@@ -39,3 +39,8 @@ app/telemetry-id
 .env
 .env.*
 !.env.example
+
+# Local dev artifacts (not part of the Xcode app)
+debug-pages/
+specs/
+default.profraw
