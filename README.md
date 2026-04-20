@@ -69,7 +69,7 @@ You’ll need to set your personal Development Team in Signing to build locally.
 
 ## Project Structure
 
-Paths below are relative to this directory (`app/`).
+Paths below are relative to the repository root (clone this repo and open `Sumi.xcodeproj` here).
 
 ```
 .

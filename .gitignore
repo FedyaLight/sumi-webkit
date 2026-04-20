@@ -31,9 +31,9 @@ default.profraw
 .build/
 .swiftpm/
 
-# App-specific (from app/.gitignore)
+# App-specific
 .home/
-app/telemetry-id
+telemetry-id
 
 # Local / editor
 .env

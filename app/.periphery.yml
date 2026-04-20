@@ -1,6 +1,0 @@
-# Periphery reads this when run from the app directory (same dir as Sumi.xcodeproj).
-project: Sumi.xcodeproj
-schemes:
-  - Sumi
-targets:
-  - Sumi
