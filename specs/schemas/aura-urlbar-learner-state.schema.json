@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aura.local/schemas/aura-urlbar-learner-state.schema.json",
+  "title": "AuraUrlbarLearnerState",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "prioritizeMax",
+    "deprioritizeMax",
+    "entries"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "minimum": 1 },
+    "prioritizeMax": { "type": "integer", "minimum": 0 },
+    "deprioritizeMax": { "type": "integer", "maximum": 0 },
+    "entries": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/learnerEntry" }
+    }
+  },
+  "$defs": {
+    "learnerEntry": {
+      "type": "object",
+      "required": ["commandId", "score"],
+      "properties": {
+        "commandId": { "type": "string" },
+        "score": {
+          "type": "integer",
+          "minimum": -5,
+          "maximum": 5
+        }
+      }
+    }
+  }
+}

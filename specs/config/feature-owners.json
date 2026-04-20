@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "owners": {
+    "browser_chrome_host": "AuraShellCoordinator",
+    "address_bar": "AuraShellCoordinator",
+    "urlbar_actions": "AuraUrlbarActionService",
+    "sidebar_shell": "AuraShellCoordinator",
+    "media_sessions": "AuraMediaSessionService",
+    "folder_runtime": "AuraShellCoordinator",
+    "spaces_and_profiles": "AuraProfileRouter",
+    "customization_bundle": "AuraCustomizationService",
+    "settings_surface": "AuraCustomizationService",
+    "theme_picker": "AuraThemeService",
+    "panel_surface_tokens": "AuraShellCoordinator",
+    "theme_runtime": "AuraThemeService",
+    "window_restore": "AuraShellCoordinator",
+    "split_and_glance": "AuraShellCoordinator",
+    "site_controls": "AuraSiteControlsService"
+  }
+}

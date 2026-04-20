@@ -1,0 +1,261 @@
+//
+//  NavButton.swift
+//  Sumi
+//
+//  Created by Maciek Bagiński on 30/07/2025.
+//  Updated by Aether Aurelia on 11/10/2025.
+//
+
+import SwiftUI
+
+struct NavButtonStyle: ButtonStyle {
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.controlSize) private var controlSize
+    @State private var isHovering: Bool = false
+
+    let overrideSize: ControlSize?
+
+    init(size: ControlSize? = nil) {
+        self.overrideSize = size
+    }
+
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
+    }
+
+    func makeBody(configuration: Configuration) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .fill(tokens.primaryText.opacity(backgroundColorOpacity(isPressed: configuration.isPressed)))
+                .frame(width: size, height: size)
+
+            configuration.label
+                .foregroundStyle(tokens.primaryText)
+//                .font(.system(size: iconSize))
+        }
+        .opacity(isEnabled ? 1.0 : 0.3)
+        
+        .contentTransition(.symbolEffect(.replace.upUp.byLayer, options: .nonRepeating))
+        .scaleEffect(configuration.isPressed && isEnabled ? 0.95 : 1.0)
+        .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+        .animation(.easeInOut(duration: 0.15), value: isHovering)
+        .onHover { hovering in
+            isHovering = hovering
+        }
+    }
+    
+    private var size: CGFloat {
+        let effectiveSize = overrideSize ?? controlSize
+        return switch effectiveSize {
+        case .mini: 24
+        case .small: 28
+        case .regular: 32
+        case .large: 40
+        case .extraLarge: 48
+        @unknown default: 32
+        }
+    }
+    
+//    private var iconSize: CGFloat {
+//        switch controlSize {
+//        case .mini: 12
+//        case .small: 14
+//        case .regular: 16
+//        case .large: 18
+//        case .extraLarge: 20
+//        @unknown default: 16
+//        }
+//    }
+    
+    private var cornerRadius: CGFloat {
+        8
+    }
+    
+    private func backgroundColorOpacity(isPressed: Bool) -> Double {
+        if (isHovering || isPressed) && isEnabled {
+            return themeContext.chromeColorScheme == .dark ? 0.2 : 0.1
+        } else {
+            return 0.0
+        }
+    }
+}
+
+/// Rectangular variant of NavButtonStyle that allows custom widths
+/// Use this for buttons that need to be wider than square (e.g., "New Space" button)
+struct RectNavButtonStyle: ButtonStyle {
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.controlSize) private var controlSize
+    @State private var isHovering: Bool = false
+
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
+    }
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(tokens.primaryText)
+            .padding(.horizontal, horizontalPadding)
+            .frame(height: height)
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(tokens.primaryText.opacity(backgroundColorOpacity(isPressed: configuration.isPressed)))
+            }
+            .contentShape(.rect)
+            .opacity(isEnabled ? 1.0 : 0.3)
+            .contentTransition(.symbolEffect(.replace.upUp.byLayer, options: .nonRepeating))
+            .scaleEffect(configuration.isPressed && isEnabled ? 0.95 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+            .animation(.easeInOut(duration: 0.15), value: isHovering)
+            .onHover { hovering in
+                isHovering = hovering
+            }
+    }
+
+    private var height: CGFloat {
+        switch controlSize {
+        case .mini: 24
+        case .small: 28
+        case .regular: 32
+        case .large: 40
+        case .extraLarge: 48
+        @unknown default: 32
+        }
+    }
+
+    private var horizontalPadding: CGFloat {
+        switch controlSize {
+        case .mini: 8
+        case .small: 10
+        case .regular: 12
+        case .large: 16
+        case .extraLarge: 20
+        @unknown default: 12
+        }
+    }
+
+    private var cornerRadius: CGFloat {
+        8
+    }
+
+    private func backgroundColorOpacity(isPressed: Bool) -> Double {
+        if (isHovering || isPressed) && isEnabled {
+            return themeContext.chromeColorScheme == .dark ? 0.2 : 0.1
+        } else {
+            return 0.0
+        }
+    }
+}
+
+#Preview("Square Buttons") {
+    VStack(spacing: 20) {
+        // Default
+        Button {
+            RuntimeDiagnostics.emit("Tapped")
+        } label: {
+            Image(systemName: "arrow.left")
+        }
+        .buttonStyle(NavButtonStyle())
+        .foregroundStyle(Color.primary)
+
+        // With foregroundStyle
+        Button {
+            RuntimeDiagnostics.emit("Tapped")
+        } label: {
+            Image(systemName: "heart.fill")
+        }
+        .buttonStyle(NavButtonStyle())
+        .foregroundStyle(.red)
+
+        // Different sizes
+        HStack {
+            Button { } label: { Image(systemName: "star") }
+                .buttonStyle(NavButtonStyle())
+                .foregroundStyle(Color.pink)
+                .controlSize(.mini)
+
+            Button { } label: { Image(systemName: "star") }
+                .buttonStyle(NavButtonStyle())
+                .foregroundStyle(Color.purple)
+                .controlSize(.small)
+
+            Button { } label: { Image(systemName: "star") }
+                .buttonStyle(NavButtonStyle())
+                .foregroundStyle(Color.yellow)
+
+            Button { } label: { Image(systemName: "star") }
+                .buttonStyle(NavButtonStyle())
+                .foregroundStyle(Color.orange)
+                .controlSize(.large)
+        }
+
+        // Disabled
+        Button {
+            RuntimeDiagnostics.emit("Tapped")
+        } label: {
+            Image(systemName: "trash")
+        }
+        .buttonStyle(NavButtonStyle())
+        .foregroundStyle(Color.primary)
+        .disabled(true)
+    }
+    .padding()
+}
+
+#Preview("Rectangular Buttons") {
+    VStack(spacing: 20) {
+        // Icon with text
+        Button {
+            RuntimeDiagnostics.emit("New Space")
+        } label: {
+            Label("New Space", systemImage: "plus")
+        }
+        .buttonStyle(RectNavButtonStyle())
+        .foregroundStyle(Color.primary)
+
+        // Icon only (still rectangular due to padding)
+        Button {
+            RuntimeDiagnostics.emit("Add")
+        } label: {
+            Image(systemName: "plus")
+        }
+        .buttonStyle(RectNavButtonStyle())
+        .foregroundStyle(Color.primary)
+
+        // Different sizes
+        VStack(spacing: 12) {
+            Button { } label: { Label("Mini", systemImage: "star") }
+                .buttonStyle(RectNavButtonStyle())
+                .foregroundStyle(Color.pink)
+                .controlSize(.mini)
+
+            Button { } label: { Label("Small", systemImage: "star") }
+                .buttonStyle(RectNavButtonStyle())
+                .foregroundStyle(Color.purple)
+                .controlSize(.small)
+
+            Button { } label: { Label("Regular", systemImage: "star") }
+                .buttonStyle(RectNavButtonStyle())
+                .foregroundStyle(Color.yellow)
+
+            Button { } label: { Label("Large", systemImage: "star") }
+                .buttonStyle(RectNavButtonStyle())
+                .foregroundStyle(Color.orange)
+                .controlSize(.large)
+        }
+
+        // Disabled
+        Button {
+            RuntimeDiagnostics.emit("Disabled")
+        } label: {
+            Label("Disabled", systemImage: "xmark")
+        }
+        .buttonStyle(RectNavButtonStyle())
+        .foregroundStyle(Color.primary)
+        .disabled(true)
+    }
+    .padding()
+}

@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "referenceRoot": "aura/resources/icons/zen-reference/zen-icons",
+  "provenanceNotes": [
+    "aura/resources/icons/zen-reference/zen-icons/nucleo/nucleo-copyright-notice.html",
+    "aura/resources/icons/zen-reference/zen-icons/fluent/NOTE.md",
+    "aura/resources/icons/zen-reference/zen-icons/sf/NOTE.md"
+  ],
+  "categories": {
+    "themePicker": {
+      "assets": [
+        "nucleo/sparkles.svg",
+        "nucleo/face-sun.svg",
+        "nucleo/moon-stars.svg",
+        "nucleo/plus.svg",
+        "nucleo/unpin.svg",
+        "nucleo/algorithm.svg",
+        "nucleo/arrow-left.svg",
+        "nucleo/arrow-right.svg"
+      ]
+    },
+    "siteControls": {
+      "assets": [
+        "nucleo/link.svg",
+        "nucleo/permissions.svg",
+        "nucleo/permissions-fill.svg",
+        "nucleo/share.svg",
+        "nucleo/reader-mode.svg",
+        "nucleo/camera.svg",
+        "nucleo/bookmark-hollow.svg",
+        "nucleo/bookmark.svg",
+        "nucleo/security.svg",
+        "nucleo/security-warning.svg",
+        "nucleo/security-broken.svg",
+        "nucleo/extension.svg",
+        "nucleo/menu.svg",
+        "nucleo/manage.svg",
+        "nucleo/settings.svg"
+      ]
+    },
+    "permissionRows": {
+      "assets": [
+        "nucleo/settings-fill.svg",
+        "nucleo/geo.svg",
+        "nucleo/geo-fill.svg",
+        "nucleo/geo-blocked.svg",
+        "nucleo/xr.svg",
+        "nucleo/xr-fill.svg",
+        "nucleo/xr-blocked.svg",
+        "nucleo/desktop-notification.svg",
+        "nucleo/desktop-notification-fill.svg",
+        "nucleo/desktop-notification-blocked.svg",
+        "nucleo/camera-fill.svg",
+        "nucleo/camera-blocked.svg",
+        "nucleo/microphone.svg",
+        "nucleo/microphone-fill.svg",
+        "nucleo/microphone-blocked.svg",
+        "nucleo/screen.svg",
+        "nucleo/screen-blocked.svg",
+        "nucleo/persistent-storage.svg",
+        "nucleo/persistent-storage-fill.svg",
+        "nucleo/persistent-storage-blocked.svg",
+        "nucleo/popup.svg",
+        "nucleo/popup-fill.svg",
+        "nucleo/autoplay-media.svg",
+        "nucleo/autoplay-media-fill.svg",
+        "nucleo/autoplay-media-blocked.svg",
+        "nucleo/cookies-fill.svg",
+        "nucleo/extension-fill.svg",
+        "nucleo/tracking-protection-fill.svg"
+      ]
+    },
+    "workspaceAndFolderMenus": {
+      "assets": [
+        "nucleo/duplicate-tab.svg",
+        "nucleo/folder.svg",
+        "nucleo/split.svg",
+        "nucleo/plus.svg",
+        "nucleo/menu.svg",
+        "nucleo/edit-theme.svg",
+        "nucleo/manage.svg",
+        "nucleo/unpin.svg",
+        "nucleo/close.svg",
+        "nucleo/pin.svg",
+        "nucleo/essential-add.svg",
+        "nucleo/essential-remove.svg"
+      ]
+    },
+    "mediaControls": {
+      "assets": [
+        "nucleo/media-play.svg",
+        "nucleo/media-pause.svg",
+        "nucleo/media-next.svg",
+        "nucleo/media-previous.svg",
+        "nucleo/media-unmute.svg",
+        "nucleo/media-mute.svg",
+        "nucleo/microphone-fill.svg",
+        "nucleo/microphone-blocked-fill.svg",
+        "nucleo/video-fill.svg",
+        "nucleo/video-blocked-fill.svg",
+        "nucleo/screen.svg",
+        "nucleo/close.svg",
+        "nucleo/tab-audio-playing-small.svg",
+        "nucleo/tab-audio-muted-small.svg",
+        "nucleo/tab-audio-blocked-small.svg"
+      ]
+    },
+    "panelHeaders": {
+      "assets": [
+        "nucleo/extension.svg",
+        "nucleo/bookmark-star-on-tray.svg",
+        "nucleo/history.svg",
+        "nucleo/help.svg",
+        "nucleo/library.svg"
+      ]
+    }
+  }
+}

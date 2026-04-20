@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aura.local/schemas/aura-customization-state.schema.json",
+  "title": "AuraCustomizationState",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "globalState"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "minimum": 1 },
+    "globalState": { "$ref": "#/$defs/globalState" }
+  },
+  "$defs": {
+    "essentialLauncher": {
+      "type": "object",
+      "required": ["id", "kind", "title", "url"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": {
+          "type": "string",
+          "enum": ["essential"]
+        },
+        "title": { "type": "string" },
+        "url": { "type": "string" },
+        "isLive": { "type": "boolean" },
+        "resetToBaseUrlOnActivate": { "type": "boolean" }
+      }
+    },
+    "keyboardState": {
+      "type": "object",
+      "required": [
+        "traversalMode",
+        "shortcutsCustomizable",
+        "numberingIncludesEssentials",
+        "numberingIncludesPinned",
+        "commandResultsHavePriority"
+      ],
+      "properties": {
+        "traversalMode": {
+          "type": "string",
+          "enum": ["sequential", "mostRecentlyUsed"]
+        },
+        "shortcutsCustomizable": { "type": "boolean" },
+        "numberingIncludesEssentials": { "type": "boolean" },
+        "numberingIncludesPinned": { "type": "boolean" },
+        "commandResultsHavePriority": { "type": "boolean" }
+      }
+    },
+    "workspaceNavigationPreferences": {
+      "type": "object",
+      "required": [
+        "wrapAroundNavigation",
+        "openNewTabIfLastUnpinnedCloses"
+      ],
+      "properties": {
+        "wrapAroundNavigation": { "type": "boolean" },
+        "openNewTabIfLastUnpinnedCloses": { "type": "boolean" }
+      }
+    },
+    "compactModePreferences": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "hideSidebar",
+        "hideToolbar",
+        "hoverRevealEnabled",
+        "hoverHideDelayMs",
+        "flashPopupEnabled",
+        "flashPopupDurationMs",
+        "useThemedBackground"
+      ],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "hideSidebar": { "type": "boolean" },
+        "hideToolbar": { "type": "boolean" },
+        "hoverRevealEnabled": { "type": "boolean" },
+        "hoverHideDelayMs": { "type": "integer", "minimum": 0 },
+        "flashPopupEnabled": { "type": "boolean" },
+        "flashPopupDurationMs": { "type": "integer", "minimum": 0 },
+        "useThemedBackground": { "type": "boolean" }
+      }
+    },
+    "layoutPreferences": {
+      "type": "object",
+      "required": ["layoutMode", "tabsOnRight"],
+      "properties": {
+        "layoutMode": {
+          "type": "string",
+          "enum": ["singleToolbar", "multipleToolbar", "collapsedToolbar"]
+        },
+        "tabsOnRight": { "type": "boolean" }
+      }
+    },
+    "urlBarPreferences": {
+      "type": "object",
+      "required": [
+        "behaviorMode",
+        "showCopyUrlButton",
+        "showPictureInPictureButton",
+        "showContextualIdentity"
+      ],
+      "properties": {
+        "behaviorMode": {
+          "type": "string",
+          "enum": ["normal", "floatingOnType", "alwaysFloating"]
+        },
+        "showCopyUrlButton": { "type": "boolean" },
+        "showPictureInPictureButton": { "type": "boolean" },
+        "showContextualIdentity": { "type": "boolean" }
+      }
+    },
+    "globalState": {
+      "type": "object",
+      "required": [
+        "essentials",
+        "keyboardState",
+        "workspaceNavigationPreferences",
+        "compactModePreferences",
+        "layoutPreferences",
+        "urlBarPreferences",
+        "useAcrylicElements",
+        "windowSchemeMode",
+        "darkThemeStyle",
+        "darkModeBias"
+      ],
+      "properties": {
+        "essentials": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/essentialLauncher" }
+        },
+        "keyboardState": { "$ref": "#/$defs/keyboardState" },
+        "workspaceNavigationPreferences": {
+          "$ref": "#/$defs/workspaceNavigationPreferences"
+        },
+        "compactModePreferences": {
+          "$ref": "#/$defs/compactModePreferences"
+        },
+        "layoutPreferences": {
+          "$ref": "#/$defs/layoutPreferences"
+        },
+        "urlBarPreferences": {
+          "$ref": "#/$defs/urlBarPreferences"
+        },
+        "useAcrylicElements": { "type": "boolean" },
+        "windowSchemeMode": {
+          "type": "string",
+          "enum": ["auto", "light", "dark"]
+        },
+        "darkThemeStyle": {
+          "type": "string",
+          "enum": ["default", "night", "colorful"]
+        },
+        "darkModeBias": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    }
+  }
+}

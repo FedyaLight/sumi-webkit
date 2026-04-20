@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "description": "Pinned upstream files and generated assets that participate in the first Aura launch path.",
+  "upstreamRoot": "../upstream",
+  "targets": [
+    "helium/patches/helium/core/change-chromium-branding.patch",
+    "helium/utils/name_substitution.py",
+    "helium/utils/name_substitution_utils.py",
+    "helium-macos/dev.sh",
+    "helium-macos/sign_and_package_app.sh",
+    "helium-macos/resources/dmg.json",
+    "helium-macos/resources/assets/app.icns",
+    "helium-macos/resources/assets/legacy.png",
+    "helium-macos/resources/assets/legacy_crop.png",
+    "helium-macos/patches/helium/core/change-chromium-branding.patch",
+    "helium-macos/patches/helium/macos/change-product-dir-name.patch",
+    "helium-macos/patches/helium/macos/updater/maybe-fix-bundle-check-crash.patch"
+  ],
+  "patchQueue": [
+    "0000-brand-aura-app-bundle",
+    "0001-brand-aura-assets",
+    "0000-brand-aura-core"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "targets": {
+    "helium": {
+      "patchRoot": "patches/helium",
+      "seriesFile": "patches/helium/series"
+    },
+    "helium-macos": {
+      "patchRoot": "patches/helium-macos",
+      "seriesFile": "patches/helium-macos/series"
+    }
+  }
+}
