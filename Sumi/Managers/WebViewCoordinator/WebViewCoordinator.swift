@@ -62,6 +62,8 @@ final class SumiWebViewContainerView: NSView {
     let tabID: UUID
     let windowID: UUID
     let webView: WKWebView
+    var fullscreenStateDidChange: ((SumiWebViewContainerView, WKWebView.FullscreenState) -> Void)?
+    private var fullscreenStateObservation: NSKeyValueObservation?
 
     override var constraints: [NSLayoutConstraint] { [] }
 
@@ -74,12 +76,8 @@ final class SumiWebViewContainerView: NSView {
         autoresizingMask = [.width, .height]
         webView.translatesAutoresizingMaskIntoConstraints = true
         webView.autoresizingMask = [.width, .height]
-        webView.frame = bounds
-
-        if webView.superview !== self {
-            webView.removeFromSuperview()
-            addSubview(webView)
-        }
+        attachDisplayedWebViewIfNeeded()
+        observeFullscreenState()
     }
 
     @available(*, unavailable)
@@ -90,7 +88,7 @@ final class SumiWebViewContainerView: NSView {
     override func layout() {
         super.layout()
         attachDisplayedWebViewIfNeeded()
-        webView.frame = bounds
+        webView.sumiFullscreenTabContentViewForHost?.frame = bounds
     }
 
     override func removeFromSuperview() {
@@ -98,17 +96,45 @@ final class SumiWebViewContainerView: NSView {
         super.removeFromSuperview()
     }
 
+    override func didAddSubview(_ subview: NSView) {
+        super.didAddSubview(subview)
+        guard webView.sumiTabContentView !== webView else { return }
+        subview.frame = bounds
+        subview.autoresizingMask = [.width, .height]
+    }
+
     func attachDisplayedWebViewIfNeeded() {
-        guard webView.superview !== self else { return }
-        webView.removeFromSuperview()
-        addSubview(webView)
-        webView.frame = bounds
-        webView.autoresizingMask = [.width, .height]
+        guard let displayedView = webView.sumiFullscreenTabContentViewForHost else { return }
+
+        if displayedView.superview !== self {
+            displayedView.removeFromSuperview()
+            addSubview(displayedView)
+        }
+
+        displayedView.frame = bounds
+        displayedView.autoresizingMask = [.width, .height]
     }
 
     func detachWebViewForCleanup() {
-        if webView.superview === self {
-            webView.removeFromSuperview()
+        guard let displayedView = webView.sumiFullscreenTabContentViewForHost else { return }
+        if displayedView.superview === self {
+            displayedView.removeFromSuperview()
+        }
+    }
+
+    private func observeFullscreenState() {
+        fullscreenStateObservation = webView.observe(
+            \.fullscreenState,
+            options: [.new]
+        ) { [weak self] _, change in
+            guard let self, let state = change.newValue else { return }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if state != .notInFullscreen {
+                    self.attachDisplayedWebViewIfNeeded()
+                }
+                self.fullscreenStateDidChange?(self, state)
+            }
         }
     }
 }
@@ -121,6 +147,14 @@ private struct HistorySwipeProtectionContext {
     let originURL: URL?
     let originHistoryItem: WKBackForwardListItem?
     let originHistoryURL: URL?
+}
+
+private struct FullscreenVideoSessionContext {
+    let tabID: UUID
+    let windowID: UUID
+    let webViewID: ObjectIdentifier
+    weak var host: SumiWebViewContainerView?
+    weak var previousFirstResponder: NSResponder?
 }
 
 @MainActor
@@ -151,6 +185,9 @@ class WebViewCoordinator {
 
     @ObservationIgnored
     private var activeHistorySwipeProtections: [ObjectIdentifier: HistorySwipeProtectionContext] = [:]
+
+    @ObservationIgnored
+    private var activeFullscreenVideoSessions: [ObjectIdentifier: FullscreenVideoSessionContext] = [:]
 
     @ObservationIgnored
     private var deferredProtectedWebViewMutations: [ObjectIdentifier: [() -> Void]] = [:]
@@ -246,6 +283,12 @@ class WebViewCoordinator {
             windowID: windowId,
             webView: webView
         )
+        host.fullscreenStateDidChange = { [weak self] host, state in
+            self?.handleFullscreenStateChange(for: host, state: state)
+        }
+        if webView.sumiIsInFullscreenElementPresentation {
+            handleFullscreenStateChange(for: host, state: webView.fullscreenState)
+        }
         webViewHostsByTabAndWindow[tabId]?[windowId] = host
         return host
     }
@@ -359,8 +402,15 @@ class WebViewCoordinator {
         activeHistorySwipeProtections.values.contains { $0.windowID == windowId }
     }
 
+    func hasActiveFullscreenVideo(in windowId: UUID) -> Bool {
+        activeFullscreenVideoSessions.values.contains { $0.windowID == windowId }
+    }
+
     func isWebViewProtectedFromCompositorMutation(_ webView: WKWebView) -> Bool {
-        activeHistorySwipeProtections[ObjectIdentifier(webView)] != nil
+        let webViewID = ObjectIdentifier(webView)
+        return activeHistorySwipeProtections[webViewID] != nil
+            || activeFullscreenVideoSessions[webViewID] != nil
+            || webView.sumiIsInFullscreenElementPresentation
     }
 
     func isHostProtectedFromCompositorMutation(_ host: SumiWebViewContainerView) -> Bool {
@@ -387,7 +437,7 @@ class WebViewCoordinator {
         to container: NSView
     ) -> Bool {
         if host.superview !== container,
-           deferProtectedWebViewMutation(
+           deferHistorySwipeProtectedWebViewMutation(
                 host.webView,
                 reason: "attachHost",
                 operation: { [weak self, weak host, weak container] in
@@ -410,9 +460,9 @@ class WebViewCoordinator {
         host.attachDisplayedWebViewIfNeeded()
         host.frame = container.bounds
         host.autoresizingMask = [.width, .height]
-        host.webView.frame = host.bounds
+        host.webView.sumiFullscreenTabContentViewForHost?.frame = host.bounds
         host.isHidden = false
-        host.webView.isHidden = false
+        host.webView.sumiFullscreenTabContentViewForHost?.isHidden = false
         return true
     }
 
@@ -425,6 +475,7 @@ class WebViewCoordinator {
                 RuntimeDiagnostics.swipeTrace(
                     "skipPruneProtected view=\(ObjectIdentifier(subview))"
                 )
+                subview.isHidden = true
                 continue
             }
             subview.removeFromSuperview()
@@ -434,6 +485,23 @@ class WebViewCoordinator {
 
     @discardableResult
     func deferProtectedWebViewMutation(
+        _ webView: WKWebView,
+        reason: String,
+        operation: @escaping () -> Void
+    ) -> Bool {
+        let webViewID = ObjectIdentifier(webView)
+        guard isWebViewProtectedFromCompositorMutation(webView) else {
+            return false
+        }
+
+        deferredProtectedWebViewMutations[webViewID, default: []].append(operation)
+        RuntimeDiagnostics.swipeTrace(
+            "defer reason=\(reason) webView=\(webViewID)"
+        )
+        return true
+    }
+
+    private func deferHistorySwipeProtectedWebViewMutation(
         _ webView: WKWebView,
         reason: String,
         operation: @escaping () -> Void
@@ -452,8 +520,81 @@ class WebViewCoordinator {
         return true
     }
 
+    private func handleFullscreenStateChange(
+        for host: SumiWebViewContainerView,
+        state: WKWebView.FullscreenState
+    ) {
+        let webViewID = ObjectIdentifier(host.webView)
+
+        if state == .notInFullscreen {
+            let context = activeFullscreenVideoSessions.removeValue(forKey: webViewID)
+            RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
+                "Ended fullscreen video session for tab=\(host.tabID.uuidString.prefix(8)) window=\(host.windowID.uuidString.prefix(8))."
+            }
+            restoreAfterFullscreenVideoExit(context: context, host: host)
+            flushDeferredProtectedWebViewMutations(for: webViewID)
+            return
+        }
+
+        if activeFullscreenVideoSessions[webViewID] == nil {
+            activeFullscreenVideoSessions[webViewID] = FullscreenVideoSessionContext(
+                tabID: host.tabID,
+                windowID: host.windowID,
+                webViewID: webViewID,
+                host: host,
+                previousFirstResponder: host.window?.firstResponder
+            )
+            RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
+                "Began fullscreen video session for tab=\(host.tabID.uuidString.prefix(8)) window=\(host.windowID.uuidString.prefix(8))."
+            }
+        }
+    }
+
+    private func restoreAfterFullscreenVideoExit(
+        context: FullscreenVideoSessionContext?,
+        host: SumiWebViewContainerView
+    ) {
+        guard let tab = (host.webView as? FocusableWKWebView)?.owningTab,
+              let browserManager = tab.browserManager,
+              let windowState = browserManager.windowRegistry?.windows[host.windowID]
+        else {
+            SumiNativeNowPlayingController.shared.scheduleRefresh(delayNanoseconds: 0)
+            return
+        }
+
+        browserManager.refreshCompositor(for: windowState)
+
+        Task { @MainActor [weak self, weak browserManager, weak windowState, weak tab] in
+            await Task.yield()
+            guard let self,
+                  let browserManager,
+                  let windowState,
+                  let tab,
+                  browserManager.currentTab(for: windowState)?.id == tab.id,
+                  let window = windowState.window,
+                  let restoredHost = self.getWebViewHost(for: tab.id, in: windowState.id)
+            else {
+                SumiNativeNowPlayingController.shared.scheduleRefresh(delayNanoseconds: 0)
+                return
+            }
+
+            restoredHost.attachDisplayedWebViewIfNeeded()
+            guard restoredHost.webView.window === window else {
+                SumiNativeNowPlayingController.shared.scheduleRefresh(delayNanoseconds: 0)
+                return
+            }
+
+            if window.firstResponder !== restoredHost.webView {
+                window.makeFirstResponder(restoredHost.webView)
+            }
+            SumiNativeNowPlayingController.shared.scheduleRefresh(delayNanoseconds: 0)
+        }
+    }
+
     private func flushDeferredProtectedWebViewMutations(for webViewID: ObjectIdentifier) {
-        guard activeHistorySwipeProtections[webViewID] == nil else { return }
+        guard activeHistorySwipeProtections[webViewID] == nil,
+              activeFullscreenVideoSessions[webViewID] == nil
+        else { return }
         let operations = deferredProtectedWebViewMutations.removeValue(forKey: webViewID) ?? []
         guard !operations.isEmpty else { return }
         Task { @MainActor in
@@ -669,6 +810,23 @@ class WebViewCoordinator {
 
     @discardableResult
     func removeAllWebViews(for tab: Tab) -> Bool {
+        let currentEntries = webViewsByTabAndWindow[tab.id] ?? [:]
+        let protectedCandidateWebViews = Array(currentEntries.values)
+            + [tab.assignedWebView, tab.existingWebView].compactMap { $0 }
+        if protectedCandidateWebViews.contains(where: isWebViewProtectedFromCompositorMutation) {
+            for protectedWebView in protectedCandidateWebViews where isWebViewProtectedFromCompositorMutation(protectedWebView) {
+                _ = deferProtectedWebViewMutation(
+                    protectedWebView,
+                    reason: "removeAllWebViews",
+                    operation: { [weak self, weak tab] in
+                        guard let self, let tab else { return }
+                        _ = self.removeAllWebViews(for: tab)
+                    }
+                )
+            }
+            return false
+        }
+
         guard let entries = webViewsByTabAndWindow.removeValue(forKey: tab.id) else { return false }
         webViewHostsByTabAndWindow.removeValue(forKey: tab.id)
         let primaryWebView = tab._webView

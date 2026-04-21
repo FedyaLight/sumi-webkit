@@ -232,62 +232,6 @@ extension Tab: WKUIDelegate {
         }
     }
 
-    @available(macOS 10.15, *)
-    public func webView(
-        _ webView: WKWebView,
-        enterFullScreenForVideoWith completionHandler: @escaping (Bool, Error?) -> Void
-    ) {
-        RuntimeDiagnostics.emit("🎬 [Tab] Entering full-screen for video - delegate method called!")
-
-        guard let window = webView.window else {
-            RuntimeDiagnostics.emit("❌ [Tab] No window found for full-screen")
-            completionHandler(
-                false,
-                NSError(
-                    domain: "Tab",
-                    code: -1,
-                    userInfo: [NSLocalizedDescriptionKey: "No window available for full-screen"]
-                )
-            )
-            return
-        }
-
-        RuntimeDiagnostics.emit("🎬 [Tab] Found window: \(window), entering full-screen...")
-        DispatchQueue.main.async {
-            window.toggleFullScreen(nil)
-            RuntimeDiagnostics.emit("🎬 [Tab] Full-screen toggle called")
-        }
-        completionHandler(true, nil)
-    }
-
-    @available(macOS 10.15, *)
-    public func webView(
-        _ webView: WKWebView,
-        exitFullScreenWith completionHandler: @escaping (Bool, Error?) -> Void
-    ) {
-        RuntimeDiagnostics.emit("🎬 [Tab] Exiting full-screen for video - delegate method called!")
-
-        guard let window = webView.window else {
-            RuntimeDiagnostics.emit("❌ [Tab] No window found for exiting full-screen")
-            completionHandler(
-                false,
-                NSError(
-                    domain: "Tab",
-                    code: -1,
-                    userInfo: [NSLocalizedDescriptionKey: "No window available for exiting full-screen"]
-                )
-            )
-            return
-        }
-
-        RuntimeDiagnostics.emit("🎬 [Tab] Found window: \(window), exiting full-screen...")
-        DispatchQueue.main.async {
-            window.toggleFullScreen(nil)
-            RuntimeDiagnostics.emit("🎬 [Tab] Full-screen exit toggle called")
-        }
-        completionHandler(true, nil)
-    }
-
     @available(macOS 13.0, *)
     public func webView(
         _ webView: WKWebView,
