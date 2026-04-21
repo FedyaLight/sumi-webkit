@@ -1,0 +1,368 @@
+import Foundation
+
+// MARK: - Profile Cleanup & Stats
+extension TabManager {
+    func cleanupProfileReferences(_ deletedProfileId: UUID) {
+        guard let fallback = browserManager?.profileManager.profiles.first else { return }
+        var didChange = false
+        for index in spaces.indices where spaces[index].profileId == deletedProfileId {
+            spaces[index].profileId = fallback.id
+            if currentSpace?.id == spaces[index].id {
+                currentSpace?.profileId = fallback.id
+            }
+            didChange = true
+        }
+        if didChange {
+            persistSnapshot()
+        }
+        handleProfileSwitch()
+    }
+
+    func tabCount(for profileId: UUID) -> Int {
+        let spaceIds = Set(spaces.filter { $0.profileId == profileId }.map(\.id))
+        let regular = spaces.filter { spaceIds.contains($0.id) }
+            .flatMap { tabsBySpace[$0.id] ?? [] }
+        let spacePinned = spaces.filter { spaceIds.contains($0.id) }
+            .flatMap { self.spacePinnedShortcuts[$0.id] ?? [] }
+        let pinned = pinnedByProfile[profileId] ?? []
+        return regular.count + spacePinned.count + pinned.count
+    }
+
+    func spaceCount(for profileId: UUID) -> Int {
+        spaces.filter { $0.profileId == profileId }.count
+    }
+
+    func tabs(in space: Space) -> [Tab] {
+        Array(tabsBySpace[space.id] ?? [])
+    }
+}
+
+// MARK: - Profile Change Handling
+extension TabManager {
+    func handleProfileSwitch() {
+        if let pendingSpaceId = pendingSpaceActivation {
+            pendingSpaceActivation = nil
+            if let target = spaces.first(where: { $0.id == pendingSpaceId }) {
+                setActiveSpace(target)
+            }
+        }
+
+        let visible = selectionTabsForCurrentContext()
+        if currentTab == nil || !(visible.contains { $0.id == currentTab!.id }) {
+            currentTab = visible.first
+            browserManager?.compositorManager.updateTabVisibility(currentTabId: currentTab?.id)
+            persistSnapshot()
+        } else {
+            browserManager?.compositorManager.updateTabVisibility(currentTabId: currentTab?.id)
+        }
+    }
+}
+
+// MARK: - Profile Assignment Helpers
+extension TabManager {
+    func reconcileSpaceProfilesIfNeeded() {
+        let defaultProfileId = browserManager?.currentProfile?.id
+            ?? browserManager?.profileManager.profiles.first?.id
+        guard let profileId = defaultProfileId else {
+            RuntimeDiagnostics.debug(
+                "No profiles available for space reconciliation yet.",
+                category: "TabManager"
+            )
+            return
+        }
+
+        var didAssign = false
+        for space in spaces where space.profileId == nil {
+            space.profileId = profileId
+            didAssign = true
+        }
+
+        if didAssign {
+            persistSnapshot()
+        }
+    }
+}
+
+// MARK: - Profile Validation
+extension TabManager {
+    func validateTabProfileAssignments() {
+        guard let fallbackProfileId = browserManager?.currentProfile?.id else { return }
+        var didFix = false
+
+        for space in spaces {
+            let hasTabs = !(tabsBySpace[space.id] ?? []).isEmpty || hasSpacePinnedContent(for: space.id)
+            if hasTabs && space.profileId == nil {
+                space.profileId = fallbackProfileId
+                didFix = true
+            }
+        }
+
+        if didFix {
+            persistSnapshot()
+        }
+    }
+
+    func validateProfileAssignments() {
+        validateTabProfileAssignments()
+    }
+}
+
+// MARK: - Profile Assignment API
+extension TabManager {
+    func assign(spaceId: UUID, toProfile profileId: UUID) {
+        if let index = spaces.firstIndex(where: { $0.id == spaceId }) {
+            let exists = browserManager?.profileManager.profiles.contains(where: { $0.id == profileId }) ?? false
+            if !exists {
+                RuntimeDiagnostics.emit(
+                    "⚠️ [TabManager] Attempted to assign space to unknown profile: \(profileId)"
+                )
+                return
+            }
+            spaces[index].profileId = profileId
+            if currentSpace?.id == spaceId {
+                currentSpace?.profileId = profileId
+            }
+            persistSnapshot()
+        }
+    }
+}
+
+// MARK: - Tab Closure Undo
+extension TabManager {
+    func trackRecentlyClosedTab(_ tab: Tab, spaceId: UUID?) {
+        let now = Date()
+        let shouldShowToast = shouldShowTabClosureToast(now: now)
+        lastTabClosureTime = now
+
+        let tabCopy = Tab(
+            id: UUID(),
+            url: tab.url,
+            name: tab.name,
+            favicon: "globe",
+            spaceId: spaceId,
+            index: tab.index,
+            skipFaviconFetch: true
+        )
+        tabCopy.browserManager = browserManager
+        tabCopy.isPinned = tab.isPinned
+        tabCopy.isSpacePinned = tab.isSpacePinned
+        tabCopy.folderId = tab.folderId
+
+        recentlyClosedTabs.append((
+            tab: tabCopy,
+            spaceId: spaceId,
+            currentURL: tab.url,
+            canGoBack: tab.canGoBack,
+            canGoForward: tab.canGoForward,
+            timestamp: now
+        ))
+
+        scheduleUndoTimerCleanup()
+
+        if shouldShowToast {
+            browserManager?.showTabClosureToast(tabCount: 1)
+        }
+    }
+
+    private func trackRecentlyClosedTabs(_ tabs: [(tab: Tab, spaceId: UUID?)], count: Int) {
+        let now = Date()
+        lastTabClosureTime = now
+
+        for (tab, spaceId) in tabs {
+            let tabCopy = Tab(
+                id: UUID(),
+                url: tab.url,
+                name: tab.name,
+                favicon: "globe",
+                spaceId: spaceId,
+                index: tab.index,
+                skipFaviconFetch: true
+            )
+            tabCopy.browserManager = browserManager
+            tabCopy.isPinned = tab.isPinned
+            tabCopy.isSpacePinned = tab.isSpacePinned
+            tabCopy.folderId = tab.folderId
+
+            recentlyClosedTabs.append((
+                tab: tabCopy,
+                spaceId: spaceId,
+                currentURL: tab.url,
+                canGoBack: tab.canGoBack,
+                canGoForward: tab.canGoForward,
+                timestamp: now
+            ))
+        }
+
+        scheduleUndoTimerCleanup()
+        browserManager?.showTabClosureToast(tabCount: count)
+    }
+
+    private func shouldShowTabClosureToast(now: Date) -> Bool {
+        guard let lastClosure = lastTabClosureTime else { return true }
+        return now.timeIntervalSince(lastClosure) >= toastCooldown
+    }
+
+    func undoCloseTab() {
+        guard !recentlyClosedTabs.isEmpty else { return }
+
+        let mostRecent = recentlyClosedTabs.removeLast()
+        mostRecent.tab.restoredCanGoBack = mostRecent.canGoBack
+        mostRecent.tab.restoredCanGoForward = mostRecent.canGoForward
+        addTab(mostRecent.tab)
+        setActiveTab(mostRecent.tab)
+
+        if recentlyClosedTabs.isEmpty {
+            clearUndoTimer()
+        }
+    }
+
+    func undoCloseMultipleTabs(count: Int) {
+        let actualCount = min(count, recentlyClosedTabs.count)
+        var restoredTabs: [Tab] = []
+
+        for _ in 0..<actualCount {
+            guard !recentlyClosedTabs.isEmpty else { break }
+            let tabInfo = recentlyClosedTabs.removeLast()
+            restoredTabs.append(tabInfo.tab)
+            tabInfo.tab.restoredCanGoBack = tabInfo.canGoBack
+            tabInfo.tab.restoredCanGoForward = tabInfo.canGoForward
+            addTab(tabInfo.tab)
+        }
+
+        if let lastTab = restoredTabs.last {
+            setActiveTab(lastTab)
+        }
+
+        if recentlyClosedTabs.isEmpty {
+            clearUndoTimer()
+        }
+    }
+
+    private func scheduleUndoTimerCleanup() {
+        clearUndoTimer()
+        undoTimer = Timer.scheduledTimer(withTimeInterval: undoDuration, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.cleanupExpiredTabs()
+            }
+        }
+    }
+
+    private func cleanupExpiredTabs() {
+        let now = Date()
+        recentlyClosedTabs.removeAll { tabInfo in
+            now.timeIntervalSince(tabInfo.timestamp) >= undoDuration
+        }
+
+        if recentlyClosedTabs.isEmpty {
+            clearUndoTimer()
+        }
+    }
+
+    private func clearUndoTimer() {
+        undoTimer?.invalidate()
+        undoTimer = nil
+    }
+
+    func clearRecentlyClosedTabs() {
+        recentlyClosedTabs.removeAll()
+        clearUndoTimer()
+        lastTabClosureTime = nil
+    }
+
+    func hasRecentlyClosedTabs() -> Bool {
+        !recentlyClosedTabs.isEmpty
+    }
+}
+
+// MARK: - Navigation State Management
+extension TabManager {
+    func updateTabNavigationState(_ tab: Tab) {
+        scheduleRuntimeStatePersistence(for: tab)
+    }
+}
+
+// MARK: - Bulk Tab Operations
+extension TabManager {
+    func closeAllTabsBelow(_ tab: Tab) {
+        guard let spaceId = tab.spaceId else { return }
+        guard let tabs = tabsBySpace[spaceId] else { return }
+        guard tabs.firstIndex(where: { $0.id == tab.id }) != nil else { return }
+
+        let tabsBelow = tabs.filter { $0.index > tab.index }
+        if tabsBelow.isEmpty {
+            return
+        }
+
+        let tabsToTrack = tabsBelow.map { (tab: $0, spaceId: spaceId) }
+        for tabToClose in tabsBelow {
+            closeTabWithoutTracking(tabToClose.id)
+        }
+
+        trackRecentlyClosedTabs(tabsToTrack, count: tabsBelow.count)
+    }
+
+    private func closeTabWithoutTracking(_ id: UUID) {
+        cancelRuntimeStatePersistence(for: id)
+        let wasCurrent = currentTab?.id == id
+        var removed: Tab?
+        var removedIndexInCurrentSpace: Int?
+
+        if removed == nil {
+            for space in spaces {
+                if var tabs = tabsBySpace[space.id],
+                   let index = tabs.firstIndex(where: { $0.id == id })
+                {
+                    removed = tabs.remove(at: index)
+                    removedIndexInCurrentSpace = space.id == currentSpace?.id ? index : nil
+                    setTabs(tabs, for: space.id)
+                    break
+                }
+            }
+        }
+
+        if removed == nil,
+           let (windowId, pinId, tab) = transientShortcutTabsByWindow.lazy
+                .compactMap({ windowId, tabsByPin -> (UUID, UUID, Tab)? in
+                    guard let match = tabsByPin.first(where: { $0.value.id == id }) else { return nil }
+                    return (windowId, match.key, match.value)
+                })
+                .first
+        {
+            transientShortcutTabsByWindow[windowId]?.removeValue(forKey: pinId)
+            if transientShortcutTabsByWindow[windowId]?.isEmpty == true {
+                transientShortcutTabsByWindow.removeValue(forKey: windowId)
+            }
+            notifyTransientShortcutStateChanged()
+            removed = tab
+        }
+
+        guard let tab = removed else { return }
+
+        browserManager?.compositorManager.unloadTab(tab)
+        if let browserManager {
+            browserManager.requireWebViewCoordinator().removeAllWebViews(for: tab)
+        }
+
+        NotificationCenter.default.post(
+            name: .sumiTabLifecycleDidChange,
+            object: tab
+        )
+
+        if wasCurrent {
+            if tab.spaceId == nil {
+                let tabs = essentialTabs(for: browserManager?.currentProfile?.id)
+                if let first = tabs.first {
+                    setActiveTab(first)
+                }
+            } else if let spaceId = tab.spaceId,
+                      let spaceTabs = tabsBySpace[spaceId],
+                      !spaceTabs.isEmpty
+            {
+                let targetIndex = min(removedIndexInCurrentSpace ?? 0, spaceTabs.count - 1)
+                setActiveTab(spaceTabs[targetIndex])
+            }
+        }
+
+        persistSnapshot()
+    }
+}

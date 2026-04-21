@@ -1,0 +1,231 @@
+//
+//  SpaceEditDialog.swift
+//  Sumi
+//
+//  Created by OpenAI Codex on 22/01/2025.
+//
+
+import AppKit
+import SwiftUI
+
+struct SpaceEditDialog: DialogPresentable {
+    enum Mode {
+        case rename
+        case icon
+    }
+
+    private let mode: Mode
+    private let originalSpaceName: String
+    private let originalSpaceIcon: String
+    private let originalProfileId: UUID?
+
+    @State private var spaceName: String
+    @State private var spaceIcon: String
+    @State private var selectedProfileId: UUID?
+
+    private let onSaveChanges: (String, String, UUID?) -> Void
+    private let onCancelChanges: () -> Void
+
+    init(
+        space: Space,
+        mode: Mode,
+        onSave: @escaping (String, String, UUID?) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        let name = MainActor.assumeIsolated { space.name }
+        let icon = MainActor.assumeIsolated { space.icon }
+        let profileId = MainActor.assumeIsolated { space.profileId }
+        self.mode = mode
+        self.originalSpaceName = name
+        self.originalSpaceIcon = icon
+        self.originalProfileId = profileId
+        _spaceName = State(initialValue: name)
+        _spaceIcon = State(initialValue: icon)
+        _selectedProfileId = State(initialValue: profileId)
+        self.onSaveChanges = onSave
+        self.onCancelChanges = onCancel
+    }
+
+    func dialogHeader() -> DialogHeader {
+        DialogHeader(
+            icon: "GEAR",
+            title: "Space Settings",
+            subtitle: originalSpaceName
+        )
+    }
+
+    @ViewBuilder
+    func dialogContent() -> some View {
+        SpaceEditContent(
+            spaceName: $spaceName,
+            spaceIcon: $spaceIcon,
+            selectedProfileId: $selectedProfileId,
+            originalIcon: originalSpaceIcon,
+            mode: mode
+        )
+    }
+
+    func dialogFooter() -> DialogFooter {
+        let trimmed = spaceName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let effectiveName = trimmed.isEmpty ? originalSpaceName : trimmed
+        let iconValue = spaceIcon.isEmpty ? originalSpaceIcon : spaceIcon
+
+        return DialogFooter(
+            rightButtons: [
+                DialogButton(
+                    text: "Cancel",
+                    variant: .secondary,
+                    action: onCancelChanges
+                ),
+                DialogButton(
+                    text: "Save Changes",
+                    iconName: "checkmark",
+                    variant: .primary,
+                    action: {
+                        onSaveChanges(effectiveName, iconValue, selectedProfileId)
+                    }
+                )
+            ]
+        )
+    }
+}
+
+private struct SpaceEditContent: View {
+    @Binding var spaceName: String
+    @Binding var spaceIcon: String
+    @Binding var selectedProfileId: UUID?
+
+    let originalIcon: String
+    let mode: SpaceEditDialog.Mode
+
+    @StateObject private var emojiManager = EmojiPickerManager()
+    @EnvironmentObject var browserManager: BrowserManager
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Space Name")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+
+                SumiTextField(
+                    text: $spaceName,
+                    placeholder: "Enter space name",
+                    variant: .default,
+                    iconName: "textformat"
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Space Icon")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+
+                HStack(spacing: 12) {
+                    Button {
+                        emojiManager.toggle()
+                    } label: {
+                        SpaceIconView(icon: currentIcon)
+                            .frame(width: 28, height: 28)
+                            .padding(4)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color.primary.opacity(0.05))
+                            )
+                    }
+                    .contentShape(RoundedRectangle(cornerRadius: 8))
+                    .background(EmojiPickerAnchor(manager: emojiManager))
+                    .buttonStyle(PlainButtonStyle())
+
+                    Text("Choose an emoji or symbol to represent this space")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Profile")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+
+                Picker(
+                    currentProfileName,
+                    systemImage: currentProfilePickerSymbolName,
+                    selection: Binding(
+                        get: {
+                            selectedProfileId ?? browserManager.profileManager.profiles.first?.id ?? UUID()
+                        },
+                        set: { newId in
+                            selectedProfileId = newId
+                        }
+                    )
+                ) {
+                    ForEach(browserManager.profileManager.profiles, id: \.id) { profile in
+                        SumiProfileMenuLabel(name: profile.name, icon: profile.icon).tag(profile.id)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 4)
+        .accessibilityIdentifier("space-edit-dialog")
+        .onAppear {
+            if !spaceIcon.isEmpty {
+                emojiManager.selectedEmoji = spaceIcon
+            } else {
+                emojiManager.selectedEmoji = originalIcon
+            }
+        }
+        .onChange(of: emojiManager.selectedEmoji) { _, newValue in
+            guard !newValue.isEmpty else { return }
+            let picked = newValue
+            DispatchQueue.main.async {
+                spaceIcon = SumiPersistentGlyph.normalizedSpaceIconValue(picked)
+            }
+        }
+    }
+
+    private var currentIcon: String {
+        if !spaceIcon.isEmpty {
+            return spaceIcon
+        }
+        return originalIcon
+    }
+
+    private var currentProfileName: String {
+        guard let profileId = selectedProfileId,
+              let profile = browserManager.profileManager.profiles.first(where: { $0.id == profileId })
+        else {
+            return browserManager.profileManager.profiles.first?.name ?? "Default"
+        }
+        return profile.name
+    }
+
+    private var currentProfilePickerSymbolName: String {
+        guard let profileId = selectedProfileId,
+              let profile = browserManager.profileManager.profiles.first(where: { $0.id == profileId })
+        else {
+            return SumiPersistentGlyph.resolvedProfileSystemImageName(
+                browserManager.profileManager.profiles.first?.icon ?? SumiPersistentGlyph.profileSystemImageFallback
+            )
+        }
+        return SumiPersistentGlyph.resolvedProfileSystemImageName(profile.icon)
+    }
+}
+
+private struct SpaceIconView: View {
+    let icon: String
+
+    var body: some View {
+        Group {
+            if SumiPersistentGlyph.presentsAsEmoji(icon) {
+                Text(icon)
+                    .font(.system(size: 18))
+            } else {
+                Image(systemName: SumiPersistentGlyph.resolvedSpaceSystemImageName(icon))
+                    .font(.system(size: 18, weight: .medium))
+            }
+        }
+        .frame(width: 20, height: 20)
+    }
+}
