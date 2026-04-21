@@ -13,6 +13,7 @@ extension TabManager {
             didChange = true
         }
         if didChange {
+            markSpacesSnapshotDirty()
             persistSnapshot()
         }
         handleProfileSwitch()
@@ -78,6 +79,7 @@ extension TabManager {
         }
 
         if didAssign {
+            markSpacesSnapshotDirty()
             persistSnapshot()
         }
     }
@@ -98,6 +100,7 @@ extension TabManager {
         }
 
         if didFix {
+            markSpacesSnapshotDirty()
             persistSnapshot()
         }
     }
@@ -122,6 +125,7 @@ extension TabManager {
             if currentSpace?.id == spaceId {
                 currentSpace?.profileId = profileId
             }
+            markSpacesSnapshotDirty()
             persistSnapshot()
         }
     }

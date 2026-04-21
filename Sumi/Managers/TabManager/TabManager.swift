@@ -272,35 +272,31 @@ class TabManager: ObservableObject {
 
     func setTabs(_ items: [Tab], for spaceId: UUID) {
         let previousTabs = tabsBySpace[spaceId] ?? []
-        var updated = tabsBySpace
         let sortedItems = items.sorted { lhs, rhs in
             if lhs.index != rhs.index { return lhs.index < rhs.index }
             return lhs.id.uuidString < rhs.id.uuidString
         }
-        updated[spaceId] = sortedItems
-        tabsBySpace = updated
+        tabsBySpace[spaceId] = sortedItems
+        markRegularTabsSnapshotDirty(for: spaceId)
         replaceTabLookupEntries(removing: previousTabs, with: sortedItems)
         structuralChanges.send()
     }
 
     func setFolders(_ items: [TabFolder], for spaceId: UUID) {
-        var updated = foldersBySpace
-        updated[spaceId] = items
-        foldersBySpace = updated
+        foldersBySpace[spaceId] = items
+        markFoldersSnapshotDirty(for: spaceId)
         structuralChanges.send()
     }
 
     func setPinnedTabs(_ items: [ShortcutPin], for profileId: UUID) {
-        var updated = pinnedByProfile
-        updated[profileId] = items
-        pinnedByProfile = updated
+        pinnedByProfile[profileId] = items
+        markPinnedSnapshotDirty(for: profileId)
         structuralChanges.send()
     }
 
     func setSpacePinnedShortcuts(_ items: [ShortcutPin], for spaceId: UUID) {
-        var updated = spacePinnedShortcuts
-        updated[spaceId] = items
-        spacePinnedShortcuts = updated
+        spacePinnedShortcuts[spaceId] = items
+        markSpacePinnedSnapshotDirty(for: spaceId)
         structuralChanges.send()
     }
 
@@ -696,6 +692,7 @@ class TabManager: ObservableObject {
             if let folder = folders.first(where: { $0.id == folderId }) {
                 if !folder.isOpen {
                     folder.isOpen = true
+                    markFoldersSnapshotDirty(for: folder.spaceId)
                 }
                 return
             }
@@ -876,9 +873,11 @@ class TabManager: ObservableObject {
         }
 
         // Save this tab as the active tab for the appropriate space
+        var didChangeSpacePersistenceState = false
         if let sid = tab.spaceId, let space = spaces.first(where: { $0.id == sid }) {
             if space.activeTabId != tab.id {
                 space.activeTabId = tab.id
+                didChangeSpacePersistenceState = true
             }
             if currentSpace?.id != space.id {
                 currentSpace = space
@@ -886,7 +885,11 @@ class TabManager: ObservableObject {
         } else if let cs = currentSpace {
             if cs.activeTabId != tab.id {
                 cs.activeTabId = tab.id
+                didChangeSpacePersistenceState = true
             }
+        }
+        if didChangeSpacePersistenceState {
+            markSpacesSnapshotDirty()
         }
 
         if previous?.id != tab.id {
@@ -908,11 +911,21 @@ class TabManager: ObservableObject {
         currentTab = tab
         
         // Save this tab as the active tab for the appropriate space
+        var didChangeSpacePersistenceState = false
         if let sid = tab.spaceId, let space = spaces.first(where: { $0.id == sid }) {
-            space.activeTabId = tab.id
+            if space.activeTabId != tab.id {
+                space.activeTabId = tab.id
+                didChangeSpacePersistenceState = true
+            }
             currentSpace = space
         } else if let cs = currentSpace {
-            cs.activeTabId = tab.id
+            if cs.activeTabId != tab.id {
+                cs.activeTabId = tab.id
+                didChangeSpacePersistenceState = true
+            }
+        }
+        if didChangeSpacePersistenceState {
+            markSpacesSnapshotDirty()
         }
         
         persistSelection()
@@ -940,6 +953,7 @@ class TabManager: ObservableObject {
             let defaultProfileId = browserManager?.currentProfile?.id ?? browserManager?.profileManager.profiles.first?.id
             if let pid = defaultProfileId {
                 ts.profileId = pid
+                markSpacesSnapshotDirty()
                 persistSnapshot()
             }
         }
@@ -1020,6 +1034,7 @@ class TabManager: ObservableObject {
             let defaultProfileId = browserManager?.currentProfile?.id ?? browserManager?.profileManager.profiles.first?.id
             if let pid = defaultProfileId {
                 ts.profileId = pid
+                markSpacesSnapshotDirty()
                 persistSnapshot()
             }
         }
@@ -1059,6 +1074,7 @@ class TabManager: ObservableObject {
             let defaultProfileId = browserManager?.currentProfile?.id ?? browserManager?.profileManager.profiles.first?.id
             if let pid = defaultProfileId {
                 ts.profileId = pid
+                markSpacesSnapshotDirty()
                 persistSnapshot()
             }
         }
@@ -1100,6 +1116,7 @@ class TabManager: ObservableObject {
                 profileId: resolvedProfileId
             )
             spaces.append(personal)
+            markSpacesSnapshotDirty()
             setTabs([], for: personal.id)
             currentSpace = personal
             persistSnapshot()
@@ -1157,6 +1174,7 @@ class TabManager: ObservableObject {
     var scheduledSnapshotPersistTask: Task<Void, Never>?
     var snapshotPersistRequestID: UInt64 = 0
     let snapshotPersistDebounceNanoseconds: UInt64 = 250_000_000
+    var snapshotCache = TabManagerSnapshotCache()
     var pendingRuntimeStatePersistTasks: [UUID: Task<Void, Never>] = [:]
     let runtimeStatePersistDebounceNanoseconds: UInt64 = 250_000_000
 }

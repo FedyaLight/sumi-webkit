@@ -3,6 +3,258 @@ import Foundation
 import SwiftData
 
 @MainActor
+struct TabManagerSnapshotCache {
+    private typealias SnapshotSpace = TabSnapshotRepository.SnapshotSpace
+    private typealias SnapshotTab = TabSnapshotRepository.SnapshotTab
+    private typealias SnapshotFolder = TabSnapshotRepository.SnapshotFolder
+
+    private var spaceSnapshots: [SnapshotSpace] = []
+    private var pinnedTabsByProfile: [UUID: [SnapshotTab]] = [:]
+    private var spacePinnedTabsBySpace: [UUID: [SnapshotTab]] = [:]
+    private var regularTabsBySpace: [UUID: [SnapshotTab]] = [:]
+    private var folderSnapshotsBySpace: [UUID: [SnapshotFolder]] = [:]
+
+    private var spacesDirty = true
+    private var dirtyPinnedProfileIds: Set<UUID> = []
+    private var dirtySpacePinnedSpaceIds: Set<UUID> = []
+    private var dirtyRegularTabSpaceIds: Set<UUID> = []
+    private var dirtyFolderSpaceIds: Set<UUID> = []
+
+    mutating func invalidateAll() {
+        spacesDirty = true
+        dirtyPinnedProfileIds = []
+        dirtySpacePinnedSpaceIds = []
+        dirtyRegularTabSpaceIds = []
+        dirtyFolderSpaceIds = []
+        pinnedTabsByProfile.removeAll(keepingCapacity: true)
+        spacePinnedTabsBySpace.removeAll(keepingCapacity: true)
+        regularTabsBySpace.removeAll(keepingCapacity: true)
+        folderSnapshotsBySpace.removeAll(keepingCapacity: true)
+    }
+
+    mutating func invalidateSpaces() {
+        spacesDirty = true
+    }
+
+    mutating func invalidatePinned(profileId: UUID) {
+        dirtyPinnedProfileIds.insert(profileId)
+    }
+
+    mutating func invalidateSpacePinned(spaceId: UUID) {
+        dirtySpacePinnedSpaceIds.insert(spaceId)
+    }
+
+    mutating func invalidateRegularTabs(spaceId: UUID) {
+        dirtyRegularTabSpaceIds.insert(spaceId)
+    }
+
+    mutating func invalidateFolders(spaceId: UUID) {
+        dirtyFolderSpaceIds.insert(spaceId)
+    }
+
+    mutating func makeSnapshot(for tabManager: TabManager) -> TabSnapshotRepository.Snapshot {
+        tabManager.reconcileProfileRuntimeStates(activeSpaceId: tabManager.currentSpace?.id)
+
+        let orderedSpaces = tabManager.spaces
+        let liveSpaceIds = Set(orderedSpaces.map(\.id))
+
+        if spacesDirty {
+            spaceSnapshots = orderedSpaces.enumerated().map { index, space in
+                SnapshotSpace(
+                    id: space.id,
+                    name: space.name,
+                    icon: space.icon,
+                    index: index,
+                    gradientData: space.gradient.encoded,
+                    workspaceThemeData: space.workspaceTheme.encoded,
+                    activeTabId: space.activeTabId,
+                    profileId: space.profileId
+                )
+            }
+            spacesDirty = false
+        }
+
+        refreshPinnedTabs(using: tabManager)
+        refreshSpacePinnedTabs(using: tabManager, liveSpaceIds: liveSpaceIds)
+        refreshRegularTabs(using: tabManager, liveSpaceIds: liveSpaceIds)
+        refreshFolders(using: tabManager, liveSpaceIds: liveSpaceIds)
+
+        var tabSnapshots: [SnapshotTab] = []
+        tabSnapshots.reserveCapacity(
+            pinnedTabsByProfile.values.reduce(0) { $0 + $1.count }
+                + spacePinnedTabsBySpace.values.reduce(0) { $0 + $1.count }
+                + regularTabsBySpace.values.reduce(0) { $0 + $1.count }
+        )
+
+        for profileId in tabManager.pinnedByProfile.keys.sorted(by: uuidLessThan) {
+            tabSnapshots.append(contentsOf: pinnedTabsByProfile[profileId] ?? [])
+        }
+        for space in orderedSpaces {
+            tabSnapshots.append(contentsOf: spacePinnedTabsBySpace[space.id] ?? [])
+            tabSnapshots.append(contentsOf: regularTabsBySpace[space.id] ?? [])
+        }
+
+        var folderSnapshots: [SnapshotFolder] = []
+        folderSnapshots.reserveCapacity(folderSnapshotsBySpace.values.reduce(0) { $0 + $1.count })
+        for space in orderedSpaces {
+            folderSnapshots.append(contentsOf: folderSnapshotsBySpace[space.id] ?? [])
+        }
+
+        let state = TabSnapshotRepository.SnapshotState(
+            currentTabID: tabManager.currentTab?.id,
+            currentSpaceID: tabManager.currentSpace?.id
+        )
+
+        return TabSnapshotRepository.Snapshot(
+            spaces: spaceSnapshots,
+            tabs: tabSnapshots,
+            folders: folderSnapshots,
+            state: state
+        )
+    }
+
+    private mutating func refreshPinnedTabs(using tabManager: TabManager) {
+        let liveProfileIds = Set(tabManager.pinnedByProfile.keys)
+        pinnedTabsByProfile = pinnedTabsByProfile.filter { liveProfileIds.contains($0.key) }
+
+        let profileIdsToRefresh: Set<UUID>
+        if pinnedTabsByProfile.isEmpty, liveProfileIds.isEmpty == false {
+            profileIdsToRefresh = liveProfileIds
+        } else {
+            profileIdsToRefresh = dirtyPinnedProfileIds
+        }
+
+        for profileId in profileIdsToRefresh {
+            let orderedPins = Array(tabManager.pinnedByProfile[profileId] ?? []).sorted { $0.index < $1.index }
+            pinnedTabsByProfile[profileId] = orderedPins.enumerated().map { index, pin in
+                SnapshotTab(
+                    id: pin.id,
+                    urlString: pin.launchURL.absoluteString,
+                    name: pin.title,
+                    index: index,
+                    spaceId: nil,
+                    isPinned: true,
+                    isSpacePinned: false,
+                    profileId: profileId,
+                    folderId: nil,
+                    iconAsset: pin.iconAsset,
+                    currentURLString: pin.launchURL.absoluteString,
+                    canGoBack: false,
+                    canGoForward: false
+                )
+            }
+        }
+        dirtyPinnedProfileIds.removeAll(keepingCapacity: true)
+    }
+
+    private mutating func refreshSpacePinnedTabs(
+        using tabManager: TabManager,
+        liveSpaceIds: Set<UUID>
+    ) {
+        spacePinnedTabsBySpace = spacePinnedTabsBySpace.filter { liveSpaceIds.contains($0.key) }
+
+        let liveIds = Set(tabManager.spacePinnedShortcuts.keys)
+        let missingIds = liveIds.subtracting(spacePinnedTabsBySpace.keys)
+        let refreshIds = dirtySpacePinnedSpaceIds.union(missingIds)
+        for spaceId in refreshIds {
+            guard liveSpaceIds.contains(spaceId) else {
+                spacePinnedTabsBySpace.removeValue(forKey: spaceId)
+                continue
+            }
+            let shortcutPins = Array(tabManager.spacePinnedShortcuts[spaceId] ?? []).sorted { $0.index < $1.index }
+            spacePinnedTabsBySpace[spaceId] = shortcutPins.enumerated().map { index, pin in
+                SnapshotTab(
+                    id: pin.id,
+                    urlString: pin.launchURL.absoluteString,
+                    name: pin.title,
+                    index: index,
+                    spaceId: spaceId,
+                    isPinned: false,
+                    isSpacePinned: true,
+                    profileId: nil,
+                    folderId: pin.folderId,
+                    iconAsset: pin.iconAsset,
+                    currentURLString: pin.launchURL.absoluteString,
+                    canGoBack: false,
+                    canGoForward: false
+                )
+            }
+        }
+        dirtySpacePinnedSpaceIds.removeAll(keepingCapacity: true)
+    }
+
+    private mutating func refreshRegularTabs(
+        using tabManager: TabManager,
+        liveSpaceIds: Set<UUID>
+    ) {
+        regularTabsBySpace = regularTabsBySpace.filter { liveSpaceIds.contains($0.key) }
+
+        let liveIds = Set(tabManager.tabsBySpace.keys)
+        let missingIds = liveIds.subtracting(regularTabsBySpace.keys)
+        let refreshIds = dirtyRegularTabSpaceIds.union(missingIds)
+        for spaceId in refreshIds {
+            guard liveSpaceIds.contains(spaceId) else {
+                regularTabsBySpace.removeValue(forKey: spaceId)
+                continue
+            }
+            let regularTabs = Array(tabManager.tabsBySpace[spaceId] ?? [])
+            regularTabsBySpace[spaceId] = regularTabs.enumerated().map { index, tab in
+                SnapshotTab(
+                    id: tab.id,
+                    urlString: tab.url.absoluteString,
+                    name: tab.name,
+                    index: index,
+                    spaceId: spaceId,
+                    isPinned: false,
+                    isSpacePinned: false,
+                    profileId: nil,
+                    folderId: tab.folderId,
+                    iconAsset: nil,
+                    currentURLString: tab.url.absoluteString,
+                    canGoBack: tab.canGoBack,
+                    canGoForward: tab.canGoForward
+                )
+            }
+        }
+        dirtyRegularTabSpaceIds.removeAll(keepingCapacity: true)
+    }
+
+    private mutating func refreshFolders(
+        using tabManager: TabManager,
+        liveSpaceIds: Set<UUID>
+    ) {
+        folderSnapshotsBySpace = folderSnapshotsBySpace.filter { liveSpaceIds.contains($0.key) }
+
+        let liveIds = Set(tabManager.foldersBySpace.keys)
+        let missingIds = liveIds.subtracting(folderSnapshotsBySpace.keys)
+        let refreshIds = dirtyFolderSpaceIds.union(missingIds)
+        for spaceId in refreshIds {
+            guard liveSpaceIds.contains(spaceId) else {
+                folderSnapshotsBySpace.removeValue(forKey: spaceId)
+                continue
+            }
+            let orderedFolders = (tabManager.foldersBySpace[spaceId] ?? []).sorted { $0.index < $1.index }
+            folderSnapshotsBySpace[spaceId] = orderedFolders.enumerated().map { index, folder in
+                SnapshotFolder(
+                    id: folder.id,
+                    name: folder.name,
+                    icon: SumiZenFolderIconCatalog.normalizedFolderIconValue(folder.icon),
+                    color: folder.color.toHexString() ?? "#000000",
+                    spaceId: spaceId,
+                    isOpen: folder.isOpen,
+                    index: index
+                )
+            }
+        }
+        dirtyFolderSpaceIds.removeAll(keepingCapacity: true)
+    }
+
+    private func uuidLessThan(_ lhs: UUID, _ rhs: UUID) -> Bool {
+        lhs.uuidString < rhs.uuidString
+    }
+}
+
+@MainActor
 extension TabManager {
     public nonisolated func persistSnapshot() {
         Task { @MainActor [weak self] in
@@ -52,8 +304,6 @@ extension TabManager {
             guard let strong = self else { return nil }
             strong.snapshotGeneration &+= 1
             let generation = strong.snapshotGeneration
-            // TODO(runtime): If Instruments still shows snapshot assembly as a hot path,
-            // split this into per-space fragments keyed by structural generations.
             let snapshot = strong._buildSnapshot()
             return (snapshot, generation)
         }
@@ -77,6 +327,9 @@ extension TabManager {
         guard shouldPersistRuntimeState(for: tab) else { return }
 
         let tabID = tab.id
+        if let spaceId = tab.spaceId {
+            markRegularTabsSnapshotDirty(for: spaceId)
+        }
         let debounceDelay = runtimeStatePersistDebounceNanoseconds
         pendingRuntimeStatePersistTasks[tabID]?.cancel()
         pendingRuntimeStatePersistTasks[tabID] = Task { [weak self, weak tab] in
@@ -120,113 +373,31 @@ extension TabManager {
     }
 
     func _buildSnapshot() -> TabSnapshotRepository.Snapshot {
-        reconcileProfileRuntimeStates(activeSpaceId: currentSpace?.id)
+        snapshotCache.makeSnapshot(for: self)
+    }
 
-        var spaceSnapshots: [TabSnapshotRepository.SnapshotSpace] = []
-        spaceSnapshots.reserveCapacity(spaces.count)
-        for (index, space) in spaces.enumerated() {
-            let snapshot = TabSnapshotRepository.SnapshotSpace(
-                id: space.id,
-                name: space.name,
-                icon: space.icon,
-                index: index,
-                gradientData: space.gradient.encoded,
-                workspaceThemeData: space.workspaceTheme.encoded,
-                activeTabId: space.activeTabId,
-                profileId: space.profileId
-            )
-            spaceSnapshots.append(snapshot)
-        }
+    func markSnapshotCacheDirty() {
+        snapshotCache.invalidateAll()
+    }
 
-        var tabSnapshots: [TabSnapshotRepository.SnapshotTab] = []
-        for (profileId, pins) in pinnedByProfile {
-            let orderedPins = Array(pins).sorted { $0.index < $1.index }
-            for (index, pin) in orderedPins.enumerated() {
-                tabSnapshots.append(.init(
-                    id: pin.id,
-                    urlString: pin.launchURL.absoluteString,
-                    name: pin.title,
-                    index: index,
-                    spaceId: nil,
-                    isPinned: true,
-                    isSpacePinned: false,
-                    profileId: profileId,
-                    folderId: nil,
-                    iconAsset: pin.iconAsset,
-                    currentURLString: pin.launchURL.absoluteString,
-                    canGoBack: false,
-                    canGoForward: false
-                ))
-            }
-        }
+    func markSpacesSnapshotDirty() {
+        snapshotCache.invalidateSpaces()
+    }
 
-        for space in spaces {
-            let shortcutPins = Array(spacePinnedShortcuts[space.id] ?? []).sorted { $0.index < $1.index }
-            for (index, pin) in shortcutPins.enumerated() {
-                tabSnapshots.append(.init(
-                    id: pin.id,
-                    urlString: pin.launchURL.absoluteString,
-                    name: pin.title,
-                    index: index,
-                    spaceId: space.id,
-                    isPinned: false,
-                    isSpacePinned: true,
-                    profileId: nil,
-                    folderId: pin.folderId,
-                    iconAsset: pin.iconAsset,
-                    currentURLString: pin.launchURL.absoluteString,
-                    canGoBack: false,
-                    canGoForward: false
-                ))
-            }
+    func markPinnedSnapshotDirty(for profileId: UUID) {
+        snapshotCache.invalidatePinned(profileId: profileId)
+    }
 
-            let regularTabs = Array(tabsBySpace[space.id] ?? [])
-            for (index, tab) in regularTabs.enumerated() {
-                tabSnapshots.append(.init(
-                    id: tab.id,
-                    urlString: tab.url.absoluteString,
-                    name: tab.name,
-                    index: index,
-                    spaceId: space.id,
-                    isPinned: false,
-                    isSpacePinned: false,
-                    profileId: nil,
-                    folderId: tab.folderId,
-                    iconAsset: nil,
-                    currentURLString: tab.url.absoluteString,
-                    canGoBack: tab.canGoBack,
-                    canGoForward: tab.canGoForward
-                ))
-            }
-        }
+    func markSpacePinnedSnapshotDirty(for spaceId: UUID) {
+        snapshotCache.invalidateSpacePinned(spaceId: spaceId)
+    }
 
-        var folderSnapshots: [TabSnapshotRepository.SnapshotFolder] = []
-            for (spaceId, folders) in foldersBySpace {
-                let orderedFolders = folders.sorted { $0.index < $1.index }
-                for (index, folder) in orderedFolders.enumerated() {
-                    folderSnapshots.append(.init(
-                        id: folder.id,
-                        name: folder.name,
-                        icon: SumiZenFolderIconCatalog.normalizedFolderIconValue(folder.icon),
-                        color: folder.color.toHexString() ?? "#000000",
-                        spaceId: spaceId,
-                        isOpen: folder.isOpen,
-                        index: index
-                    ))
-            }
-        }
+    func markRegularTabsSnapshotDirty(for spaceId: UUID) {
+        snapshotCache.invalidateRegularTabs(spaceId: spaceId)
+    }
 
-        let state = TabSnapshotRepository.SnapshotState(
-            currentTabID: currentTab?.id,
-            currentSpaceID: currentSpace?.id
-        )
-
-        return TabSnapshotRepository.Snapshot(
-            spaces: spaceSnapshots,
-            tabs: tabSnapshots,
-            folders: folderSnapshots,
-            state: state
-        )
+    func markFoldersSnapshotDirty(for spaceId: UUID) {
+        snapshotCache.invalidateFolders(spaceId: spaceId)
     }
 
     func hasLiveRuntimeContent(in space: Space) -> Bool {
@@ -465,6 +636,7 @@ extension TabManager {
             if let browserManager, let currentSpace {
                 browserManager.syncWorkspaceThemeAcrossWindows(for: currentSpace, animate: false)
             }
+            markSnapshotCacheDirty()
             if didAssignDefaultProfile || didNormalizeFolderIcons || didNormalizeSpaceIcons {
                 needsSnapshotPersistence = true
             }

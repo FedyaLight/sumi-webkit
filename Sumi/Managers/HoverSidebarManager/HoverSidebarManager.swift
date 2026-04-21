@@ -94,6 +94,11 @@ final class HoverSidebarManager: ObservableObject {
     private var isActive: Bool = false
     private var monitorsInstalled: Bool = false
     private var isMouseUpdateScheduled: Bool = false
+    private var lastScheduledMouseLocation: CGPoint?
+    private var lastMouseUpdateScheduledAt: CFTimeInterval = 0
+    private let duplicateMouseMovementThreshold: CGFloat = 0.5
+    private let mouseUpdateBypassDistance: CGFloat = 8
+    private let mouseUpdateMinimumInterval: CFTimeInterval = 1.0 / 60.0
     private let eventMonitors: HoverSidebarEventMonitorClient
     private let mouseLocationProvider: () -> CGPoint
 
@@ -166,12 +171,42 @@ final class HoverSidebarManager: ObservableObject {
     // MARK: - Mouse Logic
     private func scheduleHandleMouseMovement() {
         guard isActive, !isMouseUpdateScheduled else { return }
+        let mouse = mouseLocationProvider()
+        guard shouldScheduleMouseUpdate(for: mouse) else { return }
+
         isMouseUpdateScheduled = true
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.isMouseUpdateScheduled = false
             self.handleMouseMovementOnMain()
         }
+    }
+
+    private func shouldScheduleMouseUpdate(for mouse: CGPoint) -> Bool {
+        let now = CFAbsoluteTimeGetCurrent()
+        func recordScheduledMouseUpdate() {
+            lastScheduledMouseLocation = mouse
+            lastMouseUpdateScheduledAt = now
+        }
+
+        guard let previous = lastScheduledMouseLocation else {
+            recordScheduledMouseUpdate()
+            return true
+        }
+
+        let dx = abs(mouse.x - previous.x)
+        let dy = abs(mouse.y - previous.y)
+        guard dx > duplicateMouseMovementThreshold || dy > duplicateMouseMovementThreshold else {
+            return false
+        }
+
+        let isLargeJump = dx >= mouseUpdateBypassDistance || dy >= mouseUpdateBypassDistance
+        if !isLargeJump && now - lastMouseUpdateScheduledAt < mouseUpdateMinimumInterval {
+            return false
+        }
+
+        recordScheduledMouseUpdate()
+        return true
     }
 
     @MainActor
@@ -236,6 +271,8 @@ final class HoverSidebarManager: ObservableObject {
 
     private func uninstallMonitors() {
         isMouseUpdateScheduled = false
+        lastScheduledMouseLocation = nil
+        lastMouseUpdateScheduledAt = 0
         monitorsInstalled = false
         if let token = localMonitor {
             eventMonitors.removeMonitor(token)
