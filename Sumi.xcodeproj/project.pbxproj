@@ -1,0 +1,732 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		2C16A0262E87430B0070894B /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 2C16A0252E87430B0070894B /* Sparkle */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		2C89253A2E88DFF9002236DC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7F8340F42E37F39400674A5D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7F8340FB2E37F39400674A5D;
+			remoteInfo = Sumi;
+		};
+		2C89253C2E88DFF9002236DC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7F8340F42E37F39400674A5D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7F8340FB2E37F39400674A5D;
+			remoteInfo = Sumi;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		2C89252E2E88DFF9002236DC /* SumiTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SumiTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		2C89252F2E88DFF9002236DC /* SumiUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SumiUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		7F8340FC2E37F39400674A5D /* Sumi.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sumi.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		2CAC4DD12E82457B00870189 /* Exceptions for "Sumi" folder in "Sumi" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 7F8340FB2E37F39400674A5D /* Sumi */;
+		};
+		2D0834BF2EC8CE1300C302AC /* Exceptions for "CommandPalette" folder in "Sumi" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"CommandPalette Accessories/CommandPaletteSuggestionView.swift",
+				"CommandPalette Accessories/GenericSuggestionItem.swift",
+				"CommandPalette Accessories/HistorySuggestionItem.swift",
+				"CommandPalette Accessories/TabSuggestionItem.swift",
+				CommandPalette.swift,
+				CommandPaletteView.swift,
+			);
+			target = 7F8340FB2E37F39400674A5D /* Sumi */;
+		};
+		2D0834D12EC8E0AD00C302AC /* Exceptions for "Navigation" folder in "Sumi" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Sidebar/SidebarBottomBar.swift,
+				Sidebar/SidebarHeader.swift,
+				Sidebar/SidebarSwipeCaptureSurface.swift,
+				Sidebar/SpaceSidebarTransitionState.swift,
+				Sidebar/SpacesList/SpacesList.swift,
+				Sidebar/SpacesList/SpacesListItem.swift,
+				Sidebar/SpacesSideBarView.swift,
+				Sidebar/SpaceSwipeGestureTracker.swift,
+				Sidebar/SpaceTransitionProgressObserver.swift,
+			);
+			target = 7F8340FB2E37F39400674A5D /* Sumi */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		2C8925322E88DFF9002236DC /* SumiTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SumiTests;
+			sourceTree = "<group>";
+		};
+		2C8925332E88DFF9002236DC /* SumiUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SumiUITests;
+			sourceTree = "<group>";
+		};
+		2CAC4D282E82457B00870189 /* Sumi */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				2CAC4DD12E82457B00870189 /* Exceptions for "Sumi" folder in "Sumi" target */,
+			);
+			path = Sumi;
+			sourceTree = "<group>";
+		};
+		2D0834B32EC8C43B00C302AC /* App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = App;
+			sourceTree = "<group>";
+		};
+		2D0834BE2EC8CE0C00C302AC /* CommandPalette */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				2D0834BF2EC8CE1300C302AC /* Exceptions for "CommandPalette" folder in "Sumi" target */,
+			);
+			path = CommandPalette;
+			sourceTree = "<group>";
+		};
+		2D0834C72EC8D90400C302AC /* Settings */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		2D0834CF2EC8E0AD00C302AC /* Navigation */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				2D0834D12EC8E0AD00C302AC /* Exceptions for "Navigation" folder in "Sumi" target */,
+			);
+			path = Navigation;
+			sourceTree = "<group>";
+		};
+		564997D02E9B125200D89F78 /* UI */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = UI;
+			sourceTree = "<group>";
+		};
+		7F6409912F4729B600A02697 /* Onboarding */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Onboarding;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		2C8925342E88DFF9002236DC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		2C8925352E88DFF9002236DC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7F8340F92E37F39400674A5D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2C16A0262E87430B0070894B /* Sparkle in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		7F8340F32E37F39400674A5D = {
+			isa = PBXGroup;
+			children = (
+				2C8925322E88DFF9002236DC /* SumiTests */,
+				2C8925332E88DFF9002236DC /* SumiUITests */,
+				7F6409912F4729B600A02697 /* Onboarding */,
+				2D0834C72EC8D90400C302AC /* Settings */,
+				2D0834CF2EC8E0AD00C302AC /* Navigation */,
+				2D0834BE2EC8CE0C00C302AC /* CommandPalette */,
+				7F8340FD2E37F39400674A5D /* Products */,
+				564997D02E9B125200D89F78 /* UI */,
+				2CAC4D282E82457B00870189 /* Sumi */,
+				2D0834B32EC8C43B00C302AC /* App */,
+			);
+			sourceTree = "<group>";
+		};
+		7F8340FD2E37F39400674A5D /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				7F8340FC2E37F39400674A5D /* Sumi.app */,
+				2C89252E2E88DFF9002236DC /* SumiTests.xctest */,
+				2C89252F2E88DFF9002236DC /* SumiUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		2C8925302E88DFF9002236DC /* SumiUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2C8925432E88DFF9002236DC /* Build configuration list for PBXNativeTarget "SumiUITests" */;
+			buildPhases = (
+				2C8925392E88DFF9002236DC /* Sources */,
+				2C8925352E88DFF9002236DC /* Frameworks */,
+				2C8925372E88DFF9002236DC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				2C89253D2E88DFF9002236DC /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				2C8925332E88DFF9002236DC /* SumiUITests */,
+			);
+			name = SumiUITests;
+			productName = SumiUITests;
+			productReference = 2C89252F2E88DFF9002236DC /* SumiUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		2C8925312E88DFF9002236DC /* SumiTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2C8925422E88DFF9002236DC /* Build configuration list for PBXNativeTarget "SumiTests" */;
+			buildPhases = (
+				2C8925382E88DFF9002236DC /* Sources */,
+				2C8925342E88DFF9002236DC /* Frameworks */,
+				2C8925362E88DFF9002236DC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				2C89253B2E88DFF9002236DC /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				2C8925322E88DFF9002236DC /* SumiTests */,
+			);
+			name = SumiTests;
+			productName = SumiTests;
+			productReference = 2C89252E2E88DFF9002236DC /* SumiTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		7F8340FB2E37F39400674A5D /* Sumi */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7F8341082E37F39500674A5D /* Build configuration list for PBXNativeTarget "Sumi" */;
+			buildPhases = (
+				7F8340F82E37F39400674A5D /* Sources */,
+				7F8340F92E37F39400674A5D /* Frameworks */,
+				7F8340FA2E37F39400674A5D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				2CAC4D282E82457B00870189 /* Sumi */,
+				2D0834B32EC8C43B00C302AC /* App */,
+				2D0834C72EC8D90400C302AC /* Settings */,
+				564997D02E9B125200D89F78 /* UI */,
+				7F6409912F4729B600A02697 /* Onboarding */,
+			);
+			name = Sumi;
+			packageProductDependencies = (
+				2C16A0252E87430B0070894B /* Sparkle */,
+			);
+			productName = Sumi;
+			productReference = 7F8340FC2E37F39400674A5D /* Sumi.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		7F8340F42E37F39400674A5D /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2630;
+				TargetAttributes = {
+					2C8925302E88DFF9002236DC = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = 7F8340FB2E37F39400674A5D;
+					};
+					2C8925312E88DFF9002236DC = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = 7F8340FB2E37F39400674A5D;
+					};
+					7F8340FB2E37F39400674A5D = {
+						CreatedOnToolsVersion = 16.4;
+					};
+				};
+			};
+			buildConfigurationList = 7F8340F72E37F39400674A5D /* Build configuration list for PBXProject "Sumi" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 7F8340F32E37F39400674A5D;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				2C16A0242E87430B0070894B /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 7F8340FD2E37F39400674A5D /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				2C8925312E88DFF9002236DC /* SumiTests */,
+				2C8925302E88DFF9002236DC /* SumiUITests */,
+				7F8340FB2E37F39400674A5D /* Sumi */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		2C8925362E88DFF9002236DC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		2C8925372E88DFF9002236DC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7F8340FA2E37F39400674A5D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		2C8925382E88DFF9002236DC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		2C8925392E88DFF9002236DC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7F8340F82E37F39400674A5D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		2C89253B2E88DFF9002236DC /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7F8340FB2E37F39400674A5D /* Sumi */;
+			targetProxy = 2C89253A2E88DFF9002236DC /* PBXContainerItemProxy */;
+		};
+		2C89253D2E88DFF9002236DC /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7F8340FB2E37F39400674A5D /* Sumi */;
+			targetProxy = 2C89253C2E88DFF9002236DC /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		2C89253E2E88DFF9002236DC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 2ZJ6H8V8AZ;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sumi.browser.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sumi.app/Contents/MacOS/Sumi";
+				TEST_TARGET_NAME = Sumi;
+			};
+			name = Debug;
+		};
+		2C89253F2E88DFF9002236DC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 2ZJ6H8V8AZ;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sumi.browser.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sumi.app/Contents/MacOS/Sumi";
+				TEST_TARGET_NAME = Sumi;
+			};
+			name = Release;
+		};
+		2C8925402E88DFF9002236DC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 2ZJ6H8V8AZ;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sumi.browser.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = Sumi;
+			};
+			name = Debug;
+		};
+		2C8925412E88DFF9002236DC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 2ZJ6H8V8AZ;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sumi.browser.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = Sumi;
+			};
+			name = Release;
+		};
+		7F8341062E37F39500674A5D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 2ZJ6H8V8AZ;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.7;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		7F8341072E37F39500674A5D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 2ZJ6H8V8AZ;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.7;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		7F8341092E37F39500674A5D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "logo-dev";
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				AUTOMATION_APPLE_EVENTS = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_IDENTITY = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 107;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = NO;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = YES;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
+				ENABLE_RESOURCE_ACCESS_USB = YES;
+				FRAMEWORK_SEARCH_PATHS = "$(inherited)";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Sumi/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Sumi;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sumi.browser;
+				PRODUCT_NAME = Sumi;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				REGISTER_APP_GROUPS = YES;
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = YES;
+				RUNTIME_EXCEPTION_ALLOW_JIT = YES;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = YES;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = YES;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "$(PROJECT_DIR)/Sumi/Supporting Files/Sumi-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		7F83410A2E37F39500674A5D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = logo;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				AUTOMATION_APPLE_EVENTS = YES;
+				CODE_SIGN_ENTITLEMENTS = Sumi/Sumi.entitlements;
+				CODE_SIGN_IDENTITY = "Developer ID Application";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 107;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 2ZJ6H8V8AZ;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = YES;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
+				ENABLE_RESOURCE_ACCESS_USB = YES;
+				FRAMEWORK_SEARCH_PATHS = "$(inherited)";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Sumi/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Sumi;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sumi.browser;
+				PRODUCT_NAME = Sumi;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				REGISTER_APP_GROUPS = YES;
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = YES;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "$(PROJECT_DIR)/Sumi/Supporting Files/Sumi-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		2C8925422E88DFF9002236DC /* Build configuration list for PBXNativeTarget "SumiTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2C89253E2E88DFF9002236DC /* Debug */,
+				2C89253F2E88DFF9002236DC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		2C8925432E88DFF9002236DC /* Build configuration list for PBXNativeTarget "SumiUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2C8925402E88DFF9002236DC /* Debug */,
+				2C8925412E88DFF9002236DC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7F8340F72E37F39400674A5D /* Build configuration list for PBXProject "Sumi" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7F8341062E37F39500674A5D /* Debug */,
+				7F8341072E37F39500674A5D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7F8341082E37F39500674A5D /* Build configuration list for PBXNativeTarget "Sumi" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7F8341092E37F39500674A5D /* Debug */,
+				7F83410A2E37F39500674A5D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		2C16A0242E87430B0070894B /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.8.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		2C16A0252E87430B0070894B /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2C16A0242E87430B0070894B /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 7F8340F42E37F39400674A5D /* Project object */;
+}
