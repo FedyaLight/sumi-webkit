@@ -1,0 +1,29 @@
+import XCTest
+@testable import Sumi
+
+@MainActor
+final class BrowserConfigurationMediaSessionTests: XCTestCase {
+    func testRegularProfileEnablesMediaSession() {
+        let browserConfiguration = BrowserConfiguration.makeTestingInstance()
+        let profile = Profile(name: "Default")
+
+        let configuration = browserConfiguration.webViewConfiguration(for: profile)
+
+        XCTAssertEqual(
+            configuration.preferences.value(forKey: "mediaSessionEnabled") as? Bool,
+            true
+        )
+    }
+
+    func testEphemeralProfileDisablesMediaSession() {
+        let browserConfiguration = BrowserConfiguration.makeTestingInstance()
+        let profile = Profile.createEphemeral()
+
+        let configuration = browserConfiguration.webViewConfiguration(for: profile)
+
+        XCTAssertEqual(
+            configuration.preferences.value(forKey: "mediaSessionEnabled") as? Bool,
+            false
+        )
+    }
+}
