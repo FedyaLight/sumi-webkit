@@ -44,9 +44,9 @@ telemetry-id
 .env.*
 !.env.example
 
-# VS Code / Cursor — commit shared defaults; ignore local overrides & dumps
-.vscode/*
-!.vscode/settings.json
+# Mirror repo: no CI / editor defaults in Git — keep locally if needed
+.github/
+.vscode/
 
 # Local dev artifacts (not part of the Xcode app)
 debug-pages/
