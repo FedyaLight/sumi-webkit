@@ -237,7 +237,6 @@ struct SpacesSideBarView: View {
             }
             .padding(.bottom, 8)
         }
-        .padding(.top, SidebarChromeMetrics.topInset(for: sidebarPresentationContext.mode))
         .environment(sidebarInteractionState)
         .background(
             ZStack {

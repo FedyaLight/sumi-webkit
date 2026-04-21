@@ -5,37 +5,45 @@ import XCTest
 
 @MainActor
 final class SidebarSystemWindowControlsTests: XCTestCase {
-    func testSidebarPresentationContextKeepsDockedAndHoverWidthsSeparate() {
+    func testSidebarPresentationContextKeepsSameVisibleWidthAcrossSidebarModes() {
         let docked = SidebarPresentationContext.docked(sidebarWidth: 280)
-        let hidden = SidebarPresentationContext.collapsedHidden(
-            sidebarWidth: 280,
-            shellWidth: 298
-        )
-        let visible = SidebarPresentationContext.collapsedVisible(
-            sidebarWidth: 280,
-            shellWidth: 298
-        )
+        let hidden = SidebarPresentationContext.collapsedHidden(sidebarWidth: 280)
+        let visible = SidebarPresentationContext.collapsedVisible(sidebarWidth: 280)
 
         XCTAssertEqual(docked.mode, .docked)
         XCTAssertEqual(docked.sidebarWidth, 280)
-        XCTAssertEqual(docked.shellWidth, 280)
         XCTAssertEqual(docked.contentWidth, BrowserWindowState.sidebarContentWidth(for: 280))
         XCTAssertTrue(docked.showsResizeHandle)
         XCTAssertFalse(docked.isCollapsedOverlay)
 
         XCTAssertEqual(hidden.mode, .collapsedHidden)
         XCTAssertEqual(hidden.sidebarWidth, 280)
-        XCTAssertEqual(hidden.shellWidth, 298)
         XCTAssertEqual(hidden.contentWidth, BrowserWindowState.sidebarContentWidth(for: 280))
         XCTAssertFalse(hidden.showsResizeHandle)
         XCTAssertTrue(hidden.isCollapsedOverlay)
 
         XCTAssertEqual(visible.mode, .collapsedVisible)
         XCTAssertEqual(visible.sidebarWidth, 280)
-        XCTAssertEqual(visible.shellWidth, 298)
         XCTAssertEqual(visible.contentWidth, BrowserWindowState.sidebarContentWidth(for: 280))
         XCTAssertFalse(visible.showsResizeHandle)
         XCTAssertTrue(visible.isCollapsedOverlay)
+    }
+
+    func testCollapsedSidebarWidthUsesSharedWidthSelection() {
+        XCTAssertEqual(
+            SidebarPresentationContext.collapsedSidebarWidth(
+                sidebarWidth: 250,
+                savedSidebarWidth: 280
+            ),
+            280
+        )
+        XCTAssertEqual(
+            SidebarPresentationContext.collapsedSidebarWidth(
+                sidebarWidth: 320,
+                savedSidebarWidth: 280
+            ),
+            320
+        )
     }
 
     func testSidebarWindowControlsPlacementUsesSidebarHostAcrossWindowedSidebarModes() {

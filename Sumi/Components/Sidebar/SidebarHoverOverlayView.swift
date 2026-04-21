@@ -35,17 +35,7 @@ typealias SidebarHoverOverlayThemePinningPolicy = SidebarHoverOverlayTransientPi
 
 enum SidebarHoverOverlayMetrics {
     static let cornerRadius: CGFloat = 12
-    static let horizontalInset: CGFloat = 7
-    static let verticalInset: CGFloat = 7
     static let hiddenPadding: CGFloat = 18
-    static let revealedWidthBoost: CGFloat = 18
-
-    static func revealedWidth(
-        sidebarWidth: CGFloat,
-        savedSidebarWidth: CGFloat
-    ) -> CGFloat {
-        max(sidebarWidth, savedSidebarWidth) + revealedWidthBoost
-    }
 }
 
 struct SidebarHoverOverlayView: View {
@@ -75,13 +65,9 @@ struct SidebarHoverOverlayView: View {
     }
 
     private var overlayBaseSidebarWidth: CGFloat {
-        max(windowState.sidebarWidth, windowState.savedSidebarWidth)
-    }
-
-    private var overlaySidebarWidth: CGFloat {
-        SidebarHoverOverlayMetrics.revealedWidth(
-            sidebarWidth: overlayBaseSidebarWidth,
-            savedSidebarWidth: overlayBaseSidebarWidth
+        SidebarPresentationContext.collapsedSidebarWidth(
+            sidebarWidth: windowState.sidebarWidth,
+            savedSidebarWidth: windowState.savedSidebarWidth
         )
     }
 
@@ -91,20 +77,14 @@ struct SidebarHoverOverlayView: View {
         }
 
         if overlaySidebarRevealed {
-            return .collapsedVisible(
-                sidebarWidth: overlayBaseSidebarWidth,
-                shellWidth: overlaySidebarWidth
-            )
+            return .collapsedVisible(sidebarWidth: overlayBaseSidebarWidth)
         }
 
-        return .collapsedHidden(
-            sidebarWidth: overlayBaseSidebarWidth,
-            shellWidth: overlaySidebarWidth
-        )
+        return .collapsedHidden(sidebarWidth: overlayBaseSidebarWidth)
     }
 
     private var hiddenOffset: CGFloat {
-        let distance = overlaySidebarWidth + SidebarHoverOverlayMetrics.horizontalInset + SidebarHoverOverlayMetrics.hiddenPadding
+        let distance = presentationContext.sidebarWidth + SidebarHoverOverlayMetrics.hiddenPadding
         return -distance
     }
 
@@ -168,7 +148,7 @@ struct SidebarHoverOverlayView: View {
         .transaction { transaction in
             transaction.disablesAnimations = true
         }
-        .frame(width: presentationContext.shellWidth)
+        .frame(width: presentationContext.sidebarWidth)
         .frame(maxHeight: .infinity)
         .background {
             ZStack {
@@ -196,9 +176,6 @@ struct SidebarHoverOverlayView: View {
         .compositingGroup()
         .zIndex(5000)
         .alwaysArrowCursor()
-        .padding(.leading, usesCollapsedChrome ? SidebarHoverOverlayMetrics.horizontalInset : 0)
-        .padding(.top, usesCollapsedChrome ? 4 : 0)
-        .padding(.bottom, usesCollapsedChrome ? SidebarHoverOverlayMetrics.verticalInset : 0)
         .offset(x: sidebarPanelOffset)
         .opacity(sidebarPanelOpacity)
         .allowsHitTesting(sidebarPanelAllowsHitTesting)

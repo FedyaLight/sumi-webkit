@@ -12,11 +12,10 @@ struct WorkspaceThemePickerOverlayLayout: Equatable {
 
     init(
         windowSize: CGSize,
-        sidebarWidth: CGFloat,
-        isSidebarVisible: Bool
+        sidebarWidth: CGFloat
     ) {
         let effectiveSidebarWidth = max(sidebarWidth, 0)
-        let sidebarLeadingInset = isSidebarVisible ? 0 : SidebarHoverOverlayMetrics.horizontalInset
+        let sidebarLeadingInset: CGFloat = 0
         let sidebarMaxX = sidebarLeadingInset + effectiveSidebarWidth
         sidebarHorizontalCenterX = sidebarLeadingInset + effectiveSidebarWidth / 2
         let maxPanelLeading = max(

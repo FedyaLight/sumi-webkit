@@ -174,8 +174,10 @@ final class HoverSidebarManager: ObservableObject {
         let mouse = NSEvent.mouseLocation
         let frame = window.frame
 
-        // Use saved width when sidebar is collapsed to size the overlay and sticky zone
-        let overlayWidth = max(activeState.sidebarWidth, activeState.savedSidebarWidth)
+        let overlayWidth = SidebarPresentationContext.collapsedSidebarWidth(
+            sidebarWidth: activeState.sidebarWidth,
+            savedSidebarWidth: activeState.savedSidebarWidth
+        )
 
         let shouldShow = HoverSidebarVisibilityPolicy.shouldShowOverlay(
             mouse: mouse,

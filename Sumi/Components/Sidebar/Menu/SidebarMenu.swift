@@ -108,7 +108,6 @@ struct SidebarMenu: View {
             .padding(.horizontal, SidebarChromeMetrics.horizontalPadding)
             .padding(.bottom, 8)
         }
-        .padding(.top, SidebarChromeMetrics.topInset(for: sidebarPresentationContext.mode))
         .frame(width: 110)
         .frame(maxHeight: .infinity)
         .background(menuBackground)
