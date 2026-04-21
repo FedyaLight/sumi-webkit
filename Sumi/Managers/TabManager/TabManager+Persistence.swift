@@ -300,6 +300,11 @@ extension TabManager {
     }
 
     private nonisolated func persistSnapshotNow() async -> Bool {
+        let signpostState = PerformanceTrace.beginInterval("TabManager.persistSnapshotNow")
+        defer {
+            PerformanceTrace.endInterval("TabManager.persistSnapshotNow", signpostState)
+        }
+
         let payload: (TabSnapshotRepository.Snapshot, Int)? = await MainActor.run { [weak self] in
             guard let strong = self else { return nil }
             strong.snapshotGeneration &+= 1
@@ -319,6 +324,10 @@ extension TabManager {
         let tabID = currentTab?.id
         let spaceID = currentSpace?.id
         Task { [persistence] in
+            let signpostState = PerformanceTrace.beginInterval("TabManager.persistSelection")
+            defer {
+                PerformanceTrace.endInterval("TabManager.persistSelection", signpostState)
+            }
             await persistence.persistSelectionOnly(currentTabID: tabID, currentSpaceID: spaceID)
         }
     }
@@ -357,6 +366,11 @@ extension TabManager {
     }
 
     private nonisolated func persistRuntimeStateNow(for tab: Tab) async {
+        let signpostState = PerformanceTrace.beginInterval("TabManager.persistRuntimeStateNow")
+        defer {
+            PerformanceTrace.endInterval("TabManager.persistRuntimeStateNow", signpostState)
+        }
+
         let payload: TabSnapshotRepository.RuntimeTabState? = await MainActor.run {
             guard self.shouldPersistRuntimeState(for: tab) else { return nil }
             return TabSnapshotRepository.RuntimeTabState(
@@ -373,7 +387,9 @@ extension TabManager {
     }
 
     func _buildSnapshot() -> TabSnapshotRepository.Snapshot {
-        snapshotCache.makeSnapshot(for: self)
+        PerformanceTrace.withInterval("TabManager._buildSnapshot") {
+            snapshotCache.makeSnapshot(for: self)
+        }
     }
 
     func markSnapshotCacheDirty() {
@@ -425,6 +441,11 @@ extension TabManager {
     }
 
     func loadFromStore() {
+        let signpostState = PerformanceTrace.beginInterval("TabManager.loadFromStore")
+        defer {
+            PerformanceTrace.endInterval("TabManager.loadFromStore", signpostState)
+        }
+
         markInitialDataLoadStarted()
         SidebarUITestDragMarker.recordEvent(
             "startupLoadBegin",

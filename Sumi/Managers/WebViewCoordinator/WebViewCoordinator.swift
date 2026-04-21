@@ -298,6 +298,14 @@ class WebViewCoordinator {
         for windowState: BrowserWindowState,
         browserManager: BrowserManager
     ) -> Bool {
+        let signpostState = PerformanceTrace.beginInterval("WebViewCoordinator.prepareVisibleWebViews")
+        defer {
+            PerformanceTrace.endInterval(
+                "WebViewCoordinator.prepareVisibleWebViews",
+                signpostState
+            )
+        }
+
         let visibleTabIDs = VisibleTabPreparationPlan.visibleTabIDs(
             currentTabId: browserManager.currentTab(for: windowState)?.id,
             isSplit: browserManager.splitManager.isSplit(for: windowState.id),
@@ -495,6 +503,7 @@ class WebViewCoordinator {
         }
 
         deferredProtectedWebViewMutations[webViewID, default: []].append(operation)
+        PerformanceTrace.emitEvent("WebViewCoordinator.deferProtectedWebViewMutation")
         RuntimeDiagnostics.swipeTrace(
             "defer reason=\(reason) webView=\(webViewID)"
         )
@@ -514,6 +523,7 @@ class WebViewCoordinator {
         }
 
         deferredProtectedWebViewMutations[webViewID, default: []].append(operation)
+        PerformanceTrace.emitEvent("WebViewCoordinator.deferHistorySwipeProtectedWebViewMutation")
         RuntimeDiagnostics.swipeTrace(
             "defer reason=\(reason) webView=\(webViewID)"
         )
@@ -598,6 +608,16 @@ class WebViewCoordinator {
         let operations = deferredProtectedWebViewMutations.removeValue(forKey: webViewID) ?? []
         guard !operations.isEmpty else { return }
         Task { @MainActor in
+            let signpostState = PerformanceTrace.beginInterval(
+                "WebViewCoordinator.flushDeferredProtectedWebViewMutations"
+            )
+            defer {
+                PerformanceTrace.endInterval(
+                    "WebViewCoordinator.flushDeferredProtectedWebViewMutations",
+                    signpostState
+                )
+            }
+
             for operation in operations {
                 operation()
             }
@@ -843,6 +863,11 @@ class WebViewCoordinator {
     // MARK: - Window Cleanup
 
     func cleanupWindow(_ windowId: UUID, tabManager: TabManager) {
+        let signpostState = PerformanceTrace.beginInterval("WebViewCoordinator.cleanupWindow")
+        defer {
+            PerformanceTrace.endInterval("WebViewCoordinator.cleanupWindow", signpostState)
+        }
+
         scheduledPrepareWindowIds.remove(windowId)
         let webViewsToCleanup = webViewsByTabAndWindow.compactMap {
             (tabId, windowWebViews) -> (UUID, WKWebView)? in

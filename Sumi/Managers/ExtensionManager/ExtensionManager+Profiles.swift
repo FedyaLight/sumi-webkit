@@ -68,6 +68,11 @@ extension ExtensionManager {
             return
         }
 
+        let signpostState = PerformanceTrace.beginInterval("ExtensionManager.switchProfile")
+        defer {
+            PerformanceTrace.endInterval("ExtensionManager.switchProfile", signpostState)
+        }
+
         extensionController.configuration.defaultWebsiteDataStore = store
         currentProfileId = profileId
         reloadPinnedToolbarExtensionsForCurrentProfile()
@@ -391,6 +396,16 @@ extension ExtensionManager {
         for extensionId: String,
         removeUIState: Bool
     ) {
+        let signpostState = PerformanceTrace.beginInterval(
+            "ExtensionManager.tearDownExtensionRuntimeState"
+        )
+        defer {
+            PerformanceTrace.endInterval(
+                "ExtensionManager.tearDownExtensionRuntimeState",
+                signpostState
+            )
+        }
+
         backgroundWakeTasks[extensionId]?.cancel()
         backgroundWakeTasks.removeValue(forKey: extensionId)
         backgroundRuntimeStateByExtensionID.removeValue(forKey: extensionId)
@@ -408,6 +423,16 @@ extension ExtensionManager {
     }
 
     func resetLoadedExtensionRuntimeStateForReload() {
+        let signpostState = PerformanceTrace.beginInterval(
+            "ExtensionManager.resetLoadedExtensionRuntimeStateForReload"
+        )
+        defer {
+            PerformanceTrace.endInterval(
+                "ExtensionManager.resetLoadedExtensionRuntimeStateForReload",
+                signpostState
+            )
+        }
+
         let loadedIDs = Set(extensionContexts.keys)
             .union(loadedExtensionManifests.keys)
             .union(optionsWindows.keys)
@@ -438,6 +463,14 @@ extension ExtensionManager {
     }
 
     func setupExtensionController(using initialProfile: Profile?) {
+        let signpostState = PerformanceTrace.beginInterval("ExtensionManager.setupExtensionController")
+        defer {
+            PerformanceTrace.endInterval(
+                "ExtensionManager.setupExtensionController",
+                signpostState
+            )
+        }
+
         let defaultDataStore =
             initialProfile.map { getExtensionDataStore(for: $0.id) }
             ?? WKWebsiteDataStore(forIdentifier: stableControllerIdentifier())
@@ -502,6 +535,11 @@ extension ExtensionManager {
     ) -> WKWebsiteDataStore {
         if let store = profileExtensionStores[profileId] {
             return store
+        }
+
+        let signpostState = PerformanceTrace.beginInterval("ExtensionManager.getExtensionDataStore")
+        defer {
+            PerformanceTrace.endInterval("ExtensionManager.getExtensionDataStore", signpostState)
         }
 
         let store = WKWebsiteDataStore(forIdentifier: profileId)

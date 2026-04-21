@@ -87,6 +87,11 @@ actor TabSnapshotRepository {
     private var latestGeneration: Int = 0
 
     func persist(snapshot: Snapshot, generation: Int) async -> Bool {
+        let signpostState = PerformanceTrace.beginInterval("TabSnapshotRepository.persist")
+        defer {
+            PerformanceTrace.endInterval("TabSnapshotRepository.persist", signpostState)
+        }
+
         if generation < self.latestGeneration {
             Self.log.debug("[persist] Skipping stale snapshot generation=\(generation) < latest=\(self.latestGeneration)")
             return false
@@ -119,6 +124,11 @@ actor TabSnapshotRepository {
     }
 
     func persistSelectionOnly(currentTabID: UUID?, currentSpaceID: UUID?) async {
+        let signpostState = PerformanceTrace.beginInterval("TabSnapshotRepository.persistSelectionOnly")
+        defer {
+            PerformanceTrace.endInterval("TabSnapshotRepository.persistSelectionOnly", signpostState)
+        }
+
         let ctx = ModelContext(container)
         ctx.autosaveEnabled = false
         do {
@@ -133,6 +143,11 @@ actor TabSnapshotRepository {
     }
 
     func persistRuntimeState(_ runtimeState: RuntimeTabState) async {
+        let signpostState = PerformanceTrace.beginInterval("TabSnapshotRepository.persistRuntimeState")
+        defer {
+            PerformanceTrace.endInterval("TabSnapshotRepository.persistRuntimeState", signpostState)
+        }
+
         let ctx = ModelContext(container)
         ctx.autosaveEnabled = false
 
@@ -157,82 +172,113 @@ actor TabSnapshotRepository {
     }
 
     private func performAtomicPersistence(_ snapshot: Snapshot) async throws {
+        let signpostState = PerformanceTrace.beginInterval("TabSnapshotRepository.performAtomicPersistence")
+        defer {
+            PerformanceTrace.endInterval(
+                "TabSnapshotRepository.performAtomicPersistence",
+                signpostState
+            )
+        }
+
         let ctx = ModelContext(container)
         ctx.autosaveEnabled = false
 
-        try validateInput(snapshot)
+        try PerformanceTrace.withInterval("TabSnapshotRepository.atomic.validateInput") {
+            try validateInput(snapshot)
+        }
 
-        let existingTabsById: [UUID: TabEntity]
-        do {
-            let all = try ctx.fetch(FetchDescriptor<TabEntity>())
-            existingTabsById = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
-            let keepIDs = Set(snapshot.tabs.map { $0.id })
-            for entity in all where !keepIDs.contains(entity.id) {
-                ctx.delete(entity)
+        let existingTabsById: [UUID: TabEntity] = try PerformanceTrace.withInterval(
+            "TabSnapshotRepository.atomic.fetchTabs"
+        ) {
+            do {
+                let all = try ctx.fetch(FetchDescriptor<TabEntity>())
+                let keepIDs = Set(snapshot.tabs.map { $0.id })
+                for entity in all where !keepIDs.contains(entity.id) {
+                    ctx.delete(entity)
+                }
+                return Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
+            } catch {
+                throw classify(error)
             }
-        } catch {
-            throw classify(error)
         }
 
-        for tab in snapshot.tabs {
-            upsertTab(in: ctx, tab, existing: existingTabsById[tab.id])
-        }
-
-        let existingFoldersById: [UUID: FolderEntity]
-        do {
-            let allFolders = try ctx.fetch(FetchDescriptor<FolderEntity>())
-            existingFoldersById = Dictionary(allFolders.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
-            let keep = Set(snapshot.folders.map { $0.id })
-            for entity in allFolders where !keep.contains(entity.id) {
-                ctx.delete(entity)
+        PerformanceTrace.withInterval("TabSnapshotRepository.atomic.upsertTabs") {
+            for tab in snapshot.tabs {
+                upsertTab(in: ctx, tab, existing: existingTabsById[tab.id])
             }
-        } catch {
-            throw classify(error)
         }
 
-        for folder in snapshot.folders {
-            upsertFolder(in: ctx, folder, existing: existingFoldersById[folder.id])
-        }
-
-        let existingSpacesById: [UUID: SpaceEntity]
-        do {
-            let allSpaces = try ctx.fetch(FetchDescriptor<SpaceEntity>())
-            existingSpacesById = Dictionary(allSpaces.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
-            let keep = Set(snapshot.spaces.map { $0.id })
-            for entity in allSpaces where !keep.contains(entity.id) {
-                ctx.delete(entity)
+        let existingFoldersById: [UUID: FolderEntity] = try PerformanceTrace.withInterval(
+            "TabSnapshotRepository.atomic.fetchFolders"
+        ) {
+            do {
+                let allFolders = try ctx.fetch(FetchDescriptor<FolderEntity>())
+                let keep = Set(snapshot.folders.map { $0.id })
+                for entity in allFolders where !keep.contains(entity.id) {
+                    ctx.delete(entity)
+                }
+                return Dictionary(allFolders.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
+            } catch {
+                throw classify(error)
             }
-        } catch {
-            throw classify(error)
         }
 
-        for space in snapshot.spaces {
-            upsertSpace(in: ctx, space, existing: existingSpacesById[space.id])
+        PerformanceTrace.withInterval("TabSnapshotRepository.atomic.upsertFolders") {
+            for folder in snapshot.folders {
+                upsertFolder(in: ctx, folder, existing: existingFoldersById[folder.id])
+            }
         }
 
-        do {
-            let states = try ctx.fetch(FetchDescriptor<TabsStateEntity>())
-            let state = states.first ?? {
-                let entity = TabsStateEntity(currentTabID: nil, currentSpaceID: nil)
-                ctx.insert(entity)
-                return entity
-            }()
-            state.currentTabID = snapshot.state.currentTabID
-            state.currentSpaceID = snapshot.state.currentSpaceID
-        } catch {
-            throw classify(error)
+        let existingSpacesById: [UUID: SpaceEntity] = try PerformanceTrace.withInterval(
+            "TabSnapshotRepository.atomic.fetchSpaces"
+        ) {
+            do {
+                let allSpaces = try ctx.fetch(FetchDescriptor<SpaceEntity>())
+                let keep = Set(snapshot.spaces.map { $0.id })
+                for entity in allSpaces where !keep.contains(entity.id) {
+                    ctx.delete(entity)
+                }
+                return Dictionary(allSpaces.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
+            } catch {
+                throw classify(error)
+            }
         }
 
-        do {
-            try ctx.save()
-        } catch {
-            throw classify(error)
+        PerformanceTrace.withInterval("TabSnapshotRepository.atomic.upsertSpaces") {
+            for space in snapshot.spaces {
+                upsertSpace(in: ctx, space, existing: existingSpacesById[space.id])
+            }
         }
 
-        do {
-            try validateDataIntegrity(in: ctx, snapshot: snapshot)
-        } catch {
-            Self.log.error("[persist] Post-save integrity validation reported issues: \(String(describing: error), privacy: .public)")
+        try PerformanceTrace.withInterval("TabSnapshotRepository.atomic.upsertState") {
+            do {
+                let states = try ctx.fetch(FetchDescriptor<TabsStateEntity>())
+                let state = states.first ?? {
+                    let entity = TabsStateEntity(currentTabID: nil, currentSpaceID: nil)
+                    ctx.insert(entity)
+                    return entity
+                }()
+                state.currentTabID = snapshot.state.currentTabID
+                state.currentSpaceID = snapshot.state.currentSpaceID
+            } catch {
+                throw classify(error)
+            }
+        }
+
+        try PerformanceTrace.withInterval("TabSnapshotRepository.atomic.save") {
+            do {
+                try ctx.save()
+            } catch {
+                throw classify(error)
+            }
+        }
+
+        PerformanceTrace.withInterval("TabSnapshotRepository.atomic.validateIntegrity") {
+            do {
+                try validateDataIntegrity(in: ctx, snapshot: snapshot)
+            } catch {
+                Self.log.error("[persist] Post-save integrity validation reported issues: \(String(describing: error), privacy: .public)")
+            }
         }
     }
 
