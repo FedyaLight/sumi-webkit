@@ -140,6 +140,11 @@ final class ExtensionManager: NSObject, ObservableObject {
         initialProfile: Profile?,
         browserConfiguration: BrowserConfiguration = .shared
     ) {
+        let signpostState = PerformanceTrace.beginInterval("ExtensionManager.init")
+        defer {
+            PerformanceTrace.endInterval("ExtensionManager.init", signpostState)
+        }
+
         self.context = context
         self.browserConfiguration = browserConfiguration
         self.controllerIdentifier = Self.makeRuntimeControllerIdentifier()
@@ -234,6 +239,11 @@ final class ExtensionManager: NSObject, ObservableObject {
     #endif
 
     deinit {
+        let signpostState = PerformanceTrace.beginInterval("ExtensionManager.deinit")
+        defer {
+            PerformanceTrace.endInterval("ExtensionManager.deinit", signpostState)
+        }
+
         for (_, tokens) in anchorObserverTokens {
             for (_, token) in tokens {
                 NotificationCenter.default.removeObserver(token)
@@ -263,6 +273,16 @@ final class ExtensionManager: NSObject, ObservableObject {
     func resetInjectedBrowserConfigurationRuntimeState() {
         guard browserConfiguration !== BrowserConfiguration.shared else {
             return
+        }
+
+        let signpostState = PerformanceTrace.beginInterval(
+            "ExtensionManager.resetInjectedBrowserConfigurationRuntimeState"
+        )
+        defer {
+            PerformanceTrace.endInterval(
+                "ExtensionManager.resetInjectedBrowserConfigurationRuntimeState",
+                signpostState
+            )
         }
 
         let configuration = browserConfiguration.webViewConfiguration

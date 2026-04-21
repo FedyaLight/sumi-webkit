@@ -328,6 +328,14 @@ extension ExtensionManager {
     }
 
     func loadInstalledExtensions() {
+        let signpostState = PerformanceTrace.beginInterval("ExtensionManager.loadInstalledExtensions")
+        defer {
+            PerformanceTrace.endInterval(
+                "ExtensionManager.loadInstalledExtensions",
+                signpostState
+            )
+        }
+
         extensionsLoaded = false
         extensionLoadGeneration &+= 1
         let loadGeneration = extensionLoadGeneration
@@ -396,6 +404,16 @@ extension ExtensionManager {
         }
 
         Task { @MainActor [weak self] in
+            let signpostState = PerformanceTrace.beginInterval(
+                "ExtensionManager.loadInstalledExtensions.enabledLoad"
+            )
+            defer {
+                PerformanceTrace.endInterval(
+                    "ExtensionManager.loadInstalledExtensions.enabledLoad",
+                    signpostState
+                )
+            }
+
             guard let self else { return }
             for entity in enabledEntitiesToLoad {
                 guard self.extensionLoadGeneration == loadGeneration else {
@@ -490,6 +508,11 @@ extension ExtensionManager {
         from entity: ExtensionEntity,
         expectedLoadGeneration: UInt64? = nil
     ) async throws -> InstalledExtension {
+        let signpostState = PerformanceTrace.beginInterval("ExtensionManager.loadEnabledExtension")
+        defer {
+            PerformanceTrace.endInterval("ExtensionManager.loadEnabledExtension", signpostState)
+        }
+
         do {
             let extensionRoot = URL(fileURLWithPath: entity.packagePath)
             let manifestURL = extensionRoot.appendingPathComponent("manifest.json")
