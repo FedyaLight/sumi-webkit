@@ -55,8 +55,7 @@ Paths below are relative to the repository root.
 ├── README.md                # This file
 ├── assets/                  # Logo and marketing assets for GitHub / docs
 ├── docs/                    # Release notes, architecture notes, …
-├── scripts/                 # Development scripts
-└── .github/                 # CI workflows
+└── scripts/                 # Development scripts
 ```
 
 Notable areas inside `Sumi/Components/` include **FindInPage** (in-page search) alongside Sidebar, Browser, Settings, Extensions, and related modules.
