@@ -940,7 +940,6 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
 
     static func dismantleNSViewController(_ controller: WindowWebContentController, coordinator: ()) {
         controller.tearDownController()
-        controller.view.window?.makeFirstResponder(nil)
     }
 
     private func visibleTabIds(currentId: UUID?) -> Set<UUID> {

@@ -172,6 +172,10 @@ final class FocusableWKWebView: WKWebView {
 
     override var acceptsFirstResponder: Bool { true }
 
+    override var isInFullScreenMode: Bool {
+        sumiIsInFullscreenElementPresentation
+    }
+
     override func mouseUp(with event: NSEvent) {
         super.mouseUp(with: event)
         let owningTab = owningTab
@@ -573,6 +577,36 @@ final class FocusableWKWebView: WKWebView {
     private func sanitizeDefaultMenu(_ menu: NSMenu) {
         _ = menu
         owningTab?.pendingContextMenuCapture = nil
+    }
+}
+
+@MainActor
+extension WKWebView {
+    private enum SumiFullscreenSelector {
+        static let fullScreenPlaceholderView = NSSelectorFromString("_fullScreenPlaceholderView")
+    }
+
+    var sumiFullScreenPlaceholderView: NSView? {
+        guard responds(to: SumiFullscreenSelector.fullScreenPlaceholderView) else { return nil }
+        return value(
+            forKey: NSStringFromSelector(SumiFullscreenSelector.fullScreenPlaceholderView)
+        ) as? NSView
+    }
+
+    var sumiTabContentView: NSView {
+        sumiFullScreenPlaceholderView ?? self
+    }
+
+    var sumiIsInFullscreenElementPresentation: Bool {
+        fullscreenState != .notInFullscreen
+    }
+
+    var sumiFullscreenTabContentViewForHost: NSView? {
+        if sumiIsInFullscreenElementPresentation {
+            return sumiFullScreenPlaceholderView
+        }
+
+        return self
     }
 }
 

@@ -284,49 +284,6 @@ extension MiniWindowWebView.Coordinator: WKUIDelegate {
         return nil
     }
     
-    // MARK: - Full-Screen Video Support
-    @available(macOS 10.15, *)
-    func webView(
-        _ webView: WKWebView,
-        enterFullScreenForVideoWith completionHandler: @escaping (Bool, Error?) -> Void
-    ) {
-        RuntimeDiagnostics.emit("🎬 [MiniWindowWebView] Entering full-screen for video")
-        
-        // Get the window containing this webView
-        guard let window = webView.window else {
-            RuntimeDiagnostics.emit("❌ [MiniWindowWebView] No window found for full-screen")
-            completionHandler(false, NSError(domain: "MiniWindowWebView", code: -1, userInfo: [NSLocalizedDescriptionKey: "No window available for full-screen"]))
-            return
-        }
-        
-        // Enter full-screen mode
-        window.toggleFullScreen(nil)
-        
-        // For now, assume success - the actual full-screen state will be handled by the window
-        completionHandler(true, nil)
-    }
-    
-    @available(macOS 10.15, *)
-    func webView(
-        _ webView: WKWebView,
-        exitFullScreenWith completionHandler: @escaping (Bool, Error?) -> Void
-    ) {
-        RuntimeDiagnostics.emit("🎬 [MiniWindowWebView] Exiting full-screen for video")
-        
-        // Get the window containing this webView
-        guard let window = webView.window else {
-            RuntimeDiagnostics.emit("❌ [MiniWindowWebView] No window found for exiting full-screen")
-            completionHandler(false, NSError(domain: "MiniWindowWebView", code: -1, userInfo: [NSLocalizedDescriptionKey: "No window available for exiting full-screen"]))
-            return
-        }
-        
-        // Exit full-screen mode
-        window.toggleFullScreen(nil)
-
-        // For now, assume success - the actual full-screen state will be handled by the window
-        completionHandler(true, nil)
-    }
-
     // MARK: - Media Capture Permission
 
     /// Handle requests for media capture authorization (camera/microphone).
