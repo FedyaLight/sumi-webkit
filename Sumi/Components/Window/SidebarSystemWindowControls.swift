@@ -2,19 +2,9 @@ import AppKit
 import SwiftUI
 
 enum SidebarChromeMetrics {
-    static let collapsedTopInset: CGFloat = 4
     static let horizontalPadding: CGFloat = 8
     static let controlStripHeight: CGFloat = 38
     static let controlSpacing: CGFloat = 8
-
-    static func topInset(for presentationMode: SidebarPresentationMode) -> CGFloat {
-        switch presentationMode {
-        case .docked:
-            return 0
-        case .collapsedHidden, .collapsedVisible:
-            return collapsedTopInset
-        }
-    }
 }
 
 enum SidebarWindowControlsPlacement: Equatable {

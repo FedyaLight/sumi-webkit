@@ -258,7 +258,6 @@ enum SidebarPresentationMode: Equatable {
 
 struct SidebarPresentationContext: Equatable {
     let mode: SidebarPresentationMode
-    let shellWidth: CGFloat
     let sidebarWidth: CGFloat
 
     var contentWidth: CGFloat {
@@ -273,35 +272,39 @@ struct SidebarPresentationContext: Equatable {
         mode == .docked
     }
 
+    static func collapsedSidebarWidth(
+        sidebarWidth: CGFloat,
+        savedSidebarWidth: CGFloat
+    ) -> CGFloat {
+        BrowserWindowState.clampedSidebarWidth(
+            max(sidebarWidth, savedSidebarWidth)
+        )
+    }
+
     static func docked(sidebarWidth: CGFloat) -> SidebarPresentationContext {
         let clampedWidth = BrowserWindowState.clampedSidebarWidth(sidebarWidth)
         return SidebarPresentationContext(
             mode: .docked,
-            shellWidth: clampedWidth,
             sidebarWidth: clampedWidth
         )
     }
 
     static func collapsedHidden(
-        sidebarWidth: CGFloat,
-        shellWidth: CGFloat
+        sidebarWidth: CGFloat
     ) -> SidebarPresentationContext {
         let clampedWidth = BrowserWindowState.clampedSidebarWidth(sidebarWidth)
         return SidebarPresentationContext(
             mode: .collapsedHidden,
-            shellWidth: max(shellWidth, clampedWidth),
             sidebarWidth: clampedWidth
         )
     }
 
     static func collapsedVisible(
-        sidebarWidth: CGFloat,
-        shellWidth: CGFloat
+        sidebarWidth: CGFloat
     ) -> SidebarPresentationContext {
         let clampedWidth = BrowserWindowState.clampedSidebarWidth(sidebarWidth)
         return SidebarPresentationContext(
             mode: .collapsedVisible,
-            shellWidth: max(shellWidth, clampedWidth),
             sidebarWidth: clampedWidth
         )
     }
@@ -511,7 +514,7 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
         )
         controller.updateHostedSidebar(
             root: root,
-            width: presentationContext.shellWidth,
+            width: presentationContext.sidebarWidth,
             contextMenuController: windowState.sidebarContextMenuController
         )
     }

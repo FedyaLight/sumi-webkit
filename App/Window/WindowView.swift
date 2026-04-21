@@ -376,8 +376,7 @@ struct WorkspaceThemePickerOverlay: View {
         GeometryReader { proxy in
             let layout = WorkspaceThemePickerOverlayLayout(
                 windowSize: proxy.size,
-                sidebarWidth: resolvedSidebarWidth,
-                isSidebarVisible: windowState.isSidebarVisible
+                sidebarWidth: resolvedSidebarWidth
             )
 
             let panelWidth = GradientEditorView.panelWidth
@@ -490,7 +489,7 @@ struct WorkspaceThemePickerOverlay: View {
             return windowState.sidebarWidth
         }
 
-        return SidebarHoverOverlayMetrics.revealedWidth(
+        return SidebarPresentationContext.collapsedSidebarWidth(
             sidebarWidth: windowState.sidebarWidth,
             savedSidebarWidth: windowState.savedSidebarWidth
         )
