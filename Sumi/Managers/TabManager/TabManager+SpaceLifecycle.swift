@@ -44,6 +44,7 @@ extension TabManager {
         }
 
         spaces.append(space)
+        markSpacesSnapshotDirty()
         setTabs([], for: space.id)
 
         if currentSpace == nil {
@@ -71,6 +72,8 @@ extension TabManager {
         setTabs([], for: id)
         foldersBySpace.removeValue(forKey: id)
         spacePinnedShortcuts.removeValue(forKey: id)
+        markFoldersSnapshotDirty(for: id)
+        markSpacePinnedSnapshotDirty(for: id)
         transientShortcutTabsByWindow = transientShortcutTabsByWindow.compactMapValues { tabsByPin in
             let filtered = tabsByPin.filter { _, tab in tab.spaceId != id }
             return filtered.isEmpty ? nil : filtered
@@ -79,6 +82,7 @@ extension TabManager {
 
         if idx < spaces.count {
             spaces.remove(at: idx)
+            markSpacesSnapshotDirty()
         }
 
         if currentSpace?.id == id {
@@ -110,6 +114,7 @@ extension TabManager {
 
         if let previousSpace, let previousTab {
             previousSpace.activeTabId = previousTab.id
+            markSpacesSnapshotDirty()
         }
 
         currentSpace = space
@@ -164,6 +169,9 @@ extension TabManager {
             currentTab = targetTab
         }
 
+        if targetTab?.id == space.activeTabId {
+            markSpacesSnapshotDirty()
+        }
         persistSnapshot()
 
     }
@@ -177,6 +185,7 @@ extension TabManager {
         if currentSpace?.id == spaceId {
             currentSpace?.name = newName
         }
+        markSpacesSnapshotDirty()
         persistSnapshot()
     }
 
@@ -190,6 +199,7 @@ extension TabManager {
         if currentSpace?.id == spaceId {
             currentSpace?.icon = normalized
         }
+        markSpacesSnapshotDirty()
         persistSnapshot()
     }
 }
