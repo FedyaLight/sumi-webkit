@@ -1,0 +1,229 @@
+//
+//  MouseOverButton.swift
+//
+//  Copyright © 2020 DuckDuckGo. All rights reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//  http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+import AppKit
+
+@objc protocol MouseOverButtonDelegate: AnyObject {
+
+    @objc optional func mouseOverButton(_ sender: MouseOverButton, draggingEntered info: NSDraggingInfo, isMouseOver: UnsafeMutablePointer<Bool>) -> NSDragOperation
+    @objc optional func mouseOverButton(_ sender: MouseOverButton, draggingUpdatedWith info: NSDraggingInfo, isMouseOver: UnsafeMutablePointer<Bool>) -> NSDragOperation
+    @objc optional func mouseOverButton(_ sender: MouseOverButton, draggingEndedWith info: NSDraggingInfo)
+    @objc optional func mouseOverButton(_ sender: MouseOverButton, draggingExitedWith info: NSDraggingInfo?)
+    @objc optional func mouseOverButton(_ sender: MouseOverButton, performDragOperation info: NSDraggingInfo) -> Bool
+
+}
+
+class MouseOverButton: NSButton, Hoverable {
+
+    @IBOutlet weak var delegate: MouseOverButtonDelegate?
+
+    private var hoverBackgroundLayer: CALayer?
+
+    @IBInspectable dynamic var backgroundColor: NSColor?
+    @IBInspectable dynamic var mouseOverColor: NSColor?
+    @IBInspectable dynamic var mouseDownColor: NSColor?
+
+    @IBInspectable dynamic var cornerRadius: CGFloat = 0
+    @IBInspectable dynamic var backgroundInset: NSPoint = .zero
+    @IBInspectable dynamic var mustAnimateOnMouseOver: Bool = false
+
+    @IBInspectable var mouseOverTintColor: NSColor? {
+        didSet {
+            updateTintColor()
+        }
+    }
+
+    @IBInspectable var mouseDownTintColor: NSColor? {
+        didSet {
+            updateTintColor()
+        }
+    }
+
+    @IBInspectable var horizontalPadding: CGFloat = 0
+    @IBInspectable var verticalPadding: CGFloat = 0
+
+    override var intrinsicContentSize: NSSize {
+        var size = super.intrinsicContentSize
+        size.width += self.horizontalPadding
+        size.height += self.verticalPadding
+        return size
+    }
+
+    private var eventTypeMask: NSEvent.EventTypeMask = .leftMouseUp
+
+    @discardableResult
+    override func sendAction(on mask: NSEvent.EventTypeMask) -> Int {
+        self.eventTypeMask = mask
+        return Int(truncatingIfNeeded: mask.rawValue)
+    }
+
+    var normalTintColor: NSColor? {
+        didSet {
+            updateTintColor()
+        }
+    }
+
+    func backgroundLayer(createIfNeeded: Bool) -> CALayer? {
+        guard hoverBackgroundLayer == nil, createIfNeeded else { return hoverBackgroundLayer }
+
+        self.wantsLayer = true
+        self.layerUsesCoreImageFilters = true
+        guard let layer else {
+            assertionFailure("no layer")
+            return nil
+        }
+
+        layer.backgroundColor = NSColor.clear.cgColor
+
+        let backgroundLayer = CALayer()
+        backgroundLayer.masksToBounds = true
+        layer.addSublayer(backgroundLayer)
+        self.hoverBackgroundLayer = backgroundLayer
+
+        return backgroundLayer
+    }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        clipsToBounds = true
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        clipsToBounds = true
+    }
+
+    override func awakeFromNib() {
+        normalTintColor = self.contentTintColor
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        isMouseDown = false
+    }
+
+    @objc dynamic var isMouseOver = false {
+        didSet {
+            updateTintColor()
+        }
+    }
+
+    @objc dynamic var isMouseDown = false {
+        didSet {
+            updateTintColor()
+        }
+    }
+
+    override func draggingEntered(_ draggingInfo: NSDraggingInfo) -> NSDragOperation {
+        var newMouseOver: Bool?
+        var isMouseOver: Bool {
+            get {
+                newMouseOver ?? self.isMouseOver
+            }
+            set {
+                newMouseOver = newValue
+            }
+        }
+        let operation = delegate?.mouseOverButton?(self, draggingEntered: draggingInfo, isMouseOver: &isMouseOver)
+        let resolvedOperation: NSDragOperation = operation ?? []
+        if let newMouseOver, newMouseOver != self.isMouseOver {
+            self.isMouseOver = newMouseOver
+        }
+        return resolvedOperation
+    }
+
+    override func draggingUpdated(_ draggingInfo: NSDraggingInfo) -> NSDragOperation {
+        var newMouseOver: Bool?
+        var isMouseOver: Bool {
+            get {
+                newMouseOver ?? self.isMouseOver
+            }
+            set {
+                newMouseOver = newValue
+            }
+        }
+        let operation = delegate?.mouseOverButton?(self, draggingUpdatedWith: draggingInfo, isMouseOver: &isMouseOver)
+        let resolvedOperation: NSDragOperation = operation ?? super.draggingUpdated(draggingInfo)
+        if let newMouseOver, newMouseOver != self.isMouseOver {
+            self.isMouseOver = newMouseOver
+        }
+        return resolvedOperation
+    }
+
+    override func performDragOperation(_ draggingInfo: NSDraggingInfo) -> Bool {
+        delegate?.mouseOverButton?(self, performDragOperation: draggingInfo) ?? false
+    }
+
+    override func draggingEnded(_ draggingInfo: NSDraggingInfo) {
+        isMouseOver = false
+        delegate?.mouseOverButton?(self, draggingEndedWith: draggingInfo)
+    }
+
+    override func draggingExited(_ draggingInfo: NSDraggingInfo?) {
+        isMouseOver = false
+        delegate?.mouseOverButton?(self, draggingExitedWith: draggingInfo)
+    }
+
+    func updateTintColor() {
+        NSAppearance.sumi_findWithAppAppearance {
+            self.contentTintColor = currentTintColor()
+        }
+    }
+
+    private func currentTintColor() -> NSColor? {
+        if isMouseDown {
+            return mouseDownTintColor ?? normalTintColor
+        }
+
+        if isMouseOver {
+            return mouseOverTintColor ?? normalTintColor
+        }
+
+        return normalTintColor
+    }
+
+    private var hoverTrackingArea: HoverTrackingArea? {
+        trackingAreas.lazy.compactMap { $0 as? HoverTrackingArea }.first
+    }
+
+    override func updateLayer() {
+        hoverTrackingArea?.updateLayer()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        HoverTrackingArea.updateTrackingAreas(in: self)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        isMouseDown = true
+        super.mouseDown(with: event)
+        isMouseDown = false
+    }
+
+    override func otherMouseDown(with event: NSEvent) {
+        if eventTypeMask.contains(.init(type: event.type)), let action {
+            NSApp.sendAction(action, to: target, from: self)
+        }
+    }
+
+    override func otherMouseUp(with event: NSEvent) {
+        if eventTypeMask.contains(.init(type: event.type)), let action {
+            NSApp.sendAction(action, to: target, from: self)
+        }
+    }
+}

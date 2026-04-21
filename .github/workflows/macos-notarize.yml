@@ -1,0 +1,176 @@
+name: macOS DMG Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build-sign-notarize:
+    runs-on: macos-26
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set version info
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          if [ -z "$VERSION" ]; then
+            MARKETING_VERSION=$(grep 'MARKETING_VERSION' Sumi.xcodeproj/project.pbxproj \
+              | head -n1 | sed -E 's/.*= ([^;]+);.*/\1/')
+            VERSION="v${MARKETING_VERSION}"
+          fi
+          SHORT_VERSION="${VERSION#v}"
+          BUILD_NUMBER=$(grep 'CURRENT_PROJECT_VERSION' Sumi.xcodeproj/project.pbxproj \
+            | head -n1 | grep -oE '[0-9]+' | tail -n1)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "SHORT_VERSION=$SHORT_VERSION" >> $GITHUB_ENV
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_ENV
+          echo "Building version $SHORT_VERSION (build $BUILD_NUMBER)"
+
+      - name: Import Developer ID certificate
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          printf "%s" "$APPLE_CERTIFICATE_P12_BASE64" | base64 --decode > signing_certificate.p12
+
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+
+          security import signing_certificate.p12 \
+            -k build.keychain \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+
+          security list-keychains -d user -s build.keychain login.keychain
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
+
+          IDENTITY=$(security find-identity -v -p codesigning build.keychain \
+            | grep "Developer ID Application" | head -n1 | awk '{print $2}')
+          if [ -z "$IDENTITY" ]; then
+            echo "::error::No Developer ID Application identity found in imported certificate"
+            exit 1
+          fi
+          echo "SIGNING_IDENTITY=$IDENTITY" >> $GITHUB_ENV
+          echo "Using signing identity: $IDENTITY"
+
+      - name: Build unsigned app
+        run: |
+          set -e
+          mkdir -p build
+          echo "Attempting universal build (arm64 + x86_64)..."
+          if ! xcodebuild -project Sumi.xcodeproj -scheme Sumi -configuration Release \
+            -arch arm64 -arch x86_64 \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO; then
+            echo "Universal build failed, retrying Apple Silicon only..."
+            xcodebuild -project Sumi.xcodeproj -scheme Sumi -configuration Release \
+              -arch arm64 \
+              -derivedDataPath build \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO
+          fi
+          cp -R "build/Build/Products/Release/Sumi.app" ./Sumi.app
+
+      - name: Sign app for notarization
+        run: |
+          # Notarization requires all binaries to be signed with our Developer ID,
+          # a secure timestamp, and hardened runtime. Sparkle ships pre-signed with
+          # its own cert, so we must re-sign the entire bundle from inside out.
+          SPARKLE="Sumi.app/Contents/Frameworks/Sparkle.framework/Versions/B"
+
+          if [ -d "$SPARKLE" ]; then
+            # Sign innermost binaries first.
+            codesign --force --sign "$SIGNING_IDENTITY" --timestamp --options runtime \
+              "$SPARKLE/XPCServices/Downloader.xpc/Contents/MacOS/Downloader"
+            codesign --force --sign "$SIGNING_IDENTITY" --timestamp --options runtime \
+              "$SPARKLE/XPCServices/Installer.xpc/Contents/MacOS/Installer"
+            codesign --force --sign "$SIGNING_IDENTITY" --timestamp --options runtime \
+              "$SPARKLE/Updater.app/Contents/MacOS/Updater"
+            codesign --force --sign "$SIGNING_IDENTITY" --timestamp --options runtime \
+              "$SPARKLE/Autoupdate"
+
+            # Sign bundles.
+            codesign --force --sign "$SIGNING_IDENTITY" --timestamp --options runtime \
+              "$SPARKLE/XPCServices/Downloader.xpc"
+            codesign --force --sign "$SIGNING_IDENTITY" --timestamp --options runtime \
+              "$SPARKLE/XPCServices/Installer.xpc"
+            codesign --force --sign "$SIGNING_IDENTITY" --timestamp --options runtime \
+              "$SPARKLE/Updater.app"
+
+            # Sign the Sparkle dylib before signing the framework bundle.
+            codesign --force --sign "$SIGNING_IDENTITY" --timestamp "$SPARKLE/Sparkle"
+
+            # Sign the framework version directory, not the top-level symlink.
+            codesign --force --sign "$SIGNING_IDENTITY" --timestamp --options runtime "$SPARKLE"
+          fi
+
+          # Re-sign the main app with entitlements and hardened runtime
+          codesign --force --sign "$SIGNING_IDENTITY" --timestamp \
+            --options runtime \
+            --entitlements "$(pwd)/Sumi/Sumi.entitlements" \
+            "Sumi.app"
+
+      - name: Verify signature before notarizing
+        run: codesign --verify --deep --strict --verbose=2 "Sumi.app"
+
+      - name: Notarize app
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          xcrun notarytool store-credentials "sumi-notary" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD"
+
+          # ditto preserves macOS symlinks and extended attributes; zip -r does not.
+          # Broken symlinks in the archive cause "invalid signature" errors because
+          # the bundle seal references symlink targets, not file copies.
+          ditto -c -k --keepParent "Sumi.app" Sumi.zip
+          SUBMIT_OUTPUT=$(xcrun notarytool submit "Sumi.zip" \
+            --keychain-profile "sumi-notary" \
+            --wait 2>&1)
+          echo "$SUBMIT_OUTPUT"
+          SUBMISSION_ID=$(echo "$SUBMIT_OUTPUT" | grep "^  id:" | head -1 | awk '{print $2}')
+          STATUS=$(echo "$SUBMIT_OUTPUT" | grep "^  status:" | awk '{print $2}')
+          if [ "$STATUS" != "Accepted" ]; then
+            echo "Notarization rejected. Fetching log..."
+            xcrun notarytool log "$SUBMISSION_ID" --keychain-profile "sumi-notary"
+            exit 1
+          fi
+
+      - name: Staple notarization ticket
+        run: xcrun stapler staple "Sumi.app"
+
+      - name: Verify signature
+        run: |
+          codesign --verify --deep --strict --verbose=2 "Sumi.app"
+          spctl --assess --type execute --verbose "Sumi.app"
+
+      - name: Create DMG
+        run: |
+          rm -rf dist
+          mkdir -p "dist/dmg-root"
+          ditto "Sumi.app" "dist/dmg-root/Sumi.app"
+          ln -s /Applications "dist/dmg-root/Applications"
+          hdiutil create -volname "Sumi $SHORT_VERSION" \
+            -srcfolder "dist/dmg-root" \
+            -ov -format UDZO "dist/Sumi-${VERSION}.dmg"
+
+      - name: Upload DMG to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Sumi-*.dmg
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

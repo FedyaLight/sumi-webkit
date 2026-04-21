@@ -1,0 +1,51 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode
+build/
+DerivedData/
+.derived-data/
+
+# Local CI / smoke markers (not shipped)
+.diagnostics/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+*.xccheckout
+*.xcscmblueprint
+*.xcuserstate
+*.log
+*.profraw
+default.profraw
+
+# SwiftPM
+.build/
+.swiftpm/
+
+# App-specific
+.home/
+telemetry-id
+
+# Local / editor
+.env
+.env.*
+!.env.example
+.vscode/
+
+# Local dev artifacts (not part of the Xcode app)
+debug-pages/
+specs/
+default.profraw
