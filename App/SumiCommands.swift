@@ -14,7 +14,6 @@ struct SumiCommands: Commands {
     let windowRegistry: WindowRegistry
     let shortcutManager: KeyboardShortcutManager
     @Environment(\.sumiSettings) var sumiSettings
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init(browserManager: BrowserManager, windowRegistry: WindowRegistry, shortcutManager: KeyboardShortcutManager) {
         self.browserManager = browserManager
@@ -95,28 +94,23 @@ struct SumiCommands: Commands {
         browserManager.closeActiveWindow()
     }
 
-    private var configuredUpdateFeedURL: URL? {
-        guard
-            let rawValue = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String,
-            let url = URL(string: rawValue),
-            rawValue.contains("example.com") == false
-        else {
-            return nil
-        }
-        return url
-    }
-
     @CommandsBuilder
     private var applicationCommands: some Commands {
+        CommandGroup(replacing: .appInfo) {
+            Button("About Sumi") {
+                browserManager.openSettingsTab(selecting: .about)
+            }
+        }
+
         CommandGroup(after: .appInfo) {
             Divider()
             Button("Make Sumi Default Browser") {
                 browserManager.setAsDefaultBrowser()
             }
 
-            if configuredUpdateFeedURL != nil {
+            if SumiUpdateConfiguration.isConfigured {
                 Button("Check for Updates...") {
-                    appDelegate.updaterController.checkForUpdates(nil)
+                    browserManager.checkForUpdates()
                 }
             }
         }

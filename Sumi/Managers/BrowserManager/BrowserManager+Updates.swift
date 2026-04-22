@@ -8,6 +8,23 @@
 import CoreServices
 import Sparkle
 
+enum SumiUpdateConfiguration {
+    static var configuredFeedURL: URL? {
+        guard
+            let rawValue = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String,
+            let url = URL(string: rawValue),
+            rawValue.contains("example.com") == false
+        else {
+            return nil
+        }
+        return url
+    }
+
+    static var isConfigured: Bool {
+        configuredFeedURL != nil
+    }
+}
+
 enum ZoomPopoverSource {
     case toolbar
     case menu
@@ -66,8 +83,12 @@ extension BrowserManager {
         handleUpdaterFinishedDownloading(item)
     }
 
-    func installPendingUpdateIfAvailable() {
+    func checkForUpdates() {
         appDelegate?.updaterController.checkForUpdates(nil)
+    }
+
+    func installPendingUpdateIfAvailable() {
+        checkForUpdates()
     }
 
     // MARK: - Zoom Management
