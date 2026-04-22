@@ -58,7 +58,7 @@ class TabManager: ObservableObject {
     private var tabLookup: [UUID: Tab] = [:]
     private var transientTabLookupIDs: Set<UUID> = []
     private var attachedLiveTabIDs: Set<UUID> = []
-    /// Emitted when tab structure changes without a corresponding `@Published` update (e.g. transient shortcut live tabs). Not used for snapshot persistence completion—`scheduleStructuralPersistence()` does not send this.
+    /// Emitted when tab structure changes without a corresponding `@Published` update (e.g. transient shortcut live tabs). Not used for persistence completion—`scheduleStructuralPersistence()` does not send this.
     let structuralChanges = PassthroughSubject<Void, Never>()
     // Space activation to resume after a deferred profile switch
     var pendingSpaceActivation: UUID?
