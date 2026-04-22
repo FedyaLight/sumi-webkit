@@ -41,8 +41,6 @@ final class PeekManager: ObservableObject {
         let windowId = windowRegistry?.activeWindow?.id ?? UUID()
         let session = PeekSession(
             targetURL: url,
-            sourceTabId: tab?.id,
-            sourceURL: tab?.url,
             windowId: windowId,
             sourceProfileId: tab?.resolveProfile()?.id
         )
@@ -62,15 +60,6 @@ final class PeekManager: ObservableObject {
 
     func updateWebView(_ webView: PeekWebView) {
         self.webView = webView
-    }
-
-    // MARK: - Helper Methods
-
-    private func isExternalDomain(_ url: URL) -> Bool {
-        guard let currentHost = currentSession?.sourceURL?.host,
-              let newHost = url.host else { return false }
-
-        return currentHost != newHost
     }
 
     var canEnterSplitView: Bool {

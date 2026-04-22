@@ -26,7 +26,6 @@ private enum WindowTransientChromeZIndex {
 struct WindowView: View {
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
-    @Environment(CommandPalette.self) private var commandPalette
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sumiSettings) var sumiSettings
     @StateObject private var hoverSidebarManager = HoverSidebarManager()
@@ -135,7 +134,6 @@ struct WindowView: View {
         .onAppear {
             hoverSidebarManager.attach(browserManager: browserManager, windowState: windowState)
             hoverSidebarManager.windowRegistry = windowRegistry
-            hoverSidebarManager.sumiSettings = sumiSettings
             hoverSidebarManager.start()
         }
         .onChange(of: windowState.isSidebarVisible) { _, _ in

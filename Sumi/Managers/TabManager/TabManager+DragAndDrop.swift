@@ -8,14 +8,6 @@ extension TabManager {
         }
     }
 
-    func performSidebarDragOperations(_ operations: [DragOperation]) {
-        withStructuralUpdateTransaction {
-            for operation in operations {
-                handleDragOperation(operation)
-            }
-        }
-    }
-
     func handleDragOperation(_ operation: DragOperation) {
         if let folder = operation.folder {
             handleFolderDragOperation(folder, operation: operation)

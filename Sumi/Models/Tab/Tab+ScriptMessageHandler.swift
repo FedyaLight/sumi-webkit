@@ -106,17 +106,13 @@ extension Tab: WKScriptMessageHandler {
             return
         }
         let interactive = dict["interactive"] as? Bool ?? true
-        let prefersEphemeral = dict["prefersEphemeral"] as? Bool ?? false
-        let providedScheme = (dict["callbackScheme"] as? String)?.trimmingCharacters(
-            in: .whitespacesAndNewlines
-        )
         let rawRequestId = (dict["requestId"] as? String)?.trimmingCharacters(
             in: .whitespacesAndNewlines
         )
         let requestId = (rawRequestId?.isEmpty == false ? rawRequestId! : UUID().uuidString)
 
         RuntimeDiagnostics.emit(
-            "🔐 [Tab] OAuth request received: id=\(requestId) url=\(url.absoluteString) interactive=\(interactive) ephemeral=\(prefersEphemeral) scheme=\(providedScheme ?? "nil")"
+            "🔐 [Tab] OAuth request received: id=\(requestId) url=\(url.absoluteString) interactive=\(interactive)"
         )
 
         guard let manager = browserManager else {
@@ -127,9 +123,7 @@ extension Tab: WKScriptMessageHandler {
         let identityRequest = AuthenticationManager.IdentityRequest(
             requestId: requestId,
             url: url,
-            interactive: interactive,
-            prefersEphemeralSession: prefersEphemeral,
-            explicitCallbackScheme: providedScheme?.isEmpty == true ? nil : providedScheme
+            interactive: interactive
         )
 
         manager.authenticationManager.beginIdentityFlow(identityRequest, from: self)

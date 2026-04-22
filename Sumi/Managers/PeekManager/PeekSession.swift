@@ -12,9 +12,6 @@ import SwiftUI
 @MainActor
 class PeekSession: ObservableObject, Identifiable {
     let id = UUID()
-    let sourceTabId: UUID?
-    let sourceURL: URL?
-    let targetURL: URL
     let windowId: UUID
     let sourceProfileId: UUID?
 
@@ -25,14 +22,9 @@ class PeekSession: ObservableObject, Identifiable {
 
     init(
         targetURL: URL,
-        sourceTabId: UUID?,
-        sourceURL: URL?,
         windowId: UUID,
         sourceProfileId: UUID? = nil
     ) {
-        self.targetURL = targetURL
-        self.sourceTabId = sourceTabId
-        self.sourceURL = sourceURL
         self.windowId = windowId
         self.sourceProfileId = sourceProfileId
         self.currentURL = targetURL

@@ -3,7 +3,6 @@ import Foundation
 @MainActor
 extension TabManager {
     struct SpaceLauncherProjection {
-        let spaceId: UUID
         let regularTabs: [Tab]
         let topLevelFolders: [TabFolder]
         let topLevelPins: [ShortcutPin]
@@ -18,13 +17,6 @@ extension TabManager {
             regularTabs.count + launcherCount
         }
 
-        var hasVisibleContent: Bool {
-            userVisibleTabCount > 0 || topLevelFolders.isEmpty == false
-        }
-
-        func liveTab(for pinId: UUID) -> Tab? {
-            liveTabsByPinId[pinId]
-        }
     }
 
     func launcherProjection(
@@ -70,7 +62,6 @@ extension TabManager {
         }
 
         return SpaceLauncherProjection(
-            spaceId: spaceId,
             regularTabs: regularTabs,
             topLevelFolders: topLevelFolders,
             topLevelPins: topLevelPins,

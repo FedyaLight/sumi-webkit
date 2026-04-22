@@ -23,9 +23,7 @@ class TabManager: ObservableObject {
     let persistence: TabSnapshotRepository
     let runtimeStateCoalescer: RuntimeStateCoalescer
 
-    lazy var tabRepository = TabRepositoryService(tabManager: self)
     lazy var runtimeStore = DefaultTabRuntimeStore(tabManager: self)
-    lazy var mutationService = TabMutationService(tabManager: self)
     lazy var folderService = TabFolderService(tabManager: self)
 
     // Tab closure undo tracking - stores snapshot of tab state at closure time
@@ -75,8 +73,6 @@ class TabManager: ObservableObject {
     var pinnedTabs: [Tab] {
         activeEssentialTabs(for: browserManager?.currentProfile?.id)
     }
-    
-    var essentialTabs: [Tab] { pinnedTabs }
     
     func essentialTabs(for profileId: UUID?) -> [Tab] {
         activeEssentialTabs(for: profileId)
@@ -516,7 +512,7 @@ class TabManager: ObservableObject {
 
         transientTabLookupIDs = updatedIDs
     }
-    func normalizedSpacePinnedShortcuts(_ items: [ShortcutPin], for spaceId: UUID) -> [ShortcutPin] {
+    func normalizedSpacePinnedShortcuts(_ items: [ShortcutPin]) -> [ShortcutPin] {
         var groupedByFolder = Dictionary(grouping: items) { $0.folderId }
 
         func normalizedGroup(_ pins: [ShortcutPin]) -> [ShortcutPin] {
@@ -604,7 +600,7 @@ class TabManager: ObservableObject {
             setFolders(finalFolders, for: spaceId)
 
             let folderPins = (spacePinnedShortcuts[spaceId] ?? []).filter { $0.folderId != nil }
-            let finalPins = normalizedSpacePinnedShortcuts(folderPins + orderedTopLevelPins, for: spaceId)
+            let finalPins = normalizedSpacePinnedShortcuts(folderPins + orderedTopLevelPins)
             setSpacePinnedShortcuts(finalPins, for: spaceId)
         }
     }
@@ -678,7 +674,7 @@ class TabManager: ObservableObject {
         let normalizedGroup = targetGroup.enumerated().map { index, pin in
             pin.refreshed(index: index)
         }
-        let rebuilt = normalizedSpacePinnedShortcuts(otherPins + normalizedGroup, for: spaceId)
+        let rebuilt = normalizedSpacePinnedShortcuts(otherPins + normalizedGroup)
         setSpacePinnedShortcuts(rebuilt, for: spaceId)
     }
 
@@ -693,11 +689,6 @@ class TabManager: ObservableObject {
     func detach(_ tab: Tab) {
         attachedLiveTabIDs.remove(tab.id)
         tabLookup.removeValue(forKey: tab.id)
-    }
-
-    func allTabsAllSpaces() -> [Tab] {
-        let normals = spaces.flatMap { tabsBySpace[$0.id] ?? [] }
-        return transientShortcutTabsByWindow.values.flatMap(\.values) + normals
     }
 
     // Public accessor for managers that need to iterate tabs (e.g., privacy, rules updates)
@@ -729,11 +720,6 @@ class TabManager: ObservableObject {
         return pinned + spacePinned + regular
     }
 
-    func hasSpacePinnedContent(for spaceId: UUID) -> Bool {
-        !spacePinnedPins(for: spaceId).isEmpty
-            || !(foldersBySpace[spaceId] ?? []).isEmpty
-    }
-
     private func contains(_ tab: Tab) -> Bool {
         if activeShortcutTabs().contains(where: { $0.id == tab.id }) {
             return true
@@ -762,12 +748,6 @@ class TabManager: ObservableObject {
         guard let shortcutId = tab.shortcutPinId,
               let pin = shortcutPin(by: shortcutId) else { return false }
         return pin.role == .spacePinned
-    }
-
-    /// True if the tab is a regular (non-pinned) tab in its space.
-    func isRegular(_ tab: Tab) -> Bool {
-        guard let sid = tab.spaceId, let arr = tabsBySpace[sid] else { return false }
-        return arr.contains { $0.id == tab.id }
     }
 
     /// Create a new regular tab duplicating the source tab's URL/name and insert near an anchor tab.
@@ -837,10 +817,6 @@ class TabManager: ObservableObject {
         folderService.folders(for: spaceId)
     }
 
-    func toggleFolder(_ folderId: UUID) {
-        folderService.toggleFolder(folderId)
-    }
-
     func openFolderIfNeeded(_ folderId: UUID) {
         for (_, folders) in foldersBySpace {
             if let folder = folders.first(where: { $0.id == folderId }) {
@@ -851,10 +827,6 @@ class TabManager: ObservableObject {
                 return
             }
         }
-    }
-
-    func revealFolderForDrag(_ folderId: UUID) {
-        folderService.revealFolderForDrag(folderId)
     }
 
     func setAllFolders(open isOpen: Bool, in spaceId: UUID) {
@@ -1291,14 +1263,6 @@ class TabManager: ObservableObject {
         }
     }
 
-    func closeActiveTab() {
-        guard let currentTab else {
-            RuntimeDiagnostics.emit("No active tab to close")
-            return
-        }
-        removeTab(currentTab.id)
-    }
-
     func clearRegularTabs(for spaceId: UUID) {
         withStructuralUpdateTransaction {
             guard let tabs = tabsBySpace[spaceId] else { return }
@@ -1320,21 +1284,6 @@ class TabManager: ObservableObject {
         }
     }
     
-    func unloadTab(_ tab: Tab) {
-        // Never unload essentials tabs except on browser close/restart
-        guard !allPinnedTabsAllProfiles.contains(where: { $0.id == tab.id }) else { return }
-        browserManager?.compositorManager.unloadTab(tab)
-    }
-    
-    func unloadAllInactiveTabs() {
-        // Only unload regular tabs, never essentials (pinned) tabs
-        for tab in tabs {
-            if tab.id != currentTab?.id {
-                unloadTab(tab)
-            }
-        }
-    }
-
     // Helper to safely mutate current profile's pinned array with reindexing
     var structuralPersistenceGeneration: Int = 0
     var scheduledStructuralPersistTask: Task<Void, Never>?
@@ -1344,7 +1293,6 @@ class TabManager: ObservableObject {
     var snapshotCache = TabManagerSnapshotCache()
     var startupRestoreTask: Task<Void, Never>?
     static let defaultRuntimeStatePersistDebounceNanoseconds: UInt64 = 250_000_000
-    let runtimeStatePersistDebounceNanoseconds: UInt64 = TabManager.defaultRuntimeStatePersistDebounceNanoseconds
 }
 
 extension TabManager {

@@ -57,8 +57,6 @@ struct SidebarFloatingDragPreview: View {
     @ObservedObject private var dragState = SidebarDragState.shared
     @EnvironmentObject private var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
 
     var body: some View {
         GeometryReader { geo in

@@ -59,10 +59,6 @@ enum SpaceSidebarRenderPolicy {
         }
     }
 
-    static func renderMode(for role: Role) -> SpaceViewRenderMode {
-        pageRenderMode(for: role).spaceRenderMode
-    }
-
     static func shouldUseTransitionLayers(for state: SpaceSidebarTransitionState) -> Bool {
         state.hasDestination
     }
@@ -103,6 +99,18 @@ private struct SidebarPageInputGraphIdentity: Hashable {
     let spaceId: UUID
     let profileId: UUID?
     let recoveryGeneration: UInt64
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.spaceId == rhs.spaceId
+            && lhs.profileId == rhs.profileId
+            && lhs.recoveryGeneration == rhs.recoveryGeneration
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(spaceId)
+        hasher.combine(profileId)
+        hasher.combine(recoveryGeneration)
+    }
 }
 
 struct SpacesSideBarView: View {
@@ -202,7 +210,7 @@ struct SpacesSideBarView: View {
         let visualSpaceId = visualSelectedSpaceId(in: spaces)
 
         return VStack(spacing: 8) {
-            SidebarHeader(isSidebarHovered: isSidebarHovered)
+            SidebarHeader()
                 .environmentObject(browserManager)
                 .environment(windowState)
 
@@ -962,8 +970,7 @@ struct SpacesSideBarView: View {
             onActivateTab: {
                 browserManager.requestUserTabActivation(
                     $0,
-                    in: windowState,
-                    reason: .regularTab
+                    in: windowState
                 )
             },
             onCloseTab: { browserManager.closeTab($0, in: windowState) },
@@ -1094,53 +1101,6 @@ struct SpacesSideBarView: View {
                         browserManager.setActiveSpace(resolvedSpace, in: windowState)
                     }
                     browserManager.closeDialog()
-                },
-                onCancel: {
-                    browserManager.closeDialog()
-                }
-            ),
-            source: source
-        )
-    }
-
-    private func showSpaceEditDialog(mode: SpaceEditDialog.Mode) {
-        guard let targetSpace = resolveCurrentSpace() else { return }
-        let source = windowState.resolveSidebarPresentationSource()
-
-        browserManager.showDialog(
-            SpaceEditDialog(
-                space: targetSpace,
-                mode: mode,
-                onSave: { newName, newIcon, newProfileId in
-                    let spaceId = targetSpace.id
-
-                    browserManager.closeDialog()
-                    DispatchQueue.main.async {
-                        do {
-                            if newIcon != targetSpace.icon {
-                                try browserManager.tabManager.updateSpaceIcon(
-                                    spaceId: spaceId,
-                                    icon: newIcon
-                                )
-                            }
-
-                            if newName != targetSpace.name {
-                                try browserManager.tabManager.renameSpace(
-                                    spaceId: spaceId,
-                                    newName: newName
-                                )
-                            }
-
-                            if newProfileId != targetSpace.profileId, let profileId = newProfileId {
-                                browserManager.tabManager.assign(spaceId: spaceId, toProfile: profileId)
-                            }
-                        } catch {
-                            RuntimeDiagnostics.debug(
-                                "Failed to update space \(spaceId.uuidString): \(error)",
-                                category: "SpacesSidebar"
-                            )
-                        }
-                    }
                 },
                 onCancel: {
                     browserManager.closeDialog()

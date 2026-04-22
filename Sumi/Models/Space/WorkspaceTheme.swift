@@ -186,23 +186,6 @@ struct WorkspaceGradientTheme: Codable, Hashable, Sendable {
         )
     }
 
-    mutating func replace(with theme: WorkspaceGradientTheme) {
-        self = theme
-    }
-
-    mutating func updateColor(_ id: UUID, to color: Color) {
-        #if canImport(AppKit)
-        let hex = NSColor(color).toHexString() ?? "#FFFFFF"
-        #else
-        let hex = "#FFFFFF"
-        #endif
-        if let index = colors.firstIndex(where: { $0.id == id }) {
-            colors[index].hex = hex.normalizedThemeHex()
-            colors[index].lightness = WorkspaceThemeColor.defaultLightness(for: hex)
-            colors = WorkspaceGradientTheme.normalized(colors)
-        }
-    }
-
     mutating func updateTexture(_ value: Double) {
         texture = WorkspaceGradientTheme.quantizeTexture(value)
     }
@@ -226,16 +209,6 @@ struct WorkspaceGradientTheme: Codable, Hashable, Sendable {
                 return copy
             }
         )
-    }
-
-    mutating func setAlgorithm(_ algorithm: WorkspaceThemeColorAlgorithm) {
-        replaceColors(colors, algorithm: algorithm)
-    }
-
-    mutating func removeColor(_ id: UUID?) {
-        guard let id, !colors.isEmpty else { return }
-        colors.removeAll { $0.id == id }
-        colors = WorkspaceGradientTheme.normalized(colors)
     }
 
     private static func normalized(_ colors: [WorkspaceThemeColor]) -> [WorkspaceThemeColor] {
@@ -308,18 +281,6 @@ struct WorkspaceGradientTheme: Codable, Hashable, Sendable {
         let clamped = min(max(value, 0), 1)
         let quantized = (clamped * textureSteps).rounded() / textureSteps
         return quantized >= 1 ? 0 : quantized
-    }
-}
-
-struct WorkspaceThemeDraftSession: Identifiable, Equatable, Sendable {
-    let id: UUID
-    let spaceId: UUID
-    var theme: WorkspaceTheme
-
-    init(id: UUID = UUID(), spaceId: UUID, theme: WorkspaceTheme) {
-        self.id = id
-        self.spaceId = spaceId
-        self.theme = theme
     }
 }
 

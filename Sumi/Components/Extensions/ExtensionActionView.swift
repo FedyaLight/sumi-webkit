@@ -36,10 +36,7 @@ enum ExtensionActionVisibility {
 final class ExtensionIconCache {
     static let shared = ExtensionIconCache()
 
-    struct Key: Hashable {
-        let extensionId: String
-        let iconPath: String
-    }
+    typealias Key = String
 
     private struct Entry {
         let modificationDate: Date?
@@ -54,14 +51,8 @@ final class ExtensionIconCache {
     private var entries: [Key: Entry] = [:]
     private var entryOrder: [Key] = []
 
-    #if DEBUG
-        var debugEntryCount: Int {
-            entries.count
-        }
-    #endif
-
     func image(extensionId: String, iconPath: String) -> NSImage? {
-        let key = Key(extensionId: extensionId, iconPath: iconPath)
+        let key = Self.cacheKey(extensionId: extensionId, iconPath: iconPath)
         let modificationDate = Self.modificationDate(for: iconPath)
 
         if let entry = entries[key],
@@ -86,11 +77,6 @@ final class ExtensionIconCache {
         return image
     }
 
-    func removeAll() {
-        entries.removeAll()
-        entryOrder.removeAll()
-    }
-
     private func touch(_ key: Key) {
         entryOrder.removeAll { $0 == key }
         entryOrder.append(key)
@@ -101,6 +87,10 @@ final class ExtensionIconCache {
             entryOrder.removeFirst()
             entries.removeValue(forKey: key)
         }
+    }
+
+    private static func cacheKey(extensionId: String, iconPath: String) -> Key {
+        "\(extensionId)\u{0}\(iconPath)"
     }
 
     private static func modificationDate(for path: String) -> Date? {

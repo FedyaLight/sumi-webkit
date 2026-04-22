@@ -24,11 +24,6 @@ enum SumiExtensionMessageOriginPolicy {
 
 @available(macOS 15.5, *)
 struct SumiExtensionBridgeMessage {
-    let featureName: String
-    let method: String
-    let id: String?
-    let params: [String: Any]?
-    let world: WKContentWorld
     let rawMessage: WKScriptMessage
 }
 
@@ -41,7 +36,6 @@ protocol SumiExtensionSubfeature: AnyObject {
     var messageOriginPolicy: SumiExtensionMessageOriginPolicy { get }
 
     typealias Handler = (
-        _ params: [String: Any]?,
         _ message: SumiExtensionBridgeMessage,
         _ replyHandler: @escaping (Any?, String?) -> Void
     ) -> Void
@@ -75,10 +69,6 @@ final class SumiExtensionMessageBroker: NSObject, WKScriptMessageHandlerWithRepl
 
     func registerSubfeature(_ subfeature: SumiExtensionSubfeature) {
         subfeatures[subfeature.featureName] = subfeature
-    }
-
-    func unregisterSubfeature(named featureName: String) {
-        subfeatures.removeValue(forKey: featureName)
     }
 
     // MARK: - Install into WKUserContentController
@@ -139,9 +129,9 @@ final class SumiExtensionMessageBroker: NSObject, WKScriptMessageHandlerWithRepl
         let action = resolveAction(for: message)
         switch action {
         case .respond(let handler, let bridgeMessage):
-            handler(bridgeMessage.params, bridgeMessage, replyHandler)
+            handler(bridgeMessage, replyHandler)
         case .notify(let handler, let bridgeMessage):
-            handler(bridgeMessage.params, bridgeMessage) { _, _ in }
+            handler(bridgeMessage) { _, _ in }
             replyHandler(nil, nil)
         case .error(let errorMessage):
             replyHandler(nil, errorMessage)
@@ -165,7 +155,6 @@ final class SumiExtensionMessageBroker: NSObject, WKScriptMessageHandlerWithRepl
 
         let method = body["method"] as? String ?? featureName
         let id = body["id"] as? String
-        let params = body["params"] as? [String: Any] ?? [:]
 
         guard let subfeature = subfeatures[featureName] else {
             return .error("No handler for feature: \(featureName)")
@@ -179,14 +168,7 @@ final class SumiExtensionMessageBroker: NSObject, WKScriptMessageHandlerWithRepl
             return .error("No handler for method: \(featureName).\(method)")
         }
 
-        let bridgeMessage = SumiExtensionBridgeMessage(
-            featureName: featureName,
-            method: method,
-            id: id,
-            params: params,
-            world: message.world,
-            rawMessage: message
-        )
+        let bridgeMessage = SumiExtensionBridgeMessage(rawMessage: message)
 
         if id != nil {
             return .respond(handler: handler, message: bridgeMessage)

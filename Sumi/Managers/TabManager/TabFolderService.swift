@@ -72,7 +72,7 @@ final class TabFolderService {
                     movedTabsCount += 1
                     return pin.moved(toFolderId: nil)
                 }
-                let reindexedPins = tabManager.normalizedSpacePinnedShortcuts(detachedPins, for: spaceId)
+                let reindexedPins = tabManager.normalizedSpacePinnedShortcuts(detachedPins)
                 tabManager.setSpacePinnedShortcuts(reindexedPins, for: spaceId)
                 for pinId in movedPins {
                     if let updatedPin = reindexedPins.first(where: { $0.id == pinId }) {
@@ -99,17 +99,6 @@ final class TabFolderService {
             if lhs.index != rhs.index { return lhs.index < rhs.index }
             return lhs.id.uuidString < rhs.id.uuidString
         }
-    }
-
-    func toggleFolder(_ folderId: UUID) {
-        guard let folder = tabManager.folder(by: folderId) else { return }
-        folder.isOpen.toggle()
-        tabManager.markFoldersStructurallyDirty(for: folder.spaceId)
-        tabManager.scheduleStructuralPersistence()
-    }
-
-    func revealFolderForDrag(_ folderId: UUID) {
-        tabManager.openFolderIfNeeded(folderId)
     }
 
     func setAllFolders(open isOpen: Bool, in spaceId: UUID) {

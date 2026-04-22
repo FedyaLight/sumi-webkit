@@ -53,7 +53,6 @@ final class UserScriptStore {
     internal let context: ModelContext?
     private let fileManager = FileManager.default
     private var dispatchSource: DispatchSourceFileSystemObject?
-    private var directoryFD: Int32 = -1
 
     /// Callback invoked when scripts change on disk (for hot-reload).
     var onScriptsChanged: (() -> Void)?
@@ -263,7 +262,7 @@ final class UserScriptStore {
     /// writing the compiled source into the scripts directory.
     @discardableResult
     func installScript(from url: URL) async throws -> UserScript {
-        let (data, response) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await URLSession.shared.data(from: url)
         guard let content = String(data: data, encoding: .utf8),
               let parsedMetadata = UserScriptMetadataParser.parse(content)
         else {
@@ -295,7 +294,6 @@ final class UserScriptStore {
             installURL: url
         )
 
-        let modDate = (try? localSourceURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
         let script = UserScript(
             id: scriptId,
             filename: filename,
@@ -304,11 +302,10 @@ final class UserScriptStore {
             isEnabled: true,
             compatPreludeFragments: compatPreludes,
             requiredCode: requiredCode,
-            resourceData: resourceData,
-            lastModified: modDate
+            resourceData: resourceData
         )
 
-        persist(script: script, sourceURL: localSourceURL, response: response)
+        persist(script: script, sourceURL: localSourceURL)
         reload()
         onScriptsChanged?()
         return scripts.first(where: { $0.id == scriptId }) ?? script
@@ -347,15 +344,6 @@ final class UserScriptStore {
         onScriptsChanged?()
     }
 
-    /// Global active state.
-    var isGloballyActive: Bool {
-        get { manifest.settings["active"] != "false" }
-        set {
-            manifest.settings["active"] = newValue ? "true" : "false"
-            saveManifest()
-        }
-    }
-
     // MARK: - File Loading
 
     private func loadAllScripts() -> [UserScript] {
@@ -385,11 +373,10 @@ final class UserScriptStore {
                 continue
             }
 
-            let modDate = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
             let isEnabled = !manifest.disabled.contains(filename)
 
             let compatPreludes = UserScriptCompatAssembly.preludeFragments(for: parsedMeta)
-            let requiredCode = loadRequiredResources(for: filename, requires: parsedMeta.requires, fileType: parsedMeta.fileType)
+            let requiredCode = loadRequiredResources(for: filename, requires: parsedMeta.requires)
 
             // Load @resource resources
             let resourceData = loadResourceData(for: filename, resources: parsedMeta.resources)
@@ -407,8 +394,7 @@ final class UserScriptStore {
                 isEnabled: isEnabled,
                 compatPreludeFragments: compatPreludes,
                 requiredCode: requiredCode,
-                resourceData: resourceData,
-                lastModified: modDate
+                resourceData: resourceData
             )
             persist(script: script, sourceURL: url)
             result.append(script)
@@ -419,7 +405,7 @@ final class UserScriptStore {
 
     // MARK: - @require Resources
 
-    private func loadRequiredResources(for filename: String, requires: [String], fileType: UserScriptFileType) -> [String] {
+    private func loadRequiredResources(for filename: String, requires: [String]) -> [String] {
         guard !requires.isEmpty else { return [] }
 
         let scriptRequireDir = requireDirectory.appendingPathComponent(filename).appendingPathComponent("requires")
@@ -595,7 +581,6 @@ final class UserScriptStore {
     private func startWatching() {
         let fd = open(scriptsDirectory.path, O_EVTONLY)
         guard fd >= 0 else { return }
-        directoryFD = fd
 
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd,
@@ -621,7 +606,6 @@ final class UserScriptStore {
     private func stopWatching() {
         dispatchSource?.cancel()
         dispatchSource = nil
-        directoryFD = -1
     }
 
     // MARK: - Helpers

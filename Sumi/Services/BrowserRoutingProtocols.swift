@@ -33,15 +33,7 @@ protocol ExternalURLHandling: AnyObject {
 @MainActor
 protocol BrowserPersistenceHandling: AnyObject {
     var modelContext: ModelContext { get }
-    var tabRepository: TabRepositoryService { get }
     func cleanupAllTabs()
-}
-
-@MainActor
-protocol BrowserUpdateHandling: AnyObject {
-    func handleUpdaterFoundValidUpdate(_ item: SUAppcastItem)
-    func handleUpdaterFinishedDownloading(_ item: SUAppcastItem)
-    func handleUpdaterDidNotFindUpdate()
-    func handleUpdaterAbortedUpdate()
-    func handleUpdaterWillInstallOnQuit(_ item: SUAppcastItem)
+    func flushRuntimeStatePersistenceAwaitingResult() async -> Int
+    func persistFullReconcileAwaitingResult(reason: String) async -> Bool
 }

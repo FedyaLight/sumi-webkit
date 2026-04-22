@@ -53,13 +53,6 @@ enum TabFaviconStore {
         return (faviconCache.count, Array(faviconCache.keys).sorted())
     }
 
-    #if DEBUG
-    static func debugDiskData(for key: String) -> Data? {
-        let fileURL = diskFileURL(for: key)
-        return try? Data(contentsOf: fileURL)
-    }
-    #endif
-
     @discardableResult
     private static func storeMemoryImage(_ image: NSImage, for key: String) -> [String] {
         faviconCacheLock.lock()
@@ -290,9 +283,6 @@ enum FaviconImageDecoder {
         return (width, height)
     }
 
-    static func isHighQualityEnough(_ bitmap: DecodedFaviconBitmap) -> Bool {
-        max(bitmap.pixelWidth, bitmap.pixelHeight) >= preferredMinimumPixelSize
-    }
 }
 
 struct DecodedFaviconBitmap {

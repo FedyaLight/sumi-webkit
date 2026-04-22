@@ -43,7 +43,6 @@ final class WorkspaceAppearanceService {
         let syncWorkspaceThemeAcrossWindows: @MainActor (Space, Bool) -> Void
         let scheduleStructuralPersistence: @MainActor () -> Void
         let presentPicker: @MainActor (WorkspaceThemePickerSession) -> Void
-        let dismissPicker: @MainActor () -> Void
         let showDialog: @MainActor (AnyView, SidebarTransientPresentationSource?) -> Void
         let closeDialog: @MainActor () -> Void
     }
@@ -130,26 +129,6 @@ final class WorkspaceAppearanceService {
             )
         )
         previewWindow.window?.makeKeyAndOrderFront(nil)
-    }
-
-    func applyGradientPresetToCurrentSpace(
-        _ gradient: SpaceGradient,
-        using context: Context
-    ) {
-        guard let space = context.currentSpace() else { return }
-        space.workspaceTheme.gradient = gradient
-        context.syncWorkspaceThemeAcrossWindows(space, false)
-        context.scheduleStructuralPersistence()
-    }
-
-    func applyWorkspaceThemePresetToCurrentSpace(
-        _ workspaceTheme: WorkspaceTheme,
-        using context: Context
-    ) {
-        guard let space = context.currentSpace() else { return }
-        space.workspaceTheme = workspaceTheme
-        context.syncWorkspaceThemeAcrossWindows(space, false)
-        context.scheduleStructuralPersistence()
     }
 
     func previewGradientEditorSession(

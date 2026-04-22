@@ -23,9 +23,6 @@ final class UserScript: Identifiable {
     var resourceData: [String: String] // Contents of @resource resources, mapped by name
     var menuCommands: [String: String] = [:] // caption: uuid/id for callback
 
-    /// Date the source file was last modified on disk.
-    var lastModified: Date
-
     init(
         id: UUID = UUID(),
         filename: String,
@@ -34,8 +31,7 @@ final class UserScript: Identifiable {
         isEnabled: Bool = true,
         compatPreludeFragments: [String] = [],
         requiredCode: [String] = [],
-        resourceData: [String: String] = [:],
-        lastModified: Date = Date()
+        resourceData: [String: String] = [:]
     ) {
         self.id = id
         self.filename = filename
@@ -45,7 +41,6 @@ final class UserScript: Identifiable {
         self.compatPreludeFragments = compatPreludeFragments
         self.requiredCode = requiredCode
         self.resourceData = resourceData
-        self.lastModified = lastModified
     }
 
     // MARK: - Computed Properties
@@ -81,12 +76,6 @@ final class UserScript: Identifiable {
             return false
         }
         return true
-    }
-
-    /// Whether this script uses GM_xmlhttpRequest / GM.xmlHttpRequest.
-    var usesXMLHttpRequest: Bool {
-        let grants = metadata.grants
-        return grants.contains("GM_xmlhttpRequest") || grants.contains("GM.xmlHttpRequest")
     }
 
     /// The full assembled code including @require prepends, GM API shim, and user code.

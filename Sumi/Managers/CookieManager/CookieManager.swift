@@ -131,23 +131,6 @@ class CookieManager: ObservableObject {
         await loadCookies()
     }
     
-    func deleteNonCompliantCookies() async {
-        let dataStore = activeDataStore()
-        let httpCookies = await dataStore.httpCookieStore.allCookiesAsync()
-        let cookieInfos = httpCookies.map { CookieInfo(from: $0) }
-        let nonCompliantCookies = cookieInfos.filter { !$0.complianceIssues.isEmpty }
-        
-        for cookieInfo in nonCompliantCookies {
-            if let httpCookie = httpCookies.first(where: { 
-                $0.name == cookieInfo.name && $0.domain == cookieInfo.domain && $0.path == cookieInfo.path 
-            }) {
-                await dataStore.httpCookieStore.deleteCookieAsync(httpCookie)
-            }
-        }
-        
-        await loadCookies()
-    }
-    
     func deleteThirdPartyCookies() async {
         let dataStore = activeDataStore()
         let httpCookies = await dataStore.httpCookieStore.allCookiesAsync()
@@ -259,20 +242,6 @@ class CookieManager: ObservableObject {
 // MARK: - Cookie Management Extensions
 
 extension CookieManager {
-    func exportCookies() -> String {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = .prettyPrinted
-        
-        do {
-            let data = try encoder.encode(cookies)
-            return String(data: data, encoding: .utf8) ?? ""
-        } catch {
-            RuntimeDiagnostics.emit("Error exporting cookies: \(error)")
-            return ""
-        }
-    }
-    
     func getCookieDetails(_ cookie: CookieInfo) -> [String: String] {
         var details: [String: String] = [:]
         

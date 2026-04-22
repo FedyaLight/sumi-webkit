@@ -20,19 +20,4 @@ final class FindManagerTests: XCTestCase {
         XCTAssertNil(manager.currentModel)
     }
 
-    func testClearSearchWritesIntoCurrentTabSessionModel() {
-        let browserManager = BrowserManager()
-        let manager = FindManager()
-        let tab = browserManager.tabManager.createNewTab(
-            url: "https://example.com/find",
-            in: browserManager.tabManager.currentSpace,
-            activate: false
-        )
-
-        manager.updateCurrentTab(tab)
-        tab.findInPage.model.find("duck")
-        manager.clearSearch()
-
-        XCTAssertEqual(tab.findInPage.model.text, "")
-    }
 }

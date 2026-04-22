@@ -14,8 +14,7 @@ extension UserScriptStore {
 
     func persist(
         script: UserScript,
-        sourceURL: URL,
-        response: URLResponse? = nil
+        sourceURL: URL
     ) {
         guard let context else { return }
         let metadataJSON = Self.metadataSnapshotJSON(script.metadata)

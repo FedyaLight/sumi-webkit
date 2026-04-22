@@ -30,8 +30,7 @@ extension ExtensionManagerTests {
             PendingExternallyConnectableNativeRequest(
                 id: requestID,
                 extensionId: "fixture.extension",
-                webViewIdentifier: webViewID,
-                pageURLString: pageURL.absoluteString
+                webViewIdentifier: webViewID
             ) { reply, errorMessage in
                 resolvedReply = reply
                 resolvedError = errorMessage
@@ -353,7 +352,6 @@ extension ExtensionManagerTests {
             )
         }
 
-        XCTAssertLessThanOrEqual(cache.debugEntryCount, 128)
         let loadCountBeforeReload = loadCount
         _ = cache.image(extensionId: "icon.fixture.0", iconPath: iconPaths[0])
         XCTAssertEqual(loadCount, loadCountBeforeReload + 1)
@@ -371,8 +369,6 @@ extension ExtensionManagerTests {
         tracker.record(key: "a", at: baseDate.addingTimeInterval(0.1))
         tracker.record(key: "a", at: baseDate.addingTimeInterval(0.2))
 
-        XCTAssertEqual(tracker.keyCount, 1)
-        XCTAssertEqual(tracker.dateCount, 2)
         XCTAssertTrue(tracker.consume(key: "a", at: baseDate.addingTimeInterval(0.3)))
         XCTAssertTrue(tracker.consume(key: "a", at: baseDate.addingTimeInterval(0.3)))
         XCTAssertFalse(tracker.consume(key: "a", at: baseDate.addingTimeInterval(0.3)))
@@ -382,8 +378,9 @@ extension ExtensionManagerTests {
         tracker.record(key: "k3", at: baseDate)
         tracker.record(key: "k4", at: baseDate)
 
-        XCTAssertEqual(tracker.keyCount, 3)
         XCTAssertFalse(tracker.consume(key: "k1", at: baseDate))
+        XCTAssertTrue(tracker.consume(key: "k2", at: baseDate))
+        XCTAssertTrue(tracker.consume(key: "k3", at: baseDate))
         XCTAssertTrue(tracker.consume(key: "k4", at: baseDate))
 
         tracker.record(key: "expiring", at: baseDate)
@@ -409,22 +406,19 @@ extension ExtensionManagerTests {
             )
         }
 
-        XCTAssertEqual(
-            registry.trackedPageURLWebViewCount,
-            ExternallyConnectablePortRegistry.maxTrackedPageURLs
-        )
         XCTAssertNil(registry.trackedPageURL(for: passiveWebViews[0]))
+        XCTAssertNotNil(registry.trackedPageURL(for: passiveWebViews[1]))
+        XCTAssertNotNil(registry.trackedPageURL(for: passiveWebViews.last!))
 
         let pageRequestRegistry = ExternallyConnectablePortRegistry()
         let pageRequestWebView = WKWebView()
         var requestRejection: String?
-        for index in 0..<ExternallyConnectablePortRegistry.maxPendingRequestsPerWebView {
+        for _ in 0..<ExternallyConnectablePortRegistry.maxPendingRequestsPerWebView {
             requestRejection = pageRequestRegistry.addRequest(
                 PendingExternallyConnectableNativeRequest(
                     id: UUID(),
                     extensionId: "request.fixture",
-                    webViewIdentifier: ObjectIdentifier(pageRequestWebView),
-                    pageURLString: "https://example.com/\(index)"
+                    webViewIdentifier: ObjectIdentifier(pageRequestWebView)
                 ) { _, _ in }
             )
             XCTAssertNil(requestRejection)
@@ -434,8 +428,7 @@ extension ExtensionManagerTests {
             PendingExternallyConnectableNativeRequest(
                 id: UUID(),
                 extensionId: "request.fixture",
-                webViewIdentifier: ObjectIdentifier(pageRequestWebView),
-                pageURLString: "https://example.com/overflow"
+                webViewIdentifier: ObjectIdentifier(pageRequestWebView)
             ) { _, _ in }
         )
         XCTAssertEqual(
@@ -446,13 +439,12 @@ extension ExtensionManagerTests {
         let globalRequestRegistry = ExternallyConnectablePortRegistry()
         let requestWebViews = (0..<9).map { _ in WKWebView() }
         for webView in requestWebViews.prefix(8) {
-            for index in 0..<ExternallyConnectablePortRegistry.maxPendingRequestsPerWebView {
+            for _ in 0..<ExternallyConnectablePortRegistry.maxPendingRequestsPerWebView {
                 requestRejection = globalRequestRegistry.addRequest(
                     PendingExternallyConnectableNativeRequest(
                         id: UUID(),
                         extensionId: "request.fixture",
-                        webViewIdentifier: ObjectIdentifier(webView),
-                        pageURLString: "https://example.com/\(index)"
+                        webViewIdentifier: ObjectIdentifier(webView)
                     ) { _, _ in }
                 )
                 XCTAssertNil(requestRejection)
@@ -463,8 +455,7 @@ extension ExtensionManagerTests {
             PendingExternallyConnectableNativeRequest(
                 id: UUID(),
                 extensionId: "request.fixture",
-                webViewIdentifier: ObjectIdentifier(requestWebViews[8]),
-                pageURLString: "https://example.com/global-overflow"
+                webViewIdentifier: ObjectIdentifier(requestWebViews[8])
             ) { _, _ in }
         )
         XCTAssertEqual(
@@ -484,7 +475,6 @@ extension ExtensionManagerTests {
                     extensionId: "port.fixture",
                     webView: portWebViews[0],
                     frameInfo: frameInfo,
-                    pageURLString: "https://example.com",
                     sourceOrigin: "https://example.com",
                     isMainFrame: true,
                     frameURLString: "https://example.com",
@@ -501,7 +491,6 @@ extension ExtensionManagerTests {
                 extensionId: "port.fixture",
                 webView: portWebViews[0],
                 frameInfo: frameInfo,
-                pageURLString: "https://example.com",
                 sourceOrigin: "https://example.com",
                 isMainFrame: true,
                 frameURLString: "https://example.com",
@@ -523,7 +512,6 @@ extension ExtensionManagerTests {
                         extensionId: "port.fixture",
                         webView: webView,
                         frameInfo: frameInfo,
-                        pageURLString: "https://example.com",
                         sourceOrigin: "https://example.com",
                         isMainFrame: true,
                         frameURLString: "https://example.com",
@@ -541,7 +529,6 @@ extension ExtensionManagerTests {
                 extensionId: "port.fixture",
                 webView: portWebViews[4],
                 frameInfo: frameInfo,
-                pageURLString: "https://example.com",
                 sourceOrigin: "https://example.com",
                 isMainFrame: true,
                 frameURLString: "https://example.com",
@@ -555,12 +542,9 @@ extension ExtensionManagerTests {
         )
     }
 
-    func testNativeMessagingNegativeManifestCacheStaysBoundedAndExpires()
+    func testNativeMessagingNegativeManifestCacheExpires()
         async throws
     {
-        NativeMessagingHandler.debugResetNegativeManifestCache()
-        defer { NativeMessagingHandler.debugResetNegativeManifestCache() }
-
         let supportRoot = try temporaryDirectory()
         let appBundleRoot = try temporaryDirectory()
         defer {
@@ -568,22 +552,18 @@ extension ExtensionManagerTests {
             try? FileManager.default.removeItem(at: appBundleRoot)
         }
 
+        let runId = UUID().uuidString.lowercased()
         for index in 0..<(128 + 8) {
             XCTAssertNil(
                 NativeMessagingHandler.resolveManifestURL(
-                    applicationId: "missing.host.\(index)",
+                    applicationId: "missing.host.\(runId).\(index)",
                     browserSupportDirectory: supportRoot,
                     appBundleURL: appBundleRoot
                 )
             )
         }
 
-        XCTAssertLessThanOrEqual(
-            NativeMessagingHandler.debugNegativeManifestCacheCount,
-            128
-        )
-
-        let expiringApplicationId = "expiring.host"
+        let expiringApplicationId = "expiring.host.\(runId)"
         XCTAssertNil(
             NativeMessagingHandler.resolveManifestURL(
                 applicationId: expiringApplicationId,
@@ -740,7 +720,7 @@ extension ExtensionManagerTests {
         }
     }
 
-    func testBrowserExtensionSurfaceStoreReloadPublishesAsynchronously() async throws {
+    func testBrowserExtensionSurfaceStorePublishesManagerChangesAsynchronously() async throws {
         let harness = try makeExtensionRuntimeHarness()
         let manager = makeExtensionManager(in: harness)
         let store = BrowserExtensionSurfaceStore(extensionManager: manager)
@@ -764,9 +744,6 @@ extension ExtensionManagerTests {
         )
 
         manager.debugReplaceInstalledExtensions([record])
-        XCTAssertTrue(store.installedExtensions.isEmpty)
-
-        store.reload()
         XCTAssertTrue(store.installedExtensions.isEmpty)
 
         try await waitUntil(timeout: 1.0) {

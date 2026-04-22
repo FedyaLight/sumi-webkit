@@ -5,26 +5,15 @@
 //  Drag container types and operation structs used by TabManager.handleDragOperation().
 //
 
-import SwiftUI
+import Foundation
 
-@MainActor
-class TabDragManager: ObservableObject {
-    static let shared = TabDragManager()
-
+enum TabDragManager {
     enum DragContainer: Equatable {
         case none
         case essentials
         case spacePinned(UUID) // space ID
         case spaceRegular(UUID) // space ID
         case folder(UUID) // folder ID
-        
-        var spaceId: UUID? {
-            switch self {
-            case .spacePinned(let id): return id
-            case .spaceRegular(let id): return id
-            default: return nil
-            }
-        }
     }
 }
 
@@ -43,7 +32,6 @@ struct DragOperation {
 
     let payload: Payload
     let fromContainer: TabDragManager.DragContainer
-    let fromIndex: Int
     let toContainer: TabDragManager.DragContainer
     let toIndex: Int
     let toSpaceId: UUID?
@@ -52,7 +40,6 @@ struct DragOperation {
     init(
         payload: Payload,
         fromContainer: TabDragManager.DragContainer,
-        fromIndex: Int,
         toContainer: TabDragManager.DragContainer,
         toIndex: Int,
         toSpaceId: UUID?,
@@ -60,7 +47,6 @@ struct DragOperation {
     ) {
         self.payload = payload
         self.fromContainer = fromContainer
-        self.fromIndex = fromIndex
         self.toContainer = toContainer
         self.toIndex = toIndex
         self.toSpaceId = toSpaceId
@@ -82,11 +68,4 @@ struct DragOperation {
         return pin
     }
 
-    var isMovingBetweenContainers: Bool {
-        return fromContainer != toContainer
-    }
-
-    var isReordering: Bool {
-        return fromContainer == toContainer && fromIndex != toIndex
-    }
 }

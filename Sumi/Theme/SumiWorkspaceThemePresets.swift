@@ -2,7 +2,6 @@ import SwiftUI
 
 struct SumiWorkspaceThemePreset: Identifiable, Hashable {
     let id: String
-    let displayName: String
     let workspaceTheme: WorkspaceTheme
 
     static func single(
@@ -17,7 +16,6 @@ struct SumiWorkspaceThemePreset: Identifiable, Hashable {
     ) -> SumiWorkspaceThemePreset {
         SumiWorkspaceThemePreset(
             id: "\(group)-\(index)",
-            displayName: "\(group) \(index)",
             workspaceTheme: WorkspaceTheme(
                 gradientTheme: WorkspaceGradientTheme(
                     colors: [
@@ -49,7 +47,6 @@ struct SumiWorkspaceThemePreset: Identifiable, Hashable {
         let resolvedPositions = analogousPositions(from: position)
         return SumiWorkspaceThemePreset(
             id: "\(group)-\(index)",
-            displayName: "\(group) \(index)",
             workspaceTheme: WorkspaceTheme(
                 gradientTheme: WorkspaceGradientTheme(
                     colors: zip(colors, resolvedPositions).enumerated().map { entry in

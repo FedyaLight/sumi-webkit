@@ -87,7 +87,6 @@ struct ProfileCreationDialog: DialogPresentable {
                     iconName: "plus",
                     variant: .primary,
                     keyboardShortcut: .return,
-                    shadowStyle: .prominent,
                     isEnabled: canCreate,
                     action: {
                         handleCreate()

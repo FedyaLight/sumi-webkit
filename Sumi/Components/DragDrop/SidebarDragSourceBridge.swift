@@ -43,7 +43,6 @@ struct SidebarDragSourceConfiguration {
     let previewIcon: Image?
     let chromeTemplateSystemImageName: String?
     let pinnedConfig: PinnedTabsConfiguration
-    let itemCount: Int
     let previewPresentationState: ShortcutPresentationState?
     let folderGlyphPresentation: SumiFolderGlyphPresentationState?
     let folderGlyphPalette: SumiFolderGlyphPalette?
@@ -58,7 +57,6 @@ struct SidebarDragSourceConfiguration {
         previewIcon: Image? = nil,
         chromeTemplateSystemImageName: String? = nil,
         pinnedConfig: PinnedTabsConfiguration = .large,
-        itemCount: Int = 1,
         previewPresentationState: ShortcutPresentationState? = nil,
         folderGlyphPresentation: SumiFolderGlyphPresentationState? = nil,
         folderGlyphPalette: SumiFolderGlyphPalette? = nil,
@@ -72,7 +70,6 @@ struct SidebarDragSourceConfiguration {
         self.previewIcon = previewIcon
         self.chromeTemplateSystemImageName = chromeTemplateSystemImageName
         self.pinnedConfig = pinnedConfig
-        self.itemCount = itemCount
         self.previewPresentationState = previewPresentationState
         self.folderGlyphPresentation = folderGlyphPresentation
         self.folderGlyphPalette = folderGlyphPalette
@@ -115,18 +112,7 @@ struct SidebarDragSourceBridge: NSViewRepresentable {
     }
 }
 
-extension View {
-    func sidebarDragSource(
-        _ configuration: SidebarDragSourceConfiguration
-    ) -> some View {
-        overlay {
-            SidebarDragSourceBridge(configuration: configuration)
-        }
-    }
-}
-
 struct SidebarDragPreviewSession {
-    let descriptor: SumiNativeDragPreviewDescriptor
     let previewAssets: [SidebarDragPreviewKind: SidebarDragPreviewAsset]
     let previewModel: SidebarDragPreviewModel
     let primaryAsset: SidebarDragPreviewAsset
@@ -146,7 +132,6 @@ enum SidebarDragPreviewSessionFactory {
             sourceSize: sourceSize,
             sourceOffsetFromBottomLeading: point,
             pinnedConfig: configuration.pinnedConfig,
-            itemCount: configuration.itemCount,
             folderGlyphPresentation: configuration.folderGlyphPresentation,
             folderGlyphPalette: configuration.folderGlyphPalette
         )
@@ -168,14 +153,12 @@ enum SidebarDragPreviewSessionFactory {
                 in: sourceSize
             ),
             pinnedConfig: configuration.pinnedConfig,
-            itemCount: configuration.itemCount,
             shortcutPresentationState: configuration.previewPresentationState,
             folderGlyphPresentation: configuration.folderGlyphPresentation,
             folderGlyphPalette: configuration.folderGlyphPalette
         )
 
         return SidebarDragPreviewSession(
-            descriptor: descriptor,
             previewAssets: previewAssets,
             previewModel: model,
             primaryAsset: primaryAsset

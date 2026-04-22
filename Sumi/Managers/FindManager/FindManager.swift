@@ -21,10 +21,6 @@ final class FindManager: ObservableObject {
         }
     }
 
-    var currentTabID: UUID? {
-        currentTab?.id
-    }
-
     var currentModel: FindInPageModel? {
         currentTab?.findInPage.model
     }
@@ -63,11 +59,6 @@ final class FindManager: ObservableObject {
         }
     }
 
-    func search(for text: String, in tab: Tab?) {
-        currentTab = tab
-        currentTab?.findInPage.model.find(text)
-    }
-
     func updateCurrentTab(_ tab: Tab?) {
         currentTab = tab
     }
@@ -78,10 +69,6 @@ final class FindManager: ObservableObject {
 
     func findPrevious() {
         currentTab?.findInPage.findPrevious()
-    }
-
-    func clearSearch() {
-        currentTab?.findInPage.model.find("")
     }
 
     private func bindCurrentTabModel() {

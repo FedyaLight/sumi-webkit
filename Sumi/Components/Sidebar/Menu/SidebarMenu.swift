@@ -7,24 +7,10 @@
 
 import SwiftUI
 
-public enum SidebarPosition: String, CaseIterable, Identifiable {
+enum SidebarPosition: String, CaseIterable, Identifiable {
     case left
     case right
-    public var id: String { rawValue }
-    
-    var displayName: String {
-        switch self {
-        case .left: return "Left"
-        case .right: return "Right"
-        }
-    }
-    
-    var icon: String {
-        switch self {
-        case .left: return "sidebar.left"
-        case .right: return "sidebar.right"
-        }
-    }
+    var id: String { rawValue }
 }
 
 struct SidebarMenu: View {

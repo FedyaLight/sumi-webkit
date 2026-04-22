@@ -361,13 +361,6 @@ extension TabManager {
         }
     }
 
-    public nonisolated func flushStructuralPersistenceAwaitingResult() async -> Bool {
-        await MainActor.run { [weak self] in
-            self?.cancelScheduledStructuralPersistence()
-        }
-        return await persistIncrementalStructuralNow()
-    }
-
     /// Explicit full reconcile path for restore, repair, fallback, and termination only.
     public nonisolated func persistFullReconcileAwaitingResult(
         reason: String = "explicit full reconcile"
@@ -704,10 +697,6 @@ extension TabManager {
     func markFoldersStructurallyDirty(for spaceId: UUID) {
         markFoldersSnapshotDirty(for: spaceId)
         structuralDirtySet.markFoldersDirty((foldersBySpace[spaceId] ?? []).map(\.id))
-    }
-
-    func requestFullStructuralReconcile(reason: String) {
-        structuralDirtySet.requestFullReconcile(reason: reason)
     }
 
     func resetStructuralDirtySet() {

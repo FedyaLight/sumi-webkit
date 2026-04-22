@@ -2,20 +2,6 @@ import SwiftUI
 
 @MainActor
 extension BrowserManager {
-    func validateProfileIntegrity() {
-        profileMaintenanceService.validateProfileIntegrity(
-            using: makeProfileMaintenanceContext()
-        )
-    }
-
-    func recoverFromProfileError(_ error: Error, profile: Profile?) {
-        profileMaintenanceService.recoverFromProfileError(
-            error,
-            profile: profile,
-            using: makeProfileMaintenanceContext()
-        )
-    }
-
     func deleteProfile(_ profile: Profile) {
         profileMaintenanceService.deleteProfile(
             profile,
@@ -28,9 +14,6 @@ extension BrowserManager {
             currentProfile: { [weak self] in
                 self?.currentProfile
             },
-            setCurrentProfile: { [weak self] profile in
-                self?.currentProfile = profile
-            },
             profileManager: profileManager,
             tabManager: tabManager,
             showNotice: { [weak self] notice in
@@ -38,9 +21,6 @@ extension BrowserManager {
             },
             switchToProfile: { [weak self] profile in
                 await self?.switchToProfile(profile)
-            },
-            switchToRecoveryProfile: { [weak self] profile in
-                await self?.switchToProfile(profile, context: .recovery)
             }
         )
     }

@@ -16,7 +16,6 @@ struct SidebarResizeView: View {
     @State private var isHovering = false
     @State private var startingWidth: CGFloat = 0
     @State private var startingMouseX: CGFloat = 0
-    @State private var dragSessionID: String = UUID().uuidString
     @State private var hoverTask: Task<Void, Never>?
     private let minWidth: CGFloat = BrowserWindowState.sidebarMinimumWidth
     private let maxWidth: CGFloat = BrowserWindowState.sidebarMaximumWidth

@@ -9,15 +9,8 @@ import AppKit
 import SwiftUI
 
 struct SpaceEditDialog: DialogPresentable {
-    enum Mode {
-        case rename
-        case icon
-    }
-
-    private let mode: Mode
     private let originalSpaceName: String
     private let originalSpaceIcon: String
-    private let originalProfileId: UUID?
 
     @State private var spaceName: String
     @State private var spaceIcon: String
@@ -28,17 +21,14 @@ struct SpaceEditDialog: DialogPresentable {
 
     init(
         space: Space,
-        mode: Mode,
         onSave: @escaping (String, String, UUID?) -> Void,
         onCancel: @escaping () -> Void
     ) {
         let name = MainActor.assumeIsolated { space.name }
         let icon = MainActor.assumeIsolated { space.icon }
         let profileId = MainActor.assumeIsolated { space.profileId }
-        self.mode = mode
         self.originalSpaceName = name
         self.originalSpaceIcon = icon
-        self.originalProfileId = profileId
         _spaceName = State(initialValue: name)
         _spaceIcon = State(initialValue: icon)
         _selectedProfileId = State(initialValue: profileId)
@@ -60,8 +50,7 @@ struct SpaceEditDialog: DialogPresentable {
             spaceName: $spaceName,
             spaceIcon: $spaceIcon,
             selectedProfileId: $selectedProfileId,
-            originalIcon: originalSpaceIcon,
-            mode: mode
+            originalIcon: originalSpaceIcon
         )
     }
 
@@ -96,7 +85,6 @@ private struct SpaceEditContent: View {
     @Binding var selectedProfileId: UUID?
 
     let originalIcon: String
-    let mode: SpaceEditDialog.Mode
 
     @StateObject private var emojiManager = EmojiPickerManager()
     @EnvironmentObject var browserManager: BrowserManager

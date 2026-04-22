@@ -37,7 +37,6 @@ final class PendingExternallyConnectableNativeRequest {
     let id: UUID
     let extensionId: String
     let webViewIdentifier: ObjectIdentifier
-    let pageURLString: String?
 
     private var replyHandler: ((Any?, String?) -> Void)?
 
@@ -45,13 +44,11 @@ final class PendingExternallyConnectableNativeRequest {
         id: UUID,
         extensionId: String,
         webViewIdentifier: ObjectIdentifier,
-        pageURLString: String?,
         replyHandler: @escaping (Any?, String?) -> Void
     ) {
         self.id = id
         self.extensionId = extensionId
         self.webViewIdentifier = webViewIdentifier
-        self.pageURLString = pageURLString
         self.replyHandler = replyHandler
     }
 
@@ -78,7 +75,6 @@ final class ExternallyConnectableNativePortSession {
     let webViewIdentifier: ObjectIdentifier
     weak var webView: WKWebView?
     let frameInfo: WKFrameInfo
-    let pageURLString: String?
     let sourceOrigin: String?
     let isMainFrame: Bool
     let frameURLString: String?
@@ -90,7 +86,6 @@ final class ExternallyConnectableNativePortSession {
         extensionId: String,
         webView: WKWebView,
         frameInfo: WKFrameInfo,
-        pageURLString: String?,
         sourceOrigin: String?,
         isMainFrame: Bool,
         frameURLString: String?,
@@ -102,7 +97,6 @@ final class ExternallyConnectableNativePortSession {
         self.webViewIdentifier = ObjectIdentifier(webView)
         self.webView = webView
         self.frameInfo = frameInfo
-        self.pageURLString = pageURLString
         self.sourceOrigin = sourceOrigin
         self.isMainFrame = isMainFrame
         self.frameURLString = frameURLString

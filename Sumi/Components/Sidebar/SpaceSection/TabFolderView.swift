@@ -22,10 +22,8 @@ struct TabFolderView: View {
     let space: Space
     let renderMode: SpaceViewRenderMode
     let topLevelPinnedIndex: Int?
-    let topLevelPinnedFrameIndex: Int?
     let onDelete: () -> Void
     let onAddTab: () -> Void
-    let onActivateTab: (Tab) -> Void
 
     @State private var isHovering: Bool = false
     @State private var isRenaming: Bool = false
@@ -396,7 +394,6 @@ struct TabFolderView: View {
                 sourceZone: .spacePinned(space.id),
                 previewKind: .folderRow,
                 pinnedConfig: .large,
-                itemCount: 1,
                 folderGlyphPresentation: folderGlyphPresentation,
                 folderGlyphPalette: folderShellPalette,
                 onActivate: {
@@ -518,13 +515,9 @@ struct TabFolderView: View {
     }
 
     private var collapsedFolderContent: some View {
-        let items = folderItems
-
-        return VStack(spacing: 0) {
-            ForEach(Array(collapsedProjectedShortcutPins.enumerated()), id: \.element.id) { projectedIndex, pin in
-                if let index = items.firstIndex(of: .shortcut(pin.id)) {
-                        folderShortcutView(pin, sourceIndex: index, displayIndex: projectedIndex)
-                }
+        VStack(spacing: 0) {
+            ForEach(collapsedProjectedShortcutPins, id: \.id) { pin in
+                folderShortcutView(pin)
             }
         }
         .padding(.leading, Self.folderContentLeadingPadding)
@@ -536,13 +529,11 @@ struct TabFolderView: View {
         let items = folderItems
         
         return VStack(spacing: 0) {
-            ForEach(Array(items.enumerated()), id: \.offset) { displayIndex, item in
-                let sourceIndex = displayIndex
-                let item = items[sourceIndex]
+            ForEach(items, id: \.self) { item in
                 switch item {
                 case .shortcut(let pinId):
                     if let pin = shortcutPinsInFolder.first(where: { $0.id == pinId }) {
-                        folderShortcutView(pin, sourceIndex: sourceIndex, displayIndex: displayIndex)
+                        folderShortcutView(pin)
                     }
                 }
             }
@@ -555,7 +546,7 @@ struct TabFolderView: View {
         )
     }
 
-    private func folderShortcutView(_ pin: ShortcutPin, sourceIndex: Int, displayIndex: Int) -> some View {
+    private func folderShortcutView(_ pin: ShortcutPin) -> some View {
         return ShortcutSidebarRow(
             pin: pin,
             liveTab: browserManager.tabManager.shortcutLiveTab(for: pin.id, in: windowState.id),
@@ -715,15 +706,6 @@ struct TabFolderView: View {
         }
     }
 
-    private func rowTransition(index: Int, totalCount: Int) -> AnyTransition {
-        isInteractive
-            ? .asymmetric(
-                insertion: .opacity.animation(Self.zenFolderContentAnimation),
-                removal: .opacity.animation(Self.zenFolderContentAnimation)
-            )
-            : .identity
-    }
-
     private var tokens: ChromeThemeTokens {
         themeContext.tokens(settings: sumiSettings)
     }
@@ -814,8 +796,7 @@ struct TabFolderView: View {
         )
         browserManager.requestUserTabActivation(
             tab,
-            in: windowState,
-            reason: .folderLauncher
+            in: windowState
         )
     }
 

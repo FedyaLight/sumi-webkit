@@ -233,10 +233,8 @@ struct StandardDialog<Header: View, Content: View, Footer: View>: View {
     private let header: AnyView?
     private let content: Content
     private let footer: AnyView?
-    private let sectionSpacing: CGFloat
 
     init(
-        spacing: CGFloat = 32,
         @ViewBuilder header: () -> Header,
         @ViewBuilder content: () -> Content,
         @ViewBuilder footer: () -> Footer
@@ -246,7 +244,6 @@ struct StandardDialog<Header: View, Content: View, Footer: View>: View {
         self.content = content()
         let footerView = footer()
         self.footer = Footer.self == EmptyView.self ? nil : AnyView(footerView)
-        self.sectionSpacing = spacing
     }
 
     var body: some View {
@@ -402,7 +399,6 @@ struct DialogButton {
     let variant: DialogButtonStyleVariant
     let action: () -> Void
     let keyboardShortcut: KeyEquivalent?
-    let shadowStyle: SumiButtonStyle.ShadowStyle
     let isEnabled: Bool
 
     init(
@@ -410,7 +406,6 @@ struct DialogButton {
         iconName: String? = nil,
         variant: DialogButtonStyleVariant = .secondary,
         keyboardShortcut: KeyEquivalent? = nil,
-        shadowStyle: SumiButtonStyle.ShadowStyle = .subtle,
         isEnabled: Bool = true,
         action: @escaping () -> Void
     ) {
@@ -419,7 +414,6 @@ struct DialogButton {
         self.variant = variant
         self.action = action
         self.keyboardShortcut = keyboardShortcut
-        self.shadowStyle = shadowStyle
         self.isEnabled = isEnabled
     }
 }

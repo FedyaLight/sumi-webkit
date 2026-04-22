@@ -32,12 +32,6 @@ extension TabManager {
         }
     }
 
-    func unpinTab(_ tab: Tab) {
-        guard let shortcutId = tab.shortcutPinId,
-              let pin = shortcutPin(by: shortcutId) else { return }
-        removeShortcutPin(pin)
-    }
-
     func removeShortcutPin(_ pin: ShortcutPin) {
         withStructuralUpdateTransaction {
             if pin.role == .essential, let profileId = pin.profileId {
@@ -196,32 +190,10 @@ extension TabManager {
         }
     }
 
-    func togglePin(_ tab: Tab) {
-        if tab.shortcutPinRole == .essential || allPinnedTabsAllProfiles.contains(where: { $0.id == tab.id }) {
-            unpinTab(tab)
-        } else {
-            pinTab(tab)
-        }
-    }
-
     // MARK: - Essentials API (profile-aware)
-
-    func addToEssentials(_ tab: Tab, context: EssentialsTargetContext? = nil) {
-        pinTab(tab, context: context)
-    }
-
-    func removeFromEssentials(_ tab: Tab) {
-        unpinTab(tab)
-    }
 
     func removeFromEssentials(_ pin: ShortcutPin) {
         removeShortcutPin(pin)
-    }
-
-    func reorderEssential(_ tab: Tab, to index: Int) {
-        guard let shortcutId = tab.shortcutPinId,
-              let pin = shortcutPin(by: shortcutId) else { return }
-        reorderEssential(pin, to: index)
     }
 
     func reorderEssential(_ pin: ShortcutPin, to index: Int) {
@@ -234,14 +206,6 @@ extension TabManager {
             setPinnedTabs(reindexed(arr), for: pid)
             scheduleStructuralPersistence()
         }
-    }
-
-    func reorderRegular(_ tab: Tab, in spaceId: UUID, to index: Int) {
-        reorderRegularTabs(tab, in: spaceId, to: index)
-    }
-
-    func reorderSpacePinned(_ tab: Tab, in spaceId: UUID, to index: Int) {
-        reorderSpacePinnedTabs(tab, in: spaceId, to: index)
     }
 
     func reorderSpacePinned(_ pin: ShortcutPin, in spaceId: UUID, to index: Int) {
@@ -262,10 +226,6 @@ extension TabManager {
     }
 
     // MARK: - Space-Level Pinned Tabs
-
-    func spacePinnedLiveTabs(for spaceId: UUID) -> [Tab] {
-        liveSpacePinnedTabs(for: spaceId)
-    }
 
     func pinTabToSpace(_ tab: Tab, spaceId: UUID) {
         withStructuralUpdateTransaction {
@@ -325,32 +285,6 @@ extension TabManager {
                 at: spacePinnedPins(for: spaceId).count
             )
         }
-    }
-
-    func unpinTabFromSpace(_ tab: Tab) {
-        guard let shortcutId = tab.shortcutPinId,
-              let pin = shortcutPin(by: shortcutId) else { return }
-        removeShortcutPin(pin)
-    }
-
-    // MARK: - Navigation (pinned + current space)
-
-    func selectNextTab() {
-        let all = selectionTabsForCurrentContext()
-        guard !all.isEmpty, let current = currentTab else { return }
-        guard let currentIndex = all.firstIndex(where: { $0.id == current.id })
-        else { return }
-        let nextIndex = (currentIndex + 1) % all.count
-        if nextIndex < all.count { setActiveTab(all[nextIndex]) }
-    }
-
-    func selectPreviousTab() {
-        let all = selectionTabsForCurrentContext()
-        guard !all.isEmpty, let current = currentTab else { return }
-        guard let currentIndex = all.firstIndex(where: { $0.id == current.id })
-        else { return }
-        let previousIndex = currentIndex == 0 ? all.count - 1 : currentIndex - 1
-        if previousIndex < all.count { setActiveTab(all[previousIndex]) }
     }
 
     func reindexed(_ pins: [ShortcutPin]) -> [ShortcutPin] {

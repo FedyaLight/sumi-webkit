@@ -20,7 +20,6 @@ struct SplitTabRow: View {
         HStack(spacing: 1) {
             SplitHalfTab(
                 tab: left,
-                side: .left,
                 spaceId: spaceId,
                 isAppKitInteractionEnabled: isAppKitInteractionEnabled,
                 contextMenuEntries: contextMenuEntries(left),
@@ -34,7 +33,6 @@ struct SplitTabRow: View {
                 .padding(.vertical, 4)
             SplitHalfTab(
                 tab: right,
-                side: .right,
                 spaceId: spaceId,
                 isAppKitInteractionEnabled: isAppKitInteractionEnabled,
                 contextMenuEntries: contextMenuEntries(right),
@@ -60,7 +58,6 @@ struct SplitTabRow: View {
 
 private struct SplitHalfTab: View {
     @ObservedObject var tab: Tab
-    let side: SplitViewManager.Side
     let spaceId: UUID
     let isAppKitInteractionEnabled: Bool
     let contextMenuEntries: [SidebarContextMenuEntry]

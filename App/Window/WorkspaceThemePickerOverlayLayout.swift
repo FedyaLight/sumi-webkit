@@ -6,7 +6,6 @@ struct WorkspaceThemePickerOverlayLayout: Equatable {
 
     let panelLeadingInset: CGFloat
     let interactionFrame: CGRect
-    let scrimFrame: CGRect
     /// Horizontal midpoint of the sidebar strip in window coordinates (for motion anchored to the sidebar).
     let sidebarHorizontalCenterX: CGFloat
 
@@ -32,14 +31,6 @@ struct WorkspaceThemePickerOverlayLayout: Equatable {
             x: Self.contentInset,
             y: Self.contentInset,
             width: max(windowSize.width - (Self.contentInset * 2), 0),
-            height: max(windowSize.height - (Self.contentInset * 2), 0)
-        )
-
-        let scrimLeading = min(sidebarMaxX, max(windowSize.width - Self.contentInset, 0))
-        scrimFrame = CGRect(
-            x: scrimLeading,
-            y: Self.contentInset,
-            width: max(windowSize.width - scrimLeading - Self.contentInset, 0),
             height: max(windowSize.height - (Self.contentInset * 2), 0)
         )
     }

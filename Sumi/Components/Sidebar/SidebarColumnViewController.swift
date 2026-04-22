@@ -260,10 +260,6 @@ struct SidebarPresentationContext: Equatable {
     let mode: SidebarPresentationMode
     let sidebarWidth: CGFloat
 
-    var contentWidth: CGFloat {
-        BrowserWindowState.sidebarContentWidth(for: sidebarWidth)
-    }
-
     var isCollapsedOverlay: Bool {
         mode != .docked
     }

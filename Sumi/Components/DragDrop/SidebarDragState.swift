@@ -55,7 +55,6 @@ struct SidebarFolderDropTargetMetrics: Equatable {
 }
 
 struct SidebarRegularListHitMetrics: Equatable {
-    let spaceId: UUID
     var frame: CGRect
     var itemCount: Int
 }
@@ -81,7 +80,6 @@ struct SidebarDragPreviewModel {
     let sourceSize: CGSize
     let normalizedTopLeadingAnchor: CGPoint
     let pinnedConfig: PinnedTabsConfiguration
-    let itemCount: Int
     let shortcutPresentationState: ShortcutPresentationState?
     let folderGlyphPresentation: SumiFolderGlyphPresentationState?
     let folderGlyphPalette: SumiFolderGlyphPalette?
@@ -111,6 +109,15 @@ struct SidebarDragPreviewModel {
 struct SidebarSectionGeometryKey: Hashable {
     let spaceId: UUID
     let section: SidebarSectionPrefix
+
+    static func == (lhs: SidebarSectionGeometryKey, rhs: SidebarSectionGeometryKey) -> Bool {
+        lhs.spaceId == rhs.spaceId && lhs.section == rhs.section
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(spaceId)
+        hasher.combine(section)
+    }
 }
 
 enum SidebarPageGeometryRenderMode: Hashable {
@@ -121,6 +128,15 @@ enum SidebarPageGeometryRenderMode: Hashable {
 struct SidebarPageGeometryKey: Hashable {
     let spaceId: UUID
     let profileId: UUID?
+
+    static func == (lhs: SidebarPageGeometryKey, rhs: SidebarPageGeometryKey) -> Bool {
+        lhs.spaceId == rhs.spaceId && lhs.profileId == rhs.profileId
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(spaceId)
+        hasher.combine(profileId)
+    }
 }
 
 struct SidebarPageGeometryMetrics: Equatable {
@@ -131,14 +147,11 @@ struct SidebarPageGeometryMetrics: Equatable {
 }
 
 struct SidebarEssentialsLayoutMetrics: Equatable {
-    let spaceId: UUID
     let profileId: UUID?
     var frame: CGRect
     var dropFrame: CGRect
-    var itemCount: Int
     var columnCount: Int
     var firstSyntheticRowSlot: Int
-    var rowCount: Int
     var visibleItemCount: Int
     var visibleRowCount: Int
     var maxDropRowCount: Int
@@ -174,13 +187,6 @@ enum SidebarSectionPrefix: Hashable {
     case essentials
     case spacePinned
     case spaceRegular
-    case folder(UUID)
-}
-
-enum SidebarGeometryRefreshScope {
-    case folder
-    case sidebar
-    case all
 }
 
 @MainActor
@@ -210,9 +216,6 @@ final class SidebarDragState: ObservableObject {
     @Published private(set) var activeGeometryGeneration: Int = 0
     @Published private(set) var pendingGeometryGeneration: Int? = nil
     
-    // Tracking scroll view offset
-    @Published var scrollOffset: CGFloat = 0
-
     private var activeGeometryStore = SidebarRuntimeGeometryStore()
     private var pendingGeometryStore: SidebarRuntimeGeometryStore? = nil
     private var pendingInteractivePageKey: SidebarPageGeometryKey? = nil
@@ -220,7 +223,7 @@ final class SidebarDragState: ObservableObject {
     private var isGeometryRefreshFlushScheduled = false
     private var isGeometrySnapshotPublishScheduled = false
     
-    private init() {}
+    init() {}
 
     private static func resolvedMetricsRowCount(
         for height: CGFloat,
@@ -283,31 +286,8 @@ final class SidebarDragState: ObservableObject {
         setGeometrySnapshot(snapshot(from: activeGeometryStore))
     }
 
-    private func clearPublishedGeometryCaches() {
-        setGeometrySnapshot(.empty)
-    }
-
     private func publishActiveGeometryStore() {
         scheduleGeometrySnapshotPublish()
-    }
-
-    private func resetAllGeometryStores() {
-        activeGeometryStore = SidebarRuntimeGeometryStore()
-        pendingGeometryStore = nil
-        pendingInteractivePageKey = nil
-        activeGeometryGeneration = 0
-        pendingGeometryGeneration = nil
-        clearPublishedGeometryCaches()
-    }
-
-    private func geometryStore(for generation: Int) -> SidebarRuntimeGeometryStore? {
-        if generation == activeGeometryGeneration {
-            return activeGeometryStore
-        }
-        if generation == pendingGeometryGeneration {
-            return pendingGeometryStore
-        }
-        return nil
     }
 
     private func mutateGeometryStore(
@@ -394,13 +374,6 @@ final class SidebarDragState: ObservableObject {
         essentialsPreviewStateBySpace = [:]
     }
     
-    func reset() {
-        resetInteractionState()
-        sidebarGeometryGeneration = 0
-        requestGeometryRefresh(.all)
-        resetAllGeometryStores()
-    }
-
     func resetInteractionState() {
         isDragging = false
         clearHoverState()
@@ -412,23 +385,6 @@ final class SidebarDragState: ObservableObject {
         isInternalDragSession = false
         isHoveringNearEdge = false
         clearEssentialsPreviewState()
-    }
-
-    func invalidateGeometryEpoch() {
-        sidebarGeometryGeneration &+= 1
-        activeGeometryGeneration = sidebarGeometryGeneration
-        pendingGeometryGeneration = nil
-        pendingGeometryStore = nil
-        pendingInteractivePageKey = nil
-        clearHoverState()
-        requestGeometryRefresh(.all)
-        resetAllGeometryStores()
-        activeGeometryGeneration = sidebarGeometryGeneration
-        clearEssentialsPreviewState()
-    }
-
-    func advanceSidebarGeometryGeneration() {
-        invalidateGeometryEpoch()
     }
 
     func beginPendingGeometryEpoch(
@@ -443,12 +399,11 @@ final class SidebarDragState: ObservableObject {
         }
         clearHoverState()
         clearEssentialsPreviewState()
-        requestGeometryRefresh(.all)
+        requestGeometryRefresh()
         promotePendingGeometryIfReady()
     }
 
-    func requestGeometryRefresh(_ scope: SidebarGeometryRefreshScope = .all) {
-        _ = scope
+    func requestGeometryRefresh() {
         pendingGeometryRefreshRequested = true
 
         guard !isGeometryRefreshFlushScheduled else { return }
@@ -542,118 +497,11 @@ final class SidebarDragState: ObservableObject {
         essentialsPreviewStateBySpace[spaceId]
     }
 
-    func updateFolderDropTarget(
-        folderId: UUID,
-        spaceId: UUID,
-        topLevelIndex: Int,
-        childCount: Int,
-        isOpen: Bool,
-        region: SidebarFolderDragRegion,
-        frame: CGRect
-    ) {
-        applyFolderDropTarget(
-            folderId: folderId,
-            spaceId: spaceId,
-            topLevelIndex: topLevelIndex,
-            childCount: childCount,
-            isOpen: isOpen,
-            region: region,
-            frame: frame,
-            isActive: true,
-            generation: activeGeometryGeneration
-        )
-    }
-
-    func removeFolderDropTarget(folderId: UUID, region: SidebarFolderDragRegion) {
-        applyFolderDropTarget(
-            folderId: folderId,
-            spaceId: UUID(),
-            topLevelIndex: 0,
-            childCount: 0,
-            isOpen: false,
-            region: region,
-            frame: nil,
-            isActive: false,
-            generation: activeGeometryGeneration
-        )
-    }
-
-    func updateRegularListHitTarget(spaceId: UUID, frame: CGRect, itemCount: Int) {
-        mutateGeometryStore(for: activeGeometryGeneration) { store in
-            store.regularListHitTargets[spaceId] = SidebarRegularListHitMetrics(
-                spaceId: spaceId,
-                frame: frame,
-                itemCount: itemCount
-            )
-        }
-    }
-
-    func removeRegularListHitTarget(spaceId: UUID) {
-        mutateGeometryStore(for: activeGeometryGeneration) { store in
-            store.regularListHitTargets[spaceId] = nil
-        }
-    }
-
-    func updateSectionFrame(
-        spaceId: UUID,
-        section: SidebarSectionPrefix,
-        frame: CGRect
-    ) {
-        mutateGeometryStore(for: activeGeometryGeneration) { store in
-            store.sectionFramesBySpace[SidebarSectionGeometryKey(spaceId: spaceId, section: section)] = frame
-        }
-    }
-
-    func removeSectionFrame(
-        spaceId: UUID,
-        section: SidebarSectionPrefix
-    ) {
-        mutateGeometryStore(for: activeGeometryGeneration) { store in
-            store.sectionFramesBySpace[SidebarSectionGeometryKey(spaceId: spaceId, section: section)] = nil
-        }
-    }
-
     func sectionFrame(
         for section: SidebarSectionPrefix,
         in spaceId: UUID
     ) -> CGRect? {
         sectionFramesBySpace[SidebarSectionGeometryKey(spaceId: spaceId, section: section)]
-    }
-
-    func updatePageGeometry(
-        spaceId: UUID,
-        profileId: UUID?,
-        frame: CGRect,
-        renderMode: SidebarPageGeometryRenderMode
-    ) {
-        mutateGeometryStore(for: activeGeometryGeneration) { store in
-            upsertPageGeometry(
-                spaceId: spaceId,
-                profileId: profileId,
-                frame: frame,
-                renderMode: renderMode,
-                in: &store
-            )
-        }
-    }
-
-    func removePageGeometry(
-        spaceId: UUID,
-        profileId: UUID?
-    ) {
-        mutateGeometryStore(for: activeGeometryGeneration) { store in
-            removePageGeometry(
-                spaceId: spaceId,
-                profileId: profileId,
-                from: &store
-            )
-        }
-    }
-
-    func interactivePage(for spaceId: UUID) -> SidebarPageGeometryMetrics? {
-        pageGeometryByKey.values.first {
-            $0.renderMode == .interactive && $0.spaceId == spaceId
-        }
     }
 
     func hoveredInteractivePage(at location: CGPoint) -> SidebarPageGeometryMetrics? {
@@ -669,7 +517,6 @@ final class SidebarDragState: ObservableObject {
     }
 
     private func makeEssentialsLayoutMetrics(
-        spaceId: UUID,
         profileId: UUID?,
         frame: CGRect,
         dropFrame: CGRect,
@@ -707,14 +554,11 @@ final class SidebarDragState: ObservableObject {
             ?? (max(resolvedVisibleRowCount, 1) * max(columnCount, 1))
 
         return SidebarEssentialsLayoutMetrics(
-            spaceId: spaceId,
             profileId: profileId,
             frame: frame,
             dropFrame: dropFrame,
-            itemCount: itemCount,
             columnCount: columnCount,
             firstSyntheticRowSlot: resolvedFirstSyntheticRowSlot,
-            rowCount: rowCount,
             visibleItemCount: visibleItemCount ?? itemCount,
             visibleRowCount: resolvedVisibleRowCount,
             maxDropRowCount: resolvedMaxDropRowCount,
@@ -722,48 +566,6 @@ final class SidebarDragState: ObservableObject {
             gridSpacing: gridSpacing,
             canAcceptDrop: canAcceptDrop
         )
-    }
-
-    func updateEssentialsLayoutMetrics(
-        spaceId: UUID,
-        profileId: UUID?,
-        frame: CGRect,
-        dropFrame: CGRect,
-        itemCount: Int,
-        columnCount: Int,
-        firstSyntheticRowSlot: Int? = nil,
-        rowCount: Int,
-        itemSize: CGSize,
-        gridSpacing: CGFloat,
-        canAcceptDrop: Bool = true,
-        visibleItemCount: Int? = nil,
-        visibleRowCount: Int? = nil,
-        maxDropRowCount: Int? = nil
-    ) {
-        mutateGeometryStore(for: activeGeometryGeneration) { store in
-            store.essentialsLayoutMetricsBySpace[spaceId] = makeEssentialsLayoutMetrics(
-                spaceId: spaceId,
-                profileId: profileId,
-                frame: frame,
-                dropFrame: dropFrame,
-                itemCount: itemCount,
-                columnCount: columnCount,
-                firstSyntheticRowSlot: firstSyntheticRowSlot,
-                rowCount: rowCount,
-                itemSize: itemSize,
-                gridSpacing: gridSpacing,
-                canAcceptDrop: canAcceptDrop,
-                visibleItemCount: visibleItemCount,
-                visibleRowCount: visibleRowCount,
-                maxDropRowCount: maxDropRowCount
-            )
-        }
-    }
-
-    func removeEssentialsLayoutMetrics(spaceId: UUID) {
-        mutateGeometryStore(for: activeGeometryGeneration) { store in
-            store.essentialsLayoutMetricsBySpace[spaceId] = nil
-        }
     }
 
     func applyPageGeometry(
@@ -871,7 +673,6 @@ final class SidebarDragState: ObservableObject {
         mutateGeometryStore(for: generation) { store in
             if let frame {
                 store.regularListHitTargets[spaceId] = SidebarRegularListHitMetrics(
-                    spaceId: spaceId,
                     frame: frame,
                     itemCount: itemCount
                 )
@@ -905,7 +706,6 @@ final class SidebarDragState: ObservableObject {
             }
 
             store.essentialsLayoutMetricsBySpace[spaceId] = makeEssentialsLayoutMetrics(
-                spaceId: spaceId,
                 profileId: profileId,
                 frame: frame,
                 dropFrame: dropFrame,

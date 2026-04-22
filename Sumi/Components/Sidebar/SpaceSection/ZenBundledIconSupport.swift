@@ -205,10 +205,6 @@ enum SumiZenFolderIconCatalog {
         )
     }
 
-    static func hubAnchorImage() -> NSImage? {
-        chromeImage(named: "permissions")
-    }
-
     static func chromeImage(named name: String) -> NSImage? {
         image(
             key: "chrome:v2:\(name)",

@@ -69,13 +69,4 @@ enum PinnedTabsConfiguration: String, CaseIterable, Identifiable {
     }
     
     var gridSpacing: CGFloat { 7 }
-    
-    var maxColumns: Int {
-        switch self {
-        case .large:
-            return 4
-        case .small:
-            return 8
-        }
-    }
 }

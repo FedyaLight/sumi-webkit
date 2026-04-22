@@ -14,10 +14,6 @@ class BrowserConfiguration {
 
     init() {}
 
-    static func makeTestingInstance() -> BrowserConfiguration {
-        BrowserConfiguration()
-    }
-
     private static func makeBaseWebViewConfiguration() -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
         config.writingToolsBehavior = .none
@@ -84,10 +80,6 @@ class BrowserConfiguration {
             controller.addUserScript(script)
         }
         return controller
-    }
-
-    func freshUserContentController() -> WKUserContentController {
-        seededUserContentController(from: webViewConfiguration.userContentController)
     }
 
     func isolatedWebViewConfigurationCopy(

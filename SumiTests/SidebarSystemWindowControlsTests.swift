@@ -12,19 +12,16 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
 
         XCTAssertEqual(docked.mode, .docked)
         XCTAssertEqual(docked.sidebarWidth, 280)
-        XCTAssertEqual(docked.contentWidth, BrowserWindowState.sidebarContentWidth(for: 280))
         XCTAssertTrue(docked.showsResizeHandle)
         XCTAssertFalse(docked.isCollapsedOverlay)
 
         XCTAssertEqual(hidden.mode, .collapsedHidden)
         XCTAssertEqual(hidden.sidebarWidth, 280)
-        XCTAssertEqual(hidden.contentWidth, BrowserWindowState.sidebarContentWidth(for: 280))
         XCTAssertFalse(hidden.showsResizeHandle)
         XCTAssertTrue(hidden.isCollapsedOverlay)
 
         XCTAssertEqual(visible.mode, .collapsedVisible)
         XCTAssertEqual(visible.sidebarWidth, 280)
-        XCTAssertEqual(visible.contentWidth, BrowserWindowState.sidebarContentWidth(for: 280))
         XCTAssertFalse(visible.showsResizeHandle)
         XCTAssertTrue(visible.isCollapsedOverlay)
     }

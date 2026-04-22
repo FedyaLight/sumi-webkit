@@ -14,7 +14,6 @@ struct SidebarHeader: View {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
     @Environment(\.sumiSettings) var sumiSettings
-    let isSidebarHovered: Bool
 
     var body: some View {
         VStack(spacing: 8) {
@@ -73,17 +72,10 @@ struct SidebarHeader: View {
     }
 
     private var sidebarURLBar: some View {
-        URLBarView(
-            isSidebarHovered: isSidebarHovered,
-            presentationMode: .sidebar
-        )
+        URLBarView(presentationMode: .sidebar)
         .environmentObject(browserManager)
         .environment(windowState)
         .padding(.horizontal, 8)
-    }
-
-    private var currentTab: Tab? {
-        browserManager.currentTab(for: windowState)
     }
 }
 

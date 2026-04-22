@@ -5,7 +5,6 @@ import SwiftUI
 final class WorkspaceThemeEditorPreview: ObservableObject {
     @Published var displayGradient: SpaceGradient = .default
     @Published private(set) var isEditing: Bool = false
-    @Published var isAnimating: Bool = false
     @Published var activePrimaryNodeID: UUID?
     @Published var preferredPrimaryNodeID: UUID?
 

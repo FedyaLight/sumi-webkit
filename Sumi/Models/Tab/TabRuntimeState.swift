@@ -3,10 +3,6 @@ import Foundation
 import ObjectiveC.runtime
 import WebKit
 
-enum TabTitleUpdateSource {
-    case manual
-}
-
 enum TabMainFrameNavigationKind {
     case load
     case backForward
@@ -106,7 +102,6 @@ final class TabWebViewRuntime {
     var webView: WKWebView?
     var existingWebView: WKWebView?
     var webViewConfigurationOverride: WKWebViewConfiguration?
-    var pendingContextMenuCapture: WebContextMenuCapture?
     var primaryWindowId: UUID?
     var profileAwaitCancellable: AnyCancellable?
     let extensionRuntimeState = TabExtensionRuntimeState()

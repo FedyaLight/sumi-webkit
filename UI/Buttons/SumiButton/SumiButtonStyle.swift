@@ -13,7 +13,6 @@ struct SumiButtonStyle: ButtonStyle {
     @Environment(\.resolvedThemeContext) private var themeContext
 
     let variant: Variant
-    let shadowStyle: ShadowStyle
     let role: ButtonRole?
 
     @State private var isHovering: Bool = false
@@ -33,12 +32,6 @@ struct SumiButtonStyle: ButtonStyle {
     enum Variant {
         case secondary  // Regular button
         case primary    // Prominent button
-    }
-
-    enum ShadowStyle {
-        case none
-        case subtle
-        case prominent
     }
 
     // MARK: - Body
@@ -114,19 +107,19 @@ struct SumiButtonStyle: ButtonStyle {
 
 extension ButtonStyle where Self == SumiButtonStyle {
     static var sumiButton: SumiButtonStyle {
-        SumiButtonStyle(variant: .secondary, shadowStyle: .subtle, role: nil)
+        SumiButtonStyle(variant: .secondary, role: nil)
     }
 
     static func sumiButton(role: ButtonRole?) -> SumiButtonStyle {
-        SumiButtonStyle(variant: .secondary, shadowStyle: .subtle, role: role)
+        SumiButtonStyle(variant: .secondary, role: role)
     }
 
     static var sumiButtonProminent: SumiButtonStyle {
-        SumiButtonStyle(variant: .primary, shadowStyle: .prominent, role: nil)
+        SumiButtonStyle(variant: .primary, role: nil)
     }
 
     static func sumiButtonProminent(role: ButtonRole?) -> SumiButtonStyle {
-        SumiButtonStyle(variant: .primary, shadowStyle: .prominent, role: role)
+        SumiButtonStyle(variant: .primary, role: role)
     }
 }
 

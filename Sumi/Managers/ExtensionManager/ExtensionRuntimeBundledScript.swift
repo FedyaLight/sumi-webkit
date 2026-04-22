@@ -13,15 +13,6 @@ final class ExtensionRuntimeBundleLocator {}
 
 enum ExtensionRuntimeBundledScript {
     static let resourceSubdirectory = "ExtensionRuntimeResources"
-    static let requiredFileNames = [
-        "externally_connectable_background_helper.js",
-        "externally_connectable_isolated_bridge.js",
-        "externally_connectable_page_bridge.js",
-        "externally_connectable_worker.js",
-        "selective_content_script_guard.js",
-        "webkit_runtime_compat.js",
-        "webkit_runtime_compat_worker.js",
-    ]
 
     private static var bundle: Bundle {
         Bundle(for: ExtensionRuntimeBundleLocator.self)

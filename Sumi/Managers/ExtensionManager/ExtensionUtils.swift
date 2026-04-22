@@ -45,11 +45,6 @@ struct ExtensionUtils {
         return false
     }
 
-    static var isWorldInjectionSupported: Bool {
-        if #available(macOS 15.5, *) { return true }
-        return false
-    }
-
     static func applicationSupportRoot() -> URL {
         let root = FileManager.default.urls(
             for: .applicationSupportDirectory,
@@ -68,16 +63,6 @@ struct ExtensionUtils {
     static func extensionsDirectory() -> URL {
         let directory = applicationSupportRoot()
             .appendingPathComponent("Extensions", isDirectory: true)
-        try? FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: true
-        )
-        return directory
-    }
-
-    static func nativeMessagingHostsDirectory() -> URL {
-        let directory = applicationSupportRoot()
-            .appendingPathComponent("NativeMessagingHosts", isDirectory: true)
         try? FileManager.default.createDirectory(
             at: directory,
             withIntermediateDirectories: true
@@ -121,10 +106,6 @@ struct ExtensionUtils {
             throw ExtensionError.invalidManifest("Invalid JSON structure")
         }
         return object
-    }
-
-    static func writeJSONObject(_ object: [String: Any], to url: URL) throws {
-        _ = try writeJSONObjectIfChanged(object, to: url)
     }
 
     @discardableResult

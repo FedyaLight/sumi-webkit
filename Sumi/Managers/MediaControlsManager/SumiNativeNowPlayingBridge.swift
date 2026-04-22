@@ -4,7 +4,6 @@ import WebKit
 @MainActor
 protocol SumiNowPlayingWebViewAdapter: AnyObject {
     func sumiRequestNowPlayingInfo() async -> SumiNativeNowPlayingInfo
-    func sumiRequestBackgroundMediaPlaybackState() async -> SumiBackgroundMediaPlaybackState
     func sumiPlayPredominantOrNowPlayingMediaSession() async -> Bool
     func sumiPauseNowPlayingMediaSession() async -> Bool
 }
@@ -44,7 +43,7 @@ extension WKWebView: SumiNowPlayingWebViewAdapter {
         )
     }
 
-    func sumiRequestBackgroundMediaPlaybackState() async -> SumiBackgroundMediaPlaybackState {
+    private func sumiRequestBackgroundMediaPlaybackState() async -> SumiBackgroundMediaPlaybackState {
         let playbackState = await withCheckedContinuation { continuation in
             requestMediaPlaybackState { state in
                 continuation.resume(returning: state)

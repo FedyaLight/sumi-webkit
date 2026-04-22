@@ -6,12 +6,6 @@ enum ShortcutPinRole: String, Codable, Sendable {
     case spacePinned
 }
 
-enum SumiLauncherRole: String, Codable, Sendable {
-    case essentialLauncher
-    case pinnedLauncher
-    case folderChildLauncher
-}
-
 enum SumiEssentialRuntimeState {
     case launcherOnly
     case liveAttached
@@ -113,29 +107,6 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
 
     @Published var title: String
     @Published var favicon: Image
-
-    var sumiLauncherRole: SumiLauncherRole {
-        switch (role, folderId) {
-        case (.essential, _):
-            return .essentialLauncher
-        case (.spacePinned, .some):
-            return .folderChildLauncher
-        case (.spacePinned, .none):
-            return .pinnedLauncher
-        }
-    }
-
-    var isEssentialLauncher: Bool {
-        sumiLauncherRole == .essentialLauncher
-    }
-
-    var isPinnedLauncher: Bool {
-        sumiLauncherRole == .pinnedLauncher
-    }
-
-    var isFolderChildLauncher: Bool {
-        sumiLauncherRole == .folderChildLauncher
-    }
 
     init(
         id: UUID,

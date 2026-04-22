@@ -330,7 +330,6 @@ final class SumiFaviconResolverTests: XCTestCase {
         let image = await resolver.image(for: pageURL)
 
         XCTAssertNotNil(image)
-        XCTAssertEqual(TabFaviconStore.debugDiskData(for: key), jpegData)
 
         TabFaviconStore.clearMemoryCache()
         XCTAssertNotNil(TabFaviconStore.getCachedImage(for: key))
@@ -402,8 +401,9 @@ final class SumiFaviconResolverTests: XCTestCase {
         XCTAssertNotNil(image)
         XCTAssertNotNil(TabFaviconStore.getCachedImage(for: SumiFaviconResolver.cacheKey(for: pageURL)!))
 
-        await resolver.clearCache()
-        let stats = await resolver.cacheStats()
+        await resolver.resetTransientState()
+        TabFaviconStore.clearCache()
+        let stats = TabFaviconStore.getFaviconCacheStats()
 
         XCTAssertNil(TabFaviconStore.getCachedImage(for: SumiFaviconResolver.cacheKey(for: pageURL)!))
         XCTAssertEqual(stats.count, 0)

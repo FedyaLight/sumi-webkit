@@ -42,7 +42,6 @@ final class UserScriptInjector {
         cleanupBridges(for: webViewId, from: controller)
 
         let broker = SumiUserScriptMessageBroker(
-            webViewId: webViewId,
             profileId: profileId,
             tabHandler: tabHandler
         )
@@ -84,7 +83,7 @@ final class UserScriptInjector {
         for script in idleScripts {
             guard script.fileType == .javascript else { continue }
 
-            let bridge = findBridge(for: script, webView: webView)
+            let bridge = findBridge(for: script)
             let gmShim = bridge?.generateJSShim() ?? ""
             let code = script.assembledCode(gmShim: gmShim)
 
@@ -102,7 +101,7 @@ final class UserScriptInjector {
 
     func executeMenuCommand(script: UserScript, commandId: String, webView: WKWebView?) {
         guard let webView,
-              let bridge = findBridge(for: script, webView: webView)
+              let bridge = findBridge(for: script)
         else { return }
         bridge.resolveMenuCommand(commandId, webView: webView)
     }
@@ -246,7 +245,7 @@ final class UserScriptInjector {
         return scope
     }
 
-    private func findBridge(for script: UserScript, webView: WKWebView) -> UserScriptGMBridge? {
+    private func findBridge(for script: UserScript) -> UserScriptGMBridge? {
         for broker in activeBrokers.values {
             if let bridge = broker.bridge(for: script) {
                 return bridge

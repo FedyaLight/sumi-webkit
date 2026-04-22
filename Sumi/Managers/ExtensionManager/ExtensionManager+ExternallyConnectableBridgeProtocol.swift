@@ -121,36 +121,14 @@ struct ExternallyConnectableBridgeEnvelope: Decodable {
 }
 
 @available(macOS 15.5, *)
-struct ExternallyConnectableBridgeSenderMetadata: Codable {
-    let origin: String?
-    let url: String?
-    let frameId: Int?
-
-    var foundationObject: [String: Any] {
-        [
-            "origin": origin as Any,
-            "url": url as Any,
-            "frameId": frameId as Any,
-        ]
-    }
-}
-
-@available(macOS 15.5, *)
 struct ExternallyConnectableNativeSendMessageRequest: Decodable {
-    let documentURL: String?
     let extensionId: String?
     let message: ExternallyConnectableBridgeJSONValue?
-    let options: ExternallyConnectableBridgeJSONValue?
-    let origin: String?
-    let requestType: String?
-    let timeoutMs: Double?
 }
 
 @available(macOS 15.5, *)
 struct ExternallyConnectableNativeConnectOpenRequest: Decodable {
-    let documentURL: String?
     let extensionId: String?
-    let origin: String?
     let timeoutMs: Double?
     let portId: String?
     let connectInfo: [String: ExternallyConnectableBridgeJSONValue]?
@@ -158,20 +136,12 @@ struct ExternallyConnectableNativeConnectOpenRequest: Decodable {
 
 @available(macOS 15.5, *)
 struct ExternallyConnectableNativeConnectPostMessageRequest: Decodable {
-    let documentURL: String?
-    let extensionId: String?
-    let origin: String?
-    let timeoutMs: Double?
     let portId: String?
     let message: ExternallyConnectableBridgeJSONValue?
 }
 
 @available(macOS 15.5, *)
 struct ExternallyConnectableNativeConnectDisconnectRequest: Decodable {
-    let documentURL: String?
-    let extensionId: String?
-    let origin: String?
-    let timeoutMs: Double?
     let portId: String?
 }
 

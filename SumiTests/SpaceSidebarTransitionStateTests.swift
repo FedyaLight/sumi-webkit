@@ -14,7 +14,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
                 orderedSpaceIds: ids
             )
         )
-        XCTAssertFalse(state.isTransitioning)
+        XCTAssertFalse(state.hasDestination)
     }
 
     func testClickDirectionMatchesSpaceOrder() {
@@ -71,14 +71,6 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         )
         XCTAssertEqual(
             SpaceSidebarRenderPolicy.pageRenderMode(for: .transitionLayer),
-            .transitionSnapshot
-        )
-        XCTAssertEqual(
-            SpaceSidebarRenderPolicy.renderMode(for: .committed),
-            .interactive
-        )
-        XCTAssertEqual(
-            SpaceSidebarRenderPolicy.renderMode(for: .transitionLayer),
             .transitionSnapshot
         )
     }
@@ -246,7 +238,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
 
         XCTAssertFalse(state.shouldCommitSwipeOnEnd)
         XCTAssertNil(state.finishTransition(commit: false))
-        XCTAssertFalse(state.isTransitioning)
+        XCTAssertFalse(state.hasDestination)
     }
 
     func testSwipeAboveThresholdCommitsDestination() {
@@ -268,7 +260,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
 
         XCTAssertTrue(state.shouldCommitSwipeOnEnd)
         XCTAssertEqual(state.finishTransition(commit: true), ids[1])
-        XCTAssertFalse(state.isTransitioning)
+        XCTAssertFalse(state.hasDestination)
     }
 
     func testSpaceListMutationResetsInvalidTransitionSafely() {
@@ -288,7 +280,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             committedSpaceId: ids[0]
         )
 
-        XCTAssertFalse(state.isTransitioning)
+        XCTAssertFalse(state.hasDestination)
         XCTAssertNil(state.visualSelectedSpaceId)
     }
 

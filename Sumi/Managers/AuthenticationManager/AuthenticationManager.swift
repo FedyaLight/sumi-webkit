@@ -15,8 +15,6 @@ final class AuthenticationManager: NSObject {
         let requestId: String
         let url: URL
         let interactive: Bool
-        let prefersEphemeralSession: Bool
-        let explicitCallbackScheme: String?
     }
 
     enum IdentityFlowResult {

@@ -9,21 +9,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 import AppKit
 
-// MARK: - Supporting Types
-struct FolderWithTabs: Hashable {
-    let folder: TabFolder
-    let tabs: [Tab]
-
-    // Implement Hashable
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(folder.id)
-    }
-
-    static func == (lhs: FolderWithTabs, rhs: FolderWithTabs) -> Bool {
-        lhs.folder.id == rhs.folder.id && lhs.tabs.count == rhs.tabs.count
-    }
-}
-
 struct TabPositionPreferenceKey: PreferenceKey {
     static var defaultValue: [UUID: CGRect] = [:]
     static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
@@ -169,7 +154,6 @@ struct SpaceView: View {
     @State private var showTopArrow: Bool = false
     @State private var showBottomArrow: Bool = false
     @State private var isAtTop: Bool = true
-    @State private var activeTabIsVisible: Bool = true
     @State private var viewportHeight: CGFloat = 0
     @State private var totalContentHeight: CGFloat = 0
     @State private var activeTabPosition: CGRect = .zero
@@ -563,11 +547,11 @@ struct SpaceView: View {
                     switch item {
                     case .folder(let folderId):
                         if let folder = folders.first(where: { $0.id == folderId }) {
-                            mixedFolderView(folder, sourceIndex: sourceIndex, displayIndex: sourceIndex)
+                            mixedFolderView(folder, topLevelPinnedIndex: sourceIndex)
                         }
                     case .shortcut(let pinId):
                         if let pin = topLevelPinnedPins.first(where: { $0.id == pinId }) {
-                            pinnedShortcutView(pin, sourceIndex: sourceIndex, displayIndex: sourceIndex)
+                            pinnedShortcutView(pin)
                         }
                     }
                     if isHoveredSpacePinned(after: sourceIndex, total: allItems.count) { dropLine().transition(.opacity) }
@@ -610,27 +594,21 @@ struct SpaceView: View {
             ?? dragState.previewKind.flatMap { dragState.previewAssets[$0] }
     }
 
-    private func updateSpacePinnedCaches() {
-        // Overlay handled automatically
-    }
-
-    private func mixedFolderView(_ folder: TabFolder, sourceIndex: Int, displayIndex: Int) -> some View {
+    private func mixedFolderView(_ folder: TabFolder, topLevelPinnedIndex: Int) -> some View {
         TabFolderView(
             folder: folder,
             space: space,
             renderMode: renderMode,
-            topLevelPinnedIndex: sourceIndex,
-            topLevelPinnedFrameIndex: displayIndex,
+            topLevelPinnedIndex: topLevelPinnedIndex,
             onDelete: { deleteFolder(folder) },
-            onAddTab: { addTabToFolder(folder) },
-            onActivateTab: { onActivateTab($0) }
+            onAddTab: { addTabToFolder(folder) }
         )
         .environmentObject(browserManager)
         .environment(windowState)
         .transition(.opacity.animation(.easeInOut(duration: 0.12)))
     }
 
-    private func pinnedShortcutView(_ pin: ShortcutPin, sourceIndex: Int, displayIndex: Int) -> some View {
+    private func pinnedShortcutView(_ pin: ShortcutPin) -> some View {
         let activeTab = activeShortcutTab(for: pin)
         let rowId = activeTab?.id ?? pin.id
         return ShortcutSidebarRow(
@@ -849,7 +827,7 @@ struct SpaceView: View {
             } else if idx == secondIdx {
                 EmptyView()
             } else {
-                regularTabView(tab, sourceIndex: idx, displayIndex: idx)
+                regularTabView(tab)
             }
         }
     }
@@ -862,7 +840,7 @@ struct SpaceView: View {
                         dropLine()
                             .transition(.opacity)
                     }
-                    regularTabView(tab, sourceIndex: index, displayIndex: index)
+                    regularTabView(tab)
                     if dragState.isDragging, case .spaceRegular(let dsId, let slot) = dragState.hoveredSlot, dsId == space.id, index == currentTabs.count - 1, slot >= currentTabs.count {
                         dropLine()
                             .transition(.opacity)
@@ -874,7 +852,7 @@ struct SpaceView: View {
 
 
 
-    private func regularTabView(_ tab: Tab, sourceIndex: Int, displayIndex: Int) -> some View {
+    private func regularTabView(_ tab: Tab) -> some View {
         SpaceTab(
             tab: tab,
             dragSourceConfiguration: SidebarDragSourceConfiguration(
@@ -1047,8 +1025,7 @@ struct SpaceView: View {
         selectionScrollGuard.lock()
         browserManager.requestUserTabActivation(
             tab,
-            in: windowState,
-            reason: .regularTab
+            in: windowState
         )
     }
 
@@ -1156,8 +1133,7 @@ struct SpaceView: View {
         selectionScrollGuard.lock()
         browserManager.requestUserTabActivation(
             tab,
-            in: windowState,
-            reason: .spaceLauncher
+            in: windowState
         )
     }
 
@@ -1801,13 +1777,6 @@ private struct ShortcutSidebarRowChrome: View {
             dragHasTrailingActionExclusion: dragHasTrailingActionExclusion,
             action: action,
             dragIsEnabled: dragIsEnabled
-        )
-    }
-
-    private var dragExclusionZones: [SidebarDragSourceExclusionZone] {
-        makeShortcutSidebarDragExclusionZones(
-            runtimeAffordance: runtimeAffordance,
-            dragHasTrailingActionExclusion: dragHasTrailingActionExclusion
         )
     }
 

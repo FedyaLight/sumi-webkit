@@ -26,7 +26,7 @@ final class ExternallyConnectablePageSubfeature: SumiExtensionSubfeature {
     func handler(forMethodNamed method: String) -> Handler? {
         switch method {
         case "runtime.sendMessage", "sendMessage":
-            return { [weak self] params, message, replyHandler in
+            return { [weak self] message, replyHandler in
                 self?.manager?.handleExternallyConnectableNativeMessage(
                     message.rawMessage,
                     replyHandler: replyHandler
@@ -34,7 +34,7 @@ final class ExternallyConnectablePageSubfeature: SumiExtensionSubfeature {
             }
         case "runtime.connect.open", "runtime.connect.postMessage",
              "runtime.connect.disconnect":
-            return { [weak self] params, message, replyHandler in
+            return { [weak self] message, replyHandler in
                 self?.manager?.handleExternallyConnectableNativeMessage(
                     message.rawMessage,
                     replyHandler: replyHandler
@@ -63,7 +63,7 @@ final class ExternallyConnectableIsolatedSubfeature: SumiExtensionSubfeature {
     func handler(forMethodNamed method: String) -> Handler? {
         switch method {
         case "runtime.connect.event.message", "runtime.connect.event.disconnect":
-            return { [weak self] params, message, replyHandler in
+            return { [weak self] message, replyHandler in
                 self?.manager?.handleExternallyConnectableNativeMessage(
                     message.rawMessage,
                     replyHandler: replyHandler

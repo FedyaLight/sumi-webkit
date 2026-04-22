@@ -17,28 +17,6 @@ enum SettingsViewStateDeferral {
     }
 }
 
-// MARK: - Settings Root (Native macOS Settings)
-struct SettingsView: View {
-    @EnvironmentObject var browserManager: BrowserManager
-    @Environment(\.sumiSettings) var sumiSettings
-
-    var body: some View {
-        SettingsContent(sumiSettings: sumiSettings, browserManager: browserManager)
-    }
-}
-
-private struct SettingsContent: View {
-    @Bindable var sumiSettings: SumiSettingsService
-    @ObservedObject var browserManager: BrowserManager
-
-    var body: some View {
-        SumiSettingsTabRootView(
-            browserManager: browserManager,
-            windowState: nil
-        )
-    }
-}
-
 /// Profiles + sidebar behavior (also used in the in-tab settings surface).
 struct SumiProfilesSettingsPane: View {
     @EnvironmentObject private var browserManager: BrowserManager
@@ -443,241 +421,11 @@ private struct SafariDiscoveryRow: View {
     }
 }
 
-// MARK: - Reusable pane wrapper: fixed height + scrolling
-private struct SettingsPane<Content: View>: View {
-    let content: Content
-    init(@ViewBuilder content: () -> Content) {
-        self.content = content()
-    }
-    private let fixedHeight: CGFloat = 500
-    private let minWidth: CGFloat = 500
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                content
-            }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            .padding(20)
-        }
-        .scrollIndicators(.automatic)
-        .frame(minWidth: minWidth, maxWidth: 675)
-        .frame(
-            minHeight: fixedHeight,
-            idealHeight: fixedHeight,
-            maxHeight: fixedHeight
-        )
-    }
-}
-
-// MARK: - General Settings
-
-struct GeneralSettingsView: View {
-    @EnvironmentObject var browserManager: BrowserManager
-    @Environment(\.sumiSettings) var sumiSettings
-    @State private var showingAddEngine = false
-
-    var body: some View {
-        @Bindable var settings = sumiSettings
-
-        HStack(alignment: .top, spacing: 16) {
-            // Hero card
-            SettingsHeroCard()
-                .frame(width: 320, height: 420)
-
-            // Right side stacked cards
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    SettingsSectionCard(
-                        title: "Appearance",
-                        subtitle: "Window appearance and visual style"
-                    ) {
-                        VStack{
-                            HStack(alignment: .firstTextBaseline) {
-                                Text("Pinned Tabs Look")
-                                Spacer()
-                                Picker(
-                                    "pinned tabs",
-                                    selection: $settings.pinnedTabsLook
-                                ) {
-                                    ForEach(PinnedTabsConfiguration.allCases) { config in
-                                        Text(config.name).tag(config)
-                                    }
-                                }
-                                .labelsHidden()
-                                .pickerStyle(.menu)
-                                .frame(width: 220)
-                            }
-                        }
-
-                    }
-                    
-                    SettingsSectionCard(
-                        title: "Sumi Window",
-                        subtitle: "Sumi keeps one fixed left-sidebar shell"
-                    ) {
-                        VStack(alignment: .leading, spacing: 16) {
-                            Toggle(
-                                isOn: $settings
-                                    .askBeforeQuit
-                            ) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Ask Before Quitting")
-                                    Text(
-                                        "Warn before quitting Sumi"
-                                    )
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                }
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-
-                            Label("Left sidebar shell is always on", systemImage: "sidebar.left")
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            
-                            Divider().opacity(0.4)
-                            
-                            Toggle(
-                                isOn: $settings
-                                    .showLinkStatusBar
-                            ) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Link Status Bar")
-                                    Text(
-                                        "Show URL preview when hovering over links"
-                                    )
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                }
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-
-                    SettingsSectionCard(
-                        title: "Search",
-                        subtitle: "Default provider for address bar"
-                    ) {
-                        HStack(alignment: .firstTextBaseline) {
-                            Text("Search Engine")
-                            Spacer()
-                            Picker(
-                                "Search Engine",
-                                selection: $settings
-                                    .searchEngineId
-                            ) {
-                                ForEach(SearchProvider.allCases) { provider in
-                                    Text(provider.displayName).tag(provider.rawValue)
-                                }
-                                ForEach(sumiSettings.customSearchEngines) { engine in
-                                    Text(engine.name).tag(engine.id.uuidString)
-                                }
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
-                            .frame(width: 220)
-
-                            Button {
-                                showingAddEngine = true
-                            } label: {
-                                Image(systemName: "plus")
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-
-                        if let selected = sumiSettings.customSearchEngines.first(where: { $0.id.uuidString == sumiSettings.searchEngineId }) {
-                            HStack {
-                                Text(selected.name)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                Button("Remove") {
-                                    sumiSettings.customSearchEngines.removeAll { $0.id == selected.id }
-                                    sumiSettings.searchEngineId = SearchProvider.google.rawValue
-                                }
-                                .font(.caption)
-                                .foregroundStyle(.red)
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                    .sheet(isPresented: $showingAddEngine) {
-                        CustomSearchEngineEditor { newEngine in
-                            sumiSettings.customSearchEngines.append(newEngine)
-                        }
-                    }
-                    
-                    SettingsSectionCard(
-                        title: "Performance",
-                        subtitle: "Manage memory by unloading inactive tabs"
-                    ) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(alignment: .firstTextBaseline) {
-                                Text("Tab Unload Timeout")
-                                Spacer()
-                                Picker(
-                                    "Tab Unload Timeout",
-                                    selection: Binding<TimeInterval>(
-                                        get: {
-                                            nearestTimeoutOption(
-                                                to: sumiSettings
-                                                    .tabUnloadTimeout
-                                            )
-                                        },
-                                        set: { newValue in
-                                            sumiSettings
-                                                .tabUnloadTimeout = newValue
-                                        }
-                                    )
-                                ) {
-                                    ForEach(unloadTimeoutOptions, id: \.self) {
-                                        value in
-                                        Text(formatTimeout(value)).tag(value)
-                                    }
-                                }
-                                .labelsHidden()
-                                .pickerStyle(.menu)
-                                .frame(width: 220)
-                                .onAppear {
-                                    sumiSettings
-                                        .tabUnloadTimeout =
-                                        nearestTimeoutOption(
-                                            to: sumiSettings
-                                                .tabUnloadTimeout
-                                        )
-                                }
-                            }
-
-                            Text(
-                                "Automatically unload inactive tabs to reduce memory usage."
-                            )
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                            HStack {
-                                Button("Unload All Inactive Tabs") {
-                                    browserManager.tabManager
-                                        .unloadAllInactiveTabs()
-                                }
-                                .buttonStyle(.bordered)
-                                Spacer()
-                            }
-                        }
-                    }
-                }
-                .padding(.trailing, 4)
-            }
-        }
-        .frame(minHeight: 480)
-    }
-}
-
-// MARK: - Placeholder Settings Views
+// MARK: - Profiles Settings
 
 struct ProfilesSettingsView: View {
     @EnvironmentObject var browserManager: BrowserManager
     @State private var profileToRename: Profile? = nil
-    @State private var profileToDelete: Profile? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -733,9 +481,7 @@ struct ProfilesSettingsView: View {
                                     },
                                     onRename: { startRename(profile) },
                                     onDelete: { startDelete(profile) },
-                                    onManageData: {
-                                        showDataManagement(for: profile)
-                                    }
+                                    onManageData: showDataManagement
                                 )
                                 .accessibilityLabel("Profile \(profile.name)")
                                 .accessibilityHint(
@@ -931,7 +677,7 @@ struct ProfilesSettingsView: View {
         browserManager.showDialog(dialog)
     }
 
-    private func showDataManagement(for profile: Profile) {
+    private func showDataManagement() {
         browserManager.dialogManager.showDialog {
             StandardDialog(
                 header: {
@@ -960,10 +706,6 @@ struct ProfilesSettingsView: View {
     }
 
     // MARK: - Space assignment helpers and views
-    private func assign(space: Space, to id: UUID) {
-        browserManager.tabManager.assign(spaceId: space.id, toProfile: id)
-    }
-
     private func assignAllSpacesToCurrentProfile() {
         guard let pid = browserManager.currentProfile?.id else { return }
         for sp in browserManager.tabManager.spaces {
@@ -982,14 +724,6 @@ struct ProfilesSettingsView: View {
                 toProfile: defaultProfileId
             )
         }
-    }
-
-    
-    private func resolvedProfile(for id: UUID?) -> Profile? {
-        guard let id else { return nil }
-        return browserManager.profileManager.profiles.first(where: {
-            $0.id == id
-        })
     }
 
     private struct SpaceAssignmentRowView: View {
@@ -1317,63 +1051,6 @@ private struct CategoryFilterChip: View {
     }
 }
 
-struct AdvancedSettingsView: View {
-    @EnvironmentObject var browserManager: BrowserManager
-    @Environment(\.sumiSettings) var sumiSettings
-
-    var body: some View {
-        @Bindable var settings = sumiSettings
-        return VStack(alignment: .leading, spacing: 16) {
-            #if DEBUG
-            SettingsSectionCard(
-                title: "Debug Options",
-                subtitle: "Development and debugging features"
-            ) {
-                Toggle(
-                    isOn: $settings.debugToggleUpdateNotification
-                ) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Show Update Notification")
-                        Text(
-                            "Force display the sidebar update notification for appearance debugging"
-                        )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            #endif
-        }
-        .padding()
-    }
-}
-
-// MARK: - Helper Functions
-private let unloadTimeoutOptions: [TimeInterval] = [
-    300,  // 5 min
-    600,  // 10 min
-    900,  // 15 min
-    1800,  // 30 min
-    2700,  // 45 min
-    3600,  // 1 hr
-    7200,  // 2 hr
-    14400,  // 4 hr
-    28800,  // 8 hr
-    43200,  // 12 hr
-    86400,  // 24 hr
-]
-
-private func nearestTimeoutOption(to value: TimeInterval) -> TimeInterval {
-    guard
-        let nearest = unloadTimeoutOptions.min(by: {
-            abs($0 - value) < abs($1 - value)
-        })
-    else {
-        return value
-    }
-    return nearest
-}
-
 // MARK: - Styled Components
 struct SettingsSectionCard<Content: View>: View {
     let title: String
@@ -1413,180 +1090,7 @@ struct SettingsSectionCard<Content: View>: View {
     }
 }
 
-struct SettingsHeroCard: View {
-    @EnvironmentObject var browserManager: BrowserManager
-
-    private var heroGradient: SpaceGradient {
-        browserManager.tabManager.currentSpace?.workspaceTheme.gradient ?? .default
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .strokeBorder(Color.primary.opacity(0.08))
-                    )
-                BarycentricGradientView(
-                    gradient: heroGradient
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .padding(12)
-            }
-            .frame(height: 220)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Sumi")
-                    .font(.system(size: 24, weight: .bold))
-                Text("BROWSER")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            HStack(spacing: 12) {
-                Image(systemName: "square.and.arrow.up")
-                Image(systemName: "doc.on.doc")
-                Image(systemName: "gearshape")
-            }
-            .foregroundStyle(.secondary)
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.thinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .strokeBorder(Color.primary.opacity(0.08))
-                )
-                .shadow(color: Color.black.opacity(0.1), radius: 14, y: 6)
-        )
-    }
-}
-
-struct SettingsPlaceholderView: View {
-    let title: String
-    let subtitle: String
-    let icon: String
-
-    var body: some View {
-        VStack(alignment: .center, spacing: 16) {
-            HStack { Spacer() }
-            VStack(spacing: 10) {
-                Image(systemName: icon)
-                    .font(.system(size: 48, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                Text(title).font(.title2).fontWeight(.semibold)
-                Text(subtitle).foregroundStyle(.secondary)
-            }
-            .padding(32)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(.thinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .strokeBorder(Color.primary.opacity(0.08))
-                    )
-                    .shadow(color: Color.black.opacity(0.08), radius: 12, y: 6)
-            )
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.vertical, 20)
-    }
-}
-
 // MARK: - Site Search Settings
-
-struct SiteSearchSettingsCard: View {
-    @Environment(\.sumiSettings) var sumiSettings
-    @State private var showingAddSheet = false
-    @State private var editingEntry: SiteSearchEntry? = nil
-
-    var body: some View {
-        @Bindable var settings = sumiSettings
-        SettingsSectionCard(
-            title: "Site Search",
-            subtitle: "Tab-to-Search shortcuts for quick site searches"
-        ) {
-            VStack(alignment: .leading, spacing: 12) {
-                ForEach(sumiSettings.siteSearchEntries) { entry in
-                    HStack(spacing: 10) {
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(entry.color)
-                            .frame(width: 14, height: 14)
-
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(entry.name)
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                            Text(entry.domain)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Spacer()
-
-                        Button {
-                            editingEntry = entry
-                        } label: {
-                            Image(systemName: "pencil")
-                                .font(.caption)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-
-                        Button {
-                            sumiSettings.siteSearchEntries.removeAll { $0.id == entry.id }
-                        } label: {
-                            Image(systemName: "trash")
-                                .font(.caption)
-                                .foregroundStyle(.red)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    }
-                    .padding(8)
-                    .background(Color(.controlBackgroundColor))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-
-                HStack(spacing: 8) {
-                    Button {
-                        showingAddSheet = true
-                    } label: {
-                        Label("Add Site", systemImage: "plus")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-
-                    Spacer()
-
-                    Button("Reset to Defaults") {
-                        sumiSettings.siteSearchEntries = SiteSearchEntry.defaultSites
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-            }
-        }
-        .sheet(isPresented: $showingAddSheet) {
-            SiteSearchEntryEditor(entry: nil) { newEntry in
-                sumiSettings.siteSearchEntries.append(newEntry)
-            }
-        }
-        .sheet(item: $editingEntry) { entry in
-            SiteSearchEntryEditor(entry: entry) { updated in
-                if let idx = sumiSettings.siteSearchEntries.firstIndex(where: { $0.id == updated.id }) {
-                    sumiSettings.siteSearchEntries[idx] = updated
-                }
-            }
-        }
-    }
-}
 
 struct SiteSearchEntryEditor: View {
     let entry: SiteSearchEntry?
@@ -1640,26 +1144,5 @@ struct SiteSearchEntryEditor: View {
                 colorHex = entry.colorHex
             }
         }
-    }
-}
-
-private func formatTimeout(_ seconds: TimeInterval) -> String {
-    if seconds < 3600 {  // under 1 hour
-        let minutes = Int(seconds / 60)
-        return minutes == 1 ? "1 min" : "\(minutes) mins"
-    } else if seconds < 86400 {  // under 24 hours
-        let hours = seconds / 3600.0
-        let rounded = hours.rounded()
-        let isWhole = abs(hours - rounded) < 0.01
-        if isWhole {
-            let wholeHours = Int(rounded)
-            return wholeHours == 1 ? "1 hr" : "\(wholeHours) hrs"
-        } else {
-            // Show one decimal for non-integer hours
-            return String(format: "%.1f hrs", hours)
-        }
-    } else {
-        // 24 hours (cap in UI)
-        return "24 hr"
     }
 }

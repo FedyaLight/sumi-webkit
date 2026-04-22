@@ -111,7 +111,7 @@ final class ExtensionToolbarStateTests: XCTestCase {
         return ExtensionManager(
             context: container.mainContext,
             initialProfile: initialProfile,
-            browserConfiguration: .makeTestingInstance()
+            browserConfiguration: BrowserConfiguration()
         )
     }
 

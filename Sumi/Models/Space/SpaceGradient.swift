@@ -128,8 +128,7 @@ extension SpaceGradient {
             blended.scalars[index] = from.scalars[index] + (target.scalars[index] - from.scalars[index]) * clamped
         }
 
-        let fallback = clamped < 0.5 ? self : other
-        var gradient = SpaceGradient.decodeFromAnimVector(blended, fallback: fallback)
+        var gradient = SpaceGradient.decodeFromAnimVector(blended)
         gradient.opacity = opacity + (other.opacity - opacity) * clamped
         return gradient
     }
@@ -191,7 +190,7 @@ extension SpaceGradient: Animatable {
 
     var animatableData: AnimVector {
         get { SpaceGradient.encodeToAnimVector(self) }
-        set { self = SpaceGradient.decodeFromAnimVector(newValue, fallback: self) }
+        set { self = SpaceGradient.decodeFromAnimVector(newValue) }
     }
 
     private static func encodeToAnimVector(_ g: SpaceGradient) -> AnimVector {
@@ -244,7 +243,7 @@ extension SpaceGradient: Animatable {
         return out
     }
 
-    private static func decodeFromAnimVector(_ v: AnimVector, fallback: SpaceGradient) -> SpaceGradient {
+    private static func decodeFromAnimVector(_ v: AnimVector) -> SpaceGradient {
         let cosT = v.scalars[0]
         let sinT = v.scalars[1]
         // Recover angle from cos/sin

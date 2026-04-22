@@ -43,11 +43,6 @@ class CommandPalette {
         }
     }
 
-    /// Open the command palette with the current tab's URL
-    func openWithCurrentURL(_ url: URL) {
-        open(prefill: url.absoluteString, navigateCurrentTab: true)
-    }
-
     /// Close the command palette
     func close(preserveDraft: Bool = true) {
         isVisible = false
@@ -78,15 +73,6 @@ class CommandPalette {
         prefilledText = ""
         if notify {
             notifyStateChanged(.session)
-        }
-    }
-
-    /// Toggle the command palette visibility
-    func toggle() {
-        if isVisible {
-            close()
-        } else {
-            open()
         }
     }
 

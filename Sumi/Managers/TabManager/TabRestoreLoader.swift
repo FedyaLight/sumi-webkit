@@ -5,7 +5,6 @@ struct TabRestoreSpaceDTO: Sendable {
     let id: UUID
     let name: String
     let icon: String
-    let index: Int
     let workspaceTheme: WorkspaceTheme
     let profileId: UUID?
 }
@@ -178,7 +177,6 @@ actor TabRestoreLoader {
                 id: UUID(),
                 name: "Personal",
                 icon: "person.crop.circle",
-                index: 0,
                 workspaceTheme: .default,
                 profileId: defaultProfileId
             )
@@ -267,7 +265,6 @@ actor TabRestoreLoader {
                     id: raw.id,
                     name: raw.name,
                     icon: raw.icon,
-                    index: raw.index,
                     workspaceTheme: workspaceTheme,
                     profileId: profileId
                 )

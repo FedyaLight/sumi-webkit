@@ -17,8 +17,8 @@ import WebKit
 // MARK: - Download Model
 
 @Observable
-public class Download: Identifiable {
-    public let id: UUID
+class Download: Identifiable {
+    let id: UUID
     let download: WKDownload
     let originalURL: URL
     let suggestedFilename: String
@@ -66,20 +66,6 @@ public class Download: Identifiable {
             }
         }
 
-        var icon: String {
-            switch self {
-            case .pending:
-                return "clock"
-            case .downloading:
-                return "arrow.down.circle"
-            case .completed:
-                return "checkmark.circle"
-            case .failed:
-                return "exclamationmark.circle"
-            case .cancelled:
-                return "xmark.circle"
-            }
-        }
     }
 
     enum DestinationPreference {
@@ -207,14 +193,6 @@ public class Download: Identifiable {
         return String(format: "%.1f%%", progress * 100)
     }
 
-    var formattedSpeed: String {
-        let elapsed = Date().timeIntervalSince(startDate)
-        guard elapsed > 0 else { return "0 B/s" }
-
-        let speed = Double(downloadedBytes) / elapsed
-        return ByteCountFormatter.string(fromByteCount: Int64(speed), countStyle: .binary) + "/s"
-    }
-
     var formattedTimeRemaining: String {
         guard let estimatedTimeRemaining = estimatedTimeRemaining else { return "Unknown" }
 
@@ -251,14 +229,6 @@ public class DownloadManager: NSObject {
         return Array(downloads.values).sorted { $0.startDate > $1.startDate }
     }
 
-    var totalDownloads: Int {
-        return downloads.count
-    }
-
-    var activeDownloadsCount: Int {
-        return activeDownloads.count
-    }
-
     override private init() {
         super.init()
     }
@@ -288,42 +258,6 @@ public class DownloadManager: NSObject {
         RuntimeDiagnostics.emit("Added download: \(suggestedFilename) with ID: \(downloadModel.id)")
         RuntimeDiagnostics.emit("Download delegate set: \(download.delegate != nil)")
         return downloadModel
-    }
-
-    func removeDownload(_ id: UUID) {
-        downloads.removeValue(forKey: id)
-        downloadDelegates.removeValue(forKey: id)
-    }
-
-    func cancelDownload(_ id: UUID) {
-        guard let download = downloads[id] else { return }
-        download.state = .cancelled
-        download.download.cancel()
-        RuntimeDiagnostics.emit("Cancelled download: \(download.suggestedFilename)")
-    }
-
-    func retryDownload(_ id: UUID) {
-        guard let download = downloads[id], download.state == .failed else { return }
-        RuntimeDiagnostics.emit("Retry not supported for WKDownload")
-    }
-
-    func clearCompletedDownloads() {
-        let completedIds = downloads.values.filter { $0.state == .completed }.map { $0.id }
-        for id in completedIds {
-            removeDownload(id)
-        }
-    }
-
-    func clearFailedDownloads() {
-        let failedIds = downloads.values.filter { $0.state == .failed }.map { $0.id }
-        for id in failedIds {
-            removeDownload(id)
-        }
-    }
-
-    func clearAllDownloads() {
-        downloads.removeAll()
-        downloadDelegates.removeAll()
     }
 
     // MARK: - Download Updates
@@ -381,7 +315,6 @@ private class DownloadDelegate: NSObject, WKDownloadDelegate {
         qos: .utility
     )
     private var fileObservationSource: DispatchSourceFileSystemObject?
-    private var observedFileDescriptor: CInt = -1
     private var isObservingDestinationDirectory = false
     private var lastObservedFileSize: Int64 = 0
 
@@ -400,31 +333,24 @@ private class DownloadDelegate: NSObject, WKDownloadDelegate {
         case cancel
     }
 
-    // iOS-style API (older) – keep for compatibility where this signature exists
-    public func download(_: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
-        decideDestination(response: response, suggestedFilename: suggestedFilename) { [weak self] decision in
-            guard let self else { return }
-            switch decision {
-            case .proceed(let url):
-                completionHandler(url)
-            case .cancel:
-                self.download.download.cancel()
-                completionHandler(nil)
-            }
-        }
-    }
-
-    // macOS 12+/15+ API – WebKit on macOS expects the (URL, Bool) completion to grant a sandbox extension
-    public func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL, Bool) -> Void) {
-        decideDestination(response: response, suggestedFilename: suggestedFilename) { [weak self] decision in
-            guard let self else { return }
-            switch decision {
-            case .proceed(let url):
-                // Return true to grant sandbox extension - this allows WebKit to write to the destination
-                completionHandler(url, true)
-            case .cancel:
-                self.download.download.cancel()
-                completionHandler(URL(fileURLWithPath: "/tmp/cancelled"), false)
+    func download(
+        _: WKDownload,
+        decideDestinationUsing response: URLResponse,
+        suggestedFilename: String
+    ) async -> URL? {
+        await withCheckedContinuation { continuation in
+            decideDestination(response: response, suggestedFilename: suggestedFilename) { [weak self] decision in
+                guard let self else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                switch decision {
+                case .proceed(let url):
+                    continuation.resume(returning: url)
+                case .cancel:
+                    self.download.download.cancel()
+                    continuation.resume(returning: nil)
+                }
             }
         }
     }
@@ -506,7 +432,6 @@ private class DownloadDelegate: NSObject, WKDownloadDelegate {
     private func stopFileObservation() {
         fileObservationSource?.cancel()
         fileObservationSource = nil
-        observedFileDescriptor = -1
         isObservingDestinationDirectory = false
     }
 
@@ -527,7 +452,6 @@ private class DownloadDelegate: NSObject, WKDownloadDelegate {
             queue: fileObservationQueue
         )
 
-        observedFileDescriptor = descriptor
         isObservingDestinationDirectory = observingDirectory
         fileObservationSource = source
 
@@ -637,13 +561,4 @@ private class DownloadDelegate: NSObject, WKDownloadDelegate {
         completionHandler(.performDefaultHandling, nil)
     }
 
-    public func download(_: WKDownload, didFinishDownloadingTo location: URL) {
-        RuntimeDiagnostics.emit("🔽 [DownloadManager] Download finished to: \(location.path)")
-        // The download is already handled by downloadDidFinish, but we can add additional logic here if needed
-    }
-
-    public func download(_: WKDownload, didFailWithError error: Error) {
-        RuntimeDiagnostics.emit("🔽 [DownloadManager] Download failed: \(error.localizedDescription)")
-        // The download is already handled by the existing didFailWithError method, but we can add additional logic here if needed
-    }
 }

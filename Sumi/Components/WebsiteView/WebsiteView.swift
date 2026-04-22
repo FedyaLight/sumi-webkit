@@ -137,7 +137,6 @@ struct WebsiteView: View {
     @Environment(\.sumiSettings) var sumiSettings
     @State private var hoveredLink: String?
     @State private var isCommandPressed: Bool = false
-    @State private var isDropTargeted: Bool = false
     
     private let dragCoordinateSpace = "splitPreview"
 
@@ -172,7 +171,7 @@ struct WebsiteView: View {
                     {
                         EmptyWebsiteView()
                     } else {
-                        GeometryReader { proxy in
+                        GeometryReader { _ in
                             TabCompositorWrapper(
                                 browserManager: browserManager,
                                 webViewCoordinator: webViewCoordinator,
@@ -242,7 +241,6 @@ private struct SplitPreviewOverlay: View {
     var body: some View {
         GeometryReader { geometry in
             let splitState = splitManager.getSplitState(for: windowState.id)
-            let previewSide = splitState.previewSide
             let dragLocation = splitState.dragLocation
             let cardPadding: CGFloat = 20
             let cardWidth: CGFloat = 315
@@ -256,7 +254,6 @@ private struct SplitPreviewOverlay: View {
                         side: .left,
                         icon: "rectangle.lefthalf.filled",
                         text: "Add left split",
-                        isTabHovered: previewSide == .left,
                         dragLocation: dragLocation,
                         cardFrame: CGRect(
                             x: cardPadding,
@@ -280,7 +277,6 @@ private struct SplitPreviewOverlay: View {
                         side: .right,
                         icon: "rectangle.righthalf.filled",
                         text: "Add right split",
-                        isTabHovered: previewSide == .right,
                         dragLocation: dragLocation,
                         cardFrame: CGRect(
                             x: geometry.size.width - cardPadding - cardWidth,
@@ -310,7 +306,6 @@ private struct MagneticCardView: View {
     let side: SplitViewManager.Side
     let icon: String
     let text: String
-    let isTabHovered: Bool
     let dragLocation: CGPoint?
     let cardFrame: CGRect
     let geometry: GeometryProxy
@@ -405,6 +400,18 @@ struct WebsiteDisplayState: Equatable {
     let currentTabUnloaded: Bool
     let visibleTabIds: Set<UUID>
     let isPreviewActive: Bool
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.splitFraction == rhs.splitFraction
+            && lhs.isSplit == rhs.isSplit
+            && lhs.leftId == rhs.leftId
+            && lhs.rightId == rhs.rightId
+            && lhs.currentId == rhs.currentId
+            && lhs.compositorVersion == rhs.compositorVersion
+            && lhs.currentTabUnloaded == rhs.currentTabUnloaded
+            && lhs.visibleTabIds == rhs.visibleTabIds
+            && lhs.isPreviewActive == rhs.isPreviewActive
+    }
 }
 
 @MainActor
@@ -1165,162 +1172,6 @@ private final class PaneContainerView: NSView {
                 : NSColor.clear.cgColor
             lastIsActive = isActive
             lastAccent = accent
-        }
-    }
-}
-
-// Split view context menu is handled via buttons in SplitControlsOverlay
-// We don't use SwiftUI's contextMenu modifier because it intercepts all right-clicks
-// and prevents WKWebView's willOpenMenu from being called
-
-// MARK: - Split Controls Overlay
-private struct SplitControlsOverlay: View {
-    @EnvironmentObject var browserManager: BrowserManager
-    @EnvironmentObject var splitManager: SplitViewManager
-    @Environment(BrowserWindowState.self) private var windowState
-
-    @State private var dragOffset: CGFloat = 0
-
-    var body: some View {
-        GeometryReader { geo in
-            let totalWidth = geo.size.width
-            let totalHeight = geo.size.height
-            let orientation = splitManager.orientation(for: windowState.id)
-            let x = CGFloat(splitManager.dividerFraction(for: windowState.id)) * max(totalWidth, 1)
-            let y = CGFloat(splitManager.dividerFraction(for: windowState.id)) * max(totalHeight, 1)
-            // Divider bar
-            ZStack {
-                // Close buttons (small, top corners)
-                HStack {
-                    Button(action: { closeSide(.left) }) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 10, weight: .bold))
-                            .padding(6)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("split-close-left")
-                    .background(.ultraThinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.25), lineWidth: 1))
-                    .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
-                    .padding(.leading, 8)
-
-                    Spacer()
-
-                    Button(action: { closeSide(.right) }) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 10, weight: .bold))
-                            .padding(6)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("split-close-right")
-                    .background(.ultraThinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.25), lineWidth: 1))
-                    .shadow(color: Color.black.opacity(0.2), radius: 2, x: 0, y: 1)
-                    .padding(.trailing, 8)
-                }
-                .padding(.top, 8)
-
-                HStack(spacing: 8) {
-                    Button(action: { splitManager.swapSides(for: windowState.id) }) {
-                        Image(systemName: "arrow.left.arrow.right")
-                            .font(.system(size: 10, weight: .bold))
-                            .padding(6)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("split-swap-sides")
-                    .background(.ultraThinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.25), lineWidth: 1))
-
-                    Button(action: { splitManager.toggleOrientation(for: windowState.id) }) {
-                        Image(systemName: orientation == .horizontal ? "rectangle.split.2x1" : "rectangle.split.1x2")
-                            .font(.system(size: 10, weight: .bold))
-                            .padding(6)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("split-toggle-orientation")
-                    .background(.ultraThinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.25), lineWidth: 1))
-                }
-                .padding(.top, 8)
-
-                // Gap visuals and drag handle
-                let gap: CGFloat = 8
-                if orientation == .horizontal {
-                    Rectangle()
-                        .fill(Color(nsColor: .separatorColor).opacity(0.7))
-                        .frame(width: 1, height: totalHeight)
-                        .position(x: x, y: totalHeight / 2)
-                        .allowsHitTesting(false)
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.clear)
-                        .contentShape(Rectangle())
-                        .frame(width: gap, height: totalHeight)
-                        .position(x: x, y: totalHeight / 2)
-                        .onHover { hovering in
-                            if hovering { NSCursor.resizeLeftRight.set() } else { NSCursor.arrow.set() }
-                        }
-                        .gesture(
-                            DragGesture(minimumDistance: 0)
-                                .onChanged { value in
-                                    let width = max(totalWidth, 1)
-                                    let newX = min(max(value.location.x, splitManager.minFraction * width), splitManager.maxFraction * width)
-                                    splitManager.updateLiveDividerFraction(newX / width, for: windowState.id)
-                                }
-                                .onEnded { value in
-                                    let width = max(totalWidth, 1)
-                                    let newX = min(max(value.location.x, splitManager.minFraction * width), splitManager.maxFraction * width)
-                                    splitManager.commitDividerFraction(newX / width, for: windowState.id)
-                                }
-                        )
-                        .zIndex(1000)
-                } else {
-                    Rectangle()
-                        .fill(Color(nsColor: .separatorColor).opacity(0.7))
-                        .frame(width: totalWidth, height: 1)
-                        .position(x: totalWidth / 2, y: y)
-                        .allowsHitTesting(false)
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.clear)
-                        .contentShape(Rectangle())
-                        .frame(width: totalWidth, height: gap)
-                        .position(x: totalWidth / 2, y: y)
-                        .onHover { hovering in
-                            if hovering { NSCursor.resizeUpDown.set() } else { NSCursor.arrow.set() }
-                        }
-                        .gesture(
-                            DragGesture(minimumDistance: 0)
-                                .onChanged { value in
-                                    let height = max(totalHeight, 1)
-                                    let newY = min(max(value.location.y, splitManager.minFraction * height), splitManager.maxFraction * height)
-                                    splitManager.updateLiveDividerFraction(newY / height, for: windowState.id)
-                                }
-                                .onEnded { value in
-                                    let height = max(totalHeight, 1)
-                                    let newY = min(max(value.location.y, splitManager.minFraction * height), splitManager.maxFraction * height)
-                                    splitManager.commitDividerFraction(newY / height, for: windowState.id)
-                                }
-                        )
-                        .zIndex(1000)
-                }
-            }
-        }
-        .allowsHitTesting(true)
-    }
-
-    private func closeSide(_ side: SplitViewManager.Side) {
-        let id: UUID? = (side == .left) ? splitManager.leftTabId(for: windowState.id) : splitManager.rightTabId(for: windowState.id)
-        if let id = id {
-            if let tab = browserManager.tabManager.tab(for: id) {
-                browserManager.closeTab(tab, in: windowState)
-            } else {
-                splitManager.exitSplit(keep: side == .left ? .right : .left, for: windowState.id)
-            }
-        } else {
-            splitManager.exitSplit(keep: side == .left ? .right : .left, for: windowState.id)
         }
     }
 }

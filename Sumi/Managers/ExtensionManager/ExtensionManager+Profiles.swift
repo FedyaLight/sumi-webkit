@@ -59,10 +59,6 @@ extension ExtensionManager {
         switchProfile(profileId: profile.id)
     }
 
-    func switchProfile(profileId: UUID, dataStore: WKWebsiteDataStore) {
-        switchProfile(profileId: profileId)
-    }
-
     func switchProfile(profileId: UUID) {
         currentProfileId = profileId
         reloadPinnedToolbarExtensionsForCurrentProfile()
@@ -82,12 +78,6 @@ extension ExtensionManager {
 
         extensionController.configuration.defaultWebsiteDataStore = store
         verifyExtensionStorage(profileId: profileId)
-    }
-
-    func grantExtensionAccessToURL(_ url: URL) {
-        for (_, extensionContext) in extensionContexts {
-            extensionContext.setPermissionStatus(.grantedExplicitly, for: url)
-        }
     }
 
     @discardableResult

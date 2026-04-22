@@ -2,5 +2,17 @@
 project: Sumi.xcodeproj
 schemes:
   - Sumi
-targets:
-  - Sumi
+
+# Periphery 3.x scans all source files referenced by the index store for the
+# configured schemes, so the old 2.x `targets` setting is intentionally omitted.
+exclude_tests: true
+retain_objc_accessible: true
+retain_codable_properties: true
+retain_swift_ui_previews: true
+retain_unused_protocol_func_params: true
+relative_results: true
+disable_update_check: true
+index_exclude:
+  - "**/*?.build/**/*"
+  - "**/SourcePackages/checkouts/**"
+  - "**/*.m"

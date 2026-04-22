@@ -8,17 +8,6 @@
 import SwiftUI
 import WebKit
 
-struct CacheManagementView: View {
-    @StateObject private var cacheManager = CacheManager()
-
-    var body: some View {
-        CacheManagementPanel(
-            cacheManager: cacheManager,
-            clearsLoadedDataOnDisappear: true
-        )
-    }
-}
-
 struct CacheManagementPanel: View {
     @EnvironmentObject var browserManager: BrowserManager
     @ObservedObject var cacheManager: CacheManager

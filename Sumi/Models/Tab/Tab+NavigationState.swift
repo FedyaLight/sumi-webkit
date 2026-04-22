@@ -18,29 +18,21 @@ extension Tab {
         loadingState = .didStartProvisionalNavigation
         if let webView = _webView
         {
-            let currentURL = webView.url ?? existingWebView?.url ?? url
             if #available(macOS 15.5, *) {
                 performMainFrameNavigationAfterHydrationIfNeeded(
-                    on: webView,
-                    url: currentURL
+                    on: webView
                 ) { resolvedWebView in
                     resolvedWebView.reload()
                 }
             } else {
                 performMainFrameNavigation(
-                    on: webView,
-                    url: currentURL
+                    on: webView
                 ) { resolvedWebView in
                     resolvedWebView.reload()
                 }
             }
         }
         browserManager?.reloadTabAcrossWindows(id)
-    }
-
-    func stop() {
-        _webView?.stopLoading()
-        loadingState = .idle
     }
 
     func updateNavigationState() {

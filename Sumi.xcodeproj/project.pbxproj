@@ -44,7 +44,6 @@
 		2D0834BF2EC8CE1300C302AC /* Exceptions for "CommandPalette" folder in "Sumi" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				"CommandPalette Accessories/CommandPaletteSuggestionView.swift",
 				"CommandPalette Accessories/GenericSuggestionItem.swift",
 				"CommandPalette Accessories/HistorySuggestionItem.swift",
 				"CommandPalette Accessories/TabSuggestionItem.swift",

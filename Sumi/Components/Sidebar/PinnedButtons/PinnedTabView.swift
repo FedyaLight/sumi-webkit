@@ -14,8 +14,6 @@ struct PinnedTabView: View {
         case idle
     }
 
-    var tabName: String
-    var tabURL: String
     var tabIcon: SwiftUI.Image
     /// Draw with `ChromeThemeTokens.primaryText` + monochrome (new-tab globe, settings gear, uncached globe fallback).
     var chromeTemplateSystemImageName: String? = nil
@@ -29,7 +27,6 @@ struct PinnedTabView: View {
     var contextMenuEntries: [SidebarContextMenuEntry] = []
     var action: () -> Void
     var onUnload: () -> Void
-    var onRemove: () -> Void
 
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState

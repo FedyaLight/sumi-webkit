@@ -32,16 +32,16 @@ struct SumiSettingsTabRootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
-        .onChange(of: sumiSettings.currentSettingsTab) { _, newPane in
-            syncSettingsURLToActiveTab(sumiSettings: sumiSettings, pane: newPane)
+        .onChange(of: sumiSettings.currentSettingsTab) { _, _ in
+            syncSettingsURLToActiveTab(sumiSettings: sumiSettings)
         }
         .onChange(of: sumiSettings.extensionsSettingsSubPane) { _, _ in
             if sumiSettings.currentSettingsTab == .extensions {
-                syncSettingsURLToActiveTab(sumiSettings: sumiSettings, pane: .extensions)
+                syncSettingsURLToActiveTab(sumiSettings: sumiSettings)
             }
         }
         .onAppear {
-            syncSettingsURLToActiveTab(sumiSettings: sumiSettings, pane: sumiSettings.currentSettingsTab)
+            syncSettingsURLToActiveTab(sumiSettings: sumiSettings)
         }
     }
 
@@ -109,7 +109,7 @@ struct SumiSettingsTabRootView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private func syncSettingsURLToActiveTab(sumiSettings: SumiSettingsService, pane: SettingsTabs) {
+    private func syncSettingsURLToActiveTab(sumiSettings: SumiSettingsService) {
         guard let windowState,
               let tab = browserManager.currentTab(for: windowState),
               tab.representsSumiSettingsSurface

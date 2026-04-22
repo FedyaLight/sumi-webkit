@@ -376,14 +376,6 @@ struct CommandPaletteView: View {
         }
     }
 
-    private func isEmoji(_ string: String) -> Bool {
-        return string.unicodeScalars.contains { scalar in
-            (scalar.value >= 0x1F300 && scalar.value <= 0x1F9FF)
-                || (scalar.value >= 0x2600 && scalar.value <= 0x26FF)
-                || (scalar.value >= 0x2700 && scalar.value <= 0x27BF)
-        }
-    }
-
     // MARK: - Suggestions List Subview
     private struct CommandPaletteSuggestionsListView: View {
         let tokens: ChromeThemeTokens
@@ -568,72 +560,6 @@ struct CommandPaletteView: View {
             selectedSuggestionIndex = min(selectedSuggestionIndex + 1, maxIndex)
         } else {
             selectedSuggestionIndex = max(selectedSuggestionIndex - 1, -1)
-        }
-    }
-
-    private func iconForSuggestion(_ suggestion: SearchManager.SearchSuggestion)
-        -> Image
-    {
-        switch suggestion.type {
-        case .tab(let tab):
-            return tab.favicon
-        case .history:
-            return Image(systemName: "globe")
-        case .url:
-            return Image(systemName: "link")
-        case .search:
-            return Image(systemName: "magnifyingglass")
-        }
-    }
-
-    @ViewBuilder
-    private func suggestionRow(
-        for suggestion: SearchManager.SearchSuggestion,
-        isSelected: Bool
-    ) -> some View {
-        switch suggestion.type {
-        case .tab(let tab):
-            TabSuggestionItem(tab: tab, isSelected: isSelected)
-                .foregroundStyle(tokens.primaryText)
-        case .history(let entry):
-            HistorySuggestionItem(entry: entry, isSelected: isSelected)
-                .foregroundStyle(tokens.primaryText)
-        case .url:
-            GenericSuggestionItem(
-                icon: Image(systemName: "link"),
-                text: suggestion.text,
-                isSelected: isSelected
-            )
-            .foregroundStyle(tokens.primaryText)
-        case .search:
-            GenericSuggestionItem(
-                icon: Image(systemName: "magnifyingglass"),
-                text: suggestion.text,
-                isSelected: isSelected
-            )
-            .foregroundStyle(tokens.primaryText)
-        }
-    }
-
-    private func urlForSuggestion(_ suggestion: SearchManager.SearchSuggestion)
-        -> URL?
-    {
-        switch suggestion.type {
-        case .history(let entry):
-            return entry.url
-        default:
-            return nil
-        }
-    }
-
-    private func isTabSuggestion(_ suggestion: SearchManager.SearchSuggestion)
-        -> Bool
-    {
-        switch suggestion.type {
-        case .tab:
-            return true
-        case .search, .url, .history:
-            return false
         }
     }
 
