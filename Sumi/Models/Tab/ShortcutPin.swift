@@ -1,12 +1,12 @@
 import Foundation
 import SwiftUI
 
-enum ShortcutPinRole: String, Codable {
+enum ShortcutPinRole: String, Codable, Sendable {
     case essential
     case spacePinned
 }
 
-enum SumiLauncherRole: String, Codable {
+enum SumiLauncherRole: String, Codable, Sendable {
     case essentialLauncher
     case pinnedLauncher
     case folderChildLauncher

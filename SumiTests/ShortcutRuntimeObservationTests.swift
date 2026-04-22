@@ -333,7 +333,7 @@ final class ShortcutRuntimeObservationTests: XCTestCase {
             context: ModelContext(container),
             loadPersistedState: false
         )
-        restoredTabManager.loadFromStore()
+        await restoredTabManager.loadFromStoreAwaitingResult()
 
         XCTAssertEqual(
             restoredTabManager.shortcutPin(by: updatedPin.id)?.iconAsset,

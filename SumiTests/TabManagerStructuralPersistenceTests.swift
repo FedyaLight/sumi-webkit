@@ -180,6 +180,252 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         XCTAssertNil(try fetchTab(staleTabId, in: context))
     }
 
+    func testStartupRestorePreservesOrderingSelectionAndDoesNotScheduleStructuralPersistence() async throws {
+        let container = try makeInMemoryContainer()
+        let profileId = UUID()
+        let spaceAId = UUID()
+        let spaceBId = UUID()
+        let selectedTabId = UUID()
+        let firstTabId = UUID()
+        let folderFirstId = UUID()
+        let folderSecondId = UUID()
+        let pinnedFirstId = UUID()
+        let pinnedSecondId = UUID()
+        let spacePinnedFirstId = UUID()
+        let spacePinnedSecondId = UUID()
+
+        let mutationContext = ModelContext(container)
+        mutationContext.insert(
+            SpaceEntity(
+                id: spaceAId,
+                name: "A",
+                icon: "square.grid.2x2",
+                index: 1,
+                profileId: profileId
+            )
+        )
+        mutationContext.insert(
+            SpaceEntity(
+                id: spaceBId,
+                name: "B",
+                icon: "person.crop.circle",
+                index: 0,
+                profileId: profileId
+            )
+        )
+        mutationContext.insert(
+            FolderEntity(
+                id: folderSecondId,
+                name: "Later",
+                icon: "zen:book",
+                color: "#111111",
+                spaceId: spaceAId,
+                isOpen: false,
+                index: 1
+            )
+        )
+        mutationContext.insert(
+            FolderEntity(
+                id: folderFirstId,
+                name: "First",
+                icon: "zen:bookmark",
+                color: "#222222",
+                spaceId: spaceAId,
+                isOpen: true,
+                index: 0
+            )
+        )
+        mutationContext.insert(
+            TabEntity(
+                id: pinnedSecondId,
+                urlString: "https://example.com/pinned-second",
+                name: "Pinned Second",
+                isPinned: true,
+                index: 1,
+                spaceId: nil,
+                profileId: profileId
+            )
+        )
+        mutationContext.insert(
+            TabEntity(
+                id: pinnedFirstId,
+                urlString: "https://example.com/pinned-first",
+                name: "Pinned First",
+                isPinned: true,
+                index: 0,
+                spaceId: nil,
+                profileId: profileId
+            )
+        )
+        mutationContext.insert(
+            TabEntity(
+                id: spacePinnedSecondId,
+                urlString: "https://example.com/space-pinned-second",
+                name: "Space Pinned Second",
+                isPinned: false,
+                isSpacePinned: true,
+                index: 1,
+                spaceId: spaceAId
+            )
+        )
+        mutationContext.insert(
+            TabEntity(
+                id: spacePinnedFirstId,
+                urlString: "https://example.com/space-pinned-first",
+                name: "Space Pinned First",
+                isPinned: false,
+                isSpacePinned: true,
+                index: 0,
+                spaceId: spaceAId,
+                folderId: folderFirstId
+            )
+        )
+        mutationContext.insert(
+            TabEntity(
+                id: selectedTabId,
+                urlString: "https://example.com/selected",
+                name: "Selected",
+                isPinned: false,
+                index: 1,
+                spaceId: spaceAId
+            )
+        )
+        mutationContext.insert(
+            TabEntity(
+                id: firstTabId,
+                urlString: "https://example.com/first",
+                name: "First",
+                isPinned: false,
+                index: 0,
+                spaceId: spaceAId
+            )
+        )
+        mutationContext.insert(TabsStateEntity(currentTabID: selectedTabId, currentSpaceID: spaceAId))
+        try mutationContext.save()
+
+        let tabManager = TabManager(context: ModelContext(container), loadPersistedState: false)
+        let didLoad = await tabManager.loadFromStoreAwaitingResult()
+
+        XCTAssertTrue(didLoad)
+        XCTAssertEqual(tabManager.spaces.map(\.id), [spaceBId, spaceAId])
+        XCTAssertEqual(tabManager.tabsBySpace[spaceAId]?.map(\.id), [firstTabId, selectedTabId])
+        XCTAssertEqual(tabManager.foldersBySpace[spaceAId]?.map(\.id), [folderFirstId, folderSecondId])
+        XCTAssertEqual(tabManager.pinnedByProfile[profileId]?.map(\.id), [pinnedFirstId, pinnedSecondId])
+        XCTAssertEqual(
+            tabManager.spacePinnedShortcuts[spaceAId]?.map(\.id),
+            [spacePinnedFirstId, spacePinnedSecondId]
+        )
+        XCTAssertEqual(tabManager.currentSpace?.id, spaceAId)
+        XCTAssertEqual(tabManager.currentTab?.id, selectedTabId)
+        XCTAssertTrue(tabManager.structuralDirtySet.isEmpty)
+        XCTAssertNil(tabManager.scheduledStructuralPersistTask)
+    }
+
+    func testStartupRestoreRepairsMalformedPersistedStateAfterMainApply() async throws {
+        let container = try makeInMemoryContainer()
+        let profileId = UUID()
+        let validSpaceId = UUID()
+        let missingSpaceId = UUID()
+        let validTabId = UUID()
+        let orphanTabId = UUID()
+        let orphanFolderId = UUID()
+        let missingFolderId = UUID()
+        let folderChildPinId = UUID()
+        let noSpacePinId = UUID()
+
+        let mutationContext = ModelContext(container)
+        mutationContext.insert(
+            SpaceEntity(
+                id: validSpaceId,
+                name: "Valid",
+                icon: "square.grid.2x2",
+                index: 0,
+                profileId: profileId
+            )
+        )
+        mutationContext.insert(
+            TabEntity(
+                id: validTabId,
+                urlString: "https://example.com/valid",
+                name: "Valid",
+                isPinned: false,
+                index: 0,
+                spaceId: validSpaceId
+            )
+        )
+        mutationContext.insert(
+            TabEntity(
+                id: orphanTabId,
+                urlString: "https://example.com/orphan",
+                name: "Orphan",
+                isPinned: false,
+                index: 1,
+                spaceId: missingSpaceId
+            )
+        )
+        mutationContext.insert(
+            FolderEntity(
+                id: orphanFolderId,
+                name: "Orphan Folder",
+                icon: "zen:book",
+                color: "#333333",
+                spaceId: missingSpaceId,
+                isOpen: false,
+                index: 0
+            )
+        )
+        mutationContext.insert(
+            TabEntity(
+                id: folderChildPinId,
+                urlString: "https://example.com/folder-child",
+                name: "Folder Child",
+                isPinned: false,
+                isSpacePinned: true,
+                index: 0,
+                spaceId: validSpaceId,
+                folderId: missingFolderId
+            )
+        )
+        mutationContext.insert(
+            TabEntity(
+                id: noSpacePinId,
+                urlString: "https://example.com/no-space",
+                name: "No Space",
+                isPinned: false,
+                isSpacePinned: true,
+                index: 1,
+                spaceId: nil
+            )
+        )
+        mutationContext.insert(TabsStateEntity(currentTabID: UUID(), currentSpaceID: missingSpaceId))
+        try mutationContext.save()
+
+        let tabManager = TabManager(context: ModelContext(container), loadPersistedState: false)
+        let didLoad = await tabManager.loadFromStoreAwaitingResult()
+
+        XCTAssertTrue(didLoad)
+        XCTAssertEqual(tabManager.currentSpace?.id, validSpaceId)
+        XCTAssertEqual(tabManager.currentTab?.id, validTabId)
+        XCTAssertEqual(tabManager.tabsBySpace[validSpaceId]?.map(\.id), [validTabId])
+        let repairedPin = try XCTUnwrap(tabManager.spacePinnedShortcuts[validSpaceId]?.first)
+        XCTAssertEqual(repairedPin.id, folderChildPinId)
+        XCTAssertNil(repairedPin.folderId)
+        XCTAssertNil(tabManager.spacePinnedShortcuts[missingSpaceId])
+        XCTAssertTrue(tabManager.structuralDirtySet.isEmpty)
+        XCTAssertNil(tabManager.scheduledStructuralPersistTask)
+
+        try await waitForStoreRepair(in: container) { context in
+            let repairedStoredPin = try fetchTab(folderChildPinId, in: context)
+            let state = try context.fetch(FetchDescriptor<TabsStateEntity>()).first
+            return try fetchTab(orphanTabId, in: context) == nil
+                && fetchFolder(orphanFolderId, in: context) == nil
+                && fetchTab(noSpacePinId, in: context) == nil
+                && repairedStoredPin?.folderId == nil
+                && state?.currentSpaceID == validSpaceId
+                && state?.currentTabID == validTabId
+        }
+    }
+
     private func makeInMemoryContainer() throws -> ModelContainer {
         try ModelContainer(
             for: SumiStartupPersistence.schema,
@@ -221,5 +467,21 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let context = ModelContext(container)
         let state = try XCTUnwrap(context.fetch(FetchDescriptor<TabsStateEntity>()).first)
         XCTAssertTrue(try predicate(state))
+    }
+
+    private func waitForStoreRepair(
+        in container: ModelContainer,
+        matching predicate: (ModelContext) throws -> Bool
+    ) async throws {
+        for _ in 0..<50 {
+            let context = ModelContext(container)
+            if try predicate(context) {
+                return
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        let context = ModelContext(container)
+        XCTAssertTrue(try predicate(context))
     }
 }

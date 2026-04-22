@@ -13,7 +13,7 @@ import AppKit
 
 // MARK: - Gradient Node Model
 
-struct GradientNode: Identifiable, Codable, Hashable {
+struct GradientNode: Identifiable, Codable, Hashable, Sendable {
     let id: UUID
     var colorHex: String
     var location: Double

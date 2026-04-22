@@ -243,6 +243,8 @@ class TabManager: ObservableObject {
         MainActor.assumeIsolated {
             scheduledStructuralPersistTask?.cancel()
             scheduledStructuralPersistTask = nil
+            startupRestoreTask?.cancel()
+            startupRestoreTask = nil
             pendingRuntimeStatePersistTasks.values.forEach { $0.cancel() }
             pendingRuntimeStatePersistTasks.removeAll()
             tabsBySpace.removeAll()
@@ -346,6 +348,10 @@ class TabManager: ObservableObject {
                 .flatMap(\.values)
                 .map(\.id)
         )
+    }
+
+    func rebuildTabLookupForRestore() {
+        rebuildTabLookup()
     }
 
     private func replaceTabLookupEntries(removing previousTabs: [Tab], with currentTabs: [Tab]) {
@@ -1183,6 +1189,7 @@ class TabManager: ObservableObject {
     let structuralPersistDebounceNanoseconds: UInt64 = 250_000_000
     var structuralDirtySet = TabStructuralDirtySet()
     var snapshotCache = TabManagerSnapshotCache()
+    var startupRestoreTask: Task<Void, Never>?
     var pendingRuntimeStatePersistTasks: [UUID: Task<Void, Never>] = [:]
     let runtimeStatePersistDebounceNanoseconds: UInt64 = 250_000_000
 }

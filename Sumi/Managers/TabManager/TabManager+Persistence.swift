@@ -798,6 +798,14 @@ extension TabManager {
     }
 
     func loadFromStore() {
+        startupRestoreTask?.cancel()
+        startupRestoreTask = Task { [weak self] in
+            _ = await self?.loadFromStoreAwaitingResult()
+        }
+    }
+
+    @discardableResult
+    func loadFromStoreAwaitingResult() async -> Bool {
         let signpostState = PerformanceTrace.beginInterval("TabManager.loadFromStore")
         defer {
             PerformanceTrace.endInterval("TabManager.loadFromStore", signpostState)
@@ -812,217 +820,27 @@ extension TabManager {
         )
         defer {
             markInitialDataLoadFinished()
+            startupRestoreTask = nil
             NotificationCenter.default.post(name: .tabManagerDidLoadInitialData, object: nil)
         }
 
         do {
-            let defaultRestoreURL = URL(string: "about:blank")!
-            var needsSnapshotPersistence = false
-
-            let spaceEntities = try context.fetch(
-                FetchDescriptor<SpaceEntity>()
-            )
-            var didNormalizeSpaceIcons = false
-            for entity in spaceEntities {
-                let normalized = SumiPersistentGlyph.normalizedSpaceIconValue(entity.icon)
-                if normalized != entity.icon {
-                    entity.icon = normalized
-                    didNormalizeSpaceIcons = true
-                }
-            }
-            if didNormalizeSpaceIcons {
-                try context.save()
-            }
-            let sortedSpaces = spaceEntities.sorted { $0.index < $1.index }
-            self.spaces = sortedSpaces.map { entity in
-                let workspaceTheme: WorkspaceTheme
-                workspaceTheme = WorkspaceTheme.decode(entity.workspaceThemeData ?? Data())
-                    ?? WorkspaceTheme(
-                        gradient: SpaceGradient.decode(entity.gradientData)
-                    )
-                return Space(
-                    id: entity.id,
-                    name: entity.name,
-                    icon: entity.icon,
-                    workspaceTheme: workspaceTheme,
-                    profileId: entity.profileId
+            let defaultProfileId = browserManager?.currentProfile?.id
+                ?? browserManager?.profileManager.profiles.first?.id
+            if defaultProfileId == nil {
+                RuntimeDiagnostics.debug(
+                    "No profiles available to assign to spaces during load; reconciliation deferred.",
+                    category: "TabManager"
                 )
             }
-            for sp in spaces {
-                setTabs([], for: sp.id)
-            }
 
-            let defaultProfileId = browserManager?.currentProfile?.id ?? browserManager?.profileManager.profiles.first?.id
-            if let dp = defaultProfileId {
-                var didAssignProfiles = false
-                for space in spaces where space.profileId == nil {
-                    space.profileId = dp
-                    didAssignProfiles = true
-                }
-                if didAssignProfiles {
-                    needsSnapshotPersistence = true
-                }
-            } else {
-                RuntimeDiagnostics.debug("No profiles available to assign to spaces during load; reconciliation deferred.", category: "TabManager")
-            }
+            let loader = TabRestoreLoader(container: context.container)
+            let payload = try await loader.load(defaultProfileId: defaultProfileId)
+            if Task.isCancelled { return false }
 
-            let tabEntities = try context.fetch(FetchDescriptor<TabEntity>())
-            let sortedTabs = tabEntities.sorted { a, b in
-                if a.isPinned != b.isPinned { return a.isPinned && !b.isPinned }
-                if a.isSpacePinned != b.isSpacePinned { return a.isSpacePinned && !b.isPinned }
-                if a.spaceId != b.spaceId {
-                    return (a.spaceId?.uuidString ?? "")
-                        < (b.spaceId?.uuidString ?? "")
-                }
-                return a.index < b.index
-            }
-
-            let globalPinned = sortedTabs.filter { $0.isPinned }
-            let spacePinned = sortedTabs.filter { $0.isSpacePinned && !$0.isPinned }
-            let normals = sortedTabs.filter { !$0.isPinned && !$0.isSpacePinned && $0.folderId == nil }
-
-            RuntimeDiagnostics.debug(
-                "Loading tabs from store: total=\(sortedTabs.count), pinned=\(globalPinned.count), spacePinned=\(spacePinned.count), regular=\(normals.count)",
-                category: "TabManager"
-            )
-
-            var pinnedMap: [UUID: [ShortcutPin]] = [:]
-            let fallbackProfileId = browserManager?.currentProfile?.id ?? browserManager?.profileManager.profiles.first?.id
-            var didAssignDefaultProfile = false
-            var pendingPins: [ShortcutPin] = []
-            for entity in globalPinned {
-                let resolvedURL = URL(string: entity.urlString) ?? defaultRestoreURL
-                let pin = ShortcutPin(
-                    id: entity.id,
-                    role: .essential,
-                    profileId: entity.profileId ?? fallbackProfileId,
-                    spaceId: nil,
-                    index: entity.index,
-                    folderId: nil,
-                    launchURL: resolvedURL,
-                    title: entity.name,
-                    faviconCacheKey: ShortcutPin.makeFaviconCacheKey(for: resolvedURL),
-                    iconAsset: entity.iconAsset
-                )
-                if let stored = entity.profileId {
-                    var pins = pinnedMap[stored] ?? []
-                    pins.append(pin)
-                    pinnedMap[stored] = pins
-                } else if let fallbackProfileId {
-                    didAssignDefaultProfile = true
-                    var pins = pinnedMap[fallbackProfileId] ?? []
-                    pins.append(pin)
-                    pinnedMap[fallbackProfileId] = pins
-                } else {
-                    pendingPins.append(pin)
-                }
-            }
-            pinnedByProfile = pinnedMap
-            pendingPinnedWithoutProfile = pendingPins
-
-            for entity in spacePinned {
-                if let spaceId = entity.spaceId {
-                    let resolvedURL = URL(string: entity.urlString) ?? defaultRestoreURL
-                    let pin = ShortcutPin(
-                        id: entity.id,
-                        role: .spacePinned,
-                        profileId: nil,
-                        spaceId: spaceId,
-                        index: entity.index,
-                        folderId: entity.folderId,
-                        launchURL: resolvedURL,
-                        title: entity.name,
-                        faviconCacheKey: ShortcutPin.makeFaviconCacheKey(for: resolvedURL),
-                        iconAsset: entity.iconAsset
-                    )
-                    var pins = spacePinnedShortcuts[spaceId] ?? []
-                    pins.append(pin)
-                    setSpacePinnedShortcuts(pins, for: spaceId)
-                } else {
-                    RuntimeDiagnostics.debug("Skipping malformed space-pinned launcher '\(entity.name)' without a spaceId during load.", category: "TabManager")
-                }
-            }
-
-            for entity in normals {
-                let runtimeTab = toRuntime(entity, defaultRestoreURL: defaultRestoreURL)
-                if let spaceId = entity.spaceId {
-                    var tabs = tabsBySpace[spaceId] ?? []
-                    tabs.append(runtimeTab)
-                    setTabs(tabs, for: spaceId)
-                }
-            }
-
-            let folderEntities = try context.fetch(FetchDescriptor<FolderEntity>())
-            var didNormalizeFolderIcons = false
-            for entity in folderEntities {
-                let normalizedIcon = SumiZenFolderIconCatalog.normalizedFolderIconValue(entity.icon)
-                if normalizedIcon != entity.icon {
-                    entity.icon = normalizedIcon
-                    didNormalizeFolderIcons = true
-                }
-                let folder = TabFolder(
-                    id: entity.id,
-                    name: entity.name,
-                    spaceId: entity.spaceId,
-                    icon: normalizedIcon,
-                    color: NSColor(hex: entity.color) ?? .controlAccentColor
-                )
-                folder.isOpen = entity.isOpen
-                var folders = foldersBySpace[entity.spaceId] ?? []
-                folders.append(folder)
-                setFolders(folders, for: entity.spaceId)
-            }
-
-            for tab in allTabsAllSpaces() {
-                tab.browserManager = browserManager
-            }
-
-            let states = try context.fetch(FetchDescriptor<TabsStateEntity>())
-            let state = states.first
-            if spaces.isEmpty {
-                let personalSpace = Space(name: "Personal", icon: "person.crop.circle", workspaceTheme: .default)
-                spaces.append(personalSpace)
-                setTabs([], for: personalSpace.id)
-                currentSpace = personalSpace
-                needsSnapshotPersistence = true
-            } else if let stateSpaceId = state?.currentSpaceID,
-                      let match = spaces.first(where: { $0.id == stateSpaceId }) {
-                currentSpace = match
-            } else {
-                currentSpace = spaces.first
-            }
-
-            let selectionTabs = currentSpace.flatMap { tabsBySpace[$0.id] } ?? []
-            if let selectedTabId = state?.currentTabID,
-               let match = selectionTabs.first(where: { $0.id == selectedTabId }) {
-                currentTab = match
-            } else {
-                currentTab = selectionTabs.first
-            }
-
-            RuntimeDiagnostics.debug(
-                "Current Space: \(currentSpace?.name ?? "None"), Tab: \(currentTab?.name ?? "None")",
-                category: "TabManager"
-            )
-            SidebarUITestDragMarker.recordEvent(
-                "startupLoadComplete",
-                dragItemID: nil,
-                ownerDescription: "TabManager.loadFromStore",
-                details: "spaces=\(spaces.count) currentSpace=\(currentSpace?.id.uuidString ?? "nil") currentTab=\(currentTab?.id.uuidString ?? "nil") currentProfile=\(browserManager?.currentProfile?.id.uuidString ?? "nil") pinnedProfiles=\(pinnedByProfile.count) spacePinnedGroups=\(spacePinnedShortcuts.count)"
-            )
-
-            if let browserManager, let currentSpace {
-                browserManager.syncWorkspaceThemeAcrossWindows(for: currentSpace, animate: false)
-            }
-            markSnapshotCacheDirty()
-            if didAssignDefaultProfile || didNormalizeFolderIcons || didNormalizeSpaceIcons {
-                needsSnapshotPersistence = true
-            }
-            if needsSnapshotPersistence {
-                persistFullReconcile(reason: "restore normalization")
-            } else {
-                resetStructuralDirtySet()
-            }
+            let applyResult = applyRestorePayload(payload)
+            enqueueRestoreRepairIfNeeded(applyResult)
+            return true
         } catch {
             RuntimeDiagnostics.debug("SwiftData load error: \(String(describing: error))", category: "TabManager")
             SidebarUITestDragMarker.recordEvent(
@@ -1031,30 +849,211 @@ extension TabManager {
                 ownerDescription: "TabManager.loadFromStore",
                 details: "error=\(String(describing: error))"
             )
+            return false
         }
     }
 
-    private func toRuntime(_ entity: TabEntity, defaultRestoreURL: URL) -> Tab {
-        let urlString = entity.currentURLString ?? entity.urlString
-        let url = URL(string: urlString) ?? URL(string: entity.urlString) ?? defaultRestoreURL
-        let faviconName = SumiSurface.isSettingsSurfaceURL(url)
+    private struct RestoreApplyResult {
+        let snapshot: TabSnapshotRepository.Snapshot?
+        let reasons: [String]
+    }
+
+    private func applyRestorePayload(_ payload: TabRestorePayload) -> RestoreApplyResult {
+        let signpostState = PerformanceTrace.beginInterval("TabManager.restoreApplyMainActor")
+        defer {
+            PerformanceTrace.endInterval("TabManager.restoreApplyMainActor", signpostState)
+        }
+
+        RuntimeDiagnostics.debug(
+            "Loading tabs from store: total=\(payload.totalTabCount), pinned=\(payload.pinnedCount), spacePinned=\(payload.spacePinnedCount), regular=\(payload.regularCount)",
+            category: "TabManager"
+        )
+
+        var mainRepairReasons = payload.repairReasons
+        let restoredSpaces = payload.spaces.map { dto in
+            let space = Space(
+                id: dto.id,
+                name: dto.name,
+                icon: dto.icon,
+                workspaceTheme: dto.workspaceTheme,
+                profileId: dto.profileId
+            )
+            if space.icon != dto.icon {
+                mainRepairReasons.append("normalized space icon")
+            }
+            return space
+        }
+
+        var restoredTabsBySpace: [UUID: [Tab]] = [:]
+        for space in restoredSpaces {
+            restoredTabsBySpace[space.id] = []
+        }
+        for (spaceId, tabDTOs) in payload.regularTabsBySpace {
+            restoredTabsBySpace[spaceId] = tabDTOs.map(makeRestoredTab)
+        }
+
+        var restoredFoldersBySpace: [UUID: [TabFolder]] = [:]
+        for (spaceId, folderDTOs) in payload.foldersBySpace {
+            restoredFoldersBySpace[spaceId] = folderDTOs.map { dto in
+                let folder = TabFolder(
+                    id: dto.id,
+                    name: dto.name,
+                    spaceId: dto.spaceId,
+                    icon: dto.icon,
+                    color: NSColor(hex: dto.color) ?? .controlAccentColor,
+                    index: dto.index
+                )
+                folder.isOpen = dto.isOpen
+                if folder.icon != dto.icon {
+                    mainRepairReasons.append("normalized folder icon")
+                }
+                return folder
+            }
+        }
+
+        var restoredPinnedByProfile: [UUID: [ShortcutPin]] = [:]
+        for (profileId, shortcutDTOs) in payload.pinnedShortcutsByProfile {
+            restoredPinnedByProfile[profileId] = shortcutDTOs.map { dto in
+                let pin = makeRestoredShortcut(dto)
+                if pin.iconAsset != dto.iconAsset {
+                    mainRepairReasons.append("normalized launcher icon")
+                }
+                return pin
+            }
+        }
+
+        let restoredPendingPinned = payload.pendingPinnedShortcuts.map { dto in
+            let pin = makeRestoredShortcut(dto)
+            if pin.iconAsset != dto.iconAsset {
+                mainRepairReasons.append("normalized launcher icon")
+            }
+            return pin
+        }
+
+        var restoredSpacePinnedShortcuts: [UUID: [ShortcutPin]] = [:]
+        for (spaceId, shortcutDTOs) in payload.spacePinnedShortcutsBySpace {
+            restoredSpacePinnedShortcuts[spaceId] = shortcutDTOs.map { dto in
+                let pin = makeRestoredShortcut(dto)
+                if pin.iconAsset != dto.iconAsset {
+                    mainRepairReasons.append("normalized launcher icon")
+                }
+                return pin
+            }
+        }
+
+        spaces = restoredSpaces
+        tabsBySpace = restoredTabsBySpace
+        foldersBySpace = restoredFoldersBySpace
+        pinnedByProfile = restoredPinnedByProfile
+        pendingPinnedWithoutProfile = restoredPendingPinned
+        spacePinnedShortcuts = restoredSpacePinnedShortcuts
+
+        for tab in restoredTabsBySpace.values.flatMap(\.self) {
+            tab.browserManager = browserManager
+        }
+
+        currentSpace = payload.currentSpaceId.flatMap { currentSpaceId in
+            restoredSpaces.first(where: { $0.id == currentSpaceId })
+        } ?? restoredSpaces.first
+
+        let selectionTabs = currentSpace.flatMap { restoredTabsBySpace[$0.id] } ?? []
+        if let selectedTabId = payload.currentTabId,
+           let match = selectionTabs.first(where: { $0.id == selectedTabId }) {
+            currentTab = match
+        } else {
+            currentTab = selectionTabs.first
+        }
+
+        rebuildTabLookupForRestore()
+        markSnapshotCacheDirty()
+        resetStructuralDirtySet()
+        structuralPersistRequestID &+= 1
+        scheduledStructuralPersistTask?.cancel()
+        scheduledStructuralPersistTask = nil
+        structuralChanges.send()
+
+        RuntimeDiagnostics.debug(
+            "Current Space: \(currentSpace?.name ?? "None"), Tab: \(currentTab?.name ?? "None")",
+            category: "TabManager"
+        )
+        SidebarUITestDragMarker.recordEvent(
+            "startupLoadComplete",
+            dragItemID: nil,
+            ownerDescription: "TabManager.loadFromStore",
+            details: "spaces=\(spaces.count) currentSpace=\(currentSpace?.id.uuidString ?? "nil") currentTab=\(currentTab?.id.uuidString ?? "nil") currentProfile=\(browserManager?.currentProfile?.id.uuidString ?? "nil") pinnedProfiles=\(pinnedByProfile.count) spacePinnedGroups=\(spacePinnedShortcuts.count)"
+        )
+
+        if let browserManager, let currentSpace {
+            browserManager.syncWorkspaceThemeAcrossWindows(for: currentSpace, animate: false)
+        }
+
+        let uniqueRepairReasons = Array(Set(mainRepairReasons)).sorted()
+        guard uniqueRepairReasons.isEmpty == false else {
+            return RestoreApplyResult(snapshot: nil, reasons: [])
+        }
+
+        let snapshot = uniqueRepairReasons == payload.repairReasons
+            ? payload.snapshot
+            : _buildSnapshot()
+        return RestoreApplyResult(snapshot: snapshot, reasons: uniqueRepairReasons)
+    }
+
+    private func enqueueRestoreRepairIfNeeded(_ result: RestoreApplyResult) {
+        guard let snapshot = result.snapshot else {
+            return
+        }
+
+        structuralPersistenceGeneration &+= 1
+        let generation = structuralPersistenceGeneration
+        let persistence = self.persistence
+        let reasonSummary = result.reasons.joined(separator: ", ")
+        Task {
+            let signpostState = PerformanceTrace.beginInterval("TabManager.restoreRepairFullReconcile")
+            defer {
+                PerformanceTrace.endInterval("TabManager.restoreRepairFullReconcile", signpostState)
+            }
+            RuntimeDiagnostics.debug(
+                "Persisting restore repair snapshot: \(reasonSummary)",
+                category: "TabManager"
+            )
+            _ = await persistence.persistFullReconcile(snapshot: snapshot, generation: generation)
+        }
+    }
+
+    private func makeRestoredTab(_ dto: TabRestoreTabDTO) -> Tab {
+        let faviconName = SumiSurface.isSettingsSurfaceURL(dto.url)
             ? SumiSurface.settingsTabFaviconSystemImageName
             : "globe"
         let tab = Tab(
-            id: entity.id,
-            url: url,
-            name: entity.name,
+            id: dto.id,
+            url: dto.url,
+            name: dto.name,
             favicon: faviconName,
-            spaceId: entity.spaceId,
-            index: entity.index,
+            spaceId: dto.spaceId,
+            index: dto.index,
             browserManager: browserManager,
             skipFaviconFetch: true
         )
-        tab.folderId = entity.folderId
-        tab.isPinned = entity.isPinned
-        tab.isSpacePinned = entity.isSpacePinned
-        tab.canGoBack = entity.canGoBack
-        tab.canGoForward = entity.canGoForward
+        tab.folderId = dto.folderId
+        tab.isPinned = false
+        tab.isSpacePinned = false
+        tab.canGoBack = dto.canGoBack
+        tab.canGoForward = dto.canGoForward
         return tab
+    }
+
+    private func makeRestoredShortcut(_ dto: TabRestoreShortcutDTO) -> ShortcutPin {
+        ShortcutPin(
+            id: dto.id,
+            role: dto.role,
+            profileId: dto.profileId,
+            spaceId: dto.spaceId,
+            index: dto.index,
+            folderId: dto.folderId,
+            launchURL: dto.launchURL,
+            title: dto.title,
+            faviconCacheKey: dto.faviconCacheKey,
+            iconAsset: dto.iconAsset
+        )
     }
 }
