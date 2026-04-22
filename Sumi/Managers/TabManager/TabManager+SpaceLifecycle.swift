@@ -16,82 +16,86 @@ extension TabManager {
         gradient: SpaceGradient = .default,
         profileId: UUID? = nil
     ) -> Space {
-        let resolvedProfileId = profileId
-            ?? browserManager?.currentProfile?.id
-            ?? browserManager?.profileManager.profiles.first?.id
-        let defaultTheme = SumiWorkspaceThemePresets.rotatingTheme(at: spaces.count)
-        let resolvedTheme: WorkspaceTheme
-        if gradient.visuallyEquals(.default) {
-            resolvedTheme = defaultTheme
-        } else {
-            resolvedTheme = WorkspaceTheme(
-                gradient: gradient
+        return withStructuralUpdateTransaction {
+            let resolvedProfileId = profileId
+                ?? browserManager?.currentProfile?.id
+                ?? browserManager?.profileManager.profiles.first?.id
+            let defaultTheme = SumiWorkspaceThemePresets.rotatingTheme(at: spaces.count)
+            let resolvedTheme: WorkspaceTheme
+            if gradient.visuallyEquals(.default) {
+                resolvedTheme = defaultTheme
+            } else {
+                resolvedTheme = WorkspaceTheme(
+                    gradient: gradient
+                )
+            }
+
+            let space = Space(
+                name: name,
+                icon: icon,
+                workspaceTheme: resolvedTheme,
+                profileId: resolvedProfileId
             )
+
+            if resolvedProfileId == nil {
+                RuntimeDiagnostics.debug(
+                    "Creating space '\(name)' without a resolved profile; profile reconciliation will run later.",
+                    category: "TabManager"
+                )
+            }
+
+            spaces.append(space)
+            markAllSpacesStructurallyDirty()
+            setTabs([], for: space.id)
+
+            if currentSpace == nil {
+                currentSpace = space
+            } else {
+                setActiveSpace(space)
+            }
+            scheduleStructuralPersistence()
+            return space
         }
-
-        let space = Space(
-            name: name,
-            icon: icon,
-            workspaceTheme: resolvedTheme,
-            profileId: resolvedProfileId
-        )
-
-        if resolvedProfileId == nil {
-            RuntimeDiagnostics.debug(
-                "Creating space '\(name)' without a resolved profile; profile reconciliation will run later.",
-                category: "TabManager"
-            )
-        }
-
-        spaces.append(space)
-        markAllSpacesStructurallyDirty()
-        setTabs([], for: space.id)
-
-        if currentSpace == nil {
-            currentSpace = space
-        } else {
-            setActiveSpace(space)
-        }
-        scheduleStructuralPersistence()
-        return space
     }
 
     func removeSpace(_ id: UUID) {
-        guard spaces.count > 1 else { return }
-        guard let idx = spaces.firstIndex(where: { $0.id == id }) else { return }
+        withStructuralUpdateTransaction {
+            guard spaces.count > 1 else { return }
+            guard let idx = spaces.firstIndex(where: { $0.id == id }) else { return }
 
-        let closing = tabsBySpace[id] ?? []
-        let transientClosing = transientShortcutTabsByWindow.values
-            .flatMap(\.values)
-            .filter { $0.spaceId == id }
+            let closing = tabsBySpace[id] ?? []
+            let transientClosing = transientShortcutTabsByWindow.values
+                .flatMap(\.values)
+                .filter { $0.spaceId == id }
 
-        for tab in closing + transientClosing where currentTab?.id == tab.id {
-            currentTab = nil
+            for tab in closing + transientClosing where currentTab?.id == tab.id {
+                currentTab = nil
+            }
+
+            setTabs([], for: id)
+            markSpaceStructurallyDeleted(id)
+            foldersBySpace.removeValue(forKey: id)
+            spacePinnedShortcuts.removeValue(forKey: id)
+            markFoldersSnapshotDirty(for: id)
+            markSpacePinnedSnapshotDirty(for: id)
+            transientShortcutTabsByWindow = transientShortcutTabsByWindow.compactMapValues { tabsByPin in
+                let filtered = tabsByPin.filter { _, tab in tab.spaceId != id }
+                return filtered.isEmpty ? nil : filtered
+            }
+            notifyTransientShortcutStateChanged()
+
+            if idx < spaces.count {
+                spaces.remove(at: idx)
+                markAllSpacesStructurallyDirty()
+            }
+
+            if currentSpace?.id == id {
+                currentSpace = spaces.first
+            }
+
+            scheduleStructuralPersistence()
+            browserManager?.validateWindowStates()
         }
-
-        setTabs([], for: id)
-        markSpaceStructurallyDeleted(id)
-        foldersBySpace.removeValue(forKey: id)
-        spacePinnedShortcuts.removeValue(forKey: id)
-        markFoldersSnapshotDirty(for: id)
-        markSpacePinnedSnapshotDirty(for: id)
-        transientShortcutTabsByWindow = transientShortcutTabsByWindow.compactMapValues { tabsByPin in
-            let filtered = tabsByPin.filter { _, tab in tab.spaceId != id }
-            return filtered.isEmpty ? nil : filtered
-        }
-        notifyTransientShortcutStateChanged()
-
-        if idx < spaces.count {
-            spaces.remove(at: idx)
-            markAllSpacesStructurallyDirty()
-        }
-
-        if currentSpace?.id == id {
-            currentSpace = spaces.first
-        }
-
-        scheduleStructuralPersistence()
-        browserManager?.validateWindowStates()
     }
 
     func setActiveSpace(_ space: Space, preferredTab: Tab? = nil) {
@@ -178,29 +182,33 @@ extension TabManager {
     }
 
     func renameSpace(spaceId: UUID, newName: String) throws {
-        guard let idx = spaces.firstIndex(where: { $0.id == spaceId }), idx < spaces.count else {
-            throw TabManagerError.spaceNotFound(spaceId)
-        }
+        try withStructuralUpdateTransaction {
+            guard let idx = spaces.firstIndex(where: { $0.id == spaceId }), idx < spaces.count else {
+                throw TabManagerError.spaceNotFound(spaceId)
+            }
 
-        spaces[idx].name = newName
-        if currentSpace?.id == spaceId {
-            currentSpace?.name = newName
+            spaces[idx].name = newName
+            if currentSpace?.id == spaceId {
+                currentSpace?.name = newName
+            }
+            markAllSpacesStructurallyDirty()
+            scheduleStructuralPersistence()
         }
-        markAllSpacesStructurallyDirty()
-        scheduleStructuralPersistence()
     }
 
     func updateSpaceIcon(spaceId: UUID, icon: String) throws {
-        guard let idx = spaces.firstIndex(where: { $0.id == spaceId }), idx < spaces.count else {
-            throw TabManagerError.spaceNotFound(spaceId)
-        }
+        try withStructuralUpdateTransaction {
+            guard let idx = spaces.firstIndex(where: { $0.id == spaceId }), idx < spaces.count else {
+                throw TabManagerError.spaceNotFound(spaceId)
+            }
 
-        let normalized = SumiPersistentGlyph.normalizedSpaceIconValue(icon)
-        spaces[idx].icon = normalized
-        if currentSpace?.id == spaceId {
-            currentSpace?.icon = normalized
+            let normalized = SumiPersistentGlyph.normalizedSpaceIconValue(icon)
+            spaces[idx].icon = normalized
+            if currentSpace?.id == spaceId {
+                currentSpace?.icon = normalized
+            }
+            markAllSpacesStructurallyDirty()
+            scheduleStructuralPersistence()
         }
-        markAllSpacesStructurallyDirty()
-        scheduleStructuralPersistence()
     }
 }

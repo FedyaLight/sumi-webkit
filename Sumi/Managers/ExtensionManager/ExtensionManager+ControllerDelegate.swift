@@ -79,8 +79,6 @@ private enum SafariNativeMessageRouter {
 @available(macOS 15.5, *)
 @MainActor
 extension ExtensionManager: WKWebExtensionControllerDelegate {
-    private static let recentExtensionTabOpenRequestTTL: TimeInterval = 2
-
     private nonisolated static func recentExtensionTabOpenRequestKey(
         for url: URL?
     ) -> String? {
@@ -94,42 +92,18 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
     }
 
     func consumeRecentlyOpenedExtensionTabRequest(for url: URL) -> Bool {
-        let now = Date()
-        pruneRecentExtensionTabOpenRequests(now: now)
-
-        guard let key = Self.recentExtensionTabOpenRequestKey(for: url),
-              var requestDates = recentExtensionTabOpenRequestDatesByURL[key],
-              requestDates.isEmpty == false
-        else {
+        guard let key = Self.recentExtensionTabOpenRequestKey(for: url) else {
             return false
         }
 
-        requestDates.removeLast()
-        if requestDates.isEmpty {
-            recentExtensionTabOpenRequestDatesByURL.removeValue(forKey: key)
-        } else {
-            recentExtensionTabOpenRequestDatesByURL[key] = requestDates
-        }
-
-        return true
+        return recentExtensionTabOpenRequests.consume(key: key)
     }
 
     private func recordRecentlyOpenedExtensionTabRequest(for url: URL?) {
         guard let key = Self.recentExtensionTabOpenRequestKey(for: url) else {
             return
         }
-        let now = Date()
-        pruneRecentExtensionTabOpenRequests(now: now)
-        recentExtensionTabOpenRequestDatesByURL[key, default: []].append(now)
-    }
-
-    private func pruneRecentExtensionTabOpenRequests(now: Date) {
-        recentExtensionTabOpenRequestDatesByURL = recentExtensionTabOpenRequestDatesByURL.compactMapValues {
-            let requestDates = $0.filter {
-                now.timeIntervalSince($0) <= Self.recentExtensionTabOpenRequestTTL
-            }
-            return requestDates.isEmpty ? nil : requestDates
-        }
+        recentExtensionTabOpenRequests.record(key: key)
     }
 
     @discardableResult

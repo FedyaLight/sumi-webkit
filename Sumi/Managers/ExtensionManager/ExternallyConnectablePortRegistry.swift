@@ -13,6 +13,11 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExternallyConnectablePortRegistry {
+    static let maxPendingRequests = 256
+    static let maxPendingRequestsPerWebView = 32
+    static let maxActivePorts = 128
+    static let maxActivePortsPerWebView = 32
+    static let maxTrackedPageURLs = 256
 
     // MARK: - Pending sendMessage requests
 
@@ -28,12 +33,25 @@ final class ExternallyConnectablePortRegistry {
     // MARK: - Navigation tracking
 
     private var trackedPageURLsByWebView: [ObjectIdentifier: String] = [:]
+    private var trackedPageURLOrder: [ObjectIdentifier] = []
 
     // MARK: - Request operations
 
-    func addRequest(_ request: PendingExternallyConnectableNativeRequest) {
+    @discardableResult
+    func addRequest(_ request: PendingExternallyConnectableNativeRequest) -> String? {
+        if requestsByID.count >= Self.maxPendingRequests {
+            return "Too many pending externally connectable requests"
+        }
+
+        if (requestIDsByWebView[request.webViewIdentifier]?.count ?? 0)
+            >= Self.maxPendingRequestsPerWebView
+        {
+            return "Too many pending externally connectable requests for this page"
+        }
+
         requestsByID[request.id] = request
         requestIDsByWebView[request.webViewIdentifier, default: []].insert(request.id)
+        return nil
     }
 
     func removeRequest(id: UUID) -> PendingExternallyConnectableNativeRequest? {
@@ -85,10 +103,22 @@ final class ExternallyConnectablePortRegistry {
         portsByID[portId] != nil
     }
 
-    func addPort(_ session: ExternallyConnectableNativePortSession) {
+    @discardableResult
+    func addPort(_ session: ExternallyConnectableNativePortSession) -> String? {
+        if portsByID.count >= Self.maxActivePorts {
+            return "Too many externally connectable ports are open"
+        }
+
+        if (portIDsByWebView[session.webViewIdentifier]?.count ?? 0)
+            >= Self.maxActivePortsPerWebView
+        {
+            return "Too many externally connectable ports are open for this page"
+        }
+
         portsByID[session.portId] = session
         portIDsByWebView[session.webViewIdentifier, default: []].insert(session.portId)
         portIDsByExtension[session.extensionId, default: []].insert(session.portId)
+        return nil
     }
 
     func removePort(portId: String) -> ExternallyConnectableNativePortSession? {
@@ -130,17 +160,23 @@ final class ExternallyConnectablePortRegistry {
         let key = ObjectIdentifier(webView)
         if let urlString {
             trackedPageURLsByWebView[key] = urlString
+            touchTrackedPageURL(key)
+            evictTrackedPageURLsIfNeeded()
         } else {
             trackedPageURLsByWebView.removeValue(forKey: key)
+            trackedPageURLOrder.removeAll { $0 == key }
         }
     }
 
     func removeTrackedPageURL(for webView: WKWebView) {
-        trackedPageURLsByWebView.removeValue(forKey: ObjectIdentifier(webView))
+        let key = ObjectIdentifier(webView)
+        trackedPageURLsByWebView.removeValue(forKey: key)
+        trackedPageURLOrder.removeAll { $0 == key }
     }
 
     func clearAllTrackedPageURLs() {
         trackedPageURLsByWebView.removeAll()
+        trackedPageURLOrder.removeAll()
     }
 
     var trackedPageURLWebViewCount: Int {
@@ -198,6 +234,25 @@ final class ExternallyConnectablePortRegistry {
             } else {
                 portIDsByExtension[key] = ids
             }
+        }
+    }
+
+    private func touchTrackedPageURL(_ id: ObjectIdentifier) {
+        trackedPageURLOrder.removeAll { $0 == id }
+        trackedPageURLOrder.append(id)
+    }
+
+    private func evictTrackedPageURLsIfNeeded() {
+        while trackedPageURLsByWebView.count > Self.maxTrackedPageURLs {
+            guard let evictionID = trackedPageURLOrder.first(where: { id in
+                requestIDsByWebView[id]?.isEmpty != false
+                    && portIDsByWebView[id]?.isEmpty != false
+            }) else {
+                return
+            }
+
+            trackedPageURLOrder.removeAll { $0 == evictionID }
+            trackedPageURLsByWebView.removeValue(forKey: evictionID)
         }
     }
 }

@@ -110,6 +110,25 @@ final class SumiExtensionMessageBroker: NSObject, WKScriptMessageHandlerWithRepl
         )
     }
 
+    static func removeIfInstalled(
+        from controller: WKUserContentController,
+        context: String
+    ) {
+        let worlds: [WKContentWorld] = [.page, .defaultClient]
+        for world in worlds {
+            controller.removeScriptMessageHandler(
+                forName: context,
+                contentWorld: world
+            )
+        }
+        objc_setAssociatedObject(
+            controller,
+            &associationKey,
+            nil,
+            .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+        )
+    }
+
     // MARK: - WKScriptMessageHandlerWithReply
 
     func userContentController(

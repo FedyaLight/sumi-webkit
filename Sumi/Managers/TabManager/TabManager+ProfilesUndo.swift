@@ -207,38 +207,42 @@ extension TabManager {
     }
 
     func undoCloseTab() {
-        guard !recentlyClosedTabs.isEmpty else { return }
+        withStructuralUpdateTransaction {
+            guard !recentlyClosedTabs.isEmpty else { return }
 
-        let mostRecent = recentlyClosedTabs.removeLast()
-        mostRecent.tab.restoredCanGoBack = mostRecent.canGoBack
-        mostRecent.tab.restoredCanGoForward = mostRecent.canGoForward
-        addTab(mostRecent.tab)
-        setActiveTab(mostRecent.tab)
+            let mostRecent = recentlyClosedTabs.removeLast()
+            mostRecent.tab.restoredCanGoBack = mostRecent.canGoBack
+            mostRecent.tab.restoredCanGoForward = mostRecent.canGoForward
+            addTab(mostRecent.tab)
+            setActiveTab(mostRecent.tab)
 
-        if recentlyClosedTabs.isEmpty {
-            clearUndoTimer()
+            if recentlyClosedTabs.isEmpty {
+                clearUndoTimer()
+            }
         }
     }
 
     func undoCloseMultipleTabs(count: Int) {
-        let actualCount = min(count, recentlyClosedTabs.count)
-        var restoredTabs: [Tab] = []
+        withStructuralUpdateTransaction {
+            let actualCount = min(count, recentlyClosedTabs.count)
+            var restoredTabs: [Tab] = []
 
-        for _ in 0..<actualCount {
-            guard !recentlyClosedTabs.isEmpty else { break }
-            let tabInfo = recentlyClosedTabs.removeLast()
-            restoredTabs.append(tabInfo.tab)
-            tabInfo.tab.restoredCanGoBack = tabInfo.canGoBack
-            tabInfo.tab.restoredCanGoForward = tabInfo.canGoForward
-            addTab(tabInfo.tab)
-        }
+            for _ in 0..<actualCount {
+                guard !recentlyClosedTabs.isEmpty else { break }
+                let tabInfo = recentlyClosedTabs.removeLast()
+                restoredTabs.append(tabInfo.tab)
+                tabInfo.tab.restoredCanGoBack = tabInfo.canGoBack
+                tabInfo.tab.restoredCanGoForward = tabInfo.canGoForward
+                addTab(tabInfo.tab)
+            }
 
-        if let lastTab = restoredTabs.last {
-            setActiveTab(lastTab)
-        }
+            if let lastTab = restoredTabs.last {
+                setActiveTab(lastTab)
+            }
 
-        if recentlyClosedTabs.isEmpty {
-            clearUndoTimer()
+            if recentlyClosedTabs.isEmpty {
+                clearUndoTimer()
+            }
         }
     }
 
@@ -288,21 +292,23 @@ extension TabManager {
 // MARK: - Bulk Tab Operations
 extension TabManager {
     func closeAllTabsBelow(_ tab: Tab) {
-        guard let spaceId = tab.spaceId else { return }
-        guard let tabs = tabsBySpace[spaceId] else { return }
-        guard tabs.firstIndex(where: { $0.id == tab.id }) != nil else { return }
+        withStructuralUpdateTransaction {
+            guard let spaceId = tab.spaceId else { return }
+            guard let tabs = tabsBySpace[spaceId] else { return }
+            guard tabs.firstIndex(where: { $0.id == tab.id }) != nil else { return }
 
-        let tabsBelow = tabs.filter { $0.index > tab.index }
-        if tabsBelow.isEmpty {
-            return
+            let tabsBelow = tabs.filter { $0.index > tab.index }
+            if tabsBelow.isEmpty {
+                return
+            }
+
+            let tabsToTrack = tabsBelow.map { (tab: $0, spaceId: spaceId) }
+            for tabToClose in tabsBelow {
+                closeTabWithoutTracking(tabToClose.id)
+            }
+
+            trackRecentlyClosedTabs(tabsToTrack, count: tabsBelow.count)
         }
-
-        let tabsToTrack = tabsBelow.map { (tab: $0, spaceId: spaceId) }
-        for tabToClose in tabsBelow {
-            closeTabWithoutTracking(tabToClose.id)
-        }
-
-        trackRecentlyClosedTabs(tabsToTrack, count: tabsBelow.count)
     }
 
     private func closeTabWithoutTracking(_ id: UUID) {

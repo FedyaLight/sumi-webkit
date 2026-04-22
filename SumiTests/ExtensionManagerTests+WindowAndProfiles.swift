@@ -465,7 +465,10 @@ extension ExtensionManagerTests {
         manager.debugAttachBrowserManager(browserManager)
         defer { cleanupBrowserWindowTestRuntime(browserManager, windowRegistry: windowRegistry) }
 
-        let controller = try XCTUnwrap(manager.nativeController)
+        let controller = try requireRuntimeController(
+            for: manager,
+            reason: .extensionAction
+        )
         let oauthURL = try XCTUnwrap(
             URL(
                 string: "https://accounts.google.com/o/oauth2/v2/auth?client_id=test&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&response_type=code"
@@ -514,7 +517,10 @@ extension ExtensionManagerTests {
         manager.debugAttachBrowserManager(browserManager)
         defer { cleanupBrowserWindowTestRuntime(browserManager, windowRegistry: windowRegistry) }
 
-        let controller = try XCTUnwrap(manager.nativeController)
+        let controller = try requireRuntimeController(
+            for: manager,
+            reason: .extensionAction
+        )
         let regularURL = try XCTUnwrap(URL(string: "https://example.com/popup"))
         let createdWindow = BrowserWindowState()
         createdWindow.tabManager = browserManager.tabManager
@@ -570,7 +576,10 @@ extension ExtensionManagerTests {
         manager.debugAttachBrowserManager(browserManager)
         defer { cleanupBrowserWindowTestRuntime(browserManager, windowRegistry: windowRegistry) }
 
-        let controller = try XCTUnwrap(manager.nativeController)
+        let controller = try requireRuntimeController(
+            for: manager,
+            reason: .install
+        )
         let browserStartURL = try XCTUnwrap(URL(string: "https://bitwarden.com/browser-start/"))
         manager.extensionsLoaded = false
 
@@ -727,9 +736,11 @@ extension ExtensionManagerTests {
         let initialProfile = Profile(name: "Initial")
         let manager = makeExtensionManager(in: harness, initialProfile: initialProfile)
 
-        try await waitUntil(timeout: 5) {
-            manager.extensionsLoaded && manager.loadedContextIDs == [record.id]
-        }
+        _ = try await requireRuntimeReadyController(
+            for: manager,
+            reason: .refresh,
+            allowWithoutEnabledExtensions: false
+        )
 
         let controllerBeforeSwitch = manager.nativeController
         let nextProfile = Profile(name: "Next")

@@ -933,7 +933,7 @@ extension TabManager {
         structuralPersistRequestID &+= 1
         scheduledStructuralPersistTask?.cancel()
         scheduledStructuralPersistTask = nil
-        structuralChanges.send()
+        requestStructuralPublish()
 
         RuntimeDiagnostics.debug(
             "Current Space: \(currentSpace?.name ?? "None"), Tab: \(currentTab?.name ?? "None")",

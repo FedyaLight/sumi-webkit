@@ -103,6 +103,14 @@ extension ExtensionManager {
         for webView: WKWebView,
         currentURL: URL?
     ) {
+        guard externallyConnectablePolicies.isEmpty == false else {
+            releaseExternallyConnectableRuntime(
+                for: webView,
+                reason: "no externally_connectable policies are active"
+            )
+            return
+        }
+
         let previousURLString = ecRegistry.trackedPageURL(for: webView)
         let currentURLString = currentURL?.absoluteString
 
@@ -152,16 +160,11 @@ extension ExtensionManager {
         )
 
         if externallyConnectablePolicies.isEmpty {
-            browserConfiguration.webViewConfiguration.userContentController
-                .removeScriptMessageHandler(
-                    forName: Self.externallyConnectableNativeBridgeHandlerName,
-                    contentWorld: .page
-                )
-            browserConfiguration.webViewConfiguration.userContentController
-                .removeScriptMessageHandler(
-                    forName: Self.externallyConnectableNativeBridgeHandlerName,
-                    contentWorld: .defaultClient
-                )
+            ecRegistry.clearAllTrackedPageURLs()
+            SumiExtensionMessageBroker.removeIfInstalled(
+                from: browserConfiguration.webViewConfiguration.userContentController,
+                context: Self.externallyConnectableNativeBridgeHandlerName
+            )
         }
     }
 

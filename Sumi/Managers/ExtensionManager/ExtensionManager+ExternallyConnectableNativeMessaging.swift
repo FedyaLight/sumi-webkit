@@ -186,7 +186,10 @@ extension ExtensionManager {
             pageURLString: sourceURLString,
             replyHandler: replyHandler
         )
-        ecRegistry.addRequest(pendingRequest)
+        if let rejection = ecRegistry.addRequest(pendingRequest) {
+            replyHandler(nil, rejection)
+            return
+        }
 
         logExternallyConnectableBridgeEvent(
             "Accepted native sendMessage request id=\(requestID.uuidString) ext=\(extensionId) origin=\(sourceOrigin ?? "(unknown)")"
@@ -283,7 +286,10 @@ extension ExtensionManager {
                 connectName: (connectInfo["name"] as? String) ?? "",
                 state: .opening
             )
-            registerExternallyConnectableNativePortSession(session)
+            if let rejection = registerExternallyConnectableNativePortSession(session) {
+                replyHandler(nil, rejection)
+                return
+            }
             logExternallyConnectableBridgeEvent(
                 "Accepted native connect open portId=\(portId) ext=\(validation.extensionId) origin=\(sourceOrigin ?? "(unknown)")"
             )
@@ -746,7 +752,7 @@ extension ExtensionManager {
 
     private func registerExternallyConnectableNativePortSession(
         _ session: ExternallyConnectableNativePortSession
-    ) {
+    ) -> String? {
         ecRegistry.addPort(session)
     }
 

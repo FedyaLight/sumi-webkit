@@ -11,15 +11,18 @@ extension ExtensionManager: NSPopoverDelegate {
         _ configuration: WKWebViewConfiguration,
         reason: String = #function
     ) {
+        let requestedController = requestExtensionRuntime(
+            reason: .webViewConfiguration
+        )
         let existingController = configuration.webExtensionController
-        let shouldAssignController = existingController == nil && extensionController != nil
+        let shouldAssignController = existingController == nil && requestedController != nil
 
         extensionRuntimeTrace(
-            "prepareConfiguration reason=\(reason) configuration=\(extensionRuntimeConfigurationDescription(configuration)) userContentController=\(extensionRuntimeUserContentControllerDescription(configuration.userContentController)) existingController=\(extensionRuntimeControllerDescription(existingController)) targetController=\(extensionRuntimeControllerDescription(extensionController)) willAssign=\(shouldAssignController)"
+            "prepareConfiguration reason=\(reason) configuration=\(extensionRuntimeConfigurationDescription(configuration)) userContentController=\(extensionRuntimeUserContentControllerDescription(configuration.userContentController)) existingController=\(extensionRuntimeControllerDescription(existingController)) targetController=\(extensionRuntimeControllerDescription(requestedController)) willAssign=\(shouldAssignController)"
         )
 
         if shouldAssignController {
-            configuration.webExtensionController = extensionController
+            configuration.webExtensionController = requestedController
         }
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
     }
@@ -101,6 +104,7 @@ extension ExtensionManager: NSPopoverDelegate {
         }
 
         anchorObserverTokens[extensionId, default: [:]][viewIdentifier] = token
+        enforceActionAnchorLimit(for: extensionId, keeping: anchorView)
     }
 
     func clearActionAnchors(for extensionId: String) {
@@ -397,6 +401,50 @@ extension ExtensionManager: NSPopoverDelegate {
             else {
                 continue
             }
+            if let token = tokens.removeValue(forKey: viewID) {
+                NotificationCenter.default.removeObserver(token)
+            }
+        }
+
+        if tokens.isEmpty {
+            anchorObserverTokens.removeValue(forKey: extensionId)
+        } else {
+            anchorObserverTokens[extensionId] = tokens
+        }
+    }
+
+    private func enforceActionAnchorLimit(
+        for extensionId: String,
+        keeping anchorView: NSView
+    ) {
+        let maxAnchors = 32
+        guard var anchors = actionAnchors[extensionId],
+              anchors.count > maxAnchors else {
+            return
+        }
+
+        var removedViewIDs: [ObjectIdentifier] = []
+        while anchors.count > maxAnchors {
+            guard let removalIndex = anchors.firstIndex(where: { anchor in
+                guard let view = anchor.view else { return true }
+                return view !== anchorView
+            }) else {
+                break
+            }
+
+            if let view = anchors[removalIndex].view {
+                removedViewIDs.append(ObjectIdentifier(view))
+            }
+            anchors.remove(at: removalIndex)
+        }
+
+        actionAnchors[extensionId] = anchors
+
+        guard var tokens = anchorObserverTokens[extensionId] else {
+            return
+        }
+
+        for viewID in removedViewIDs {
             if let token = tokens.removeValue(forKey: viewID) {
                 NotificationCenter.default.removeObserver(token)
             }

@@ -1853,6 +1853,7 @@ extension ExtensionManagerTests {
 
         let webExtension = try await WKWebExtension(resourceBaseURL: extensionRoot)
         let extensionContext = WKWebExtensionContext(for: webExtension)
+        let controller = try requireRuntimeController(for: manager)
 
         manager.debugPrepareExtensionContextForRuntime(
             extensionContext,
@@ -1863,7 +1864,7 @@ extension ExtensionManagerTests {
             XCTAssertTrue(
                 configuration.defaultWebpagePreferences.allowsContentJavaScript
             )
-            XCTAssertTrue(configuration.webExtensionController === manager.nativeController)
+            XCTAssertTrue(configuration.webExtensionController === controller)
         } else {
             XCTAssertTrue(
                 harness.browserConfiguration
@@ -1874,7 +1875,7 @@ extension ExtensionManagerTests {
             XCTAssertTrue(
                 harness.browserConfiguration
                     .webViewConfiguration
-                    .webExtensionController === manager.nativeController
+                    .webExtensionController === controller
             )
         }
     }
@@ -2012,7 +2013,7 @@ extension ExtensionManagerTests {
 
         let granted = await withCheckedContinuation { continuation in
             manager.webExtensionController(
-                try! XCTUnwrap(manager.nativeController),
+                try! requireRuntimeController(for: manager),
                 promptForPermissions: [storagePermission, tabsPermission],
                 in: nil,
                 for: extensionContext
@@ -2063,7 +2064,7 @@ extension ExtensionManagerTests {
 
         let granted = await withCheckedContinuation { continuation in
             manager.webExtensionController(
-                try! XCTUnwrap(manager.nativeController),
+                try! requireRuntimeController(for: manager),
                 promptForPermissionMatchPatterns: [allowedPattern, deniedPattern],
                 in: nil,
                 for: extensionContext
@@ -2109,7 +2110,7 @@ extension ExtensionManagerTests {
 
         let granted = await withCheckedContinuation { continuation in
             manager.webExtensionController(
-                try! XCTUnwrap(manager.nativeController),
+                try! requireRuntimeController(for: manager),
                 promptForPermissionToAccess: [allowedURL, deniedURL],
                 in: nil,
                 for: extensionContext
