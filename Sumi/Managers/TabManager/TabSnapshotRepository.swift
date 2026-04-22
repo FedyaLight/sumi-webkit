@@ -4,14 +4,14 @@ import OSLog
 
 // MARK: - Tab Repository
 
-/// Serializes all SwiftData writes for Tab snapshots and provides
-/// a best-effort atomic save using a child ModelContext pattern.
+/// Serializes SwiftData tab persistence writes and keeps recovery-only
+/// in-memory backups for explicit full reconciles.
 actor TabSnapshotRepository {
     private let container: ModelContainer
     private static let log = Logger.sumi(category: "TabPersistence")
 
-    // Lightweight, in-memory backup of the most recent snapshot
-    // to allow quick recovery if atomic operations fail mid-flight.
+    // Lightweight, in-memory backup of the most recent full reconcile payload.
+    // Recovery paths may use this if the primary full reconcile fails mid-flight.
     private var lastBackupJSON: Data?
 
     enum PersistenceError: Error {
@@ -59,7 +59,6 @@ actor TabSnapshotRepository {
         let index: Int
         let gradientData: Data?
         let workspaceThemeData: Data?
-        let activeTabId: UUID?
         let profileId: UUID?
     }
 
@@ -109,21 +108,21 @@ actor TabSnapshotRepository {
         self.latestGeneration = generation
         do {
             try createDataSnapshot(snapshot)
-            try await performAtomicPersistence(snapshot)
+            try await performFullReconcile(snapshot)
             return true
         } catch {
             let classified = classify(error)
-            Self.log.error("[persistFullReconcile] Atomic persistence failed (\(String(describing: classified), privacy: .public)): \(String(describing: error), privacy: .public)")
+            Self.log.error("[persistFullReconcile] Full reconcile failed (\(String(describing: classified), privacy: .public)): \(String(describing: error), privacy: .public)")
 
             do {
                 try await performBestEffortPersistence(snapshot)
-                Self.log.notice("[persistFullReconcile] Fallback persistence succeeded after atomic failure")
+                Self.log.notice("[persistFullReconcile] Recovery fallback succeeded after full reconcile failure")
                 return false
             } catch {
-                Self.log.fault("[persistFullReconcile] Fallback persistence failed: \(String(describing: error), privacy: .public). Attempting recovery from backup…")
+                Self.log.fault("[persistFullReconcile] Recovery fallback failed: \(String(describing: error), privacy: .public). Attempting backup recovery…")
                 do {
                     try await recoverFromBackup()
-                    Self.log.notice("[persistFullReconcile] Recovered from in-memory backup snapshot")
+                    Self.log.notice("[persistFullReconcile] Recovered from in-memory backup payload")
                     return false
                 } catch {
                     Self.log.fault("[persistFullReconcile] Backup recovery failed: \(String(describing: error), privacy: .public)")
@@ -131,10 +130,6 @@ actor TabSnapshotRepository {
                 }
             }
         }
-    }
-
-    func persist(snapshot: Snapshot, generation: Int) async -> Bool {
-        await persistFullReconcile(snapshot: snapshot, generation: generation)
     }
 
     func persistIncremental(delta: StructuralDelta, generation: Int) async -> Bool {
@@ -318,7 +313,7 @@ actor TabSnapshotRepository {
         }
     }
 
-    private func performAtomicPersistence(_ snapshot: Snapshot) async throws {
+    private func performFullReconcile(_ snapshot: Snapshot) async throws {
         let signpostState = PerformanceTrace.beginInterval("TabSnapshotRepository.performFullReconcile")
         defer {
             PerformanceTrace.endInterval(
@@ -569,6 +564,7 @@ actor TabSnapshotRepository {
         try await performBestEffortPersistence(snapshot)
     }
 
+    /// Recovery-only fallback used after a full reconcile failure.
     private func performBestEffortPersistence(_ snapshot: Snapshot) async throws {
         let ctx = ModelContext(container)
         ctx.autosaveEnabled = false

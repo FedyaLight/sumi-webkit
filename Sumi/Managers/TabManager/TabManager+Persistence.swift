@@ -67,7 +67,6 @@ struct TabManagerSnapshotCache {
                     index: index,
                     gradientData: space.gradient.encoded,
                     workspaceThemeData: space.workspaceTheme.encoded,
-                    activeTabId: space.activeTabId,
                     profileId: space.profileId
                 )
             }
@@ -369,31 +368,14 @@ extension TabManager {
         return await persistIncrementalStructuralNow()
     }
 
-    /// Explicit full reconcile path for restore, repair, migration, and incremental fallback only.
-    public nonisolated func persistFullReconcile(reason: String = "explicit full reconcile") {
-        Task { [weak self] in
-            _ = await self?.persistFullReconcileAwaitingResult(reason: reason)
-        }
-    }
-
+    /// Explicit full reconcile path for restore, repair, fallback, and termination only.
     public nonisolated func persistFullReconcileAwaitingResult(
         reason: String = "explicit full reconcile"
     ) async -> Bool {
         await MainActor.run { [weak self] in
             self?.cancelScheduledStructuralPersistence()
         }
-        return await persistFullSnapshotNow(reason: reason)
-    }
-
-    /// Compatibility wrapper. Do not use for normal runtime mutations; call
-    /// `scheduleStructuralPersistence()` for the incremental hot path instead.
-    public nonisolated func persistSnapshot() {
-        persistFullReconcile(reason: "legacy persistSnapshot() call")
-    }
-
-    // Returns true if the full atomic path succeeded; false if fallback was used or stale.
-    public nonisolated func persistSnapshotAwaitingResult() async -> Bool {
-        await persistFullReconcileAwaitingResult(reason: "legacy persistSnapshotAwaitingResult() call")
+        return await performFullReconcileNow(reason: reason)
     }
 
     private func scheduleStructuralPersistenceOnMain() {
@@ -455,7 +437,7 @@ extension TabManager {
 
         switch payload {
         case .fullReconcile(let reason):
-            return await persistFullSnapshotNow(reason: reason)
+            return await performFullReconcileNow(reason: reason)
         case .incremental(let delta, let consumedDirtySet, let generation):
             let didPersist = await persistence.persistIncremental(delta: delta, generation: generation)
             if didPersist {
@@ -468,7 +450,7 @@ extension TabManager {
                     reason: "incremental structural persistence failed"
                 )
             }
-            return await persistFullSnapshotNow(reason: "incremental structural persistence failed")
+            return await performFullReconcileNow(reason: "incremental structural persistence failed")
         }
     }
 
@@ -477,12 +459,12 @@ extension TabManager {
         await runtimeStateCoalescer.flushImmediately()
     }
 
-    private nonisolated func persistFullSnapshotNow(reason _: String) async -> Bool {
+    private nonisolated func performFullReconcileNow(reason _: String) async -> Bool {
         _ = await flushRuntimeStatePersistenceAwaitingResult()
 
-        let signpostState = PerformanceTrace.beginInterval("TabManager.persistFullSnapshotNow")
+        let signpostState = PerformanceTrace.beginInterval("TabManager.performFullReconcileNow")
         defer {
-            PerformanceTrace.endInterval("TabManager.persistFullSnapshotNow", signpostState)
+            PerformanceTrace.endInterval("TabManager.performFullReconcileNow", signpostState)
         }
 
         let payload: (TabSnapshotRepository.Snapshot, Int)? = await MainActor.run { [weak self] in
@@ -581,7 +563,6 @@ extension TabManager {
                 index: index,
                 gradientData: space.gradient.encoded,
                 workspaceThemeData: space.workspaceTheme.encoded,
-                activeTabId: space.activeTabId,
                 profileId: space.profileId
             )
         }
@@ -995,7 +976,7 @@ extension TabManager {
                 PerformanceTrace.endInterval("TabManager.restoreRepairFullReconcile", signpostState)
             }
             RuntimeDiagnostics.debug(
-                "Persisting restore repair snapshot: \(reasonSummary)",
+                "Persisting restore repair via full reconcile: \(reasonSummary)",
                 category: "TabManager"
             )
             _ = await persistence.persistFullReconcile(snapshot: snapshot, generation: generation)

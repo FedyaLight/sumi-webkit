@@ -44,7 +44,6 @@ struct TabRestorePayload: Sendable {
     let currentSpaceId: UUID?
     let currentTabId: UUID?
     let snapshot: TabSnapshotRepository.Snapshot
-    let needsRepairWriteBack: Bool
     let repairReasons: [String]
     let totalTabCount: Int
     let pinnedCount: Int
@@ -237,7 +236,6 @@ actor TabRestoreLoader {
             currentSpaceId: selection.currentSpaceId,
             currentTabId: selection.currentTabId,
             snapshot: snapshot,
-            needsRepairWriteBack: repairReasons.isEmpty == false,
             repairReasons: repairReasons.sorted(),
             totalTabCount: raw.tabs.count,
             pinnedCount: categorizedTabs.pinnedCount,
@@ -522,7 +520,6 @@ actor TabRestoreLoader {
                 index: index,
                 gradientData: space.workspaceTheme.gradient.encoded,
                 workspaceThemeData: space.workspaceTheme.encoded,
-                activeTabId: nil,
                 profileId: space.profileId
             )
         }
