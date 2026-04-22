@@ -46,11 +46,19 @@ final class ExtensionIconCache {
         let image: NSImage
     }
 
+    private static let maxEntries = 128
     var imageLoader: (String) -> NSImage? = { path in
         NSImage(contentsOfFile: path)
     }
 
     private var entries: [Key: Entry] = [:]
+    private var entryOrder: [Key] = []
+
+    #if DEBUG
+        var debugEntryCount: Int {
+            entries.count
+        }
+    #endif
 
     func image(extensionId: String, iconPath: String) -> NSImage? {
         let key = Key(extensionId: extensionId, iconPath: iconPath)
@@ -59,11 +67,13 @@ final class ExtensionIconCache {
         if let entry = entries[key],
            entry.modificationDate == modificationDate
         {
+            touch(key)
             return entry.image
         }
 
         guard let image = imageLoader(iconPath) else {
             entries.removeValue(forKey: key)
+            entryOrder.removeAll { $0 == key }
             return nil
         }
 
@@ -71,11 +81,26 @@ final class ExtensionIconCache {
             modificationDate: modificationDate,
             image: image
         )
+        touch(key)
+        evictIfNeeded()
         return image
     }
 
     func removeAll() {
         entries.removeAll()
+        entryOrder.removeAll()
+    }
+
+    private func touch(_ key: Key) {
+        entryOrder.removeAll { $0 == key }
+        entryOrder.append(key)
+    }
+
+    private func evictIfNeeded() {
+        while entries.count > Self.maxEntries, let key = entryOrder.first {
+            entryOrder.removeFirst()
+            entries.removeValue(forKey: key)
+        }
     }
 
     private static func modificationDate(for path: String) -> Date? {
@@ -473,6 +498,10 @@ struct ExtensionActionButton: View {
     }
 
     private func showExtensionPopup() {
+        browserManager.extensionManager.requestExtensionRuntime(
+            reason: .extensionAction
+        )
+
         guard let extensionContext = browserManager.extensionManager.getExtensionContext(for: ext.id) else {
             browserManager.showBrowserExtensionsUnavailableAlert(
                 extensionName: ext.name

@@ -10,21 +10,23 @@ final class TabFolderService {
     }
 
     func createFolder(for spaceId: UUID, name: String = "New Folder") -> TabFolder {
-        RuntimeDiagnostics.emit("📁 Creating folder for spaceId: \(spaceId.uuidString)")
-        let folder = TabFolder(
-            name: name,
-            spaceId: spaceId,
-            color: tabManager.spaces.first(where: { $0.id == spaceId })?.color ?? .controlAccentColor
-        )
-        folder.index = tabManager.topLevelSpacePinnedItems(for: spaceId).count
-        RuntimeDiagnostics.emit("   Created folder: \(folder.name) (id: \(folder.id.uuidString.prefix(8))...)")
+        return tabManager.withStructuralUpdateTransaction {
+            RuntimeDiagnostics.emit("📁 Creating folder for spaceId: \(spaceId.uuidString)")
+            let folder = TabFolder(
+                name: name,
+                spaceId: spaceId,
+                color: tabManager.spaces.first(where: { $0.id == spaceId })?.color ?? .controlAccentColor
+            )
+            folder.index = tabManager.topLevelSpacePinnedItems(for: spaceId).count
+            RuntimeDiagnostics.emit("   Created folder: \(folder.name) (id: \(folder.id.uuidString.prefix(8))...)")
 
-        var folders = tabManager.folders(for: spaceId)
-        folders.append(folder)
-        tabManager.setFolders(folders, for: spaceId)
+            var folders = tabManager.folders(for: spaceId)
+            folders.append(folder)
+            tabManager.setFolders(folders, for: spaceId)
 
-        tabManager.scheduleStructuralPersistence()
-        return folder
+            tabManager.scheduleStructuralPersistence()
+            return folder
+        }
     }
 
     func renameFolder(_ folderId: UUID, newName: String) {
@@ -44,50 +46,52 @@ final class TabFolderService {
     }
 
     func deleteFolder(_ folderId: UUID) {
-        RuntimeDiagnostics.emit("🗑️ Deleting folder: \(folderId.uuidString)")
+        tabManager.withStructuralUpdateTransaction {
+            RuntimeDiagnostics.emit("🗑️ Deleting folder: \(folderId.uuidString)")
 
-        guard let spaceId = tabManager.folderSpaceId(for: folderId) else { return }
-        var folders = tabManager.folders(for: spaceId)
-        guard let index = folders.firstIndex(where: { $0.id == folderId }) else { return }
+            guard let spaceId = tabManager.folderSpaceId(for: folderId) else { return }
+            var folders = tabManager.folders(for: spaceId)
+            guard let index = folders.firstIndex(where: { $0.id == folderId }) else { return }
 
-        let folder = folders[index]
-        RuntimeDiagnostics.emit("   Found folder '\(folder.name)' in space \(spaceId.uuidString.prefix(8))...")
+            let folder = folders[index]
+            RuntimeDiagnostics.emit("   Found folder '\(folder.name)' in space \(spaceId.uuidString.prefix(8))...")
 
-        var movedTabsCount = 0
-        for tab in tabManager.allTabs() where tab.folderId == folderId {
-            tab.folderId = nil
-            tab.isSpacePinned = true
-            movedTabsCount += 1
-        }
-        tabManager.markRegularTabsStructurallyDirty(for: spaceId)
-
-        let existingPins = tabManager.spacePinnedPins(for: spaceId)
-        if existingPins.isEmpty == false {
-            let movedPins = existingPins.filter { $0.folderId == folderId }.map(\.id)
-            let detachedPins = existingPins.map { pin -> ShortcutPin in
-                guard pin.folderId == folderId else { return pin }
+            var movedTabsCount = 0
+            for tab in tabManager.allTabs() where tab.folderId == folderId {
+                tab.folderId = nil
+                tab.isSpacePinned = true
                 movedTabsCount += 1
-                return pin.moved(toFolderId: nil)
             }
-            let reindexedPins = tabManager.normalizedSpacePinnedShortcuts(detachedPins, for: spaceId)
-            tabManager.setSpacePinnedShortcuts(reindexedPins, for: spaceId)
-            for pinId in movedPins {
-                if let updatedPin = reindexedPins.first(where: { $0.id == pinId }) {
-                    tabManager.updateTransientShortcutBindings(for: updatedPin)
+            tabManager.markRegularTabsStructurallyDirty(for: spaceId)
+
+            let existingPins = tabManager.spacePinnedPins(for: spaceId)
+            if existingPins.isEmpty == false {
+                let movedPins = existingPins.filter { $0.folderId == folderId }.map(\.id)
+                let detachedPins = existingPins.map { pin -> ShortcutPin in
+                    guard pin.folderId == folderId else { return pin }
+                    movedTabsCount += 1
+                    return pin.moved(toFolderId: nil)
+                }
+                let reindexedPins = tabManager.normalizedSpacePinnedShortcuts(detachedPins, for: spaceId)
+                tabManager.setSpacePinnedShortcuts(reindexedPins, for: spaceId)
+                for pinId in movedPins {
+                    if let updatedPin = reindexedPins.first(where: { $0.id == pinId }) {
+                        tabManager.updateTransientShortcutBindings(for: updatedPin)
+                    }
                 }
             }
+
+            RuntimeDiagnostics.emit("   Moved \(movedTabsCount) tabs out of folder")
+
+            folders.remove(at: index)
+            tabManager.setFolders(folders, for: spaceId)
+            tabManager.applyTopLevelSpacePinnedOrder(
+                tabManager.topLevelSpacePinnedItems(for: spaceId),
+                for: spaceId
+            )
+
+            tabManager.scheduleStructuralPersistence()
         }
-
-        RuntimeDiagnostics.emit("   Moved \(movedTabsCount) tabs out of folder")
-
-        folders.remove(at: index)
-        tabManager.setFolders(folders, for: spaceId)
-        tabManager.applyTopLevelSpacePinnedOrder(
-            tabManager.topLevelSpacePinnedItems(for: spaceId),
-            for: spaceId
-        )
-
-        tabManager.scheduleStructuralPersistence()
     }
 
     func folders(for spaceId: UUID) -> [TabFolder] {
@@ -125,34 +129,36 @@ final class TabFolderService {
     }
 
     func moveTabToFolder(tab: Tab, folderId: UUID) {
-        guard let targetFolder = tabManager.folder(by: folderId) else { return }
+        tabManager.withStructuralUpdateTransaction {
+            guard let targetFolder = tabManager.folder(by: folderId) else { return }
 
-        targetFolder.isOpen = true
-        tabManager.markFoldersStructurallyDirty(for: targetFolder.spaceId)
-        let targetIndex = tabManager.folderPinnedPins(for: folderId, in: targetFolder.spaceId).count
+            targetFolder.isOpen = true
+            tabManager.markFoldersStructurallyDirty(for: targetFolder.spaceId)
+            let targetIndex = tabManager.folderPinnedPins(for: folderId, in: targetFolder.spaceId).count
 
-        if let shortcutId = tab.shortcutPinId,
-           let pin = tabManager.shortcutPin(by: shortcutId)
-        {
-            _ = tabManager.moveShortcutPin(
-                pin,
-                to: .spacePinned,
+            if let shortcutId = tab.shortcutPinId,
+               let pin = tabManager.shortcutPin(by: shortcutId)
+            {
+                _ = tabManager.moveShortcutPin(
+                    pin,
+                    to: .spacePinned,
+                    profileId: nil,
+                    spaceId: targetFolder.spaceId,
+                    folderId: folderId,
+                    index: targetIndex
+                )
+                return
+            }
+
+            _ = tabManager.convertTabToShortcutPin(
+                tab,
+                role: .spacePinned,
                 profileId: nil,
                 spaceId: targetFolder.spaceId,
                 folderId: folderId,
-                index: targetIndex
+                at: targetIndex
             )
-            return
         }
-
-        _ = tabManager.convertTabToShortcutPin(
-            tab,
-            role: .spacePinned,
-            profileId: nil,
-            spaceId: targetFolder.spaceId,
-            folderId: folderId,
-            at: targetIndex
-        )
     }
 
     func handleFolderDragOperation(_ folder: TabFolder, operation: DragOperation) {
@@ -165,15 +171,17 @@ final class TabFolderService {
     }
 
     func alphabetizeFolderPins(_ folderId: UUID, in spaceId: UUID) {
-        let folderPins = tabManager.spacePinnedPins(for: spaceId)
-            .filter { $0.folderId == folderId }
-            .sorted { lhs, rhs in
-                lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+        tabManager.withStructuralUpdateTransaction {
+            let folderPins = tabManager.spacePinnedPins(for: spaceId)
+                .filter { $0.folderId == folderId }
+                .sorted { lhs, rhs in
+                    lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+                }
+            guard !folderPins.isEmpty else { return }
+            tabManager.withSpacePinnedShortcutGroup(for: spaceId, folderId: folderId) { pins in
+                pins = folderPins
             }
-        guard !folderPins.isEmpty else { return }
-        tabManager.withSpacePinnedShortcutGroup(for: spaceId, folderId: folderId) { pins in
-            pins = folderPins
+            tabManager.scheduleStructuralPersistence()
         }
-        tabManager.scheduleStructuralPersistence()
     }
 }

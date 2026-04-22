@@ -331,6 +331,300 @@ extension ExtensionManagerTests {
         XCTAssertFalse(firstImage === thirdImage)
     }
 
+    func testExtensionIconCacheEvictsLeastRecentlyUsedEntriesAtCapacity() throws {
+        let cache = ExtensionIconCache()
+        let directoryURL = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        var loadCount = 0
+        cache.imageLoader = { _ in
+            loadCount += 1
+            return NSImage(size: NSSize(width: 16, height: 16))
+        }
+
+        var iconPaths: [String] = []
+        for index in 0..<(128 + 4) {
+            let iconURL = directoryURL.appendingPathComponent("icon-\(index).png")
+            try Data([UInt8(index % 255)]).write(to: iconURL)
+            iconPaths.append(iconURL.path)
+            _ = cache.image(
+                extensionId: "icon.fixture.\(index)",
+                iconPath: iconURL.path
+            )
+        }
+
+        XCTAssertLessThanOrEqual(cache.debugEntryCount, 128)
+        let loadCountBeforeReload = loadCount
+        _ = cache.image(extensionId: "icon.fixture.0", iconPath: iconPaths[0])
+        XCTAssertEqual(loadCount, loadCountBeforeReload + 1)
+    }
+
+    func testBoundedRecentDateTrackerCapsEntriesAndExpiresOldDates() {
+        var tracker = BoundedRecentDateTracker(
+            ttl: 2,
+            maxKeys: 3,
+            maxDatesPerKey: 2
+        )
+        let baseDate = Date()
+
+        tracker.record(key: "a", at: baseDate)
+        tracker.record(key: "a", at: baseDate.addingTimeInterval(0.1))
+        tracker.record(key: "a", at: baseDate.addingTimeInterval(0.2))
+
+        XCTAssertEqual(tracker.keyCount, 1)
+        XCTAssertEqual(tracker.dateCount, 2)
+        XCTAssertTrue(tracker.consume(key: "a", at: baseDate.addingTimeInterval(0.3)))
+        XCTAssertTrue(tracker.consume(key: "a", at: baseDate.addingTimeInterval(0.3)))
+        XCTAssertFalse(tracker.consume(key: "a", at: baseDate.addingTimeInterval(0.3)))
+
+        tracker.record(key: "k1", at: baseDate)
+        tracker.record(key: "k2", at: baseDate)
+        tracker.record(key: "k3", at: baseDate)
+        tracker.record(key: "k4", at: baseDate)
+
+        XCTAssertEqual(tracker.keyCount, 3)
+        XCTAssertFalse(tracker.consume(key: "k1", at: baseDate))
+        XCTAssertTrue(tracker.consume(key: "k4", at: baseDate))
+
+        tracker.record(key: "expiring", at: baseDate)
+        XCTAssertFalse(
+            tracker.consume(
+                key: "expiring",
+                at: baseDate.addingTimeInterval(3)
+            )
+        )
+    }
+
+    func testExternallyConnectablePortRegistryCapsPassiveTrackingRequestsAndPorts()
+        throws
+    {
+        let registry = ExternallyConnectablePortRegistry()
+        let passiveWebViews = (0..<(ExternallyConnectablePortRegistry.maxTrackedPageURLs + 1))
+            .map { _ in WKWebView() }
+
+        for (index, webView) in passiveWebViews.enumerated() {
+            registry.setTrackedPageURL(
+                "https://example.com/\(index)",
+                for: webView
+            )
+        }
+
+        XCTAssertEqual(
+            registry.trackedPageURLWebViewCount,
+            ExternallyConnectablePortRegistry.maxTrackedPageURLs
+        )
+        XCTAssertNil(registry.trackedPageURL(for: passiveWebViews[0]))
+
+        let pageRequestRegistry = ExternallyConnectablePortRegistry()
+        let pageRequestWebView = WKWebView()
+        var requestRejection: String?
+        for index in 0..<ExternallyConnectablePortRegistry.maxPendingRequestsPerWebView {
+            requestRejection = pageRequestRegistry.addRequest(
+                PendingExternallyConnectableNativeRequest(
+                    id: UUID(),
+                    extensionId: "request.fixture",
+                    webViewIdentifier: ObjectIdentifier(pageRequestWebView),
+                    pageURLString: "https://example.com/\(index)"
+                ) { _, _ in }
+            )
+            XCTAssertNil(requestRejection)
+        }
+
+        requestRejection = pageRequestRegistry.addRequest(
+            PendingExternallyConnectableNativeRequest(
+                id: UUID(),
+                extensionId: "request.fixture",
+                webViewIdentifier: ObjectIdentifier(pageRequestWebView),
+                pageURLString: "https://example.com/overflow"
+            ) { _, _ in }
+        )
+        XCTAssertEqual(
+            requestRejection,
+            "Too many pending externally connectable requests for this page"
+        )
+
+        let globalRequestRegistry = ExternallyConnectablePortRegistry()
+        let requestWebViews = (0..<9).map { _ in WKWebView() }
+        for webView in requestWebViews.prefix(8) {
+            for index in 0..<ExternallyConnectablePortRegistry.maxPendingRequestsPerWebView {
+                requestRejection = globalRequestRegistry.addRequest(
+                    PendingExternallyConnectableNativeRequest(
+                        id: UUID(),
+                        extensionId: "request.fixture",
+                        webViewIdentifier: ObjectIdentifier(webView),
+                        pageURLString: "https://example.com/\(index)"
+                    ) { _, _ in }
+                )
+                XCTAssertNil(requestRejection)
+            }
+        }
+
+        requestRejection = globalRequestRegistry.addRequest(
+            PendingExternallyConnectableNativeRequest(
+                id: UUID(),
+                extensionId: "request.fixture",
+                webViewIdentifier: ObjectIdentifier(requestWebViews[8]),
+                pageURLString: "https://example.com/global-overflow"
+            ) { _, _ in }
+        )
+        XCTAssertEqual(
+            requestRejection,
+            "Too many pending externally connectable requests"
+        )
+
+        let pagePortRegistry = ExternallyConnectablePortRegistry()
+        let portWebViews = (0..<5).map { _ in WKWebView() }
+        let frameInfo = unsafeBitCast(NSObject(), to: WKFrameInfo.self)
+        var portRejection: String?
+
+        for index in 0..<ExternallyConnectablePortRegistry.maxActivePortsPerWebView {
+            portRejection = pagePortRegistry.addPort(
+                ExternallyConnectableNativePortSession(
+                    portId: "page-port-\(index)",
+                    extensionId: "port.fixture",
+                    webView: portWebViews[0],
+                    frameInfo: frameInfo,
+                    pageURLString: "https://example.com",
+                    sourceOrigin: "https://example.com",
+                    isMainFrame: true,
+                    frameURLString: "https://example.com",
+                    connectName: "fixture",
+                    state: .open
+                )
+            )
+            XCTAssertNil(portRejection)
+        }
+
+        portRejection = pagePortRegistry.addPort(
+            ExternallyConnectableNativePortSession(
+                portId: "page-port-overflow",
+                extensionId: "port.fixture",
+                webView: portWebViews[0],
+                frameInfo: frameInfo,
+                pageURLString: "https://example.com",
+                sourceOrigin: "https://example.com",
+                isMainFrame: true,
+                frameURLString: "https://example.com",
+                connectName: "fixture",
+                state: .open
+            )
+        )
+        XCTAssertEqual(
+            portRejection,
+            "Too many externally connectable ports are open for this page"
+        )
+
+        let globalPortRegistry = ExternallyConnectablePortRegistry()
+        for (webViewIndex, webView) in portWebViews.prefix(4).enumerated() {
+            for portIndex in 0..<ExternallyConnectablePortRegistry.maxActivePortsPerWebView {
+                portRejection = globalPortRegistry.addPort(
+                    ExternallyConnectableNativePortSession(
+                        portId: "global-port-\(webViewIndex)-\(portIndex)",
+                        extensionId: "port.fixture",
+                        webView: webView,
+                        frameInfo: frameInfo,
+                        pageURLString: "https://example.com",
+                        sourceOrigin: "https://example.com",
+                        isMainFrame: true,
+                        frameURLString: "https://example.com",
+                        connectName: "fixture",
+                        state: .open
+                    )
+                )
+                XCTAssertNil(portRejection)
+            }
+        }
+
+        portRejection = globalPortRegistry.addPort(
+            ExternallyConnectableNativePortSession(
+                portId: "global-port-overflow",
+                extensionId: "port.fixture",
+                webView: portWebViews[4],
+                frameInfo: frameInfo,
+                pageURLString: "https://example.com",
+                sourceOrigin: "https://example.com",
+                isMainFrame: true,
+                frameURLString: "https://example.com",
+                connectName: "fixture",
+                state: .open
+            )
+        )
+        XCTAssertEqual(
+            portRejection,
+            "Too many externally connectable ports are open"
+        )
+    }
+
+    func testNativeMessagingNegativeManifestCacheStaysBoundedAndExpires()
+        async throws
+    {
+        NativeMessagingHandler.debugResetNegativeManifestCache()
+        defer { NativeMessagingHandler.debugResetNegativeManifestCache() }
+
+        let supportRoot = try temporaryDirectory()
+        let appBundleRoot = try temporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: supportRoot)
+            try? FileManager.default.removeItem(at: appBundleRoot)
+        }
+
+        for index in 0..<(128 + 8) {
+            XCTAssertNil(
+                NativeMessagingHandler.resolveManifestURL(
+                    applicationId: "missing.host.\(index)",
+                    browserSupportDirectory: supportRoot,
+                    appBundleURL: appBundleRoot
+                )
+            )
+        }
+
+        XCTAssertLessThanOrEqual(
+            NativeMessagingHandler.debugNegativeManifestCacheCount,
+            128
+        )
+
+        let expiringApplicationId = "expiring.host"
+        XCTAssertNil(
+            NativeMessagingHandler.resolveManifestURL(
+                applicationId: expiringApplicationId,
+                browserSupportDirectory: supportRoot,
+                appBundleURL: appBundleRoot
+            )
+        )
+
+        let manifestURL = supportRoot
+            .appendingPathComponent("NativeMessagingHosts", isDirectory: true)
+            .appendingPathComponent("\(expiringApplicationId).json")
+        try FileManager.default.createDirectory(
+            at: manifestURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try ExtensionUtils.writeJSONObject(
+            ["path": "/tmp/expiring-host"],
+            to: manifestURL
+        )
+
+        XCTAssertNil(
+            NativeMessagingHandler.resolveManifestURL(
+                applicationId: expiringApplicationId,
+                browserSupportDirectory: supportRoot,
+                appBundleURL: appBundleRoot
+            )
+        )
+
+        try await Task.sleep(nanoseconds: 5_200_000_000)
+
+        let resolvedURL = NativeMessagingHandler.resolveManifestURL(
+            applicationId: expiringApplicationId,
+            browserSupportDirectory: supportRoot,
+            appBundleURL: appBundleRoot
+        )
+        XCTAssertEqual(
+            resolvedURL?.standardizedFileURL,
+            manifestURL.standardizedFileURL
+        )
+    }
+
     func testSetActionAnchorReusesObserverForSameViewAndPrunesStaleAnchors()
         throws
     {
@@ -366,6 +660,34 @@ extension ExtensionManagerTests {
         XCTAssertEqual(manager.actionAnchors[extensionId]?.count, 1)
         XCTAssertNil(
             manager.anchorObserverTokens[extensionId]?[ObjectIdentifier(staleView)]
+        )
+    }
+
+    func testSetActionAnchorCapsObserversPerExtensionAtThirtyTwo() throws {
+        let harness = try makeExtensionRuntimeHarness()
+        let manager = makeExtensionManager(in: harness)
+        let extensionId = "anchor.cap.fixture"
+        let views = (0..<40).map { index in
+            NSView(frame: NSRect(x: CGFloat(index) * 4, y: 0, width: 16, height: 16))
+        }
+
+        for view in views {
+            manager.setActionAnchor(for: extensionId, anchorView: view)
+        }
+
+        XCTAssertLessThanOrEqual(
+            manager.anchorObserverTokens[extensionId]?.count ?? 0,
+            32
+        )
+        XCTAssertLessThanOrEqual(
+            manager.actionAnchors[extensionId]?.count ?? 0,
+            32
+        )
+        XCTAssertNil(
+            manager.anchorObserverTokens[extensionId]?[ObjectIdentifier(views[0])]
+        )
+        XCTAssertNotNil(
+            manager.anchorObserverTokens[extensionId]?[ObjectIdentifier(views.last!)]
         )
     }
 

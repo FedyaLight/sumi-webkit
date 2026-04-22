@@ -248,6 +248,46 @@ final class ExtensionManagerTests: XCTestCase {
         return manager
     }
 
+    @discardableResult
+    func requireRuntimeController(
+        for manager: ExtensionManager,
+        reason: ExtensionManager.ExtensionRuntimeRequestReason = .extensionAction,
+        allowWithoutEnabledExtensions: Bool = true,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws -> WKWebExtensionController {
+        try XCTUnwrap(
+            manager.debugRequestExtensionRuntime(
+                reason: reason,
+                allowWithoutEnabledExtensions: allowWithoutEnabledExtensions
+            ),
+            file: file,
+            line: line
+        )
+    }
+
+    @discardableResult
+    func requireRuntimeReadyController(
+        for manager: ExtensionManager,
+        reason: ExtensionManager.ExtensionRuntimeRequestReason = .extensionAction,
+        allowWithoutEnabledExtensions: Bool = true,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async throws -> WKWebExtensionController {
+        let didInitialize = await manager.debugRequestExtensionRuntimeAndWait(
+            reason: reason,
+            allowWithoutEnabledExtensions: allowWithoutEnabledExtensions
+        )
+        XCTAssertTrue(didInitialize, file: file, line: line)
+        return try requireRuntimeController(
+            for: manager,
+            reason: reason,
+            allowWithoutEnabledExtensions: allowWithoutEnabledExtensions,
+            file: file,
+            line: line
+        )
+    }
+
     private func cleanupTestManagers() {
         for manager in testManagers {
             manager.resetInjectedBrowserConfigurationRuntimeState()
@@ -679,9 +719,48 @@ final class ExtensionManagerTests: XCTestCase {
         return storageDirectory
     }
 
-    func testPrepareWebViewConfigurationForExtensionRuntimeAssignsControllerBeforeCreation() throws {
+    func testPrepareWebViewConfigurationForExtensionRuntimeSkipsControllerWithoutEnabledExtensions() throws {
         let harness = try makeExtensionRuntimeHarness()
         let manager = makeExtensionManager(in: harness)
+        let configuration = WKWebViewConfiguration()
+
+        XCTAssertNil(configuration.webExtensionController)
+
+        manager.prepareWebViewConfigurationForExtensionRuntime(
+            configuration,
+            reason: #function
+        )
+
+        XCTAssertNil(configuration.webExtensionController)
+        XCTAssertTrue(configuration.defaultWebpagePreferences.allowsContentJavaScript)
+        XCTAssertNil(manager.nativeController)
+    }
+
+    func testPrepareWebViewConfigurationForExtensionRuntimeAssignsControllerWhenEnabledExtensionIsPersisted() throws {
+        let harness = try makeExtensionRuntimeHarness()
+        let extensionRoot = try makeUnpackedExtensionDirectory(
+            manifest: [
+                "manifest_version": 3,
+                "name": "Prepare Runtime Fixture",
+                "version": "1.0",
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: extensionRoot) }
+
+        let record = makeInstalledExtensionRecord(
+            id: "prepare.runtime.fixture",
+            packagePath: extensionRoot.path,
+            sourceBundlePath: extensionRoot.path,
+            manifest: try ExtensionUtils.validateManifest(
+                at: extensionRoot.appendingPathComponent("manifest.json")
+            ),
+            isEnabled: true
+        )
+        harness.container.mainContext.insert(ExtensionEntity(record: record))
+        try harness.container.mainContext.save()
+
+        let manager = makeExtensionManager(in: harness)
+        _ = manager.loadInstalledExtensionMetadata()
         let configuration = WKWebViewConfiguration()
 
         XCTAssertNil(configuration.webExtensionController)
@@ -712,6 +791,141 @@ final class ExtensionManagerTests: XCTestCase {
 
         XCTAssertNil(webView.configuration.webExtensionController)
         XCTAssertTrue(webView.configuration.defaultWebpagePreferences.allowsContentJavaScript)
+    }
+
+    func testManagerInitWithDisabledPersistedExtensionLoadsMetadataWithoutRuntime() throws {
+        let harness = try makeExtensionRuntimeHarness()
+        let extensionRoot = try makeUnpackedExtensionDirectory(
+            manifest: [
+                "manifest_version": 3,
+                "name": "Metadata Only Fixture",
+                "version": "1.0",
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: extensionRoot) }
+
+        let record = makeInstalledExtensionRecord(
+            id: "metadata.only.fixture",
+            packagePath: extensionRoot.path,
+            sourceBundlePath: extensionRoot.path,
+            manifest: try ExtensionUtils.validateManifest(
+                at: extensionRoot.appendingPathComponent("manifest.json")
+            ),
+            isEnabled: false
+        )
+        harness.container.mainContext.insert(ExtensionEntity(record: record))
+        try harness.container.mainContext.save()
+
+        let manager = makeExtensionManager(in: harness)
+        let snapshot = manager.debugRuntimeStateSnapshot
+
+        XCTAssertEqual(manager.installedExtensions.map(\.id), [record.id])
+        XCTAssertTrue(manager.extensionsLoaded)
+        XCTAssertEqual(snapshot.runtimeState, .idle)
+        XCTAssertFalse(snapshot.isControllerInitialized)
+        XCTAssertEqual(snapshot.profileExtensionStoreCount, 0)
+        XCTAssertEqual(snapshot.managedPageBridgeScriptCount, 0)
+        XCTAssertNil(harness.browserConfiguration.webViewConfiguration.webExtensionController)
+    }
+
+    func testRequestExtensionRuntimeIsIdempotentAndBoundsProfileStoreCache() async throws {
+        let harness = try makeExtensionRuntimeHarness()
+        let manager = makeExtensionManager(in: harness)
+
+        let firstController = try await requireRuntimeReadyController(
+            for: manager,
+            reason: .extensionAction
+        )
+        let secondController = try await requireRuntimeReadyController(
+            for: manager,
+            reason: .extensionAction
+        )
+
+        XCTAssertTrue(firstController === secondController)
+        XCTAssertEqual(manager.debugRuntimeStateSnapshot.runtimeState, .ready)
+
+        for index in 0..<8 {
+            manager.switchProfile(Profile(name: "Profile \(index)"))
+        }
+
+        XCTAssertLessThanOrEqual(
+            manager.debugRuntimeStateSnapshot.profileExtensionStoreCount,
+            ExtensionManager.profileExtensionStoreLimit
+        )
+    }
+
+    func testResetInjectedBrowserConfigurationRuntimeStateReleasesRuntimeArtifacts() throws {
+        let harness = try makeExtensionRuntimeHarness()
+        let manager = makeExtensionManager(in: harness)
+        let extensionRoot = try makeUnpackedExtensionDirectory(
+            manifest: [
+                "manifest_version": 3,
+                "name": "Reset Runtime Fixture",
+                "version": "1.0",
+                "externally_connectable": [
+                    "matches": ["https://accounts.example.com/*"]
+                ],
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: extensionRoot) }
+
+        let record = makeInstalledExtensionRecord(
+            id: "reset.runtime.fixture",
+            packagePath: extensionRoot.path,
+            sourceBundlePath: extensionRoot.path,
+            manifest: try ExtensionUtils.validateManifest(
+                at: extensionRoot.appendingPathComponent("manifest.json")
+            ),
+            isEnabled: true
+        )
+
+        manager.debugReplaceInstalledExtensions([record])
+        _ = try requireRuntimeController(for: manager, reason: .resetReload)
+        manager.debugSetLoadedManifest(record.manifest, for: record.id)
+        manager.debugSetupExternallyConnectablePageBridge(
+            extensionId: record.id,
+            packagePath: extensionRoot.path
+        )
+        manager.debugInsertRuntimeArtifacts(for: record.id)
+
+        let webView = WKWebView()
+        manager.ecRegistry.setTrackedPageURL(
+            "https://accounts.example.com/login",
+            for: webView
+        )
+        _ = manager.ecRegistry.addRequest(
+            PendingExternallyConnectableNativeRequest(
+                id: UUID(),
+                extensionId: record.id,
+                webViewIdentifier: ObjectIdentifier(webView),
+                pageURLString: webView.url?.absoluteString
+            ) { _, _ in }
+        )
+        manager.recentExtensionTabOpenRequests.record(
+            key: "https://accounts.example.com/login"
+        )
+
+        let beforeReset = manager.debugRuntimeStateSnapshot
+        XCTAssertTrue(beforeReset.isControllerInitialized)
+        XCTAssertEqual(beforeReset.installedPageBridgeIDs, [record.id])
+        XCTAssertEqual(beforeReset.nativeMessageExtensionIDs, [record.id])
+        XCTAssertEqual(beforeReset.pendingExternallyConnectableNativeRequestCount, 1)
+        XCTAssertEqual(beforeReset.trackedExternallyConnectableWebViewCount, 1)
+        XCTAssertEqual(beforeReset.recentTabOpenRequestKeyCount, 1)
+
+        manager.resetInjectedBrowserConfigurationRuntimeState()
+
+        let afterReset = manager.debugRuntimeStateSnapshot
+        XCTAssertFalse(afterReset.isControllerInitialized)
+        XCTAssertEqual(afterReset.runtimeState, .idle)
+        XCTAssertEqual(afterReset.profileExtensionStoreCount, 0)
+        XCTAssertTrue(afterReset.installedPageBridgeIDs.isEmpty)
+        XCTAssertTrue(afterReset.nativeMessageExtensionIDs.isEmpty)
+        XCTAssertEqual(afterReset.pendingExternallyConnectableNativeRequestCount, 0)
+        XCTAssertEqual(afterReset.trackedExternallyConnectableWebViewCount, 0)
+        XCTAssertEqual(afterReset.recentTabOpenRequestKeyCount, 0)
+        XCTAssertEqual(afterReset.managedPageBridgeScriptCount, 0)
+        XCTAssertNil(harness.browserConfiguration.webViewConfiguration.webExtensionController)
     }
 
     func testIsolatedWebViewConfigurationCopyCreatesFreshUserContentController() {

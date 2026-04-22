@@ -60,6 +60,14 @@ class TabManager: ObservableObject {
     private var attachedLiveTabIDs: Set<UUID> = []
     /// Emitted when tab structure changes without a corresponding `@Published` update (e.g. transient shortcut live tabs). Not used for persistence completion—`scheduleStructuralPersistence()` does not send this.
     let structuralChanges = PassthroughSubject<Void, Never>()
+    private var structuralUpdateDepth = 0
+    private var pendingStructuralPublish = false
+    private var structuralTransactionSignpostState: OSSignpostIntervalState?
+    private var pendingTabLookupRemovedIDs: Set<UUID> = []
+    private var pendingTabLookupUpserts: [UUID: Tab] = [:]
+    private var pendingTransientTabLookupRefresh = false
+    private(set) var structuralLookupBatchFlushCount = 0
+    private(set) var structuralLookupImmediateFlushCount = 0
     // Space activation to resume after a deferred profile switch
     var pendingSpaceActivation: UUID?
     
@@ -100,40 +108,42 @@ class TabManager: ObservableObject {
 
     @discardableResult
     func ensureSpacePinnedLauncher(for tab: Tab, in spaceId: UUID) -> ShortcutPin? {
-        guard spaces.contains(where: { $0.id == spaceId }) else { return nil }
+        return withStructuralUpdateTransaction {
+            guard spaces.contains(where: { $0.id == spaceId }) else { return nil }
 
-        if let shortcutId = tab.shortcutPinId,
-           let existingPin = shortcutPin(by: shortcutId),
-           existingPin.role == .spacePinned {
-            existingPin.refreshFromLiveTab(tab)
-            return existingPin
+            if let shortcutId = tab.shortcutPinId,
+               let existingPin = shortcutPin(by: shortcutId),
+               existingPin.role == .spacePinned {
+                existingPin.refreshFromLiveTab(tab)
+                return existingPin
+            }
+
+            if let existingPin = spacePinnedPin(matching: tab.url, in: spaceId) {
+                let trimmedTitle = tab.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                let refreshedTitle = trimmedTitle.isEmpty ? existingPin.title : trimmedTitle
+                let updatedPin = updateShortcutPin(existingPin, title: refreshedTitle) ?? existingPin
+                updatedPin.refreshFromLiveTab(tab)
+                return updatedPin
+            }
+
+            let targetIndex = topLevelSpacePinnedItems(for: spaceId).count
+            let newPin = makeShortcutPin(
+                from: tab,
+                role: .spacePinned,
+                profileId: nil,
+                spaceId: spaceId,
+                folderId: nil,
+                index: targetIndex
+            )
+
+            guard let insertedPin = insertShortcutPin(newPin, at: targetIndex) else {
+                return nil
+            }
+
+            insertedPin.refreshFromLiveTab(tab)
+            scheduleStructuralPersistence()
+            return insertedPin
         }
-
-        if let existingPin = spacePinnedPin(matching: tab.url, in: spaceId) {
-            let trimmedTitle = tab.name.trimmingCharacters(in: .whitespacesAndNewlines)
-            let refreshedTitle = trimmedTitle.isEmpty ? existingPin.title : trimmedTitle
-            let updatedPin = updateShortcutPin(existingPin, title: refreshedTitle) ?? existingPin
-            updatedPin.refreshFromLiveTab(tab)
-            return updatedPin
-        }
-
-        let targetIndex = topLevelSpacePinnedItems(for: spaceId).count
-        let newPin = makeShortcutPin(
-            from: tab,
-            role: .spacePinned,
-            profileId: nil,
-            spaceId: spaceId,
-            folderId: nil,
-            index: targetIndex
-        )
-
-        guard let insertedPin = insertShortcutPin(newPin, at: targetIndex) else {
-            return nil
-        }
-
-        insertedPin.refreshFromLiveTab(tab)
-        scheduleStructuralPersistence()
-        return insertedPin
     }
 
     func liveSpacePinnedTabs(for spaceId: UUID) -> [Tab] {
@@ -287,8 +297,8 @@ class TabManager: ObservableObject {
         tabsBySpace[spaceId] = sortedItems
         markRegularTabsSnapshotDirty(for: spaceId)
         recordRegularTabsStructuralChange(previous: previousTabs, current: sortedItems)
-        replaceTabLookupEntries(removing: previousTabs, with: sortedItems)
-        structuralChanges.send()
+        queueTabLookupEntries(removing: previousTabs, with: sortedItems)
+        requestStructuralPublish()
     }
 
     func setFolders(_ items: [TabFolder], for spaceId: UUID) {
@@ -296,7 +306,7 @@ class TabManager: ObservableObject {
         foldersBySpace[spaceId] = items
         markFoldersSnapshotDirty(for: spaceId)
         recordFoldersStructuralChange(previous: previousFolders, current: items)
-        structuralChanges.send()
+        requestStructuralPublish()
     }
 
     func setPinnedTabs(_ items: [ShortcutPin], for profileId: UUID) {
@@ -304,7 +314,7 @@ class TabManager: ObservableObject {
         pinnedByProfile[profileId] = items
         markPinnedSnapshotDirty(for: profileId)
         recordShortcutPinsStructuralChange(previous: previousPins, current: items)
-        structuralChanges.send()
+        requestStructuralPublish()
     }
 
     func setSpacePinnedShortcuts(_ items: [ShortcutPin], for spaceId: UUID) {
@@ -312,15 +322,16 @@ class TabManager: ObservableObject {
         spacePinnedShortcuts[spaceId] = items
         markSpacePinnedSnapshotDirty(for: spaceId)
         recordShortcutPinsStructuralChange(previous: previousPins, current: items)
-        structuralChanges.send()
+        requestStructuralPublish()
     }
 
     func notifyTransientShortcutStateChanged() {
-        refreshTransientTabLookup()
-        structuralChanges.send()
+        queueTransientTabLookupRefresh()
+        requestStructuralPublish()
     }
 
     func tab(for id: UUID) -> Tab? {
+        flushPendingStructuralLookupImmediatelyIfNeeded()
         if let tab = tabLookup[id] {
             return tab
         }
@@ -358,6 +369,126 @@ class TabManager: ObservableObject {
 
     func rebuildTabLookupForRestore() {
         rebuildTabLookup()
+    }
+
+    @discardableResult
+    func withStructuralUpdateTransaction<T>(_ operation: () throws -> T) rethrows -> T {
+        beginStructuralUpdate()
+        defer {
+            endStructuralUpdate()
+        }
+        return try operation()
+    }
+
+    private func beginStructuralUpdate() {
+        if structuralUpdateDepth == 0 {
+            structuralTransactionSignpostState = PerformanceTrace.beginInterval("TabManager.structuralTransaction")
+        }
+        structuralUpdateDepth += 1
+    }
+
+    private func endStructuralUpdate() {
+        guard structuralUpdateDepth > 0 else { return }
+        structuralUpdateDepth -= 1
+        guard structuralUpdateDepth == 0 else { return }
+
+        flushPendingStructuralLookupBatchIfNeeded()
+        let shouldPublish = pendingStructuralPublish
+        pendingStructuralPublish = false
+        if let state = structuralTransactionSignpostState {
+            PerformanceTrace.endInterval("TabManager.structuralTransaction", state)
+            structuralTransactionSignpostState = nil
+        }
+        if shouldPublish {
+            PerformanceTrace.emitEvent("TabManager.structuralPublish.coalesced")
+            structuralChanges.send()
+        }
+    }
+
+    func requestStructuralPublish() {
+        if structuralUpdateDepth > 0 {
+            pendingStructuralPublish = true
+            return
+        }
+
+        PerformanceTrace.emitEvent("TabManager.structuralPublish.immediate")
+        structuralChanges.send()
+    }
+
+    private var hasPendingStructuralLookupWork: Bool {
+        pendingTransientTabLookupRefresh
+            || pendingTabLookupRemovedIDs.isEmpty == false
+            || pendingTabLookupUpserts.isEmpty == false
+    }
+
+    private func queueTabLookupEntries(removing previousTabs: [Tab], with currentTabs: [Tab]) {
+        guard structuralUpdateDepth > 0 else {
+            replaceTabLookupEntries(removing: previousTabs, with: currentTabs)
+            return
+        }
+
+        let currentIDs = Set(currentTabs.map(\.id))
+        for tab in previousTabs where !currentIDs.contains(tab.id) {
+            pendingTabLookupUpserts.removeValue(forKey: tab.id)
+            pendingTabLookupRemovedIDs.insert(tab.id)
+        }
+        for tab in currentTabs {
+            pendingTabLookupRemovedIDs.remove(tab.id)
+            pendingTabLookupUpserts[tab.id] = tab
+        }
+    }
+
+    private func queueTransientTabLookupRefresh() {
+        guard structuralUpdateDepth > 0 else {
+            refreshTransientTabLookup()
+            return
+        }
+
+        pendingTransientTabLookupRefresh = true
+    }
+
+    private func flushPendingStructuralLookupBatchIfNeeded() {
+        guard hasPendingStructuralLookupWork else { return }
+        structuralLookupBatchFlushCount += 1
+        PerformanceTrace.withInterval("TabManager.structuralLookupBatch") {
+            applyPendingStructuralLookupWork()
+        }
+    }
+
+    private func flushPendingStructuralLookupImmediatelyIfNeeded() {
+        guard hasPendingStructuralLookupWork else { return }
+        structuralLookupImmediateFlushCount += 1
+        PerformanceTrace.withInterval("TabManager.structuralLookupImmediate") {
+            applyPendingStructuralLookupWork()
+        }
+    }
+
+    private func applyPendingStructuralLookupWork() {
+        let removedIDs = pendingTabLookupRemovedIDs
+        let upserts = pendingTabLookupUpserts
+        let shouldRefreshTransientLookup = pendingTransientTabLookupRefresh
+
+        pendingTabLookupRemovedIDs.removeAll(keepingCapacity: true)
+        pendingTabLookupUpserts.removeAll(keepingCapacity: true)
+        pendingTransientTabLookupRefresh = false
+
+        let liveTransientIDs = Set(
+            transientShortcutTabsByWindow.values
+                .flatMap(\.values)
+                .map(\.id)
+        )
+
+        if shouldRefreshTransientLookup {
+            refreshTransientTabLookup()
+        }
+
+        for tabId in removedIDs where upserts[tabId] == nil && !liveTransientIDs.contains(tabId) {
+            tabLookup.removeValue(forKey: tabId)
+        }
+
+        for (tabId, tab) in upserts {
+            tabLookup[tabId] = tab
+        }
     }
 
     private func replaceTabLookupEntries(removing previousTabs: [Tab], with currentTabs: [Tab]) {
@@ -447,33 +578,35 @@ class TabManager: ObservableObject {
         _ items: [SpacePinnedTopLevelItem],
         for spaceId: UUID
     ) {
-        let folderMap = Dictionary(uniqueKeysWithValues: (foldersBySpace[spaceId] ?? []).map { ($0.id, $0) })
-        var orderedFolders: [TabFolder] = []
-        var orderedTopLevelPins: [ShortcutPin] = []
+        withStructuralUpdateTransaction {
+            let folderMap = Dictionary(uniqueKeysWithValues: (foldersBySpace[spaceId] ?? []).map { ($0.id, $0) })
+            var orderedFolders: [TabFolder] = []
+            var orderedTopLevelPins: [ShortcutPin] = []
 
-        for (index, item) in items.enumerated() {
-            switch item {
-            case .folder(let folder):
-                let target = folderMap[folder.id] ?? folder
-                target.index = index
-                target.spaceId = spaceId
-                orderedFolders.append(target)
-            case .shortcut(let pin):
-                orderedTopLevelPins.append(pin.refreshed(index: index).moved(toFolderId: nil))
+            for (index, item) in items.enumerated() {
+                switch item {
+                case .folder(let folder):
+                    let target = folderMap[folder.id] ?? folder
+                    target.index = index
+                    target.spaceId = spaceId
+                    orderedFolders.append(target)
+                case .shortcut(let pin):
+                    orderedTopLevelPins.append(pin.refreshed(index: index).moved(toFolderId: nil))
+                }
             }
-        }
 
-        let remainingFolders = (foldersBySpace[spaceId] ?? [])
-            .filter { folder in orderedFolders.contains(where: { $0.id == folder.id }) == false }
-        let finalFolders = (orderedFolders + remainingFolders).sorted { lhs, rhs in
-            if lhs.index != rhs.index { return lhs.index < rhs.index }
-            return lhs.id.uuidString < rhs.id.uuidString
-        }
-        setFolders(finalFolders, for: spaceId)
+            let remainingFolders = (foldersBySpace[spaceId] ?? [])
+                .filter { folder in orderedFolders.contains(where: { $0.id == folder.id }) == false }
+            let finalFolders = (orderedFolders + remainingFolders).sorted { lhs, rhs in
+                if lhs.index != rhs.index { return lhs.index < rhs.index }
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
+            setFolders(finalFolders, for: spaceId)
 
-        let folderPins = (spacePinnedShortcuts[spaceId] ?? []).filter { $0.folderId != nil }
-        let finalPins = normalizedSpacePinnedShortcuts(folderPins + orderedTopLevelPins, for: spaceId)
-        setSpacePinnedShortcuts(finalPins, for: spaceId)
+            let folderPins = (spacePinnedShortcuts[spaceId] ?? []).filter { $0.folderId != nil }
+            let finalPins = normalizedSpacePinnedShortcuts(folderPins + orderedTopLevelPins, for: spaceId)
+            setSpacePinnedShortcuts(finalPins, for: spaceId)
+        }
     }
 
     func insertTopLevelSpacePinnedShortcut(
@@ -645,39 +778,41 @@ class TabManager: ObservableObject {
     /// - Returns: The newly created regular Tab.
     @discardableResult
     func duplicateAsRegularForSplit(from source: Tab, anchor: Tab?, placeAfterAnchor: Bool = true) -> Tab {
-        // Resolve target space: prefer the anchor's space, else currentSpace.
-        let targetSpace: Space = {
-            if let a = anchor, let sid = a.spaceId, let sp = spaces.first(where: { $0.id == sid }) { return sp }
-            return currentSpace ?? ensureDefaultSpaceIfNeeded()
-        }()
+        return withStructuralUpdateTransaction {
+            // Resolve target space: prefer the anchor's space, else currentSpace.
+            let targetSpace: Space = {
+                if let a = anchor, let sid = a.spaceId, let sp = spaces.first(where: { $0.id == sid }) { return sp }
+                return currentSpace ?? ensureDefaultSpaceIfNeeded()
+            }()
 
-        // Build the duplicate with the same URL/name; favicon will refresh from URL.
-        let newTab = Tab(
-            url: source.url,
-            name: source.name,
-            favicon: "globe",
-            spaceId: targetSpace.id,
-            index: 0,
-            browserManager: browserManager
-        )
+            // Build the duplicate with the same URL/name; favicon will refresh from URL.
+            let newTab = Tab(
+                url: source.url,
+                name: source.name,
+                favicon: "globe",
+                spaceId: targetSpace.id,
+                index: 0,
+                browserManager: browserManager
+            )
 
-        // Add at end first, then reposition next to anchor if provided.
-        addTab(newTab)
+            // Add at end first, then reposition next to anchor if provided.
+            addTab(newTab)
 
-        if let a = anchor, let sid = a.spaceId, let arr = tabsBySpace[sid] {
-            // Find indices in current ordering
-            if let anchorIndex = arr.firstIndex(where: { $0.id == a.id }),
-               let newIndex = arr.firstIndex(where: { $0.id == newTab.id })
-            {
-                // Compute desired position relative to anchor
-                let desired = min(max(anchorIndex + (placeAfterAnchor ? 1 : 0), 0), arr.count)
-                if newIndex != desired {
-                    reorderRegularTabs(newTab, in: sid, to: desired)
+            if let a = anchor, let sid = a.spaceId, let arr = tabsBySpace[sid] {
+                // Find indices in current ordering
+                if let anchorIndex = arr.firstIndex(where: { $0.id == a.id }),
+                   let newIndex = arr.firstIndex(where: { $0.id == newTab.id })
+                {
+                    // Compute desired position relative to anchor
+                    let desired = min(max(anchorIndex + (placeAfterAnchor ? 1 : 0), 0), arr.count)
+                    if newIndex != desired {
+                        reorderRegularTabs(newTab, in: sid, to: desired)
+                    }
                 }
             }
-        }
 
-        return newTab
+            return newTab
+        }
     }
 
     // MARK: - Folder Management
@@ -733,132 +868,136 @@ class TabManager: ObservableObject {
     // MARK: - Tab Management (Normal within current space)
 
     func addTab(_ tab: Tab) {
-        attach(tab)
-        if contains(tab) { return }
+        withStructuralUpdateTransaction {
+            attach(tab)
+            if contains(tab) { return }
 
-        if tab.spaceId == nil {
-            tab.spaceId = currentSpace?.id
-        }
-        guard let sid = tab.spaceId else {
-            RuntimeDiagnostics.debug("Skipping addTab for '\(tab.name)' because no spaceId was resolved.", category: "TabManager")
-            return
-        }
-        var arr = tabsBySpace[sid] ?? []
-        arr.append(tab)
-        setTabs(arr, for: sid)
+            if tab.spaceId == nil {
+                tab.spaceId = currentSpace?.id
+            }
+            guard let sid = tab.spaceId else {
+                RuntimeDiagnostics.debug("Skipping addTab for '\(tab.name)' because no spaceId was resolved.", category: "TabManager")
+                return
+            }
+            var arr = tabsBySpace[sid] ?? []
+            arr.append(tab)
+            setTabs(arr, for: sid)
         
-        // Load the tab in compositor if it's the current tab
-        if tab.id == currentTab?.id {
-            browserManager?.compositorManager.loadTab(tab)
-        }
+            // Load the tab in compositor if it's the current tab
+            if tab.id == currentTab?.id {
+                browserManager?.compositorManager.loadTab(tab)
+            }
         
-        RuntimeDiagnostics.debug("Added regular tab '\(tab.name)' to space \(sid.uuidString).", category: "TabManager")
-        scheduleStructuralPersistence()
+            RuntimeDiagnostics.debug("Added regular tab '\(tab.name)' to space \(sid.uuidString).", category: "TabManager")
+            scheduleStructuralPersistence()
+        }
     }
 
     func removeTab(_ id: UUID) {
-        // Notify SplitViewManager about tab closure to prevent zombie state
-        browserManager?.splitManager.handleTabClosure(id)
-        cancelRuntimeStatePersistence(for: id)
+        withStructuralUpdateTransaction {
+            // Notify SplitViewManager about tab closure to prevent zombie state
+            browserManager?.splitManager.handleTabClosure(id)
+            cancelRuntimeStatePersistence(for: id)
         
-        let wasCurrent = (currentTab?.id == id)
-        var removed: Tab?
-        var removedSpaceId: UUID?
-        var removedIndexInCurrentSpace: Int?
+            let wasCurrent = (currentTab?.id == id)
+            var removed: Tab?
+            var removedSpaceId: UUID?
+            var removedIndexInCurrentSpace: Int?
 
-        if removed == nil {
-            for space in spaces {
-                // Then check regular tabs
-                if var arr = tabsBySpace[space.id],
-                   let i = arr.firstIndex(where: { $0.id == id })
-                {
-                    if i < arr.count { removed = arr.remove(at: i) }
-                    removedSpaceId = space.id
-                    removedIndexInCurrentSpace =
-                        (space.id == currentSpace?.id) ? i : nil
-                    setTabs(arr, for: space.id)
-                    break
+            if removed == nil {
+                for space in spaces {
+                    // Then check regular tabs
+                    if var arr = tabsBySpace[space.id],
+                       let i = arr.firstIndex(where: { $0.id == id })
+                    {
+                        if i < arr.count { removed = arr.remove(at: i) }
+                        removedSpaceId = space.id
+                        removedIndexInCurrentSpace =
+                            (space.id == currentSpace?.id) ? i : nil
+                        setTabs(arr, for: space.id)
+                        break
+                    }
                 }
             }
-        }
-        if removed == nil,
-           let (windowId, pinId, tab) = transientShortcutTabsByWindow.lazy
-                .compactMap({ windowId, tabsByPin -> (UUID, UUID, Tab)? in
-                    guard let match = tabsByPin.first(where: { $0.value.id == id }) else { return nil }
-                    return (windowId, match.key, match.value)
-                })
-                .first
-        {
-            transientShortcutTabsByWindow[windowId]?.removeValue(forKey: pinId)
-            if transientShortcutTabsByWindow[windowId]?.isEmpty == true {
-                transientShortcutTabsByWindow.removeValue(forKey: windowId)
-            }
-            notifyTransientShortcutStateChanged()
-            removed = tab
-        }
-
-        guard let tab = removed else { return }
-
-        browserManager?.extensionManager.notifyTabClosed(tab)
-
-        browserManager?.windowRegistry?.windows.values.forEach { windowState in
-            windowState.removeFromRegularTabHistory(tab.id)
-        }
-
-        // Add to recently closed tabs for undo functionality
-        trackRecentlyClosedTab(tab, spaceId: removedSpaceId)
-
-        // Force unload the tab from compositor before removing
-        browserManager?.compositorManager.unloadTab(tab)
-        browserManager?.webViewCoordinator?.removeAllWebViews(for: tab)
-        detach(tab)
-
-        NotificationCenter.default.post(
-            name: .sumiTabLifecycleDidChange,
-            object: tab
-        )
-
-        if wasCurrent {
-            if tab.spaceId == nil {
-                // Tab was global pinned
-                if !pinnedTabs.isEmpty {
-                    currentTab = pinnedTabs.last
-                } else if let cs = currentSpace {
-                    let spacePinned = liveSpacePinnedTabs(for: cs.id)
-                    let arr = tabsBySpace[cs.id] ?? []
-                    currentTab = spacePinned.last ?? arr.last
-                } else {
-                    currentTab = nil
+            if removed == nil,
+               let (windowId, pinId, tab) = transientShortcutTabsByWindow.lazy
+                    .compactMap({ windowId, tabsByPin -> (UUID, UUID, Tab)? in
+                        guard let match = tabsByPin.first(where: { $0.value.id == id }) else { return nil }
+                        return (windowId, match.key, match.value)
+                    })
+                    .first
+            {
+                transientShortcutTabsByWindow[windowId]?.removeValue(forKey: pinId)
+                if transientShortcutTabsByWindow[windowId]?.isEmpty == true {
+                    transientShortcutTabsByWindow.removeValue(forKey: windowId)
                 }
-            } else if let cs = currentSpace {
-                // Tab was in a space
-                let spacePinned = liveSpacePinnedTabs(for: cs.id)
-                let arr = tabsBySpace[cs.id] ?? []
-                
-                if let i = removedIndexInCurrentSpace {
-                    // Try to select adjacent tab
-                    let allSpaceTabs = spacePinned + arr
-                    if !allSpaceTabs.isEmpty {
-                        let newIndex = min(i, allSpaceTabs.count - 1)
-                        currentTab = allSpaceTabs.indices.contains(newIndex) 
-                            ? allSpaceTabs[newIndex] 
-                            : allSpaceTabs.first
-                    } else if !pinnedTabs.isEmpty {
+                notifyTransientShortcutStateChanged()
+                removed = tab
+            }
+
+            guard let tab = removed else { return }
+
+            browserManager?.extensionManager.notifyTabClosed(tab)
+
+            browserManager?.windowRegistry?.windows.values.forEach { windowState in
+                windowState.removeFromRegularTabHistory(tab.id)
+            }
+
+            // Add to recently closed tabs for undo functionality
+            trackRecentlyClosedTab(tab, spaceId: removedSpaceId)
+
+            // Force unload the tab from compositor before removing
+            browserManager?.compositorManager.unloadTab(tab)
+            browserManager?.webViewCoordinator?.removeAllWebViews(for: tab)
+            detach(tab)
+
+            NotificationCenter.default.post(
+                name: .sumiTabLifecycleDidChange,
+                object: tab
+            )
+
+            if wasCurrent {
+                if tab.spaceId == nil {
+                    // Tab was global pinned
+                    if !pinnedTabs.isEmpty {
                         currentTab = pinnedTabs.last
+                    } else if let cs = currentSpace {
+                        let spacePinned = liveSpacePinnedTabs(for: cs.id)
+                        let arr = tabsBySpace[cs.id] ?? []
+                        currentTab = spacePinned.last ?? arr.last
                     } else {
                         currentTab = nil
                     }
-                } else {
-                    // Fallback to last tab
-                    currentTab = arr.last ?? spacePinned.last ?? pinnedTabs.last
+                } else if let cs = currentSpace {
+                    // Tab was in a space
+                    let spacePinned = liveSpacePinnedTabs(for: cs.id)
+                    let arr = tabsBySpace[cs.id] ?? []
+
+                    if let i = removedIndexInCurrentSpace {
+                        // Try to select adjacent tab
+                        let allSpaceTabs = spacePinned + arr
+                        if !allSpaceTabs.isEmpty {
+                            let newIndex = min(i, allSpaceTabs.count - 1)
+                            currentTab = allSpaceTabs.indices.contains(newIndex)
+                                ? allSpaceTabs[newIndex]
+                                : allSpaceTabs.first
+                        } else if !pinnedTabs.isEmpty {
+                            currentTab = pinnedTabs.last
+                        } else {
+                            currentTab = nil
+                        }
+                    } else {
+                        // Fallback to last tab
+                        currentTab = arr.last ?? spacePinned.last ?? pinnedTabs.last
+                    }
                 }
             }
-        }
 
-        scheduleStructuralPersistence()
-        
-        // Validate window states after tab removal
-        browserManager?.validateWindowStates()
+            scheduleStructuralPersistence()
+
+            // Validate window states after tab removal
+            browserManager?.validateWindowStates()
+        }
     }
 
     func setActiveTab(_ tab: Tab) {
@@ -957,49 +1096,51 @@ class TabManager: ObservableObject {
         activate: Bool = true,
         webViewConfigurationOverride: WKWebViewConfiguration? = nil
     ) -> Tab {
-        let settings = sumiSettings ?? browserManager?.sumiSettings
-        let template = settings?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
-        let normalizedUrl = normalizeURL(url, queryTemplate: template)
-        guard let validURL = URL(string: normalizedUrl)
-        else {
-            RuntimeDiagnostics.debug("Invalid URL '\(url)' while creating a new tab; falling back to Sumi empty surface.", category: "TabManager")
-            return createNewTab(in: space)
-        }
-
-        let targetSpace: Space? = space ?? currentSpace ?? ensureDefaultSpaceIfNeeded()
-        // Ensure the target space has a profile assignment; backfill from currentProfile if missing
-        if let ts = targetSpace, ts.profileId == nil {
-            let defaultProfileId = browserManager?.currentProfile?.id ?? browserManager?.profileManager.profiles.first?.id
-            if let pid = defaultProfileId {
-                ts.profileId = pid
-                markAllSpacesStructurallyDirty()
-                scheduleStructuralPersistence()
+        return withStructuralUpdateTransaction {
+            let settings = sumiSettings ?? browserManager?.sumiSettings
+            let template = settings?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
+            let normalizedUrl = normalizeURL(url, queryTemplate: template)
+            guard let validURL = URL(string: normalizedUrl)
+            else {
+                RuntimeDiagnostics.debug("Invalid URL '\(url)' while creating a new tab; falling back to Sumi empty surface.", category: "TabManager")
+                return createNewTab(in: space)
             }
-        }
-        let sid = targetSpace?.id
 
-        let nextIndex = sid
-            .flatMap { tabsBySpace[$0]?.map(\.index).max() }
-            .map { $0 + 1 }
-            ?? 0
+            let targetSpace: Space? = space ?? currentSpace ?? ensureDefaultSpaceIfNeeded()
+            // Ensure the target space has a profile assignment; backfill from currentProfile if missing
+            if let ts = targetSpace, ts.profileId == nil {
+                let defaultProfileId = browserManager?.currentProfile?.id ?? browserManager?.profileManager.profiles.first?.id
+                if let pid = defaultProfileId {
+                    ts.profileId = pid
+                    markAllSpacesStructurallyDirty()
+                    scheduleStructuralPersistence()
+                }
+            }
+            let sid = targetSpace?.id
 
-        let newTab = Tab(
-            url: validURL,
-            name: "New Tab",
-            favicon: "globe",
-            spaceId: sid,
-            index: nextIndex,
-            browserManager: browserManager
-        )
-        newTab.profileId = targetSpace?.profileId
-        if let webViewConfigurationOverride {
-            newTab.applyWebViewConfigurationOverride(webViewConfigurationOverride)
+            let nextIndex = sid
+                .flatMap { tabsBySpace[$0]?.map(\.index).max() }
+                .map { $0 + 1 }
+                ?? 0
+
+            let newTab = Tab(
+                url: validURL,
+                name: "New Tab",
+                favicon: "globe",
+                spaceId: sid,
+                index: nextIndex,
+                browserManager: browserManager
+            )
+            newTab.profileId = targetSpace?.profileId
+            if let webViewConfigurationOverride {
+                newTab.applyWebViewConfigurationOverride(webViewConfigurationOverride)
+            }
+            addTab(newTab)
+            if activate {
+                setActiveTab(newTab)
+            }
+            return newTab
         }
-        addTab(newTab)
-        if activate {
-            setActiveTab(newTab)
-        }
-        return newTab
     }
     
     // MARK: - Ephemeral Tab Creation (Incognito)
@@ -1038,44 +1179,46 @@ class TabManager: ObservableObject {
         in space: Space? = nil,
         existingWebView: WKWebView? = nil
     ) -> Tab {
-        let settings = sumiSettings ?? browserManager?.sumiSettings
-        let template = settings?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
-        let normalizedUrl = normalizeURL(url, queryTemplate: template)
-        guard let validURL = URL(string: normalizedUrl)
-        else {
-            RuntimeDiagnostics.debug("Invalid URL '\(url)' while creating a WebView-backed tab; falling back to Sumi empty surface.", category: "TabManager")
-            return createNewTab(in: space)
-        }
-
-        let targetSpace: Space? = space ?? currentSpace ?? ensureDefaultSpaceIfNeeded()
-        // Ensure the target space has a profile assignment; backfill from currentProfile if missing
-        if let ts = targetSpace, ts.profileId == nil {
-            let defaultProfileId = browserManager?.currentProfile?.id ?? browserManager?.profileManager.profiles.first?.id
-            if let pid = defaultProfileId {
-                ts.profileId = pid
-                markAllSpacesStructurallyDirty()
-                scheduleStructuralPersistence()
+        return withStructuralUpdateTransaction {
+            let settings = sumiSettings ?? browserManager?.sumiSettings
+            let template = settings?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
+            let normalizedUrl = normalizeURL(url, queryTemplate: template)
+            guard let validURL = URL(string: normalizedUrl)
+            else {
+                RuntimeDiagnostics.debug("Invalid URL '\(url)' while creating a WebView-backed tab; falling back to Sumi empty surface.", category: "TabManager")
+                return createNewTab(in: space)
             }
+
+            let targetSpace: Space? = space ?? currentSpace ?? ensureDefaultSpaceIfNeeded()
+            // Ensure the target space has a profile assignment; backfill from currentProfile if missing
+            if let ts = targetSpace, ts.profileId == nil {
+                let defaultProfileId = browserManager?.currentProfile?.id ?? browserManager?.profileManager.profiles.first?.id
+                if let pid = defaultProfileId {
+                    ts.profileId = pid
+                    markAllSpacesStructurallyDirty()
+                    scheduleStructuralPersistence()
+                }
+            }
+            let sid = targetSpace?.id
+
+            let nextIndex = sid
+                .flatMap { tabsBySpace[$0]?.map(\.index).max() }
+                .map { $0 + 1 }
+                ?? 0
+
+            let newTab = Tab(
+                url: validURL,
+                name: "New Tab",
+                favicon: "globe",
+                spaceId: sid,
+                index: nextIndex,
+                browserManager: browserManager,
+                existingWebView: existingWebView
+            )
+            addTab(newTab)
+            setActiveTab(newTab)
+            return newTab
         }
-        let sid = targetSpace?.id
-
-        let nextIndex = sid
-            .flatMap { tabsBySpace[$0]?.map(\.index).max() }
-            .map { $0 + 1 }
-            ?? 0
-
-        let newTab = Tab(
-            url: validURL,
-            name: "New Tab",
-            favicon: "globe",
-            spaceId: sid,
-            index: nextIndex,
-            browserManager: browserManager,
-            existingWebView: existingWebView
-        )
-        addTab(newTab)
-        setActiveTab(newTab)
-        return newTab
     }
 
     // Create a new blank tab intended to host a popup window. The returned tab's
@@ -1087,40 +1230,42 @@ class TabManager: ObservableObject {
         activate: Bool = true,
         webViewConfigurationOverride: WKWebViewConfiguration? = nil
     ) -> Tab {
-        let targetSpace: Space? = space ?? currentSpace ?? ensureDefaultSpaceIfNeeded()
-        // Ensure target space has a profile assignment
-        if let ts = targetSpace, ts.profileId == nil {
-            let defaultProfileId = browserManager?.currentProfile?.id ?? browserManager?.profileManager.profiles.first?.id
-            if let pid = defaultProfileId {
-                ts.profileId = pid
-                markAllSpacesStructurallyDirty()
-                scheduleStructuralPersistence()
+        return withStructuralUpdateTransaction {
+            let targetSpace: Space? = space ?? currentSpace ?? ensureDefaultSpaceIfNeeded()
+            // Ensure target space has a profile assignment
+            if let ts = targetSpace, ts.profileId == nil {
+                let defaultProfileId = browserManager?.currentProfile?.id ?? browserManager?.profileManager.profiles.first?.id
+                if let pid = defaultProfileId {
+                    ts.profileId = pid
+                    markAllSpacesStructurallyDirty()
+                    scheduleStructuralPersistence()
+                }
             }
-        }
-        let sid = targetSpace?.id
-        let existingTabs = sid.flatMap { tabsBySpace[$0] } ?? []
-        let nextIndex = (existingTabs.map { $0.index }.max() ?? -1) + 1
+            let sid = targetSpace?.id
+            let existingTabs = sid.flatMap { tabsBySpace[$0] } ?? []
+            let nextIndex = (existingTabs.map { $0.index }.max() ?? -1) + 1
 
-        guard let blankURL = URL(string: "about:blank") else {
-            preconditionFailure("TabManager: invalid about:blank URL")
+            guard let blankURL = URL(string: "about:blank") else {
+                preconditionFailure("TabManager: invalid about:blank URL")
+            }
+            let newTab = Tab(
+                url: blankURL,
+                name: "New Tab",
+                favicon: "globe",
+                spaceId: sid,
+                index: nextIndex,
+                browserManager: browserManager
+            )
+            newTab.isPopupHost = true
+            if let webViewConfigurationOverride {
+                newTab.applyWebViewConfigurationOverride(webViewConfigurationOverride)
+            }
+            addTab(newTab)
+            if activate {
+                setActiveTab(newTab)
+            }
+            return newTab
         }
-        let newTab = Tab(
-            url: blankURL,
-            name: "New Tab",
-            favicon: "globe",
-            spaceId: sid,
-            index: nextIndex,
-            browserManager: browserManager
-        )
-        newTab.isPopupHost = true
-        if let webViewConfigurationOverride {
-            newTab.applyWebViewConfigurationOverride(webViewConfigurationOverride)
-        }
-        addTab(newTab)
-        if activate {
-            setActiveTab(newTab)
-        }
-        return newTab
     }
 
     // Ensure a default space exists and is active; create a Personal space if needed
@@ -1155,21 +1300,23 @@ class TabManager: ObservableObject {
     }
 
     func clearRegularTabs(for spaceId: UUID) {
-        guard let tabs = tabsBySpace[spaceId] else { return }
+        withStructuralUpdateTransaction {
+            guard let tabs = tabsBySpace[spaceId] else { return }
 
-        RuntimeDiagnostics.emit("🧹 [TabManager] Clearing \(tabs.count) regular tabs for space \(spaceId)")
+            RuntimeDiagnostics.emit("🧹 [TabManager] Clearing \(tabs.count) regular tabs for space \(spaceId)")
 
-        let inactiveRegular = tabs.filter { $0.id != currentTab?.id }
-        if !inactiveRegular.isEmpty {
-            for tab in inactiveRegular {
-                removeTab(tab.id)
+            let inactiveRegular = tabs.filter { $0.id != currentTab?.id }
+            if !inactiveRegular.isEmpty {
+                for tab in inactiveRegular {
+                    removeTab(tab.id)
+                }
+                return
             }
-            return
-        }
-        if let active = currentTab,
-           active.spaceId == spaceId,
-           tabs.contains(where: { $0.id == active.id }) {
-            removeTab(active.id)
+            if let active = currentTab,
+               active.spaceId == spaceId,
+               tabs.contains(where: { $0.id == active.id }) {
+                removeTab(active.id)
+            }
         }
     }
     

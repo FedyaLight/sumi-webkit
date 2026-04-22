@@ -25,7 +25,9 @@ private struct NativeMessagingHostManifest {
 final class NativeMessagingHandler: NSObject {
     private static let logger = Logger.sumi(category: "NativeMessaging")
     private static let missingHostBackoff: TimeInterval = 5
-    nonisolated(unsafe) private static var negativeManifestCache: Set<String> = []
+    private static let negativeManifestCacheLimit = 128
+    private static let negativeManifestCacheLock = NSLock()
+    nonisolated(unsafe) private static var negativeManifestCache: [String: Date] = [:]
 
     private let applicationId: String
     private let browserSupportDirectory: URL
@@ -77,7 +79,7 @@ final class NativeMessagingHandler: NSObject {
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
         fileManager: FileManager = .default
     ) -> URL? {
-        guard negativeManifestCache.contains(applicationId) == false else {
+        guard isNegativeManifestCacheEntryActive(applicationId) == false else {
             return nil
         }
 
@@ -89,11 +91,66 @@ final class NativeMessagingHandler: NSObject {
         ).first(where: { fileManager.fileExists(atPath: $0.path) })
 
         if manifestURL == nil {
-            negativeManifestCache.insert(applicationId)
+            insertNegativeManifestCacheEntry(applicationId)
         }
 
         return manifestURL
     }
+
+    private static func isNegativeManifestCacheEntryActive(
+        _ applicationId: String,
+        now: Date = Date()
+    ) -> Bool {
+        negativeManifestCacheLock.lock()
+        defer { negativeManifestCacheLock.unlock() }
+
+        guard let cachedAt = negativeManifestCache[applicationId] else {
+            return false
+        }
+
+        if now.timeIntervalSince(cachedAt) > missingHostBackoff {
+            negativeManifestCache.removeValue(forKey: applicationId)
+            return false
+        }
+
+        return true
+    }
+
+    private static func insertNegativeManifestCacheEntry(
+        _ applicationId: String,
+        now: Date = Date()
+    ) {
+        negativeManifestCacheLock.lock()
+        defer { negativeManifestCacheLock.unlock() }
+
+        negativeManifestCache = negativeManifestCache.filter {
+            now.timeIntervalSince($0.value) <= missingHostBackoff
+        }
+        negativeManifestCache[applicationId] = now
+
+        if negativeManifestCache.count > negativeManifestCacheLimit {
+            let overflow = negativeManifestCache.count - negativeManifestCacheLimit
+            let keysToRemove = negativeManifestCache
+                .sorted { $0.value < $1.value }
+                .prefix(overflow)
+                .map(\.key)
+            keysToRemove.forEach { negativeManifestCache.removeValue(forKey: $0) }
+        }
+    }
+
+    #if DEBUG
+        static func debugResetNegativeManifestCache() {
+            negativeManifestCacheLock.lock()
+            negativeManifestCache.removeAll()
+            negativeManifestCacheLock.unlock()
+        }
+
+        static var debugNegativeManifestCacheCount: Int {
+            negativeManifestCacheLock.lock()
+            defer { negativeManifestCacheLock.unlock() }
+            return negativeManifestCache.count
+        }
+    #endif
 
     func sendMessage(
         _ message: Any,

@@ -3,12 +3,16 @@ import Foundation
 @MainActor
 extension TabManager {
     func performSidebarDragOperation(_ operation: DragOperation) {
-        handleDragOperation(operation)
+        withStructuralUpdateTransaction {
+            handleDragOperation(operation)
+        }
     }
 
     func performSidebarDragOperations(_ operations: [DragOperation]) {
-        for operation in operations {
-            handleDragOperation(operation)
+        withStructuralUpdateTransaction {
+            for operation in operations {
+                handleDragOperation(operation)
+            }
         }
     }
 
@@ -226,72 +230,80 @@ extension TabManager {
     }
 
     func reorderRegularTabs(_ tab: Tab, in spaceId: UUID, to index: Int) {
-        guard var regularTabs = tabsBySpace[spaceId],
-              let currentIndex = regularTabs.firstIndex(where: { $0.id == tab.id }) else {
-            return
+        withStructuralUpdateTransaction {
+            guard var regularTabs = tabsBySpace[spaceId],
+                  let currentIndex = regularTabs.firstIndex(where: { $0.id == tab.id }) else {
+                return
+            }
+            guard index != currentIndex else { return }
+
+            regularTabs.remove(at: currentIndex)
+            let adjustedIndex = currentIndex < index ? index - 1 : index
+            let clampedIndex = min(max(adjustedIndex, 0), regularTabs.count)
+            regularTabs.insert(tab, at: clampedIndex)
+
+            for (index, regularTab) in regularTabs.enumerated() {
+                regularTab.index = index
+            }
+
+            setTabs(regularTabs, for: spaceId)
+            scheduleStructuralPersistence()
         }
-        guard index != currentIndex else { return }
-
-        regularTabs.remove(at: currentIndex)
-        let adjustedIndex = currentIndex < index ? index - 1 : index
-        let clampedIndex = min(max(adjustedIndex, 0), regularTabs.count)
-        regularTabs.insert(tab, at: clampedIndex)
-
-        for (index, regularTab) in regularTabs.enumerated() {
-            regularTab.index = index
-        }
-
-        setTabs(regularTabs, for: spaceId)
-        scheduleStructuralPersistence()
     }
 
     func moveTab(_ tabId: UUID, to targetSpaceId: UUID) {
-        guard let tab = tab(for: tabId),
-              let currentSpaceId = tab.spaceId,
-              currentSpaceId != targetSpaceId else {
-            return
-        }
+        withStructuralUpdateTransaction {
+            guard let tab = tab(for: tabId),
+                  let currentSpaceId = tab.spaceId,
+                  currentSpaceId != targetSpaceId else {
+                return
+            }
 
-        let targetTabs = tabsBySpace[targetSpaceId] ?? []
-        moveTabBetweenSpaces(
-            tab,
-            from: currentSpaceId,
-            to: targetSpaceId,
-            asSpacePinned: false,
-            toIndex: targetTabs.count
-        )
+            let targetTabs = tabsBySpace[targetSpaceId] ?? []
+            moveTabBetweenSpaces(
+                tab,
+                from: currentSpaceId,
+                to: targetSpaceId,
+                asSpacePinned: false,
+                toIndex: targetTabs.count
+            )
+        }
     }
 
     func moveTabUp(_ tabId: UUID) {
-        guard let spaceId = findSpaceForTab(tabId) else { return }
-        let tabs = tabsBySpace[spaceId] ?? []
-        guard let currentIndex = tabs.firstIndex(where: { $0.id == tabId }) else { return }
-        guard currentIndex > 0 else { return }
+        withStructuralUpdateTransaction {
+            guard let spaceId = findSpaceForTab(tabId) else { return }
+            let tabs = tabsBySpace[spaceId] ?? []
+            guard let currentIndex = tabs.firstIndex(where: { $0.id == tabId }) else { return }
+            guard currentIndex > 0 else { return }
 
-        let tab = tabs[currentIndex]
-        let targetTab = tabs[currentIndex - 1]
-        let tempIndex = tab.index
-        tab.index = targetTab.index
-        targetTab.index = tempIndex
+            let tab = tabs[currentIndex]
+            let targetTab = tabs[currentIndex - 1]
+            let tempIndex = tab.index
+            tab.index = targetTab.index
+            targetTab.index = tempIndex
 
-        setTabs(tabs, for: spaceId)
-        scheduleStructuralPersistence()
+            setTabs(tabs, for: spaceId)
+            scheduleStructuralPersistence()
+        }
     }
 
     func moveTabDown(_ tabId: UUID) {
-        guard let spaceId = findSpaceForTab(tabId) else { return }
-        let tabs = tabsBySpace[spaceId] ?? []
-        guard let currentIndex = tabs.firstIndex(where: { $0.id == tabId }) else { return }
-        guard currentIndex < tabs.count - 1 else { return }
+        withStructuralUpdateTransaction {
+            guard let spaceId = findSpaceForTab(tabId) else { return }
+            let tabs = tabsBySpace[spaceId] ?? []
+            guard let currentIndex = tabs.firstIndex(where: { $0.id == tabId }) else { return }
+            guard currentIndex < tabs.count - 1 else { return }
 
-        let tab = tabs[currentIndex]
-        let targetTab = tabs[currentIndex + 1]
-        let tempIndex = tab.index
-        tab.index = targetTab.index
-        targetTab.index = tempIndex
+            let tab = tabs[currentIndex]
+            let targetTab = tabs[currentIndex + 1]
+            let tempIndex = tab.index
+            tab.index = targetTab.index
+            targetTab.index = tempIndex
 
-        setTabs(tabs, for: spaceId)
-        scheduleStructuralPersistence()
+            setTabs(tabs, for: spaceId)
+            scheduleStructuralPersistence()
+        }
     }
 
     private func handleFolderDragOperation(_ folder: TabFolder, operation: DragOperation) {
@@ -299,21 +311,23 @@ extension TabManager {
     }
 
     private func reorderGlobalPinnedTabs(_ tab: Tab, to index: Int) {
-        guard let shortcutId = tab.shortcutPinId,
-              let pin = shortcutPin(by: shortcutId),
-              let profileId = pin.profileId else {
-            return
-        }
-        var pins = pinnedByProfile[profileId] ?? []
-        guard let currentIndex = pins.firstIndex(where: { $0.id == pin.id }) else { return }
-        guard index != currentIndex else { return }
+        withStructuralUpdateTransaction {
+            guard let shortcutId = tab.shortcutPinId,
+                  let pin = shortcutPin(by: shortcutId),
+                  let profileId = pin.profileId else {
+                return
+            }
+            var pins = pinnedByProfile[profileId] ?? []
+            guard let currentIndex = pins.firstIndex(where: { $0.id == pin.id }) else { return }
+            guard index != currentIndex else { return }
 
-        pins.remove(at: currentIndex)
-        let adjustedIndex = currentIndex < index ? index - 1 : index
-        let safeIndex = max(0, min(adjustedIndex, pins.count))
-        pins.insert(pin, at: safeIndex)
-        setPinnedTabs(reindexed(pins), for: profileId)
-        scheduleStructuralPersistence()
+            pins.remove(at: currentIndex)
+            let adjustedIndex = currentIndex < index ? index - 1 : index
+            let safeIndex = max(0, min(adjustedIndex, pins.count))
+            pins.insert(pin, at: safeIndex)
+            setPinnedTabs(reindexed(pins), for: profileId)
+            scheduleStructuralPersistence()
+        }
     }
 
     private func moveTabBetweenSpaces(

@@ -234,17 +234,6 @@ extension ExtensionManager {
             throw ExtensionError.installationFailed("Extension was not found in persistence")
         }
 
-        if extensionContexts[extensionId] == nil {
-            _ = try await loadEnabledExtension(from: entity)
-            if extensionsLoaded {
-                tabOpenNotificationGeneration &+= 1
-                resyncOpenTabsWithExtensionRuntimeAfterGenerationBump(
-                    reason: "ExtensionManager.enableExtension"
-                )
-                registerExistingWindowStateIfAttached()
-            }
-        }
-
         entity.isEnabled = true
         entity.lastUpdateDate = Date()
         try context.save()
@@ -255,10 +244,18 @@ extension ExtensionManager {
         await applyInstalledExtensionsMutationOnNextRunLoop { manager in
             manager.upsertInstalledExtension(refreshed)
         }
+        loadInstalledExtensionMetadata()
+        _ = await requestExtensionRuntimeAndWait(
+            reason: .enable,
+            allowWithoutEnabledExtensions: true
+        )
         return refreshed
     }
 
-    func disableExtension(_ extensionId: String) async throws {
+    func disableExtension(
+        _ extensionId: String,
+        releaseRuntimeIfIdle: Bool = true
+    ) async throws {
         tearDownExtensionRuntimeState(for: extensionId, removeUIState: true)
 
         if let entity = try extensionEntity(for: extensionId) {
@@ -307,10 +304,18 @@ extension ExtensionManager {
             manager.installedExtensions[index] = updated
             manager.sortInstalledExtensions()
         }
+
+        if releaseRuntimeIfIdle && hasEnabledInstalledExtensions == false {
+            tearDownExtensionRuntime(
+                reason: "disableExtension.noEnabledExtensions",
+                removeUIState: true,
+                releaseController: true
+            )
+        }
     }
 
     func uninstallExtension(_ extensionId: String) async throws {
-        try await disableExtension(extensionId)
+        try await disableExtension(extensionId, releaseRuntimeIfIdle: false)
         await removeStoredWebExtensionData(for: extensionId)
 
         if let entity = try extensionEntity(for: extensionId) {
@@ -325,6 +330,14 @@ extension ExtensionManager {
         await applyInstalledExtensionsMutationOnNextRunLoop { manager in
             manager.installedExtensions.removeAll { $0.id == extensionId }
         }
+
+        if hasEnabledInstalledExtensions == false {
+            tearDownExtensionRuntime(
+                reason: "uninstallExtension.noEnabledExtensions",
+                removeUIState: true,
+                releaseController: true
+            )
+        }
     }
 
     func loadInstalledExtensions() {
@@ -336,13 +349,34 @@ extension ExtensionManager {
             )
         }
 
-        extensionsLoaded = false
-        extensionLoadGeneration &+= 1
-        let loadGeneration = extensionLoadGeneration
-        extensionRuntimeTrace(
-            "loadInstalledExtensions start loadGeneration=\(loadGeneration) installedContexts=\(extensionContexts.count)"
+        loadInstalledExtensionMetadata()
+
+        if hasEnabledInstalledExtensions {
+            requestExtensionRuntime(reason: .refresh, forceReload: true)
+        } else {
+            tearDownExtensionRuntime(
+                reason: "loadInstalledExtensions.noEnabledExtensions",
+                removeUIState: false,
+                releaseController: true
+            )
+        }
+    }
+
+    @discardableResult
+    func loadInstalledExtensionMetadata() -> [ExtensionEntity] {
+        let signpostState = PerformanceTrace.beginInterval(
+            "ExtensionManager.loadInstalledExtensionMetadata"
         )
-        resetLoadedExtensionRuntimeStateForReload()
+        defer {
+            PerformanceTrace.endInterval(
+                "ExtensionManager.loadInstalledExtensionMetadata",
+                signpostState
+            )
+        }
+
+        extensionRuntimeTrace(
+            "loadInstalledExtensionMetadata start installedContexts=\(extensionContexts.count)"
+        )
 
         let entities: [ExtensionEntity]
         do {
@@ -351,107 +385,53 @@ extension ExtensionManager {
             Self.logger.error("Failed to fetch extensions: \(error.localizedDescription, privacy: .public)")
             installedExtensions = []
             extensionsLoaded = true
-            return
+            return []
         }
 
         var loadedRecords: [InstalledExtension] = []
         var enabledEntitiesToLoad: [ExtensionEntity] = []
+        var didMutatePersistence = false
 
         for entity in entities {
-            let manifestURL = URL(fileURLWithPath: entity.packagePath)
-                .appendingPathComponent("manifest.json")
-
-            do {
-                let patchStart = CFAbsoluteTimeGetCurrent()
-                patchManifestForWebKit(at: manifestURL)
-                recordRuntimeMetric(for: entity.id) {
-                    $0.manifestPatchDuration = CFAbsoluteTimeGetCurrent() - patchStart
-                }
-
-                let validationStart = CFAbsoluteTimeGetCurrent()
-                let manifest = try ExtensionUtils.validateManifest(at: manifestURL)
-                recordRuntimeMetric(for: entity.id) {
-                    $0.manifestValidationDuration = CFAbsoluteTimeGetCurrent() - validationStart
-                }
-                let refreshed = try refreshedRecord(for: entity, manifest: manifest)
-                loadedRecords.append(refreshed)
-                update(entity, from: refreshed)
-                if entity.isEnabled {
-                    enabledEntitiesToLoad.append(entity)
-                }
-            } catch {
+            let packageURL = URL(fileURLWithPath: entity.packagePath, isDirectory: true)
+            guard FileManager.default.fileExists(atPath: packageURL.path),
+                  let record = InstalledExtensionRecord(from: entity)
+            else {
                 context.delete(entity)
+                didMutatePersistence = true
                 Self.logger.error(
-                    "Dropped invalid persisted extension record for \(entity.name, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                    "Dropped invalid persisted extension record for \(entity.name, privacy: .public)"
                 )
+                continue
+            }
+
+            loadedRecords.append(record)
+            if entity.isEnabled {
+                enabledEntitiesToLoad.append(entity)
             }
         }
 
         installedExtensions = loadedRecords.sorted {
             $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
+        reconcilePinnedToolbarExtensions()
         cleanupOrphanedExtensionPackages(
             referencedPackagePaths: Set(loadedRecords.map(\.packagePath))
         )
-        scheduleWebKitExtensionStorageCleanupDryRun(
-            activeExtensionIDs: Set(loadedRecords.map(\.id))
+
+        if didMutatePersistence {
+            do {
+                try context.save()
+            } catch {
+                Self.logger.error("Failed to persist refreshed extension metadata: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+
+        extensionsLoaded = true
+        extensionRuntimeTrace(
+            "loadInstalledExtensionMetadata complete records=\(loadedRecords.count) enabled=\(enabledEntitiesToLoad.count)"
         )
-
-        do {
-            try context.save()
-        } catch {
-            Self.logger.error("Failed to persist refreshed extension metadata: \(error.localizedDescription, privacy: .public)")
-        }
-
-        Task { @MainActor [weak self] in
-            let signpostState = PerformanceTrace.beginInterval(
-                "ExtensionManager.loadInstalledExtensions.enabledLoad"
-            )
-            defer {
-                PerformanceTrace.endInterval(
-                    "ExtensionManager.loadInstalledExtensions.enabledLoad",
-                    signpostState
-                )
-            }
-
-            guard let self else { return }
-            for entity in enabledEntitiesToLoad {
-                guard self.extensionLoadGeneration == loadGeneration else {
-                    self.extensionRuntimeTrace(
-                        "loadInstalledExtensions cancelled before loading extension entity=\(entity.id) expectedGeneration=\(loadGeneration) actualGeneration=\(self.extensionLoadGeneration)"
-                    )
-                    return
-                }
-
-                do {
-                    _ = try await loadEnabledExtension(
-                        from: entity,
-                        expectedLoadGeneration: loadGeneration
-                    )
-                } catch is CancellationError {
-                    return
-                } catch {
-                    Self.logger.error("Failed to load enabled extension \(entity.name, privacy: .public): \(error.localizedDescription, privacy: .public)")
-                }
-            }
-
-            guard self.extensionLoadGeneration == loadGeneration else {
-                self.extensionRuntimeTrace(
-                    "loadInstalledExtensions cancelled before finalize expectedGeneration=\(loadGeneration) actualGeneration=\(self.extensionLoadGeneration)"
-                )
-                return
-            }
-
-            extensionsLoaded = true
-            self.tabOpenNotificationGeneration &+= 1
-            self.extensionRuntimeTrace(
-                "loadInstalledExtensions finalize loadGeneration=\(loadGeneration) notifyGeneration=\(self.tabOpenNotificationGeneration) loadedContexts=\(self.extensionContexts.count)"
-            )
-            self.resyncOpenTabsWithExtensionRuntimeAfterGenerationBump(
-                reason: "ExtensionManager.loadInstalledExtensions.finalize"
-            )
-            registerExistingWindowStateIfAttached()
-        }
+        return enabledEntitiesToLoad
     }
 
     private nonisolated func cleanupOrphanedExtensionPackages(
@@ -514,6 +494,12 @@ extension ExtensionManager {
         }
 
         do {
+            guard let extensionController else {
+                throw ExtensionError.installationFailed(
+                    "Extension runtime controller is unavailable"
+                )
+            }
+
             let extensionRoot = URL(fileURLWithPath: entity.packagePath)
             let manifestURL = extensionRoot.appendingPathComponent("manifest.json")
             extensionRuntimeTrace(
@@ -575,7 +561,7 @@ extension ExtensionManager {
                     )
                 #endif
                 let contextLoadStart = CFAbsoluteTimeGetCurrent()
-                try extensionController?.load(extensionContext)
+                try extensionController.load(extensionContext)
                 recordRuntimeMetric(for: entity.id) {
                     $0.contextLoadDuration =
                         CFAbsoluteTimeGetCurrent() - contextLoadStart
@@ -775,6 +761,11 @@ extension ExtensionManager {
     func performInstallation(
         from sourceURL: URL
     ) async throws -> InstalledExtension {
+        _ = await requestExtensionRuntimeAndWait(
+            reason: .install,
+            allowWithoutEnabledExtensions: true
+        )
+
         let extensionsDirectory = ExtensionUtils.extensionsDirectory()
         let resolvedSource = try Self.resolveInstallSource(at: sourceURL)
         let temporaryDirectory = extensionsDirectory.appendingPathComponent(
@@ -925,7 +916,12 @@ extension ExtensionManager {
                         webExtensionStorageSnapshot(for: extensionId)
                     )
                 #endif
-                try extensionController?.load(extensionContext)
+                guard let extensionController else {
+                    throw ExtensionError.installationFailed(
+                        "Extension runtime controller is unavailable"
+                    )
+                }
+                try extensionController.load(extensionContext)
             } catch {
                 tearDownExtensionRuntimeState(for: extensionId, removeUIState: false)
                 throw error

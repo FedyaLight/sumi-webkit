@@ -2473,10 +2473,19 @@ extension ExtensionManagerTests {
         try container.mainContext.save()
 
         let manager = makeExtensionManager(in: harness)
+        let initSnapshot = manager.debugRuntimeStateSnapshot
 
-        try await waitUntil(timeout: 5) {
-            manager.extensionsLoaded
-        }
+        XCTAssertTrue(manager.extensionsLoaded)
+        XCTAssertEqual(manager.installedExtensions.map(\.id), [record.id])
+        XCTAssertEqual(initSnapshot.runtimeState, .idle)
+        XCTAssertFalse(initSnapshot.isControllerInitialized)
+        XCTAssertEqual(initSnapshot.profileExtensionStoreCount, 0)
+
+        _ = try await requireRuntimeReadyController(
+            for: manager,
+            reason: .refresh,
+            allowWithoutEnabledExtensions: false
+        )
 
         XCTAssertEqual(manager.loadedContextIDs, [record.id])
         XCTAssertNotNil(manager.getExtensionContext(for: record.id))
@@ -2509,12 +2518,10 @@ extension ExtensionManagerTests {
 
         let manager = makeExtensionManager(in: harness)
 
-        try await waitUntil(timeout: 5) {
-            manager.extensionsLoaded
-        }
-
         XCTAssertTrue(manager.loadedContextIDs.isEmpty)
         XCTAssertTrue(manager.installedExtensions.isEmpty)
+        XCTAssertTrue(manager.extensionsLoaded)
+        XCTAssertFalse(manager.debugRuntimeStateSnapshot.isControllerInitialized)
         XCTAssertTrue(
             try container.mainContext.fetch(FetchDescriptor<ExtensionEntity>()).isEmpty
         )

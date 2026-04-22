@@ -94,12 +94,36 @@ final class ExtensionManager: NSObject, ObservableObject {
         var errorUpdateDuration: TimeInterval = 0
     }
 
+    enum ExtensionRuntimeState: String, Codable, CaseIterable {
+        case idle
+        case loading
+        case ready
+        case unavailable
+        case failed
+    }
+
+    enum ExtensionRuntimeRequestReason: String, Codable, CaseIterable {
+        case attach
+        case webViewConfiguration
+        case install
+        case enable
+        case refresh
+        case extensionAction
+        case externallyConnectable
+        case resetReload
+    }
+
     let context: ModelContext
     let browserConfiguration: BrowserConfiguration
-    let controllerIdentifier: UUID
+    var controllerIdentifierStorage: UUID?
+    var controllerIdentifier: UUID {
+        ensureRuntimeControllerIdentifier()
+    }
 
     weak var browserManager: BrowserManager?
     var extensionController: WKWebExtensionController?
+    var runtimeState: ExtensionRuntimeState = .idle
+    var runtimeInitializationTask: Task<Void, Never>?
     var extensionContexts: [String: WKWebExtensionContext] = [:]
     var loadedExtensionManifests: [String: [String: Any]] = [:]
     var backgroundWakeTasks: [String: Task<Void, Error>] = [:]
@@ -117,7 +141,12 @@ final class ExtensionManager: NSObject, ObservableObject {
     var nativeMessagePortHandlers: [ObjectIdentifier: NativeMessagingHandler] = [:]
     var nativeMessagePortExtensionIDs: [ObjectIdentifier: String] = [:]
     var profileExtensionStores: [UUID: WKWebsiteDataStore] = [:]
-    var recentExtensionTabOpenRequestDatesByURL: [String: [Date]] = [:]
+    var profileExtensionStoreOrder: [UUID] = []
+    var recentExtensionTabOpenRequests = BoundedRecentDateTracker(
+        ttl: ExtensionManager.recentExtensionTabOpenRequestTTL,
+        maxKeys: 128,
+        maxDatesPerKey: 4
+    )
     let ecRegistry = ExternallyConnectablePortRegistry()
     private(set) lazy var ecBroker: SumiExtensionMessageBroker = {
         let broker = SumiExtensionMessageBroker(
@@ -135,6 +164,9 @@ final class ExtensionManager: NSObject, ObservableObject {
     var currentProfileId: UUID?
     var pinnedToolbarExtensionIDsByProfile: [String: [String]] = [:]
 
+    nonisolated static let profileExtensionStoreLimit = 4
+    nonisolated static let recentExtensionTabOpenRequestTTL: TimeInterval = 2
+
     init(
         context: ModelContext,
         initialProfile: Profile?,
@@ -147,7 +179,6 @@ final class ExtensionManager: NSObject, ObservableObject {
 
         self.context = context
         self.browserConfiguration = browserConfiguration
-        self.controllerIdentifier = Self.makeRuntimeControllerIdentifier()
         self.currentProfileId = initialProfile?.id
         self.pinnedToolbarExtensionIDsByProfile = Self.loadPinnedToolbarExtensionIDsByProfile()
         self.pinnedToolbarExtensionIDs = Self.normalizedPinnedToolbarExtensionIDs(
@@ -159,11 +190,23 @@ final class ExtensionManager: NSObject, ObservableObject {
 
         guard isExtensionSupportAvailable else {
             extensionsLoaded = true
+            runtimeState = .unavailable
             return
         }
 
-        setupExtensionController(using: initialProfile)
-        loadInstalledExtensions()
+        loadInstalledExtensionMetadata()
+        PerformanceTrace.emitEvent("ExtensionManager.eagerRuntimeSkipped")
+    }
+
+    @discardableResult
+    private func ensureRuntimeControllerIdentifier() -> UUID {
+        if let controllerIdentifierStorage {
+            return controllerIdentifierStorage
+        }
+
+        let identifier = Self.makeRuntimeControllerIdentifier()
+        controllerIdentifierStorage = identifier
+        return identifier
     }
 
     private static func makeRuntimeControllerIdentifier() -> UUID {
@@ -244,20 +287,20 @@ final class ExtensionManager: NSObject, ObservableObject {
             PerformanceTrace.endInterval("ExtensionManager.deinit", signpostState)
         }
 
-        for (_, tokens) in anchorObserverTokens {
-            for (_, token) in tokens {
-                NotificationCenter.default.removeObserver(token)
-            }
-        }
-
-        for (_, token) in extensionErrorObserverTokens {
-            NotificationCenter.default.removeObserver(token)
+        MainActor.assumeIsolated { [self] in
+            tearDownExtensionRuntime(
+                reason: "deinit",
+                removeUIState: true,
+                releaseController: true
+            )
         }
 
         #if DEBUG
-            Self.removeTestWebExtensionControllerStorageIfNeeded(
-                for: controllerIdentifier
-            )
+            if let controllerIdentifierStorage {
+                Self.removeTestWebExtensionControllerStorageIfNeeded(
+                    for: controllerIdentifierStorage
+                )
+            }
             clearDebugState()
         #endif
     }
@@ -285,34 +328,11 @@ final class ExtensionManager: NSObject, ObservableObject {
             )
         }
 
-        let configuration = browserConfiguration.webViewConfiguration
-        let userContentController = configuration.userContentController
-        let preservedScripts = userContentController.userScripts.filter {
-            Self.isManagedExternallyConnectablePageBridgeScript($0) == false
-        }
-
-        if preservedScripts.count != userContentController.userScripts.count {
-            userContentController.removeAllUserScripts()
-            preservedScripts.forEach { userContentController.addUserScript($0) }
-        }
-
-        userContentController.removeScriptMessageHandler(
-            forName: Self.externallyConnectableNativeBridgeHandlerName,
-            contentWorld: .page
+        tearDownExtensionRuntime(
+            reason: "resetInjectedBrowserConfigurationRuntimeState",
+            removeUIState: true,
+            releaseController: true
         )
-        userContentController.removeScriptMessageHandler(
-            forName: Self.externallyConnectableNativeBridgeHandlerName,
-            contentWorld: .defaultClient
-        )
-
-        if configuration.webExtensionController != nil {
-            configuration.webExtensionController = nil
-        }
-
-        installedPageBridgeIDs.removeAll()
-        externallyConnectablePolicies.removeAll()
-        clearExternallyConnectablePendingRequests()
-        clearExternallyConnectableNativePorts()
     }
 
     func refreshFromPersistence() {

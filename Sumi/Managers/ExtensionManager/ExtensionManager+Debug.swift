@@ -68,6 +68,12 @@ extension ExtensionManager {
         let backgroundWakeTaskIDs: [String]
         let backgroundRuntimeStatesByExtensionID: [String: BackgroundRuntimeState]
         let runtimeMetricsByExtensionID: [String: ExtensionRuntimeMetrics]
+        let runtimeState: ExtensionRuntimeState
+        let isControllerInitialized: Bool
+        let profileExtensionStoreCount: Int
+        let recentTabOpenRequestKeyCount: Int
+        let recentTabOpenRequestDateCount: Int
+        let optionalControllerIdentifier: UUID?
     }
 
     var testHooks: TestHooks {
@@ -118,7 +124,13 @@ extension ExtensionManager {
             backgroundContentFailedIDs: backgroundContentFailedIDs,
             backgroundWakeTaskIDs: backgroundWakeTasks.keys.sorted(),
             backgroundRuntimeStatesByExtensionID: wakeStates,
-            runtimeMetricsByExtensionID: runtimeMetricsByExtensionID
+            runtimeMetricsByExtensionID: runtimeMetricsByExtensionID,
+            runtimeState: runtimeState,
+            isControllerInitialized: extensionController != nil,
+            profileExtensionStoreCount: profileExtensionStores.count,
+            recentTabOpenRequestKeyCount: recentExtensionTabOpenRequests.keyCount,
+            recentTabOpenRequestDateCount: recentExtensionTabOpenRequests.dateCount,
+            optionalControllerIdentifier: controllerIdentifierStorage
         )
     }
 
@@ -158,6 +170,32 @@ extension ExtensionManager {
 
     func debugAttachBrowserManager(_ browserManager: BrowserManager) {
         attach(browserManager: browserManager)
+    }
+
+    @discardableResult
+    func debugRequestExtensionRuntime(
+        reason: ExtensionRuntimeRequestReason = .extensionAction,
+        forceReload: Bool = false,
+        allowWithoutEnabledExtensions: Bool = true
+    ) -> WKWebExtensionController? {
+        requestExtensionRuntime(
+            reason: reason,
+            forceReload: forceReload,
+            allowWithoutEnabledExtensions: allowWithoutEnabledExtensions
+        )
+    }
+
+    @discardableResult
+    func debugRequestExtensionRuntimeAndWait(
+        reason: ExtensionRuntimeRequestReason = .extensionAction,
+        forceReload: Bool = false,
+        allowWithoutEnabledExtensions: Bool = true
+    ) async -> Bool {
+        await requestExtensionRuntimeAndWait(
+            reason: reason,
+            forceReload: forceReload,
+            allowWithoutEnabledExtensions: allowWithoutEnabledExtensions
+        )
     }
 
     nonisolated static func debugExternallyConnectableBridgeScriptSource() -> String {

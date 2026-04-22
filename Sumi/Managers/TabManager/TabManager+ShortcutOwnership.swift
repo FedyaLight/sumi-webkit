@@ -192,9 +192,11 @@ extension TabManager {
     }
 
     func convertShortcutPinToRegularTab(_ pin: ShortcutPin, in targetSpaceId: UUID, at targetIndex: Int? = nil) {
-        _ = insertRegularTabFromShortcut(pin, into: targetSpaceId, at: targetIndex)
-        removeShortcutPinFromContainers(pin)
-        scheduleStructuralPersistence()
+        withStructuralUpdateTransaction {
+            _ = insertRegularTabFromShortcut(pin, into: targetSpaceId, at: targetIndex)
+            removeShortcutPinFromContainers(pin)
+            scheduleStructuralPersistence()
+        }
     }
 
     @discardableResult
@@ -249,25 +251,27 @@ extension TabManager {
         index: Int,
         openTargetFolder: Bool = true
     ) -> ShortcutPin? {
-        removeShortcutPinFromContainers(pin)
-        let movedPin = cloneShortcutPin(
-            pin,
-            role: role,
-            profileId: profileId,
-            spaceId: spaceId,
-            folderId: folderId,
-            index: index
-        )
-        let inserted = insertShortcutPin(
-            movedPin,
-            at: index,
-            openTargetFolder: openTargetFolder
-        )
-        if let inserted {
-            updateTransientShortcutBindings(for: inserted)
+        return withStructuralUpdateTransaction {
+            removeShortcutPinFromContainers(pin)
+            let movedPin = cloneShortcutPin(
+                pin,
+                role: role,
+                profileId: profileId,
+                spaceId: spaceId,
+                folderId: folderId,
+                index: index
+            )
+            let inserted = insertShortcutPin(
+                movedPin,
+                at: index,
+                openTargetFolder: openTargetFolder
+            )
+            if let inserted {
+                updateTransientShortcutBindings(for: inserted)
+            }
+            scheduleStructuralPersistence()
+            return inserted
         }
-        scheduleStructuralPersistence()
-        return inserted
     }
 
     @discardableResult
@@ -280,43 +284,46 @@ extension TabManager {
         at targetIndex: Int,
         openTargetFolder: Bool = true
     ) -> ShortcutPin? {
-        let pin = makeShortcutPin(
-            from: tab,
-            role: role,
-            profileId: profileId,
-            spaceId: spaceId,
-            folderId: folderId,
-            index: targetIndex
-        )
-        guard let insertedPin = insertShortcutPin(
-            pin,
-            at: targetIndex,
-            openTargetFolder: openTargetFolder
-        ) else { return nil }
+        return withStructuralUpdateTransaction {
+            let pin = makeShortcutPin(
+                from: tab,
+                role: role,
+                profileId: profileId,
+                spaceId: spaceId,
+                folderId: folderId,
+                index: targetIndex
+            )
+            guard let insertedPin = insertShortcutPin(
+                pin,
+                at: targetIndex,
+                openTargetFolder: openTargetFolder
+            ) else { return nil }
 
-        if let windowId = windowIdDisplaying(tabId: tab.id) {
-            convertTabToShortcutLiveInstance(tab, pin: insertedPin, in: windowId)
-        } else {
-            removeTab(tab.id)
+            if let windowId = windowIdDisplaying(tabId: tab.id) {
+                convertTabToShortcutLiveInstance(tab, pin: insertedPin, in: windowId)
+            } else {
+                removeTab(tab.id)
+            }
+            scheduleStructuralPersistence()
+            return insertedPin
         }
-        scheduleStructuralPersistence()
-        return insertedPin
     }
 
     func handleShortcutDragOperation(_ pin: ShortcutPin, operation: DragOperation) {
-        switch (operation.fromContainer, operation.toContainer) {
-        case (.essentials, .essentials):
-            reorderEssential(pin, to: operation.toIndex)
+        withStructuralUpdateTransaction {
+            switch (operation.fromContainer, operation.toContainer) {
+            case (.essentials, .essentials):
+                reorderEssential(pin, to: operation.toIndex)
 
-        case (.essentials, .spacePinned(let targetSpaceId)):
-            _ = moveShortcutPin(
-                pin,
-                to: .spacePinned,
-                profileId: nil,
-                spaceId: targetSpaceId,
-                folderId: nil,
-                index: operation.toIndex
-            )
+            case (.essentials, .spacePinned(let targetSpaceId)):
+                _ = moveShortcutPin(
+                    pin,
+                    to: .spacePinned,
+                    profileId: nil,
+                    spaceId: targetSpaceId,
+                    folderId: nil,
+                    index: operation.toIndex
+                )
 
         case (.essentials, .folder(let targetFolderId)):
             guard let targetSpaceId = foldersBySpace.first(where: { $0.value.contains(where: { $0.id == targetFolderId }) })?.key else { return }
@@ -410,13 +417,14 @@ extension TabManager {
             _ = insertRegularTabFromShortcut(pin, into: targetSpaceId, at: operation.toIndex)
             scheduleStructuralPersistence()
 
-        case (.spaceRegular, .essentials),
-             (.spaceRegular, .spacePinned),
-             (.spaceRegular, .folder),
-             (.spaceRegular, .spaceRegular),
-             (.none, _),
-             (_, .none):
-            break
+            case (.spaceRegular, .essentials),
+                 (.spaceRegular, .spacePinned),
+                 (.spaceRegular, .folder),
+                 (.spaceRegular, .spaceRegular),
+                 (.none, _),
+                 (_, .none):
+                break
+            }
         }
     }
 }

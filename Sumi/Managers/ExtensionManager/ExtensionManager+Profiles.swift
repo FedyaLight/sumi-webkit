@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import WebKit
 
 @available(macOS 15.5, *)
@@ -7,17 +8,20 @@ extension ExtensionManager {
     func attach(browserManager: BrowserManager) {
         self.browserManager = browserManager
 
-        guard let controller = extensionController else { return }
-        extensionRuntimeTrace(
-            "attach browserManager controller=\(extensionRuntimeControllerDescription(controller)) windows=\(browserManager.windowRegistry?.allWindows.count ?? 0) tabs=\(browserManager.tabManager.allTabs().count)"
-        )
-        updateExistingWebViewsWithController(controller)
-        registerExistingWindowStateIfAttached()
-
         if browserManager.windowRegistry?.activeWindow == nil,
            let currentProfile = browserManager.currentProfile
         {
             switchProfile(profileId: currentProfile.id)
+        }
+
+        if hasEnabledInstalledExtensions {
+            requestExtensionRuntime(reason: .attach)
+        } else if let controller = extensionController {
+            extensionRuntimeTrace(
+                "attach browserManager controller=\(extensionRuntimeControllerDescription(controller)) windows=\(browserManager.windowRegistry?.allWindows.count ?? 0) tabs=\(browserManager.tabManager.allTabs().count)"
+            )
+            updateExistingWebViewsWithController(controller)
+            registerExistingWindowStateIfAttached()
         }
     }
 
@@ -60,6 +64,9 @@ extension ExtensionManager {
     }
 
     func switchProfile(profileId: UUID) {
+        currentProfileId = profileId
+        reloadPinnedToolbarExtensionsForCurrentProfile()
+
         guard let extensionController else { return }
         let store = getExtensionDataStore(for: profileId)
         if currentProfileId == profileId,
@@ -74,8 +81,6 @@ extension ExtensionManager {
         }
 
         extensionController.configuration.defaultWebsiteDataStore = store
-        currentProfileId = profileId
-        reloadPinnedToolbarExtensionsForCurrentProfile()
         verifyExtensionStorage(profileId: profileId)
     }
 
@@ -298,68 +303,179 @@ extension ExtensionManager {
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
     }
 
-    func scheduleWebKitExtensionStorageCleanupDryRun(activeExtensionIDs: Set<String>) {
-        guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else {
-            return
+    var hasEnabledInstalledExtensions: Bool {
+        installedExtensions.contains { $0.isEnabled }
+    }
+
+    @discardableResult
+    func requestExtensionRuntime(
+        reason: ExtensionRuntimeRequestReason,
+        forceReload: Bool = false,
+        allowWithoutEnabledExtensions: Bool = false
+    ) -> WKWebExtensionController? {
+        PerformanceTrace.emitEvent("ExtensionManager.runtimeRequested")
+
+        guard isExtensionSupportAvailable else {
+            runtimeState = .unavailable
+            extensionsLoaded = true
+            return nil
         }
 
-        let currentIdentifier = stableControllerIdentifier().uuidString.uppercased()
-        guard let libraryDir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first else { return }
+        let hasDemand = hasEnabledInstalledExtensions || allowWithoutEnabledExtensions
+        guard hasDemand else {
+            extensionsLoaded = true
+            return nil
+        }
 
-        let rootURL = libraryDir
-            .appendingPathComponent("WebKit", isDirectory: true)
-            .appendingPathComponent(SumiAppIdentity.runtimeBundleIdentifier, isDirectory: true)
-            .appendingPathComponent("WebExtensions", isDirectory: true)
+        let controller = ensureExtensionController(reason: reason)
 
-        let activeIDs = activeExtensionIDs
-        let staleCutoff = Date().addingTimeInterval(-7 * 24 * 60 * 60)
-        let logger = Self.logger
+        if runtimeState == .loading, forceReload == false {
+            return controller
+        }
 
-        DispatchQueue.global(qos: .utility).async {
-            let fileManager = FileManager.default
-            let controllerDirectories = (try? fileManager.contentsOfDirectory(
-                at: rootURL,
-                includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
-                options: [.skipsHiddenFiles]
-            )) ?? []
+        if runtimeState == .ready, forceReload == false {
+            updateExistingWebViewsWithController(controller)
+            return controller
+        }
 
-            for controllerDirectory in controllerDirectories {
-                let controllerIdentifier = controllerDirectory.lastPathComponent.uppercased()
-                guard UUID(uuidString: controllerIdentifier) != nil,
-                      controllerIdentifier != currentIdentifier else {
-                    continue
-                }
-                guard (try? controllerDirectory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
-                    continue
-                }
+        startExtensionRuntimeLoad(
+            reason: reason,
+            forceReload: forceReload,
+            allowWithoutEnabledExtensions: allowWithoutEnabledExtensions
+        )
+        return controller
+    }
 
-                let values = try? controllerDirectory.resourceValues(forKeys: [.contentModificationDateKey])
-                guard (values?.contentModificationDate ?? .distantPast) < staleCutoff else {
-                    continue
-                }
+    @discardableResult
+    func requestExtensionRuntimeAndWait(
+        reason: ExtensionRuntimeRequestReason,
+        forceReload: Bool = false,
+        allowWithoutEnabledExtensions: Bool = false
+    ) async -> Bool {
+        guard requestExtensionRuntime(
+            reason: reason,
+            forceReload: forceReload,
+            allowWithoutEnabledExtensions: allowWithoutEnabledExtensions
+        ) != nil else {
+            return false
+        }
 
-                let extensionDirectories = (try? fileManager.contentsOfDirectory(
-                    at: controllerDirectory,
-                    includingPropertiesForKeys: [.isDirectoryKey],
-                    options: [.skipsHiddenFiles]
-                )) ?? []
-                let storedExtensionIDs = Set(extensionDirectories.compactMap { extensionDirectory in
-                    ((try? extensionDirectory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true)
-                        ? extensionDirectory.lastPathComponent
-                        : nil
-                })
+        if let runtimeInitializationTask {
+            await runtimeInitializationTask.value
+        }
 
-                if storedExtensionIDs.isDisjoint(with: activeIDs) {
-                    logger.info(
-                        "Dry-run stale WebKit extension storage cleanup would remove \(controllerDirectory.path, privacy: .public)"
-                    )
-                } else {
-                    logger.debug(
-                        "Keeping stale WebKit extension storage \(controllerDirectory.path, privacy: .public) because it contains active extension IDs"
-                    )
+        return runtimeState == .ready
+    }
+
+    private func ensureExtensionController(
+        reason: ExtensionRuntimeRequestReason
+    ) -> WKWebExtensionController {
+        if let extensionController {
+            return extensionController
+        }
+
+        setupExtensionController(using: currentProfile())
+        extensionRuntimeTrace(
+            "runtime controller initialized reason=\(reason.rawValue) controller=\(extensionRuntimeControllerDescription(extensionController))"
+        )
+        return extensionController!
+    }
+
+    private func startExtensionRuntimeLoad(
+        reason: ExtensionRuntimeRequestReason,
+        forceReload: Bool,
+        allowWithoutEnabledExtensions: Bool
+    ) {
+        runtimeInitializationTask?.cancel()
+        runtimeInitializationTask = nil
+
+        extensionsLoaded = false
+        runtimeState = .loading
+        extensionLoadGeneration &+= 1
+        let loadGeneration = extensionLoadGeneration
+
+        if forceReload || extensionContexts.isEmpty == false {
+            resetLoadedExtensionRuntimeStateForReload()
+        }
+
+        let enabledEntities = enabledPersistedExtensionEntities()
+        runtimeInitializationTask = Task { @MainActor [weak self] in
+            let signpostState = PerformanceTrace.beginInterval(
+                "ExtensionManager.lazyRuntimeInitialize"
+            )
+            defer {
+                PerformanceTrace.endInterval(
+                    "ExtensionManager.lazyRuntimeInitialize",
+                    signpostState
+                )
+            }
+
+            guard let self else { return }
+            defer {
+                if self.extensionLoadGeneration == loadGeneration {
+                    self.runtimeInitializationTask = nil
                 }
             }
+
+            guard enabledEntities.isEmpty == false || allowWithoutEnabledExtensions else {
+                self.extensionsLoaded = true
+                self.runtimeState = .idle
+                return
+            }
+
+            for entity in enabledEntities {
+                guard self.extensionLoadGeneration == loadGeneration,
+                      Task.isCancelled == false else {
+                    return
+                }
+
+                do {
+                    _ = try await self.loadEnabledExtension(
+                        from: entity,
+                        expectedLoadGeneration: loadGeneration
+                    )
+                } catch is CancellationError {
+                    return
+                } catch {
+                    Self.logger.error("Failed to load enabled extension \(entity.name, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                    self.runtimeState = .failed
+                }
+            }
+
+            guard self.extensionLoadGeneration == loadGeneration,
+                  Task.isCancelled == false else {
+                return
+            }
+
+            self.extensionsLoaded = true
+            if self.runtimeState != .failed {
+                self.runtimeState = .ready
+            }
+            self.tabOpenNotificationGeneration &+= 1
+            self.extensionRuntimeTrace(
+                "lazyRuntimeInitialize finalize reason=\(reason.rawValue) loadGeneration=\(loadGeneration) notifyGeneration=\(self.tabOpenNotificationGeneration) loadedContexts=\(self.extensionContexts.count)"
+            )
+            self.resyncOpenTabsWithExtensionRuntimeAfterGenerationBump(
+                reason: "ExtensionManager.lazyRuntimeInitialize.finalize"
+            )
+            self.registerExistingWindowStateIfAttached()
         }
+    }
+
+    private func enabledPersistedExtensionEntities() -> [ExtensionEntity] {
+        do {
+            return try context.fetch(FetchDescriptor<ExtensionEntity>())
+                .filter(\.isEnabled)
+        } catch {
+            Self.logger.error("Failed to fetch enabled extensions: \(error.localizedDescription, privacy: .public)")
+            return []
+        }
+    }
+
+    private func currentProfile() -> Profile? {
+        guard let currentProfileId else { return browserManager?.currentProfile }
+        return browserManager?.profileManager.profiles.first(where: { $0.id == currentProfileId })
+            ?? browserManager?.currentProfile
     }
 
     func observeExtensionErrors(
@@ -420,6 +536,8 @@ extension ExtensionManager {
         if removeUIState {
             clearActionAnchors(for: extensionId)
         }
+
+        pruneRuntimeAdapters()
     }
 
     func resetLoadedExtensionRuntimeStateForReload() {
@@ -447,12 +565,139 @@ extension ExtensionManager {
         backgroundWakeTasks.values.forEach { $0.cancel() }
         backgroundWakeTasks.removeAll()
         backgroundRuntimeStateByExtensionID.removeAll()
-        recentExtensionTabOpenRequestDatesByURL.removeAll()
+        recentExtensionTabOpenRequests.removeAll()
         nativeMessagePortHandlers.removeAll()
         nativeMessagePortExtensionIDs.removeAll()
         externallyConnectablePolicies.removeAll()
         clearExternallyConnectablePendingRequests()
         clearExternallyConnectableNativePorts()
+        installedPageBridgeIDs.removeAll()
+        pruneRuntimeAdapters()
+    }
+
+    func tearDownExtensionRuntime(
+        reason: String,
+        removeUIState: Bool,
+        releaseController: Bool
+    ) {
+        let signpostState = PerformanceTrace.beginInterval(
+            "ExtensionManager.runtimeTeardown"
+        )
+        defer {
+            PerformanceTrace.endInterval(
+                "ExtensionManager.runtimeTeardown",
+                signpostState
+            )
+        }
+
+        extensionRuntimeTrace(
+            "runtimeTeardown start reason=\(reason) removeUIState=\(removeUIState) releaseController=\(releaseController)"
+        )
+
+        runtimeInitializationTask?.cancel()
+        runtimeInitializationTask = nil
+        backgroundWakeTasks.values.forEach { $0.cancel() }
+
+        let uiStateIDs = removeUIState ? Array(actionAnchors.keys) : []
+        let loadedIDs = Set(extensionContexts.keys)
+            .union(loadedExtensionManifests.keys)
+            .union(optionsWindows.keys)
+            .union(nativeMessagePortExtensionIDs.values)
+            .union(installedPageBridgeIDs)
+            .union(extensionErrorObserverTokens.keys)
+            .union(uiStateIDs)
+
+        for extensionId in loadedIDs {
+            tearDownExtensionRuntimeState(
+                for: extensionId,
+                removeUIState: removeUIState
+            )
+        }
+
+        for (_, token) in extensionErrorObserverTokens {
+            NotificationCenter.default.removeObserver(token)
+        }
+        extensionErrorObserverTokens.removeAll()
+
+        if removeUIState {
+            for extensionId in Array(actionAnchors.keys) {
+                clearActionAnchors(for: extensionId)
+            }
+        }
+
+        Array(optionsWindows.keys).forEach { closeOptionsWindow(for: $0) }
+        nativeMessagePortHandlers.values.forEach { $0.disconnect() }
+        nativeMessagePortHandlers.removeAll()
+        nativeMessagePortExtensionIDs.removeAll()
+        clearExternallyConnectableNativePorts()
+        clearExternallyConnectablePendingRequests()
+        ecRegistry.clearAllTrackedPageURLs()
+
+        extensionContexts.removeAll()
+        loadedExtensionManifests.removeAll()
+        backgroundWakeTasks.removeAll()
+        backgroundRuntimeStateByExtensionID.removeAll()
+        runtimeMetricsByExtensionID.removeAll()
+        lastLoggedExtensionErrorFingerprints.removeAll()
+        installedPageBridgeIDs.removeAll()
+        externallyConnectablePolicies.removeAll()
+        recentExtensionTabOpenRequests.removeAll()
+        tabAdapters.removeAll()
+        windowAdapters.removeAll()
+
+        removeManagedExternallyConnectableScriptsAndHandlers()
+
+        if releaseController {
+            if browserConfiguration.webViewConfiguration.webExtensionController === extensionController {
+                browserConfiguration.webViewConfiguration.webExtensionController = nil
+            }
+            extensionController?.delegate = nil
+            extensionController = nil
+            profileExtensionStores.removeAll()
+            profileExtensionStoreOrder.removeAll()
+            runtimeState = isExtensionSupportAvailable ? .idle : .unavailable
+            extensionsLoaded = true
+        }
+
+        extensionRuntimeTrace("runtimeTeardown complete reason=\(reason)")
+    }
+
+    private func removeManagedExternallyConnectableScriptsAndHandlers() {
+        let configuration = browserConfiguration.webViewConfiguration
+        let userContentController = configuration.userContentController
+        let preservedScripts = userContentController.userScripts.filter {
+            Self.isManagedExternallyConnectablePageBridgeScript($0) == false
+        }
+
+        if preservedScripts.count != userContentController.userScripts.count {
+            userContentController.removeAllUserScripts()
+            preservedScripts.forEach { userContentController.addUserScript($0) }
+        }
+
+        SumiExtensionMessageBroker.removeIfInstalled(
+            from: userContentController,
+            context: Self.externallyConnectableNativeBridgeHandlerName
+        )
+    }
+
+    private func pruneRuntimeAdapters() {
+        if let browserManager {
+            let liveTabIDs = Set(
+                browserManager.tabManager.allTabs().map(\.id)
+                    + (browserManager.windowRegistry?.allWindows ?? [])
+                    .flatMap(\.ephemeralTabs)
+                    .map(\.id)
+            )
+            tabAdapters = tabAdapters.filter { liveTabIDs.contains($0.key) }
+
+            let liveWindowIDs = Set(
+                browserManager.windowRegistry?.windows.keys.map { $0 } ?? []
+            )
+            windowAdapters = windowAdapters.filter { liveWindowIDs.contains($0.key) }
+        } else {
+            tabAdapters.removeAll()
+            windowAdapters.removeAll()
+        }
     }
 
     func validateExpectedExtensionLoadGeneration(_ expectedGeneration: UInt64?) throws {
@@ -473,13 +718,16 @@ extension ExtensionManager {
 
         let defaultDataStore =
             initialProfile.map { getExtensionDataStore(for: $0.id) }
+            ?? currentProfileId.map { getExtensionDataStore(for: $0) }
             ?? WKWebsiteDataStore(forIdentifier: stableControllerIdentifier())
         let controller = makeExtensionController(defaultDataStore: defaultDataStore)
         extensionRuntimeTrace(
             "setupExtensionController controller=\(extensionRuntimeControllerDescription(controller)) profile=\(initialProfile?.id.uuidString ?? "nil")"
         )
         extensionController = controller
-        currentProfileId = initialProfile?.id
+        if let initialProfile {
+            currentProfileId = initialProfile.id
+        }
         scheduleControllerDelegateRebind(for: controller)
         updateExistingWebViewsWithController(controller)
         verifyExtensionStorage(profileId: initialProfile?.id)
@@ -534,17 +782,38 @@ extension ExtensionManager {
         for profileId: UUID
     ) -> WKWebsiteDataStore {
         if let store = profileExtensionStores[profileId] {
+            touchProfileExtensionStore(profileId)
             return store
         }
 
-        let signpostState = PerformanceTrace.beginInterval("ExtensionManager.getExtensionDataStore")
+        let signpostState = PerformanceTrace.beginInterval("ExtensionManager.profileStoreCreate")
         defer {
-            PerformanceTrace.endInterval("ExtensionManager.getExtensionDataStore", signpostState)
+            PerformanceTrace.endInterval("ExtensionManager.profileStoreCreate", signpostState)
         }
 
         let store = WKWebsiteDataStore(forIdentifier: profileId)
         profileExtensionStores[profileId] = store
+        touchProfileExtensionStore(profileId)
+        evictProfileExtensionStoresIfNeeded()
         return store
+    }
+
+    private func touchProfileExtensionStore(_ profileId: UUID) {
+        profileExtensionStoreOrder.removeAll { $0 == profileId }
+        profileExtensionStoreOrder.append(profileId)
+    }
+
+    private func evictProfileExtensionStoresIfNeeded() {
+        while profileExtensionStores.count > Self.profileExtensionStoreLimit {
+            guard let evictionID = profileExtensionStoreOrder.first(where: {
+                $0 != currentProfileId
+            }) ?? profileExtensionStoreOrder.first else {
+                return
+            }
+
+            profileExtensionStoreOrder.removeAll { $0 == evictionID }
+            profileExtensionStores.removeValue(forKey: evictionID)
+        }
     }
 
     private func updateExistingWebViewsWithController(

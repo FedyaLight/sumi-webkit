@@ -90,7 +90,7 @@ extension ExtensionManagerTests {
 
         let webExtension = try await WKWebExtension(resourceBaseURL: extensionRoot)
         let extensionContext = WKWebExtensionContext(for: webExtension)
-        let controller = try XCTUnwrap(manager.nativeController)
+        let controller = try requireRuntimeController(for: manager)
 
         let result: Result<Any?, Error> = await withCheckedContinuation { continuation in
             manager.webExtensionController(
@@ -129,7 +129,7 @@ extension ExtensionManagerTests {
 
         let webExtension = try await WKWebExtension(resourceBaseURL: extensionRoot)
         let extensionContext = WKWebExtensionContext(for: webExtension)
-        let controller = try XCTUnwrap(manager.nativeController)
+        let controller = try requireRuntimeController(for: manager)
 
         let startedAt = Date()
         let result: Result<Any?, Error> = await withCheckedContinuation { continuation in
@@ -170,7 +170,7 @@ extension ExtensionManagerTests {
 
         let webExtension = try await WKWebExtension(resourceBaseURL: extensionRoot)
         let extensionContext = WKWebExtensionContext(for: webExtension)
-        let controller = try XCTUnwrap(manager.nativeController)
+        let controller = try requireRuntimeController(for: manager)
 
         let startedAt = Date()
         let result: Result<Any?, Error> = await withCheckedContinuation { continuation in
