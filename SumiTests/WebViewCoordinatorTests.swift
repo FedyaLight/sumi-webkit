@@ -187,6 +187,39 @@ final class WebViewCoordinatorTests: XCTestCase {
         XCTAssertEqual(webView.frame, host?.bounds)
     }
 
+    func testSetWebViewReplacesReverseIndexForOverwrittenSlot() {
+        let coordinator = WebViewCoordinator()
+        let tabId = UUID()
+        let windowId = UUID()
+        let firstWebView = WKWebView(frame: .zero)
+        let replacementWebView = WKWebView(frame: .zero)
+
+        coordinator.setWebView(firstWebView, for: tabId, in: windowId)
+        coordinator.setWebView(replacementWebView, for: tabId, in: windowId)
+
+        XCTAssertNil(coordinator.windowID(containing: firstWebView))
+        XCTAssertEqual(coordinator.windowID(containing: replacementWebView), windowId)
+        XCTAssertTrue(coordinator.getWebView(for: tabId, in: windowId) === replacementWebView)
+        XCTAssertTrue(coordinator.getWebViewHost(for: tabId, in: windowId)?.webView === replacementWebView)
+    }
+
+    func testWindowIDContainingWebViewUsesReverseIndexAcrossWindows() {
+        let coordinator = WebViewCoordinator()
+        let tabId = UUID()
+        let firstWindowId = UUID()
+        let secondWindowId = UUID()
+        let firstWebView = WKWebView(frame: .zero)
+        let secondWebView = WKWebView(frame: .zero)
+
+        coordinator.setWebView(firstWebView, for: tabId, in: firstWindowId)
+        coordinator.setWebView(secondWebView, for: tabId, in: secondWindowId)
+
+        XCTAssertEqual(coordinator.windowID(containing: firstWebView), firstWindowId)
+        XCTAssertEqual(coordinator.windowID(containing: secondWebView), secondWindowId)
+        XCTAssertTrue(coordinator.getWebViewHost(for: tabId, in: firstWindowId)?.webView === firstWebView)
+        XCTAssertTrue(coordinator.getWebViewHost(for: tabId, in: secondWindowId)?.webView === secondWebView)
+    }
+
     func testCoordinatorCreatedWebViewUpdatesTabTitleFromKVO() async {
         let browserManager = BrowserManager()
         let coordinator = WebViewCoordinator()
@@ -456,6 +489,208 @@ final class WebViewCoordinatorTests: XCTestCase {
         )
         XCTAssertNotNil(coordinator.getWebView(for: leftTab.id, in: windowState.id))
         XCTAssertNotNil(coordinator.getWebView(for: rightTab.id, in: windowState.id))
+    }
+
+    func testRemoveAllWebViewsClearsReverseIndexEntries() {
+        let browserManager = BrowserManager()
+        let coordinator = WebViewCoordinator()
+        browserManager.webViewCoordinator = coordinator
+
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/remove-all",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let firstWindowId = UUID()
+        let secondWindowId = UUID()
+        let firstWebView = WKWebView(frame: .zero)
+        let secondWebView = WKWebView(frame: .zero)
+
+        coordinator.setWebView(firstWebView, for: tab.id, in: firstWindowId)
+        coordinator.setWebView(secondWebView, for: tab.id, in: secondWindowId)
+        tab.assignWebViewToWindow(firstWebView, windowId: firstWindowId)
+
+        XCTAssertTrue(coordinator.removeAllWebViews(for: tab))
+
+        XCTAssertNil(coordinator.getWebView(for: tab.id, in: firstWindowId))
+        XCTAssertNil(coordinator.getWebView(for: tab.id, in: secondWindowId))
+        XCTAssertNil(coordinator.getWebViewHost(for: tab.id, in: firstWindowId))
+        XCTAssertNil(coordinator.getWebViewHost(for: tab.id, in: secondWindowId))
+        XCTAssertNil(coordinator.windowID(containing: firstWebView))
+        XCTAssertNil(coordinator.windowID(containing: secondWebView))
+        XCTAssertNil(tab.primaryWindowId)
+        XCTAssertNil(tab.assignedWebView)
+    }
+
+    func testCleanupWindowPromotesRemainingTrackedWebViewAndClearsClosedWindowIndex() {
+        let browserManager = BrowserManager()
+        let coordinator = WebViewCoordinator()
+        browserManager.webViewCoordinator = coordinator
+
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/cleanup-window",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let firstWindowId = UUID()
+        let secondWindowId = UUID()
+        let firstWebView = WKWebView(frame: .zero)
+        let secondWebView = WKWebView(frame: .zero)
+
+        coordinator.setWebView(firstWebView, for: tab.id, in: firstWindowId)
+        coordinator.setWebView(secondWebView, for: tab.id, in: secondWindowId)
+        tab.assignWebViewToWindow(firstWebView, windowId: firstWindowId)
+
+        coordinator.cleanupWindow(firstWindowId, tabManager: browserManager.tabManager)
+
+        XCTAssertNil(coordinator.getWebView(for: tab.id, in: firstWindowId))
+        XCTAssertNil(coordinator.windowID(containing: firstWebView))
+        XCTAssertEqual(coordinator.windowID(containing: secondWebView), secondWindowId)
+        XCTAssertEqual(tab.primaryWindowId, secondWindowId)
+        XCTAssertTrue(tab.assignedWebView === secondWebView)
+    }
+
+    func testCleanupAllWebViewsClearsReverseIndexEntries() {
+        let browserManager = BrowserManager()
+        let coordinator = WebViewCoordinator()
+        browserManager.webViewCoordinator = coordinator
+
+        let firstTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/full-cleanup-a",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let secondTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/full-cleanup-b",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let firstWindowId = UUID()
+        let secondWindowId = UUID()
+        let firstWebView = WKWebView(frame: .zero)
+        let secondWebView = WKWebView(frame: .zero)
+
+        coordinator.setWebView(firstWebView, for: firstTab.id, in: firstWindowId)
+        coordinator.setWebView(secondWebView, for: secondTab.id, in: secondWindowId)
+        firstTab.assignWebViewToWindow(firstWebView, windowId: firstWindowId)
+        secondTab.assignWebViewToWindow(secondWebView, windowId: secondWindowId)
+
+        coordinator.cleanupAllWebViews(tabManager: browserManager.tabManager)
+
+        XCTAssertNil(coordinator.windowID(containing: firstWebView))
+        XCTAssertNil(coordinator.windowID(containing: secondWebView))
+        XCTAssertNil(coordinator.getWebView(for: firstTab.id, in: firstWindowId))
+        XCTAssertNil(coordinator.getWebView(for: secondTab.id, in: secondWindowId))
+        XCTAssertNil(firstTab.primaryWindowId)
+        XCTAssertNil(secondTab.primaryWindowId)
+    }
+
+    func testPrepareVisibleWebViewsRetainsOnlyOneWarmHiddenWebViewPerWindow() {
+        let browserManager = BrowserManager()
+        let coordinator = WebViewCoordinator()
+        browserManager.webViewCoordinator = coordinator
+        let (_, windowState) = makeWindowContext(browserManager: browserManager)
+
+        let firstTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/retention-first",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let secondTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/retention-second",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let thirdTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/retention-third",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+
+        setCurrentTab(firstTab, in: windowState)
+        _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+        let firstWebView = try! XCTUnwrap(coordinator.getWebView(for: firstTab.id, in: windowState.id))
+
+        setCurrentTab(secondTab, in: windowState)
+        _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+        let secondWebView = try! XCTUnwrap(coordinator.getWebView(for: secondTab.id, in: windowState.id))
+        XCTAssertNotNil(coordinator.getWebView(for: firstTab.id, in: windowState.id))
+
+        setCurrentTab(thirdTab, in: windowState)
+        _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+        let thirdWebView = try! XCTUnwrap(coordinator.getWebView(for: thirdTab.id, in: windowState.id))
+
+        XCTAssertNil(coordinator.getWebView(for: firstTab.id, in: windowState.id))
+        XCTAssertNil(coordinator.windowID(containing: firstWebView))
+        XCTAssertEqual(coordinator.windowID(containing: secondWebView), windowState.id)
+        XCTAssertEqual(coordinator.windowID(containing: thirdWebView), windowState.id)
+        XCTAssertNotNil(coordinator.getWebView(for: secondTab.id, in: windowState.id))
+        XCTAssertNotNil(coordinator.getWebView(for: thirdTab.id, in: windowState.id))
+    }
+
+    func testPrepareVisibleWebViewsDoesNotEvictSplitVisibleWebViews() {
+        let browserManager = BrowserManager()
+        let coordinator = WebViewCoordinator()
+        browserManager.webViewCoordinator = coordinator
+        let (_, windowState) = makeWindowContext(browserManager: browserManager)
+
+        let leftTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/split-left-visible",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let rightTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/split-right-visible",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let hiddenTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/split-hidden-evict",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let secondHiddenTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/split-hidden-evict-second",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+
+        setCurrentTab(leftTab, in: windowState)
+        browserManager.splitManager.enterSplit(
+            with: rightTab,
+            placeOn: .right,
+            in: windowState,
+            animate: false
+        )
+
+        _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+        let leftWebView = try! XCTUnwrap(coordinator.getWebView(for: leftTab.id, in: windowState.id))
+        let rightWebView = try! XCTUnwrap(coordinator.getWebView(for: rightTab.id, in: windowState.id))
+        let hiddenWebView = coordinator.getOrCreateWebView(
+            for: hiddenTab,
+            in: windowState.id,
+            tabManager: browserManager.tabManager
+        )
+        let secondHiddenWebView = coordinator.getOrCreateWebView(
+            for: secondHiddenTab,
+            in: windowState.id,
+            tabManager: browserManager.tabManager
+        )
+
+        _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+
+        XCTAssertTrue(coordinator.getWebView(for: leftTab.id, in: windowState.id) === leftWebView)
+        XCTAssertTrue(coordinator.getWebView(for: rightTab.id, in: windowState.id) === rightWebView)
+        XCTAssertNil(coordinator.getWebView(for: hiddenTab.id, in: windowState.id))
+        XCTAssertNil(coordinator.getWebView(for: secondHiddenTab.id, in: windowState.id))
+        XCTAssertNil(coordinator.windowID(containing: hiddenWebView))
+        XCTAssertNil(coordinator.windowID(containing: secondHiddenWebView))
+    }
+
+    private func setCurrentTab(_ tab: Tab, in windowState: BrowserWindowState) {
+        windowState.currentTabId = tab.id
+        windowState.currentSpaceId = tab.spaceId
+        windowState.isShowingEmptyState = false
     }
 
     private func makeWindowContext(
