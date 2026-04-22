@@ -85,6 +85,35 @@ final class RuntimeStateCoalescerTests: XCTestCase {
         XCTAssertEqual(batches.first?.first?.id, tabID)
     }
 
+    func testCancelAndShutdownFlushOnlyLatestLivePayloads() async throws {
+        let recorder = RuntimeStateBatchRecorder()
+        let coalescer = RuntimeStateCoalescer(
+            debounceNanoseconds: 60_000_000_000,
+            persistBatch: { states in
+                await recorder.record(states)
+            }
+        )
+        let liveID = UUID()
+        let canceledID = UUID()
+
+        coalescer.enqueue(makeRuntimeState(id: liveID, urlString: "https://example.com/old", name: "Old"))
+        coalescer.enqueue(makeRuntimeState(id: liveID, urlString: "https://example.com/latest", name: "Latest"))
+        coalescer.enqueue(makeRuntimeState(id: canceledID, urlString: "https://example.com/canceled", name: "Canceled"))
+        coalescer.cancel(tabID: canceledID)
+
+        let flushedCount = await coalescer.shutdownAndFlush()
+        coalescer.enqueue(makeRuntimeState(id: UUID(), urlString: "https://example.com/ignored", name: "Ignored"))
+        let postShutdownFlushCount = await coalescer.flushImmediately()
+        let batches = await recorder.allBatches()
+
+        XCTAssertEqual(flushedCount, 1)
+        XCTAssertEqual(postShutdownFlushCount, 0)
+        XCTAssertEqual(batches.count, 1)
+        XCTAssertEqual(batches.first?.map(\.id), [liveID])
+        XCTAssertEqual(batches.first?.first?.urlString, "https://example.com/latest")
+        XCTAssertEqual(batches.first?.first?.name, "Latest")
+    }
+
     private func makeRuntimeState(
         id: UUID,
         urlString: String,

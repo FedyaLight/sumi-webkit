@@ -779,8 +779,10 @@ final class WebViewCoordinatorTests: XCTestCase {
         coordinator.cleanupWindow(firstWindowId, tabManager: browserManager.tabManager)
 
         XCTAssertNil(coordinator.getWebView(for: tab.id, in: firstWindowId))
+        XCTAssertNil(coordinator.getWebViewHost(for: tab.id, in: firstWindowId))
         XCTAssertNil(coordinator.windowID(containing: firstWebView))
         XCTAssertEqual(coordinator.windowID(containing: secondWebView), secondWindowId)
+        XCTAssertTrue(coordinator.getWebViewHost(for: tab.id, in: secondWindowId)?.webView === secondWebView)
         XCTAssertEqual(tab.primaryWindowId, secondWindowId)
         XCTAssertTrue(tab.assignedWebView === secondWebView)
     }
@@ -816,6 +818,9 @@ final class WebViewCoordinatorTests: XCTestCase {
         XCTAssertNil(coordinator.windowID(containing: secondWebView))
         XCTAssertNil(coordinator.getWebView(for: firstTab.id, in: firstWindowId))
         XCTAssertNil(coordinator.getWebView(for: secondTab.id, in: secondWindowId))
+        XCTAssertNil(coordinator.getWebViewHost(for: firstTab.id, in: firstWindowId))
+        XCTAssertNil(coordinator.getWebViewHost(for: secondTab.id, in: secondWindowId))
+        XCTAssertEqual(coordinator.totalDeferredProtectedCommandCount(), 0)
         XCTAssertNil(firstTab.primaryWindowId)
         XCTAssertNil(secondTab.primaryWindowId)
     }

@@ -852,6 +852,17 @@ final class ExtensionManagerTests: XCTestCase {
             manager.debugRuntimeStateSnapshot.profileExtensionStoreCount,
             ExtensionManager.profileExtensionStoreLimit
         )
+
+        manager.resetInjectedBrowserConfigurationRuntimeState()
+        XCTAssertFalse(manager.debugRuntimeStateSnapshot.isControllerInitialized)
+        XCTAssertNil(harness.browserConfiguration.webViewConfiguration.webExtensionController)
+
+        let recreatedController = try await requireRuntimeReadyController(
+            for: manager,
+            reason: .resetReload
+        )
+        XCTAssertFalse(recreatedController === firstController)
+        XCTAssertTrue(harness.browserConfiguration.webViewConfiguration.webExtensionController === recreatedController)
     }
 
     func testResetInjectedBrowserConfigurationRuntimeStateReleasesRuntimeArtifacts() throws {
