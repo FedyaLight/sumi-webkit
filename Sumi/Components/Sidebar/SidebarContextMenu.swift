@@ -31,22 +31,30 @@ enum SidebarUITestDragMarker {
 
     static func recordDragStart(
         itemID: UUID,
-        sourceDescription: String,
-        ownerDescription: String,
-        sourceID: String? = nil,
-        viewDescription: String? = nil
+        sourceDescription: @autoclosure () -> String,
+        ownerDescription: @autoclosure () -> String,
+        sourceID: @autoclosure () -> String? = nil,
+        viewDescription: @autoclosure () -> String? = nil
     ) {
-        append(
-            [
-                "event=startDrag",
-                "item=\(itemID.uuidString)",
-                "sourceID=\(sourceID ?? "nil")",
-                "source=\(sourceDescription)",
-                "view=\(viewDescription ?? "nil")",
-                "owner=\(ownerDescription)",
-                "timestamp=\(Date().timeIntervalSince1970)",
-            ]
-        )
+        #if DEBUG
+            append(
+                [
+                    "event=startDrag",
+                    "item=\(itemID.uuidString)",
+                    "sourceID=\(sourceID() ?? "nil")",
+                    "source=\(sourceDescription())",
+                    "view=\(viewDescription() ?? "nil")",
+                    "owner=\(ownerDescription())",
+                    "timestamp=\(Date().timeIntervalSince1970)",
+                ]
+            )
+        #else
+            _ = itemID
+            _ = sourceDescription
+            _ = ownerDescription
+            _ = sourceID
+            _ = viewDescription
+        #endif
     }
 
     static func recordEvent(
@@ -55,19 +63,28 @@ enum SidebarUITestDragMarker {
         ownerDescription: String,
         sourceID: String? = nil,
         viewDescription: String? = nil,
-        details: String
+        details: @autoclosure () -> String
     ) {
-        append(
-            [
-                "event=\(name)",
-                "dragItem=\(dragItemID?.uuidString ?? "nil")",
-                "sourceID=\(sourceID ?? "nil")",
-                "view=\(viewDescription ?? "nil")",
-                "owner=\(ownerDescription)",
-                "details=\(details)",
-                "timestamp=\(Date().timeIntervalSince1970)",
-            ]
-        )
+        #if DEBUG
+            append(
+                [
+                    "event=\(name)",
+                    "dragItem=\(dragItemID?.uuidString ?? "nil")",
+                    "sourceID=\(sourceID ?? "nil")",
+                    "view=\(viewDescription ?? "nil")",
+                    "owner=\(ownerDescription)",
+                    "details=\(details())",
+                    "timestamp=\(Date().timeIntervalSince1970)",
+                ]
+            )
+        #else
+            _ = name
+            _ = dragItemID
+            _ = ownerDescription
+            _ = sourceID
+            _ = viewDescription
+            _ = details
+        #endif
     }
 
     private static func append(_ fields: [String]) {

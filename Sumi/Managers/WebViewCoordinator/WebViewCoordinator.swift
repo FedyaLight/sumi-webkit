@@ -1837,7 +1837,6 @@ class WebViewCoordinator {
     }
 
     private func trackedOwner(containing webView: WKWebView) -> TrackedWebViewOwner? {
-        PerformanceTrace.emitEvent("WebViewCoordinator.reverseIndexLookup")
         let webViewID = ObjectIdentifier(webView)
         guard let owner = webViewOwnersByIdentifier[webViewID] else { return nil }
         guard let trackedWebView = webViewsByTabAndWindow[owner.tabID]?[owner.windowID],

@@ -174,9 +174,12 @@ extension ExtensionManager {
         return normalized.isEmpty ? nil : normalized
     }
 
-    func logExternallyConnectableBridgeEvent(_ message: String) {
+    func logExternallyConnectableBridgeEvent(
+        _ message: @autoclosure () -> String
+    ) {
         guard Self.isExternallyConnectableBridgeDebugLoggingEnabled else { return }
-        Self.logger.debug("\(message, privacy: .public)")
+        let renderedMessage = message()
+        Self.logger.debug("\(renderedMessage, privacy: .public)")
     }
 
     static func originString(for url: URL?) -> String? {
