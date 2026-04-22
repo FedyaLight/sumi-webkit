@@ -100,6 +100,8 @@ struct SumiSettingsTabRootView: View {
                     SumiExtensionsSettingsPane()
                 case .advanced:
                     SumiDataRecoverySettingsPane()
+                case .about:
+                    SettingsAboutTab()
                 }
             }
             .frame(maxWidth: Layout.contentMaxWidth, alignment: .leading)
