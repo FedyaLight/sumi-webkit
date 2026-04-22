@@ -599,14 +599,14 @@ extension ExtensionManager {
 
         switch backgroundRuntimeState(for: wakeKey) {
         case .loaded:
-            Self.logger.debug(
-                "Skipping required background wake for \(wakeKey, privacy: .public): already loaded"
+            extensionRuntimeTrace(
+                "Skipping required background wake for \(wakeKey): already loaded"
             )
             return false
         case .wakeInFlight:
             if let existingTask = backgroundWakeTasks[wakeKey] {
-                Self.logger.debug(
-                    "Awaiting required background wake already in flight for \(wakeKey, privacy: .public)"
+                extensionRuntimeTrace(
+                    "Awaiting required background wake already in flight for \(wakeKey)"
                 )
                 try await existingTask.value
                 return false
@@ -682,13 +682,13 @@ extension ExtensionManager {
 
         switch backgroundRuntimeState(for: wakeKey) {
         case .loaded:
-            Self.logger.debug(
-                "Skipping defensive background wake for \(wakeKey, privacy: .public): already loaded"
+            extensionRuntimeTrace(
+                "Skipping defensive background wake for \(wakeKey): already loaded"
             )
             return
         case .wakeInFlight:
-            Self.logger.debug(
-                "Skipping defensive background wake for \(wakeKey, privacy: .public): wake already in flight"
+            extensionRuntimeTrace(
+                "Skipping defensive background wake for \(wakeKey): wake already in flight"
             )
             return
         case .neverLoaded, .loadFailed:
@@ -705,7 +705,7 @@ extension ExtensionManager {
         Task { @MainActor in
             do {
                 try await wakeTask.value
-                Self.logger.debug("\(successMessage, privacy: .public)")
+                extensionRuntimeTrace(successMessage)
             } catch {
                 Self.logger.error(
                     "\(failureMessage, privacy: .public): \(error.localizedDescription, privacy: .public)"
@@ -722,8 +722,8 @@ extension ExtensionManager {
         mode: String
     ) -> Task<Void, Error> {
         setBackgroundRuntimeState(.wakeInFlight, for: wakeKey)
-        Self.logger.debug(
-            "Starting \(mode, privacy: .public) background wake for \(wakeKey, privacy: .public) reason=\(reason.rawValue, privacy: .public)"
+        extensionRuntimeTrace(
+            "Starting \(mode) background wake for \(wakeKey) reason=\(reason.rawValue)"
         )
         let task = makeBackgroundWakeTask(
             wakeKey: wakeKey,
@@ -855,8 +855,8 @@ extension ExtensionManager {
                 )
             } else {
                 if RuntimeDiagnostics.isVerboseEnabled {
-                    Self.logger.debug(
-                        "Skipped WebExtension data cleanup for \(extensionId, privacy: .public): no stored data candidate (fresh install path)"
+                    extensionRuntimeTrace(
+                        "Skipped WebExtension data cleanup for \(extensionId): no stored data candidate (fresh install path)"
                     )
                 }
             }
@@ -1029,8 +1029,8 @@ extension ExtensionManager {
                 extensionId: extensionId
             )
             if RuntimeDiagnostics.isVerboseEnabled {
-                Self.logger.debug(
-                    "Skipped WebExtension data cleanup for \(extensionId, privacy: .public): no stored data candidate"
+                extensionRuntimeTrace(
+                    "Skipped WebExtension data cleanup for \(extensionId): no stored data candidate"
                 )
             }
             return
@@ -1050,8 +1050,8 @@ extension ExtensionManager {
         #endif
 
         guard let extensionController else {
-            Self.logger.debug(
-                "Skipped WebExtension data cleanup for \(extensionId, privacy: .public): no controller"
+            extensionRuntimeTrace(
+                "Skipped WebExtension data cleanup for \(extensionId): no controller"
             )
             return
         }
@@ -1074,8 +1074,8 @@ extension ExtensionManager {
                 extensionId: extensionId
             )
             if RuntimeDiagnostics.isVerboseEnabled {
-                Self.logger.debug(
-                    "No stored WebExtension data found for \(extensionId, privacy: .public)"
+                extensionRuntimeTrace(
+                    "No stored WebExtension data found for \(extensionId)"
                 )
             }
             return
@@ -1099,23 +1099,25 @@ extension ExtensionManager {
             preCleanupSnapshot: preCleanupSnapshot,
             postCleanupSnapshot: postCleanupSnapshot
         )
-        if errors.isEmpty {
-            Self.logger.debug(
-                "Removed stored WebExtension data for \(extensionId, privacy: .public)"
-            )
-        } else if classifiedErrors.actionableDiagnostics.isEmpty {
-            Self.logger.debug(
-                "Removed stored WebExtension data for \(extensionId, privacy: .public); ignored \(classifiedErrors.benignOptionalStoreDiagnostics.count, privacy: .public) missing optional store errors"
-            )
-        } else {
-            Self.logger.debug(
-                "Removed stored WebExtension data for \(extensionId, privacy: .public) with \(classifiedErrors.actionableDiagnostics.count, privacy: .public) actionable record errors"
-            )
-            let diagnosticsSummary = classifiedErrors.actionableDiagnostics.map(\.logSummary)
-                .joined(separator: " | ")
-            Self.logger.debug(
-                "Actionable WebExtension cleanup diagnostics for \(extensionId, privacy: .public): \(diagnosticsSummary, privacy: .public)"
-            )
+        if RuntimeDiagnostics.isVerboseEnabled {
+            if errors.isEmpty {
+                extensionRuntimeTrace(
+                    "Removed stored WebExtension data for \(extensionId)"
+                )
+            } else if classifiedErrors.actionableDiagnostics.isEmpty {
+                extensionRuntimeTrace(
+                    "Removed stored WebExtension data for \(extensionId); ignored \(classifiedErrors.benignOptionalStoreDiagnostics.count) missing optional store errors"
+                )
+            } else {
+                extensionRuntimeTrace(
+                    "Removed stored WebExtension data for \(extensionId) with \(classifiedErrors.actionableDiagnostics.count) actionable record errors"
+                )
+                let diagnosticsSummary = classifiedErrors.actionableDiagnostics.map(\.logSummary)
+                    .joined(separator: " | ")
+                extensionRuntimeTrace(
+                    "Actionable WebExtension cleanup diagnostics for \(extensionId): \(diagnosticsSummary)"
+                )
+            }
         }
         traceWebExtensionStoreLifecycle(
             phase: "cleanup-finished",
@@ -1458,8 +1460,9 @@ extension ExtensionManager {
         }
 
         extensionContext.setPermissionStatus(.grantedExplicitly, for: url)
-        Self.logger.debug(
-            "Auto-granted URL access for \(extensionContext.webExtension.displayName ?? extensionContext.uniqueIdentifier, privacy: .public): \(url.absoluteString, privacy: .private(mask: .hash)) via \(matchingPattern.string, privacy: .public)"
+        RuntimeDiagnostics.debug(
+            "Auto-granted URL access for \(extensionContext.webExtension.displayName ?? extensionContext.uniqueIdentifier): \(url.absoluteString) via \(matchingPattern.string)",
+            category: "Extensions"
         )
         return true
     }

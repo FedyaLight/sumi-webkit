@@ -195,7 +195,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         }
 
         loadInstalledExtensionMetadata()
-        PerformanceTrace.emitEvent("ExtensionManager.eagerRuntimeSkipped")
+        PerformanceTrace.emitEvent("ExtensionManager.lazyRuntimeDeferred")
     }
 
     @discardableResult
@@ -403,15 +403,29 @@ final class ExtensionManager: NSObject, ObservableObject {
         RuntimeDiagnostics.isVerboseEnabled
     }
 
+    nonisolated static var shouldObserveExtensionErrors: Bool {
+        RuntimeDiagnostics.isVerboseEnabled
+    }
+
     nonisolated static func isExtensionOwnedURL(_ url: URL?) -> Bool {
         guard let scheme = url?.scheme?.lowercased() else { return false }
         return extensionSchemes.contains(scheme)
     }
 
-    func extensionRuntimeTrace(_ message: String) {
+    func extensionRuntimeTrace(
+        _ message: @autoclosure () -> String
+    ) {
         guard Self.isWebKitRuntimeTraceEnabled else { return }
+        let renderedMessage = message()
         RuntimeDiagnostics.logger(category: "ExtensionRuntimeTrace")
-            .debug("\(message, privacy: .public)")
+            .debug("\(renderedMessage, privacy: .public)")
+    }
+
+    func extensionRuntimeTrace(_ message: () -> String) {
+        guard Self.isWebKitRuntimeTraceEnabled else { return }
+        let renderedMessage = message()
+        RuntimeDiagnostics.logger(category: "ExtensionRuntimeTrace")
+            .debug("\(renderedMessage, privacy: .public)")
     }
 
     func recordRuntimeMetric(

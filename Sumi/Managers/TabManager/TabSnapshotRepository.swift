@@ -96,13 +96,16 @@ actor TabSnapshotRepository {
     private var latestGeneration: Int = 0
 
     func persistFullReconcile(snapshot: Snapshot, generation: Int) async -> Bool {
-        let signpostState = PerformanceTrace.beginInterval("TabSnapshotRepository.persistFullReconcile")
+        let signpostState = PerformanceTrace.beginInterval("TabSnapshotRepository.fullReconcile")
         defer {
-            PerformanceTrace.endInterval("TabSnapshotRepository.persistFullReconcile", signpostState)
+            PerformanceTrace.endInterval("TabSnapshotRepository.fullReconcile", signpostState)
         }
 
         if generation < self.latestGeneration {
-            Self.log.debug("[persistFullReconcile] Skipping stale snapshot generation=\(generation) < latest=\(self.latestGeneration)")
+            RuntimeDiagnostics.debug(
+                "[persistFullReconcile] Skipping stale snapshot generation=\(generation) < latest=\(self.latestGeneration)",
+                category: "TabPersistence"
+            )
             return false
         }
         self.latestGeneration = generation
@@ -133,13 +136,21 @@ actor TabSnapshotRepository {
     }
 
     func persistIncremental(delta: StructuralDelta, generation: Int) async -> Bool {
-        let signpostState = PerformanceTrace.beginInterval("TabSnapshotRepository.persistIncremental")
+        let signpostState = PerformanceTrace.beginInterval(
+            "TabSnapshotRepository.incrementalStructuralPersistence"
+        )
         defer {
-            PerformanceTrace.endInterval("TabSnapshotRepository.persistIncremental", signpostState)
+            PerformanceTrace.endInterval(
+                "TabSnapshotRepository.incrementalStructuralPersistence",
+                signpostState
+            )
         }
 
         if generation < self.latestGeneration {
-            Self.log.debug("[persistIncremental] Skipping stale generation=\(generation) < latest=\(self.latestGeneration)")
+            RuntimeDiagnostics.debug(
+                "[persistIncremental] Skipping stale generation=\(generation) < latest=\(self.latestGeneration)",
+                category: "TabPersistence"
+            )
             return false
         }
         self.latestGeneration = generation
@@ -155,9 +166,14 @@ actor TabSnapshotRepository {
     }
 
     func persistSelectionOnly(currentTabID: UUID?, currentSpaceID: UUID?) async {
-        let signpostState = PerformanceTrace.beginInterval("TabSnapshotRepository.persistSelectionOnly")
+        let signpostState = PerformanceTrace.beginInterval(
+            "TabSnapshotRepository.selectionPersistence"
+        )
         defer {
-            PerformanceTrace.endInterval("TabSnapshotRepository.persistSelectionOnly", signpostState)
+            PerformanceTrace.endInterval(
+                "TabSnapshotRepository.selectionPersistence",
+                signpostState
+            )
         }
 
         let ctx = ModelContext(container)
@@ -174,9 +190,14 @@ actor TabSnapshotRepository {
     }
 
     func persistRuntimeStates(_ runtimeStates: [RuntimeTabState]) async {
-        let signpostState = PerformanceTrace.beginInterval("TabSnapshotRepository.persistRuntimeStates")
+        let signpostState = PerformanceTrace.beginInterval(
+            "TabSnapshotRepository.runtimeStatePersistence"
+        )
         defer {
-            PerformanceTrace.endInterval("TabSnapshotRepository.persistRuntimeStates", signpostState)
+            PerformanceTrace.endInterval(
+                "TabSnapshotRepository.runtimeStatePersistence",
+                signpostState
+            )
         }
 
         let latestByTabID = Dictionary(runtimeStates.map { ($0.id, $0) }) { _, latest in latest }
@@ -215,205 +236,156 @@ actor TabSnapshotRepository {
         let ctx = ModelContext(container)
         ctx.autosaveEnabled = false
 
-        try PerformanceTrace.withInterval("TabSnapshotRepository.incremental.validateInput") {
-            try validateDelta(delta)
-        }
+        try validateDelta(delta)
 
-        try PerformanceTrace.withInterval("TabSnapshotRepository.incremental.deleteSpaces") {
-            do {
-                for spaceId in delta.deletedSpaceIds {
-                    for tab in try fetchTabs(in: ctx, spaceId: spaceId) {
-                        ctx.delete(tab)
-                    }
-                    for folder in try fetchFolders(in: ctx, spaceId: spaceId) {
-                        ctx.delete(folder)
-                    }
-                    if let space = try fetchSpace(in: ctx, id: spaceId) {
-                        ctx.delete(space)
-                    }
+        do {
+            for spaceId in delta.deletedSpaceIds {
+                for tab in try fetchTabs(in: ctx, spaceId: spaceId) {
+                    ctx.delete(tab)
                 }
-            } catch {
-                throw classify(error)
+                for folder in try fetchFolders(in: ctx, spaceId: spaceId) {
+                    ctx.delete(folder)
+                }
+                if let space = try fetchSpace(in: ctx, id: spaceId) {
+                    ctx.delete(space)
+                }
             }
+        } catch {
+            throw classify(error)
         }
 
         let upsertTabIds = Set(delta.tabs.map(\.id))
-        try PerformanceTrace.withInterval("TabSnapshotRepository.incremental.deleteTabs") {
-            do {
-                for tabId in delta.deletedTabIds.subtracting(upsertTabIds) {
-                    if let tab = try fetchTab(in: ctx, id: tabId) {
-                        ctx.delete(tab)
-                    }
+        do {
+            for tabId in delta.deletedTabIds.subtracting(upsertTabIds) {
+                if let tab = try fetchTab(in: ctx, id: tabId) {
+                    ctx.delete(tab)
                 }
-            } catch {
-                throw classify(error)
             }
+        } catch {
+            throw classify(error)
         }
 
         let upsertFolderIds = Set(delta.folders.map(\.id))
-        try PerformanceTrace.withInterval("TabSnapshotRepository.incremental.deleteFolders") {
-            do {
-                for folderId in delta.deletedFolderIds.subtracting(upsertFolderIds) {
-                    if let folder = try fetchFolder(in: ctx, id: folderId) {
-                        ctx.delete(folder)
-                    }
+        do {
+            for folderId in delta.deletedFolderIds.subtracting(upsertFolderIds) {
+                if let folder = try fetchFolder(in: ctx, id: folderId) {
+                    ctx.delete(folder)
                 }
-            } catch {
-                throw classify(error)
             }
+        } catch {
+            throw classify(error)
         }
 
-        try PerformanceTrace.withInterval("TabSnapshotRepository.incremental.upsertSpaces") {
-            do {
-                for space in delta.spaces {
-                    let existing = try fetchSpace(in: ctx, id: space.id)
-                    upsertSpace(in: ctx, space, existing: existing)
-                }
-            } catch {
-                throw classify(error)
+        do {
+            for space in delta.spaces {
+                let existing = try fetchSpace(in: ctx, id: space.id)
+                upsertSpace(in: ctx, space, existing: existing)
             }
+        } catch {
+            throw classify(error)
         }
 
-        try PerformanceTrace.withInterval("TabSnapshotRepository.incremental.upsertFolders") {
-            do {
-                for folder in delta.folders {
-                    let existing = try fetchFolder(in: ctx, id: folder.id)
-                    upsertFolder(in: ctx, folder, existing: existing)
-                }
-            } catch {
-                throw classify(error)
+        do {
+            for folder in delta.folders {
+                let existing = try fetchFolder(in: ctx, id: folder.id)
+                upsertFolder(in: ctx, folder, existing: existing)
             }
+        } catch {
+            throw classify(error)
         }
 
-        try PerformanceTrace.withInterval("TabSnapshotRepository.incremental.upsertTabs") {
-            do {
-                for tab in delta.tabs {
-                    let existing = try fetchTab(in: ctx, id: tab.id)
-                    upsertTab(in: ctx, tab, existing: existing)
-                }
-            } catch {
-                throw classify(error)
+        do {
+            for tab in delta.tabs {
+                let existing = try fetchTab(in: ctx, id: tab.id)
+                upsertTab(in: ctx, tab, existing: existing)
             }
+        } catch {
+            throw classify(error)
         }
 
-        try PerformanceTrace.withInterval("TabSnapshotRepository.incremental.upsertState") {
-            do {
-                try upsertState(in: ctx, state: delta.state)
-            } catch {
-                throw classify(error)
-            }
+        do {
+            try upsertState(in: ctx, state: delta.state)
+        } catch {
+            throw classify(error)
         }
 
-        try PerformanceTrace.withInterval("TabSnapshotRepository.incremental.save") {
-            do {
-                try ctx.save()
-            } catch {
-                throw classify(error)
-            }
+        do {
+            try ctx.save()
+        } catch {
+            throw classify(error)
         }
     }
 
     private func performFullReconcile(_ snapshot: Snapshot) async throws {
-        let signpostState = PerformanceTrace.beginInterval("TabSnapshotRepository.performFullReconcile")
-        defer {
-            PerformanceTrace.endInterval(
-                "TabSnapshotRepository.performFullReconcile",
-                signpostState
-            )
-        }
-
         let ctx = ModelContext(container)
         ctx.autosaveEnabled = false
 
-        try PerformanceTrace.withInterval("TabSnapshotRepository.fullReconcile.validateInput") {
-            try validateInput(snapshot)
+        try validateInput(snapshot)
+
+        let existingTabsById: [UUID: TabEntity]
+        do {
+            let all = try ctx.fetch(FetchDescriptor<TabEntity>())
+            let keepIDs = Set(snapshot.tabs.map { $0.id })
+            for entity in all where !keepIDs.contains(entity.id) {
+                ctx.delete(entity)
+            }
+            existingTabsById = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
+        } catch {
+            throw classify(error)
         }
 
-        let existingTabsById: [UUID: TabEntity] = try PerformanceTrace.withInterval(
-            "TabSnapshotRepository.fullReconcile.fetchTabs"
-        ) {
-            do {
-                let all = try ctx.fetch(FetchDescriptor<TabEntity>())
-                let keepIDs = Set(snapshot.tabs.map { $0.id })
-                for entity in all where !keepIDs.contains(entity.id) {
-                    ctx.delete(entity)
-                }
-                return Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
-            } catch {
-                throw classify(error)
-            }
+        for tab in snapshot.tabs {
+            upsertTab(in: ctx, tab, existing: existingTabsById[tab.id])
         }
 
-        PerformanceTrace.withInterval("TabSnapshotRepository.fullReconcile.upsertTabs") {
-            for tab in snapshot.tabs {
-                upsertTab(in: ctx, tab, existing: existingTabsById[tab.id])
+        let existingFoldersById: [UUID: FolderEntity]
+        do {
+            let allFolders = try ctx.fetch(FetchDescriptor<FolderEntity>())
+            let keep = Set(snapshot.folders.map { $0.id })
+            for entity in allFolders where !keep.contains(entity.id) {
+                ctx.delete(entity)
             }
+            existingFoldersById = Dictionary(allFolders.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
+        } catch {
+            throw classify(error)
         }
 
-        let existingFoldersById: [UUID: FolderEntity] = try PerformanceTrace.withInterval(
-            "TabSnapshotRepository.fullReconcile.fetchFolders"
-        ) {
-            do {
-                let allFolders = try ctx.fetch(FetchDescriptor<FolderEntity>())
-                let keep = Set(snapshot.folders.map { $0.id })
-                for entity in allFolders where !keep.contains(entity.id) {
-                    ctx.delete(entity)
-                }
-                return Dictionary(allFolders.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
-            } catch {
-                throw classify(error)
-            }
+        for folder in snapshot.folders {
+            upsertFolder(in: ctx, folder, existing: existingFoldersById[folder.id])
         }
 
-        PerformanceTrace.withInterval("TabSnapshotRepository.fullReconcile.upsertFolders") {
-            for folder in snapshot.folders {
-                upsertFolder(in: ctx, folder, existing: existingFoldersById[folder.id])
+        let existingSpacesById: [UUID: SpaceEntity]
+        do {
+            let allSpaces = try ctx.fetch(FetchDescriptor<SpaceEntity>())
+            let keep = Set(snapshot.spaces.map { $0.id })
+            for entity in allSpaces where !keep.contains(entity.id) {
+                ctx.delete(entity)
             }
+            existingSpacesById = Dictionary(allSpaces.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
+        } catch {
+            throw classify(error)
         }
 
-        let existingSpacesById: [UUID: SpaceEntity] = try PerformanceTrace.withInterval(
-            "TabSnapshotRepository.fullReconcile.fetchSpaces"
-        ) {
-            do {
-                let allSpaces = try ctx.fetch(FetchDescriptor<SpaceEntity>())
-                let keep = Set(snapshot.spaces.map { $0.id })
-                for entity in allSpaces where !keep.contains(entity.id) {
-                    ctx.delete(entity)
-                }
-                return Dictionary(allSpaces.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
-            } catch {
-                throw classify(error)
-            }
+        for space in snapshot.spaces {
+            upsertSpace(in: ctx, space, existing: existingSpacesById[space.id])
         }
 
-        PerformanceTrace.withInterval("TabSnapshotRepository.fullReconcile.upsertSpaces") {
-            for space in snapshot.spaces {
-                upsertSpace(in: ctx, space, existing: existingSpacesById[space.id])
-            }
+        do {
+            try upsertState(in: ctx, state: snapshot.state)
+        } catch {
+            throw classify(error)
         }
 
-        try PerformanceTrace.withInterval("TabSnapshotRepository.fullReconcile.upsertState") {
-            do {
-                try upsertState(in: ctx, state: snapshot.state)
-            } catch {
-                throw classify(error)
-            }
+        do {
+            try ctx.save()
+        } catch {
+            throw classify(error)
         }
 
-        try PerformanceTrace.withInterval("TabSnapshotRepository.fullReconcile.save") {
-            do {
-                try ctx.save()
-            } catch {
-                throw classify(error)
-            }
-        }
-
-        PerformanceTrace.withInterval("TabSnapshotRepository.fullReconcile.validateIntegrity") {
-            do {
-                try validateDataIntegrity(in: ctx, snapshot: snapshot)
-            } catch {
-                Self.log.error("[persist] Post-save integrity validation reported issues: \(String(describing: error), privacy: .public)")
-            }
+        do {
+            try validateDataIntegrity(in: ctx, snapshot: snapshot)
+        } catch {
+            Self.log.error("[persist] Post-save integrity validation reported issues: \(String(describing: error), privacy: .public)")
         }
     }
 

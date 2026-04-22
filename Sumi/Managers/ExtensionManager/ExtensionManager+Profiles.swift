@@ -313,7 +313,7 @@ extension ExtensionManager {
         forceReload: Bool = false,
         allowWithoutEnabledExtensions: Bool = false
     ) -> WKWebExtensionController? {
-        PerformanceTrace.emitEvent("ExtensionManager.runtimeRequested")
+        PerformanceTrace.emitEvent("ExtensionManager.lazyRuntimeRequested")
 
         guard isExtensionSupportAvailable else {
             runtimeState = .unavailable
@@ -401,11 +401,11 @@ extension ExtensionManager {
         let enabledEntities = enabledPersistedExtensionEntities()
         runtimeInitializationTask = Task { @MainActor [weak self] in
             let signpostState = PerformanceTrace.beginInterval(
-                "ExtensionManager.lazyRuntimeInitialize"
+                "ExtensionManager.lazyRuntime"
             )
             defer {
                 PerformanceTrace.endInterval(
-                    "ExtensionManager.lazyRuntimeInitialize",
+                    "ExtensionManager.lazyRuntime",
                     signpostState
                 )
             }
@@ -453,10 +453,10 @@ extension ExtensionManager {
             }
             self.tabOpenNotificationGeneration &+= 1
             self.extensionRuntimeTrace(
-                "lazyRuntimeInitialize finalize reason=\(reason.rawValue) loadGeneration=\(loadGeneration) notifyGeneration=\(self.tabOpenNotificationGeneration) loadedContexts=\(self.extensionContexts.count)"
+                "lazyRuntime finalize reason=\(reason.rawValue) loadGeneration=\(loadGeneration) notifyGeneration=\(self.tabOpenNotificationGeneration) loadedContexts=\(self.extensionContexts.count)"
             )
             self.resyncOpenTabsWithExtensionRuntimeAfterGenerationBump(
-                reason: "ExtensionManager.lazyRuntimeInitialize.finalize"
+                reason: "ExtensionManager.lazyRuntime.finalize"
             )
             self.registerExistingWindowStateIfAttached()
         }
@@ -483,6 +483,7 @@ extension ExtensionManager {
         extensionId: String
     ) {
         removeExtensionErrorObserver(for: extensionId)
+        guard Self.shouldObserveExtensionErrors else { return }
 
         let token = NotificationCenter.default.addObserver(
             forName: WKWebExtensionContext.errorsDidUpdateNotification,
@@ -992,6 +993,8 @@ extension ExtensionManager {
         extensionId: String,
         reason: String
     ) {
+        guard Self.shouldObserveExtensionErrors else { return }
+
         let updateStart = CFAbsoluteTimeGetCurrent()
         defer {
             recordRuntimeMetric(for: extensionId) {
@@ -1020,8 +1023,8 @@ extension ExtensionManager {
         lastLoggedExtensionErrorFingerprints[extensionId] = fingerprint
 
         guard errors.isEmpty == false else {
-            Self.logger.debug(
-                "Extension errors \(reason, privacy: .public) for \(extensionId, privacy: .public): none"
+            extensionRuntimeTrace(
+                "Extension errors \(reason) for \(extensionId): none"
             )
             return
         }
@@ -1036,21 +1039,26 @@ extension ExtensionManager {
     }
 
     nonisolated private static func describeUserInfo(_ userInfo: [String: Any]) -> String {
-        guard userInfo.isEmpty == false else {
+        #if DEBUG || SUMI_DIAGNOSTICS
+            guard userInfo.isEmpty == false else {
+                return "{}"
+            }
+
+            if JSONSerialization.isValidJSONObject(userInfo),
+               let data = try? JSONSerialization.data(withJSONObject: userInfo, options: [.sortedKeys]),
+               let string = String(data: data, encoding: .utf8)
+            {
+                return string
+            }
+
+            let parts = userInfo.keys.sorted().map { key in
+                "\(key)=\(String(describing: userInfo[key] ?? "nil"))"
+            }
+            return "{\(parts.joined(separator: ", "))}"
+        #else
+            _ = userInfo
             return "{}"
-        }
-
-        if JSONSerialization.isValidJSONObject(userInfo),
-           let data = try? JSONSerialization.data(withJSONObject: userInfo, options: [.sortedKeys]),
-           let string = String(data: data, encoding: .utf8)
-        {
-            return string
-        }
-
-        let parts = userInfo.keys.sorted().map { key in
-            "\(key)=\(String(describing: userInfo[key] ?? "nil"))"
-        }
-        return "{\(parts.joined(separator: ", "))}"
+        #endif
     }
 
     private func tearDownNativeMessageHandlers(for extensionId: String) {
@@ -1074,8 +1082,8 @@ extension ExtensionManager {
         do {
             try extensionController?.unload(context)
         } catch {
-            Self.logger.debug(
-                "Ignoring failed unload for extension \(extensionId, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            extensionRuntimeTrace(
+                "Ignoring failed unload for extension \(extensionId): \(error.localizedDescription)"
             )
         }
     }

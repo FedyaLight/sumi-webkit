@@ -515,7 +515,6 @@ extension TabManager {
             canGoBack: tab.canGoBack,
             canGoForward: tab.canGoForward
         )
-        PerformanceTrace.emitEvent("TabManager.runtimeState.enqueue")
         runtimeStateCoalescer.enqueue(payload)
     }
 

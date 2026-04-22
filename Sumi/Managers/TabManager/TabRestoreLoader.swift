@@ -60,11 +60,9 @@ actor TabRestoreLoader {
     }
 
     func load(defaultProfileId: UUID?) async throws -> TabRestorePayload {
-        let raw = try PerformanceTrace.withInterval("TabRestoreLoader.backgroundFetch") {
-            try fetchRawStore()
-        }
-        return PerformanceTrace.withInterval("TabRestoreLoader.dtoBuildNormalize") {
-            buildPayload(from: raw, defaultProfileId: defaultProfileId)
+        try PerformanceTrace.withInterval("TabRestoreLoader.offMainRestore") {
+            let raw = try fetchRawStore()
+            return buildPayload(from: raw, defaultProfileId: defaultProfileId)
         }
     }
 

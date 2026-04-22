@@ -58,8 +58,9 @@ private enum SafariNativeMessageRouter {
         applicationId: String,
         replyHandler: @escaping (Any?, (any Error)?) -> Void
     ) {
-        ExtensionManager.logger.debug(
-            "Native messaging host \(applicationId, privacy: .public) is not registered for Sumi; returning delayed null response"
+        RuntimeDiagnostics.debug(
+            "Native messaging host \(applicationId) is not registered for Sumi; returning delayed null response",
+            category: "Extensions"
         )
         delayedReply(after: missingHostDelay, value: NSNull(), replyHandler: replyHandler)
     }
@@ -397,8 +398,9 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             }
         }
 
-        Self.logger.debug(
-            "Handled URL access request silently for \(extensionContext.webExtension.displayName ?? extensionContext.uniqueIdentifier, privacy: .public): granted=\(autoGranted.count, privacy: .public) denied=\(denied.count, privacy: .public)"
+        RuntimeDiagnostics.debug(
+            "Handled URL access request silently for \(extensionContext.webExtension.displayName ?? extensionContext.uniqueIdentifier): granted=\(autoGranted.count) denied=\(denied.count)",
+            category: "Extensions"
         )
         completionHandler(autoGranted, nil)
     }
