@@ -8,6 +8,19 @@ import XCTest
 @testable import Sumi
 
 final class SumiEmojiCatalogTests: XCTestCase {
+    private static func flagRegionCode(from glyph: String) -> String? {
+        let scalars = Array(glyph.unicodeScalars)
+        guard scalars.count == 2 else { return nil }
+
+        let asciiScalars = scalars.compactMap { scalar -> UnicodeScalar? in
+            let value = scalar.value
+            guard (0x1F1E6...0x1F1FF).contains(value) else { return nil }
+            return UnicodeScalar(value - 0x1F1E6 + 65)
+        }
+        guard asciiScalars.count == 2 else { return nil }
+        return String(String.UnicodeScalarView(asciiScalars))
+    }
+
     func testCatalogExcludesStandaloneRegionalIndicators() {
         for entry in SumiEmojiCatalog.allEntries {
             let scalars = Array(entry.glyph.unicodeScalars)
@@ -84,5 +97,16 @@ final class SumiEmojiCatalogTests: XCTestCase {
         // Previously 26 * 25 arbitrary pairs plus scalars; ISO list is much smaller than 650 flags.
         let flagLike = SumiEmojiCatalog.allEntries.filter { $0.glyph.unicodeScalars.count == 2 }
         XCTAssertLessThan(flagLike.count, 400)
+    }
+
+    func testCatalogExcludesModernOnlyOutlyingOceaniaRegionCode() {
+        let regionCodes = SumiEmojiCatalog.allEntries.compactMap { Self.flagRegionCode(from: $0.glyph) }
+        XCTAssertFalse(regionCodes.contains("QO"))
+    }
+
+    func testCatalogFlagRegionCodesRemainAlphabeticallyOrdered() {
+        let regionCodes = SumiEmojiCatalog.allEntries.compactMap { Self.flagRegionCode(from: $0.glyph) }
+        XCTAssertFalse(regionCodes.isEmpty)
+        XCTAssertEqual(regionCodes, regionCodes.sorted())
     }
 }

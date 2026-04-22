@@ -121,17 +121,28 @@ enum SumiEmojiCatalog {
         return String(String.UnicodeScalarView([a, b]))
     }
 
+    private static func isASCIILetter(_ scalar: UnicodeScalar) -> Bool {
+        let value = scalar.value
+        return (65...90).contains(value) || (97...122).contains(value)
+    }
+
+    private static func flagCapableAlpha2Identifier(for region: Locale.Region) -> String? {
+        let identifier = region.identifier
+        guard identifier.count == 2 else { return nil }
+        guard identifier.unicodeScalars.allSatisfy({ isASCIILetter($0) }) else { return nil }
+
+        let canonicalIdentifier = identifier.uppercased()
+        // `Locale.Region.isoRegions` includes "QO" (Outlying Oceania), which was not part of the
+        // previous picker population and would add a new non-legacy flag-like entry.
+        guard canonicalIdentifier != "QO" else { return nil }
+        return canonicalIdentifier
+    }
+
     /// ISO 3166-1 alpha-2 regions from the system locale database (no arbitrary RI pairs).
     private static func appendISORegionFlagGlyphs(seen: inout Set<String>, orderedGlyphs: inout [String]) {
-        let codes = Locale.isoRegionCodes.filter { code in
-            guard code.count == 2 else { return false }
-            return code.unicodeScalars.allSatisfy { scalar in
-                let v = scalar.value
-                return (65...90).contains(v) || (97...122).contains(v)
-            }
-        }
+        let codes = Array(Set(Locale.Region.isoRegions.compactMap(flagCapableAlpha2Identifier(for:)))).sorted()
         for code in codes {
-            let glyph = flagGlyph(fromAlpha2: code.uppercased())
+            let glyph = flagGlyph(fromAlpha2: code)
             guard let glyph else { continue }
             guard seen.insert(glyph).inserted else { continue }
             orderedGlyphs.append(glyph)
