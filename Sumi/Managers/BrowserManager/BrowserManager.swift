@@ -239,7 +239,14 @@ class BrowserManager: ObservableObject {
 
     /// Shared with app shell / `ContentView` via `.environment`; retained strongly so routing never sees a dangling coordinator.
     /// After `SumiApp.setupApplicationLifecycle` runs, this must be set before any WebView routing or coordinator cleanup.
-    var webViewCoordinator: WebViewCoordinator?
+    var webViewCoordinator: WebViewCoordinator? {
+        didSet {
+            if oldValue?.browserManager === self {
+                oldValue?.browserManager = nil
+            }
+            webViewCoordinator?.browserManager = self
+        }
+    }
 
     /// Use for cleanup and cross-window operations; fails fast if the coordinator was not wired (e.g. tests forgot to assign `webViewCoordinator`).
     func requireWebViewCoordinator() -> WebViewCoordinator {

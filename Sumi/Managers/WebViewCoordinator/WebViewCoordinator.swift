@@ -157,9 +157,180 @@ private struct FullscreenVideoSessionContext {
     weak var previousFirstResponder: NSResponder?
 }
 
+enum CompositorPaneDestination: String, CaseIterable {
+    case single
+    case left
+    case right
+
+    var viewIdentifier: NSUserInterfaceItemIdentifier {
+        NSUserInterfaceItemIdentifier("SumiCompositorPane.\(rawValue)")
+    }
+
+    static func resolve(from view: NSView) -> Self? {
+        var current: NSView? = view
+        while let candidate = current {
+            if let identifier = candidate.identifier,
+               let destination = allCases.first(where: { $0.viewIdentifier == identifier })
+            {
+                return destination
+            }
+            current = candidate.superview
+        }
+        return nil
+    }
+
+    func resolve(in root: NSView) -> NSView? {
+        root.sumiFirstSubview(matching: viewIdentifier)
+    }
+}
+
+private struct WeakWKWebView {
+    weak var value: WKWebView?
+}
+
+enum DeferredWebViewCommandKey: Hashable {
+    case attachHost(ObjectIdentifier)
+    case removeWebViewFromContainers(ObjectIdentifier)
+    case removeAllWebViews(UUID)
+    case cleanupWindow(UUID)
+    case cleanupAllWebViews
+    case rebuildLiveWebViews(UUID)
+    case evictHiddenWebViews(UUID)
+    case cleanupTabWebView(ObjectIdentifier)
+    case performFallbackWebViewCleanup(ObjectIdentifier)
+}
+
+enum DeferredWebViewCommand {
+    case attachHost(
+        tabID: UUID,
+        windowID: UUID,
+        webViewID: ObjectIdentifier,
+        destination: CompositorPaneDestination
+    )
+    case removeWebViewFromContainers(webViewID: ObjectIdentifier)
+    case removeAllWebViews(tabID: UUID)
+    case cleanupWindow(windowID: UUID)
+    case cleanupAllWebViews
+    case rebuildLiveWebViews(tabID: UUID, preferredPrimaryWindowID: UUID?)
+    case evictHiddenWebViews(windowID: UUID)
+    case cleanupTabWebView(webViewID: ObjectIdentifier, tabID: UUID)
+    case performFallbackWebViewCleanup(webViewID: ObjectIdentifier, tabID: UUID)
+
+    var key: DeferredWebViewCommandKey {
+        switch self {
+        case .attachHost(_, _, let webViewID, _):
+            return .attachHost(webViewID)
+        case .removeWebViewFromContainers(let webViewID):
+            return .removeWebViewFromContainers(webViewID)
+        case .removeAllWebViews(let tabID):
+            return .removeAllWebViews(tabID)
+        case .cleanupWindow(let windowID):
+            return .cleanupWindow(windowID)
+        case .cleanupAllWebViews:
+            return .cleanupAllWebViews
+        case .rebuildLiveWebViews(let tabID, _):
+            return .rebuildLiveWebViews(tabID)
+        case .evictHiddenWebViews(let windowID):
+            return .evictHiddenWebViews(windowID)
+        case .cleanupTabWebView(let webViewID, _):
+            return .cleanupTabWebView(webViewID)
+        case .performFallbackWebViewCleanup(let webViewID, _):
+            return .performFallbackWebViewCleanup(webViewID)
+        }
+    }
+
+    var debugSummary: String {
+        switch self {
+        case .attachHost(let tabID, let windowID, let webViewID, let destination):
+            return "attachHost tab=\(tabID.uuidString.prefix(8)) window=\(windowID.uuidString.prefix(8)) webView=\(webViewID) pane=\(destination.rawValue)"
+        case .removeWebViewFromContainers(let webViewID):
+            return "removeWebViewFromContainers webView=\(webViewID)"
+        case .removeAllWebViews(let tabID):
+            return "removeAllWebViews tab=\(tabID.uuidString.prefix(8))"
+        case .cleanupWindow(let windowID):
+            return "cleanupWindow window=\(windowID.uuidString.prefix(8))"
+        case .cleanupAllWebViews:
+            return "cleanupAllWebViews"
+        case .rebuildLiveWebViews(let tabID, let preferredPrimaryWindowID):
+            return "rebuildLiveWebViews tab=\(tabID.uuidString.prefix(8)) preferredWindow=\(preferredPrimaryWindowID?.uuidString.prefix(8) ?? "nil")"
+        case .evictHiddenWebViews(let windowID):
+            return "evictHiddenWebViews window=\(windowID.uuidString.prefix(8))"
+        case .cleanupTabWebView(let webViewID, let tabID):
+            return "cleanupTabWebView tab=\(tabID.uuidString.prefix(8)) webView=\(webViewID)"
+        case .performFallbackWebViewCleanup(let webViewID, let tabID):
+            return "performFallbackWebViewCleanup tab=\(tabID.uuidString.prefix(8)) webView=\(webViewID)"
+        }
+    }
+}
+
+enum DeferredProtectedCommandEnqueueOutcome {
+    case enqueued
+    case collapsed
+    case droppedAtCapacity
+}
+
+struct DeferredProtectedCommandBuffer {
+    static let maxCommands = 8
+
+    private(set) var commands: [DeferredWebViewCommand] = []
+
+    var count: Int { commands.count }
+    var isEmpty: Bool { commands.isEmpty }
+
+    mutating func enqueue(_ command: DeferredWebViewCommand) -> DeferredProtectedCommandEnqueueOutcome {
+        if let index = commands.firstIndex(where: { $0.key == command.key }) {
+            commands[index] = command
+            return .collapsed
+        }
+        guard commands.count < Self.maxCommands else {
+            return .droppedAtCapacity
+        }
+        commands.append(command)
+        return .enqueued
+    }
+
+    mutating func prune(
+        where shouldDrop: (DeferredWebViewCommand) -> Bool
+    ) -> [DeferredWebViewCommand] {
+        var dropped: [DeferredWebViewCommand] = []
+        commands.removeAll { command in
+            guard shouldDrop(command) else { return false }
+            dropped.append(command)
+            return true
+        }
+        return dropped
+    }
+
+    mutating func drain() -> [DeferredWebViewCommand] {
+        let drained = commands
+        commands.removeAll(keepingCapacity: true)
+        return drained
+    }
+
+    func summaries() -> [String] {
+        commands.map(\.debugSummary)
+    }
+}
+
 private struct TrackedWebViewOwner: Equatable {
     let tabID: UUID
     let windowID: UUID
+}
+
+private extension NSView {
+    func sumiFirstSubview(
+        matching identifier: NSUserInterfaceItemIdentifier
+    ) -> NSView? {
+        if self.identifier == identifier {
+            return self
+        }
+        for subview in subviews {
+            if let match = subview.sumiFirstSubview(matching: identifier) {
+                return match
+            }
+        }
+        return nil
+    }
 }
 
 @MainActor
@@ -195,13 +366,19 @@ class WebViewCoordinator {
     private var scheduledPrepareWindowIds: Set<UUID> = []
 
     @ObservationIgnored
+    weak var browserManager: BrowserManager?
+
+    @ObservationIgnored
     private var activeHistorySwipeProtections: [ObjectIdentifier: HistorySwipeProtectionContext] = [:]
 
     @ObservationIgnored
     private var activeFullscreenVideoSessions: [ObjectIdentifier: FullscreenVideoSessionContext] = [:]
 
     @ObservationIgnored
-    private var deferredProtectedWebViewMutations: [ObjectIdentifier: [() -> Void]] = [:]
+    private var deferredProtectedWebViewCommands: [ObjectIdentifier: DeferredProtectedCommandBuffer] = [:]
+
+    @ObservationIgnored
+    private var weakWebViewsByIdentifier: [ObjectIdentifier: WeakWKWebView] = [:]
 
     private let hiddenWarmWebViewBufferPerWindow = 1
 
@@ -227,6 +404,7 @@ class WebViewCoordinator {
         compositorContainerViews.removeValue(forKey: windowId)
         scheduledPrepareWindowIds.remove(windowId)
         recentlyVisibleTabIDsByWindow.removeValue(forKey: windowId)
+        pruneInvalidDeferredProtectedCommands(reason: "removeCompositorContainerView")
     }
 
     func compositorContainers() -> [(UUID, NSView)] {
@@ -378,6 +556,7 @@ class WebViewCoordinator {
         originHistoryItem: WKBackForwardListItem?
     ) {
         let webViewID = ObjectIdentifier(webView)
+        noteWeakWebView(webView)
         let windowId = windowId(containing: webView)
         let host = host(containing: webView)
         activeHistorySwipeProtections[webViewID] = HistorySwipeProtectionContext(
@@ -412,7 +591,7 @@ class WebViewCoordinator {
         RuntimeDiagnostics.swipeTrace(
             "finish tab=\(tabId.uuidString.prefix(8)) webView=\(webViewID) cancelled=\(wasCancelled) url=\((currentURL ?? currentHistoryItem?.url)?.absoluteString ?? "nil")"
         )
-        flushDeferredProtectedWebViewMutations(for: webViewID)
+        flushDeferredProtectedCommands(for: webViewID)
         return wasCancelled
     }
 
@@ -454,14 +633,18 @@ class WebViewCoordinator {
         _ host: SumiWebViewContainerView,
         to container: NSView
     ) -> Bool {
+        let deferredDestination = CompositorPaneDestination.resolve(from: container)
         if host.superview !== container,
-           deferHistorySwipeProtectedWebViewMutation(
-                host.webView,
-                reason: "attachHost",
-                operation: { [weak self, weak host, weak container] in
-                    guard let self, let host, let container else { return }
-                    _ = self.attachHost(host, to: container)
-                }
+           let deferredDestination,
+           enqueueDeferredHistorySwipeCommand(
+                .attachHost(
+                    tabID: host.tabID,
+                    windowID: host.windowID,
+                    webViewID: ObjectIdentifier(host.webView),
+                    destination: deferredDestination
+                ),
+                for: host.webView,
+                reason: "attachHost"
            )
         {
             RuntimeDiagnostics.swipeTrace(
@@ -501,45 +684,6 @@ class WebViewCoordinator {
         keepView?.isHidden = false
     }
 
-    @discardableResult
-    func deferProtectedWebViewMutation(
-        _ webView: WKWebView,
-        reason: String,
-        operation: @escaping () -> Void
-    ) -> Bool {
-        let webViewID = ObjectIdentifier(webView)
-        guard isWebViewProtectedFromCompositorMutation(webView) else {
-            return false
-        }
-
-        deferredProtectedWebViewMutations[webViewID, default: []].append(operation)
-        PerformanceTrace.emitEvent("WebViewCoordinator.deferProtectedWebViewMutation")
-        RuntimeDiagnostics.swipeTrace(
-            "defer reason=\(reason) webView=\(webViewID)"
-        )
-        return true
-    }
-
-    private func deferHistorySwipeProtectedWebViewMutation(
-        _ webView: WKWebView,
-        reason: String,
-        operation: @escaping () -> Void
-    ) -> Bool {
-        let webViewID = ObjectIdentifier(webView)
-        guard HistorySwipeCompositorMutationPolicy.shouldDeferMutation(
-            isProtectedSource: activeHistorySwipeProtections[webViewID] != nil
-        ) else {
-            return false
-        }
-
-        deferredProtectedWebViewMutations[webViewID, default: []].append(operation)
-        PerformanceTrace.emitEvent("WebViewCoordinator.deferHistorySwipeProtectedWebViewMutation")
-        RuntimeDiagnostics.swipeTrace(
-            "defer reason=\(reason) webView=\(webViewID)"
-        )
-        return true
-    }
-
     private func handleFullscreenStateChange(
         for host: SumiWebViewContainerView,
         state: WKWebView.FullscreenState
@@ -552,11 +696,12 @@ class WebViewCoordinator {
                 "Ended fullscreen video session for tab=\(host.tabID.uuidString.prefix(8)) window=\(host.windowID.uuidString.prefix(8))."
             }
             restoreAfterFullscreenVideoExit(context: context, host: host)
-            flushDeferredProtectedWebViewMutations(for: webViewID)
+            flushDeferredProtectedCommands(for: webViewID)
             return
         }
 
         if activeFullscreenVideoSessions[webViewID] == nil {
+            noteWeakWebView(host.webView)
             activeFullscreenVideoSessions[webViewID] = FullscreenVideoSessionContext(
                 tabID: host.tabID,
                 windowID: host.windowID,
@@ -611,25 +756,40 @@ class WebViewCoordinator {
         }
     }
 
-    private func flushDeferredProtectedWebViewMutations(for webViewID: ObjectIdentifier) {
+    private func flushDeferredProtectedCommands(for webViewID: ObjectIdentifier) {
         guard activeHistorySwipeProtections[webViewID] == nil,
               activeFullscreenVideoSessions[webViewID] == nil
         else { return }
-        let operations = deferredProtectedWebViewMutations.removeValue(forKey: webViewID) ?? []
-        guard !operations.isEmpty else { return }
+        pruneInvalidDeferredProtectedCommands(reason: "flush.preflight")
+        var buffer = deferredProtectedWebViewCommands.removeValue(forKey: webViewID)
+        let commands = buffer?.drain() ?? []
+        guard !commands.isEmpty else { return }
         Task { @MainActor in
             let signpostState = PerformanceTrace.beginInterval(
-                "WebViewCoordinator.flushDeferredProtectedWebViewMutations"
+                "WebViewCoordinator.flushDeferredProtectedCommands"
             )
             defer {
                 PerformanceTrace.endInterval(
-                    "WebViewCoordinator.flushDeferredProtectedWebViewMutations",
+                    "WebViewCoordinator.flushDeferredProtectedCommands",
                     signpostState
                 )
             }
 
-            for operation in operations {
-                operation()
+            RuntimeDiagnostics.swipeTrace(
+                "flushDeferredCommands sourceWebView=\(webViewID) count=\(commands.count)"
+            )
+
+            for command in commands {
+                if executeDeferredProtectedCommand(
+                    command,
+                    sourceWebViewID: webViewID
+                ) == false {
+                    dropDeferredProtectedCommand(
+                        command,
+                        sourceWebViewID: webViewID,
+                        reason: "flush.invalidTarget"
+                    )
+                }
             }
         }
     }
@@ -775,13 +935,10 @@ class WebViewCoordinator {
     }
 
     func removeWebViewFromContainers(_ webView: WKWebView) {
-        if deferProtectedWebViewMutation(
-            webView,
-            reason: "removeWebViewFromContainers",
-            operation: { [weak self, weak webView] in
-                guard let self, let webView else { return }
-                self.removeWebViewFromContainers(webView)
-            }
+        if enqueueDeferredProtectedCommand(
+            .removeWebViewFromContainers(webViewID: ObjectIdentifier(webView)),
+            for: webView,
+            reason: "removeWebViewFromContainers"
         ) {
             return
         }
@@ -847,13 +1004,10 @@ class WebViewCoordinator {
         )
         if protectedCandidateWebViews.contains(where: isWebViewProtectedFromCompositorMutation) {
             for protectedWebView in protectedCandidateWebViews where isWebViewProtectedFromCompositorMutation(protectedWebView) {
-                _ = deferProtectedWebViewMutation(
-                    protectedWebView,
-                    reason: "removeAllWebViews",
-                    operation: { [weak self, weak tab] in
-                        guard let self, let tab else { return }
-                        _ = self.removeAllWebViews(for: tab)
-                    }
+                _ = enqueueDeferredProtectedCommand(
+                    .removeAllWebViews(tabID: tab.id),
+                    for: protectedWebView,
+                    reason: "removeAllWebViews"
                 )
             }
             return false
@@ -893,13 +1047,10 @@ class WebViewCoordinator {
 
         for (owner, webView) in webViewsToCleanup {
             if isWebViewProtectedFromCompositorMutation(webView) {
-                _ = deferProtectedWebViewMutation(
-                    webView,
-                    reason: "cleanupWindow",
-                    operation: { [weak self, weak tabManager] in
-                        guard let self, let tabManager else { return }
-                        self.cleanupWindow(windowId, tabManager: tabManager)
-                    }
+                _ = enqueueDeferredProtectedCommand(
+                    .cleanupWindow(windowID: windowId),
+                    for: webView,
+                    reason: "cleanupWindow"
                 )
                 continue
             }
@@ -940,13 +1091,10 @@ class WebViewCoordinator {
 
         for (owner, webView) in trackedEntries {
             if isWebViewProtectedFromCompositorMutation(webView) {
-                _ = deferProtectedWebViewMutation(
-                    webView,
-                    reason: "cleanupAllWebViews",
-                    operation: { [weak self, weak tabManager] in
-                        guard let self, let tabManager else { return }
-                        self.cleanupAllWebViews(tabManager: tabManager)
-                    }
+                _ = enqueueDeferredProtectedCommand(
+                    .cleanupAllWebViews,
+                    for: webView,
+                    reason: "cleanupAllWebViews"
                 )
                 continue
             }
@@ -1076,9 +1224,24 @@ class WebViewCoordinator {
         guard targetWindowIds.isEmpty == false else { return }
 
         let targetURL = url ?? tab.existingWebView?.url ?? tab.url
-        let primaryWindowId = preferredPrimaryWindowId
-            .flatMap { targetWindowIds.contains($0) ? $0 : nil }
-            ?? tab.primaryWindowId.flatMap { targetWindowIds.contains($0) ? $0 : nil }
+        let preferredPrimaryWindowIdCandidate: UUID?
+        if let preferredPrimaryWindowId,
+           targetWindowIds.contains(preferredPrimaryWindowId)
+        {
+            preferredPrimaryWindowIdCandidate = preferredPrimaryWindowId
+        } else {
+            preferredPrimaryWindowIdCandidate = nil
+        }
+        let existingPrimaryWindowIdCandidate: UUID?
+        if let existingPrimaryWindowId = tab.primaryWindowId,
+           targetWindowIds.contains(existingPrimaryWindowId)
+        {
+            existingPrimaryWindowIdCandidate = existingPrimaryWindowId
+        } else {
+            existingPrimaryWindowIdCandidate = nil
+        }
+        let primaryWindowId = preferredPrimaryWindowIdCandidate
+            ?? existingPrimaryWindowIdCandidate
             ?? targetWindowIds.sorted { $0.uuidString < $1.uuidString }.first
 
         guard let primaryWindowId else { return }
@@ -1088,17 +1251,13 @@ class WebViewCoordinator {
         if protectedCandidateWebViews.contains(where: isWebViewProtectedFromCompositorMutation) {
             let deferredWebViews = protectedCandidateWebViews.filter(isWebViewProtectedFromCompositorMutation)
             for protectedWebView in deferredWebViews {
-                _ = deferProtectedWebViewMutation(
-                    protectedWebView,
-                    reason: "rebuildLiveWebViews",
-                    operation: { [weak self, weak tab] in
-                        guard let self, let tab else { return }
-                        self.rebuildLiveWebViews(
-                            for: tab,
-                            preferredPrimaryWindowId: preferredPrimaryWindowId,
-                            load: url
-                        )
-                    }
+                _ = enqueueDeferredProtectedCommand(
+                    .rebuildLiveWebViews(
+                        tabID: tab.id,
+                        preferredPrimaryWindowID: preferredPrimaryWindowId
+                    ),
+                    for: protectedWebView,
+                    reason: "rebuildLiveWebViews"
                 )
             }
             return
@@ -1159,7 +1318,379 @@ class WebViewCoordinator {
         }
     }
 
+    func deferredProtectedCommandSummaries(for webView: WKWebView) -> [String] {
+        deferredProtectedWebViewCommands[ObjectIdentifier(webView)]?.summaries() ?? []
+    }
+
+    func totalDeferredProtectedCommandCount() -> Int {
+        deferredProtectedWebViewCommands.values.reduce(0) { partialResult, buffer in
+            partialResult + buffer.count
+        }
+    }
+
+    func simulateFullscreenStateChangeForTesting(
+        tabId: UUID,
+        in windowId: UUID,
+        state: WKWebView.FullscreenState
+    ) {
+        guard let host = getWebViewHost(for: tabId, in: windowId) else { return }
+        handleFullscreenStateChange(for: host, state: state)
+    }
+
+    @discardableResult
+    func deferProtectedWebViewCleanup(
+        _ webView: WKWebView,
+        tabID: UUID,
+        reason: String
+    ) -> Bool {
+        enqueueDeferredProtectedCommand(
+            .cleanupTabWebView(
+                webViewID: ObjectIdentifier(webView),
+                tabID: tabID
+            ),
+            for: webView,
+            reason: reason
+        )
+    }
+
     // MARK: - Private Helpers
+
+    @discardableResult
+    private func enqueueDeferredProtectedCommand(
+        _ command: DeferredWebViewCommand,
+        for webView: WKWebView,
+        reason: String
+    ) -> Bool {
+        enqueueDeferredCommandIfNeeded(
+            command,
+            for: webView,
+            reason: reason
+        ) { webViewID in
+            activeHistorySwipeProtections[webViewID] != nil
+                || activeFullscreenVideoSessions[webViewID] != nil
+                || webView.sumiIsInFullscreenElementPresentation
+        }
+    }
+
+    @discardableResult
+    private func enqueueDeferredHistorySwipeCommand(
+        _ command: DeferredWebViewCommand,
+        for webView: WKWebView,
+        reason: String
+    ) -> Bool {
+        enqueueDeferredCommandIfNeeded(
+            command,
+            for: webView,
+            reason: reason
+        ) { webViewID in
+            HistorySwipeCompositorMutationPolicy.shouldDeferMutation(
+                isProtectedSource: activeHistorySwipeProtections[webViewID] != nil
+            )
+        }
+    }
+
+    @discardableResult
+    private func enqueueDeferredCommandIfNeeded(
+        _ command: DeferredWebViewCommand,
+        for webView: WKWebView,
+        reason: String,
+        shouldDefer: (ObjectIdentifier) -> Bool
+    ) -> Bool {
+        let sourceWebViewID = ObjectIdentifier(webView)
+        noteWeakWebView(webView)
+        guard shouldDefer(sourceWebViewID) else {
+            return false
+        }
+
+        pruneInvalidDeferredProtectedCommands(reason: "enqueue.preflight")
+        guard isDeferredProtectedCommandValid(command) else {
+            dropDeferredProtectedCommand(
+                command,
+                sourceWebViewID: sourceWebViewID,
+                reason: "\(reason).invalidTarget"
+            )
+            return true
+        }
+
+        var buffer = deferredProtectedWebViewCommands[sourceWebViewID]
+            ?? DeferredProtectedCommandBuffer()
+        let outcome = buffer.enqueue(command)
+        deferredProtectedWebViewCommands[sourceWebViewID] = buffer
+
+        switch outcome {
+        case .enqueued:
+            PerformanceTrace.emitEvent("WebViewCoordinator.enqueueDeferredProtectedCommand")
+            RuntimeDiagnostics.swipeTrace(
+                "enqueueDeferredCommand reason=\(reason) sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)} count=\(buffer.count)"
+            )
+        case .collapsed:
+            PerformanceTrace.emitEvent("WebViewCoordinator.collapseDeferredProtectedCommand")
+            RuntimeDiagnostics.swipeTrace(
+                "collapseDeferredCommand reason=\(reason) sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)} count=\(buffer.count)"
+            )
+        case .droppedAtCapacity:
+            dropDeferredProtectedCommand(
+                command,
+                sourceWebViewID: sourceWebViewID,
+                reason: "\(reason).capacity"
+            )
+        }
+
+        return true
+    }
+
+    private func noteWeakWebView(_ webView: WKWebView) {
+        weakWebViewsByIdentifier[ObjectIdentifier(webView)] = WeakWKWebView(value: webView)
+    }
+
+    private func resolveWeakWebView(
+        with identifier: ObjectIdentifier
+    ) -> WKWebView? {
+        if let webView = weakWebViewsByIdentifier[identifier]?.value {
+            return webView
+        }
+        weakWebViewsByIdentifier.removeValue(forKey: identifier)
+        return nil
+    }
+
+    private func resolveWebView(
+        with identifier: ObjectIdentifier
+    ) -> WKWebView? {
+        if let owner = webViewOwnersByIdentifier[identifier],
+           let webView = webViewsByTabAndWindow[owner.tabID]?[owner.windowID],
+           ObjectIdentifier(webView) == identifier
+        {
+            noteWeakWebView(webView)
+            return webView
+        }
+        return resolveWeakWebView(with: identifier)
+    }
+
+    private func resolveHost(
+        tabID: UUID,
+        windowID: UUID,
+        expectedWebViewID: ObjectIdentifier
+    ) -> SumiWebViewContainerView? {
+        guard let host = getWebViewHost(for: tabID, in: windowID),
+              ObjectIdentifier(host.webView) == expectedWebViewID
+        else {
+            return nil
+        }
+        return host
+    }
+
+    private func resolveCompositorPane(
+        _ destination: CompositorPaneDestination,
+        in windowID: UUID
+    ) -> NSView? {
+        guard let root = compositorContainerView(for: windowID) else { return nil }
+        return destination.resolve(in: root)
+    }
+
+    private func resolvedTab(with tabID: UUID) -> Tab? {
+        if let tab = browserManager?.tabManager.tab(for: tabID) {
+            return tab
+        }
+        if let windowStates = browserManager?.windowRegistry?.windows.values {
+            for windowState in windowStates {
+                if let tab = windowState.ephemeralTabs.first(where: { $0.id == tabID }) {
+                    return tab
+                }
+            }
+        }
+        return nil
+    }
+
+    private func pruneDeadWeakWebViewReferences() {
+        weakWebViewsByIdentifier = weakWebViewsByIdentifier.filter { _, entry in
+            entry.value != nil
+        }
+    }
+
+    private func pruneInvalidDeferredProtectedCommands(reason: String) {
+        pruneDeadWeakWebViewReferences()
+
+        for sourceWebViewID in Array(deferredProtectedWebViewCommands.keys) {
+            guard resolveWebView(with: sourceWebViewID) != nil else {
+                activeHistorySwipeProtections.removeValue(forKey: sourceWebViewID)
+                activeFullscreenVideoSessions.removeValue(forKey: sourceWebViewID)
+                if var buffer = deferredProtectedWebViewCommands.removeValue(forKey: sourceWebViewID) {
+                    for command in buffer.drain() {
+                        dropDeferredProtectedCommand(
+                            command,
+                            sourceWebViewID: sourceWebViewID,
+                            reason: "\(reason).deadSource"
+                        )
+                    }
+                }
+                continue
+            }
+
+            guard var buffer = deferredProtectedWebViewCommands[sourceWebViewID] else {
+                continue
+            }
+            let droppedCommands = buffer.prune { [self] command in
+                isDeferredProtectedCommandValid(command) == false
+            }
+
+            if buffer.isEmpty {
+                deferredProtectedWebViewCommands.removeValue(forKey: sourceWebViewID)
+            } else {
+                deferredProtectedWebViewCommands[sourceWebViewID] = buffer
+            }
+
+            for command in droppedCommands {
+                dropDeferredProtectedCommand(
+                    command,
+                    sourceWebViewID: sourceWebViewID,
+                    reason: "\(reason).invalidTarget"
+                )
+            }
+        }
+    }
+
+    private func isDeferredProtectedCommandValid(
+        _ command: DeferredWebViewCommand
+    ) -> Bool {
+        switch command {
+        case .attachHost(let tabID, let windowID, let webViewID, let destination):
+            return resolveHost(
+                tabID: tabID,
+                windowID: windowID,
+                expectedWebViewID: webViewID
+            ) != nil
+                && resolveCompositorPane(destination, in: windowID) != nil
+        case .removeWebViewFromContainers(let webViewID):
+            return resolveWebView(with: webViewID) != nil
+        case .removeAllWebViews(let tabID):
+            return resolvedTab(with: tabID) != nil
+        case .cleanupWindow(let windowID):
+            return browserManager?.tabManager != nil
+                && (
+                    trackedWebViews(in: windowID).isEmpty == false
+                        || compositorContainerView(for: windowID) != nil
+                )
+        case .cleanupAllWebViews:
+            return browserManager?.tabManager != nil
+                && webViewsByTabAndWindow.isEmpty == false
+        case .rebuildLiveWebViews(let tabID, _):
+            return resolvedTab(with: tabID) != nil
+        case .evictHiddenWebViews(let windowID):
+            return browserManager?.tabManager != nil
+                && browserManager?.windowRegistry?.windows[windowID] != nil
+        case .cleanupTabWebView(let webViewID, _):
+            return resolveWebView(with: webViewID) != nil
+        case .performFallbackWebViewCleanup(let webViewID, _):
+            return resolveWebView(with: webViewID) != nil
+        }
+    }
+
+    @discardableResult
+    private func executeDeferredProtectedCommand(
+        _ command: DeferredWebViewCommand,
+        sourceWebViewID: ObjectIdentifier
+    ) -> Bool {
+        guard isDeferredProtectedCommandValid(command) else {
+            return false
+        }
+
+        RuntimeDiagnostics.swipeTrace(
+            "executeDeferredCommand sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)}"
+        )
+
+        switch command {
+        case .attachHost(let tabID, let windowID, let webViewID, let destination):
+            guard let host = resolveHost(
+                    tabID: tabID,
+                    windowID: windowID,
+                    expectedWebViewID: webViewID
+                  ),
+                  let container = resolveCompositorPane(destination, in: windowID)
+            else {
+                return false
+            }
+            _ = attachHost(host, to: container)
+        case .removeWebViewFromContainers(let webViewID):
+            guard let webView = resolveWebView(with: webViewID) else {
+                return false
+            }
+            removeWebViewFromContainers(webView)
+        case .removeAllWebViews(let tabID):
+            guard let tab = resolvedTab(with: tabID) else {
+                return false
+            }
+            _ = removeAllWebViews(for: tab)
+        case .cleanupWindow(let windowID):
+            guard let tabManager = browserManager?.tabManager else {
+                return false
+            }
+            cleanupWindow(windowID, tabManager: tabManager)
+        case .cleanupAllWebViews:
+            guard let tabManager = browserManager?.tabManager else {
+                return false
+            }
+            cleanupAllWebViews(tabManager: tabManager)
+        case .rebuildLiveWebViews(let tabID, let preferredPrimaryWindowID):
+            guard let tab = resolvedTab(with: tabID) else {
+                return false
+            }
+            if #available(macOS 15.5, *) {
+                rebuildLiveWebViews(
+                    for: tab,
+                    preferredPrimaryWindowId: preferredPrimaryWindowID
+                )
+            }
+        case .evictHiddenWebViews(let windowID):
+            guard let browserManager,
+                  browserManager.windowRegistry?.windows[windowID] != nil
+            else {
+                return false
+            }
+            evictHiddenWebViewsIfNeeded(
+                in: windowID,
+                visibleTabIDs: visibleTabIDSet(
+                    in: windowID,
+                    browserManager: browserManager
+                ),
+                tabManager: browserManager.tabManager
+            )
+        case .cleanupTabWebView(let webViewID, let tabID):
+            guard let webView = resolveWebView(with: webViewID) else {
+                return false
+            }
+            if let tab = resolvedTab(with: tabID) {
+                tab.cleanupCloneWebView(webView)
+            } else {
+                performFallbackWebViewCleanup(
+                    webView,
+                    tabId: tabID,
+                    browserManager: browserManager
+                )
+            }
+        case .performFallbackWebViewCleanup(let webViewID, let tabID):
+            guard let webView = resolveWebView(with: webViewID) else {
+                return false
+            }
+            performFallbackWebViewCleanup(
+                webView,
+                tabId: tabID,
+                browserManager: browserManager
+            )
+        }
+
+        return true
+    }
+
+    private func dropDeferredProtectedCommand(
+        _ command: DeferredWebViewCommand,
+        sourceWebViewID: ObjectIdentifier,
+        reason: String
+    ) {
+        PerformanceTrace.emitEvent("WebViewCoordinator.dropDeferredProtectedCommand")
+        RuntimeDiagnostics.swipeTrace(
+            "dropDeferredCommand reason=\(reason) sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)}"
+        )
+    }
 
     private func visibleTabIDs(
         for windowState: BrowserWindowState,
@@ -1221,6 +1752,7 @@ class WebViewCoordinator {
     ) {
         let owner = TrackedWebViewOwner(tabID: tabId, windowID: windowId)
         let webViewID = ObjectIdentifier(webView)
+        noteWeakWebView(webView)
 
         if let existingOwner = webViewOwnersByIdentifier[webViewID],
            existingOwner != owner
@@ -1290,6 +1822,7 @@ class WebViewCoordinator {
             removeTabFromVisibilityHistory(owner.tabID, in: owner.windowID)
         }
         cleanupEmptyTrackingBuckets(for: owner.tabID)
+        pruneInvalidDeferredProtectedCommands(reason: "unregisterTrackedWebViewSlot")
         assertTrackingConsistency("unregisterTrackedWebViewSlot")
         return resolvedWebView
     }
@@ -1429,20 +1962,10 @@ class WebViewCoordinator {
 
         for (owner, webView) in hiddenEntries {
             if isWebViewProtectedFromCompositorMutation(webView) {
-                _ = deferProtectedWebViewMutation(
-                    webView,
-                    reason: "evictHiddenWebViews",
-                    operation: { [weak self, weak tabManager] in
-                        guard let self, let tabManager else { return }
-                        self.evictHiddenWebViewsIfNeeded(
-                            in: windowId,
-                            visibleTabIDs: self.visibleTabIDSet(
-                                in: windowId,
-                                browserManager: tabManager.browserManager
-                            ),
-                            tabManager: tabManager
-                        )
-                    }
+                _ = enqueueDeferredProtectedCommand(
+                    .evictHiddenWebViews(windowID: windowId),
+                    for: webView,
+                    reason: "evictHiddenWebViews"
                 )
                 continue
             }
@@ -1577,17 +2100,13 @@ class WebViewCoordinator {
         tabId: UUID,
         browserManager: BrowserManager?
     ) {
-        if deferProtectedWebViewMutation(
-            webView,
-            reason: "performFallbackWebViewCleanup",
-            operation: { [weak self, weak webView, weak browserManager] in
-                guard let self, let webView else { return }
-                self.performFallbackWebViewCleanup(
-                    webView,
-                    tabId: tabId,
-                    browserManager: browserManager
-                )
-            }
+        if enqueueDeferredProtectedCommand(
+            .performFallbackWebViewCleanup(
+                webViewID: ObjectIdentifier(webView),
+                tabID: tabId
+            ),
+            for: webView,
+            reason: "performFallbackWebViewCleanup"
         ) {
             return
         }

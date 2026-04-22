@@ -1001,6 +1001,9 @@ private class ContainerView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
 
+        singlePaneView.identifier = CompositorPaneDestination.single.viewIdentifier
+        leftPaneView.identifier = CompositorPaneDestination.left.viewIdentifier
+        rightPaneView.identifier = CompositorPaneDestination.right.viewIdentifier
         singlePaneView.autoresizingMask = [.width, .height]
         leftPaneView.wantsLayer = true
         rightPaneView.wantsLayer = true
