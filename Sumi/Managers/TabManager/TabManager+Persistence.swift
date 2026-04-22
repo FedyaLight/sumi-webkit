@@ -472,7 +472,14 @@ extension TabManager {
         }
     }
 
+    @discardableResult
+    public nonisolated func flushRuntimeStatePersistenceAwaitingResult() async -> Int {
+        await runtimeStateCoalescer.flushImmediately()
+    }
+
     private nonisolated func persistFullSnapshotNow(reason _: String) async -> Bool {
+        _ = await flushRuntimeStatePersistenceAwaitingResult()
+
         let signpostState = PerformanceTrace.beginInterval("TabManager.persistFullSnapshotNow")
         defer {
             PerformanceTrace.endInterval("TabManager.persistFullSnapshotNow", signpostState)
@@ -514,55 +521,30 @@ extension TabManager {
     func scheduleRuntimeStatePersistence(for tab: Tab) {
         guard shouldPersistRuntimeState(for: tab) else { return }
 
-        let tabID = tab.id
         if let spaceId = tab.spaceId {
             markRegularTabsSnapshotDirty(for: spaceId)
         }
-        let debounceDelay = runtimeStatePersistDebounceNanoseconds
-        pendingRuntimeStatePersistTasks[tabID]?.cancel()
-        pendingRuntimeStatePersistTasks[tabID] = Task { [weak self, weak tab] in
-            do {
-                try await Task.sleep(nanoseconds: debounceDelay)
-            } catch {
-                return
-            }
 
-            guard let self, let tab else { return }
-            self.pendingRuntimeStatePersistTasks.removeValue(forKey: tabID)
-            await self.persistRuntimeStateNow(for: tab)
-        }
+        let payload = TabSnapshotRepository.RuntimeTabState(
+            id: tab.id,
+            urlString: tab.url.absoluteString,
+            currentURLString: tab.url.absoluteString,
+            name: tab.name,
+            canGoBack: tab.canGoBack,
+            canGoForward: tab.canGoForward
+        )
+        PerformanceTrace.emitEvent("TabManager.runtimeState.enqueue")
+        runtimeStateCoalescer.enqueue(payload)
     }
 
     func cancelRuntimeStatePersistence(for tabId: UUID) {
-        pendingRuntimeStatePersistTasks[tabId]?.cancel()
-        pendingRuntimeStatePersistTasks.removeValue(forKey: tabId)
+        runtimeStateCoalescer.cancel(tabID: tabId)
     }
 
     private func shouldPersistRuntimeState(for tab: Tab) -> Bool {
         guard tab.isShortcutLiveInstance == false else { return false }
         guard tab.isPinned == false, tab.isSpacePinned == false else { return false }
         return tab.spaceId != nil
-    }
-
-    private nonisolated func persistRuntimeStateNow(for tab: Tab) async {
-        let signpostState = PerformanceTrace.beginInterval("TabManager.persistRuntimeStateNow")
-        defer {
-            PerformanceTrace.endInterval("TabManager.persistRuntimeStateNow", signpostState)
-        }
-
-        let payload: TabSnapshotRepository.RuntimeTabState? = await MainActor.run {
-            guard self.shouldPersistRuntimeState(for: tab) else { return nil }
-            return TabSnapshotRepository.RuntimeTabState(
-                id: tab.id,
-                urlString: tab.url.absoluteString,
-                currentURLString: tab.url.absoluteString,
-                name: tab.name,
-                canGoBack: tab.canGoBack,
-                canGoForward: tab.canGoForward
-            )
-        }
-        guard let payload else { return }
-        await persistence.persistRuntimeState(payload)
     }
 
     func _buildSnapshot() -> TabSnapshotRepository.Snapshot {

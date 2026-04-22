@@ -21,6 +21,7 @@ class TabManager: ObservableObject {
     weak var sumiSettings: SumiSettingsService?
     let context: ModelContext
     let persistence: TabSnapshotRepository
+    let runtimeStateCoalescer: RuntimeStateCoalescer
 
     lazy var tabRepository = TabRepositoryService(tabManager: self)
     lazy var runtimeStore = DefaultTabRuntimeStore(tabManager: self)
@@ -230,7 +231,14 @@ class TabManager: ObservableObject {
     ) {
         self.browserManager = browserManager
         self.context = context
-        self.persistence = TabSnapshotRepository(container: context.container)
+        let persistence = TabSnapshotRepository(container: context.container)
+        self.persistence = persistence
+        self.runtimeStateCoalescer = RuntimeStateCoalescer(
+            debounceNanoseconds: Self.defaultRuntimeStatePersistDebounceNanoseconds,
+            persistBatch: { runtimeStates in
+                await persistence.persistRuntimeStates(runtimeStates)
+            }
+        )
         if loadPersistedState {
             Task { @MainActor in
                 loadFromStore()
@@ -245,8 +253,6 @@ class TabManager: ObservableObject {
             scheduledStructuralPersistTask = nil
             startupRestoreTask?.cancel()
             startupRestoreTask = nil
-            pendingRuntimeStatePersistTasks.values.forEach { $0.cancel() }
-            pendingRuntimeStatePersistTasks.removeAll()
             tabsBySpace.removeAll()
             spacePinnedShortcuts.removeAll()
             foldersBySpace.removeAll()
@@ -1190,8 +1196,8 @@ class TabManager: ObservableObject {
     var structuralDirtySet = TabStructuralDirtySet()
     var snapshotCache = TabManagerSnapshotCache()
     var startupRestoreTask: Task<Void, Never>?
-    var pendingRuntimeStatePersistTasks: [UUID: Task<Void, Never>] = [:]
-    let runtimeStatePersistDebounceNanoseconds: UInt64 = 250_000_000
+    static let defaultRuntimeStatePersistDebounceNanoseconds: UInt64 = 250_000_000
+    let runtimeStatePersistDebounceNanoseconds: UInt64 = TabManager.defaultRuntimeStatePersistDebounceNanoseconds
 }
 
 extension TabManager {

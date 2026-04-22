@@ -178,31 +178,40 @@ actor TabSnapshotRepository {
         }
     }
 
-    func persistRuntimeState(_ runtimeState: RuntimeTabState) async {
-        let signpostState = PerformanceTrace.beginInterval("TabSnapshotRepository.persistRuntimeState")
+    func persistRuntimeStates(_ runtimeStates: [RuntimeTabState]) async {
+        let signpostState = PerformanceTrace.beginInterval("TabSnapshotRepository.persistRuntimeStates")
         defer {
-            PerformanceTrace.endInterval("TabSnapshotRepository.persistRuntimeState", signpostState)
+            PerformanceTrace.endInterval("TabSnapshotRepository.persistRuntimeStates", signpostState)
         }
+
+        let latestByTabID = Dictionary(runtimeStates.map { ($0.id, $0) }) { _, latest in latest }
+        let deduplicatedStates = latestByTabID.values.sorted {
+            $0.id.uuidString < $1.id.uuidString
+        }
+        guard deduplicatedStates.isEmpty == false else { return }
 
         let ctx = ModelContext(container)
         ctx.autosaveEnabled = false
 
         do {
-            let tabID = runtimeState.id
-            let predicate = #Predicate<TabEntity> { $0.id == tabID }
-            guard let existing = try ctx.fetch(FetchDescriptor<TabEntity>(predicate: predicate)).first else {
-                return
+            var didUpdate = false
+            for runtimeState in deduplicatedStates {
+                let tabID = runtimeState.id
+                let predicate = #Predicate<TabEntity> { $0.id == tabID }
+                guard let existing = try ctx.fetch(FetchDescriptor<TabEntity>(predicate: predicate)).first else {
+                    continue
+                }
+
+                applyRuntimeState(runtimeState, to: existing)
+                didUpdate = true
             }
 
-            existing.urlString = runtimeState.urlString
-            existing.currentURLString = runtimeState.currentURLString
-            existing.name = runtimeState.name
-            existing.canGoBack = runtimeState.canGoBack
-            existing.canGoForward = runtimeState.canGoForward
-            try ctx.save()
+            if didUpdate {
+                try ctx.save()
+            }
         } catch {
             Self.log.error(
-                "[persistRuntimeState] Failed for tab=\(runtimeState.id.uuidString, privacy: .public): \(String(describing: error), privacy: .public)"
+                "[persistRuntimeStates] Failed for count=\(deduplicatedStates.count, privacy: .public): \(String(describing: error), privacy: .public)"
             )
         }
     }
@@ -445,6 +454,14 @@ actor TabSnapshotRepository {
             )
             ctx.insert(entity)
         }
+    }
+
+    private func applyRuntimeState(_ runtimeState: RuntimeTabState, to existing: TabEntity) {
+        existing.urlString = runtimeState.urlString
+        existing.currentURLString = runtimeState.currentURLString
+        existing.name = runtimeState.name
+        existing.canGoBack = runtimeState.canGoBack
+        existing.canGoForward = runtimeState.canGoForward
     }
 
     private func upsertFolder(in ctx: ModelContext, _ folder: SnapshotFolder, existing: FolderEntity? = nil) {

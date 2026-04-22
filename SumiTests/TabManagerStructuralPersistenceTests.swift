@@ -101,6 +101,33 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         }
     }
 
+    func testRuntimeStateBatchFlushUpdatesStoredTabFields() async throws {
+        let container = try makeInMemoryContainer()
+        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let space = tabManager.createSpace(name: "Runtime", profileId: UUID())
+        let tab = tabManager.createNewTab(url: "https://example.com/initial", in: space, activate: true)
+
+        let didPersistInitial = await tabManager.flushStructuralPersistenceAwaitingResult()
+        XCTAssertTrue(didPersistInitial)
+
+        tab.url = try XCTUnwrap(URL(string: "https://example.com/runtime"))
+        tab.name = "Runtime Updated"
+        tab.canGoBack = true
+        tab.canGoForward = true
+
+        tabManager.scheduleRuntimeStatePersistence(for: tab)
+        let flushedCount = await tabManager.flushRuntimeStatePersistenceAwaitingResult()
+
+        XCTAssertEqual(flushedCount, 1)
+        let context = ModelContext(container)
+        let storedTab = try XCTUnwrap(fetchTab(tab.id, in: context))
+        XCTAssertEqual(storedTab.urlString, "https://example.com/runtime")
+        XCTAssertEqual(storedTab.currentURLString, "https://example.com/runtime")
+        XCTAssertEqual(storedTab.name, "Runtime Updated")
+        XCTAssertTrue(storedTab.canGoBack)
+        XCTAssertTrue(storedTab.canGoForward)
+    }
+
     func testFullReconcileDeletesStaleEntitiesAndPreservesFolders() async throws {
         let container = try makeInMemoryContainer()
         let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)

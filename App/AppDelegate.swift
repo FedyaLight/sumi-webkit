@@ -233,6 +233,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
                 AppDelegate.log.info("Termination: MainActor task began")
 
+                let runtimePersistStart = CFAbsoluteTimeGetCurrent()
+                let flushedRuntimeStates = await persistenceHandler.tabRepository
+                    .flushRuntimeStatePersistenceAwaitingResult()
+                let rdt = CFAbsoluteTimeGetCurrent() - runtimePersistStart
+                AppDelegate.log.info(
+                    "Runtime-state persistence flushed \(flushedRuntimeStates) tab(s) in \(String(format: "%.3f", rdt))s"
+                )
+
                 let persistStart = CFAbsoluteTimeGetCurrent()
                 let atomic: Bool = await persistenceHandler.tabRepository.persistFullReconcileAwaitingResult(
                     reason: "app termination"
