@@ -194,7 +194,7 @@ extension TabManager {
     func convertShortcutPinToRegularTab(_ pin: ShortcutPin, in targetSpaceId: UUID, at targetIndex: Int? = nil) {
         _ = insertRegularTabFromShortcut(pin, into: targetSpaceId, at: targetIndex)
         removeShortcutPinFromContainers(pin)
-        persistSnapshot()
+        scheduleStructuralPersistence()
     }
 
     @discardableResult
@@ -266,7 +266,7 @@ extension TabManager {
         if let inserted {
             updateTransientShortcutBindings(for: inserted)
         }
-        persistSnapshot()
+        scheduleStructuralPersistence()
         return inserted
     }
 
@@ -299,7 +299,7 @@ extension TabManager {
         } else {
             removeTab(tab.id)
         }
-        persistSnapshot()
+        scheduleStructuralPersistence()
         return insertedPin
     }
 
@@ -408,7 +408,7 @@ extension TabManager {
              (.folder, .spaceRegular(let targetSpaceId)):
             removeShortcutPinFromContainers(pin)
             _ = insertRegularTabFromShortcut(pin, into: targetSpaceId, at: operation.toIndex)
-            persistSnapshot()
+            scheduleStructuralPersistence()
 
         case (.spaceRegular, .essentials),
              (.spaceRegular, .spacePinned),

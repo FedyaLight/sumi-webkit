@@ -44,7 +44,7 @@ extension TabManager {
         }
 
         spaces.append(space)
-        markSpacesSnapshotDirty()
+        markAllSpacesStructurallyDirty()
         setTabs([], for: space.id)
 
         if currentSpace == nil {
@@ -52,7 +52,7 @@ extension TabManager {
         } else {
             setActiveSpace(space)
         }
-        persistSnapshot()
+        scheduleStructuralPersistence()
         return space
     }
 
@@ -70,6 +70,7 @@ extension TabManager {
         }
 
         setTabs([], for: id)
+        markSpaceStructurallyDeleted(id)
         foldersBySpace.removeValue(forKey: id)
         spacePinnedShortcuts.removeValue(forKey: id)
         markFoldersSnapshotDirty(for: id)
@@ -82,14 +83,14 @@ extension TabManager {
 
         if idx < spaces.count {
             spaces.remove(at: idx)
-            markSpacesSnapshotDirty()
+            markAllSpacesStructurallyDirty()
         }
 
         if currentSpace?.id == id {
             currentSpace = spaces.first
         }
 
-        persistSnapshot()
+        scheduleStructuralPersistence()
         browserManager?.validateWindowStates()
     }
 
@@ -172,7 +173,7 @@ extension TabManager {
         if targetTab?.id == space.activeTabId {
             markSpacesSnapshotDirty()
         }
-        persistSnapshot()
+        persistSelection()
 
     }
 
@@ -185,8 +186,8 @@ extension TabManager {
         if currentSpace?.id == spaceId {
             currentSpace?.name = newName
         }
-        markSpacesSnapshotDirty()
-        persistSnapshot()
+        markAllSpacesStructurallyDirty()
+        scheduleStructuralPersistence()
     }
 
     func updateSpaceIcon(spaceId: UUID, icon: String) throws {
@@ -199,7 +200,7 @@ extension TabManager {
         if currentSpace?.id == spaceId {
             currentSpace?.icon = normalized
         }
-        markSpacesSnapshotDirty()
-        persistSnapshot()
+        markAllSpacesStructurallyDirty()
+        scheduleStructuralPersistence()
     }
 }

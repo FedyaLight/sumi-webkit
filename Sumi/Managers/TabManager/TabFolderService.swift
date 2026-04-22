@@ -23,15 +23,15 @@ final class TabFolderService {
         folders.append(folder)
         tabManager.setFolders(folders, for: spaceId)
 
-        tabManager.persistSnapshot()
+        tabManager.scheduleStructuralPersistence()
         return folder
     }
 
     func renameFolder(_ folderId: UUID, newName: String) {
         guard let folder = tabManager.folder(by: folderId) else { return }
         folder.name = newName
-        tabManager.markFoldersSnapshotDirty(for: folder.spaceId)
-        tabManager.persistSnapshot()
+        tabManager.markFoldersStructurallyDirty(for: folder.spaceId)
+        tabManager.scheduleStructuralPersistence()
     }
 
     func updateFolderIcon(_ folderId: UUID, icon: String) {
@@ -39,8 +39,8 @@ final class TabFolderService {
         guard let folder = tabManager.folder(by: folderId) else { return }
 
         folder.icon = SumiZenFolderIconCatalog.normalizedFolderIconValue(trimmedIcon)
-        tabManager.markFoldersSnapshotDirty(for: folder.spaceId)
-        tabManager.persistSnapshot()
+        tabManager.markFoldersStructurallyDirty(for: folder.spaceId)
+        tabManager.scheduleStructuralPersistence()
     }
 
     func deleteFolder(_ folderId: UUID) {
@@ -59,7 +59,7 @@ final class TabFolderService {
             tab.isSpacePinned = true
             movedTabsCount += 1
         }
-        tabManager.markRegularTabsSnapshotDirty(for: spaceId)
+        tabManager.markRegularTabsStructurallyDirty(for: spaceId)
 
         let existingPins = tabManager.spacePinnedPins(for: spaceId)
         if existingPins.isEmpty == false {
@@ -87,7 +87,7 @@ final class TabFolderService {
             for: spaceId
         )
 
-        tabManager.persistSnapshot()
+        tabManager.scheduleStructuralPersistence()
     }
 
     func folders(for spaceId: UUID) -> [TabFolder] {
@@ -100,8 +100,8 @@ final class TabFolderService {
     func toggleFolder(_ folderId: UUID) {
         guard let folder = tabManager.folder(by: folderId) else { return }
         folder.isOpen.toggle()
-        tabManager.markFoldersSnapshotDirty(for: folder.spaceId)
-        tabManager.persistSnapshot()
+        tabManager.markFoldersStructurallyDirty(for: folder.spaceId)
+        tabManager.scheduleStructuralPersistence()
     }
 
     func revealFolderForDrag(_ folderId: UUID) {
@@ -119,8 +119,8 @@ final class TabFolderService {
         }
 
         if didChange {
-            tabManager.markFoldersSnapshotDirty(for: spaceId)
-            tabManager.persistSnapshot()
+            tabManager.markFoldersStructurallyDirty(for: spaceId)
+            tabManager.scheduleStructuralPersistence()
         }
     }
 
@@ -128,6 +128,7 @@ final class TabFolderService {
         guard let targetFolder = tabManager.folder(by: folderId) else { return }
 
         targetFolder.isOpen = true
+        tabManager.markFoldersStructurallyDirty(for: targetFolder.spaceId)
         let targetIndex = tabManager.folderPinnedPins(for: folderId, in: targetFolder.spaceId).count
 
         if let shortcutId = tab.shortcutPinId,
@@ -173,6 +174,6 @@ final class TabFolderService {
         tabManager.withSpacePinnedShortcutGroup(for: spaceId, folderId: folderId) { pins in
             pins = folderPins
         }
-        tabManager.persistSnapshot()
+        tabManager.scheduleStructuralPersistence()
     }
 }

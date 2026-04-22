@@ -105,9 +105,9 @@ extension BrowserManager {
             syncWorkspaceThemeAcrossWindows: { [weak self] space, animate in
                 self?.syncWorkspaceThemeAcrossWindows(for: space, animate: animate)
             },
-            persistSnapshot: { [weak self] in
-                self?.tabManager.markSpacesSnapshotDirty()
-                self?.tabManager.persistSnapshot()
+            scheduleStructuralPersistence: { [weak self] in
+                self?.tabManager.markAllSpacesStructurallyDirty()
+                self?.tabManager.scheduleStructuralPersistence()
             },
             presentPicker: { [weak self] session in
                 self?.workspaceThemePickerSession = session

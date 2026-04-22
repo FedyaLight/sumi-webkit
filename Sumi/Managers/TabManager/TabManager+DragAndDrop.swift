@@ -84,7 +84,7 @@ extension TabManager {
                 existingTab.index = index
             }
             setTabs(regularTabs, for: targetSpaceId)
-            persistSnapshot()
+            scheduleStructuralPersistence()
 
         case (.spaceRegular, .essentials), (.spacePinned, .essentials):
             guard let profileId = resolvedEssentialsProfileId(for: operation) else { return }
@@ -109,7 +109,7 @@ extension TabManager {
                 existingTab.index = index
             }
             setTabs(regularTabs, for: spaceId)
-            persistSnapshot()
+            scheduleStructuralPersistence()
 
         case (.essentials, .spacePinned(let spaceId)):
             _ = convertTabToShortcutPin(
@@ -167,7 +167,7 @@ extension TabManager {
                 existingTab.index = index
             }
             setTabs(regularTabs, for: spaceId)
-            persistSnapshot()
+            scheduleStructuralPersistence()
 
         case (.spaceRegular(let spaceId), .folder(let toFolderId)):
             let targetSpaceId = folderSpaceId(for: toFolderId) ?? spaceId
@@ -242,7 +242,7 @@ extension TabManager {
         }
 
         setTabs(regularTabs, for: spaceId)
-        persistSnapshot()
+        scheduleStructuralPersistence()
     }
 
     func moveTab(_ tabId: UUID, to targetSpaceId: UUID) {
@@ -275,7 +275,7 @@ extension TabManager {
         targetTab.index = tempIndex
 
         setTabs(tabs, for: spaceId)
-        persistSnapshot()
+        scheduleStructuralPersistence()
     }
 
     func moveTabDown(_ tabId: UUID) {
@@ -291,7 +291,7 @@ extension TabManager {
         targetTab.index = tempIndex
 
         setTabs(tabs, for: spaceId)
-        persistSnapshot()
+        scheduleStructuralPersistence()
     }
 
     private func handleFolderDragOperation(_ folder: TabFolder, operation: DragOperation) {
@@ -313,7 +313,7 @@ extension TabManager {
         let safeIndex = max(0, min(adjustedIndex, pins.count))
         pins.insert(pin, at: safeIndex)
         setPinnedTabs(reindexed(pins), for: profileId)
-        persistSnapshot()
+        scheduleStructuralPersistence()
     }
 
     private func moveTabBetweenSpaces(
@@ -348,7 +348,7 @@ extension TabManager {
         }
 
         setTabs(regularTabs, for: toSpaceId)
-        persistSnapshot()
+        scheduleStructuralPersistence()
     }
 
     private func findSpaceForTab(_ tabId: UUID) -> UUID? {

@@ -27,7 +27,7 @@ extension TabManager {
         } else {
             removeTab(tab.id)
         }
-        persistSnapshot()
+        scheduleStructuralPersistence()
     }
 
     func unpinTab(_ tab: Tab) {
@@ -61,7 +61,7 @@ extension TabManager {
         for windowId in liveWindowIds {
             deactivateShortcutLiveTab(pinId: pin.id, in: windowId)
         }
-        persistSnapshot()
+        scheduleStructuralPersistence()
     }
 
     @discardableResult
@@ -91,7 +91,7 @@ extension TabManager {
             setPinnedTabs(reindexed(pins), for: profileId)
             if let inserted = pinnedByProfile[profileId]?.first(where: { $0.id == pin.id }) {
                 updateTransientShortcutBindings(for: inserted)
-                persistSnapshot()
+                scheduleStructuralPersistence()
                 return inserted
             }
         case .spacePinned:
@@ -114,7 +114,7 @@ extension TabManager {
 
             if let inserted = shortcutPin(by: pin.id) {
                 updateTransientShortcutBindings(for: inserted)
-                persistSnapshot()
+                scheduleStructuralPersistence()
                 return inserted
             }
         }
@@ -223,7 +223,7 @@ extension TabManager {
         if currentIndex < arr.count { arr.remove(at: currentIndex) }
         arr.insert(pin, at: max(0, min(index, arr.count)))
         setPinnedTabs(reindexed(arr), for: pid)
-        persistSnapshot()
+        scheduleStructuralPersistence()
     }
 
     func reorderRegular(_ tab: Tab, in spaceId: UUID, to index: Int) {
@@ -246,7 +246,7 @@ extension TabManager {
                 arr.insert(pin, at: max(0, min(adjustedIndex, arr.count)))
             }
         }
-        persistSnapshot()
+        scheduleStructuralPersistence()
     }
 
     // MARK: - Space-Level Pinned Tabs
@@ -299,7 +299,7 @@ extension TabManager {
                 }
             }
 
-            persistSnapshot()
+            scheduleStructuralPersistence()
             return
         }
 

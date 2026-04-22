@@ -1321,7 +1321,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
             windowRegistry: { registry },
             commitWorkspaceTheme: { _, _ in },
             syncWorkspaceThemeAcrossWindows: { _, _ in },
-            persistSnapshot: {},
+            scheduleStructuralPersistence: {},
             presentPicker: { presentedSession = $0 },
             dismissPicker: {},
             showDialog: { _, dialogSource in
@@ -1353,7 +1353,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
             windowRegistry: { nil },
             commitWorkspaceTheme: { _, _ in },
             syncWorkspaceThemeAcrossWindows: { _, _ in },
-            persistSnapshot: {},
+            scheduleStructuralPersistence: {},
             presentPicker: { _ in
                 XCTFail("Theme picker should not present without a current space")
             },

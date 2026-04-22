@@ -318,7 +318,7 @@ final class ShortcutRuntimeObservationTests: XCTestCase {
         )
 
         XCTAssertEqual(updatedPin.iconAsset, "🚀")
-        let didPersist = await tabManager.persistSnapshotAwaitingResult()
+        let didPersist = await tabManager.flushStructuralPersistenceAwaitingResult()
         XCTAssertTrue(didPersist)
 
         let verificationContext = ModelContext(container)
