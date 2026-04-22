@@ -26,9 +26,9 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertTrue(delegate.committedThemes.isEmpty)
     }
 
-    func testSetupWindowStateFallsBackToDefaultWhenLoadedSpaceIsMissing() throws {
+    func testSetupWindowStateFallsBackToDefaultWhenLoadedSpaceIsMissing() async throws {
         let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
-        tabManager.loadFromStore()
+        await tabManager.loadFromStoreAwaitingResult()
         XCTAssertTrue(tabManager.hasLoadedInitialData)
         tabManager.spaces = []
         tabManager.currentSpace = nil

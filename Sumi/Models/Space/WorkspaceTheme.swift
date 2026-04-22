@@ -3,7 +3,7 @@ import SwiftUI
 import AppKit
 #endif
 
-enum WorkspaceThemeColorAlgorithm: String, CaseIterable, Identifiable, Codable {
+enum WorkspaceThemeColorAlgorithm: String, CaseIterable, Identifiable, Codable, Sendable {
     case floating = "floating"
     case complementary = "complementary"
     case splitComplementary = "splitComplementary"
@@ -28,12 +28,12 @@ enum WorkspaceThemeColorAlgorithm: String, CaseIterable, Identifiable, Codable {
     }
 }
 
-enum WorkspaceThemeColorType: String, Codable, CaseIterable {
+enum WorkspaceThemeColorType: String, Codable, CaseIterable, Sendable {
     case explicitLightness = "explicit-lightness"
     case explicitBlackWhite = "explicit-black-white"
 }
 
-struct WorkspaceThemePosition: Codable, Hashable {
+struct WorkspaceThemePosition: Codable, Hashable, Sendable {
     var x: Double
     var y: Double
 
@@ -48,7 +48,7 @@ struct WorkspaceThemePosition: Codable, Hashable {
     static let monochrome = WorkspaceThemePosition(x: 0.66, y: 0.5)
 }
 
-struct WorkspaceThemeColor: Identifiable, Codable, Hashable {
+struct WorkspaceThemeColor: Identifiable, Codable, Hashable, Sendable {
     var id: UUID
     var hex: String
     var isCustom: Bool
@@ -91,7 +91,7 @@ struct WorkspaceThemeColor: Identifiable, Codable, Hashable {
     }
 }
 
-struct WorkspaceGradientTheme: Codable, Hashable {
+struct WorkspaceGradientTheme: Codable, Hashable, Sendable {
     static let minimumOpacity: Double = 0.30
     static let maximumOpacity: Double = 0.90
     static let textureSteps: Double = 16
@@ -311,7 +311,7 @@ struct WorkspaceGradientTheme: Codable, Hashable {
     }
 }
 
-struct WorkspaceThemeDraftSession: Identifiable, Equatable {
+struct WorkspaceThemeDraftSession: Identifiable, Equatable, Sendable {
     let id: UUID
     let spaceId: UUID
     var theme: WorkspaceTheme
@@ -323,7 +323,7 @@ struct WorkspaceThemeDraftSession: Identifiable, Equatable {
     }
 }
 
-struct WorkspaceTheme: Codable, Hashable {
+struct WorkspaceTheme: Codable, Hashable, Sendable {
     var gradientTheme: WorkspaceGradientTheme
 
     init(gradientTheme: WorkspaceGradientTheme = .default) {

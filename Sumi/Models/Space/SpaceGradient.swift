@@ -11,7 +11,7 @@ import AppKit
 #endif
 import SwiftUI
 
-struct SpaceGradient: Codable, Hashable {
+struct SpaceGradient: Codable, Hashable, Sendable {
     var angle: Double
     var nodes: [GradientNode]
     var grain: Double
