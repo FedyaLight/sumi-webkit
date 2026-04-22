@@ -5,6 +5,7 @@ import WebKit
 protocol TabRepository: AnyObject {
     func scheduleStructuralPersistence()
     func flushStructuralPersistenceAwaitingResult() async -> Bool
+    func flushRuntimeStatePersistenceAwaitingResult() async -> Int
     func persistFullReconcileAwaitingResult(reason: String) async -> Bool
 }
 
@@ -53,6 +54,10 @@ final class TabRepositoryService: TabRepository {
 
     func flushStructuralPersistenceAwaitingResult() async -> Bool {
         await tabManager.flushStructuralPersistenceAwaitingResult()
+    }
+
+    func flushRuntimeStatePersistenceAwaitingResult() async -> Int {
+        await tabManager.flushRuntimeStatePersistenceAwaitingResult()
     }
 
     func persistFullReconcileAwaitingResult(reason: String) async -> Bool {
