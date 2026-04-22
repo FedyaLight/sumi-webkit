@@ -41,7 +41,7 @@ final class WorkspaceAppearanceService {
         let windowRegistry: @MainActor () -> WindowRegistry?
         let commitWorkspaceTheme: @MainActor (WorkspaceTheme, BrowserWindowState) -> Void
         let syncWorkspaceThemeAcrossWindows: @MainActor (Space, Bool) -> Void
-        let persistSnapshot: @MainActor () -> Void
+        let scheduleStructuralPersistence: @MainActor () -> Void
         let presentPicker: @MainActor (WorkspaceThemePickerSession) -> Void
         let dismissPicker: @MainActor () -> Void
         let showDialog: @MainActor (AnyView, SidebarTransientPresentationSource?) -> Void
@@ -139,7 +139,7 @@ final class WorkspaceAppearanceService {
         guard let space = context.currentSpace() else { return }
         space.workspaceTheme.gradient = gradient
         context.syncWorkspaceThemeAcrossWindows(space, false)
-        context.persistSnapshot()
+        context.scheduleStructuralPersistence()
     }
 
     func applyWorkspaceThemePresetToCurrentSpace(
@@ -149,7 +149,7 @@ final class WorkspaceAppearanceService {
         guard let space = context.currentSpace() else { return }
         space.workspaceTheme = workspaceTheme
         context.syncWorkspaceThemeAcrossWindows(space, false)
-        context.persistSnapshot()
+        context.scheduleStructuralPersistence()
     }
 
     func previewGradientEditorSession(
@@ -176,7 +176,7 @@ final class WorkspaceAppearanceService {
         if session.commitsOnDismiss, session.hasPendingChanges {
             space.workspaceTheme = session.draftTheme
             context.syncWorkspaceThemeAcrossWindows(space, false)
-            context.persistSnapshot()
+            context.scheduleStructuralPersistence()
             return
         }
 

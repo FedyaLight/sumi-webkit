@@ -351,7 +351,8 @@ private struct SpaceTitleEmojiPickModifier: ViewModifier {
                 let picked = newValue
                 DispatchQueue.main.async {
                     space.icon = SumiPersistentGlyph.normalizedSpaceIconValue(picked)
-                    browserManager.tabManager.persistSnapshot()
+                    browserManager.tabManager.markAllSpacesStructurallyDirty()
+                    browserManager.tabManager.scheduleStructuralPersistence()
                 }
             }
     }

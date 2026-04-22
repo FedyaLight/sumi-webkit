@@ -234,10 +234,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
                 AppDelegate.log.info("Termination: MainActor task began")
 
                 let persistStart = CFAbsoluteTimeGetCurrent()
-                let atomic: Bool = await persistenceHandler.tabRepository.persistSnapshotAwaitingResult()
+                let atomic: Bool = await persistenceHandler.tabRepository.persistFullReconcileAwaitingResult(
+                    reason: "app termination"
+                )
                 let pdt = CFAbsoluteTimeGetCurrent() - persistStart
                 AppDelegate.log.info(
-                    "Atomic persistence \(atomic ? "succeeded" : "did not run; fallback used") in \(String(format: "%.3f", pdt))s"
+                    "Full reconcile persistence \(atomic ? "succeeded" : "did not run; fallback used") in \(String(format: "%.3f", pdt))s"
                 )
 
                 AppDelegate.log.info("Termination: MainActor finalize (context save + cleanup)")

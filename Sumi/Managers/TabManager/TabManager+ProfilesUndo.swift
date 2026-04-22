@@ -13,8 +13,8 @@ extension TabManager {
             didChange = true
         }
         if didChange {
-            markSpacesSnapshotDirty()
-            persistSnapshot()
+            markAllSpacesStructurallyDirty()
+            scheduleStructuralPersistence()
         }
         handleProfileSwitch()
     }
@@ -52,7 +52,7 @@ extension TabManager {
         if currentTab == nil || !(visible.contains { $0.id == currentTab!.id }) {
             currentTab = visible.first
             browserManager?.compositorManager.updateTabVisibility(currentTabId: currentTab?.id)
-            persistSnapshot()
+            persistSelection()
         } else {
             browserManager?.compositorManager.updateTabVisibility(currentTabId: currentTab?.id)
         }
@@ -79,8 +79,8 @@ extension TabManager {
         }
 
         if didAssign {
-            markSpacesSnapshotDirty()
-            persistSnapshot()
+            markAllSpacesStructurallyDirty()
+            scheduleStructuralPersistence()
         }
     }
 }
@@ -100,8 +100,8 @@ extension TabManager {
         }
 
         if didFix {
-            markSpacesSnapshotDirty()
-            persistSnapshot()
+            markAllSpacesStructurallyDirty()
+            scheduleStructuralPersistence()
         }
     }
 
@@ -125,8 +125,8 @@ extension TabManager {
             if currentSpace?.id == spaceId {
                 currentSpace?.profileId = profileId
             }
-            markSpacesSnapshotDirty()
-            persistSnapshot()
+            markAllSpacesStructurallyDirty()
+            scheduleStructuralPersistence()
         }
     }
 }
@@ -367,6 +367,6 @@ extension TabManager {
             }
         }
 
-        persistSnapshot()
+        scheduleStructuralPersistence()
     }
 }

@@ -57,7 +57,7 @@ class TabManager: ObservableObject {
     private var tabLookup: [UUID: Tab] = [:]
     private var transientTabLookupIDs: Set<UUID> = []
     private var attachedLiveTabIDs: Set<UUID> = []
-    /// Emitted when tab structure changes without a corresponding `@Published` update (e.g. transient shortcut live tabs). Not used for snapshot persistence completion—`persistSnapshot()` does not send this.
+    /// Emitted when tab structure changes without a corresponding `@Published` update (e.g. transient shortcut live tabs). Not used for snapshot persistence completion—`scheduleStructuralPersistence()` does not send this.
     let structuralChanges = PassthroughSubject<Void, Never>()
     // Space activation to resume after a deferred profile switch
     var pendingSpaceActivation: UUID?
@@ -131,7 +131,7 @@ class TabManager: ObservableObject {
         }
 
         insertedPin.refreshFromLiveTab(tab)
-        persistSnapshot()
+        scheduleStructuralPersistence()
         return insertedPin
     }
 
@@ -241,8 +241,8 @@ class TabManager: ObservableObject {
     deinit {
         // MEMORY LEAK FIX: Clean up all tab references and break potential cycles
         MainActor.assumeIsolated {
-            scheduledSnapshotPersistTask?.cancel()
-            scheduledSnapshotPersistTask = nil
+            scheduledStructuralPersistTask?.cancel()
+            scheduledStructuralPersistTask = nil
             pendingRuntimeStatePersistTasks.values.forEach { $0.cancel() }
             pendingRuntimeStatePersistTasks.removeAll()
             tabsBySpace.removeAll()
@@ -278,25 +278,32 @@ class TabManager: ObservableObject {
         }
         tabsBySpace[spaceId] = sortedItems
         markRegularTabsSnapshotDirty(for: spaceId)
+        recordRegularTabsStructuralChange(previous: previousTabs, current: sortedItems)
         replaceTabLookupEntries(removing: previousTabs, with: sortedItems)
         structuralChanges.send()
     }
 
     func setFolders(_ items: [TabFolder], for spaceId: UUID) {
+        let previousFolders = foldersBySpace[spaceId] ?? []
         foldersBySpace[spaceId] = items
         markFoldersSnapshotDirty(for: spaceId)
+        recordFoldersStructuralChange(previous: previousFolders, current: items)
         structuralChanges.send()
     }
 
     func setPinnedTabs(_ items: [ShortcutPin], for profileId: UUID) {
+        let previousPins = pinnedByProfile[profileId] ?? []
         pinnedByProfile[profileId] = items
         markPinnedSnapshotDirty(for: profileId)
+        recordShortcutPinsStructuralChange(previous: previousPins, current: items)
         structuralChanges.send()
     }
 
     func setSpacePinnedShortcuts(_ items: [ShortcutPin], for spaceId: UUID) {
+        let previousPins = spacePinnedShortcuts[spaceId] ?? []
         spacePinnedShortcuts[spaceId] = items
         markSpacePinnedSnapshotDirty(for: spaceId)
+        recordShortcutPinsStructuralChange(previous: previousPins, current: items)
         structuralChanges.send()
     }
 
@@ -504,7 +511,7 @@ class TabManager: ObservableObject {
         let safeIndex = max(0, min(adjustedIndex, items.count))
         items.insert(moving, at: safeIndex)
         applyTopLevelSpacePinnedOrder(items, for: spaceId)
-        persistSnapshot()
+        scheduleStructuralPersistence()
     }
 
     func withSpacePinnedShortcutGroup(
@@ -692,7 +699,7 @@ class TabManager: ObservableObject {
             if let folder = folders.first(where: { $0.id == folderId }) {
                 if !folder.isOpen {
                     folder.isOpen = true
-                    markFoldersSnapshotDirty(for: folder.spaceId)
+                    markFoldersStructurallyDirty(for: folder.spaceId)
                 }
                 return
             }
@@ -734,7 +741,7 @@ class TabManager: ObservableObject {
         }
         
         RuntimeDiagnostics.debug("Added regular tab '\(tab.name)' to space \(sid.uuidString).", category: "TabManager")
-        persistSnapshot()
+        scheduleStructuralPersistence()
     }
 
     func removeTab(_ id: UUID) {
@@ -836,7 +843,7 @@ class TabManager: ObservableObject {
             }
         }
 
-        persistSnapshot()
+        scheduleStructuralPersistence()
         
         // Validate window states after tab removal
         browserManager?.validateWindowStates()
@@ -953,8 +960,8 @@ class TabManager: ObservableObject {
             let defaultProfileId = browserManager?.currentProfile?.id ?? browserManager?.profileManager.profiles.first?.id
             if let pid = defaultProfileId {
                 ts.profileId = pid
-                markSpacesSnapshotDirty()
-                persistSnapshot()
+                markAllSpacesStructurallyDirty()
+                scheduleStructuralPersistence()
             }
         }
         let sid = targetSpace?.id
@@ -1034,8 +1041,8 @@ class TabManager: ObservableObject {
             let defaultProfileId = browserManager?.currentProfile?.id ?? browserManager?.profileManager.profiles.first?.id
             if let pid = defaultProfileId {
                 ts.profileId = pid
-                markSpacesSnapshotDirty()
-                persistSnapshot()
+                markAllSpacesStructurallyDirty()
+                scheduleStructuralPersistence()
             }
         }
         let sid = targetSpace?.id
@@ -1074,8 +1081,8 @@ class TabManager: ObservableObject {
             let defaultProfileId = browserManager?.currentProfile?.id ?? browserManager?.profileManager.profiles.first?.id
             if let pid = defaultProfileId {
                 ts.profileId = pid
-                markSpacesSnapshotDirty()
-                persistSnapshot()
+                markAllSpacesStructurallyDirty()
+                scheduleStructuralPersistence()
             }
         }
         let sid = targetSpace?.id
@@ -1116,10 +1123,10 @@ class TabManager: ObservableObject {
                 profileId: resolvedProfileId
             )
             spaces.append(personal)
-            markSpacesSnapshotDirty()
+            markAllSpacesStructurallyDirty()
             setTabs([], for: personal.id)
             currentSpace = personal
-            persistSnapshot()
+            scheduleStructuralPersistence()
             return personal
         } else {
             currentSpace = spaces.first
@@ -1170,10 +1177,11 @@ class TabManager: ObservableObject {
     }
 
     // Helper to safely mutate current profile's pinned array with reindexing
-    var snapshotGeneration: Int = 0
-    var scheduledSnapshotPersistTask: Task<Void, Never>?
-    var snapshotPersistRequestID: UInt64 = 0
-    let snapshotPersistDebounceNanoseconds: UInt64 = 250_000_000
+    var structuralPersistenceGeneration: Int = 0
+    var scheduledStructuralPersistTask: Task<Void, Never>?
+    var structuralPersistRequestID: UInt64 = 0
+    let structuralPersistDebounceNanoseconds: UInt64 = 250_000_000
+    var structuralDirtySet = TabStructuralDirtySet()
     var snapshotCache = TabManagerSnapshotCache()
     var pendingRuntimeStatePersistTasks: [UUID: Task<Void, Never>] = [:]
     let runtimeStatePersistDebounceNanoseconds: UInt64 = 250_000_000
@@ -1199,7 +1207,7 @@ extension TabManager {
                 arr.append(contentsOf: pendingPinnedWithoutProfile)
             }
             pendingPinnedWithoutProfile.removeAll()
-            persistSnapshot()
+            scheduleStructuralPersistence()
         }
         if let current = self.currentTab {
             if let match = visibleTabs.first(where: { $0.id == current.id }) {

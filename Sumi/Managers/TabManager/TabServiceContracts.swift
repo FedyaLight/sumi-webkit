@@ -3,8 +3,9 @@ import WebKit
 
 @MainActor
 protocol TabRepository: AnyObject {
-    func persistSnapshot()
-    func persistSnapshotAwaitingResult() async -> Bool
+    func scheduleStructuralPersistence()
+    func flushStructuralPersistenceAwaitingResult() async -> Bool
+    func persistFullReconcileAwaitingResult(reason: String) async -> Bool
 }
 
 @MainActor
@@ -46,12 +47,16 @@ final class TabRepositoryService: TabRepository {
         self.tabManager = tabManager
     }
 
-    func persistSnapshot() {
-        tabManager.persistSnapshot()
+    func scheduleStructuralPersistence() {
+        tabManager.scheduleStructuralPersistence()
     }
 
-    func persistSnapshotAwaitingResult() async -> Bool {
-        await tabManager.persistSnapshotAwaitingResult()
+    func flushStructuralPersistenceAwaitingResult() async -> Bool {
+        await tabManager.flushStructuralPersistenceAwaitingResult()
+    }
+
+    func persistFullReconcileAwaitingResult(reason: String) async -> Bool {
+        await tabManager.persistFullReconcileAwaitingResult(reason: reason)
     }
 }
 

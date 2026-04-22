@@ -254,68 +254,247 @@ struct TabManagerSnapshotCache {
     }
 }
 
+struct TabStructuralDirtySet: Sendable {
+    var dirtyTabIds: Set<UUID> = []
+    var dirtyFolderIds: Set<UUID> = []
+    var dirtySpaceIds: Set<UUID> = []
+    var deletedTabIds: Set<UUID> = []
+    var deletedFolderIds: Set<UUID> = []
+    var deletedSpaceIds: Set<UUID> = []
+    var needsFullReconcileReason: String?
+
+    var isEmpty: Bool {
+        dirtyTabIds.isEmpty
+            && dirtyFolderIds.isEmpty
+            && dirtySpaceIds.isEmpty
+            && deletedTabIds.isEmpty
+            && deletedFolderIds.isEmpty
+            && deletedSpaceIds.isEmpty
+            && needsFullReconcileReason == nil
+    }
+
+    var hasIncrementalChanges: Bool {
+        dirtyTabIds.isEmpty == false
+            || dirtyFolderIds.isEmpty == false
+            || dirtySpaceIds.isEmpty == false
+            || deletedTabIds.isEmpty == false
+            || deletedFolderIds.isEmpty == false
+            || deletedSpaceIds.isEmpty == false
+    }
+
+    mutating func markTabsDirty<S: Sequence>(_ ids: S) where S.Element == UUID {
+        for id in ids {
+            deletedTabIds.remove(id)
+            dirtyTabIds.insert(id)
+        }
+    }
+
+    mutating func markFoldersDirty<S: Sequence>(_ ids: S) where S.Element == UUID {
+        for id in ids {
+            deletedFolderIds.remove(id)
+            dirtyFolderIds.insert(id)
+        }
+    }
+
+    mutating func markSpacesDirty<S: Sequence>(_ ids: S) where S.Element == UUID {
+        for id in ids {
+            deletedSpaceIds.remove(id)
+            dirtySpaceIds.insert(id)
+        }
+    }
+
+    mutating func markTabsDeleted<S: Sequence>(_ ids: S) where S.Element == UUID {
+        for id in ids {
+            dirtyTabIds.remove(id)
+            deletedTabIds.insert(id)
+        }
+    }
+
+    mutating func markFoldersDeleted<S: Sequence>(_ ids: S) where S.Element == UUID {
+        for id in ids {
+            dirtyFolderIds.remove(id)
+            deletedFolderIds.insert(id)
+        }
+    }
+
+    mutating func markSpacesDeleted<S: Sequence>(_ ids: S) where S.Element == UUID {
+        for id in ids {
+            dirtySpaceIds.remove(id)
+            deletedSpaceIds.insert(id)
+        }
+    }
+
+    mutating func requestFullReconcile(reason: String) {
+        if needsFullReconcileReason == nil {
+            needsFullReconcileReason = reason
+        }
+    }
+
+    mutating func takePending() -> TabStructuralDirtySet {
+        let pending = self
+        self = TabStructuralDirtySet()
+        return pending
+    }
+
+    mutating func merge(_ other: TabStructuralDirtySet) {
+        dirtyTabIds.formUnion(other.dirtyTabIds)
+        dirtyFolderIds.formUnion(other.dirtyFolderIds)
+        dirtySpaceIds.formUnion(other.dirtySpaceIds)
+        deletedTabIds.formUnion(other.deletedTabIds)
+        deletedFolderIds.formUnion(other.deletedFolderIds)
+        deletedSpaceIds.formUnion(other.deletedSpaceIds)
+        if let reason = other.needsFullReconcileReason {
+            requestFullReconcile(reason: reason)
+        }
+    }
+}
+
 @MainActor
 extension TabManager {
-    public nonisolated func persistSnapshot() {
+    private enum StructuralPersistencePayload: Sendable {
+        case incremental(TabSnapshotRepository.StructuralDelta, TabStructuralDirtySet, Int)
+        case fullReconcile(String)
+    }
+
+    public nonisolated func scheduleStructuralPersistence() {
         Task { @MainActor [weak self] in
-            self?.scheduleSnapshotPersistence()
+            self?.scheduleStructuralPersistenceOnMain()
         }
     }
 
-    // Returns true if atomic path succeeded; false if fallback was used or stale.
-    public nonisolated func persistSnapshotAwaitingResult() async -> Bool {
+    public nonisolated func flushStructuralPersistenceAwaitingResult() async -> Bool {
         await MainActor.run { [weak self] in
-            self?.cancelScheduledSnapshotPersistence()
+            self?.cancelScheduledStructuralPersistence()
         }
-        return await persistSnapshotNow()
+        return await persistIncrementalStructuralNow()
     }
 
-    private func scheduleSnapshotPersistence() {
-        snapshotPersistRequestID &+= 1
-        let requestID = snapshotPersistRequestID
-        let debounceDelay = snapshotPersistDebounceNanoseconds
+    /// Explicit full reconcile path for restore, repair, migration, and incremental fallback only.
+    public nonisolated func persistFullReconcile(reason: String = "explicit full reconcile") {
+        Task { [weak self] in
+            _ = await self?.persistFullReconcileAwaitingResult(reason: reason)
+        }
+    }
 
-        scheduledSnapshotPersistTask?.cancel()
-        scheduledSnapshotPersistTask = Task { [weak self] in
+    public nonisolated func persistFullReconcileAwaitingResult(
+        reason: String = "explicit full reconcile"
+    ) async -> Bool {
+        await MainActor.run { [weak self] in
+            self?.cancelScheduledStructuralPersistence()
+        }
+        return await persistFullSnapshotNow(reason: reason)
+    }
+
+    /// Compatibility wrapper. Do not use for normal runtime mutations; call
+    /// `scheduleStructuralPersistence()` for the incremental hot path instead.
+    public nonisolated func persistSnapshot() {
+        persistFullReconcile(reason: "legacy persistSnapshot() call")
+    }
+
+    // Returns true if the full atomic path succeeded; false if fallback was used or stale.
+    public nonisolated func persistSnapshotAwaitingResult() async -> Bool {
+        await persistFullReconcileAwaitingResult(reason: "legacy persistSnapshotAwaitingResult() call")
+    }
+
+    private func scheduleStructuralPersistenceOnMain() {
+        structuralPersistRequestID &+= 1
+        let requestID = structuralPersistRequestID
+        let debounceDelay = structuralPersistDebounceNanoseconds
+
+        scheduledStructuralPersistTask?.cancel()
+        scheduledStructuralPersistTask = Task { [weak self] in
             do {
                 try await Task.sleep(nanoseconds: debounceDelay)
             } catch {
                 return
             }
 
-            await self?.executeScheduledSnapshotPersistence(requestID: requestID)
+            await self?.executeScheduledStructuralPersistence(requestID: requestID)
         }
     }
 
-    private func cancelScheduledSnapshotPersistence() {
-        snapshotPersistRequestID &+= 1
-        scheduledSnapshotPersistTask?.cancel()
-        scheduledSnapshotPersistTask = nil
+    private func cancelScheduledStructuralPersistence() {
+        structuralPersistRequestID &+= 1
+        scheduledStructuralPersistTask?.cancel()
+        scheduledStructuralPersistTask = nil
     }
 
-    private func executeScheduledSnapshotPersistence(requestID: UInt64) async {
-        guard snapshotPersistRequestID == requestID else { return }
-        scheduledSnapshotPersistTask = nil
-        _ = await persistSnapshotNow()
+    private func executeScheduledStructuralPersistence(requestID: UInt64) async {
+        guard structuralPersistRequestID == requestID else { return }
+        scheduledStructuralPersistTask = nil
+        _ = await persistIncrementalStructuralNow()
     }
 
-    private nonisolated func persistSnapshotNow() async -> Bool {
-        let signpostState = PerformanceTrace.beginInterval("TabManager.persistSnapshotNow")
+    private nonisolated func persistIncrementalStructuralNow() async -> Bool {
+        let signpostState = PerformanceTrace.beginInterval("TabManager.persistIncrementalStructuralNow")
         defer {
-            PerformanceTrace.endInterval("TabManager.persistSnapshotNow", signpostState)
+            PerformanceTrace.endInterval("TabManager.persistIncrementalStructuralNow", signpostState)
+        }
+
+        let payload: StructuralPersistencePayload? = await MainActor.run { [weak self] in
+            guard let strong = self else { return nil }
+            guard strong.structuralDirtySet.isEmpty == false else { return nil }
+
+            if let reason = strong.structuralDirtySet.needsFullReconcileReason {
+                strong.structuralDirtySet = TabStructuralDirtySet()
+                return .fullReconcile(reason)
+            }
+
+            let pending = strong.structuralDirtySet.takePending()
+            guard pending.hasIncrementalChanges else { return nil }
+
+            strong.structuralPersistenceGeneration &+= 1
+            let generation = strong.structuralPersistenceGeneration
+            let delta = strong._buildStructuralDelta(from: pending)
+            return .incremental(delta, pending, generation)
+        }
+
+        guard let payload else {
+            return true
+        }
+
+        switch payload {
+        case .fullReconcile(let reason):
+            return await persistFullSnapshotNow(reason: reason)
+        case .incremental(let delta, let consumedDirtySet, let generation):
+            let didPersist = await persistence.persistIncremental(delta: delta, generation: generation)
+            if didPersist {
+                return true
+            }
+
+            await MainActor.run { [weak self] in
+                self?.structuralDirtySet.merge(consumedDirtySet)
+                self?.structuralDirtySet.requestFullReconcile(
+                    reason: "incremental structural persistence failed"
+                )
+            }
+            return await persistFullSnapshotNow(reason: "incremental structural persistence failed")
+        }
+    }
+
+    private nonisolated func persistFullSnapshotNow(reason _: String) async -> Bool {
+        let signpostState = PerformanceTrace.beginInterval("TabManager.persistFullSnapshotNow")
+        defer {
+            PerformanceTrace.endInterval("TabManager.persistFullSnapshotNow", signpostState)
         }
 
         let payload: (TabSnapshotRepository.Snapshot, Int)? = await MainActor.run { [weak self] in
             guard let strong = self else { return nil }
-            strong.snapshotGeneration &+= 1
-            let generation = strong.snapshotGeneration
+            strong.structuralPersistenceGeneration &+= 1
+            let generation = strong.structuralPersistenceGeneration
             let snapshot = strong._buildSnapshot()
             return (snapshot, generation)
         }
         guard let (snapshot, generation) = payload else {
             return false
         }
-        return await persistence.persist(snapshot: snapshot, generation: generation)
+        let didPersist = await persistence.persistFullReconcile(snapshot: snapshot, generation: generation)
+        if didPersist {
+            await MainActor.run { [weak self] in
+                self?.structuralDirtySet = TabStructuralDirtySet()
+            }
+        }
+        return didPersist
     }
 
     /// Lightweight persistence for tab selection changes only.
@@ -392,12 +571,151 @@ extension TabManager {
         }
     }
 
+    func _buildStructuralDelta(
+        from dirtySet: TabStructuralDirtySet
+    ) -> TabSnapshotRepository.StructuralDelta {
+        TabSnapshotRepository.StructuralDelta(
+            spaces: makeDirtySpaceSnapshots(for: dirtySet.dirtySpaceIds),
+            tabs: makeDirtyTabSnapshots(for: dirtySet.dirtyTabIds),
+            folders: makeDirtyFolderSnapshots(for: dirtySet.dirtyFolderIds),
+            deletedSpaceIds: dirtySet.deletedSpaceIds,
+            deletedTabIds: dirtySet.deletedTabIds,
+            deletedFolderIds: dirtySet.deletedFolderIds,
+            state: TabSnapshotRepository.SnapshotState(
+                currentTabID: currentTab?.id,
+                currentSpaceID: currentSpace?.id
+            )
+        )
+    }
+
+    private func makeDirtySpaceSnapshots(for ids: Set<UUID>) -> [TabSnapshotRepository.SnapshotSpace] {
+        guard ids.isEmpty == false else { return [] }
+        return spaces.enumerated().compactMap { index, space in
+            guard ids.contains(space.id) else { return nil }
+            return TabSnapshotRepository.SnapshotSpace(
+                id: space.id,
+                name: space.name,
+                icon: space.icon,
+                index: index,
+                gradientData: space.gradient.encoded,
+                workspaceThemeData: space.workspaceTheme.encoded,
+                activeTabId: space.activeTabId,
+                profileId: space.profileId
+            )
+        }
+    }
+
+    private func makeDirtyTabSnapshots(for ids: Set<UUID>) -> [TabSnapshotRepository.SnapshotTab] {
+        guard ids.isEmpty == false else { return [] }
+        var snapshots: [TabSnapshotRepository.SnapshotTab] = []
+
+        for profileId in pinnedByProfile.keys.sorted(by: { $0.uuidString < $1.uuidString }) {
+            let orderedPins = Array(pinnedByProfile[profileId] ?? []).sorted { $0.index < $1.index }
+            for (index, pin) in orderedPins.enumerated() where ids.contains(pin.id) {
+                snapshots.append(
+                    TabSnapshotRepository.SnapshotTab(
+                        id: pin.id,
+                        urlString: pin.launchURL.absoluteString,
+                        name: pin.title,
+                        index: index,
+                        spaceId: nil,
+                        isPinned: true,
+                        isSpacePinned: false,
+                        profileId: profileId,
+                        folderId: nil,
+                        iconAsset: pin.iconAsset,
+                        currentURLString: pin.launchURL.absoluteString,
+                        canGoBack: false,
+                        canGoForward: false
+                    )
+                )
+            }
+        }
+
+        for space in spaces {
+            let shortcutPins = Array(spacePinnedShortcuts[space.id] ?? []).sorted { $0.index < $1.index }
+            for (index, pin) in shortcutPins.enumerated() where ids.contains(pin.id) {
+                snapshots.append(
+                    TabSnapshotRepository.SnapshotTab(
+                        id: pin.id,
+                        urlString: pin.launchURL.absoluteString,
+                        name: pin.title,
+                        index: index,
+                        spaceId: space.id,
+                        isPinned: false,
+                        isSpacePinned: true,
+                        profileId: nil,
+                        folderId: pin.folderId,
+                        iconAsset: pin.iconAsset,
+                        currentURLString: pin.launchURL.absoluteString,
+                        canGoBack: false,
+                        canGoForward: false
+                    )
+                )
+            }
+
+            let regularTabs = Array(tabsBySpace[space.id] ?? [])
+            for (index, tab) in regularTabs.enumerated() where ids.contains(tab.id) {
+                snapshots.append(
+                    TabSnapshotRepository.SnapshotTab(
+                        id: tab.id,
+                        urlString: tab.url.absoluteString,
+                        name: tab.name,
+                        index: index,
+                        spaceId: space.id,
+                        isPinned: false,
+                        isSpacePinned: false,
+                        profileId: nil,
+                        folderId: tab.folderId,
+                        iconAsset: nil,
+                        currentURLString: tab.url.absoluteString,
+                        canGoBack: tab.canGoBack,
+                        canGoForward: tab.canGoForward
+                    )
+                )
+            }
+        }
+
+        return snapshots
+    }
+
+    private func makeDirtyFolderSnapshots(for ids: Set<UUID>) -> [TabSnapshotRepository.SnapshotFolder] {
+        guard ids.isEmpty == false else { return [] }
+        var snapshots: [TabSnapshotRepository.SnapshotFolder] = []
+        for space in spaces {
+            let orderedFolders = (foldersBySpace[space.id] ?? []).sorted { $0.index < $1.index }
+            for (index, folder) in orderedFolders.enumerated() where ids.contains(folder.id) {
+                snapshots.append(
+                    TabSnapshotRepository.SnapshotFolder(
+                        id: folder.id,
+                        name: folder.name,
+                        icon: SumiZenFolderIconCatalog.normalizedFolderIconValue(folder.icon),
+                        color: folder.color.toHexString() ?? "#000000",
+                        spaceId: space.id,
+                        isOpen: folder.isOpen,
+                        index: index
+                    )
+                )
+            }
+        }
+        return snapshots
+    }
+
     func markSnapshotCacheDirty() {
         snapshotCache.invalidateAll()
     }
 
     func markSpacesSnapshotDirty() {
         snapshotCache.invalidateSpaces()
+    }
+
+    func markAllSpacesStructurallyDirty() {
+        markSpacesSnapshotDirty()
+        structuralDirtySet.markSpacesDirty(spaces.map(\.id))
+    }
+
+    func markSpaceStructurallyDeleted(_ spaceId: UUID) {
+        structuralDirtySet.markSpacesDeleted([spaceId])
     }
 
     func markPinnedSnapshotDirty(for profileId: UUID) {
@@ -412,8 +730,47 @@ extension TabManager {
         snapshotCache.invalidateRegularTabs(spaceId: spaceId)
     }
 
+    func markRegularTabsStructurallyDirty(for spaceId: UUID) {
+        markRegularTabsSnapshotDirty(for: spaceId)
+        structuralDirtySet.markTabsDirty((tabsBySpace[spaceId] ?? []).map(\.id))
+    }
+
     func markFoldersSnapshotDirty(for spaceId: UUID) {
         snapshotCache.invalidateFolders(spaceId: spaceId)
+    }
+
+    func markFoldersStructurallyDirty(for spaceId: UUID) {
+        markFoldersSnapshotDirty(for: spaceId)
+        structuralDirtySet.markFoldersDirty((foldersBySpace[spaceId] ?? []).map(\.id))
+    }
+
+    func requestFullStructuralReconcile(reason: String) {
+        structuralDirtySet.requestFullReconcile(reason: reason)
+    }
+
+    func resetStructuralDirtySet() {
+        structuralDirtySet = TabStructuralDirtySet()
+    }
+
+    func recordRegularTabsStructuralChange(previous: [Tab], current: [Tab]) {
+        let previousIds = Set(previous.map(\.id))
+        let currentIds = Set(current.map(\.id))
+        structuralDirtySet.markTabsDeleted(previousIds.subtracting(currentIds))
+        structuralDirtySet.markTabsDirty(current.map(\.id))
+    }
+
+    func recordFoldersStructuralChange(previous: [TabFolder], current: [TabFolder]) {
+        let previousIds = Set(previous.map(\.id))
+        let currentIds = Set(current.map(\.id))
+        structuralDirtySet.markFoldersDeleted(previousIds.subtracting(currentIds))
+        structuralDirtySet.markFoldersDirty(current.map(\.id))
+    }
+
+    func recordShortcutPinsStructuralChange(previous: [ShortcutPin], current: [ShortcutPin]) {
+        let previousIds = Set(previous.map(\.id))
+        let currentIds = Set(current.map(\.id))
+        structuralDirtySet.markTabsDeleted(previousIds.subtracting(currentIds))
+        structuralDirtySet.markTabsDirty(current.map(\.id))
     }
 
     func hasLiveRuntimeContent(in space: Space) -> Bool {
@@ -662,7 +1019,9 @@ extension TabManager {
                 needsSnapshotPersistence = true
             }
             if needsSnapshotPersistence {
-                persistSnapshot()
+                persistFullReconcile(reason: "restore normalization")
+            } else {
+                resetStructuralDirtySet()
             }
         } catch {
             RuntimeDiagnostics.debug("SwiftData load error: \(String(describing: error))", category: "TabManager")
