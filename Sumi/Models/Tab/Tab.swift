@@ -704,13 +704,10 @@ public class Tab: NSObject, Identifiable, ObservableObject, WKDownloadDelegate {
 
     /// MEMORY LEAK FIX: Comprehensive WebView cleanup to prevent memory leaks
     func cleanupCloneWebView(_ webView: WKWebView) {
-        if browserManager?.webViewCoordinator?.deferProtectedWebViewMutation(
+        if browserManager?.webViewCoordinator?.deferProtectedWebViewCleanup(
             webView,
+            tabID: id,
             reason: "Tab.cleanupCloneWebView",
-            operation: { [weak self, weak webView] in
-                guard let self, let webView else { return }
-                self.cleanupCloneWebView(webView)
-            }
         ) == true {
             return
         }
