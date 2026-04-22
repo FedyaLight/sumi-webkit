@@ -453,11 +453,201 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         }
     }
 
+    func testStartupRestoreCurrentFormatDoesNotPersistOrDuplicateAcrossRepeatedLoads() async throws {
+        let container = try makeInMemoryContainer()
+        let fixture = try insertCurrentFormatRestoreFixture(in: container)
+        let tabManager = TabManager(context: ModelContext(container), loadPersistedState: false)
+
+        await tabManager.persistence.debugResetPersistenceEvents()
+        let firstLoad = await tabManager.loadFromStoreAwaitingResult()
+        XCTAssertTrue(firstLoad)
+        try await waitPastStructuralDebounce()
+
+        let firstLoadEvents = await tabManager.persistence.debugPersistenceEventsSnapshot()
+        XCTAssertEqual(firstLoadEvents, [])
+        XCTAssertEqual(tabManager.spaces.map(\.id), [fixture.spaceAId, fixture.spaceBId])
+        XCTAssertEqual(tabManager.tabsBySpace[fixture.spaceAId]?.map(\.id), [fixture.firstTabId, fixture.secondTabId])
+        XCTAssertEqual(tabManager.currentSpace?.id, fixture.spaceAId)
+        XCTAssertEqual(tabManager.currentTab?.id, fixture.secondTabId)
+        try assertStoreShape(in: container, spaces: 2, folders: 1, tabs: 4)
+
+        await tabManager.persistence.debugResetPersistenceEvents()
+        let secondLoad = await tabManager.loadFromStoreAwaitingResult()
+        XCTAssertTrue(secondLoad)
+        try await waitPastStructuralDebounce()
+
+        let secondLoadEvents = await tabManager.persistence.debugPersistenceEventsSnapshot()
+        XCTAssertEqual(secondLoadEvents, [])
+        XCTAssertEqual(tabManager.spaces.map(\.id), [fixture.spaceAId, fixture.spaceBId])
+        XCTAssertEqual(tabManager.tabsBySpace[fixture.spaceAId]?.map(\.id), [fixture.firstTabId, fixture.secondTabId])
+        try assertStoreShape(in: container, spaces: 2, folders: 1, tabs: 4)
+    }
+
+    func testPostRestoreStructuralMutationPersistsOnceWithoutDuplicatingRestoredGraph() async throws {
+        let container = try makeInMemoryContainer()
+        let fixture = try insertCurrentFormatRestoreFixture(in: container)
+        let tabManager = TabManager(context: ModelContext(container), loadPersistedState: false)
+
+        let didLoad = await tabManager.loadFromStoreAwaitingResult()
+        XCTAssertTrue(didLoad)
+        try await waitPastStructuralDebounce()
+        await tabManager.persistence.debugResetPersistenceEvents()
+
+        let restoredSpace = try XCTUnwrap(tabManager.spaces.first { $0.id == fixture.spaceAId })
+        let created = tabManager.createNewTab(
+            url: "https://example.com/post-restore",
+            in: restoredSpace,
+            activate: false
+        )
+
+        let didPersist = await tabManager.flushStructuralPersistenceAwaitingResult()
+        XCTAssertTrue(didPersist)
+        let events = await tabManager.persistence.debugPersistenceEventsSnapshot()
+
+        XCTAssertEqual(events.map(\.kind), [.incremental])
+        XCTAssertNotNil(try fetchTab(created.id, in: ModelContext(container)))
+        try assertStoreShape(in: container, spaces: 2, folders: 1, tabs: 5)
+    }
+
+    func testStructuralTransactionPersistsFinalOrderOnce() async throws {
+        let container = try makeInMemoryContainer()
+        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let space = tabManager.createSpace(name: "Batch", profileId: UUID())
+        let first = tabManager.createNewTab(url: "https://example.com/one", in: space)
+        let second = tabManager.createNewTab(url: "https://example.com/two", in: space, activate: false)
+        let third = tabManager.createNewTab(url: "https://example.com/three", in: space, activate: false)
+
+        let didPersistInitial = await tabManager.flushStructuralPersistenceAwaitingResult()
+        XCTAssertTrue(didPersistInitial)
+        await tabManager.persistence.debugResetPersistenceEvents()
+
+        tabManager.withStructuralUpdateTransaction {
+            tabManager.reorderRegularTabs(first, in: space.id, to: 3)
+            tabManager.reorderRegularTabs(second, in: space.id, to: 3)
+        }
+
+        let didPersistBatch = await tabManager.flushStructuralPersistenceAwaitingResult()
+        XCTAssertTrue(didPersistBatch)
+        let events = await tabManager.persistence.debugPersistenceEventsSnapshot()
+
+        XCTAssertEqual(events.map(\.kind), [.incremental])
+        XCTAssertEqual(try fetchTab(third.id, in: ModelContext(container))?.index, 0)
+        XCTAssertEqual(try fetchTab(first.id, in: ModelContext(container))?.index, 1)
+        XCTAssertEqual(try fetchTab(second.id, in: ModelContext(container))?.index, 2)
+    }
+
     private func makeInMemoryContainer() throws -> ModelContainer {
         try ModelContainer(
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
+    }
+
+    private struct CurrentFormatRestoreFixture {
+        let profileId: UUID
+        let spaceAId: UUID
+        let spaceBId: UUID
+        let folderId: UUID
+        let firstTabId: UUID
+        let secondTabId: UUID
+        let pinnedTabId: UUID
+        let spacePinnedTabId: UUID
+    }
+
+    private func insertCurrentFormatRestoreFixture(
+        in container: ModelContainer
+    ) throws -> CurrentFormatRestoreFixture {
+        let fixture = CurrentFormatRestoreFixture(
+            profileId: UUID(),
+            spaceAId: UUID(),
+            spaceBId: UUID(),
+            folderId: UUID(),
+            firstTabId: UUID(),
+            secondTabId: UUID(),
+            pinnedTabId: UUID(),
+            spacePinnedTabId: UUID()
+        )
+        let context = ModelContext(container)
+        context.insert(
+            SpaceEntity(
+                id: fixture.spaceAId,
+                name: "A",
+                icon: "square.grid.2x2",
+                index: 0,
+                profileId: fixture.profileId
+            )
+        )
+        context.insert(
+            SpaceEntity(
+                id: fixture.spaceBId,
+                name: "B",
+                icon: "person.crop.circle",
+                index: 1,
+                profileId: fixture.profileId
+            )
+        )
+        context.insert(
+            FolderEntity(
+                id: fixture.folderId,
+                name: "Docs",
+                icon: "zen:book",
+                color: "#111111",
+                spaceId: fixture.spaceAId,
+                isOpen: true,
+                index: 0
+            )
+        )
+        context.insert(
+            TabEntity(
+                id: fixture.firstTabId,
+                urlString: "https://example.com/one",
+                name: "One",
+                isPinned: false,
+                index: 0,
+                spaceId: fixture.spaceAId
+            )
+        )
+        context.insert(
+            TabEntity(
+                id: fixture.secondTabId,
+                urlString: "https://example.com/two",
+                name: "Two",
+                isPinned: false,
+                index: 1,
+                spaceId: fixture.spaceAId
+            )
+        )
+        context.insert(
+            TabEntity(
+                id: fixture.pinnedTabId,
+                urlString: "https://example.com/pinned",
+                name: "Pinned",
+                isPinned: true,
+                index: 0,
+                spaceId: nil,
+                profileId: fixture.profileId
+            )
+        )
+        context.insert(
+            TabEntity(
+                id: fixture.spacePinnedTabId,
+                urlString: "https://example.com/space-pinned",
+                name: "Space Pinned",
+                isPinned: false,
+                isSpacePinned: true,
+                index: 0,
+                spaceId: fixture.spaceAId,
+                folderId: fixture.folderId
+            )
+        )
+        context.insert(
+            TabsStateEntity(
+                currentTabID: fixture.secondTabId,
+                currentSpaceID: fixture.spaceAId
+            )
+        )
+        try context.save()
+        return fixture
     }
 
     private func fetchTab(_ id: UUID, in context: ModelContext) throws -> TabEntity? {
@@ -476,6 +666,27 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let spaceId = id
         let predicate = #Predicate<SpaceEntity> { $0.id == spaceId }
         return try context.fetch(FetchDescriptor<SpaceEntity>(predicate: predicate)).first
+    }
+
+    private func assertStoreShape(
+        in container: ModelContainer,
+        spaces expectedSpaces: Int,
+        folders expectedFolders: Int,
+        tabs expectedTabs: Int,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        let context = ModelContext(container)
+        let spaces = try context.fetch(FetchDescriptor<SpaceEntity>())
+        let folders = try context.fetch(FetchDescriptor<FolderEntity>())
+        let tabs = try context.fetch(FetchDescriptor<TabEntity>())
+
+        XCTAssertEqual(spaces.count, expectedSpaces, file: file, line: line)
+        XCTAssertEqual(folders.count, expectedFolders, file: file, line: line)
+        XCTAssertEqual(tabs.count, expectedTabs, file: file, line: line)
+        XCTAssertEqual(Set(spaces.map(\.id)).count, spaces.count, file: file, line: line)
+        XCTAssertEqual(Set(folders.map(\.id)).count, folders.count, file: file, line: line)
+        XCTAssertEqual(Set(tabs.map(\.id)).count, tabs.count, file: file, line: line)
     }
 
     private func waitForPersistedState(
@@ -510,5 +721,9 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
         let context = ModelContext(container)
         XCTAssertTrue(try predicate(context))
+    }
+
+    private func waitPastStructuralDebounce() async throws {
+        try await Task.sleep(nanoseconds: 350_000_000)
     }
 }

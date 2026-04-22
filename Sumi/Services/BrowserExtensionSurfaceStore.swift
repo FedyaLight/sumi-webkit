@@ -14,6 +14,7 @@ final class BrowserExtensionSurfaceStore: ObservableObject {
 
     private weak var extensionManager: ExtensionManager?
     private var cancellables: Set<AnyCancellable> = []
+    private var scheduledInstalledExtensionsGeneration = 0
 
     init(extensionManager: ExtensionManager?) {
         self.extensionManager = extensionManager
@@ -49,8 +50,13 @@ final class BrowserExtensionSurfaceStore: ObservableObject {
     private func scheduleInstalledExtensionsUpdate(
         _ installedExtensions: [InstalledExtension]
     ) {
+        scheduledInstalledExtensionsGeneration &+= 1
+        let generation = scheduledInstalledExtensionsGeneration
         Task { @MainActor [weak self] in
             await Task.yield()
+            guard self?.scheduledInstalledExtensionsGeneration == generation else {
+                return
+            }
             self?.installedExtensions = installedExtensions
         }
     }

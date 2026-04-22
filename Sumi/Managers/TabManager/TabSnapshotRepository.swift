@@ -14,6 +14,24 @@ actor TabSnapshotRepository {
     // Recovery paths may use this if the primary full reconcile fails mid-flight.
     private var lastBackupJSON: Data?
 
+#if DEBUG
+    enum DebugPersistenceKind: Equatable, Sendable {
+        case fullReconcile
+        case incremental
+        case runtimeState
+        case selection
+    }
+
+    struct DebugPersistenceEvent: Equatable, Sendable {
+        let kind: DebugPersistenceKind
+        let itemCount: Int
+        let generation: Int?
+    }
+
+    private var debugPersistenceEvents: [DebugPersistenceEvent] = []
+    private static let debugPersistenceEventLimit = 256
+#endif
+
     enum PersistenceError: Error {
         case concurrencyConflict
         case dataCorruption
@@ -25,6 +43,35 @@ actor TabSnapshotRepository {
     init(container: ModelContainer) {
         self.container = container
     }
+
+#if DEBUG
+    func debugResetPersistenceEvents() {
+        debugPersistenceEvents.removeAll(keepingCapacity: true)
+    }
+
+    func debugPersistenceEventsSnapshot() -> [DebugPersistenceEvent] {
+        debugPersistenceEvents
+    }
+
+    private func debugRecordPersistenceEvent(
+        _ kind: DebugPersistenceKind,
+        itemCount: Int,
+        generation: Int? = nil
+    ) {
+        debugPersistenceEvents.append(
+            DebugPersistenceEvent(
+                kind: kind,
+                itemCount: itemCount,
+                generation: generation
+            )
+        )
+        if debugPersistenceEvents.count > Self.debugPersistenceEventLimit {
+            debugPersistenceEvents.removeFirst(
+                debugPersistenceEvents.count - Self.debugPersistenceEventLimit
+            )
+        }
+    }
+#endif
 
     struct SnapshotTab: Codable, Sendable {
         let id: UUID
@@ -109,6 +156,13 @@ actor TabSnapshotRepository {
             return false
         }
         self.latestGeneration = generation
+#if DEBUG
+        debugRecordPersistenceEvent(
+            .fullReconcile,
+            itemCount: snapshot.spaces.count + snapshot.tabs.count + snapshot.folders.count,
+            generation: generation
+        )
+#endif
         do {
             try createDataSnapshot(snapshot)
             try await performFullReconcile(snapshot)
@@ -154,6 +208,15 @@ actor TabSnapshotRepository {
             return false
         }
         self.latestGeneration = generation
+#if DEBUG
+        debugRecordPersistenceEvent(
+            .incremental,
+            itemCount: delta.spaces.count + delta.tabs.count + delta.folders.count
+                + delta.deletedSpaceIds.count + delta.deletedTabIds.count
+                + delta.deletedFolderIds.count,
+            generation: generation
+        )
+#endif
 
         do {
             try await performIncrementalPersistence(delta)
@@ -175,6 +238,9 @@ actor TabSnapshotRepository {
                 signpostState
             )
         }
+#if DEBUG
+        debugRecordPersistenceEvent(.selection, itemCount: 1)
+#endif
 
         let ctx = ModelContext(container)
         ctx.autosaveEnabled = false
@@ -205,6 +271,9 @@ actor TabSnapshotRepository {
             $0.id.uuidString < $1.id.uuidString
         }
         guard deduplicatedStates.isEmpty == false else { return }
+#if DEBUG
+        debugRecordPersistenceEvent(.runtimeState, itemCount: deduplicatedStates.count)
+#endif
 
         let ctx = ModelContext(container)
         ctx.autosaveEnabled = false

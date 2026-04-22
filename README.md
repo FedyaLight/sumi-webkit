@@ -22,6 +22,8 @@ Design goals stay **simple, fast, and deliberately anti-bloat**—fewer nested s
 
 Release packaging targets **GitHub Releases** as a notarized DMG. Maintainer-facing steps and CI secrets are in [docs/release.md](docs/release.md).
 
+Performance regression checks and the Instruments profiling workflow are in [docs/performance-profiling.md](docs/performance-profiling.md).
+
 ## Acknowledgments
 
 - **Zen Browser** informs the **workspace / vertical-tab mental model** and the overall “sidebar-first, low chrome” posture Sumi chases—especially how Essentials-style pinning coexists with dense tab lists.
