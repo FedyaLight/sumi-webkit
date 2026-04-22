@@ -211,7 +211,6 @@ final class SidebarTransientSessionCoordinator {
     private var pendingMenuActionRecoveryTier: SidebarRecoveryTier = .soft
     private var pendingFinalRecoveryScheduled = false
     private var pendingRecoveriesByWindowID: [UUID: PendingRecovery] = [:]
-    private var dragToken: SidebarTransientSessionToken?
 
     init(
         windowID: UUID,
@@ -388,31 +387,6 @@ final class SidebarTransientSessionCoordinator {
             tier: recoveryTierForSessionEnd(kind: token.kind)
         )
         schedulePendingPresentationSourceCleanup()
-    }
-
-    func syncSidebarItemDrag(_ isDragging: Bool) {
-        if isDragging {
-            guard dragToken == nil else { return }
-            let source = capturePresentationSource(ownerView: nil)
-            let token = SidebarTransientSessionToken(kind: .drag)
-            dragToken = token
-            register(
-                token: token,
-                source: source,
-                path: "SidebarDragState.sync",
-                handles: [],
-                preservePendingSource: false
-            )
-            return
-        }
-
-        endSession(dragToken)
-        dragToken = nil
-    }
-
-    func clearPendingPresentationSource() {
-        pendingPresentationSource = nil
-        pendingCleanupScheduled = false
     }
 
     private var activePinnedSessionRecords: [SessionRecord] {

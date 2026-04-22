@@ -71,12 +71,6 @@ final class SumiScriptsManager: ObservableObject {
     private var runtimeErrorObserver: NSObjectProtocol?
     private var autoUpdateTask: Task<Void, Never>?
 
-    // MARK: - Constants
-
-    static let extensionIdentifier = SumiScriptsToolbarConstants.nativeToolbarItemID
-    static let extensionDisplayName = "SumiScripts"
-    static let extensionVersion = "1.0.0"
-
     // MARK: - Init
 
     init(context: ModelContext? = nil) {
@@ -181,11 +175,6 @@ final class SumiScriptsManager: ObservableObject {
 
     var scriptsDirectory: URL {
         store?.scriptsDirectory ?? UserScriptStore.defaultScriptsDirectory()
-    }
-
-    /// Get scripts matching a specific URL.
-    func scriptsForURL(_ url: URL) -> [UserScript] {
-        store?.scriptsForURL(url) ?? []
     }
 
     /// Rows for the toolbar popover on this page (non-empty HTTP(S) host only).
@@ -366,10 +355,6 @@ final class SumiScriptsManager: ObservableObject {
         return true
     }
 
-    static func isUserscriptURL(_ url: URL) -> Bool {
-        SumiScriptsRemoteInstall.isUserscriptURL(url)
-    }
-
     // MARK: - Injection API (called from Tab lifecycle)
 
     /// Prepare scripts for a WebView navigating to a URL.
@@ -443,23 +428,6 @@ final class SumiScriptsManager: ObservableObject {
         injector?.executeMenuCommand(script: script, commandId: commandId, webView: webView)
     }
 
-    // MARK: - SumiScripts UI Metadata
-
-    /// Metadata used by Sumi-owned userscript surfaces.
-    var extensionMetadata: [String: Any] {
-        [
-            "id": Self.extensionIdentifier,
-            "name": Self.extensionDisplayName,
-            "version": Self.extensionVersion,
-            "description": "Native userscript manager for Sumi browser. Supports Greasemonkey/Tampermonkey APIs.",
-            "enabled": isEnabled,
-            "type": "builtin",
-            "builtinDisableable": true,
-            "scriptCount": totalScriptCount,
-            "activeScriptCount": activeScriptCount,
-            "icon": "applescript"  // SF Symbol name
-        ]
-    }
 }
 
 enum SumiScriptsManagerError: LocalizedError {

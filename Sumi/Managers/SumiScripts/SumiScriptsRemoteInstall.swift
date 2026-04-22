@@ -12,7 +12,6 @@ import Foundation
 /// Parsed remote script shown in the install confirmation dialog.
 struct SumiScriptsInstallPreview {
     let metadata: UserScriptMetadata
-    let sourceLength: Int
 }
 
 enum SumiScriptsRemoteInstall {
@@ -58,7 +57,7 @@ enum SumiScriptsRemoteInstall {
         else {
             throw SumiUserScriptError.invalidMetadata
         }
-        return SumiScriptsInstallPreview(metadata: metadata, sourceLength: content.count)
+        return SumiScriptsInstallPreview(metadata: metadata)
     }
 
     @MainActor

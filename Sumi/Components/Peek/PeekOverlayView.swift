@@ -42,8 +42,8 @@ struct PeekOverlayView: View {
                 .opacity(backgroundOpacity)
 
             // Peek overlay container - always present but visibility controlled
-            if let session = session {
-                peekContent(session: session)
+            if session != nil {
+                peekContent()
                     .scaleEffect(scale, anchor: .center)
                     .opacity(opacity)
                     .zIndex(1000)
@@ -148,7 +148,7 @@ struct PeekOverlayView: View {
     }
 
     @ViewBuilder
-    private func peekContent(session: PeekSession) -> some View {
+    private func peekContent() -> some View {
         GeometryReader { geometry in
             let (frame, cornerRadius) = calculateLayout(geometry: geometry)
 
@@ -158,7 +158,7 @@ struct PeekOverlayView: View {
                     .fill(tokens.commandPaletteBackground)
 
                 // Peek webview with shadow
-                webViewContainer(session: session)
+                webViewContainer()
                     .opacity(webContentOpacity)
                     .frame(width: frame.width, height: frame.height)
                     .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
@@ -170,7 +170,7 @@ struct PeekOverlayView: View {
                     )
 
                 // Action buttons positioned outside the main content but within the scaled area
-                actionButtons(session: session)
+                actionButtons()
                     .position(
                         x: frame.width + 30,
                         y: 80
@@ -185,7 +185,7 @@ struct PeekOverlayView: View {
     }
 
     @ViewBuilder
-    private func webViewContainer(session: PeekSession) -> some View {
+    private func webViewContainer() -> some View {
         Group {
             if webView != nil {
                 webView
@@ -223,7 +223,7 @@ struct PeekOverlayView: View {
     }
 
     @ViewBuilder
-    private func actionButtons(session: PeekSession) -> some View {
+    private func actionButtons() -> some View {
         VStack(spacing: 12) {
             // Close button
             actionButton(

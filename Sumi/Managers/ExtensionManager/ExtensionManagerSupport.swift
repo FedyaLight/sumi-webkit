@@ -34,14 +34,6 @@ struct BoundedRecentDateTracker {
         self.maxDatesPerKey = maxDatesPerKey
     }
 
-    var keyCount: Int {
-        datesByKey.count
-    }
-
-    var dateCount: Int {
-        datesByKey.values.reduce(0) { $0 + $1.count }
-    }
-
     mutating func record(key: String, at now: Date = Date()) {
         prune(now: now)
 

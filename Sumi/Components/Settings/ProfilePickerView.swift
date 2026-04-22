@@ -39,32 +39,6 @@ struct ProfilePickerView: View {
         }
     }
 
-    // MARK: - Subviews
-    @ViewBuilder
-    private func row(for profile: Profile) -> some View {
-        HStack(spacing: 8) {
-            SumiProfileGlyphDisplay(icon: profile.icon, font: .system(size: 14, weight: .semibold))
-            Text(profile.name)
-                .lineLimit(1)
-            Spacer()
-            if selectedProfileId == profile.id {
-                Image(systemName: "checkmark")
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .contentShape(Rectangle())
-        .accessibilityLabel("Profile: \(profile.name)")
-        .accessibilityHint(selectedProfileId == profile.id ? "Selected" : "Not selected")
-        .onTapGesture {
-            select(profile.id)
-        }
-    }
-
-    private func select(_ id: UUID) {
-        selectedProfileId = id
-        onSelect?(id)
-    }
-
     // Compact vertical list – suitable for menus/context menus
     private struct CompactListView: View {
         let profiles: [Profile]

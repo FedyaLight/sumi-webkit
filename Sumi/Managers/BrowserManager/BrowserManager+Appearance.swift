@@ -72,20 +72,6 @@ extension BrowserManager {
         )
     }
 
-    func applyGradientPresetToCurrentSpace(_ gradient: SpaceGradient) {
-        workspaceAppearanceService.applyGradientPresetToCurrentSpace(
-            gradient,
-            using: makeWorkspaceAppearanceContext()
-        )
-    }
-
-    func applyWorkspaceThemePresetToCurrentSpace(_ workspaceTheme: WorkspaceTheme) {
-        workspaceAppearanceService.applyWorkspaceThemePresetToCurrentSpace(
-            workspaceTheme,
-            using: makeWorkspaceAppearanceContext()
-        )
-    }
-
     private func makeWorkspaceAppearanceContext(
         currentSpaceOverride: Space? = nil
     ) -> WorkspaceAppearanceService.Context {
@@ -111,11 +97,6 @@ extension BrowserManager {
             },
             presentPicker: { [weak self] session in
                 self?.workspaceThemePickerSession = session
-            },
-            dismissPicker: { [weak self] in
-                withAnimation(WorkspaceThemePickerPresentationAnimation.disappear) {
-                    self?.workspaceThemePickerSession = nil
-                }
             },
             showDialog: { [weak self] dialog, source in
                 if let source {

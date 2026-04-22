@@ -226,7 +226,7 @@ final class ExtensionManagerTests: XCTestCase {
     }
 
     func makeExtensionRuntimeHarness() throws -> ExtensionRuntimeHarness {
-        let browserConfiguration = BrowserConfiguration.makeTestingInstance()
+        let browserConfiguration = BrowserConfiguration()
         testBrowserConfigurations.append(browserConfiguration)
         return ExtensionRuntimeHarness(
             container: try makeInMemoryContainer(),
@@ -908,8 +908,7 @@ final class ExtensionManagerTests: XCTestCase {
             PendingExternallyConnectableNativeRequest(
                 id: UUID(),
                 extensionId: record.id,
-                webViewIdentifier: ObjectIdentifier(webView),
-                pageURLString: webView.url?.absoluteString
+                webViewIdentifier: ObjectIdentifier(webView)
             ) { _, _ in }
         )
         manager.recentExtensionTabOpenRequests.record(
@@ -917,12 +916,17 @@ final class ExtensionManagerTests: XCTestCase {
         )
 
         let beforeReset = manager.debugRuntimeStateSnapshot
+        var beforeRecentTabOpenRequests = manager.recentExtensionTabOpenRequests
         XCTAssertTrue(beforeReset.isControllerInitialized)
         XCTAssertEqual(beforeReset.installedPageBridgeIDs, [record.id])
         XCTAssertEqual(beforeReset.nativeMessageExtensionIDs, [record.id])
         XCTAssertEqual(beforeReset.pendingExternallyConnectableNativeRequestCount, 1)
-        XCTAssertEqual(beforeReset.trackedExternallyConnectableWebViewCount, 1)
-        XCTAssertEqual(beforeReset.recentTabOpenRequestKeyCount, 1)
+        XCTAssertTrue(manager.ecRegistry.hasTrackedState(for: webView))
+        XCTAssertTrue(
+            beforeRecentTabOpenRequests.consume(
+                key: "https://accounts.example.com/login"
+            )
+        )
 
         manager.resetInjectedBrowserConfigurationRuntimeState()
 
@@ -933,14 +937,19 @@ final class ExtensionManagerTests: XCTestCase {
         XCTAssertTrue(afterReset.installedPageBridgeIDs.isEmpty)
         XCTAssertTrue(afterReset.nativeMessageExtensionIDs.isEmpty)
         XCTAssertEqual(afterReset.pendingExternallyConnectableNativeRequestCount, 0)
-        XCTAssertEqual(afterReset.trackedExternallyConnectableWebViewCount, 0)
-        XCTAssertEqual(afterReset.recentTabOpenRequestKeyCount, 0)
+        XCTAssertFalse(manager.ecRegistry.hasTrackedState(for: webView))
+        var afterRecentTabOpenRequests = manager.recentExtensionTabOpenRequests
+        XCTAssertFalse(
+            afterRecentTabOpenRequests.consume(
+                key: "https://accounts.example.com/login"
+            )
+        )
         XCTAssertEqual(afterReset.managedPageBridgeScriptCount, 0)
         XCTAssertNil(harness.browserConfiguration.webViewConfiguration.webExtensionController)
     }
 
     func testIsolatedWebViewConfigurationCopyCreatesFreshUserContentController() {
-        let browserConfiguration = BrowserConfiguration.makeTestingInstance()
+        let browserConfiguration = BrowserConfiguration()
         let template = browserConfiguration.webViewConfiguration
         template.userContentController.addUserScript(
             WKUserScript(

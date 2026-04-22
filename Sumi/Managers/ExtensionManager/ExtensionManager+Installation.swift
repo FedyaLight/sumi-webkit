@@ -102,8 +102,6 @@ extension ExtensionManager {
     }
 
     struct WebExtensionCleanupErrorClassification: Equatable {
-        let preCleanupSnapshot: WebExtensionStorageSnapshot
-        let postCleanupSnapshot: WebExtensionStorageSnapshot
         let benignOptionalStoreDiagnostics: [WebExtensionCleanupErrorDiagnostic]
         let actionableDiagnostics: [WebExtensionCleanupErrorDiagnostic]
     }
@@ -166,8 +164,7 @@ extension ExtensionManager {
                                     id: bundleID,
                                     name: displayName,
                                     appPath: appURL,
-                                    appexPath: appexURL,
-                                    resourcesPath: resourcesURL
+                                    appexPath: appexURL
                                 )
                             )
                         }
@@ -335,28 +332,6 @@ extension ExtensionManager {
             tearDownExtensionRuntime(
                 reason: "uninstallExtension.noEnabledExtensions",
                 removeUIState: true,
-                releaseController: true
-            )
-        }
-    }
-
-    func loadInstalledExtensions() {
-        let signpostState = PerformanceTrace.beginInterval("ExtensionManager.loadInstalledExtensions")
-        defer {
-            PerformanceTrace.endInterval(
-                "ExtensionManager.loadInstalledExtensions",
-                signpostState
-            )
-        }
-
-        loadInstalledExtensionMetadata()
-
-        if hasEnabledInstalledExtensions {
-            requestExtensionRuntime(reason: .refresh, forceReload: true)
-        } else {
-            tearDownExtensionRuntime(
-                reason: "loadInstalledExtensions.noEnabledExtensions",
-                removeUIState: false,
                 releaseController: true
             )
         }
@@ -666,50 +641,6 @@ extension ExtensionManager {
                     $0.lastBackgroundWakeFailed = true
                 }
                 throw error
-            }
-        }
-    }
-
-    func startBackgroundContentDefensively(
-        for webExtension: WKWebExtension,
-        context extensionContext: WKWebExtensionContext,
-        reason: ExtensionBackgroundWakeReason,
-        successMessage: String,
-        failureMessage: String
-    ) {
-        guard webExtension.hasBackgroundContent else { return }
-        let wakeKey = backgroundWakeKey(for: extensionContext)
-
-        switch backgroundRuntimeState(for: wakeKey) {
-        case .loaded:
-            extensionRuntimeTrace(
-                "Skipping defensive background wake for \(wakeKey): already loaded"
-            )
-            return
-        case .wakeInFlight:
-            extensionRuntimeTrace(
-                "Skipping defensive background wake for \(wakeKey): wake already in flight"
-            )
-            return
-        case .neverLoaded, .loadFailed:
-            break
-        }
-
-        let wakeTask = startBackgroundWakeTask(
-            wakeKey: wakeKey,
-            extensionContext: extensionContext,
-            reason: reason,
-            mode: "defensive"
-        )
-
-        Task { @MainActor in
-            do {
-                try await wakeTask.value
-                extensionRuntimeTrace(successMessage)
-            } catch {
-                Self.logger.error(
-                    "\(failureMessage, privacy: .public): \(error.localizedDescription, privacy: .public)"
-                )
             }
         }
     }
@@ -1291,8 +1222,6 @@ extension ExtensionManager {
         }
 
         return WebExtensionCleanupErrorClassification(
-            preCleanupSnapshot: preCleanupSnapshot,
-            postCleanupSnapshot: postCleanupSnapshot,
             benignOptionalStoreDiagnostics: benignOptionalStoreDiagnostics,
             actionableDiagnostics: actionableDiagnostics
         )

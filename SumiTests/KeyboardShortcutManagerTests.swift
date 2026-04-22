@@ -60,12 +60,12 @@ final class KeyboardShortcutManagerTests: XCTestCase {
         let manager = KeyboardShortcutManager()
 
         XCTAssertEqual(
-            manager.shortcut(for: KeyCombination(key: "p", modifiers: [.command, .shift]))?.action,
-            .openCommandPalette
+            manager.shortcuts.first { $0.action == .openCommandPalette }?.keyCombination,
+            KeyCombination(key: "p", modifiers: [.command, .shift])
         )
         XCTAssertEqual(
-            manager.shortcut(for: KeyCombination(key: "c", modifiers: [.command, .shift]))?.action,
-            .copyCurrentURL
+            manager.shortcuts.first { $0.action == .copyCurrentURL }?.keyCombination,
+            KeyCombination(key: "c", modifiers: [.command, .shift])
         )
 
         let persistedData = try XCTUnwrap(UserDefaults.standard.data(forKey: shortcutsKey))

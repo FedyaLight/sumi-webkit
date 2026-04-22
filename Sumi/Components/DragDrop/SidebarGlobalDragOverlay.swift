@@ -517,12 +517,10 @@ class SidebarDragNSView: NSView {
             guard let payload = browserManager.tabManager.resolveSidebarDragPayload(for: draggedItem) else { return false }
             
             let sourceContainer = resolveSourceContainer(for: draggedItem)
-            let sourceIndex = resolveSourceIndex(for: draggedItem)
             
             let operation = DragOperation(
                 payload: payload,
                 fromContainer: sourceContainer,
-                fromIndex: sourceIndex,
                 toContainer: resolution.slot.asDragContainer,
                 toIndex: resolution.slot.visualIndex,
                 toSpaceId: resolution.targetSpaceId,
@@ -601,20 +599,4 @@ class SidebarDragNSView: NSView {
         return .none
     }
     
-    private func resolveSourceIndex(for item: SumiDragItem) -> Int {
-        guard let tabManager = browserManager?.tabManager else { return 0 }
-        if item.kind == .folder {
-            guard let folder = tabManager.folder(by: item.tabId) else { return 0 }
-            return tabManager.topLevelSpacePinnedItems(for: folder.spaceId).firstIndex {
-                if case .folder(let existingFolder) = $0 {
-                    return existingFolder.id == folder.id
-                }
-                return false
-            } ?? 0
-        } else {
-            if let pin = tabManager.shortcutPin(by: item.tabId) { return pin.index }
-            guard let tab = tabManager.resolveDragTab(for: item.tabId) else { return 0 }
-            return tab.index
-        }
-    }
 }

@@ -1,7 +1,6 @@
 import AppKit
 
 enum SpaceSidebarTransitionConfig {
-    static let sidebarChromeAnimationDuration: Double = 0.2
     static let spaceSwitchAnimationDuration: Double = 0.37
 
     static let swipeCommitThreshold: Double = 0.3
@@ -77,10 +76,6 @@ struct SpaceSidebarTransitionState: Equatable {
 
     var hasDestination: Bool {
         sourceSpaceId != nil && destinationSpaceId != nil
-    }
-
-    var isTransitioning: Bool {
-        hasDestination
     }
 
     var visualSelectedSpaceId: UUID? {

@@ -4,7 +4,6 @@ import AppKit
 struct MiniBrowserWindowView: View {
     let session: MiniWindowSession
     let adoptAction: () -> Void
-    let dismissAction: () -> Void
 
     @State private var hostingWindow: NSWindow?
 
@@ -84,6 +83,6 @@ private struct WindowAccessor: NSViewRepresentable {
         targetSpaceResolver: { "Preview Space" },
         adoptHandler: { _ in }
     )
-    MiniBrowserWindowView(session: session, adoptAction: {}, dismissAction: {})
+    MiniBrowserWindowView(session: session, adoptAction: {})
 }
 #endif

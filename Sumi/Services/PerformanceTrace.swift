@@ -35,13 +35,4 @@ enum PerformanceTrace {
         return try operation()
     }
 
-    @discardableResult
-    static func withInterval<T>(
-        _ name: StaticString,
-        _ operation: () async throws -> T
-    ) async rethrows -> T {
-        let state = beginInterval(name)
-        defer { endInterval(name, state) }
-        return try await operation()
-    }
 }

@@ -23,13 +23,6 @@ extension AnyTransition {
         .blur()
     }
 
-    static var blurWithoutScale: AnyTransition {
-        .modifier(
-            active: BlurModifier(isIdentity: true, intensity: 20),
-            identity: BlurModifier(isIdentity: false, intensity: 20)
-        )
-    }
-
     static func blur(
         intensity: CGFloat = 2,
         scale: CGFloat = 0.8

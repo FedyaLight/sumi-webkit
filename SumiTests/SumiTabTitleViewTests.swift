@@ -7,9 +7,10 @@ import XCTest
 final class SumiTabTitleViewTests: XCTestCase {
     func testTitleViewUsesClippingInsteadOfTailTruncation() {
         let view = makeView(width: 180)
+        let fields = titleFields(in: view)
 
-        XCTAssertEqual(view.currentTitleField.lineBreakMode, .byClipping)
-        XCTAssertEqual(view.previousTitleField.lineBreakMode, .byClipping)
+        XCTAssertEqual(fields.current.lineBreakMode, .byClipping)
+        XCTAssertEqual(fields.previous.lineBreakMode, .byClipping)
     }
 
     func testTitleViewAppliesTrailingFadeMask() throws {
@@ -24,7 +25,7 @@ final class SumiTabTitleViewTests: XCTestCase {
             animated: false
         )
 
-        let maskLayer = try XCTUnwrap(view.fadeMaskLayer)
+        let maskLayer = try XCTUnwrap(fadeMaskLayer(in: view))
         XCTAssertEqual(maskLayer.frame.width, 160, accuracy: 0.01)
         XCTAssertEqual(maskLayer.startPoint.x, 0.675, accuracy: 0.001)
         XCTAssertEqual(maskLayer.endPoint.x, 0.875, accuracy: 0.001)
@@ -49,12 +50,13 @@ final class SumiTabTitleViewTests: XCTestCase {
             trailingFadePadding: 0,
             animated: true
         )
+        let fields = titleFields(in: view)
 
-        XCTAssertEqual(view.currentTitleField.stringValue, "New Title")
-        XCTAssertEqual(view.previousTitleField.stringValue, "Old Title")
-        XCTAssertNotNil(try XCTUnwrap(view.previousTitleField.layer).animation(forKey: SumiTabTitleAnimation.fadeAndSlideOutKey))
-        XCTAssertNotNil(try XCTUnwrap(view.currentTitleField.layer).animation(forKey: SumiTabTitleAnimation.slideInKey))
-        XCTAssertNotNil(try XCTUnwrap(view.currentTitleField.layer).animation(forKey: SumiTabTitleAnimation.fadeInKey))
+        XCTAssertEqual(fields.current.stringValue, "New Title")
+        XCTAssertEqual(fields.previous.stringValue, "Old Title")
+        XCTAssertNotNil(try XCTUnwrap(fields.previous.layer).animation(forKey: SumiTabTitleAnimation.fadeAndSlideOutKey))
+        XCTAssertNotNil(try XCTUnwrap(fields.current.layer).animation(forKey: SumiTabTitleAnimation.slideInKey))
+        XCTAssertNotNil(try XCTUnwrap(fields.current.layer).animation(forKey: SumiTabTitleAnimation.alphaKey))
     }
 
     func testSwiftUIHostedLabelUsesContainerWidthForMaskLayout() throws {
@@ -81,7 +83,7 @@ final class SumiTabTitleViewTests: XCTestCase {
         let titleView = try XCTUnwrap(findSubview(ofType: SumiTabTitleView.self, in: host))
         XCTAssertEqual(titleView.frame.width, 96, accuracy: 1.0)
 
-        let maskLayer = try XCTUnwrap(titleView.fadeMaskLayer)
+        let maskLayer = try XCTUnwrap(fadeMaskLayer(in: titleView))
         XCTAssertEqual(maskLayer.frame.width, titleView.bounds.width, accuracy: 0.5)
     }
 
@@ -103,5 +105,15 @@ final class SumiTabTitleViewTests: XCTestCase {
         }
 
         return nil
+    }
+
+    private func titleFields(in view: SumiTabTitleView) -> (previous: NSTextField, current: NSTextField) {
+        let fields = view.subviews.compactMap { $0 as? NSTextField }
+        XCTAssertEqual(fields.count, 2)
+        return (fields[0], fields[1])
+    }
+
+    private func fadeMaskLayer(in view: SumiTabTitleView) -> CAGradientLayer? {
+        view.layer?.mask as? CAGradientLayer
     }
 }

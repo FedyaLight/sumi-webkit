@@ -104,25 +104,7 @@ if let webView = _webView {
 
 ---
 
-## 4. Sumi-owned UI presence
-
-### Where
-In the Sumi-owned userscript surfaces that display local tooling.
-
-### What
-Read `browserManager.sumiScriptsManager.extensionMetadata` for Sumi-owned userscript surfaces.
-
-### Code
-```swift
-// In whatever method builds the SumiScripts list for the sidebar/popup:
-
-// --- SumiScripts: Show as built-in userscript tooling ---
-let sumiScriptsEntry = browserManager.sumiScriptsManager.extensionMetadata
-extensions.append(sumiScriptsEntry)
-// --- End SumiScripts ---
-```
-
-### Toggle behavior
+## 4. Toggle behavior
 ```swift
 // When user toggles SumiScripts on/off:
 browserManager.sumiScriptsManager.isEnabled = newValue

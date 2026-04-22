@@ -121,7 +121,6 @@ __SUMI_BRIDGE_MARKER__
 
         var extensionId = null;
         var message = undefined;
-        var options = undefined;
 
         if (args.length === 1) {
             message = args[0];
@@ -131,18 +130,15 @@ __SUMI_BRIDGE_MARKER__
                 message = args[1];
             } else {
                 message = args[0];
-                options = args[1];
             }
         } else if (args.length >= 3) {
             extensionId = args[0];
             message = args[1];
-            options = args[2];
         }
 
         return {
             extensionId: extensionId,
             message: message,
-            options: options,
             callback: callback
         };
     }
@@ -206,7 +202,7 @@ __SUMI_BRIDGE_MARKER__
         return 'sumi_ec_req_' + String(Date.now()) + '_' + Math.random().toString(36).slice(2, 11);
     }
 
-    function requestViaNativeBridge(parsed, requestType) {
+    function requestViaNativeBridge(parsed) {
         var handler = nativeBridgeHandler();
         if (!handler || typeof handler.postMessage !== 'function') {
             return Promise.reject(new Error('Native extension bridge unavailable'));
@@ -218,13 +214,8 @@ __SUMI_BRIDGE_MARKER__
             method: 'sendMessage',
             id: newBridgeRequestId(),
             params: {
-                documentURL: location.href,
                 extensionId: parsed.extensionId || activeRuntimeId(),
-                message: parsed.message,
-                options: typeof parsed.options === 'undefined' ? null : parsed.options,
-                origin: location.origin,
-                requestType: requestType || null,
-                timeoutMs: 30000
+                message: parsed.message
             }
         }));
     }
@@ -241,9 +232,7 @@ __SUMI_BRIDGE_MARKER__
             method: method,
             id: newBridgeRequestId(),
             params: Object.assign({
-                documentURL: location.href,
                 extensionId: activeRuntimeId(),
-                origin: location.origin,
                 timeoutMs: 30000
             }, payload || {})
         }));
@@ -383,7 +372,7 @@ __SUMI_BRIDGE_MARKER__
 
             var promise;
             if (shouldBridge) {
-                promise = requestViaNativeBridge(parsed, requestType);
+                promise = requestViaNativeBridge(parsed);
             } else {
                 try {
                     promise = Promise.resolve(originalSendMessage.apply(runtimeObject, arguments));

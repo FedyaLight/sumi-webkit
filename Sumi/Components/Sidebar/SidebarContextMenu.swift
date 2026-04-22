@@ -219,28 +219,11 @@ struct SidebarContextMenuTriggers: OptionSet {
 enum SidebarContextMenuMouseTrigger {
     case leftMouseDown
     case rightMouseDown
-
-    init?(eventType: NSEvent.EventType) {
-        switch eventType {
-        case .leftMouseDown:
-            self = .leftMouseDown
-        case .rightMouseDown:
-            self = .rightMouseDown
-        default:
-            return nil
-        }
-    }
 }
 
 enum SidebarContextMenuPresentationStyle: Equatable {
     case contextualEvent
     case anchoredPopup
-}
-
-enum SidebarInteractionPhase: Equatable {
-    case idle
-    case menuTracking
-    case sidebarItemDrag
 }
 
 enum SidebarContextMenuRoutingPolicy {
@@ -360,7 +343,7 @@ final class SidebarContextMenuBuilder: NSObject, NSMenuDelegate {
 
                 let item = NSMenuItem(
                     title: action.title,
-                    action: #selector(SidebarContextMenuActionTarget.performAction(_:)),
+                    action: #selector(SidebarContextMenuActionTarget.performAction),
                     keyEquivalent: ""
                 )
                 item.target = target
@@ -402,7 +385,7 @@ private final class SidebarContextMenuActionTarget: NSObject {
         self.onActionDidDrain = onActionDidDrain
     }
 
-    @objc func performAction(_ sender: NSMenuItem) {
+    @objc func performAction() {
         onActionWillDispatch(title, classification)
         DispatchQueue.main.async { [classification, title, action, onActionDidDrain] in
             action()
@@ -418,17 +401,6 @@ private final class SidebarContextMenuActionTarget: NSObject {
 final class SidebarInteractionState {
     private var activeSessionTokenIDsByKind: [SidebarTransientUIKind: Set<UUID>] = [:]
     private var dragTokenID: UUID?
-    private var manualMenuTokenID: UUID?
-
-    var phase: SidebarInteractionPhase {
-        if isKindActive(.contextMenu) {
-            return .menuTracking
-        }
-        if isKindActive(.drag) {
-            return .sidebarItemDrag
-        }
-        return .idle
-    }
 
     var isContextMenuPresented: Bool {
         isKindActive(.contextMenu)
@@ -446,16 +418,8 @@ final class SidebarInteractionState {
         activeKinds.isEmpty
     }
 
-    var allowsRootPointerInterception: Bool {
-        activeKinds.isEmpty
-    }
-
     var allowsSidebarDragSourceHitTesting: Bool {
         activeKinds.contains(where: \.blocksSidebarDragSources) == false
-    }
-
-    var hasPinnedTransientUI: Bool {
-        activeKinds.contains(where: \.pinsCollapsedSidebar)
     }
 
     var activeKindsDescription: String {
@@ -493,30 +457,12 @@ final class SidebarInteractionState {
         self.dragTokenID = nil
     }
 
-    func beginMenuTracking() {
-        guard manualMenuTokenID == nil else { return }
-        let tokenID = UUID()
-        manualMenuTokenID = tokenID
-        beginSession(kind: .contextMenu, tokenID: tokenID)
-    }
-
-    func endMenuTracking() {
-        guard let manualMenuTokenID else { return }
-        endSession(kind: .contextMenu, tokenID: manualMenuTokenID)
-        self.manualMenuTokenID = nil
-    }
-
     func reconcileSessions(_ activeTokenIDsByKind: [SidebarTransientUIKind: Set<UUID>]) {
         activeSessionTokenIDsByKind = activeTokenIDsByKind.filter { !$0.value.isEmpty }
         if let dragTokenID,
            activeSessionTokenIDsByKind[.drag]?.contains(dragTokenID) != true
         {
             self.dragTokenID = nil
-        }
-        if let manualMenuTokenID,
-           activeSessionTokenIDsByKind[.contextMenu]?.contains(manualMenuTokenID) != true
-        {
-            self.manualMenuTokenID = nil
         }
     }
 
@@ -710,16 +656,6 @@ final class SidebarContextMenuController {
         self.transientSessionCoordinator = transientSessionCoordinator
     }
 
-    convenience init(interactionState: SidebarInteractionState) {
-        self.init(
-            interactionState: interactionState,
-            transientSessionCoordinator: SidebarTransientSessionCoordinator(
-                windowID: UUID(),
-                interactionState: interactionState
-            )
-        )
-    }
-
     deinit {
         let center = NotificationCenter.default
         windowObservers.forEach(center.removeObserver)
@@ -728,21 +664,12 @@ final class SidebarContextMenuController {
         }
     }
 
-    var isContextMenuPresented: Bool {
-        interactionState.isContextMenuPresented
-    }
-
     func configureBackgroundMenu(
         entriesProvider: @escaping () -> [SidebarContextMenuEntry],
         onMenuVisibilityChanged: @escaping (Bool) -> Void
     ) {
         backgroundEntriesProvider = entriesProvider
         backgroundMenuVisibilityChanged = onMenuVisibilityChanged
-    }
-
-    func clearBackgroundMenu() {
-        backgroundEntriesProvider = { [] }
-        backgroundMenuVisibilityChanged = { _ in }
     }
 
     func registerInteractiveOwner(_ ownerView: SidebarInteractiveItemView) {
@@ -794,10 +721,6 @@ final class SidebarContextMenuController {
             return false
         }
         return true
-    }
-
-    func recoverInteractiveOwners(in window: NSWindow?) -> Int {
-        recoverInteractiveOwners(in: window, source: nil).recoveredOwnerCount
     }
 
     func recoverInteractiveOwners(
@@ -969,79 +892,6 @@ final class SidebarContextMenuController {
             in: ownerView
         )
         return true
-    }
-
-    private func runPointerRecovery(aroundOwnerView ownerView: NSView) {
-        sidebarRecoveryCoordinator.recover(in: ownerView.window)
-        sidebarRecoveryCoordinator.recover(anchor: ownerView)
-    }
-
-    func beginMenuSessionForTesting(
-        ownerView: NSView? = nil,
-        menu: NSMenu?,
-        onMenuVisibilityChanged: @escaping (Bool) -> Void = { _ in }
-    ) -> UUID {
-        forceCloseActiveSession()
-        let resolvedOwnerView = ownerView ?? NSView(frame: .zero)
-        activeOwnerView = resolvedOwnerView
-        rebindWindow(resolvedOwnerView.window)
-
-        let sessionID = UUID()
-        activeSessionID = sessionID
-        activeMenuBuilder = nil
-        activeMenuVisibilityChanged = onMenuVisibilityChanged
-        activeSessionDidBecomeVisible = false
-        activeSessionDidClose = false
-        startMenuSession(sessionID: sessionID)
-        if let menu {
-            observeMenuEndTracking(for: menu, sessionID: sessionID)
-        }
-        return sessionID
-    }
-
-    func beginMenuSessionForTesting(
-        ownerView: NSView? = nil,
-        onMenuVisibilityChanged: @escaping (Bool) -> Void = { _ in }
-    ) -> UUID {
-        beginMenuSessionForTesting(
-            ownerView: ownerView,
-            menu: nil,
-            onMenuVisibilityChanged: onMenuVisibilityChanged
-        )
-    }
-
-    func markMenuOpenedForTesting(sessionID: UUID) {
-        markMenuVisible(sessionID: sessionID)
-    }
-
-    func markMenuClosedForTesting(sessionID: UUID) {
-        markMenuClosed(sessionID: sessionID)
-    }
-
-    func finishMenuSessionForTesting(sessionID: UUID) {
-        finalizeMenuSession(sessionID: sessionID, reason: "test-finalize")
-    }
-
-    func detachOwnerViewForTesting(_ ownerView: NSView) {
-        ownerViewDidDetach(ownerView)
-    }
-
-    func forceCloseActiveSessionForTesting() {
-        forceCloseActiveSession()
-    }
-
-    func runPointerRecoveryForTesting(aroundOwnerView ownerView: NSView) {
-        runPointerRecovery(aroundOwnerView: ownerView)
-    }
-
-    func configureBackgroundMenuForTesting(
-        entriesProvider: @escaping () -> [SidebarContextMenuEntry],
-        onMenuVisibilityChanged: @escaping (Bool) -> Void = { _ in }
-    ) {
-        configureBackgroundMenu(
-            entriesProvider: entriesProvider,
-            onMenuVisibilityChanged: onMenuVisibilityChanged
-        )
     }
 
     private func startMenuSession(sessionID: UUID) {

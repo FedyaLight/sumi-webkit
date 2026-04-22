@@ -18,7 +18,6 @@ import WebKit
 final class SumiStartupPersistence {
     static let shared = SumiStartupPersistence()
     let container: ModelContainer
-    let recoveryNotice: String?
 
     // MARK: - Constants
     nonisolated private static let log = Logger.sumi(category: "StartupPersistence")
@@ -36,7 +35,6 @@ final class SumiStartupPersistence {
         ExtensionEntity.self,
         UserScriptEntity.self,
         UserScriptResourceEntity.self,
-        UserScriptValueEntity.self,
     ])
 
     // MARK: - URLs
@@ -88,13 +86,11 @@ final class SumiStartupPersistence {
 
     // MARK: - Init
     private init() {
-        var resolvedContainer: ModelContainer?
-        var resolvedRecoveryNotice: String?
-
         do {
-            let config = ModelConfiguration(url: Self.storeURL)
-            resolvedContainer = try ModelContainer(for: Self.schema, configurations: [config])
+            let resolvedContainer = try Self.openPersistentContainer()
             Self.log.info("SwiftData container initialized successfully")
+            Self.createStartupBackupIfPossible()
+            self.container = resolvedContainer
         } catch {
             let classification = Self.classifyStoreError(error)
             Self.log.error(
@@ -102,82 +98,37 @@ final class SumiStartupPersistence {
             )
 
             switch classification {
-            case .schemaMismatch:
+            case .schemaMismatch, .corruption, .other:
                 Self.log.fault(
-                    "Schema-mismatch recovery path: deleting on-disk store after error domain=\(String(describing: (error as NSError).domain), privacy: .public) code=\((error as NSError).code, privacy: .public)"
+                    "Attempting to restore the latest known-good store backup after startup failure."
                 )
-                // Attempt a safe reset with optional backup
-                var didCreateBackup = false
                 do {
-                    _ = try Self.createBackup()
-                    didCreateBackup = true
-                } catch let backupError as PersistenceBackupError {
-                    switch backupError {
-                    case .storeNotFound:
-                        // Treat as recoverable: proceed without a backup
-                        Self.log.notice("No existing store to back up. Proceeding with reset.")
-                    case .noBackupsFound:
-                        // Not expected here but log just in case
-                        Self.log.notice("No backups found when attempting to create backup.")
-                    }
-                } catch {
-                    // Unexpected backup failure — continue but warn
-                    Self.log.error(
-                        "Backup attempt failed: \(String(describing: error), privacy: .public). Proceeding with cautious reset."
+                    try Self.restoreFromBackup()
+                    let resolvedContainer = try Self.openPersistentContainer()
+                    Self.log.notice(
+                        "Restored SwiftData container from latest known-good backup.")
+                    self.container = resolvedContainer
+                } catch let restoreError {
+                    Self.log.fault(
+                        "Failed to restore usable SwiftData store from backup: \(String(describing: restoreError), privacy: .public)"
                     )
-                }
-
-                do {
-                    try Self.deleteStore()
-                    Self.log.notice(
-                        "Deleted existing store (and sidecars) for schema-mismatch recovery")
-
-                    let config = ModelConfiguration(url: Self.storeURL)
-                    resolvedContainer = try ModelContainer(for: Self.schema, configurations: [config])
-                    resolvedRecoveryNotice = "Sumi reset the local browser store after a schema mismatch."
-                    Self.log.notice(
-                        "Recreated SwiftData container after schema mismatch using configured URL")
-                } catch {
-                    // On any failure, attempt to restore backup (if one was made) before falling back in-memory.
-                    if didCreateBackup {
-                        do {
-                            try Self.restoreFromBackup()
-                            Self.log.fault(
-                                "Restored store from latest backup after failed recovery attempt")
-                        } catch {
-                            Self.log.fault(
-                                "Failed to restore store from backup: \(String(describing: error), privacy: .public)"
-                            )
-                        }
-                    }
-                    resolvedRecoveryNotice = "Sumi started with an in-memory session because the local browser store could not be recovered after a schema mismatch."
+                    fatalError(
+                        "Sumi could not open the local browser store and no usable backup could be restored."
+                    )
                 }
 
             case .diskSpace:
                 Self.log.fault(
                     "Store initialization failed due to insufficient disk space. Not deleting store."
                 )
-                resolvedRecoveryNotice = "Sumi started with an in-memory session because disk space was insufficient for the local browser store."
-
-            case .corruption:
-                Self.log.fault(
-                    "Store appears corrupted. Not deleting store. Please investigate backups manually."
-                )
-                resolvedRecoveryNotice = "Sumi started with an in-memory session because the local browser store appears corrupted."
-
-            case .other:
-                Self.log.error(
-                    "Store initialization failed with unclassified error. Not deleting store.")
-                resolvedRecoveryNotice = "Sumi started with an in-memory session because the local browser store could not be opened."
+                fatalError("Sumi could not open the local browser store because disk space is insufficient.")
             }
         }
+    }
 
-        if resolvedContainer == nil {
-            resolvedContainer = Self.makeInMemoryFallbackContainer(reason: resolvedRecoveryNotice)
-        }
-
-        self.container = resolvedContainer!
-        self.recoveryNotice = resolvedRecoveryNotice
+    private static func openPersistentContainer() throws -> ModelContainer {
+        let config = ModelConfiguration(url: Self.storeURL)
+        return try ModelContainer(for: Self.schema, configurations: [config])
     }
 
     // MARK: - Error Classification
@@ -216,6 +167,23 @@ final class SumiStartupPersistence {
 
     // MARK: - Backup / Restore
     private enum PersistenceBackupError: Error { case storeNotFound, noBackupsFound }
+
+    nonisolated private static func createStartupBackupIfPossible() {
+        do {
+            _ = try createBackup()
+        } catch let error as PersistenceBackupError {
+            switch error {
+            case .storeNotFound:
+                log.notice("No persistent store file exists yet; skipping startup backup.")
+            case .noBackupsFound:
+                log.notice("No backups found while creating startup backup.")
+            }
+        } catch {
+            log.error(
+                "Failed to create startup store backup: \(String(describing: error), privacy: .public)"
+            )
+        }
+    }
 
     // Include SQLite sidecars (-wal/-shm) and back up into a directory
     nonisolated private static func createBackup() throws -> URL {
@@ -350,51 +318,6 @@ final class SumiStartupPersistence {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd'T'HH-mm-ss"
         return formatter.string(from: Date())
-    }
-
-    private static func makeInMemoryFallbackContainer(reason: String?) -> ModelContainer {
-        if let reason {
-            log.fault("Using in-memory SwiftData fallback. Reason: \(reason, privacy: .public)")
-        } else {
-            log.fault("Using in-memory SwiftData fallback.")
-        }
-
-        if let inMemoryContainer = try? makeInMemoryContainer() {
-            return inMemoryContainer
-        }
-
-        log.fault("In-memory fallback container creation failed. Retrying with a temporary on-disk store.")
-
-        if let temporaryDiskContainer = try? makeTemporaryDiskFallbackContainer() {
-            return temporaryDiskContainer
-        }
-
-        fatalError(
-            "Failed to create any SwiftData fallback container after in-memory and temporary-disk recovery attempts."
-        )
-    }
-
-    private static func makeInMemoryContainer() throws -> ModelContainer {
-        let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        return try ModelContainer(for: schema, configurations: [config])
-    }
-
-    private static func makeTemporaryDiskFallbackContainer() throws -> ModelContainer {
-        let fm = FileManager.default
-        let emergencyDirectory = fm.temporaryDirectory
-            .appendingPathComponent("SumiStartupFallback", isDirectory: true)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try fm.createDirectory(at: emergencyDirectory, withIntermediateDirectories: true)
-
-        let temporaryStoreURL = emergencyDirectory.appendingPathComponent(
-            storeFileName,
-            isDirectory: false
-        )
-        log.notice(
-            "Using temporary on-disk SwiftData fallback at \(temporaryStoreURL.path, privacy: .public)"
-        )
-        let config = ModelConfiguration(url: temporaryStoreURL)
-        return try ModelContainer(for: schema, configurations: [config])
     }
 
     // Run a throwing closure on a background utility queue and block until it finishes

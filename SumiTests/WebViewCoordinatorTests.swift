@@ -122,31 +122,8 @@ final class WebViewCoordinatorTests: XCTestCase {
 
         let resolvedWebView = coordinator.getOrCreateWebView(
             for: tab,
-            in: windowId,
-            tabManager: browserManager.tabManager
+            in: windowId
         )
-
-        XCTAssertTrue(resolvedWebView === preCreatedWebView)
-        XCTAssertTrue(coordinator.getWebView(for: tab.id, in: windowId) === preCreatedWebView)
-        XCTAssertEqual(tab.primaryWindowId, windowId)
-    }
-
-    func testCreateWebViewAdoptsPreCreatedTabWebViewAsPrimary() {
-        let browserManager = BrowserManager()
-        let coordinator = WebViewCoordinator()
-        browserManager.webViewCoordinator = coordinator
-
-        let tab = browserManager.tabManager.createNewTab(
-            url: "https://example.com/adopt-direct",
-            in: browserManager.tabManager.currentSpace,
-            activate: false
-        )
-        tab.setupWebView()
-
-        let preCreatedWebView = try! XCTUnwrap(tab.existingWebView)
-        let windowId = UUID()
-
-        let resolvedWebView = coordinator.createWebView(for: tab, in: windowId)
 
         XCTAssertTrue(resolvedWebView === preCreatedWebView)
         XCTAssertTrue(coordinator.getWebView(for: tab.id, in: windowId) === preCreatedWebView)
@@ -243,7 +220,10 @@ final class WebViewCoordinatorTests: XCTestCase {
             }
             .store(in: &cancellables)
 
-        let webView = coordinator.createWebView(for: tab, in: windowId)
+        let webView = coordinator.getOrCreateWebView(
+            for: tab,
+            in: windowId
+        )
         webView.loadHTMLString(
             """
             <!doctype html>
@@ -282,7 +262,6 @@ final class WebViewCoordinatorTests: XCTestCase {
         )
         coordinator.removeWebViewFromContainers(webView)
 
-        XCTAssertEqual(coordinator.totalDeferredProtectedCommandCount(), 1)
         XCTAssertTrue(host.superview === pane)
         XCTAssertTrue(webView.superview === host)
 
@@ -296,7 +275,6 @@ final class WebViewCoordinatorTests: XCTestCase {
 
         XCTAssertNil(host.superview)
         XCTAssertNil(webView.superview)
-        XCTAssertEqual(coordinator.totalDeferredProtectedCommandCount(), 0)
     }
 
     func testDeferredAttachHostCommandsCollapseToLatestPane() async {
@@ -318,16 +296,8 @@ final class WebViewCoordinatorTests: XCTestCase {
         )
 
         XCTAssertFalse(coordinator.attachHost(host, to: singlePane))
-        XCTAssertEqual(coordinator.deferredProtectedCommandSummaries(for: webView).count, 1)
-        XCTAssertTrue(
-            coordinator.deferredProtectedCommandSummaries(for: webView)[0]
-                .contains("pane=single")
-        )
 
         XCTAssertFalse(coordinator.attachHost(host, to: leftPane))
-        let summaries = coordinator.deferredProtectedCommandSummaries(for: webView)
-        XCTAssertEqual(summaries.count, 1)
-        XCTAssertTrue(summaries[0].contains("pane=left"))
 
         coordinator.finishHistorySwipeProtection(
             tabId: tabId,
@@ -338,7 +308,6 @@ final class WebViewCoordinatorTests: XCTestCase {
         await Task.yield()
 
         XCTAssertTrue(host.superview === leftPane)
-        XCTAssertEqual(coordinator.totalDeferredProtectedCommandCount(), 0)
     }
 
     func testDeferredCommandsDropWhenWindowContainerIsDestroyed() {
@@ -360,46 +329,10 @@ final class WebViewCoordinatorTests: XCTestCase {
         )
 
         XCTAssertFalse(coordinator.attachHost(host, to: leftPane))
-        XCTAssertEqual(coordinator.totalDeferredProtectedCommandCount(), 1)
 
         coordinator.removeCompositorContainerView(for: windowId)
 
-        XCTAssertEqual(coordinator.totalDeferredProtectedCommandCount(), 0)
         XCTAssertNil(host.superview)
-    }
-
-    func testFullscreenProtectedContainerRemovalFlushesAfterExit() async {
-        let coordinator = WebViewCoordinator()
-        let tabId = UUID()
-        let windowId = UUID()
-        let (root, singlePane, _, _) = makeCompositorPaneRoot()
-        let webView = WKWebView(frame: .zero)
-
-        coordinator.setCompositorContainerView(root, for: windowId)
-        coordinator.setWebView(webView, for: tabId, in: windowId)
-        let host = try! XCTUnwrap(coordinator.getWebViewHost(for: tabId, in: windowId))
-        singlePane.addSubview(host)
-
-        coordinator.simulateFullscreenStateChangeForTesting(
-            tabId: tabId,
-            in: windowId,
-            state: .inFullscreen
-        )
-        coordinator.removeWebViewFromContainers(webView)
-
-        XCTAssertTrue(host.superview === singlePane)
-        XCTAssertEqual(coordinator.totalDeferredProtectedCommandCount(), 1)
-
-        coordinator.simulateFullscreenStateChangeForTesting(
-            tabId: tabId,
-            in: windowId,
-            state: .notInFullscreen
-        )
-        await Task.yield()
-
-        XCTAssertNil(host.superview)
-        XCTAssertNil(webView.superview)
-        XCTAssertEqual(coordinator.totalDeferredProtectedCommandCount(), 0)
     }
 
     func testCleanupWindowDeferredCommandsAreRemovedAfterProtectedFlush() async {
@@ -426,7 +359,6 @@ final class WebViewCoordinatorTests: XCTestCase {
         )
         coordinator.cleanupWindow(windowId, tabManager: browserManager.tabManager)
 
-        XCTAssertEqual(coordinator.totalDeferredProtectedCommandCount(), 1)
         XCTAssertNotNil(coordinator.getWebView(for: tab.id, in: windowId))
 
         coordinator.finishHistorySwipeProtection(
@@ -438,7 +370,6 @@ final class WebViewCoordinatorTests: XCTestCase {
         await Task.yield()
 
         XCTAssertNil(coordinator.getWebView(for: tab.id, in: windowId))
-        XCTAssertEqual(coordinator.totalDeferredProtectedCommandCount(), 0)
     }
 
     func testProtectedHiddenWebViewDeferredEvictionFlushesAfterSwipeFinishes() async {
@@ -487,11 +418,6 @@ final class WebViewCoordinatorTests: XCTestCase {
         XCTAssertNotNil(coordinator.getWebView(for: firstTab.id, in: windowState.id))
         XCTAssertNotNil(coordinator.getWebView(for: thirdTab.id, in: windowState.id))
         XCTAssertNotNil(coordinator.getWebView(for: secondTab.id, in: windowState.id))
-        XCTAssertEqual(coordinator.totalDeferredProtectedCommandCount(), 1)
-        XCTAssertTrue(
-            coordinator.deferredProtectedCommandSummaries(for: secondWebView)[0]
-                .contains("evictHiddenWebViews")
-        )
 
         coordinator.finishHistorySwipeProtection(
             tabId: secondTab.id,
@@ -509,9 +435,7 @@ final class WebViewCoordinatorTests: XCTestCase {
                     secondTab.id,
                     thirdTab.id,
                 ].compactMap { coordinator.getWebView(for: $0, in: windowState.id) }.count
-                if trackedWebViewCount == 2,
-                   coordinator.totalDeferredProtectedCommandCount() == 0
-                {
+                if trackedWebViewCount == 2 {
                     evictionExpectation.fulfill()
                     return
                 }
@@ -528,7 +452,6 @@ final class WebViewCoordinatorTests: XCTestCase {
             ].compactMap { $0 }.count,
             1
         )
-        XCTAssertEqual(coordinator.totalDeferredProtectedCommandCount(), 0)
         _ = registry
     }
 
@@ -548,8 +471,7 @@ final class WebViewCoordinatorTests: XCTestCase {
 
         let webView = coordinator.getOrCreateWebView(
             for: tab,
-            in: windowState.id,
-            tabManager: browserManager.tabManager
+            in: windowState.id
         )
 
         coordinator.beginHistorySwipeProtection(
@@ -586,8 +508,7 @@ final class WebViewCoordinatorTests: XCTestCase {
 
         let webView = coordinator.getOrCreateWebView(
             for: tab,
-            in: windowState.id,
-            tabManager: browserManager.tabManager
+            in: windowState.id
         )
 
         coordinator.beginHistorySwipeProtection(
@@ -632,8 +553,7 @@ final class WebViewCoordinatorTests: XCTestCase {
 
         let leftWebView = coordinator.getOrCreateWebView(
             for: leftTab,
-            in: windowState.id,
-            tabManager: browserManager.tabManager
+            in: windowState.id
         )
 
         coordinator.beginHistorySwipeProtection(
@@ -820,7 +740,6 @@ final class WebViewCoordinatorTests: XCTestCase {
         XCTAssertNil(coordinator.getWebView(for: secondTab.id, in: secondWindowId))
         XCTAssertNil(coordinator.getWebViewHost(for: firstTab.id, in: firstWindowId))
         XCTAssertNil(coordinator.getWebViewHost(for: secondTab.id, in: secondWindowId))
-        XCTAssertEqual(coordinator.totalDeferredProtectedCommandCount(), 0)
         XCTAssertNil(firstTab.primaryWindowId)
         XCTAssertNil(secondTab.primaryWindowId)
     }
@@ -908,13 +827,11 @@ final class WebViewCoordinatorTests: XCTestCase {
         let rightWebView = try! XCTUnwrap(coordinator.getWebView(for: rightTab.id, in: windowState.id))
         let hiddenWebView = coordinator.getOrCreateWebView(
             for: hiddenTab,
-            in: windowState.id,
-            tabManager: browserManager.tabManager
+            in: windowState.id
         )
         let secondHiddenWebView = coordinator.getOrCreateWebView(
             for: secondHiddenTab,
-            in: windowState.id,
-            tabManager: browserManager.tabManager
+            in: windowState.id
         )
 
         _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)

@@ -4,10 +4,6 @@ import WebKit
 
 @MainActor
 extension Tab {
-    var shouldShowTabAudioButton: Bool {
-        audioState.showsTabAudioButton
-    }
-
     func bindAudioState(to webView: WKWebView) {
         let key = ObjectIdentifier(webView)
         guard mediaRuntime.audioStateCancellables[key] == nil else {

@@ -32,11 +32,6 @@ extension Tab {
 
     // MARK: - WebView Ownership
 
-    /// Returns true if this tab has an assigned primary WebView (displayed in any window)
-    var hasAssignedPrimaryWebView: Bool {
-        primaryWindowId != nil && _webView != nil
-    }
-
     /// Returns the WebView only after it has been attached to a concrete window.
     var assignedWebView: WKWebView? {
         primaryWindowId != nil ? _webView : nil
@@ -50,13 +45,6 @@ extension Tab {
             setupWebView()
         }
         return _webView
-    }
-
-    var activeWebView: WKWebView {
-        if _webView == nil {
-            setupWebView()
-        }
-        return _webView!
     }
 
     /// Returns the current WebView without triggering lazy initialization.
@@ -116,19 +104,16 @@ extension Tab {
     @available(macOS 15.5, *)
     func performMainFrameNavigationAfterHydrationIfNeeded(
         on webView: WKWebView,
-        url: URL,
         performLoad: @escaping @MainActor (WKWebView) -> Void
     ) {
         performMainFrameNavigation(
             on: webView,
-            url: url,
             performLoad: performLoad
         )
     }
 
     func performMainFrameNavigation(
         on webView: WKWebView,
-        url: URL,
         performLoad: @escaping @MainActor (WKWebView) -> Void
     ) {
         cancelPendingMainFrameNavigation()
@@ -214,7 +199,6 @@ extension Tab {
             _webView = newWebView
             if let fv = _webView as? FocusableWKWebView {
                 fv.owningTab = self
-                fv.contextMenuBridge = WebContextMenuBridge(tab: self, configuration: configuration)
             }
         }
 

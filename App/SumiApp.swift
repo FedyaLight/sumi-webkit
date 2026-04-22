@@ -93,7 +93,6 @@ struct SumiApp: App {
 
         // Initialize keyboard shortcut manager
         keyboardShortcutManager.setBrowserManager(browserManager)
-        browserManager.keyboardShortcutManager = keyboardShortcutManager
 
         // Set up window lifecycle callbacks
         windowRegistry.onWindowRegister = { [weak browserManager] windowState in

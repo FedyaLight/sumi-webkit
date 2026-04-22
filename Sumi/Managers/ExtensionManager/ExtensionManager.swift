@@ -28,8 +28,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         "sumi_webkit_runtime_compat.js"
     nonisolated static let webKitRuntimeCompatibilityServiceWorkerWrapperFilename =
         "sumi_webkit_runtime_compat_worker.js"
-    nonisolated static let webKitRuntimeBlockProgrammaticContentScriptAPIsKey =
-        "debug.extensions.webkitRuntime.blockProgrammaticContentScriptAPIs.enabled"
     nonisolated static let selectiveContentScriptGuardTargetsKey =
         "extensions.webkitRuntime.contentScriptGuard.targets"
     nonisolated static let externallyConnectableNativeBridgeHandlerName =
@@ -305,40 +303,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         #endif
     }
 
-    var loadedContextIDs: [String] {
-        Array(extensionContexts.keys).sorted()
-    }
-
-    var nativeController: WKWebExtensionController? {
-        extensionController
-    }
-
-    func resetInjectedBrowserConfigurationRuntimeState() {
-        guard browserConfiguration !== BrowserConfiguration.shared else {
-            return
-        }
-
-        let signpostState = PerformanceTrace.beginInterval(
-            "ExtensionManager.resetInjectedBrowserConfigurationRuntimeState"
-        )
-        defer {
-            PerformanceTrace.endInterval(
-                "ExtensionManager.resetInjectedBrowserConfigurationRuntimeState",
-                signpostState
-            )
-        }
-
-        tearDownExtensionRuntime(
-            reason: "resetInjectedBrowserConfigurationRuntimeState",
-            removeUIState: true,
-            releaseController: true
-        )
-    }
-
-    func refreshFromPersistence() {
-        loadInstalledExtensions()
-    }
-
     func getExtensionContext(for extensionId: String) -> WKWebExtensionContext? {
         extensionContexts[extensionId]
     }
@@ -415,13 +379,6 @@ final class ExtensionManager: NSObject, ObservableObject {
     func extensionRuntimeTrace(
         _ message: @autoclosure () -> String
     ) {
-        guard Self.isWebKitRuntimeTraceEnabled else { return }
-        let renderedMessage = message()
-        RuntimeDiagnostics.logger(category: "ExtensionRuntimeTrace")
-            .debug("\(renderedMessage, privacy: .public)")
-    }
-
-    func extensionRuntimeTrace(_ message: () -> String) {
         guard Self.isWebKitRuntimeTraceEnabled else { return }
         let renderedMessage = message()
         RuntimeDiagnostics.logger(category: "ExtensionRuntimeTrace")

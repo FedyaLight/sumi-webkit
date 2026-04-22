@@ -19,20 +19,6 @@ extension TabManager {
         handleProfileSwitch()
     }
 
-    func tabCount(for profileId: UUID) -> Int {
-        let spaceIds = Set(spaces.filter { $0.profileId == profileId }.map(\.id))
-        let regular = spaces.filter { spaceIds.contains($0.id) }
-            .flatMap { tabsBySpace[$0.id] ?? [] }
-        let spacePinned = spaces.filter { spaceIds.contains($0.id) }
-            .flatMap { self.spacePinnedShortcuts[$0.id] ?? [] }
-        let pinned = pinnedByProfile[profileId] ?? []
-        return regular.count + spacePinned.count + pinned.count
-    }
-
-    func spaceCount(for profileId: UUID) -> Int {
-        spaces.filter { $0.profileId == profileId }.count
-    }
-
     func tabs(in space: Space) -> [Tab] {
         Array(tabsBySpace[space.id] ?? [])
     }
@@ -51,10 +37,10 @@ extension TabManager {
         let visible = selectionTabsForCurrentContext()
         if currentTab == nil || !(visible.contains { $0.id == currentTab!.id }) {
             currentTab = visible.first
-            browserManager?.compositorManager.updateTabVisibility(currentTabId: currentTab?.id)
+            browserManager?.compositorManager.updateTabVisibility()
             persistSelection()
         } else {
-            browserManager?.compositorManager.updateTabVisibility(currentTabId: currentTab?.id)
+            browserManager?.compositorManager.updateTabVisibility()
         }
     }
 }
@@ -82,31 +68,6 @@ extension TabManager {
             markAllSpacesStructurallyDirty()
             scheduleStructuralPersistence()
         }
-    }
-}
-
-// MARK: - Profile Validation
-extension TabManager {
-    func validateTabProfileAssignments() {
-        guard let fallbackProfileId = browserManager?.currentProfile?.id else { return }
-        var didFix = false
-
-        for space in spaces {
-            let hasTabs = !(tabsBySpace[space.id] ?? []).isEmpty || hasSpacePinnedContent(for: space.id)
-            if hasTabs && space.profileId == nil {
-                space.profileId = fallbackProfileId
-                didFix = true
-            }
-        }
-
-        if didFix {
-            markAllSpacesStructurallyDirty()
-            scheduleStructuralPersistence()
-        }
-    }
-
-    func validateProfileAssignments() {
-        validateTabProfileAssignments()
     }
 }
 
@@ -222,30 +183,6 @@ extension TabManager {
         }
     }
 
-    func undoCloseMultipleTabs(count: Int) {
-        withStructuralUpdateTransaction {
-            let actualCount = min(count, recentlyClosedTabs.count)
-            var restoredTabs: [Tab] = []
-
-            for _ in 0..<actualCount {
-                guard !recentlyClosedTabs.isEmpty else { break }
-                let tabInfo = recentlyClosedTabs.removeLast()
-                restoredTabs.append(tabInfo.tab)
-                tabInfo.tab.restoredCanGoBack = tabInfo.canGoBack
-                tabInfo.tab.restoredCanGoForward = tabInfo.canGoForward
-                addTab(tabInfo.tab)
-            }
-
-            if let lastTab = restoredTabs.last {
-                setActiveTab(lastTab)
-            }
-
-            if recentlyClosedTabs.isEmpty {
-                clearUndoTimer()
-            }
-        }
-    }
-
     private func scheduleUndoTimerCleanup() {
         clearUndoTimer()
         undoTimer = Timer.scheduledTimer(withTimeInterval: undoDuration, repeats: false) { [weak self] _ in
@@ -271,15 +208,6 @@ extension TabManager {
         undoTimer = nil
     }
 
-    func clearRecentlyClosedTabs() {
-        recentlyClosedTabs.removeAll()
-        clearUndoTimer()
-        lastTabClosureTime = nil
-    }
-
-    func hasRecentlyClosedTabs() -> Bool {
-        !recentlyClosedTabs.isEmpty
-    }
 }
 
 // MARK: - Navigation State Management

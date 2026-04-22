@@ -85,7 +85,6 @@ final class HoverSidebarManager: ObservableObject {
     // MARK: - Dependencies
     weak var browserManager: BrowserManager?
     weak var windowRegistry: WindowRegistry?
-    weak var sumiSettings: SumiSettingsService?
     private var hostedWindowId: UUID?
 
     // MARK: - Monitors

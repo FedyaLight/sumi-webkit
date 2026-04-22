@@ -12,22 +12,18 @@ import WebKit
 @MainActor
 final class SumiUserScriptMessageBroker {
     struct Entry {
-        let scriptId: UUID
         let bridge: UserScriptGMBridge
         let contentWorld: WKContentWorld
     }
 
-    let webViewId: UUID
     private let profileId: UUID?
     private weak var tabHandler: SumiScriptsTabHandler?
     private var entries: [UUID: Entry] = [:]
 
     init(
-        webViewId: UUID,
         profileId: UUID?,
         tabHandler: SumiScriptsTabHandler?
     ) {
-        self.webViewId = webViewId
         self.profileId = profileId
         self.tabHandler = tabHandler
     }
@@ -49,7 +45,7 @@ final class SumiUserScriptMessageBroker {
             tabOpenHandler: tabHandler
         )
         controller.add(bridge, contentWorld: contentWorld, name: bridge.messageHandlerName)
-        entries[script.id] = Entry(scriptId: script.id, bridge: bridge, contentWorld: contentWorld)
+        entries[script.id] = Entry(bridge: bridge, contentWorld: contentWorld)
         return bridge
     }
 

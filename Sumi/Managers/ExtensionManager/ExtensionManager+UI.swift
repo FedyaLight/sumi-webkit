@@ -27,17 +27,6 @@ extension ExtensionManager: NSPopoverDelegate {
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
     }
 
-    func prepareWebViewForExtensionRuntime(
-        _ webView: WKWebView,
-        currentURL: URL? = nil
-    ) {
-        prepareWebViewForExtensionRuntime(
-            webView,
-            currentURL: currentURL,
-            reason: #function
-        )
-    }
-
     func showExtensionInstallDialog() {
         guard isExtensionSupportAvailable else {
             showErrorAlert(.unsupportedOS)

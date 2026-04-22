@@ -9,6 +9,10 @@ import SwiftUI
 struct FindChromePaintSignature: Equatable {
     var theme: ResolvedThemeContext
     var settingsBits: Int
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.theme == rhs.theme && lhs.settingsBits == rhs.settingsBits
+    }
 }
 
 /// Wraps find chrome so `FindManager` / `WindowRegistry` drive visibility.
@@ -50,7 +54,6 @@ struct FindInPageChromeHitTestingWrapper: View {
 /// Hosts DuckDuckGo-style `FindInPageViewController` in the top browser chrome (400×40, centered).
 struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
     @ObservedObject var findManager: FindManager
-    @EnvironmentObject private var browserManager: BrowserManager
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sumiSettings) private var sumiSettings
     let windowStateID: UUID

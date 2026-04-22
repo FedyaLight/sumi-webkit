@@ -13,7 +13,7 @@ struct PeekWebView: NSViewRepresentable {
     weak var peekManager: PeekManager?
 
     func makeCoordinator() -> Coordinator {
-        let coordinator = Coordinator(session: session, peekManager: peekManager)
+        let coordinator = Coordinator(session: session)
         // Store coordinator reference for WebView extraction immediately
         peekManager?.webViewCoordinator = coordinator
         return coordinator
@@ -51,7 +51,6 @@ struct PeekWebView: NSViewRepresentable {
 
     func updateNSView(_ nsView: WKWebView, context: Context) {
         context.coordinator.session = session
-        context.coordinator.peekManager = peekManager
         context.coordinator.loadInitialURLIfNeeded(on: nsView)
 
         // Update reference in coordinator
@@ -63,16 +62,14 @@ struct PeekWebView: NSViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         var session: PeekSession
-        weak var peekManager: PeekManager?
         private var progressObservation: NSKeyValueObservation?
         private var didLoadInitialURL = false
         /// MEMORY LEAK FIX: Use weak reference to avoid retaining the WKWebView
         /// when the peek overlay is dismissed. The view hierarchy holds the strong ref.
         weak var webView: WKWebView?
 
-        init(session: PeekSession, peekManager: PeekManager?) {
+        init(session: PeekSession) {
             self.session = session
-            self.peekManager = peekManager
         }
 
         deinit {

@@ -27,17 +27,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     weak var webViewLookup: (any WebViewLookup)?
     weak var externalURLHandler: (any ExternalURLHandling)?
     weak var persistenceHandler: (any BrowserPersistenceHandling)?
-    weak var updateHandler: (any BrowserUpdateHandling)?
+    weak var updateHandler: BrowserManager?
 
     // Window registry for accessing active window state
     weak var windowRegistry: WindowRegistry?
 
     private let urlEventClass = AEEventClass(kInternetEventClass)
     private let urlEventID = AEEventID(kAEGetURL)
-    private var mouseEventMonitor: Any?
-    private let userDefaults = UserDefaults.standard
-    
-
 
     // MARK: - Sparkle Updates
 
@@ -81,7 +77,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     ///
     /// This is common in browsers - side buttons on gaming/office mice are often used for navigation.
     private func setupMouseButtonHandling() {
-        mouseEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .otherMouseDown) {
+        _ = NSEvent.addLocalMonitorForEvents(matching: .otherMouseDown) {
             [weak self] event in
             guard let self = self,
                   let commandRouter = self.commandRouter,
@@ -234,7 +230,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
                 AppDelegate.log.info("Termination: MainActor task began")
 
                 let runtimePersistStart = CFAbsoluteTimeGetCurrent()
-                let flushedRuntimeStates = await persistenceHandler.tabRepository
+                let flushedRuntimeStates = await persistenceHandler
                     .flushRuntimeStatePersistenceAwaitingResult()
                 let rdt = CFAbsoluteTimeGetCurrent() - runtimePersistStart
                 AppDelegate.log.info(
@@ -242,7 +238,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
                 )
 
                 let persistStart = CFAbsoluteTimeGetCurrent()
-                let didDirectFullReconcile: Bool = await persistenceHandler.tabRepository.persistFullReconcileAwaitingResult(
+                let didDirectFullReconcile: Bool = await persistenceHandler.persistFullReconcileAwaitingResult(
                     reason: "app termination"
                 )
                 let pdt = CFAbsoluteTimeGetCurrent() - persistStart
@@ -278,7 +274,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
     /// Handles URL events from AppleScript/AppleEvents
     @objc private func handleGetURLEvent(
-        _ event: NSAppleEventDescriptor, withReplyEvent replyEvent: NSAppleEventDescriptor
+        _ event: NSAppleEventDescriptor, withReplyEvent _: NSAppleEventDescriptor
     ) {
         guard let stringValue = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
             let url = URL(string: stringValue)

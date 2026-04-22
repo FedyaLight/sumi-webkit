@@ -160,9 +160,6 @@ class BrowserManager: ObservableObject {
     @Published var workspaceThemePickerSession: WorkspaceThemePickerSession?
     @Published var tabStructuralRevision: UInt = 0
 
-    /// Track tabs currently being synced to prevent recursive sync calls
-    private var isSyncingTab: Set<UUID> = []
-
     /// Reference to the app delegate for Sparkle integration
     weak var appDelegate: AppDelegate?
 
@@ -204,7 +201,6 @@ class BrowserManager: ObservableObject {
     var workspaceThemeCoordinator: WorkspaceThemeCoordinator
     var findManager: FindManager
     var zoomManager = ZoomManager()
-    var keyboardShortcutManager: KeyboardShortcutManager?
     weak var sumiSettings: SumiSettingsService?
     let sumiProfileRouter = SumiProfileRouter()
     let profileMaintenanceService = SumiProfileMaintenanceService()
@@ -222,9 +218,6 @@ class BrowserManager: ObservableObject {
     lazy var webViewRoutingService = BrowserWebViewRoutingService(
         tabLookup: { [weak self] tabId in
             self?.tabManager.tab(for: tabId)
-        },
-        incognitoTabLookup: { [weak self] windowId, tabId in
-            self?.windowRegistry?.windows[windowId]?.ephemeralTabs.first(where: { $0.id == tabId })
         },
         coordinatorLookup: { [weak self] in
             self?.webViewCoordinator
@@ -275,10 +268,6 @@ class BrowserManager: ObservableObject {
     private var pendingUserActivationsByWindow: [UUID: PendingUserTabActivation] = [:]
     private var userActivationFlushScheduledWindows: Set<UUID> = []
     private var deferredHistorySwipeWindowMutationsByWindow: [UUID: DeferredHistorySwipeWindowMutations] = [:]
-
-    var tabRepository: TabRepositoryService {
-        tabManager.tabRepository
-    }
 
     private func adoptProfileIfNeeded(
         for windowState: BrowserWindowState, context: ProfileSwitchContext
@@ -383,9 +372,7 @@ class BrowserManager: ObservableObject {
 
     // MARK: - Profile Switching
     struct ProfileSwitchToast: Equatable {
-        let fromProfile: Profile?
         let toProfile: Profile
-        let timestamp: Date
     }
 
     enum ProfileSwitchContext {
@@ -457,7 +444,9 @@ class BrowserManager: ObservableObject {
 
             if context.shouldProvideFeedback {
                 self.showProfileSwitchToast(
-                    from: previousProfile, to: profile, in: windowState ?? self.windowRegistry?.activeWindow)
+                    to: profile,
+                    in: windowState ?? self.windowRegistry?.activeWindow
+                )
                 NSHapticFeedbackManager.defaultPerformer.perform(
                     .generic, performanceTime: .drawCompleted)
             }
@@ -468,15 +457,6 @@ class BrowserManager: ObservableObject {
                 }
             }
         }
-    }
-
-    func updateSidebarWidth(_ width: CGFloat) {
-        let clampedWidth = BrowserWindowState.clampedSidebarWidth(width)
-        if let activeWindow = windowRegistry?.activeWindow {
-            updateSidebarWidth(clampedWidth, for: activeWindow)
-            return
-        }
-        savedSidebarWidth = clampedWidth
     }
 
     func updateSidebarWidth(
@@ -620,18 +600,8 @@ class BrowserManager: ObservableObject {
         case deferred
     }
 
-    enum TabActivationReason: Equatable {
-        case regularTab
-        case spaceLauncher
-        case folderLauncher
-        case essential
-        case keyboard
-        case programmatic
-    }
-
     private struct PendingUserTabActivation {
         let tabId: UUID
-        let reason: TabActivationReason
         let loadPolicy: TabSelectionLoadPolicy
     }
 
@@ -921,7 +891,7 @@ class BrowserManager: ObservableObject {
 
         tabManager.addTab(newTab)
         if let spaceId = targetSpace?.id {
-            tabManager.reorderRegular(newTab, in: spaceId, to: insertIndex)
+            tabManager.reorderRegularTabs(newTab, in: spaceId, to: insertIndex)
         }
         selectTab(newTab, in: windowState)
     }
@@ -937,14 +907,6 @@ class BrowserManager: ObservableObject {
             closeTab(currentTab, in: activeWindow)
         } else if let activeWindow = windowRegistry?.activeWindow {
             showEmptyState(in: activeWindow)
-        }
-    }
-
-    func closeTabIfPresent(_ tab: Tab) {
-        if let windowState = windowState(containing: tab) {
-            closeTab(tab, in: windowState)
-        } else {
-            tabManager.removeTab(tab.id)
         }
     }
 
@@ -1081,12 +1043,10 @@ class BrowserManager: ObservableObject {
     func requestUserTabActivation(
         _ tab: Tab,
         in windowState: BrowserWindowState,
-        reason: TabActivationReason,
         loadPolicy: TabSelectionLoadPolicy = .immediate
     ) {
         pendingUserActivationsByWindow[windowState.id] = PendingUserTabActivation(
             tabId: tab.id,
-            reason: reason,
             loadPolicy: loadPolicy
         )
 
@@ -1436,22 +1396,6 @@ class BrowserManager: ObservableObject {
         deferredHistorySwipeWindowMutationsByWindow.removeValue(forKey: windowId)
     }
 
-    private func tabBelongsToDisplayedContext(_ tab: Tab, in windowState: BrowserWindowState) -> Bool {
-        if tab.isShortcutLiveInstance && tab.shortcutPinRole == .essential {
-            return true
-        }
-
-        guard let currentSpaceId = windowState.currentSpaceId else {
-            return !tab.isShortcutLiveInstance || tab.shortcutPinRole == .essential
-        }
-
-        if tab.isShortcutLiveInstance {
-            return tab.spaceId == nil || tab.spaceId == currentSpaceId
-        }
-
-        return tab.spaceId == currentSpaceId
-    }
-
     func hasValidCurrentSelection(in windowState: BrowserWindowState) -> Bool {
         shellSelectionService.hasValidCurrentSelection(
             in: windowState,
@@ -1687,17 +1631,6 @@ class BrowserManager: ObservableObject {
         }
     }
 
-    private func restoreWindowSession(into windowState: BrowserWindowState) -> Bool {
-        windowSessionService.restoreWindowSession(into: windowState, delegate: self)
-    }
-
-    private func makeWindowSessionSnapshot(for windowState: BrowserWindowState) -> WindowSessionSnapshot {
-        windowSessionService.makeWindowSessionSnapshot(
-            for: windowState,
-            delegate: self
-        )
-    }
-
     private func preferredTabForWindow(_ windowState: BrowserWindowState) -> Tab? {
         shellSelectionService.preferredTabForWindow(
             windowState,
@@ -1920,10 +1853,6 @@ extension BrowserManager {
         webViewRoutingService.webView(for: tabId, in: windowId)
     }
 
-    func createWebView(for tabId: UUID, in windowId: UUID) -> WKWebView {
-        webViewRoutingService.createWebView(for: tabId, in: windowId)
-    }
-
     func syncTabAcrossWindows(_ tabId: UUID, originatingWebView: WKWebView? = nil) {
         webViewRoutingService.syncTabAcrossWindows(
             tabId,
@@ -1931,26 +1860,26 @@ extension BrowserManager {
         )
     }
 
-    func navigateTabAcrossWindows(_ tabId: UUID, to url: URL) {
-        webViewRoutingService.navigateTabAcrossWindows(tabId, to: url)
-    }
-
     func reloadTabAcrossWindows(_ tabId: UUID) {
         webViewRoutingService.reloadTabAcrossWindows(tabId)
     }
 
-    func setMuteState(_ muted: Bool, for tabId: UUID, originatingWindowId: UUID?) {
-        webViewRoutingService.setMuteState(
-            muted,
-            for: tabId,
-            originatingWindowId: originatingWindowId
-        )
+    func setMuteState(_ muted: Bool, for tabId: UUID) {
+        webViewRoutingService.setMuteState(muted, for: tabId)
     }
 }
 
 extension BrowserManager: BrowserCommandRouting, WindowCommandRouting, ExternalURLHandling,
-    BrowserPersistenceHandling, BrowserUpdateHandling, WebViewLookup
+    BrowserPersistenceHandling, WebViewLookup
 {
+    func flushRuntimeStatePersistenceAwaitingResult() async -> Int {
+        await tabManager.flushRuntimeStatePersistenceAwaitingResult()
+    }
+
+    func persistFullReconcileAwaitingResult(reason: String) async -> Bool {
+        await tabManager.persistFullReconcileAwaitingResult(reason: reason)
+    }
+
     func webView(for tabId: UUID, in windowId: UUID) -> WKWebView? {
         getWebView(for: tabId, in: windowId)
     }

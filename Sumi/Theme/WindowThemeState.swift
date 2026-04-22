@@ -85,10 +85,6 @@ struct WindowThemeState: Equatable {
         self.progress = min(max(progress, 0.0), 1.0)
     }
 
-    mutating func commit(_ theme: WorkspaceTheme) {
-        restore(theme)
-    }
-
     mutating func cancel() {
         restore(sourceTheme ?? committedTheme)
     }

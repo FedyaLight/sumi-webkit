@@ -107,29 +107,3 @@ final class UserScriptResourceEntity {
         self.updatedAt = updatedAt
     }
 }
-
-@Model
-final class UserScriptValueEntity {
-    @Attribute(.unique) var id: UUID
-    var scriptId: UUID
-    var profileId: UUID?
-    var key: String
-    var valueJSON: String
-    var updatedAt: Date
-
-    init(
-        id: UUID = UUID(),
-        scriptId: UUID,
-        profileId: UUID?,
-        key: String,
-        valueJSON: String,
-        updatedAt: Date = Date()
-    ) {
-        self.id = id
-        self.scriptId = scriptId
-        self.profileId = profileId
-        self.key = key
-        self.valueJSON = valueJSON
-        self.updatedAt = updatedAt
-    }
-}

@@ -5,41 +5,14 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class WebContextMenuBridgeTests: XCTestCase {
-    func testInstallingBridgeTwiceOnSharedUserContentControllerDoesNotDuplicateScriptRegistration() {
-        let configuration = WKWebViewConfiguration()
-        let firstTab = Tab(name: "First")
-        let secondTab = Tab(name: "Second")
-
-        let firstBridge = WebContextMenuBridge(
-            tab: firstTab,
-            configuration: configuration
-        )
-        XCTAssertEqual(
-            configuration.userContentController.userScripts.count,
-            1
-        )
-
-        let secondBridge = WebContextMenuBridge(
-            tab: secondTab,
-            configuration: configuration
-        )
-        XCTAssertEqual(
-            configuration.userContentController.userScripts.count,
-            1
-        )
-
-        _ = firstBridge
-        _ = secondBridge
-    }
-
+final class FocusableWKWebViewContextMenuTests: XCTestCase {
     func testWebKitContextMenuEndTrackingClearsTransientMenuSessionAndRestoresDragCapture() {
         let fixture = makeWebContextMenuFixture()
         let menu = NSMenu()
 
         XCTAssertTrue(fixture.dragView.shouldCaptureInteraction(at: NSPoint(x: 12, y: 12), eventType: .leftMouseDown))
 
-        fixture.webView.beginContextMenuLifecycleForTesting(on: menu, windowState: fixture.windowState)
+        openWebContextMenu(in: fixture, menu: menu)
 
         XCTAssertTrue(fixture.windowState.sidebarInteractionState.isContextMenuPresented)
         XCTAssertFalse(fixture.windowState.sidebarInteractionState.allowsSidebarDragSourceHitTesting)
@@ -57,7 +30,7 @@ final class WebContextMenuBridgeTests: XCTestCase {
         let fixture = makeWebContextMenuFixture()
         let menu = NSMenu()
 
-        fixture.webView.beginContextMenuLifecycleForTesting(on: menu, windowState: fixture.windowState)
+        openWebContextMenu(in: fixture, menu: menu)
         let lifecycleDelegate = menu.delegate
 
         XCTAssertTrue(fixture.windowState.sidebarInteractionState.isContextMenuPresented)
@@ -77,7 +50,7 @@ final class WebContextMenuBridgeTests: XCTestCase {
         for _ in 0..<3 {
             let menu = NSMenu()
 
-            fixture.webView.beginContextMenuLifecycleForTesting(on: menu, windowState: fixture.windowState)
+            openWebContextMenu(in: fixture, menu: menu)
 
             XCTAssertTrue(fixture.windowState.sidebarInteractionState.isContextMenuPresented)
             XCTAssertFalse(fixture.dragView.shouldCaptureInteraction(at: NSPoint(x: 12, y: 12), eventType: .leftMouseDown))
@@ -92,13 +65,24 @@ final class WebContextMenuBridgeTests: XCTestCase {
     }
 
     private func makeWebContextMenuFixture() -> (
+        browserManager: BrowserManager,
+        windowRegistry: WindowRegistry,
         windowState: BrowserWindowState,
         window: NSWindow,
         webView: FocusableWKWebView,
         dragView: SidebarInteractiveItemView
     ) {
+        let browserManager = BrowserManager()
+        let windowRegistry = WindowRegistry()
         let windowState = BrowserWindowState()
-        let tab = Tab(name: "Web", skipFaviconFetch: true)
+        browserManager.windowRegistry = windowRegistry
+
+        let tab = Tab(
+            name: "Web",
+            browserManager: browserManager,
+            skipFaviconFetch: true
+        )
+        windowState.currentTabId = tab.id
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 480, height: 320),
@@ -107,6 +91,8 @@ final class WebContextMenuBridgeTests: XCTestCase {
             defer: false
         )
         windowState.window = window
+        windowRegistry.register(windowState)
+        windowRegistry.activeWindowId = windowState.id
 
         let webView = FocusableWKWebView(
             frame: NSRect(x: 0, y: 0, width: 240, height: 180),
@@ -130,7 +116,32 @@ final class WebContextMenuBridgeTests: XCTestCase {
         )
         window.contentView?.addSubview(dragView)
 
-        return (windowState, window, webView, dragView)
+        return (browserManager, windowRegistry, windowState, window, webView, dragView)
+    }
+
+    private func openWebContextMenu(
+        in fixture: (
+            browserManager: BrowserManager,
+            windowRegistry: WindowRegistry,
+            windowState: BrowserWindowState,
+            window: NSWindow,
+            webView: FocusableWKWebView,
+            dragView: SidebarInteractiveItemView
+        ),
+        menu: NSMenu
+    ) {
+        let event = NSEvent.mouseEvent(
+            with: .rightMouseDown,
+            location: NSPoint(x: 12, y: 12),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: fixture.window.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 0
+        )!
+        fixture.webView.willOpenMenu(menu, with: event)
     }
 
     private func drainMainRunLoop() {

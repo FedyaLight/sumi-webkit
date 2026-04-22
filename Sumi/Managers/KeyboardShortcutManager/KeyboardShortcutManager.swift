@@ -175,11 +175,6 @@ class KeyboardShortcutManager {
 
     // MARK: - Public Interface
 
-    /// O(1) lookup of shortcut by key combination
-    func shortcut(for keyCombination: KeyCombination) -> KeyboardShortcut? {
-        shortcutMap[keyCombination.lookupKey]
-    }
-
     /// O(n) lookup of shortcut by action (for specific action queries)
     func shortcut(for action: ShortcutAction) -> KeyboardShortcut? {
         shortcutMap.values.first { $0.action == action && $0.isEnabled }
@@ -545,5 +540,4 @@ class KeyboardShortcutManager {
 // MARK: - Notification
 extension Notification.Name {
     static let shortcutExecuted = Notification.Name("shortcutExecuted")
-    static let shortcutsChanged = Notification.Name("shortcutsChanged")
 }

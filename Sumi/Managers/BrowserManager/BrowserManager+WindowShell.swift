@@ -18,14 +18,6 @@ extension BrowserManager {
         )
     }
 
-    func canDragTab(_ tab: Tab, toWindow targetWindow: BrowserWindowState) -> Bool {
-        windowShellService.canDragTab(tab, toWindow: targetWindow)
-    }
-
-    func isIncognitoWindow(_ windowId: UUID) -> Bool {
-        windowShellService.isIncognitoWindow(windowId)
-    }
-
     func closeActiveWindow() {
         windowShellService.closeActiveWindow(in: windowRegistry)
     }
@@ -80,9 +72,6 @@ extension BrowserManager {
             },
             createNewTab: { [weak self] windowState, url in
                 self?.createNewTab(in: windowState, url: url)
-            },
-            persistWindowSession: { [weak self] windowState in
-                self?.persistWindowSession(for: windowState)
             }
         )
     }

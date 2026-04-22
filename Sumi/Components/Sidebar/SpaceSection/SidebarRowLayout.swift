@@ -16,7 +16,6 @@ enum SidebarRowLayout {
     static let folderHeaderGlyphCenteringOffset: CGFloat = (faviconSize - folderGlyphSize) * 0.5
     /// Horizontal offset from row leading to folder title text (matches favicon column + gap before title).
     static let folderTitleLeading: CGFloat = faviconSize + iconTrailingSpacing
-    static let actionSlotWidth: CGFloat = 34
     static let changedLauncherResetWidth: CGFloat = 42
     static let changedLauncherTitleLeading: CGFloat = 4
     static let changedLauncherSeparatorWidth: CGFloat = 2.5

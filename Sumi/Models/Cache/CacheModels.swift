@@ -222,23 +222,6 @@ enum DataRetentionRisk: String, CaseIterable {
     case moderate = "Moderate (8-30 days)"
     case aging = "Aging (31-90 days)"
     case stale = "Stale (90+ days)"
-    
-    var color: String {
-        switch self {
-        case .fresh: return "green"
-        case .moderate: return "blue"
-        case .aging: return "orange"
-        case .stale: return "red"
-        }
-    }
-    
-    var shouldRetain: Bool {
-        switch self {
-        case .fresh, .moderate: return true
-        case .aging: return false  // Review needed
-        case .stale: return false  // Should be deleted
-        }
-    }
 }
 
 enum PrivacyCategory: String, CaseIterable {
@@ -246,24 +229,6 @@ enum PrivacyCategory: String, CaseIterable {
     case userData = "User Data"
     case functional = "Functional"
     case performance = "Performance"
-    
-    var sensitivityLevel: Int {
-        switch self {
-        case .personalData: return 4  // Highest sensitivity
-        case .userData: return 3
-        case .functional: return 2
-        case .performance: return 1   // Lowest sensitivity
-        }
-    }
-    
-    var icon: String {
-        switch self {
-        case .personalData: return "person.circle.fill"
-        case .userData: return "folder.circle.fill"
-        case .functional: return "gear.circle.fill"
-        case .performance: return "speedometer"
-        }
-    }
 }
 
 // MARK: - Cache Types and Filters

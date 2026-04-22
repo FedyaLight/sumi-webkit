@@ -39,8 +39,6 @@ extension ExtensionManagerTests {
         XCTAssertEqual(envelope.method, "sendMessage")
         XCTAssertEqual(envelope.id, "request-1")
         XCTAssertEqual(request.extensionId, "fixture.extension")
-        XCTAssertEqual(request.origin, "https://example.com")
-        XCTAssertEqual(request.timeoutMs, 5000)
         XCTAssertEqual(
             request.message?.foundationObject as? [String: AnyHashable],
             [
@@ -117,7 +115,17 @@ extension ExtensionManagerTests {
     }
 
     func testExtensionRuntimeBundledScriptLoaderFindsAllTemplates() {
-        for fileName in ExtensionRuntimeBundledScript.requiredFileNames {
+        let requiredFileNames = [
+            "externally_connectable_background_helper.js",
+            "externally_connectable_isolated_bridge.js",
+            "externally_connectable_page_bridge.js",
+            "externally_connectable_worker.js",
+            "selective_content_script_guard.js",
+            "webkit_runtime_compat.js",
+            "webkit_runtime_compat_worker.js",
+        ]
+
+        for fileName in requiredFileNames {
             let source = ExtensionRuntimeBundledScript.source(fileName: fileName)
             XCTAssertNotNil(source, "Missing bundled runtime template \(fileName)")
             XCTAssertFalse(source?.isEmpty ?? true, "Bundled runtime template \(fileName) is empty")
@@ -1183,15 +1191,14 @@ extension ExtensionManagerTests {
             PendingExternallyConnectableNativeRequest(
                 id: requestID,
                 extensionId: "fixture.extension",
-                webViewIdentifier: ObjectIdentifier(webView),
-                pageURLString: pageURL.absoluteString
+                webViewIdentifier: ObjectIdentifier(webView)
             ) { _, _ in }
         )
 
         let snapshot = manager.debugRuntimeStateSnapshot
 
         XCTAssertEqual(snapshot.externallyConnectablePolicyIDs, ["fixture.extension"])
-        XCTAssertEqual(snapshot.trackedExternallyConnectableWebViewCount, 1)
+        XCTAssertTrue(manager.ecRegistry.hasTrackedState(for: webView))
         XCTAssertEqual(snapshot.pendingExternallyConnectableNativeRequestCount, 1)
         XCTAssertTrue(snapshot.externallyConnectableNativePortIDs.isEmpty)
     }
@@ -1771,8 +1778,7 @@ extension ExtensionManagerTests {
             PendingExternallyConnectableNativeRequest(
                 id: requestID,
                 extensionId: "bridge.pending",
-                webViewIdentifier: webViewID,
-                pageURLString: originalURL.absoluteString
+                webViewIdentifier: webViewID
             ) { reply, errorMessage in
                 resolvedReply = reply
                 resolvedError = errorMessage
@@ -1790,7 +1796,6 @@ extension ExtensionManagerTests {
             "Extension request canceled due to navigation"
         )
         XCTAssertTrue(manager.ecRegistry.allRequestIDs.isEmpty)
-        XCTAssertTrue(manager.ecRegistry.requestIDs(for: webView).isEmpty)
     }
 
     func testPrepareWebViewForExtensionRuntimePreservesExistingScriptsAndAttachesController() throws {

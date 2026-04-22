@@ -54,13 +54,13 @@ final class SumiWebViewAudioStateTests: XCTestCase {
 
         XCTAssertTrue(tab.audioState.isMuted)
         XCTAssertTrue(tab.audioState.isPlayingAudio)
-        XCTAssertTrue(tab.shouldShowTabAudioButton)
+        XCTAssertTrue(tab.audioState.showsTabAudioButton)
 
         tab.applyAudioState(.muted(isPlayingAudio: false))
 
         XCTAssertTrue(tab.audioState.isMuted)
         XCTAssertFalse(tab.audioState.isPlayingAudio)
-        XCTAssertFalse(tab.shouldShowTabAudioButton)
+        XCTAssertFalse(tab.audioState.showsTabAudioButton)
     }
 
     func testSetMutedUpdatesUnloadedTabAudioState() {
@@ -71,6 +71,6 @@ final class SumiWebViewAudioStateTests: XCTestCase {
 
         XCTAssertTrue(tab.audioState.isMuted)
         XCTAssertTrue(tab.audioState.isPlayingAudio)
-        XCTAssertTrue(tab.shouldShowTabAudioButton)
+        XCTAssertTrue(tab.audioState.showsTabAudioButton)
     }
 }

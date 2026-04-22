@@ -64,10 +64,6 @@ class HistoryManager {
         }
     }
     
-    func getHistory(days: Int = 7) -> [HistoryEntry] {
-        return getHistory(days: days, page: 0, pageSize: 1000).entries
-    }
-    
     func getHistory(days: Int = 7, page: Int = 0, pageSize: Int = 50) -> (entries: [HistoryEntry], hasMore: Bool) {
         do {
             let cutoffDate = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
@@ -100,10 +96,6 @@ class HistoryManager {
             RuntimeDiagnostics.emit("Error fetching paginated history: \(error)")
             return (entries: [], hasMore: false)
         }
-    }
-    
-    func searchHistory(query: String) -> [HistoryEntry] {
-        return searchHistory(query: query, page: 0, pageSize: 1000).entries
     }
     
     func searchHistory(query: String, page: Int = 0, pageSize: Int = 50) -> (entries: [HistoryEntry], hasMore: Bool) {
@@ -148,28 +140,6 @@ class HistoryManager {
     }
     
     private let maxResults: Int = 10000
-    
-    func getMostVisited(limit: Int = 10) -> [HistoryEntry] {
-        do {
-            let profileFilter = currentProfileId
-            var descriptor = FetchDescriptor<HistoryEntity>(
-                sortBy: [
-                    SortDescriptor(\.visitCount, order: .reverse),
-                    SortDescriptor(\.lastVisited, order: .reverse)
-                ]
-            )
-            descriptor.fetchLimit = limit
-            
-            let entities = try context.fetch(descriptor).filter { entity in
-                guard let pf = profileFilter else { return true }
-                return entity.profileId == pf || entity.profileId == nil
-            }
-            return entities.map { HistoryEntry(from: $0) }
-        } catch {
-            RuntimeDiagnostics.emit("Error fetching most visited: \(error)")
-            return []
-        }
-    }
     
     func clearHistory(olderThan days: Int = 0, profileId: UUID? = nil) {
         do {
@@ -248,30 +218,6 @@ class HistoryManager {
         clearHistory(olderThan: maxHistoryDays)
     }
 
-    // MARK: - Stats
-    func getHistoryStats(for profileId: UUID?) -> (count: Int, uniqueHosts: Int) {
-        do {
-            let pf = profileId ?? currentProfileId
-            let countDescriptor: FetchDescriptor<HistoryEntity>
-            if let p = pf {
-                countDescriptor = FetchDescriptor<HistoryEntity>(
-                    predicate: #Predicate<HistoryEntity> { $0.profileId == p || $0.profileId == nil }
-                )
-            } else {
-                countDescriptor = FetchDescriptor<HistoryEntity>()
-            }
-            let count = try context.fetchCount(countDescriptor)
-
-            var urlDescriptor = countDescriptor
-            urlDescriptor.propertiesToFetch = [\.url]
-            let urls = try context.fetch(urlDescriptor).compactMap { URL(string: $0.url)?.host }
-            let uniqueHosts = Set(urls).count
-            return (count: count, uniqueHosts: uniqueHosts)
-        } catch {
-            RuntimeDiagnostics.emit("Error computing history stats: \(error)")
-            return (0, 0)
-        }
-    }
 }
 
 // MARK: - HistoryEntry Model
@@ -280,8 +226,6 @@ struct HistoryEntry: Identifiable, Hashable {
     let id: UUID
     let url: URL
     let title: String
-    let visitDate: Date
-    let tabId: UUID?
     let visitCount: Int
     let lastVisited: Date
     
@@ -289,8 +233,6 @@ struct HistoryEntry: Identifiable, Hashable {
         self.id = entity.id
         self.url = URL(string: entity.url) ?? SumiSurface.emptyTabURL
         self.title = entity.title
-        self.visitDate = entity.visitDate
-        self.tabId = entity.tabId
         self.visitCount = entity.visitCount
         self.lastVisited = entity.lastVisited
     }
@@ -303,11 +245,6 @@ struct HistoryEntry: Identifiable, Hashable {
         return url.absoluteString
     }
     
-    var timeAgo: String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.dateTimeStyle = .named
-        return formatter.localizedString(for: lastVisited, relativeTo: Date())
-    }
 }
 
 // MARK: - Background Writer

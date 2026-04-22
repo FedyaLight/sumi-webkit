@@ -13,7 +13,6 @@ struct SumiCommands: Commands {
     let browserManager: BrowserManager
     let windowRegistry: WindowRegistry
     let shortcutManager: KeyboardShortcutManager
-    @Environment(\.openWindow) private var openWindow
     @Environment(\.sumiSettings) var sumiSettings
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 

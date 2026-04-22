@@ -108,25 +108,6 @@ class ZoomManager: ObservableObject {
         currentDomain = domain
     }
 
-    /// Clear zoom level for a domain
-    func clearZoomLevel(for domain: String) {
-        let key = zoomKeyPrefix + domain
-        userDefaults.removeObject(forKey: key)
-    }
-
-    /// Clear all saved zoom levels
-    func clearAllZoomLevels() {
-        let keys = userDefaults.dictionaryRepresentation().keys.filter { $0.hasPrefix(zoomKeyPrefix) }
-        for key in keys {
-            userDefaults.removeObject(forKey: key)
-        }
-    }
-
-    /// Get zoom percentage as string for display
-    func getZoomPercentageDisplay() -> String {
-        return "\(Int(currentZoomLevel * 100))%"
-    }
-
     func getZoomPercentageDisplay(for tabId: UUID) -> String {
         return "\(Int((getZoomLevel(for: tabId) * 100).rounded()))%"
     }
@@ -187,10 +168,6 @@ class ZoomManager: ObservableObject {
         tabZoomLevels.removeValue(forKey: tabId)
     }
 
-    /// Clear all tab-specific zoom levels (called on app quit)
-    func clearAllTabZoomLevels() {
-        tabZoomLevels.removeAll()
-    }
 }
 
 // MARK: - Supporting Types
@@ -201,25 +178,3 @@ private enum ZoomDirection {
 }
 
 // MARK: - Extensions
-
-extension ZoomManager {
-    /// Get the current zoom level as a percentage
-    var currentZoomPercentage: Int {
-        return Int(currentZoomLevel * 100)
-    }
-
-    /// Check if the current zoom level is at the minimum
-    var isAtMinimumZoom: Bool {
-        return currentZoomLevel <= 0.5
-    }
-
-    /// Check if the current zoom level is at the maximum
-    var isAtMaximumZoom: Bool {
-        return currentZoomLevel >= (Self.zoomPresets.last ?? 3.0)
-    }
-
-    /// Check if the current zoom level is at the default (100%)
-    var isAtDefaultZoom: Bool {
-        return abs(currentZoomLevel - 1.0) < 0.01
-    }
-}

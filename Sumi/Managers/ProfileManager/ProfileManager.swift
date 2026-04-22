@@ -168,13 +168,4 @@ final class ProfileManager: ObservableObject {
         RuntimeDiagnostics.emit("🔒 [ProfileManager] Ephemeral profile removed: \(profile.id) for window: \(windowId)")
     }
     
-    /// Get ephemeral profile for a window
-    func ephemeralProfile(for windowId: UUID) -> Profile? {
-        return ephemeralProfiles[windowId]
-    }
-    
-    /// Check if a profile ID is an ephemeral profile
-    func isEphemeralProfile(_ profileId: UUID) -> Bool {
-        return ephemeralProfiles.values.contains { $0.id == profileId }
-    }
 }

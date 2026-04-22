@@ -134,9 +134,6 @@ class BrowserWindowState {
     /// Frame of the URL bar within this window
     var urlBarFrame: CGRect = .zero
 
-    /// Toast info for this window
-    var toastInfo: WindowToastInfo?
-
     /// Profile switch toast payload for this window
     var profileSwitchToast: BrowserManager.ProfileSwitchToast?
 
@@ -182,17 +179,6 @@ class BrowserWindowState {
     /// Whether the download warning has been shown in this incognito session
     var hasShownDownloadWarning: Bool = false
     
-    /// Computed property: the actual Space object for this window's current space
-    var currentSpace: Space? {
-        guard let spaceId = currentSpaceId else { return nil }
-        // Check ephemeral spaces first for incognito windows
-        if isIncognito {
-            return ephemeralSpaces.first { $0.id == spaceId }
-        }
-        guard let tabManager = tabManager else { return nil }
-        return tabManager.spaces.first { $0.id == spaceId }
-    }
-
     init(id: UUID = UUID(), initialWorkspaceTheme: WorkspaceTheme? = nil) {
         self.id = id
         var initialThemeState = WindowThemeState()
@@ -324,17 +310,4 @@ class BrowserWindowState {
         }
     }
 
-}
-
-/// Toast information specific to a window
-struct WindowToastInfo: Equatable {
-    let message: String
-    let timestamp: Date
-    let duration: TimeInterval
-    
-    init(message: String, duration: TimeInterval = 2.0) {
-        self.message = message
-        self.timestamp = Date()
-        self.duration = duration
-    }
 }

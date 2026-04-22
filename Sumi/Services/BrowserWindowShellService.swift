@@ -5,7 +5,6 @@ import SwiftUI
 final class BrowserWindowShellService {
     typealias ContentViewFactory = @MainActor (WindowRegistry, WebViewCoordinator, BrowserWindowState?) -> NSView
     typealias NewTabCreator = @MainActor (BrowserWindowState, String) -> Void
-    typealias SessionPersister = @MainActor (BrowserWindowState) -> Void
 
     struct Context {
         let windowRegistry: WindowRegistry?
@@ -14,7 +13,6 @@ final class BrowserWindowShellService {
         let tabManager: TabManager
         let makeContentView: ContentViewFactory
         let createNewTab: NewTabCreator
-        let persistWindowSession: SessionPersister
     }
 
     private var incognitoWindowIds: Set<UUID> = []
@@ -127,14 +125,6 @@ final class BrowserWindowShellService {
         )
     }
 
-    func canDragTab(_ tab: Tab, toWindow targetWindow: BrowserWindowState) -> Bool {
-        tab.isEphemeral == targetWindow.isIncognito
-    }
-
-    func isIncognitoWindow(_ windowId: UUID) -> Bool {
-        incognitoWindowIds.contains(windowId)
-    }
-
     func closeActiveWindow(in windowRegistry: WindowRegistry?) {
         windowRegistry?.activeWindow?.window?.close()
     }
@@ -146,7 +136,7 @@ final class BrowserWindowShellService {
     func revealSidebarMenu(
         _ section: WindowSidebarMenuSection,
         in windowState: BrowserWindowState,
-        persistSession: SessionPersister
+        persistSession: @MainActor (BrowserWindowState) -> Void
     ) {
         withAnimation(.easeInOut(duration: 0.2)) {
             windowState.isSidebarVisible = true

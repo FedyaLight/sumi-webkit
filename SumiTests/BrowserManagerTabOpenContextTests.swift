@@ -150,7 +150,6 @@ final class BrowserManagerTabOpenContextTests: XCTestCase {
             DragOperation(
                 payload: .tab(tab),
                 fromContainer: .spaceRegular(sourceSpace.id),
-                fromIndex: 0,
                 toContainer: .essentials,
                 toIndex: 0,
                 toSpaceId: targetSpace.id
@@ -187,7 +186,6 @@ final class BrowserManagerTabOpenContextTests: XCTestCase {
             DragOperation(
                 payload: .pin(pin),
                 fromContainer: .spacePinned(sourceSpace.id),
-                fromIndex: 0,
                 toContainer: .essentials,
                 toIndex: 0,
                 toSpaceId: sourceSpace.id,
@@ -335,13 +333,11 @@ final class BrowserManagerTabOpenContextTests: XCTestCase {
         browserManager.requestUserTabActivation(
             firstTab,
             in: windowState,
-            reason: .regularTab,
             loadPolicy: .deferred
         )
         browserManager.requestUserTabActivation(
             secondTab,
             in: windowState,
-            reason: .regularTab,
             loadPolicy: .deferred
         )
 

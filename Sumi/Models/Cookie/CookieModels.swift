@@ -184,22 +184,6 @@ enum PrivacyRisk: String, CaseIterable {
     case low = "Low Risk"
     case medium = "Medium Risk" 
     case high = "High Risk"
-    
-    var color: String {
-        switch self {
-        case .low: return "green"
-        case .medium: return "orange"
-        case .high: return "red"
-        }
-    }
-    
-    var icon: String {
-        switch self {
-        case .low: return "checkmark.shield"
-        case .medium: return "exclamationmark.shield"
-        case .high: return "xmark.shield"
-        }
-    }
 }
 
 // MARK: - Cookie Filter Options

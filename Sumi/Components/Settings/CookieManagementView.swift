@@ -8,17 +8,6 @@
 import SwiftUI
 import WebKit
 
-struct CookieManagementView: View {
-    @StateObject private var cookieManager = CookieManager()
-
-    var body: some View {
-        CookieManagementPanel(
-            cookieManager: cookieManager,
-            clearsLoadedDataOnDisappear: true
-        )
-    }
-}
-
 struct CookieManagementPanel: View {
     @EnvironmentObject var browserManager: BrowserManager
     @ObservedObject var cookieManager: CookieManager

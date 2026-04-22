@@ -95,6 +95,10 @@ final class HoverTrackingArea: NSTrackingArea {
         ].compactMap { $0 }
     }
 
+    deinit {
+        observers?.forEach { $0.invalidate() }
+    }
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }

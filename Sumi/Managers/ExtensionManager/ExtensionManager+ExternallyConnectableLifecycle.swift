@@ -224,20 +224,6 @@ extension ExtensionManager {
     }
 
     @MainActor
-    static func externallyConnectableHostnames(
-        from manifest: [String: Any]
-    ) -> [String] {
-        guard let policy = externallyConnectablePolicy(
-            from: manifest,
-            extensionId: "policy"
-        ) else {
-            return []
-        }
-
-        return policy.normalizedHostnames
-    }
-
-    @MainActor
     static func pageWorldExternallyConnectableBridgeConfigJSON(
         policy: ExternallyConnectablePolicy,
         bridgeMarker: String

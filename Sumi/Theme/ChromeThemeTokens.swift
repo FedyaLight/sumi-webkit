@@ -3,7 +3,6 @@ import SwiftUI
 
 struct ChromeThemeTokens {
     let accent: Color
-    let background: Color
     let toolbarBackground: Color
     let fieldBackground: Color
     let fieldBackgroundHover: Color

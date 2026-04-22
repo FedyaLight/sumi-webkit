@@ -1,33 +1,7 @@
 import Foundation
 import SwiftUI
 
-public func isValidURL(_ string: String) -> Bool {
-  let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
-
-  if trimmed.isEmpty || trimmed.contains(" ") {
-    return false
-  }
-
-  guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased() else {
-    return false
-  }
-
-  switch scheme {
-  case "http", "https", "ftp":
-    if let host = url.host, !host.isEmpty { return true }
-    return false
-  case "file":
-    return url.path.isEmpty == false
-  case "about":
-    return trimmed == SumiSurface.emptyTabURL.absoluteString
-  case "sumi":
-    return SumiSurface.isSettingsSurfaceURL(url)
-  default:
-    return false
-  }
-}
-
-public func normalizeURL(_ input: String, queryTemplate: String) -> String {
+func normalizeURL(_ input: String, queryTemplate: String) -> String {
   let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
 
   if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") ||
@@ -54,7 +28,7 @@ public func normalizeURL(_ input: String, queryTemplate: String) -> String {
   return urlString
 }
 
-public func isLikelyURL(_ text: String) -> Bool {
+func isLikelyURL(_ text: String) -> Bool {
   let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
   return trimmed.contains(".") &&
     (trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") ||
@@ -63,7 +37,7 @@ public func isLikelyURL(_ text: String) -> Bool {
       trimmed.contains(".co") || trimmed.contains(".dev"))
 }
 
-public enum SearchProvider: String, CaseIterable, Identifiable, Codable, Sendable {
+enum SearchProvider: String, CaseIterable, Identifiable, Codable, Sendable {
   case google
   case duckDuckGo
   case bing
@@ -74,7 +48,7 @@ public enum SearchProvider: String, CaseIterable, Identifiable, Codable, Sendabl
   case ecosia
   case kagi
 
-  public var id: String { rawValue }
+  var id: String { rawValue }
 
   var displayName: String {
     switch self {

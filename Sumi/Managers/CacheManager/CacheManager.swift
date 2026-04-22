@@ -103,15 +103,6 @@ class CacheManager: ObservableObject {
         }
     }
     
-    func clearCacheOfType(_ cacheType: CacheType) async {
-        let dataStore = activeDataStore()
-        let dataType = cacheType.websiteDataType
-        guard !dataType.isEmpty else { return }
-        
-        await dataStore.removeData(ofTypes: [dataType], modifiedSince: Date.distantPast)
-        await loadCacheData() // Refresh the list
-    }
-    
     func clearDiskCache() async {
         let dataStore = activeDataStore()
         await dataStore.removeData(ofTypes: [WKWebsiteDataTypeDiskCache], modifiedSince: Date.distantPast)
@@ -149,15 +140,6 @@ class CacheManager: ObservableObject {
         await loadCacheData()
     }
     
-    func clearAgingCache() async {
-        let dataStore = activeDataStore()
-        // Clear cache older than 30 days (GDPR compliance)
-        let thirtyDaysAgo = Date().addingTimeInterval(-2592000)
-        let allTypes = WKWebsiteDataStore.allWebsiteDataTypes()
-        await dataStore.removeData(ofTypes: allTypes, modifiedSince: thirtyDaysAgo)
-        await loadCacheData()
-    }
-    
     func performPrivacyCompliantCleanup() async {
         let dataStore = activeDataStore()
         // Comprehensive GDPR-compliant cache cleanup
@@ -176,19 +158,6 @@ class CacheManager: ObservableObject {
         ]
         await dataStore.removeData(ofTypes: personalDataTypes, modifiedSince: thirtyDaysAgo)
         
-        await loadCacheData()
-    }
-    
-    func clearNonEssentialCache() async {
-        let dataStore = activeDataStore()
-        // Clear only non-essential cache types (keep functional cache)
-        let nonEssentialTypes: Set<String> = [
-            WKWebsiteDataTypeDiskCache,
-            WKWebsiteDataTypeMemoryCache,
-            WKWebsiteDataTypeOfflineWebApplicationCache
-        ]
-        
-        await dataStore.removeData(ofTypes: nonEssentialTypes, modifiedSince: Date.distantPast)
         await loadCacheData()
     }
     
@@ -285,27 +254,11 @@ class CacheManager: ObservableObject {
         return stats
     }
     
-    func getCacheTypeBreakdown() -> [CacheType: Int64] {
-        var breakdown: [CacheType: Int64] = [:]
-        
-        for cache in cacheEntries {
-            for type in cache.cacheTypes {
-                breakdown[type, default: 0] += cache.size
-            }
-        }
-        RuntimeDiagnostics.emit("📊 [CacheManager] Type breakdown computed for profile=\(currentProfileId?.uuidString ?? "nil")")
-        return breakdown
-    }
-    
     func getLargestCacheDomains(limit: Int = 10) -> [DomainCacheGroup] {
         return domainGroups
             .sorted { $0.totalSize > $1.totalSize }
             .prefix(limit)
             .map { $0 }
-    }
-    
-    func getStaleCacheDomains() -> [DomainCacheGroup] {
-        return domainGroups.filter { $0.hasStaleCache }
     }
     
     // MARK: - Private Methods

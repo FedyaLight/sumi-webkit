@@ -106,24 +106,6 @@ extension BrowserManager {
         )
     }
 
-    func showDialog<Content: View>(@ViewBuilder builder: () -> Content) {
-        dialogManager.showDialog(
-            builder: builder,
-            in: dialogPresentationWindow()
-        )
-    }
-
-    func showDialog<Content: View>(
-        source: SidebarTransientPresentationSource,
-        @ViewBuilder builder: () -> Content
-    ) {
-        dialogManager.showDialog(
-            builder: builder,
-            in: dialogPresentationWindow(for: source),
-            source: source
-        )
-    }
-
     func closeDialog() {
         dialogManager.closeDialog()
     }
@@ -270,9 +252,9 @@ extension BrowserManager {
 
     // MARK: - Profile Switch Toast
 
-    func showProfileSwitchToast(from: Profile?, to: Profile, in windowState: BrowserWindowState?) {
+    func showProfileSwitchToast(to: Profile, in windowState: BrowserWindowState?) {
         guard let targetWindow = windowState ?? windowRegistry?.activeWindow else { return }
-        let toast = ProfileSwitchToast(fromProfile: from, toProfile: to, timestamp: Date())
+        let toast = ProfileSwitchToast(toProfile: to)
         let windowId = targetWindow.id
         targetWindow.profileSwitchToast = toast
         withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {

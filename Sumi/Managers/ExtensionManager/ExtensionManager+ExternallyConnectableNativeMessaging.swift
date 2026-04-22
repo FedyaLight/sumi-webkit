@@ -164,7 +164,6 @@ extension ExtensionManager {
 
         let sourceURL = message.frameInfo.request.url
         let sourceOrigin = Self.originString(for: sourceURL)
-        let sourceURLString = sourceURL?.absoluteString
         let webViewID = ObjectIdentifier(webView)
         let requestID = UUID()
 
@@ -183,7 +182,6 @@ extension ExtensionManager {
             id: requestID,
             extensionId: extensionId,
             webViewIdentifier: webViewID,
-            pageURLString: sourceURLString,
             replyHandler: replyHandler
         )
         if let rejection = ecRegistry.addRequest(pendingRequest) {
@@ -194,8 +192,6 @@ extension ExtensionManager {
         logExternallyConnectableBridgeEvent(
             "Accepted native sendMessage request id=\(requestID.uuidString) ext=\(extensionId) origin=\(sourceOrigin ?? "(unknown)")"
         )
-
-        let timeoutMilliseconds = timeoutMilliseconds(from: request.timeoutMs)
 
         Task { @MainActor [weak self, weak webView] in
             guard let self else { return }
@@ -213,9 +209,7 @@ extension ExtensionManager {
                     via: webView,
                     frameInfo: message.frameInfo,
                     extensionId: validation.extensionId,
-                    message: request.message?.foundationObject,
-                    options: request.options?.foundationObject,
-                    timeoutMilliseconds: timeoutMilliseconds
+                    message: request.message?.foundationObject
                 )
                 self.resolveExternallyConnectablePendingRequest(
                     id: requestID,
@@ -279,7 +273,6 @@ extension ExtensionManager {
                 extensionId: validation.extensionId,
                 webView: webView,
                 frameInfo: message.frameInfo,
-                pageURLString: sourceURL?.absoluteString,
                 sourceOrigin: sourceOrigin,
                 isMainFrame: message.frameInfo.isMainFrame,
                 frameURLString: sourceURL?.absoluteString,
@@ -603,7 +596,6 @@ extension ExtensionManager {
 
     struct ExternallyConnectableValidationResult {
         let extensionId: String
-        let policy: ExternallyConnectablePolicy
     }
 
     func validateExternallyConnectableNativeSendMessageTarget(
@@ -690,8 +682,7 @@ extension ExtensionManager {
         }
 
         return ExternallyConnectableValidationResult(
-            extensionId: extensionId,
-            policy: policy
+            extensionId: extensionId
         )
     }
 
@@ -789,9 +780,7 @@ extension ExtensionManager {
         via webView: WKWebView,
         frameInfo: WKFrameInfo,
         extensionId: String,
-        message: Any?,
-        options: Any?,
-        timeoutMilliseconds: Double
+        message: Any?
     ) async throws -> Any? {
         logExternallyConnectableBridgeEvent(
             "Starting isolated-world delivery for native sendMessage ext=\(extensionId)"

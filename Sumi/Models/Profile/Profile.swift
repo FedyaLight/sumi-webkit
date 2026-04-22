@@ -34,7 +34,6 @@ final class Profile: NSObject, Identifiable {
     // Metadata (not yet persisted)
     var createdDate: Date = Date()
     var lastUsed: Date = Date()
-    var isDefault: Bool { name.lowercased() == "default" }
     
     /// Whether this is an ephemeral/incognito profile (no disk persistence)
     var isEphemeral: Bool = false
@@ -42,9 +41,6 @@ final class Profile: NSObject, Identifiable {
     // Cached stats
     private(set) var cachedCookieCount: Int = 0
     private(set) var cachedRecordCount: Int = 0
-    var estimatedDataSize: String { "Cookies: \(cachedCookieCount), Records: \(cachedRecordCount)" }
-    var cookieCount: Int { cachedCookieCount }
-    var hasStoredData: Bool { cachedCookieCount > 0 || cachedRecordCount > 0 }
 
     init(
         id: UUID = UUID(),
@@ -100,15 +96,6 @@ final class Profile: NSObject, Identifiable {
     }
 
     // MARK: - Validation & Stats
-    func validateDataStore() async -> Bool {
-        if #available(macOS 15.4, *) {
-            // Basic check: store exists and is persistent
-            if dataStore.isPersistent == false { return false }
-        }
-        await refreshDataStoreStats()
-        return true
-    }
-
     @MainActor
     func refreshDataStoreStats() async {
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in

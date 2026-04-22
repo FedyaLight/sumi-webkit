@@ -34,41 +34,23 @@ extension BrowserManager {
     // MARK: - Update Handling
 
     struct UpdateAvailability: Equatable {
-        let version: String
-        let shortVersion: String
-        let releaseNotesURL: URL?
         var isDownloaded: Bool
-
-        init(version: String, shortVersion: String, releaseNotesURL: URL?, isDownloaded: Bool) {
-            self.version = version
-            self.shortVersion = shortVersion
-            self.releaseNotesURL = releaseNotesURL
-            self.isDownloaded = isDownloaded
-        }
-
-        init(item: SUAppcastItem, isDownloaded: Bool) {
-            self.init(
-                version: item.versionString,
-                shortVersion: item.displayVersionString,
-                releaseNotesURL: item.releaseNotesURL,
-                isDownloaded: isDownloaded
-            )
-        }
     }
 
     func handleUpdaterFoundValidUpdate(_ item: SUAppcastItem) {
+        _ = item
         updateAvailability = UpdateAvailability(
-            item: item,
             isDownloaded: updateAvailability?.isDownloaded ?? false
         )
     }
 
     func handleUpdaterFinishedDownloading(_ item: SUAppcastItem) {
+        _ = item
         if var availability = updateAvailability {
             availability.isDownloaded = true
             updateAvailability = availability
         } else {
-            updateAvailability = UpdateAvailability(item: item, isDownloaded: true)
+            updateAvailability = UpdateAvailability(isDownloaded: true)
         }
     }
 
@@ -135,20 +117,6 @@ extension BrowserManager {
         didUpdateZoom(for: currentTab, in: windowState, source: source)
     }
 
-    func applyZoomLevel(_ zoomLevel: Double, to tabId: UUID? = nil, in windowState: BrowserWindowState? = nil) {
-        guard let windowState = windowState ?? windowRegistry?.activeWindow else { return }
-
-        let targetTabId = tabId ?? currentTab(for: windowState)?.id
-        guard let tabId = targetTabId,
-              let webView = getWebView(for: tabId, in: windowState.id),
-              let tab = tabManager.tab(for: tabId)
-        else { return }
-
-        let domain = tab.url.host ?? tab.url.absoluteString
-        zoomManager.applyZoom(zoomLevel, to: webView, domain: domain, tabId: tabId)
-        didUpdateZoom(for: tab, in: windowState, source: nil)
-    }
-
     func loadZoomForTab(_ tabId: UUID) {
         guard let tab = tabManager.tab(for: tabId) else { return }
 
@@ -165,21 +133,6 @@ extension BrowserManager {
     func cleanupZoomForTab(_ tabId: UUID) {
         zoomManager.removeTabZoomLevel(for: tabId)
         zoomStateRevision += 1
-    }
-
-    func getCurrentZoomLevel() -> Double {
-        zoomManager.currentZoomLevel
-    }
-
-    func getCurrentZoomPercentage() -> String {
-        zoomManager.getZoomPercentageDisplay()
-    }
-
-    func showZoomPopup() {
-        guard let windowState = windowRegistry?.activeWindow,
-              let currentTab = currentTab(for: windowState)
-        else { return }
-        requestZoomPopover(for: currentTab, in: windowState, source: .menu)
     }
 
     // MARK: - Default Browser

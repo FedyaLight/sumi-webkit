@@ -38,19 +38,15 @@ enum URLBarPresentationMode {
 
 struct URLBarView: View {
     @EnvironmentObject var browserManager: BrowserManager
-    @EnvironmentObject private var extensionSurfaceStore: BrowserExtensionSurfaceStore
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
 
-    let isSidebarHovered: Bool
     let presentationMode: URLBarPresentationMode
 
     @State private var isHovering = false
     @State private var showCheckmark = false
     @State private var isHubPresented = false
-    @State private var isIdentityPopoverPresented = false
-    @State private var identityPopoverSize = CGSize(width: 340, height: 170)
     @State private var isZoomPopoverPresented = false
     @State private var zoomPopoverSource: ZoomPopoverSource = .toolbar
     @State private var zoomPopoverSize = CGSize(width: 252, height: 48)
@@ -59,10 +55,8 @@ struct URLBarView: View {
     @State private var zoomPopoverHideTimer: Timer?
 
     init(
-        isSidebarHovered: Bool = false,
         presentationMode: URLBarPresentationMode = .sidebar
     ) {
-        self.isSidebarHovered = isSidebarHovered
         self.presentationMode = presentationMode
     }
 
@@ -240,7 +234,6 @@ struct URLBarView: View {
 
     private var hubButton: some View {
         Button {
-            isIdentityPopoverPresented = false
             isHubPresented.toggle()
         } label: {
             Group {
@@ -262,34 +255,11 @@ struct URLBarView: View {
             URLBarHubPopover(
                 currentTab: currentTab,
                 profileId: effectiveProfileId,
-                onOpenIdentityPopover: openIdentityPopover,
                 onClose: { isHubPresented = false }
             )
             .environmentObject(browserManager)
             .environment(windowState)
             .frame(width: 234)
-        }
-        .background {
-            PersistentPopover(
-                isPresented: $isIdentityPopoverPresented,
-                contentSize: $identityPopoverSize,
-                preferredEdge: .minY
-            ) {
-                URLBarIdentityPopover(
-                    currentTab: currentTab,
-                    contentSize: $identityPopoverSize
-                )
-                .environmentObject(browserManager)
-                .environment(windowState)
-            }
-            .frame(width: 0, height: 0)
-        }
-    }
-
-    private func openIdentityPopover() {
-        isHubPresented = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            isIdentityPopoverPresented = true
         }
     }
 
@@ -326,7 +296,6 @@ struct URLBarView: View {
 
     private func toggleZoomPopoverFromToolbar(for tab: Tab) {
         isHubPresented = false
-        isIdentityPopoverPresented = false
         zoomPopoverSource = .toolbar
         if isZoomPopoverPresented {
             closeZoomPopover()
@@ -344,7 +313,6 @@ struct URLBarView: View {
         else { return }
 
         isHubPresented = false
-        isIdentityPopoverPresented = false
         zoomPopoverSource = request.source
         isZoomPopoverPresented = true
         updateZoomPopoverAutoCloseTimer()
@@ -573,14 +541,6 @@ private struct SiteControlsSettingRowModel: Equatable, Identifiable {
         }
     }
 
-    var usesAccentCapsule: Bool {
-        switch kind {
-        case .autoplay(let state):
-            return state == .allow
-        default:
-            return false
-        }
-    }
 }
 
 private struct SiteControlsSnapshot: Equatable {
@@ -602,15 +562,6 @@ private struct SiteControlsSnapshot: Equatable {
         var footerTitle: String {
             switch self {
             case .secure: return "Secure connection"
-            case .notSecure: return "Connection not secure"
-            case .localPage: return "Local page"
-            case .internalPage: return "Page information"
-            }
-        }
-
-        var identityTitle: String {
-            switch self {
-            case .secure: return "Connection secure"
             case .notSecure: return "Connection not secure"
             case .localPage: return "Local page"
             case .internalPage: return "Page information"
@@ -643,23 +594,8 @@ private struct SiteControlsSnapshot: Equatable {
             self != .internalPage
         }
 
-        var detailText: String {
-            switch self {
-            case .secure:
-                return "This page is loaded over HTTPS."
-            case .notSecure:
-                return "This page is not using a secure HTTPS connection."
-            case .localPage:
-                return "This page is loaded from a local or bundled resource."
-            case .internalPage:
-                return "Internal browser pages do not expose standard site identity details."
-            }
-        }
     }
 
-    let hostDisplayName: String
-    let identityHostDisplayName: String
-    let url: URL?
     let hubAnchorAppearance: HubAnchorAppearance
     let securityState: SecurityState
     let readerAvailability: ReaderAvailability
@@ -672,9 +608,6 @@ private struct SiteControlsSnapshot: Equatable {
     ) -> SiteControlsSnapshot {
         guard let url else {
             return SiteControlsSnapshot(
-                hostDisplayName: "No Site",
-                identityHostDisplayName: "this page",
-                url: nil,
                 hubAnchorAppearance: .zenPermissions,
                 securityState: .internalPage,
                 readerAvailability: .disabledPlaceholder,
@@ -763,9 +696,6 @@ private struct SiteControlsSnapshot: Equatable {
         }
 
         return SiteControlsSnapshot(
-            hostDisplayName: displayHost,
-            identityHostDisplayName: rawHost,
-            url: url,
             hubAnchorAppearance: .zenPermissions,
             securityState: securityState,
             readerAvailability: .disabledPlaceholder,
@@ -783,7 +713,6 @@ private struct URLBarHubPopover: View {
 
     let currentTab: Tab?
     let profileId: UUID?
-    let onOpenIdentityPopover: () -> Void
     let onClose: () -> Void
 
     @State private var refreshNonce = 0
@@ -1090,188 +1019,6 @@ private struct URLBarHubPopover: View {
         let sanitized = base.components(separatedBy: invalidCharacters)
             .joined(separator: "-")
         return "\(sanitized).png"
-    }
-}
-
-private struct URLBarIdentityPopover: View {
-    private enum Page {
-        case overview
-        case details
-    }
-
-    @EnvironmentObject private var browserManager: BrowserManager
-    @Environment(BrowserWindowState.self) private var windowState
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
-
-    let currentTab: Tab?
-    @Binding var contentSize: CGSize
-
-    @State private var page: Page = .overview
-
-    private var snapshot: SiteControlsSnapshot {
-        SiteControlsSnapshot.resolve(
-            url: currentTab?.url,
-            profileId: windowState.currentProfileId
-        )
-    }
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
-
-    var body: some View {
-        Group {
-            switch page {
-            case .overview:
-                overviewPage
-            case .details:
-                detailsPage
-            }
-        }
-        .padding(16)
-        .background(tokens.commandPaletteBackground)
-        .onAppear {
-            updateContentSize()
-        }
-        .onChange(of: page) { _, _ in
-            updateContentSize()
-        }
-    }
-
-    private var overviewPage: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Site information for \(snapshot.identityHostDisplayName)")
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(tokens.primaryText)
-
-            VStack(spacing: 0) {
-                Button {
-                    page = .details
-                } label: {
-                    HStack(spacing: 12) {
-                        SumiZenChromeIcon(
-                            iconName: snapshot.securityState.chromeIconName,
-                            fallbackSystemName: snapshot.securityState.fallbackSystemName,
-                            size: 18,
-                            tint: tokens.primaryText
-                        )
-                        Text(snapshot.securityState.identityTitle)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(tokens.primaryText)
-                        Spacer(minLength: 8)
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(tokens.secondaryText)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 12)
-                }
-                .buttonStyle(.plain)
-
-                Divider()
-                    .padding(.leading, 12)
-
-                Button {
-                    browserManager.clearCurrentPageCookies()
-                    browserManager.clearCurrentPageCache()
-                    browserManager.hardReloadCurrentPage()
-                } label: {
-                    HStack(spacing: 12) {
-                        Text("Clear cookies and site data...")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(tokens.primaryText)
-                        Spacer(minLength: 8)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 12)
-                }
-                .buttonStyle(.plain)
-            }
-            .background(tokens.fieldBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }
-    }
-
-    private var detailsPage: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Button {
-                    page = .overview
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(tokens.primaryText)
-                        .frame(width: 24, height: 24)
-                        .background(
-                            tokens.fieldBackground,
-                            in: RoundedRectangle(
-                                cornerRadius: 7,
-                                style: .continuous
-                            )
-                        )
-                }
-                .buttonStyle(.plain)
-
-                Text(snapshot.securityState.footerTitle)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(tokens.primaryText)
-            }
-
-            HStack(spacing: 10) {
-                SumiZenChromeIcon(
-                    iconName: snapshot.securityState.chromeIconName,
-                    fallbackSystemName: snapshot.securityState.fallbackSystemName,
-                    size: 18,
-                    tint: tokens.primaryText
-                )
-                .frame(width: 34, height: 34)
-                .background(
-                    tokens.fieldBackground,
-                    in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-                )
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(snapshot.hostDisplayName)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(tokens.primaryText)
-                    Text(snapshot.securityState.detailText)
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(tokens.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            if let url = snapshot.url {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Address")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(tokens.secondaryText)
-                    Text(url.absoluteString)
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(tokens.primaryText)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(10)
-                .background(
-                    tokens.fieldBackground,
-                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                )
-            }
-        }
-    }
-
-    private func updateContentSize() {
-        switch page {
-        case .overview:
-            contentSize = CGSize(width: 330, height: 165)
-        case .details:
-            contentSize = CGSize(
-                width: 340,
-                height: snapshot.url == nil ? 150 : 225
-            )
-        }
     }
 }
 

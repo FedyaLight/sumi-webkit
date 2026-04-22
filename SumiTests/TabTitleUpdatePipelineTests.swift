@@ -45,7 +45,7 @@ final class TabTitleUpdatePipelineTests: XCTestCase {
         XCTAssertEqual(tab.name, "Updated Video Title")
     }
 
-    func testApplyTitleCandidateIgnoresWhitespace() {
+    func testAcceptResolvedDisplayTitleIgnoresWhitespace() {
         let tab = Tab(
             url: URL(string: "https://example.com/watch?v=1")!,
             name: "Stable Title",
@@ -53,18 +53,13 @@ final class TabTitleUpdatePipelineTests: XCTestCase {
             index: 0
         )
 
-        let didUpdate = tab.applyTitleCandidate(
-            "   ",
-            url: URL(string: "https://example.com/watch?v=2")!,
-            source: .manual,
-            isLoading: false
-        )
+        let didUpdate = tab.acceptResolvedDisplayTitle("   ")
 
         XCTAssertFalse(didUpdate)
         XCTAssertEqual(tab.name, "Stable Title")
     }
 
-    func testApplyTitleCandidateAllowsPlaceholderLikeTitleForManualPath() {
+    func testAcceptResolvedDisplayTitleAllowsPlaceholderLikeTitle() {
         let tab = Tab(
             url: URL(string: "https://example.com/watch?v=1")!,
             name: "Stable Title",
@@ -72,18 +67,13 @@ final class TabTitleUpdatePipelineTests: XCTestCase {
             index: 0
         )
 
-        let didUpdate = tab.applyTitleCandidate(
-            "example.com",
-            url: URL(string: "https://example.com/watch?v=2")!,
-            source: .manual,
-            isLoading: true
-        )
+        let didUpdate = tab.acceptResolvedDisplayTitle("example.com")
 
         XCTAssertTrue(didUpdate)
         XCTAssertEqual(tab.name, "example.com")
     }
 
-    func testApplyTitleCandidateSkipsSameURLAndSameTitle() {
+    func testAcceptResolvedDisplayTitleSkipsSameURLAndSameTitle() {
         let url = URL(string: "https://example.com/watch?v=1")!
         let tab = Tab(
             url: url,
@@ -94,18 +84,10 @@ final class TabTitleUpdatePipelineTests: XCTestCase {
 
         XCTAssertFalse(tab.acceptResolvedDisplayTitle("Stable Title", url: url))
 
-        let didUpdate = tab.applyTitleCandidate(
-            "Stable Title",
-            url: url,
-            source: .manual,
-            isLoading: false
-        )
-
-        XCTAssertFalse(didUpdate)
         XCTAssertEqual(tab.name, "Stable Title")
     }
 
-    func testApplyTitleCandidateSkipsCrossHostSameTitle() {
+    func testAcceptResolvedDisplayTitleSkipsCrossHostSameTitle() {
         let tab = Tab(
             url: URL(string: "https://example.com/watch?v=1")!,
             name: "Shared Title",
@@ -113,18 +95,16 @@ final class TabTitleUpdatePipelineTests: XCTestCase {
             index: 0
         )
 
-        let didUpdate = tab.applyTitleCandidate(
+        let didUpdate = tab.acceptResolvedDisplayTitle(
             "Shared Title",
-            url: URL(string: "https://other.example/watch?v=2")!,
-            source: .manual,
-            isLoading: false
+            url: URL(string: "https://other.example/watch?v=2")!
         )
 
         XCTAssertFalse(didUpdate)
         XCTAssertEqual(tab.name, "Shared Title")
     }
 
-    func testManualTitleCandidateUsesUnifiedPipeline() {
+    func testAcceptResolvedDisplayTitleUpdatesTitle() {
         let url = URL(string: "https://example.com/watch?v=1")!
         let tab = Tab(
             url: url,
@@ -133,11 +113,9 @@ final class TabTitleUpdatePipelineTests: XCTestCase {
             index: 0
         )
 
-        let didUpdate = tab.applyTitleCandidate(
+        let didUpdate = tab.acceptResolvedDisplayTitle(
             "Manual Title",
-            url: url,
-            source: .manual,
-            isLoading: false
+            url: url
         )
 
         XCTAssertTrue(didUpdate)

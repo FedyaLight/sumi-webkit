@@ -229,41 +229,6 @@ struct KeyCombination: Hashable, Codable {
         physicalKeyMap[event.keyCode]
     }
 
-    private static func normalizedEventKeys(for event: NSEvent) -> Set<String> {
-        var keys = Set<String>()
-
-        if let keyWithoutModifiers = event.charactersIgnoringModifiers?.lowercased(), !keyWithoutModifiers.isEmpty {
-            keys.insert(keyWithoutModifiers)
-        }
-
-        if let keyWithModifiers = event.characters?.lowercased(), !keyWithModifiers.isEmpty {
-            keys.insert(keyWithModifiers)
-        }
-
-        if let physicalKey = canonicalPhysicalKey(for: event) {
-            keys.insert(physicalKey)
-            if physicalKey == "=", event.modifierFlags.contains(.shift) {
-                keys.insert("+")
-            }
-        }
-
-        return keys
-    }
-
-    // For matching with NSEvent
-    func matches(_ event: NSEvent) -> Bool {
-        guard event.type == .keyDown || event.type == .keyUp else { return false }
-        let keyMatches = Self.normalizedEventKeys(for: event).contains(key)
-
-        let modifierMatches =
-            (modifiers.contains(.command) == (event.modifierFlags.contains(.command))) &&
-            (modifiers.contains(.option) == (event.modifierFlags.contains(.option))) &&
-            (modifiers.contains(.control) == (event.modifierFlags.contains(.control))) &&
-            (modifiers.contains(.shift) == (event.modifierFlags.contains(.shift)))
-
-        return keyMatches && modifierMatches
-    }
-
     /// Unique hash for O(1) lookup: "cmd+shift+t"
     var lookupKey: String {
         var parts: [String] = []

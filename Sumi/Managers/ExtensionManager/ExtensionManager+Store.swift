@@ -76,15 +76,6 @@ extension ExtensionManager {
         }
     }
 
-    func orderedPinnedToolbarExtensions(
-        from extensions: [InstalledExtension]
-    ) -> [InstalledExtension] {
-        Self.orderedPinnedToolbarExtensions(
-            from: extensions,
-            pinnedIDs: pinnedToolbarExtensionIDs
-        )
-    }
-
     func reloadPinnedToolbarExtensionsForCurrentProfile() {
         let profileKey = Self.pinnedToolbarProfileKey(for: currentProfileId)
         pinnedToolbarExtensionIDs = Self.normalizedPinnedToolbarExtensionIDs(
@@ -186,19 +177,6 @@ extension ExtensionManager {
         }
 
         return result
-    }
-
-    static func orderedPinnedToolbarExtensions(
-        from extensions: [InstalledExtension],
-        pinnedIDs: [String]
-    ) -> [InstalledExtension] {
-        let enabledByID = Dictionary(
-            uniqueKeysWithValues: extensions
-                .filter(\.isEnabled)
-                .map { ($0.id, $0) }
-        )
-
-        return normalizedPinnedToolbarExtensionIDs(pinnedIDs).compactMap { enabledByID[$0] }
     }
 
     func update(

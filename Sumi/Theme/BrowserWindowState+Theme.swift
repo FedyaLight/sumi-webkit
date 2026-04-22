@@ -9,11 +9,6 @@ extension BrowserWindowState {
         return windowThemeState.resolvedTheme
     }
 
-    /// Convenience surface for views that still render directly from a gradient.
-    var gradient: SpaceGradient {
-        workspaceTheme.gradient
-    }
-
     var displayedWorkspaceTheme: WorkspaceTheme {
         get { windowThemeState.committedTheme }
         set { windowThemeState.committedTheme = newValue }

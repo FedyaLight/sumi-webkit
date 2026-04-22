@@ -7,6 +7,322 @@ import SwiftUI
 private let sidebarTestInteractivePageFrame = CGRect(x: 0, y: 0, width: 320, height: 1200)
 
 @MainActor
+private func makeSidebarContextMenuController(
+    interactionState: SidebarInteractionState
+) -> SidebarContextMenuController {
+    SidebarContextMenuController(
+        interactionState: interactionState,
+        transientSessionCoordinator: SidebarTransientSessionCoordinator(
+            windowID: UUID(),
+            interactionState: interactionState
+        )
+    )
+}
+
+private extension SidebarInteractionState {
+    @discardableResult
+    func beginContextMenuSessionForTesting() -> UUID {
+        let tokenID = UUID()
+        beginSession(kind: .contextMenu, tokenID: tokenID)
+        return tokenID
+    }
+
+    func endContextMenuSessionForTesting(_ tokenID: UUID) {
+        endSession(kind: .contextMenu, tokenID: tokenID)
+    }
+}
+
+@MainActor
+private final class SidebarContextMenuControllerTestingSession {
+    let token: SidebarTransientSessionToken
+    weak var ownerView: NSView?
+    let onMenuVisibilityChanged: (Bool) -> Void
+    var didBecomeVisible = false
+    var menuEndTrackingObserver: NSObjectProtocol?
+    var windowCloseObserver: NSObjectProtocol?
+
+    init(
+        token: SidebarTransientSessionToken,
+        ownerView: NSView,
+        onMenuVisibilityChanged: @escaping (Bool) -> Void
+    ) {
+        self.token = token
+        self.ownerView = ownerView
+        self.onMenuVisibilityChanged = onMenuVisibilityChanged
+    }
+
+    deinit {
+        if let menuEndTrackingObserver {
+            NotificationCenter.default.removeObserver(menuEndTrackingObserver)
+        }
+        if let windowCloseObserver {
+            NotificationCenter.default.removeObserver(windowCloseObserver)
+        }
+    }
+}
+
+@MainActor
+private var sidebarContextMenuControllerTestingSessions:
+    [ObjectIdentifier: [UUID: SidebarContextMenuControllerTestingSession]] = [:]
+
+@MainActor
+extension SidebarContextMenuController {
+    func beginMenuSessionForTesting(
+        ownerView: NSView? = nil,
+        menu: NSMenu?,
+        onMenuVisibilityChanged: @escaping (Bool) -> Void = { _ in }
+    ) -> UUID {
+        forceCloseActiveSessionForTesting()
+
+        let resolvedOwnerView = ownerView ?? NSView(frame: .zero)
+        transientSessionCoordinator.prepareMenuPresentationSource(ownerView: resolvedOwnerView)
+        let source = transientSessionCoordinator.preparedPresentationSource(
+            window: resolvedOwnerView.window,
+            ownerView: resolvedOwnerView
+        )
+        let token = transientSessionCoordinator.beginSession(
+            kind: .contextMenu,
+            source: source,
+            path: "test.sidebar-context-menu",
+            preservePendingSource: true
+        )
+        let sessionID = UUID()
+        let session = SidebarContextMenuControllerTestingSession(
+            token: token,
+            ownerView: resolvedOwnerView,
+            onMenuVisibilityChanged: onMenuVisibilityChanged
+        )
+        let controllerID = ObjectIdentifier(self)
+        sidebarContextMenuControllerTestingSessions[controllerID, default: [:]][sessionID] = session
+
+        if let menu {
+            session.menuEndTrackingObserver = NotificationCenter.default.addObserver(
+                forName: NSMenu.didEndTrackingNotification,
+                object: menu,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.finishMenuSessionForTesting(sessionID: sessionID)
+                }
+            }
+        }
+
+        if let window = resolvedOwnerView.window {
+            session.windowCloseObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.finishMenuSessionForTesting(sessionID: sessionID)
+                }
+            }
+        }
+
+        return sessionID
+    }
+
+    func beginMenuSessionForTesting(
+        ownerView: NSView? = nil,
+        onMenuVisibilityChanged: @escaping (Bool) -> Void = { _ in }
+    ) -> UUID {
+        beginMenuSessionForTesting(
+            ownerView: ownerView,
+            menu: nil,
+            onMenuVisibilityChanged: onMenuVisibilityChanged
+        )
+    }
+
+    func markMenuOpenedForTesting(sessionID: UUID) {
+        sidebarContextMenuControllerTestingSessions[ObjectIdentifier(self)]?[sessionID]?.didBecomeVisible = true
+    }
+
+    func markMenuClosedForTesting(sessionID: UUID) {
+        _ = sidebarContextMenuControllerTestingSessions[ObjectIdentifier(self)]?[sessionID]
+    }
+
+    func finishMenuSessionForTesting(sessionID: UUID) {
+        let controllerID = ObjectIdentifier(self)
+        guard var sessions = sidebarContextMenuControllerTestingSessions[controllerID],
+              let session = sessions.removeValue(forKey: sessionID)
+        else { return }
+
+        sidebarContextMenuControllerTestingSessions[controllerID] = sessions.isEmpty ? nil : sessions
+        transientSessionCoordinator.endSession(session.token)
+
+        if session.didBecomeVisible {
+            DispatchQueue.main.async {
+                session.onMenuVisibilityChanged(true)
+                session.onMenuVisibilityChanged(false)
+            }
+        }
+    }
+
+    func detachOwnerViewForTesting(_ ownerView: NSView) {
+        let controllerID = ObjectIdentifier(self)
+        let sessionIDs = sidebarContextMenuControllerTestingSessions[controllerID, default: [:]]
+            .filter { $0.value.ownerView === ownerView }
+            .map(\.key)
+        sessionIDs.forEach { finishMenuSessionForTesting(sessionID: $0) }
+    }
+
+    func forceCloseActiveSessionForTesting() {
+        let controllerID = ObjectIdentifier(self)
+        let sessionIDs = Array(sidebarContextMenuControllerTestingSessions[controllerID, default: [:]].keys)
+        sessionIDs.forEach { finishMenuSessionForTesting(sessionID: $0) }
+    }
+
+    func runPointerRecoveryForTesting(aroundOwnerView ownerView: NSView) {
+        sidebarRecoveryCoordinator.recover(in: ownerView.window)
+        sidebarRecoveryCoordinator.recover(anchor: ownerView)
+    }
+
+    func configureBackgroundMenuForTesting(
+        entriesProvider: @escaping () -> [SidebarContextMenuEntry],
+        onMenuVisibilityChanged: @escaping (Bool) -> Void = { _ in }
+    ) {
+        configureBackgroundMenu(
+            entriesProvider: entriesProvider,
+            onMenuVisibilityChanged: onMenuVisibilityChanged
+        )
+    }
+}
+
+private extension SidebarDragState {
+    func interactivePage(for spaceId: UUID) -> SidebarPageGeometryMetrics? {
+        pageGeometryByKey.values.first {
+            $0.renderMode == .interactive && $0.spaceId == spaceId
+        }
+    }
+
+    func updatePageGeometry(
+        spaceId: UUID,
+        profileId: UUID?,
+        frame: CGRect,
+        renderMode: SidebarPageGeometryRenderMode
+    ) {
+        applyPageGeometry(
+            spaceId: spaceId,
+            profileId: profileId,
+            frame: frame,
+            renderMode: renderMode,
+            generation: activeGeometryGeneration
+        )
+    }
+
+    func updateSectionFrame(
+        spaceId: UUID,
+        section: SidebarSectionPrefix,
+        frame: CGRect
+    ) {
+        applySectionFrame(
+            spaceId: spaceId,
+            section: section,
+            frame: frame,
+            generation: activeGeometryGeneration
+        )
+    }
+
+    func updateFolderDropTarget(
+        folderId: UUID,
+        spaceId: UUID,
+        topLevelIndex: Int,
+        childCount: Int,
+        isOpen: Bool,
+        region: SidebarFolderDragRegion,
+        frame: CGRect
+    ) {
+        applyFolderDropTarget(
+            folderId: folderId,
+            spaceId: spaceId,
+            topLevelIndex: topLevelIndex,
+            childCount: childCount,
+            isOpen: isOpen,
+            region: region,
+            frame: frame,
+            isActive: true,
+            generation: activeGeometryGeneration
+        )
+    }
+
+    func updateRegularListHitTarget(spaceId: UUID, frame: CGRect, itemCount: Int) {
+        applyRegularListHitTarget(
+            spaceId: spaceId,
+            frame: frame,
+            itemCount: itemCount,
+            generation: activeGeometryGeneration
+        )
+    }
+
+    func updateEssentialsLayoutMetrics(
+        spaceId: UUID,
+        profileId: UUID?,
+        frame: CGRect,
+        dropFrame: CGRect,
+        itemCount: Int,
+        columnCount: Int,
+        firstSyntheticRowSlot: Int? = nil,
+        rowCount: Int,
+        itemSize: CGSize,
+        gridSpacing: CGFloat,
+        canAcceptDrop: Bool = true,
+        visibleItemCount: Int? = nil,
+        visibleRowCount: Int? = nil,
+        maxDropRowCount: Int? = nil
+    ) {
+        let resolvedVisibleRowCount = max(
+            visibleRowCount ?? Self.resolvedMetricsRowCount(
+                for: frame.height,
+                itemSize: itemSize,
+                gridSpacing: gridSpacing,
+                fallback: rowCount
+            ),
+            1
+        )
+        let resolvedMaxDropRowCount = max(
+            maxDropRowCount ?? Self.resolvedMetricsRowCount(
+                for: dropFrame.height,
+                itemSize: itemSize,
+                gridSpacing: gridSpacing,
+                fallback: resolvedVisibleRowCount
+            ),
+            resolvedVisibleRowCount,
+            1
+        )
+
+        applyEssentialsLayoutMetrics(
+            spaceId: spaceId,
+            profileId: profileId,
+            frame: frame,
+            dropFrame: dropFrame,
+            itemCount: itemCount,
+            columnCount: columnCount,
+            firstSyntheticRowSlot: firstSyntheticRowSlot,
+            rowCount: rowCount,
+            itemSize: itemSize,
+            gridSpacing: gridSpacing,
+            canAcceptDrop: canAcceptDrop,
+            visibleItemCount: visibleItemCount ?? itemCount,
+            visibleRowCount: resolvedVisibleRowCount,
+            maxDropRowCount: resolvedMaxDropRowCount,
+            generation: activeGeometryGeneration
+        )
+    }
+
+    private static func resolvedMetricsRowCount(
+        for height: CGFloat,
+        itemSize: CGSize,
+        gridSpacing: CGFloat,
+        fallback: Int
+    ) -> Int {
+        guard itemSize.height > 0 else { return max(fallback, 1) }
+        let stride = max(itemSize.height + gridSpacing, 1)
+        let derivedRows = Int(floor(max(height - itemSize.height, 0) / stride)) + 1
+        return max(fallback, derivedRows, 1)
+    }
+}
+
+@MainActor
 private func ensureSidebarInteractivePage(
     _ state: SidebarDragState,
     spaceId: UUID,
@@ -88,15 +404,15 @@ private func registerSidebarEssentialsMetrics(
 
 @MainActor
 final class SidebarCurrentDragResolverTests: XCTestCase {
-    private let state = SidebarDragState.shared
+    private var state: SidebarDragState!
 
     override func setUp() {
         super.setUp()
-        resetState()
+        state = SidebarDragState()
     }
 
     override func tearDown() {
-        resetState()
+        state = nil
         super.tearDown()
     }
 
@@ -115,7 +431,7 @@ final class SidebarCurrentDragResolverTests: XCTestCase {
         let pasteboard = NSPasteboard(name: NSPasteboard.Name("sumi.folder-drag.\(UUID().uuidString)"))
         pasteboard.clearContents()
 
-        item.writeToPasteboard(pasteboard)
+        pasteboard.writeObjects([item.pasteboardItem()])
 
         XCTAssertEqual(SumiDragItem.fromPasteboard(pasteboard), item)
     }
@@ -691,21 +1007,22 @@ final class SidebarCurrentDragResolverTests: XCTestCase {
     }
 
     private func resetState() {
-        state.reset()
+        state = SidebarDragState()
     }
+
 }
 
 @MainActor
 final class SidebarDragStateTests: XCTestCase {
-    private let state = SidebarDragState.shared
+    private var state: SidebarDragState!
 
     override func setUp() {
         super.setUp()
-        state.reset()
+        state = SidebarDragState()
     }
 
     override func tearDown() {
-        state.reset()
+        state = nil
         super.tearDown()
     }
 
@@ -728,7 +1045,7 @@ final class SidebarDragStateTests: XCTestCase {
         XCTAssertNotNil(state.previewAssets[.row])
     }
 
-    func testResetClearsPreviewAndHoverState() {
+    func testResetInteractionStateClearsPreviewAndHoverState() {
         let itemId = UUID()
         let folderId = UUID()
         let spaceId = UUID()
@@ -752,7 +1069,7 @@ final class SidebarDragStateTests: XCTestCase {
             gridSpacing: 8
         )
 
-        state.reset()
+        state.resetInteractionState()
 
         XCTAssertFalse(state.isDragging)
         XCTAssertEqual(state.hoveredSlot, .empty)
@@ -764,18 +1081,18 @@ final class SidebarDragStateTests: XCTestCase {
         XCTAssertNil(state.previewKind)
         XCTAssertTrue(state.previewAssets.isEmpty)
         XCTAssertFalse(state.isInternalDragSession)
-        XCTAssertTrue(state.essentialsLayoutMetricsBySpace.isEmpty)
-        XCTAssertTrue(state.pageGeometryByKey.isEmpty)
+        XCTAssertFalse(state.essentialsLayoutMetricsBySpace.isEmpty)
+        XCTAssertFalse(state.pageGeometryByKey.isEmpty)
     }
 
     func testGeometryRevisionIsCoalescedPerMainQueueTurn() async {
         await drainMainQueue()
         let initialRevision = state.geometryRevision
 
-        state.requestGeometryRefresh(.all)
-        state.requestGeometryRefresh(.all)
-        state.requestGeometryRefresh(.folder)
-        state.requestGeometryRefresh(.sidebar)
+        state.requestGeometryRefresh()
+        state.requestGeometryRefresh()
+        state.requestGeometryRefresh()
+        state.requestGeometryRefresh()
 
         XCTAssertEqual(state.geometryRevision, initialRevision)
 
@@ -784,7 +1101,7 @@ final class SidebarDragStateTests: XCTestCase {
 
         XCTAssertEqual(firstRevision, initialRevision + 1)
 
-        state.requestGeometryRefresh(.all)
+        state.requestGeometryRefresh()
         await drainMainQueue()
 
         XCTAssertEqual(state.geometryRevision, firstRevision + 1)
@@ -1452,7 +1769,6 @@ final class SidebarDragStateTests: XCTestCase {
             sourceSize: CGSize(width: 48, height: 48),
             normalizedTopLeadingAnchor: normalizedTopLeadingAnchor,
             pinnedConfig: .large,
-            itemCount: 1,
             shortcutPresentationState: .launcherOnly,
             folderGlyphPresentation: nil,
             folderGlyphPalette: nil
@@ -1462,15 +1778,15 @@ final class SidebarDragStateTests: XCTestCase {
 
 @MainActor
 final class SidebarEssentialsProjectionPolicyTests: XCTestCase {
-    private let state = SidebarDragState.shared
+    private var state: SidebarDragState!
 
     override func setUp() {
         super.setUp()
-        state.reset()
+        state = SidebarDragState()
     }
 
     override func tearDown() {
-        state.reset()
+        state = nil
         super.tearDown()
     }
 
@@ -1544,7 +1860,7 @@ final class SidebarEssentialsProjectionPolicyTests: XCTestCase {
         XCTAssertEqual(projection.columnCount, 3)
         XCTAssertEqual(projection.rows.count, 1)
         XCTAssertEqual(projection.rows.first?.visualColumnCount, 3)
-        XCTAssertEqual(projection.layoutItemIDs, [pins[0].id, pins[1].id, nil])
+        XCTAssertEqual(projection.layoutItems.map { $0?.id }, [pins[0].id, pins[1].id, nil])
         XCTAssertEqual(
             SidebarEssentialsProjectionPolicy.neededRowCountAfterDrop(
                 itemIDs: pins.map(\.id),
@@ -1591,7 +1907,7 @@ final class SidebarEssentialsProjectionPolicyTests: XCTestCase {
         XCTAssertEqual(projection.rows.first?.visualColumnCount, 3)
         XCTAssertEqual(projection.rows.last?.visualColumnCount, 1)
         XCTAssertEqual(projection.rows.last?.tileSize.width ?? 0, width, accuracy: 0.001)
-        XCTAssertEqual(projection.layoutItemIDs, [pins[0].id, pins[1].id, pins[2].id, nil])
+        XCTAssertEqual(projection.layoutItems.map { $0?.id }, [pins[0].id, pins[1].id, pins[2].id, nil])
     }
 
     func testProjectedLayoutStretchesFourthCommittedTileOnSecondRow() {
@@ -1617,7 +1933,7 @@ final class SidebarEssentialsProjectionPolicyTests: XCTestCase {
         XCTAssertEqual(projection.rows.first?.visualColumnCount, 3)
         XCTAssertEqual(projection.rows.last?.visualColumnCount, 1)
         XCTAssertEqual(projection.rows.last?.tileSize.width ?? 0, width, accuracy: 0.001)
-        XCTAssertEqual(projection.layoutItemIDs, pins.map(\.id))
+        XCTAssertEqual(projection.layoutItems.map { $0?.id }, pins.map(\.id))
     }
 
     func testProjectedLayoutRemovesDraggedEssentialBeforeGhostInsert() {
@@ -1648,7 +1964,7 @@ final class SidebarEssentialsProjectionPolicyTests: XCTestCase {
         XCTAssertEqual(projection.projectedItemCount, 3)
         XCTAssertEqual(projection.columnCount, 3)
         XCTAssertEqual(projection.rows.count, 1)
-        XCTAssertEqual(projection.layoutItemIDs, [nil, pins[0].id, pins[2].id])
+        XCTAssertEqual(projection.layoutItems.map { $0?.id }, [nil, pins[0].id, pins[2].id])
     }
 
     func testOutboundDragKeepsDraggedEssentialFootprintReserved() {
@@ -1678,7 +1994,7 @@ final class SidebarEssentialsProjectionPolicyTests: XCTestCase {
 
         XCTAssertEqual(projection.projectedItemCount, 3)
         XCTAssertEqual(projection.visibleRowCount, 1)
-        XCTAssertEqual(projection.layoutItemIDs, pins.map(\.id))
+        XCTAssertEqual(projection.layoutItems.map { $0?.id }, pins.map(\.id))
     }
 
     private func makeEssentialPin(index: Int) -> ShortcutPin {
@@ -1716,7 +2032,6 @@ final class SumiNativeDragPreviewParityTests: XCTestCase {
             sourceSize: CGSize(width: 220, height: SidebarRowLayout.rowHeight),
             sourceOffsetFromBottomLeading: CGPoint(x: 42, y: 18),
             pinnedConfig: .large,
-            itemCount: 1,
             folderGlyphPresentation: SumiFolderGlyphPresentationState(
                 iconValue: "zen:bookmark",
                 isOpen: false,
@@ -1778,7 +2093,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
     func testGenericAppKitContextMenuHostOnlyCapturesContextMenuTriggers() {
         let state = SidebarInteractionState()
         let host = SumiAppKitContextMenuHostView(frame: NSRect(x: 0, y: 0, width: 80, height: 36))
-        let controller = SidebarContextMenuController(interactionState: state)
+        let controller = makeSidebarContextMenuController(interactionState: state)
         host.controller = controller
         host.entriesProvider = {
             [
@@ -2331,7 +2646,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
     @MainActor
     func testSidebarInteractiveItemDragCaptureResumesAfterContextMenuTrackingEndsWithoutRemount() {
         let state = SidebarInteractionState()
-        let controller = SidebarContextMenuController(interactionState: state)
+        let controller = makeSidebarContextMenuController(interactionState: state)
         let view = SidebarInteractiveItemView(frame: NSRect(x: 0, y: 0, width: 80, height: 36))
         view.contextMenuController = controller
         view.update(
@@ -2353,7 +2668,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
             )
         )
 
-        state.beginMenuTracking()
+        let menuTokenID = state.beginContextMenuSessionForTesting()
 
         XCTAssertFalse(
             view.shouldCaptureInteraction(
@@ -2362,7 +2677,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
             )
         )
 
-        state.endMenuTracking()
+        state.endContextMenuSessionForTesting(menuTokenID)
 
         XCTAssertTrue(
             view.shouldCaptureInteraction(
@@ -2375,7 +2690,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
     @MainActor
     func testShortcutLauncherDragConfigurationKeepsStableEnablementDuringContextMenuTracking() {
         let state = SidebarInteractionState()
-        state.beginMenuTracking()
+        state.beginContextMenuSessionForTesting()
 
         let spaceId = UUID()
         let pin = ShortcutPin(
@@ -2503,7 +2818,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
     @MainActor
     func testSidebarInteractiveItemDismantleClearsPartialPrimaryClickTracking() {
         var primaryActivations = 0
-        let controller = SidebarContextMenuController(interactionState: SidebarInteractionState())
+        let controller = makeSidebarContextMenuController(interactionState: SidebarInteractionState())
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
             styleMask: [.titled],
@@ -2562,7 +2877,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
     @MainActor
     func testSidebarInteractiveItemDismantlePreparationDisarmsAndDetachesController() {
         let state = SidebarInteractionState()
-        let controller = SidebarContextMenuController(interactionState: state)
+        let controller = makeSidebarContextMenuController(interactionState: state)
         let view = SidebarInteractiveItemView(frame: NSRect(x: 0, y: 0, width: 80, height: 36))
         view.contextMenuController = controller
         view.update(
@@ -2599,47 +2914,46 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
     func testSidebarInteractionStateTracksMenuLifecycle() {
         let state = SidebarInteractionState()
 
-        XCTAssertEqual(state.phase, .idle)
+        XCTAssertEqual(state.activeKindsDescription, "none")
         XCTAssertFalse(state.isContextMenuPresented)
 
-        state.beginMenuTracking()
+        let menuTokenID = state.beginContextMenuSessionForTesting()
 
-        XCTAssertEqual(state.phase, .menuTracking)
         XCTAssertTrue(state.isContextMenuPresented)
         XCTAssertTrue(state.suppressesSidebarAffordances)
         XCTAssertFalse(state.allowsSidebarSwipeCapture)
 
-        state.endMenuTracking()
+        state.endContextMenuSessionForTesting(menuTokenID)
 
-        XCTAssertEqual(state.phase, .idle)
+        XCTAssertEqual(state.activeKindsDescription, "none")
         XCTAssertFalse(state.isContextMenuPresented)
     }
 
     func testSidebarInteractionStatePreservesMenuTrackingAgainstSidebarDragSync() {
         let state = SidebarInteractionState()
 
-        state.beginMenuTracking()
+        let menuTokenID = state.beginContextMenuSessionForTesting()
         state.syncSidebarItemDrag(true)
 
-        XCTAssertEqual(state.phase, .menuTracking)
+        XCTAssertTrue(state.isContextMenuPresented)
         XCTAssertFalse(state.allowsSidebarDragSourceHitTesting)
 
-        state.endMenuTracking()
+        state.endContextMenuSessionForTesting(menuTokenID)
         state.syncSidebarItemDrag(true)
 
-        XCTAssertEqual(state.phase, .sidebarItemDrag)
+        XCTAssertEqual(state.activeKindsDescription, "drag")
         XCTAssertTrue(state.allowsSidebarDragSourceHitTesting)
 
         state.syncSidebarItemDrag(false)
 
-        XCTAssertEqual(state.phase, .idle)
+        XCTAssertEqual(state.activeKindsDescription, "none")
         XCTAssertTrue(state.allowsSidebarDragSourceHitTesting)
     }
 
     @MainActor
     func testSidebarContextMenuControllerStartsMenuTrackingBeforeVisibilityAndPreOpenCleanupRestoresDragCapture() {
         let state = SidebarInteractionState()
-        let controller = SidebarContextMenuController(interactionState: state)
+        let controller = makeSidebarContextMenuController(interactionState: state)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 120, height: 120),
             styleMask: [.titled],
@@ -2675,7 +2989,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
             onMenuVisibilityChanged: { visibilityEvents.append($0) }
         )
 
-        XCTAssertEqual(state.phase, .menuTracking)
+        XCTAssertTrue(state.isContextMenuPresented)
         XCTAssertFalse(state.allowsSidebarDragSourceHitTesting)
         XCTAssertFalse(
             dragView.shouldCaptureInteraction(
@@ -2687,7 +3001,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
         controller.finishMenuSessionForTesting(sessionID: sessionID)
         drainMainRunLoop()
 
-        XCTAssertEqual(state.phase, .idle)
+        XCTAssertEqual(state.activeKindsDescription, "none")
         XCTAssertTrue(state.allowsSidebarDragSourceHitTesting)
         XCTAssertTrue(visibilityEvents.isEmpty)
         XCTAssertTrue(
@@ -2701,7 +3015,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
     @MainActor
     func testSidebarContextMenuControllerMenuCloseDoesNotRestoreDragCaptureBeforeEndTracking() {
         let state = SidebarInteractionState()
-        let controller = SidebarContextMenuController(interactionState: state)
+        let controller = makeSidebarContextMenuController(interactionState: state)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 120, height: 120),
             styleMask: [.titled],
@@ -2733,7 +3047,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
         )
         controller.markMenuOpenedForTesting(sessionID: sessionID)
 
-        XCTAssertEqual(state.phase, .menuTracking)
+        XCTAssertTrue(state.isContextMenuPresented)
         XCTAssertFalse(state.allowsSidebarDragSourceHitTesting)
         XCTAssertFalse(
             dragView.shouldCaptureInteraction(
@@ -2745,7 +3059,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
         controller.markMenuClosedForTesting(sessionID: sessionID)
         drainMainRunLoop()
 
-        XCTAssertEqual(state.phase, .menuTracking)
+        XCTAssertTrue(state.isContextMenuPresented)
         XCTAssertFalse(state.allowsSidebarDragSourceHitTesting)
         XCTAssertTrue(visibilityEvents.isEmpty)
         XCTAssertFalse(
@@ -2759,7 +3073,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
     @MainActor
     func testSidebarContextMenuControllerEndTrackingRestoresDragCaptureAndVisibilityCallbacks() {
         let state = SidebarInteractionState()
-        let controller = SidebarContextMenuController(interactionState: state)
+        let controller = makeSidebarContextMenuController(interactionState: state)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 120, height: 120),
             styleMask: [.titled],
@@ -2795,7 +3109,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
         NotificationCenter.default.post(name: NSMenu.didEndTrackingNotification, object: menu)
         drainMainRunLoop()
 
-        XCTAssertEqual(state.phase, .idle)
+        XCTAssertEqual(state.activeKindsDescription, "none")
         XCTAssertTrue(state.allowsSidebarDragSourceHitTesting)
         XCTAssertEqual(visibilityEvents, [true, false])
         XCTAssertTrue(
@@ -2809,19 +3123,19 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
     @MainActor
     func testSidebarContextMenuControllerForceCloseResetsMenuTrackingWithoutDelegateClose() {
         let state = SidebarInteractionState()
-        let controller = SidebarContextMenuController(interactionState: state)
+        let controller = makeSidebarContextMenuController(interactionState: state)
         var visibilityEvents: [Bool] = []
         let sessionID = controller.beginMenuSessionForTesting(
             onMenuVisibilityChanged: { visibilityEvents.append($0) }
         )
 
-        XCTAssertEqual(state.phase, .menuTracking)
+        XCTAssertTrue(state.isContextMenuPresented)
         controller.markMenuOpenedForTesting(sessionID: sessionID)
-        XCTAssertEqual(state.phase, .menuTracking)
+        XCTAssertTrue(state.isContextMenuPresented)
 
         controller.forceCloseActiveSessionForTesting()
 
-        XCTAssertEqual(state.phase, .idle)
+        XCTAssertEqual(state.activeKindsDescription, "none")
         XCTAssertEqual(visibilityEvents, [])
         drainMainRunLoop()
         XCTAssertEqual(visibilityEvents, [true, false])
@@ -2830,7 +3144,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
     @MainActor
     func testSidebarContextMenuControllerDetachingActiveOwnerResetsMenuTracking() {
         let state = SidebarInteractionState()
-        let controller = SidebarContextMenuController(interactionState: state)
+        let controller = makeSidebarContextMenuController(interactionState: state)
         let ownerView = NSView(frame: .zero)
         var visibilityEvents: [Bool] = []
         let sessionID = controller.beginMenuSessionForTesting(
@@ -2838,13 +3152,13 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
             onMenuVisibilityChanged: { visibilityEvents.append($0) }
         )
 
-        XCTAssertEqual(state.phase, .menuTracking)
+        XCTAssertTrue(state.isContextMenuPresented)
         controller.markMenuOpenedForTesting(sessionID: sessionID)
-        XCTAssertEqual(state.phase, .menuTracking)
+        XCTAssertTrue(state.isContextMenuPresented)
 
         controller.detachOwnerViewForTesting(ownerView)
 
-        XCTAssertEqual(state.phase, .idle)
+        XCTAssertEqual(state.activeKindsDescription, "none")
         XCTAssertEqual(visibilityEvents, [])
         drainMainRunLoop()
         XCTAssertEqual(visibilityEvents, [true, false])
@@ -2853,7 +3167,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
     @MainActor
     func testSidebarContextMenuControllerWindowCloseResetsMenuTracking() {
         let state = SidebarInteractionState()
-        let controller = SidebarContextMenuController(interactionState: state)
+        let controller = makeSidebarContextMenuController(interactionState: state)
         let (window, ownerView) = makeWindowAndAttachedHostView()
         var visibilityEvents: [Bool] = []
         let sessionID = controller.beginMenuSessionForTesting(
@@ -2861,21 +3175,21 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
             onMenuVisibilityChanged: { visibilityEvents.append($0) }
         )
 
-        XCTAssertEqual(state.phase, .menuTracking)
+        XCTAssertTrue(state.isContextMenuPresented)
         controller.markMenuOpenedForTesting(sessionID: sessionID)
-        XCTAssertEqual(state.phase, .menuTracking)
+        XCTAssertTrue(state.isContextMenuPresented)
 
         NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: window)
         drainMainRunLoop()
 
-        XCTAssertEqual(state.phase, .idle)
+        XCTAssertEqual(state.activeKindsDescription, "none")
         XCTAssertEqual(visibilityEvents, [true, false])
     }
 
     @MainActor
     func testSidebarContextMenuControllerIgnoresLateEndTrackingFromPreviousSession() {
         let state = SidebarInteractionState()
-        let controller = SidebarContextMenuController(interactionState: state)
+        let controller = makeSidebarContextMenuController(interactionState: state)
         let ownerView = NSView(frame: .zero)
         let firstMenu = NSMenu()
         let secondMenu = NSMenu()
@@ -2889,7 +3203,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
         )
         controller.markMenuOpenedForTesting(sessionID: firstSessionID)
         controller.markMenuClosedForTesting(sessionID: firstSessionID)
-        XCTAssertEqual(state.phase, .menuTracking)
+        XCTAssertTrue(state.isContextMenuPresented)
 
         let secondSessionID = controller.beginMenuSessionForTesting(
             ownerView: ownerView,
@@ -2897,24 +3211,24 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
             onMenuVisibilityChanged: { secondSessionEvents.append($0) }
         )
 
-        XCTAssertEqual(state.phase, .menuTracking)
+        XCTAssertTrue(state.isContextMenuPresented)
         XCTAssertEqual(firstSessionEvents, [])
         drainMainRunLoop()
         XCTAssertEqual(firstSessionEvents, [true, false])
 
         controller.markMenuOpenedForTesting(sessionID: secondSessionID)
-        XCTAssertEqual(state.phase, .menuTracking)
+        XCTAssertTrue(state.isContextMenuPresented)
 
         NotificationCenter.default.post(name: NSMenu.didEndTrackingNotification, object: firstMenu)
 
-        XCTAssertEqual(state.phase, .menuTracking)
+        XCTAssertTrue(state.isContextMenuPresented)
         XCTAssertEqual(firstSessionEvents, [true, false])
         XCTAssertEqual(secondSessionEvents, [])
 
         controller.markMenuClosedForTesting(sessionID: secondSessionID)
         NotificationCenter.default.post(name: NSMenu.didEndTrackingNotification, object: secondMenu)
 
-        XCTAssertEqual(state.phase, .idle)
+        XCTAssertEqual(state.activeKindsDescription, "none")
         XCTAssertEqual(secondSessionEvents, [])
         drainMainRunLoop()
         XCTAssertEqual(secondSessionEvents, [true, false])
@@ -2925,7 +3239,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
         SidebarDragState.shared.resetInteractionState()
 
         let state = SidebarInteractionState()
-        let controller = SidebarContextMenuController(interactionState: state)
+        let controller = makeSidebarContextMenuController(interactionState: state)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 120, height: 120),
             styleMask: [.titled],
@@ -3026,7 +3340,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
     @MainActor
     func testSidebarContextMenuControllerRecoverInteractiveOwnersMatchesRemountedSourceOwnerByDragKey() {
         let state = SidebarInteractionState()
-        let controller = SidebarContextMenuController(interactionState: state)
+        let controller = makeSidebarContextMenuController(interactionState: state)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 120, height: 120),
             styleMask: [.titled],
@@ -3086,7 +3400,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
     @MainActor
     func testSidebarContextMenuControllerRecoverInteractiveOwnersDoesNotTreatUnrelatedOwnerAsSourceRecovery() {
         let state = SidebarInteractionState()
-        let controller = SidebarContextMenuController(interactionState: state)
+        let controller = makeSidebarContextMenuController(interactionState: state)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 120, height: 120),
             styleMask: [.titled],
@@ -3145,7 +3459,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
     @MainActor
     func testSidebarContextMenuControllerFinishSessionIsIdempotentAfterForcedClose() {
         let state = SidebarInteractionState()
-        let controller = SidebarContextMenuController(interactionState: state)
+        let controller = makeSidebarContextMenuController(interactionState: state)
         var visibilityEvents: [Bool] = []
         let sessionID = controller.beginMenuSessionForTesting(
             onMenuVisibilityChanged: { visibilityEvents.append($0) }
@@ -3155,7 +3469,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
         controller.finishMenuSessionForTesting(sessionID: sessionID)
         controller.finishMenuSessionForTesting(sessionID: sessionID)
 
-        XCTAssertEqual(state.phase, .idle)
+        XCTAssertEqual(state.activeKindsDescription, "none")
         XCTAssertEqual(visibilityEvents, [])
         drainMainRunLoop()
         XCTAssertEqual(visibilityEvents, [true, false])
@@ -3164,7 +3478,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
     @MainActor
     func testSidebarContextMenuControllerDismissRecoveryUsesWindowAndOwnerAnchor() {
         let state = SidebarInteractionState()
-        let controller = SidebarContextMenuController(interactionState: state)
+        let controller = makeSidebarContextMenuController(interactionState: state)
         let spy = SidebarContextMenuRecoverySpy()
         controller.sidebarRecoveryCoordinator = spy
 
@@ -3181,7 +3495,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
     @MainActor
     func testSidebarContextMenuControllerDismissRecoveryIsRepeatableAcrossCycles() {
         let state = SidebarInteractionState()
-        let controller = SidebarContextMenuController(interactionState: state)
+        let controller = makeSidebarContextMenuController(interactionState: state)
         let spy = SidebarContextMenuRecoverySpy()
         controller.sidebarRecoveryCoordinator = spy
 
@@ -3215,7 +3529,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
     @MainActor
     func testSidebarContextMenuControllerBackgroundMenuUsesConfiguredVisibilityCallback() {
         let state = SidebarInteractionState()
-        let controller = SidebarContextMenuController(interactionState: state)
+        let controller = makeSidebarContextMenuController(interactionState: state)
         var visibilityEvents: [Bool] = []
 
         controller.configureBackgroundMenuForTesting(
@@ -3353,7 +3667,6 @@ final class SidebarDragOperationParityTests: XCTestCase {
             DragOperation(
                 payload: .tab(tab),
                 fromContainer: .spaceRegular(space.id),
-                fromIndex: 0,
                 toContainer: .folder(folder.id),
                 toIndex: 0,
                 toSpaceId: nil
@@ -3386,7 +3699,6 @@ final class SidebarDragOperationParityTests: XCTestCase {
             DragOperation(
                 payload: .tab(tabManager.dragProxyTab(for: pin)),
                 fromContainer: .spacePinned(space.id),
-                fromIndex: 0,
                 toContainer: .folder(folder.id),
                 toIndex: 0,
                 toSpaceId: nil
@@ -3422,7 +3734,6 @@ final class SidebarDragOperationParityTests: XCTestCase {
             DragOperation(
                 payload: .tab(tabManager.dragProxyTab(for: pin)),
                 fromContainer: .spacePinned(space.id),
-                fromIndex: 0,
                 toContainer: .folder(folder.id),
                 toIndex: 0,
                 toSpaceId: nil
@@ -3446,7 +3757,6 @@ final class SidebarDragOperationParityTests: XCTestCase {
             DragOperation(
                 payload: .tab(tab),
                 fromContainer: .spaceRegular(space.id),
-                fromIndex: 0,
                 toContainer: .folder(folder.id),
                 toIndex: 0,
                 toSpaceId: nil
@@ -3462,7 +3772,6 @@ final class SidebarDragOperationParityTests: XCTestCase {
             DragOperation(
                 payload: .tab(tabManager.dragProxyTab(for: folderPin)),
                 fromContainer: .folder(folder.id),
-                fromIndex: 0,
                 toContainer: .spacePinned(space.id),
                 toIndex: 0,
                 toSpaceId: space.id
@@ -3484,7 +3793,6 @@ final class SidebarDragOperationParityTests: XCTestCase {
             DragOperation(
                 payload: .tab(firstRegular),
                 fromContainer: .spaceRegular(space.id),
-                fromIndex: 0,
                 toContainer: .spacePinned(space.id),
                 toIndex: 0,
                 toSpaceId: space.id
@@ -3499,7 +3807,6 @@ final class SidebarDragOperationParityTests: XCTestCase {
             DragOperation(
                 payload: .tab(tabManager.dragProxyTab(for: pinned)),
                 fromContainer: .spacePinned(space.id),
-                fromIndex: 0,
                 toContainer: .spaceRegular(space.id),
                 toIndex: 1,
                 toSpaceId: space.id
@@ -3538,7 +3845,6 @@ final class SidebarDragOperationParityTests: XCTestCase {
             DragOperation(
                 payload: .tab(tabManager.dragProxyTab(for: pin)),
                 fromContainer: .essentials,
-                fromIndex: 0,
                 toContainer: .spaceRegular(space.id),
                 toIndex: 0,
                 toSpaceId: space.id
@@ -3595,7 +3901,6 @@ final class SidebarDragOperationParityTests: XCTestCase {
             DragOperation(
                 payload: .folder(first),
                 fromContainer: .spacePinned(space.id),
-                fromIndex: 0,
                 toContainer: .spacePinned(space.id),
                 toIndex: 2,
                 toSpaceId: space.id
@@ -3641,7 +3946,6 @@ final class SidebarDragOperationParityTests: XCTestCase {
             DragOperation(
                 payload: .folder(folder),
                 fromContainer: .spacePinned(space.id),
-                fromIndex: 1,
                 toContainer: .spacePinned(space.id),
                 toIndex: 3,
                 toSpaceId: space.id
@@ -3667,7 +3971,6 @@ final class SidebarDragOperationParityTests: XCTestCase {
             DragOperation(
                 payload: .folder(first),
                 fromContainer: .spacePinned(space.id),
-                fromIndex: 0,
                 toContainer: .folder(second.id),
                 toIndex: 0,
                 toSpaceId: nil
@@ -3704,7 +4007,6 @@ final class SidebarDragOperationParityTests: XCTestCase {
             DragOperation(
                 payload: .tab(tabManager.dragProxyTab(for: first)),
                 fromContainer: .spacePinned(space.id),
-                fromIndex: 0,
                 toContainer: .spacePinned(space.id),
                 toIndex: 1,
                 toSpaceId: space.id
@@ -3741,7 +4043,6 @@ final class SidebarDragOperationParityTests: XCTestCase {
             DragOperation(
                 payload: .tab(tabManager.dragProxyTab(for: first)),
                 fromContainer: .essentials,
-                fromIndex: 0,
                 toContainer: .essentials,
                 toIndex: 1,
                 toSpaceId: nil
@@ -3771,7 +4072,6 @@ final class SidebarDragOperationParityTests: XCTestCase {
             DragOperation(
                 payload: .tab(tabManager.dragProxyTab(for: pin)),
                 fromContainer: .essentials,
-                fromIndex: 0,
                 toContainer: .spacePinned(targetSpace.id),
                 toIndex: 0,
                 toSpaceId: targetSpace.id
@@ -3800,7 +4100,6 @@ final class SidebarDragOperationParityTests: XCTestCase {
             DragOperation(
                 payload: .tab(tabManager.dragProxyTab(for: pin)),
                 fromContainer: .essentials,
-                fromIndex: 0,
                 toContainer: .spaceRegular(targetSpace.id),
                 toIndex: 0,
                 toSpaceId: targetSpace.id
@@ -3839,7 +4138,6 @@ final class SidebarDragOperationParityTests: XCTestCase {
             DragOperation(
                 payload: .tab(tabManager.dragProxyTab(for: first)),
                 fromContainer: .folder(folder.id),
-                fromIndex: 0,
                 toContainer: .folder(folder.id),
                 toIndex: 1,
                 toSpaceId: nil
@@ -3863,7 +4161,6 @@ final class SidebarDragOperationParityTests: XCTestCase {
             DragOperation(
                 payload: .tab(first),
                 fromContainer: .spaceRegular(space.id),
-                fromIndex: 0,
                 toContainer: .spaceRegular(space.id),
                 toIndex: 3,
                 toSpaceId: space.id

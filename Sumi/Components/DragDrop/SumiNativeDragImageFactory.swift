@@ -28,7 +28,6 @@ struct SumiNativeDragPreviewDescriptor {
     let sourceSize: CGSize
     let sourceOffsetFromBottomLeading: CGPoint
     let pinnedConfig: PinnedTabsConfiguration
-    let itemCount: Int
     let folderGlyphPresentation: SumiFolderGlyphPresentationState?
     let folderGlyphPalette: SumiFolderGlyphPalette?
 
@@ -39,7 +38,6 @@ struct SumiNativeDragPreviewDescriptor {
         sourceSize: CGSize,
         sourceOffsetFromBottomLeading: CGPoint,
         pinnedConfig: PinnedTabsConfiguration,
-        itemCount: Int,
         folderGlyphPresentation: SumiFolderGlyphPresentationState? = nil,
         folderGlyphPalette: SumiFolderGlyphPalette? = nil
     ) {
@@ -49,7 +47,6 @@ struct SumiNativeDragPreviewDescriptor {
         self.sourceSize = sourceSize
         self.sourceOffsetFromBottomLeading = sourceOffsetFromBottomLeading
         self.pinnedConfig = pinnedConfig
-        self.itemCount = itemCount
         self.folderGlyphPresentation = folderGlyphPresentation
         self.folderGlyphPalette = folderGlyphPalette
     }

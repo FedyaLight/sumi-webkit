@@ -17,7 +17,6 @@ import WebKit
 final class UserScriptGMBridge: NSObject, WKScriptMessageHandler {
 
     let script: UserScript
-    private let profileId: UUID?
     private let contentWorld: WKContentWorld
     private weak var tabOpenHandler: SumiScriptsTabHandler?
 
@@ -38,7 +37,6 @@ final class UserScriptGMBridge: NSObject, WKScriptMessageHandler {
         tabOpenHandler: SumiScriptsTabHandler?
     ) {
         self.script = script
-        self.profileId = profileId
         self.contentWorld = contentWorld
         self.tabOpenHandler = tabOpenHandler
 

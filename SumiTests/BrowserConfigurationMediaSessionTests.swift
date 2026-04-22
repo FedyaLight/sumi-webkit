@@ -4,7 +4,7 @@ import XCTest
 @MainActor
 final class BrowserConfigurationMediaSessionTests: XCTestCase {
     func testRegularProfileEnablesMediaSession() {
-        let browserConfiguration = BrowserConfiguration.makeTestingInstance()
+        let browserConfiguration = BrowserConfiguration()
         let profile = Profile(name: "Default")
 
         let configuration = browserConfiguration.webViewConfiguration(for: profile)
@@ -16,7 +16,7 @@ final class BrowserConfigurationMediaSessionTests: XCTestCase {
     }
 
     func testEphemeralProfileDisablesMediaSession() {
-        let browserConfiguration = BrowserConfiguration.makeTestingInstance()
+        let browserConfiguration = BrowserConfiguration()
         let profile = Profile.createEphemeral()
 
         let configuration = browserConfiguration.webViewConfiguration(for: profile)

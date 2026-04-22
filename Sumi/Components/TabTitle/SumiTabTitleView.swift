@@ -72,7 +72,6 @@ enum SumiTabTitleAnimation {
     static let fadeAndSlideOutKey = "fadeOutAndSlide"
     static let slideInKey = "slideIn"
     static let alphaKey = "alpha"
-    static let fadeInKey = alphaKey
     static let duration: TimeInterval = 0.2
     static let previousTitleAlpha = Float(0.6)
     static let slidingOutStartX = CGFloat(0)
@@ -86,10 +85,6 @@ final class SumiTabTitleView: NSView {
     private lazy var previousTextField: NSTextField = buildTitleTextField()
     private var fadeWidth: CGFloat = 32
     private var trailingFadePadding: CGFloat = 0
-
-    var currentTitleField: NSTextField { titleTextField }
-    var previousTitleField: NSTextField { previousTextField }
-    var fadeMaskLayer: CAGradientLayer? { layer?.mask as? CAGradientLayer }
 
     override var intrinsicContentSize: NSSize {
         NSSize(width: NSView.noIntrinsicMetric, height: 16)

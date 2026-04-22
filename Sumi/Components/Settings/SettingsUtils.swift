@@ -88,16 +88,6 @@ enum SettingsTabs: Hashable, CaseIterable {
         }
     }
 
-    /// Primary sidebar tab for a settings URL. `pane=userScripts` maps to **Extensions**
-    /// (Userscripts is a segment inside that pane).
-    static func settingsTab(from url: URL) -> SettingsTabs {
-        guard let raw = SumiSurface.settingsPaneQuery(from: url),
-              let tab = SettingsTabs(paneQueryValue: raw)
-        else { return .appearance }
-        if tab == .userScripts { return .extensions }
-        return tab
-    }
-
     var settingsSurfaceURL: URL {
         SumiSurface.settingsSurfaceURL(paneQuery: paneQueryValue)
     }

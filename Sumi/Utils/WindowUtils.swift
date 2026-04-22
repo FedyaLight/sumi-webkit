@@ -18,10 +18,6 @@ extension View {
     public func backgroundDraggable() -> some View {
         modifier(BackgroundDraggableModifier(gesture: WindowDragGesture()))
     }
-
-    public func backgroundDraggable<G: Gesture>(gesture: G) -> some View {
-        modifier(BackgroundDraggableModifier(gesture: gesture))
-    }
 }
 
 private struct BackgroundDraggableModifier<G: Gesture>: ViewModifier {

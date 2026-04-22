@@ -140,21 +140,10 @@ final class SumiWebViewContainerView: NSView {
 }
 
 private struct HistorySwipeProtectionContext {
-    let tabID: UUID
     let windowID: UUID?
-    let webViewID: ObjectIdentifier
-    let hostID: ObjectIdentifier?
     let originURL: URL?
     let originHistoryItem: WKBackForwardListItem?
     let originHistoryURL: URL?
-}
-
-private struct FullscreenVideoSessionContext {
-    let tabID: UUID
-    let windowID: UUID
-    let webViewID: ObjectIdentifier
-    weak var host: SumiWebViewContainerView?
-    weak var previousFirstResponder: NSResponder?
 }
 
 enum CompositorPaneDestination: String, CaseIterable {
@@ -307,9 +296,6 @@ struct DeferredProtectedCommandBuffer {
         return drained
     }
 
-    func summaries() -> [String] {
-        commands.map(\.debugSummary)
-    }
 }
 
 private struct TrackedWebViewOwner: Equatable {
@@ -372,7 +358,7 @@ class WebViewCoordinator {
     private var activeHistorySwipeProtections: [ObjectIdentifier: HistorySwipeProtectionContext] = [:]
 
     @ObservationIgnored
-    private var activeFullscreenVideoSessions: [ObjectIdentifier: FullscreenVideoSessionContext] = [:]
+    private var activeFullscreenVideoSessions: Set<ObjectIdentifier> = []
 
     @ObservationIgnored
     private var deferredProtectedWebViewCommands: [ObjectIdentifier: DeferredProtectedCommandBuffer] = [:]
@@ -509,8 +495,7 @@ class WebViewCoordinator {
             if getWebView(for: tab.id, in: windowState.id) == nil {
                 _ = getOrCreateWebView(
                     for: tab,
-                    in: windowState.id,
-                    tabManager: browserManager.tabManager
+                    in: windowState.id
                 )
                 didCreateWebView = true
             }
@@ -560,10 +545,7 @@ class WebViewCoordinator {
         let windowId = windowId(containing: webView)
         let host = host(containing: webView)
         activeHistorySwipeProtections[webViewID] = HistorySwipeProtectionContext(
-            tabID: tabId,
             windowID: windowId,
-            webViewID: webViewID,
-            hostID: host.map(ObjectIdentifier.init),
             originURL: originURL,
             originHistoryItem: originHistoryItem,
             originHistoryURL: originHistoryItem?.url
@@ -599,14 +581,10 @@ class WebViewCoordinator {
         activeHistorySwipeProtections.values.contains { $0.windowID == windowId }
     }
 
-    func hasActiveFullscreenVideo(in windowId: UUID) -> Bool {
-        activeFullscreenVideoSessions.values.contains { $0.windowID == windowId }
-    }
-
     func isWebViewProtectedFromCompositorMutation(_ webView: WKWebView) -> Bool {
         let webViewID = ObjectIdentifier(webView)
         return activeHistorySwipeProtections[webViewID] != nil
-            || activeFullscreenVideoSessions[webViewID] != nil
+            || activeFullscreenVideoSessions.contains(webViewID)
             || webView.sumiIsInFullscreenElementPresentation
     }
 
@@ -691,24 +669,18 @@ class WebViewCoordinator {
         let webViewID = ObjectIdentifier(host.webView)
 
         if state == .notInFullscreen {
-            let context = activeFullscreenVideoSessions.removeValue(forKey: webViewID)
+            activeFullscreenVideoSessions.remove(webViewID)
             RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
                 "Ended fullscreen video session for tab=\(host.tabID.uuidString.prefix(8)) window=\(host.windowID.uuidString.prefix(8))."
             }
-            restoreAfterFullscreenVideoExit(context: context, host: host)
+            restoreAfterFullscreenVideoExit(host: host)
             flushDeferredProtectedCommands(for: webViewID)
             return
         }
 
-        if activeFullscreenVideoSessions[webViewID] == nil {
+        if activeFullscreenVideoSessions.contains(webViewID) == false {
             noteWeakWebView(host.webView)
-            activeFullscreenVideoSessions[webViewID] = FullscreenVideoSessionContext(
-                tabID: host.tabID,
-                windowID: host.windowID,
-                webViewID: webViewID,
-                host: host,
-                previousFirstResponder: host.window?.firstResponder
-            )
+            activeFullscreenVideoSessions.insert(webViewID)
             RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
                 "Began fullscreen video session for tab=\(host.tabID.uuidString.prefix(8)) window=\(host.windowID.uuidString.prefix(8))."
             }
@@ -716,7 +688,6 @@ class WebViewCoordinator {
     }
 
     private func restoreAfterFullscreenVideoExit(
-        context: FullscreenVideoSessionContext?,
         host: SumiWebViewContainerView
     ) {
         guard let tab = (host.webView as? FocusableWKWebView)?.owningTab,
@@ -758,7 +729,7 @@ class WebViewCoordinator {
 
     private func flushDeferredProtectedCommands(for webViewID: ObjectIdentifier) {
         guard activeHistorySwipeProtections[webViewID] == nil,
-              activeFullscreenVideoSessions[webViewID] == nil
+              activeFullscreenVideoSessions.contains(webViewID) == false
         else { return }
         pruneInvalidDeferredProtectedCommands(reason: "flush.preflight")
         var buffer = deferredProtectedWebViewCommands.removeValue(forKey: webViewID)
@@ -818,7 +789,7 @@ class WebViewCoordinator {
     /// - If no window is displaying this tab yet, creates a "primary" WebView
     /// - If another window is already displaying this tab, creates a "clone" WebView
     /// - Returns existing WebView if this window already has one
-    func getOrCreateWebView(for tab: Tab, in windowId: UUID, tabManager: TabManager) -> WKWebView {
+    func getOrCreateWebView(for tab: Tab, in windowId: UUID) -> WKWebView {
         let tabId = tab.id
 
         // Check if this window already has a WebView for this tab
@@ -855,7 +826,7 @@ class WebViewCoordinator {
             return adoptedWebView
         }
 
-        let webView = createWebViewInternal(for: tab, in: windowId, isPrimary: true)
+        let webView = createWebViewInternal(for: tab, in: windowId)
         tab.assignWebViewToWindow(webView, windowId: windowId)
         return webView
     }
@@ -869,11 +840,11 @@ class WebViewCoordinator {
         let primaryWebView = getWebView(for: tabId, in: primaryWindowId)
         
         // Create clone with shared configuration
-        return createWebViewInternal(for: tab, in: windowId, isPrimary: false, copyFrom: primaryWebView)
+        return createWebViewInternal(for: tab, in: windowId, copyFrom: primaryWebView)
     }
     
     /// Internal method to create a WebView with proper configuration
-    private func createWebViewInternal(for tab: Tab, in windowId: UUID, isPrimary: Bool, copyFrom: WKWebView? = nil) -> WKWebView {
+    private func createWebViewInternal(for tab: Tab, in windowId: UUID, copyFrom: WKWebView? = nil) -> WKWebView {
         let tabId = tab.id
 
         let configuration = resolvedConfiguration(
@@ -897,7 +868,6 @@ class WebViewCoordinator {
         newWebView.allowsMagnification = true
         newWebView.setValue(true, forKey: "drawsBackground")
         newWebView.owningTab = tab
-        newWebView.contextMenuBridge = WebContextMenuBridge(tab: tab, configuration: configuration)
         tab.replaceCoreScriptMessageHandlers(
             on: newWebView.configuration.userContentController
         )
@@ -915,15 +885,13 @@ class WebViewCoordinator {
             )
             if #available(macOS 15.5, *) {
                 tab.performMainFrameNavigationAfterHydrationIfNeeded(
-                    on: newWebView,
-                    url: url
+                    on: newWebView
                 ) { resolvedWebView in
                     resolvedWebView.load(URLRequest(url: url))
                 }
             } else {
                 tab.performMainFrameNavigation(
-                    on: newWebView,
-                    url: url
+                    on: newWebView
                 ) { resolvedWebView in
                     resolvedWebView.load(URLRequest(url: url))
                 }
@@ -1131,66 +1099,6 @@ class WebViewCoordinator {
 
     // MARK: - WebView Creation & Cross-Window Sync
 
-    /// Create a new web view for a specific tab in a specific window
-    func createWebView(for tab: Tab, in windowId: UUID) -> WKWebView {
-        let tabId = tab.id
-
-        if let adoptedWebView = adoptExistingPrimaryWebViewIfNeeded(for: tab, in: windowId) {
-            return adoptedWebView
-        }
-
-        let configuration = resolvedConfiguration(
-            for: tab,
-            copying: tab.existingWebView
-        )
-        BrowserConfiguration.shared.applySitePermissionOverrides(
-            to: configuration,
-            url: tab.url,
-            profileId: tab.resolveProfile()?.id ?? tab.profileId
-        )
-
-        let newWebView = FocusableWKWebView(frame: .zero, configuration: configuration)
-        newWebView.navigationDelegate = tab
-        newWebView.uiDelegate = tab
-        newWebView.allowsBackForwardNavigationGestures = true
-        newWebView.allowsMagnification = true
-        newWebView.setValue(true, forKey: "drawsBackground")
-        newWebView.owningTab = tab
-        newWebView.contextMenuBridge = WebContextMenuBridge(tab: tab, configuration: configuration)
-        tab.replaceCoreScriptMessageHandlers(
-            on: newWebView.configuration.userContentController
-        )
-        tab.installRuntimeObservers(on: newWebView)
-        setWebView(newWebView, for: tabId, in: windowId)
-
-        if let url = URL(string: tab.url.absoluteString) {
-            prepareInitialExtensionNavigation(
-                for: newWebView,
-                tab: tab,
-                in: windowId,
-                url: url
-            )
-            if #available(macOS 15.5, *) {
-                tab.performMainFrameNavigationAfterHydrationIfNeeded(
-                    on: newWebView,
-                    url: url
-                ) { resolvedWebView in
-                    resolvedWebView.load(URLRequest(url: url))
-                }
-            } else {
-                tab.performMainFrameNavigation(
-                    on: newWebView,
-                    url: url
-                ) { resolvedWebView in
-                    resolvedWebView.load(URLRequest(url: url))
-                }
-            }
-        }
-        newWebView.sumiSetAudioMuted(tab.audioState.isMuted)
-
-        return newWebView
-    }
-
     private func adoptExistingPrimaryWebViewIfNeeded(
         for tab: Tab,
         in windowId: UUID
@@ -1293,7 +1201,6 @@ class WebViewCoordinator {
         let recreatedPrimary = createWebViewInternal(
             for: tab,
             in: primaryWindowId,
-            isPrimary: true,
             copyFrom: nil
         )
         tab.assignWebViewToWindow(recreatedPrimary, windowId: primaryWindowId)
@@ -1305,7 +1212,6 @@ class WebViewCoordinator {
             _ = createWebViewInternal(
                 for: tab,
                 in: windowId,
-                isPrimary: false,
                 copyFrom: recreatedPrimary
             )
         }
@@ -1316,25 +1222,6 @@ class WebViewCoordinator {
             }
             tab.browserManager?.refreshCompositor(for: windowState)
         }
-    }
-
-    func deferredProtectedCommandSummaries(for webView: WKWebView) -> [String] {
-        deferredProtectedWebViewCommands[ObjectIdentifier(webView)]?.summaries() ?? []
-    }
-
-    func totalDeferredProtectedCommandCount() -> Int {
-        deferredProtectedWebViewCommands.values.reduce(0) { partialResult, buffer in
-            partialResult + buffer.count
-        }
-    }
-
-    func simulateFullscreenStateChangeForTesting(
-        tabId: UUID,
-        in windowId: UUID,
-        state: WKWebView.FullscreenState
-    ) {
-        guard let host = getWebViewHost(for: tabId, in: windowId) else { return }
-        handleFullscreenStateChange(for: host, state: state)
     }
 
     @discardableResult
@@ -1367,7 +1254,7 @@ class WebViewCoordinator {
             reason: reason
         ) { webViewID in
             activeHistorySwipeProtections[webViewID] != nil
-                || activeFullscreenVideoSessions[webViewID] != nil
+                || activeFullscreenVideoSessions.contains(webViewID)
                 || webView.sumiIsInFullscreenElementPresentation
         }
     }
@@ -1513,7 +1400,7 @@ class WebViewCoordinator {
         for sourceWebViewID in Array(deferredProtectedWebViewCommands.keys) {
             guard resolveWebView(with: sourceWebViewID) != nil else {
                 activeHistorySwipeProtections.removeValue(forKey: sourceWebViewID)
-                activeFullscreenVideoSessions.removeValue(forKey: sourceWebViewID)
+                activeFullscreenVideoSessions.remove(sourceWebViewID)
                 if var buffer = deferredProtectedWebViewCommands.removeValue(forKey: sourceWebViewID) {
                     for command in buffer.drain() {
                         dropDeferredProtectedCommand(
@@ -2159,15 +2046,13 @@ class WebViewCoordinator {
 
             if #available(macOS 15.5, *) {
                 tab.performMainFrameNavigationAfterHydrationIfNeeded(
-                    on: webView,
-                    url: url
+                    on: webView
                 ) { resolvedWebView in
                     resolvedWebView.load(URLRequest(url: url))
                 }
             } else {
                 tab.performMainFrameNavigation(
-                    on: webView,
-                    url: url
+                    on: webView
                 ) { resolvedWebView in
                     resolvedWebView.load(URLRequest(url: url))
                 }
@@ -2186,18 +2071,15 @@ class WebViewCoordinator {
                 )
                 continue
             }
-            let targetURL = webView.url ?? tab.url
             if #available(macOS 15.5, *) {
                 tab.performMainFrameNavigationAfterHydrationIfNeeded(
-                    on: webView,
-                    url: targetURL
+                    on: webView
                 ) { resolvedWebView in
                     resolvedWebView.reload()
                 }
             } else {
                 tab.performMainFrameNavigation(
-                    on: webView,
-                    url: targetURL
+                    on: webView
                 ) { resolvedWebView in
                     resolvedWebView.reload()
                 }
@@ -2206,7 +2088,7 @@ class WebViewCoordinator {
     }
 
     /// Set mute state for a tab across all windows
-    func setMuteState(_ muted: Bool, for tabId: UUID, excludingWindow originatingWindowId: UUID?) {
+    func setMuteState(_ muted: Bool, for tabId: UUID) {
         guard let windowWebViews = webViewsByTabAndWindow[tabId] else { return }
 
         for (_, webView) in windowWebViews {

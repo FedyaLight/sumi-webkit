@@ -29,13 +29,4 @@ struct GradientNode: Identifiable, Codable, Hashable, Sendable {
         self.xPosition = xPosition
         self.yPosition = yPosition
     }
-
-    init(id: UUID = UUID(), color: Color, location: Double) {
-        #if canImport(AppKit)
-        let hex = NSColor(color).toHexString() ?? "#000000"
-        #else
-        let hex = "#000000"
-        #endif
-        self.init(id: id, colorHex: hex, location: location)
-    }
 }

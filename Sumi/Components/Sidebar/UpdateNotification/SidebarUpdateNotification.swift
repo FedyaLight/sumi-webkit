@@ -9,7 +9,6 @@ import SwiftUI
 
 struct SidebarUpdateNotification: View {
     @EnvironmentObject var browserManager: BrowserManager
-    @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) var settingsManager
     let downloadsMenuVisible: Bool
     @State private var isVisible: Bool = false
@@ -23,9 +22,6 @@ struct SidebarUpdateNotification: View {
         }
         if settingsManager.debugToggleUpdateNotification {
             return BrowserManager.UpdateAvailability(
-                version: "9999.0",
-                shortVersion: "Preview Build",
-                releaseNotesURL: nil,
                 isDownloaded: true
             )
         }
@@ -41,7 +37,7 @@ struct SidebarUpdateNotification: View {
     }
 
     var body: some View {
-        if let availability, shouldShowNotification {
+        if shouldShowNotification {
             VStack(spacing: 0) {
                 VStack(spacing: 0) {
                     Text("New version of Sumi available")
@@ -52,7 +48,7 @@ struct SidebarUpdateNotification: View {
 
                     if isExpanded {
                         Button(action: {
-                            installUpdate(wasDownloaded: availability.isDownloaded)
+                            installUpdate()
                         }) {
                             Text("Restart and Update")
                                 .font(.system(size: 12, weight: .semibold))
@@ -127,7 +123,7 @@ struct SidebarUpdateNotification: View {
         isVisible = false
     }
 
-    private func installUpdate(wasDownloaded: Bool) {
+    private func installUpdate() {
         browserManager.installPendingUpdateIfAvailable()
     }
 }

@@ -18,7 +18,6 @@ struct SpaceTitle: View {
     @State private var isRenaming: Bool = false
     @State private var draftName: String = ""
     @FocusState private var nameFieldFocused: Bool
-    @State private var isEllipsisHovering: Bool = false
     
     @StateObject private var emojiManager = EmojiPickerManager()
 
@@ -223,7 +222,6 @@ struct SpaceTitle: View {
                     browserManager.showDialog(
                         SpaceEditDialog(
                             space: space,
-                            mode: .icon,
                             onSave: { newName, newIcon, newProfileId in
                                 updateSpace(name: newName, icon: newIcon, profileId: newProfileId)
                             },
@@ -285,15 +283,6 @@ struct SpaceTitle: View {
         )
     }
 
-    private func createFolder() {
-        RuntimeDiagnostics.emit("🎯 SpaceTitle.createFolder() called for space '\(space.name)' (id: \(space.id.uuidString.prefix(8))...)")
-        _ = browserManager.tabManager.createFolder(for: space.id)
-    }
-
-    private func assignProfile(_ id: UUID) {
-        browserManager.tabManager.assign(spaceId: space.id, toProfile: id)
-    }
-
     private func updateSpace(name: String, icon: String, profileId: UUID?) {
         browserManager.closeDialog()
         DispatchQueue.main.async {
@@ -330,10 +319,6 @@ struct SpaceTitle: View {
         }
     }
 
-    private func resolvedProfileName(for id: UUID?) -> String? {
-        guard let id else { return nil }
-        return browserManager.profileManager.profiles.first(where: { $0.id == id })?.name
-    }
 }
 
 // MARK: - Emoji picker

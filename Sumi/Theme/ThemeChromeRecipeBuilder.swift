@@ -3,7 +3,6 @@ import SwiftUI
 
 struct ThemeContrastDecision: Equatable {
     let chromeColorScheme: ColorScheme
-    let whiteContrast: Double
     let blackContrast: Double
 }
 
@@ -45,7 +44,6 @@ enum ThemeContrastResolver {
         if isIncognito {
             return ThemeContrastDecision(
                 chromeColorScheme: .dark,
-                whiteContrast: 21,
                 blackContrast: 1
             )
         }
@@ -53,7 +51,6 @@ enum ThemeContrastResolver {
         if settings.themeUseSystemColors {
             return ThemeContrastDecision(
                 chromeColorScheme: globalWindowScheme,
-                whiteContrast: globalWindowScheme == .dark ? 21 : 1,
                 blackContrast: globalWindowScheme == .light ? 21 : 1
             )
         }
@@ -83,7 +80,6 @@ enum ThemeContrastResolver {
 
         return ThemeContrastDecision(
             chromeColorScheme: whiteContrast > blackContrast ? .dark : .light,
-            whiteContrast: whiteContrast,
             blackContrast: blackContrast
         )
     }
@@ -489,7 +485,6 @@ private struct ThemeChromePalette {
     func resolve(accent: Color) -> ChromeThemeTokens {
         ChromeThemeTokens(
             accent: accent,
-            background: background,
             toolbarBackground: toolbarBackground,
             fieldBackground: fieldBackground,
             fieldBackgroundHover: fieldBackgroundHover,

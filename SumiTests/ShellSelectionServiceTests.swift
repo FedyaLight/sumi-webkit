@@ -171,10 +171,6 @@ private final class FakeShellSelectionTabStore: ShellSelectionTabStore {
         self.currentTab = currentTab
     }
 
-    func allTabs() -> [Tab] {
-        allTabsValue
-    }
-
     func tab(for id: UUID) -> Tab? {
         allTabsValue.first(where: { $0.id == id })
     }

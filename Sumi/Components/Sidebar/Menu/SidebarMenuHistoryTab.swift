@@ -50,11 +50,6 @@ struct SidebarMenuHistoryTab: View {
     @State private var searchTask: Task<Void, Never>?
 
     private let pageSize: Int = 50
-    private let maxResults: Int = 1000
-
-    private var contrastText: Color {
-        tokens.primaryText
-    }
 
     private var contrastTextSecondary: Color {
         tokens.secondaryText
@@ -468,22 +463,6 @@ struct SidebarMenuHistoryTab: View {
         browserManager.historyManager.deleteHistoryEntry(entry.id)
         historyEntries.removeAll { $0.id == entry.id }
         groupedHistoryEntries = groupHistoryEntries(historyEntries)
-    }
-
-    private func clearHistory() {
-        let alert = NSAlert()
-        alert.messageText = "Clear History"
-        alert.informativeText =
-            "Are you sure you want to clear your browsing history? This action cannot be undone."
-        alert.addButton(withTitle: "Clear")
-        alert.addButton(withTitle: "Cancel")
-        alert.alertStyle = .warning
-
-        if alert.runModal() == .alertFirstButtonReturn {
-            browserManager.historyManager.clearHistory()
-            historyEntries.removeAll()
-            groupedHistoryEntries.removeAll()
-        }
     }
 }
 

@@ -89,25 +89,6 @@ actor SumiFaviconResolver {
         return resolvedImage
     }
 
-    func cachedImage(for url: URL) -> NSImage? {
-        guard let cacheKey = Self.cacheKey(for: url) else {
-            return nil
-        }
-        return TabFaviconStore.getCachedImage(for: cacheKey)
-    }
-
-    func clearCache() {
-        for task in inFlight.values {
-            task.cancel()
-        }
-        inFlight.removeAll()
-        resolvedIconURLs.removeAll()
-        acceptedLowQualityKeys.removeAll()
-        negativeCacheExpirations.removeAll()
-        persistNegativeCacheIfNeeded()
-        TabFaviconStore.clearCache()
-    }
-
     func resetTransientState() {
         for task in inFlight.values {
             task.cancel()
@@ -122,10 +103,6 @@ actor SumiFaviconResolver {
         }
     }
 
-    func cacheStats() -> (count: Int, domains: [String]) {
-        TabFaviconStore.getFaviconCacheStats()
-    }
-
     private func resolveImage(for url: URL, cacheKey: String) async -> NSImage? {
         if Task.isCancelled {
             return nil
@@ -136,7 +113,6 @@ actor SumiFaviconResolver {
 
         if let directIcon = await fetchDirectImage(
             for: url,
-            cacheKey: cacheKey,
             path: "/favicon.ico"
         ) {
             if Self.isHighQualityEnough(directIcon.decodedImage.bitmap.image) {
@@ -150,7 +126,6 @@ actor SumiFaviconResolver {
 
         if let appleTouchIcon = await fetchDirectImage(
             for: url,
-            cacheKey: cacheKey,
             path: "/apple-touch-icon.png"
         ) {
             if Self.isHighQualityEnough(appleTouchIcon.decodedImage.bitmap.image) {
@@ -186,7 +161,6 @@ actor SumiFaviconResolver {
 
     private func fetchDirectImage(
         for pageURL: URL,
-        cacheKey: String,
         path: String
     ) async -> FaviconCandidate? {
         guard let iconURL = directURL(for: pageURL, path: path),

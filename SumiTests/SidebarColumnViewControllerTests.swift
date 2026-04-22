@@ -5,6 +5,32 @@ import XCTest
 @testable import Sumi
 
 @MainActor
+private func makeSidebarContextMenuController(
+    interactionState: SidebarInteractionState
+) -> SidebarContextMenuController {
+    SidebarContextMenuController(
+        interactionState: interactionState,
+        transientSessionCoordinator: SidebarTransientSessionCoordinator(
+            windowID: UUID(),
+            interactionState: interactionState
+        )
+    )
+}
+
+private extension SidebarInteractionState {
+    @discardableResult
+    func beginContextMenuSessionForTesting() -> UUID {
+        let tokenID = UUID()
+        beginSession(kind: .contextMenu, tokenID: tokenID)
+        return tokenID
+    }
+
+    func endContextMenuSessionForTesting(_ tokenID: UUID) {
+        endSession(kind: .contextMenu, tokenID: tokenID)
+    }
+}
+
+@MainActor
 final class SidebarColumnViewControllerTests: XCTestCase {
     func testSidebarColumnViewControllerHostsUpdatesAndTeardown() {
         let vc = SidebarColumnViewController()
@@ -306,7 +332,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
     }
 
     func testSidebarColumnRoutingPrefersRegisteredOwnerForRightClickWhenOriginalHitIsHostedView() {
-        let controller = SidebarContextMenuController(interactionState: SidebarInteractionState())
+        let controller = makeSidebarContextMenuController(interactionState: SidebarInteractionState())
         let (window, container, hostedView, owner) = makeRegisteredSidebarOwner(controller: controller)
         _ = window
         owner.update(
@@ -335,7 +361,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
     }
 
     func testSidebarColumnRoutingLeftClickInvokesRegisteredOwnerPrimaryAction() {
-        let controller = SidebarContextMenuController(interactionState: SidebarInteractionState())
+        let controller = makeSidebarContextMenuController(interactionState: SidebarInteractionState())
         let (window, container, hostedView, owner) = makeRegisteredSidebarOwner(controller: controller)
         var primaryActivations = 0
         owner.update(
@@ -362,7 +388,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
     }
 
     func testSidebarColumnRoutingSendsMouseUpToActivePrimaryTrackingOwner() {
-        let controller = SidebarContextMenuController(interactionState: SidebarInteractionState())
+        let controller = makeSidebarContextMenuController(interactionState: SidebarInteractionState())
         let (window, container, hostedView, owner) = makeRegisteredSidebarOwner(controller: controller)
         var primaryActivations = 0
         owner.update(
@@ -400,7 +426,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
     }
 
     func testSidebarColumnRoutingPrimaryOnlyOwnerRightClickFallsBackToBackgroundMenu() {
-        let controller = SidebarContextMenuController(interactionState: SidebarInteractionState())
+        let controller = makeSidebarContextMenuController(interactionState: SidebarInteractionState())
         let (window, container, hostedView, owner) = makeRegisteredSidebarOwner(controller: controller)
         owner.update(
             rootView: AnyView(Color.clear.frame(width: 80, height: 36)),
@@ -421,7 +447,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
     }
 
     func testSidebarColumnRoutingPrefersNestedActionOwnerForLeftClickAndParentForRightClick() {
-        let controller = SidebarContextMenuController(interactionState: SidebarInteractionState())
+        let controller = makeSidebarContextMenuController(interactionState: SidebarInteractionState())
         let (window, container, hostedView, rowOwner) = makeRegisteredSidebarOwner(controller: controller)
         rowOwner.update(
             rootView: AnyView(Color.clear.frame(width: 80, height: 36)),
@@ -468,7 +494,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
     }
 
     func testSidebarColumnRoutingPrefersOriginalHitOwnerOverLaterRegisteredMatch() {
-        let controller = SidebarContextMenuController(interactionState: SidebarInteractionState())
+        let controller = makeSidebarContextMenuController(interactionState: SidebarInteractionState())
         let (_, container, hostedView, visibleOwner) = makeRegisteredSidebarOwner(controller: controller)
         visibleOwner.update(
             rootView: AnyView(Color.clear.frame(width: 80, height: 36)),
@@ -496,7 +522,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
     }
 
     func testSidebarColumnRoutingRestrictsRegistryLookupToCurrentHostedSidebarView() {
-        let controller = SidebarContextMenuController(interactionState: SidebarInteractionState())
+        let controller = makeSidebarContextMenuController(interactionState: SidebarInteractionState())
         let window = makeWindow()
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 120))
         let currentHostedView = NSView(frame: container.bounds)
@@ -553,7 +579,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
 
     func testSidebarColumnRoutingRestoresLiveDragOwnerOnlyAfterMenuEndTracking() {
         let interactionState = SidebarInteractionState()
-        let controller = SidebarContextMenuController(interactionState: interactionState)
+        let controller = makeSidebarContextMenuController(interactionState: interactionState)
         let (window, container, hostedView, owner) = makeRegisteredSidebarOwner(controller: controller)
         let menu = NSMenu()
 
@@ -583,7 +609,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         controller.markMenuOpenedForTesting(sessionID: sessionID)
         controller.markMenuClosedForTesting(sessionID: sessionID)
 
-        XCTAssertEqual(interactionState.phase, .menuTracking)
+        XCTAssertTrue(interactionState.isContextMenuPresented)
         XCTAssertFalse(interactionState.allowsSidebarDragSourceHitTesting)
 
         let blockedDown = SidebarColumnHitTestRouting.routedHit(
@@ -600,7 +626,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         NotificationCenter.default.post(name: NSMenu.didEndTrackingNotification, object: menu)
         drainMainRunLoop()
 
-        XCTAssertEqual(interactionState.phase, .idle)
+        XCTAssertEqual(interactionState.activeKindsDescription, "none")
         XCTAssertTrue(interactionState.allowsSidebarDragSourceHitTesting)
 
         let down = SidebarColumnHitTestRouting.routedHit(
@@ -630,7 +656,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
     }
 
     func testSidebarInteractiveOwnerRegistryRespectsPrimaryActionExclusionZones() {
-        let controller = SidebarContextMenuController(interactionState: SidebarInteractionState())
+        let controller = makeSidebarContextMenuController(interactionState: SidebarInteractionState())
         let (window, _, _, owner) = makeRegisteredSidebarOwner(controller: controller)
         owner.update(
             rootView: AnyView(Color.clear.frame(width: 80, height: 36)),
@@ -657,7 +683,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
     }
 
     func testSidebarInteractiveOwnerRegistryDoesNotRouteOwnersAcrossWindows() {
-        let controller = SidebarContextMenuController(interactionState: SidebarInteractionState())
+        let controller = makeSidebarContextMenuController(interactionState: SidebarInteractionState())
         let (_, _, _, owner) = makeRegisteredSidebarOwner(controller: controller)
         owner.update(
             rootView: AnyView(Color.clear.frame(width: 80, height: 36)),
@@ -678,29 +704,29 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         let windowID = UUID()
 
         XCTAssertTrue(
-            SidebarHoverOverlayThemePinningPolicy.shouldPinHoverSidebar(
-                sessionHostWindowID: windowID,
+            SidebarHoverOverlayTransientPinningPolicy.shouldPinHoverSidebar(
+                transientWindowID: windowID,
                 currentWindowID: windowID,
                 isSidebarVisible: false
             )
         )
         XCTAssertFalse(
-            SidebarHoverOverlayThemePinningPolicy.shouldPinHoverSidebar(
-                sessionHostWindowID: windowID,
+            SidebarHoverOverlayTransientPinningPolicy.shouldPinHoverSidebar(
+                transientWindowID: windowID,
                 currentWindowID: windowID,
                 isSidebarVisible: true
             )
         )
         XCTAssertFalse(
-            SidebarHoverOverlayThemePinningPolicy.shouldPinHoverSidebar(
-                sessionHostWindowID: nil,
+            SidebarHoverOverlayTransientPinningPolicy.shouldPinHoverSidebar(
+                transientWindowID: nil,
                 currentWindowID: windowID,
                 isSidebarVisible: false
             )
         )
         XCTAssertFalse(
-            SidebarHoverOverlayThemePinningPolicy.shouldPinHoverSidebar(
-                sessionHostWindowID: UUID(),
+            SidebarHoverOverlayTransientPinningPolicy.shouldPinHoverSidebar(
+                transientWindowID: UUID(),
                 currentWindowID: windowID,
                 isSidebarVisible: false
             )
@@ -730,7 +756,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         )
 
         XCTAssertTrue(interactionState.isContextMenuPresented)
-        XCTAssertEqual(interactionState.phase, .menuTracking)
+        XCTAssertTrue(interactionState.isContextMenuPresented)
 
         coordinator.endSession(menuToken)
 
@@ -1016,7 +1042,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
             )
         }
 
-        interactionState.beginMenuTracking()
+        interactionState.beginContextMenuSessionForTesting()
         XCTAssertFalse(interactionState.allowsSidebarDragSourceHitTesting)
 
         let sourceWindow = makeWindow()
@@ -1323,7 +1349,6 @@ final class SidebarColumnViewControllerTests: XCTestCase {
             syncWorkspaceThemeAcrossWindows: { _, _ in },
             scheduleStructuralPersistence: {},
             presentPicker: { presentedSession = $0 },
-            dismissPicker: {},
             showDialog: { _, dialogSource in
                 shownDialogSource = dialogSource
             },
@@ -1357,7 +1382,6 @@ final class SidebarColumnViewControllerTests: XCTestCase {
             presentPicker: { _ in
                 XCTFail("Theme picker should not present without a current space")
             },
-            dismissPicker: {},
             showDialog: { _, dialogSource in
                 shownDialogSource = dialogSource
             },

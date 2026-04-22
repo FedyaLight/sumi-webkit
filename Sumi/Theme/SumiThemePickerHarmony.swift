@@ -25,7 +25,6 @@ struct SumiThemePickerFieldGeometry: Equatable {
         let lightness: Double
     }
 
-    static let referencePanelWidth: CGFloat = 380
     static let colorPadding: CGFloat = 30
     static let colorDotHalfSize: CGFloat = 29
 

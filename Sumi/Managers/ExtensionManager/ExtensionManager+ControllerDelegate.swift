@@ -16,7 +16,6 @@ private enum SafariNativeMessageRouter {
 
     static func route(
         message: Any,
-        to applicationId: String,
         for extensionContext: WKWebExtensionContext,
         manager: ExtensionManager,
         replyHandler: @escaping (Any?, (any Error)?) -> Void
@@ -462,7 +461,6 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
 
         if SafariNativeMessageRouter.route(
             message: message,
-            to: applicationId,
             for: extensionContext,
             manager: self,
             replyHandler: replyHandler

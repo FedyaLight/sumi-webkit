@@ -71,10 +71,12 @@ final class RuntimeDiagnosticsTests: XCTestCase {
 
         var evaluated = false
 
-        manager.extensionRuntimeTrace {
+        func makeTraceMessage() -> String {
             evaluated = true
             return "should not log"
         }
+
+        manager.extensionRuntimeTrace(makeTraceMessage())
 
         XCTAssertFalse(evaluated)
     }

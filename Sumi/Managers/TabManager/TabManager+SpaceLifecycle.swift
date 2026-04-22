@@ -5,10 +5,6 @@ extension TabManager {
         launcherProjection(for: spaceId).userVisibleTabCount
     }
 
-    func hasUserVisibleContent(in spaceId: UUID) -> Bool {
-        launcherProjection(for: spaceId).hasVisibleContent
-    }
-
     @discardableResult
     func createSpace(
         name: String,

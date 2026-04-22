@@ -365,13 +365,13 @@ class SumiSettingsService {
     }
 }
 
-public enum GlanceActivationMethod: String, CaseIterable, Identifiable {
+enum GlanceActivationMethod: String, CaseIterable, Identifiable {
     case ctrl = "ctrl"
     case alt = "alt"
     case shift = "shift"
     case meta = "meta"
 
-    public var id: String { rawValue }
+    var id: String { rawValue }
 
     var displayName: String {
         switch self {
@@ -383,11 +383,11 @@ public enum GlanceActivationMethod: String, CaseIterable, Identifiable {
     }
 }
 
-public enum TabListNewTabButtonPosition: String, CaseIterable, Identifiable {
+enum TabListNewTabButtonPosition: String, CaseIterable, Identifiable {
     case top = "top"
     case bottom = "bottom"
 
-    public var id: String { rawValue }
+    var id: String { rawValue }
 
     var displayName: String {
         switch self {
@@ -397,30 +397,12 @@ public enum TabListNewTabButtonPosition: String, CaseIterable, Identifiable {
     }
 }
 
-public enum WindowSchemeMode: String, CaseIterable, Identifiable {
+enum WindowSchemeMode: String, CaseIterable, Identifiable {
     case auto = "auto"
     case light = "light"
     case dark = "dark"
 
-    public var id: String { rawValue }
-
-    func resolve(
-        global globalScheme: ColorScheme,
-        isIncognito: Bool = false
-    ) -> ColorScheme {
-        if isIncognito {
-            return .dark
-        }
-
-        switch self {
-        case .auto:
-            return globalScheme
-        case .light:
-            return .light
-        case .dark:
-            return .dark
-        }
-    }
+    var id: String { rawValue }
 
     var displayName: String {
         switch self {
@@ -431,12 +413,12 @@ public enum WindowSchemeMode: String, CaseIterable, Identifiable {
     }
 }
 
-public enum DarkThemeStyle: String, CaseIterable, Identifiable {
+enum DarkThemeStyle: String, CaseIterable, Identifiable {
     case `default` = "default"
     case night = "night"
     case colorful = "colorful"
 
-    public var id: String { rawValue }
+    var id: String { rawValue }
 
     var displayName: String {
         switch self {
@@ -470,16 +452,9 @@ extension EnvironmentValues {
 }
 // MARK: - Tab Layout
 
-public enum TabLayout: String, CaseIterable, Identifiable {
+enum TabLayout: String, CaseIterable, Identifiable {
     case sidebar
     case topOfWindow
 
-    public var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .sidebar: return "Sidebar"
-        case .topOfWindow: return "Top of Window"
-        }
-    }
+    var id: String { rawValue }
 }

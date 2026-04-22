@@ -250,8 +250,7 @@ extension ExtensionManagerTests {
         let resolvedURL = NativeMessagingHandler.resolveManifestURL(
             applicationId: applicationId,
             browserSupportDirectory: supportRoot,
-            appBundleURL: appBundleRoot,
-            homeDirectory: homeRoot
+            appBundleURL: appBundleRoot
         )
         XCTAssertEqual(
             resolvedURL?.standardizedFileURL,
@@ -261,8 +260,7 @@ extension ExtensionManagerTests {
         let candidatePaths = NativeMessagingHandler.manifestSearchURLs(
             applicationId: applicationId,
             browserSupportDirectory: supportRoot,
-            appBundleURL: appBundleRoot,
-            homeDirectory: homeRoot
+            appBundleURL: appBundleRoot
         ).map(\.path)
 
         XCTAssertEqual(candidatePaths.first, localManifestURL.path)

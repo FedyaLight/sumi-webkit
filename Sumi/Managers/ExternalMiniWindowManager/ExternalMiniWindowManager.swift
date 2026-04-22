@@ -157,7 +157,6 @@ final class ExternalMiniWindowManager {
 @MainActor
 final class MiniBrowserWindowController: NSWindowController, NSWindowDelegate {
     private let session: MiniWindowSession
-    private let adoptAction: () -> Void
     private let onClose: (MiniWindowSession) -> Void
 
     init(
@@ -167,16 +166,11 @@ final class MiniBrowserWindowController: NSWindowController, NSWindowDelegate {
         onClose: @escaping (MiniWindowSession) -> Void
     ) {
         self.session = session
-        self.adoptAction = adoptAction
         self.onClose = onClose
 
         let baseView = MiniBrowserWindowView(
             session: session,
-            adoptAction: adoptAction,
-            dismissAction: { [weak session] in
-                guard let session else { return }
-                onClose(session)
-            }
+            adoptAction: adoptAction
         )
         let contentView: AnyView
         if let settings {

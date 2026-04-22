@@ -78,7 +78,6 @@ struct SafariExtensionInfo: Identifiable, Equatable {
     let name: String
     let appPath: URL
     let appexPath: URL
-    let resourcesPath: URL
 }
 
 @Model

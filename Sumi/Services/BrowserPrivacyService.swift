@@ -7,8 +7,6 @@ final class BrowserPrivacyService {
         let cacheManager: CacheManager
         let currentTab: @MainActor () -> Tab?
         let activeWindowId: @MainActor () -> UUID?
-        let currentProfileId: @MainActor () -> UUID?
-        let profiles: @MainActor () -> [Profile]
         let webViewLookup: @MainActor (UUID, UUID) -> WKWebView?
     }
 
@@ -47,36 +45,30 @@ final class BrowserPrivacyService {
         Task { @MainActor in
             await context.cacheManager.clearCacheForDomainExcludingCookies(host)
             if let webView = context.webViewLookup(currentTab.id, activeWindowId) {
-                let targetURL = webView.url ?? currentTab.url
                 if #available(macOS 15.5, *) {
                     currentTab.performMainFrameNavigationAfterHydrationIfNeeded(
-                        on: webView,
-                        url: targetURL
+                        on: webView
                     ) { resolvedWebView in
                         resolvedWebView.reloadFromOrigin()
                     }
                 } else {
                     currentTab.performMainFrameNavigation(
-                        on: webView,
-                        url: targetURL
+                        on: webView
                     ) { resolvedWebView in
                         resolvedWebView.reloadFromOrigin()
                     }
                 }
             } else {
                 if let webView = currentTab.existingWebView {
-                    let targetURL = webView.url ?? currentTab.url
                     if #available(macOS 15.5, *) {
                         currentTab.performMainFrameNavigationAfterHydrationIfNeeded(
-                            on: webView,
-                            url: targetURL
+                            on: webView
                         ) { resolvedWebView in
                             resolvedWebView.reloadFromOrigin()
                         }
                     } else {
                         currentTab.performMainFrameNavigation(
-                            on: webView,
-                            url: targetURL
+                            on: webView
                         ) { resolvedWebView in
                             resolvedWebView.reloadFromOrigin()
                         }
@@ -126,58 +118,6 @@ final class BrowserPrivacyService {
         Task {
             await context.cookieManager.performPrivacyCleanup()
             await context.cacheManager.performPrivacyCompliantCleanup()
-        }
-    }
-
-    func clearCurrentProfileCookies(using context: Context) {
-        guard let profileId = context.currentProfileId() else { return }
-        RuntimeDiagnostics.emit(
-            "🧹 [PrivacyService] Clearing cookies for current profile: \(profileId.uuidString)"
-        )
-        Task {
-            await context.cookieManager.deleteAllCookies()
-        }
-    }
-
-    func clearCurrentProfileCache(using context: Context) {
-        guard context.currentProfileId() != nil else { return }
-        RuntimeDiagnostics.emit("🧹 [PrivacyService] Clearing cache for current profile")
-        Task {
-            await context.cacheManager.clearAllCache()
-        }
-    }
-
-    func clearAllProfilesCookies(using context: Context) {
-        let profiles = context.profiles()
-        RuntimeDiagnostics.emit(
-            "🧹 [PrivacyService] Clearing cookies for ALL profiles (sequential, isolated)"
-        )
-        Task { @MainActor in
-            for profile in profiles {
-                let cookieManager = CookieManager(dataStore: profile.dataStore)
-                RuntimeDiagnostics.emit(
-                    "   → Clearing cookies for profile=\(profile.id.uuidString) [\(profile.name)]"
-                )
-                await cookieManager.deleteAllCookies()
-            }
-        }
-    }
-
-    func performPrivacyCleanupAllProfiles(using context: Context) {
-        let profiles = context.profiles()
-        RuntimeDiagnostics.emit(
-            "🧹 [PrivacyService] Performing privacy cleanup across ALL profiles (sequential, isolated)"
-        )
-        Task { @MainActor in
-            for profile in profiles {
-                RuntimeDiagnostics.emit(
-                    "   → Cleaning profile=\(profile.id.uuidString) [\(profile.name)]"
-                )
-                let cookieManager = CookieManager(dataStore: profile.dataStore)
-                let cacheManager = CacheManager(dataStore: profile.dataStore)
-                await cookieManager.performPrivacyCleanup()
-                await cacheManager.performPrivacyCompliantCleanup()
-            }
         }
     }
 

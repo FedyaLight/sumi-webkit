@@ -8,7 +8,6 @@ actor RuntimeStateCoalescer {
         case enqueue(RuntimeTabState)
         case cancel(UUID)
         case flushImmediately(CheckedContinuation<Int, Never>)
-        case shutdownAndFlush(CheckedContinuation<Int, Never>)
     }
 
     private let debounceNanoseconds: UInt64
@@ -18,7 +17,6 @@ actor RuntimeStateCoalescer {
     private var scheduledFlushTask: Task<Void, Never>?
     private var scheduledDeadline: UInt64?
     private var pendingByTabID: [UUID: RuntimeTabState] = [:]
-    private var isShutdown = false
 
     init(
         debounceNanoseconds: UInt64,
@@ -60,13 +58,6 @@ actor RuntimeStateCoalescer {
         }
     }
 
-    @discardableResult
-    nonisolated func shutdownAndFlush() async -> Int {
-        await withCheckedContinuation { continuation in
-            commandContinuation.yield(.shutdownAndFlush(continuation))
-        }
-    }
-
     private func handle(_ command: Command) async {
         switch command {
         case .enqueue(let runtimeState):
@@ -78,18 +69,10 @@ actor RuntimeStateCoalescer {
                 signpostName: "RuntimeStateCoalescer.immediateRuntimeStateFlush"
             )
             continuation.resume(returning: count)
-        case .shutdownAndFlush(let continuation):
-            isShutdown = true
-            let count = await flushPending(
-                signpostName: "RuntimeStateCoalescer.immediateRuntimeStateFlush"
-            )
-            continuation.resume(returning: count)
         }
     }
 
     private func enqueueOnActor(_ runtimeState: RuntimeTabState) {
-        guard isShutdown == false else { return }
-
         pendingByTabID[runtimeState.id] = runtimeState
         scheduledDeadline = DispatchTime.now().uptimeNanoseconds &+ debounceNanoseconds
         ensureScheduledFlushTask()

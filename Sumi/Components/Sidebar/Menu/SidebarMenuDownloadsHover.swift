@@ -40,7 +40,7 @@ struct SidebarMenuHoverDownloads: View {
     var body: some View {
         VStack(spacing: 4) {
             ForEach(Array(prioritizedDownloads.enumerated()), id: \.element.id) { index, download in
-                SidebarMenuHoverDownloadItem(download: download, index: index)
+                SidebarMenuHoverDownloadItem(download: download)
                     .offset(
                         y: (index < itemsVisible.count && itemsVisible[index])
                             ? 0 : 50
@@ -125,7 +125,6 @@ struct SidebarMenuHoverDownloads: View {
 struct SidebarMenuHoverDownloadItem: View {
     @State private var isHovering: Bool = false
     let download: Download
-    let index: Int
 
     private var timeAgoText: String {
         let now = Date()

@@ -11,7 +11,6 @@ import SwiftUI
 struct SpacesListItem: View {
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
 
@@ -153,7 +152,6 @@ struct SpacesListItem: View {
         browserManager.showDialog(
             SpaceEditDialog(
                 space: space,
-                mode: .icon,
                 onSave: { newName, newIcon, newProfileId in
                     browserManager.closeDialog()
                     DispatchQueue.main.async {

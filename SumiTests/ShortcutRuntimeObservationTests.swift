@@ -27,11 +27,9 @@ final class ShortcutRuntimeObservationTests: XCTestCase {
         )
 
         XCTAssertTrue(
-            liveTab.applyTitleCandidate(
+            liveTab.acceptResolvedDisplayTitle(
                 "Actual Video Title",
-                url: liveTab.url,
-                source: .manual,
-                isLoading: false
+                url: liveTab.url
             )
         )
         XCTAssertEqual(tabManager.shortcutPin(by: pin.id)?.title, "Pinned Launcher Title")
@@ -217,10 +215,10 @@ final class ShortcutRuntimeObservationTests: XCTestCase {
 
         XCTAssertEqual(tabManager.spacePinnedPins(for: space.id).map(\.id), [pin.id])
         XCTAssertEqual(projection.topLevelPins.map(\.id), [pin.id])
-        XCTAssertEqual(projection.liveTab(for: pin.id)?.id, liveTab.id)
-        XCTAssertEqual(projection.liveTab(for: pin.id)?.shortcutPinId, pin.id)
-        XCTAssertEqual(projection.liveTab(for: pin.id)?.shortcutPinRole, .spacePinned)
-        XCTAssertEqual(projection.liveTab(for: pin.id)?.spaceId, space.id)
+        XCTAssertEqual(projection.liveTabsByPinId[pin.id]?.id, liveTab.id)
+        XCTAssertEqual(projection.liveTabsByPinId[pin.id]?.shortcutPinId, pin.id)
+        XCTAssertEqual(projection.liveTabsByPinId[pin.id]?.shortcutPinRole, .spacePinned)
+        XCTAssertEqual(projection.liveTabsByPinId[pin.id]?.spaceId, space.id)
         XCTAssertEqual(updatedPin.id, pin.id)
     }
 
@@ -261,12 +259,12 @@ final class ShortcutRuntimeObservationTests: XCTestCase {
 
         XCTAssertEqual(tabManager.spacePinnedPins(for: space.id).map(\.id), [pin.id])
         XCTAssertEqual(projection.topLevelPins.map(\.id), [pin.id])
-        XCTAssertEqual(projection.liveTab(for: pin.id)?.id, liveTab.id)
-        XCTAssertEqual(projection.liveTab(for: pin.id)?.shortcutPinId, pin.id)
-        XCTAssertEqual(projection.liveTab(for: pin.id)?.shortcutPinRole, .spacePinned)
-        XCTAssertEqual(projection.liveTab(for: pin.id)?.spaceId, space.id)
+        XCTAssertEqual(projection.liveTabsByPinId[pin.id]?.id, liveTab.id)
+        XCTAssertEqual(projection.liveTabsByPinId[pin.id]?.shortcutPinId, pin.id)
+        XCTAssertEqual(projection.liveTabsByPinId[pin.id]?.shortcutPinRole, .spacePinned)
+        XCTAssertEqual(projection.liveTabsByPinId[pin.id]?.spaceId, space.id)
         XCTAssertEqual(updatedPin.id, pin.id)
-        XCTAssertEqual(projection.liveTab(for: pin.id)?.url, pin.launchURL)
+        XCTAssertEqual(projection.liveTabsByPinId[pin.id]?.url, pin.launchURL)
     }
 
     func testShortcutPinMigratesLegacySystemIconNameIntoIconAsset() {
@@ -318,11 +316,12 @@ final class ShortcutRuntimeObservationTests: XCTestCase {
         )
 
         XCTAssertEqual(updatedPin.iconAsset, "🚀")
-        let didPersist = await tabManager.flushStructuralPersistenceAwaitingResult()
-        XCTAssertTrue(didPersist)
+        let updatedPinID = updatedPin.id
+        try await waitForPersistedShortcutPin(updatedPinID, in: container) { entity in
+            entity.iconAsset == "🚀"
+        }
 
         let verificationContext = ModelContext(container)
-        let updatedPinID = updatedPin.id
         let predicate = #Predicate<TabEntity> { $0.id == updatedPinID }
         let storedEntity = try XCTUnwrap(
             verificationContext.fetch(FetchDescriptor<TabEntity>(predicate: predicate)).first
@@ -433,7 +432,6 @@ final class ShortcutRuntimeObservationTests: XCTestCase {
             resolvedTitle: pin.resolvedDisplayTitle(liveTab: liveTab),
             previewIcon: pin.favicon,
             pinnedConfiguration: .large,
-            itemCount: 1,
             exclusionZones: []
         )
         XCTAssertEqual(initialDragConfiguration.item.title, "Launcher")
@@ -447,7 +445,6 @@ final class ShortcutRuntimeObservationTests: XCTestCase {
             resolvedTitle: pin.resolvedDisplayTitle(liveTab: liveTab),
             previewIcon: pin.favicon,
             pinnedConfiguration: .large,
-            itemCount: 1,
             exclusionZones: []
         )
         XCTAssertEqual(updatedDragConfiguration.item.title, "Updated Essentials Title")
@@ -517,5 +514,35 @@ final class ShortcutRuntimeObservationTests: XCTestCase {
         }
 
         XCTAssertTrue(condition(), description, file: file, line: line)
+    }
+
+    private func waitForPersistedShortcutPin(
+        _ pinId: UUID,
+        in container: ModelContainer,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        matching predicate: (TabEntity) -> Bool
+    ) async throws {
+        let predicateID = pinId
+        let fetchDescriptor = FetchDescriptor<TabEntity>(
+            predicate: #Predicate<TabEntity> { $0.id == predicateID }
+        )
+
+        for _ in 0..<50 {
+            let context = ModelContext(container)
+            if let entity = try context.fetch(fetchDescriptor).first,
+               predicate(entity) {
+                return
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        let context = ModelContext(container)
+        let entity = try XCTUnwrap(
+            context.fetch(fetchDescriptor).first,
+            file: file,
+            line: line
+        )
+        XCTAssertTrue(predicate(entity), file: file, line: line)
     }
 }

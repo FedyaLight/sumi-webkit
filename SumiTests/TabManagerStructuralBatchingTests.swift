@@ -28,7 +28,6 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
             DragOperation(
                 payload: .folder(folder),
                 fromContainer: .spacePinned(space.id),
-                fromIndex: 1,
                 toContainer: .spacePinned(space.id),
                 toIndex: 0,
                 toSpaceId: space.id

@@ -66,10 +66,6 @@ final class ExternallyConnectablePortRegistry {
         return request
     }
 
-    func requestIDs(for webView: WKWebView) -> Set<UUID> {
-        requestIDsByWebView[ObjectIdentifier(webView)] ?? []
-    }
-
     func removeRequestIDs(for webView: WKWebView) -> Set<UUID> {
         requestIDsByWebView.removeValue(forKey: ObjectIdentifier(webView)) ?? []
     }
@@ -177,10 +173,6 @@ final class ExternallyConnectablePortRegistry {
     func clearAllTrackedPageURLs() {
         trackedPageURLsByWebView.removeAll()
         trackedPageURLOrder.removeAll()
-    }
-
-    var trackedPageURLWebViewCount: Int {
-        trackedPageURLsByWebView.count
     }
 
     func trackedPageURL(forWebViewIdentifier id: ObjectIdentifier) -> String? {

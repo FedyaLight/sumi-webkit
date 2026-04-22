@@ -470,7 +470,6 @@ final class SumiBackgroundMediaCardStore: ObservableObject {
 
     private let controller: SumiNativeNowPlayingController
     private var cancellables: Set<AnyCancellable> = []
-    weak var browserManager: BrowserManager?
     weak var windowState: BrowserWindowState?
 
     convenience init() {
@@ -492,7 +491,6 @@ final class SumiBackgroundMediaCardStore: ObservableObject {
         browserManager: BrowserManager,
         windowState: BrowserWindowState
     ) {
-        self.browserManager = browserManager
         self.windowState = windowState
         controller.configure(browserManager: browserManager)
         applyVisibleState(controller.cardState)

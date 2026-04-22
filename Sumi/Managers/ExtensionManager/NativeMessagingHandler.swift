@@ -37,7 +37,6 @@ final class NativeMessagingHandler: NSObject {
     private var process: Process?
     private var inputPipe: Pipe?
     private var outputPipe: Pipe?
-    private var errorPipe: Pipe?
     private weak var port: WKWebExtension.MessagePort?
     private var outputBuffer = Data()
     private var onDisconnect: (() -> Void)?
@@ -58,8 +57,7 @@ final class NativeMessagingHandler: NSObject {
     static func manifestSearchURLs(
         applicationId: String,
         browserSupportDirectory: URL,
-        appBundleURL: URL,
-        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+        appBundleURL: URL
     ) -> [URL] {
         let manifestName = "\(applicationId).json"
         return [
@@ -76,7 +74,6 @@ final class NativeMessagingHandler: NSObject {
         applicationId: String,
         browserSupportDirectory: URL,
         appBundleURL: URL,
-        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
         fileManager: FileManager = .default
     ) -> URL? {
         guard isNegativeManifestCacheEntryActive(applicationId) == false else {
@@ -86,8 +83,7 @@ final class NativeMessagingHandler: NSObject {
         let manifestURL = manifestSearchURLs(
             applicationId: applicationId,
             browserSupportDirectory: browserSupportDirectory,
-            appBundleURL: appBundleURL,
-            homeDirectory: homeDirectory
+            appBundleURL: appBundleURL
         ).first(where: { fileManager.fileExists(atPath: $0.path) })
 
         if manifestURL == nil {
@@ -137,20 +133,6 @@ final class NativeMessagingHandler: NSObject {
             keysToRemove.forEach { negativeManifestCache.removeValue(forKey: $0) }
         }
     }
-
-    #if DEBUG
-        static func debugResetNegativeManifestCache() {
-            negativeManifestCacheLock.lock()
-            negativeManifestCache.removeAll()
-            negativeManifestCacheLock.unlock()
-        }
-
-        static var debugNegativeManifestCacheCount: Int {
-            negativeManifestCacheLock.lock()
-            defer { negativeManifestCacheLock.unlock() }
-            return negativeManifestCache.count
-        }
-    #endif
 
     func sendMessage(
         _ message: Any,
@@ -305,7 +287,6 @@ final class NativeMessagingHandler: NSObject {
             self.process = process
             self.inputPipe = input
             self.outputPipe = output
-            self.errorPipe = error
 
             try process.run()
             completion(.success(()))
@@ -380,7 +361,6 @@ final class NativeMessagingHandler: NSObject {
         process = nil
         inputPipe = nil
         outputPipe = nil
-        errorPipe = nil
         onDisconnect?()
         onDisconnect = nil
     }

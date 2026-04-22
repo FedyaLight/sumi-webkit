@@ -4,19 +4,16 @@ import ObjectiveC.runtime
 struct NativeWindowControlsMetrics: Equatable {
     static let fallbackHostedSize = NSSize(width: 60, height: 18)
 
-    let titlebarHeight: CGFloat
     let buttonFrames: [NSWindow.ButtonType: NSRect]
     let buttonGroupRect: NSRect
     let normalizedButtonFrames: [NSWindow.ButtonType: NSRect]
 
     init(
-        titlebarHeight: CGFloat,
         buttonFrames: [NSWindow.ButtonType: NSRect],
         buttonGroupRect: NSRect
     ) {
         let resolvedGroupRect = buttonGroupRect.isNull ? .zero : buttonGroupRect
 
-        self.titlebarHeight = titlebarHeight
         self.buttonFrames = buttonFrames
         self.buttonGroupRect = resolvedGroupRect
         self.normalizedButtonFrames = buttonFrames.mapValues { frame in
@@ -306,18 +303,6 @@ extension NSWindow {
         }
     }
 
-    func nativeWindowControlsMetrics(
-        for buttonTypes: [NSWindow.ButtonType] = SumiBrowserChromeConfiguration.buttonTypes
-    ) -> NativeWindowControlsMetrics? {
-        if let liveMetrics = captureNativeWindowControlsMetricsIfButtonsInTitlebar(
-            for: buttonTypes
-        ) {
-            return liveMetrics
-        }
-
-        return cachedNativeWindowControlsMetrics
-    }
-
     func captureNativeWindowControlsMetricsIfButtonsInTitlebar(
         for buttonTypes: [NSWindow.ButtonType] = SumiBrowserChromeConfiguration.buttonTypes
     ) -> NativeWindowControlsMetrics? {
@@ -346,7 +331,6 @@ extension NSWindow {
         }
 
         let metrics = NativeWindowControlsMetrics(
-            titlebarHeight: titlebarView.bounds.height,
             buttonFrames: buttonFrames,
             buttonGroupRect: buttonGroupRect
         )

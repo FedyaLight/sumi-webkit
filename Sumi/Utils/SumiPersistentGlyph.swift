@@ -87,23 +87,6 @@ enum SumiPersistentGlyph {
 
 // MARK: - SwiftUI
 
-/// Renders a space icon from persisted storage (emoji `Text` or validated SF Symbol).
-struct SumiSpaceGlyphDisplay: View {
-    let icon: String
-    var font: Font = .body
-
-    var body: some View {
-        Group {
-            if SumiPersistentGlyph.presentsAsEmoji(icon) {
-                Text(icon).font(font)
-            } else {
-                Image(systemName: SumiPersistentGlyph.resolvedSpaceSystemImageName(icon))
-                    .font(font)
-            }
-        }
-    }
-}
-
 /// Renders a profile icon from persisted storage (emoji `Text` or validated SF Symbol).
 struct SumiProfileGlyphDisplay: View {
     let icon: String
@@ -115,23 +98,6 @@ struct SumiProfileGlyphDisplay: View {
                 Text(icon).font(font)
             } else {
                 Image(systemName: SumiPersistentGlyph.resolvedProfileSystemImageName(icon))
-                    .font(font)
-            }
-        }
-    }
-}
-
-/// Renders a launcher icon override from persisted storage (emoji `Text` or validated SF Symbol).
-struct SumiLauncherGlyphDisplay: View {
-    let icon: String
-    var font: Font = .body
-
-    var body: some View {
-        Group {
-            if SumiPersistentGlyph.presentsAsEmoji(icon) {
-                Text(icon).font(font)
-            } else {
-                Image(systemName: SumiPersistentGlyph.resolvedLauncherSystemImageName(icon))
                     .font(font)
             }
         }
@@ -152,24 +118,6 @@ struct SumiProfileMenuLabel: View {
             }
         } else {
             Label(name, systemImage: SumiPersistentGlyph.resolvedProfileSystemImageName(icon))
-        }
-    }
-}
-
-/// `Label` for menus where the space icon may be emoji or an SF Symbol name.
-struct SumiSpaceMenuLabel: View {
-    let name: String
-    let icon: String
-
-    var body: some View {
-        if SumiPersistentGlyph.presentsAsEmoji(icon) {
-            Label {
-                Text(name)
-            } icon: {
-                Text(icon)
-            }
-        } else {
-            Label(name, systemImage: SumiPersistentGlyph.resolvedSpaceSystemImageName(icon))
         }
     }
 }

@@ -70,8 +70,6 @@ extension PeekManager {
             assertionFailure("PeekManager.createWebView called without an active session")
             return PeekWebView(session: PeekSession(
                 targetURL: URL(string: "about:blank")!,
-                sourceTabId: nil,
-                sourceURL: nil,
                 windowId: windowRegistry?.activeWindow?.id ?? UUID()
             ))
         }

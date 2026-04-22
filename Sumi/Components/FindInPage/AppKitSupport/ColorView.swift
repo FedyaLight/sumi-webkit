@@ -26,19 +26,6 @@ class ColorView: DraggingDestinationView {
         setupView()
     }
 
-    init(frame: NSRect, backgroundColor: NSColor? = nil, cornerRadius: CGFloat = 0, borderColor: NSColor? = nil, borderWidth: CGFloat = 0, interceptClickEvents: Bool = false) {
-        super.init(frame: frame)
-
-        self.translatesAutoresizingMaskIntoConstraints = false
-        self.backgroundColor = backgroundColor
-        self.cornerRadius = cornerRadius
-        self.borderColor = borderColor
-        self.borderWidth = borderWidth
-        self.interceptClickEvents = interceptClickEvents
-
-        setupView()
-    }
-
     @IBInspectable var backgroundColor: NSColor? = NSColor.clear {
         didSet {
             updateBackgroundColor()

@@ -50,22 +50,6 @@ extension BrowserManager {
         privacyService.performPrivacyCleanup(using: makePrivacyContext())
     }
 
-    func clearCurrentProfileCookies() {
-        privacyService.clearCurrentProfileCookies(using: makePrivacyContext())
-    }
-
-    func clearCurrentProfileCache() {
-        privacyService.clearCurrentProfileCache(using: makePrivacyContext())
-    }
-
-    func clearAllProfilesCookies() {
-        privacyService.clearAllProfilesCookies(using: makePrivacyContext())
-    }
-
-    func performPrivacyCleanupAllProfiles() {
-        privacyService.performPrivacyCleanupAllProfiles(using: makePrivacyContext())
-    }
-
     func clearPersonalDataCache() {
         privacyService.clearPersonalDataCache(using: makePrivacyContext())
     }
@@ -83,12 +67,6 @@ extension BrowserManager {
             },
             activeWindowId: { [weak self] in
                 self?.windowRegistry?.activeWindow?.id
-            },
-            currentProfileId: { [weak self] in
-                self?.currentProfile?.id
-            },
-            profiles: { [weak self] in
-                self?.profileManager.profiles ?? []
             },
             webViewLookup: { [weak self] tabId, windowId in
                 self?.getWebView(for: tabId, in: windowId)

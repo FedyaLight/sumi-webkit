@@ -5,7 +5,6 @@ protocol ShellSelectionTabStore: AnyObject {
     var currentTab: Tab? { get }
     var spaces: [Space] { get }
 
-    func allTabs() -> [Tab]
     func tab(for id: UUID) -> Tab?
     func tabs(in space: Space) -> [Tab]
     func shortcutPin(by id: UUID) -> ShortcutPin?

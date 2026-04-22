@@ -17,21 +17,7 @@ enum SidebarHoverOverlayTransientPinningPolicy {
         guard let transientWindowID else { return false }
         return transientWindowID == currentWindowID && !isSidebarVisible
     }
-
-    static func shouldPinHoverSidebar(
-        sessionHostWindowID: UUID?,
-        currentWindowID: UUID,
-        isSidebarVisible: Bool
-    ) -> Bool {
-        shouldPinHoverSidebar(
-            transientWindowID: sessionHostWindowID,
-            currentWindowID: currentWindowID,
-            isSidebarVisible: isSidebarVisible
-        )
-    }
 }
-
-typealias SidebarHoverOverlayThemePinningPolicy = SidebarHoverOverlayTransientPinningPolicy
 
 enum SidebarHoverOverlayMetrics {
     static let cornerRadius: CGFloat = 12

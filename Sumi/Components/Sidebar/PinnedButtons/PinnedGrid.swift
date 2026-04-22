@@ -38,10 +38,6 @@ struct SidebarEssentialsProjectedLayout {
         visibleRows.count
     }
 
-    var layoutItemIDs: [UUID?] {
-        layoutItems.map { $0?.id }
-    }
-
     var visualColumnSignature: [Int] {
         rows.map(\.visualColumnCount)
     }
@@ -55,7 +51,6 @@ private enum SidebarEssentialsDisplayCell {
 
 private struct SidebarEssentialsDisplayRow {
     let cells: [SidebarEssentialsDisplayCell]
-    let visualColumnCount: Int
     let tileSize: CGSize
     let startSlot: Int
 }
@@ -312,7 +307,6 @@ struct PinnedGrid: View {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sumiSettings) var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
 
     init(
         width: CGFloat,
@@ -398,7 +392,6 @@ struct PinnedGrid: View {
                         Group {
                             if essentialsEmptyDropShowsLivePreview {
                                 renderGhostPlaceholder(
-                                    configuration: pinnedTabsConfiguration,
                                     tileSize: revealTileSize
                                 )
                             } else {
@@ -430,7 +423,6 @@ struct PinnedGrid: View {
                                     )
                                 case .ghost:
                                     renderGhostPlaceholder(
-                                        configuration: pinnedTabsConfiguration,
                                         tileSize: row.tileSize
                                     )
                                 case .spacer:
@@ -503,9 +495,7 @@ struct PinnedGrid: View {
             onSplitRight: { openInSplit(pin, side: .right) },
             onSplitLeft: { openInSplit(pin, side: .left) },
             showsCloseAction: presentationState.isSelected,
-            showsHoverAction: true,
             dragPinnedConfiguration: configuration,
-            dragItemCount: itemsCount(for: pin),
             dragIsEnabled: !browserManager.isTransitioningProfile && isAppKitInteractionEnabled,
             isAppKitInteractionEnabled: isAppKitInteractionEnabled
         )
@@ -520,15 +510,12 @@ struct PinnedGrid: View {
 
     @ViewBuilder
     private func renderGhostPlaceholder(
-        configuration: PinnedTabsConfiguration,
         tileSize: CGSize
     ) -> some View {
         Group {
             if let draggedId = dragState.activeDragItemId,
                let proxyTab = browserManager.tabManager.resolveDragTab(for: draggedId) {
                 PinnedTabView(
-                    tabName: proxyTab.name,
-                    tabURL: proxyTab.url.absoluteString,
                     tabIcon: proxyTab.favicon,
                     presentationState: .launcherOnly,
                     liveTab: nil,
@@ -547,8 +534,7 @@ struct PinnedGrid: View {
                     isAppKitInteractionEnabled: false,
                     contextMenuEntries: [],
                     action: {},
-                    onUnload: {},
-                    onRemove: {}
+                    onUnload: {}
                 )
                 .opacity(0.8)
                 .scaleEffect(0.98)
@@ -561,10 +547,6 @@ struct PinnedGrid: View {
     }
 
     @ObservedObject private var dragState = SidebarDragState.shared
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
 
     private func pinPresentationState(_ pin: ShortcutPin) -> ShortcutPresentationState {
         browserManager.tabManager.shortcutPresentationState(for: pin, in: windowState)
@@ -586,8 +568,7 @@ struct PinnedGrid: View {
         )
         browserManager.requestUserTabActivation(
             tab,
-            in: windowState,
-            reason: .essential
+            in: windowState
         )
     }
 
@@ -621,12 +602,6 @@ struct PinnedGrid: View {
             ?? browserManager.tabManager.currentSpace
         else { return }
         browserManager.tabManager.convertShortcutPinToRegularTab(pin, in: targetSpace.id)
-    }
-
-    private func itemsCount(for _: ShortcutPin) -> Int {
-        let effectiveProfileId = profileId ?? windowState.currentProfileId ?? browserManager.currentProfile?.id
-        guard let effectiveProfileId else { return 1 }
-        return max(browserManager.tabManager.essentialPins(for: effectiveProfileId).count, 1)
     }
 
     private var geometrySpaceId: UUID {
@@ -716,7 +691,6 @@ struct PinnedGrid: View {
 
             return SidebarEssentialsDisplayRow(
                 cells: cells,
-                visualColumnCount: row.visualColumnCount,
                 tileSize: row.tileSize,
                 startSlot: row.startSlot
             )
@@ -758,7 +732,6 @@ struct PinnedGrid: View {
             rows.append(
                 SidebarEssentialsDisplayRow(
                     cells: cells,
-                    visualColumnCount: visualColumnCount,
                     tileSize: tileSize,
                     startSlot: rowStart
                 )
@@ -784,9 +757,7 @@ private struct PinnedTile: View {
     let onSplitRight: () -> Void
     let onSplitLeft: () -> Void
     let showsCloseAction: Bool
-    let showsHoverAction: Bool
     let dragPinnedConfiguration: PinnedTabsConfiguration
-    let dragItemCount: Int
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
 
@@ -808,7 +779,6 @@ private struct PinnedTile: View {
                     onSplitLeft: onSplitLeft,
                     showsCloseAction: showsCloseAction,
                     dragPinnedConfiguration: dragPinnedConfiguration,
-                    dragItemCount: dragItemCount,
                     dragIsEnabled: dragIsEnabled,
                     isAppKitInteractionEnabled: isAppKitInteractionEnabled
                 )
@@ -827,7 +797,6 @@ private struct PinnedTile: View {
                     onSplitLeft: onSplitLeft,
                     showsCloseAction: showsCloseAction,
                     dragPinnedConfiguration: dragPinnedConfiguration,
-                    dragItemCount: dragItemCount,
                     dragIsEnabled: dragIsEnabled,
                     isAppKitInteractionEnabled: isAppKitInteractionEnabled
                 )
@@ -852,7 +821,6 @@ private struct LivePinnedTileContent: View {
     let onSplitLeft: () -> Void
     let showsCloseAction: Bool
     let dragPinnedConfiguration: PinnedTabsConfiguration
-    let dragItemCount: Int
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
 
@@ -861,8 +829,6 @@ private struct LivePinnedTileContent: View {
     var body: some View {
         let resolvedTitle = pin.resolvedDisplayTitle(liveTab: liveTab)
         PinnedTabView(
-            tabName: resolvedTitle,
-            tabURL: pin.launchURL.absoluteString,
             tabIcon: pin.favicon,
             chromeTemplateSystemImageName: pin.pinnedChromeTemplateSystemImageName,
             presentationState: presentationState,
@@ -874,7 +840,6 @@ private struct LivePinnedTileContent: View {
                 chromeTemplateSystemImageName: pin.pinnedChromeTemplateSystemImageName,
                 previewPresentationState: presentationState,
                 pinnedConfiguration: dragPinnedConfiguration,
-                itemCount: dragItemCount,
                 exclusionZones: dragExclusionZones,
                 onActivate: onActivate,
                 isEnabled: dragIsEnabled
@@ -895,8 +860,7 @@ private struct LivePinnedTileContent: View {
                 )
             ),
             action: onActivate,
-            onUnload: onUnload,
-            onRemove: onRemovePin
+            onUnload: onUnload
         )
         .overlay(alignment: .bottomTrailing) {
             if essentialRuntimeState?.showsSplitProxyBadge == true {
@@ -942,7 +906,6 @@ private struct StoredPinnedTileContent: View {
     let onSplitLeft: () -> Void
     let showsCloseAction: Bool
     let dragPinnedConfiguration: PinnedTabsConfiguration
-    let dragItemCount: Int
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
 
@@ -951,8 +914,6 @@ private struct StoredPinnedTileContent: View {
     var body: some View {
         let resolvedTitle = pin.preferredDisplayTitle
         PinnedTabView(
-            tabName: resolvedTitle,
-            tabURL: pin.launchURL.absoluteString,
             tabIcon: pin.favicon,
             chromeTemplateSystemImageName: pin.pinnedChromeTemplateSystemImageName,
             presentationState: presentationState,
@@ -964,7 +925,6 @@ private struct StoredPinnedTileContent: View {
                 chromeTemplateSystemImageName: pin.pinnedChromeTemplateSystemImageName,
                 previewPresentationState: presentationState,
                 pinnedConfiguration: dragPinnedConfiguration,
-                itemCount: dragItemCount,
                 exclusionZones: dragExclusionZones,
                 onActivate: onActivate,
                 isEnabled: dragIsEnabled
@@ -985,8 +945,7 @@ private struct StoredPinnedTileContent: View {
                 )
             ),
             action: onActivate,
-            onUnload: onUnload,
-            onRemove: onRemovePin
+            onUnload: onUnload
         )
         .overlay(alignment: .bottomTrailing) {
             if essentialRuntimeState?.showsSplitProxyBadge == true {
@@ -1019,7 +978,6 @@ func makePinnedTileDragSourceConfiguration(
     chromeTemplateSystemImageName: String? = nil,
     previewPresentationState: ShortcutPresentationState? = nil,
     pinnedConfiguration: PinnedTabsConfiguration,
-    itemCount: Int,
     exclusionZones: [SidebarDragSourceExclusionZone],
     onActivate: (() -> Void)? = nil,
     isEnabled: Bool = true
@@ -1035,7 +993,6 @@ func makePinnedTileDragSourceConfiguration(
         previewIcon: previewIcon,
         chromeTemplateSystemImageName: chromeTemplateSystemImageName,
         pinnedConfig: pinnedConfiguration,
-        itemCount: itemCount,
         previewPresentationState: previewPresentationState,
         exclusionZones: exclusionZones,
         onActivate: onActivate,

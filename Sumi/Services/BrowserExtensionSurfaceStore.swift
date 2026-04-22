@@ -12,12 +12,10 @@ import Foundation
 final class BrowserExtensionSurfaceStore: ObservableObject {
     @Published private(set) var installedExtensions: [InstalledExtension] = []
 
-    private weak var extensionManager: ExtensionManager?
     private var cancellables: Set<AnyCancellable> = []
     private var scheduledInstalledExtensionsGeneration = 0
 
     init(extensionManager: ExtensionManager?) {
-        self.extensionManager = extensionManager
         bind(extensionManager)
     }
 
@@ -25,15 +23,8 @@ final class BrowserExtensionSurfaceStore: ObservableObject {
         installedExtensions.filter(\.isEnabled)
     }
 
-    func reload() {
-        scheduleInstalledExtensionsUpdate(
-            extensionManager?.installedExtensions ?? []
-        )
-    }
-
     func bind(_ extensionManager: ExtensionManager?) {
         cancellables.removeAll()
-        self.extensionManager = extensionManager
 
         guard let extensionManager else {
             scheduleInstalledExtensionsUpdate([])

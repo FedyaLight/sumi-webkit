@@ -11,12 +11,6 @@ import Foundation
 import SwiftUI
 import WebKit
 
-enum SumiLiveInstanceRole {
-    case none
-    case liveEssentialInstance
-    case livePinnedLauncherInstance
-}
-
 extension Notification.Name {
     static let sumiTabLifecycleDidChange = Notification.Name("SumiTabLifecycleDidChange")
     static let sumiTabNavigationStateDidChange = Notification.Name("SumiTabNavigationStateDidChange")
@@ -47,11 +41,6 @@ enum SumiWebViewShutdown {
             controller.removeScriptMessageHandler(forName: handlerName)
         }
 
-        if let focusableWebView = webView as? FocusableWKWebView {
-            focusableWebView.contextMenuBridge?.detach()
-            focusableWebView.contextMenuBridge = nil
-        }
-
         additionalTabCleanup?()
 
         webView.navigationDelegate = nil
@@ -76,7 +65,7 @@ enum SumiWebViewShutdown {
 }
 
 @MainActor
-public class Tab: NSObject, Identifiable, ObservableObject, WKDownloadDelegate {
+public class Tab: NSObject, Identifiable, ObservableObject {
     public let id: UUID
     var url: URL
     @Published var name: String
@@ -221,10 +210,6 @@ public class Tab: NSObject, Identifiable, ObservableObject, WKDownloadDelegate {
         get { mediaRuntime.lastMediaActivityAt }
         set { mediaRuntime.lastMediaActivityAt = newValue }
     }
-    var isActivelyPlayingMedia: Bool {
-        audioState.isPlayingAudio
-    }
-
     // MARK: - Tab State
     var isUnloaded: Bool {
         return _webView == nil
@@ -250,10 +235,6 @@ public class Tab: NSObject, Identifiable, ObservableObject, WKDownloadDelegate {
     var webViewConfigurationOverride: WKWebViewConfiguration? {
         get { webViewRuntime.webViewConfigurationOverride }
         set { webViewRuntime.webViewConfigurationOverride = newValue }
-    }
-    var pendingContextMenuCapture: WebContextMenuCapture? {
-        get { webViewRuntime.pendingContextMenuCapture }
-        set { webViewRuntime.pendingContextMenuCapture = newValue }
     }
     var didNotifyOpenToExtensions: Bool {
         get { webViewRuntime.extensionRuntimeState.didReportOpenForGeneration != 0 }
@@ -345,16 +326,6 @@ public class Tab: NSObject, Identifiable, ObservableObject, WKDownloadDelegate {
         return false
     }
 
-    var isActiveInSpace: Bool {
-        guard let spaceId = self.spaceId,
-            let browserManager = self.browserManager,
-            let space = browserManager.tabManager.spaces.first(where: { $0.id == spaceId })
-        else {
-            return isCurrentTab  // Fallback to current tab for pinned tabs or if no space
-        }
-        return space.activeTabId == id
-    }
-
     var isLoading: Bool {
         return loadingState.isLoading
     }
@@ -418,18 +389,6 @@ public class Tab: NSObject, Identifiable, ObservableObject, WKDownloadDelegate {
         isShortcutLiveInstance = false
     }
 
-    var sumiLiveInstanceRole: SumiLiveInstanceRole {
-        guard isShortcutLiveInstance else { return .none }
-        switch shortcutPinRole {
-        case .essential:
-            return .liveEssentialInstance
-        case .spacePinned:
-            return .livePinnedLauncherInstance
-        case .none:
-            return .none
-        }
-    }
-
     public init(
         id: UUID = UUID(),
         url: URL = SumiSurface.emptyTabURL,
@@ -476,8 +435,7 @@ public class Tab: NSObject, Identifiable, ObservableObject, WKDownloadDelegate {
         // 14. FORCE COMPOSITOR UPDATE
         // Note: This is called during tab loading, so we use the global current tab
         // The compositor will handle window-specific visibility in its update methods
-        browserManager?.compositorManager.updateTabVisibility(
-            currentTabId: browserManager?.tabManager.currentTab?.id)
+        browserManager?.compositorManager.updateTabVisibility()
 
         if let webView = _webView {
             removeNavigationStateObservers(from: webView)
@@ -518,8 +476,7 @@ public class Tab: NSObject, Identifiable, ObservableObject, WKDownloadDelegate {
             if let webView = _webView {
                 if #available(macOS 15.5, *) {
                     performMainFrameNavigationAfterHydrationIfNeeded(
-                        on: webView,
-                        url: newURL
+                        on: webView
                     ) { resolvedWebView in
                         resolvedWebView.loadFileURL(
                             newURL,
@@ -528,8 +485,7 @@ public class Tab: NSObject, Identifiable, ObservableObject, WKDownloadDelegate {
                     }
                 } else {
                     performMainFrameNavigation(
-                        on: webView,
-                        url: newURL
+                        on: webView
                     ) { resolvedWebView in
                         resolvedWebView.loadFileURL(
                             newURL,
@@ -552,15 +508,13 @@ public class Tab: NSObject, Identifiable, ObservableObject, WKDownloadDelegate {
             if let webView = _webView {
                 if #available(macOS 15.5, *) {
                     performMainFrameNavigationAfterHydrationIfNeeded(
-                        on: webView,
-                        url: newURL
+                        on: webView
                     ) { resolvedWebView in
                         resolvedWebView.load(request)
                     }
                 } else {
                     performMainFrameNavigation(
-                        on: webView,
-                        url: newURL
+                        on: webView
                     ) { resolvedWebView in
                         resolvedWebView.load(request)
                     }
@@ -663,8 +617,7 @@ public class Tab: NSObject, Identifiable, ObservableObject, WKDownloadDelegate {
             RuntimeDiagnostics.emit("🔇 [Tab] Mute state queued at \(muted); base webView not loaded yet")
         }
 
-        browserManager?.setMuteState(
-            muted, for: id, originatingWindowId: browserManager?.windowRegistry?.activeWindow?.id)
+        browserManager?.setMuteState(muted, for: id)
 
         applyAudioState(audioState.withMuted(muted))
     }
@@ -781,23 +734,6 @@ public class Tab: NSObject, Identifiable, ObservableObject, WKDownloadDelegate {
     }
 
     @discardableResult
-    func applyTitleCandidate(
-        _ candidateTitle: String?,
-        url candidateURL: URL?,
-        source: TabTitleUpdateSource,
-        isLoading explicitLoadingState: Bool? = nil
-    ) -> Bool {
-        _ = candidateURL
-        _ = source
-        _ = explicitLoadingState
-        let trimmedTitle = candidateTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let resolvedTitle = trimmedTitle, !resolvedTitle.isEmpty else {
-            return false
-        }
-        return acceptResolvedDisplayTitle(resolvedTitle, url: url)
-    }
-
-    @discardableResult
     func acceptResolvedDisplayTitle(_ title: String, url candidateURL: URL? = nil) -> Bool {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty else { return false }
@@ -823,10 +759,6 @@ public class Tab: NSObject, Identifiable, ObservableObject, WKDownloadDelegate {
 
 // MARK: - Hashable & Equatable
 extension Tab {
-    public static func == (lhs: Tab, rhs: Tab) -> Bool {
-        return lhs.id == rhs.id
-    }
-
     public override func isEqual(_ object: Any?) -> Bool {
         guard let other = object as? Tab else { return false }
         return self.id == other.id
@@ -834,15 +766,6 @@ extension Tab {
 
     public override var hash: Int {
         return id.hashValue
-    }
-}
-
-extension Tab {
-    func deliverContextMenuCapture(_ capture: WebContextMenuCapture?) {
-        pendingContextMenuCapture = capture
-        if let webView = _webView as? FocusableWKWebView {
-            webView.contextMenuCaptureDidUpdate(capture)
-        }
     }
 }
 

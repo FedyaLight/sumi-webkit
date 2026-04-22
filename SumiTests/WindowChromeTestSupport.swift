@@ -33,3 +33,13 @@ enum WindowChromeTestSupport {
         return window
     }
 }
+
+extension NSWindow {
+    @MainActor
+    func nativeWindowControlsMetrics(
+        for buttonTypes: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+    ) -> NativeWindowControlsMetrics? {
+        captureNativeWindowControlsMetricsIfButtonsInTitlebar(for: buttonTypes)
+            ?? cachedNativeWindowControlsMetrics
+    }
+}
