@@ -3,7 +3,6 @@ import SwiftUI
 
 struct SumiHistoryTabRootView: View {
     @ObservedObject var browserManager: BrowserManager
-    var windowState: BrowserWindowState?
     @StateObject private var viewModel: HistoryPageViewModel
 
     private enum Layout {
@@ -14,7 +13,6 @@ struct SumiHistoryTabRootView: View {
 
     init(browserManager: BrowserManager, windowState: BrowserWindowState?) {
         self.browserManager = browserManager
-        self.windowState = windowState
         _viewModel = StateObject(
             wrappedValue: HistoryPageViewModel(
                 browserManager: browserManager,

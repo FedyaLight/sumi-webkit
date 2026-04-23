@@ -44,7 +44,7 @@ final class HistoryViewDataProviderTests: XCTestCase {
         XCTAssertEqual(allItems.count, 3)
         XCTAssertEqual(todayItems.count, 2)
         XCTAssertEqual(yesterdayItems.count, 1)
-        XCTAssertEqual(harness.provider.sections(for: .rangeFilter(.all)).map(\.title), ["Today", "Yesterday"])
+        XCTAssertEqual(allItems.map(\.relativeDay), ["Today", "Today", "Yesterday"])
     }
 
     func testRecentVisitedItemsOnlyIncludeToday() async throws {
@@ -98,7 +98,7 @@ final class HistoryViewDataProviderTests: XCTestCase {
         await harness.provider.refreshData()
         await harness.provider.deleteVisits(matching: .domainFilter(["example.com"]))
 
-        let remaining = await harness.provider.visits(matching: .rangeFilter(.all))
+        let remaining = harness.provider.items(for: .rangeFilter(.all))
 
         XCTAssertEqual(remaining.count, 1)
         XCTAssertEqual(remaining.first?.domain, "other.com")

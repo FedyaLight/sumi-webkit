@@ -33,7 +33,7 @@ final class SettingsNavigationTests: XCTestCase {
 
         XCTAssertTrue(tab.representsSumiSettingsSurface)
         XCTAssertTrue(tab.representsSumiInternalSurface)
-        XCTAssertTrue(tab.representsSumiNonWebSurface)
+        XCTAssertTrue(tab.representsSumiNativeSurface)
         XCTAssertTrue(tab.usesChromeThemedTemplateFavicon)
     }
 
