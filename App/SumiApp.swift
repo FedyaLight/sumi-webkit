@@ -9,7 +9,6 @@
 import AppKit
 import Carbon
 import OSLog
-import Sparkle
 import SwiftUI
 import WebKit
 
@@ -56,7 +55,7 @@ struct SumiApp: App {
     /// Configures application-level dependencies and callbacks when the first window appears.
     ///
     /// This function sets up the following connections:
-    /// - AppDelegate ↔ BrowserManager: For app termination cleanup and Sparkle update integration
+    /// - AppDelegate ↔ BrowserManager: For app termination cleanup and menu routing
     /// - WindowRegistry callbacks: Register, close, and activate window state
     /// - Keyboard shortcut manager: Enable global keyboard shortcuts
     ///
@@ -67,7 +66,7 @@ struct SumiApp: App {
         guard !didSetupApplicationLifecycle else { return }
         didSetupApplicationLifecycle = true
 
-        // Connect AppDelegate for termination and updates
+        // Connect AppDelegate for termination and menu routing
         appDelegate.windowRegistry = windowRegistry
         appDelegate.commandRouter = browserManager
         appDelegate.windowRouter = browserManager
@@ -76,7 +75,6 @@ struct SumiApp: App {
         appDelegate.persistenceHandler = browserManager
         appDelegate.updateHandler = browserManager
         appDelegate.shortcutManager = keyboardShortcutManager
-        browserManager.appDelegate = appDelegate
         appDelegate.refreshHistoryMenu()
 
         // Required: routing and cleanup call `requireWebViewCoordinator()` after this point.

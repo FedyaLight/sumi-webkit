@@ -2,12 +2,11 @@
 //  AppDelegate.swift
 //  Sumi
 //
-//  Application lifecycle delegate handling app termination, URL events, and Sparkle updates
+//  Application lifecycle delegate handling app termination, URL events, and menu routing
 //
 
 import AppKit
 import OSLog
-import Sparkle
 
 /// Handles application-level lifecycle events and coordinates app termination
 ///
@@ -15,11 +14,11 @@ import Sparkle
 /// - **URL Handling**: Opens external URLs (e.g., from other apps, custom URL schemes)
 /// - **Mouse Button Events**: Maps mouse buttons 2/3/4 to command palette, back, and forward
 /// - **App Termination**: Coordinates graceful shutdown with data persistence
-/// - **Sparkle Updates**: Integrates with Sparkle framework for auto-updates
 ///
 /// Quit path: `applicationShouldTerminate` returns `.terminateNow` immediately; persistence + WKWebView
 /// cleanup run from `DispatchQueue.main.async` + `Task { @MainActor }` on the next main turn.
-class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
+@MainActor
+class AppDelegate: NSObject, NSApplicationDelegate {
     private static let log = Logger.sumi(category: "AppTermination")
 
     weak var commandRouter: (any BrowserCommandRouting)?
@@ -40,14 +39,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
     private let urlEventClass = AEEventClass(kInternetEventClass)
     private let urlEventID = AEEventID(kAEGetURL)
-
-    // MARK: - Sparkle Updates
-
-    /// Sparkle updater controller for automatic app updates
-    lazy var updaterController: SPUStandardUpdaterController = {
-        return SPUStandardUpdaterController(
-            startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil)
-    }()
 
     deinit {
         for observer in historyMenuObservers {
@@ -218,8 +209,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         didSetupHistoryMenuMonitoring = true
 
         let notificationCenter = NotificationCenter.default
-        let mutationHandler: (Notification) -> Void = { [weak self] notification in
-            self?.handleMenuMutation(notification)
+        let mutationHandler: @Sendable (Notification) -> Void = { [weak self] notification in
+            MainActor.assumeIsolated {
+                self?.handleMenuMutation(notification)
+            }
         }
 
         historyMenuObservers = [
@@ -240,7 +233,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
                 object: nil,
                 queue: .main
             ) { [weak self] notification in
-                self?.handleMenuDidBeginTracking(notification)
+                MainActor.assumeIsolated {
+                    self?.handleMenuDidBeginTracking(notification)
+                }
             },
         ]
     }
@@ -461,55 +456,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         }
         Task { @MainActor in
             externalURLHandler.presentExternalURL(url)
-        }
-    }
-}
-
-// MARK: - Sparkle Delegate
-
-extension AppDelegate {
-    /// Called when Sparkle finds a valid update
-    func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
-        Task { @MainActor in
-            updateHandler?.handleUpdaterFoundValidUpdate(item)
-        }
-    }
-
-    /// Called when Sparkle finishes downloading an update
-    func updater(_ updater: SPUUpdater, didFinishDownloadingUpdate item: SUAppcastItem) {
-        Task { @MainActor in
-            updateHandler?.handleUpdaterFinishedDownloading(item)
-        }
-    }
-
-    /// Called when no update is found
-    func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
-        Task { @MainActor in
-            updateHandler?.handleUpdaterDidNotFindUpdate()
-        }
-    }
-
-    /// Called when user cancels the update download
-    func userDidCancelDownload(_ updater: SPUUpdater) {
-        Task { @MainActor in
-            updateHandler?.handleUpdaterAbortedUpdate()
-        }
-    }
-
-    /// Called when update process encounters an error
-    func updater(_ updater: SPUUpdater, didAbortWithError error: any Error) {
-        Task { @MainActor in
-            updateHandler?.handleUpdaterAbortedUpdate()
-        }
-    }
-
-    /// Called when update is ready to install on quit
-    func updater(
-        _ updater: SPUUpdater, willInstallUpdateOnQuit item: SUAppcastItem,
-        immediateInstallationInvocation: @escaping () -> Void
-    ) {
-        Task { @MainActor in
-            updateHandler?.handleUpdaterWillInstallOnQuit(item)
         }
     }
 }

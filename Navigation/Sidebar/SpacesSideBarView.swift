@@ -222,12 +222,6 @@ struct SpacesSideBarView: View {
                     downloadsMenuOverlay
                 }
 
-                SidebarUpdateNotification(downloadsMenuVisible: showDownloadsMenu)
-                    .environmentObject(browserManager)
-                    .environment(windowState)
-                    .environment(sumiSettings)
-                    .padding(.horizontal, 8)
-
                 MediaControlsView()
                     .environmentObject(browserManager)
                     .environment(windowState)

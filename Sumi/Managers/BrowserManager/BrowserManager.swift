@@ -156,12 +156,8 @@ class BrowserManager: ObservableObject {
     // Tab closure undo notification
     @Published var showTabClosureToast: Bool = false
     @Published var tabClosureToastCount: Int = 0
-    @Published var updateAvailability: UpdateAvailability?
     @Published var workspaceThemePickerSession: WorkspaceThemePickerSession?
     @Published var tabStructuralRevision: UInt = 0
-
-    /// Reference to the app delegate for Sparkle integration
-    weak var appDelegate: AppDelegate?
 
     var modelContext: ModelContext
     let startupWorkspaceTheme: WorkspaceTheme?

@@ -9,7 +9,6 @@ import AppKit
 import Combine
 import CoreServices
 import OSLog
-import Sparkle
 import SwiftData
 import SwiftUI
 import WebKit
