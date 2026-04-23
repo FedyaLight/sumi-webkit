@@ -116,6 +116,9 @@ struct URLBarView: View {
         .onChange(of: browserManager.zoomPopoverRequest) { _, request in
             handleZoomPopoverRequest(request)
         }
+        .onChange(of: browserManager.bookmarkEditorPresentationRequest) { _, request in
+            handleBookmarkEditorPresentationRequest(request)
+        }
         .onChange(of: currentTab?.id) { _, _ in
             DispatchQueue.main.async {
                 closeZoomPopover()
@@ -253,13 +256,14 @@ struct URLBarView: View {
         .help("Site Controls")
         .popover(isPresented: $isHubPresented, arrowEdge: .bottom) {
             URLBarHubPopover(
+                bookmarkManager: browserManager.bookmarkManager,
+                bookmarkPresentationRequest: browserManager.bookmarkEditorPresentationRequest,
                 currentTab: currentTab,
                 profileId: effectiveProfileId,
                 onClose: { isHubPresented = false }
             )
             .environmentObject(browserManager)
             .environment(windowState)
-            .frame(width: 234)
         }
     }
 
@@ -318,6 +322,16 @@ struct URLBarView: View {
         updateZoomPopoverAutoCloseTimer()
     }
 
+    private func handleBookmarkEditorPresentationRequest(_ request: SumiBookmarkEditorPresentationRequest?) {
+        guard let request,
+              request.windowID == windowState.id,
+              request.tabID == currentTab?.id
+        else { return }
+
+        closeZoomPopover()
+        isHubPresented = true
+    }
+
     private func updateZoomPopoverAutoCloseTimer() {
         invalidateZoomPopoverHideTimer()
         guard isZoomPopoverPresented,
@@ -352,6 +366,9 @@ struct URLBarView: View {
         if currentTab.representsSumiHistorySurface {
             return String(localized: "History")
         }
+        if currentTab.representsSumiBookmarksSurface {
+            return String(localized: "Bookmarks")
+        }
         return formatURL(currentTab.url)
     }
 
@@ -361,6 +378,9 @@ struct URLBarView: View {
         }
         if SumiSurface.isHistorySurfaceURL(url) {
             return String(localized: "History")
+        }
+        if SumiSurface.isBookmarksSurfaceURL(url) {
+            return String(localized: "Bookmarks")
         }
         guard let host = url.host else {
             return url.absoluteString
@@ -717,11 +737,21 @@ private struct URLBarHubPopover: View {
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
 
+    @ObservedObject var bookmarkManager: SumiBookmarkManager
+
+    let bookmarkPresentationRequest: SumiBookmarkEditorPresentationRequest?
     let currentTab: Tab?
     let profileId: UUID?
     let onClose: () -> Void
 
+    private enum Mode: Equatable {
+        case controls
+        case bookmark(SumiBookmarkEditorState)
+    }
+
     @State private var refreshNonce = 0
+    @State private var mode: Mode = .controls
+    @State private var bookmarkErrorMessage: String?
 
     private var snapshot: SiteControlsSnapshot {
         _ = refreshNonce
@@ -746,11 +776,59 @@ private struct URLBarHubPopover: View {
     }
 
     var body: some View {
+        Group {
+            switch mode {
+            case .controls:
+                controlsContent
+            case .bookmark(let state):
+                URLBarBookmarkEditorView(
+                    state: state,
+                    currentTab: currentTab,
+                    folders: bookmarkManager.folders(),
+                    onClose: {
+                        withAnimation(.easeInOut(duration: 0.14)) {
+                            mode = .controls
+                        }
+                    },
+                    onDidMutate: {
+                        refreshNonce += 1
+                    }
+                )
+                .id(state.id)
+            }
+        }
+        .frame(width: modeWidth)
+        .background(tokens.commandPaletteBackground)
+        .onAppear {
+            handleBookmarkPresentationRequest(bookmarkPresentationRequest)
+        }
+        .onChange(of: bookmarkPresentationRequest) { _, request in
+            handleBookmarkPresentationRequest(request)
+        }
+        .onChange(of: currentTab?.id) { _, _ in
+            mode = .controls
+            refreshNonce += 1
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .sumiTabNavigationStateDidChange)) { notification in
+            handleNavigationStateDidChange(notification)
+        }
+    }
+
+    private var controlsContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             topActionRow
                 .padding(.horizontal, 9)
                 .padding(.top, 10)
-                .padding(.bottom, 8)
+                .padding(.bottom, bookmarkErrorMessage == nil ? 8 : 4)
+
+            if let bookmarkErrorMessage {
+                Text(bookmarkErrorMessage)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(Color.red.opacity(0.9))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 8)
+            }
 
             if showsExtensionSection {
                 Divider()
@@ -778,7 +856,15 @@ private struct URLBarHubPopover: View {
                 .padding(.horizontal, 8)
                 .padding(.bottom, 8)
         }
-        .background(tokens.commandPaletteBackground)
+    }
+
+    private var modeWidth: CGFloat {
+        switch mode {
+        case .controls:
+            return 234
+        case .bookmark:
+            return 468
+        }
     }
 
     @ViewBuilder
@@ -835,24 +921,19 @@ private struct URLBarHubPopover: View {
                 iconName: isCurrentPageBookmarked ? "bookmark" : "bookmark-hollow",
                 fallbackSystemName: isCurrentPageBookmarked ? "bookmark.fill" : "bookmark",
                 help: isCurrentPageBookmarked ? "Bookmarked" : "Bookmark",
+                isEnabled: bookmarkManager.canBookmark(currentTab),
                 isActive: isCurrentPageBookmarked
             ) {
-                ensureCurrentPageBookmarked()
-                refreshNonce += 1
+                showBookmarkEditor()
             }
         }
     }
 
     private var isCurrentPageBookmarked: Bool {
-        guard let currentTab,
-              let spaceId = windowState.currentSpaceId else { return false }
-        if currentTab.shortcutPinRole == .spacePinned || currentTab.isSpacePinned {
-            return true
-        }
-        return browserManager.tabManager.spacePinnedPin(
-            matching: currentTab.url,
-            in: spaceId
-        ) != nil
+        _ = refreshNonce
+        _ = bookmarkManager.revision
+        guard let currentTab else { return false }
+        return bookmarkManager.isBookmarked(currentTab.url)
     }
 
     private var settingsSection: some View {
@@ -1005,13 +1086,44 @@ private struct URLBarHubPopover: View {
         }
     }
 
-    private func ensureCurrentPageBookmarked() {
-        guard let currentTab,
-              let spaceId = windowState.currentSpaceId else { return }
-        _ = browserManager.tabManager.ensureSpacePinnedLauncher(
-            for: currentTab,
-            in: spaceId
-        )
+    private func showBookmarkEditor() {
+        guard let currentTab else { return }
+        do {
+            let editorState = try bookmarkManager.editorState(for: currentTab)
+            bookmarkErrorMessage = nil
+            refreshNonce += 1
+            withAnimation(.easeInOut(duration: 0.14)) {
+                mode = .bookmark(editorState)
+            }
+        } catch {
+            bookmarkErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func handleBookmarkPresentationRequest(_ request: SumiBookmarkEditorPresentationRequest?) {
+        guard let request,
+              request.windowID == windowState.id,
+              request.tabID == currentTab?.id
+        else { return }
+
+        showBookmarkEditor()
+        browserManager.clearBookmarkEditorPresentationRequest(request)
+    }
+
+    private func handleNavigationStateDidChange(_ notification: Notification) {
+        guard let tab = notification.object as? Tab,
+              tab.id == currentTab?.id
+        else {
+            return
+        }
+
+        refreshNonce += 1
+        if case .bookmark(let state) = mode,
+           state.tabID == tab.id,
+           state.pageURL.absoluteString != tab.url.absoluteString
+        {
+            mode = .controls
+        }
     }
 
     private func handleReaderMode() {

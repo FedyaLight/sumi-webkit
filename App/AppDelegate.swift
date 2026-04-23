@@ -32,6 +32,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Window registry for accessing active window state
     weak var windowRegistry: WindowRegistry?
     private let historyMenuInstaller = SumiHistoryMenuInstaller()
+    private let bookmarksMenuInstaller = SumiBookmarksMenuInstaller()
     private var didSetupHistoryMenuMonitoring = false
     private var historyMenuRestoreScheduled = false
     private var historyMenuRestoreNeedsForce = false
@@ -170,6 +171,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         historyMenuInstaller.installOrUpdateIfNeeded()
     }
 
+    private func configureBookmarksMenu() {
+        bookmarksMenuInstaller.browserManager = updateHandler
+        bookmarksMenuInstaller.actionTarget = self
+        bookmarksMenuInstaller.installOrUpdateIfNeeded()
+    }
+
     @MainActor
     func refreshHistoryMenu() {
         scheduleHistoryMenuConfiguration()
@@ -193,15 +200,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let historyItems = mainMenu.items.filter { $0.title == "History" }
         let currentHistoryMenu = historyItems.first?.submenu as? SumiHistoryMenu
+        let shouldConfigureHistory: Bool
         if let currentHistoryMenu {
             let dependenciesChanged =
                 currentHistoryMenu.browserManager !== updateHandler
                 || currentHistoryMenu.shortcutManager !== shortcutManager
                 || currentHistoryMenu.actionTarget !== self
-            guard force || dependenciesChanged || historyItems.count > 1 else { return }
+            shouldConfigureHistory = dependenciesChanged || historyItems.count > 1
+        } else {
+            shouldConfigureHistory = true
         }
 
-        configureHistoryMenu()
+        let bookmarksItems = mainMenu.items.filter { $0.title == "Bookmarks" }
+        let currentBookmarksMenu = bookmarksItems.first?.submenu as? SumiBookmarksMenu
+        let shouldConfigureBookmarks: Bool
+        if let currentBookmarksMenu {
+            let dependenciesChanged =
+                currentBookmarksMenu.browserManager !== updateHandler
+                || currentBookmarksMenu.actionTarget !== self
+            shouldConfigureBookmarks = dependenciesChanged || bookmarksItems.count > 1
+        } else {
+            shouldConfigureBookmarks = true
+        }
+
+        guard force || shouldConfigureHistory || shouldConfigureBookmarks else { return }
+
+        if force || shouldConfigureHistory {
+            configureHistoryMenu()
+        }
+        if force || shouldConfigureBookmarks {
+            configureBookmarksMenu()
+        }
     }
 
     private func setupHistoryMenuMonitoring() {
@@ -247,7 +276,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func shouldRestoreHistoryMenu(afterMutationIn menu: NSMenu) -> Bool {
-        if menu is SumiHistoryMenu {
+        if menu is SumiHistoryMenu || menu is SumiBookmarksMenu {
             return false
         }
 
@@ -255,8 +284,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return true
         }
 
-        guard menu.title == "History" else { return false }
-        return NSApp.mainMenu?.items.first(where: { $0.title == "History" })?.submenu === menu
+        if menu.title == "History" {
+            return NSApp.mainMenu?.items.first(where: { $0.title == "History" })?.submenu === menu
+        }
+
+        if menu.title == "Bookmarks" {
+            return NSApp.mainMenu?.items.first(where: { $0.title == "Bookmarks" })?.submenu === menu
+        }
+
+        return false
     }
 
     private func handleMenuDidBeginTracking(_ notification: Notification) {
@@ -266,11 +302,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func isPlaceholderHistoryMenu(_ menu: NSMenu) -> Bool {
-        guard !(menu is SumiHistoryMenu) else { return false }
-        guard let historyMenuItem = NSApp.mainMenu?.items.first(where: { $0.title == "History" }) else {
-            return menu.title == "History"
+        guard !(menu is SumiHistoryMenu), !(menu is SumiBookmarksMenu) else { return false }
+
+        if let historyMenuItem = NSApp.mainMenu?.items.first(where: { $0.title == "History" }),
+           historyMenuItem.submenu === menu
+        {
+            return true
         }
-        return historyMenuItem.submenu === menu
+
+        if let bookmarksMenuItem = NSApp.mainMenu?.items.first(where: { $0.title == "Bookmarks" }),
+           bookmarksMenuItem.submenu === menu
+        {
+            return true
+        }
+
+        return menu.title == "History" || menu.title == "Bookmarks"
     }
 
     @MainActor @objc private func handleCloseTabMenuItem(_ sender: Any?) {
@@ -336,6 +382,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor @objc func clearAllHistory(_ sender: Any?) {
         _ = sender
         updateHandler?.clearAllHistoryFromMenu()
+    }
+
+    @MainActor @objc func bookmarkThisPageFromMenu(_ sender: Any?) {
+        _ = sender
+        updateHandler?.requestBookmarkEditorForActiveWindowFromMenu()
+    }
+
+    @MainActor @objc func bookmarkAllTabsFromMenu(_ sender: Any?) {
+        _ = sender
+        updateHandler?.bookmarkAllTabsFromMenu()
+    }
+
+    @MainActor @objc func manageBookmarksFromMenu(_ sender: Any?) {
+        _ = sender
+        updateHandler?.manageBookmarksFromMenu()
+    }
+
+    @MainActor @objc func importBookmarksFromMenu(_ sender: Any?) {
+        _ = sender
+        updateHandler?.importBookmarksFromMenu()
+    }
+
+    @MainActor @objc func exportBookmarksFromMenu(_ sender: Any?) {
+        _ = sender
+        updateHandler?.exportBookmarksFromMenu()
+    }
+
+    @MainActor @objc func openBookmarkFromMenu(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        updateHandler?.openBookmarkURLFromMenuItem(url)
     }
 
     /// Handles URLs opened from external sources (e.g., Finder, other apps)

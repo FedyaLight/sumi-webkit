@@ -36,6 +36,14 @@ extension Tab {
             return true
         }
 
+        if SumiSurface.isBookmarksSurfaceURL(url) {
+            favicon = SwiftUI.Image(systemName: SumiSurface.bookmarksTabFaviconSystemImageName)
+            faviconIsTemplateGlobePlaceholder = false
+            resolvedFaviconCacheKey = nil
+            syncBoundLauncherPinAfterFaviconResolved()
+            return true
+        }
+
         guard let cacheKey = SumiFaviconResolver.cacheKey(for: url),
               let image = TabFaviconStore.getCachedImage(for: cacheKey)
         else {

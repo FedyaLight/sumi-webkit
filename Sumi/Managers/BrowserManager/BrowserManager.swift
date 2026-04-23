@@ -149,6 +149,7 @@ class BrowserManager: ObservableObject {
     static let lastWindowSessionKey = "sumi.windowSession.last.v2"
     @Published var zoomStateRevision: Int = 0
     @Published var zoomPopoverRequest: ZoomPopoverRequest?
+    @Published var bookmarkEditorPresentationRequest: SumiBookmarkEditorPresentationRequest?
     @Published var currentProfile: Profile?
     // Indicates an in-progress animated profile transition for coordinating UI
     @Published var isTransitioningProfile: Bool = false
@@ -171,6 +172,7 @@ class BrowserManager: ObservableObject {
     let downloadsPopoverPresenter: DownloadsPopoverPresenter
     var authenticationManager: AuthenticationManager
     var historyManager: HistoryManager
+    var bookmarkManager: SumiBookmarkManager
     var recentlyClosedManager: RecentlyClosedManager
     var lastSessionWindowsStore: LastSessionWindowsStore
     private var cachedCookieManager: CookieManager?
@@ -311,6 +313,7 @@ class BrowserManager: ObservableObject {
         self.authenticationManager = AuthenticationManager()
         // Initialize managers with current profile context for isolation
         self.historyManager = HistoryManager(context: startupModelContext, profileId: initialProfile?.id)
+        self.bookmarkManager = SumiBookmarkManager()
         self.recentlyClosedManager = RecentlyClosedManager()
         self.lastSessionWindowsStore = LastSessionWindowsStore()
         self.startupLastSessionWindowSnapshots = self.lastSessionWindowsStore.snapshots

@@ -166,6 +166,19 @@ struct WebsiteView: View {
                         .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 0)
                         .allowsHitTesting(true)
                     } else if splitManager.isSplit(for: windowState.id) == false,
+                       browserManager.currentTab(for: windowState)?.representsSumiBookmarksSurface == true
+                    {
+                        SumiBookmarksTabRootView(
+                            browserManager: browserManager,
+                            windowState: windowState
+                        )
+                        .environmentObject(browserManager)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(nsColor: .windowBackgroundColor))
+                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                        .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 0)
+                        .allowsHitTesting(true)
+                    } else if splitManager.isSplit(for: windowState.id) == false,
                        browserManager.currentTab(for: windowState)?.representsSumiSettingsSurface == true
                     {
                         SumiSettingsTabRootView(
