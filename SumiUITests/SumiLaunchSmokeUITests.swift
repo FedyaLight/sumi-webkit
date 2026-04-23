@@ -603,6 +603,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
         }
         exerciseRegularTabCloseButtonAfterContextMenuDismiss(
             tabID: fixture.regularTabID,
+            alternateHoverTabID: fixture.secondaryRegularTabID,
             app: app,
             window: window,
             collapsedSidebar: false
@@ -628,6 +629,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
         }
         exerciseRegularTabCloseButtonAfterContextMenuDismiss(
             tabID: fixture.regularTabID,
+            alternateHoverTabID: fixture.secondaryRegularTabID,
             app: app,
             window: window,
             collapsedSidebar: true
@@ -1362,6 +1364,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
     @MainActor
     private func exerciseRegularTabCloseButtonAfterContextMenuDismiss(
         tabID: String,
+        alternateHoverTabID: String? = nil,
         app: XCUIApplication,
         window: XCUIElement,
         collapsedSidebar: Bool,
@@ -1402,6 +1405,26 @@ final class SumiLaunchSmokeUITests: XCTestCase {
             file: file,
             line: line
         )
+        if accessibilityValue(of: closeRow) != "selected",
+           let alternateHoverTabID
+        {
+            let alternateRowID = "space-regular-tab-\(alternateHoverTabID)"
+            let alternateRow = requireElement(
+                withIdentifier: alternateRowID,
+                in: app,
+                window: window,
+                collapsedSidebar: collapsedSidebar,
+                file: file,
+                line: line
+            )
+            alternateRow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
+            XCTAssertTrue(
+                waitForElementMissing(closeID, in: app, timeout: 1),
+                "Regular tab close button \(closeID) stayed exposed after hovering \(alternateRowID)",
+                file: file,
+                line: line
+            )
+        }
         closeRow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
         let closeButton = requireElement(
             withIdentifier: closeID,

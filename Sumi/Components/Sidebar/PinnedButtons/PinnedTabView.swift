@@ -32,7 +32,6 @@ struct PinnedTabView: View {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
-    @State private var isHovered: Bool = false
 
     var body: some View {
         let pinnedTabsConfiguration: PinnedTabsConfiguration = sumiSettings.pinnedTabsLook
@@ -101,15 +100,11 @@ struct PinnedTabView: View {
         .onTapGesture(perform: action)
         .accessibilityIdentifier(accessibilityID ?? "pinned-tile")
         .accessibilityValue(presentationState.isSelected ? "selected" : "not selected")
-        .onHover { hovering in
-            guard !freezesHoverState else { return }
-            self.isHovered = hovering && !SidebarDragState.shared.isDragging
-        }
-        .onChange(of: SidebarDragState.shared.isDragging) { _, isDragging in
-            if isDragging {
-                self.isHovered = false
-            }
-        }
+        .sidebarHoverTarget(
+            tileHoverTarget,
+            isEnabled: isAppKitInteractionEnabled,
+            animation: .easeInOut(duration: 0.12)
+        )
         .sidebarAppKitContextMenu(
             isInteractionEnabled: isAppKitInteractionEnabled,
             dragSource: dragSourceConfiguration,
@@ -149,7 +144,7 @@ struct PinnedTabView: View {
     }
 
     private var shouldShowActionButton: Bool {
-        supportsActionButton && (isHovered || presentationState.isSelected)
+        supportsActionButton && (displayIsHovered || presentationState.isSelected)
     }
 
     private var supportsActionButton: Bool {
@@ -161,7 +156,13 @@ struct PinnedTabView: View {
     }
 
     private var displayIsHovered: Bool {
-        isHovered && !freezesHoverState
+        windowState.sidebarInteractionState.isSidebarHoverActive(tileHoverTarget)
+            && !freezesHoverState
+    }
+
+    private var tileHoverTarget: SidebarHoverTarget {
+        let fallbackID = dragSourceConfiguration?.item.tabId.uuidString ?? "pinned-tile"
+        return .row(accessibilityID ?? "pinned-tile-\(fallbackID)")
     }
 
     private var actionAccessibilityID: String? {
@@ -361,7 +362,6 @@ private struct PinnedTileAudioButton: View {
     let accessibilityID: String?
     let isAppKitInteractionEnabled: Bool
     @Environment(BrowserWindowState.self) private var windowState
-    @State private var isHovering = false
 
     var body: some View {
         Group {
@@ -380,10 +380,11 @@ private struct PinnedTileAudioButton: View {
                         .id(tab.audioState.isMuted)
                 }
                 .buttonStyle(.plain)
-                .onHover { hovering in
-                    guard !windowState.sidebarInteractionState.freezesSidebarHoverState else { return }
-                    isHovering = hovering
-                }
+                .sidebarHoverTarget(
+                    hoverTarget,
+                    isEnabled: isAppKitInteractionEnabled,
+                    animation: .easeInOut(duration: 0.1)
+                )
                 .accessibilityIdentifier(accessibilityID ?? "pinned-tile-audio")
                 .sidebarAppKitPrimaryAction(
                     isEnabled: !windowState.sidebarInteractionState.freezesSidebarHoverState,
@@ -397,7 +398,12 @@ private struct PinnedTileAudioButton: View {
     }
 
     private var displayIsHovering: Bool {
-        isHovering && !windowState.sidebarInteractionState.freezesSidebarHoverState
+        windowState.sidebarInteractionState.isSidebarHoverActive(hoverTarget)
+            && !windowState.sidebarInteractionState.freezesSidebarHoverState
+    }
+
+    private var hoverTarget: SidebarHoverTarget {
+        .action(accessibilityID ?? "pinned-tile-audio-\(tab.id.uuidString)")
     }
 }
 

@@ -25,7 +25,6 @@ struct TabFolderView: View {
     let onDelete: () -> Void
     let onAddTab: () -> Void
 
-    @State private var isHovering: Bool = false
     @State private var isRenaming: Bool = false
     @State private var draftName: String = ""
     @State private var measuredExpandedFolderContentHeight: CGFloat = 0
@@ -447,18 +446,11 @@ struct TabFolderView: View {
                 folderHeaderContainGuide
             }
         }
-        .onHover { hovering in
-            guard isInteractive else { return }
-            guard !freezesHoverState else { return }
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovering = hovering && !dragState.isDragging
-            }
-        }
-        .onChange(of: dragState.isDragging) { _, isDragging in
-            if isDragging {
-                isHovering = false
-            }
-        }
+        .sidebarHoverTarget(
+            folderHeaderHoverTarget,
+            isEnabled: isInteractive,
+            animation: .easeInOut(duration: 0.15)
+        )
     }
 
     @ViewBuilder
@@ -715,7 +707,12 @@ struct TabFolderView: View {
     }
 
     private var displayIsHovering: Bool {
-        isHovering && !freezesHoverState
+        windowState.sidebarInteractionState.isSidebarHoverActive(folderHeaderHoverTarget)
+            && !freezesHoverState
+    }
+
+    private var folderHeaderHoverTarget: SidebarHoverTarget {
+        .row("folder-header-\(folder.id.uuidString)")
     }
 
     private func alphabetizeTabs() {
