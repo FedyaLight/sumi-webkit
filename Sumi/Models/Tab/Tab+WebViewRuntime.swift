@@ -1,4 +1,5 @@
 import Combine
+import BrowserServicesKit
 import Foundation
 import WebKit
 
@@ -8,7 +9,6 @@ extension Tab {
         "commandHover",
         "commandClick",
         "SumiIdentity",
-        "faviconLinks",
     ]
 
     static func coreScriptMessageHandlerName(
@@ -89,194 +89,6 @@ extension Tab {
         userContentController.add(self, name: coreScriptMessageHandlerName("commandHover"))
         userContentController.add(self, name: coreScriptMessageHandlerName("commandClick"))
         userContentController.add(self, name: coreScriptMessageHandlerName("SumiIdentity"))
-        userContentController.add(self, name: coreScriptMessageHandlerName("faviconLinks"))
-        installFaviconDiscoveryScriptIfNeeded(on: userContentController)
-    }
-
-    static func faviconDiscoveryMarker(for tabId: UUID) -> String {
-        "__sumiFaviconReporter_\(tabId.uuidString.replacingOccurrences(of: "-", with: "_"))"
-    }
-
-    // Ported from DuckDuckGo content-scope-scripts `injected/src/features/favicon.js`
-    // pinned by apple-browsers macOS `Package.resolved` revision 454f3131bbbdc19a4bf5bc1c2aabf1725cc9f5fc.
-    static func faviconDiscoveryScriptSource(
-        handlerName: String,
-        marker: String
-    ) -> String {
-        """
-        (() => {
-          if (window["\(marker)"]) { return; }
-          window["\(marker)"] = true;
-
-          const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers["\(handlerName)"];
-          if (!handler) { return; }
-
-          let lastFavicons = null;
-
-          const faviconKey = (favicon) => JSON.stringify([
-            favicon.href || '',
-            favicon.rel || '',
-            favicon.type || ''
-          ]);
-
-          const sameOrderedFavicons = (lhs, rhs) => {
-            if (lhs.length !== rhs.length) { return false; }
-            for (let index = 0; index < lhs.length; index += 1) {
-              if (faviconKey(lhs[index]) !== faviconKey(rhs[index])) { return false; }
-            }
-            return true;
-          };
-
-          const getFaviconList = () => {
-            const target = document.head;
-            if (!target) { return []; }
-
-            const selectors = [
-              "link[href][rel='favicon']",
-              "link[href][rel*='icon']",
-              "link[href][rel='apple-touch-icon']",
-              "link[href][rel='apple-touch-icon-precomposed']"
-            ];
-
-            return Array.from(target.querySelectorAll(selectors.join(',')))
-              .filter((element) => element instanceof HTMLLinkElement)
-              .map((link) => {
-                const href = link.href || '';
-                const rel = link.getAttribute('rel') || '';
-                const type = link.type || '';
-                return { href, rel, type };
-              });
-          };
-
-          const send = () => {
-            const nextFavicons = getFaviconList();
-            if (lastFavicons === null) {
-              lastFavicons = nextFavicons;
-              handler.postMessage({
-                documentUrl: document.URL,
-                favicons: nextFavicons
-              });
-              return;
-            }
-
-            if (sameOrderedFavicons(lastFavicons, nextFavicons)) {
-              return;
-            }
-
-            const previousKeys = lastFavicons.map(faviconKey);
-            const nextKeys = nextFavicons.map(faviconKey);
-            const previousKeySet = new Set(previousKeys);
-            const nextKeySet = new Set(nextKeys);
-            const didOnlyReorder =
-              previousKeys.length === nextKeys.length
-              && previousKeys.every((key) => nextKeySet.has(key))
-              && nextKeys.every((key) => previousKeySet.has(key));
-
-            if (didOnlyReorder) {
-              lastFavicons = nextFavicons;
-              handler.postMessage({
-                documentUrl: document.URL,
-                favicons: nextFavicons
-              });
-              return;
-            }
-
-            const upserted = nextFavicons.filter((favicon) => !previousKeySet.has(faviconKey(favicon)));
-            const removed = lastFavicons.filter((favicon) => !nextKeySet.has(faviconKey(favicon)));
-            lastFavicons = nextFavicons;
-
-            handler.postMessage({
-              documentUrl: document.URL,
-              faviconDelta: {
-                upserted,
-                removed
-              }
-            });
-          };
-
-          const monitorChanges = () => {
-            const target = document.head;
-            if (!target || !window.MutationObserver) { return; }
-
-            let trailing;
-            let lastEmitTime = performance.now();
-            const interval = 50;
-
-            const changeObserved = () => {
-              clearTimeout(trailing);
-              const currentTime = performance.now();
-              const delta = currentTime - lastEmitTime;
-              if (delta >= interval) {
-                send();
-              } else {
-                trailing = setTimeout(() => {
-                  send();
-                }, interval);
-              }
-              lastEmitTime = currentTime;
-            };
-
-            const observer = new MutationObserver((mutations) => {
-              for (const mutation of mutations) {
-                if (mutation.type === 'attributes' && mutation.target instanceof HTMLLinkElement) {
-                  changeObserved();
-                  return;
-                }
-                if (mutation.type === 'childList') {
-                  for (const addedNode of mutation.addedNodes) {
-                    if (addedNode instanceof HTMLLinkElement) {
-                      changeObserved();
-                      return;
-                    }
-                  }
-                  for (const removedNode of mutation.removedNodes) {
-                    if (removedNode instanceof HTMLLinkElement) {
-                      changeObserved();
-                      return;
-                    }
-                  }
-                }
-              }
-            });
-
-            observer.observe(target, {
-              attributeFilter: ['rel', 'href', 'type'],
-              attributes: true,
-              subtree: true,
-              childList: true
-            });
-          };
-
-          const start = () => {
-            send();
-            monitorChanges();
-          };
-
-          if (document.readyState === 'loading') {
-            window.addEventListener('DOMContentLoaded', start, { once: true });
-          } else {
-            start();
-          }
-        })();
-        """
-    }
-
-    private func installFaviconDiscoveryScriptIfNeeded(on userContentController: WKUserContentController) {
-        let marker = Self.faviconDiscoveryMarker(for: id)
-        guard userContentController.userScripts.contains(where: { $0.source.contains(marker) }) == false else {
-            return
-        }
-
-        let handlerName = coreScriptMessageHandlerName("faviconLinks")
-        let source = Self.faviconDiscoveryScriptSource(
-            handlerName: handlerName,
-            marker: marker
-        )
-        userContentController.addUserScript(WKUserScript(
-            source: source,
-            injectionTime: .atDocumentEnd,
-            forMainFrameOnly: true
-        ))
     }
 
     func cancelPendingMainFrameNavigation() {
@@ -353,6 +165,10 @@ extension Tab {
             return
         }
 
+        if requiresPrimaryWebView {
+            configuration.userContentController = SumiDDGFaviconUserContentControllerFactory.makeController()
+        }
+
         BrowserConfiguration.shared.applySitePermissionOverrides(
             to: configuration,
             url: url,
@@ -398,6 +214,9 @@ extension Tab {
 
         if let webView = _webView {
             installRuntimeObservers(on: webView)
+            if let scriptsProvider = webView.configuration.userContentController.sumiFaviconScriptsProvider {
+                ensureFaviconsTabExtension(using: scriptsProvider)
+            }
         }
 
         if reusableExistingWebView == nil {
@@ -443,7 +262,15 @@ extension Tab {
         }
 
         if !isPopupHost && _existingWebView == nil {
-            loadURL(url)
+            if let controller = _webView?.configuration.userContentController as? UserContentController {
+                Task { @MainActor [weak self] in
+                    await controller.awaitContentBlockingAssetsInstalled()
+                    guard let self, self._existingWebView == nil else { return }
+                    self.loadURL(self.url)
+                }
+            } else {
+                loadURL(url)
+            }
         }
     }
 

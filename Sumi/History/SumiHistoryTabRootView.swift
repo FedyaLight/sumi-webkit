@@ -359,9 +359,6 @@ private struct HistoryFaviconView: View {
             image = cachedImage
             return
         }
-
-        let resolvedImage = await SumiFaviconResolver.shared.image(for: url)
-        guard !Task.isCancelled else { return }
-        image = resolvedImage
+        image = nil
     }
 }

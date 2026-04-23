@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import History
 import SwiftData
 
 @MainActor
@@ -142,6 +143,13 @@ final class HistoryManager: ObservableObject {
 
     func delete(query: HistoryQuery) async {
         await dataProvider.deleteVisits(matching: query)
+        if case .domainFilter(let domains) = query, !domains.isEmpty {
+            await SumiFaviconSystem.shared.burnDomains(
+                domains,
+                remainingHistory: currentBrowsingHistory(),
+                savedLogins: BasicAuthCredentialStore().allCredentialHosts()
+            )
+        }
         revision &+= 1
     }
 
@@ -150,12 +158,40 @@ final class HistoryManager: ObservableObject {
         domains: Set<String>
     ) async {
         await dataProvider.deleteSelection(visitIDs: visitIDs, domains: domains)
+        if !domains.isEmpty {
+            await SumiFaviconSystem.shared.burnDomains(
+                domains,
+                remainingHistory: currentBrowsingHistory(),
+                savedLogins: BasicAuthCredentialStore().allCredentialHosts()
+            )
+        }
         revision &+= 1
     }
 
     func clearAll() async {
         await dataProvider.clearAll()
+        await SumiFaviconSystem.shared.burnAfterHistoryClear(
+            savedLogins: BasicAuthCredentialStore().allCredentialHosts()
+        )
         revision &+= 1
+    }
+
+    private func currentBrowsingHistory() -> BrowsingHistory {
+        let visits = dataProvider.rawVisits
+        return visits.map { visit in
+            HistoryEntry(
+                identifier: visit.id,
+                url: visit.url,
+                title: visit.title,
+                failedToLoad: false,
+                numberOfTotalVisits: 1,
+                lastVisit: visit.visitedAt,
+                visits: [],
+                numberOfTrackersBlocked: 0,
+                blockedTrackingEntities: [],
+                trackersFound: false
+            )
+        }
     }
 
     private func scheduleDeferredHistoryCleanupIfNeeded() {

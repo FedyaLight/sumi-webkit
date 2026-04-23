@@ -786,7 +786,11 @@ extension TabManager {
             }
 
             let loader = TabRestoreLoader(container: context.container)
-            let payload = try await loader.load(defaultProfileId: defaultProfileId)
+            let faviconManager = SumiFaviconSystem.shared.manager
+            async let payloadTask = loader.load(defaultProfileId: defaultProfileId)
+            async let faviconLoadTask: Void = faviconManager.waitUntilLoaded()
+            let payload = try await payloadTask
+            await faviconLoadTask
             if Task.isCancelled { return false }
 
             let applyResult = applyRestorePayload(payload)
@@ -972,14 +976,11 @@ extension TabManager {
     }
 
     private func makeRestoredTab(_ dto: TabRestoreTabDTO) -> Tab {
-        let faviconName = SumiSurface.isSettingsSurfaceURL(dto.url)
-            ? SumiSurface.settingsTabFaviconSystemImageName
-            : "globe"
         let tab = Tab(
             id: dto.id,
             url: dto.url,
             name: dto.name,
-            favicon: faviconName,
+            favicon: "globe",
             spaceId: dto.spaceId,
             index: dto.index,
             browserManager: browserManager
@@ -989,6 +990,7 @@ extension TabManager {
         tab.isSpacePinned = false
         tab.canGoBack = dto.canGoBack
         tab.canGoForward = dto.canGoForward
+        _ = tab.applyCachedFaviconOrPlaceholder(for: dto.url)
         return tab
     }
 

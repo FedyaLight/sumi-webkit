@@ -288,9 +288,13 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { webViewRuntime.resolvedFaviconCacheKey }
         set { webViewRuntime.resolvedFaviconCacheKey = newValue }
     }
-    var discoveredFaviconLinksByDocumentURL: [URL: [SumiDiscoveredFaviconLink]] {
-        get { webViewRuntime.discoveredFaviconLinksByDocumentURL }
-        set { webViewRuntime.discoveredFaviconLinksByDocumentURL = newValue }
+    var faviconsTabExtension: FaviconsTabExtension? {
+        get { webViewRuntime.faviconsTabExtension }
+        set { webViewRuntime.faviconsTabExtension = newValue }
+    }
+    var faviconCancellables: Set<AnyCancellable> {
+        get { webViewRuntime.faviconCancellables }
+        set { webViewRuntime.faviconCancellables = newValue }
     }
     
     weak var browserManager: BrowserManager?

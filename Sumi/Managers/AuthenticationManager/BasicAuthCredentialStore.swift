@@ -107,6 +107,25 @@ final class BasicAuthCredentialStore {
         return false
         #endif
     }
+
+    func allCredentialHosts() -> Set<String> {
+        #if canImport(Security)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnAttributes as String: true
+        ]
+
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess else { return [] }
+        let attributes = item as? [[String: Any]] ?? []
+        return Set(attributes.compactMap { $0[kSecAttrAccount as String] as? String })
+        #else
+        return []
+        #endif
+    }
 }
 
 private struct Payload: Codable {

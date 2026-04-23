@@ -77,6 +77,7 @@ extension Tab {
 
         if urlChanged {
             applyCachedFaviconOrPlaceholder(for: newURL)
+            faviconsTabExtension?.loadCachedFavicon(previousURL: nil, error: nil)
             NotificationCenter.default.post(
                 name: .sumiTabNavigationStateDidChange,
                 object: self,

@@ -1,0 +1,965 @@
+//
+//  SecureVaultManager.swift
+//
+//  Copyright © 2021 DuckDuckGo. All rights reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//  http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+import Foundation
+import Combine
+import Common
+import SecureStorage
+import os.log
+
+public enum AutofillType {
+    case password
+    case card
+    case identity
+}
+
+public struct AutofillData {
+    public let identity: SecureVaultModels.Identity?
+    public let credentials: SecureVaultModels.WebsiteCredentials?
+    public let creditCard: SecureVaultModels.CreditCard?
+    public var automaticallySavedCredentials: Bool
+    public var backfilled: Bool
+}
+
+public protocol SecureVaultManagerDelegate: AnyObject, SecureVaultReporting {
+
+    func secureVaultManagerIsEnabledStatus(_ manager: SecureVaultManager, forType type: AutofillType?) -> Bool
+
+    func secureVaultManagerShouldSaveData(_: SecureVaultManager) -> Bool
+
+    func secureVaultManager(_: SecureVaultManager,
+                            promptUserToStoreAutofillData data: AutofillData,
+                            withTrigger trigger: AutofillUserScript.GetTriggerType?)
+
+    func secureVaultManager(_: SecureVaultManager,
+                            promptUserToAutofillCredentialsForDomain domain: String,
+                            withAccounts accounts: [SecureVaultModels.WebsiteAccount],
+                            withTrigger trigger: AutofillUserScript.GetTriggerType,
+                            onAccountSelected account: @escaping (SecureVaultModels.WebsiteAccount?) -> Void,
+                            completionHandler: @escaping (SecureVaultModels.WebsiteAccount?) -> Void)
+
+    func secureVaultManager(_: SecureVaultManager,
+                            promptUserToAutofillCreditCardWith creditCards: [SecureVaultModels.CreditCard],
+                            withTrigger trigger: AutofillUserScript.GetTriggerType,
+                            completionHandler: @escaping (SecureVaultModels.CreditCard?) -> Void)
+
+    func secureVaultManager(_: SecureVaultManager,
+                            didFocusFieldFor mainType: AutofillUserScript.GetAutofillDataMainType,
+                            withCreditCards creditCards: [SecureVaultModels.CreditCard],
+                            completionHandler: @escaping (SecureVaultModels.CreditCard?) -> Void)
+
+    func secureVaultManager(_: SecureVaultManager,
+                            promptUserWithGeneratedPassword password: String,
+                            completionHandler: @escaping (Bool) -> Void)
+
+    func secureVaultManager(_: SecureVaultManager,
+                            promptUserToImportCredentialsForDomain domain: String,
+                            completionHandler: @escaping (Bool) -> Void)
+
+    func secureVaultManager(_: SecureVaultManager,
+                            isAuthenticatedFor type: AutofillType,
+                            completionHandler: @escaping (Bool) -> Void)
+
+    func secureVaultManager(_: SecureVaultManager, didAutofill type: AutofillType, withObjectId objectId: String)
+
+    func secureVaultManager(_: SecureVaultManager, didRequestAuthenticationWithCompletionHandler: @escaping (Bool) -> Void)
+
+    func secureVaultManager(_: SecureVaultManager, didRequestCreditCardsManagerForDomain domain: String)
+
+    func secureVaultManager(_: SecureVaultManager, didRequestIdentitiesManagerForDomain domain: String)
+
+    func secureVaultManager(_: SecureVaultManager, didRequestPasswordManagerForDomain domain: String)
+
+    func secureVaultManager(_: SecureVaultManager,
+                            didRequestRuntimeConfigurationForDomain domain: String,
+                            completionHandler: @escaping (String?) -> Void)
+
+    func secureVaultManager(_: SecureVaultManager, didReceivePixel: AutofillUserScript.JSPixel)
+
+}
+
+public protocol PasswordManager: AnyObject {
+
+    var isEnabled: Bool { get }
+    var name: String { get }
+    var isLocked: Bool { get }
+
+    func accountsFor(domain: String, completion: @escaping ([SecureVaultModels.WebsiteAccount], Error?) -> Void)
+    func cachedAccountsFor(domain: String) -> [SecureVaultModels.WebsiteAccount]
+    func cachedWebsiteCredentialsFor(domain: String, username: String) -> SecureVaultModels.WebsiteCredentials?
+    func websiteCredentialsFor(accountId: String, completion: @escaping (SecureVaultModels.WebsiteCredentials?, Error?) -> Void)
+    func websiteCredentialsFor(domain: String, completion: @escaping ([SecureVaultModels.WebsiteCredentials], Error?) -> Void)
+
+    func askToUnlock(completionHandler: @escaping () -> Void)
+
+}
+
+public class SecureVaultManager {
+
+    public weak var delegate: SecureVaultManagerDelegate?
+
+    private let vault: (any AutofillSecureVault)?
+
+    // Third party password manager
+    private let passwordManager: PasswordManager?
+
+    private let shouldAllowPartialFormSaves: Bool
+
+    public let tld: TLD?
+
+    // Keeps track of partial account created from autogenerated credentials (Private Email + Pwd)
+    private var autosaveAccount: SecureVaultModels.WebsiteAccount?
+
+    // Tracks if the autosave account was created in the current session
+    // To prevent automatically updating username/password for an an existing account
+    private var autosaveAccountCreatedInSession = false
+
+    // Keeps track of autogenerated data in forms
+    private var autogeneratedUserName: Bool = false
+    private var autogeneratedPassword: Bool = false
+    private var autogeneratedCredentials: Bool {
+        return autogeneratedUserName || autogeneratedPassword
+    }
+    private let partialFormSaveManager: PartialFormSaveManager
+
+    public lazy var autofillWebsiteAccountMatcher: AutofillWebsiteAccountMatcher? = {
+        guard let tld = tld else { return nil }
+        return AutofillWebsiteAccountMatcher(autofillUrlMatcher: AutofillDomainNameUrlMatcher(),
+                                             tld: tld)
+    }()
+
+    public init(vault: (any AutofillSecureVault)? = nil,
+                passwordManager: PasswordManager? = nil,
+                shouldAllowPartialFormSaves: Bool = false,
+                tld: TLD? = nil) {
+        self.vault = vault
+        self.passwordManager = passwordManager
+        self.shouldAllowPartialFormSaves = shouldAllowPartialFormSaves
+        self.tld = tld
+        if let tld {
+            partialFormSaveManager = PartialFormSaveManager(tld: tld)
+        } else {
+            partialFormSaveManager = PartialFormSaveManager(tld: TLD())
+        }
+    }
+
+}
+
+// Later these catches should check if it is an auth error and call the delegate to ask for user authentication.
+extension SecureVaultManager: AutofillSecureVaultDelegate {
+
+    public func autofillUserScript(_: AutofillUserScript,
+                                   didRequestAutoFillInitDataForDomain domain: String,
+                                   completionHandler: @escaping ([SecureVaultModels.WebsiteCredentials],
+                                                                 [SecureVaultModels.Identity],
+                                                                 [SecureVaultModels.CreditCard],
+                                                                 SecureVaultModels.CredentialsProvider,
+                                                                 SecureVaultLoginsCount) -> Void) {
+
+        do {
+            guard let delegate = delegate, delegate.secureVaultManagerIsEnabledStatus(self, forType: nil) else {
+                completionHandler([], [], [], credentialsProvider, 0)
+                return
+            }
+            let vault = try self.vault ?? AutofillSecureVaultFactory.makeVault(reporter: self.delegate)
+
+            var identities: [SecureVaultModels.Identity] = []
+            if delegate.secureVaultManagerIsEnabledStatus(self, forType: .identity) {
+                identities = try vault.identities()
+            }
+
+            var cards: [SecureVaultModels.CreditCard] = []
+            if delegate.secureVaultManagerIsEnabledStatus(self, forType: .card) {
+                cards = try vault.creditCards()
+            }
+
+            if delegate.secureVaultManagerIsEnabledStatus(self, forType: .password) {
+                let accountsCount = try vault.accountsCount()
+                getCredentials(forDomain: domain, from: vault, or: passwordManager) { [weak self] credentials, error in
+                    guard let self = self else { return }
+                    if let error = error {
+                        Logger.secureVault.error("Error requesting autofill init data: \(error.localizedDescription, privacy: .public)")
+                        completionHandler([], [], [], self.credentialsProvider, 0)
+                    } else {
+                        completionHandler(credentials, identities, cards, self.credentialsProvider, accountsCount)
+                    }
+                }
+            } else {
+                completionHandler([], identities, cards, self.credentialsProvider, 0)
+            }
+
+        } catch {
+            Logger.secureVault.error("Error requesting autofill init data: \(error.localizedDescription, privacy: .public)")
+            completionHandler([], [], [], credentialsProvider, 0)
+        }
+    }
+
+    public func autofillUserScript(_: AutofillUserScript, didRequestCreditCardsManagerForDomain domain: String) {
+        delegate?.secureVaultManager(self, didRequestCreditCardsManagerForDomain: domain)
+    }
+
+    public func autofillUserScript(_: AutofillUserScript, didRequestIdentitiesManagerForDomain domain: String) {
+        delegate?.secureVaultManager(self, didRequestIdentitiesManagerForDomain: domain)
+    }
+
+    public func autofillUserScript(_: AutofillUserScript, didRequestPasswordManagerForDomain domain: String) {
+        delegate?.secureVaultManager(self, didRequestPasswordManagerForDomain: domain)
+    }
+
+    // swiftlint:disable:next cyclomatic_complexity
+    public func autofillUserScript(_: AutofillUserScript,
+                                   didRequestStoreDataForDomain domain: String,
+                                   data: AutofillUserScript.DetectedAutofillData) {
+        do {
+
+            // We don't want to store data in special cases (Fire Window)
+            guard delegate?.secureVaultManagerShouldSaveData(self) ?? false else {
+                return
+            }
+
+            var autofilldata = data
+            var backfilled = false
+
+            if shouldAllowPartialFormSaves,
+               let partialAccountUsername = partialFormSaveManager.partialAccount(forDomain: domain)?.username,
+               !partialAccountUsername.isEmpty,
+               let credentials = autofilldata.credentials,
+               credentials.username.isNilOrEmpty {
+                autofilldata.credentials = .init(
+                    username: partialAccountUsername,
+                    password: credentials.password,
+                    autogenerated: credentials.autogenerated
+                )
+                backfilled = true
+            }
+
+            let vault = try? self.vault ?? AutofillSecureVaultFactory.makeVault(reporter: self.delegate)
+            var autoSavedCredentials: SecureVaultModels.WebsiteCredentials?
+
+            // If the user navigated away from current domain, remove autosave data
+            if domain != autosaveAccount?.domain {
+                autogeneratedUserName = false
+                autogeneratedPassword = false
+                autosaveAccount = nil
+                autosaveAccountCreatedInSession = false
+            }
+
+            // Do not autosave anything if user has requested to never be prompted to save credentials for this domain and are using DDG as password manager
+            if let neverPrompt = try vault?.hasNeverPromptWebsitesFor(domain: domain), neverPrompt {
+                guard let passwordManager = passwordManager, passwordManager.isEnabled else {
+                    return
+                }
+            }
+
+            // Validate the existing account exists and matches the domain and fetch the credentials
+            if let stringId = autosaveAccount?.id,
+               let id = Int64(stringId),
+               let credentials =  try? vault?.websiteCredentialsFor(accountId: id) {
+                autoSavedCredentials = credentials
+            } else {
+                autosaveAccount = nil
+            }
+
+            switch autofilldata.trigger {
+            case .emailProtection:
+                autogeneratedUserName = data.credentials?.autogenerated ?? false
+            case .passwordGeneration:
+                autogeneratedPassword = data.credentials?.autogenerated ?? false
+                NotificationCenter.default.post(name: .autofillFillEvent, object: nil)
+            case .formSubmission:
+                if autosaveAccount != nil, let credentials = autoSavedCredentials {
+
+                    let existingUsername = credentials.account.username
+                    let existingPassword =  credentials.password.flatMap { String(bytes: $0, encoding: .utf8) }
+                    let submittedUserName = data.credentials?.username
+                    let submittedPassword = data.credentials?.password
+
+                    if existingUsername != submittedUserName && submittedUserName != "" {
+                        autogeneratedUserName = false
+                    }
+
+                    if existingPassword != submittedPassword && submittedPassword != "" {
+                        autogeneratedPassword = false
+                    }
+
+                }
+            case .partialSave:
+                guard shouldAllowPartialFormSaves else { return }
+                let username = data.credentials?.username ?? data.identity?.emailAddress
+                let partialAccount = SecureVaultModels.WebsiteAccount(username: username, domain: domain)
+                partialFormSaveManager.store(partialAccount: partialAccount, for: domain)
+                return
+            case .none, .userInitiated, .autoprompt, .credentialsImport: break
+            }
+
+            autofilldata.credentials?.autogenerated = autogeneratedCredentials
+            let shouldSilentlySave = autogeneratedCredentials && autofilldata.trigger != .formSubmission
+
+            if !autogeneratedCredentials && data.trigger == .formSubmission {
+                if let stringId = autosaveAccount?.id, let id = Int64(stringId) {
+                    try? vault?.deleteWebsiteCredentialsFor(accountId: id)
+                    autosaveAccount = nil
+                    autosaveAccountCreatedInSession = false
+                }
+            }
+
+            // Update/Prompt in 3rd party password manager (if enabled)
+            if let passwordManager = passwordManager, passwordManager.isEnabled {
+                if !shouldSilentlySave {
+                    let dataToPrompt = try existingEntries(for: domain, autofillData: autofilldata, backfilled: backfilled)
+                    delegate?.secureVaultManager(self, promptUserToStoreAutofillData: dataToPrompt, withTrigger: data.trigger)
+                    autosaveAccount = nil
+                    autosaveAccountCreatedInSession = false
+                    partialFormSaveManager.removePartialAccount(for: domain)
+                }
+                return
+            } else {
+                // Store or update silently (if required)
+                try storeOrUpdateAutogeneratedCredentials(domain: domain, autofillData: autofilldata)
+            }
+
+            // Prompt or notify on form submissions and clean any partial accounts for this instance (tab)
+            if !shouldSilentlySave {
+                var dataToPrompt = try existingEntries(for: domain, autofillData: autofilldata, backfilled: backfilled)
+
+                // On form submissions use the local value for autogenerated credentials
+                // In this case, the JS field should be treated more like "form has some autofilled data"
+                if autofilldata.trigger == .formSubmission {
+                    dataToPrompt.automaticallySavedCredentials = autogeneratedCredentials
+                    autosaveAccount = nil
+                    autosaveAccountCreatedInSession = false
+                    partialFormSaveManager.removePartialAccount(for: domain)
+                }
+                delegate?.secureVaultManager(self, promptUserToStoreAutofillData: dataToPrompt, withTrigger: autofilldata.trigger)
+            }
+
+        } catch {
+            Logger.secureVault.error("Error storing data: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    public func autofillUserScript(_: AutofillUserScript,
+                                   didRequestAccountsForDomain domain: String,
+                                   completionHandler: @escaping ([SecureVaultModels.WebsiteAccount],
+                                                                 SecureVaultModels.CredentialsProvider) -> Void) {
+
+        do {
+            let vault = try self.vault ?? AutofillSecureVaultFactory.makeVault(reporter: self.delegate)
+            getAccounts(for: domain, from: vault,
+                        or: passwordManager) { [weak self] accounts, error in
+                guard let self = self else { return }
+                if let error = error {
+                    Logger.secureVault.error("Error requesting accounts: \(error.localizedDescription, privacy: .public)")
+                    completionHandler([], self.credentialsProvider)
+                } else {
+                    completionHandler(accounts, self.credentialsProvider)
+                }
+            }
+        } catch {
+            Logger.secureVault.error("Error requesting accounts: \(error.localizedDescription, privacy: .public)")
+            completionHandler([], credentialsProvider)
+        }
+
+    }
+
+    public func autofillUserScript(_: AutofillUserScript,
+                                   didRequestCredentialsForDomain domain: String,
+                                   subType: AutofillUserScript.GetAutofillDataSubType,
+                                   trigger: AutofillUserScript.GetTriggerType,
+                                   completionHandler: @escaping (SecureVaultModels.WebsiteCredentials?,
+                                                                 SecureVaultModels.CredentialsProvider,
+                                                                 RequestVaultDataAction) -> Void) {
+        do {
+            let vault = try self.vault ?? AutofillSecureVaultFactory.makeVault(reporter: self.delegate)
+
+            getAccounts(for: domain,
+                        from: vault,
+                        or: passwordManager) { [weak self] accounts, error in
+                guard let self = self else { return }
+                if let error = error {
+                    Logger.secureVault.error("Error requesting accounts: \(error.localizedDescription, privacy: .public)")
+                    completionHandler(nil, self.credentialsProvider, .none)
+                }
+
+                let accounts = accounts.filter {
+                    // don't show accounts without usernames if the user interacted with the 'username' field
+                    if subType == .username && ($0.username ?? "").isEmpty {
+                        return false
+                    }
+                    return true
+                }
+
+                if accounts.count == 0 {
+                    self.handleCredentialsImport(domain: domain, completionHandler: completionHandler)
+                } else {
+                    self.delegate?.secureVaultManager(self, promptUserToAutofillCredentialsForDomain: domain,
+                                                      withAccounts: accounts,
+                                                      withTrigger: trigger,
+                                                      onAccountSelected: { [weak self] account in
+                        guard let accountID = account?.id else {
+                            return
+                        }
+                        self?.updateLastUsedDate(for: accountID, vault: vault)
+                    }, completionHandler: { [weak self] account in
+                        guard let self = self else { return }
+                        guard let accountID = account?.id else {
+                            completionHandler(nil, self.credentialsProvider, .none)
+                            return
+                        }
+
+                        self.getCredentials(for: accountID, from: vault, or: self.passwordManager) { [weak self] credentials, error in
+                            guard let self = self else { return }
+                            if let error = error {
+                                Logger.secureVault.error("Error requesting credentials: \(error.localizedDescription, privacy: .public)")
+                                completionHandler(nil, self.credentialsProvider, .none)
+                            } else {
+                                completionHandler(credentials, self.credentialsProvider, .fill)
+                            }
+                        }
+                    })
+                }
+            }
+        } catch {
+            Logger.secureVault.error("Error requesting accounts: \(error.localizedDescription, privacy: .public)")
+            completionHandler(nil, credentialsProvider, .none)
+        }
+    }
+
+    private func handleCredentialsImport(domain: String, completionHandler: @escaping (SecureVaultModels.WebsiteCredentials?, SecureVaultModels.CredentialsProvider, RequestVaultDataAction) -> Void) {
+        self.delegate?.secureVaultManager(self, promptUserToImportCredentialsForDomain: domain) { [weak self] shouldRefresh in
+            guard let self = self else { return }
+            if shouldRefresh {
+                completionHandler(nil, self.credentialsProvider, .refreshAvailableInputTypes)
+            } else {
+                completionHandler(nil, self.credentialsProvider, .none)
+            }
+        }
+    }
+
+    public func autofillUserScript(_: AutofillUserScript,
+                                   didRequestCredentialsForAccount accountId: String,
+                                   completionHandler: @escaping (SecureVaultModels.WebsiteCredentials?,
+                                                                 SecureVaultModels.CredentialsProvider) -> Void) {
+
+        do {
+            let vault = try self.vault ?? AutofillSecureVaultFactory.makeVault(reporter: self.delegate)
+
+            updateLastUsedDate(for: accountId, vault: vault)
+
+            self.delegate?.secureVaultManager(self, isAuthenticatedFor: .password, completionHandler: { result in
+                if result == true {
+                    self.getCredentials(for: accountId, from: vault, or: self.passwordManager) { [weak self] credentials, error in
+                        guard let self = self else { return }
+                        if let error = error {
+                            Logger.secureVault.error("Error requesting credentials: \(error.localizedDescription, privacy: .public)")
+                            completionHandler(nil, self.credentialsProvider)
+                        } else {
+                            completionHandler(credentials, self.credentialsProvider)
+                            self.delegate?.secureVaultManager(self, didAutofill: .password, withObjectId: accountId)
+                        }
+                    }
+                } else {
+                    return
+                }
+            })
+
+        } catch {
+            Logger.secureVault.error("Error requesting credentials: \(error.localizedDescription, privacy: .public)")
+            completionHandler(nil, credentialsProvider)
+        }
+
+    }
+
+    public func autofillUserScript(_: AutofillUserScript,
+                                   didRequestCreditCardWithId creditCardId: Int64,
+                                   completionHandler: @escaping (SecureVaultModels.CreditCard?) -> Void) {
+        do {
+            let vault = try self.vault ?? AutofillSecureVaultFactory.makeVault(reporter: self.delegate)
+            let card = try vault.creditCardFor(id: creditCardId)
+
+            delegate?.secureVaultManager(self, didRequestAuthenticationWithCompletionHandler: { authenticated in
+                if authenticated {
+                    completionHandler(card)
+                } else {
+                    completionHandler(nil)
+                }
+            })
+
+            delegate?.secureVaultManager(self, didAutofill: .card, withObjectId: String(creditCardId))
+        } catch {
+            Logger.secureVault.error("Error requesting credit card: \(error.localizedDescription, privacy: .public)")
+            completionHandler(nil)
+        }
+    }
+
+    public func autofillUserScript(_: AutofillUserScript,
+                                   didRequestIdentityWithId identityId: Int64,
+                                   completionHandler: @escaping (SecureVaultModels.Identity?) -> Void) {
+        do {
+            let vault = try self.vault ?? AutofillSecureVaultFactory.makeVault(reporter: self.delegate)
+            completionHandler(try vault.identityFor(id: identityId))
+
+            delegate?.secureVaultManager(self, didAutofill: .identity, withObjectId: String(identityId))
+        } catch {
+            Logger.secureVault.error("Error requesting identity: \(error.localizedDescription, privacy: .public)")
+            completionHandler(nil)
+        }
+    }
+
+    public func autofillUserScriptDidRequestCreditCard(_: AutofillUserScript, trigger: AutofillUserScript.GetTriggerType, completionHandler: @escaping (SecureVaultModels.CreditCard?, RequestVaultDataAction) -> Void) {
+        do {
+            let vault = try self.vault ?? AutofillSecureVaultFactory.makeVault(reporter: self.delegate)
+            let cards: [SecureVaultModels.CreditCard] = try vault.creditCards()
+
+            guard !cards.isEmpty else {
+                Logger.secureVault.debug("Not showing the modal, no cards found")
+                completionHandler(nil, .none)
+                return
+            }
+
+            delegate?.secureVaultManager(self, promptUserToAutofillCreditCardWith: cards, withTrigger: trigger) { creditCard in
+                guard let creditCard else {
+                    completionHandler(nil, .none)
+                    return
+                }
+                completionHandler(creditCard, .fill)
+            }
+        } catch {
+            Logger.secureVault.error("Error requesting credit card: \(error.localizedDescription, privacy: .public)")
+            completionHandler(nil, .none)
+        }
+    }
+
+    public func autofillUserScriptDidAskToUnlockCredentialsProvider(_: AutofillUserScript,
+                                                                    andProvideCredentialsForDomain domain: String,
+                                                                    completionHandler: @escaping ([SecureVaultModels.WebsiteCredentials],
+                                                                                                  [SecureVaultModels.Identity],
+                                                                                                  [SecureVaultModels.CreditCard],
+                                                                                                  SecureVaultModels.CredentialsProvider) -> Void) {
+        if let passwordManager = passwordManager, passwordManager.isEnabled {
+            passwordManager.askToUnlock { [weak self] in
+                passwordManager.websiteCredentialsFor(domain: domain) { [weak self] credentials, error in
+                    guard let self = self else { return }
+                    if let error = error {
+                        Logger.secureVault.error("Error requesting credentials: \(error.localizedDescription, privacy: .public)")
+                        completionHandler([], [], [], self.credentialsProvider)
+                    } else {
+                        do {
+                            let vault = try self.vault ?? AutofillSecureVaultFactory.makeVault(reporter: self.delegate)
+                            let identities = try vault.identities()
+                            let cards = try vault.creditCards()
+                            completionHandler(credentials, identities, cards, self.credentialsProvider)
+                        } catch {
+                            Logger.secureVault.error("Error requesting identities or cards: \(error.localizedDescription, privacy: .public)")
+                            completionHandler([], [], [], self.credentialsProvider)
+                        }
+                    }
+                }
+            }
+        } else {
+            completionHandler([], [], [], credentialsProvider)
+        }
+    }
+
+    public func autofillUserScript(_: AutofillUserScript,
+                                   didRequestCredentialsForDomain domain: String,
+                                   completionHandler: @escaping ([SecureVaultModels.WebsiteCredentials],
+                                                                 SecureVaultModels.CredentialsProvider) -> Void) {
+        if let passwordManager = passwordManager, passwordManager.isEnabled {
+            passwordManager.websiteCredentialsFor(domain: domain) { [weak self] credentials, error in
+                guard let self = self else { return }
+                if let error = error {
+                    Logger.secureVault.error("Error requesting credentials: \(error.localizedDescription, privacy: .public)")
+                    completionHandler([], self.credentialsProvider)
+                } else {
+                    completionHandler(credentials, self.credentialsProvider)
+                }
+            }
+        } else {
+            // This method is necessary only when using a third party password manager
+            assertionFailure("Not implemented")
+
+            completionHandler([], credentialsProvider)
+        }
+    }
+
+    public func autofillUserScriptDidOfferGeneratedPassword(_: AutofillUserScript, password: String, completionHandler: @escaping (Bool) -> Void) {
+        delegate?.secureVaultManager(self,
+                                     promptUserWithGeneratedPassword: password) { useGeneratedPassword in
+            completionHandler(useGeneratedPassword)
+        }
+    }
+
+    public func autofillUserScriptDidFocus(_: AutofillUserScript,
+                                           mainType: AutofillUserScript.GetAutofillDataMainType,
+                                           completionHandler: @escaping (SecureVaultModels.CreditCard?, RequestVaultDataAction) -> Void) {
+        if mainType == .creditCards {
+            do {
+                let vault = try self.vault ?? AutofillSecureVaultFactory.makeVault(reporter: self.delegate)
+                let cards: [SecureVaultModels.CreditCard] = try vault.creditCards()
+
+                delegate?.secureVaultManager(self, didFocusFieldFor: mainType, withCreditCards: cards) { creditCard in
+                    guard let creditCard else {
+                        completionHandler(nil, .none)
+                        return
+                    }
+                    completionHandler(creditCard, .fill)
+                }
+            } catch {
+                Logger.secureVault.error("Error requesting credit card: \(error.localizedDescription, privacy: .public)")
+                // Notify delegate regardless so the keyboard accessory is updated correctly
+                delegate?.secureVaultManager(self, didFocusFieldFor: mainType, withCreditCards: []) { _ in
+                    completionHandler(nil, .none)
+                }
+
+            }
+        } else {
+            delegate?.secureVaultManager(self, didFocusFieldFor: mainType, withCreditCards: []) { _ in
+                completionHandler(nil, .none)
+            }
+        }
+    }
+
+    public func autofillUserScript(_: AutofillUserScript, didSendPixel pixel: AutofillUserScript.JSPixel) {
+        delegate?.secureVaultManager(self, didReceivePixel: pixel)
+    }
+
+    public func autofillUserScript(_: AutofillUserScript,
+                                   didRequestRuntimeConfigurationForDomain domain: String,
+                                   completionHandler: @escaping (String?) -> Void) {
+        delegate?.secureVaultManager(self, didRequestRuntimeConfigurationForDomain: domain, completionHandler: { response in
+            completionHandler(response)
+        })
+    }
+
+    /// Stores autogenerated credentials sent by the AutofillUserScript, or updates an existing row in the database if credentials already exist.
+    func storeOrUpdateAutogeneratedCredentials(domain: String, autofillData: AutofillUserScript.DetectedAutofillData) throws {
+
+        guard autogeneratedCredentials,
+                let credentials = autofillData.credentials else {
+            Logger.passwordManager.error("Did not meet conditions for silently saving autogenerated credentials, returning early")
+            return
+        }
+
+        let user: String = credentials.username ??  ""
+        let pass: String = credentials.password ?? ""
+
+        let vault = try self.vault ?? AutofillSecureVaultFactory.makeVault(reporter: self.delegate)
+        let accounts: [SecureVaultModels.WebsiteAccount]
+        if let eTLDplus1 = eTLDplus1(for: domain) {
+            accounts = try vault.accountsWithPartialMatchesFor(eTLDplus1: eTLDplus1)
+        } else {
+            accounts = try vault.accountsFor(domain: domain)
+        }
+        var currentAccount: SecureVaultModels.WebsiteAccount
+
+        // Grab an existing autosave account (if any)
+        if let account = autosaveAccount, account.domain == domain {
+            currentAccount = account
+
+        // Find an existing account in the vault
+        } else if let account = accounts.first(where: { $0.username == user }) {
+            currentAccount = account
+
+        // Create an new account
+        } else {
+            currentAccount = createAccount(username: user,
+                                           password: Data((pass).utf8),
+                                           domain: domain)
+            autosaveAccountCreatedInSession = true
+        }
+
+        // Only autosave the username/password if the autosave account was
+        // created in this visit to the page, and the user has not navigated anywhere.
+        if autosaveAccountCreatedInSession {
+            if let id = currentAccount.id {
+
+                // Update password if provided, and existing account does not have one
+                let pwd = credentials.password ?? ""
+                var pwdData: Data
+                if pwd == "" {
+                    let credentials = try? vault.websiteCredentialsFor(accountId: id)
+                    pwdData = credentials?.password ?? Data()
+                } else {
+                    pwdData = Data(pwd.utf8)
+                }
+
+                // Update username if provided
+                if user != "" {
+                    currentAccount.username = user
+                }
+
+                // Save
+                try vault.storeWebsiteCredentials(SecureVaultModels.WebsiteCredentials(account: currentAccount, password: pwdData))
+
+                // Update the autosave account with changes
+                autosaveAccount = currentAccount
+            }
+        } else {
+            return
+        }
+
+    }
+
+    private func createAccount(username: String, password: Data, domain: String) -> SecureVaultModels.WebsiteAccount {
+        let vault = try? self.vault ?? AutofillSecureVaultFactory.makeVault(reporter: self.delegate)
+        var account = SecureVaultModels.WebsiteAccount(username: username, domain: domain, lastUsed: Date())
+        let credentials = try? vault?.storeWebsiteCredentials(SecureVaultModels.WebsiteCredentials(account: account, password: password))
+        account.id = String(credentials ?? -1)
+        NotificationCenter.default.post(name: .autofillSaveEvent, object: nil, userInfo: nil)
+        return account
+    }
+
+    private func updateLastUsedDate(for accountId: String, vault: any AutofillSecureVault) {
+        guard credentialsProvider.name == .duckduckgo else {
+            return
+        }
+
+        if let accountIdInt = Int64(accountId) {
+            try? vault.updateLastUsedFor(accountId: accountIdInt)
+        }
+    }
+
+    func existingEntries(for domain: String,
+                         autofillData: AutofillUserScript.DetectedAutofillData,
+                         backfilled: Bool
+    ) throws -> AutofillData {
+        let vault = try self.vault ?? AutofillSecureVaultFactory.makeVault(reporter: self.delegate)
+
+        let proposedIdentity = try existingIdentity(with: autofillData, vault: vault)
+        let proposedCredentials: SecureVaultModels.WebsiteCredentials?
+        if let passwordManager = passwordManager, passwordManager.isEnabled {
+            proposedCredentials = existingCredentialsInPasswordManager(with: autofillData,
+                                                                       domain: domain,
+                                                                       vault: vault)
+        } else {
+            proposedCredentials = try existingCredentials(with: autofillData,
+                                                          domain: domain,
+                                                          vault: vault)
+        }
+
+        let proposedCard = try existingPaymentMethod(with: autofillData, vault: vault)
+
+        return AutofillData(identity: proposedIdentity,
+                            credentials: proposedCredentials,
+                            creditCard: proposedCard,
+                            automaticallySavedCredentials: autofillData.hasAutogeneratedCredentials,
+                            backfilled: backfilled)
+    }
+
+    private func existingIdentity(with autofillData: AutofillUserScript.DetectedAutofillData,
+                                  vault: any AutofillSecureVault) throws -> SecureVaultModels.Identity? {
+        if let identity = autofillData.identity, try vault.existingIdentityForAutofill(matching: identity) == nil {
+            Logger.passwordManager.debug("Got new identity/address to save")
+            return identity
+        } else {
+            Logger.passwordManager.debug("No new identity/address found, avoid prompting user")
+            return nil
+        }
+    }
+
+    private func existingCredentials(with autofillData: AutofillUserScript.DetectedAutofillData,
+                                     domain: String,
+                                     vault: any AutofillSecureVault) throws -> SecureVaultModels.WebsiteCredentials? {
+
+        guard let credentials = autofillData.credentials,
+            let passwordData = credentials.password?.data(using: .utf8) else {
+            return nil
+        }
+
+        let accounts: [SecureVaultModels.WebsiteAccount]
+        if let eTLDplus1 = eTLDplus1(for: domain) {
+            accounts = try vault.accountsWithPartialMatchesFor(eTLDplus1: eTLDplus1)
+        } else {
+            accounts = try vault.accountsFor(domain: domain)
+        }
+
+        guard var account = accounts.first(where: { $0.username == credentials.username || $0.username.isNilOrEmpty }) else {
+                // No existing credentials found.  This is a new entry
+                let account = SecureVaultModels.WebsiteAccount(username: credentials.username ?? "", domain: domain)
+                return SecureVaultModels.WebsiteCredentials(account: account, password: passwordData)
+        }
+
+        guard let existingAccountId = account.id,
+              let existingCredentials = try vault.websiteCredentialsFor(accountId: existingAccountId) else {
+            return nil
+        }
+
+        // Prompt to save on submit autogenerated credentials OR user input that change the existing password
+        if autofillData.hasAutogeneratedCredentials ||
+            (!autofillData.hasAutogeneratedCredentials && existingCredentials.password != passwordData) {
+
+            // If the previously saved username was empty, default to the submitted one
+            if existingCredentials.account.username == "" {
+                account.username = autofillData.credentials?.username ?? ""
+            }
+
+            return SecureVaultModels.WebsiteCredentials(account: account, password: passwordData)
+        }
+
+        // Prompt to update the login on submit when previous username was empty (there was a partial password account)
+        if existingCredentials.account.username.isNilOrEmpty {
+            account.username = autofillData.credentials?.username ?? ""
+            return SecureVaultModels.WebsiteCredentials(account: account, password: passwordData)
+        }
+
+        return nil
+
+    }
+
+    private func existingPaymentMethod(with autofillData: AutofillUserScript.DetectedAutofillData,
+                                       vault: any AutofillSecureVault) throws -> SecureVaultModels.CreditCard? {
+        if let card = autofillData.creditCard, try vault.existingCardForAutofill(matching: card) == nil {
+            Logger.passwordManager.debug("Got new payment method to save")
+            return card
+        } else {
+            Logger.passwordManager.debug("No new payment method found, avoid prompting user")
+            return nil
+        }
+    }
+
+    // MARK: - Third-party password manager
+
+    private var credentialsProvider: SecureVaultModels.CredentialsProvider {
+        if let passwordManager = passwordManager,
+           passwordManager.isEnabled,
+           let name = SecureVaultModels.CredentialsProvider.Name(rawValue: passwordManager.name) {
+            return SecureVaultModels.CredentialsProvider(name: name,
+                                                         locked: passwordManager.isLocked)
+        } else {
+            return SecureVaultModels.CredentialsProvider(name: .duckduckgo, locked: false)
+        }
+    }
+
+    private func getAccounts(for domain: String,
+                             from vault: any AutofillSecureVault,
+                             or passwordManager: PasswordManager?,
+                             completion: @escaping ([SecureVaultModels.WebsiteAccount], Error?) -> Void) {
+        if let passwordManager = passwordManager,
+           passwordManager.isEnabled {
+            passwordManager.accountsFor(domain: domain, completion: completion)
+        } else {
+            do {
+                guard let eTLDplus1 = eTLDplus1(for: domain) else {
+                    completion([], nil)
+                    return
+                }
+                let accounts = try vault.accountsWithPartialMatchesFor(eTLDplus1: eTLDplus1)
+                completion(accounts, nil)
+            } catch {
+                completion([], error)
+            }
+        }
+    }
+
+    private func getCredentials(for accountId: String,
+                                from vault: any AutofillSecureVault,
+                                or passwordManager: PasswordManager?,
+                                completion: @escaping (SecureVaultModels.WebsiteCredentials?, Error?) -> Void) {
+        if let passwordManager = passwordManager,
+           passwordManager.isEnabled {
+            passwordManager.websiteCredentialsFor(accountId: accountId, completion: completion)
+        } else {
+            do {
+                let credentials = try vault.websiteCredentialsFor(accountId: accountId)
+                completion(credentials, nil)
+            } catch {
+                completion(nil, error)
+            }
+        }
+    }
+
+    private func getCredentials(forDomain domain: String,
+                                from vault: any AutofillSecureVault,
+                                or passwordManager: PasswordManager?,
+                                completion: @escaping ([SecureVaultModels.WebsiteCredentials], Error?) -> Void) {
+        if let passwordManager = passwordManager,
+           passwordManager.isEnabled {
+            passwordManager.websiteCredentialsFor(domain: domain, completion: completion)
+        } else {
+            do {
+                guard let eTLDplus1 = eTLDplus1(for: domain) else {
+                    completion([], nil)
+                    return
+                }
+                let accounts = try vault.websiteCredentialsWithPartialMatchesFor(eTLDplus1: eTLDplus1)
+                completion(accounts, nil)
+            } catch {
+                completion([], error)
+            }
+        }
+    }
+
+    private func eTLDplus1(for domain: String) -> String? {
+        guard var currentUrlComponents = AutofillDomainNameUrlMatcher().normalizeSchemeForAutofill(domain) else {
+            return nil
+        }
+
+        if currentUrlComponents.host == .localhost {
+            return domain
+        } else {
+            guard let tld = tld, let eTLDplus1 = currentUrlComponents.eTLDplus1WithPort(tld: tld) else {
+                return nil
+            }
+
+            return eTLDplus1
+        }
+    }
+
+    private func existingCredentialsInPasswordManager(with autofillData: AutofillUserScript.DetectedAutofillData,
+                                                      domain: String,
+                                                      vault: any AutofillSecureVault) -> SecureVaultModels.WebsiteCredentials? {
+        guard let passwordManager = passwordManager, passwordManager.isEnabled else {
+            return nil
+        }
+
+        guard let credentials = autofillData.credentials,
+              let passwordData = credentials.password?.data(using: .utf8) else {
+            return nil
+        }
+
+        guard let existingCredentials = passwordManager.cachedWebsiteCredentialsFor(domain: domain,
+                                                                                    username: credentials.username ?? "") else {
+            // No existing credentials found and not auto-generated, so return a new entry
+            let account = SecureVaultModels.WebsiteAccount(username: credentials.username ?? "", domain: domain)
+            return SecureVaultModels.WebsiteCredentials(account: account, password: passwordData)
+
+        }
+
+        // Prompt to save on submit autogenerated credentials OR user input that change the existing password
+        if autofillData.hasAutogeneratedCredentials || (!autofillData.hasAutogeneratedCredentials && existingCredentials.password != passwordData) {
+            return SecureVaultModels.WebsiteCredentials(account: existingCredentials.account, password: passwordData)
+        }
+
+        return nil
+    }
+
+}
+
+fileprivate extension AutofillSecureVault {
+
+    func websiteCredentialsFor(accountId: String) throws -> SecureVaultModels.WebsiteCredentials? {
+        guard let accountIdInt = Int64(accountId) else {
+            assertionFailure("Bad account id format")
+            return nil
+        }
+
+        return try websiteCredentialsFor(accountId: accountIdInt)
+    }
+
+}

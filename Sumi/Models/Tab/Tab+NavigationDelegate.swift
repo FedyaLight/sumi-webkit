@@ -11,7 +11,6 @@ extension Tab: WKNavigationDelegate {
         didStartProvisionalNavigation navigation: WKNavigation!
     ) {
         browserManager?.findManager.closeForNavigation(tab: self)
-        clearDiscoveredFaviconLinks()
         loadingState = .didStartProvisionalNavigation
         browserManager?.extensionManager.notifyTabPropertiesChanged(
             self,
@@ -23,6 +22,7 @@ extension Tab: WKNavigationDelegate {
                 resetPlaybackActivity()
                 self.url = newURL
                 applyCachedFaviconOrPlaceholder(for: newURL)
+                faviconsTabExtension?.loadCachedFavicon(previousURL: nil, error: nil)
             } else {
                 self.url = newURL
             }
@@ -84,6 +84,7 @@ extension Tab: WKNavigationDelegate {
         if let newURL = webView.url {
             self.url = newURL
             browserManager?.loadZoomForTab(self.id)
+            faviconsTabExtension?.loadCachedFavicon(previousURL: nil, error: nil)
         }
 
         updateNavigationState()

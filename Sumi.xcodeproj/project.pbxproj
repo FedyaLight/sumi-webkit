@@ -6,6 +6,18 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A11DD020B11D000100000001 /* BrowserServicesKit in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000001 /* BrowserServicesKit */; };
+		A11DD020B11D000100000002 /* Bookmarks in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000002 /* Bookmarks */; };
+		A11DD020B11D000100000003 /* Common in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000003 /* Common */; };
+		A11DD020B11D000100000004 /* History in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000004 /* History */; };
+		A11DD020B11D000100000005 /* Navigation in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000005 /* Navigation */; };
+		A11DD020B11D000100000006 /* Persistence in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000006 /* Persistence */; };
+		A11DD020B11D000100000007 /* PrivacyConfig in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000007 /* PrivacyConfig */; };
+		A11DD020B11D000100000008 /* UserScript in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000008 /* UserScript */; };
+		A11DD021B11D000100000001 /* UserScript in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD011B11D000100000001 /* UserScript */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		2C89253A2E88DFF9002236DC /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -127,6 +139,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A11DD021B11D000100000001 /* UserScript in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -141,6 +154,14 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A11DD020B11D000100000001 /* BrowserServicesKit in Frameworks */,
+				A11DD020B11D000100000002 /* Bookmarks in Frameworks */,
+				A11DD020B11D000100000003 /* Common in Frameworks */,
+				A11DD020B11D000100000004 /* History in Frameworks */,
+				A11DD020B11D000100000005 /* Navigation in Frameworks */,
+				A11DD020B11D000100000006 /* Persistence in Frameworks */,
+				A11DD020B11D000100000007 /* PrivacyConfig in Frameworks */,
+				A11DD020B11D000100000008 /* UserScript in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -214,6 +235,9 @@
 				2C8925322E88DFF9002236DC /* SumiTests */,
 			);
 			name = SumiTests;
+			packageProductDependencies = (
+				A11DD011B11D000100000001 /* UserScript */,
+			);
 			productName = SumiTests;
 			productReference = 2C89252E2E88DFF9002236DC /* SumiTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -239,6 +263,14 @@
 			);
 			name = Sumi;
 			packageProductDependencies = (
+				A11DD010B11D000100000001 /* BrowserServicesKit */,
+				A11DD010B11D000100000002 /* Bookmarks */,
+				A11DD010B11D000100000003 /* Common */,
+				A11DD010B11D000100000004 /* History */,
+				A11DD010B11D000100000005 /* Navigation */,
+				A11DD010B11D000100000006 /* Persistence */,
+				A11DD010B11D000100000007 /* PrivacyConfig */,
+				A11DD010B11D000100000008 /* UserScript */,
 			);
 			productName = Sumi;
 			productReference = 7F8340FC2E37F39400674A5D /* Sumi.app */;
@@ -277,6 +309,7 @@
 			mainGroup = 7F8340F32E37F39400674A5D;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				A11DD000B11D000100000001 /* XCLocalSwiftPackageReference "Vendor/DDG/BrowserServicesKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7F8340FD2E37F39400674A5D /* Products */;
@@ -700,6 +733,52 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		A11DD000B11D000100000001 /* XCLocalSwiftPackageReference "Vendor/DDG/BrowserServicesKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Vendor/DDG/BrowserServicesKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A11DD010B11D000100000001 /* BrowserServicesKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BrowserServicesKit;
+		};
+		A11DD010B11D000100000002 /* Bookmarks */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Bookmarks;
+		};
+		A11DD010B11D000100000003 /* Common */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Common;
+		};
+		A11DD010B11D000100000004 /* History */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = History;
+		};
+		A11DD010B11D000100000005 /* Navigation */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Navigation;
+		};
+		A11DD010B11D000100000006 /* Persistence */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Persistence;
+		};
+		A11DD010B11D000100000007 /* PrivacyConfig */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PrivacyConfig;
+		};
+		A11DD010B11D000100000008 /* UserScript */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = UserScript;
+		};
+		A11DD011B11D000100000001 /* UserScript */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = UserScript;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 7F8340F42E37F39400674A5D /* Project object */;
 }

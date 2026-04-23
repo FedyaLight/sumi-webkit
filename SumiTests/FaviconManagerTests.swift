@@ -1,4 +1,7 @@
 import AppKit
+import Common
+import Persistence
+import UserScript
 import WebKit
 import XCTest
 
@@ -6,166 +9,30 @@ import XCTest
 
 @MainActor
 final class FaviconManagerTests: XCTestCase {
-    func testHandleFaviconLinksPrefersPageLinksAndCachesImage() async throws {
+    func testHandleFaviconLinksPrefersPageLinksAndCachesDocumentAndHost() async throws {
         let faviconURL = URL(string: "https://example.com/apple-touch-icon.png")!
         let pageURL = URL(string: "https://example.com/article")!
         let downloader = RecordingFaviconDownloader { url in
             XCTAssertEqual(url, faviconURL)
             return try XCTUnwrap(Self.makeImageData(color: .systemOrange, size: 64))
         }
-
-        let manager = FaviconManager(
-            cacheType: .inMemory,
-            downloader: downloader
-        )
+        let manager = makeManager(downloader: downloader)
 
         let favicon = await manager.handleLiveFaviconLinks(
-            [FaviconUserScript.FaviconLink(href: faviconURL, rel: "apple-touch-icon")],
+            [FaviconUserScript.FaviconLink(href: faviconURL, rel: "apple-touch-icon", type: "image/png")],
             documentUrl: pageURL,
             webView: nil
         )
 
         XCTAssertEqual(downloader.recordedURLs, [faviconURL])
         XCTAssertEqual(favicon?.url, faviconURL)
-        XCTAssertNotNil(
-            manager.getCachedFavicon(
-                for: pageURL,
-                sizeCategory: .small,
-                fallBackToSmaller: true
-            )?.image
-        )
-        XCTAssertNotNil(
-            manager.getCachedFavicon(
-                for: "example.com",
-                sizeCategory: .small,
-                fallBackToSmaller: true
-            )?.image
-        )
-    }
-
-    func testHandleFaviconLinksPrefersDownscalingMediumOverUpscalingTinyForSmallIcons() async throws {
-        let tinyURL = URL(string: "https://example.com/favicon-16.png")!
-        let mediumURL = URL(string: "https://example.com/apple-touch-icon-180.png")!
-        let pageURL = URL(string: "https://example.com/article")!
-        let downloader = RecordingFaviconDownloader { url in
-            switch url {
-            case tinyURL:
-                return try XCTUnwrap(Self.makeImageData(color: .systemRed, size: 16))
-            case mediumURL:
-                return try XCTUnwrap(Self.makeImageData(color: .systemBlue, size: 180))
-            default:
-                XCTFail("Unexpected download URL: \(url)")
-                return Data()
-            }
-        }
-
-        let manager = FaviconManager(
-            cacheType: .inMemory,
-            downloader: downloader
-        )
-
-        let favicon = await manager.handleLiveFaviconLinks(
-            [
-                FaviconUserScript.FaviconLink(href: tinyURL, rel: "icon"),
-                FaviconUserScript.FaviconLink(href: mediumURL, rel: "apple-touch-icon"),
-            ],
-            documentUrl: pageURL,
-            webView: nil
-        )
-
-        XCTAssertEqual(Set(downloader.recordedURLs), Set([tinyURL, mediumURL]))
-        XCTAssertEqual(favicon?.url, mediumURL)
         XCTAssertEqual(
-            manager.getCachedFavicon(
-                for: pageURL,
-                sizeCategory: .small,
-                fallBackToSmaller: true
-            )?.url,
-            mediumURL
+            manager.getCachedFavicon(for: pageURL, sizeCategory: .small, fallBackToSmaller: true)?.url,
+            faviconURL
         )
-    }
-
-    func testHandleFaviconLinksPrefersDownscalingLargeOverUpscalingTinyForSmallIcons() async throws {
-        let tinyURL = URL(string: "https://example.com/favicon-16.png")!
-        let largeURL = URL(string: "https://example.com/icon-512.png")!
-        let pageURL = URL(string: "https://example.com/article")!
-        let downloader = RecordingFaviconDownloader { url in
-            switch url {
-            case tinyURL:
-                return try XCTUnwrap(Self.makeImageData(color: .systemRed, size: 16))
-            case largeURL:
-                return try XCTUnwrap(Self.makeImageData(color: .systemPurple, size: 512))
-            default:
-                XCTFail("Unexpected download URL: \(url)")
-                return Data()
-            }
-        }
-
-        let manager = FaviconManager(
-            cacheType: .inMemory,
-            downloader: downloader
-        )
-
-        let favicon = await manager.handleLiveFaviconLinks(
-            [
-                FaviconUserScript.FaviconLink(href: tinyURL, rel: "icon"),
-                FaviconUserScript.FaviconLink(href: largeURL, rel: "icon"),
-            ],
-            documentUrl: pageURL,
-            webView: nil
-        )
-
-        XCTAssertEqual(Set(downloader.recordedURLs), Set([tinyURL, largeURL]))
-        XCTAssertEqual(favicon?.url, largeURL)
         XCTAssertEqual(
-            manager.getCachedFavicon(
-                for: pageURL,
-                sizeCategory: .small,
-                fallBackToSmaller: true
-            )?.url,
-            largeURL
-        )
-    }
-
-    func testHandleFaviconLinksPrefersDownscalingMediumOverExactSmallForSmallIcons() async throws {
-        let smallURL = URL(string: "https://example.com/icon-32.png")!
-        let mediumURL = URL(string: "https://example.com/apple-touch-icon-180.png")!
-        let pageURL = URL(string: "https://example.com/article")!
-        let downloader = RecordingFaviconDownloader { url in
-            switch url {
-            case smallURL:
-                return try XCTUnwrap(Self.makeImageData(color: .systemRed, size: 32))
-            case mediumURL:
-                return try XCTUnwrap(Self.makeImageData(color: .systemBlue, size: 180))
-            default:
-                XCTFail("Unexpected download URL: \(url)")
-                return Data()
-            }
-        }
-
-        let manager = FaviconManager(
-            cacheType: .inMemory,
-            downloader: downloader
-        )
-
-        let favicon = await manager.handleLiveFaviconLinks(
-            [
-                FaviconUserScript.FaviconLink(href: smallURL, rel: "icon"),
-                FaviconUserScript.FaviconLink(href: mediumURL, rel: "icon"),
-            ],
-            documentUrl: pageURL,
-            webView: nil
-        )
-
-        XCTAssertEqual(Set(downloader.recordedURLs), Set([smallURL, mediumURL]))
-        XCTAssertEqual(favicon?.url, mediumURL)
-        XCTAssertEqual(
-            manager.getCachedFavicon(
-                for: pageURL,
-                sizeCategory: .small,
-                fallBackToSmaller: true
-            )?.url,
-            mediumURL
+            manager.getCachedFavicon(for: "example.com", sizeCategory: .small, fallBackToSmaller: true)?.url,
+            faviconURL
         )
     }
 
@@ -181,26 +48,19 @@ final class FaviconManagerTests: XCTestCase {
             XCTAssertEqual(url, httpsFallbackURL)
             return try XCTUnwrap(Self.makeImageData(color: .systemBlue, size: 48))
         }
-
-        let manager = FaviconManager(
-            cacheType: .inMemory,
-            downloader: downloader
-        )
+        let manager = makeManager(downloader: downloader)
 
         let favicon = await manager.loadFavicon(for: pageURL, webView: nil)
 
         XCTAssertEqual(Set(downloader.recordedURLs), Set([httpFallbackURL, httpsFallbackURL]))
         XCTAssertEqual(favicon?.url, httpsFallbackURL)
-        XCTAssertNotNil(
-            manager.getCachedFavicon(
-                for: "upgrade.example.com",
-                sizeCategory: .small,
-                fallBackToSmaller: true
-            )?.image
+        XCTAssertEqual(
+            manager.getCachedFavicon(for: "upgrade.example.com", sizeCategory: .small, fallBackToSmaller: true)?.url,
+            httpsFallbackURL
         )
     }
 
-    func testLoadFaviconDoesNotDowngradeExistingPageProvidedIcon() async throws {
+    func testFallbackOnlyCallDoesNotDowngradeExistingPageProvidedIcon() async throws {
         let pageURL = URL(string: "https://example.com/article")!
         let pageIconURL = URL(string: "https://example.com/apple-touch-icon.png")!
         let fallbackURL = URL(string: "https://example.com/favicon.ico")!
@@ -215,89 +75,38 @@ final class FaviconManagerTests: XCTestCase {
                 return Data()
             }
         }
-
-        let manager = FaviconManager(
-            cacheType: .inMemory,
-            downloader: downloader
-        )
+        let manager = makeManager(downloader: downloader)
 
         let initial = await manager.handleLiveFaviconLinks(
-            [FaviconUserScript.FaviconLink(href: pageIconURL, rel: "apple-touch-icon")],
+            [FaviconUserScript.FaviconLink(href: pageIconURL, rel: "apple-touch-icon", type: "image/png")],
             documentUrl: pageURL,
             webView: nil
         )
-        let resolvedAfterFallback = await manager.loadFavicon(for: pageURL, webView: nil)
+        let resolvedAfterFallbackOnlyCall = await manager.loadFavicon(for: pageURL, webView: nil)
 
         XCTAssertEqual(initial?.url, pageIconURL)
-        XCTAssertEqual(resolvedAfterFallback?.url, pageIconURL)
+        XCTAssertEqual(resolvedAfterFallbackOnlyCall?.url, pageIconURL)
+        XCTAssertEqual(downloader.recordedURLs, [pageIconURL])
         XCTAssertEqual(
-            manager.getCachedFavicon(
-                for: pageURL,
-                sizeCategory: .small,
-                fallBackToSmaller: true
-            )?.url,
+            manager.getCachedFavicon(for: pageURL, sizeCategory: .small, fallBackToSmaller: true)?.url,
             pageIconURL
         )
-        XCTAssertEqual(downloader.recordedURLs, [pageIconURL])
     }
 
-    func testHandleLiveFaviconLinksDoesNotClearExistingReferenceWhenNewBatchFails() async throws {
+    func testFailedOrInvalidBatchDoesNotClearExistingReference() async throws {
         let pageURL = URL(string: "https://example.com/article")!
         let initialURL = URL(string: "https://example.com/initial.png")!
         let failingURL = URL(string: "https://example.com/failing.png")!
+        let htmlURL = URL(string: "https://example.com/not-image")!
+        let tinyGarbageURL = URL(string: "https://example.com/tiny-garbage")!
         let downloader = RecordingFaviconDownloader { url in
             switch url {
             case initialURL:
                 return try XCTUnwrap(Self.makeImageData(color: .systemGreen, size: 128))
             case failingURL:
                 throw URLError(.cannotDecodeRawData)
-            default:
-                XCTFail("Unexpected download URL: \(url)")
-                return Data()
-            }
-        }
-
-        let manager = FaviconManager(
-            cacheType: .inMemory,
-            downloader: downloader
-        )
-
-        _ = await manager.handleLiveFaviconLinks(
-            [FaviconUserScript.FaviconLink(href: initialURL, rel: "icon")],
-            documentUrl: pageURL,
-            webView: nil
-        )
-        let resolved = await manager.handleLiveFaviconLinks(
-            [FaviconUserScript.FaviconLink(href: failingURL, rel: "icon")],
-            documentUrl: pageURL,
-            webView: nil
-        )
-
-        XCTAssertEqual(resolved?.url, initialURL)
-        XCTAssertEqual(
-            manager.getCachedFavicon(
-                for: pageURL,
-                sizeCategory: .small,
-                fallBackToSmaller: true
-            )?.url,
-            initialURL
-        )
-        XCTAssertEqual(downloader.recordedURLs, [initialURL, failingURL])
-    }
-
-    func testInvalidPayloadsDoNotReplaceExistingCachedFavicon() async throws {
-        let pageURL = URL(string: "https://example.com/article")!
-        let initialURL = URL(string: "https://example.com/initial.png")!
-        let htmlURL = URL(string: "https://example.com/html-fallback")!
-        let tinyGarbageURL = URL(string: "https://example.com/tiny-garbage")!
-        let downloader = RecordingFaviconDownloader { url in
-            switch url {
-            case initialURL:
-                return try XCTUnwrap(Self.makeImageData(color: .systemOrange, size: 128))
             case htmlURL:
-                return Data("""
-                <!doctype html><html><head><title>not an image</title></head><body></body></html>
-                """.utf8)
+                return Data("<!doctype html><html><body>not an image</body></html>".utf8)
             case tinyGarbageURL:
                 return Data([0x00])
             default:
@@ -305,19 +114,20 @@ final class FaviconManagerTests: XCTestCase {
                 return Data()
             }
         }
-
-        let manager = FaviconManager(
-            cacheType: .inMemory,
-            downloader: downloader
-        )
+        let manager = makeManager(downloader: downloader)
 
         _ = await manager.handleLiveFaviconLinks(
-            [FaviconUserScript.FaviconLink(href: initialURL, rel: "icon")],
+            [FaviconUserScript.FaviconLink(href: initialURL, rel: "icon", type: "image/png")],
+            documentUrl: pageURL,
+            webView: nil
+        )
+        let afterFailure = await manager.handleLiveFaviconLinks(
+            [FaviconUserScript.FaviconLink(href: failingURL, rel: "icon", type: "image/png")],
             documentUrl: pageURL,
             webView: nil
         )
         let afterHTML = await manager.handleLiveFaviconLinks(
-            [FaviconUserScript.FaviconLink(href: htmlURL, rel: "icon")],
+            [FaviconUserScript.FaviconLink(href: htmlURL, rel: "icon", type: "text/html")],
             documentUrl: pageURL,
             webView: nil
         )
@@ -327,45 +137,39 @@ final class FaviconManagerTests: XCTestCase {
             webView: nil
         )
 
+        XCTAssertEqual(afterFailure?.url, initialURL)
         XCTAssertEqual(afterHTML?.url, initialURL)
         XCTAssertEqual(afterGarbage?.url, initialURL)
         XCTAssertEqual(
-            manager.getCachedFavicon(
-                for: pageURL,
-                sizeCategory: .small,
-                fallBackToSmaller: true
-            )?.url,
+            manager.getCachedFavicon(for: pageURL, sizeCategory: .small, fallBackToSmaller: true)?.url,
             initialURL
         )
-        XCTAssertEqual(downloader.recordedURLs, [initialURL, htmlURL, tinyGarbageURL])
+        XCTAssertEqual(downloader.recordedURLs, [initialURL, failingURL, htmlURL, tinyGarbageURL])
     }
 
-    func testPersistentStoreReloadsCachedHostLookupForLaunchersAndHistory() async throws {
-        let storeDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let storeURL = storeDirectory.appendingPathComponent("favicons.sqlite", isDirectory: false)
-        try FileManager.default.createDirectory(at: storeDirectory, withIntermediateDirectories: true)
-        defer {
-            try? FileManager.default.removeItem(at: storeDirectory)
-        }
+    func testPersistentStoreReloadsCachedHostLookupForPassiveConsumers() async throws {
+        let storeDirectory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: storeDirectory) }
 
+        let database = try await Self.makeFaviconDatabase(in: storeDirectory)
         let faviconURL = URL(string: "https://persist.example.com/favicon.ico")!
         let pageURL = URL(string: "https://persist.example.com/path")!
         let imageData = try XCTUnwrap(Self.makeImageData(color: .systemGreen, size: 64))
-
-        let writer = FaviconManager(
-            cacheType: .standard(storeURL: storeURL),
+        let writerStore = FaviconStore(database: database)
+        let writer = makeManager(
+            store: writerStore,
             downloader: RecordingFaviconDownloader { _ in imageData }
         )
 
         _ = await writer.handleLiveFaviconLinks(
-            [FaviconUserScript.FaviconLink(href: faviconURL, rel: "icon")],
+            [FaviconUserScript.FaviconLink(href: faviconURL, rel: "icon", type: "image/png")],
             documentUrl: pageURL,
             webView: nil
         )
+        try await waitUntilStoreHasReferences(writerStore)
 
-        let reader = FaviconManager(
-            cacheType: .standard(storeURL: storeURL),
+        let reader = makeManager(
+            store: FaviconStore(database: database),
             downloader: RecordingFaviconDownloader { _ in
                 XCTFail("Reader should not re-download cached favicon")
                 return imageData
@@ -374,50 +178,19 @@ final class FaviconManagerTests: XCTestCase {
         await reader.waitUntilLoaded()
 
         XCTAssertEqual(
-            reader.getCachedFavicon(
-                for: pageURL,
-                sizeCategory: .small,
-                fallBackToSmaller: true
-            )?.url,
+            reader.getCachedFavicon(for: pageURL, sizeCategory: .small, fallBackToSmaller: true)?.url,
             faviconURL
         )
         XCTAssertEqual(
-            reader.getCachedFavicon(
-                for: "persist.example.com",
-                sizeCategory: .small,
-                fallBackToSmaller: true
-            )?.url,
+            reader.getCachedFavicon(for: "persist.example.com", sizeCategory: .small, fallBackToSmaller: true)?.url,
             faviconURL
         )
         XCTAssertNotNil(reader.image(forLookupKey: "persist.example.com"))
     }
 
-    func testLoadCachesClearsDirtyStoreWhenDuplicateFaviconURLsExist() async throws {
-        let faviconURL = URL(string: "https://dirty.example.com/favicon.ico")!
-        let documentURL = URL(string: "https://dirty.example.com/page")!
-        let image = try XCTUnwrap(
-            Self.makeImageData(color: .systemOrange, size: 64).flatMap(NSImage.init(data:))
-        )
-        let duplicateFavicons = [
-            Favicon(
-                identifier: UUID(),
-                url: faviconURL,
-                image: image,
-                relationString: "icon",
-                documentUrl: documentURL,
-                dateCreated: Date().addingTimeInterval(-10)
-            ),
-            Favicon(
-                identifier: UUID(),
-                url: faviconURL,
-                image: image,
-                relationString: "icon",
-                documentUrl: documentURL,
-                dateCreated: Date()
-            ),
-        ]
-        let store = DirtyFaviconStore(favicons: duplicateFavicons)
-        let manager = FaviconManager(
+    func testLoadCachesClearDirtyStoreAfterLoadFailure() async throws {
+        let store = ThrowingFaviconStore(loadError: CocoaError(.fileReadCorruptFile))
+        let manager = makeManager(
             store: store,
             downloader: RecordingFaviconDownloader { _ in Data() }
         )
@@ -426,87 +199,59 @@ final class FaviconManagerTests: XCTestCase {
 
         XCTAssertEqual(store.clearAllCallCount, 1)
         XCTAssertTrue(manager.isCacheLoaded)
-        XCTAssertNil(
-            manager.getCachedFavicon(
-                for: documentURL,
-                sizeCategory: .small,
-                fallBackToSmaller: true
-            )
-        )
     }
 
-    func testLoadCachesClearsDirtyStoreWhenDuplicateReferenceKeysExist() async throws {
-        let documentURL = URL(string: "https://dirty.example.com/page")!
-        let faviconURL = URL(string: "https://dirty.example.com/favicon.ico")!
-        let duplicateReferences = (
-            [
-                FaviconHostReference(
-                    identifier: UUID(),
-                    smallFaviconUrl: faviconURL,
-                    mediumFaviconUrl: faviconURL,
-                    host: "dirty.example.com",
-                    documentUrl: documentURL,
-                    dateCreated: Date().addingTimeInterval(-10)
-                ),
-                FaviconHostReference(
-                    identifier: UUID(),
-                    smallFaviconUrl: faviconURL,
-                    mediumFaviconUrl: faviconURL,
-                    host: "dirty.example.com",
-                    documentUrl: documentURL,
-                    dateCreated: Date()
-                ),
-            ],
-            [FaviconUrlReference]()
-        )
-        let store = DirtyFaviconStore(references: duplicateReferences)
-        let manager = FaviconManager(
+    private func makeManager(
+        store: FaviconStoring = FaviconNullStore(),
+        downloader: RecordingFaviconDownloader,
+        bookmarkManager: TestBookmarkManager? = nil
+    ) -> FaviconManager {
+        let bookmarkManager = bookmarkManager ?? TestBookmarkManager()
+        return FaviconManager(
             store: store,
-            downloader: RecordingFaviconDownloader { _ in Data() }
-        )
-
-        await manager.waitUntilLoaded()
-
-        XCTAssertEqual(store.clearAllCallCount, 1)
-        XCTAssertTrue(manager.isCacheLoaded)
-        XCTAssertNil(
-            manager.getCachedFavicon(
-                for: "dirty.example.com",
-                sizeCategory: .small,
-                fallBackToSmaller: true
-            )
+            bookmarkManager: bookmarkManager,
+            fireproofDomains: FireproofDomains(store: FireproofDomainsStore(context: nil), tld: TLD()),
+            privacyConfigurationManager: SumiStaticPrivacyConfigurationManager(),
+            faviconDownloader: downloader
         )
     }
 
-    func testDownloaderRetainsTemporaryDownloadSurfaceUntilSessionCompletes() async throws {
-        let url = URL(string: "https://example.com/favicon.png")!
-        let session = ControlledFaviconDownloadSession()
-        weak var weakSurface: RetainedDownloadSurface?
+    private func temporaryDirectory() -> URL {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
 
-        let downloader = FaviconDownloader(
-            startDownloadSession: { request, webView in
-                XCTAssertEqual(request.url, url)
-                XCTAssertNil(webView)
-
-                let surface = RetainedDownloadSurface()
-                weakSurface = surface
-                return (session, surface)
+    private static func makeFaviconDatabase(in directory: URL) async throws -> CoreDataDatabase {
+        FaviconValueTransformers.register()
+        let model = CoreDataDatabase.loadModel(from: .main, named: "Favicons")
+            ?? CoreDataDatabase.loadModel(from: Bundle(for: FaviconManagedObject.self), named: "Favicons")
+        let unwrappedModel = try XCTUnwrap(model)
+        let database = CoreDataDatabase(name: "Favicons", containerLocation: directory, model: unwrappedModel)
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            database.loadStore { _, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: ())
+                }
             }
-        )
-
-        let downloadTask = Task {
-            try await downloader.download(from: url, using: nil)
         }
+        return database
+    }
 
-        await Task.yield()
-        XCTAssertNotNil(weakSurface)
-
-        let imageData = try XCTUnwrap(Self.makeImageData(color: .systemTeal, size: 24))
-        try await session.finish(with: imageData, url: url)
-
-        let resolvedData = try await downloadTask.value
-        XCTAssertEqual(resolvedData, imageData)
-        XCTAssertNil(weakSurface)
+    private func waitUntilStoreHasReferences(_ store: FaviconStore) async throws {
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline {
+            let favicons = try await store.loadFavicons()
+            let references = try await store.loadFaviconReferences()
+            if !favicons.isEmpty, !references.0.isEmpty || !references.1.isEmpty {
+                return
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTFail("Timed out waiting for favicon store persistence")
     }
 
     private static func makeImageData(color: NSColor, size: CGFloat) -> Data? {
@@ -537,35 +282,12 @@ final class FaviconManagerTests: XCTestCase {
 }
 
 @MainActor
-private final class ControlledFaviconDownloadSession: FaviconDownloadSession {
-    weak var delegate: (any FaviconDownloadSessionDelegate)?
+private final class TestBookmarkManager: BookmarkManager {
+    var hosts = Set<String>()
 
-    func cancel(_ completionHandler: @escaping @Sendable (Data?) -> Void) {
-        completionHandler(nil)
+    func allHosts() -> Set<String> {
+        hosts
     }
-
-    func finish(with data: Data, url: URL, suggestedFilename: String = "favicon.png") async throws {
-        let response = URLResponse(
-            url: url,
-            mimeType: "image/png",
-            expectedContentLength: data.count,
-            textEncodingName: nil
-        )
-        guard let destinationURL = await delegate?.faviconDownloadSession(
-            self,
-            decideDestinationUsing: response,
-            suggestedFilename: suggestedFilename
-        ) else {
-            XCTFail("Expected download destination URL")
-            return
-        }
-
-        try data.write(to: destinationURL)
-        delegate?.faviconDownloadSessionDidFinish(self)
-    }
-}
-
-private final class RetainedDownloadSurface {
 }
 
 @MainActor
@@ -584,22 +306,21 @@ private final class RecordingFaviconDownloader: FaviconDownloading {
     }
 }
 
-private final class DirtyFaviconStore: FaviconStoring {
-    private let faviconsToLoad: [Favicon]
-    private let referencesToLoad: ([FaviconHostReference], [FaviconUrlReference])
-
+private final class ThrowingFaviconStore: FaviconStoring {
+    private let loadError: Error
     private(set) var clearAllCallCount = 0
+    private var didThrow = false
 
-    init(
-        favicons: [Favicon] = [],
-        references: ([FaviconHostReference], [FaviconUrlReference]) = ([], [])
-    ) {
-        self.faviconsToLoad = favicons
-        self.referencesToLoad = references
+    init(loadError: Error) {
+        self.loadError = loadError
     }
 
     func loadFavicons() async throws -> [Favicon] {
-        faviconsToLoad
+        if !didThrow {
+            didThrow = true
+            throw loadError
+        }
+        return []
     }
 
     func save(_ favicons: [Favicon]) async throws {
@@ -611,7 +332,7 @@ private final class DirtyFaviconStore: FaviconStoring {
     }
 
     func loadFaviconReferences() async throws -> ([FaviconHostReference], [FaviconUrlReference]) {
-        referencesToLoad
+        ([], [])
     }
 
     func save(hostReference: FaviconHostReference) async throws {
@@ -630,7 +351,7 @@ private final class DirtyFaviconStore: FaviconStoring {
         _ = urlReferences
     }
 
-    func clearAll() throws {
+    func clearAll() async throws {
         clearAllCallCount += 1
     }
 }

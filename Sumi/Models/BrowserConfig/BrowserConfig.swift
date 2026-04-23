@@ -71,8 +71,22 @@ class BrowserConfiguration {
         from template: WKUserContentController? = nil,
         keeping shouldKeepScript: ((WKUserScript) -> Bool)? = nil
     ) -> WKUserContentController {
-        let controller = WKUserContentController()
         let sourceController = template ?? webViewConfiguration.userContentController
+        if sourceController.sumiUsesDDGFaviconUserContentController {
+            if Thread.isMainThread {
+                return MainActor.assumeIsolated {
+                    SumiDDGFaviconUserContentControllerFactory.makeController()
+                }
+            }
+
+            var controller: WKUserContentController!
+            DispatchQueue.main.sync {
+                controller = SumiDDGFaviconUserContentControllerFactory.makeController()
+            }
+            return controller
+        }
+
+        let controller = WKUserContentController()
         for script in sourceController.userScripts {
             if let shouldKeepScript, shouldKeepScript(script) == false {
                 continue
