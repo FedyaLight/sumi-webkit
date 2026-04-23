@@ -109,22 +109,19 @@ final class HistoryManager: ObservableObject {
             guard let self else { return }
             do {
                 try await operation(store)
-                await refresh(notifySpecialPages: true)
+                await refresh()
             } catch {
                 RuntimeDiagnostics.emit("Error updating history: \(error)")
             }
         }
     }
 
-    func refresh(notifySpecialPages: Bool = false) async {
+    func refresh() async {
         await dataProvider.refreshData()
         revision &+= 1
-        if notifySpecialPages {
-            SumiSpecialPagesController.shared.historyDidChange()
-        }
     }
 
-    func ranges() -> [DataModel.HistoryRangeWithCount] {
+    func ranges() -> [HistoryRangeCount] {
         dataProvider.ranges
     }
 
@@ -143,16 +140,22 @@ final class HistoryManager: ObservableObject {
         dataProvider.canClearHistory
     }
 
-    func delete(query: DataModel.HistoryQueryKind) async {
+    func delete(query: HistoryQuery) async {
         await dataProvider.deleteVisits(matching: query)
         revision &+= 1
-        SumiSpecialPagesController.shared.historyDidChange()
+    }
+
+    func deleteSelection(
+        visitIDs: [VisitIdentifier],
+        domains: Set<String>
+    ) async {
+        await dataProvider.deleteSelection(visitIDs: visitIDs, domains: domains)
+        revision &+= 1
     }
 
     func clearAll() async {
         await dataProvider.clearAll()
         revision &+= 1
-        SumiSpecialPagesController.shared.historyDidChange()
     }
 
     private func scheduleDeferredHistoryCleanupIfNeeded() {

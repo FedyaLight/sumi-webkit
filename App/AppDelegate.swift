@@ -71,7 +71,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     func applicationDidBecomeActive(_ notification: Notification) {
         scheduleCloseMenuConfiguration()
         scheduleHistoryMenuConfiguration()
-        SumiSpecialPagesController.shared.notifyThemeChanged()
     }
 
     func applicationDidUpdate(_ notification: Notification) {

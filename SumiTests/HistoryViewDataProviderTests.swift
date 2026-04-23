@@ -37,28 +37,14 @@ final class HistoryViewDataProviderTests: XCTestCase {
 
         await harness.provider.refreshData()
 
-        let allBatch = await harness.provider.visitsBatch(
-            for: .rangeFilter(.all),
-            source: .user,
-            limit: 20,
-            offset: 0
-        )
-        let todayBatch = await harness.provider.visitsBatch(
-            for: .rangeFilter(.today),
-            source: .user,
-            limit: 20,
-            offset: 0
-        )
-        let yesterdayBatch = await harness.provider.visitsBatch(
-            for: .rangeFilter(.yesterday),
-            source: .user,
-            limit: 20,
-            offset: 0
-        )
+        let allItems = harness.provider.items(for: .rangeFilter(.all))
+        let todayItems = harness.provider.items(for: .rangeFilter(.today))
+        let yesterdayItems = harness.provider.items(for: .rangeFilter(.yesterday))
 
-        XCTAssertEqual(allBatch.visits.count, 3)
-        XCTAssertEqual(todayBatch.visits.count, 2)
-        XCTAssertEqual(yesterdayBatch.visits.count, 1)
+        XCTAssertEqual(allItems.count, 3)
+        XCTAssertEqual(todayItems.count, 2)
+        XCTAssertEqual(yesterdayItems.count, 1)
+        XCTAssertEqual(harness.provider.sections(for: .rangeFilter(.all)).map(\.title), ["Today", "Yesterday"])
     }
 
     func testRecentVisitedItemsOnlyIncludeToday() async throws {
@@ -116,6 +102,36 @@ final class HistoryViewDataProviderTests: XCTestCase {
 
         XCTAssertEqual(remaining.count, 1)
         XCTAssertEqual(remaining.first?.domain, "other.com")
+    }
+
+    func testSitesItemsAreSortedByDomainWithCounts() async throws {
+        let harness = try makeHarness()
+
+        try await harness.store.recordVisit(
+            url: URL(string: "https://z.example/path")!,
+            title: "Z",
+            visitedAt: date("2026-04-23T10:00:00Z"),
+            profileId: harness.profileID
+        )
+        try await harness.store.recordVisit(
+            url: URL(string: "https://a.example/path")!,
+            title: "A",
+            visitedAt: date("2026-04-23T09:00:00Z"),
+            profileId: harness.profileID
+        )
+        try await harness.store.recordVisit(
+            url: URL(string: "https://www.a.example/docs")!,
+            title: "A Docs",
+            visitedAt: date("2026-04-22T09:00:00Z"),
+            profileId: harness.profileID
+        )
+
+        await harness.provider.refreshData()
+
+        let sites = harness.provider.items(for: .rangeFilter(.allSites))
+
+        XCTAssertEqual(sites.map(\.domain), ["a.example", "z.example"])
+        XCTAssertEqual(sites.first?.visitCount, 2)
     }
 
     private func makeHarness() throws -> (

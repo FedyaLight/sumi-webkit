@@ -1593,7 +1593,7 @@ class WebViewCoordinator {
             guard let tab = resolveTab(for: tabId, in: windowState, browserManager: browserManager) else {
                 return false
             }
-            return !tab.representsSumiNonWebSurface && !tab.representsSumiEmptySurface
+            return tab.requiresPrimaryWebView
         }
     }
 

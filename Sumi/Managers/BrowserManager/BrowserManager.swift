@@ -1132,7 +1132,7 @@ class BrowserManager: ObservableObject {
             rememberSelection: rememberSelection
         )
 
-        if tab.representsSumiNonWebSurface, splitManager.isSplit(for: windowState.id) {
+        if tab.representsSumiNativeSurface, splitManager.isSplit(for: windowState.id) {
             splitManager.exitSplit(keep: .left, for: windowState.id)
         }
 
@@ -1146,7 +1146,7 @@ class BrowserManager: ObservableObject {
         stateDidChange = applyRegularTabMemoryUpdate(targetState.regularTabMemoryUpdate, to: windowState) || stateDidChange
 
         let selectedTabChanged = previousTabId != tab.id
-        let requiresMaterialization = tab.isUnloaded && !tab.representsSumiNonWebSurface
+        let requiresMaterialization = tab.isUnloaded && tab.requiresPrimaryWebView
         guard stateDidChange || selectedTabChanged || requiresMaterialization else {
             return
         }
@@ -1177,7 +1177,7 @@ class BrowserManager: ObservableObject {
         }
 
         // Load the tab in compositor if needed (reloads unloaded tabs)
-        if !tab.representsSumiNonWebSurface {
+        if tab.requiresPrimaryWebView {
             scheduleTabLoadIfNeeded(
                 tab,
                 in: windowState,

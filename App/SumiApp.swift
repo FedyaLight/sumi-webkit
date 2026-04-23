@@ -77,7 +77,6 @@ struct SumiApp: App {
         appDelegate.updateHandler = browserManager
         appDelegate.shortcutManager = keyboardShortcutManager
         browserManager.appDelegate = appDelegate
-        SumiSpecialPagesController.shared.browserManager = browserManager
         appDelegate.refreshHistoryMenu()
 
         // Required: routing and cleanup call `requireWebViewCoordinator()` after this point.

@@ -67,7 +67,7 @@ extension BrowserManager {
     }
 
     func openHistoryTab(
-        selecting range: DataModel.HistoryRange = .all,
+        selecting range: HistoryRange = .all,
         in windowState: BrowserWindowState? = nil
     ) {
         if let targetWindow = windowState ?? windowRegistry?.activeWindow {
@@ -91,7 +91,7 @@ extension BrowserManager {
 
     private func openHistoryTab(
         inResolvedWindow targetWindow: BrowserWindowState,
-        selecting range: DataModel.HistoryRange
+        selecting range: HistoryRange
     ) {
         let historyURL = SumiSurface.historySurfaceURL(rangeQuery: range.paneQueryValue)
         let newTab = openNewTab(
@@ -127,7 +127,11 @@ extension BrowserManager {
             if let currentTab = currentTab(for: windowState),
                !currentTab.representsSumiEmptySurface
             {
-                currentTab.loadURL(url)
+                if currentTab.representsSumiHistorySurface {
+                    replaceNativeHistoryTab(currentTab, with: url, in: windowState)
+                } else {
+                    currentTab.loadURL(url)
+                }
             } else {
                 let newTab = openNewTab(
                     url: url.absoluteString,
@@ -143,6 +147,26 @@ extension BrowserManager {
             newTab.name = url.host ?? url.absoluteString
         case .newWindow:
             openHistoryURLsInNewWindow([url])
+        }
+    }
+
+    private func replaceNativeHistoryTab(
+        _ tab: Tab,
+        with url: URL,
+        in windowState: BrowserWindowState
+    ) {
+        tab.name = url.host ?? url.absoluteString
+        tab.favicon = Image(systemName: "globe")
+        tab.faviconIsTemplateGlobePlaceholder = true
+        tab.loadURL(url)
+        windowState.invalidateNativeSurfaceRouting()
+        tabManager.scheduleRuntimeStatePersistence(for: tab)
+        schedulePrepareVisibleWebViews(for: windowState)
+        refreshCompositor(for: windowState)
+
+        Task { @MainActor [weak tab] in
+            guard let tab else { return }
+            await tab.fetchFaviconForVisiblePresentation()
         }
     }
 

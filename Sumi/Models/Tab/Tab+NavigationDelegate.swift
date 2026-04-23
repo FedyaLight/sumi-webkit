@@ -45,11 +45,6 @@ extension Tab: WKNavigationDelegate {
                 kind: pendingMainFrameNavigationKind == .backForward ? .backForward : .regular,
                 tab: self
             )
-            if SumiSurface.isHistorySurfaceURL(newURL) {
-                SumiSpecialPagesController.shared.registerHistoryWebView(webView)
-            } else {
-                SumiSpecialPagesController.shared.unregisterWebView(webView)
-            }
             browserManager?.extensionManager.markTabEligibleAfterCommittedNavigation(
                 self,
                 reason: "Tab.didCommitMainDocumentNavigation"

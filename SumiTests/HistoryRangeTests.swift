@@ -6,7 +6,7 @@ final class HistoryRangeTests: XCTestCase {
     func testDisplayedRangesStartTodayAndEndWithOlder() {
         let referenceDate = ISO8601DateFormatter().date(from: "2026-04-23T12:00:00Z")!
 
-        let ranges = DataModel.HistoryRange.displayedRanges(
+        let ranges = HistoryRange.displayedRanges(
             for: referenceDate,
             calendar: makeUTCCalendar()
         )
@@ -18,18 +18,25 @@ final class HistoryRangeTests: XCTestCase {
 
     func testHistorySurfaceURLRoundTripsRange() {
         let url = SumiSurface.historySurfaceURL(
-            rangeQuery: DataModel.HistoryRange.older.paneQueryValue
+            rangeQuery: HistoryRange.older.paneQueryValue
         )
 
         XCTAssertTrue(SumiSurface.isHistorySurfaceURL(url))
-        XCTAssertEqual(
-            URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                .queryItems?
-                .first(where: { $0.name == "range" })?
-                .value,
-            DataModel.HistoryRange.older.paneQueryValue
-        )
+        XCTAssertEqual(SumiSurface.historyRange(from: url), .older)
     }
+
+    func testOlderRangeStartsBeforeDisplayedWeekOnly() throws {
+        let calendar = makeUTCCalendar()
+        let referenceDate = ISO8601DateFormatter().date(from: "2026-04-23T12:00:00Z")!
+        let range = try XCTUnwrap(HistoryRange.older.dateRange(for: referenceDate, calendar: calendar))
+
+        let sixDaysAgo = ISO8601DateFormatter().date(from: "2026-04-17T00:00:00Z")!
+        let sevenDaysAgo = ISO8601DateFormatter().date(from: "2026-04-16T23:59:59Z")!
+
+        XCTAssertFalse(range.contains(sixDaysAgo))
+        XCTAssertTrue(range.contains(sevenDaysAgo))
+    }
+
     private func makeUTCCalendar() -> Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt

@@ -262,7 +262,7 @@ final class SplitViewManager: ObservableObject {
     // MARK: - Entry points
     func enterSplit(with tab: Tab, placeOn side: Side = .right, in windowState: BrowserWindowState, animate: Bool = true) {
         guard let bm = browserManager else { return }
-        if tab.representsSumiNonWebSurface {
+        if tab.representsSumiNativeSurface {
             return
         }
         let tm = bm.tabManager
@@ -283,7 +283,7 @@ final class SplitViewManager: ObservableObject {
             let oppositeId = (side == .left) ? state.rightTabId : state.leftTabId
             let opposite = oppositeId.flatMap { id in tm.tab(for: id) }
             let resolved = maybeDuplicateIfPinned(tab, anchor: opposite)
-            if resolved.representsSumiNonWebSurface {
+            if resolved.representsSumiNativeSurface {
                 return
             }
             switch side {
@@ -303,7 +303,7 @@ final class SplitViewManager: ObservableObject {
 
         let current = bm.currentTab(for: windowState) ?? tm.currentTab
         guard let current else { return }
-        if current.representsSumiNonWebSurface {
+        if current.representsSumiNativeSurface {
             return
         }
 
@@ -331,7 +331,7 @@ final class SplitViewManager: ObservableObject {
 
         let leftResolved = maybeDuplicateIfPinned(leftCandidate, anchor: rightCandidate)
         let rightResolved = maybeDuplicateIfPinned(rightCandidate, anchor: leftResolved)
-        if leftResolved.representsSumiNonWebSurface || rightResolved.representsSumiNonWebSurface {
+        if leftResolved.representsSumiNativeSurface || rightResolved.representsSumiNativeSurface {
             return
         }
 

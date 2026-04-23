@@ -7,16 +7,14 @@ final class HistoryViewDataProvider {
     private let referenceDateProvider: @MainActor () -> Date
     private let calendar: Calendar
     private let relativeDayFormatter: DateFormatter
-    private let shortDateFormatter: DateFormatter
     private let timeFormatter: DateFormatter
 
     private(set) var rawVisits: [HistoryVisitRecord] = []
     private var allItems: [HistoryListItem] = []
-    private var dayItemsByRange: [DataModel.HistoryRange: [HistoryListItem]] = [:]
-    private var dataItemsByKey: [String: DataModel.HistoryItem] = [:]
+    private var dayItemsByRange: [HistoryRange: [HistoryListItem]] = [:]
     private var itemsByDomain: [String: [HistoryVisitRecord]] = [:]
     private var refreshGeneration: UInt64 = 0
-    private var rangesCache: [DataModel.HistoryRangeWithCount] = [
+    private var rangesCache: [HistoryRangeCount] = [
         .init(id: .all, count: 0),
         .init(id: .allSites, count: 0),
     ]
@@ -38,12 +36,6 @@ final class HistoryViewDataProvider {
         relativeDayFormatter.timeStyle = .none
         self.relativeDayFormatter = relativeDayFormatter
 
-        let shortDateFormatter = DateFormatter()
-        shortDateFormatter.calendar = calendar
-        shortDateFormatter.dateStyle = .medium
-        shortDateFormatter.timeStyle = .none
-        self.shortDateFormatter = shortDateFormatter
-
         let timeFormatter = DateFormatter()
         timeFormatter.calendar = calendar
         timeFormatter.dateStyle = .none
@@ -51,7 +43,7 @@ final class HistoryViewDataProvider {
         self.timeFormatter = timeFormatter
     }
 
-    var ranges: [DataModel.HistoryRangeWithCount] {
+    var ranges: [HistoryRangeCount] {
         rangesCache
     }
 
@@ -74,28 +66,60 @@ final class HistoryViewDataProvider {
         rebuildCaches(referenceDate: referenceDateProvider())
     }
 
-    func visitsBatch(
-        for query: DataModel.HistoryQueryKind,
-        source _: DataModel.HistoryQuerySource,
-        limit: Int,
-        offset: Int
-    ) async -> DataModel.HistoryItemsBatch {
-        let items = items(matching: query)
-        guard offset < items.count else {
-            return .init(finished: true, visits: [])
-        }
-
-        let endIndex = min(offset + limit, items.count)
-        let batch = Array(items[offset..<endIndex]).compactMap { dataItemsByKey[$0.id] }
-        return .init(finished: endIndex >= items.count, visits: batch)
+    func items(for query: HistoryQuery) -> [HistoryListItem] {
+        items(matching: query)
     }
 
-    func deleteVisits(matching query: DataModel.HistoryQueryKind) async {
+    func sections(for query: HistoryQuery) -> [HistorySection] {
+        let items = items(matching: query)
+        if case .rangeFilter(.allSites) = query {
+            return [.init(id: "sites", title: HistoryRange.allSites.title, items: items)]
+        }
+
+        var sections: [HistorySection] = []
+        var itemsByTitle: [String: [HistoryListItem]] = [:]
+        for item in items {
+            let title = item.relativeDay.isEmpty ? "History" : item.relativeDay
+            if itemsByTitle[title] == nil {
+                sections.append(.init(id: title, title: title, items: []))
+            }
+            itemsByTitle[title, default: []].append(item)
+        }
+
+        return sections.map { section in
+            .init(id: section.id, title: section.title, items: itemsByTitle[section.id] ?? [])
+        }
+    }
+
+    func deleteVisits(matching query: HistoryQuery) async {
         do {
             let ids = matchingRecordIDs(for: query)
             _ = try await store.deleteVisits(withIDs: ids, profileId: currentProfileIdProvider())
         } catch {
             RuntimeDiagnostics.emit("Error deleting history visits: \(error)")
+        }
+        await refreshData()
+    }
+
+    func deleteSelection(
+        visitIDs: [VisitIdentifier],
+        domains: Set<String>
+    ) async {
+        do {
+            var ids = Set<UUID>()
+            if !visitIDs.isEmpty {
+                ids.formUnion(matchingRecordIDs(for: .visits(visitIDs)))
+            }
+            if !domains.isEmpty {
+                ids.formUnion(matchingRecordIDs(for: .domainFilter(domains)))
+            }
+            guard !ids.isEmpty else {
+                await refreshData()
+                return
+            }
+            _ = try await store.deleteVisits(withIDs: ids, profileId: currentProfileIdProvider())
+        } catch {
+            RuntimeDiagnostics.emit("Error deleting selected history visits: \(error)")
         }
         await refreshData()
     }
@@ -109,7 +133,7 @@ final class HistoryViewDataProvider {
         await refreshData()
     }
 
-    func visits(matching query: DataModel.HistoryQueryKind) async -> [HistoryVisitRecord] {
+    func visits(matching query: HistoryQuery) async -> [HistoryVisitRecord] {
         matchingVisits(for: query)
     }
 
@@ -146,7 +170,6 @@ final class HistoryViewDataProvider {
         let visibleVisits = deduplicatedVisibleVisits(from: rawVisits)
         allItems = []
         dayItemsByRange = [:]
-        dataItemsByKey = [:]
         itemsByDomain = Dictionary(grouping: rawVisits) { $0.siteDomain ?? $0.domain }
 
         let groupedByDay = Dictionary(grouping: visibleVisits) {
@@ -154,7 +177,7 @@ final class HistoryViewDataProvider {
         }
 
         for day in groupedByDay.keys.sorted(by: >) {
-            guard let range = DataModel.HistoryRange(
+            guard let range = HistoryRange(
                 date: day,
                 referenceDate: referenceDate,
                 calendar: calendar
@@ -166,14 +189,12 @@ final class HistoryViewDataProvider {
             let items = records.map { makeHistoryItem(from: $0, referenceDate: referenceDate) }
             dayItemsByRange[range, default: []].append(contentsOf: items)
             allItems.append(contentsOf: items)
-            items.forEach { dataItemsByKey[$0.id] = makeDataItem(from: $0) }
         }
 
         let sitesItems = makeSitesItems()
         dayItemsByRange[.allSites] = sitesItems
-        sitesItems.forEach { dataItemsByKey[$0.id] = makeDataItem(from: $0) }
 
-        let displayedRanges = DataModel.HistoryRange.displayedRanges(
+        let displayedRanges = HistoryRange.displayedRanges(
             for: referenceDate,
             calendar: calendar
         )
@@ -184,14 +205,14 @@ final class HistoryViewDataProvider {
         )
 
         var computedRanges = trimmedRanges.map {
-            DataModel.HistoryRangeWithCount(id: $0, count: dayItemsByRange[$0]?.count ?? 0)
+            HistoryRangeCount(id: $0, count: dayItemsByRange[$0]?.count ?? 0)
         }
         computedRanges.insert(.init(id: .all, count: allItems.count), at: 0)
         computedRanges.append(.init(id: .allSites, count: sitesItems.count))
         rangesCache = computedRanges
     }
 
-    private func items(matching query: DataModel.HistoryQueryKind) -> [HistoryListItem] {
+    private func items(matching query: HistoryQuery) -> [HistoryListItem] {
         switch query {
         case .rangeFilter(.all):
             return allItems
@@ -222,7 +243,7 @@ final class HistoryViewDataProvider {
         }
     }
 
-    private func matchingVisits(for query: DataModel.HistoryQueryKind) -> [HistoryVisitRecord] {
+    private func matchingVisits(for query: HistoryQuery) -> [HistoryVisitRecord] {
         switch query {
         case .rangeFilter(.all):
             return rawVisits
@@ -255,7 +276,7 @@ final class HistoryViewDataProvider {
         }
     }
 
-    private func matchingRecordIDs(for query: DataModel.HistoryQueryKind) -> Set<UUID> {
+    private func matchingRecordIDs(for query: HistoryQuery) -> Set<UUID> {
         Set(matchingVisits(for: query).map(\.id))
     }
 
@@ -294,6 +315,7 @@ final class HistoryViewDataProvider {
             visitedAt: visit.visitedAt,
             relativeDay: relativeDayString(for: visit.visitedAt, referenceDate: referenceDate),
             timeText: timeFormatter.string(from: visit.visitedAt),
+            visitCount: 1,
             isSiteAggregate: false
         )
     }
@@ -314,31 +336,10 @@ final class HistoryViewDataProvider {
                 visitedAt: nil,
                 relativeDay: "",
                 timeText: "",
+                visitCount: itemsByDomain[domain]?.count ?? 0,
                 isSiteAggregate: true
             )
         }
-    }
-
-    private func makeDataItem(from item: HistoryListItem) -> DataModel.HistoryItem {
-        let favicon = item.isSiteAggregate == false
-            ? SumiHistoryFaviconURL.url(for: item.url).map {
-                DataModel.Favicon(maxAvailableSize: 64, src: $0.absoluteString)
-            }
-            : SumiHistoryFaviconURL.url(for: item.url).map {
-                DataModel.Favicon(maxAvailableSize: 64, src: $0.absoluteString)
-            }
-
-        return DataModel.HistoryItem(
-            id: item.id,
-            url: item.url.absoluteString,
-            title: item.displayTitle,
-            domain: item.domain,
-            etldPlusOne: item.siteDomain,
-            dateRelativeDay: item.relativeDay,
-            dateShort: item.visitedAt.map(shortDateFormatter.string(from:)) ?? "",
-            dateTimeOfDay: item.timeText,
-            favicon: favicon
-        )
     }
 
     private func bestTitle(for records: [HistoryVisitRecord], domain: String) -> String {
@@ -405,14 +406,14 @@ final class HistoryViewDataProvider {
         referenceDate: Date
     ) -> String {
         if calendar.isDate(date, inSameDayAs: referenceDate) {
-            return DataModel.HistoryRange.today.title
+            return HistoryRange.today.title
         }
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: referenceDate),
            calendar.isDate(date, inSameDayAs: yesterday)
         {
-            return DataModel.HistoryRange.yesterday.title
+            return HistoryRange.yesterday.title
         }
-        if let range = DataModel.HistoryRange(
+        if let range = HistoryRange(
             date: date,
             referenceDate: referenceDate,
             calendar: calendar
