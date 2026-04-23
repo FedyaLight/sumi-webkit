@@ -30,7 +30,6 @@ final class DownloadsPopoverStateTests: XCTestCase {
         let manager = DownloadManager()
         let item = DownloadItem(
             downloadURL: URL(string: "https://example.com/retry.bin")!,
-            websiteURL: nil,
             fileName: "retry.bin",
             state: .failed,
             error: .failed(message: "Network error", resumeData: Data([1]), isRetryable: true)
@@ -44,7 +43,6 @@ final class DownloadsPopoverStateTests: XCTestCase {
         let manager = DownloadManager()
         let active = manager.beginExternalDownload(
             originalURL: URL(string: "https://example.com/active.bin")!,
-            websiteURL: nil,
             suggestedFilename: "active.bin",
             sourceProgress: Progress(totalUnitCount: -1)
         )
@@ -73,7 +71,6 @@ final class DownloadsPopoverStateTests: XCTestCase {
         let oneItemManager = DownloadManager()
         _ = oneItemManager.beginExternalDownload(
             originalURL: URL(string: "https://example.com/active.bin")!,
-            websiteURL: nil,
             suggestedFilename: "active.bin",
             sourceProgress: Progress(totalUnitCount: 100)
         )
@@ -89,7 +86,6 @@ final class DownloadsPopoverStateTests: XCTestCase {
         let oneItemManager = DownloadManager()
         _ = oneItemManager.beginExternalDownload(
             originalURL: URL(string: "https://example.com/one.bin")!,
-            websiteURL: nil,
             suggestedFilename: "one.bin",
             sourceProgress: Progress(totalUnitCount: 100)
         )
@@ -98,7 +94,6 @@ final class DownloadsPopoverStateTests: XCTestCase {
         for index in 0..<2 {
             _ = twoItemManager.beginExternalDownload(
                 originalURL: URL(string: "https://example.com/two-\(index).bin")!,
-                websiteURL: nil,
                 suggestedFilename: "two-\(index).bin",
                 sourceProgress: Progress(totalUnitCount: 100)
             )
@@ -108,7 +103,6 @@ final class DownloadsPopoverStateTests: XCTestCase {
         for index in 0..<20 {
             _ = cappedManager.beginExternalDownload(
                 originalURL: URL(string: "https://example.com/capped-\(index).bin")!,
-                websiteURL: nil,
                 suggestedFilename: "capped-\(index).bin",
                 sourceProgress: Progress(totalUnitCount: 100)
             )

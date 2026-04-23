@@ -406,10 +406,6 @@ final class SidebarInteractionState {
         isKindActive(.contextMenu)
     }
 
-    var suppressesSidebarAffordances: Bool {
-        activeKinds.isEmpty == false
-    }
-
     var freezesSidebarHoverState: Bool {
         activeKinds.contains(where: \.pinsCollapsedSidebar)
     }

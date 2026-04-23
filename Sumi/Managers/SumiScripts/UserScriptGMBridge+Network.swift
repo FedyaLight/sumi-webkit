@@ -196,12 +196,11 @@ extension UserScriptGMBridge {
             }
         }
         activeTasks[requestId] = task
-        Task { @MainActor [weak self, weak task, weak webView] in
+        Task { @MainActor [weak self, weak task] in
             guard let self, let task else { return }
             if let downloadManager {
                 let item = downloadManager.beginExternalDownload(
                     originalURL: url,
-                    websiteURL: webView?.url,
                     suggestedFilename: filename,
                     sourceProgress: task.progress
                 )

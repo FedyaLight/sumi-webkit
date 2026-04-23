@@ -33,30 +33,16 @@ final class DownloadManager: ObservableObject {
         items.contains { !$0.isActive }
     }
 
-    var activeItems: [DownloadItem] {
-        items.filter(\.isActive)
-    }
-
-    var completedItems: [DownloadItem] {
-        items.filter { $0.state == .completed }
-    }
-
-    var failedItems: [DownloadItem] {
-        items.filter { $0.state == .failed }
-    }
-
     @discardableResult
     func addDownload(
         _ download: WKDownload,
         originalURL: URL,
-        websiteURL: URL? = nil,
         suggestedFilename: String,
         flyAnimationOriginalRect: NSRect? = nil
     ) -> DownloadItem {
         let item = coordinator.start(
             download: download,
             originalURL: originalURL,
-            websiteURL: websiteURL,
             suggestedFilename: suggestedFilename,
             flyAnimationOriginalRect: flyAnimationOriginalRect
         )
@@ -77,7 +63,6 @@ final class DownloadManager: ObservableObject {
         progress.fileURL = tempURL
         let item = DownloadItem(
             downloadURL: originatingURL,
-            websiteURL: originatingURL,
             fileName: destinationURL.lastPathComponent,
             destinationURL: destinationURL,
             tempURL: tempURL,
@@ -115,7 +100,6 @@ final class DownloadManager: ObservableObject {
 
     func beginExternalDownload(
         originalURL: URL,
-        websiteURL: URL?,
         suggestedFilename: String,
         sourceProgress: Progress?,
         flyAnimationOriginalRect: NSRect? = nil
@@ -133,7 +117,6 @@ final class DownloadManager: ObservableObject {
 
         let item = DownloadItem(
             downloadURL: originalURL,
-            websiteURL: websiteURL,
             fileName: destinationURL.lastPathComponent,
             destinationURL: destinationURL,
             state: .downloading,

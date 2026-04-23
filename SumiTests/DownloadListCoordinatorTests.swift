@@ -10,19 +10,15 @@ final class DownloadListCoordinatorTests: XCTestCase {
 
         let item = DownloadItem(
             downloadURL: URL(string: "https://example.com/a.txt")!,
-            websiteURL: nil,
             fileName: "a.txt",
             state: .pending
         )
-        coordinator.track(item)
-
-        coordinator.didUpdateProgress(
-            totalUnitCount: 100,
-            completedUnitCount: 40,
-            throughput: 8,
-            estimatedTimeRemaining: 7,
-            for: item
-        )
+        let progress = DownloadProgress(totalUnitCount: 100)
+        coordinator.track(item, progress: progress)
+        progress.updateProgress(totalUnitCount: 100, completedUnitCount: 40)
+        progress.throughput = 8
+        progress.estimatedTimeRemaining = 7
+        coordinator.didUpdateProgress(progress, for: item)
 
         XCTAssertEqual(coordinator.activeCount, 1)
         XCTAssertEqual(coordinator.combinedProgressFraction ?? 0, 0.4, accuracy: 0.001)
@@ -34,22 +30,16 @@ final class DownloadListCoordinatorTests: XCTestCase {
         let coordinator = DownloadListCoordinator()
         let item = DownloadItem(
             downloadURL: URL(string: "https://example.com/b.txt")!,
-            websiteURL: nil,
             fileName: "b.txt",
             destinationURL: try makeExistingFile(named: "b.txt"),
             state: .pending,
             completedUnitCount: 0,
             totalUnitCount: 4
         )
-        coordinator.track(item)
-
-        coordinator.didUpdateProgress(
-            totalUnitCount: 4,
-            completedUnitCount: 4,
-            throughput: nil,
-            estimatedTimeRemaining: nil,
-            for: item
-        )
+        let progress = DownloadProgress(totalUnitCount: 4)
+        coordinator.track(item, progress: progress)
+        progress.updateProgress(totalUnitCount: 4, completedUnitCount: 4)
+        coordinator.didUpdateProgress(progress, for: item)
         coordinator.didFinish(item, finalURL: try makeExistingFile(named: "b-final.txt"))
 
         XCTAssertEqual(item.state, .completed)
@@ -58,11 +48,10 @@ final class DownloadListCoordinatorTests: XCTestCase {
 
         let failed = DownloadItem(
             downloadURL: URL(string: "https://example.com/c.txt")!,
-            websiteURL: nil,
             fileName: "c.txt",
             state: .downloading
         )
-        coordinator.track(failed)
+        coordinator.track(failed, progress: DownloadProgress(totalUnitCount: -1))
         coordinator.didFail(
             failed,
             error: .failed(message: "Failed", resumeData: Data([9]), isRetryable: true)
@@ -76,7 +65,6 @@ final class DownloadListCoordinatorTests: XCTestCase {
         let coordinator = DownloadListCoordinator()
         let item = DownloadItem(
             downloadURL: URL(string: "https://example.com/progress.bin")!,
-            websiteURL: nil,
             fileName: "progress.bin"
         )
         let progress = DownloadProgress(totalUnitCount: 100)
@@ -104,7 +92,6 @@ final class DownloadListCoordinatorTests: XCTestCase {
     func testActiveStatusTextUsesCompactByteProgressFormat() throws {
         let item = DownloadItem(
             downloadURL: URL(string: "https://example.com/compact.bin")!,
-            websiteURL: nil,
             fileName: "compact.bin",
             state: .downloading,
             completedUnitCount: 25_800_000,
@@ -126,20 +113,17 @@ final class DownloadListCoordinatorTests: XCTestCase {
         let cancelledTempURL = try makeExistingFile(named: "cancelled.txt.sumiload")
         let completed = DownloadItem(
             downloadURL: URL(string: "https://example.com/complete.txt")!,
-            websiteURL: nil,
             fileName: "complete.txt",
             destinationURL: completedURL,
             state: .completed
         )
         let active = DownloadItem(
             downloadURL: URL(string: "https://example.com/active.txt")!,
-            websiteURL: nil,
             fileName: "active.txt",
             state: .downloading
         )
         let failed = DownloadItem(
             downloadURL: URL(string: "https://example.com/failed.txt")!,
-            websiteURL: nil,
             fileName: "failed.txt",
             tempURL: failedTempURL,
             state: .failed,
@@ -147,14 +131,22 @@ final class DownloadListCoordinatorTests: XCTestCase {
         )
         let cancelled = DownloadItem(
             downloadURL: URL(string: "https://example.com/cancelled.txt")!,
-            websiteURL: nil,
             fileName: "cancelled.txt",
             tempURL: cancelledTempURL,
             state: .cancelled,
             error: .cancelled
         )
 
-        [completed, active, failed, cancelled].forEach(coordinator.track)
+        coordinator.track(completed, progress: DownloadProgress(totalUnitCount: 1))
+        coordinator.didFinish(completed, finalURL: completedURL)
+        coordinator.track(active, progress: DownloadProgress(totalUnitCount: -1))
+        coordinator.track(failed, progress: DownloadProgress(totalUnitCount: -1))
+        coordinator.didFail(
+            failed,
+            error: .failed(message: "Failed", resumeData: nil, isRetryable: false)
+        )
+        coordinator.track(cancelled, progress: DownloadProgress(totalUnitCount: -1))
+        coordinator.didFail(cancelled, error: .cancelled)
 
         coordinator.clearInactiveDownloads()
 

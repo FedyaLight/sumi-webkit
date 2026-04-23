@@ -43,18 +43,12 @@ enum DownloadError: Error, Equatable, Codable, LocalizedError {
     }
 }
 
-enum DownloadDestination: Equatable {
-    case automatic
-    case preset(URL)
-}
-
 @MainActor
 final class DownloadItem: ObservableObject, Identifiable {
     let id: UUID
     let added: Date
     @Published var modified: Date
     let downloadURL: URL
-    let websiteURL: URL?
 
     @Published var fileName: String {
         didSet { touchIfChanged(fileName, oldValue) }
@@ -103,7 +97,6 @@ final class DownloadItem: ObservableObject, Identifiable {
         added: Date = Date(),
         modified: Date = Date(),
         downloadURL: URL,
-        websiteURL: URL?,
         fileName: String,
         destinationURL: URL? = nil,
         tempURL: URL? = nil,
@@ -119,7 +112,6 @@ final class DownloadItem: ObservableObject, Identifiable {
         self.added = added
         self.modified = modified
         self.downloadURL = downloadURL
-        self.websiteURL = websiteURL
         self.fileName = fileName
         self.destinationURL = destinationURL
         self.tempURL = tempURL

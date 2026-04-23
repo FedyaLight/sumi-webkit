@@ -771,12 +771,14 @@ final class SidebarColumnViewControllerTests: XCTestCase {
             path: "test.dialog"
         )
 
-        XCTAssertTrue(interactionState.suppressesSidebarAffordances)
+        XCTAssertTrue(interactionState.freezesSidebarHoverState)
+        XCTAssertFalse(interactionState.allowsSidebarSwipeCapture)
         XCTAssertTrue(coordinator.hasPinnedTransientUI(for: coordinator.windowID))
 
         coordinator.endSession(dialogToken)
 
-        XCTAssertFalse(interactionState.suppressesSidebarAffordances)
+        XCTAssertFalse(interactionState.freezesSidebarHoverState)
+        XCTAssertTrue(interactionState.allowsSidebarSwipeCapture)
         XCTAssertFalse(coordinator.hasPinnedTransientUI(for: coordinator.windowID))
     }
 
@@ -1066,7 +1068,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         drainMainRunLoop()
 
         XCTAssertTrue(interactionState.allowsSidebarDragSourceHitTesting)
-        XCTAssertFalse(interactionState.suppressesSidebarAffordances)
+        XCTAssertTrue(interactionState.allowsSidebarSwipeCapture)
         XCTAssertTrue(inputRecoveryReasons.isEmpty)
         XCTAssertEqual(interactiveOwnerRecoveryWindows.count, 2)
         XCTAssertTrue(interactiveOwnerRecoveryWindows.allSatisfy { $0 === sourceWindow })

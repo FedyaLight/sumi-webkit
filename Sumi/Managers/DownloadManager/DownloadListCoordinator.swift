@@ -55,13 +55,11 @@ final class DownloadListCoordinator {
     func start(
         download: WKDownload,
         originalURL: URL,
-        websiteURL: URL?,
         suggestedFilename: String,
         flyAnimationOriginalRect: NSRect?
     ) -> DownloadItem {
         let item = DownloadItem(
             downloadURL: originalURL,
-            websiteURL: websiteURL,
             fileName: DownloadFileUtilities.sanitizedFilename(suggestedFilename)
         )
         upsert(item)
@@ -79,11 +77,6 @@ final class DownloadListCoordinator {
         )
         tasks[item.id] = task
         task.start()
-    }
-
-    func track(_ item: DownloadItem) {
-        upsert(item)
-        notify()
     }
 
     func track(_ item: DownloadItem, progress: DownloadProgress) {
@@ -169,35 +162,12 @@ final class DownloadListCoordinator {
         notify()
     }
 
-    func didReceiveResponse(_ response: URLResponse, for item: DownloadItem) {
-        item.state = .downloading
-        if response.expectedContentLength > 0 {
-            item.totalUnitCount = response.expectedContentLength
-        }
-        notify()
-    }
-
     func didUpdateProgress(_ progress: Progress, for item: DownloadItem) {
         if let downloadProgress = progress as? DownloadProgress {
             item.progress = downloadProgress
         }
         item.state = .downloading
         mirrorProgress(progress, to: item)
-        notify()
-    }
-
-    func didUpdateProgress(
-        totalUnitCount: Int64,
-        completedUnitCount: Int64,
-        throughput: Int?,
-        estimatedTimeRemaining: TimeInterval?,
-        for item: DownloadItem
-    ) {
-        item.state = .downloading
-        item.totalUnitCount = totalUnitCount
-        item.completedUnitCount = completedUnitCount
-        item.throughput = throughput
-        item.estimatedTimeRemaining = estimatedTimeRemaining
         notify()
     }
 
@@ -233,16 +203,6 @@ final class DownloadListCoordinator {
         tasks[item.id] = nil
         progressSubscriptions[item.id] = nil
         releaseReservation(for: item)
-        notify()
-    }
-
-    func remove(_ item: DownloadItem) {
-        tasks[item.id]?.cancel()
-        tasks[item.id] = nil
-        progressSubscriptions[item.id] = nil
-        releaseReservation(for: item)
-        cleanupTemporaryFile(for: item)
-        items.removeAll { $0.id == item.id }
         notify()
     }
 

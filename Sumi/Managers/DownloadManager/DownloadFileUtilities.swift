@@ -127,15 +127,6 @@ enum DownloadFileUtilities {
         }
     }
 
-    static func fileType(from response: URLResponse?, filename: String) -> UTType? {
-        if let mimeType = response?.mimeType?.components(separatedBy: ";").first,
-           let type = UTType(mimeType: mimeType) {
-            return type
-        }
-        let ext = (filename as NSString).pathExtension
-        return ext.isEmpty ? nil : UTType(filenameExtension: ext)
-    }
-
     static func openDownloadsFolder(selecting itemToSelect: URL? = nil) {
         let folder = DownloadsDirectoryResolver.resolvedDownloadsDirectory()
         if let itemToSelect,

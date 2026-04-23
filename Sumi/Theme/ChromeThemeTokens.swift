@@ -18,8 +18,6 @@ struct ChromeThemeTokens {
     let separator: Color
     let dropGuide: Color
     let dropGuideBackground: Color
-    /// Neutral lift from the chrome base (`elevatedNeutral`): sidebars, peek-adjacent chrome, in-flow menu panels (e.g. sidebar history strip). Not for floating command/hub-style surfaces.
-    let panelBackground: Color
     let toastBackground: Color
     let toastBorder: Color
     let toastPrimaryText: Color
@@ -32,7 +30,7 @@ struct ChromeThemeTokens {
     let buttonPrimaryText: Color
     let buttonSecondaryBackground: Color
     let windowBackground: Color
-    /// Opaque floating surface (command palette, URL hub/identity popovers, theme picker, modal peek cards). Flat white / near-black — not the same as ``panelBackground``.
+    /// Opaque floating surface (command palette, URL hub/identity popovers, theme picker, modal peek cards). Flat white / near-black.
     let commandPaletteBackground: Color
     /// Secondary fills inside the palette (e.g. “Tab” chip, favicon wells).
     let commandPaletteChipBackground: Color
