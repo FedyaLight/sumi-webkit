@@ -139,6 +139,9 @@ extension UserScriptGMBridge {
         if let requestId = args["requestId"] as? String {
             activeTasks[requestId]?.cancel()
             activeTasks.removeValue(forKey: requestId)
+            if let item = activeDownloadItems.removeValue(forKey: requestId) {
+                downloadManager?.cancelExternalDownload(item)
+            }
         }
     }
 
@@ -156,48 +159,56 @@ extension UserScriptGMBridge {
             ?? "download"
         let requestId = callbackId.isEmpty ? UUID().uuidString : callbackId
         let task = URLSession.shared.downloadTask(with: url) { [weak self, weak webView] tempURL, response, error in
-            guard let self else { return }
-            self.activeTasks.removeValue(forKey: requestId)
+            Task { @MainActor [weak self, weak webView] in
+                guard let self else { return }
+                self.activeTasks.removeValue(forKey: requestId)
+                let item = self.activeDownloadItems.removeValue(forKey: requestId)
 
-            if let error {
-                self.rejectCallback(requestId, error: error.localizedDescription, webView: webView)
-                return
-            }
-            guard let tempURL else {
-                self.rejectCallback(requestId, error: "No downloaded file", webView: webView)
-                return
-            }
+                if let error {
+                    self.downloadManager?.failExternalDownload(item, error: error)
+                    self.rejectCallback(requestId, error: error.localizedDescription, webView: webView)
+                    return
+                }
+                guard let tempURL else {
+                    let error = URLError(.cannotCreateFile)
+                    self.downloadManager?.failExternalDownload(item, error: error)
+                    self.rejectCallback(requestId, error: "No downloaded file", webView: webView)
+                    return
+                }
 
-            let destination = Self.uniqueDownloadDestination(filename: filename)
-            do {
-                try FileManager.default.moveItem(at: tempURL, to: destination)
-                self.resolveCallback(requestId, result: [
-                    "status": 200,
-                    "filename": destination.path,
-                    "finalUrl": response?.url?.absoluteString ?? url.absoluteString
-                ], webView: webView)
-            } catch {
-                self.rejectCallback(requestId, error: error.localizedDescription, webView: webView)
+                guard let item, let downloadManager = self.downloadManager else {
+                    self.rejectCallback(requestId, error: "Downloads manager unavailable", webView: webView)
+                    return
+                }
+
+                downloadManager.finishExternalDownload(item, temporaryURL: tempURL, response: response) { result in
+                    switch result {
+                    case .success(let destination):
+                        self.resolveCallback(requestId, result: [
+                            "status": 200,
+                            "filename": destination.path,
+                            "finalUrl": response?.url?.absoluteString ?? url.absoluteString
+                        ], webView: webView)
+                    case .failure(let error):
+                        self.rejectCallback(requestId, error: error.localizedDescription, webView: webView)
+                    }
+                }
             }
         }
         activeTasks[requestId] = task
-        task.resume()
-    }
-
-    private static func uniqueDownloadDestination(filename: String) -> URL {
-        let downloads = SumiDownloadsDirectoryResolver.resolvedDownloadsDirectory()
-        let cleanName = filename.replacingOccurrences(of: "/", with: "_")
-        var destination = downloads.appendingPathComponent(cleanName)
-        let ext = destination.pathExtension
-        let base = destination.deletingPathExtension().lastPathComponent
-        var counter = 1
-        while FileManager.default.fileExists(atPath: destination.path) {
-            destination = downloads.appendingPathComponent(
-                "\(base) (\(counter))" + (ext.isEmpty ? "" : ".\(ext)")
-            )
-            counter += 1
+        Task { @MainActor [weak self, weak task, weak webView] in
+            guard let self, let task else { return }
+            if let downloadManager {
+                let item = downloadManager.beginExternalDownload(
+                    originalURL: url,
+                    websiteURL: webView?.url,
+                    suggestedFilename: filename,
+                    sourceProgress: task.progress
+                )
+                self.activeDownloadItems[requestId] = item
+            }
+            task.resume()
         }
-        return destination
     }
 
     func sendXHREvent(_ event: String, callbackId: String, response: [String: Any], webView: WKWebView?) {

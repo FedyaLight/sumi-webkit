@@ -90,8 +90,6 @@ final class WindowSessionServiceTests: XCTestCase {
                 for: BrowserWindowState.sidebarDefaultWidth
             )),
             isSidebarVisible: true,
-            isSidebarMenuVisible: false,
-            selectedSidebarMenuSection: .downloads,
             urlBarDraft: URLBarDraftState(text: "", navigateCurrentTab: false),
             splitSession: nil
         )

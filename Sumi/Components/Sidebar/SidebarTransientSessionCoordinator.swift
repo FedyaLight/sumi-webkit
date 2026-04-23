@@ -94,11 +94,12 @@ enum SidebarTransientUIKind: String, CaseIterable {
     case themePicker
     case emojiPopover
     case sharingPicker
+    case downloadsPopover
     case drag
 
     var blocksSidebarDragSources: Bool {
         switch self {
-        case .contextMenu, .dialog, .themePicker, .emojiPopover, .sharingPicker:
+        case .contextMenu, .dialog, .themePicker, .emojiPopover, .sharingPicker, .downloadsPopover:
             return true
         case .drag:
             return false
@@ -581,7 +582,7 @@ final class SidebarTransientSessionCoordinator {
         switch kind {
         case .contextMenu:
             return pendingMenuActionRecoveryTier
-        case .dialog, .themePicker, .emojiPopover, .sharingPicker, .drag:
+        case .dialog, .themePicker, .emojiPopover, .sharingPicker, .downloadsPopover, .drag:
             return .soft
         }
     }

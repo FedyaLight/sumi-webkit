@@ -122,10 +122,6 @@ struct SpacesSideBarView: View {
     @Environment(CommandPalette.self) var commandPalette
 
     @State private var isSidebarHovered: Bool = false
-    @State private var isMenuButtonHovered = false
-    @State private var isDownloadsHovered = false
-    @State private var showDownloadsMenu = false
-    @State private var animateDownloadsMenu: Bool = false
     @State private var transitionState = SpaceSidebarTransitionState()
     @State private var transitionTask: Task<Void, Never>?
     @ObservedObject private var dragState = SidebarDragState.shared
@@ -146,9 +142,6 @@ struct SpacesSideBarView: View {
             .onChange(of: windowState.isSidebarVisible) { _, _ in
                 recordUITestSidebarState(reason: "sidebarVisibilityChanged")
             }
-            .onChange(of: windowState.isSidebarMenuVisible) { _, _ in
-                recordUITestSidebarState(reason: "sidebarMenuVisibilityChanged")
-            }
             .onChange(of: transitionState) { _, _ in
                 recordUITestSidebarState(reason: "transitionStateChanged")
             }
@@ -163,21 +156,13 @@ struct SpacesSideBarView: View {
     // MARK: - Main Content
 
     private var sidebarContent: some View {
-        ZStack {
-            if windowState.isSidebarMenuVisible {
-                SidebarMenu()
-                    .transition(menuTransition)
-            } else {
-                mainSidebarContent
-                    .transition(.opacity)
-                    .overlay {
-                        ZStack {
-                            SidebarGlobalDragOverlay()
-                                .allowsHitTesting(true)
-                        }
-                    }
+        mainSidebarContent
+            .overlay {
+                ZStack {
+                    SidebarGlobalDragOverlay()
+                        .allowsHitTesting(true)
+                }
             }
-        }
     }
 
     private func recordUITestSidebarState(reason: String) {
@@ -185,7 +170,7 @@ struct SpacesSideBarView: View {
             "startupSidebarView",
             dragItemID: nil,
             ownerDescription: "SpacesSideBarView",
-            details: "reason=\(reason) spaces=\(availableSpaces.count) currentSpace=\(windowState.currentSpaceId?.uuidString ?? "nil") currentTab=\(windowState.currentTabId?.uuidString ?? "nil") currentShortcutPin=\(windowState.currentShortcutPinId?.uuidString ?? "nil") sidebarVisible=\(windowState.isSidebarVisible) sidebarMenuVisible=\(windowState.isSidebarMenuVisible) presentationMode=\(String(describing: sidebarPresentationContext.mode)) transitionPhase=\(transitionState.phase) transitionTrigger=\(transitionState.trigger.map(String.init(describing:)) ?? "nil") transitionSource=\(transitionState.sourceSpaceId?.uuidString ?? "nil") transitionDestination=\(transitionState.destinationSpaceId?.uuidString ?? "nil") transitionProgress=\(String(format: "%.3f", transitionState.progress))"
+            details: "reason=\(reason) spaces=\(availableSpaces.count) currentSpace=\(windowState.currentSpaceId?.uuidString ?? "nil") currentTab=\(windowState.currentTabId?.uuidString ?? "nil") currentShortcutPin=\(windowState.currentShortcutPinId?.uuidString ?? "nil") sidebarVisible=\(windowState.isSidebarVisible) presentationMode=\(String(describing: sidebarPresentationContext.mode)) transitionPhase=\(transitionState.phase) transitionTrigger=\(transitionState.trigger.map(String.init(describing:)) ?? "nil") transitionSource=\(transitionState.sourceSpaceId?.uuidString ?? "nil") transitionDestination=\(transitionState.destinationSpaceId?.uuidString ?? "nil") transitionProgress=\(String(format: "%.3f", transitionState.progress))"
         )
     }
 
@@ -218,21 +203,14 @@ struct SpacesSideBarView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             VStack(spacing: 8) {
-                if showDownloadsMenu {
-                    downloadsMenuOverlay
-                }
-
                 MediaControlsView()
                     .environmentObject(browserManager)
                     .environment(windowState)
 
                 SidebarBottomBar(
-                    isMenuButtonHovered: $isMenuButtonHovered,
                     visualSelectedSpaceId: visualSpaceId,
-                    onMenuTap: handleMenuTap,
                     onNewSpaceTap: showSpaceCreationDialog,
-                    onSelectSpace: { switchSpace(to: $0, spaces: spaces) },
-                    onMenuHover: handleMenuHover
+                    onSelectSpace: { switchSpace(to: $0, spaces: spaces) }
                 )
                 .environmentObject(browserManager)
                 .environment(windowState)
@@ -837,21 +815,6 @@ struct SpacesSideBarView: View {
         .padding()
     }
 
-    // MARK: - Downloads Menu
-
-    private var downloadsMenuOverlay: some View {
-        SidebarMenuHoverDownloads(isVisible: animateDownloadsMenu)
-            .onHover { isHovered in
-                isDownloadsHovered = isHovered
-                if isHovered {
-                    showDownloadsMenu = true
-                    animateDownloadsMenu = true
-                } else {
-                    hideMenuAfterDelay()
-                }
-            }
-    }
-
     // MARK: - Context Menu
 
     private func sidebarContextMenuEntries() -> [SidebarContextMenuEntry] {
@@ -908,47 +871,9 @@ struct SpacesSideBarView: View {
 
     // MARK: - Helper Functions
 
-    private func handleMenuTap() {
-        withAnimation(.easeInOut(duration: 0.2)) {
-            windowState.isSidebarMenuVisible = true
-            let previousWidth = windowState.sidebarWidth
-            windowState.savedSidebarWidth = previousWidth
-            let newWidth: CGFloat = 400
-            windowState.sidebarWidth = newWidth
-            windowState.sidebarContentWidth = BrowserWindowState.sidebarContentWidth(for: newWidth)
-        }
-        browserManager.persistWindowSession(for: windowState)
-    }
-
-    private func handleMenuHover(_ isHovered: Bool) {
-        guard !sidebarInteractionState.suppressesSidebarAffordances else { return }
-        if isHovered {
-            showDownloadsMenu = true
-            animateDownloadsMenu = true
-        } else {
-            hideMenuAfterDelay()
-        }
-    }
-
-    private func hideMenuAfterDelay() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            guard !sidebarInteractionState.suppressesSidebarAffordances else { return }
-            if !isMenuButtonHovered, !isDownloadsHovered {
-                animateDownloadsMenu = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    guard !sidebarInteractionState.suppressesSidebarAffordances else { return }
-                    showDownloadsMenu = false
-                }
-            }
-        }
-    }
-
     private func handleSidebarContextMenuVisibility(_ presented: Bool) {
         if presented {
-            isMenuButtonHovered = false
-            isDownloadsHovered = false
-            showDownloadsMenu = false
-            animateDownloadsMenu = false
+            browserManager.closeDownloadsPopover(in: windowState)
         }
     }
 
@@ -1122,9 +1047,4 @@ struct SpacesSideBarView: View {
     }
 
     // MARK: - Computed Properties
-
-    private var menuTransition: AnyTransition {
-        .move(edge: .leading)
-            .combined(with: .opacity)
-    }
 }

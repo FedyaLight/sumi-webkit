@@ -21,6 +21,7 @@ final class UserScriptInjector {
     private var activeBrokers: [UUID: SumiUserScriptMessageBroker] = [:]
 
     weak var tabHandler: SumiScriptsTabHandler?
+    weak var browserManager: BrowserManager?
 
     // MARK: - Public API
 
@@ -43,7 +44,8 @@ final class UserScriptInjector {
 
         let broker = SumiUserScriptMessageBroker(
             profileId: profileId,
-            tabHandler: tabHandler
+            tabHandler: tabHandler,
+            downloadManager: browserManager?.downloadManager
         )
         var didRegisterPrivilegedBridge = false
 

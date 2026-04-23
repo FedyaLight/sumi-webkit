@@ -5,10 +5,6 @@ enum SplitOrientation: String, Codable, Hashable {
     case vertical
 }
 
-enum WindowSidebarMenuSection: String, Codable, Hashable {
-    case downloads
-}
-
 enum CommandPalettePresentationReason: String, Codable, Equatable, Hashable {
     case none
     case emptySpace
@@ -52,8 +48,6 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
     var savedSidebarWidth: Double
     var sidebarContentWidth: Double
     var isSidebarVisible: Bool
-    var isSidebarMenuVisible: Bool
-    var selectedSidebarMenuSection: WindowSidebarMenuSection
     var urlBarDraft: URLBarDraftState
     var splitSession: SplitSessionSnapshot?
 }

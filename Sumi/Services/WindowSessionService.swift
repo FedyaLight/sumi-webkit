@@ -376,7 +376,7 @@ final class WindowSessionService {
             "startupSessionRestore",
             dragItemID: nil,
             ownerDescription: "WindowSessionService.restoreWindowSession",
-            details: "window=\(windowState.id.uuidString) currentSpace=\(snapshot.currentSpaceId?.uuidString ?? "nil") currentProfile=\(snapshot.currentProfileId?.uuidString ?? "nil") currentTab=\(snapshot.currentTabId?.uuidString ?? "nil") emptyState=\(snapshot.isShowingEmptyState) sidebarVisible=\(snapshot.isSidebarVisible) sidebarMenuVisible=\(snapshot.isSidebarMenuVisible)"
+            details: "window=\(windowState.id.uuidString) currentSpace=\(snapshot.currentSpaceId?.uuidString ?? "nil") currentProfile=\(snapshot.currentProfileId?.uuidString ?? "nil") currentTab=\(snapshot.currentTabId?.uuidString ?? "nil") emptyState=\(snapshot.isShowingEmptyState) sidebarVisible=\(snapshot.isSidebarVisible)"
         )
         return true
     }
@@ -408,8 +408,7 @@ final class WindowSessionService {
         windowState.savedSidebarWidth = restoredSavedSidebarWidth
         windowState.sidebarContentWidth = BrowserWindowState.sidebarContentWidth(for: restoredSidebarWidth)
         windowState.isSidebarVisible = snapshot.isSidebarVisible
-        windowState.isSidebarMenuVisible = snapshot.isSidebarMenuVisible
-        windowState.selectedSidebarMenuSection = snapshot.selectedSidebarMenuSection
+        windowState.isDownloadsPopoverPresented = false
         windowState.commandPaletteDraftText = snapshot.urlBarDraft.text
         windowState.commandPaletteDraftNavigatesCurrentTab = snapshot.urlBarDraft.navigateCurrentTab
         delegate.splitManager.restoreSession(snapshot.splitSession, for: windowState.id)
@@ -438,8 +437,6 @@ final class WindowSessionService {
             savedSidebarWidth: Double(windowState.savedSidebarWidth),
             sidebarContentWidth: Double(windowState.sidebarContentWidth),
             isSidebarVisible: windowState.isSidebarVisible,
-            isSidebarMenuVisible: windowState.isSidebarMenuVisible,
-            selectedSidebarMenuSection: windowState.selectedSidebarMenuSection,
             urlBarDraft: URLBarDraftState(
                 text: windowState.commandPaletteDraftText,
                 navigateCurrentTab: windowState.commandPaletteDraftNavigatesCurrentTab
