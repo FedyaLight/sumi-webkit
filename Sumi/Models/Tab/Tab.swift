@@ -354,9 +354,13 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         !isPopupHost && SumiSurface.isHistorySurfaceURL(url)
     }
 
+    var representsSumiBookmarksSurface: Bool {
+        !isPopupHost && SumiSurface.isBookmarksSurfaceURL(url)
+    }
+
     /// Native Sumi surfaces rendered outside WebKit.
     var representsSumiNativeSurface: Bool {
-        representsSumiSettingsSurface || representsSumiHistorySurface
+        representsSumiSettingsSurface || representsSumiHistorySurface || representsSumiBookmarksSurface
     }
 
     /// Internal Sumi surfaces that use chrome-template presentation.

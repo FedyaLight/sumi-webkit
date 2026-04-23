@@ -1,0 +1,195 @@
+import XCTest
+
+@testable import Sumi
+
+@MainActor
+final class SumiBookmarkManagerTests: XCTestCase {
+    private var temporaryDirectories: [URL] = []
+
+    override func tearDown() {
+        for directory in temporaryDirectories {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        temporaryDirectories.removeAll()
+        super.tearDown()
+    }
+
+    func testCreateBookmarkIsFoundByDDGStyleURLVariants() throws {
+        let manager = makeManager()
+        let url = try XCTUnwrap(URL(string: "https://example.com"))
+
+        let bookmark = try manager.createBookmark(url: url, title: "Example")
+
+        XCTAssertEqual(manager.bookmarks().count, 1)
+        XCTAssertEqual(manager.bookmark(for: url)?.id, bookmark.id)
+        XCTAssertEqual(
+            manager.bookmark(for: try XCTUnwrap(URL(string: "http://example.com/")))?.id,
+            bookmark.id
+        )
+        XCTAssertEqual(manager.allHosts(), ["example.com"])
+    }
+
+    func testRepeatedCreateReturnsExistingBookmark() throws {
+        let manager = makeManager()
+        let firstURL = try XCTUnwrap(URL(string: "https://repeat.example"))
+        let variantURL = try XCTUnwrap(URL(string: "http://repeat.example/"))
+
+        let first = try manager.createBookmark(url: firstURL, title: "First")
+        let second = try manager.createBookmark(url: variantURL, title: "Second")
+
+        XCTAssertEqual(first.id, second.id)
+        XCTAssertEqual(manager.bookmarks().count, 1)
+        XCTAssertEqual(manager.bookmark(for: variantURL)?.title, "First")
+    }
+
+    func testUpdateAndRemoveBookmark() throws {
+        let manager = makeManager()
+        let originalURL = try XCTUnwrap(URL(string: "https://edit.example"))
+        let updatedURL = try XCTUnwrap(URL(string: "https://edit.example/docs"))
+        let bookmark = try manager.createBookmark(url: originalURL, title: "Original")
+
+        let updated = try manager.updateBookmark(
+            id: bookmark.id,
+            title: "Updated",
+            url: updatedURL,
+            folderID: nil
+        )
+
+        XCTAssertEqual(updated.title, "Updated")
+        XCTAssertNil(manager.bookmark(for: originalURL))
+        XCTAssertEqual(manager.bookmark(for: updatedURL)?.id, bookmark.id)
+
+        try manager.removeBookmark(id: bookmark.id)
+
+        XCTAssertFalse(manager.isBookmarked(updatedURL))
+        XCTAssertTrue(manager.bookmarks().isEmpty)
+    }
+
+    func testDuplicateURLUpdateIsRejected() throws {
+        let manager = makeManager()
+        let firstURL = try XCTUnwrap(URL(string: "https://one.example"))
+        let secondURL = try XCTUnwrap(URL(string: "https://two.example"))
+        _ = try manager.createBookmark(url: firstURL, title: "One")
+        let second = try manager.createBookmark(url: secondURL, title: "Two")
+
+        XCTAssertThrowsError(
+            try manager.updateBookmark(
+                id: second.id,
+                title: "Two",
+                url: firstURL,
+                folderID: nil
+            )
+        ) { error in
+            XCTAssertEqual(error as? SumiBookmarkError, .duplicateURL)
+        }
+    }
+
+    func testEditorStateCreatesOnceThenOpensEditMode() throws {
+        let manager = makeManager()
+        let tab = Tab(
+            url: try XCTUnwrap(URL(string: "https://editor.example/path")),
+            name: "Editor Page"
+        )
+
+        let addedState = try manager.editorState(for: tab)
+        let editState = try manager.editorState(for: tab)
+
+        XCTAssertEqual(addedState.mode, .added)
+        XCTAssertEqual(addedState.title, "Editor Page")
+        XCTAssertEqual(editState.mode, .edit)
+        XCTAssertEqual(editState.bookmarkID, addedState.bookmarkID)
+        XCTAssertEqual(manager.bookmarks().count, 1)
+    }
+
+    func testUnsupportedURLCannotBeBookmarked() throws {
+        let manager = makeManager()
+
+        XCTAssertThrowsError(
+            try manager.createBookmark(
+                url: URL(fileURLWithPath: "/tmp/example.html"),
+                title: "File"
+            )
+        ) { error in
+            XCTAssertEqual(error as? SumiBookmarkError, .unsupportedURL)
+        }
+    }
+
+    func testTreeSnapshotSearchSortMoveAndRecursiveDelete() throws {
+        let manager = makeManager()
+        let folder = try manager.createFolder(title: "Docs")
+        let nested = try manager.createFolder(title: "Nested", parentID: folder.id)
+        let zedURL = try XCTUnwrap(URL(string: "https://zed.example"))
+        let alphaURL = try XCTUnwrap(URL(string: "https://alpha.example"))
+        let zed = try manager.createBookmark(url: zedURL, title: "Zed", folderID: nested.id)
+        let alpha = try manager.createBookmark(url: alphaURL, title: "Alpha", folderID: folder.id)
+
+        let snapshot = manager.snapshot()
+        XCTAssertEqual(snapshot.root.childBookmarkCount, 2)
+        XCTAssertEqual(snapshot.flattenedFolders.map(\.title), ["Bookmarks", "Docs", "Nested"])
+        XCTAssertEqual(snapshot.entitiesByID[folder.id]?.childBookmarkCount, 2)
+
+        XCTAssertEqual(
+            manager.visibleEntities(in: folder.id, query: "", sortMode: .nameAscending).map(\.title),
+            ["Nested", "Alpha"]
+        )
+        XCTAssertEqual(
+            manager.visibleEntities(in: folder.id, query: "zed", sortMode: .manual).map(\.id),
+            [zed.id]
+        )
+
+        try manager.moveEntities(ids: [alpha.id], toParentID: nil, atIndex: 0)
+        XCTAssertEqual(manager.entity(id: alpha.id)?.parentID, SumiBookmarkConstants.rootFolderID)
+
+        try manager.removeEntities(ids: [folder.id])
+        XCTAssertNil(manager.entity(id: zed.id))
+        XCTAssertNil(manager.entity(id: nested.id))
+        XCTAssertEqual(manager.bookmarks().map(\.id), [alpha.id])
+    }
+
+    func testCannotMoveFolderIntoDescendant() throws {
+        let manager = makeManager()
+        let folder = try manager.createFolder(title: "Parent")
+        let nested = try manager.createFolder(title: "Child", parentID: folder.id)
+
+        XCTAssertThrowsError(
+            try manager.moveEntities(ids: [folder.id], toParentID: nested.id)
+        ) { error in
+            XCTAssertEqual(error as? SumiBookmarkError, .cannotMoveFolderIntoDescendant)
+        }
+    }
+
+    func testImportSkipsURLVariantDuplicatesAndExportPreservesFolders() throws {
+        let manager = makeManager()
+        let nodes: [SumiImportedBookmarkNode] = [
+            .folder(
+                title: "Imported",
+                children: [
+                    .bookmark(title: "Example", url: try XCTUnwrap(URL(string: "https://example.com"))),
+                    .bookmark(title: "Example Duplicate", url: try XCTUnwrap(URL(string: "http://example.com/"))),
+                    .bookmark(title: "Bad", url: try XCTUnwrap(URL(string: "ftp://example.com/file"))),
+                ]
+            ),
+        ]
+
+        let summary = try manager.importBookmarks(nodes, sourceName: "Fixture")
+
+        XCTAssertEqual(summary.imported, 2)
+        XCTAssertEqual(summary.duplicates, 1)
+        XCTAssertEqual(summary.failed, 1)
+        XCTAssertEqual(manager.bookmarks().map(\.title), ["Example"])
+
+        let html = try manager.exportBookmarksHTML()
+        XCTAssertTrue(html.contains("<H3>Imported</H3>"))
+        XCTAssertTrue(html.contains("<A HREF=\"https://example.com\">Example</A>"))
+    }
+
+    private func makeManager() -> SumiBookmarkManager {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("SumiBookmarkManagerTests-\(UUID().uuidString)", isDirectory: true)
+        temporaryDirectories.append(directory)
+        return SumiBookmarkManager(
+            database: SumiBookmarkDatabase(directory: directory),
+            syncFavicons: false
+        )
+    }
+}

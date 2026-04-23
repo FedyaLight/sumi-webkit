@@ -27,7 +27,7 @@ extension BrowserManager {
     var canGoBackInActiveWindow: Bool {
         guard let activeWindow = windowRegistry?.activeWindow,
               let currentTab = currentTab(for: activeWindow),
-              let webView = getWebView(for: currentTab.id, in: activeWindow.id)
+              let webView = webViewCoordinator?.getWebView(for: currentTab.id, in: activeWindow.id)
         else {
             return false
         }
@@ -37,7 +37,7 @@ extension BrowserManager {
     var canGoForwardInActiveWindow: Bool {
         guard let activeWindow = windowRegistry?.activeWindow,
               let currentTab = currentTab(for: activeWindow),
-              let webView = getWebView(for: currentTab.id, in: activeWindow.id)
+              let webView = webViewCoordinator?.getWebView(for: currentTab.id, in: activeWindow.id)
         else {
             return false
         }
@@ -47,7 +47,7 @@ extension BrowserManager {
     func goBackInActiveWindow() {
         guard let activeWindow = windowRegistry?.activeWindow,
               let currentTab = currentTab(for: activeWindow),
-              let webView = getWebView(for: currentTab.id, in: activeWindow.id),
+              let webView = webViewCoordinator?.getWebView(for: currentTab.id, in: activeWindow.id),
               webView.canGoBack
         else {
             return
@@ -58,7 +58,7 @@ extension BrowserManager {
     func goForwardInActiveWindow() {
         guard let activeWindow = windowRegistry?.activeWindow,
               let currentTab = currentTab(for: activeWindow),
-              let webView = getWebView(for: currentTab.id, in: activeWindow.id),
+              let webView = webViewCoordinator?.getWebView(for: currentTab.id, in: activeWindow.id),
               webView.canGoForward
         else {
             return

@@ -13,9 +13,12 @@ enum SumiSurface {
     static let settingsURLHost = "settings"
     /// Internal history UI opened as a browser tab (`sumi://history?range=…`).
     static let historyURLHost = "history"
+    /// Internal bookmarks manager opened as a browser tab (`sumi://bookmarks?folder=…`).
+    static let bookmarksURLHost = "bookmarks"
     /// SF Symbol used for the settings tab row / favicon slot (sidebar, pinned UI, etc.).
     static let settingsTabFaviconSystemImageName = "gearshape.fill"
     static let historyTabFaviconSystemImageName = "clock.arrow.circlepath"
+    static let bookmarksTabFaviconSystemImageName = "book.closed.fill"
 
     static func isEmptyNewTabURL(_ url: URL) -> Bool {
         url.absoluteString == emptyTabURL.absoluteString
@@ -29,6 +32,11 @@ enum SumiSurface {
     static func isHistorySurfaceURL(_ url: URL) -> Bool {
         url.scheme?.lowercased() == "sumi"
             && url.host?.lowercased() == historyURLHost.lowercased()
+    }
+
+    static func isBookmarksSurfaceURL(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == "sumi"
+            && url.host?.lowercased() == bookmarksURLHost.lowercased()
     }
 
     /// Stable `pane` query value for `sumi://settings?pane=…`.
@@ -63,6 +71,24 @@ enum SumiSurface {
             .first(where: { $0.name == "range" })?
             .value
         return queryValue.flatMap(HistoryRange.init(rawValue:))
+    }
+
+    static func bookmarksSurfaceURL(selecting folderID: String? = nil) -> URL {
+        var components = URLComponents()
+        components.scheme = "sumi"
+        components.host = Self.bookmarksURLHost
+        if let folderID, !folderID.isEmpty {
+            components.queryItems = [URLQueryItem(name: "folder", value: folderID)]
+        }
+        return components.url ?? URL(string: "sumi://bookmarks")!
+    }
+
+    static func bookmarksSelectedFolderID(from url: URL) -> String? {
+        guard isBookmarksSurfaceURL(url) else { return nil }
+        return URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first(where: { $0.name == "folder" })?
+            .value
     }
 
 }

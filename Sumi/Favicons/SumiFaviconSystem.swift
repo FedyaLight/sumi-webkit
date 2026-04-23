@@ -171,6 +171,7 @@ final class SumiBookmarkMirrorManager: BookmarkManager {
     private let rootDirectoryURL: URL
     private weak var faviconsFetcher: BookmarksFaviconsFetcher?
     nonisolated private static let mirrorPrefix = "sumi-favicon-mirror-"
+    nonisolated private static let realBookmarkPrefix = "sumi-real-bookmark-"
     private var didInitializeFetcherState = false
 
     init(database: CoreDataDatabase, rootDirectoryURL: URL) {
@@ -187,9 +188,6 @@ final class SumiBookmarkMirrorManager: BookmarkManager {
     }
 
     func syncShortcutPins(_ pins: [ShortcutPin]) {
-        let context = database.makeContext(concurrencyType: .privateQueueConcurrencyType, name: "SumiFaviconBookmarksSync")
-        var modifiedIDs = Set<String>()
-        var deletedIDs = Set<String>()
         let desiredRecords = pins.map {
             DesiredBookmarkRecord(
                 uuid: Self.mirrorBookmarkID(for: $0.id),
@@ -198,11 +196,43 @@ final class SumiBookmarkMirrorManager: BookmarkManager {
             )
         }
 
+        syncDesiredRecords(
+            desiredRecords,
+            prefix: Self.mirrorPrefix,
+            contextName: "SumiFaviconShortcutBookmarksSync"
+        )
+    }
+
+    func syncBookmarks(_ bookmarks: [SumiBookmark]) {
+        let desiredRecords = bookmarks.map {
+            DesiredBookmarkRecord(
+                uuid: Self.realBookmarkID(for: $0.id),
+                title: $0.title,
+                urlString: $0.url.absoluteString
+            )
+        }
+
+        syncDesiredRecords(
+            desiredRecords,
+            prefix: Self.realBookmarkPrefix,
+            contextName: "SumiFaviconRealBookmarksSync"
+        )
+    }
+
+    private func syncDesiredRecords(
+        _ desiredRecords: [DesiredBookmarkRecord],
+        prefix: String,
+        contextName: String
+    ) {
+        let context = database.makeContext(concurrencyType: .privateQueueConcurrencyType, name: contextName)
+        var modifiedIDs = Set<String>()
+        var deletedIDs = Set<String>()
+
         context.performAndWait {
             BookmarkUtils.prepareFoldersStructure(in: context)
             guard let rootFolder = BookmarkUtils.fetchRootFolder(context) else { return }
 
-            let existingMirrorBookmarks = Self.fetchMirrorBookmarks(in: context, prefix: Self.mirrorPrefix)
+            let existingMirrorBookmarks = Self.fetchMirrorBookmarks(in: context, prefix: prefix)
             let existingPairs: [(String, BookmarkEntity)] = existingMirrorBookmarks.compactMap { bookmark in
                 guard let uuid = bookmark.uuid else { return nil }
                 return (uuid, bookmark)
@@ -263,7 +293,7 @@ final class SumiBookmarkMirrorManager: BookmarkManager {
         var deletedIDs = Set<String>()
 
         context.performAndWait {
-            let bookmarks = Self.fetchMirrorBookmarks(in: context, prefix: Self.mirrorPrefix)
+            let bookmarks = Self.fetchMirrorBookmarks(in: context, prefixes: [Self.mirrorPrefix, Self.realBookmarkPrefix])
             for bookmark in bookmarks {
                 if let uuid = bookmark.uuid {
                     deletedIDs.insert(uuid)
@@ -283,7 +313,7 @@ final class SumiBookmarkMirrorManager: BookmarkManager {
         let context = database.makeContext(concurrencyType: .privateQueueConcurrencyType, name: "SumiFaviconBookmarksHosts")
         var hosts = Set<String>()
         context.performAndWait {
-            for bookmark in Self.fetchMirrorBookmarks(in: context, prefix: Self.mirrorPrefix) {
+            for bookmark in Self.fetchMirrorBookmarks(in: context, prefixes: [Self.mirrorPrefix, Self.realBookmarkPrefix]) {
                 guard let urlString = bookmark.url,
                       let url = URL(string: urlString),
                       let host = url.host
@@ -316,13 +346,28 @@ final class SumiBookmarkMirrorManager: BookmarkManager {
         mirrorPrefix + pinID.uuidString.lowercased()
     }
 
+    nonisolated private static func realBookmarkID(for bookmarkID: String) -> String {
+        realBookmarkPrefix + bookmarkID.lowercased()
+    }
+
     nonisolated private static func fetchMirrorBookmarks(in context: NSManagedObjectContext, prefix: String) -> [BookmarkEntity] {
+        fetchMirrorBookmarks(in: context, prefixes: [prefix])
+    }
+
+    nonisolated private static func fetchMirrorBookmarks(in context: NSManagedObjectContext, prefixes: [String]) -> [BookmarkEntity] {
+        let prefixPredicates = prefixes.map {
+            NSPredicate(format: "%K BEGINSWITH %@", #keyPath(BookmarkEntity.uuid), $0)
+        }
         let request = BookmarkEntity.fetchRequest()
-        request.predicate = NSPredicate(
-            format: "%K BEGINSWITH %@ AND %K == NO AND (%K == NO OR %K == nil)",
-            #keyPath(BookmarkEntity.uuid), prefix,
-            #keyPath(BookmarkEntity.isPendingDeletion),
-            #keyPath(BookmarkEntity.isStub), #keyPath(BookmarkEntity.isStub)
+        request.predicate = NSCompoundPredicate(
+            andPredicateWithSubpredicates: [
+                NSCompoundPredicate(orPredicateWithSubpredicates: prefixPredicates),
+                NSPredicate(
+                    format: "%K == NO AND (%K == NO OR %K == nil)",
+                    #keyPath(BookmarkEntity.isPendingDeletion),
+                    #keyPath(BookmarkEntity.isStub), #keyPath(BookmarkEntity.isStub)
+                ),
+            ]
         )
         request.returnsObjectsAsFaults = false
         return (try? context.fetch(request)) ?? []
@@ -401,6 +446,10 @@ final class SumiFaviconSystem {
 
     func syncShortcutPins(_ pins: [ShortcutPin]) {
         bookmarkMirror.syncShortcutPins(pins)
+    }
+
+    func syncBookmarks(_ bookmarks: [SumiBookmark]) {
+        bookmarkMirror.syncBookmarks(bookmarks)
     }
 
     func image(forLookupKey key: String) -> NSImage? {

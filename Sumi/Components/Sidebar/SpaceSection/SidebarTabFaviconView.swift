@@ -28,6 +28,9 @@ struct SidebarTabFaviconView: View {
         if tab.representsSumiHistorySurface {
             return SumiSurface.historyTabFaviconSystemImageName
         }
+        if tab.representsSumiBookmarksSurface {
+            return SumiSurface.bookmarksTabFaviconSystemImageName
+        }
         return "globe"
     }
 
