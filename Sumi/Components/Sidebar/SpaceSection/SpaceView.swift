@@ -171,8 +171,6 @@ struct SpaceView: View {
     @State private var preferenceUpdateCoalescer = SidebarPreferenceUpdateCoalescer()
     @State private var deferredScrollStateMutation = SidebarDeferredStateMutation<CGRect>()
     @State private var deferredContentHeightMutation = SidebarDeferredStateMutation<CGFloat>()
-    @State private var isHovered: Bool = false
-    @State private var isNewTabHovered: Bool = false
     @Environment(\.resolvedThemeContext) private var themeContext
 
     let onActivateTab: (Tab) -> Void
@@ -306,13 +304,6 @@ struct SpaceView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .contentShape(Rectangle())
         .coordinateSpace(name: "SpaceViewCoordinateSpace")
-        .onHover { state in
-            guard isInteractive else { return }
-            guard !windowState.sidebarInteractionState.freezesSidebarHoverState else { return }
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovered = state
-            }
-        }
     }
 
     /// Uses `DialogManager` instead of SwiftUI `.sheet` so presenting after `NSMenu` does not trip
@@ -702,18 +693,26 @@ struct SpaceView: View {
         .frame(minWidth: 0, maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(12), style: .continuous)
-                .fill(isNewTabHovered ? tokens.sidebarRowHover : Color.clear)
+                .fill(displayIsNewTabHovered ? tokens.sidebarRowHover : Color.clear)
                 .padding(.horizontal, 2)
         )
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .onHover { hovering in
-            guard !windowState.sidebarInteractionState.freezesSidebarHoverState else { return }
-            withAnimation(.easeInOut(duration: 0.12)) {
-                isNewTabHovered = hovering
-            }
-        }
+        .sidebarHoverTarget(
+            newTabHoverTarget,
+            isEnabled: isInteractive,
+            animation: .easeInOut(duration: 0.12)
+        )
         .accessibilityIdentifier("space-new-tab-\(space.id.uuidString)")
         .sidebarAppKitPrimaryAction(isEnabled: isInteractive, action: openNewTabCommandPalette)
+    }
+
+    private var displayIsNewTabHovered: Bool {
+        windowState.sidebarInteractionState.isSidebarHoverActive(newTabHoverTarget)
+            && !windowState.sidebarInteractionState.freezesSidebarHoverState
+    }
+
+    private var newTabHoverTarget: SidebarHoverTarget {
+        .row("space-new-tab-\(space.id.uuidString)")
     }
 
     private func openNewTabCommandPalette() {
@@ -1419,9 +1418,6 @@ private struct ShortcutSidebarRowChrome: View {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
-    @State private var isHovering: Bool = false
-    @State private var isActionHovering: Bool = false
-    @State private var isResetHovering: Bool = false
     @State private var markerInstanceID = UUID()
     @StateObject private var emojiManager = EmojiPickerManager()
 
@@ -1433,12 +1429,11 @@ private struct ShortcutSidebarRowChrome: View {
                     resetLeadingButtonContent
                 }
                 .buttonStyle(.plain)
-                .onHover { hovering in
-                    guard !freezesHoverState else { return }
-                    withAnimation(.easeInOut(duration: 0.1)) {
-                        isResetHovering = hovering
-                    }
-                }
+                .sidebarHoverTarget(
+                    resetHoverTarget,
+                    isEnabled: dragIsEnabled,
+                    animation: .easeInOut(duration: 0.1)
+                )
                 .accessibilityIdentifier(resetActionAccessibilityID ?? "shortcut-sidebar-reset")
                 .sidebarAppKitPrimaryAction(
                     isInteractionEnabled: dragIsEnabled,
@@ -1489,10 +1484,11 @@ private struct ShortcutSidebarRowChrome: View {
             .opacity(showsActionButton ? 1 : 0)
             .allowsHitTesting(showsActionButton && !freezesHoverState)
             .accessibilityHidden(!showsActionButton)
-            .onHover { hovering in
-                guard !freezesHoverState else { return }
-                isActionHovering = hovering
-            }
+            .sidebarHoverTarget(
+                actionHoverTarget,
+                isEnabled: showsActionButton && dragIsEnabled,
+                animation: .easeInOut(duration: 0.05)
+            )
             .accessibilityIdentifier(trailingActionAccessibilityID ?? "shortcut-sidebar-action")
             .sidebarAppKitPrimaryAction(
                 isEnabled: showsActionButton && !freezesHoverState,
@@ -1522,21 +1518,11 @@ private struct ShortcutSidebarRowChrome: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(accessibilityID ?? "shortcut-sidebar-row")
         .accessibilityValue(runtimeAffordance.isSelected ? "selected" : "not selected")
-        .onHover { hovering in
-            guard !freezesHoverState else { return }
-            withAnimation(.easeInOut(duration: 0.05)) {
-                isHovering = hovering && !SidebarDragState.shared.isDragging
-            }
-            if !hovering || SidebarDragState.shared.isDragging {
-                isResetHovering = false
-            }
-        }
-        .onChange(of: SidebarDragState.shared.isDragging) { _, isDragging in
-            if isDragging {
-                isHovering = false
-                isResetHovering = false
-            }
-        }
+        .sidebarHoverTarget(
+            rowHoverTarget,
+            isEnabled: dragIsEnabled,
+            animation: .easeInOut(duration: 0.05)
+        )
         .onAppear {
             recordShortcutSidebarMarker("shortcutRowAppear")
         }
@@ -1756,7 +1742,7 @@ private struct ShortcutSidebarRowChrome: View {
     }
 
     private var showsActionButton: Bool {
-        isHovering || runtimeAffordance.isSelected
+        displayIsHovering || runtimeAffordance.isSelected
     }
 
     private var freezesHoverState: Bool {
@@ -1764,15 +1750,30 @@ private struct ShortcutSidebarRowChrome: View {
     }
 
     private var displayIsHovering: Bool {
-        isHovering && !freezesHoverState
+        windowState.sidebarInteractionState.isSidebarHoverActive(rowHoverTarget)
+            && !freezesHoverState
     }
 
     private var displayIsActionHovering: Bool {
-        isActionHovering && !freezesHoverState
+        windowState.sidebarInteractionState.isSidebarHoverActive(actionHoverTarget)
+            && !freezesHoverState
     }
 
     private var displayIsResetHovering: Bool {
-        isResetHovering && !freezesHoverState
+        windowState.sidebarInteractionState.isSidebarHoverActive(resetHoverTarget)
+            && !freezesHoverState
+    }
+
+    private var rowHoverTarget: SidebarHoverTarget {
+        .row(accessibilityID ?? "shortcut-sidebar-row-\(pin.id.uuidString)")
+    }
+
+    private var actionHoverTarget: SidebarHoverTarget {
+        .action(trailingActionAccessibilityID ?? "shortcut-sidebar-action-\(pin.id.uuidString)")
+    }
+
+    private var resetHoverTarget: SidebarHoverTarget {
+        .action(resetActionAccessibilityID ?? "shortcut-sidebar-reset-\(pin.id.uuidString)")
     }
 
     private var dragSourceConfiguration: SidebarDragSourceConfiguration? {
@@ -1868,7 +1869,6 @@ private struct LauncherAudioButton: View {
     let accessibilityID: String?
     let isAppKitInteractionEnabled: Bool
     @Environment(BrowserWindowState.self) private var windowState
-    @State private var isHovering = false
 
     var body: some View {
         Group {
@@ -1894,10 +1894,11 @@ private struct LauncherAudioButton: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .onHover { hovering in
-                    guard !windowState.sidebarInteractionState.freezesSidebarHoverState else { return }
-                    isHovering = hovering
-                }
+                .sidebarHoverTarget(
+                    hoverTarget,
+                    isEnabled: isAppKitInteractionEnabled,
+                    animation: .easeInOut(duration: 0.1)
+                )
                 .accessibilityIdentifier(accessibilityID ?? "shortcut-sidebar-audio")
                 .sidebarAppKitPrimaryAction(
                     isEnabled: !windowState.sidebarInteractionState.freezesSidebarHoverState,
@@ -1911,7 +1912,12 @@ private struct LauncherAudioButton: View {
     }
 
     private var displayIsHovering: Bool {
-        isHovering && !windowState.sidebarInteractionState.freezesSidebarHoverState
+        windowState.sidebarInteractionState.isSidebarHoverActive(hoverTarget)
+            && !windowState.sidebarInteractionState.freezesSidebarHoverState
+    }
+
+    private var hoverTarget: SidebarHoverTarget {
+        .action(accessibilityID ?? "shortcut-sidebar-audio-\(tab.id.uuidString)")
     }
 }
 

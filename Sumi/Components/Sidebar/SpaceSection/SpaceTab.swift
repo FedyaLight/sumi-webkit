@@ -16,9 +16,6 @@ struct SpaceTab: View {
     var onClose: () -> Void
     var onMute: () -> Void
     var contextMenuEntries: [SidebarContextMenuEntry] = []
-    @State private var isHovering: Bool = false
-    @State private var isCloseHovering: Bool = false
-    @State private var isSpeakerHovering: Bool = false
     @FocusState private var isTextFieldFocused: Bool
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
@@ -53,7 +50,7 @@ struct SpaceTab: View {
                                         : Color.clear
                                 )
                                 .frame(width: 22, height: 22)
-                                .animation(.easeInOut(duration: 0.05), value: isSpeakerHovering)
+                                .animation(.easeInOut(duration: 0.05), value: displayIsSpeakerHovering)
                             ZStack {
                                 Image(systemName: tab.audioState.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                                     .font(.system(size: 12, weight: .medium))
@@ -70,10 +67,11 @@ struct SpaceTab: View {
                         }
                     }
                     .buttonStyle(PlainButtonStyle())
-                    .onHover { hovering in
-                        guard !freezesHoverState else { return }
-                        isSpeakerHovering = hovering
-                    }
+                    .sidebarHoverTarget(
+                        speakerHoverTarget,
+                        isEnabled: isAppKitInteractionEnabled,
+                        animation: .easeInOut(duration: 0.05)
+                    )
                     .accessibilityIdentifier("space-regular-tab-audio-\(tab.id.uuidString)")
                     .sidebarAppKitPrimaryAction(
                         isEnabled: !freezesHoverState,
@@ -133,10 +131,11 @@ struct SpaceTab: View {
                 .opacity(showsCloseButton ? 1 : 0)
                 .allowsHitTesting(showsCloseButton && !freezesHoverState)
                 .accessibilityHidden(!showsCloseButton)
-                .onHover { hovering in
-                    guard !freezesHoverState else { return }
-                    isCloseHovering = hovering
-                }
+                .sidebarHoverTarget(
+                    closeHoverTarget,
+                    isEnabled: showsCloseButton && isAppKitInteractionEnabled,
+                    animation: .easeInOut(duration: 0.05)
+                )
                 .accessibilityIdentifier("space-regular-tab-close-\(tab.id.uuidString)")
                 .sidebarAppKitPrimaryAction(
                     isEnabled: showsCloseButton && !freezesHoverState,
@@ -163,17 +162,11 @@ struct SpaceTab: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("tab-row-\(tab.id.uuidString)")
         .accessibilityValue(isCurrentTab ? "selected" : "not selected")
-        .onHover { hovering in
-            guard !freezesHoverState else { return }
-            withAnimation(.easeInOut(duration: 0.05)) {
-                isHovering = hovering && !SidebarDragState.shared.isDragging
-            }
-        }
-        .onChange(of: SidebarDragState.shared.isDragging) { _, isDragging in
-            if isDragging {
-                isHovering = false
-            }
-        }
+        .sidebarHoverTarget(
+            rowHoverTarget,
+            isEnabled: isAppKitInteractionEnabled,
+            animation: .easeInOut(duration: 0.05)
+        )
         .background(
             Group {
                 if tab.isRenaming {
@@ -237,18 +230,33 @@ struct SpaceTab: View {
     }
 
     private var displayIsHovering: Bool {
-        isHovering && !freezesHoverState
+        windowState.sidebarInteractionState.isSidebarHoverActive(rowHoverTarget)
+            && !freezesHoverState
     }
 
     private var displayIsCloseHovering: Bool {
-        isCloseHovering && !freezesHoverState
+        windowState.sidebarInteractionState.isSidebarHoverActive(closeHoverTarget)
+            && !freezesHoverState
     }
 
     private var displayIsSpeakerHovering: Bool {
-        isSpeakerHovering && !freezesHoverState
+        windowState.sidebarInteractionState.isSidebarHoverActive(speakerHoverTarget)
+            && !freezesHoverState
     }
 
     private var showsCloseButton: Bool {
-        isHovering || isCurrentTab
+        displayIsHovering || isCurrentTab
+    }
+
+    private var rowHoverTarget: SidebarHoverTarget {
+        .row("regular-tab-\(tab.id.uuidString)")
+    }
+
+    private var closeHoverTarget: SidebarHoverTarget {
+        .action("regular-tab-close-\(tab.id.uuidString)")
+    }
+
+    private var speakerHoverTarget: SidebarHoverTarget {
+        .action("regular-tab-audio-\(tab.id.uuidString)")
     }
 }

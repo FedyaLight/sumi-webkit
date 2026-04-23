@@ -65,8 +65,6 @@ private struct SplitHalfTab: View {
     let onClose: () -> Void
     let isSplitActiveSide: Bool
 
-    @State private var isHovering: Bool = false
-    @State private var isCloseHovering: Bool = false
     @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject var splitManager: SplitViewManager
     @Environment(BrowserWindowState.self) private var windowState
@@ -81,7 +79,7 @@ private struct SplitHalfTab: View {
                     title: tab.name,
                     font: .systemFont(ofSize: 13, weight: .medium),
                     textColor: textTab,
-                    trailingFadePadding: isHovering ? 12 : 0
+                    trailingFadePadding: displayIsHovering ? 12 : 0
                 )
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 Button(action: onClose) {
@@ -99,16 +97,17 @@ private struct SplitHalfTab: View {
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
                 .buttonStyle(PlainButtonStyle())
-                .opacity(isHovering ? 1 : 0)
-                .allowsHitTesting(isHovering && !freezesHoverState)
-                .accessibilityHidden(!isHovering)
-                .onHover { state in
-                    guard !freezesHoverState else { return }
-                    isCloseHovering = state
-                }
+                .opacity(displayIsHovering ? 1 : 0)
+                .allowsHitTesting(displayIsHovering && !freezesHoverState)
+                .accessibilityHidden(!displayIsHovering)
+                .sidebarHoverTarget(
+                    closeHoverTarget,
+                    isEnabled: displayIsHovering && isAppKitInteractionEnabled,
+                    animation: .easeInOut(duration: 0.15)
+                )
                 .accessibilityIdentifier("space-split-tab-close-\(tab.id.uuidString)")
                 .sidebarAppKitPrimaryAction(
-                    isEnabled: isHovering && !freezesHoverState,
+                    isEnabled: displayIsHovering && !freezesHoverState,
                     isInteractionEnabled: isAppKitInteractionEnabled,
                     action: onClose
                 )
@@ -117,17 +116,11 @@ private struct SplitHalfTab: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
             .onTapGesture(perform: onActivate)
-            .onHover { hovering in
-                guard !freezesHoverState else { return }
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    isHovering = hovering && !SidebarDragState.shared.isDragging
-                }
-            }
-            .onChange(of: SidebarDragState.shared.isDragging) { _, isDragging in
-                if isDragging {
-                    isHovering = false
-                }
-            }
+            .sidebarHoverTarget(
+                rowHoverTarget,
+                isEnabled: isAppKitInteractionEnabled,
+                animation: .easeInOut(duration: 0.15)
+            )
             .sidebarAppKitContextMenu(
                 isInteractionEnabled: isAppKitInteractionEnabled,
                 dragSource: SidebarDragSourceConfiguration(
@@ -191,11 +184,21 @@ private struct SplitHalfTab: View {
     }
 
     private var displayIsHovering: Bool {
-        isHovering && !freezesHoverState
+        windowState.sidebarInteractionState.isSidebarHoverActive(rowHoverTarget)
+            && !freezesHoverState
     }
 
     private var displayIsCloseHovering: Bool {
-        isCloseHovering && !freezesHoverState
+        windowState.sidebarInteractionState.isSidebarHoverActive(closeHoverTarget)
+            && !freezesHoverState
+    }
+
+    private var rowHoverTarget: SidebarHoverTarget {
+        .row("split-tab-\(tab.id.uuidString)")
+    }
+
+    private var closeHoverTarget: SidebarHoverTarget {
+        .action("split-tab-close-\(tab.id.uuidString)")
     }
 
 }

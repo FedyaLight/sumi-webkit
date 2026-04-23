@@ -21,7 +21,6 @@ struct SpacesListItem: View {
     let onSelect: () -> Void
     let onHoverChange: ((Bool) -> Void)?
 
-    @State private var isHovering: Bool = false
     @StateObject private var emojiManager = EmojiPickerManager()
 
     private let dotSize: CGFloat = 6
@@ -52,16 +51,26 @@ struct SpacesListItem: View {
 
         }
         .labelStyle(.iconOnly)
-        .buttonStyle(SpaceListItemButtonStyle())
+        .buttonStyle(SpaceListItemButtonStyle(isHovering: displayIsHovering))
         .layoutPriority(2)
         .layoutPriority(isActive ? 1 : 0)
         .opacity(isFaded ? 0.3 : 1.0)
         .accessibilityIdentifier("space-icon-\(space.id.uuidString)")
         .onHover { hovering in
-            guard !windowState.sidebarInteractionState.freezesSidebarHoverState else { return }
-            isHovering = hovering
-            onHoverChange?(hovering)
+            onHoverChange?(hovering && !windowState.sidebarInteractionState.freezesSidebarHoverState)
         }
+        .onDisappear {
+            onHoverChange?(false)
+        }
+        .onChange(of: windowState.sidebarInteractionState.freezesSidebarHoverState) { _, freezes in
+            if freezes {
+                onHoverChange?(false)
+            }
+        }
+        .sidebarHoverTarget(
+            spaceSwitcherHoverTarget,
+            animation: .easeInOut(duration: 0.15)
+        )
         .sidebarAppKitContextMenu(entries: {
             spaceContextMenuEntries()
         })
@@ -107,6 +116,15 @@ struct SpacesListItem: View {
 
     private var iconColor: Color {
         themeContext.tokens(settings: sumiSettings).primaryText
+    }
+
+    private var displayIsHovering: Bool {
+        windowState.sidebarInteractionState.isSidebarHoverActive(spaceSwitcherHoverTarget)
+            && !windowState.sidebarInteractionState.freezesSidebarHoverState
+    }
+
+    private var spaceSwitcherHoverTarget: SidebarHoverTarget {
+        .spaceSwitcher("space-icon-\(space.id.uuidString)")
     }
 
     // MARK: - Context Menu
@@ -193,7 +211,7 @@ struct SpaceListItemButtonStyle: ButtonStyle {
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.controlSize) private var controlSize
-    @State private var isHovering: Bool = false
+    let isHovering: Bool
 
     private var tokens: ChromeThemeTokens {
         themeContext.tokens(settings: sumiSettings)
@@ -214,9 +232,6 @@ struct SpaceListItemButtonStyle: ButtonStyle {
         .scaleEffect(configuration.isPressed && isEnabled ? 0.95 : 1.0)
         .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
         .animation(.easeInOut(duration: 0.15), value: isHovering)
-        .onHover { hovering in
-            isHovering = hovering
-        }
     }
     
     private var size: CGFloat {

@@ -14,7 +14,6 @@ struct SpaceTitle: View {
         SidebarRowLayout.faviconSize * 0.78
     }
 
-    @State private var isHovering: Bool = false
     @State private var isRenaming: Bool = false
     @State private var draftName: String = ""
     @FocusState private var nameFieldFocused: Bool
@@ -89,7 +88,7 @@ struct SpaceTitle: View {
                     .labelStyle(.iconOnly)
             }
             .buttonStyle(NavButtonStyle(size: .small))
-            .opacity(isHovering ? 1.0 : 0.0)
+            .opacity(displayIsHovering ? 1.0 : 0.0)
             .accessibilityIdentifier("space-title-menu-button-\(space.id.uuidString)")
             .sidebarAppKitContextMenu(
                 isInteractionEnabled: isAppKitInteractionEnabled,
@@ -107,12 +106,11 @@ struct SpaceTitle: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .contentShape(RoundedRectangle(cornerRadius: 12))
         .accessibilityIdentifier("space-title-\(space.id.uuidString)")
-        .onHover { hovering in
-            guard !freezesHoverState else { return }
-            withAnimation(.easeInOut(duration: 0.1)) {
-                isHovering = hovering
-            }
-        }
+        .sidebarHoverTarget(
+            rowHoverTarget,
+            isEnabled: isAppKitInteractionEnabled,
+            animation: .easeInOut(duration: 0.1)
+        )
         .onChange(of: nameFieldFocused) { _, focused in
             // When losing focus during rename, commit
             if isRenaming && !focused {
@@ -153,7 +151,12 @@ struct SpaceTitle: View {
     }
 
     private var displayIsHovering: Bool {
-        isHovering && !freezesHoverState
+        windowState.sidebarInteractionState.isSidebarHoverActive(rowHoverTarget)
+            && !freezesHoverState
+    }
+
+    private var rowHoverTarget: SidebarHoverTarget {
+        .row("space-title-\(space.id.uuidString)")
     }
 
     // MARK: - Actions
