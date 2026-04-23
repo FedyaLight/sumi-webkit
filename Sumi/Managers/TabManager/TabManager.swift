@@ -61,6 +61,7 @@ class TabManager: ObservableObject {
     private var pendingTransientTabLookupRefresh = false
     private(set) var structuralLookupBatchFlushCount = 0
     private(set) var structuralLookupImmediateFlushCount = 0
+    private var faviconCacheObserver: NSObjectProtocol?
     // Space activation to resume after a deferred profile switch
     var pendingSpaceActivation: UUID?
     
@@ -240,6 +241,15 @@ class TabManager: ObservableObject {
                 await persistence.persistRuntimeStates(runtimeStates)
             }
         )
+        self.faviconCacheObserver = NotificationCenter.default.addObserver(
+            forName: .faviconCacheUpdated,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.refreshCachedFaviconPresentation()
+            }
+        }
         if loadPersistedState {
             Task { @MainActor in
                 loadFromStore()
@@ -254,6 +264,10 @@ class TabManager: ObservableObject {
             scheduledStructuralPersistTask = nil
             startupRestoreTask?.cancel()
             startupRestoreTask = nil
+            if let faviconCacheObserver {
+                NotificationCenter.default.removeObserver(faviconCacheObserver)
+                self.faviconCacheObserver = nil
+            }
             tabsBySpace.removeAll()
             spacePinnedShortcuts.removeAll()
             foldersBySpace.removeAll()
@@ -303,6 +317,7 @@ class TabManager: ObservableObject {
     func setPinnedTabs(_ items: [ShortcutPin], for profileId: UUID) {
         let previousPins = pinnedByProfile[profileId] ?? []
         pinnedByProfile[profileId] = items
+        SumiFaviconSystem.shared.syncShortcutPins(Array(pinnedByProfile.values.joined()) + Array(spacePinnedShortcuts.values.joined()))
         markPinnedSnapshotDirty(for: profileId)
         recordShortcutPinsStructuralChange(previous: previousPins, current: items)
         requestStructuralPublish()
@@ -311,6 +326,7 @@ class TabManager: ObservableObject {
     func setSpacePinnedShortcuts(_ items: [ShortcutPin], for spaceId: UUID) {
         let previousPins = spacePinnedShortcuts[spaceId] ?? []
         spacePinnedShortcuts[spaceId] = items
+        SumiFaviconSystem.shared.syncShortcutPins(Array(pinnedByProfile.values.joined()) + Array(spacePinnedShortcuts.values.joined()))
         markSpacePinnedSnapshotDirty(for: spaceId)
         recordShortcutPinsStructuralChange(previous: previousPins, current: items)
         requestStructuralPublish()
@@ -319,6 +335,25 @@ class TabManager: ObservableObject {
     func notifyTransientShortcutStateChanged() {
         queueTransientTabLookupRefresh()
         requestStructuralPublish()
+    }
+
+    private func refreshCachedFaviconPresentation() {
+        let launcherPins = Array(pinnedByProfile.values.joined()) + Array(spacePinnedShortcuts.values.joined())
+        let liveShortcutPinIDs = Set(
+            transientShortcutTabsByWindow.values.flatMap { tabsByPin in
+                tabsByPin.keys
+            }
+        )
+
+        for pin in launcherPins where pin.iconAsset == nil && !liveShortcutPinIDs.contains(pin.id) {
+            pin.applyCachedFaviconIfAvailable()
+        }
+
+        let tabsNeedingRefresh = Array(tabsBySpace.values.joined())
+            + Array(transientShortcutTabsByWindow.values.joined().map(\.value))
+        for tab in tabsNeedingRefresh where tab.faviconIsTemplateGlobePlaceholder {
+            _ = tab.applyCachedFaviconOrPlaceholder(for: tab.url)
+        }
     }
 
     func tab(for id: UUID) -> Tab? {

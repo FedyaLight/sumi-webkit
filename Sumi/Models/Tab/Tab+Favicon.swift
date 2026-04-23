@@ -3,8 +3,11 @@
 //  Sumi
 //
 
+import AppKit
+import Combine
 import Foundation
 import SwiftUI
+import UserScript
 
 extension Tab {
     @MainActor
@@ -55,31 +58,37 @@ extension Tab {
     func fetchFaviconForVisiblePresentation() async {
         guard faviconIsTemplateGlobePlaceholder else { return }
         _ = applyCachedFaviconOrPlaceholder(for: url)
+        await MainActor.run {
+            faviconsTabExtension?.loadCachedFavicon(previousURL: nil, error: nil)
+        }
     }
 
-    func applyDiscoveredFaviconLinks(
-        _ links: [SumiDiscoveredFaviconLink],
-        documentURL: URL
-    ) async {
-        guard let cacheKey = SumiFaviconResolver.cacheKey(for: documentURL),
-              let image = await SumiFaviconResolver.shared.image(
-                for: documentURL,
-                discoveredLinks: links,
-                webView: existingWebView
-              )
-        else {
-            return
-        }
+    @MainActor
+    func ensureFaviconsTabExtension(using scriptsProvider: SumiDDGFaviconUserScripts) {
+        faviconCancellables = []
 
-        await MainActor.run {
-            guard self.url == documentURL || self.existingWebView?.url == documentURL else {
-                return
+        let extensionInstance = FaviconsTabExtension(
+            scriptsPublisher: Just(scriptsProvider).eraseToAnyPublisher(),
+            tab: self,
+            faviconManagement: SumiFaviconSystem.shared.manager
+        )
+        faviconsTabExtension = extensionInstance
+        extensionInstance.loadCachedFavicon(previousURL: nil, error: nil)
+
+        var cancellables = faviconCancellables
+        extensionInstance.faviconPublisher
+            .receive(on: RunLoop.main)
+            .sink { [weak self] (image: NSImage?) in
+                guard let self, let image else { return }
+                let currentURL = self.existingWebView?.url ?? self.url
+                guard let cacheKey = SumiFaviconResolver.cacheKey(for: currentURL) else { return }
+                self.favicon = SwiftUI.Image(nsImage: image)
+                self.faviconIsTemplateGlobePlaceholder = false
+                self.resolvedFaviconCacheKey = cacheKey
+                self.syncBoundLauncherPinAfterFaviconResolved()
             }
-            self.favicon = SwiftUI.Image(nsImage: image)
-            self.faviconIsTemplateGlobePlaceholder = false
-            self.resolvedFaviconCacheKey = cacheKey
-            self.syncBoundLauncherPinAfterFaviconResolved()
-        }
+            .store(in: &cancellables)
+        faviconCancellables = cancellables
     }
 
     static func getCachedFavicon(for key: String) -> SwiftUI.Image? {
@@ -91,7 +100,7 @@ extension Tab {
 
     static func clearFaviconCache() {
         TabFaviconStore.clearCache()
-        SumiFaviconSystem.shared.manager.clearAll()
+        SumiFaviconSystem.shared.clearAll()
     }
 
     static func getFaviconCacheStats() -> (count: Int, domains: [String]) {

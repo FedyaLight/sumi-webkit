@@ -4,83 +4,6 @@ import WebKit
 
 // MARK: - WKScriptMessageHandler
 extension Tab: WKScriptMessageHandler {
-    struct ParsedDiscoveredFaviconPayload {
-        let documentURL: URL
-        let fullLinks: [SumiDiscoveredFaviconLink]?
-        let upsertedLinks: [SumiDiscoveredFaviconLink]
-        let removedLinks: [SumiDiscoveredFaviconLink]
-    }
-
-    static func parseDiscoveredFaviconPayload(
-        _ body: Any
-    ) -> ParsedDiscoveredFaviconPayload? {
-        guard let payload = body as? [String: Any],
-              let documentURLString = (payload["documentUrl"] as? String) ?? (payload["documentURL"] as? String),
-              let documentURL = URL(string: documentURLString)
-        else {
-            return nil
-        }
-
-        if let rawLinks = (payload["favicons"] as? [[String: Any]]) ?? (payload["links"] as? [[String: Any]]) {
-            return ParsedDiscoveredFaviconPayload(
-                documentURL: documentURL,
-                fullLinks: parseDiscoveredFaviconLinks(rawLinks),
-                upsertedLinks: [],
-                removedLinks: []
-            )
-        }
-
-        if let delta = payload["faviconDelta"] as? [String: Any] {
-            return ParsedDiscoveredFaviconPayload(
-                documentURL: documentURL,
-                fullLinks: nil,
-                upsertedLinks: parseDiscoveredFaviconLinks(delta["upserted"] as? [[String: Any]] ?? []),
-                removedLinks: parseDiscoveredFaviconLinks(delta["removed"] as? [[String: Any]] ?? [])
-            )
-        }
-
-        return ParsedDiscoveredFaviconPayload(
-            documentURL: documentURL,
-            fullLinks: [],
-            upsertedLinks: [],
-            removedLinks: []
-        )
-    }
-
-    static func mergeDiscoveredFaviconPayload(
-        existingLinks: [SumiDiscoveredFaviconLink],
-        parsed: ParsedDiscoveredFaviconPayload
-    ) -> [SumiDiscoveredFaviconLink] {
-        if let fullLinks = parsed.fullLinks {
-            return fullLinks
-        }
-
-        let removed = Set(parsed.removedLinks)
-        var merged = existingLinks.filter { !removed.contains($0) }
-        var seen = Set(merged)
-        for link in parsed.upsertedLinks where seen.insert(link).inserted {
-            merged.append(link)
-        }
-        return merged
-    }
-
-    private static func parseDiscoveredFaviconLinks(_ rawLinks: [[String: Any]]) -> [SumiDiscoveredFaviconLink] {
-        rawLinks.compactMap { raw -> SumiDiscoveredFaviconLink? in
-            guard let href = raw["href"] as? String,
-                  let url = URL(string: href),
-                  let rel = raw["rel"] as? String
-            else {
-                return nil
-            }
-
-            return SumiDiscoveredFaviconLink(
-                url: url,
-                relation: rel,
-                type: raw["type"] as? String
-            )
-        }
-    }
-
     public func userContentController(
         _ userContentController: WKUserContentController,
         didReceive message: WKScriptMessage
@@ -115,9 +38,6 @@ extension Tab: WKScriptMessageHandler {
 
         case coreScriptMessageHandlerName("SumiIdentity"):
             handleOAuthRequest(message: message)
-
-        case coreScriptMessageHandlerName("faviconLinks"):
-            handleDiscoveredFaviconLinks(message: message)
 
         default:
             break
@@ -207,44 +127,6 @@ extension Tab: WKScriptMessageHandler {
         )
 
         manager.authenticationManager.beginIdentityFlow(identityRequest, from: self)
-    }
-
-    private func handleDiscoveredFaviconLinks(message: WKScriptMessage) {
-        guard let parsed = Self.parseDiscoveredFaviconPayload(message.body) else {
-            return
-        }
-
-        let documentURL = parsed.documentURL
-        let links = mergedDiscoveredFaviconLinks(from: parsed)
-        guard !links.isEmpty else { return }
-
-        Task { @MainActor [weak self] in
-            await self?.applyDiscoveredFaviconLinks(links, documentURL: documentURL)
-        }
-    }
-
-    func clearDiscoveredFaviconLinks() {
-        discoveredFaviconLinksByDocumentURL = [:]
-    }
-
-    private func mergedDiscoveredFaviconLinks(
-        from parsed: ParsedDiscoveredFaviconPayload
-    ) -> [SumiDiscoveredFaviconLink] {
-        var currentLinksByDocumentURL = discoveredFaviconLinksByDocumentURL
-        let existingLinks = currentLinksByDocumentURL[parsed.documentURL] ?? []
-        let mergedLinks = Self.mergeDiscoveredFaviconPayload(
-            existingLinks: existingLinks,
-            parsed: parsed
-        )
-
-        if mergedLinks.isEmpty {
-            currentLinksByDocumentURL.removeValue(forKey: parsed.documentURL)
-        } else {
-            currentLinksByDocumentURL[parsed.documentURL] = mergedLinks
-        }
-        discoveredFaviconLinksByDocumentURL = currentLinksByDocumentURL
-
-        return mergedLinks
     }
 
     func finishIdentityFlow(

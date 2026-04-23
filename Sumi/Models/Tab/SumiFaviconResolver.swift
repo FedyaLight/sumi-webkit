@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import UserScript
 import WebKit
 
 struct SumiDiscoveredFaviconLink: Hashable, Sendable {
@@ -29,7 +30,7 @@ actor SumiFaviconResolver {
 
     func image(for url: URL, webView: WKWebView? = nil) async -> NSImage? {
         let manager = await MainActor.run { SumiFaviconSystem.shared.manager }
-        return await manager.loadFavicon(for: url, webView: webView)?.image
+        return await manager.handleFaviconLinks([], documentUrl: url, webView: webView)?.image
     }
 
     func image(
@@ -38,7 +39,7 @@ actor SumiFaviconResolver {
         webView: WKWebView? = nil
     ) async -> NSImage? {
         let manager = await MainActor.run { SumiFaviconSystem.shared.manager }
-        return await manager.handleLiveFaviconLinks(
+        return await manager.handleFaviconLinks(
             Self.faviconLinks(from: discoveredLinks),
             documentUrl: documentURL,
             webView: webView
@@ -51,7 +52,8 @@ actor SumiFaviconResolver {
         discoveredLinks.map {
             FaviconUserScript.FaviconLink(
                 href: $0.url,
-                rel: $0.relation
+                rel: $0.relation,
+                type: $0.type
             )
         }
     }

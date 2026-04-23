@@ -1,5 +1,7 @@
+import AppKit
 import SwiftData
 import SwiftUI
+import UserScript
 import XCTest
 @testable import Sumi
 
@@ -488,12 +490,97 @@ final class ShortcutRuntimeObservationTests: XCTestCase {
         )
     }
 
+    func testFaviconCacheUpdateRefreshesLauncherOnlyPinWithoutReopening() async throws {
+        Tab.clearFaviconCache()
+        defer { Tab.clearFaviconCache() }
+
+        let tabManager = try makeInMemoryTabManager()
+        let profileId = UUID()
+        let launchURL = URL(string: "https://refresh.example.com/page")!
+        let pin = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: profileId,
+            spaceId: nil,
+            index: 0,
+            folderId: nil,
+            launchURL: launchURL,
+            title: "Launcher",
+            iconAsset: nil
+        )
+        tabManager.setPinnedTabs([pin], for: profileId)
+
+        let beforeRender = render(image: pin.favicon)
+        let expectedData = try XCTUnwrap(makeImageData(color: .systemGreen, size: 64))
+        let expectedImage = try XCTUnwrap(NSImage(data: expectedData))
+        let expectedRender = render(image: Image(nsImage: expectedImage))
+        let faviconURL = try XCTUnwrap(URL(string: "https://refresh.example.com/apple-touch-icon.png"))
+        try await SumiFaviconSystem.shared.manager.storeFavicon(expectedData, with: faviconURL, for: launchURL)
+
+        waitUntil("launcher-only pin should refresh from favicon cache update") {
+            self.render(image: pin.favicon).tiffRepresentation == expectedRender.tiffRepresentation
+        }
+
+        let afterRender = render(image: pin.favicon)
+        XCTAssertNotEqual(beforeRender.tiffRepresentation, afterRender.tiffRepresentation)
+        XCTAssertEqual(afterRender.tiffRepresentation, expectedRender.tiffRepresentation)
+    }
+
     private func makeInMemoryTabManager() throws -> TabManager {
         let container = try ModelContainer(
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
         return TabManager(context: container.mainContext, loadPersistedState: false)
+    }
+
+    private func render(image: Image, size: CGSize = CGSize(width: 18, height: 18)) -> NSImage {
+        let host = NSHostingView(
+            rootView: image
+                .resizable()
+                .scaledToFit()
+                .frame(width: size.width, height: size.height)
+        )
+        host.frame = NSRect(origin: .zero, size: size)
+        host.layoutSubtreeIfNeeded()
+
+        let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
+        host.cacheDisplay(in: host.bounds, to: rep)
+
+        let rendered = NSImage(size: host.bounds.size)
+        rendered.addRepresentation(rep)
+        return rendered
+    }
+
+    private func makeImageData(color: NSColor, size: CGFloat) -> Data? {
+        let pixelSize = max(1, Int(size.rounded()))
+        guard let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: pixelSize,
+            pixelsHigh: pixelSize,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else {
+            return nil
+        }
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+        color.setFill()
+        NSBezierPath(rect: NSRect(x: 0, y: 0, width: pixelSize, height: pixelSize)).fill()
+        NSGraphicsContext.restoreGraphicsState()
+
+        return bitmap.representation(using: .png, properties: [:])
+    }
+
+    private func makeDataURL(color: NSColor, size: CGFloat) -> URL? {
+        guard let data = makeImageData(color: color, size: size) else { return nil }
+        return URL(string: "data:image/png;base64,\(data.base64EncodedString())")
     }
 
     private func waitUntil(

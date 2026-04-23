@@ -1,5 +1,6 @@
 import AppKit
 import SwiftData
+import UserScript
 import XCTest
 
 @testable import Sumi
@@ -260,12 +261,10 @@ final class HistoryMenuTests: XCTestCase {
     }
 
     private func seedFavicon(for url: URL) async throws {
-        let faviconURL = try XCTUnwrap(Self.makeDataURL(color: .systemOrange, size: 16))
-        let favicon = await SumiFaviconSystem.shared.manager.handleLiveFaviconLinks(
-            [FaviconUserScript.FaviconLink(href: faviconURL, rel: "icon")],
-            documentUrl: url,
-            webView: nil
-        )
+        let data = try XCTUnwrap(Self.makeImageData(color: .systemOrange, size: 16))
+        let faviconURL = try XCTUnwrap(URL(string: "https://\(url.host ?? "example.com")/favicon-test.png"))
+        try await SumiFaviconSystem.shared.manager.storeFavicon(data, with: faviconURL, for: url)
+        let favicon = await SumiFaviconSystem.shared.manager.getCachedFavicon(for: url, sizeCategory: .small)
         XCTAssertNotNil(favicon, "Expected favicon cache to be seeded for \(url.absoluteString)")
     }
 

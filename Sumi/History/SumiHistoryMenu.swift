@@ -324,15 +324,6 @@ private enum MenuFaviconResolver {
         let placeholder = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
         placeholder?.size = NSSize(width: 16, height: 16)
         menuItem.image = placeholder
-
-        Task { @MainActor [weak menuItem] in
-            guard let menuItem,
-                  let fetchedImage = await SumiFaviconResolver.shared.image(for: url)
-            else {
-                return
-            }
-            menuItem.image = fetchedImage.resizedToFaviconSize()
-        }
     }
 }
 

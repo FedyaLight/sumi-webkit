@@ -1,0 +1,224 @@
+//
+//  SubscriptionURL.swift
+//
+//  Copyright © 2024 DuckDuckGo. All rights reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//  http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+import Foundation
+
+// MARK: - URLs, ex URL+Subscription
+
+public enum SubscriptionURL: Equatable {
+
+    case baseURL
+    case purchase
+    case welcome
+    case faq
+    case privacyPolicy
+    case helpPagesAddingEmail
+    case activationFlow
+    case activationFlowThisDeviceEmailStep
+    case activationFlowThisDeviceActivateEmailStep
+    case activationFlowThisDeviceActivateEmailOTPStep
+    case activationFlowAddEmailStep
+    case activationFlowLinkViaEmailStep
+    case activationFlowSuccess
+    case manageEmail
+    case manageSubscriptionsInAppStore
+    case identityTheftRestoration
+    case plans
+    case upgradeToTier(String)
+    case addEmail
+    case addEmailSuccess
+
+    public enum StaticURLs {
+        public static let defaultBaseSubscriptionURL = URL(string: "https://duckduckgo.com/subscriptions")!
+        static let manageSubscriptionsInMacAppStoreURL = URL(string: "macappstores://apps.apple.com/account/subscriptions")!
+        static let helpPagesURL = URL(string: "https://duckduckgo.com/duckduckgo-help-pages/privacy-pro/")!
+        static let privacyPolicyURL = URL(string: "https://duckduckgo.com/pro/privacy-terms/")!
+        static let helpPagesAddingEmailURL = URL(string: "https://duckduckgo.com/duckduckgo-help-pages/privacy-pro/adding-email")!
+    }
+
+    public func subscriptionURL(withCustomBaseURL baseURL: URL = StaticURLs.defaultBaseSubscriptionURL, environment: SubscriptionEnvironment.ServiceEnvironment) -> URL {
+        let url: URL = {
+            switch self {
+            case .baseURL:
+                baseURL
+            case .purchase:
+                baseURL
+            case .welcome:
+                baseURL.appendingPathComponent("welcome")
+            case .faq:
+                StaticURLs.helpPagesURL
+            case .privacyPolicy:
+                StaticURLs.privacyPolicyURL
+            case .helpPagesAddingEmail:
+                StaticURLs.helpPagesAddingEmailURL
+            case .activationFlow:
+                baseURL.appendingPathComponent("activation-flow")
+            case .activationFlowThisDeviceEmailStep:
+                baseURL.appendingPathComponent("activation-flow/this-device/email")
+            case .activationFlowThisDeviceActivateEmailStep:
+                baseURL.appendingPathComponent("activation-flow/this-device/activate-by-email")
+            case .activationFlowThisDeviceActivateEmailOTPStep:
+                baseURL.appendingPathComponent("activation-flow/this-device/activate-by-email/otp")
+            case .activationFlowAddEmailStep:
+                baseURL.appendingPathComponent("activation-flow/another-device/add-email")
+            case .activationFlowLinkViaEmailStep:
+                baseURL.appendingPathComponent("activation-flow/another-device/email")
+            case .activationFlowSuccess:
+                baseURL.appendingPathComponent("activation-flow/this-device/activate-by-email/success")
+            case .manageEmail:
+                baseURL.appendingPathComponent("manage")
+            case .manageSubscriptionsInAppStore:
+                StaticURLs.manageSubscriptionsInMacAppStoreURL
+            case .identityTheftRestoration:
+                baseURL.replacing(path: "identity-theft-restoration")
+            case .plans:
+                baseURL.appendingPathComponent("plans")
+            case .upgradeToTier(let tier):
+                baseURL.appendingPathComponent("plans").appendingParameter(name: "tier", value: tier)
+            case .addEmail:
+                baseURL.appendingPathComponent("add-email")
+            case .addEmailSuccess:
+                baseURL.appendingPathComponent("add-email/success")
+            }
+        }()
+
+        if environment == .staging, hasStagingVariant {
+            return url.forStaging()
+        }
+
+        return url
+    }
+
+    private var hasStagingVariant: Bool {
+        switch self {
+        case .faq, .privacyPolicy, .helpPagesAddingEmail, .manageSubscriptionsInAppStore:
+            false
+        default:
+            true
+        }
+    }
+
+}
+
+extension SubscriptionURL {
+
+    /**
+     * Creates URL components for a subscription purchase URL with the specified origin parameter.
+     *
+     * This method constructs a subscription purchase URL by:
+     * 1. Using the base purchase URL
+     * 2. Appending the origin parameter to track where the subscription request originated from
+     * 3. Converting the resulting URL into URLComponents
+     *
+     * - Parameters:
+     *   - origin: A string identifying where the subscription request originated from (e.g., "funnel_appsettings_ios")
+     *   - environment: The subscription environment to use (defaults to production)
+     *
+     * - Returns: URLComponents containing the subscription URL with the origin parameter, or nil if the URL could not be parsed
+     */
+    public static func purchaseURLComponentsWithOrigin(_ origin: String, environment: SubscriptionEnvironment.ServiceEnvironment = .production) -> URLComponents? {
+        let url = SubscriptionURL.purchase
+            .subscriptionURL(environment: environment)
+            .appendingParameter(name: AttributionParameter.origin, value: origin)
+        return URLComponents(url: url, resolvingAgainstBaseURL: false)
+    }
+
+    /**
+     * Creates URL components for a subscription purchase URL with the specified origin and featurePage parameters.
+     *
+     * - Parameters:
+     *   - origin: A string identifying where the subscription request originated from (optional)
+     *   - featurePage: The feature page to highlight (optional)
+     *   - environment: The subscription environment to use (defaults to production)
+     *
+     * - Returns: URLComponents containing the subscription URL with the origin and featurePage parameters, or nil if the URL could not be parsed
+     */
+    public static func purchaseURLComponentsWithOriginAndFeaturePage(
+        origin: String?,
+        featurePage: String?,
+        environment: SubscriptionEnvironment.ServiceEnvironment = .production
+    ) -> URLComponents? {
+        var url = SubscriptionURL.purchase.subscriptionURL(environment: environment)
+        if let origin = origin {
+            url = url.appendingParameter(name: AttributionParameter.origin, value: origin)
+        }
+        if let featurePage = featurePage {
+            url = url.appendingParameter(name: "featurePage", value: featurePage)
+        }
+        return URLComponents(url: url, resolvingAgainstBaseURL: false)
+    }
+
+    /**
+     * Creates URL components for the plans page with origin parameter
+     *
+     * - Parameters:
+     *   - origin: Attribution origin for analytics
+     *   - tier: If provided, includes tier=<value> parameter for direct upgrade flow to the specified tier.
+     *           The tier value should come from the backend's available upgrade tiers (e.g., "pro", "plus").
+     *   - environment: The subscription environment (production/staging)
+     *
+     * - Returns: URLComponents containing the plans URL with origin parameter
+     */
+    public static func plansURLComponents(_ origin: String, tier: String? = nil, environment: SubscriptionEnvironment.ServiceEnvironment = .production) -> URLComponents? {
+        var url = SubscriptionURL.plans
+            .subscriptionURL(environment: environment)
+            .appendingParameter(name: AttributionParameter.origin, value: origin)
+        if let tier {
+            url = url.appendingParameter(name: "tier", value: tier)
+        }
+        return URLComponents(url: url, resolvingAgainstBaseURL: false)
+    }
+}
+
+extension SubscriptionURL {
+    public enum FeaturePage {
+        public static let winback = "winback"
+    }
+}
+
+fileprivate extension URL {
+
+    enum EnvironmentParameter {
+        static let name = "environment"
+        static let staging = "staging"
+    }
+
+    func forStaging() -> URL {
+        self.appendingParameter(name: EnvironmentParameter.name, value: EnvironmentParameter.staging)
+    }
+
+}
+
+extension URL {
+
+    public func forComparison() -> URL {
+        guard var components = URLComponents(url: self, resolvingAgainstBaseURL: false) else {
+            return self
+        }
+
+        if let queryItems = components.queryItems, !queryItems.isEmpty {
+            components.queryItems = queryItems.filter { !["environment", "origin", "using"].contains($0.name) }
+            if components.queryItems?.isEmpty ?? true {
+                components.queryItems = nil
+            }
+        } else {
+            components.queryItems = nil
+        }
+        return components.url ?? self
+    }
+}
