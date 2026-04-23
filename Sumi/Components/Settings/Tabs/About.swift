@@ -24,25 +24,6 @@ private enum SumiAppMetadata {
 }
 
 struct SettingsAboutTab: View {
-    @EnvironmentObject private var browserManager: BrowserManager
-
-    private var updateButtonTitle: String {
-        if browserManager.updateAvailability?.isDownloaded == true {
-            return "Install Update"
-        }
-        return "Check for Updates..."
-    }
-
-    private var updateStatusText: String {
-        guard let availability = browserManager.updateAvailability else {
-            return "Use Sparkle to check for the latest Sumi release from within Settings."
-        }
-        if availability.isDownloaded {
-            return "A downloaded update is ready to install when you apply it."
-        }
-        return "A new Sumi update is available."
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             SettingsSectionCard(
@@ -68,27 +49,6 @@ struct SettingsAboutTab: View {
                     }
 
                     Spacer()
-                }
-            }
-
-            if SumiUpdateConfiguration.isConfigured {
-                SettingsSectionCard(
-                    title: "Updates",
-                    subtitle: "Check for new Sumi releases and install downloaded updates"
-                ) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(updateStatusText)
-                            .foregroundStyle(.secondary)
-
-                        Button(updateButtonTitle) {
-                            if browserManager.updateAvailability?.isDownloaded == true {
-                                browserManager.installPendingUpdateIfAvailable()
-                            } else {
-                                browserManager.checkForUpdates()
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
                 }
             }
         }

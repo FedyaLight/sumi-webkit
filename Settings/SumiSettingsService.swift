@@ -21,7 +21,6 @@ class SumiSettingsService {
     private let darkThemeStyleKey = "settings.darkThemeStyle"
     private let searchEngineKey = "settings.searchEngine"
     private let tabUnloadTimeoutKey = "settings.tabUnloadTimeout"
-    private let debugToggleUpdateNotificationKey = "settings.debugToggleUpdateNotification"
     private let askBeforeQuitKey = "settings.askBeforeQuit"
     private let sidebarPositionKey = "settings.sidebarPosition"
     private let sidebarCompactSpacesKey = "settings.sidebarCompactSpaces"
@@ -174,12 +173,6 @@ class SumiSettingsService {
         }
     }
 
-    var debugToggleUpdateNotification: Bool {
-        didSet {
-            userDefaults.set(debugToggleUpdateNotification, forKey: debugToggleUpdateNotificationKey)
-        }
-    }
-    
     var showLinkStatusBar: Bool {
         didSet {
             userDefaults.set(showLinkStatusBar, forKey: showLinkStatusBarKey)
@@ -233,7 +226,6 @@ class SumiSettingsService {
             searchEngineKey: SearchProvider.google.rawValue,
             // Default tab unload timeout: 60 minutes
             tabUnloadTimeoutKey: 3600.0,
-            debugToggleUpdateNotificationKey: false,
             askBeforeQuitKey: true,
             sidebarPositionKey: SidebarPosition.left.rawValue,
             sidebarCompactSpacesKey: false,
@@ -275,7 +267,6 @@ class SumiSettingsService {
         
         // Initialize tab unload timeout
         self.tabUnloadTimeout = userDefaults.double(forKey: tabUnloadTimeoutKey)
-        self.debugToggleUpdateNotification = userDefaults.bool(forKey: debugToggleUpdateNotificationKey)
         self.askBeforeQuit = userDefaults.bool(forKey: askBeforeQuitKey)
         self.sidebarPosition = SidebarPosition(rawValue: userDefaults.string(forKey: sidebarPositionKey) ?? "left") ?? SidebarPosition.left
         self.sidebarCompactSpaces = userDefaults.bool(forKey: sidebarCompactSpacesKey)

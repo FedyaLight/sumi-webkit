@@ -107,12 +107,6 @@ struct SumiCommands: Commands {
             Button("Make Sumi Default Browser") {
                 browserManager.setAsDefaultBrowser()
             }
-
-            if SumiUpdateConfiguration.isConfigured {
-                Button("Check for Updates...") {
-                    browserManager.checkForUpdates()
-                }
-            }
         }
 
         CommandGroup(replacing: .appSettings) {

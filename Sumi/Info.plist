@@ -27,20 +27,6 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>SUAllowsAutomaticUpdates</key>
-	<false/>
-	<key>SUAutomaticallyInstall</key>
-	<false/>
-	<key>SUAutomaticallyUpdate</key>
-	<false/>
-	<key>SUEnableAutomaticChecks</key>
-	<false/>
-	<key>SUEnableDowngrade</key>
-	<false/>
-	<key>SUScheduledCheckInterval</key>
-	<integer>86400</integer>
-	<key>SUUpdateRelaunchDelay</key>
-	<integer>3</integer>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

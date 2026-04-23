@@ -6,24 +6,6 @@
 //
 
 import CoreServices
-import Sparkle
-
-enum SumiUpdateConfiguration {
-    static var configuredFeedURL: URL? {
-        guard
-            let rawValue = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String,
-            let url = URL(string: rawValue),
-            rawValue.contains("example.com") == false
-        else {
-            return nil
-        }
-        return url
-    }
-
-    static var isConfigured: Bool {
-        configuredFeedURL != nil
-    }
-}
 
 enum ZoomPopoverSource {
     case toolbar
@@ -48,49 +30,6 @@ struct ZoomPopoverRequest: Equatable, Identifiable {
 
 @MainActor
 extension BrowserManager {
-    // MARK: - Update Handling
-
-    struct UpdateAvailability: Equatable {
-        var isDownloaded: Bool
-    }
-
-    func handleUpdaterFoundValidUpdate(_ item: SUAppcastItem) {
-        _ = item
-        updateAvailability = UpdateAvailability(
-            isDownloaded: updateAvailability?.isDownloaded ?? false
-        )
-    }
-
-    func handleUpdaterFinishedDownloading(_ item: SUAppcastItem) {
-        _ = item
-        if var availability = updateAvailability {
-            availability.isDownloaded = true
-            updateAvailability = availability
-        } else {
-            updateAvailability = UpdateAvailability(isDownloaded: true)
-        }
-    }
-
-    func handleUpdaterDidNotFindUpdate() {
-        updateAvailability = nil
-    }
-
-    func handleUpdaterAbortedUpdate() {
-        updateAvailability = nil
-    }
-
-    func handleUpdaterWillInstallOnQuit(_ item: SUAppcastItem) {
-        handleUpdaterFinishedDownloading(item)
-    }
-
-    func checkForUpdates() {
-        appDelegate?.updaterController.checkForUpdates(nil)
-    }
-
-    func installPendingUpdateIfAvailable() {
-        checkForUpdates()
-    }
-
     // MARK: - Zoom Management
 
     func zoomInCurrentTab() {
