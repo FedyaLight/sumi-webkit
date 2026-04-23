@@ -2920,7 +2920,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
         let menuTokenID = state.beginContextMenuSessionForTesting()
 
         XCTAssertTrue(state.isContextMenuPresented)
-        XCTAssertTrue(state.suppressesSidebarAffordances)
+        XCTAssertTrue(state.freezesSidebarHoverState)
         XCTAssertFalse(state.allowsSidebarSwipeCapture)
 
         state.endContextMenuSessionForTesting(menuTokenID)

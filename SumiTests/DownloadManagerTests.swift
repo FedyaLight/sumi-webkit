@@ -61,7 +61,6 @@ final class DownloadManagerTests: XCTestCase {
 
         let item = manager.beginExternalDownload(
             originalURL: sourceURL,
-            websiteURL: sourceURL,
             suggestedFilename: "archive.zip",
             sourceProgress: sourceProgress
         )
@@ -96,7 +95,6 @@ final class DownloadManagerTests: XCTestCase {
         let completedURL = try XCTUnwrap(completed.destinationURL)
         let active = manager.beginExternalDownload(
             originalURL: URL(string: "https://example.com/active.bin")!,
-            websiteURL: nil,
             suggestedFilename: "active-\(UUID().uuidString).bin",
             sourceProgress: Progress(totalUnitCount: -1)
         )

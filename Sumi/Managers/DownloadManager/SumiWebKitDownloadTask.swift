@@ -11,9 +11,9 @@ final class SumiWebKitDownloadTask: NSObject, WKDownloadDelegate {
     private weak var coordinator: DownloadListCoordinator?
     private let progress: DownloadProgress
     private var progressPresenter: DownloadFileProgressPresenter?
+    // periphery:ignore - retained to keep the temporary-file deletion watcher alive.
     private var tempFilePresenter: DownloadFilePresenter?
     private var isCancelling = false
-    private var lastReceivedBytes: UInt64 = 0
     private var progressCancellables = Set<AnyCancellable>()
     private let flyAnimationOriginalRect: NSRect?
 
@@ -89,29 +89,9 @@ final class SumiWebKitDownloadTask: NSObject, WKDownloadDelegate {
         return reservation.tempURL
     }
 
-    func download(_: WKDownload, didReceive response: URLResponse) {
-        coordinator?.didReceiveResponse(response, for: item)
-        if response.expectedContentLength > 0 {
-            progress.updateProgress(
-                totalUnitCount: response.expectedContentLength,
-                completedUnitCount: progress.completedUnitCount
-            )
-            coordinator?.didUpdateProgress(progress, for: item)
-        }
-    }
-
-    func download(_: WKDownload, didReceive bytes: UInt64) {
-        lastReceivedBytes = bytes
-        let sourceProgress = download.progress
-        let total = sourceProgress.totalUnitCount
-        let completed = sourceProgress.completedUnitCount
-        progress.updateProgress(totalUnitCount: total, completedUnitCount: completed)
-        coordinator?.didUpdateProgress(progress, for: item)
-    }
-
     func downloadDidFinish(_ download: WKDownload) {
         let sourceCompleted = download.progress.completedUnitCount
-        let knownBytes = max(sourceCompleted, Int64(lastReceivedBytes), progress.completedUnitCount)
+        let knownBytes = max(sourceCompleted, progress.completedUnitCount)
         progress.markCompleted(byteCount: knownBytes)
         coordinator?.didUpdateProgress(progress, for: item)
 
@@ -190,15 +170,6 @@ final class SumiWebKitDownloadTask: NSObject, WKDownloadDelegate {
                 isRetryable: retryable
             )
         )
-    }
-
-    func downloadWillPerformHTTPRedirection(
-        _: WKDownload,
-        navigationResponse _: HTTPURLResponse,
-        newRequest request: URLRequest,
-        decisionHandler: @escaping (URLRequest?) -> Void
-    ) {
-        decisionHandler(request)
     }
 
     func download(

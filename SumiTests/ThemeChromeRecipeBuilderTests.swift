@@ -56,7 +56,7 @@ final class ThemeChromeRecipeBuilderTests: XCTestCase {
         )
     }
 
-    func testCommandPaletteBackgroundDiffersFromPanelBackgroundInRecipe() {
+    func testCommandPaletteTokenUsesSolidBackgroundInDarkRecipe() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
 
@@ -69,15 +69,11 @@ final class ThemeChromeRecipeBuilderTests: XCTestCase {
         context.transitionProgress = 1.0
 
         let tokens = context.tokens(settings: settings)
-        let panel = tokens.panelBackground.sRGBComponents
-        let palette = tokens.commandPaletteBackground.sRGBComponents
-        let distance = abs(panel.red - palette.red)
-            + abs(panel.green - palette.green)
-            + abs(panel.blue - palette.blue)
-        XCTAssertGreaterThan(
-            distance,
-            0.05,
-            "In dark chrome, floating palette (#1C1C1E) should differ from the neutral panel lift"
-        )
+        let token = tokens.commandPaletteBackground.sRGBComponents
+        let expected = ThemeChromeRecipeBuilder.commandPaletteSolidBackground(scheme: .dark).sRGBComponents
+        XCTAssertEqual(token.red, expected.red, accuracy: 0.02)
+        XCTAssertEqual(token.green, expected.green, accuracy: 0.02)
+        XCTAssertEqual(token.blue, expected.blue, accuracy: 0.02)
+        XCTAssertEqual(token.alpha, expected.alpha, accuracy: 0.02)
     }
 }

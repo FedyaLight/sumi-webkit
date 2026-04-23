@@ -277,7 +277,6 @@ private struct ThemeChromePalette {
     let separator: Color
     let dropGuide: Color
     let dropGuideBackground: Color
-    let panelBackground: Color
     let toastBackground: Color
     let toastBorder: Color
     let toastPrimaryText: Color
@@ -405,7 +404,6 @@ private struct ThemeChromePalette {
             separator: separator,
             dropGuide: dropGuide,
             dropGuideBackground: dropGuide.opacity(scheme == .dark ? 0.16 : 0.12),
-            panelBackground: elevatedStrong.opacity(0.98),
             toastBackground: elevatedStrong.opacity(0.98),
             toastBorder: separator.opacity(scheme == .dark ? 0.7 : 1.0),
             toastPrimaryText: primaryText,
@@ -462,7 +460,6 @@ private struct ThemeChromePalette {
             separator: mix(separator, other.separator),
             dropGuide: mix(dropGuide, other.dropGuide),
             dropGuideBackground: mix(dropGuideBackground, other.dropGuideBackground),
-            panelBackground: mix(panelBackground, other.panelBackground),
             toastBackground: mix(toastBackground, other.toastBackground),
             toastBorder: mix(toastBorder, other.toastBorder),
             toastPrimaryText: mix(toastPrimaryText, other.toastPrimaryText),
@@ -500,7 +497,6 @@ private struct ThemeChromePalette {
             separator: separator,
             dropGuide: dropGuide,
             dropGuideBackground: dropGuideBackground,
-            panelBackground: panelBackground,
             toastBackground: toastBackground,
             toastBorder: toastBorder,
             toastPrimaryText: toastPrimaryText,

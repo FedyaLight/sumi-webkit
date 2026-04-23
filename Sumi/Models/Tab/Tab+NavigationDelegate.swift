@@ -306,7 +306,6 @@ extension Tab: WKNavigationDelegate {
         _ = browserManager?.downloadManager.addDownload(
             download,
             originalURL: originalURL,
-            websiteURL: webView.url,
             suggestedFilename: suggestedFilename,
             flyAnimationOriginalRect: fileIconFlyAnimationOriginalRect(in: webView)
         )
@@ -331,7 +330,6 @@ extension Tab: WKNavigationDelegate {
         _ = browserManager?.downloadManager.addDownload(
             download,
             originalURL: originalURL,
-            websiteURL: webView.url,
             suggestedFilename: suggestedFilename,
             flyAnimationOriginalRect: fileIconFlyAnimationOriginalRect(in: webView)
         )
