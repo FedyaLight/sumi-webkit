@@ -85,10 +85,15 @@ extension Tab: WKUIDelegate {
             reason: "Tab.createPopupWebView.configuration"
         )
         let newWebView = FocusableWKWebView(frame: .zero, configuration: configuration)
+        let shouldOpenInBackground = shouldOpenPopupTabInBackground(
+            navigationAction: navigationAction,
+            modifierFlags: navigationFlags,
+            isExtensionOriginated: isExtensionOriginated
+        )
         let newTab = bm.createPopupTab(
             from: self,
             webViewConfigurationOverride: configuration,
-            activate: true
+            activate: !shouldOpenInBackground
         )
 
         newWebView.navigationDelegate = newTab
@@ -119,6 +124,18 @@ extension Tab: WKUIDelegate {
         }
 
         return newWebView
+    }
+
+    private func shouldOpenPopupTabInBackground(
+        navigationAction: WKNavigationAction,
+        modifierFlags: NSEvent.ModifierFlags,
+        isExtensionOriginated: Bool
+    ) -> Bool {
+        guard isExtensionOriginated == false else { return false }
+        guard navigationAction.navigationType == .linkActivated else { return false }
+
+        let normalizedFlags = modifierFlags.intersection([.command, .option, .control, .shift])
+        return normalizedFlags == [.command]
     }
 
     public func webView(

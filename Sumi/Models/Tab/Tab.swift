@@ -288,6 +288,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { webViewRuntime.resolvedFaviconCacheKey }
         set { webViewRuntime.resolvedFaviconCacheKey = newValue }
     }
+    var discoveredFaviconLinksByDocumentURL: [URL: [SumiDiscoveredFaviconLink]] {
+        get { webViewRuntime.discoveredFaviconLinksByDocumentURL }
+        set { webViewRuntime.discoveredFaviconLinksByDocumentURL = newValue }
+    }
     
     weak var browserManager: BrowserManager?
     weak var sumiSettings: SumiSettingsService?
@@ -390,13 +394,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         super.init()
         self._existingWebView = existingWebView
 
-        if skipFaviconFetch {
-            applyCachedFaviconOrPlaceholder(for: url)
-        } else {
-            Task { @MainActor in
-                await fetchAndSetFavicon(for: url)
-            }
-        }
+        applyCachedFaviconOrPlaceholder(for: url)
     }
 
     func bindToShortcutPin(_ pin: ShortcutPin) {
@@ -516,9 +514,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             }
         }
 
-        Task { @MainActor in
-            await fetchAndSetFavicon(for: newURL)
-        }
+        applyCachedFaviconOrPlaceholder(for: newURL)
     }
 
     func loadURL(_ urlString: String) {

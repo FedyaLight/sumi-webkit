@@ -54,59 +54,11 @@ extension Tab {
 
     func fetchFaviconForVisiblePresentation() async {
         guard faviconIsTemplateGlobePlaceholder else { return }
-        await fetchAndSetFavicon(for: url)
+        _ = applyCachedFaviconOrPlaceholder(for: url)
     }
 
     func fetchAndSetFavicon(for url: URL) async {
-        let defaultFavicon = SwiftUI.Image(systemName: "globe")
-
-        if SumiSurface.isSettingsSurfaceURL(url) {
-            await MainActor.run {
-                self.favicon = SwiftUI.Image(systemName: SumiSurface.settingsTabFaviconSystemImageName)
-                self.faviconIsTemplateGlobePlaceholder = false
-                self.resolvedFaviconCacheKey = nil
-                self.syncBoundLauncherPinAfterFaviconResolved()
-            }
-            return
-        }
-
-        if SumiSurface.isHistorySurfaceURL(url) {
-            await MainActor.run {
-                self.favicon = SwiftUI.Image(systemName: SumiSurface.historyTabFaviconSystemImageName)
-                self.faviconIsTemplateGlobePlaceholder = false
-                self.resolvedFaviconCacheKey = nil
-                self.syncBoundLauncherPinAfterFaviconResolved()
-            }
-            return
-        }
-
-        guard let cacheKey = SumiFaviconResolver.cacheKey(for: url) else {
-            await MainActor.run {
-                self.favicon = defaultFavicon
-                self.faviconIsTemplateGlobePlaceholder = true
-                self.resolvedFaviconCacheKey = nil
-            }
-            return
-        }
-
-        if let image = await SumiFaviconResolver.shared.image(for: url) {
-            await MainActor.run {
-                self.favicon = SwiftUI.Image(nsImage: image)
-                self.faviconIsTemplateGlobePlaceholder = false
-                self.resolvedFaviconCacheKey = cacheKey
-                self.syncBoundLauncherPinAfterFaviconResolved()
-            }
-            return
-        }
-
-        await MainActor.run {
-            if self.resolvedFaviconCacheKey == cacheKey,
-               !self.faviconIsTemplateGlobePlaceholder {
-                return
-            }
-            self.favicon = defaultFavicon
-            self.faviconIsTemplateGlobePlaceholder = true
-        }
+        _ = applyCachedFaviconOrPlaceholder(for: url)
     }
 
     func applyDiscoveredFaviconLinks(
@@ -114,7 +66,11 @@ extension Tab {
         documentURL: URL
     ) async {
         guard let cacheKey = SumiFaviconResolver.cacheKey(for: documentURL),
-              let image = await SumiFaviconResolver.shared.image(for: documentURL, discoveredLinks: links)
+              let image = await SumiFaviconResolver.shared.image(
+                for: documentURL,
+                discoveredLinks: links,
+                webView: existingWebView
+              )
         else {
             return
         }
@@ -139,9 +95,7 @@ extension Tab {
 
     static func clearFaviconCache() {
         TabFaviconStore.clearCache()
-        Task {
-            await SumiFaviconResolver.shared.resetTransientState()
-        }
+        SumiFaviconSystem.shared.manager.clearAll()
     }
 
     static func getFaviconCacheStats() -> (count: Int, domains: [String]) {

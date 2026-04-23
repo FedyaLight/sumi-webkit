@@ -111,6 +111,7 @@ final class TabWebViewRuntime {
     var primaryWindowId: UUID?
     var profileAwaitCancellable: AnyCancellable?
     var resolvedFaviconCacheKey: String?
+    var discoveredFaviconLinksByDocumentURL: [URL: [SumiDiscoveredFaviconLink]] = [:]
     let extensionRuntimeState = TabExtensionRuntimeState()
     let findInPage = FindInPageTabExtension()
 }
