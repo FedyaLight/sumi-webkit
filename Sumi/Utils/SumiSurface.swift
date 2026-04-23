@@ -56,4 +56,13 @@ enum SumiSurface {
         return components.url ?? URL(string: "sumi://history?range=all")!
     }
 
+    static func historyRange(from url: URL) -> HistoryRange? {
+        guard isHistorySurfaceURL(url) else { return nil }
+        let queryValue = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first(where: { $0.name == "range" })?
+            .value
+        return queryValue.flatMap(HistoryRange.init(rawValue:))
+    }
+
 }

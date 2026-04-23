@@ -13,21 +13,23 @@ final class HistoryNavigationTests: XCTestCase {
         XCTAssertEqual(historyTabs.count, 1)
         XCTAssertEqual(
             historyTabs.first?.url,
-            SumiSurface.historySurfaceURL(rangeQuery: DataModel.HistoryRange.all.paneQueryValue)
+            SumiSurface.historySurfaceURL(rangeQuery: HistoryRange.all.paneQueryValue)
         )
         XCTAssertEqual(historyTabs.first?.name, "History")
         XCTAssertEqual(windowState.currentTabId, historyTabs.first?.id)
     }
 
-    func testHistorySurfaceIsWebBackedSpecialPage() {
+    func testHistorySurfaceIsNativeBrowserTab() {
         let historyURL = SumiSurface.historySurfaceURL(
-            rangeQuery: DataModel.HistoryRange.all.paneQueryValue
+            rangeQuery: HistoryRange.all.paneQueryValue
         )
         let tab = Tab(url: historyURL, skipFaviconFetch: true)
 
         XCTAssertTrue(tab.representsSumiHistorySurface)
         XCTAssertTrue(tab.representsSumiInternalSurface)
-        XCTAssertFalse(tab.representsSumiNonWebSurface)
+        XCTAssertTrue(tab.representsSumiNativeSurface)
+        XCTAssertTrue(tab.representsSumiNonWebSurface)
+        XCTAssertFalse(tab.requiresPrimaryWebView)
         XCTAssertTrue(tab.usesChromeThemedTemplateFavicon)
     }
 
@@ -41,7 +43,7 @@ final class HistoryNavigationTests: XCTestCase {
         XCTAssertEqual(historyTabs.count, 2)
         XCTAssertEqual(
             historyTabs.last?.url,
-            SumiSurface.historySurfaceURL(rangeQuery: DataModel.HistoryRange.older.paneQueryValue)
+            SumiSurface.historySurfaceURL(rangeQuery: HistoryRange.older.paneQueryValue)
         )
         XCTAssertEqual(windowState.currentTabId, historyTabs.last?.id)
     }

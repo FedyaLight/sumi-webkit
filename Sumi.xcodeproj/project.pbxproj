@@ -230,7 +230,6 @@
 				7F8340F82E37F39400674A5D /* Sources */,
 				7F8340F92E37F39400674A5D /* Frameworks */,
 				7F8340FA2E37F39400674A5D /* Resources */,
-				2F8F11042FA0000000A10001 /* Copy DDG History Assets */,
 			);
 			buildRules = (
 			);
@@ -321,29 +320,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
-
-/* Begin PBXShellScriptBuildPhase section */
-		2F8F11042FA0000000A10001 /* Copy DDG History Assets */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/Vendor/DDGHistoryPage/history",
-			);
-			name = "Copy DDG History Assets";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/DDGHistoryPage/history/index.html",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "set -e\nDEST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/DDGHistoryPage\"\nmkdir -p \"$DEST\"\nditto \"$SRCROOT/Vendor/DDGHistoryPage/history\" \"$DEST/history\"\n";
-		};
-/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		2C8925382E88DFF9002236DC /* Sources */ = {

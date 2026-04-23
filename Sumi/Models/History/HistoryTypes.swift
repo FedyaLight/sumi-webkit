@@ -68,6 +68,7 @@ struct HistoryListItem: Identifiable, Equatable, Hashable {
     let visitedAt: Date?
     let relativeDay: String
     let timeText: String
+    let visitCount: Int
     let isSiteAggregate: Bool
 
     var displayTitle: String {
@@ -91,6 +92,221 @@ struct HistoryListItem: Identifiable, Equatable, Hashable {
         let matchDomain = siteDomain ?? domain
         return domains.contains(matchDomain)
     }
+}
+
+enum HistoryRange: String, Codable, CaseIterable, Equatable, Hashable {
+    case all
+    case today
+    case yesterday
+    case sunday
+    case monday
+    case tuesday
+    case wednesday
+    case thursday
+    case friday
+    case saturday
+    case older
+    case allSites = "sites"
+
+    var title: String {
+        switch self {
+        case .all:
+            return "All"
+        case .today:
+            return "Today"
+        case .yesterday:
+            return "Yesterday"
+        case .sunday:
+            return "Sunday"
+        case .monday:
+            return "Monday"
+        case .tuesday:
+            return "Tuesday"
+        case .wednesday:
+            return "Wednesday"
+        case .thursday:
+            return "Thursday"
+        case .friday:
+            return "Friday"
+        case .saturday:
+            return "Saturday"
+        case .older:
+            return "Older"
+        case .allSites:
+            return "Sites"
+        }
+    }
+
+    var paneQueryValue: String { rawValue }
+
+    init?(date: Date, referenceDate: Date, calendar: Calendar = .autoupdatingCurrent) {
+        guard referenceDate >= date else { return nil }
+
+        let dayDelta = calendar.dateComponents(
+            [.day],
+            from: calendar.startOfDay(for: date),
+            to: calendar.startOfDay(for: referenceDate)
+        ).day ?? 0
+
+        switch dayDelta {
+        case 0:
+            self = .today
+        case 1:
+            self = .yesterday
+        default:
+            let weekday = calendar.component(.weekday, from: date)
+            if dayDelta < 7, let range = Self(weekday: weekday) {
+                self = range
+            } else {
+                self = .older
+            }
+        }
+    }
+
+    static func displayedRanges(
+        for referenceDate: Date,
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> [Self] {
+        var currentRange: Self? = .today
+        var ranges: [Self] = []
+        for _ in 0..<7 {
+            guard let unwrappedCurrentRange = currentRange else { break }
+            ranges.append(unwrappedCurrentRange)
+            currentRange = unwrappedCurrentRange.previousRange(
+                for: referenceDate,
+                calendar: calendar
+            )
+        }
+        ranges.append(.older)
+        return ranges
+    }
+
+    func dateRange(
+        for referenceDate: Date,
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> Range<Date>? {
+        let startOfReferenceDay = calendar.startOfDay(for: referenceDate)
+        if self == .older {
+            guard let oldestDisplayedDay = calendar.date(
+                byAdding: .day,
+                value: -6,
+                to: startOfReferenceDay
+            ) else {
+                return nil
+            }
+            return Date.distantPast..<oldestDisplayedDay
+        }
+
+        guard let weekday = weekday(for: referenceDate, calendar: calendar) else {
+            return nil
+        }
+
+        let startDate = self == .today
+            ? startOfReferenceDay
+            : calendar.firstWeekday(weekday, before: startOfReferenceDay)
+        guard let nextDay = calendar.date(byAdding: .day, value: 1, to: startDate) else {
+            return nil
+        }
+
+        return startDate..<nextDay
+    }
+
+    private init?(weekday: Int) {
+        switch weekday {
+        case 1: self = .sunday
+        case 2: self = .monday
+        case 3: self = .tuesday
+        case 4: self = .wednesday
+        case 5: self = .thursday
+        case 6: self = .friday
+        case 7: self = .saturday
+        default: return nil
+        }
+    }
+
+    private func weekday(
+        for referenceDate: Date,
+        calendar: Calendar
+    ) -> Int? {
+        let referenceWeekday = calendar.component(.weekday, from: referenceDate)
+
+        switch self {
+        case .all, .allSites:
+            return nil
+        case .today, .older:
+            return referenceWeekday
+        case .yesterday:
+            return referenceWeekday == 1 ? 7 : referenceWeekday - 1
+        case .sunday:
+            return 1
+        case .monday:
+            return 2
+        case .tuesday:
+            return 3
+        case .wednesday:
+            return 4
+        case .thursday:
+            return 5
+        case .friday:
+            return 6
+        case .saturday:
+            return 7
+        }
+    }
+
+    private func previousRange(
+        for referenceDate: Date,
+        calendar: Calendar
+    ) -> Self? {
+        switch self {
+        case .all:
+            return .today
+        case .today:
+            return .yesterday
+        case .yesterday:
+            guard let yesterday = dateRange(for: referenceDate, calendar: calendar)?.lowerBound,
+                  let previousDay = calendar.date(byAdding: .day, value: -1, to: yesterday)
+            else {
+                return nil
+            }
+            return Self(date: previousDay, referenceDate: referenceDate, calendar: calendar)
+        case .sunday:
+            return .saturday
+        case .monday:
+            return .sunday
+        case .tuesday:
+            return .monday
+        case .wednesday:
+            return .tuesday
+        case .thursday:
+            return .wednesday
+        case .friday:
+            return .thursday
+        case .saturday:
+            return .friday
+        case .older, .allSites:
+            return nil
+        }
+    }
+}
+
+struct HistoryRangeCount: Equatable, Hashable, Identifiable {
+    let id: HistoryRange
+    let count: Int
+}
+
+enum HistoryQuery: Equatable, Hashable {
+    case searchTerm(String)
+    case domainFilter(Set<String>)
+    case rangeFilter(HistoryRange)
+    case dateFilter(Date)
+    case visits([VisitIdentifier])
+}
+
+struct HistorySection: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let items: [HistoryListItem]
 }
 
 struct RecentlyClosedTabState: Identifiable, Equatable {
@@ -148,5 +364,19 @@ enum HistoryDomainResolver {
             return components.suffix(2).joined(separator: ".")
         }
         return host
+    }
+}
+
+private extension Calendar {
+    func firstWeekday(_ weekday: Int, before referenceDate: Date) -> Date {
+        let startOfReferenceDay = startOfDay(for: referenceDate)
+        var current = startOfReferenceDay
+        while component(.weekday, from: current) != weekday {
+            guard let previousDay = date(byAdding: .day, value: -1, to: current) else {
+                break
+            }
+            current = previousDay
+        }
+        return current
     }
 }

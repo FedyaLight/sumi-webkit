@@ -153,6 +153,19 @@ struct WebsiteView: View {
             Group {
                 if browserManager.currentTab(for: windowState) != nil {
                     if splitManager.isSplit(for: windowState.id) == false,
+                       browserManager.currentTab(for: windowState)?.representsSumiHistorySurface == true
+                    {
+                        SumiHistoryTabRootView(
+                            browserManager: browserManager,
+                            windowState: windowState
+                        )
+                        .environmentObject(browserManager)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(nsColor: .windowBackgroundColor))
+                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                        .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 0)
+                        .allowsHitTesting(true)
+                    } else if splitManager.isSplit(for: windowState.id) == false,
                        browserManager.currentTab(for: windowState)?.representsSumiSettingsSurface == true
                     {
                         SumiSettingsTabRootView(
@@ -226,6 +239,7 @@ struct WebsiteView: View {
             }
             
         }
+        .id(windowState.nativeSurfaceRoutingRevision)
     }
 
 }
@@ -893,7 +907,7 @@ final class WindowWebContentController: NSViewController {
     private func missingPreparedWebViews(for visibleTabIds: Set<UUID>) -> Bool {
         visibleTabIds.contains { tabId in
             if let tab = browserManager.tabManager.tab(for: tabId),
-               (tab.representsSumiNonWebSurface || tab.representsSumiEmptySurface)
+               tab.requiresPrimaryWebView == false
             {
                 return false
             }

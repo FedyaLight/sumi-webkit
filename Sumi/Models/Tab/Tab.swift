@@ -40,7 +40,6 @@ enum SumiWebViewShutdown {
         for handlerName in Tab.coreScriptMessageHandlerNames(for: tabId) {
             controller.removeScriptMessageHandler(forName: handlerName)
         }
-        SumiSpecialPagesController.shared.unregisterWebView(webView)
 
         additionalTabCleanup?()
 
@@ -222,10 +221,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     /// True when the tab row should show the “web content unloaded” affordance (dimmed favicon + badge).
     /// Sumi-native tabs (settings UI, empty new-tab surface) never host a primary-frame WKWebView for that UI, so they must not look “unloaded”.
     var showsWebViewUnloadedIndicator: Bool {
-        if representsSumiNonWebSurface || representsSumiEmptySurface {
-            return false
-        }
-        return isUnloaded
+        requiresPrimaryWebView && isUnloaded
     }
 
     var _webView: WKWebView? {
@@ -350,14 +346,23 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         !isPopupHost && SumiSurface.isHistorySurfaceURL(url)
     }
 
-    /// Native Sumi surfaces rendered outside WebKit. Do not include web-backed special pages here.
-    var representsSumiNonWebSurface: Bool {
-        representsSumiSettingsSurface
+    /// Native Sumi surfaces rendered outside WebKit.
+    var representsSumiNativeSurface: Bool {
+        representsSumiSettingsSurface || representsSumiHistorySurface
     }
 
-    /// Internal Sumi surfaces that use chrome-template presentation even when web-backed.
+    /// Backward-compatible spelling for native, non-WebKit Sumi surfaces.
+    var representsSumiNonWebSurface: Bool {
+        representsSumiNativeSurface
+    }
+
+    /// Internal Sumi surfaces that use chrome-template presentation.
     var representsSumiInternalSurface: Bool {
-        representsSumiSettingsSurface || representsSumiHistorySurface
+        representsSumiNativeSurface
+    }
+
+    var requiresPrimaryWebView: Bool {
+        !representsSumiNativeSurface && !representsSumiEmptySurface
     }
 
     /// Sidebar / split tab row: tint template SF Symbol favicons like `NavButtonStyle` (`tokens.primaryText`).

@@ -145,6 +145,10 @@ class BrowserWindowState {
     
     /// Compositor version counter for this window (incremented when tab ownership changes)
     var compositorVersion: Int = 0
+
+    /// Forces WebsiteView to re-evaluate whether the current tab is native or web-backed.
+    var nativeSurfaceRoutingRevision: UInt64 = 0
+
     @ObservationIgnored private var isCompositorRefreshScheduled: Bool = false
     @ObservationIgnored private var isSidebarInputRecoveryScheduled: Bool = false
     @ObservationIgnored private var pendingSidebarInputRecoveryReasons: [String] = []
@@ -292,6 +296,10 @@ class BrowserWindowState {
             self.isCompositorRefreshScheduled = false
             self.compositorVersion += 1
         }
+    }
+
+    func invalidateNativeSurfaceRouting() {
+        nativeSurfaceRoutingRevision &+= 1
     }
 
     func recordRegularTabSelection(_ tabId: UUID, in spaceId: UUID) {

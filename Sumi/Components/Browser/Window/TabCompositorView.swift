@@ -52,7 +52,7 @@ class TabCompositorManager: ObservableObject {
     }
 
     func loadTab(_ tab: Tab) {
-        if tab.representsSumiNonWebSurface {
+        if !tab.requiresPrimaryWebView {
             return
         }
         markTabAccessed(tab.id)
