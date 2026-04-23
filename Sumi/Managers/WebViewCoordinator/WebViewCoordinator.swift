@@ -1856,6 +1856,13 @@ class WebViewCoordinator {
                 continue
             }
 
+            guard canEvictHiddenWebView(
+                webView,
+                ownedBy: owner
+            ) else {
+                continue
+            }
+
             removeWebViewFromContainers(webView)
             _ = unregisterTrackedWebViewSlot(owner: owner, expectedWebView: webView)
 
@@ -1873,6 +1880,26 @@ class WebViewCoordinator {
             RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
                 "Evicted hidden WebView for tab=\(owner.tabID.uuidString.prefix(8)) in window=\(owner.windowID.uuidString.prefix(8))."
             }
+        }
+    }
+
+    private func canEvictHiddenWebView(
+        _ webView: WKWebView,
+        ownedBy owner: TrackedWebViewOwner
+    ) -> Bool {
+        let trackedCandidates = Array((webViewsByTabAndWindow[owner.tabID] ?? [:]).values)
+
+        guard let tab = resolvedTab(with: owner.tabID) else {
+            return uniqueWebViews(trackedCandidates).contains { candidate in
+                candidate !== webView
+            }
+        }
+
+        let liveCandidates = uniqueWebViews(
+            trackedCandidates + [tab.assignedWebView, tab.existingWebView].compactMap { $0 }
+        )
+        return liveCandidates.contains { candidate in
+            candidate !== webView
         }
     }
 

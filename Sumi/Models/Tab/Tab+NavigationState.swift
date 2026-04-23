@@ -76,15 +76,12 @@ extension Tab {
         self.url = newURL
 
         if urlChanged {
+            applyCachedFaviconOrPlaceholder(for: newURL)
             NotificationCenter.default.post(
                 name: .sumiTabNavigationStateDidChange,
                 object: self,
                 userInfo: ["tabId": id]
             )
-
-            Task { @MainActor in
-                await fetchAndSetFavicon(for: newURL)
-            }
         }
     }
 

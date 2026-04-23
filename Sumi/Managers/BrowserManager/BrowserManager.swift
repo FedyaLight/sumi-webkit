@@ -699,6 +699,10 @@ class BrowserManager: ObservableObject {
                 selectTab(newTab, in: windowState, loadPolicy: loadPolicy)
             case .background:
                 resolvedWindowState.currentTabId = previousTabId
+                prepareBackgroundTabIfNeeded(
+                    newTab,
+                    in: resolvedWindowState
+                )
             }
 
             return newTab
@@ -716,10 +720,33 @@ class BrowserManager: ObservableObject {
         case .foreground(let windowState, let loadPolicy):
             selectTab(newTab, in: windowState, loadPolicy: loadPolicy)
         case .background:
-            break
+            prepareBackgroundTabIfNeeded(
+                newTab,
+                in: resolvedWindowState
+            )
         }
 
         return newTab
+    }
+
+    private func prepareBackgroundTabIfNeeded(
+        _ tab: Tab,
+        in windowState: BrowserWindowState?
+    ) {
+        guard tab.requiresPrimaryWebView else { return }
+
+        if let windowState,
+           let webViewCoordinator
+        {
+            _ = webViewCoordinator.getOrCreateWebView(
+                for: tab,
+                in: windowState.id
+            )
+        } else {
+            tab.loadWebViewIfNeeded()
+        }
+
+        compositorManager.markTabAccessed(tab.id)
     }
 
     func resolvedTabOpenSpace(for context: TabOpenContext) -> Space? {

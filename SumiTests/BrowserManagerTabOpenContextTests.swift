@@ -86,6 +86,94 @@ final class BrowserManagerTabOpenContextTests: XCTestCase {
         XCTAssertTrue(newTab.isUnloaded)
     }
 
+    func testBackgroundOpenKeepsCurrentSelectionAndMaterializesTrackedWebView() {
+        let browserManager = BrowserManager()
+        let windowRegistry = WindowRegistry()
+        let coordinator = WebViewCoordinator()
+        browserManager.windowRegistry = windowRegistry
+        browserManager.webViewCoordinator = coordinator
+
+        let profileId = UUID()
+        let space = Space(name: "Primary", profileId: profileId)
+        browserManager.tabManager.spaces = [space]
+        browserManager.tabManager.currentSpace = space
+
+        let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentSpaceId = space.id
+        windowState.currentProfileId = profileId
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+
+        let currentTab = browserManager.tabManager.createNewTab(
+            url: "https://current.example",
+            in: space,
+            activate: false
+        )
+        windowState.currentTabId = currentTab.id
+
+        let newTab = browserManager.openNewTab(
+            url: "https://background.example",
+            context: .background(
+                windowState: windowState,
+                sourceTab: currentTab,
+                preferredSpaceId: space.id
+            )
+        )
+
+        XCTAssertEqual(windowState.currentTabId, currentTab.id)
+        XCTAssertEqual(newTab.spaceId, space.id)
+        XCTAssertFalse(newTab.isUnloaded)
+
+        let backgroundWebView = try! XCTUnwrap(newTab.existingWebView)
+        XCTAssertTrue(
+            coordinator.getWebView(for: newTab.id, in: windowState.id) === backgroundWebView
+        )
+    }
+
+    func testBackgroundIncognitoOpenKeepsCurrentSelectionAndMaterializesTrackedWebView() {
+        let browserManager = BrowserManager()
+        let windowRegistry = WindowRegistry()
+        let coordinator = WebViewCoordinator()
+        browserManager.windowRegistry = windowRegistry
+        browserManager.webViewCoordinator = coordinator
+
+        let profile = Profile(name: "Private")
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+
+        let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
+        windowState.isIncognito = true
+        windowState.ephemeralProfile = profile
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+
+        let currentTab = browserManager.tabManager.createEphemeralTab(
+            url: URL(string: "https://current-private.example")!,
+            in: windowState,
+            profile: profile
+        )
+        windowState.currentTabId = currentTab.id
+
+        let newTab = browserManager.openNewTab(
+            url: "https://background-private.example",
+            context: .background(
+                windowState: windowState,
+                sourceTab: currentTab
+            )
+        )
+
+        XCTAssertEqual(windowState.currentTabId, currentTab.id)
+        XCTAssertTrue(windowState.ephemeralTabs.contains(where: { $0.id == newTab.id }))
+        XCTAssertFalse(newTab.isUnloaded)
+
+        let backgroundWebView = try! XCTUnwrap(newTab.existingWebView)
+        XCTAssertTrue(
+            coordinator.getWebView(for: newTab.id, in: windowState.id) === backgroundWebView
+        )
+    }
+
     func testPinTabUsesVisibleWindowProfileInsteadOfGlobalCurrentProfile() {
         let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
@@ -380,7 +468,8 @@ final class BrowserManagerTabOpenContextTests: XCTestCase {
             in: sharedSpace,
             activate: false
         )
-        await drainMainQueue()
+        await waitForCondition { browserManager.tabManager.hasLoadedInitialData }
+        await settleCompositorVersions(for: [firstWindow, secondWindow])
 
         let firstInitialVersion = firstWindow.compositorVersion
         let secondInitialVersion = secondWindow.compositorVersion
@@ -393,10 +482,42 @@ final class BrowserManagerTabOpenContextTests: XCTestCase {
             rememberSelection: false,
             persistSelection: false
         )
-        await drainMainQueue()
+        await settleCompositorVersions(for: [firstWindow, secondWindow])
 
         XCTAssertGreaterThan(firstWindow.compositorVersion, firstInitialVersion)
         XCTAssertEqual(secondWindow.compositorVersion, secondInitialVersion)
+    }
+
+    private func settleCompositorVersions(for windows: [BrowserWindowState]) async {
+        var previousSnapshot: [UUID: Int]? = nil
+
+        for _ in 0..<8 {
+            await drainMainQueue()
+
+            let snapshot = Dictionary(
+                uniqueKeysWithValues: windows.map { windowState in
+                    (windowState.id, windowState.compositorVersion)
+                }
+            )
+
+            if snapshot == previousSnapshot {
+                return
+            }
+
+            previousSnapshot = snapshot
+        }
+    }
+
+    private func waitForCondition(
+        iterations: Int = 64,
+        _ condition: () -> Bool
+    ) async {
+        for _ in 0..<iterations {
+            if condition() {
+                return
+            }
+            await drainMainQueue()
+        }
     }
 
     private func drainMainQueue() async {
