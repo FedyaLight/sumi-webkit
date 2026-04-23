@@ -70,6 +70,13 @@ private final class SidebarPreferenceUpdateCoalescer {
 private enum SpacePinnedListItem: Hashable {
     case folder(UUID)
     case shortcut(UUID)
+
+    var id: UUID {
+        switch self {
+        case .folder(let id), .shortcut(let id):
+            return id
+        }
+    }
 }
 
 struct ShortcutLinkEditorSheet: View {
@@ -541,7 +548,7 @@ struct SpaceView: View {
         let allItems = spacePinnedItems
         
         return VStack(spacing: 0) {
-            ForEach(Array(allItems.enumerated()), id: \.offset) { sourceIndex, item in
+            ForEach(Array(allItems.enumerated()), id: \.element.id) { sourceIndex, item in
                 VStack(spacing: 0) {
                     if isHoveredSpacePinned(before: sourceIndex) { dropLine().transition(.opacity) }
                     switch item {
