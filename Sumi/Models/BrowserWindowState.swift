@@ -116,11 +116,8 @@ class BrowserWindowState {
     /// Whether the sidebar is visible in this window
     var isSidebarVisible: Bool = true
 
-    /// Whether the sidebar menu is visible in this window
-    var isSidebarMenuVisible: Bool = false
-
-    /// Selected section inside the sidebar utility menu
-    var selectedSidebarMenuSection: WindowSidebarMenuSection = .downloads
+    /// Whether the downloads popover is visible in this window.
+    var isDownloadsPopoverPresented: Bool = false
 
     /// Whether the command palette is visible in this window
     var isCommandPaletteVisible: Bool = false

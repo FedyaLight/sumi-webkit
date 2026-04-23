@@ -168,6 +168,7 @@ class BrowserManager: ObservableObject {
     var profileManager: ProfileManager
     var dialogManager: DialogManager
     var downloadManager: DownloadManager
+    let downloadsPopoverPresenter: DownloadsPopoverPresenter
     var authenticationManager: AuthenticationManager
     var historyManager: HistoryManager
     var recentlyClosedManager: RecentlyClosedManager
@@ -305,7 +306,8 @@ class BrowserManager: ObservableObject {
         self.tabManager = TabManager(browserManager: nil, context: startupModelContext)
         // settingsManager will be injected from SumiApp
         self.dialogManager = DialogManager()
-        self.downloadManager = DownloadManager.shared
+        self.downloadManager = DownloadManager()
+        self.downloadsPopoverPresenter = DownloadsPopoverPresenter()
         self.authenticationManager = AuthenticationManager()
         // Initialize managers with current profile context for isolation
         self.historyManager = HistoryManager(context: startupModelContext, profileId: initialProfile?.id)
@@ -324,6 +326,7 @@ class BrowserManager: ObservableObject {
         // Note: settingsManager will be injected later, so we skip initialization here
         self.tabManager.browserManager = self
         self.tabManager.reattachBrowserManager(self)
+        self.downloadManager.browserManager = self
         self.extensionManager.attach(browserManager: self)
         self.sumiScriptsManager.attach(browserManager: self)
         bindTabManagerStructuralUpdates()

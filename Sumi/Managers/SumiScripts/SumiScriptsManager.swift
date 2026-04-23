@@ -87,6 +87,7 @@ final class SumiScriptsManager: ObservableObject {
     func attach(browserManager: BrowserManager) {
         self.browserManager = browserManager
         injector?.tabHandler = self
+        injector?.browserManager = browserManager
     }
 
     // MARK: - Activation / Deactivation
@@ -108,6 +109,7 @@ final class SumiScriptsManager: ObservableObject {
         store = newStore
         let newInjector = UserScriptInjector()
         newInjector.tabHandler = self
+        newInjector.browserManager = browserManager
         injector = newInjector
         totalScriptCount = newStore.scripts.count
 

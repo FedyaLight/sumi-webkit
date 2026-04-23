@@ -87,7 +87,8 @@ final class UserScriptsRuntimeTests: XCTestCase {
             script: script,
             profileId: nil,
             contentWorld: .page,
-            tabOpenHandler: nil
+            tabOpenHandler: nil,
+            downloadManager: nil
         )
 
         let shim = bridge.generateJSShim()

@@ -133,24 +133,6 @@ final class BrowserWindowShellService {
         windowRegistry?.activeWindow?.window?.toggleFullScreen(nil)
     }
 
-    func revealSidebarMenu(
-        _ section: WindowSidebarMenuSection,
-        in windowState: BrowserWindowState,
-        persistSession: @MainActor (BrowserWindowState) -> Void
-    ) {
-        withAnimation(.easeInOut(duration: 0.2)) {
-            windowState.isSidebarVisible = true
-            windowState.isSidebarMenuVisible = true
-            windowState.selectedSidebarMenuSection = section
-            let restoredWidth = BrowserWindowState.clampedSidebarWidth(windowState.savedSidebarWidth)
-            windowState.savedSidebarWidth = restoredWidth
-            windowState.sidebarWidth = restoredWidth
-            windowState.sidebarContentWidth = BrowserWindowState.sidebarContentWidth(for: restoredWidth)
-        }
-
-        persistSession(windowState)
-    }
-
     private func makeWindow(title: String, contentView: NSView) -> NSWindow {
         let window = SumiBrowserWindow(
             contentRect: NSRect(origin: .zero, size: SumiBrowserWindowShellConfiguration.defaultContentSize),

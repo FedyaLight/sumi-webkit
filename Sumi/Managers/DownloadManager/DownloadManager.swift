@@ -1,564 +1,310 @@
-//
-//  DownloadManager.swift
-//  Sumi
-//
-//  Created by Maciek Bagiński on 05/08/2025.
-//
-
 import AppKit
-import Darwin
+import Combine
 import Foundation
-import QuickLook
-import QuickLookThumbnailing
-import SwiftUI
 import UniformTypeIdentifiers
 import WebKit
 
-// MARK: - Download Model
-
-@Observable
-class Download: Identifiable {
-    let id: UUID
-    let download: WKDownload
-    let originalURL: URL
-    let suggestedFilename: String
-    let destinationPreference: DestinationPreference
-    let allowedContentTypes: [UTType]?
-    var destinationURL: URL?
-    var progress: Double
-    var state: DownloadState {
-        didSet {
-            if state == .completed && oldValue != .completed {
-                Task {
-                    await loadThumbnail()
-                }
-            }
-        }
-    }
-
-    var error: Error?
-    var fileSize: Int64?
-    var downloadedBytes: Int64
-    var icon: NSImage?
-    var startDate: Date
-    var estimatedTimeRemaining: TimeInterval?
-    var downloadThumbnail: NSImage?
-
-    enum DownloadState {
-        case pending
-        case downloading
-        case completed
-        case failed
-        case cancelled
-
-        var description: String {
-            switch self {
-            case .pending:
-                return "Pending"
-            case .downloading:
-                return "Downloading"
-            case .completed:
-                return "Completed"
-            case .failed:
-                return "Failed"
-            case .cancelled:
-                return "Cancelled"
-            }
-        }
-
-    }
-
-    enum DestinationPreference {
-        case automaticDownloadsFolder
-        case askUser
-    }
-
-    init(
-        download: WKDownload,
-        originalURL: URL,
-        suggestedFilename: String,
-        destinationPreference: DestinationPreference = .automaticDownloadsFolder,
-        allowedContentTypes: [UTType]? = nil
-    ) {
-        id = UUID()
-        self.download = download
-        self.originalURL = originalURL
-        self.suggestedFilename = suggestedFilename
-        self.destinationPreference = destinationPreference
-        self.allowedContentTypes = allowedContentTypes
-        progress = 0.0
-        state = .pending
-        downloadedBytes = 0
-        startDate = Date()
-
-        // Set default icon based on file extension
-        icon = getIconForFile(suggestedFilename)
-    }
-
-    @MainActor
-    func loadThumbnail(size: CGSize = CGSize(width: 80, height: 80)) async {
-        guard let destinationURL = destinationURL,
-              FileManager.default.fileExists(atPath: destinationURL.path),
-              downloadThumbnail == nil
-        else {
-            return
-        }
-
-        RuntimeDiagnostics.emit("Loading thumbnail for: \(destinationURL.lastPathComponent)")
-
-        if shouldGenerateThumbnail(for: destinationURL) {
-            if let thumbnail = await getQuickLookThumbnail(for: destinationURL, size: size) {
-                downloadThumbnail = thumbnail
-                RuntimeDiagnostics.emit("QuickLook thumbnail loaded for: \(destinationURL.lastPathComponent)")
-                return
-            }
-            RuntimeDiagnostics.emit("QuickLook thumbnail failed, falling back to Finder icon for: \(destinationURL.lastPathComponent)")
-        }
-
-        let finderIcon = NSWorkspace.shared.icon(forFile: destinationURL.path)
-
-        let targetSize = NSSize(width: size.width, height: size.height)
-        let highResIcon = NSImage(size: targetSize)
-
-        highResIcon.lockFocus()
-        finderIcon.draw(in: NSRect(origin: .zero, size: targetSize),
-                        from: NSRect(origin: .zero, size: finderIcon.size),
-                        operation: .copy,
-                        fraction: 1.0)
-        highResIcon.unlockFocus()
-
-        downloadThumbnail = highResIcon
-        RuntimeDiagnostics.emit("Finder icon loaded for: \(destinationURL.lastPathComponent)")
-    }
-
-    private func shouldGenerateThumbnail(for fileURL: URL) -> Bool {
-        let fileExtension = fileURL.pathExtension.lowercased()
-
-        let supportedExtensions: Set<String> = [
-            // Images
-            "jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "heic", "webp", "ico", "svg",
-            // Videos
-            "mp4", "mov", "avi", "mkv", "wmv", "flv", "webm", "m4v",
-            // Documents
-            "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "pages", "numbers", "keynote",
-            // Text files
-            "txt", "rtf", "html", "htm", "md", "swift", "js", "css", "json", "xml",
-            // Audio files
-            "mp3", "m4a", "flac", "aac",
-        ]
-
-        return supportedExtensions.contains(fileExtension)
-    }
-
-    private func getQuickLookThumbnail(for fileURL: URL, size: CGSize) async -> NSImage? {
-        let request = QLThumbnailGenerator.Request(
-            fileAt: fileURL,
-            size: size,
-            scale: NSScreen.main?.backingScaleFactor ?? 1.0,
-            representationTypes: .thumbnail
-        )
-
-        do {
-            let thumbnail = try await QLThumbnailGenerator.shared.generateBestRepresentation(for: request)
-            return thumbnail.nsImage
-        } catch {
-            return nil
-        }
-    }
-
-    private func getIconForFile(_ filename: String) -> NSImage {
-        let fileExtension = (filename as NSString).pathExtension.lowercased()
-
-        let possibleTypes = UTType.types(tag: fileExtension,
-                                         tagClass: .filenameExtension,
-                                         conformingTo: nil)
-
-        if let utType = possibleTypes.first {
-            return NSWorkspace.shared.icon(for: utType)
-        } else {
-            return NSWorkspace.shared.icon(for: .item)
-        }
-    }
-
-    var formattedFileSize: String {
-        guard let fileSize = fileSize else { return "Unknown size" }
-        return ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)
-    }
-
-    var formattedDownloadedSize: String {
-        return ByteCountFormatter.string(fromByteCount: downloadedBytes, countStyle: .file)
-    }
-
-    var formattedProgress: String {
-        return String(format: "%.1f%%", progress * 100)
-    }
-
-    var formattedTimeRemaining: String {
-        guard let estimatedTimeRemaining = estimatedTimeRemaining else { return "Unknown" }
-
-        let formatter = DateComponentsFormatter()
-        formatter.allowedUnits = [.hour, .minute, .second]
-        formatter.unitsStyle = .abbreviated
-        return formatter.string(from: estimatedTimeRemaining) ?? "Unknown"
-    }
-}
-
-// MARK: - Download Manager
-
 @MainActor
-@Observable
-public class DownloadManager: NSObject {
-    public static let shared = DownloadManager()
+final class DownloadManager: ObservableObject {
+    @Published private(set) var items: [DownloadItem] = []
+    @Published private(set) var activeDownloadCount: Int = 0
+    @Published private(set) var combinedProgressFraction: Double?
 
-    private var downloads: [UUID: Download] = [:]
-    private var downloadDelegates: [UUID: DownloadDelegate] = [:]
+    private let coordinator: DownloadListCoordinator
+    weak var browserManager: BrowserManager?
 
-    var activeDownloads: [Download] {
-        return Array(downloads.values).filter { $0.state == .downloading || $0.state == .pending }
-    }
+    init() {
+        DownloadFileUtilities.removeOrphanedIncompleteDownloads()
+        self.coordinator = DownloadListCoordinator()
+        self.items = coordinator.items
+        self.activeDownloadCount = coordinator.activeCount
+        self.combinedProgressFraction = coordinator.combinedProgressFraction
 
-    var completedDownloads: [Download] {
-        return Array(downloads.values).filter { $0.state == .completed }
-    }
-
-    var failedDownloads: [Download] {
-        return Array(downloads.values).filter { $0.state == .failed }
-    }
-
-    var allDownloads: [Download] {
-        return Array(downloads.values).sorted { $0.startDate > $1.startDate }
-    }
-
-    override private init() {
-        super.init()
-    }
-
-    // MARK: - Download Management
-
-    func addDownload(
-        _ download: WKDownload,
-        originalURL: URL,
-        suggestedFilename: String,
-        destinationPreference: Download.DestinationPreference = .automaticDownloadsFolder,
-        allowedContentTypes: [UTType]? = nil
-    ) -> Download {
-        let downloadModel = Download(
-            download: download,
-            originalURL: originalURL,
-            suggestedFilename: suggestedFilename,
-            destinationPreference: destinationPreference,
-            allowedContentTypes: allowedContentTypes
-        )
-        let delegate = DownloadDelegate(downloadManager: self, download: downloadModel)
-
-        downloads[downloadModel.id] = downloadModel
-        downloadDelegates[downloadModel.id] = delegate
-        download.delegate = delegate
-
-        RuntimeDiagnostics.emit("Added download: \(suggestedFilename) with ID: \(downloadModel.id)")
-        RuntimeDiagnostics.emit("Download delegate set: \(download.delegate != nil)")
-        return downloadModel
-    }
-
-    // MARK: - Download Updates
-
-    func updateDownloadProgress(_ id: UUID, progress: Double, downloadedBytes: Int64, fileSize: Int64?) {
-        guard let download = downloads[id] else {
-            RuntimeDiagnostics.emit("Download not found for ID: \(id)")
-            return
-        }
-
-        download.progress = progress
-        download.downloadedBytes = downloadedBytes
-        download.fileSize = fileSize
-
-        // Calculate estimated time remaining
-        if let fileSize = fileSize, downloadedBytes > 0 {
-            let elapsed = Date().timeIntervalSince(download.startDate)
-            let bytesPerSecond = Double(downloadedBytes) / elapsed
-            let remainingBytes = fileSize - downloadedBytes
-            download.estimatedTimeRemaining = Double(remainingBytes) / bytesPerSecond
+        coordinator.onChange = { [weak self] in
+            self?.publishCoordinatorState()
         }
     }
 
-    func updateDownloadState(_ id: UUID, state: Download.DownloadState, error: Error? = nil) {
-        guard let download = downloads[id] else {
-            RuntimeDiagnostics.emit("Download not found for ID: \(id)")
-            return
-        }
-
-        RuntimeDiagnostics.emit("Updating download state to \(state.description) for \(download.suggestedFilename)")
-
-        download.state = state
-        download.error = error
-
-        if state == .completed {
-            RuntimeDiagnostics.emit("Download completed: \(download.suggestedFilename)")
-        } else if state == .failed {
-            RuntimeDiagnostics.emit("Download failed: \(download.suggestedFilename) - \(error?.localizedDescription ?? "Unknown error")")
-        }
+    var hasActiveDownloads: Bool {
+        activeDownloadCount > 0
     }
 
-    func setDownloadDestination(_ id: UUID, destination: URL) {
-        guard let download = downloads[id] else { return }
-        download.destinationURL = destination
-    }
-}
-
-// MARK: - Download Delegate
-
-private class DownloadDelegate: NSObject, WKDownloadDelegate {
-    weak var downloadManager: DownloadManager?
-    let download: Download
-    private let fileObservationQueue = DispatchQueue(
-        label: "com.sumi.browser.download-observer",
-        qos: .utility
-    )
-    private var fileObservationSource: DispatchSourceFileSystemObject?
-    private var isObservingDestinationDirectory = false
-    private var lastObservedFileSize: Int64 = 0
-
-    init(downloadManager: DownloadManager, download: Download) {
-        self.downloadManager = downloadManager
-        self.download = download
-        super.init()
+    var hasInactiveDownloads: Bool {
+        items.contains { !$0.isActive }
     }
 
-    deinit {
-        stopFileObservation()
+    var activeItems: [DownloadItem] {
+        items.filter(\.isActive)
     }
 
-    private enum DestinationDecision {
-        case proceed(URL)
-        case cancel
+    var completedItems: [DownloadItem] {
+        items.filter { $0.state == .completed }
     }
 
-    func download(
-        _: WKDownload,
-        decideDestinationUsing response: URLResponse,
-        suggestedFilename: String
-    ) async -> URL? {
-        await withCheckedContinuation { continuation in
-            decideDestination(response: response, suggestedFilename: suggestedFilename) { [weak self] decision in
-                guard let self else {
-                    continuation.resume(returning: nil)
-                    return
-                }
-                switch decision {
-                case .proceed(let url):
-                    continuation.resume(returning: url)
-                case .cancel:
-                    self.download.download.cancel()
-                    continuation.resume(returning: nil)
-                }
-            }
-        }
-    }
-
-    private func decideDestination(response: URLResponse, suggestedFilename: String, completion: @escaping (DestinationDecision) -> Void) {
-        let defaultName = suggestedFilename.isEmpty ? "download" : suggestedFilename
-        let cleanName = defaultName.replacingOccurrences(of: "/", with: "_")
-
-        switch download.destinationPreference {
-        case .automaticDownloadsFolder:
-            resolveAutomaticDestination(response: response, cleanName: cleanName, completion: completion)
-        case .askUser:
-            presentSavePanel(response: response, cleanName: cleanName, completion: completion)
-        }
-    }
-
-    private func resolveAutomaticDestination(response: URLResponse, cleanName: String, completion: @escaping (DestinationDecision) -> Void) {
-        let downloadsDirectory = SumiDownloadsDirectoryResolver.resolvedDownloadsDirectory()
-
-        var destination = downloadsDirectory.appendingPathComponent(cleanName)
-        let ext = destination.pathExtension
-        let base = destination.deletingPathExtension().lastPathComponent
-        var counter = 1
-        while FileManager.default.fileExists(atPath: destination.path) {
-            let newName = "\(base) (\(counter))" + (ext.isEmpty ? "" : ".\(ext)")
-            destination = downloadsDirectory.appendingPathComponent(newName)
-            counter += 1
-        }
-
-        configureDownload(for: destination, response: response)
-        completion(.proceed(destination))
-    }
-
-    private func presentSavePanel(response: URLResponse, cleanName: String, completion: @escaping (DestinationDecision) -> Void) {
-        let savePanel = NSSavePanel()
-        savePanel.nameFieldStringValue = cleanName
-        savePanel.allowedContentTypes = download.allowedContentTypes ?? [.data]
-        savePanel.canCreateDirectories = true
-        savePanel.isExtensionHidden = false
-        savePanel.directoryURL = SumiDownloadsDirectoryResolver.resolvedDownloadsDirectory()
-
-        DispatchQueue.main.async {
-            savePanel.begin { result in
-                if result == .OK, let url = savePanel.url {
-                    self.configureDownload(for: url, response: response)
-                    completion(.proceed(url))
-                } else {
-                    RuntimeDiagnostics.emit("Download cancelled by user")
-                    self.downloadManager?.updateDownloadState(self.download.id, state: .cancelled)
-                    completion(.cancel)
-                }
-            }
-        }
-    }
-
-    private func configureDownload(for destination: URL, response: URLResponse) {
-        let fileSize = response.expectedContentLength
-        RuntimeDiagnostics.emit("Download destination set: \(destination.path) with fileSize: \(fileSize) bytes")
-        downloadManager?.updateDownloadProgress(download.id, progress: 0.0, downloadedBytes: 0, fileSize: fileSize)
-        downloadManager?.updateDownloadState(download.id, state: .downloading)
-        downloadManager?.setDownloadDestination(download.id, destination: destination)
-
-        startFileObservation()
-    }
-
-    private func startFileObservation() {
-        stopFileObservation()
-        lastObservedFileSize = 0
-
-        guard let destinationURL = download.destinationURL else { return }
-        if installFileObservation(at: destinationURL, observingDirectory: false) {
-            return
-        }
-
-        let directoryURL = destinationURL.deletingLastPathComponent()
-        _ = installFileObservation(at: directoryURL, observingDirectory: true)
-    }
-
-    private func stopFileObservation() {
-        fileObservationSource?.cancel()
-        fileObservationSource = nil
-        isObservingDestinationDirectory = false
+    var failedItems: [DownloadItem] {
+        items.filter { $0.state == .failed }
     }
 
     @discardableResult
-    private func installFileObservation(
-        at url: URL,
-        observingDirectory: Bool
-    ) -> Bool {
-        let descriptor = open(url.path, O_EVTONLY)
-        guard descriptor >= 0 else { return false }
+    func addDownload(
+        _ download: WKDownload,
+        originalURL: URL,
+        websiteURL: URL? = nil,
+        suggestedFilename: String,
+        flyAnimationOriginalRect: NSRect? = nil
+    ) -> DownloadItem {
+        let item = coordinator.start(
+            download: download,
+            originalURL: originalURL,
+            websiteURL: websiteURL,
+            suggestedFilename: suggestedFilename,
+            flyAnimationOriginalRect: flyAnimationOriginalRect
+        )
+        publishCoordinatorState()
+        return item
+    }
 
-        let eventMask: DispatchSource.FileSystemEvent = observingDirectory
-            ? [.write, .rename, .delete]
-            : [.write, .extend, .attrib, .rename, .delete]
-        let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: descriptor,
-            eventMask: eventMask,
-            queue: fileObservationQueue
+    func saveDownloadedData(
+        _ data: Data,
+        suggestedFilename: String,
+        mimeType _: String?,
+        originatingURL: URL
+    ) {
+        let destinationURL = DownloadFileUtilities.uniqueDestination(for: suggestedFilename)
+        let tempURL = DownloadFileUtilities.incompleteURL(for: destinationURL)
+        let progress = DownloadProgress(totalUnitCount: max(Int64(data.count), 1))
+        progress.fileDownloadingSourceURL = originatingURL
+        progress.fileURL = tempURL
+        let item = DownloadItem(
+            downloadURL: originatingURL,
+            websiteURL: originatingURL,
+            fileName: destinationURL.lastPathComponent,
+            destinationURL: destinationURL,
+            tempURL: tempURL,
+            state: .downloading,
+            progress: progress,
+            completedUnitCount: 0,
+            totalUnitCount: progress.totalUnitCount
+        )
+        coordinator.track(item, progress: progress)
+        publishCoordinatorState()
+
+        let writeTask = Task.detached(priority: .utility) {
+            do {
+                try data.write(to: tempURL, options: .atomic)
+                if FileManager.default.fileExists(atPath: destinationURL.path) {
+                    try FileManager.default.removeItem(at: destinationURL)
+                }
+                try FileManager.default.moveItem(at: tempURL, to: destinationURL)
+                return Result<URL, Error>.success(destinationURL)
+            } catch {
+                try? FileManager.default.removeItem(at: tempURL)
+                return Result<URL, Error>.failure(error)
+            }
+        }
+
+        Task { @MainActor [weak self] in
+            let result = await writeTask.value
+            if case .success = result {
+                progress.markCompleted(byteCount: Int64(data.count))
+                self?.coordinator.didUpdateProgress(progress, for: item)
+            }
+            self?.finishDownloadedData(item, result: result)
+        }
+    }
+
+    func beginExternalDownload(
+        originalURL: URL,
+        websiteURL: URL?,
+        suggestedFilename: String,
+        sourceProgress: Progress?,
+        flyAnimationOriginalRect: NSRect? = nil
+    ) -> DownloadItem {
+        let destinationURL = DownloadFileUtilities.uniqueDestination(for: suggestedFilename)
+        let progress = sourceProgress.map {
+            DownloadProgress(sourceProgress: $0, sourceURL: originalURL)
+        } ?? DownloadProgress(totalUnitCount: -1)
+        progress.fileDownloadingSourceURL = originalURL
+        configureSystemPresentation(
+            progress: progress,
+            destinationURL: destinationURL,
+            flyAnimationOriginalRect: flyAnimationOriginalRect
         )
 
-        isObservingDestinationDirectory = observingDirectory
-        fileObservationSource = source
-
-        source.setEventHandler { [weak self] in
-            self?.handleFileObservationEvent()
-        }
-        source.setCancelHandler { [descriptor] in
-            close(descriptor)
-        }
-        source.resume()
-
-        if !observingDirectory {
-            publishObservedFileSize()
-        }
-
-        return true
+        let item = DownloadItem(
+            downloadURL: originalURL,
+            websiteURL: websiteURL,
+            fileName: destinationURL.lastPathComponent,
+            destinationURL: destinationURL,
+            state: .downloading,
+            progress: progress,
+            completedUnitCount: progress.completedUnitCount,
+            totalUnitCount: progress.totalUnitCount
+        )
+        coordinator.track(item, progress: progress)
+        publishCoordinatorState()
+        return item
     }
 
-    private func handleFileObservationEvent() {
-        publishObservedFileSize()
-
-        guard isObservingDestinationDirectory,
-              let destinationURL = download.destinationURL,
-              FileManager.default.fileExists(atPath: destinationURL.path)
-        else {
-            return
-        }
-
-        fileObservationQueue.async { [weak self] in
-            guard let self else { return }
-            self.stopFileObservation()
-            _ = self.installFileObservation(at: destinationURL, observingDirectory: false)
-        }
-    }
-
-    private func publishObservedFileSize(forceComplete: Bool = false) {
-        guard let destinationURL = download.destinationURL,
-              FileManager.default.fileExists(atPath: destinationURL.path)
-        else {
-            return
-        }
-
-        do {
-            let attributes = try FileManager.default.attributesOfItem(atPath: destinationURL.path)
-            guard let observedSize = attributes[.size] as? Int64 else { return }
-            guard forceComplete || observedSize != lastObservedFileSize else { return }
-
-            lastObservedFileSize = observedSize
-            let expectedSize = download.fileSize
-            let progress: Double
-            if let expectedSize, expectedSize > 0 {
-                progress = min(Double(observedSize) / Double(expectedSize), 1.0)
-            } else {
-                progress = forceComplete ? 1.0 : download.progress
-            }
-
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.downloadManager?.updateDownloadProgress(
-                    self.download.id,
-                    progress: progress,
-                    downloadedBytes: observedSize,
-                    fileSize: expectedSize
+    func finishExternalDownload(
+        _ item: DownloadItem,
+        temporaryURL: URL,
+        response _: URLResponse?,
+        completion: ((Result<URL, Error>) -> Void)? = nil
+    ) {
+        let destinationURL = item.destinationURL ?? DownloadFileUtilities.uniqueDestination(for: item.fileName)
+        let progress = item.progress
+        let moveTask = Task.detached(priority: .utility) {
+            let finalURL = DownloadFileUtilities.uniqueURL(for: destinationURL)
+            do {
+                try FileManager.default.createDirectory(
+                    at: finalURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
                 )
+                if FileManager.default.fileExists(atPath: finalURL.path) {
+                    try FileManager.default.removeItem(at: finalURL)
+                }
+                try FileManager.default.moveItem(at: temporaryURL, to: finalURL)
+                return Result<URL, Error>.success(finalURL)
+            } catch {
+                return Result<URL, Error>.failure(error)
             }
-        } catch {
-            RuntimeDiagnostics.emit("Error observing download file: \(error)")
+        }
+
+        Task { @MainActor [weak self] in
+            let result = await moveTask.value
+            if case .success(let finalURL) = result {
+                let byteCount = (try? finalURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init)
+                progress?.markCompleted(byteCount: byteCount)
+                if let progress {
+                    self?.coordinator.didUpdateProgress(progress, for: item)
+                }
+            }
+            self?.finishDownloadedData(item, result: result)
+            completion?(result)
         }
     }
 
-    func download(_: WKDownload, didReceive response: URLResponse) {
-        let fileSize = response.expectedContentLength
-        RuntimeDiagnostics.emit("Download started with file size: \(fileSize) bytes")
-        downloadManager?.updateDownloadProgress(download.id, progress: 0.0, downloadedBytes: 0, fileSize: fileSize)
-        downloadManager?.updateDownloadState(download.id, state: .downloading)
+    func failExternalDownload(_ item: DownloadItem?, error: Error) {
+        guard let item else { return }
+        coordinator.didFail(
+            item,
+            error: .failed(message: error.localizedDescription, resumeData: nil, isRetryable: false)
+        )
+        publishCoordinatorState()
     }
 
-    func download(_: WKDownload, didReceive bytes: UInt64) {
-        let downloadedBytes = Int64(bytes)
-        let progress = download.fileSize.map { Double(downloadedBytes) / Double($0) } ?? 0.0
-
-        let clampedProgress = min(progress, 1.0)
-
-        downloadManager?.updateDownloadProgress(download.id, progress: clampedProgress, downloadedBytes: downloadedBytes, fileSize: download.fileSize)
+    func cancelExternalDownload(_ item: DownloadItem?) {
+        guard let item else { return }
+        coordinator.didFail(item, error: .cancelled)
+        publishCoordinatorState()
     }
 
-    func downloadDidFinish(_: WKDownload) {
-        publishObservedFileSize(forceComplete: true)
-        stopFileObservation()
-        RuntimeDiagnostics.emit("Download finished: \(download.suggestedFilename)")
-        downloadManager?.updateDownloadState(download.id, state: .completed)
+    func cancel(_ item: DownloadItem) {
+        coordinator.cancel(item)
     }
 
-    func download(_: WKDownload, didFailWithError error: Error, resumeData _: Data?) {
-        stopFileObservation()
-        RuntimeDiagnostics.emit("Download failed: \(download.suggestedFilename) - \(error.localizedDescription)")
-        downloadManager?.updateDownloadState(download.id, state: .failed, error: error)
+    func retry(_ item: DownloadItem) {
+        guard item.canRetry || item.state == .failed else { return }
+        guard let webView = retryWebView() else {
+            item.error = .failed(
+                message: "Open a browser tab to retry this download.",
+                resumeData: item.error?.resumeData,
+                isRetryable: item.error?.resumeData != nil
+            )
+            publishCoordinatorState()
+            return
+        }
+
+        let resumeData = item.error?.resumeData
+        coordinator.prepareRetry(item)
+        let callback: @MainActor @Sendable (WKDownload) -> Void = { [weak self, weak webView] download in
+            guard let self else { return }
+            withExtendedLifetime(webView) {
+                self.coordinator.attach(download: download, to: item)
+                self.publishCoordinatorState()
+            }
+        }
+
+        if let resumeData {
+            webView.resumeDownload(fromResumeData: resumeData, completionHandler: callback)
+        } else {
+            webView.startDownload(using: URLRequest(url: item.downloadURL), completionHandler: callback)
+        }
     }
 
-    func downloadWillPerformHTTPRedirection(_: WKDownload, navigationResponse _: HTTPURLResponse, newRequest request: URLRequest, decisionHandler: @escaping (URLRequest?) -> Void) {
-        RuntimeDiagnostics.emit("Download will perform HTTP redirection")
-        decisionHandler(request)
+    func open(_ item: DownloadItem) {
+        guard let url = item.localURL,
+              FileManager.default.fileExists(atPath: url.path)
+        else { return }
+        NSWorkspace.shared.open(url)
     }
 
-    func download(_: WKDownload, didReceive _: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
-        RuntimeDiagnostics.emit("Download received authentication challenge")
-        completionHandler(.performDefaultHandling, nil)
+    func reveal(_ item: DownloadItem) {
+        guard let url = item.destinationURL,
+              FileManager.default.fileExists(atPath: url.path)
+        else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
+    func openDownloadsFolder() {
+        DownloadFileUtilities.openDownloadsFolder()
+    }
+
+    func clearInactiveDownloads() {
+        coordinator.clearInactiveDownloads()
+        publishCoordinatorState()
+    }
+
+    fileprivate func finishDownloadedData(_ item: DownloadItem, result: Result<URL, Error>) {
+        switch result {
+        case .success(let destinationURL):
+            coordinator.didFinish(item, finalURL: destinationURL)
+        case .failure(let error):
+            coordinator.didFail(item, error: .moveFailed(message: error.localizedDescription))
+        }
+        publishCoordinatorState()
+    }
+
+    private func retryWebView() -> WKWebView? {
+        if let current = browserManager?.currentTabForActiveWindow()?.existingWebView {
+            return current
+        }
+        return browserManager?.currentTabForActiveWindow()?.ensureWebView()
+    }
+
+    private func publishCoordinatorState() {
+        items = coordinator.items
+        publishDerivedState()
+    }
+
+    private func publishDerivedState() {
+        activeDownloadCount = items.filter(\.isActive).count
+        combinedProgressFraction = {
+            let active = items.filter(\.isActive)
+            guard !active.isEmpty else { return nil }
+            var total: Int64 = 0
+            var completed: Int64 = 0
+            for item in active where item.totalUnitCount > 0 {
+                total += item.totalUnitCount
+                completed += max(item.completedUnitCount, 0)
+            }
+            guard total > 0 else { return -1 }
+            return min(max(Double(completed) / Double(total), 0), 1)
+        }()
+    }
+
+    private func configureSystemPresentation(
+        progress: DownloadProgress,
+        destinationURL: URL,
+        flyAnimationOriginalRect: NSRect?
+    ) {
+        guard let flyAnimationOriginalRect else { return }
+
+        let fileType = UTType(filenameExtension: destinationURL.pathExtension) ?? .data
+        let icon = NSWorkspace.shared.icon(for: fileType)
+        progress.flyToImage = icon
+        progress.fileIcon = icon
+        progress.fileIconOriginalRect = flyAnimationOriginalRect
+    }
 }

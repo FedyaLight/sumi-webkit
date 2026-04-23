@@ -28,7 +28,7 @@ Performance regression checks and the Instruments profiling workflow are in [doc
 
 - **Zen Browser** informs the **workspace / vertical-tab mental model** and the overall “sidebar-first, low chrome” posture Sumi chases—especially how Essentials-style pinning coexists with dense tab lists.
 - The codebase **started from the open-source Nook browser** but has been **heavily reworked** toward Sumi’s goals; treat today’s architecture and features as Sumi-first, not a drop-in Nook fork.
-- A few **AppKit / WebKit helpers** (notably around **find-in-page** and related window chrome) **adapt code published by DuckDuckGo** for macOS under the **Apache License 2.0**—those files retain DDG copyright/SPDX headers. They are an implementation reference for specific subsystems, not an endorsement or full UI parity.
+- A few **AppKit / WebKit helpers** (notably around **find-in-page**, **downloads**, and related window chrome) **adapt code published by DuckDuckGo** for macOS under the **Apache License 2.0**—those files retain DDG copyright/SPDX headers where code is directly reused. They are an implementation reference for specific subsystems, not an endorsement or full UI parity.
 
 ## Project structure
 

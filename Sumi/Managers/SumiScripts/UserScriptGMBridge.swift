@@ -19,6 +19,7 @@ final class UserScriptGMBridge: NSObject, WKScriptMessageHandler {
     let script: UserScript
     private let contentWorld: WKContentWorld
     private weak var tabOpenHandler: SumiScriptsTabHandler?
+    weak var downloadManager: DownloadManager?
 
     // Per-script persistent storage using UserDefaults suite
     private let storage: UserDefaults?
@@ -29,16 +30,19 @@ final class UserScriptGMBridge: NSObject, WKScriptMessageHandler {
 
     // Active XHR tasks (for abort support)
     var activeTasks: [String: URLSessionTask] = [:]
+    var activeDownloadItems: [String: DownloadItem] = [:]
 
     init(
         script: UserScript,
         profileId: UUID?,
         contentWorld: WKContentWorld,
-        tabOpenHandler: SumiScriptsTabHandler?
+        tabOpenHandler: SumiScriptsTabHandler?,
+        downloadManager: DownloadManager?
     ) {
         self.script = script
         self.contentWorld = contentWorld
         self.tabOpenHandler = tabOpenHandler
+        self.downloadManager = downloadManager
 
         if let profileId {
             let suiteName = "group.sumi.userscripts.\(profileId.uuidString).\(UserScriptStore.sanitizeFilename(script.filename))"

@@ -18,14 +18,17 @@ final class SumiUserScriptMessageBroker {
 
     private let profileId: UUID?
     private weak var tabHandler: SumiScriptsTabHandler?
+    private weak var downloadManager: DownloadManager?
     private var entries: [UUID: Entry] = [:]
 
     init(
         profileId: UUID?,
-        tabHandler: SumiScriptsTabHandler?
+        tabHandler: SumiScriptsTabHandler?,
+        downloadManager: DownloadManager?
     ) {
         self.profileId = profileId
         self.tabHandler = tabHandler
+        self.downloadManager = downloadManager
     }
 
     @discardableResult
@@ -42,7 +45,8 @@ final class SumiUserScriptMessageBroker {
             script: script,
             profileId: profileId,
             contentWorld: contentWorld,
-            tabOpenHandler: tabHandler
+            tabOpenHandler: tabHandler,
+            downloadManager: downloadManager
         )
         controller.add(bridge, contentWorld: contentWorld, name: bridge.messageHandlerName)
         entries[script.id] = Entry(bridge: bridge, contentWorld: contentWorld)

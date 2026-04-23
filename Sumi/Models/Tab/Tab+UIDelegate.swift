@@ -232,6 +232,23 @@ extension Tab: WKUIDelegate {
         }
     }
 
+    /// WebKit private save-data hook used by "Save Page As..." style paths when available.
+    @objc(_webView:saveDataToFile:suggestedFilename:mimeType:originatingURL:)
+    func webView(
+        _ webView: WKWebView,
+        saveDataToFile data: Data,
+        suggestedFilename: String,
+        mimeType: String?,
+        originatingURL: URL
+    ) {
+        browserManager?.downloadManager.saveDownloadedData(
+            data,
+            suggestedFilename: suggestedFilename.isEmpty ? (webView.url?.lastPathComponent ?? "download") : suggestedFilename,
+            mimeType: mimeType,
+            originatingURL: originatingURL
+        )
+    }
+
     @available(macOS 13.0, *)
     public func webView(
         _ webView: WKWebView,

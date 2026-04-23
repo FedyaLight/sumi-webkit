@@ -1170,7 +1170,7 @@ struct SpaceView: View {
             dragItemID: pin.id,
             ownerDescription: "SpaceView.resetShortcutPin",
             sourceID: sourceID,
-            details: "phase=before pin=\(pin.id.uuidString) liveTab=\(activeShortcutTab(for: pin)?.id.uuidString ?? "nil") currentSpace=\(windowState.currentSpaceId?.uuidString ?? "nil") currentTab=\(windowState.currentTabId?.uuidString ?? "nil") currentShortcutPin=\(windowState.currentShortcutPinId?.uuidString ?? "nil") sidebarVisible=\(windowState.isSidebarVisible) sidebarMenuVisible=\(windowState.isSidebarMenuVisible) preserveCurrentPage=\(preserveCurrentPage)"
+            details: "phase=before pin=\(pin.id.uuidString) liveTab=\(activeShortcutTab(for: pin)?.id.uuidString ?? "nil") currentSpace=\(windowState.currentSpaceId?.uuidString ?? "nil") currentTab=\(windowState.currentTabId?.uuidString ?? "nil") currentShortcutPin=\(windowState.currentShortcutPinId?.uuidString ?? "nil") sidebarVisible=\(windowState.isSidebarVisible) preserveCurrentPage=\(preserveCurrentPage)"
         )
         _ = browserManager.tabManager.resetShortcutPinToLaunchURL(
             pin,
@@ -1182,7 +1182,7 @@ struct SpaceView: View {
             dragItemID: pin.id,
             ownerDescription: "SpaceView.resetShortcutPin",
             sourceID: sourceID,
-            details: "phase=after pin=\(pin.id.uuidString) liveTab=\(activeShortcutTab(for: pin)?.id.uuidString ?? "nil") currentSpace=\(windowState.currentSpaceId?.uuidString ?? "nil") currentTab=\(windowState.currentTabId?.uuidString ?? "nil") currentShortcutPin=\(windowState.currentShortcutPinId?.uuidString ?? "nil") sidebarVisible=\(windowState.isSidebarVisible) sidebarMenuVisible=\(windowState.isSidebarMenuVisible)"
+            details: "phase=after pin=\(pin.id.uuidString) liveTab=\(activeShortcutTab(for: pin)?.id.uuidString ?? "nil") currentSpace=\(windowState.currentSpaceId?.uuidString ?? "nil") currentTab=\(windowState.currentTabId?.uuidString ?? "nil") currentShortcutPin=\(windowState.currentShortcutPinId?.uuidString ?? "nil") sidebarVisible=\(windowState.isSidebarVisible)"
         )
     }
 

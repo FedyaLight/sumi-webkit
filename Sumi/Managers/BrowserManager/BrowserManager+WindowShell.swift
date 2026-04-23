@@ -27,26 +27,21 @@ extension BrowserManager {
     }
 
     func showDownloads() {
-        revealSidebarMenu(.downloads)
+        guard let windowState = windowRegistry?.activeWindow else { return }
+
+        downloadsPopoverPresenter.toggle(in: windowState, browserManager: self)
     }
 
     func showHistory() {
         openHistoryTab()
     }
 
-    private func revealSidebarMenu(_ section: WindowSidebarMenuSection) {
-        guard let windowState = windowRegistry?.activeWindow else { return }
+    func toggleDownloadsPopover(in windowState: BrowserWindowState) {
+        downloadsPopoverPresenter.toggle(in: windowState, browserManager: self)
+    }
 
-        windowShellService.revealSidebarMenu(
-            section,
-            in: windowState
-        ) { [weak self] state in
-            guard let self else { return }
-            if self.windowRegistry?.activeWindow?.id == state.id {
-                self.syncBrowserManagerSidebarCachesFromWindow(state)
-            }
-            self.persistWindowSession(for: state)
-        }
+    func closeDownloadsPopover(in windowState: BrowserWindowState) {
+        downloadsPopoverPresenter.close(in: windowState)
     }
 
     private func makeWindowShellContext() -> BrowserWindowShellService.Context {

@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import WebKit
 
@@ -292,7 +293,11 @@ extension Tab: WKNavigationDelegate {
         didBecome download: WKDownload
     ) {
         let originalURL = navigationAction.request.url ?? URL(string: "https://example.com")!
-        let suggestedFilename = navigationAction.request.url?.lastPathComponent ?? "download"
+        let suggestedFilename = DownloadFileUtilities.suggestedFilename(
+            response: nil,
+            requestURL: navigationAction.request.url,
+            fallback: "download"
+        )
 
         RuntimeDiagnostics.emit("🔽 [Tab] Download started from navigationAction: \(originalURL.absoluteString)")
         RuntimeDiagnostics.emit("🔽 [Tab] Suggested filename: \(suggestedFilename)")
@@ -301,7 +306,9 @@ extension Tab: WKNavigationDelegate {
         _ = browserManager?.downloadManager.addDownload(
             download,
             originalURL: originalURL,
-            suggestedFilename: suggestedFilename
+            websiteURL: webView.url,
+            suggestedFilename: suggestedFilename,
+            flyAnimationOriginalRect: fileIconFlyAnimationOriginalRect(in: webView)
         )
     }
 
@@ -311,7 +318,11 @@ extension Tab: WKNavigationDelegate {
         didBecome download: WKDownload
     ) {
         let originalURL = navigationResponse.response.url ?? URL(string: "https://example.com")!
-        let suggestedFilename = navigationResponse.response.url?.lastPathComponent ?? "download"
+        let suggestedFilename = DownloadFileUtilities.suggestedFilename(
+            response: navigationResponse.response,
+            requestURL: navigationResponse.response.url,
+            fallback: "download"
+        )
 
         RuntimeDiagnostics.emit("🔽 [Tab] Download started from navigationResponse: \(originalURL.absoluteString)")
         RuntimeDiagnostics.emit("🔽 [Tab] Suggested filename: \(suggestedFilename)")
@@ -320,7 +331,29 @@ extension Tab: WKNavigationDelegate {
         _ = browserManager?.downloadManager.addDownload(
             download,
             originalURL: originalURL,
-            suggestedFilename: suggestedFilename
+            websiteURL: webView.url,
+            suggestedFilename: suggestedFilename,
+            flyAnimationOriginalRect: fileIconFlyAnimationOriginalRect(in: webView)
         )
+    }
+
+    private func fileIconFlyAnimationOriginalRect(in webView: WKWebView) -> NSRect? {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let window = webView.window,
+              let dockScreen = NSScreen.dockScreen
+        else { return nil }
+
+        let size = webView.bounds.size
+        guard size.width > 0, size.height > 0 else { return nil }
+
+        let sourceRect = NSRect(
+            x: size.width / 2 - 32,
+            y: size.height / 2 - 32,
+            width: 64,
+            height: 64
+        )
+        let windowRect = webView.convert(sourceRect, to: nil)
+        let globalRect = window.convertToScreen(windowRect)
+        return dockScreen.convertFromGlobalScreenCoordinates(globalRect)
     }
 }

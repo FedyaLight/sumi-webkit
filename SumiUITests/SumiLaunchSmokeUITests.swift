@@ -77,7 +77,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments.append("--uitest-smoke")
         app.launchArguments.append("--uitest-sidebar-drag-marker=\(sidebarDragMarkerFileURL().path)")
-        // Keeps automatic downloads out of the real ~/Downloads so macOS TCC does not prompt every run (see SumiDownloadsDirectoryResolver).
+        // Keeps automatic downloads out of the real ~/Downloads so macOS TCC does not prompt every run.
         app.launchEnvironment["SUMI_TEST_DOWNLOADS_ISOLATION"] = "1"
         if let smokeAppSupportURL {
             app.launchEnvironment["SUMI_APP_SUPPORT_OVERRIDE"] = smokeAppSupportURL.path
@@ -3209,8 +3209,6 @@ final class SumiLaunchSmokeUITests: XCTestCase {
             "savedSidebarWidth": 250.0,
             "sidebarContentWidth": 234.0,
             "isSidebarVisible": true,
-            "isSidebarMenuVisible": false,
-            "selectedSidebarMenuSection": "history",
             "urlBarDraft": [
                 "text": "",
                 "navigateCurrentTab": false
