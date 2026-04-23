@@ -314,7 +314,7 @@ struct PrivacySettingsView: View {
     }
     
     private func clearBrowsingHistory() {
-        browserManager.historyManager.clearHistory()
+        browserManager.clearAllHistoryFromMenu()
     }
     
     private func clearCache() {

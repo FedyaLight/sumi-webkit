@@ -1,37 +1,36 @@
 import Foundation
 
-enum SplitOrientation: String, Codable {
+enum SplitOrientation: String, Codable, Hashable {
     case horizontal
     case vertical
 }
 
-enum WindowSidebarMenuSection: String, Codable {
-    case history
+enum WindowSidebarMenuSection: String, Codable, Hashable {
     case downloads
 }
 
-enum CommandPalettePresentationReason: String, Codable, Equatable {
+enum CommandPalettePresentationReason: String, Codable, Equatable, Hashable {
     case none
     case emptySpace
     case keyboard
 }
 
-struct URLBarDraftState: Codable, Equatable {
+struct URLBarDraftState: Codable, Equatable, Hashable {
     var text: String
     var navigateCurrentTab: Bool
 }
 
-struct SpaceTabSelectionSnapshot: Codable, Equatable {
+struct SpaceTabSelectionSnapshot: Codable, Equatable, Hashable {
     var spaceId: UUID
     var tabId: UUID
 }
 
-struct SpaceShortcutSelectionSnapshot: Codable, Equatable {
+struct SpaceShortcutSelectionSnapshot: Codable, Equatable, Hashable {
     var spaceId: UUID
     var shortcutPinId: UUID
 }
 
-struct SplitSessionSnapshot: Codable, Equatable {
+struct SplitSessionSnapshot: Codable, Equatable, Hashable {
     var leftTabId: UUID
     var rightTabId: UUID
     var dividerFraction: Double
@@ -39,7 +38,7 @@ struct SplitSessionSnapshot: Codable, Equatable {
     var orientation: SplitOrientation
 }
 
-struct WindowSessionSnapshot: Codable, Equatable {
+struct WindowSessionSnapshot: Codable, Equatable, Hashable {
     var currentTabId: UUID?
     var currentSpaceId: UUID?
     var currentProfileId: UUID?

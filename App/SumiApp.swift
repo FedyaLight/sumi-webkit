@@ -75,7 +75,10 @@ struct SumiApp: App {
         appDelegate.externalURLHandler = browserManager
         appDelegate.persistenceHandler = browserManager
         appDelegate.updateHandler = browserManager
+        appDelegate.shortcutManager = keyboardShortcutManager
         browserManager.appDelegate = appDelegate
+        SumiSpecialPagesController.shared.browserManager = browserManager
+        appDelegate.refreshHistoryMenu()
 
         // Required: routing and cleanup call `requireWebViewCoordinator()` after this point.
         browserManager.webViewCoordinator = webViewCoordinator
@@ -109,6 +112,7 @@ struct SumiApp: App {
             [webViewCoordinator, weak browserManager] windowId in
             // Only cleanup if browserManager still exists (it's captured weakly)
             if let browserManager = browserManager {
+                browserManager.handleWindowWillClose(windowId)
                 browserManager.extensionManager.notifyWindowClosed(windowId)
                 webViewCoordinator.cleanupWindow(
                     windowId,

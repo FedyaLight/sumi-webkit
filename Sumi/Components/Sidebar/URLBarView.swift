@@ -349,12 +349,18 @@ struct URLBarView: View {
         if currentTab.representsSumiSettingsSurface {
             return String(localized: "Settings")
         }
+        if currentTab.representsSumiHistorySurface {
+            return String(localized: "History")
+        }
         return formatURL(currentTab.url)
     }
 
     private func formatURL(_ url: URL) -> String {
         if SumiSurface.isSettingsSurfaceURL(url) {
             return String(localized: "Settings")
+        }
+        if SumiSurface.isHistorySurfaceURL(url) {
+            return String(localized: "History")
         }
         guard let host = url.host else {
             return url.absoluteString

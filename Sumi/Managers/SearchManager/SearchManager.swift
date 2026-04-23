@@ -34,7 +34,7 @@ class SearchManager {
             case search
             case url
             case tab(Tab)
-            case history(HistoryEntry)
+            case history(HistoryListItem)
         }
         
         static func == (lhs: SearchSuggestion, rhs: SearchSuggestion) -> Bool {
@@ -183,11 +183,11 @@ class SearchManager {
         guard let historyManager = historyManager else { return [] }
         
         let lowercaseQuery = query.lowercased()
-        let historyEntries = historyManager.searchHistory(query: query, page: 0, pageSize: 20)
+        let historyEntries = historyManager.searchSuggestions(matching: query, limit: 20)
         
         var matchingHistory: [SearchSuggestion] = []
         
-        for entry in historyEntries.entries {
+        for entry in historyEntries {
             let titleMatch = entry.title.lowercased().contains(lowercaseQuery)
             let urlMatch = entry.url.absoluteString.lowercased().contains(lowercaseQuery)
             let hostMatch = entry.url.host?.lowercased().contains(lowercaseQuery) ?? false
@@ -213,12 +213,7 @@ class SearchManager {
                 } else if !lhsTitleMatch && rhsTitleMatch {
                     return false
                 } else {
-                    // Then prioritize by visit count and recency
-                    if lhsHistory.visitCount != rhsHistory.visitCount {
-                        return lhsHistory.visitCount > rhsHistory.visitCount
-                    } else {
-                        return lhsHistory.lastVisited > rhsHistory.lastVisited
-                    }
+                    return (lhsHistory.visitedAt ?? .distantPast) > (rhsHistory.visitedAt ?? .distantPast)
                 }
             }
             return false

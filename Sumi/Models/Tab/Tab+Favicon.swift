@@ -20,6 +20,15 @@ extension Tab {
         if SumiSurface.isSettingsSurfaceURL(url) {
             favicon = SwiftUI.Image(systemName: SumiSurface.settingsTabFaviconSystemImageName)
             faviconIsTemplateGlobePlaceholder = false
+            resolvedFaviconCacheKey = nil
+            syncBoundLauncherPinAfterFaviconResolved()
+            return true
+        }
+
+        if SumiSurface.isHistorySurfaceURL(url) {
+            favicon = SwiftUI.Image(systemName: SumiSurface.historyTabFaviconSystemImageName)
+            faviconIsTemplateGlobePlaceholder = false
+            resolvedFaviconCacheKey = nil
             syncBoundLauncherPinAfterFaviconResolved()
             return true
         }
@@ -27,6 +36,10 @@ extension Tab {
         guard let cacheKey = SumiFaviconResolver.cacheKey(for: url),
               let image = TabFaviconStore.getCachedImage(for: cacheKey)
         else {
+            if resolvedFaviconCacheKey == SumiFaviconResolver.cacheKey(for: url),
+               !faviconIsTemplateGlobePlaceholder {
+                return false
+            }
             favicon = defaultFavicon
             faviconIsTemplateGlobePlaceholder = true
             return false
@@ -34,6 +47,7 @@ extension Tab {
 
         favicon = SwiftUI.Image(nsImage: image)
         faviconIsTemplateGlobePlaceholder = false
+        resolvedFaviconCacheKey = cacheKey
         syncBoundLauncherPinAfterFaviconResolved()
         return true
     }
@@ -50,15 +64,27 @@ extension Tab {
             await MainActor.run {
                 self.favicon = SwiftUI.Image(systemName: SumiSurface.settingsTabFaviconSystemImageName)
                 self.faviconIsTemplateGlobePlaceholder = false
+                self.resolvedFaviconCacheKey = nil
                 self.syncBoundLauncherPinAfterFaviconResolved()
             }
             return
         }
 
-        guard SumiFaviconResolver.cacheKey(for: url) != nil else {
+        if SumiSurface.isHistorySurfaceURL(url) {
+            await MainActor.run {
+                self.favicon = SwiftUI.Image(systemName: SumiSurface.historyTabFaviconSystemImageName)
+                self.faviconIsTemplateGlobePlaceholder = false
+                self.resolvedFaviconCacheKey = nil
+                self.syncBoundLauncherPinAfterFaviconResolved()
+            }
+            return
+        }
+
+        guard let cacheKey = SumiFaviconResolver.cacheKey(for: url) else {
             await MainActor.run {
                 self.favicon = defaultFavicon
                 self.faviconIsTemplateGlobePlaceholder = true
+                self.resolvedFaviconCacheKey = nil
             }
             return
         }
@@ -67,14 +93,40 @@ extension Tab {
             await MainActor.run {
                 self.favicon = SwiftUI.Image(nsImage: image)
                 self.faviconIsTemplateGlobePlaceholder = false
+                self.resolvedFaviconCacheKey = cacheKey
                 self.syncBoundLauncherPinAfterFaviconResolved()
             }
             return
         }
 
         await MainActor.run {
+            if self.resolvedFaviconCacheKey == cacheKey,
+               !self.faviconIsTemplateGlobePlaceholder {
+                return
+            }
             self.favicon = defaultFavicon
             self.faviconIsTemplateGlobePlaceholder = true
+        }
+    }
+
+    func applyDiscoveredFaviconLinks(
+        _ links: [SumiDiscoveredFaviconLink],
+        documentURL: URL
+    ) async {
+        guard let cacheKey = SumiFaviconResolver.cacheKey(for: documentURL),
+              let image = await SumiFaviconResolver.shared.image(for: documentURL, discoveredLinks: links)
+        else {
+            return
+        }
+
+        await MainActor.run {
+            guard self.url == documentURL || self.existingWebView?.url == documentURL else {
+                return
+            }
+            self.favicon = SwiftUI.Image(nsImage: image)
+            self.faviconIsTemplateGlobePlaceholder = false
+            self.resolvedFaviconCacheKey = cacheKey
+            self.syncBoundLauncherPinAfterFaviconResolved()
         }
     }
 

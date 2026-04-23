@@ -1,6 +1,12 @@
 import AppKit
 import Foundation
 
+struct SumiDiscoveredFaviconLink: Sendable {
+    let url: URL
+    let relation: String
+    let sizes: String?
+}
+
 actor SumiFaviconResolver {
     static let shared = SumiFaviconResolver(usesPersistedNegativeCache: true)
 
@@ -87,6 +93,41 @@ actor SumiFaviconResolver {
         let resolvedImage = await task.value
         inFlight.removeValue(forKey: cacheKey)
         return resolvedImage
+    }
+
+    func image(
+        for documentURL: URL,
+        discoveredLinks: [SumiDiscoveredFaviconLink]
+    ) async -> NSImage? {
+        guard let cacheKey = Self.cacheKey(for: documentURL) else {
+            return nil
+        }
+
+        if let cached = TabFaviconStore.getCachedImage(for: cacheKey),
+           acceptedLowQualityKeys.contains(cacheKey) || Self.isHighQualityEnough(cached)
+        {
+            return cached
+        }
+
+        if negativeCacheExpirations.removeValue(forKey: cacheKey) != nil {
+            persistNegativeCacheIfNeeded()
+        }
+
+        for candidate in htmlIconCandidates(from: discoveredLinks) {
+            guard let decodedImage = await fetchImage(at: candidate.url) else {
+                continue
+            }
+
+            if Self.isHighQualityEnough(decodedImage.bitmap.image) {
+                acceptedLowQualityKeys.remove(cacheKey)
+            } else {
+                acceptedLowQualityKeys.insert(cacheKey)
+            }
+            cache(decodedImage, cacheKey: cacheKey, resolvedURL: candidate.url)
+            return decodedImage.bitmap.image
+        }
+
+        return await image(for: documentURL)
     }
 
     func resetTransientState() {
@@ -189,6 +230,30 @@ actor SumiFaviconResolver {
         }
 
         return FaviconCandidate(url: bestCandidate.url, decodedImage: decodedImage)
+    }
+
+    private func htmlIconCandidates(
+        from links: [SumiDiscoveredFaviconLink]
+    ) -> [HTMLIconCandidate] {
+        links.compactMap { link in
+            guard let relation = HTMLHeadIconParser.relationType(from: link.relation) else {
+                return nil
+            }
+            return HTMLIconCandidate(
+                url: link.url,
+                sizeScore: HTMLHeadIconParser.sizeScore(from: link.sizes),
+                relationPriority: relation.priority
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.sizeScore == rhs.sizeScore {
+                if lhs.relationPriority == rhs.relationPriority {
+                    return lhs.url.absoluteString < rhs.url.absoluteString
+                }
+                return lhs.relationPriority > rhs.relationPriority
+            }
+            return lhs.sizeScore > rhs.sizeScore
+        }
     }
 
     private func fetchAndCacheImage(
@@ -591,7 +656,7 @@ private enum HTMLHeadIconParser {
         return attributes
     }
 
-    private static func relationType(from rawRelation: String?) -> IconRelation? {
+    static func relationType(from rawRelation: String?) -> IconRelation? {
         guard let rawRelation else {
             return nil
         }
@@ -613,7 +678,7 @@ private enum HTMLHeadIconParser {
         return nil
     }
 
-    private static func sizeScore(from rawSize: String?) -> Int {
+    static func sizeScore(from rawSize: String?) -> Int {
         guard let rawSize else {
             return 0
         }

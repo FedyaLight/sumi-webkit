@@ -24,12 +24,7 @@ struct SidebarMenu: View {
         HStack(alignment: .center, spacing: 0) {
             tabs
             VStack {
-                switch windowState.selectedSidebarMenuSection {
-                case .history:
-                    SidebarMenuHistoryTab()
-                case .downloads:
-                    SidebarMenuDownloadsTab()
-                }
+                SidebarMenuDownloadsTab()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -54,20 +49,10 @@ struct SidebarMenu: View {
             Spacer()
             VStack(spacing: 20) {
                 SidebarMenuTab(
-                    image: "clock",
-                    activeImage: "clock.fill",
-                    title: "History",
-                    isActive: windowState.selectedSidebarMenuSection == .history,
-                    action: {
-                        windowState.selectedSidebarMenuSection = .history
-                        browserManager.persistWindowSession(for: windowState)
-                    }
-                )
-                SidebarMenuTab(
                     image: "arrow.down.circle",
                     activeImage: "arrow.down.circle.fill",
                     title: "Downloads",
-                    isActive: windowState.selectedSidebarMenuSection == .downloads,
+                    isActive: true,
                     action: {
                         windowState.selectedSidebarMenuSection = .downloads
                         browserManager.persistWindowSession(for: windowState)

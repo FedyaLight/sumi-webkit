@@ -8,6 +8,7 @@ extension Tab {
         "commandHover",
         "commandClick",
         "SumiIdentity",
+        "faviconLinks",
     ]
 
     static func coreScriptMessageHandlerName(
@@ -88,6 +89,79 @@ extension Tab {
         userContentController.add(self, name: coreScriptMessageHandlerName("commandHover"))
         userContentController.add(self, name: coreScriptMessageHandlerName("commandClick"))
         userContentController.add(self, name: coreScriptMessageHandlerName("SumiIdentity"))
+        userContentController.add(self, name: coreScriptMessageHandlerName("faviconLinks"))
+        installFaviconDiscoveryScriptIfNeeded(on: userContentController)
+    }
+
+    private func installFaviconDiscoveryScriptIfNeeded(on userContentController: WKUserContentController) {
+        let marker = "__sumiFaviconReporter_\(id.uuidString.replacingOccurrences(of: "-", with: "_"))"
+        guard userContentController.userScripts.contains(where: { $0.source.contains(marker) }) == false else {
+            return
+        }
+
+        let handlerName = coreScriptMessageHandlerName("faviconLinks")
+        let source = """
+        (() => {
+          if (window.\(marker)) { return; }
+          window.\(marker) = true;
+
+          const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.\(handlerName);
+          if (!handler) { return; }
+
+          const absoluteURL = (value) => {
+            try { return new URL(value, document.baseURI || location.href).href; } catch (_) { return null; }
+          };
+
+          const collect = () => {
+            const links = Array.from(document.querySelectorAll('link[rel][href]')).map((link) => {
+              const rel = String(link.getAttribute('rel') || '').toLowerCase();
+              if (!rel.includes('icon')) { return null; }
+              const href = absoluteURL(link.getAttribute('href'));
+              if (!href) { return null; }
+              return {
+                href,
+                rel,
+                sizes: link.getAttribute('sizes') || '',
+                type: link.getAttribute('type') || ''
+              };
+            }).filter(Boolean);
+
+            if (links.length > 0) {
+              handler.postMessage({ documentURL: location.href, links });
+            }
+          };
+
+          let scheduled = false;
+          const schedule = () => {
+            if (scheduled) { return; }
+            scheduled = true;
+            setTimeout(() => {
+              scheduled = false;
+              collect();
+            }, 0);
+          };
+
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', schedule, { once: true });
+          }
+          schedule();
+
+          const head = document.head || document.documentElement;
+          if (head && window.MutationObserver) {
+            new MutationObserver(schedule).observe(head, {
+              childList: true,
+              subtree: true,
+              attributes: true,
+              attributeFilter: ['href', 'rel', 'sizes', 'type']
+            });
+          }
+        })();
+        """
+        userContentController.addUserScript(WKUserScript(
+            source: source,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
+        ))
     }
 
     func cancelPendingMainFrameNavigation() {

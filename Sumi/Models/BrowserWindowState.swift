@@ -120,7 +120,7 @@ class BrowserWindowState {
     var isSidebarMenuVisible: Bool = false
 
     /// Selected section inside the sidebar utility menu
-    var selectedSidebarMenuSection: WindowSidebarMenuSection = .history
+    var selectedSidebarMenuSection: WindowSidebarMenuSection = .downloads
 
     /// Whether the command palette is visible in this window
     var isCommandPaletteVisible: Bool = false

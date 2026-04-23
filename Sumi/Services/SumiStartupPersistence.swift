@@ -31,7 +31,8 @@ final class SumiStartupPersistence {
         TabEntity.self,
         FolderEntity.self,
         TabsStateEntity.self,
-        HistoryEntity.self,
+        HistoryEntryEntity.self,
+        HistoryVisitEntity.self,
         ExtensionEntity.self,
         UserScriptEntity.self,
         UserScriptResourceEntity.self,
@@ -98,7 +99,23 @@ final class SumiStartupPersistence {
             )
 
             switch classification {
-            case .schemaMismatch, .corruption, .other:
+            case .schemaMismatch:
+                Self.log.fault(
+                    "Schema mismatch detected. Recreating the local store without migration."
+                )
+                do {
+                    try Self.resetPersistentStore()
+                    let resolvedContainer = try Self.openPersistentContainer()
+                    Self.log.notice("Recreated SwiftData store after schema mismatch.")
+                    self.container = resolvedContainer
+                } catch let resetError {
+                    Self.log.fault(
+                        "Failed to recreate store after schema mismatch: \(String(describing: resetError), privacy: .public)"
+                    )
+                    fatalError("Sumi could not recreate the local browser store after a schema update.")
+                }
+
+            case .corruption, .other:
                 Self.log.fault(
                     "Attempting to restore the latest known-good store backup after startup failure."
                 )
@@ -112,9 +129,21 @@ final class SumiStartupPersistence {
                     Self.log.fault(
                         "Failed to restore usable SwiftData store from backup: \(String(describing: restoreError), privacy: .public)"
                     )
-                    fatalError(
-                        "Sumi could not open the local browser store and no usable backup could be restored."
-                    )
+                    do {
+                        try Self.resetPersistentStore()
+                        let resolvedContainer = try Self.openPersistentContainer()
+                        Self.log.notice(
+                            "Recreated SwiftData store after backup restore failed."
+                        )
+                        self.container = resolvedContainer
+                    } catch let resetError {
+                        Self.log.fault(
+                            "Failed to recreate store after backup restore failed: \(String(describing: resetError), privacy: .public)"
+                        )
+                        fatalError(
+                            "Sumi could not open or recreate the local browser store."
+                        )
+                    }
                 }
 
             case .diskSpace:
@@ -137,7 +166,7 @@ final class SumiStartupPersistence {
         let ns = error as NSError
         let domain = ns.domain
         let code = ns.code
-        let desc = (ns.userInfo[NSLocalizedDescriptionKey] as? String) ?? ns.localizedDescription
+        let desc = Self.errorDescriptionTree(error)
         let lower = (desc + " " + domain).lowercased()
 
         // Disk space: POSIX ENOSPC or clear full-disk wording
@@ -163,6 +192,35 @@ final class SumiStartupPersistence {
         }
 
         return .other
+    }
+
+    private static func errorDescriptionTree(_ error: Error) -> String {
+        var parts: [String] = []
+        var visited = Set<ObjectIdentifier>()
+
+        func append(_ error: Error) {
+            let ns = error as NSError
+            let identity = ObjectIdentifier(ns)
+            guard !visited.contains(identity) else { return }
+            visited.insert(identity)
+
+            parts.append(ns.localizedDescription)
+            parts.append(ns.domain)
+            parts.append(String(ns.code))
+            for value in ns.userInfo.values {
+                switch value {
+                case let nested as NSError:
+                    append(nested)
+                case let nested as Error:
+                    append(nested)
+                default:
+                    parts.append(String(describing: value))
+                }
+            }
+        }
+
+        append(error)
+        return parts.joined(separator: " ")
     }
 
     // MARK: - Backup / Restore
@@ -299,6 +357,20 @@ final class SumiStartupPersistence {
                         throw error
                     }
                 }
+            }
+        }
+    }
+
+    nonisolated private static func resetPersistentStore() throws {
+        try Self.runBlockingOnUtilityQueue {
+            let fm = FileManager.default
+            let base = Self.storeURL
+            let files = [base] + Self.sidecarURLs(for: base)
+            for file in files where fm.fileExists(atPath: file.path) {
+                try? fm.removeItem(at: file)
+            }
+            if fm.fileExists(atPath: Self.backupsDirectoryURL.path) {
+                try? fm.removeItem(at: Self.backupsDirectoryURL)
             }
         }
     }

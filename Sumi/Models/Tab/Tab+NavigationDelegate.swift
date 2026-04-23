@@ -40,6 +40,16 @@ extension Tab: WKNavigationDelegate {
         if let newURL = webView.url {
             self.url = newURL
             noteCommittedMainDocumentNavigation(to: newURL)
+            historyRecorder.didCommitMainFrameNavigation(
+                to: newURL,
+                kind: pendingMainFrameNavigationKind == .backForward ? .backForward : .regular,
+                tab: self
+            )
+            if SumiSurface.isHistorySurfaceURL(newURL) {
+                SumiSpecialPagesController.shared.registerHistoryWebView(webView)
+            } else {
+                SumiSpecialPagesController.shared.unregisterWebView(webView)
+            }
             browserManager?.extensionManager.markTabEligibleAfterCommittedNavigation(
                 self,
                 reason: "Tab.didCommitMainDocumentNavigation"
@@ -81,19 +91,8 @@ extension Tab: WKNavigationDelegate {
         updateNavigationState()
         let resolvedTitle = webView.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
-        if let currentURL = webView.url {
-            let titleForHistory = resolvedTitle.isEmpty ? name : resolvedTitle
-            let profile = resolveProfile()
-            let profileId = profile?.id ?? browserManager?.currentProfile?.id
-            let isEphemeral = profile?.isEphemeral ?? false
-            browserManager?.historyManager.addVisit(
-                url: currentURL,
-                title: titleForHistory,
-                timestamp: Date(),
-                tabId: id,
-                profileId: profileId,
-                isEphemeral: isEphemeral
-            )
+        if webView.url != nil {
+            historyRecorder.updateTitle(resolvedTitle, tab: self)
         }
         browserManager?.tabManager.scheduleRuntimeStatePersistence(for: self)
         if pendingMainFrameNavigationKind == .backForward {
@@ -135,6 +134,11 @@ extension Tab: WKNavigationDelegate {
         guard let newURL = webView.url else { return }
 
         handleSameDocumentNavigation(to: newURL)
+        historyRecorder.didSameDocumentNavigation(
+            to: newURL,
+            type: SumiSameDocumentNavigationType(rawValue: navigationTypeRaw),
+            tab: self
+        )
         if pendingMainFrameNavigationKind == .backForward {
             scheduleBackForwardSameDocumentSettle(using: webView)
         } else {
@@ -324,5 +328,4 @@ extension Tab: WKNavigationDelegate {
             suggestedFilename: suggestedFilename
         )
     }
-
 }

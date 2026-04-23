@@ -174,6 +174,8 @@ class BrowserManager: ObservableObject {
     var downloadManager: DownloadManager
     var authenticationManager: AuthenticationManager
     var historyManager: HistoryManager
+    var recentlyClosedManager: RecentlyClosedManager
+    var lastSessionWindowsStore: LastSessionWindowsStore
     private var cachedCookieManager: CookieManager?
     var cookieManager: CookieManager {
         if let cachedCookieManager {
@@ -262,6 +264,8 @@ class BrowserManager: ObservableObject {
     private var savedSidebarWidth: CGFloat = BrowserWindowState.sidebarDefaultWidth
     private var savedSidebarVisibility: Bool = true
     var isSwitchingProfile: Bool = false
+    let startupLastSessionWindowSnapshots: [LastSessionWindowSnapshot]
+    var didConsumeStartupLastSessionRestoreOffer = false
     private var structuralChangeCancellable: AnyCancellable?
     private var tabManagerLoadObserverToken: NSObjectProtocol?
     private var pendingWindowSessionPersistTasks: [UUID: Task<Void, Never>] = [:]
@@ -309,6 +313,9 @@ class BrowserManager: ObservableObject {
         self.authenticationManager = AuthenticationManager()
         // Initialize managers with current profile context for isolation
         self.historyManager = HistoryManager(context: startupModelContext, profileId: initialProfile?.id)
+        self.recentlyClosedManager = RecentlyClosedManager()
+        self.lastSessionWindowsStore = LastSessionWindowsStore()
+        self.startupLastSessionWindowSnapshots = self.lastSessionWindowsStore.snapshots
         self.compositorManager = TabCompositorManager()
         self.splitManager = SplitViewManager()
         self.workspaceThemeCoordinator = WorkspaceThemeCoordinator()
@@ -1125,7 +1132,7 @@ class BrowserManager: ObservableObject {
             rememberSelection: rememberSelection
         )
 
-        if tab.representsSumiSettingsSurface, splitManager.isSplit(for: windowState.id) {
+        if tab.representsSumiNonWebSurface, splitManager.isSplit(for: windowState.id) {
             splitManager.exitSplit(keep: .left, for: windowState.id)
         }
 
@@ -1139,7 +1146,7 @@ class BrowserManager: ObservableObject {
         stateDidChange = applyRegularTabMemoryUpdate(targetState.regularTabMemoryUpdate, to: windowState) || stateDidChange
 
         let selectedTabChanged = previousTabId != tab.id
-        let requiresMaterialization = tab.isUnloaded && !tab.representsSumiSettingsSurface
+        let requiresMaterialization = tab.isUnloaded && !tab.representsSumiNonWebSurface
         guard stateDidChange || selectedTabChanged || requiresMaterialization else {
             return
         }
@@ -1170,7 +1177,7 @@ class BrowserManager: ObservableObject {
         }
 
         // Load the tab in compositor if needed (reloads unloaded tabs)
-        if !tab.representsSumiSettingsSurface {
+        if !tab.representsSumiNonWebSurface {
             scheduleTabLoadIfNeeded(
                 tab,
                 in: windowState,
@@ -1607,6 +1614,7 @@ class BrowserManager: ObservableObject {
         pendingWindowSessionPersistTasks[windowState.id]?.cancel()
         pendingWindowSessionPersistTasks.removeValue(forKey: windowState.id)
         windowSessionService.persistWindowSession(for: windowState, delegate: self)
+        refreshLastSessionWindowsStore(excludingWindowID: nil)
     }
 
     func schedulePersistWindowSession(
@@ -1628,6 +1636,7 @@ class BrowserManager: ObservableObject {
 
             self.pendingWindowSessionPersistTasks.removeValue(forKey: windowId)
             self.windowSessionService.persistWindowSession(for: windowState, delegate: self)
+            self.refreshLastSessionWindowsStore(excludingWindowID: nil)
         }
     }
 

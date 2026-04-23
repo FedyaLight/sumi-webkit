@@ -7,24 +7,32 @@
 
 import Foundation
 
-public enum SumiSurface {
-    public static let emptyTabURL = URL(string: "about:blank")!
+enum SumiSurface {
+    static let emptyTabURL = URL(string: "about:blank")!
     /// Internal settings UI opened as a browser tab (`sumi://settings?pane=…`).
-    public static let settingsURLHost = "settings"
+    static let settingsURLHost = "settings"
+    /// Internal history UI opened as a browser tab (`sumi://history?range=…`).
+    static let historyURLHost = "history"
     /// SF Symbol used for the settings tab row / favicon slot (sidebar, pinned UI, etc.).
-    public static let settingsTabFaviconSystemImageName = "gearshape.fill"
+    static let settingsTabFaviconSystemImageName = "gearshape.fill"
+    static let historyTabFaviconSystemImageName = "clock.arrow.circlepath"
 
-    public static func isEmptyNewTabURL(_ url: URL) -> Bool {
+    static func isEmptyNewTabURL(_ url: URL) -> Bool {
         url.absoluteString == emptyTabURL.absoluteString
     }
 
-    public static func isSettingsSurfaceURL(_ url: URL) -> Bool {
+    static func isSettingsSurfaceURL(_ url: URL) -> Bool {
         url.scheme?.lowercased() == "sumi"
             && url.host?.lowercased() == settingsURLHost.lowercased()
     }
 
+    static func isHistorySurfaceURL(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == "sumi"
+            && url.host?.lowercased() == historyURLHost.lowercased()
+    }
+
     /// Stable `pane` query value for `sumi://settings?pane=…`.
-    public static func settingsSurfaceURL(paneQuery: String) -> URL {
+    static func settingsSurfaceURL(paneQuery: String) -> URL {
         var components = URLComponents()
         components.scheme = "sumi"
         components.host = Self.settingsURLHost
@@ -32,11 +40,20 @@ public enum SumiSurface {
         return components.url ?? URL(string: "sumi://settings?pane=appearance")!
     }
 
-    public static func settingsPaneQuery(from url: URL) -> String? {
+    static func settingsPaneQuery(from url: URL) -> String? {
         guard isSettingsSurfaceURL(url) else { return nil }
         return URLComponents(url: url, resolvingAgainstBaseURL: false)?
             .queryItems?
             .first(where: { $0.name == "pane" })?
             .value
     }
+
+    static func historySurfaceURL(rangeQuery: String) -> URL {
+        var components = URLComponents()
+        components.scheme = "sumi"
+        components.host = Self.historyURLHost
+        components.queryItems = [URLQueryItem(name: "range", value: rangeQuery)]
+        return components.url ?? URL(string: "sumi://history?range=all")!
+    }
+
 }
