@@ -52,11 +52,22 @@ final class WorkspaceThemePersistenceTests: XCTestCase {
 
         var workspaceTheme = WorkspaceTheme.default
         workspaceTheme = try! XCTUnwrap(
-            SumiWorkspaceThemePresets.groups.first?.presets.first?.workspaceTheme
+            SumiWorkspaceThemePresets.groups.first?.presets.dropFirst().first?.workspaceTheme
         )
 
         XCTAssertFalse(workspaceTheme.visuallyEquals(.default))
         XCTAssertEqual(settings.windowSchemeMode, .dark)
+    }
+
+    func testDefaultGradientMatchesFirstLightMonoPreset() throws {
+        let firstLightMonoPreset = try XCTUnwrap(
+            SumiWorkspaceThemePresets.groups.first?.presets.first?.workspaceTheme
+        )
+
+        XCTAssertTrue(WorkspaceTheme.default.visuallyEquals(firstLightMonoPreset))
+        XCTAssertEqual(SpaceGradient.default.primaryColorHex, "#F4EFDF")
+        XCTAssertEqual(SpaceGradient.default.opacity, 0.62, accuracy: 0.0001)
+        XCTAssertEqual(SpaceGradient.default.grain, 1.0 / 16.0, accuracy: 0.0001)
     }
 
     func testTextureQuantizesToZenSixteenthStepsAndWrapsFullTurn() {

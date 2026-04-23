@@ -28,10 +28,15 @@ struct SpaceGradient: Codable, Hashable, Sendable {
     }
 
     static var `default`: SpaceGradient {
-        let hex = "#000000"
-        let n1 = GradientNode(colorHex: hex, location: 0.0)
-        let n2 = GradientNode(colorHex: hex, location: 1.0)
-        return SpaceGradient(angle: 45.0, nodes: [n1, n2], grain: 0.05, opacity: 0.6)
+        let hex = "#F4EFDF"
+        let position = 240.0 / 360.0
+        let n1 = GradientNode(
+            colorHex: hex,
+            location: 0.0,
+            xPosition: position,
+            yPosition: position
+        )
+        return SpaceGradient(angle: 225.0, nodes: [n1], grain: 1.0 / 16.0, opacity: 0.62)
     }
 
     static var incognito: SpaceGradient {
