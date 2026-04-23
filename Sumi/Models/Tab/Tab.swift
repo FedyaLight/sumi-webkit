@@ -351,11 +351,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         representsSumiSettingsSurface || representsSumiHistorySurface
     }
 
-    /// Backward-compatible spelling for native, non-WebKit Sumi surfaces.
-    var representsSumiNonWebSurface: Bool {
-        representsSumiNativeSurface
-    }
-
     /// Internal Sumi surfaces that use chrome-template presentation.
     var representsSumiInternalSurface: Bool {
         representsSumiNativeSurface

@@ -70,27 +70,6 @@ final class HistoryViewDataProvider {
         items(matching: query)
     }
 
-    func sections(for query: HistoryQuery) -> [HistorySection] {
-        let items = items(matching: query)
-        if case .rangeFilter(.allSites) = query {
-            return [.init(id: "sites", title: HistoryRange.allSites.title, items: items)]
-        }
-
-        var sections: [HistorySection] = []
-        var itemsByTitle: [String: [HistoryListItem]] = [:]
-        for item in items {
-            let title = item.relativeDay.isEmpty ? "History" : item.relativeDay
-            if itemsByTitle[title] == nil {
-                sections.append(.init(id: title, title: title, items: []))
-            }
-            itemsByTitle[title, default: []].append(item)
-        }
-
-        return sections.map { section in
-            .init(id: section.id, title: section.title, items: itemsByTitle[section.id] ?? [])
-        }
-    }
-
     func deleteVisits(matching query: HistoryQuery) async {
         do {
             let ids = matchingRecordIDs(for: query)
@@ -131,10 +110,6 @@ final class HistoryViewDataProvider {
             RuntimeDiagnostics.emit("Error clearing history visits: \(error)")
         }
         await refreshData()
-    }
-
-    func visits(matching query: HistoryQuery) async -> [HistoryVisitRecord] {
-        matchingVisits(for: query)
     }
 
     func preferredURL(forSiteDomain domain: String) -> URL? {

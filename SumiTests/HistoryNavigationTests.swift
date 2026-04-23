@@ -28,7 +28,7 @@ final class HistoryNavigationTests: XCTestCase {
         XCTAssertTrue(tab.representsSumiHistorySurface)
         XCTAssertTrue(tab.representsSumiInternalSurface)
         XCTAssertTrue(tab.representsSumiNativeSurface)
-        XCTAssertTrue(tab.representsSumiNonWebSurface)
+        XCTAssertTrue(tab.representsSumiNativeSurface)
         XCTAssertFalse(tab.requiresPrimaryWebView)
         XCTAssertTrue(tab.usesChromeThemedTemplateFavicon)
     }
