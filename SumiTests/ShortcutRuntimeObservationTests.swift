@@ -472,8 +472,7 @@ final class ShortcutRuntimeObservationTests: XCTestCase {
             name: "Example",
             favicon: "globe",
             spaceId: nil,
-            index: 0,
-            skipFaviconFetch: true
+            index: 0
         )
         tab.bindToShortcutPin(try XCTUnwrap(tabManager.shortcutPin(by: pinId)))
         tab.favicon = Image(systemName: "house.fill")

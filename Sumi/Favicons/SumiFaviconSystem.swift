@@ -9,14 +9,10 @@ enum FaviconUserScript {
     struct FaviconLink: Hashable, Sendable {
         let href: URL
         let rel: String
-        let sizes: String?
-        let type: String?
 
-        init(href: URL, rel: String, sizes: String? = nil, type: String? = nil) {
+        init(href: URL, rel: String) {
             self.href = href
             self.rel = rel
-            self.sizes = sizes
-            self.type = type
         }
     }
 }
@@ -173,7 +169,6 @@ extension Notification.Name {
 
 extension Date {
     static var weekAgo: Date { Date().addingTimeInterval(-7 * 24 * 60 * 60) }
-    static var monthAgo: Date { Date().addingTimeInterval(-30 * 24 * 60 * 60) }
 }
 
 enum SumiFaviconLookupKey {
@@ -249,18 +244,98 @@ protocol FaviconDownloading {
 }
 
 @MainActor
+protocol FaviconDownloadSessionDelegate: AnyObject {
+    func faviconDownloadSession(
+        _ session: any FaviconDownloadSession,
+        decideDestinationUsing response: URLResponse,
+        suggestedFilename: String
+    ) async -> URL?
+    func faviconDownloadSessionDidFinish(_ session: any FaviconDownloadSession)
+    func faviconDownloadSession(
+        _ session: any FaviconDownloadSession,
+        didFailWithError error: Error,
+        resumeData: Data?
+    )
+}
+
+@MainActor
+protocol FaviconDownloadSession: AnyObject {
+    var delegate: (any FaviconDownloadSessionDelegate)? { get set }
+    func cancel(_ completionHandler: @escaping @Sendable (Data?) -> Void)
+}
+
+@MainActor
+private final class WKFaviconDownloadSession: NSObject, FaviconDownloadSession {
+    private let download: WKDownload
+    weak var delegate: (any FaviconDownloadSessionDelegate)?
+
+    init(download: WKDownload) {
+        self.download = download
+        super.init()
+        download.delegate = self
+    }
+
+    func cancel(_ completionHandler: @escaping @Sendable (Data?) -> Void) {
+        download.cancel(completionHandler)
+    }
+}
+
+extension WKFaviconDownloadSession: WKDownloadDelegate {
+    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String) async -> URL? {
+        await delegate?.faviconDownloadSession(
+            self,
+            decideDestinationUsing: response,
+            suggestedFilename: suggestedFilename
+        )
+    }
+
+    func downloadDidFinish(_ download: WKDownload) {
+        delegate?.faviconDownloadSessionDidFinish(self)
+    }
+
+    func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        delegate?.faviconDownloadSession(self, didFailWithError: error, resumeData: resumeData)
+    }
+}
+
+@MainActor
 final class FaviconDownloader: NSObject, FaviconDownloading {
+    typealias DownloadSessionStarter = @MainActor (
+        _ request: URLRequest,
+        _ webView: WKWebView?
+    ) async -> (session: any FaviconDownloadSession, retainedDownloadSurface: AnyObject?)
+
     private struct PendingDownload {
         let url: URL
         let continuation: CheckedContinuation<Data, Error>
-        let temporaryWebView: WKWebView?
+        let session: any FaviconDownloadSession
+        let retainedDownloadSurface: AnyObject?
         var destinationURL: URL?
     }
 
     private static let maxFaviconSize: Int64 = 1_024 * 1_024
 
+    private var startDownloadSession: DownloadSessionStarter
     private var pendingDownloads: [ObjectIdentifier: PendingDownload] = [:]
-    private lazy var fallbackSession = URLSession(configuration: .ephemeral)
+    private let fallbackSession: URLSession
+
+    init(
+        fallbackSession: URLSession = URLSession(configuration: .ephemeral),
+        startDownloadSession: DownloadSessionStarter? = nil
+    ) {
+        self.fallbackSession = fallbackSession
+        self.startDownloadSession = { _, _ in
+            preconditionFailure("FaviconDownloader.startDownloadSession used before initialization")
+        }
+        super.init()
+        if let startDownloadSession {
+            self.startDownloadSession = startDownloadSession
+        } else {
+            self.startDownloadSession = { [unowned self] request, webView in
+                await self.makeDownloadSession(using: request, webView: webView)
+            }
+        }
+    }
 
     func download(from url: URL, using webView: WKWebView?) async throws -> Data {
         do {
@@ -271,26 +346,35 @@ final class FaviconDownloader: NSObject, FaviconDownloading {
     }
 
     private func downloadUsingWKDownload(from url: URL, using webView: WKWebView?) async throws -> Data {
-        let temporaryWebView = webView == nil ? makeTemporaryWebView() : nil
-        let targetWebView = webView ?? temporaryWebView!
-        let download = await targetWebView.startDownload(using: URLRequest(url: url))
+        let (session, retainedDownloadSurface) = await startDownloadSession(URLRequest(url: url), webView)
+        let identifier = ObjectIdentifier(session as AnyObject)
 
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                let identifier = ObjectIdentifier(download)
                 pendingDownloads[identifier] = PendingDownload(
                     url: url,
                     continuation: continuation,
-                    temporaryWebView: temporaryWebView,
+                    session: session,
+                    retainedDownloadSurface: retainedDownloadSurface,
                     destinationURL: nil
                 )
-                download.delegate = self
+                session.delegate = self
             }
         } onCancel: {
             Task { @MainActor [weak self] in
-                self?.cancel(download)
+                self?.cancelDownload(withIdentifier: identifier)
             }
         }
+    }
+
+    private func makeDownloadSession(
+        using request: URLRequest,
+        webView: WKWebView?
+    ) async -> (session: any FaviconDownloadSession, retainedDownloadSurface: AnyObject?) {
+        let temporaryWebView = webView == nil ? makeTemporaryWebView() : nil
+        let targetWebView = webView ?? temporaryWebView!
+        let download = await targetWebView.startDownload(using: request)
+        return (WKFaviconDownloadSession(download: download), temporaryWebView)
     }
 
     private func makeTemporaryWebView() -> WKWebView {
@@ -301,16 +385,17 @@ final class FaviconDownloader: NSObject, FaviconDownloading {
         return webView
     }
 
-    private func cancel(_ download: WKDownload) {
-        let identifier = ObjectIdentifier(download)
+    private func cancelDownload(withIdentifier identifier: ObjectIdentifier) {
         guard let pending = pendingDownloads.removeValue(forKey: identifier) else { return }
-        download.delegate = nil
-        download.cancel { _ in
-            if let destinationURL = pending.destinationURL {
-                try? FileManager.default.removeItem(at: destinationURL)
+        withExtendedLifetime(pending.retainedDownloadSurface) {
+            pending.session.delegate = nil
+            pending.session.cancel { _ in
+                if let destinationURL = pending.destinationURL {
+                    try? FileManager.default.removeItem(at: destinationURL)
+                }
             }
+            pending.continuation.resume(throwing: URLError(.cancelled))
         }
-        pending.continuation.resume(throwing: URLError(.cancelled))
     }
 }
 
@@ -325,52 +410,64 @@ extension FaviconDownloader: WKNavigationDelegate {
     }
 }
 
-extension FaviconDownloader: WKDownloadDelegate {
-    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String) async -> URL? {
+extension FaviconDownloader: FaviconDownloadSessionDelegate {
+    func faviconDownloadSession(
+        _ session: any FaviconDownloadSession,
+        decideDestinationUsing response: URLResponse,
+        suggestedFilename: String
+    ) async -> URL? {
         if response.expectedContentLength > 0 && response.expectedContentLength > Self.maxFaviconSize {
             return nil
         }
 
         let destinationURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: false)
-        let identifier = ObjectIdentifier(download)
+        let identifier = ObjectIdentifier(session as AnyObject)
         guard var pending = pendingDownloads[identifier] else { return nil }
         pending.destinationURL = destinationURL
         pendingDownloads[identifier] = pending
         return destinationURL
     }
 
-    func downloadDidFinish(_ download: WKDownload) {
-        let identifier = ObjectIdentifier(download)
+    func faviconDownloadSessionDidFinish(_ session: any FaviconDownloadSession) {
+        let identifier = ObjectIdentifier(session as AnyObject)
         guard let pending = pendingDownloads.removeValue(forKey: identifier) else { return }
-        defer {
-            if let destinationURL = pending.destinationURL {
-                try? FileManager.default.removeItem(at: destinationURL)
+        withExtendedLifetime(pending.retainedDownloadSurface) {
+            defer {
+                if let destinationURL = pending.destinationURL {
+                    try? FileManager.default.removeItem(at: destinationURL)
+                }
             }
-        }
 
-        do {
-            guard let destinationURL = pending.destinationURL else {
-                throw CocoaError(.fileNoSuchFile)
+            do {
+                guard let destinationURL = pending.destinationURL else {
+                    throw CocoaError(.fileNoSuchFile)
+                }
+                let attributes = try FileManager.default.attributesOfItem(atPath: destinationURL.path)
+                if let fileSize = attributes[.size] as? Int64, fileSize > Self.maxFaviconSize {
+                    throw URLError(.dataLengthExceedsMaximum, userInfo: [NSURLErrorKey: pending.url])
+                }
+                let data = try Data(contentsOf: destinationURL)
+                pending.continuation.resume(returning: data)
+            } catch {
+                pending.continuation.resume(throwing: error)
             }
-            let attributes = try FileManager.default.attributesOfItem(atPath: destinationURL.path)
-            if let fileSize = attributes[.size] as? Int64, fileSize > Self.maxFaviconSize {
-                throw URLError(.dataLengthExceedsMaximum, userInfo: [NSURLErrorKey: pending.url])
-            }
-            let data = try Data(contentsOf: destinationURL)
-            pending.continuation.resume(returning: data)
-        } catch {
-            pending.continuation.resume(throwing: error)
         }
     }
 
-    func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
-        let identifier = ObjectIdentifier(download)
+    func faviconDownloadSession(
+        _ session: any FaviconDownloadSession,
+        didFailWithError error: Error,
+        resumeData: Data?
+    ) {
+        let identifier = ObjectIdentifier(session as AnyObject)
         guard let pending = pendingDownloads.removeValue(forKey: identifier) else { return }
-        if let destinationURL = pending.destinationURL {
-            try? FileManager.default.removeItem(at: destinationURL)
+        withExtendedLifetime(pending.retainedDownloadSurface) {
+            if let destinationURL = pending.destinationURL {
+                try? FileManager.default.removeItem(at: destinationURL)
+            }
+            pending.continuation.resume(throwing: error)
         }
-        pending.continuation.resume(throwing: error)
     }
 }
 
@@ -402,7 +499,6 @@ final class FaviconNullStore: FaviconStoring {
 
 final class FaviconStore: @unchecked Sendable, FaviconStoring {
     enum StoreError: Error {
-        case persistentStoreLoadFailed
         case saveFailed
     }
 
@@ -1075,23 +1171,7 @@ final class FaviconSelector {
 }
 
 @MainActor
-protocol FaviconManagement: AnyObject {
-    var isCacheLoaded: Bool { get }
-
-    func waitUntilLoaded() async
-    func handleFaviconLinks(_ faviconLinks: [FaviconUserScript.FaviconLink], documentUrl: URL, webView: WKWebView?) async -> Favicon?
-    func loadFavicon(for documentUrl: URL, webView: WKWebView?) async -> Favicon?
-    func getCachedFavicon(for documentUrl: URL, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) -> Favicon?
-    func getCachedFavicon(for host: String, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) -> Favicon?
-    func getCachedFavicon(forUrlOrAnySubdomain documentUrl: URL, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) -> Favicon?
-    func image(forLookupKey key: String) -> NSImage?
-    func clearAll()
-    func cacheStats() -> (count: Int, domains: [String])
-    func storeImageForTesting(_ image: NSImage, for lookupKey: String)
-}
-
-@MainActor
-final class FaviconManager: FaviconManagement {
+final class FaviconManager {
     private enum ReferenceInsertionPolicy {
         case opportunistic
         case authoritativeCurrentLinks
@@ -1142,20 +1222,6 @@ final class FaviconManager: FaviconManagement {
         if isCacheLoaded == false {
             await loadCaches()
         }
-    }
-
-    func handleFaviconLinks(
-        _ faviconLinks: [FaviconUserScript.FaviconLink],
-        documentUrl: URL,
-        webView: WKWebView?
-    ) async -> Favicon? {
-        await resolveFavicon(
-            faviconLinks: faviconLinks,
-            documentUrl: documentUrl,
-            webView: webView,
-            allowFallback: true,
-            referencePolicy: .opportunistic
-        )
     }
 
     func handleLiveFaviconLinks(
@@ -1288,26 +1354,6 @@ final class FaviconManager: FaviconManagement {
         referenceCache.cacheStats()
     }
 
-    func storeImageForTesting(_ image: NSImage, for lookupKey: String) {
-        guard let documentURL = SumiFaviconLookupKey.documentURL(for: lookupKey) else { return }
-        let faviconURL = documentURL.deletingPathExtension().appendingPathComponent("manual-favicon.ico")
-        let favicon = Favicon(
-            identifier: UUID(),
-            url: faviconURL,
-            image: image,
-            relationString: "favicon",
-            documentUrl: documentURL,
-            dateCreated: Date()
-        )
-        Task { @MainActor in
-            await imageCache.insert([favicon])
-            await referenceCache.insert(
-                faviconUrls: (smallFaviconUrl: faviconURL, mediumFaviconUrl: faviconURL),
-                documentUrl: documentURL
-            )
-        }
-    }
-
     private func loadCaches() async {
         do {
             try await imageCache.load()
@@ -1410,7 +1456,6 @@ final class FaviconManager: FaviconManagement {
         return await handleReferenceInsertion(
             documentURL: documentUrl,
             cachedFavicons: cachedFavicons,
-            newFavicons: favicons,
             referencePolicy: referencePolicy
         )
     }
@@ -1419,7 +1464,6 @@ final class FaviconManager: FaviconManagement {
     private func handleReferenceInsertion(
         documentURL: URL,
         cachedFavicons: [Favicon],
-        newFavicons: [Favicon],
         referencePolicy: ReferenceInsertionPolicy
     ) async -> Favicon? {
         let currentSmallURL = referenceCache.getFaviconUrl(for: documentURL, sizeCategory: .small)

@@ -29,7 +29,7 @@ final class SettingsNavigationTests: XCTestCase {
     }
 
     func testSettingsSurfaceRemainsNativeNonWebSurface() {
-        let tab = Tab(url: SettingsTabs.about.settingsSurfaceURL, skipFaviconFetch: true)
+        let tab = Tab(url: SettingsTabs.about.settingsSurfaceURL)
 
         XCTAssertTrue(tab.representsSumiSettingsSurface)
         XCTAssertTrue(tab.representsSumiInternalSurface)

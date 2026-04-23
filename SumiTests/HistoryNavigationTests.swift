@@ -23,7 +23,7 @@ final class HistoryNavigationTests: XCTestCase {
         let historyURL = SumiSurface.historySurfaceURL(
             rangeQuery: HistoryRange.all.paneQueryValue
         )
-        let tab = Tab(url: historyURL, skipFaviconFetch: true)
+        let tab = Tab(url: historyURL)
 
         XCTAssertTrue(tab.representsSumiHistorySurface)
         XCTAssertTrue(tab.representsSumiInternalSurface)

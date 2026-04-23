@@ -380,8 +380,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         spaceId: UUID? = nil,
         index: Int = 0,
         browserManager: BrowserManager? = nil,
-        existingWebView: WKWebView? = nil,
-        skipFaviconFetch: Bool = false
+        existingWebView: WKWebView? = nil
     ) {
         self.id = id
         self.url = url

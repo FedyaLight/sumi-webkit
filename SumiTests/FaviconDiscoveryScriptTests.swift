@@ -114,23 +114,6 @@ final class FaviconDiscoveryScriptTests: XCTestCase {
         )
     }
 
-    func testResolverBridgePreservesDiscoveredLinkType() {
-        let faviconLinks = SumiFaviconResolver.faviconLinks(
-            from: [
-                SumiDiscoveredFaviconLink(
-                    url: URL(string: "https://example.com/favicon.svg")!,
-                    relation: "icon",
-                    type: "image/svg+xml"
-                ),
-            ]
-        )
-
-        XCTAssertEqual(faviconLinks.count, 1)
-        XCTAssertEqual(faviconLinks[0].href.absoluteString, "https://example.com/favicon.svg")
-        XCTAssertEqual(faviconLinks[0].rel, "icon")
-        XCTAssertEqual(faviconLinks[0].type, "image/svg+xml")
-    }
-
     func testDiscoveryScriptReportsInitialPayloadAfterPageLoad() async throws {
         let handlerName = "faviconLinks_initial"
         let recorder = FaviconMessageRecorder()
@@ -400,7 +383,7 @@ final class FaviconDiscoveryScriptTests: XCTestCase {
             Self.makeDataURL(color: .systemBlue, size: 180)
         )
         let webView = makeWebView(handlers: [])
-        let tab = Tab(url: pageURL, existingWebView: webView, skipFaviconFetch: true)
+        let tab = Tab(url: pageURL, existingWebView: webView)
         tab._webView = webView
 
         try await loadHTML(
