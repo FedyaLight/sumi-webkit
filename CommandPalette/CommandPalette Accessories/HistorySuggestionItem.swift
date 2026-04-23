@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct HistorySuggestionItem: View {
-    let entry: HistoryEntry
+    let entry: HistoryListItem
     var isSelected: Bool = false
     
     @State private var resolvedFavicon: SwiftUI.Image? = nil

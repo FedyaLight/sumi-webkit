@@ -39,6 +39,9 @@ extension Tab: WKScriptMessageHandler {
         case coreScriptMessageHandlerName("SumiIdentity"):
             handleOAuthRequest(message: message)
 
+        case coreScriptMessageHandlerName("faviconLinks"):
+            handleDiscoveredFaviconLinks(message: message)
+
         default:
             break
         }
@@ -127,6 +130,36 @@ extension Tab: WKScriptMessageHandler {
         )
 
         manager.authenticationManager.beginIdentityFlow(identityRequest, from: self)
+    }
+
+    private func handleDiscoveredFaviconLinks(message: WKScriptMessage) {
+        guard let payload = message.body as? [String: Any],
+              let documentURLString = payload["documentURL"] as? String,
+              let documentURL = URL(string: documentURLString),
+              let rawLinks = payload["links"] as? [[String: Any]]
+        else {
+            return
+        }
+
+        let links = rawLinks.compactMap { raw -> SumiDiscoveredFaviconLink? in
+            guard let href = raw["href"] as? String,
+                  let url = URL(string: href),
+                  let rel = raw["rel"] as? String
+            else {
+                return nil
+            }
+
+            return SumiDiscoveredFaviconLink(
+                url: url,
+                relation: rel,
+                sizes: raw["sizes"] as? String
+            )
+        }
+        guard !links.isEmpty else { return }
+
+        Task { @MainActor [weak self] in
+            await self?.applyDiscoveredFaviconLinks(links, documentURL: documentURL)
+        }
     }
 
     func finishIdentityFlow(

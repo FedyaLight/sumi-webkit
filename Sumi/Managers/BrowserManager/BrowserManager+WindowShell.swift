@@ -31,7 +31,7 @@ extension BrowserManager {
     }
 
     func showHistory() {
-        revealSidebarMenu(.history)
+        openHistoryTab()
     }
 
     private func revealSidebarMenu(_ section: WindowSidebarMenuSection) {

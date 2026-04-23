@@ -40,6 +40,7 @@ enum SumiWebViewShutdown {
         for handlerName in Tab.coreScriptMessageHandlerNames(for: tabId) {
             controller.removeScriptMessageHandler(forName: handlerName)
         }
+        SumiSpecialPagesController.shared.unregisterWebView(webView)
 
         additionalTabCleanup?()
 
@@ -202,6 +203,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { navigationRuntime.pendingBackForwardSettleTask }
         set { navigationRuntime.pendingBackForwardSettleTask = newValue }
     }
+    var historyRecorder: HistoryTabRecorder {
+        navigationRuntime.historyRecorder
+    }
     var isFreezingNavigationStateDuringBackForwardGesture: Bool {
         get { navigationRuntime.isFreezingNavigationStateDuringBackForwardGesture }
         set { navigationRuntime.isFreezingNavigationStateDuringBackForwardGesture = newValue }
@@ -216,9 +220,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     /// True when the tab row should show the “web content unloaded” affordance (dimmed favicon + badge).
-    /// Sumi-only tabs (settings UI, empty new-tab surface) never host a primary-frame WKWebView for that UI, so they must not look “unloaded”.
+    /// Sumi-native tabs (settings UI, empty new-tab surface) never host a primary-frame WKWebView for that UI, so they must not look “unloaded”.
     var showsWebViewUnloadedIndicator: Bool {
-        if representsSumiSettingsSurface || representsSumiEmptySurface {
+        if representsSumiNonWebSurface || representsSumiEmptySurface {
             return false
         }
         return isUnloaded
@@ -284,6 +288,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { webViewRuntime.primaryWindowId }
         set { webViewRuntime.primaryWindowId = newValue }
     }
+    var resolvedFaviconCacheKey: String? {
+        get { webViewRuntime.resolvedFaviconCacheKey }
+        set { webViewRuntime.resolvedFaviconCacheKey = newValue }
+    }
     
     weak var browserManager: BrowserManager?
     weak var sumiSettings: SumiSettingsService?
@@ -338,11 +346,25 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         !isPopupHost && SumiSurface.isSettingsSurfaceURL(url)
     }
 
+    var representsSumiHistorySurface: Bool {
+        !isPopupHost && SumiSurface.isHistorySurfaceURL(url)
+    }
+
+    /// Native Sumi surfaces rendered outside WebKit. Do not include web-backed special pages here.
+    var representsSumiNonWebSurface: Bool {
+        representsSumiSettingsSurface
+    }
+
+    /// Internal Sumi surfaces that use chrome-template presentation even when web-backed.
+    var representsSumiInternalSurface: Bool {
+        representsSumiSettingsSurface || representsSumiHistorySurface
+    }
+
     /// Sidebar / split tab row: tint template SF Symbol favicons like `NavButtonStyle` (`tokens.primaryText`).
-    /// Covers empty tab, settings, and the ordinary ``globe`` placeholder until a bitmap favicon loads.
+    /// Covers empty tab, internal Sumi surfaces, and the ordinary ``globe`` placeholder until a bitmap favicon loads.
     var usesChromeThemedTemplateFavicon: Bool {
         !isPopupHost
-            && (representsSumiEmptySurface || representsSumiSettingsSurface || faviconIsTemplateGlobePlaceholder)
+            && (representsSumiEmptySurface || representsSumiInternalSurface || faviconIsTemplateGlobePlaceholder)
     }
 
     // MARK: - Initializers
@@ -387,34 +409,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         shortcutPinId = nil
         shortcutPinRole = nil
         isShortcutLiveInstance = false
-    }
-
-    public init(
-        id: UUID = UUID(),
-        url: URL = SumiSurface.emptyTabURL,
-        name: String = "New Tab",
-        favicon: String = "globe",
-        spaceId: UUID? = nil,
-        index: Int = 0,
-        skipFaviconFetch: Bool = false
-    ) {
-        self.id = id
-        self.url = url
-        self.name = name
-        self.favicon = Image(systemName: favicon)
-        self.faviconIsTemplateGlobePlaceholder = (favicon == "globe")
-        self.spaceId = spaceId
-        self.index = index
-        self.browserManager = nil
-        super.init()
-
-        if skipFaviconFetch {
-            applyCachedFaviconOrPlaceholder(for: url)
-        } else {
-            Task { @MainActor in
-                await fetchAndSetFavicon(for: url)
-            }
-        }
     }
 
     // MARK: - Tab Actions
@@ -726,6 +720,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             )
         }
 
+        historyRecorder.updateTitle(trimmedTitle, tab: self)
+
         if let currentItem = webView.backForwardList.currentItem,
            currentItem.url == (webView.url ?? url),
            !webView.isLoading {
@@ -747,7 +743,22 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             self,
             properties: [.title]
         )
+        historyRecorder.updateTitle(trimmedTitle, tab: self)
         return true
+    }
+
+    func resolvedHistoryTitle(for candidateURL: URL) -> String {
+        let webViewTitle = existingWebView?.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let webViewTitle, !webViewTitle.isEmpty {
+            return webViewTitle
+        }
+
+        let currentName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !currentName.isEmpty, !representsSumiEmptySurface {
+            return currentName
+        }
+
+        return candidateURL.sumiSuggestedTitlePlaceholder ?? candidateURL.absoluteString
     }
 
     func resetPlaybackActivity() {

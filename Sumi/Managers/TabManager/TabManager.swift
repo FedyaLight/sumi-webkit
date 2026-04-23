@@ -26,11 +26,6 @@ class TabManager: ObservableObject {
     lazy var runtimeStore = DefaultTabRuntimeStore(tabManager: self)
     lazy var folderService = TabFolderService(tabManager: self)
 
-    // Tab closure undo tracking - stores snapshot of tab state at closure time
-    var recentlyClosedTabs: [(tab: Tab, spaceId: UUID?, currentURL: URL?, canGoBack: Bool, canGoForward: Bool, timestamp: Date)] = []
-    let undoDuration: TimeInterval = 20.0 // 20 seconds
-    var undoTimer: Timer?
-
     // Toast notification cooldown
     var lastTabClosureTime: Date?
     let toastCooldown: TimeInterval = 2 * 60 * 60 // 2 hours in seconds
@@ -915,8 +910,7 @@ class TabManager: ObservableObject {
                 windowState.removeFromRegularTabHistory(tab.id)
             }
 
-            // Add to recently closed tabs for undo functionality
-            trackRecentlyClosedTab(tab, spaceId: removedSpaceId)
+            captureRecentlyClosedTab(tab, spaceId: removedSpaceId)
 
             // Force unload the tab from compositor before removing
             browserManager?.compositorManager.unloadTab(tab)

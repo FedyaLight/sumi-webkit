@@ -18,6 +18,7 @@ extension BrowserManager {
 
     func commitWorkspaceTheme(_ workspaceTheme: WorkspaceTheme, for windowState: BrowserWindowState) {
         workspaceThemeCoordinator.restore(workspaceTheme, in: windowState)
+        SumiSpecialPagesController.shared.notifyThemeChanged()
     }
 
     func beginInteractiveSpaceTransition(

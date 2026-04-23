@@ -91,7 +91,7 @@ final class WindowSessionServiceTests: XCTestCase {
             )),
             isSidebarVisible: true,
             isSidebarMenuVisible: false,
-            selectedSidebarMenuSection: .history,
+            selectedSidebarMenuSection: .downloads,
             urlBarDraft: URLBarDraftState(text: "", navigateCurrentTab: false),
             splitSession: nil
         )

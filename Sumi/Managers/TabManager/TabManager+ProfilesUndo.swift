@@ -94,71 +94,37 @@ extension TabManager {
 
 // MARK: - Tab Closure Undo
 extension TabManager {
-    func trackRecentlyClosedTab(_ tab: Tab, spaceId: UUID?) {
+    func captureRecentlyClosedTab(_ tab: Tab, spaceId: UUID?) {
         let now = Date()
         let shouldShowToast = shouldShowTabClosureToast(now: now)
         lastTabClosureTime = now
-
-        let tabCopy = Tab(
-            id: UUID(),
-            url: tab.url,
-            name: tab.name,
-            favicon: "globe",
-            spaceId: spaceId,
-            index: tab.index,
-            skipFaviconFetch: true
-        )
-        tabCopy.browserManager = browserManager
-        tabCopy.isPinned = tab.isPinned
-        tabCopy.isSpacePinned = tab.isSpacePinned
-        tabCopy.folderId = tab.folderId
-
-        recentlyClosedTabs.append((
-            tab: tabCopy,
-            spaceId: spaceId,
+        browserManager?.recentlyClosedManager.captureClosedTab(
+            tab,
+            sourceSpaceId: spaceId,
             currentURL: tab.url,
             canGoBack: tab.canGoBack,
-            canGoForward: tab.canGoForward,
-            timestamp: now
-        ))
-
-        scheduleUndoTimerCleanup()
+            canGoForward: tab.canGoForward
+        )
 
         if shouldShowToast {
             browserManager?.showTabClosureToast(tabCount: 1)
         }
     }
 
-    private func trackRecentlyClosedTabs(_ tabs: [(tab: Tab, spaceId: UUID?)], count: Int) {
+    private func captureRecentlyClosedTabs(_ tabs: [(tab: Tab, spaceId: UUID?)], count: Int) {
         let now = Date()
         lastTabClosureTime = now
 
         for (tab, spaceId) in tabs {
-            let tabCopy = Tab(
-                id: UUID(),
-                url: tab.url,
-                name: tab.name,
-                favicon: "globe",
-                spaceId: spaceId,
-                index: tab.index,
-                skipFaviconFetch: true
-            )
-            tabCopy.browserManager = browserManager
-            tabCopy.isPinned = tab.isPinned
-            tabCopy.isSpacePinned = tab.isSpacePinned
-            tabCopy.folderId = tab.folderId
-
-            recentlyClosedTabs.append((
-                tab: tabCopy,
-                spaceId: spaceId,
+            browserManager?.recentlyClosedManager.captureClosedTab(
+                tab,
+                sourceSpaceId: spaceId,
                 currentURL: tab.url,
                 canGoBack: tab.canGoBack,
-                canGoForward: tab.canGoForward,
-                timestamp: now
-            ))
+                canGoForward: tab.canGoForward
+            )
         }
 
-        scheduleUndoTimerCleanup()
         browserManager?.showTabClosureToast(tabCount: count)
     }
 
@@ -168,44 +134,7 @@ extension TabManager {
     }
 
     func undoCloseTab() {
-        withStructuralUpdateTransaction {
-            guard !recentlyClosedTabs.isEmpty else { return }
-
-            let mostRecent = recentlyClosedTabs.removeLast()
-            mostRecent.tab.restoredCanGoBack = mostRecent.canGoBack
-            mostRecent.tab.restoredCanGoForward = mostRecent.canGoForward
-            addTab(mostRecent.tab)
-            setActiveTab(mostRecent.tab)
-
-            if recentlyClosedTabs.isEmpty {
-                clearUndoTimer()
-            }
-        }
-    }
-
-    private func scheduleUndoTimerCleanup() {
-        clearUndoTimer()
-        undoTimer = Timer.scheduledTimer(withTimeInterval: undoDuration, repeats: false) { [weak self] _ in
-            Task { @MainActor in
-                self?.cleanupExpiredTabs()
-            }
-        }
-    }
-
-    private func cleanupExpiredTabs() {
-        let now = Date()
-        recentlyClosedTabs.removeAll { tabInfo in
-            now.timeIntervalSince(tabInfo.timestamp) >= undoDuration
-        }
-
-        if recentlyClosedTabs.isEmpty {
-            clearUndoTimer()
-        }
-    }
-
-    private func clearUndoTimer() {
-        undoTimer?.invalidate()
-        undoTimer = nil
+        browserManager?.reopenLastClosedItem()
     }
 
 }
@@ -235,7 +164,7 @@ extension TabManager {
                 closeTabWithoutTracking(tabToClose.id)
             }
 
-            trackRecentlyClosedTabs(tabsToTrack, count: tabsBelow.count)
+            captureRecentlyClosedTabs(tabsToTrack, count: tabsBelow.count)
         }
     }
 

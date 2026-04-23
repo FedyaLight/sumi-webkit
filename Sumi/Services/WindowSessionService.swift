@@ -198,6 +198,25 @@ final class WindowSessionService {
             windowState.currentTabId = delegate.tabManager.currentTab?.id
         }
 
+        finalizeWindowStateRestore(windowState, delegate: delegate, source: "setupWindowState")
+    }
+
+    func applyWindowSessionSnapshot(
+        _ snapshot: WindowSessionSnapshot,
+        to windowState: BrowserWindowState,
+        delegate: WindowSessionServiceDelegate
+    ) {
+        windowState.tabManager = delegate.tabManager
+        apply(snapshot: snapshot, to: windowState, delegate: delegate)
+        finalizeWindowStateRestore(windowState, delegate: delegate, source: "applyWindowSessionSnapshot")
+    }
+
+    private func finalizeWindowStateRestore(
+        _ windowState: BrowserWindowState,
+        delegate: WindowSessionServiceDelegate,
+        source: String
+    ) {
+
         if !windowState.isShowingEmptyState,
            !delegate.hasValidCurrentSelection(in: windowState)
         {
@@ -263,7 +282,7 @@ final class WindowSessionService {
         syncWorkspaceThemeAfterSessionRestore(
             windowState,
             delegate: delegate,
-            source: "setupWindowState"
+            source: source
         )
 
         RuntimeDiagnostics.debug(
@@ -352,6 +371,21 @@ final class WindowSessionService {
         didRestoreGlobalWindowSessionThisCycle = true
         lastPersistedWindowSessionData = data
 
+        apply(snapshot: snapshot, to: windowState, delegate: delegate)
+        SidebarUITestDragMarker.recordEvent(
+            "startupSessionRestore",
+            dragItemID: nil,
+            ownerDescription: "WindowSessionService.restoreWindowSession",
+            details: "window=\(windowState.id.uuidString) currentSpace=\(snapshot.currentSpaceId?.uuidString ?? "nil") currentProfile=\(snapshot.currentProfileId?.uuidString ?? "nil") currentTab=\(snapshot.currentTabId?.uuidString ?? "nil") emptyState=\(snapshot.isShowingEmptyState) sidebarVisible=\(snapshot.isSidebarVisible) sidebarMenuVisible=\(snapshot.isSidebarMenuVisible)"
+        )
+        return true
+    }
+
+    private func apply(
+        snapshot: WindowSessionSnapshot,
+        to windowState: BrowserWindowState,
+        delegate: WindowSessionServiceDelegate
+    ) {
         windowState.currentTabId = snapshot.currentTabId
         windowState.currentSpaceId = snapshot.currentSpaceId
         windowState.currentProfileId = snapshot.currentProfileId
@@ -380,13 +414,6 @@ final class WindowSessionService {
         windowState.commandPaletteDraftNavigatesCurrentTab = snapshot.urlBarDraft.navigateCurrentTab
         delegate.splitManager.restoreSession(snapshot.splitSession, for: windowState.id)
         delegate.sanitizeCommandPaletteState(in: windowState)
-        SidebarUITestDragMarker.recordEvent(
-            "startupSessionRestore",
-            dragItemID: nil,
-            ownerDescription: "WindowSessionService.restoreWindowSession",
-            details: "window=\(windowState.id.uuidString) currentSpace=\(snapshot.currentSpaceId?.uuidString ?? "nil") currentProfile=\(snapshot.currentProfileId?.uuidString ?? "nil") currentTab=\(snapshot.currentTabId?.uuidString ?? "nil") emptyState=\(snapshot.isShowingEmptyState) sidebarVisible=\(snapshot.isSidebarVisible) sidebarMenuVisible=\(snapshot.isSidebarMenuVisible)"
-        )
-        return true
     }
 
     func makeWindowSessionSnapshot(

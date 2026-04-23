@@ -28,9 +28,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     weak var externalURLHandler: (any ExternalURLHandling)?
     weak var persistenceHandler: (any BrowserPersistenceHandling)?
     weak var updateHandler: BrowserManager?
+    var shortcutManager: KeyboardShortcutManager?
 
     // Window registry for accessing active window state
     weak var windowRegistry: WindowRegistry?
+    private let historyMenuInstaller = SumiHistoryMenuInstaller()
+    private var didSetupHistoryMenuMonitoring = false
+    private var historyMenuRestoreScheduled = false
+    private var historyMenuRestoreNeedsForce = false
+    private var historyMenuObservers: [NSObjectProtocol] = []
 
     private let urlEventClass = AEEventClass(kInternetEventClass)
     private let urlEventID = AEEventID(kAEGetURL)
@@ -43,12 +49,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil)
     }()
 
+    deinit {
+        for observer in historyMenuObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
     // MARK: - Application Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupURLEventHandling()
         setupMouseButtonHandling()
+        setupHistoryMenuMonitoring()
         scheduleCloseMenuConfiguration()
+        scheduleHistoryMenuConfiguration()
         if NSApplication.shared.windows.isEmpty == false {
             NSApp.activate(ignoringOtherApps: true)
         }
@@ -56,6 +70,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
     func applicationDidBecomeActive(_ notification: Notification) {
         scheduleCloseMenuConfiguration()
+        scheduleHistoryMenuConfiguration()
+        SumiSpecialPagesController.shared.notifyThemeChanged()
+    }
+
+    func applicationDidUpdate(_ notification: Notification) {
+        configureHistoryMenuIfNeeded()
     }
 
     /// Registers handler for external URL events (e.g., clicking links from other apps)
@@ -153,6 +173,112 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         }
     }
 
+    private func configureHistoryMenu() {
+        historyMenuInstaller.browserManager = updateHandler
+        historyMenuInstaller.shortcutManager = shortcutManager
+        historyMenuInstaller.actionTarget = self
+        historyMenuInstaller.installOrUpdateIfNeeded()
+    }
+
+    @MainActor
+    func refreshHistoryMenu() {
+        scheduleHistoryMenuConfiguration()
+    }
+
+    private func scheduleHistoryMenuConfiguration(force: Bool = false) {
+        historyMenuRestoreNeedsForce = historyMenuRestoreNeedsForce || force
+        guard !historyMenuRestoreScheduled else { return }
+        historyMenuRestoreScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let shouldForce = self.historyMenuRestoreNeedsForce
+            self.historyMenuRestoreScheduled = false
+            self.historyMenuRestoreNeedsForce = false
+            self.configureHistoryMenuIfNeeded(force: shouldForce)
+        }
+    }
+
+    private func configureHistoryMenuIfNeeded(force: Bool = false) {
+        guard let mainMenu = NSApp.mainMenu else { return }
+
+        let historyItems = mainMenu.items.filter { $0.title == "History" }
+        let currentHistoryMenu = historyItems.first?.submenu as? SumiHistoryMenu
+        if let currentHistoryMenu {
+            let dependenciesChanged =
+                currentHistoryMenu.browserManager !== updateHandler
+                || currentHistoryMenu.shortcutManager !== shortcutManager
+                || currentHistoryMenu.actionTarget !== self
+            guard force || dependenciesChanged || historyItems.count > 1 else { return }
+        }
+
+        configureHistoryMenu()
+    }
+
+    private func setupHistoryMenuMonitoring() {
+        guard !didSetupHistoryMenuMonitoring else { return }
+        didSetupHistoryMenuMonitoring = true
+
+        let notificationCenter = NotificationCenter.default
+        let mutationHandler: (Notification) -> Void = { [weak self] notification in
+            self?.handleMenuMutation(notification)
+        }
+
+        historyMenuObservers = [
+            notificationCenter.addObserver(
+                forName: NSMenu.didAddItemNotification,
+                object: nil,
+                queue: .main,
+                using: mutationHandler
+            ),
+            notificationCenter.addObserver(
+                forName: NSMenu.didRemoveItemNotification,
+                object: nil,
+                queue: .main,
+                using: mutationHandler
+            ),
+            notificationCenter.addObserver(
+                forName: NSMenu.didBeginTrackingNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                self?.handleMenuDidBeginTracking(notification)
+            },
+        ]
+    }
+
+    private func handleMenuMutation(_ notification: Notification) {
+        guard let menu = notification.object as? NSMenu else { return }
+        guard shouldRestoreHistoryMenu(afterMutationIn: menu) else { return }
+        scheduleHistoryMenuConfiguration()
+    }
+
+    private func shouldRestoreHistoryMenu(afterMutationIn menu: NSMenu) -> Bool {
+        if menu is SumiHistoryMenu {
+            return false
+        }
+
+        if menu === NSApp.mainMenu {
+            return true
+        }
+
+        guard menu.title == "History" else { return false }
+        return NSApp.mainMenu?.items.first(where: { $0.title == "History" })?.submenu === menu
+    }
+
+    private func handleMenuDidBeginTracking(_ notification: Notification) {
+        guard let menu = notification.object as? NSMenu else { return }
+        guard isPlaceholderHistoryMenu(menu) else { return }
+        configureHistoryMenuIfNeeded(force: true)
+    }
+
+    private func isPlaceholderHistoryMenu(_ menu: NSMenu) -> Bool {
+        guard !(menu is SumiHistoryMenu) else { return false }
+        guard let historyMenuItem = NSApp.mainMenu?.items.first(where: { $0.title == "History" }) else {
+            return menu.title == "History"
+        }
+        return historyMenuItem.submenu === menu
+    }
+
     @MainActor @objc private func handleCloseTabMenuItem(_ sender: Any?) {
         if let keyWindow = NSApp.keyWindow,
            windowRegistry?.windows.values.contains(where: { $0.window === keyWindow }) != true
@@ -171,6 +297,51 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             return
         }
         windowRouter?.closeActiveWindow()
+    }
+
+    @MainActor @objc func historyGoBack(_ sender: Any?) {
+        _ = sender
+        updateHandler?.goBackInActiveWindow()
+    }
+
+    @MainActor @objc func historyGoForward(_ sender: Any?) {
+        _ = sender
+        updateHandler?.goForwardInActiveWindow()
+    }
+
+    @MainActor @objc func showHistory(_ sender: Any?) {
+        _ = sender
+        updateHandler?.showHistory()
+    }
+
+    @MainActor @objc func openHistoryEntryVisit(_ sender: NSMenuItem) {
+        if let visit = sender.representedObject as? HistoryListItem {
+            updateHandler?.openHistoryURLFromMenuItem(visit.url)
+        } else if let url = sender.representedObject as? URL {
+            updateHandler?.openHistoryURLFromMenuItem(url)
+        }
+    }
+
+    @MainActor @objc func recentlyClosedAction(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? RecentlyClosedItem else {
+            return
+        }
+        updateHandler?.reopenRecentlyClosedItem(item)
+    }
+
+    @MainActor @objc func reopenLastClosedTab(_ sender: Any?) {
+        _ = sender
+        updateHandler?.reopenLastClosedItem()
+    }
+
+    @MainActor @objc func reopenAllWindowsFromLastSession(_ sender: Any?) {
+        _ = sender
+        updateHandler?.reopenAllWindowsFromLastSession()
+    }
+
+    @MainActor @objc func clearAllHistory(_ sender: Any?) {
+        _ = sender
+        updateHandler?.clearAllHistoryFromMenu()
     }
 
     /// Handles URLs opened from external sources (e.g., Finder, other apps)

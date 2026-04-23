@@ -28,6 +28,15 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(settings.currentSettingsTab, .about)
     }
 
+    func testSettingsSurfaceRemainsNativeNonWebSurface() {
+        let tab = Tab(url: SettingsTabs.about.settingsSurfaceURL, skipFaviconFetch: true)
+
+        XCTAssertTrue(tab.representsSumiSettingsSurface)
+        XCTAssertTrue(tab.representsSumiInternalSurface)
+        XCTAssertTrue(tab.representsSumiNonWebSurface)
+        XCTAssertTrue(tab.usesChromeThemedTemplateFavicon)
+    }
+
     func testOpenSettingsTabSelectsAboutSurface() {
         let (browserManager, _, settings, windowState, space) = makeHarness()
 

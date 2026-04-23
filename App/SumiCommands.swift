@@ -205,7 +205,7 @@ struct SumiCommands: Commands {
             }
 
             Button("Clear Browsing History") {
-                browserManager.historyManager.clearHistory()
+                browserManager.clearAllHistoryFromMenu()
             }
 
             Button("Clear All Website Data") {

@@ -893,7 +893,7 @@ final class WindowWebContentController: NSViewController {
     private func missingPreparedWebViews(for visibleTabIds: Set<UUID>) -> Bool {
         visibleTabIds.contains { tabId in
             if let tab = browserManager.tabManager.tab(for: tabId),
-               (tab.representsSumiSettingsSurface || tab.representsSumiEmptySurface)
+               (tab.representsSumiNonWebSurface || tab.representsSumiEmptySurface)
             {
                 return false
             }

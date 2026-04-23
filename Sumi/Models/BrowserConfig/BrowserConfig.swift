@@ -17,6 +17,7 @@ class BrowserConfiguration {
     private static func makeBaseWebViewConfiguration() -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
         config.writingToolsBehavior = .none
+        config.setURLSchemeHandler(SumiSpecialPagesController.shared, forURLScheme: "sumi")
 
         // Match Nook: the shared template configuration uses the default store.
         // Real browser tabs still override this with their profile-specific store,
@@ -79,6 +80,7 @@ class BrowserConfiguration {
             }
             controller.addUserScript(script)
         }
+        SumiSpecialPagesController.shared.prepare(controller)
         return controller
     }
 

@@ -107,6 +107,68 @@ final class SumiFaviconResolverTests: XCTestCase {
         XCTAssertEqual(secondCount, firstCount)
     }
 
+    func testDiscoveredFaviconBypassesNegativeCacheAndCachesImage() async {
+        let resolver = makeResolver(negativeCacheTTL: 60)
+        let pageURL = URL(string: "https://discovered-negative.example.com/article")!
+        let discoveredIconURL = URL(string: "https://cdn.example.com/discovered-icon.png")!
+        let key = SumiFaviconResolver.cacheKey(for: pageURL)!
+
+        StubURLProtocol.setHandler { request in
+            StubURLProtocol.Response(
+                statusCode: 404,
+                data: Data(),
+                url: request.url ?? pageURL
+            )
+        }
+
+        let initialMiss = await resolver.image(for: pageURL)
+        XCTAssertNil(initialMiss)
+        XCTAssertEqual(StubURLProtocol.recordedRequestURLs.count, 3)
+
+        StubURLProtocol.reset()
+        let pngData = makePNGData(size: 64)
+        StubURLProtocol.setHandler { request in
+            XCTAssertEqual(request.url, discoveredIconURL)
+            return StubURLProtocol.Response(
+                statusCode: 200,
+                data: pngData,
+                url: discoveredIconURL
+            )
+        }
+
+        let image = await resolver.image(
+            for: pageURL,
+            discoveredLinks: [
+                SumiDiscoveredFaviconLink(
+                    url: discoveredIconURL,
+                    relation: "icon",
+                    sizes: "64x64"
+                )
+            ]
+        )
+
+        XCTAssertNotNil(image)
+        XCTAssertNotNil(TabFaviconStore.getCachedImage(for: key))
+        XCTAssertEqual(StubURLProtocol.recordedRequestURLs, [discoveredIconURL])
+    }
+
+    @MainActor
+    func testTabKeepsExistingFaviconForSameHostCacheMiss() {
+        let firstURL = URL(string: "https://same-host.example.com/first")!
+        let secondURL = URL(string: "https://same-host.example.com/second")!
+        let key = SumiFaviconResolver.cacheKey(for: firstURL)!
+        let tab = Tab(url: firstURL, name: "Same Host", skipFaviconFetch: true)
+
+        TabFaviconStore.cacheImage(makeImage(), for: key)
+        XCTAssertTrue(tab.applyCachedFaviconOrPlaceholder(for: firstURL))
+        XCTAssertFalse(tab.faviconIsTemplateGlobePlaceholder)
+
+        TabFaviconStore.clearCache()
+        XCTAssertFalse(tab.applyCachedFaviconOrPlaceholder(for: secondURL))
+        XCTAssertFalse(tab.faviconIsTemplateGlobePlaceholder)
+        XCTAssertEqual(tab.resolvedFaviconCacheKey, key)
+    }
+
     func testDirectFaviconHitCachesImage() async {
         let resolver = makeResolver()
         let pageURL = URL(string: "https://direct-hit.example.com/article")!
