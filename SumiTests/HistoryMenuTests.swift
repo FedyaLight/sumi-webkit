@@ -14,7 +14,7 @@ final class HistoryMenuTests: XCTestCase {
     func testHistoryMenuBuildsDDGStyleStructureAndRecentVisitIcons() async throws {
         let harness = try makeHarness()
         let url = URL(string: "https://example.com")!
-        cacheFavicon(for: url)
+        try await seedFavicon(for: url)
 
         try await harness.browserManager.historyManager.store.recordVisit(
             url: url,
@@ -41,12 +41,12 @@ final class HistoryMenuTests: XCTestCase {
         XCTAssertNotNil(recentVisitItem.image)
     }
 
-    func testRecentlyClosedSubmenuShowsIconForClosedTab() throws {
+    func testRecentlyClosedSubmenuShowsIconForClosedTab() async throws {
         let harness = try makeHarness()
         let url = URL(string: "https://example.org")!
-        cacheFavicon(for: url)
+        try await seedFavicon(for: url)
 
-        let tab = Tab(url: url, name: "Example Org", skipFaviconFetch: true)
+        let tab = Tab(url: url, name: "Example Org")
         harness.browserManager.recentlyClosedManager.captureClosedTab(
             tab,
             sourceSpaceId: harness.space.id,
@@ -259,18 +259,45 @@ final class HistoryMenuTests: XCTestCase {
         return (browserManager, windowRegistry, windowState, space, profile)
     }
 
-    private func cacheFavicon(for url: URL) {
-        guard let cacheKey = SumiFaviconResolver.cacheKey(for: url) else {
-            XCTFail("Missing favicon cache key for \(url.absoluteString)")
-            return
+    private func seedFavicon(for url: URL) async throws {
+        let faviconURL = try XCTUnwrap(Self.makeDataURL(color: .systemOrange, size: 16))
+        let favicon = await SumiFaviconSystem.shared.manager.handleLiveFaviconLinks(
+            [FaviconUserScript.FaviconLink(href: faviconURL, rel: "icon")],
+            documentUrl: url,
+            webView: nil
+        )
+        XCTAssertNotNil(favicon, "Expected favicon cache to be seeded for \(url.absoluteString)")
+    }
+
+    private static func makeDataURL(color: NSColor, size: CGFloat) -> URL? {
+        guard let data = makeImageData(color: color, size: size) else { return nil }
+        return URL(string: "data:image/png;base64,\(data.base64EncodedString())")
+    }
+
+    private static func makeImageData(color: NSColor, size: CGFloat) -> Data? {
+        let pixelSize = max(1, Int(size.rounded()))
+        guard let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: pixelSize,
+            pixelsHigh: pixelSize,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else {
+            return nil
         }
 
-        let image = NSImage(size: NSSize(width: 16, height: 16))
-        image.lockFocus()
-        NSColor.systemOrange.setFill()
-        NSBezierPath(rect: NSRect(x: 0, y: 0, width: 16, height: 16)).fill()
-        image.unlockFocus()
-        TabFaviconStore.cacheImage(image, for: cacheKey)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+        color.setFill()
+        NSBezierPath(rect: NSRect(x: 0, y: 0, width: pixelSize, height: pixelSize)).fill()
+        NSGraphicsContext.restoreGraphicsState()
+
+        return bitmap.representation(using: .png, properties: [:])
     }
 
     private func makeSwiftUIHistoryPlaceholderMenu() -> NSMenu {

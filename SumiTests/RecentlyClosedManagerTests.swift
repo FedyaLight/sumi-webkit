@@ -6,7 +6,7 @@ import XCTest
 final class RecentlyClosedManagerTests: XCTestCase {
     func testCaptureClosedTabSkipsEmptySurface() {
         let manager = RecentlyClosedManager()
-        let emptyTab = Tab(url: SumiSurface.emptyTabURL, skipFaviconFetch: true)
+        let emptyTab = Tab(url: SumiSurface.emptyTabURL)
 
         manager.captureClosedTab(
             emptyTab,
@@ -21,8 +21,8 @@ final class RecentlyClosedManagerTests: XCTestCase {
 
     func testMostRecentItemIsPrepended() {
         let manager = RecentlyClosedManager()
-        let firstTab = Tab(url: URL(string: "https://example.com")!, name: "Example", skipFaviconFetch: true)
-        let secondTab = Tab(url: URL(string: "https://other.com")!, name: "Other", skipFaviconFetch: true)
+        let firstTab = Tab(url: URL(string: "https://example.com")!, name: "Example")
+        let secondTab = Tab(url: URL(string: "https://other.com")!, name: "Other")
 
         manager.captureClosedTab(firstTab, sourceSpaceId: nil, currentURL: firstTab.url, canGoBack: false, canGoForward: false)
         manager.captureClosedTab(secondTab, sourceSpaceId: nil, currentURL: secondTab.url, canGoBack: false, canGoForward: false)

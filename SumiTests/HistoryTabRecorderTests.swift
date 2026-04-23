@@ -101,7 +101,7 @@ final class HistoryTabRecorderTests: XCTestCase {
     func testEphemeralAndNonHTTPURLsAreNotRecorded() async throws {
         let harness = try makeHarness()
         let ephemeralProfile = Profile.createEphemeral()
-        let ephemeralTab = Tab(url: URL(string: "https://private.example.com")!, skipFaviconFetch: true)
+        let ephemeralTab = Tab(url: URL(string: "https://private.example.com")!)
         ephemeralTab.browserManager = harness.browserManager
         ephemeralTab.profileId = ephemeralProfile.id
         harness.browserManager.profileManager.profiles.append(ephemeralProfile)
@@ -139,7 +139,7 @@ final class HistoryTabRecorderTests: XCTestCase {
         let browserManager = BrowserManager()
         let profile = Profile(name: "Primary")
         let historyManager = HistoryManager(context: context, profileId: profile.id)
-        let tab = Tab(url: URL(string: "https://example.com")!, name: "Example", skipFaviconFetch: true)
+        let tab = Tab(url: URL(string: "https://example.com")!, name: "Example")
 
         browserManager.modelContext = context
         browserManager.profileManager.profiles = [profile]

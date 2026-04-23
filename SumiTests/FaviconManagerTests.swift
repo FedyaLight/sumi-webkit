@@ -19,8 +19,8 @@ final class FaviconManagerTests: XCTestCase {
             downloader: downloader
         )
 
-        let favicon = await manager.handleFaviconLinks(
-            [FaviconUserScript.FaviconLink(href: faviconURL, rel: "apple-touch-icon", sizes: "180x180")],
+        let favicon = await manager.handleLiveFaviconLinks(
+            [FaviconUserScript.FaviconLink(href: faviconURL, rel: "apple-touch-icon")],
             documentUrl: pageURL,
             webView: nil
         )
@@ -64,7 +64,7 @@ final class FaviconManagerTests: XCTestCase {
             downloader: downloader
         )
 
-        let favicon = await manager.handleFaviconLinks(
+        let favicon = await manager.handleLiveFaviconLinks(
             [
                 FaviconUserScript.FaviconLink(href: tinyURL, rel: "icon"),
                 FaviconUserScript.FaviconLink(href: mediumURL, rel: "apple-touch-icon"),
@@ -106,7 +106,7 @@ final class FaviconManagerTests: XCTestCase {
             downloader: downloader
         )
 
-        let favicon = await manager.handleFaviconLinks(
+        let favicon = await manager.handleLiveFaviconLinks(
             [
                 FaviconUserScript.FaviconLink(href: tinyURL, rel: "icon"),
                 FaviconUserScript.FaviconLink(href: largeURL, rel: "icon"),
@@ -148,7 +148,7 @@ final class FaviconManagerTests: XCTestCase {
             downloader: downloader
         )
 
-        let favicon = await manager.handleFaviconLinks(
+        let favicon = await manager.handleLiveFaviconLinks(
             [
                 FaviconUserScript.FaviconLink(href: smallURL, rel: "icon"),
                 FaviconUserScript.FaviconLink(href: mediumURL, rel: "icon"),
@@ -222,7 +222,7 @@ final class FaviconManagerTests: XCTestCase {
         )
 
         let initial = await manager.handleLiveFaviconLinks(
-            [FaviconUserScript.FaviconLink(href: pageIconURL, rel: "apple-touch-icon", type: "image/png")],
+            [FaviconUserScript.FaviconLink(href: pageIconURL, rel: "apple-touch-icon")],
             documentUrl: pageURL,
             webView: nil
         )
@@ -263,12 +263,12 @@ final class FaviconManagerTests: XCTestCase {
         )
 
         _ = await manager.handleLiveFaviconLinks(
-            [FaviconUserScript.FaviconLink(href: initialURL, rel: "icon", type: "image/png")],
+            [FaviconUserScript.FaviconLink(href: initialURL, rel: "icon")],
             documentUrl: pageURL,
             webView: nil
         )
         let resolved = await manager.handleLiveFaviconLinks(
-            [FaviconUserScript.FaviconLink(href: failingURL, rel: "icon", type: "image/png")],
+            [FaviconUserScript.FaviconLink(href: failingURL, rel: "icon")],
             documentUrl: pageURL,
             webView: nil
         )
@@ -312,17 +312,17 @@ final class FaviconManagerTests: XCTestCase {
         )
 
         _ = await manager.handleLiveFaviconLinks(
-            [FaviconUserScript.FaviconLink(href: initialURL, rel: "icon", type: "image/png")],
+            [FaviconUserScript.FaviconLink(href: initialURL, rel: "icon")],
             documentUrl: pageURL,
             webView: nil
         )
         let afterHTML = await manager.handleLiveFaviconLinks(
-            [FaviconUserScript.FaviconLink(href: htmlURL, rel: "icon", type: "text/html")],
+            [FaviconUserScript.FaviconLink(href: htmlURL, rel: "icon")],
             documentUrl: pageURL,
             webView: nil
         )
         let afterGarbage = await manager.handleLiveFaviconLinks(
-            [FaviconUserScript.FaviconLink(href: tinyGarbageURL, rel: "icon", type: "application/octet-stream")],
+            [FaviconUserScript.FaviconLink(href: tinyGarbageURL, rel: "icon")],
             documentUrl: pageURL,
             webView: nil
         )
@@ -358,8 +358,8 @@ final class FaviconManagerTests: XCTestCase {
             downloader: RecordingFaviconDownloader { _ in imageData }
         )
 
-        _ = await writer.handleFaviconLinks(
-            [FaviconUserScript.FaviconLink(href: faviconURL, rel: "icon", sizes: "64x64")],
+        _ = await writer.handleLiveFaviconLinks(
+            [FaviconUserScript.FaviconLink(href: faviconURL, rel: "icon")],
             documentUrl: pageURL,
             webView: nil
         )
@@ -478,6 +478,37 @@ final class FaviconManagerTests: XCTestCase {
         )
     }
 
+    func testDownloaderRetainsTemporaryDownloadSurfaceUntilSessionCompletes() async throws {
+        let url = URL(string: "https://example.com/favicon.png")!
+        let session = ControlledFaviconDownloadSession()
+        weak var weakSurface: RetainedDownloadSurface?
+
+        let downloader = FaviconDownloader(
+            startDownloadSession: { request, webView in
+                XCTAssertEqual(request.url, url)
+                XCTAssertNil(webView)
+
+                let surface = RetainedDownloadSurface()
+                weakSurface = surface
+                return (session, surface)
+            }
+        )
+
+        let downloadTask = Task {
+            try await downloader.download(from: url, using: nil)
+        }
+
+        await Task.yield()
+        XCTAssertNotNil(weakSurface)
+
+        let imageData = try XCTUnwrap(Self.makeImageData(color: .systemTeal, size: 24))
+        try await session.finish(with: imageData, url: url)
+
+        let resolvedData = try await downloadTask.value
+        XCTAssertEqual(resolvedData, imageData)
+        XCTAssertNil(weakSurface)
+    }
+
     private static func makeImageData(color: NSColor, size: CGFloat) -> Data? {
         let pixelSize = max(1, Int(size.rounded()))
         guard let bitmap = NSBitmapImageRep(
@@ -506,6 +537,38 @@ final class FaviconManagerTests: XCTestCase {
 }
 
 @MainActor
+private final class ControlledFaviconDownloadSession: FaviconDownloadSession {
+    weak var delegate: (any FaviconDownloadSessionDelegate)?
+
+    func cancel(_ completionHandler: @escaping @Sendable (Data?) -> Void) {
+        completionHandler(nil)
+    }
+
+    func finish(with data: Data, url: URL, suggestedFilename: String = "favicon.png") async throws {
+        let response = URLResponse(
+            url: url,
+            mimeType: "image/png",
+            expectedContentLength: data.count,
+            textEncodingName: nil
+        )
+        guard let destinationURL = await delegate?.faviconDownloadSession(
+            self,
+            decideDestinationUsing: response,
+            suggestedFilename: suggestedFilename
+        ) else {
+            XCTFail("Expected download destination URL")
+            return
+        }
+
+        try data.write(to: destinationURL)
+        delegate?.faviconDownloadSessionDidFinish(self)
+    }
+}
+
+private final class RetainedDownloadSurface {
+}
+
+@MainActor
 private final class RecordingFaviconDownloader: FaviconDownloading {
     private let handler: (URL) throws -> Data
     private(set) var recordedURLs: [URL] = []
@@ -521,7 +584,6 @@ private final class RecordingFaviconDownloader: FaviconDownloading {
     }
 }
 
-@MainActor
 private final class DirtyFaviconStore: FaviconStoring {
     private let faviconsToLoad: [Favicon]
     private let referencesToLoad: ([FaviconHostReference], [FaviconUrlReference])

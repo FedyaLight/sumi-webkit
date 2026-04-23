@@ -12,20 +12,6 @@ enum TabFaviconStore {
         return withManager { $0.image(forLookupKey: key) }
     }
 
-    static func cacheImage(_ image: NSImage, rawData: Data? = nil, for key: String) {
-        _ = rawData
-        withManualOverrides { overrides in
-            overrides[key] = image
-        }
-        NotificationCenter.default.post(name: .faviconCacheUpdated, object: nil)
-    }
-
-    static func clearMemoryCache() {
-        withManualOverrides { overrides in
-            overrides.removeAll()
-        }
-    }
-
     static func clearCache() {
         withManualOverrides { overrides in
             overrides.removeAll()

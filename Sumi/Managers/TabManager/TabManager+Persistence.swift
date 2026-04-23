@@ -982,8 +982,7 @@ extension TabManager {
             favicon: faviconName,
             spaceId: dto.spaceId,
             index: dto.index,
-            browserManager: browserManager,
-            skipFaviconFetch: true
+            browserManager: browserManager
         )
         tab.folderId = dto.folderId
         tab.isPinned = false

@@ -57,10 +57,6 @@ extension Tab {
         _ = applyCachedFaviconOrPlaceholder(for: url)
     }
 
-    func fetchAndSetFavicon(for url: URL) async {
-        _ = applyCachedFaviconOrPlaceholder(for: url)
-    }
-
     func applyDiscoveredFaviconLinks(
         _ links: [SumiDiscoveredFaviconLink],
         documentURL: URL

@@ -6,6 +6,18 @@ struct SumiDiscoveredFaviconLink: Hashable, Sendable {
     let url: URL
     let relation: String
     let type: String?
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.url == rhs.url
+            && lhs.relation == rhs.relation
+            && lhs.type == rhs.type
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(url)
+        hasher.combine(relation)
+        hasher.combine(type)
+    }
 }
 
 actor SumiFaviconResolver {
@@ -39,16 +51,8 @@ actor SumiFaviconResolver {
         discoveredLinks.map {
             FaviconUserScript.FaviconLink(
                 href: $0.url,
-                rel: $0.relation,
-                sizes: nil,
-                type: $0.type
+                rel: $0.relation
             )
-        }
-    }
-
-    func resetTransientState() async {
-        await MainActor.run {
-            SumiFaviconSystem.shared.manager.clearAll()
         }
     }
 }

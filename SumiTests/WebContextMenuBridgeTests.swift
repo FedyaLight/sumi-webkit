@@ -79,8 +79,7 @@ final class FocusableWKWebViewContextMenuTests: XCTestCase {
 
         let tab = Tab(
             name: "Web",
-            browserManager: browserManager,
-            skipFaviconFetch: true
+            browserManager: browserManager
         )
         windowState.currentTabId = tab.id
 
