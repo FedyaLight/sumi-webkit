@@ -59,6 +59,39 @@ final class SumiTabTitleViewTests: XCTestCase {
         XCTAssertNotNil(try XCTUnwrap(fields.current.layer).animation(forKey: SumiTabTitleAnimation.alphaKey))
     }
 
+    func testNonAnimatedTitleUpdateClearsPreviousTitleState() throws {
+        let view = makeView(width: 200)
+        view.apply(
+            title: "Old Title",
+            font: .systemFont(ofSize: 13, weight: .medium),
+            textColor: .labelColor,
+            fadeWidth: 32,
+            trailingFadePadding: 0,
+            animated: false
+        )
+
+        view.apply(
+            title: "New Title",
+            font: .systemFont(ofSize: 13, weight: .medium),
+            textColor: .labelColor,
+            fadeWidth: 32,
+            trailingFadePadding: 0,
+            animated: false
+        )
+
+        let fields = titleFields(in: view)
+        let previousLayer = try XCTUnwrap(fields.previous.layer)
+        let currentLayer = try XCTUnwrap(fields.current.layer)
+
+        XCTAssertEqual(fields.current.stringValue, "New Title")
+        XCTAssertEqual(fields.previous.stringValue, "")
+        XCTAssertEqual(fields.previous.alphaValue, 0, accuracy: 0.001)
+        XCTAssertEqual(previousLayer.opacity, 0, accuracy: 0.001)
+        XCTAssertNil(previousLayer.animation(forKey: SumiTabTitleAnimation.fadeAndSlideOutKey))
+        XCTAssertNil(currentLayer.animation(forKey: SumiTabTitleAnimation.slideInKey))
+        XCTAssertNil(currentLayer.animation(forKey: SumiTabTitleAnimation.alphaKey))
+    }
+
     func testSwiftUIHostedLabelUsesContainerWidthForMaskLayout() throws {
         let host = NSHostingView(
             rootView: HStack(spacing: 0) {

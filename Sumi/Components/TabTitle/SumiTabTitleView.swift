@@ -133,17 +133,25 @@ final class SumiTabTitleView: NSView {
 private extension SumiTabTitleView {
     func displayTitleIfNeeded(title: String, animated: Bool = true) {
         let previousTitle = titleTextField.stringValue
+        let shouldAnimate = animated && shouldAnimateTransition(to: title, from: previousTitle)
+
         guard title != previousTitle else {
+            if !shouldAnimate {
+                resetPreviousTitleState()
+            }
             return
         }
 
         titleTextField.stringValue = title
-        previousTextField.stringValue = previousTitle
 
-        guard animated, shouldAnimateTransition(to: title, from: previousTitle) else {
+        guard shouldAnimate else {
+            resetPreviousTitleState()
             return
         }
 
+        previousTextField.stringValue = previousTitle
+        previousTextField.alphaValue = CGFloat(SumiTabTitleAnimation.previousTitleAlpha)
+        previousTextField.layer?.opacity = SumiTabTitleAnimation.previousTitleAlpha
         transitionToLatestTitle(fadeInTitle: true)
     }
 
@@ -177,6 +185,7 @@ private extension SumiTabTitleView {
     func setupTextFields() {
         titleTextField.textColor = .labelColor
         previousTextField.textColor = .labelColor
+        resetPreviousTitleState()
     }
 
     func buildTitleTextField() -> NSTextField {
@@ -201,6 +210,15 @@ private extension SumiTabTitleView {
 
     func shouldAnimateTransition(to title: String, from previousTitle: String) -> Bool {
         title != previousTitle && previousTitle.isEmpty == false
+    }
+
+    func resetPreviousTitleState() {
+        previousTextField.stringValue = ""
+        previousTextField.alphaValue = 0
+        previousTextField.layer?.opacity = 0
+        previousTextField.layer?.removeAnimation(forKey: SumiTabTitleAnimation.fadeAndSlideOutKey)
+        titleTextField.layer?.removeAnimation(forKey: SumiTabTitleAnimation.slideInKey)
+        titleTextField.layer?.removeAnimation(forKey: SumiTabTitleAnimation.alphaKey)
     }
 }
 
