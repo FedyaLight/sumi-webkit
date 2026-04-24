@@ -1,17 +1,14 @@
 import SwiftUI
 
-private enum WorkspaceThemePickerPresentationAnimation {
-    /// Fade the overlay on dismiss; panel entrance is driven by ``WorkspaceThemePickerPanelDropModifier`` (no `withAnimation` on insert).
-    static let disappear = Animation.easeOut(duration: SumiEmojiPickerMetrics.disappearEaseDuration)
-}
-
 @MainActor
 extension BrowserManager {
     func showGradientEditor() {
+        guard !closeWorkspaceThemePickerIfPresented() else { return }
         workspaceAppearanceService.showGradientEditor(using: makeWorkspaceAppearanceContext())
     }
 
     func showGradientEditor(source: SidebarTransientPresentationSource) {
+        guard !closeWorkspaceThemePickerIfPresented() else { return }
         workspaceAppearanceService.showGradientEditor(
             using: makeWorkspaceAppearanceContext(),
             preferredSource: source
@@ -19,6 +16,7 @@ extension BrowserManager {
     }
 
     func showGradientEditor(for space: Space, source: SidebarTransientPresentationSource) {
+        guard !closeWorkspaceThemePickerIfPresented() else { return }
         workspaceAppearanceService.showGradientEditor(
             using: makeWorkspaceAppearanceContext(currentSpaceOverride: space),
             preferredSource: source
@@ -42,9 +40,7 @@ extension BrowserManager {
         else { return }
 
         session.commitsOnDismiss = true
-        withAnimation(WorkspaceThemePickerPresentationAnimation.disappear) {
-            workspaceThemePickerSession = nil
-        }
+        workspaceThemePickerPopoverPresenter.close(sessionID: session.id, committing: true)
     }
 
     /// Dismisses the theme picker without committing the draft (e.g. another modal took focus).
@@ -54,9 +50,7 @@ extension BrowserManager {
         else { return }
 
         session.commitsOnDismiss = false
-        withAnimation(WorkspaceThemePickerPresentationAnimation.disappear) {
-            workspaceThemePickerSession = nil
-        }
+        workspaceThemePickerPopoverPresenter.close(sessionID: session.id, committing: false)
     }
 
     /// Discards any open workspace theme picker session (used before presenting app-wide modals).
@@ -70,6 +64,30 @@ extension BrowserManager {
             session,
             using: makeWorkspaceAppearanceContext()
         )
+        if workspaceThemePickerSession?.id == session.id {
+            workspaceThemePickerSession = nil
+        }
+    }
+
+    private func presentWorkspaceThemePicker(
+        _ session: WorkspaceThemePickerSession,
+        in windowState: BrowserWindowState
+    ) {
+        workspaceThemePickerSession = session
+        workspaceThemePickerPopoverPresenter.present(
+            session,
+            in: windowState,
+            browserManager: self
+        )
+    }
+
+    private func closeWorkspaceThemePickerIfPresented() -> Bool {
+        guard let session = workspaceThemePickerSession,
+              workspaceThemePickerPopoverPresenter.hasActiveSession
+        else { return false }
+
+        dismissWorkspaceThemePicker(sessionID: session.id)
+        return true
     }
 
     private func makeWorkspaceAppearanceContext(
@@ -95,8 +113,8 @@ extension BrowserManager {
                 self?.tabManager.markAllSpacesStructurallyDirty()
                 self?.tabManager.scheduleStructuralPersistence()
             },
-            presentPicker: { [weak self] session in
-                self?.workspaceThemePickerSession = session
+            presentPicker: { [weak self] session, windowState in
+                self?.presentWorkspaceThemePicker(session, in: windowState)
             },
             showDialog: { [weak self] dialog, source in
                 if let source {

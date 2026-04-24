@@ -32,6 +32,88 @@ final class SidebarThemeResolutionTests: XCTestCase {
         XCTAssertEqual(after.chromeDarknessProgress, 0, accuracy: 0.0001)
     }
 
+    func testExplicitDarkWindowSchemeDarkensDefaultWorkspaceBeforeAndAfterTabActivation() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = makeThemeSettings(defaults: harness.defaults, windowSchemeMode: .dark)
+        let windowState = BrowserWindowState(initialWorkspaceTheme: .default)
+        let before = SidebarThemeResolutionSnapshot.make(
+            windowState: windowState,
+            settings: settings,
+            globalColorScheme: .dark
+        )
+
+        windowState.currentSpaceId = UUID()
+        windowState.currentTabId = UUID()
+        windowState.isShowingEmptyState = false
+
+        let after = SidebarThemeResolutionSnapshot.make(
+            windowState: windowState,
+            settings: settings,
+            globalColorScheme: .dark
+        )
+
+        XCTAssertEqual(before.workspacePrimaryHex, "#F4EFDF")
+        XCTAssertEqual(before.chromeColorScheme, .dark)
+        XCTAssertEqual(before.chromeDarknessProgress, 1, accuracy: 0.0001)
+        XCTAssertEqual(after.chromeColorScheme, .dark)
+        XCTAssertEqual(after.chromeDarknessProgress, 1, accuracy: 0.0001)
+        XCTAssertEqual(after.workspacePrimaryHex, before.workspacePrimaryHex)
+        XCTAssertEqual(after, before)
+    }
+
+    func testAutoWindowSchemeFollowsResolvedGlobalSchemeForDefaultWorkspace() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = makeThemeSettings(defaults: harness.defaults, windowSchemeMode: .auto)
+        let windowState = BrowserWindowState(initialWorkspaceTheme: .default)
+
+        let lightSnapshot = SidebarThemeResolutionSnapshot.make(
+            windowState: windowState,
+            settings: settings,
+            globalColorScheme: .light
+        )
+        let darkSnapshot = SidebarThemeResolutionSnapshot.make(
+            windowState: windowState,
+            settings: settings,
+            globalColorScheme: .dark
+        )
+
+        XCTAssertEqual(lightSnapshot.chromeColorScheme, .light)
+        XCTAssertEqual(lightSnapshot.chromeDarknessProgress, 0, accuracy: 0.0001)
+        XCTAssertEqual(darkSnapshot.chromeColorScheme, .dark)
+        XCTAssertEqual(darkSnapshot.chromeDarknessProgress, 1, accuracy: 0.0001)
+        XCTAssertEqual(lightSnapshot.workspacePrimaryHex, darkSnapshot.workspacePrimaryHex)
+    }
+
+    func testExplicitFirstLightMonoWorkspaceKeepsDarkTextInDarkWindowScheme() throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = makeThemeSettings(defaults: harness.defaults, windowSchemeMode: .dark)
+        let lightMonoTheme = try XCTUnwrap(
+            SumiWorkspaceThemePresets.groups.first?.presets.first?.workspaceTheme
+        )
+        let windowState = BrowserWindowState(initialWorkspaceTheme: lightMonoTheme)
+
+        let snapshot = SidebarThemeResolutionSnapshot.make(
+            windowState: windowState,
+            settings: settings,
+            globalColorScheme: .dark
+        )
+        let tokens = windowState
+            .resolvedThemeContext(global: .dark, settings: settings)
+            .tokens(settings: settings)
+
+        XCTAssertTrue(WorkspaceTheme.default.visuallyEquals(lightMonoTheme))
+        XCTAssertTrue(lightMonoTheme.usesExplicitColorScheme)
+        XCTAssertEqual(snapshot.chromeColorScheme, .light)
+        XCTAssertEqual(snapshot.chromeDarknessProgress, 0, accuracy: 0.0001)
+        XCTAssertEqual(tokens.primaryText, Color.black.opacity(0.84))
+    }
+
     func testActivatingTabDoesNotChangeSidebarThemeSnapshotForSameSpace() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -122,7 +204,10 @@ final class SidebarThemeResolutionTests: XCTestCase {
         XCTAssertTrue(source.contains("@Environment(\\.resolvedThemeContext)"))
         XCTAssertTrue(source.contains("@Environment(\\.sumiSettings)"))
         XCTAssertTrue(source.contains("themeContext.tokens(settings: sumiSettings)"))
-        XCTAssertTrue(source.contains("chromeTokens.windowBackground.opacity"))
+        XCTAssertTrue(source.contains("chromeTokens.windowBackground"))
+        XCTAssertTrue(source.contains("case .toolbarChrome"))
+        XCTAssertTrue(source.contains("ZenWorkspaceThemeResolver.resolve"))
+        XCTAssertFalse(source.contains("chromeDarknessProgress"))
         XCTAssertFalse(source.contains("Color(.windowBackgroundColor)"))
     }
 
@@ -154,7 +239,7 @@ final class SidebarThemeResolutionTests: XCTestCase {
         XCTAssertTrue(source.contains("private var drawsSidebarChromeBackground"))
         XCTAssertTrue(source.contains("presentationContext.mode != .collapsedHidden"))
         XCTAssertTrue(source.contains("themeContext.tokens(settings: sumiSettings).windowBackground"))
-        XCTAssertTrue(source.contains("SpaceGradientBackgroundView()"))
+        XCTAssertTrue(source.contains("SpaceGradientBackgroundView(surface: .toolbarChrome)"))
         XCTAssertTrue(source.contains(".opacity(drawsSidebarChromeBackground ? 1 : 0)"))
     }
 
@@ -208,9 +293,12 @@ final class SidebarThemeResolutionTests: XCTestCase {
         XCTAssertFalse(hostSource.contains("NSColor.windowBackgroundColor.setFill()"))
     }
 
-    private func makeThemeSettings(defaults: UserDefaults) -> SumiSettingsService {
+    private func makeThemeSettings(
+        defaults: UserDefaults,
+        windowSchemeMode: WindowSchemeMode = .light
+    ) -> SumiSettingsService {
         let settings = SumiSettingsService(userDefaults: defaults)
-        settings.windowSchemeMode = .light
+        settings.windowSchemeMode = windowSchemeMode
         settings.themeUseSystemColors = false
         return settings
     }

@@ -146,7 +146,7 @@ struct SidebarHoverOverlayView: View {
                 // views cannot leak a dynamic system background after WebKit/tab activation.
                 themeContext.tokens(settings: sumiSettings).windowBackground
                     .opacity(drawsSidebarChromeBackground ? 1 : 0)
-                SpaceGradientBackgroundView()
+                SpaceGradientBackgroundView(surface: .toolbarChrome)
                     .environmentObject(browserManager)
                     .environment(windowState)
                     .opacity(drawsSidebarChromeBackground ? 1 : 0)

@@ -26,6 +26,7 @@ final class WorkspaceThemePersistenceTests: XCTestCase {
         let decoded = try XCTUnwrap(WorkspaceTheme.decode(encoded))
 
         XCTAssertEqual(decoded, theme)
+        XCTAssertTrue(decoded.usesExplicitColorScheme)
     }
 
     func testLegacyThemePayloadIsRejected() {
@@ -65,9 +66,39 @@ final class WorkspaceThemePersistenceTests: XCTestCase {
         )
 
         XCTAssertTrue(WorkspaceTheme.default.visuallyEquals(firstLightMonoPreset))
+        XCTAssertFalse(WorkspaceTheme.default.usesExplicitColorScheme)
+        XCTAssertTrue(firstLightMonoPreset.usesExplicitColorScheme)
         XCTAssertEqual(SpaceGradient.default.primaryColorHex, "#F4EFDF")
         XCTAssertEqual(SpaceGradient.default.opacity, 0.62, accuracy: 0.0001)
         XCTAssertEqual(SpaceGradient.default.grain, 1.0 / 16.0, accuracy: 0.0001)
+    }
+
+    func testLegacyWorkspaceThemePayloadDefaultsExistingColoredThemesToExplicitScheme() throws {
+        let legacyJSON = """
+        {
+          "gradientTheme": {
+            "type": "gradient",
+            "colors": [
+              {
+                "id": "\(UUID().uuidString)",
+                "hex": "#F4EFDF",
+                "isCustom": false,
+                "isPrimary": true,
+                "algorithm": "floating",
+                "lightness": 0.9,
+                "position": { "x": 0.6666666667, "y": 0.6666666667 },
+                "type": "explicit-lightness"
+              }
+            ],
+            "opacity": 0.62,
+            "texture": 0.0625
+          }
+        }
+        """
+
+        let decoded = try XCTUnwrap(WorkspaceTheme.decode(Data(legacyJSON.utf8)))
+
+        XCTAssertTrue(decoded.usesExplicitColorScheme)
     }
 
     func testTextureQuantizesToZenSixteenthStepsAndWrapsFullTurn() {

@@ -42,7 +42,7 @@ final class WorkspaceAppearanceService {
         let commitWorkspaceTheme: @MainActor (WorkspaceTheme, BrowserWindowState) -> Void
         let syncWorkspaceThemeAcrossWindows: @MainActor (Space, Bool) -> Void
         let scheduleStructuralPersistence: @MainActor () -> Void
-        let presentPicker: @MainActor (WorkspaceThemePickerSession) -> Void
+        let presentPicker: @MainActor (WorkspaceThemePickerSession, BrowserWindowState) -> Void
         let showDialog: @MainActor (AnyView, SidebarTransientPresentationSource?) -> Void
         let closeDialog: @MainActor () -> Void
     }
@@ -111,24 +111,31 @@ final class WorkspaceAppearanceService {
             return
         }
 
-        let transientSessionToken = preferredSource.flatMap {
-            $0.coordinator?.beginSession(
-                kind: .themePicker,
-                source: $0,
-                path: "WorkspaceAppearanceService.showGradientEditor"
+        let presentationSource = preferredSource
+            ?? previewWindow.sidebarTransientSessionCoordinator.preparedPresentationSource(
+                window: previewWindow.window
             )
-        }
+        presentationSource.refresh(
+            window: previewWindow.window ?? presentationSource.window,
+            originOwnerView: presentationSource.originOwnerView
+        )
+        let transientSessionToken = presentationSource.coordinator?.beginSession(
+            kind: .themePicker,
+            source: presentationSource,
+            path: "WorkspaceAppearanceService.showGradientEditor"
+        )
 
+        previewWindow.window?.makeKeyAndOrderFront(nil)
         context.presentPicker(
             WorkspaceThemePickerSession(
                 spaceId: space.id,
                 hostWindowID: previewWindow.id,
                 originalTheme: space.workspaceTheme,
-                presentationSource: preferredSource,
+                presentationSource: presentationSource,
                 transientSessionToken: transientSessionToken
-            )
+            ),
+            previewWindow
         )
-        previewWindow.window?.makeKeyAndOrderFront(nil)
     }
 
     func previewGradientEditorSession(

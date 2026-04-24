@@ -286,24 +286,58 @@ struct WorkspaceGradientTheme: Codable, Hashable, Sendable {
 
 struct WorkspaceTheme: Codable, Hashable, Sendable {
     var gradientTheme: WorkspaceGradientTheme
+    var usesExplicitColorScheme: Bool
 
-    init(gradientTheme: WorkspaceGradientTheme = .default) {
-        self.gradientTheme = gradientTheme
+    enum CodingKeys: String, CodingKey {
+        case gradientTheme
+        case usesExplicitColorScheme
     }
 
-    init(gradient: SpaceGradient = .default) {
+    init(
+        gradientTheme: WorkspaceGradientTheme = .default,
+        usesExplicitColorScheme: Bool = true
+    ) {
+        self.gradientTheme = gradientTheme
+        self.usesExplicitColorScheme = usesExplicitColorScheme
+    }
+
+    init(
+        gradient: SpaceGradient = .default,
+        usesExplicitColorScheme: Bool? = nil
+    ) {
         self.init(
-            gradientTheme: WorkspaceGradientTheme(renderGradient: gradient)
+            gradientTheme: WorkspaceGradientTheme(renderGradient: gradient),
+            usesExplicitColorScheme: usesExplicitColorScheme ?? !gradient.visuallyEquals(.default)
         )
     }
 
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let gradientTheme = try container.decode(WorkspaceGradientTheme.self, forKey: .gradientTheme)
+        self.gradientTheme = gradientTheme
+        self.usesExplicitColorScheme = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .usesExplicitColorScheme
+        ) ?? !gradientTheme.normalizedColors.isEmpty
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(gradientTheme, forKey: .gradientTheme)
+        try container.encode(usesExplicitColorScheme, forKey: .usesExplicitColorScheme)
+    }
+
     static var `default`: WorkspaceTheme {
-        WorkspaceTheme(gradientTheme: .default)
+        WorkspaceTheme(
+            gradientTheme: .default,
+            usesExplicitColorScheme: false
+        )
     }
 
     static var incognito: WorkspaceTheme {
         WorkspaceTheme(
-            gradientTheme: WorkspaceGradientTheme(renderGradient: .incognito)
+            gradientTheme: WorkspaceGradientTheme(renderGradient: .incognito),
+            usesExplicitColorScheme: true
         )
     }
 
@@ -337,7 +371,8 @@ struct WorkspaceTheme: Codable, Hashable, Sendable {
     func interpolated(to other: WorkspaceTheme, progress: Double) -> WorkspaceTheme {
         let clamped = min(max(progress, 0), 1)
         return WorkspaceTheme(
-            gradient: gradient.interpolated(to: other.gradient, progress: clamped)
+            gradient: gradient.interpolated(to: other.gradient, progress: clamped),
+            usesExplicitColorScheme: clamped < 0.5 ? usesExplicitColorScheme : other.usesExplicitColorScheme
         )
     }
 
