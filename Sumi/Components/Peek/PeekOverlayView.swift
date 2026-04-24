@@ -9,23 +9,11 @@ import SwiftUI
 import AppKit
 
 struct PeekOverlayView: View {
-    @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject private var peekManager: PeekManager
-    @Environment(\.colorScheme) var colorScheme
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(BrowserWindowState.self) private var windowState
     @State private var webView: PeekWebView?
-    @State private var scale: CGFloat = 0.001
-    @State private var opacity: Double = 0.0
-    @State private var backgroundOpacity: Double = 0.0
-    @State private var activateObserver: NSObjectProtocol?
-    @State private var deactivateObserver: NSObjectProtocol?
-    @State private var webContentOpacity: Double = 0.0
-
-    private var isActive: Bool {
-        peekManager.isActive
-    }
 
     private var session: PeekSession? {
         peekManager.currentSession
@@ -37,97 +25,22 @@ struct PeekOverlayView: View {
 
     var body: some View {
         ZStack {
-            // Always present but visibility controlled by opacity
             backgroundOverlay
-                .opacity(backgroundOpacity)
 
-            // Peek overlay container - always present but visibility controlled
             if session != nil {
                 peekContent()
-                    .scaleEffect(scale, anchor: .center)
-                    .opacity(opacity)
                     .zIndex(1000)
             } else {
-                // Loading state while session is being set up
                 RoundedRectangle(cornerRadius: 16)
                     .fill(tokens.commandPaletteBackground)
                     .frame(width: 600, height: 400)
-                    .scaleEffect(scale, anchor: .center)
-                    .opacity(opacity)
                     .zIndex(1000)
             }
         }
-        .zIndex(9999) // Put it at the very top
-        .allowsHitTesting(isActive) // Only intercept events when Peek is active
+        .zIndex(9999)
+        .allowsHitTesting(true)
         .accessibilityIdentifier("glance-overlay")
-        .onAppear {
-            // Sync initial state when view appears
-            if peekManager.isActive {
-                presentPeek()
-            }
-
-            // Fallback: observe explicit activation notifications to bypass blocked @Published delivery
-            activateObserver = NotificationCenter.default.addObserver(forName: .peekDidActivate, object: nil, queue: .main) { _ in
-                Task { @MainActor in
-                    presentPeek()
-                }
-            }
-            deactivateObserver = NotificationCenter.default.addObserver(forName: .peekDidDeactivate, object: nil, queue: .main) { _ in
-                Task { @MainActor in
-                    dismissPeek()
-                }
-            }
-        }
         .onDisappear {
-            if let token = activateObserver {
-                NotificationCenter.default.removeObserver(token)
-                activateObserver = nil
-            }
-            if let token = deactivateObserver {
-                NotificationCenter.default.removeObserver(token)
-                deactivateObserver = nil
-            }
-        }
-        .onChange(of: peekManager.isActive) { _, isActive in
-            if isActive {
-                presentPeek()
-            } else {
-                dismissPeek()
-            }
-        }
-        .onChange(of: peekManager.currentSession?.id) { _, _ in
-            // Session changed - no action needed
-        }
-    }
-
-    // MARK: - State Management
-
-    @MainActor
-    private func presentPeek() {
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-            scale = 1.0
-            opacity = 1.0
-            backgroundOpacity = 1.0
-        }
-    }
-
-    @MainActor
-    private func dismissPeek() {
-        // Animate web content opacity out first (reverse of appearing)
-        withAnimation(.easeOut(duration: 0.15)) {
-            webContentOpacity = 0.0
-        }
-
-        // Then animate the main overlay elements with spring animation
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-            scale = 0.001
-            opacity = 0.0
-            backgroundOpacity = 0.0
-        }
-
-        // Schedule cleanup after the spring animation completes
-        // Using a slightly longer delay to ensure animation fully completes
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
             webView = nil
         }
     }
@@ -135,10 +48,9 @@ struct PeekOverlayView: View {
     @ViewBuilder
     private var backgroundOverlay: some View {
         Color.black.opacity(0.3)
-            .contentShape(Rectangle()) // Ensure proper hit testing
-            .allowsHitTesting(isActive) // Only allow hit testing when peek is active
+            .contentShape(Rectangle())
+            .allowsHitTesting(true)
             .onTapGesture {
-                // Simple dismiss on background tap
                 peekManager.dismissPeek(reason: .close)
             }
     }
@@ -150,24 +62,13 @@ struct PeekOverlayView: View {
     @ViewBuilder
     private func peekContent() -> some View {
         GeometryReader { geometry in
-            let (frame, cornerRadius) = calculateLayout(geometry: geometry)
+            let frame = calculateLayout(geometry: geometry)
 
             ZStack {
-                // Themed placeholder behind web content
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(tokens.commandPaletteBackground)
+                tokens.commandPaletteBackground
 
-                // Peek webview with shadow
                 webViewContainer()
-                    .opacity(webContentOpacity)
                     .frame(width: frame.width, height: frame.height)
-                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-                    .shadow(
-                        color: Color.black.opacity(0.3),
-                        radius: 20,
-                        x: 0,
-                        y: 10
-                    )
 
                 // Action buttons positioned outside the main content but within the scaled area
                 actionButtons()
@@ -189,33 +90,19 @@ struct PeekOverlayView: View {
         Group {
             if webView != nil {
                 webView
-                    .allowsHitTesting(true) // Ensure webview is interactable
-                    .onAppear {
-                        withAnimation(.easeIn(duration: 0.15)) {
-                            webContentOpacity = 1.0
-                        }
-                    }
-                    .onPreferenceChange(PeekWebViewSizePreferenceKey.self) { size in
-                        // Handle webview size preferences if needed
-                    }
+                    .allowsHitTesting(true)
             } else {
-                // Themed placeholder that matches system theme; this scales up during presentation
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(tokens.commandPaletteBackground)
+                tokens.commandPaletteBackground
             }
         }
-        .allowsHitTesting(true) // Ensure container allows hit testing
+        .allowsHitTesting(true)
         .onAppear {
             if webView == nil {
-                // Use the pre-created WebView from PeekManager
                 if let preCreatedWebView = peekManager.webView {
                     webView = preCreatedWebView
-                    webContentOpacity = 0.0
                 } else {
-                    // Fallback: create WebView if not available
                     let peekWebView = peekManager.createWebView()
                     webView = peekWebView
-                    webContentOpacity = 0.0
                     peekManager.updateWebView(peekWebView)
                 }
             }
@@ -308,7 +195,7 @@ struct PeekOverlayView: View {
 
     // MARK: - Layout Calculation
 
-    private func calculateLayout(geometry: GeometryProxy) -> (frame: CGRect, cornerRadius: CGFloat) {
+    private func calculateLayout(geometry: GeometryProxy) -> CGRect {
         let windowSize = geometry.size
 
         // Compute the visible web content area by excluding the sidebar width
@@ -316,7 +203,6 @@ struct PeekOverlayView: View {
         let webAreaWidth = max(0, windowSize.width - sidebarWidth)
 
         let webViewHeight = windowSize.height - 10 // Full height PLUS 10pts
-        let cornerRadius: CGFloat = 16
 
         // Center within the web area (excluding sidebar) with 60pt margins
         let horizontalMargin: CGFloat = 60
@@ -325,20 +211,11 @@ struct PeekOverlayView: View {
 
         let peekX = sidebarWidth + peekXWithinWebArea
 
-        return (
-            frame: CGRect(
-                x: peekX,
-                y: 0,
-                width: peekWidth,
-                height: webViewHeight
-            ),
-            cornerRadius: cornerRadius
+        return CGRect(
+            x: peekX,
+            y: 0,
+            width: peekWidth,
+            height: webViewHeight
         )
     }
-}
-
-// Preference key for webview size tracking
-struct PeekWebViewSizePreferenceKey: PreferenceKey {
-    static var defaultValue: CGSize = .zero
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {}
 }
