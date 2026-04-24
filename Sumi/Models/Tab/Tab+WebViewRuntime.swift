@@ -55,6 +55,8 @@ extension Tab {
 
     func adoptPopupWebView(_ webView: WKWebView) {
         _webView = webView
+        installNavigationDelegate(on: webView)
+        webView.uiDelegate = self
         installRuntimeObservers(on: webView)
         replaceCoreScriptMessageHandlers(on: webView.configuration.userContentController)
     }
@@ -63,6 +65,7 @@ extension Tab {
     func assignWebViewToWindow(_ webView: WKWebView, windowId: UUID) {
         _webView = webView
         primaryWindowId = windowId
+        installNavigationDelegate(on: webView)
         installRuntimeObservers(on: webView)
     }
 
@@ -225,7 +228,9 @@ extension Tab {
             }
         }
 
-        _webView?.navigationDelegate = self
+        if let webView = _webView {
+            installNavigationDelegate(on: webView)
+        }
         _webView?.uiDelegate = self
         _webView?.allowsBackForwardNavigationGestures = true
         _webView?.allowsMagnification = true

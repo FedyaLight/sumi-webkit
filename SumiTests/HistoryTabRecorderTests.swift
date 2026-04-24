@@ -1,3 +1,4 @@
+import Navigation
 import SwiftData
 import XCTest
 

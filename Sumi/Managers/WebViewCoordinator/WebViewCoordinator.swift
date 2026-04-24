@@ -875,7 +875,7 @@ class WebViewCoordinator {
         )
 
         let newWebView = FocusableWKWebView(frame: .zero, configuration: configuration)
-        newWebView.navigationDelegate = tab
+        tab.installNavigationDelegate(on: newWebView)
         newWebView.uiDelegate = tab
         newWebView.allowsBackForwardNavigationGestures = true
         newWebView.allowsMagnification = true

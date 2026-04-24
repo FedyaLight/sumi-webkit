@@ -1,4 +1,5 @@
 import BrowserServicesKit
+import Navigation
 import WebKit
 import XCTest
 
@@ -218,8 +219,9 @@ final class TabSuspensionServiceTests: XCTestCase {
         setCurrentTab(selected, in: harness.windowState)
         attachWebView(to: selected, harness: harness)
         let releasedWebView = attachWebView(to: hidden, harness: harness)
-        releasedWebView.navigationDelegate = hidden
+        hidden.installNavigationDelegate(on: releasedWebView)
         releasedWebView.uiDelegate = hidden
+        XCTAssertNotNil(hidden.navigationDelegateBundle(for: releasedWebView))
 
         XCTAssertTrue(harness.service.suspend(hidden, reason: "test-release"))
 
@@ -232,6 +234,7 @@ final class TabSuspensionServiceTests: XCTestCase {
         XCTAssertNil(releasedWebView.navigationDelegate)
         XCTAssertNil(releasedWebView.uiDelegate)
         XCTAssertNil(releasedWebView.superview)
+        XCTAssertNil(hidden.navigationDelegateBundle(for: releasedWebView))
     }
 
     func testSelectingSuspendedTabRestoresOnlyThatTab() throws {

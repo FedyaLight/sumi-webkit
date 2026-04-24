@@ -40,102 +40,37 @@ extension Tab: WKUIDelegate {
         for navigationAction: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
-        guard let bm = browserManager else { return nil }
-        let navigationFlags = navigationModifierFlags(from: navigationAction)
-        let isExtensionOriginated = Self.isExtensionOriginatedPopupNavigation(
-            sourceURL: navigationAction.sourceFrame.request.url,
-            requestURL: navigationAction.request.url
+        navigationDelegateBundle(for: webView)?.popupHandling.createWebView(
+            from: webView,
+            with: configuration,
+            for: navigationAction,
+            windowFeatures: windowFeatures
         )
-
-        if let url = navigationAction.request.url,
-           Self.isExtensionOriginatedExternalPopupNavigation(
-                sourceURL: navigationAction.sourceFrame.request.url,
-                requestURL: url
-           ),
-           bm.extensionManager.consumeRecentlyOpenedExtensionTabRequest(for: url)
-        {
-            return nil
-        }
-
-        if let url = navigationAction.request.url,
-           isExtensionOriginated == false,
-           isGlanceTriggerActive(navigationFlags)
-        {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.openURLInGlance(url)
-            }
-            return nil
-        }
-
-        if let url = navigationAction.request.url,
-           isExtensionOriginated == false,
-           shouldRedirectToPeek(url: url)
-        {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.openURLInGlance(url)
-            }
-
-            return nil
-        }
-
-        bm.extensionManager.prepareWebViewConfigurationForExtensionRuntime(
-            configuration,
-            reason: "Tab.createPopupWebView.configuration"
-        )
-        let newWebView = FocusableWKWebView(frame: .zero, configuration: configuration)
-        let shouldOpenInBackground = shouldOpenPopupTabInBackground(
-            navigationAction: navigationAction,
-            modifierFlags: navigationFlags,
-            isExtensionOriginated: isExtensionOriginated
-        )
-        let newTab = bm.createPopupTab(
-            from: self,
-            webViewConfigurationOverride: configuration,
-            activate: !shouldOpenInBackground
-        )
-
-        newWebView.navigationDelegate = newTab
-        newWebView.uiDelegate = newTab
-        newWebView.allowsBackForwardNavigationGestures = true
-        newWebView.allowsMagnification = true
-        newWebView.owningTab = newTab
-
-        newTab.adoptPopupWebView(newWebView)
-        if isExtensionOriginated {
-            bm.extensionManager.prepareWebViewForExtensionRuntime(
-                newWebView,
-                currentURL: navigationAction.request.url,
-                reason: "Tab.createPopupWebView"
-            )
-        }
-
-        SumiUserAgent.apply(to: newWebView)
-
-        newWebView.configuration.preferences.isFraudulentWebsiteWarningEnabled = true
-        newWebView.configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
-
-        if let url = navigationAction.request.url,
-           url.scheme != nil,
-           url.absoluteString != "about:blank"
-        {
-            newTab.loadURL(url)
-        }
-
-        return newWebView
     }
 
-    private func shouldOpenPopupTabInBackground(
-        navigationAction: WKNavigationAction,
-        modifierFlags: NSEvent.ModifierFlags,
-        isExtensionOriginated: Bool
-    ) -> Bool {
-        guard isExtensionOriginated == false else { return false }
-        guard navigationAction.navigationType == .linkActivated else { return false }
-
-        let normalizedFlags = modifierFlags.intersection([.command, .option, .control, .shift])
-        return normalizedFlags == [.command]
+    @MainActor
+    @objc(_webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:completionHandler:)
+    func webView(
+        _ webView: WKWebView,
+        createWebViewWithConfiguration configuration: WKWebViewConfiguration,
+        for navigationAction: WKNavigationAction,
+        windowFeatures: WKWindowFeatures,
+        completionHandler: @escaping (WKWebView?) -> Void
+    ) {
+        dispatchCreateWebView(from: webView) { [weak self, weak webView] in
+            guard let self, let webView else {
+                completionHandler(nil)
+                return
+            }
+            completionHandler(
+                self.navigationDelegateBundle(for: webView)?.popupHandling.createWebView(
+                    from: webView,
+                    with: configuration,
+                    for: navigationAction,
+                    windowFeatures: windowFeatures
+                )
+            )
+        }
     }
 
     public func webView(

@@ -1,3 +1,4 @@
+import Navigation
 import XCTest
 @testable import Sumi
 
@@ -15,30 +16,59 @@ final class FindInPageBackendTests: XCTestCase {
     }
 
     func test_sameDocumentNavigation_closesFindOnlyForPushAndPop() {
-        XCTAssertFalse(SumiSameDocumentNavigationType.shouldCloseFindInPage(forWebKitSameDocumentNavigationRaw: 0))
-        XCTAssertTrue(SumiSameDocumentNavigationType.shouldCloseFindInPage(forWebKitSameDocumentNavigationRaw: 1))
-        XCTAssertFalse(SumiSameDocumentNavigationType.shouldCloseFindInPage(forWebKitSameDocumentNavigationRaw: 2))
-        XCTAssertTrue(SumiSameDocumentNavigationType.shouldCloseFindInPage(forWebKitSameDocumentNavigationRaw: 3))
-        XCTAssertFalse(SumiSameDocumentNavigationType.shouldCloseFindInPage(forWebKitSameDocumentNavigationRaw: 99))
+        let ext = FindInPageTabExtension()
+        let navigation = Navigation(
+            identity: .expected,
+            responders: ResponderChain(),
+            state: .started,
+            isCurrent: true
+        )
+
+        ext.model.show()
+        ext.navigation(navigation, didSameDocumentNavigationOf: .anchorNavigation)
+        XCTAssertTrue(ext.model.isVisible)
+
+        ext.navigation(navigation, didSameDocumentNavigationOf: .sessionStatePush)
+        XCTAssertFalse(ext.model.isVisible)
+
+        ext.model.show()
+        ext.navigation(navigation, didSameDocumentNavigationOf: .sessionStateReplace)
+        XCTAssertTrue(ext.model.isVisible)
+
+        ext.navigation(navigation, didSameDocumentNavigationOf: .sessionStatePop)
+        XCTAssertFalse(ext.model.isVisible)
     }
 
-    func test_findInPageExtension_didStartNavigation_closesVisibleSession() {
+    func test_findInPageExtension_didStartResponder_closesVisibleSession() {
         let ext = FindInPageTabExtension()
         ext.model.show()
         ext.model.find("needle")
         XCTAssertTrue(ext.model.isVisible)
 
-        ext.didStartNavigation()
+        ext.didStart(
+            Navigation(
+                identity: .expected,
+                responders: ResponderChain(),
+                state: .started,
+                isCurrent: true
+            )
+        )
 
         XCTAssertFalse(ext.model.isVisible)
     }
 
-    func test_findInPageExtension_didSameDocumentNavigation_closesVisibleSession() {
+    func test_findInPageExtension_sessionStatePush_closesVisibleSession() {
         let ext = FindInPageTabExtension()
+        let navigation = Navigation(
+            identity: .expected,
+            responders: ResponderChain(),
+            state: .started,
+            isCurrent: true
+        )
         ext.model.show()
         XCTAssertTrue(ext.model.isVisible)
 
-        ext.didSameDocumentNavigation()
+        ext.navigation(navigation, didSameDocumentNavigationOf: .sessionStatePush)
 
         XCTAssertFalse(ext.model.isVisible)
     }
