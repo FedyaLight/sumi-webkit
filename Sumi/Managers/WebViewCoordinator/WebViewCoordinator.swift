@@ -7,6 +7,7 @@
 
 import Foundation
 import AppKit
+import BrowserServicesKit
 import Observation
 import WebKit
 
@@ -878,6 +879,9 @@ class WebViewCoordinator {
             on: newWebView.configuration.userContentController
         )
         tab.installRuntimeObservers(on: newWebView)
+        if let scriptsProvider = newWebView.configuration.userContentController.sumiNormalTabUserScriptsProvider {
+            tab.ensureFaviconsTabExtension(using: scriptsProvider.faviconScripts)
+        }
         setWebView(newWebView, for: tabId, in: windowId)
 
         // Only load URL if this is the primary or if we're creating a clone
@@ -889,18 +893,32 @@ class WebViewCoordinator {
                 in: windowId,
                 url: url
             )
-            if #available(macOS 15.5, *) {
-                tab.performMainFrameNavigationAfterHydrationIfNeeded(
-                    on: newWebView
-                ) { resolvedWebView in
-                    resolvedWebView.load(URLRequest(url: url))
+            let performLoad = { [weak tab, weak newWebView] in
+                guard let tab, let newWebView else { return }
+                if #available(macOS 15.5, *) {
+                    tab.performMainFrameNavigationAfterHydrationIfNeeded(
+                        on: newWebView
+                    ) { resolvedWebView in
+                        guard !resolvedWebView.isLoading, resolvedWebView.url == nil else { return }
+                        resolvedWebView.load(URLRequest(url: url))
+                    }
+                } else {
+                    tab.performMainFrameNavigation(
+                        on: newWebView
+                    ) { resolvedWebView in
+                        guard !resolvedWebView.isLoading, resolvedWebView.url == nil else { return }
+                        resolvedWebView.load(URLRequest(url: url))
+                    }
+                }
+            }
+
+            if let controller = newWebView.configuration.userContentController as? UserContentController {
+                Task { @MainActor in
+                    await controller.awaitContentBlockingAssetsInstalled()
+                    performLoad()
                 }
             } else {
-                tab.performMainFrameNavigation(
-                    on: newWebView
-                ) { resolvedWebView in
-                    resolvedWebView.load(URLRequest(url: url))
-                }
+                performLoad()
             }
         }
         newWebView.sumiSetAudioMuted(tab.audioState.isMuted)
@@ -1956,29 +1974,22 @@ class WebViewCoordinator {
         copying sourceWebView: WKWebView?
     ) -> WKWebViewConfiguration {
         let resolvedProfile = tab.resolveProfile()
-        let reusableSourceWebView = sourceWebView
         let configuration: WKWebViewConfiguration
 
         if let profile = resolvedProfile {
-            if let reusableSourceWebView {
-                configuration = BrowserConfiguration.shared.isolatedWebViewConfigurationCopy(
-                    from: reusableSourceWebView.configuration,
-                    websiteDataStore: profile.dataStore
-                )
-            } else {
-                configuration = BrowserConfiguration.shared.cacheOptimizedWebViewConfiguration(
-                    for: profile
-                )
-            }
-        } else if let reusableSourceWebView {
-            configuration = BrowserConfiguration.shared.isolatedWebViewConfigurationCopy(
-                from: reusableSourceWebView.configuration,
-                websiteDataStore: reusableSourceWebView.configuration.websiteDataStore
+            configuration = BrowserConfiguration.shared.normalTabWebViewConfiguration(
+                for: profile,
+                url: tab.url,
+                additionalUserScripts: additionalUserScriptsForNormalTab(tab)
+            )
+        } else if let sourceWebView {
+            configuration = BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
+                from: sourceWebView.configuration,
+                surface: .peek
             )
         } else {
-            configuration = BrowserConfiguration.shared.isolatedWebViewConfigurationCopy(
-                from: BrowserConfiguration.shared.webViewConfiguration,
-                websiteDataStore: BrowserConfiguration.shared.webViewConfiguration.websiteDataStore
+            configuration = BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
+                surface: .peek
             )
         }
 
@@ -1987,6 +1998,10 @@ class WebViewCoordinator {
             profile: resolvedProfile
         )
         return configuration
+    }
+
+    private func additionalUserScriptsForNormalTab(_ tab: Tab) -> [WKUserScript] {
+        tab.browserManager?.extensionManager.normalTabAdditionalUserScripts() ?? []
     }
 
     private func prepareInitialExtensionNavigation(

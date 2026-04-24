@@ -348,6 +348,11 @@ final class ExtensionManager: NSObject, ObservableObject {
         script.source.contains(externallyConnectablePageBridgeMarker)
     }
 
+    func normalTabAdditionalUserScripts() -> [WKUserScript] {
+        browserConfiguration.webViewConfiguration.userContentController.userScripts
+            .filter(Self.isManagedExternallyConnectablePageBridgeScript)
+    }
+
     static var isExternallyConnectableBridgeDebugLoggingEnabled: Bool {
         RuntimeDiagnostics.isVerboseEnabled
             || RuntimeDiagnostics.debugDefaultBool(
