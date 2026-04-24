@@ -109,6 +109,10 @@ final class TabWebViewRuntime {
     var existingWebView: WKWebView?
     var webViewConfigurationOverride: WKWebViewConfiguration?
     var primaryWindowId: UUID?
+    var isSuspended: Bool = false
+    var lastSuspendedURL: URL?
+    var lastSelectedAt: Date?
+    var isSuspensionRestoreInProgress: Bool = false
     var profileAwaitCancellable: AnyCancellable?
     var resolvedFaviconCacheKey: String?
     var faviconsTabExtension: FaviconsTabExtension?

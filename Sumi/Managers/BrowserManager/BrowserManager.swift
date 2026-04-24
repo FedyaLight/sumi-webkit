@@ -198,6 +198,7 @@ class BrowserManager: ObservableObject {
         return manager
     }
     var compositorManager: TabCompositorManager
+    let tabSuspensionService: TabSuspensionService
     var splitManager: SplitViewManager
     var workspaceThemeCoordinator: WorkspaceThemeCoordinator
     var findManager: FindManager
@@ -318,12 +319,16 @@ class BrowserManager: ObservableObject {
         self.lastSessionWindowsStore = LastSessionWindowsStore()
         self.startupLastSessionWindowSnapshots = self.lastSessionWindowsStore.snapshots
         self.compositorManager = TabCompositorManager()
+        self.tabSuspensionService = TabSuspensionService(
+            memoryMonitor: SumiMemoryPressureMonitor()
+        )
         self.splitManager = SplitViewManager()
         self.workspaceThemeCoordinator = WorkspaceThemeCoordinator()
         self.findManager = FindManager()
 
         // Phase 2: wire dependencies and perform side effects (safe to use self)
         self.compositorManager.browserManager = self
+        self.tabSuspensionService.attach(browserManager: self)
         self.splitManager.browserManager = self
         self.splitManager.windowRegistry = self.windowRegistry
         // Note: settingsManager will be injected later, so we skip initialization here
@@ -737,19 +742,8 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState?
     ) {
         guard tab.requiresPrimaryWebView else { return }
-
-        if let windowState,
-           let webViewCoordinator
-        {
-            _ = webViewCoordinator.getOrCreateWebView(
-                for: tab,
-                in: windowState.id
-            )
-        } else {
-            tab.loadWebViewIfNeeded()
-        }
-
-        compositorManager.markTabAccessed(tab.id)
+        _ = windowState
+        // Background tabs stay data-only; selection is the lazy restore boundary.
     }
 
     func resolvedTabOpenSpace(for context: TabOpenContext) -> Space? {
@@ -1181,6 +1175,7 @@ class BrowserManager: ObservableObject {
         }
 
         SumiNativeNowPlayingController.shared.handleTabActivated(tab.id)
+        tab.noteSuspensionAccess()
         dismissCommandPaletteAfterSelection(in: windowState)
         splitManager.updateActiveSide(for: tab.id, in: windowState.id)
 

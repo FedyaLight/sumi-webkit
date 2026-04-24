@@ -87,11 +87,6 @@ struct SumiApp: App {
             browserManager: browserManager
         )
 
-        // Configure managers that depend on settings
-        browserManager.compositorManager.setUnloadTimeout(
-            settingsManager.tabUnloadTimeout
-        )
-
         // Initialize keyboard shortcut manager
         keyboardShortcutManager.setBrowserManager(browserManager)
 
