@@ -14,7 +14,6 @@ struct URLBarBookmarkEditorView: View {
     @State private var title: String
     @State private var folderID: String
     @State private var errorMessage: String?
-    @FocusState private var isNameFocused: Bool
 
     init(
         state: SumiBookmarkEditorState,
@@ -41,91 +40,101 @@ struct URLBarBookmarkEditorView: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 32) {
-            faviconPreview
+        VStack(alignment: .leading, spacing: 18) {
+            header
+            formFields
 
-            VStack(alignment: .leading, spacing: 22) {
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.red.opacity(0.92))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            footer
+        }
+        .padding(.horizontal, 22)
+        .padding(.top, 22)
+        .padding(.bottom, 18)
+        .background(tokens.commandPaletteBackground)
+    }
+
+    private var header: some View {
+        HStack(alignment: .center, spacing: 12) {
+            faviconBadge
+
+            VStack(alignment: .leading, spacing: 3) {
                 Text(editorTitle)
-                    .font(.system(size: 15.5, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(tokens.primaryText)
                     .lineLimit(1)
 
-                formFields
-
-                if let errorMessage {
-                    Text(errorMessage)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.red.opacity(0.92))
-                        .fixedSize(horizontal: false, vertical: true)
+                if let pageSubtitle {
+                    Text(pageSubtitle)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(tokens.secondaryText)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
-
-                footer
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.leading, 34)
-        .padding(.trailing, 34)
-        .padding(.top, 34)
-        .padding(.bottom, 36)
-        .background(tokens.commandPaletteBackground)
-        .onAppear {
-            isNameFocused = true
+
+            Spacer(minLength: 0)
         }
     }
 
-    private var faviconPreview: some View {
+    private var faviconBadge: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(nsColor: .textBackgroundColor))
-                .shadow(color: Color.black.opacity(0.06), radius: 1, x: 0, y: 1)
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(tokens.commandPaletteChipBackground)
                 .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(tokens.separator.opacity(0.55), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .stroke(tokens.separator.opacity(0.5), lineWidth: 1)
                 }
 
-            Group {
-                if let currentTab {
-                    currentTab.favicon
-                        .resizable()
-                        .scaledToFit()
-                } else {
-                    Image(systemName: "globe")
-                        .resizable()
-                        .scaledToFit()
-                        .foregroundStyle(tokens.secondaryText)
-                }
-            }
-            .frame(width: 34, height: 34)
+            faviconImage
+                .frame(width: 23, height: 23)
         }
-        .frame(width: 102, height: 102)
+        .frame(width: 44, height: 44)
+    }
+
+    @ViewBuilder
+    private var faviconImage: some View {
+        if let currentTab {
+            currentTab.favicon
+                .resizable()
+                .scaledToFit()
+        } else {
+            Image(systemName: "globe")
+                .resizable()
+                .scaledToFit()
+                .foregroundStyle(tokens.secondaryText)
+        }
     }
 
     private var formFields: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            formRow(title: "Name") {
+        VStack(alignment: .leading, spacing: 14) {
+            fieldGroup(title: "Name") {
                 TextField("", text: $title)
                     .modifier(URLBarBookmarkTextFieldChrome())
-                    .focused($isNameFocused)
                     .onSubmit(saveAndClose)
             }
 
             if !folders.isEmpty {
-                formRow(title: "Location") {
+                fieldGroup(title: "Location") {
                     folderMenu
                 }
             }
         }
     }
 
-    private func formRow<Content: View>(
+    private func fieldGroup<Content: View>(
         title: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        HStack(alignment: .center, spacing: 16) {
+        VStack(alignment: .leading, spacing: 7) {
             Text(title)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(tokens.primaryText)
-                .frame(width: 72, alignment: .leading)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(tokens.secondaryText)
 
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -141,9 +150,9 @@ struct URLBarBookmarkEditorView: View {
             }
         } label: {
             HStack(spacing: 9) {
-                Image(systemName: "star.square.fill")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(tokens.primaryText)
+                Image(systemName: "bookmark.fill")
+                    .font(.system(size: 13.5, weight: .semibold))
+                    .foregroundStyle(tokens.secondaryText)
 
                 Text(selectedFolderTitle)
                     .font(.system(size: 13.5, weight: .semibold))
@@ -158,22 +167,24 @@ struct URLBarBookmarkEditorView: View {
                     .foregroundStyle(tokens.secondaryText)
             }
             .padding(.horizontal, 12)
-            .frame(height: 32)
+            .frame(height: 38)
             .background(tokens.fieldBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
         .buttonStyle(.plain)
         .menuStyle(.button)
     }
 
     private var footer: some View {
-        HStack(spacing: 18) {
-            Spacer(minLength: 0)
-
-            Button("Remove bookmark") {
-                removeBookmark()
+        HStack(spacing: 10) {
+            if state.mode == .edit {
+                Button("Remove") {
+                    removeBookmark()
+                }
+                .buttonStyle(URLBarBookmarkFooterButtonStyle(role: .destructive))
             }
-            .buttonStyle(URLBarBookmarkFooterButtonStyle(role: .destructive))
+
+            Spacer(minLength: 0)
 
             Button(state.mode.primaryActionTitle) {
                 saveAndClose()
@@ -181,16 +192,21 @@ struct URLBarBookmarkEditorView: View {
             .buttonStyle(URLBarBookmarkFooterButtonStyle(role: .primary))
             .disabled(!canSave)
         }
-        .padding(.top, 4)
+        .padding(.top, 2)
     }
 
     private var editorTitle: String {
         switch state.mode {
-        case .added:
-            return "Bookmark added"
+        case .add:
+            return "Add bookmark"
         case .edit:
             return "Edit bookmark"
         }
+    }
+
+    private var pageSubtitle: String? {
+        let url = currentTab?.url ?? state.pageURL
+        return url.host(percentEncoded: false) ?? url.absoluteString
     }
 
     private var selectedFolderTitle: String {
@@ -216,12 +232,24 @@ struct URLBarBookmarkEditorView: View {
         }
 
         do {
-            _ = try browserManager.bookmarkManager.updateBookmark(
-                id: state.bookmarkID,
-                title: title,
-                url: url,
-                folderID: folderID
-            )
+            switch state.mode {
+            case .add:
+                _ = try browserManager.bookmarkManager.createBookmark(
+                    url: url,
+                    title: title,
+                    folderID: folderID
+                )
+            case .edit:
+                guard let bookmarkID = state.bookmarkID else {
+                    throw SumiBookmarkError.missingBookmark
+                }
+                _ = try browserManager.bookmarkManager.updateBookmark(
+                    id: bookmarkID,
+                    title: title,
+                    url: url,
+                    folderID: folderID
+                )
+            }
             errorMessage = nil
             onDidMutate()
             onClose()
@@ -232,7 +260,10 @@ struct URLBarBookmarkEditorView: View {
 
     private func removeBookmark() {
         do {
-            try browserManager.bookmarkManager.removeBookmark(id: state.bookmarkID)
+            guard let bookmarkID = state.bookmarkID else {
+                throw SumiBookmarkError.missingBookmark
+            }
+            try browserManager.bookmarkManager.removeBookmark(id: bookmarkID)
             errorMessage = nil
             onDidMutate()
             onClose()
@@ -265,13 +296,13 @@ private struct URLBarBookmarkTextFieldChrome: ViewModifier {
             .font(.system(size: 13.5))
             .foregroundStyle(tokens.primaryText)
             .textFieldStyle(.plain)
-            .padding(.horizontal, 9)
-            .frame(height: 32)
+            .padding(.horizontal, 11)
+            .frame(height: 38)
             .background(tokens.fieldBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .stroke(tokens.separator.opacity(0.85), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .stroke(tokens.separator.opacity(0.6), lineWidth: 1)
             }
             .opacity(isEnabled ? 1 : 0.5)
     }
@@ -299,9 +330,9 @@ private struct URLBarBookmarkFooterButtonStyle: ButtonStyle {
             .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(foregroundColor)
             .padding(.horizontal, role == .primary ? 18 : 8)
-            .frame(height: 32)
+            .frame(height: 34)
             .background(backgroundColor(isPressed: configuration.isPressed))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .opacity(isEnabled ? 1 : 0.45)
             .scaleEffect(configuration.isPressed && isEnabled ? 0.98 : 1)
             .onHover { isHovering = $0 }
@@ -312,7 +343,7 @@ private struct URLBarBookmarkFooterButtonStyle: ButtonStyle {
         case .primary:
             return tokens.buttonPrimaryText
         case .destructive:
-            return tokens.primaryText
+            return tokens.secondaryText
         }
     }
 

@@ -104,13 +104,13 @@ struct SumiBookmarkAllTabsResult: Equatable, Sendable {
 }
 
 enum SumiBookmarkEditorMode: Equatable, Sendable {
-    case added
+    case add
     case edit
 
     var title: String {
         switch self {
-        case .added:
-            return "Bookmark Added"
+        case .add:
+            return "Add Bookmark"
         case .edit:
             return "Edit Bookmark"
         }
@@ -118,8 +118,8 @@ enum SumiBookmarkEditorMode: Equatable, Sendable {
 
     var primaryActionTitle: String {
         switch self {
-        case .added:
-            return "Done"
+        case .add:
+            return "Add"
         case .edit:
             return "Save"
         }
@@ -128,7 +128,7 @@ enum SumiBookmarkEditorMode: Equatable, Sendable {
 
 struct SumiBookmarkEditorState: Equatable, Identifiable, Sendable {
     let mode: SumiBookmarkEditorMode
-    let bookmarkID: String
+    let bookmarkID: String?
     let tabID: UUID
     let pageURL: URL
     var title: String
@@ -136,7 +136,7 @@ struct SumiBookmarkEditorState: Equatable, Identifiable, Sendable {
     var folderID: String?
 
     var id: String {
-        "\(bookmarkID)-\(mode)-\(pageURL.absoluteString)"
+        "\(bookmarkID ?? "draft")-\(mode)-\(pageURL.absoluteString)"
     }
 }
 

@@ -84,21 +84,30 @@ final class SumiBookmarkManagerTests: XCTestCase {
         }
     }
 
-    func testEditorStateCreatesOnceThenOpensEditMode() throws {
+    func testEditorStateForNewPageIsDraftUntilSaved() throws {
         let manager = makeManager()
         let tab = Tab(
             url: try XCTUnwrap(URL(string: "https://editor.example/path")),
             name: "Editor Page"
         )
 
-        let addedState = try manager.editorState(for: tab)
+        let addState = try manager.editorState(for: tab)
+
+        XCTAssertEqual(addState.mode, .add)
+        XCTAssertNil(addState.bookmarkID)
+        XCTAssertEqual(addState.title, "Editor Page")
+        XCTAssertEqual(addState.urlString, "https://editor.example/path")
+        XCTAssertTrue(manager.bookmarks().isEmpty)
+
+        let savedBookmark = try manager.createBookmark(
+            url: tab.url,
+            title: addState.title,
+            folderID: addState.folderID
+        )
         let editState = try manager.editorState(for: tab)
 
-        XCTAssertEqual(addedState.mode, .added)
-        XCTAssertEqual(addedState.title, "Editor Page")
         XCTAssertEqual(editState.mode, .edit)
-        XCTAssertEqual(editState.bookmarkID, addedState.bookmarkID)
-        XCTAssertEqual(manager.bookmarks().count, 1)
+        XCTAssertEqual(editState.bookmarkID, savedBookmark.id)
     }
 
     func testUnsupportedURLCannotBeBookmarked() throws {
