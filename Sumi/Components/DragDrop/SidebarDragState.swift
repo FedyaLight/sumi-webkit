@@ -286,6 +286,12 @@ final class SidebarDragState: ObservableObject {
         setGeometrySnapshot(snapshot(from: activeGeometryStore))
     }
 
+    #if DEBUG
+    func publishGeometrySnapshotForTesting() {
+        flushScheduledGeometrySnapshotPublish()
+    }
+    #endif
+
     private func publishActiveGeometryStore() {
         scheduleGeometrySnapshotPublish()
     }

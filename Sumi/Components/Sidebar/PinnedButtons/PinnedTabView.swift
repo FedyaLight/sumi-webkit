@@ -32,6 +32,8 @@ struct PinnedTabView: View {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @State private var isTileHovered = false
+    @State private var isActionHovered = false
 
     var body: some View {
         let pinnedTabsConfiguration: PinnedTabsConfiguration = sumiSettings.pinnedTabsLook
@@ -56,7 +58,7 @@ struct PinnedTabView: View {
                                 .frame(width: 22, height: 22)
                                 .background(
                                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                        .fill(backgroundColor.opacity(0.92))
+                                        .fill(backgroundColor.opacity(displayIsActionHovering ? 1 : 0.92))
                                 )
                         }
                         .buttonStyle(.plain)
@@ -64,6 +66,10 @@ struct PinnedTabView: View {
                         .allowsHitTesting(shouldShowActionButton && !freezesHoverState)
                         .accessibilityHidden(!shouldShowActionButton)
                         .accessibilityIdentifier(actionAccessibilityID ?? "pinned-tile-action")
+                        .sidebarDDGHover(
+                            $isActionHovered,
+                            isEnabled: shouldShowActionButton && isAppKitInteractionEnabled
+                        )
                         .sidebarAppKitPrimaryAction(
                             isEnabled: shouldShowActionButton && !freezesHoverState,
                             isInteractionEnabled: isAppKitInteractionEnabled,
@@ -100,11 +106,7 @@ struct PinnedTabView: View {
         .onTapGesture(perform: action)
         .accessibilityIdentifier(accessibilityID ?? "pinned-tile")
         .accessibilityValue(presentationState.isSelected ? "selected" : "not selected")
-        .sidebarHoverTarget(
-            tileHoverTarget,
-            isEnabled: isAppKitInteractionEnabled,
-            animation: .easeInOut(duration: 0.12)
-        )
+        .sidebarDDGHover($isTileHovered, isEnabled: isAppKitInteractionEnabled)
         .sidebarAppKitContextMenu(
             isInteractionEnabled: isAppKitInteractionEnabled,
             dragSource: dragSourceConfiguration,
@@ -122,14 +124,7 @@ struct PinnedTabView: View {
     
     //MARK: - Colors
     private var backgroundColor: Color {
-        let state: TileBackgroundState
-        if presentationState.isSelected {
-            state = .active
-        } else if displayIsHovered {
-            state = .hover
-        } else {
-            state = .idle
-        }
+        let state = backgroundState
         switch state {
         case .active:
             return tokens.pinnedActiveBackground
@@ -137,6 +132,20 @@ struct PinnedTabView: View {
             return tokens.pinnedHoverBackground
         case .idle:
             return tokens.pinnedIdleBackground
+        }
+    }
+
+    private var backgroundState: TileBackgroundState {
+        switch SidebarHoverChrome.visualState(
+            isSelected: presentationState.isSelected,
+            isHovered: displayIsHovered
+        ) {
+        case .selected:
+            return .active
+        case .hovered:
+            return .hover
+        case .idle:
+            return .idle
         }
     }
     private var tokens: ChromeThemeTokens {
@@ -156,13 +165,11 @@ struct PinnedTabView: View {
     }
 
     private var displayIsHovered: Bool {
-        windowState.sidebarInteractionState.isSidebarHoverActive(tileHoverTarget)
-            && !freezesHoverState
+        SidebarHoverChrome.displayHover(isTileHovered, freezesHoverState: freezesHoverState)
     }
 
-    private var tileHoverTarget: SidebarHoverTarget {
-        let fallbackID = dragSourceConfiguration?.item.tabId.uuidString ?? "pinned-tile"
-        return .row(accessibilityID ?? "pinned-tile-\(fallbackID)")
+    private var displayIsActionHovering: Bool {
+        SidebarHoverChrome.displayHover(isActionHovered, freezesHoverState: freezesHoverState)
     }
 
     private var actionAccessibilityID: String? {
@@ -362,6 +369,7 @@ private struct PinnedTileAudioButton: View {
     let accessibilityID: String?
     let isAppKitInteractionEnabled: Bool
     @Environment(BrowserWindowState.self) private var windowState
+    @State private var isHovering = false
 
     var body: some View {
         Group {
@@ -380,11 +388,7 @@ private struct PinnedTileAudioButton: View {
                         .id(tab.audioState.isMuted)
                 }
                 .buttonStyle(.plain)
-                .sidebarHoverTarget(
-                    hoverTarget,
-                    isEnabled: isAppKitInteractionEnabled,
-                    animation: .easeInOut(duration: 0.1)
-                )
+                .sidebarDDGHover($isHovering, isEnabled: isAppKitInteractionEnabled)
                 .accessibilityIdentifier(accessibilityID ?? "pinned-tile-audio")
                 .sidebarAppKitPrimaryAction(
                     isEnabled: !windowState.sidebarInteractionState.freezesSidebarHoverState,
@@ -398,12 +402,10 @@ private struct PinnedTileAudioButton: View {
     }
 
     private var displayIsHovering: Bool {
-        windowState.sidebarInteractionState.isSidebarHoverActive(hoverTarget)
-            && !windowState.sidebarInteractionState.freezesSidebarHoverState
-    }
-
-    private var hoverTarget: SidebarHoverTarget {
-        .action(accessibilityID ?? "pinned-tile-audio-\(tab.id.uuidString)")
+        SidebarHoverChrome.displayHover(
+            isHovering,
+            freezesHoverState: windowState.sidebarInteractionState.freezesSidebarHoverState
+        )
     }
 }
 

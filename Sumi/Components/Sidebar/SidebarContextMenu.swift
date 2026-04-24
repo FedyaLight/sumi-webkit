@@ -396,48 +396,10 @@ private final class SidebarContextMenuActionTarget: NSObject {
     }
 }
 
-enum SidebarHoverScope: Hashable {
-    case row
-    case action
-    case spaceSwitcher
-    case shellControl
-}
-
-struct SidebarHoverTarget: Hashable, CustomStringConvertible {
-    let scope: SidebarHoverScope
-    let id: String
-
-    init(scope: SidebarHoverScope, id: String) {
-        self.scope = scope
-        self.id = id
-    }
-
-    static func row(_ id: String) -> SidebarHoverTarget {
-        SidebarHoverTarget(scope: .row, id: id)
-    }
-
-    static func action(_ id: String) -> SidebarHoverTarget {
-        SidebarHoverTarget(scope: .action, id: id)
-    }
-
-    static func spaceSwitcher(_ id: String) -> SidebarHoverTarget {
-        SidebarHoverTarget(scope: .spaceSwitcher, id: id)
-    }
-
-    static func shellControl(_ id: String) -> SidebarHoverTarget {
-        SidebarHoverTarget(scope: .shellControl, id: id)
-    }
-
-    var description: String {
-        "\(scope):\(id)"
-    }
-}
-
 @MainActor
 @Observable
 final class SidebarInteractionState {
     private var activeSessionTokenIDsByKind: [SidebarTransientUIKind: Set<UUID>] = [:]
-    private var activeSidebarHoverTargets: Set<SidebarHoverTarget> = []
     private var dragTokenID: UUID?
 
     var isContextMenuPresented: Bool {
@@ -462,7 +424,6 @@ final class SidebarInteractionState {
     }
 
     func beginSession(kind: SidebarTransientUIKind, tokenID: UUID) {
-        clearSidebarHover(reason: "begin:\(kind.rawValue)")
         var tokens = activeSessionTokenIDsByKind[kind] ?? []
         tokens.insert(tokenID)
         activeSessionTokenIDsByKind[kind] = tokens
@@ -499,63 +460,6 @@ final class SidebarInteractionState {
         {
             self.dragTokenID = nil
         }
-        if !allowsSidebarHoverActivation {
-            clearSidebarHover(reason: "reconcile:\(activeKindsDescription)")
-        }
-    }
-
-    func setSidebarHover(_ target: SidebarHoverTarget, active: Bool) {
-        if active {
-            guard allowsSidebarHoverActivation else {
-                clearSidebarHover(reason: "blocked:\(target.description)")
-                return
-            }
-            activateSidebarHoverTarget(target)
-            return
-        }
-
-        deactivateSidebarHoverTarget(target)
-    }
-
-    func clearSidebarHover(reason: String) {
-        guard !activeSidebarHoverTargets.isEmpty else { return }
-        activeSidebarHoverTargets.removeAll()
-        RuntimeDiagnostics.emit(
-            "Sidebar hover cleared reason=\(reason)"
-        )
-    }
-
-    func isSidebarHoverActive(_ target: SidebarHoverTarget) -> Bool {
-        activeSidebarHoverTargets.contains(target)
-    }
-
-    private var allowsSidebarHoverActivation: Bool {
-        activeKinds.isEmpty
-    }
-
-    private func activateSidebarHoverTarget(_ target: SidebarHoverTarget) {
-        var nextTargets = activeSidebarHoverTargets
-        switch target.scope {
-        case .row:
-            nextTargets = Set(nextTargets.filter { $0.scope != .row && $0.scope != .action })
-        case .action:
-            nextTargets = Set(nextTargets.filter { $0.scope != .action })
-        case .spaceSwitcher:
-            nextTargets = Set(nextTargets.filter { $0.scope != .spaceSwitcher })
-        case .shellControl:
-            nextTargets = Set(nextTargets.filter { $0.scope != .shellControl })
-        }
-        nextTargets.insert(target)
-        activeSidebarHoverTargets = nextTargets
-    }
-
-    private func deactivateSidebarHoverTarget(_ target: SidebarHoverTarget) {
-        var nextTargets = activeSidebarHoverTargets
-        nextTargets.remove(target)
-        if target.scope == .row {
-            nextTargets = Set(nextTargets.filter { $0.scope != .action })
-        }
-        activeSidebarHoverTargets = nextTargets
     }
 
     private var activeKinds: Set<SidebarTransientUIKind> {
@@ -2038,78 +1942,7 @@ private struct SumiAppKitContextMenuModifier: ViewModifier {
     }
 }
 
-private struct SidebarHoverTargetModifier: ViewModifier {
-    @Environment(BrowserWindowState.self) private var windowState
-    @ObservedObject private var dragState = SidebarDragState.shared
-
-    let target: SidebarHoverTarget
-    let isEnabled: Bool
-    let animation: Animation?
-
-    func body(content: Content) -> some View {
-        content
-            .onHover { hovering in
-                setHover(hovering)
-            }
-            .onDisappear {
-                clearHover(target)
-            }
-            .onChange(of: target) { oldTarget, _ in
-                clearHover(oldTarget)
-            }
-            .onChange(of: isEnabled) { _, enabled in
-                if !enabled {
-                    clearHover(target)
-                }
-            }
-            .onChange(of: dragState.isDragging) { _, isDragging in
-                if isDragging {
-                    clearHover(target)
-                }
-            }
-            .onChange(of: windowState.sidebarInteractionState.freezesSidebarHoverState) { _, freezes in
-                if freezes {
-                    clearHover(target)
-                }
-            }
-    }
-
-    private func setHover(_ hovering: Bool) {
-        let active = hovering && isEnabled && !dragState.isDragging
-        applyHover(target, active: active)
-    }
-
-    private func clearHover(_ target: SidebarHoverTarget) {
-        applyHover(target, active: false)
-    }
-
-    private func applyHover(_ target: SidebarHoverTarget, active: Bool) {
-        let update = {
-            windowState.sidebarInteractionState.setSidebarHover(target, active: active)
-        }
-        if let animation {
-            withAnimation(animation, update)
-        } else {
-            update()
-        }
-    }
-}
-
 extension View {
-    func sidebarHoverTarget(
-        _ target: SidebarHoverTarget,
-        isEnabled: Bool = true,
-        animation: Animation? = nil
-    ) -> some View {
-        modifier(
-            SidebarHoverTargetModifier(
-                target: target,
-                isEnabled: isEnabled,
-                animation: animation
-            )
-        )
-    }
-
     func sidebarAppKitContextMenu(
         isEnabled: Bool = true,
         isInteractionEnabled: Bool = true,

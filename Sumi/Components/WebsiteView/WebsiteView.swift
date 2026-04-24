@@ -844,6 +844,14 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
 
 // MARK: - Container View
 
+private enum WebColumnPaintlessChrome {
+    static func configure(_ view: NSView) {
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.clear.cgColor
+        view.layer?.isOpaque = false
+    }
+}
+
 private class ContainerView: NSView {
     enum PaneLayout: Equatable {
         case single
@@ -858,6 +866,10 @@ private class ContainerView: NSView {
 
     init(browserManager: BrowserManager, splitManager: SplitViewManager, windowId: UUID) {
         super.init(frame: .zero)
+        WebColumnPaintlessChrome.configure(self)
+        WebColumnPaintlessChrome.configure(singlePaneView)
+        WebColumnPaintlessChrome.configure(leftPaneView)
+        WebColumnPaintlessChrome.configure(rightPaneView)
 
         singlePaneView.identifier = CompositorPaneDestination.single.viewIdentifier
         leftPaneView.identifier = CompositorPaneDestination.left.viewIdentifier
@@ -880,11 +892,18 @@ private class ContainerView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override var isOpaque: Bool { true }
+    override var isOpaque: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.windowBackgroundColor.setFill()
-        dirtyRect.fill()
+        // Paintless AppKit shell. SwiftUI WindowBackground owns browser chrome fill.
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        WebColumnPaintlessChrome.configure(self)
+        WebColumnPaintlessChrome.configure(singlePaneView)
+        WebColumnPaintlessChrome.configure(leftPaneView)
+        WebColumnPaintlessChrome.configure(rightPaneView)
     }
 
     override func layout() {
@@ -1023,6 +1042,7 @@ private class ContainerView: NSView {
 private final class PaneContainerView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        WebColumnPaintlessChrome.configure(self)
     }
 
     @available(*, unavailable)
@@ -1030,10 +1050,14 @@ private final class PaneContainerView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override var isOpaque: Bool { true }
+    override var isOpaque: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.windowBackgroundColor.setFill()
-        dirtyRect.fill()
+        // Paintless AppKit pane. The resolved SwiftUI window background shows through gaps.
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        WebColumnPaintlessChrome.configure(self)
     }
 }

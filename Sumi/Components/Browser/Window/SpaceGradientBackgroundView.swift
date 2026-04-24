@@ -6,30 +6,48 @@ import CoreGraphics
 // Renders the current space's gradient as a bottom background layer.
 // Zen reference: workspace tint is a small fraction of a near-neutral base (e.g. `color-mix(..., rgb(24,24,24) 96%, var(--zen-primary-color))` in zen-glance.css, urlbar `hsl(0,0%,6.7%)` mix in zen-omnibox.css). We keep `chromeDarknessProgress` as the driver so sidebar text contrast stays aligned with `ThemeContrastResolver`.
 struct SpaceGradientBackgroundView: View {
-    @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.sumiSettings) private var sumiSettings
 
     private var gradient: SpaceGradient {
         themeContext.gradient
+    }
+
+    private var chromeTokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
     }
 
     private var chromeDarknessProgress: Double {
         themeContext.chromeDarknessProgress
     }
 
+    private var sourceGradient: SpaceGradient {
+        themeContext.sourceWorkspaceTheme.gradient
+    }
+
+    private var targetGradient: SpaceGradient {
+        themeContext.targetWorkspaceTheme.gradient
+    }
+
+    private var transitionProgress: Double {
+        min(max(themeContext.transitionProgress, 0), 1)
+    }
+
+    private var usesResolvedTransitionLayers: Bool {
+        themeContext.isInteractiveTransition
+            || !themeContext.sourceWorkspaceTheme.visuallyEquals(themeContext.targetWorkspaceTheme)
+    }
+
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                Color(.windowBackgroundColor).opacity(baseBackgroundOpacity(for: gradient))
+                chromeTokens.windowBackground.opacity(baseBackgroundOpacity(for: gradient))
 
-                if let previousTheme = windowState.previousWorkspaceTheme,
-                   let targetTheme = windowState.targetWorkspaceTheme,
-                   windowState.isThemeTransitioning
-                {
-                    gradientVisualLayer(for: previousTheme.gradient, size: proxy.size)
-                        .opacity(max(0, 1 - windowState.themeTransitionProgress))
-                    gradientVisualLayer(for: targetTheme.gradient, size: proxy.size)
-                        .opacity(min(1, windowState.themeTransitionProgress))
+                if usesResolvedTransitionLayers {
+                    gradientVisualLayer(for: sourceGradient, size: proxy.size)
+                        .opacity(1 - transitionProgress)
+                    gradientVisualLayer(for: targetGradient, size: proxy.size)
+                        .opacity(transitionProgress)
                 } else {
                     gradientVisualLayer(for: gradient, size: proxy.size)
                 }

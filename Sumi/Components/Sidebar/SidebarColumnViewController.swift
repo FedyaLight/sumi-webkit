@@ -8,6 +8,14 @@ private final class SidebarColumnContainerView: NSView {
     weak var hostedSidebarView: NSView?
     weak var contextMenuController: SidebarContextMenuController?
 
+    override var isOpaque: Bool {
+        false
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        // Paintless AppKit shell. SwiftUI resolved chrome owns sidebar background.
+    }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
     }
@@ -37,7 +45,53 @@ private final class SidebarColumnContainerView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        SidebarColumnPaintlessChrome.configure(self)
         onWindowChanged?(window)
+    }
+}
+
+private enum SidebarColumnPaintlessChrome {
+    static func configure(_ view: NSView) {
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.clear.cgColor
+        view.layer?.isOpaque = false
+    }
+}
+
+private final class SidebarHostingView<Content: View>: NSHostingView<Content> {
+    override var isOpaque: Bool {
+        false
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        SidebarColumnPaintlessChrome.configure(self)
+    }
+}
+
+private final class SidebarHostingController<Content: View>: NSViewController {
+    var rootView: Content {
+        didSet {
+            hostingView.rootView = rootView
+        }
+    }
+
+    private let hostingView: SidebarHostingView<Content>
+
+    init(rootView: Content) {
+        self.rootView = rootView
+        self.hostingView = SidebarHostingView(rootView: rootView)
+        super.init(nibName: nil, bundle: nil)
+        SidebarColumnPaintlessChrome.configure(hostingView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func loadView() {
+        view = hostingView
     }
 }
 
@@ -350,6 +404,7 @@ final class SidebarColumnViewController: NSViewController {
                 self?.syncRecoveryAnchor(window: window)
             }
         }
+        SidebarColumnPaintlessChrome.configure(containerView)
         view = containerView
         view.translatesAutoresizingMaskIntoConstraints = true
     }
@@ -362,13 +417,15 @@ final class SidebarColumnViewController: NSViewController {
         let previousHostedSidebarView = hostingController?.view
         (view as? SidebarColumnContainerView)?.contextMenuController = contextMenuController
 
-        if let hostingController = hostingController as? NSHostingController<Content> {
+        if let hostingController = hostingController as? SidebarHostingController<Content> {
             hostingController.rootView = root
+            SidebarColumnPaintlessChrome.configure(hostingController.view)
             widthConstraint?.constant = width
         } else {
             removeHostingControllerIfNeeded()
 
-            let nextHostingController = NSHostingController(rootView: root)
+            let nextHostingController = SidebarHostingController(rootView: root)
+            SidebarColumnPaintlessChrome.configure(nextHostingController.view)
             hostingController = nextHostingController
             addChild(nextHostingController)
             view.addSubview(nextHostingController.view)

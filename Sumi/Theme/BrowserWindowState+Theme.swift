@@ -64,8 +64,15 @@ extension BrowserWindowState {
         settings: SumiSettingsService
     ) -> ResolvedThemeContext {
         let resolvedWorkspaceTheme = workspaceTheme
-        let sourceThemeValue = previousWorkspaceTheme ?? resolvedWorkspaceTheme
-        let targetThemeValue = targetWorkspaceTheme ?? resolvedWorkspaceTheme
+        let isTransitioning = windowThemeState.isTransitioning
+        let sourceThemeValue = isTransitioning
+            ? previousWorkspaceTheme ?? resolvedWorkspaceTheme
+            : resolvedWorkspaceTheme
+        let targetThemeValue = isTransitioning
+            ? targetWorkspaceTheme ?? resolvedWorkspaceTheme
+            : resolvedWorkspaceTheme
+        let transitionProgress = isTransitioning ? themeTransitionProgress : 1.0
+        let isInteractiveTransition = isTransitioning && isInteractiveSpaceTransition
         let resolvedChromeScheme = ThemeContrastResolver.resolvedChromeColorScheme(
             theme: resolvedWorkspaceTheme,
             globalWindowScheme: globalScheme,
@@ -93,8 +100,46 @@ extension BrowserWindowState {
             workspaceTheme: resolvedWorkspaceTheme,
             sourceWorkspaceTheme: sourceThemeValue,
             targetWorkspaceTheme: targetThemeValue,
-            isInteractiveTransition: isInteractiveSpaceTransition,
-            transitionProgress: themeTransitionProgress
+            isInteractiveTransition: isInteractiveTransition,
+            transitionProgress: transitionProgress
         )
     }
 }
+
+#if DEBUG
+struct SidebarThemeResolutionSnapshot: Equatable {
+    let workspacePrimaryHex: String
+    let sourceWorkspacePrimaryHex: String
+    let targetWorkspacePrimaryHex: String
+    let chromeColorScheme: ColorScheme
+    let sourceChromeColorScheme: ColorScheme
+    let targetChromeColorScheme: ColorScheme
+    let chromeDarknessProgress: Double
+    let transitionProgress: Double
+
+    init(context: ResolvedThemeContext) {
+        workspacePrimaryHex = context.workspaceTheme.gradient.primaryColorHex
+        sourceWorkspacePrimaryHex = context.sourceWorkspaceTheme.gradient.primaryColorHex
+        targetWorkspacePrimaryHex = context.targetWorkspaceTheme.gradient.primaryColorHex
+        chromeColorScheme = context.chromeColorScheme
+        sourceChromeColorScheme = context.sourceChromeColorScheme
+        targetChromeColorScheme = context.targetChromeColorScheme
+        chromeDarknessProgress = context.chromeDarknessProgress
+        transitionProgress = context.transitionProgress
+    }
+
+    @MainActor
+    static func make(
+        windowState: BrowserWindowState,
+        settings: SumiSettingsService,
+        globalColorScheme: ColorScheme
+    ) -> SidebarThemeResolutionSnapshot {
+        SidebarThemeResolutionSnapshot(
+            context: windowState.resolvedThemeContext(
+                global: globalColorScheme,
+                settings: settings
+            )
+        )
+    }
+}
+#endif
