@@ -109,39 +109,11 @@ struct SpaceTab: View {
                         title: tab.name,
                         font: .systemFont(ofSize: 13, weight: .medium),
                         textColor: textTab,
-                        trailingFadePadding: showsCloseButton ? 12 : 0
+                        trailingFadePadding: showsCloseButton ? SidebarRowLayout.trailingActionFadePadding : 0
                     )
                     .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                     .textSelection(.disabled) // Make text non-selectable
                 }
-
-                Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .heavy))
-                        .foregroundColor(textTab)
-                        .frame(width: 24,height: 24)
-                        .background(
-                            displayIsCloseHovering
-                                ? (isCurrentTab ? tokens.fieldBackgroundHover : tokens.fieldBackground)
-                                : Color.clear
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                }
-                .buttonStyle(PlainButtonStyle())
-                .opacity(showsCloseButton ? 1 : 0)
-                .allowsHitTesting(showsCloseButton && !freezesHoverState)
-                .accessibilityHidden(!showsCloseButton)
-                .sidebarHoverTarget(
-                    closeHoverTarget,
-                    isEnabled: showsCloseButton && isAppKitInteractionEnabled,
-                    animation: .easeInOut(duration: 0.05)
-                )
-                .accessibilityIdentifier("space-regular-tab-close-\(tab.id.uuidString)")
-                .sidebarAppKitPrimaryAction(
-                    isEnabled: showsCloseButton && !freezesHoverState,
-                    isInteractionEnabled: isAppKitInteractionEnabled,
-                    action: onClose
-                )
             }
             .padding(.leading, SidebarRowLayout.leadingInset)
             .padding(.trailing, SidebarRowLayout.trailingInset)
@@ -151,6 +123,10 @@ struct SpaceTab: View {
             .background(
                 backgroundColor
             )
+            .overlay(alignment: .trailing) {
+                closeButton
+                    .padding(.trailing, SidebarRowLayout.trailingInset)
+            }
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .onTapGesture {
@@ -246,6 +222,39 @@ struct SpaceTab: View {
 
     private var showsCloseButton: Bool {
         displayIsHovering || isCurrentTab
+    }
+
+    private var closeButton: some View {
+        Button(action: onClose) {
+            Image(systemName: "xmark")
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundColor(textTab)
+                .frame(
+                    width: SidebarRowLayout.trailingActionSize,
+                    height: SidebarRowLayout.trailingActionSize
+                )
+                .background(
+                    displayIsCloseHovering
+                        ? (isCurrentTab ? tokens.fieldBackgroundHover : tokens.fieldBackground)
+                        : Color.clear
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(PlainButtonStyle())
+        .opacity(showsCloseButton ? 1 : 0)
+        .allowsHitTesting(showsCloseButton && !freezesHoverState)
+        .accessibilityHidden(!showsCloseButton)
+        .sidebarHoverTarget(
+            closeHoverTarget,
+            isEnabled: showsCloseButton && isAppKitInteractionEnabled,
+            animation: .easeInOut(duration: 0.05)
+        )
+        .accessibilityIdentifier("space-regular-tab-close-\(tab.id.uuidString)")
+        .sidebarAppKitPrimaryAction(
+            isEnabled: showsCloseButton && !freezesHoverState,
+            isInteractionEnabled: isAppKitInteractionEnabled,
+            action: onClose
+        )
     }
 
     private var rowHoverTarget: SidebarHoverTarget {
