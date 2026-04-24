@@ -74,6 +74,7 @@ struct SumiApp: App {
         appDelegate.externalURLHandler = browserManager
         appDelegate.persistenceHandler = browserManager
         appDelegate.updateHandler = browserManager
+        appDelegate.settingsHandler = settingsManager
         appDelegate.shortcutManager = keyboardShortcutManager
         appDelegate.refreshHistoryMenu()
 

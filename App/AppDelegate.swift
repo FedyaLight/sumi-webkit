@@ -15,8 +15,8 @@ import OSLog
 /// - **Mouse Button Events**: Maps mouse buttons 2/3/4 to command palette, back, and forward
 /// - **App Termination**: Coordinates graceful shutdown with data persistence
 ///
-/// Quit path: `applicationShouldTerminate` returns `.terminateNow` immediately; persistence + WKWebView
-/// cleanup run from `DispatchQueue.main.async` + `Task { @MainActor }` on the next main turn.
+/// Quit path: `applicationShouldTerminate` confirms with AppKit when needed, then schedules persistence +
+/// WKWebView cleanup on the next main turn.
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     private static let log = Logger.sumi(category: "AppTermination")
@@ -27,10 +27,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     weak var externalURLHandler: (any ExternalURLHandling)?
     weak var persistenceHandler: (any BrowserPersistenceHandling)?
     weak var updateHandler: BrowserManager?
+    weak var settingsHandler: SumiSettingsService?
     var shortcutManager: KeyboardShortcutManager?
 
     // Window registry for accessing active window state
     weak var windowRegistry: WindowRegistry?
+    private var quitConfirmationInProgress = false
     private let historyMenuInstaller = SumiHistoryMenuInstaller()
     private let bookmarksMenuInstaller = SumiBookmarksMenuInstaller()
     private var didSetupHistoryMenuMonitoring = false
@@ -421,24 +423,103 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Application Termination
 
-    /// Returns **terminateNow** immediately and schedules persistence on the next main-queue turn.
+    /// Confirms user-initiated quits when enabled, then schedules best-effort persistence.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        let reason = NSAppleEventManager.shared()
-            .currentAppleEvent?
-            .attributeDescriptor(forKeyword: kAEQuitReason)
-
-        switch reason?.enumCodeValue {
-        case nil:
+        guard shouldAskBeforeQuit else {
             scheduleTerminationPersistenceBestEffortAfterReturningFromDelegate(
                 shouldTerminate: true
             )
-        default:
-            scheduleTerminationPersistenceBestEffortAfterReturningFromDelegate(
-                shouldTerminate: true
-            )
+            return .terminateNow
         }
 
-        return .terminateNow
+        guard !quitConfirmationInProgress else {
+            AppDelegate.log.info("Termination: cancel duplicate quit confirmation request")
+            return .terminateCancel
+        }
+
+        if let window = quitConfirmationWindow() {
+            quitConfirmationInProgress = true
+            sender.activate(ignoringOtherApps: true)
+            presentQuitConfirmationSheet(for: sender, window: window)
+            return .terminateLater
+        }
+
+        let alert = makeQuitConfirmationAlert()
+        let shouldTerminate = handleQuitConfirmationResponse(alert.runModal(), alert: alert)
+        if shouldTerminate {
+            scheduleTerminationPersistenceBestEffortAfterReturningFromDelegate(
+                shouldTerminate: true
+            )
+            return .terminateNow
+        }
+        return .terminateCancel
+    }
+
+    private var shouldAskBeforeQuit: Bool {
+        settingsHandler?.askBeforeQuit ?? updateHandler?.sumiSettings?.askBeforeQuit ?? false
+    }
+
+    private func setAskBeforeQuit(_ value: Bool) {
+        if let settingsHandler {
+            settingsHandler.askBeforeQuit = value
+        } else {
+            updateHandler?.sumiSettings?.askBeforeQuit = value
+        }
+    }
+
+    private func quitConfirmationWindow() -> NSWindow? {
+        windowRegistry?.activeWindow?.window ?? NSApp.keyWindow ?? NSApp.mainWindow
+    }
+
+    private func makeQuitConfirmationAlert() -> NSAlert {
+        let alert = NSAlert()
+        alert.messageText = "Are you sure you want to quit Sumi?"
+        alert.informativeText = "You may lose unsaved work in your tabs."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons[safe: 1]?.keyEquivalent = "\u{1b}"
+        alert.showsSuppressionButton = true
+        alert.suppressionButton?.title = "Do not warn before quitting again"
+        return alert
+    }
+
+    private func presentQuitConfirmationSheet(for application: NSApplication, window: NSWindow) {
+        let alert = makeQuitConfirmationAlert()
+        alert.beginSheetModal(for: window) { [weak self, alert, application] response in
+            MainActor.assumeIsolated {
+                guard let self else {
+                    application.reply(toApplicationShouldTerminate: false)
+                    return
+                }
+
+                self.quitConfirmationInProgress = false
+                let shouldTerminate = self.handleQuitConfirmationResponse(response, alert: alert)
+                if shouldTerminate {
+                    self.scheduleTerminationPersistenceBestEffortAfterReturningFromDelegate(
+                        shouldTerminate: true
+                    )
+                }
+
+                application.reply(toApplicationShouldTerminate: shouldTerminate)
+            }
+        }
+    }
+
+    private func handleQuitConfirmationResponse(
+        _ response: NSApplication.ModalResponse,
+        alert: NSAlert
+    ) -> Bool {
+        let shouldTerminate = response == .alertFirstButtonReturn
+        guard shouldTerminate else {
+            AppDelegate.log.info("Termination: cancelled by quit confirmation")
+            return false
+        }
+
+        if alert.suppressionButton?.state == .on {
+            setAskBeforeQuit(false)
+        }
+        return true
     }
 
     /// Best-effort persistence and WK teardown after `applicationShouldTerminate` returns (next main turn).

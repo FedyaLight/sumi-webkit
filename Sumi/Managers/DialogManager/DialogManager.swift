@@ -94,63 +94,6 @@ class DialogManager {
         presentedSessionToken = nil
     }
 
-    // MARK: - Convenience Dialogs
-
-    func showQuitDialog(
-        onAlwaysQuit: @escaping () -> Void,
-        onQuit: @escaping () -> Void
-    ) {
-        showDialog {
-            StandardDialog(
-                header: {
-                    EmptyView()
-                },
-                content: {
-                    VStack(alignment: .leading, spacing: 20) {
-                        Image("sumi-logo-1024")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 26, height: 26)
-                            .shadow(
-                                color: Color.primary.opacity(0.3),
-                                radius: 0.5,
-                                y: 1
-                            )
-                        Text("Are you sure you want to quit Sumi?")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundStyle(.primary)
-                        Text("You may lose unsaved work in your tabs.")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(10)
-                },
-                footer: {
-                    DialogFooter(
-                        leftButton: DialogButton(
-                            text: "Always Quit",
-                            variant: .secondary,
-                            action: onAlwaysQuit
-                        ),
-                        rightButtons: [
-                            DialogButton(
-                                text: "Cancel",
-                                variant: .secondary,
-                                action: closeDialog
-                            ),
-                            DialogButton(
-                                text: "Quit",
-                                iconName: "return",
-                                variant: .primary,
-                                action: onQuit
-                            ),
-                        ]
-                    )
-                }
-            )
-        }
-    }
-
     private func endPresentedSessionIfNeeded() {
         guard let presentedSessionToken,
               let coordinator = presentedSource?.coordinator
