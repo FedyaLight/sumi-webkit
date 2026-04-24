@@ -179,19 +179,14 @@ final class SumiBookmarkManager: ObservableObject {
             )
         }
 
-        let bookmark = try createBookmark(
-            url: tab.url,
-            title: suggestedTitle(for: tab),
-            folderID: nil
-        )
         return SumiBookmarkEditorState(
-            mode: .added,
-            bookmarkID: bookmark.id,
+            mode: .add,
+            bookmarkID: nil,
             tabID: tab.id,
             pageURL: tab.url,
-            title: bookmark.title,
-            urlString: bookmark.url.absoluteString,
-            folderID: bookmark.folderID
+            title: suggestedTitle(for: tab),
+            urlString: tab.url.absoluteString,
+            folderID: nil
         )
     }
 

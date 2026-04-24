@@ -786,9 +786,7 @@ private struct URLBarHubPopover: View {
                     currentTab: currentTab,
                     folders: bookmarkManager.folders(),
                     onClose: {
-                        withAnimation(.easeInOut(duration: 0.14)) {
-                            mode = .controls
-                        }
+                        mode = .controls
                     },
                     onDidMutate: {
                         refreshNonce += 1
@@ -799,6 +797,7 @@ private struct URLBarHubPopover: View {
         }
         .frame(width: modeWidth)
         .background(tokens.commandPaletteBackground)
+        .animation(nil, value: mode)
         .onAppear {
             handleBookmarkPresentationRequest(bookmarkPresentationRequest)
         }
@@ -863,7 +862,7 @@ private struct URLBarHubPopover: View {
         case .controls:
             return 234
         case .bookmark:
-            return 468
+            return 392
         }
     }
 
@@ -1092,9 +1091,7 @@ private struct URLBarHubPopover: View {
             let editorState = try bookmarkManager.editorState(for: currentTab)
             bookmarkErrorMessage = nil
             refreshNonce += 1
-            withAnimation(.easeInOut(duration: 0.14)) {
-                mode = .bookmark(editorState)
-            }
+            mode = .bookmark(editorState)
         } catch {
             bookmarkErrorMessage = error.localizedDescription
         }
