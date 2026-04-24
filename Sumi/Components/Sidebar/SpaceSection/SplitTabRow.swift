@@ -72,45 +72,16 @@ private struct SplitHalfTab: View {
     @Environment(\.resolvedThemeContext) private var themeContext
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .trailing) {
             HStack(spacing: 8) {
                 SidebarTabFaviconView(tab: tab, size: 18, cornerRadius: 4)
                 SumiTabTitleLabel(
                     title: tab.name,
                     font: .systemFont(ofSize: 13, weight: .medium),
                     textColor: textTab,
-                    trailingFadePadding: displayIsHovering ? 12 : 0
+                    trailingFadePadding: displayIsHovering ? SidebarRowLayout.trailingActionFadePadding : 0
                 )
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(textTab)
-                        .frame(width: 24, height: 24)
-                        .background(
-                            displayIsCloseHovering
-                                ? (isActive
-                                    ? tokens.fieldBackgroundHover
-                                    : tokens.fieldBackground)
-                                : Color.clear
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                }
-                .buttonStyle(PlainButtonStyle())
-                .opacity(displayIsHovering ? 1 : 0)
-                .allowsHitTesting(displayIsHovering && !freezesHoverState)
-                .accessibilityHidden(!displayIsHovering)
-                .sidebarHoverTarget(
-                    closeHoverTarget,
-                    isEnabled: displayIsHovering && isAppKitInteractionEnabled,
-                    animation: .easeInOut(duration: 0.15)
-                )
-                .accessibilityIdentifier("space-split-tab-close-\(tab.id.uuidString)")
-                .sidebarAppKitPrimaryAction(
-                    isEnabled: displayIsHovering && !freezesHoverState,
-                    isInteractionEnabled: isAppKitInteractionEnabled,
-                    action: onClose
-                )
             }
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -140,6 +111,9 @@ private struct SplitHalfTab: View {
                 sourceID: "space-split-tab-\(tab.id.uuidString)",
                 entries: { contextMenuEntries }
             )
+
+            closeButton
+                .padding(.trailing, 8)
         }
         .opacity(
             SidebarDragState.shared.isDragging && SidebarDragState.shared.activeDragItemId == tab.id
@@ -191,6 +165,41 @@ private struct SplitHalfTab: View {
     private var displayIsCloseHovering: Bool {
         windowState.sidebarInteractionState.isSidebarHoverActive(closeHoverTarget)
             && !freezesHoverState
+    }
+
+    private var closeButton: some View {
+        Button(action: onClose) {
+            Image(systemName: "xmark")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(textTab)
+                .frame(
+                    width: SidebarRowLayout.trailingActionSize,
+                    height: SidebarRowLayout.trailingActionSize
+                )
+                .background(
+                    displayIsCloseHovering
+                        ? (isActive
+                            ? tokens.fieldBackgroundHover
+                            : tokens.fieldBackground)
+                        : Color.clear
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(PlainButtonStyle())
+        .opacity(displayIsHovering ? 1 : 0)
+        .allowsHitTesting(displayIsHovering && !freezesHoverState)
+        .accessibilityHidden(!displayIsHovering)
+        .sidebarHoverTarget(
+            closeHoverTarget,
+            isEnabled: displayIsHovering && isAppKitInteractionEnabled,
+            animation: .easeInOut(duration: 0.15)
+        )
+        .accessibilityIdentifier("space-split-tab-close-\(tab.id.uuidString)")
+        .sidebarAppKitPrimaryAction(
+            isEnabled: displayIsHovering && !freezesHoverState,
+            isInteractionEnabled: isAppKitInteractionEnabled,
+            action: onClose
+        )
     }
 
     private var rowHoverTarget: SidebarHoverTarget {

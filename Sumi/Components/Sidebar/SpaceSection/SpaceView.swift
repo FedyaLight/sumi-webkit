@@ -1465,42 +1465,22 @@ private struct ShortcutSidebarRowChrome: View {
                         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(.leading, runtimeAffordance.usesResetLeadingAction ? SidebarRowLayout.changedLauncherTitleLeading : 0)
-                .padding(.trailing, showsActionButton ? 0 : SidebarRowLayout.trailingInset)
+                .padding(.trailing, SidebarRowLayout.trailingInset)
                 .frame(height: SidebarRowLayout.rowHeight)
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             .onTapGesture(perform: action)
-
-            Button(action: performActionButton) {
-                Image(systemName: actionIconName)
-                    .font(.system(size: 12, weight: .heavy))
-                    .foregroundColor(textColor)
-                    .frame(width: 24, height: 24)
-                    .background(displayIsActionHovering ? actionBackground : Color.clear)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-            }
-            .buttonStyle(.plain)
-            .opacity(showsActionButton ? 1 : 0)
-            .allowsHitTesting(showsActionButton && !freezesHoverState)
-            .accessibilityHidden(!showsActionButton)
-            .sidebarHoverTarget(
-                actionHoverTarget,
-                isEnabled: showsActionButton && dragIsEnabled,
-                animation: .easeInOut(duration: 0.05)
-            )
-            .accessibilityIdentifier(trailingActionAccessibilityID ?? "shortcut-sidebar-action")
-            .sidebarAppKitPrimaryAction(
-                isEnabled: showsActionButton && !freezesHoverState,
-                isInteractionEnabled: dragIsEnabled,
-                action: performActionButton
-            )
-            .padding(.trailing, SidebarRowLayout.trailingInset)
         }
         .frame(height: SidebarRowLayout.rowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(backgroundColor)
         .background(EmojiPickerAnchor(manager: emojiManager))
+        .overlay(alignment: .trailing) {
+            trailingActionButton
+                .padding(.trailing, SidebarRowLayout.trailingInset)
+        }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay(alignment: .bottomTrailing) {
             if showsSplitBadge {
@@ -1705,9 +1685,39 @@ private struct ShortcutSidebarRowChrome: View {
             title: resolvedTitle,
             font: .systemFont(ofSize: 13, weight: .medium),
             textColor: textColor,
+            trailingFadePadding: showsActionButton ? SidebarRowLayout.trailingActionFadePadding : 0,
             animated: liveTab != nil
         )
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var trailingActionButton: some View {
+        Button(action: performActionButton) {
+            Image(systemName: actionIconName)
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundColor(textColor)
+                .frame(
+                    width: SidebarRowLayout.trailingActionSize,
+                    height: SidebarRowLayout.trailingActionSize
+                )
+                .background(displayIsActionHovering ? actionBackground : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+        .opacity(showsActionButton ? 1 : 0)
+        .allowsHitTesting(showsActionButton && !freezesHoverState)
+        .accessibilityHidden(!showsActionButton)
+        .sidebarHoverTarget(
+            actionHoverTarget,
+            isEnabled: showsActionButton && dragIsEnabled,
+            animation: .easeInOut(duration: 0.05)
+        )
+        .accessibilityIdentifier(trailingActionAccessibilityID ?? "shortcut-sidebar-action")
+        .sidebarAppKitPrimaryAction(
+            isEnabled: showsActionButton && !freezesHoverState,
+            isInteractionEnabled: dragIsEnabled,
+            action: performActionButton
+        )
     }
 
     private var backgroundColor: Color {

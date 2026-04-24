@@ -92,21 +92,22 @@ final class SumiTabTitleViewTests: XCTestCase {
         XCTAssertNil(currentLayer.animation(forKey: SumiTabTitleAnimation.alphaKey))
     }
 
-    func testSwiftUIHostedLabelUsesContainerWidthForMaskLayout() throws {
+    func testSwiftUIHostedLabelKeepsFullWidthWithOverlaidAction() throws {
         let host = NSHostingView(
-            rootView: HStack(spacing: 0) {
+            rootView: ZStack(alignment: .trailing) {
                 SumiTabTitleLabel(
                     title: "A very long hosted tab title",
                     font: .systemFont(ofSize: 13, weight: .medium),
                     textColor: .primary,
                     fadeWidth: 32,
-                    trailingFadePadding: 0,
+                    trailingFadePadding: SidebarRowLayout.trailingActionFadePadding,
                     animated: false
                 )
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
 
                 Color.clear
-                    .frame(width: 24, height: 16)
+                    .frame(width: SidebarRowLayout.trailingActionSize, height: 16)
+                    .padding(.trailing, SidebarRowLayout.trailingInset)
             }
             .frame(width: 120, height: 16)
         )
@@ -114,10 +115,15 @@ final class SumiTabTitleViewTests: XCTestCase {
         host.layoutSubtreeIfNeeded()
 
         let titleView = try XCTUnwrap(findSubview(ofType: SumiTabTitleView.self, in: host))
-        XCTAssertEqual(titleView.frame.width, 96, accuracy: 1.0)
+        XCTAssertEqual(titleView.frame.width, 120, accuracy: 1.0)
 
         let maskLayer = try XCTUnwrap(fadeMaskLayer(in: titleView))
         XCTAssertEqual(maskLayer.frame.width, titleView.bounds.width, accuracy: 0.5)
+        XCTAssertEqual(
+            maskLayer.endPoint.x,
+            (titleView.bounds.width - SidebarRowLayout.trailingActionFadePadding) / titleView.bounds.width,
+            accuracy: 0.001
+        )
     }
 
     private func makeView(width: CGFloat) -> SumiTabTitleView {
