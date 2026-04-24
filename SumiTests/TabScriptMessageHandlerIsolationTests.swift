@@ -1,25 +1,27 @@
+import BrowserServicesKit
 import WebKit
 import XCTest
 @testable import Sumi
 
 @MainActor
 final class TabScriptMessageHandlerIsolationTests: XCTestCase {
-    func testTabScopedHandlersRemainIsolatedOnSharedUserContentController() async throws {
-        let userContentController = WKUserContentController()
+    func testBrokeredTabMessagesRemainScopedByContext() async throws {
+        let firstTab = Tab(name: "First")
+        let secondTab = Tab(name: "Second")
+        let scriptsProvider = SumiNormalTabUserScripts(
+            managedUserScripts: firstTab.normalTabCoreUserScripts() + secondTab.normalTabCoreUserScripts()
+        )
+        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+            scriptsProvider: scriptsProvider
+        )
         let configuration = WKWebViewConfiguration()
-        configuration.userContentController = userContentController
-
+        configuration.userContentController = controller
         let webView = WKWebView(
             frame: CGRect(x: 0, y: 0, width: 800, height: 600),
             configuration: configuration
         )
 
-        let firstTab = Tab(name: "First")
-        let secondTab = Tab(name: "Second")
-
-        firstTab.replaceCoreScriptMessageHandlers(on: userContentController)
-        secondTab.replaceCoreScriptMessageHandlers(on: userContentController)
-
+        await controller.awaitContentBlockingAssetsInstalled()
         try await loadBlankDocument(into: webView)
 
         let firstDelivered = expectation(description: "first tab message delivered")
@@ -35,60 +37,141 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
             }
         }
 
-        try await evaluate(
-            """
-            const firstHandler = window.webkit?.messageHandlers?.["\(Tab.coreScriptMessageHandlerName("linkHover", for: firstTab.id))"];
-            if (firstHandler) {
-                firstHandler.postMessage("https://first.example/");
-            }
-            const secondHandler = window.webkit?.messageHandlers?.["\(Tab.coreScriptMessageHandlerName("linkHover", for: secondTab.id))"];
-            if (secondHandler) {
-                secondHandler.postMessage("https://second.example/");
-            }
-            """,
+        try await postLinkHover(
+            "https://first.example/",
+            context: linkContext(for: firstTab),
+            in: webView
+        )
+        try await postLinkHover(
+            "https://second.example/",
+            context: linkContext(for: secondTab),
             in: webView
         )
 
         await fulfillment(of: [firstDelivered, secondDelivered], timeout: 5.0)
+    }
 
-        for handlerName in Tab.coreScriptMessageHandlerNames(for: firstTab.id) {
-            userContentController.removeScriptMessageHandler(forName: handlerName)
-        }
-
-        let removedHandlerDidNotFire = expectation(
-            description: "removed handler stays detached"
+    func testControllerCleanupRemovesBrokerHandlers() async throws {
+        let tab = Tab(name: "Cleanup")
+        let scriptsProvider = SumiNormalTabUserScripts(
+            managedUserScripts: tab.normalTabCoreUserScripts()
         )
+        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+            scriptsProvider: scriptsProvider
+        )
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController = controller
+        let webView = WKWebView(
+            frame: CGRect(x: 0, y: 0, width: 800, height: 600),
+            configuration: configuration
+        )
+
+        await controller.awaitContentBlockingAssetsInstalled()
+        try await loadBlankDocument(into: webView)
+
+        controller.cleanUpBeforeClosing()
+
+        let removedHandlerDidNotFire = expectation(description: "removed handler stays detached")
         removedHandlerDidNotFire.isInverted = true
-        let survivingHandlerStillFires = expectation(
-            description: "second tab handler still works"
-        )
-
-        firstTab.onLinkHover = { _ in
+        tab.onLinkHover = { _ in
             removedHandlerDidNotFire.fulfill()
         }
-        secondTab.onLinkHover = { href in
-            if href == "https://second-after-cleanup.example/" {
-                survivingHandlerStillFires.fulfill()
-            }
+
+        try await postLinkHover(
+            "https://removed.example/",
+            context: linkContext(for: tab),
+            in: webView
+        )
+
+        await fulfillment(of: [removedHandlerDidNotFire], timeout: 0.5)
+    }
+
+    func testMalformedBrokerPayloadFailsLocally() async throws {
+        let tab = Tab(name: "Malformed")
+        let webView = try await makeWebView(with: tab)
+        let malformedDidNotFire = expectation(description: "malformed payload has no side effects")
+        malformedDidNotFire.isInverted = true
+        tab.onLinkHover = { _ in
+            malformedDidNotFire.fulfill()
         }
 
         try await evaluate(
             """
-            const removedHandler = window.webkit?.messageHandlers?.["\(Tab.coreScriptMessageHandlerName("linkHover", for: firstTab.id))"];
-            if (removedHandler) {
-                removedHandler.postMessage("https://first-after-cleanup.example/");
-            }
-            const survivingHandler = window.webkit?.messageHandlers?.["\(Tab.coreScriptMessageHandlerName("linkHover", for: secondTab.id))"];
-            if (survivingHandler) {
-                survivingHandler.postMessage("https://second-after-cleanup.example/");
-            }
+            const handler = window.webkit?.messageHandlers?.["\(linkContext(for: tab))"];
+            handler.postMessage({
+                context: "\(linkContext(for: tab))",
+                featureName: "linkInteraction",
+                method: "linkHover",
+                params: []
+            });
             """,
             in: webView
         )
 
-        await fulfillment(
-            of: [survivingHandlerStillFires, removedHandlerDidNotFire],
-            timeout: 5.0
+        await fulfillment(of: [malformedDidNotFire], timeout: 0.5)
+    }
+
+    func testUnknownBrokerMethodIsIgnoredSafely() async throws {
+        let tab = Tab(name: "Unknown")
+        let webView = try await makeWebView(with: tab)
+        let unknownDidNotFire = expectation(description: "unknown message has no side effects")
+        unknownDidNotFire.isInverted = true
+        tab.onLinkHover = { _ in
+            unknownDidNotFire.fulfill()
+        }
+
+        try await evaluate(
+            """
+            const handler = window.webkit?.messageHandlers?.["\(linkContext(for: tab))"];
+            handler.postMessage({
+                context: "\(linkContext(for: tab))",
+                featureName: "linkInteraction",
+                method: "unknownMethod",
+                params: {}
+            });
+            """,
+            in: webView
+        )
+
+        await fulfillment(of: [unknownDidNotFire], timeout: 0.5)
+    }
+
+    private func linkContext(for tab: Tab) -> String {
+        "sumiLinkInteraction_\(tab.id.uuidString)"
+    }
+
+    private func makeWebView(with tab: Tab) async throws -> WKWebView {
+        let scriptsProvider = SumiNormalTabUserScripts(
+            managedUserScripts: tab.normalTabCoreUserScripts()
+        )
+        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+            scriptsProvider: scriptsProvider
+        )
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController = controller
+        let webView = WKWebView(
+            frame: CGRect(x: 0, y: 0, width: 800, height: 600),
+            configuration: configuration
+        )
+        await controller.awaitContentBlockingAssetsInstalled()
+        try await loadBlankDocument(into: webView)
+        return webView
+    }
+
+    private func postLinkHover(_ href: String, context: String, in webView: WKWebView) async throws {
+        try await evaluate(
+            """
+            const handler = window.webkit?.messageHandlers?.["\(context)"];
+            if (handler) {
+                handler.postMessage({
+                    context: "\(context)",
+                    featureName: "linkInteraction",
+                    method: "linkHover",
+                    params: { href: "\(href)" }
+                });
+            }
+            """,
+            in: webView
         )
     }
 
@@ -127,6 +210,7 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
             }
         }
     }
+
 }
 
 private final class NavigationDelegateBox: NSObject, WKNavigationDelegate {
@@ -140,6 +224,8 @@ private final class NavigationDelegateBox: NSObject, WKNavigationDelegate {
         _ webView: WKWebView,
         didFinish navigation: WKNavigation!
     ) {
+        _ = webView
+        _ = navigation
         onFinish()
     }
 }

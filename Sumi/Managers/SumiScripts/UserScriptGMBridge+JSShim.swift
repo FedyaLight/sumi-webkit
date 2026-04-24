@@ -68,9 +68,14 @@ extension UserScriptGMBridge {
                 const callbackId = __newCallbackId();
                 if (resolve) __callbacks[callbackId] = { resolve, reject };
                 window.webkit.messageHandlers['\(handlerName)'].postMessage({
+                    context: '\(handlerName)',
+                    featureName: 'gm',
                     method: method,
-                    callbackId: callbackId,
-                    args: args || {}
+                    id: callbackId,
+                    params: {
+                        callbackId: callbackId,
+                        args: args || {}
+                    }
                 });
                 return callbackId;
             }
@@ -250,9 +255,10 @@ extension UserScriptGMBridge {
                     });
                 },
                 addStyle: function(css) {
-                    return new Promise((resolve, reject) => {
-                        __sendMessage('GM_addStyle', { css }, resolve, reject);
-                    });
+                    var tag = document.createElement('style');
+                    tag.textContent = css || '';
+                    (document.head || document.documentElement).appendChild(tag);
+                    return Promise.resolve(tag);
                 },
                 addElement: function(parent, tagName, attributes) {
                     if (typeof parent === 'string') {
@@ -296,18 +302,23 @@ extension UserScriptGMBridge {
                             onreadystatechange: details.onreadystatechange
                         };
                         window.webkit.messageHandlers['\(handlerName)'].postMessage({
+                            context: '\(handlerName)',
+                            featureName: 'gm',
                             method: 'GM_xmlhttpRequest',
-                            callbackId: callbackId,
-                            args: {
-                                url: details.url,
-                                method: details.method || 'GET',
-                                headers: __normalizeXhrHeaders(details.headers),
-                                data: __normalizeXhrData(details.data),
-                                timeout: details.timeout,
-                                responseType: details.responseType || '',
-                                overrideMimeType: details.overrideMimeType,
-                                user: details.user,
-                                password: details.password
+                            id: callbackId,
+                            params: {
+                                callbackId: callbackId,
+                                args: {
+                                    url: details.url,
+                                    method: details.method || 'GET',
+                                    headers: __normalizeXhrHeaders(details.headers),
+                                    data: __normalizeXhrData(details.data),
+                                    timeout: details.timeout,
+                                    responseType: details.responseType || '',
+                                    overrideMimeType: details.overrideMimeType,
+                                    user: details.user,
+                                    password: details.password
+                                }
                             }
                         });
                     });
@@ -406,7 +417,7 @@ extension UserScriptGMBridge {
                 return GM.listValues();
             }
             function GM_addStyle(css) {
-                __sendMessage('GM_addStyle', { css });
+                return GM.addStyle(css);
             }
             function GM_xmlhttpRequest(details) {
                 const result = GM.xmlHttpRequest(details);
@@ -498,9 +509,13 @@ extension UserScriptGMBridge {
             function __sumiReportRuntime(kind, detail) {
                 try {
                     window.webkit.messageHandlers['\(handlerName)'].postMessage({
+                        context: '\(handlerName)',
+                        featureName: 'gm',
                         method: '__sumi_runtimeError',
-                        callbackId: '',
-                        args: Object.assign({ kind: kind }, detail || {})
+                        params: {
+                            callbackId: '',
+                            args: Object.assign({ kind: kind }, detail || {})
+                        }
                     });
                 } catch (_) {}
             }

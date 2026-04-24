@@ -3,7 +3,7 @@
 //  Sumi
 //
 //  Native implementation of Greasemonkey/Tampermonkey API.
-//  Provides GM.* and GM_* functions via WKScriptMessageHandler,
+//  Provides GM.* and GM_* native glue behind a BSK UserScriptMessageBroker,
 //  with native URLSession for GM_xmlhttpRequest (bypasses CORS/CSP).
 //
 //  Greasemonkey-style APIs commonly used by translation/network userscripts.
@@ -14,9 +14,10 @@ import Foundation
 import UserNotifications
 import WebKit
 
-final class UserScriptGMBridge: NSObject, WKScriptMessageHandler {
+@MainActor
+final class UserScriptGMBridge: NSObject {
 
-    let script: UserScript
+    let script: SumiInstalledUserScript
     private let contentWorld: WKContentWorld
     private weak var tabOpenHandler: SumiScriptsTabHandler?
     weak var downloadManager: DownloadManager?
@@ -33,7 +34,7 @@ final class UserScriptGMBridge: NSObject, WKScriptMessageHandler {
     var activeDownloadItems: [String: DownloadItem] = [:]
 
     init(
-        script: UserScript,
+        script: SumiInstalledUserScript,
         profileId: UUID?,
         contentWorld: WKContentWorld,
         tabOpenHandler: SumiScriptsTabHandler?,
@@ -61,44 +62,6 @@ final class UserScriptGMBridge: NSObject, WKScriptMessageHandler {
 
     func resolveMenuCommand(_ commandId: String, webView: WKWebView?) {
         resolveCallback(commandId, result: NSNull(), webView: webView)
-    }
-
-    // MARK: - WKScriptMessageHandler
-
-    func userContentController(
-        _ userContentController: WKUserContentController,
-        didReceive message: WKScriptMessage
-    ) {
-        guard let body = message.body as? [String: Any],
-              let method = body["method"] as? String
-        else { return }
-
-        let callbackId = body["callbackId"] as? String ?? ""
-        let args = body["args"] as? [String: Any] ?? [:]
-
-        if method == "__sumi_runtimeError" {
-            NotificationCenter.default.post(
-                name: .sumiUserScriptRuntimeError,
-                object: self,
-                userInfo: [
-                    "scriptId": script.id.uuidString,
-                    "scriptFilename": script.filename,
-                    "kind": args["kind"] as? String ?? "error",
-                    "message": args["message"] as? String ?? "",
-                    "location": args["location"] as? String ?? "",
-                    "stack": args["stack"] as? String ?? ""
-                ]
-            )
-            return
-        }
-
-        UserScriptGMDispatch.route(
-            bridge: self,
-            method: method,
-            args: args,
-            callbackId: callbackId,
-            webView: message.webView
-        )
     }
 
     // MARK: - GM_getValue / GM.getValue
@@ -304,25 +267,8 @@ final class UserScriptGMBridge: NSObject, WKScriptMessageHandler {
         resolveCallback(callbackId, result: true, webView: webView)
     }
 
-    func performAddStyle(args: [String: Any], webView: WKWebView?) {
-        guard let css = args["css"] as? String, let webView else { return }
-
-        let escapedCSS = css
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "`", with: "\\`")
-            .replacingOccurrences(of: "$", with: "\\$")
-
-        let js = """
-        (function() {
-            var tag = document.createElement('style');
-            tag.textContent = `\(escapedCSS)`;
-            (document.head || document.documentElement).appendChild(tag);
-        })();
-        """
-
-        DispatchQueue.main.async {
-            webView.evaluateJavaScript(js, completionHandler: nil)
-        }
+    func performAddStyle(callbackId: String, webView: WKWebView?) {
+        resolveCallback(callbackId, result: true, webView: webView)
     }
 
     func performOpenInTab(args: [String: Any], callbackId: String, webView: WKWebView?) {

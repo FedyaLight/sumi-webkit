@@ -10,6 +10,7 @@ final class SumiTabNavigationDelegateBundle {
     private let installNavigation: SumiInstallNavigationResponder
     private let externalScheme: SumiExternalSchemeNavigationResponder
     private let downloads: SumiDownloadsNavigationResponder
+    private let scriptAttachment: SumiTabScriptAttachmentNavigationResponder
     private let lifecycle: SumiTabLifecycleNavigationResponder
 
     init(tab: Tab) {
@@ -18,6 +19,7 @@ final class SumiTabNavigationDelegateBundle {
         self.popupHandling = SumiPopupHandlingNavigationResponder(tab: tab)
         self.externalScheme = SumiExternalSchemeNavigationResponder(tab: tab)
         self.downloads = SumiDownloadsNavigationResponder(tab: tab, downloadManager: tab.browserManager?.downloadManager)
+        self.scriptAttachment = SumiTabScriptAttachmentNavigationResponder(tab: tab)
         self.lifecycle = SumiTabLifecycleNavigationResponder(tab: tab)
 
         distributedNavigationDelegate.setResponders(
@@ -25,6 +27,7 @@ final class SumiTabNavigationDelegateBundle {
             .strong(popupHandling),
             .strong(externalScheme),
             .strong(downloads),
+            .strong(scriptAttachment),
             .strong(lifecycle),
             .weak(tab.findInPage)
         )

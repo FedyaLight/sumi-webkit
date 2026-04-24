@@ -10,9 +10,8 @@
 //
 //  Lifecycle:
 //  - On initialization, loads scripts from disk (if enabled)
-//  - On navigation commit: prepares + installs matching scripts for the URL
-//  - On navigation finish: injects document-idle scripts
-//  - On disable: tears down everything, clears all WKUserScript registrations
+//  - On navigation policy: prepares BSK UserScript adapters for the URL
+//  - On disable: releases all native GM bridge state
 //
 //  INTEGRATION NOTES:
 //  This module is standalone. To integrate with Tab lifecycle, see INTEGRATION.md.
@@ -20,7 +19,7 @@
 //  Dependency sketch:
 //  Tab (WebView/Navigation) → SumiScriptsManager
 //    → UserScriptStore (disk manifest + SwiftData mirror in UserScriptStore+SwiftData)
-//    → UserScriptInjector → per-script UserScriptGMBridge (+JSShim, +Network)
+//    → UserScriptInjector → BSK UserScript adapters → per-script UserScriptGMBridge glue
 //    Remote installs: SumiScriptsRemoteInstall (URL sniffing, preview, NSAlert)
 //
 
@@ -29,6 +28,7 @@ import Foundation
 import WebKit
 import Combine
 import SwiftData
+import UserScript
 
 @MainActor
 final class SumiScriptsManager: ObservableObject {
@@ -171,7 +171,7 @@ final class SumiScriptsManager: ObservableObject {
     // MARK: - Script Access
 
     /// All loaded scripts (empty when disabled).
-    var allScripts: [UserScript] {
+    var allScripts: [SumiInstalledUserScript] {
         store?.scripts ?? []
     }
 
@@ -182,7 +182,7 @@ final class SumiScriptsManager: ObservableObject {
     /// Rows for the toolbar popover on this page (non-empty HTTP(S) host only).
     /// - strict: every script so each row’s switch is the per-site allowlist.
     /// - always: enabled scripts whose `@match` applies here, **including** site-disabled ones so the switch can turn them back on without running `scriptsForURL` injection.
-    func popoverScripts(for url: URL) -> [UserScript] {
+    func popoverScripts(for url: URL) -> [SumiInstalledUserScript] {
         let sorted = allScripts.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         switch runMode {
         case .strictOrigin:
@@ -359,65 +359,33 @@ final class SumiScriptsManager: ObservableObject {
 
     // MARK: - Injection API (called from Tab lifecycle)
 
-    /// Prepare scripts for a WebView navigating to a URL.
-    /// Call this from Tab+WebViewRuntime.swift during setupWebView(),
-    /// BEFORE the navigation starts, to install document-start scripts.
-    ///
-    /// - Parameters:
-    ///   - controller: The WKUserContentController of the webView being set up
-    ///   - url: The URL being navigated to
-    ///   - webViewId: The tab's ID (for cleanup tracking)
-    func installContentController(
-        _ controller: WKUserContentController,
+    func normalTabUserScripts(
         for url: URL,
         webViewId: UUID,
         profileId: UUID? = nil,
         isEphemeral: Bool = false
-    ) {
-        guard isEnabled, let store, let injector else { return }
+    ) -> [UserScript] {
+        guard isEnabled, let store, let injector else { return [] }
 
         let matchingScripts = store.scriptsForURL(url)
         guard !matchingScripts.isEmpty else {
-            injector.cleanupBridges(for: webViewId, from: controller)
+            injector.cleanupBridges(for: webViewId)
             activeScriptCount = 0
-            return
+            return []
         }
 
-        injector.installScripts(
-            into: controller,
+        let userScripts = injector.makeUserScripts(
             scripts: matchingScripts,
             webViewId: webViewId,
             profileId: isEphemeral ? nil : profileId
         )
-
-        // Install CSP fallback listener if any script uses auto scope
-        let hasAutoScripts = matchingScripts.contains { $0.metadata.injectInto == .auto }
-        if hasAutoScripts {
-            let cspScript = UserScriptCSPHandler.createCSPMonitorScript(
-                handlerName: "sumiCSPFallback_\(webViewId.uuidString)"
-            )
-            controller.addUserScript(cspScript)
-        }
-
         activeScriptCount = matchingScripts.count
 
         RuntimeDiagnostics.debug(
-            "Installed \(matchingScripts.count) script(s) for \(url.host ?? url.absoluteString)",
+            "Prepared \(matchingScripts.count) BSK userscript(s) for \(url.host ?? url.absoluteString)",
             category: "SumiScripts"
         )
-    }
-
-    /// Inject document-idle scripts after page load completes.
-    /// Call this after the normal tab's main-frame navigation finishes.
-    ///
-    /// - Parameters:
-    ///   - webView: The webView that finished loading
-    ///   - url: The loaded URL
-    func injectDocumentIdleScripts(for webView: WKWebView, url: URL) {
-        guard isEnabled, let store, let injector else { return }
-
-        let matchingScripts = store.scriptsForURL(url)
-        injector.injectDocumentIdleScripts(into: webView, scripts: matchingScripts)
+        return userScripts
     }
 
     /// Clean up when a tab is closed or webView is deallocated.
@@ -426,7 +394,7 @@ final class SumiScriptsManager: ObservableObject {
         injector?.cleanupBridges(for: webViewId, from: controller)
     }
 
-    func executeMenuCommand(script: UserScript, commandId: String, webView: WKWebView?) {
+    func executeMenuCommand(script: SumiInstalledUserScript, commandId: String, webView: WKWebView?) {
         injector?.executeMenuCommand(script: script, commandId: commandId, webView: webView)
     }
 

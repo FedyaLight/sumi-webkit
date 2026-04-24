@@ -1,8 +1,8 @@
 /**
  * Sumi userscript compat: webkit-media
  *
- * Opt-in via `// @aura-compat webkit-media` or
- * `@require aura-internal://userscript-compat/webkit-media.js`
+ * Opt-in via `// @sumi-compat webkit-media` or
+ * `@require sumi-internal://userscript-compat/webkit-media.js`
  *
  * WebKit can glitch when user media code calls AudioContext.prototype.suspend()
  * together with pausing HTMLMediaElement (common in translation / dubbing scripts).
@@ -11,13 +11,13 @@
  */
 (function () {
   'use strict';
-  if (globalThis.__auraWebkitMediaCompatInstalled) return;
-  globalThis.__auraWebkitMediaCompatInstalled = true;
+  if (globalThis.__sumiWebkitMediaCompatInstalled) return;
+  globalThis.__sumiWebkitMediaCompatInstalled = true;
   var Ctor = globalThis.AudioContext || globalThis.webkitAudioContext;
   if (!Ctor || !Ctor.prototype) return;
   var proto = Ctor.prototype;
   if (typeof proto.suspend !== 'function') return;
-  proto.suspend = function auraCompatSuspendNoOp() {
+  proto.suspend = function sumiCompatSuspendNoOp() {
     return Promise.resolve();
   };
 })();

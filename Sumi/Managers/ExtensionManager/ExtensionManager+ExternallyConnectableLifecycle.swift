@@ -15,26 +15,6 @@ extension ExtensionManager {
     }
 
     func removeExternallyConnectablePageBridge(for extensionId: String) {
-        let bridgeMarker = pageBridgeMarker(for: extensionId)
-        let userContentController = browserConfiguration
-            .webViewConfiguration
-            .userContentController
-
-        let preservedScripts = userContentController.userScripts.filter { script in
-            guard Self.isManagedExternallyConnectablePageBridgeScript(script) else {
-                return true
-            }
-            return script.source.contains(bridgeMarker) == false
-        }
-
-        guard preservedScripts.count != userContentController.userScripts.count else {
-            installedPageBridgeIDs.remove(extensionId)
-            removeExternallyConnectablePolicy(for: extensionId)
-            return
-        }
-
-        userContentController.removeAllUserScripts()
-        preservedScripts.forEach { userContentController.addUserScript($0) }
         installedPageBridgeIDs.remove(extensionId)
         removeExternallyConnectablePolicy(for: extensionId)
     }
@@ -61,42 +41,15 @@ extension ExtensionManager {
             "Installing page-world externally_connectable shim for extension \(extensionId, privacy: .public): \(policy.matchPatternStrings.joined(separator: ", "), privacy: .public)"
         )
 
-        let runtimeConfiguration = browserConfiguration.webViewConfiguration
-        let runtimeUserContentController = runtimeConfiguration.userContentController
-        installExternallyConnectableNativeBridgeIfNeeded(into: runtimeUserContentController)
         removeExternallyConnectablePageBridge(for: extensionId)
         externallyConnectablePolicies[extensionId] = policy
-
-        let pageScriptSource = Self.pageWorldExternallyConnectableBridgeScript(
-            configJSON: Self.pageWorldExternallyConnectableBridgeConfigJSON(
-                policy: policy,
-                bridgeMarker: pageBridgeMarker(for: extensionId)
-            ),
-            bridgeMarker: pageBridgeMarker(for: extensionId)
-        )
-
-        let pageScript = SumiCreatePrivateUserScript(
-            pageScriptSource,
-            .atDocumentStart,
-            false,
-            policy.matchPatternStrings,
-            nil,
-            nil,
-            WKContentWorld.page
-        )
-        runtimeUserContentController.addUserScript(pageScript)
         installedPageBridgeIDs.insert(extensionId)
     }
 
     func installExternallyConnectableNativeBridgeIfNeeded(
         into controller: WKUserContentController
     ) {
-        guard externallyConnectablePolicies.isEmpty == false else { return }
-
-        SumiExtensionMessageBroker.installIfNeeded(
-            ecBroker,
-            into: controller
-        )
+        _ = controller
     }
 
     func updateExternallyConnectableNavigationLifecycle(
@@ -161,10 +114,6 @@ extension ExtensionManager {
 
         if externallyConnectablePolicies.isEmpty {
             ecRegistry.clearAllTrackedPageURLs()
-            SumiExtensionMessageBroker.removeIfInstalled(
-                from: browserConfiguration.webViewConfiguration.userContentController,
-                context: Self.externallyConnectableNativeBridgeHandlerName
-            )
         }
     }
 

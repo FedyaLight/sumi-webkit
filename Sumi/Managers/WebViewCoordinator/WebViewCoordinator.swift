@@ -881,9 +881,6 @@ class WebViewCoordinator {
         newWebView.allowsMagnification = true
         newWebView.setValue(true, forKey: "drawsBackground")
         newWebView.owningTab = tab
-        tab.replaceCoreScriptMessageHandlers(
-            on: newWebView.configuration.userContentController
-        )
         tab.installRuntimeObservers(on: newWebView)
         if let scriptsProvider = newWebView.configuration.userContentController.sumiNormalTabUserScriptsProvider {
             tab.ensureFaviconsTabExtension(using: scriptsProvider.faviconScripts)
@@ -2023,7 +2020,7 @@ class WebViewCoordinator {
             configuration = BrowserConfiguration.shared.normalTabWebViewConfiguration(
                 for: profile,
                 url: tab.url,
-                additionalUserScripts: additionalUserScriptsForNormalTab(tab)
+                userScriptsProvider: tab.normalTabUserScriptsProvider(for: tab.url)
             )
         } else if let sourceWebView {
             configuration = BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
@@ -2041,10 +2038,6 @@ class WebViewCoordinator {
             profile: resolvedProfile
         )
         return configuration
-    }
-
-    private func additionalUserScriptsForNormalTab(_ tab: Tab) -> [WKUserScript] {
-        tab.browserManager?.extensionManager.normalTabAdditionalUserScripts() ?? []
     }
 
     private func prepareInitialExtensionNavigation(

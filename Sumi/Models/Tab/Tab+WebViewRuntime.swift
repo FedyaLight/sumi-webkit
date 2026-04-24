@@ -1,36 +1,10 @@
 import Combine
 import BrowserServicesKit
 import Foundation
+import UserScript
 import WebKit
 
 extension Tab {
-    private static let tabScopedCoreScriptMessageBaseNames = [
-        "linkHover",
-        "commandHover",
-        "commandClick",
-        "SumiIdentity",
-    ]
-
-    static func coreScriptMessageHandlerName(
-        _ baseName: String,
-        for tabId: UUID
-    ) -> String {
-        "\(baseName)_\(tabId.uuidString)"
-    }
-
-    static func coreScriptMessageHandlerNames(for tabId: UUID) -> [String] {
-        tabScopedCoreScriptMessageBaseNames.map {
-            coreScriptMessageHandlerName($0, for: tabId)
-        }
-    }
-
-    func coreScriptMessageHandlerName(
-        _ baseName: String,
-        for tabId: UUID? = nil
-    ) -> String {
-        Self.coreScriptMessageHandlerName(baseName, for: tabId ?? id)
-    }
-
     // MARK: - WebView Ownership
 
     /// Returns the WebView only after it has been attached to a concrete window.
@@ -58,7 +32,6 @@ extension Tab {
         installNavigationDelegate(on: webView)
         webView.uiDelegate = self
         installRuntimeObservers(on: webView)
-        replaceCoreScriptMessageHandlers(on: webView.configuration.userContentController)
     }
 
     /// Assigns the primary WebView to a specific window to avoid orphan runtime instances.
@@ -79,31 +52,38 @@ extension Tab {
 
     // MARK: - WebView Runtime
 
-    func coreScriptMessageHandlerNames(for tabId: UUID) -> [String] {
-        Self.coreScriptMessageHandlerNames(for: tabId)
+    func normalTabUserScriptsProvider(for targetURL: URL?) -> SumiNormalTabUserScripts {
+        SumiNormalTabUserScripts(managedUserScripts: normalTabManagedUserScripts(for: targetURL))
     }
 
-    func replaceCoreScriptMessageHandlers(on userContentController: WKUserContentController) {
-        for handlerName in coreScriptMessageHandlerNames(for: id) {
-            userContentController.removeScriptMessageHandler(forName: handlerName)
+    func normalTabManagedUserScripts(for targetURL: URL?) -> [UserScript] {
+        var scripts = normalTabCoreUserScripts()
+        scripts.append(contentsOf: browserManager?.extensionManager.normalTabUserScripts() ?? [])
+
+        if let targetURL {
+            scripts.append(
+                contentsOf: browserManager?.sumiScriptsManager.normalTabUserScripts(
+                    for: targetURL,
+                    webViewId: id,
+                    profileId: resolveProfile()?.id ?? profileId,
+                    isEphemeral: isEphemeral
+                ) ?? []
+            )
         }
 
-        userContentController.add(self, name: coreScriptMessageHandlerName("linkHover"))
-        userContentController.add(self, name: coreScriptMessageHandlerName("commandHover"))
-        userContentController.add(self, name: coreScriptMessageHandlerName("commandClick"))
-        userContentController.add(self, name: coreScriptMessageHandlerName("SumiIdentity"))
+        return scripts
     }
 
-    private func additionalUserScriptsForConfiguration(
-        from source: WKWebViewConfiguration? = nil
-    ) -> [WKUserScript] {
-        var scripts = source?.userContentController.userScripts ?? []
-        scripts.append(contentsOf: browserManager?.extensionManager.normalTabAdditionalUserScripts() ?? [])
+    func replaceNormalTabUserScripts(
+        on userContentController: WKUserContentController,
+        for targetURL: URL?
+    ) async {
+        guard let provider = userContentController.sumiNormalTabUserScriptsProvider,
+              let controller = userContentController as? UserContentController
+        else { return }
 
-        var seenSources = Set<String>()
-        return scripts.filter { script in
-            seenSources.insert(script.source).inserted
-        }
+        provider.replaceManagedUserScripts(normalTabManagedUserScripts(for: targetURL))
+        await controller.replaceUserScripts(with: provider)
     }
 
     func cancelPendingMainFrameNavigation() {
@@ -159,15 +139,13 @@ extension Tab {
                     from: override,
                     for: profile,
                     surface: .extensionOptions,
-                    additionalUserScripts: additionalUserScriptsForConfiguration(
-                        from: override
-                    )
+                    additionalUserScripts: override.userContentController.userScripts
                 )
             } else {
                 configuration = BrowserConfiguration.shared.normalTabWebViewConfiguration(
                     for: profile,
                     url: url,
-                    additionalUserScripts: additionalUserScriptsForConfiguration()
+                    userScriptsProvider: normalTabUserScriptsProvider(for: url)
                 )
             }
         } else {
@@ -202,24 +180,17 @@ extension Tab {
 
         if let existingWebView = reusableExistingWebView {
             _webView = existingWebView
-            browserManager?.sumiScriptsManager.installContentController(
-                existingWebView.configuration.userContentController,
-                for: url,
-                webViewId: id,
-                profileId: resolveProfile()?.id ?? profileId,
-                isEphemeral: isEphemeral
-            )
+            Task { @MainActor [weak self, weak existingWebView] in
+                guard let self, let existingWebView else { return }
+                await self.replaceNormalTabUserScripts(
+                    on: existingWebView.configuration.userContentController,
+                    for: self.url
+                )
+            }
         } else {
             browserManager?.extensionManager.prepareWebViewConfigurationForExtensionRuntime(
                 configuration,
                 reason: "Tab.setupWebView.configuration"
-            )
-            browserManager?.sumiScriptsManager.installContentController(
-                configuration.userContentController,
-                for: url,
-                webViewId: id,
-                profileId: resolveProfile()?.id ?? profileId,
-                isEphemeral: isEphemeral
             )
             let newWebView = FocusableWKWebView(frame: .zero, configuration: configuration)
             _webView = newWebView
@@ -243,10 +214,6 @@ extension Tab {
         }
 
         if reusableExistingWebView == nil {
-            if let userContentController = _webView?.configuration.userContentController {
-                replaceCoreScriptMessageHandlers(on: userContentController)
-            }
-
             if let webView = _webView {
                 SumiUserAgent.apply(to: webView)
             }
@@ -333,7 +300,7 @@ extension Tab {
         let isolatedConfiguration = BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
             from: configuration,
             surface: .extensionOptions,
-            additionalUserScripts: additionalUserScriptsForConfiguration(from: configuration)
+            additionalUserScripts: configuration.userContentController.userScripts
         )
         browserManager?.extensionManager.prepareWebViewConfigurationForExtensionRuntime(
             isolatedConfiguration,

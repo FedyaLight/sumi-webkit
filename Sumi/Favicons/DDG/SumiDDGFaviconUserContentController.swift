@@ -7,26 +7,44 @@ import UserScript
 import WebKit
 
 @MainActor
-final class SumiNormalTabUserScripts {
+final class SumiNormalTabUserScripts: UserScriptsProvider {
     let faviconScripts = SumiDDGFaviconUserScripts()
-    let additionalWKUserScripts: [WKUserScript]
+    private var managedUserScripts: [UserScript]
 
-    init(additionalWKUserScripts: [WKUserScript] = []) {
-        self.additionalWKUserScripts = additionalWKUserScripts
+    init(managedUserScripts: [UserScript] = []) {
+        self.managedUserScripts = managedUserScripts
+    }
+
+    var userScripts: [UserScript] {
+        faviconScripts.userScripts + managedUserScripts
+    }
+
+    func replaceManagedUserScripts(_ userScripts: [UserScript]) {
+        managedUserScripts = userScripts
+    }
+
+    func loadWKUserScripts() async -> [WKUserScript] {
+        var scripts: [WKUserScript] = []
+        scripts.reserveCapacity(userScripts.count)
+        for userScript in userScripts {
+            let script = await userScript.makeWKUserScript()
+            scripts.append(script.wkUserScript)
+        }
+        return scripts
     }
 }
 
 private struct SumiNormalTabUserContent: UserContentControllerNewContent {
-    typealias SourceProvider = SumiDDGFaviconUserScripts
-    typealias UserScripts = SumiDDGFaviconUserScripts
+    typealias SourceProvider = SumiNormalTabUserScripts
+    typealias UserScripts = SumiNormalTabUserScripts
 
     let rulesUpdate = ContentBlockerRulesManager.UpdateEvent(
         rules: [],
         changes: [:],
         completionTokens: []
     )
-    let sourceProvider: SumiDDGFaviconUserScripts
-    let makeUserScripts: @MainActor (SumiDDGFaviconUserScripts) -> SumiDDGFaviconUserScripts = { $0 }
+    let sourceProvider: SumiNormalTabUserScripts
+    let makeUserScripts: @MainActor (SumiNormalTabUserScripts) -> SumiNormalTabUserScripts = { $0 }
 }
 
 private enum SumiNormalTabAssociatedKeys {
@@ -97,13 +115,11 @@ private final class SumiNormalTabUserContentControllerDelegate: UserContentContr
 @MainActor
 enum SumiNormalTabUserContentControllerFactory {
     static func makeController(
-        additionalUserScripts: [WKUserScript] = []
+        scriptsProvider: SumiNormalTabUserScripts? = nil
     ) -> UserContentController {
-        let scriptsProvider = SumiNormalTabUserScripts(
-            additionalWKUserScripts: additionalUserScripts
-        )
+        let scriptsProvider = scriptsProvider ?? SumiNormalTabUserScripts()
         let content = SumiNormalTabUserContent(
-            sourceProvider: scriptsProvider.faviconScripts
+            sourceProvider: scriptsProvider
         )
         let delegate = SumiNormalTabUserContentControllerDelegate()
         let controller = UserContentController(
@@ -114,7 +130,6 @@ enum SumiNormalTabUserContentControllerFactory {
         controller.sumiNormalTabControllerDelegate = delegate
         controller.sumiNormalTabUserScriptsProvider = scriptsProvider
         controller.sumiUsesNormalTabBrowserServicesKitUserContentController = true
-        scriptsProvider.additionalWKUserScripts.forEach(controller.addUserScript)
         return controller
     }
 }

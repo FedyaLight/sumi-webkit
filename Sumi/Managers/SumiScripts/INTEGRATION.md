@@ -1,148 +1,89 @@
-# SumiScripts Module — Integration Guide
+# SumiScripts Module - Integration Guide
 
-This document describes how the native `SumiScripts` runtime is wired into Sumi's browser lifecycle.
+This document describes how the native Sumi userscript runtime is wired into the BrowserServicesKit user-script pipeline.
 
 ## Overview
 
-The runtime is owned by `BrowserManager.sumiScriptsManager`. It is dormant while disabled: no store watcher, no active broker, no pending install/update work, and no new `WKUserScript` registrations.
+The runtime is owned by `BrowserManager.sumiScriptsManager`. It is dormant while disabled: no store watcher, no active installed-script adapters, no pending install/update work, and no new BSK `UserScript` adapters returned for future normal-tab navigations.
 
-### Lifecycle (data flow)
+Normal tabs do not mutate `WKUserContentController` directly. They build one `SumiNormalTabUserScripts` provider and install it through the Prompt 03 BrowserServicesKit `UserContentController`.
+
+### Lifecycle
 
 ```
-Tab (WKWebView setup / didFinish / close)
-  → BrowserManager.sumiScriptsManager
-      → UserScriptStore (scripts on disk, manifest.json; optional SwiftData mirror)
-      → UserScriptInjector (WKUserScript + message handlers)
-          → UserScriptGMBridge (+JSShim string, +Network XHR)
-  Remote `.user.js` navigation → SumiScriptsRemoteInstall (URL rules, fetch preview, NSAlert)
+Tab setup / normal-tab navigation
+  -> BrowserConfiguration.normalTabWebViewConfiguration(..., userScriptsProvider:)
+  -> SumiNormalTabUserScripts
+      -> DDG favicon UserScripts
+      -> Tab core UserScripts
+      -> ExtensionManager externally-connectable UserScript
+      -> SumiScriptsManager installed UserScript adapters
+          -> UserScriptInjector.makeUserScripts(...)
+          -> SumiInstalledUserScriptAdapter / SumiInstalledUserStyleAdapter
+          -> UserScriptGMBridge behind a BSK UserScriptMessageBroker
+  -> BSK UserContentController installs WKUserScripts and weak broker handlers
 ```
 
----
+Remote `.user.js` navigation is still intercepted by `SumiScriptsRemoteInstall` through the navigation responder chain.
 
-## SwiftData note
+## SwiftData Note
 
-`UserScriptEntity` / `UserScriptResourceEntity` are written from `UserScriptStore+SwiftData.swift` when a `ModelContext` is available. The authoritative catalog is still the filesystem; SwiftData exists for schema registration (`SumiStartupPersistence`) and a durable index of installs. No other modules query these entities today.
+`UserScriptEntity` and `UserScriptResourceEntity` are written from `UserScriptStore+SwiftData.swift` when a `ModelContext` is available. The filesystem remains the authoritative catalog; SwiftData exists for schema registration (`SumiStartupPersistence`) and a durable install index.
 
----
+## Normal-Tab Registration
 
-## 1. Tab+WebViewRuntime.swift — document-start injection
+`Tab.normalTabUserScriptsProvider(for:)` constructs the provider before the `WKWebView` begins loading. `SumiTabScriptAttachmentNavigationResponder` refreshes provider contents at main-frame navigation start:
 
-### Where
-In the `setupWebView()` method, **after** the `WKWebViewConfiguration` is created and **before** the first navigation.
-
-### What
-Call `browserManager.sumiScriptsManager.installContentController()` to pre-install `document-start`, `document-body`, and `document-end` scripts into the `WKUserContentController`.
-
-### Code
 ```swift
-// In setupWebView(), after configuration is created:
-
-// --- SumiScripts: Install userscripts into content controller ---
-browserManager.sumiScriptsManager.installContentController(
-    configuration.userContentController,
-    for: self.url,
-    webViewId: self.id,
-    profileId: profileId,
-    isEphemeral: isEphemeral
-)
-// --- End SumiScripts ---
+provider.replaceManagedUserScripts(normalTabManagedUserScripts(for: targetURL))
+await controller.replaceUserScripts(with: provider)
 ```
 
-### Why
-`WKUserScript` with `.atDocumentStart` injection time **must** be registered on the `WKUserContentController` before the `WKWebView` begins navigation. This is the only way to guarantee `@run-at document-start` scripts execute before any page JavaScript.
+That BSK replacement path removes only BSK-installed scripts/handlers and then installs the new provider output. Sumi does not run a document-idle `evaluateJavaScript` injection loop and does not use a production `removeAllUserScripts` preservation workaround for userscripts.
 
----
+## Broker Boundaries
 
-## 2. Tab+NavigationDelegate.swift — document-idle injection
+Each script or feature owns its own BSK `UserScriptMessageBroker` context:
 
-### Where
-In `webView(_:didFinish:)`, alongside the existing injections (e.g., `injectLinkHoverJavaScript`).
+| Context | Owner |
+| --- | --- |
+| `sumiGM_<script.uuid>` | Installed userscript GM bridge. |
+| `sumiLinkInteraction_<tab.uuid>` | Link hover, command hover, and modified-click handling. |
+| `sumiIdentity_<tab.uuid>` | Page identity request bridge. |
+| `sumiExternallyConnectableRuntime` | WebExtension externally-connectable page bridge. |
 
-### What
-Call `browserManager.sumiScriptsManager.injectDocumentIdleScripts()` to inject `@run-at document-idle` scripts after the page has fully loaded.
+Payload parsing stays local to the subfeature. Malformed payloads return no side effects, unknown methods are ignored by the broker, and handler lifetime is tied to the BSK user content controller.
 
-### Code
-```swift
-// In webView(_:didFinish:), after existing injections:
+## GM Compatibility
 
-// --- SumiScripts: Inject document-idle userscripts ---
-if let currentURL = webView.url {
-    browserManager.sumiScriptsManager.injectDocumentIdleScripts(for: webView, url: currentURL)
-}
-// --- End SumiScripts ---
-```
+Sumi keeps GM APIs because installed userscripts rely on them. The native bridge is no longer a global script-message hot path:
 
-### Why
-`document-idle` scripts should only run after the page is fully loaded and the DOM is complete. Using `evaluateJavaScript` at `didFinish` mirrors the browser extension pattern of waiting for `readyState === "complete"`.
+- `UserScriptInjector` returns BSK `UserScript` adapters instead of mutating a controller.
+- `SumiInstalledUserScriptAdapter` registers a per-script broker only when the script needs GM/native glue.
+- `SumiGMSubfeature` routes allowed GM methods to `UserScriptGMBridge`.
+- Network and download APIs remain native, but only through the typed `gm` broker boundary.
 
----
+## WebKit Compatibility (`@sumi-compat` and Built-In `@require`)
 
-## 3. Tab.swift — cleanup on tab close (optional)
+Sumi ships optional compat preludes for userscripts that hit WebKit-specific media/audio edge cases. They are opt-in only.
 
-### Where
-In `closeTab()`, before the WebView is released.
+- Declarative: add one or more lines to the metablock, for example `// @sumi-compat webkit-media`.
+- As `@require`: `// @require sumi-internal://userscript-compat/webkit-media.js` resolves to the same bundled script without network access.
 
-### What
-Cleanup GM bridge message handlers to prevent memory leaks.
-
-### Code
-```swift
-// In closeTab(), before performComprehensiveWebViewCleanup():
-
-// --- SumiScripts: Cleanup userscript handlers ---
-if let webView = _webView {
-    browserManager.sumiScriptsManager.cleanupWebView(
-        controller: webView.configuration.userContentController,
-        webViewId: self.id
-    )
-}
-// --- End SumiScripts ---
-```
-
-### Why
-`WKScriptMessageHandler` references are retained by `WKUserContentController`. Without explicit cleanup, the GM bridge objects (and their associated `URLSession` tasks, `UserDefaults` references) would leak.
-
----
-
-## 4. Toggle behavior
-```swift
-// When user toggles SumiScripts on/off:
-browserManager.sumiScriptsManager.isEnabled = newValue
-
-// When disabled:
-// - UserScriptStore is deallocated (FSEvents watcher stops)
-// - UserScriptInjector is deallocated (all broker/bridge references released)
-// - No WKUserScript is registered on any future navigation
-// - totalScriptCount and activeScriptCount reset to 0
-// - Memory: only the empty manager object remains
-```
-
----
-
-## WebKit compatibility (`@sumi-compat` and built-in `@require`)
-
-Sumi ships optional **compat preludes** for userscripts that hit WebKit-specific media/audio edge cases. They are **opt-in** only (not applied to arbitrary scripts).
-
-- **Declarative**: add one or more lines to the metablock, e.g. `// @sumi-compat webkit-media`. Modules are loaded from the app bundle and injected **after** the GM shim (if any) and **before** `@require` bodies and your script.
-- **As `@require`**: `// @require sumi-internal://userscript-compat/webkit-media.js` resolves to the same bundled script (no network). Useful when you cannot edit upstream metadata beyond `@require`.
-
-Bundled modules (expand over time):
+Bundled modules:
 
 | Module id | Purpose |
-|-----------|---------|
-| `webkit-media` | Replaces `AudioContext.prototype.suspend` with a resolved no-op so audio graph state stays consistent for some dubbing / translation userscript patterns in WebKit. Opt-in only. |
-
----
+| --- | --- |
+| `webkit-media` | Replaces `AudioContext.prototype.suspend` with a resolved no-op for specific WebKit media userscript compatibility cases. |
 
 ## Verification Checklist
 
 After integration, verify:
 
-1. **document-start**: A `@run-at document-start` script should execute before page JS
-2. **document-end**: A `@run-at document-end` script should execute when DOM is ready
-3. **document-idle**: A `@run-at document-idle` script should execute after `didFinish`
-4. **GM APIs**: VOT script should be able to call `GM_xmlhttpRequest` to Yandex APIs
-5. **Disable**: Toggling `isEnabled = false` should stop all injection immediately
-6. **Re-enable**: Toggling `isEnabled = true` should reload scripts from disk
-7. **Hot-reload**: Editing a `.user.js` file in the scripts directory should reload automatically
-8. **Memory**: With 0 scripts and disabled, Instruments should show ~0 SumiScripts overhead
+1. A `@run-at document-start` script is present in the provider before first navigation.
+2. `@run-at document-end` and `@run-at document-idle` scripts are represented as `WKUserScript` injection times, not post-load eval loops.
+3. GM APIs route through the per-script `sumiGM_<uuid>` broker.
+4. Disabling SumiScripts stops returning installed-script adapters for future normal-tab navigations.
+5. Editing a `.user.js` file reloads store state and affects the next provider replacement.
+6. BSK controller cleanup removes script-message handlers when a WebView/configuration is released.
+7. `scripts/check_userscript_hot_paths.sh` passes.

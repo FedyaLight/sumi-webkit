@@ -2,6 +2,7 @@ import WebKit
 import XCTest
 @testable import Sumi
 
+@MainActor
 final class UserScriptsRuntimeTests: XCTestCase {
     func testMetadataParserCapturesSourceAndAntifeatures() throws {
         let source = """
@@ -62,7 +63,7 @@ final class UserScriptsRuntimeTests: XCTestCase {
         // ==/UserScript==
         console.log('ok');
         """))
-        let script = UserScript(filename: "match.user.js", metadata: metadata)
+        let script = SumiInstalledUserScript(filename: "match.user.js", metadata: metadata)
 
         XCTAssertTrue(UserScriptMatchEngine.shouldInject(script: script, into: try XCTUnwrap(URL(string: "https://www.example.test/page"))))
         XCTAssertFalse(UserScriptMatchEngine.shouldInject(script: script, into: try XCTUnwrap(URL(string: "https://private.example.test/page"))))
@@ -82,7 +83,7 @@ final class UserScriptsRuntimeTests: XCTestCase {
         // ==/UserScript==
         console.log('ok');
         """))
-        let script = UserScript(filename: "gm.user.js", metadata: metadata)
+        let script = SumiInstalledUserScript(filename: "gm.user.js", metadata: metadata)
         let bridge = UserScriptGMBridge(
             script: script,
             profileId: nil,
@@ -117,7 +118,7 @@ final class UserScriptsRuntimeTests: XCTestCase {
         // ==/UserScript==
         console.log('user');
         """))
-        let script = UserScript(
+        let script = SumiInstalledUserScript(
             filename: "require-order.user.js",
             metadata: metadata,
             requiredCode: ["GM_addStyle('.from-require{}');"]
@@ -180,7 +181,7 @@ final class UserScriptsRuntimeTests: XCTestCase {
         console.log('user');
         """))
         let compat = UserScriptCompatAssembly.preludeFragments(for: metadata)
-        let script = UserScript(
+        let script = SumiInstalledUserScript(
             filename: "order.user.js",
             metadata: metadata,
             compatPreludeFragments: compat,
@@ -212,7 +213,7 @@ final class UserScriptsRuntimeTests: XCTestCase {
         // ==/UserScript==
         await Promise.resolve();
         """))
-        let wrapped = UserScript(filename: "await.user.js", metadata: wrappedMetadata)
+        let wrapped = SumiInstalledUserScript(filename: "await.user.js", metadata: wrappedMetadata)
         XCTAssertTrue(wrapped.assembledCode(gmShim: "").contains("(async () => {"))
 
         let unwrappedMetadata = try XCTUnwrap(UserScriptMetadataParser.parse("""
@@ -224,7 +225,7 @@ final class UserScriptsRuntimeTests: XCTestCase {
         // ==/UserScript==
         await Promise.resolve();
         """))
-        let unwrapped = UserScript(filename: "unwrap.user.js", metadata: unwrappedMetadata)
+        let unwrapped = SumiInstalledUserScript(filename: "unwrap.user.js", metadata: unwrappedMetadata)
         XCTAssertFalse(unwrapped.assembledCode(gmShim: "").contains("(async () => {"))
     }
 }

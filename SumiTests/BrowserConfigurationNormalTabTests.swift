@@ -1,4 +1,5 @@
 import BrowserServicesKit
+import UserScript
 import WebKit
 import XCTest
 
@@ -57,24 +58,22 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             )
         )
 
-        let seedMarker = "/* SUMI_EC_PAGE_BRIDGE:test */"
-        let seedScript = WKUserScript(
-            source: seedMarker,
-            injectionTime: .atDocumentStart,
-            forMainFrameOnly: false
+        let seedMarker = "window.__sumiManagedProviderScript = true;"
+        let scriptsProvider = SumiNormalTabUserScripts(
+            managedUserScripts: [TestNormalTabUserScript(source: seedMarker)]
         )
         let configuration = browserConfiguration.normalTabWebViewConfiguration(
             for: profile,
             url: URL(string: "https://example.com"),
-            additionalUserScripts: [seedScript]
+            userScriptsProvider: scriptsProvider
         )
 
         let controller = try XCTUnwrap(configuration.userContentController as? UserContentController)
         await controller.awaitContentBlockingAssetsInstalled()
 
         let sources = configuration.userContentController.userScripts.map(\.source)
-        XCTAssertFalse(sources.contains(templateMarker))
-        XCTAssertEqual(sources.filter { $0 == seedMarker }.count, 1)
+        XCTAssertFalse(sources.contains { $0.contains(templateMarker) })
+        XCTAssertEqual(sources.filter { $0.contains(seedMarker) }.count, 1)
     }
 
     func testEphemeralProfileUsesNonPersistentDataStore() {
@@ -101,5 +100,29 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertTrue(source.contains("normalTabWebViewConfiguration"))
         XCTAssertFalse(source.contains("SumiDDGFaviconUserContentControllerFactory"))
         XCTAssertFalse(source.contains("removeAllUserScripts"))
+
+        let lifecycleSourceURL = repoRoot
+            .appendingPathComponent("Sumi/Models/Tab/Navigation/SumiTabLifecycleNavigationResponder.swift")
+        let lifecycleSource = try String(contentsOf: lifecycleSourceURL, encoding: .utf8)
+        XCTAssertFalse(lifecycleSource.contains("injectDocumentIdleScripts"))
+        XCTAssertFalse(lifecycleSource.contains("evaluateJavaScript"))
+    }
+}
+
+private final class TestNormalTabUserScript: NSObject, UserScript {
+    let source: String
+    let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
+    let forMainFrameOnly = true
+    let requiresRunInPageContentWorld = false
+    let messageNames: [String] = []
+
+    init(source: String) {
+        self.source = source
+        super.init()
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        _ = userContentController
+        _ = message
     }
 }

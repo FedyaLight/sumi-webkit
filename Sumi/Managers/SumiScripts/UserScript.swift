@@ -1,5 +1,5 @@
 //
-//  UserScript.swift
+//  SumiInstalledUserScript.swift
 //  Sumi
 //
 //  Model representing a single loaded userscript with its metadata,
@@ -9,7 +9,7 @@
 import Foundation
 import WebKit
 
-final class UserScript: Identifiable {
+final class SumiInstalledUserScript: Identifiable {
     let id: UUID
     let filename: String
     /// When `lazyScriptBody` is enabled, code may be empty until first `assembledCode` / `code` access; then loaded from `sourceFileURL`.

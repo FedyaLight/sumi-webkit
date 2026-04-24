@@ -15,7 +15,7 @@ enum UserScriptMatchEngine {
     // MARK: - Public API
 
     /// Returns true if the given URL matches a script's match/include/exclude rules.
-    static func shouldInject(script: UserScript, into url: URL) -> Bool {
+    static func shouldInject(script: SumiInstalledUserScript, into url: URL) -> Bool {
         guard script.isEnabled else { return false }
 
         let urlString = url.absoluteString

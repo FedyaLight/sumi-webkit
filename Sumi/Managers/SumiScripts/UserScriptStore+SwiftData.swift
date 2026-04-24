@@ -13,7 +13,7 @@ import SwiftData
 extension UserScriptStore {
 
     func persist(
-        script: UserScript,
+        script: SumiInstalledUserScript,
         sourceURL: URL
     ) {
         guard let context else { return }

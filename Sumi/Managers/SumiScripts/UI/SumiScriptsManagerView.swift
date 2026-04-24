@@ -283,7 +283,7 @@ struct SumiScriptsManagerView: View {
         }
     }
 
-    private var filteredScripts: [UserScript] {
+    private var filteredScripts: [SumiInstalledUserScript] {
         if searchText.isEmpty {
             return manager.allScripts
         }
@@ -296,11 +296,11 @@ struct SumiScriptsManagerView: View {
 
 private struct ScriptManagerRow: View {
     @ObservedObject var manager: SumiScriptsManager
-    let script: UserScript
+    let script: SumiInstalledUserScript
     
     @State private var isEnabled: Bool
 
-    init(manager: SumiScriptsManager, script: UserScript) {
+    init(manager: SumiScriptsManager, script: SumiInstalledUserScript) {
         self.manager = manager
         self.script = script
         _isEnabled = State(initialValue: script.isEnabled)

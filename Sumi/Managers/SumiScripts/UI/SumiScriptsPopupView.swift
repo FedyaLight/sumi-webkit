@@ -194,13 +194,13 @@ struct SumiScriptsPopupView: View {
 
 struct ScriptRow: View {
     @ObservedObject var manager: SumiScriptsManager
-    let script: UserScript
+    let script: SumiInstalledUserScript
     let webView: WKWebView?
     let currentURL: URL?
 
     init(
         manager: SumiScriptsManager,
-        script: UserScript,
+        script: SumiInstalledUserScript,
         webView: WKWebView?,
         currentURL: URL? = nil
     ) {

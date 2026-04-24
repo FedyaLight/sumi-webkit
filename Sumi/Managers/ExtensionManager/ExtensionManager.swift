@@ -10,6 +10,7 @@ import Combine
 import Foundation
 import OSLog
 import SwiftData
+import UserScript
 import WebKit
 
 @available(macOS 15.5, *)
@@ -146,16 +147,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         maxDatesPerKey: 4
     )
     let ecRegistry = ExternallyConnectablePortRegistry()
-    private(set) lazy var ecBroker: SumiExtensionMessageBroker = {
-        let broker = SumiExtensionMessageBroker(
-            context: Self.externallyConnectableNativeBridgeHandlerName
-        )
-        let pageSubfeature = ExternallyConnectablePageSubfeature(manager: self)
-        let isolatedSubfeature = ExternallyConnectableIsolatedSubfeature(manager: self)
-        broker.registerSubfeature(pageSubfeature)
-        broker.registerSubfeature(isolatedSubfeature)
-        return broker
-    }()
     var extensionLoadGeneration: UInt64 = 0
     var tabOpenNotificationGeneration: UInt64 = 1
 
@@ -348,9 +339,14 @@ final class ExtensionManager: NSObject, ObservableObject {
         script.source.contains(externallyConnectablePageBridgeMarker)
     }
 
-    func normalTabAdditionalUserScripts() -> [WKUserScript] {
-        browserConfiguration.webViewConfiguration.userContentController.userScripts
-            .filter(Self.isManagedExternallyConnectablePageBridgeScript)
+    func normalTabUserScripts() -> [UserScript] {
+        guard externallyConnectablePolicies.isEmpty == false else { return [] }
+        return [
+            SumiExternallyConnectableUserScript(
+                manager: self,
+                policies: Array(externallyConnectablePolicies.values)
+            )
+        ]
     }
 
     static var isExternallyConnectableBridgeDebugLoggingEnabled: Bool {

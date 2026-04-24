@@ -28,13 +28,6 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
                 currentURL: url,
                 reason: "SumiTabLifecycleNavigationResponder.willStart"
             )
-            tab.browserManager?.sumiScriptsManager.installContentController(
-                webView.configuration.userContentController,
-                for: url,
-                webViewId: tab.id,
-                profileId: tab.resolveProfile()?.id ?? tab.profileId,
-                isEphemeral: tab.isEphemeral
-            )
         }
     }
 
@@ -120,11 +113,6 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
             tab.browserManager?.syncTabAcrossWindows(tab.id, originatingWebView: webView)
         } else {
             tab.pendingMainFrameNavigationKind = nil
-        }
-
-        tab.injectLinkHoverJavaScript(to: webView)
-        if let currentURL = webView.url {
-            tab.browserManager?.sumiScriptsManager.injectDocumentIdleScripts(for: webView, url: currentURL)
         }
 
         if tab.audioState.isMuted {
