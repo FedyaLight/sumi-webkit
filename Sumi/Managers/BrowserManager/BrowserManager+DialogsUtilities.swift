@@ -73,22 +73,7 @@ extension BrowserManager {
     // MARK: - Dialog Methods
 
     func showQuitDialog() {
-        if self.sumiSettings?.askBeforeQuit == true {
-            // SwiftUI overlay via DialogManager avoids NSAlert modal loops that crash TouchBar KVO on SumiBrowserWindow.
-            dialogManager.showQuitDialog(
-                onAlwaysQuit: { [weak self] in
-                    guard let self else { return }
-                    self.sumiSettings?.askBeforeQuit = false
-                    self.requestApplicationTermination()
-                },
-                onQuit: { [weak self] in
-                    guard let self else { return }
-                    self.requestApplicationTermination()
-                }
-            )
-        } else {
-            scheduleApplicationTerminationAfterTeardown()
-        }
+        NSApplication.shared.terminate(nil)
     }
 
     func showDialog<Content: View>(_ dialog: Content) {
@@ -153,29 +138,6 @@ extension BrowserManager {
             RuntimeDiagnostics.emit("🔄 [BrowserManager] Cleaning up tab: \(tab.name)")
             tab.closeTab()
         }
-    }
-
-    /// Dismiss quit UI, yield the main run loop, then request termination.
-    ///
-    /// We intentionally do **not** `orderOut` / `resignKey` browser windows here: that path has been observed to
-    /// trigger AppKit `_NSTouchBarFinderObservation` KVO faults on **`NSApplication.currentTouchBar`** during the
-    /// same display pass as SwiftUI dialog teardown (hang / trap in `-[NSApplication nextEventMatching...]`).
-    /// Window and WebKit teardown run from `AppDelegate.scheduleTerminationPersistenceBestEffort` after Quit.
-    private func scheduleApplicationTerminationAfterTeardown() {
-        // Do not call `terminate` from an awaited Swift `Task` on the main actor: `-[NSApplication terminate:]`
-        // can block the main thread until `reply(toApplicationShouldTerminate:)`, while that reply is produced
-        // from another MainActor `Task` queued behind the same executor — deadlock (NDJSON showed H1 without H2).
-        DispatchQueue.main.async { [self] in
-            self.dialogManager.closeDialog()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                NSApplication.shared.terminate(nil)
-            }
-        }
-    }
-
-    /// Requests app termination. Tab teardown runs in AppDelegate during `applicationShouldTerminate`.
-    private func requestApplicationTermination() {
-        scheduleApplicationTerminationAfterTeardown()
     }
 
     // MARK: - Window-Aware Tab Operations for Commands
