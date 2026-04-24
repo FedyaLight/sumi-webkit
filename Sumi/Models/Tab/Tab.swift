@@ -205,6 +205,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     var historyRecorder: HistoryTabRecorder {
         navigationRuntime.historyRecorder
     }
+    var navigationDelegateBundles: NSMapTable<WKWebView, SumiTabNavigationDelegateBundle> {
+        navigationRuntime.navigationDelegateBundles
+    }
     var isFreezingNavigationStateDuringBackForwardGesture: Bool {
         get { navigationRuntime.isFreezingNavigationStateDuringBackForwardGesture }
         set { navigationRuntime.isFreezingNavigationStateDuringBackForwardGesture = newValue }
@@ -728,6 +731,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             guard let self, let webView else { return }
             self.unbindAudioState(from: webView)
             self.removeNavigationStateObservers(from: webView)
+            self.removeNavigationDelegateBundle(for: webView)
         }
     }
 

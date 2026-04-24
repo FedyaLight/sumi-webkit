@@ -45,20 +45,6 @@ final class FindManager: ObservableObject {
         bindCurrentTabModel()
     }
 
-    func closeForNavigation(tab: Tab) {
-        tab.findInPage.didStartNavigation()
-        if currentTab?.id == tab.id {
-            bindCurrentTabModel()
-        }
-    }
-
-    func closeForSameDocumentNavigation(tab: Tab) {
-        tab.findInPage.didSameDocumentNavigation()
-        if currentTab?.id == tab.id {
-            bindCurrentTabModel()
-        }
-    }
-
     func updateCurrentTab(_ tab: Tab?) {
         currentTab = tab
     }

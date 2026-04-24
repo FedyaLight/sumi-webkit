@@ -408,7 +408,7 @@ final class SumiScriptsManager: ObservableObject {
     }
 
     /// Inject document-idle scripts after page load completes.
-    /// Call this from Tab+NavigationDelegate.swift in didFinish.
+    /// Call this after the normal tab's main-frame navigation finishes.
     ///
     /// - Parameters:
     ///   - webView: The webView that finished loading

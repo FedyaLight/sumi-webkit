@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import Navigation
 import ObjectiveC.runtime
 import WebKit
 
@@ -83,6 +84,7 @@ final class TabNavigationRuntime {
     let observedWebViews = NSHashTable<AnyObject>.weakObjects()
     var titleObservations: [ObjectIdentifier: NSKeyValueObservation] = [:]
     let historyRecorder = HistoryTabRecorder()
+    let navigationDelegateBundles = NSMapTable<WKWebView, SumiTabNavigationDelegateBundle>.weakToStrongObjects()
 }
 
 @MainActor
@@ -154,11 +156,7 @@ final class HistoryTabRecorder {
         addVisit(url: url, tab: tab)
     }
 
-    func didSameDocumentNavigation(
-        to url: URL,
-        type: SumiSameDocumentNavigationType?,
-        tab: Tab
-    ) {
+    func didSameDocumentNavigation(to url: URL, type: WKSameDocumentNavigationType?, tab: Tab) {
         currentURL = url
         guard shouldCapture(url: url, tab: tab) else { return }
         guard type == .anchorNavigation || type == .sessionStatePush else { return }
