@@ -84,25 +84,41 @@ enum SumiContentBlockingCompilationError: Error {
 
 @MainActor
 final class SumiContentBlockingService {
-    static let shared = SumiContentBlockingService(policy: .defaultPolicy)
+    static let shared = SumiContentBlockingService(
+        policy: .defaultPolicy,
+        trackingProtectionSettings: .shared,
+        trackingRuleSource: SumiEmbeddedDDGTrackerDataRuleSource(),
+        trackingDataStore: .shared
+    )
 
     let privacyConfigurationManager: SumiContentBlockingPrivacyConfigurationManager
 
     private let compiler: SumiContentRuleListCompiling
     private let updatesSubject: CurrentValueSubject<ContentBlockerRulesManager.UpdateEvent?, Never>
+    private let trackingProtectionSettings: SumiTrackingProtectionSettings?
+    private let trackingRuleSource: SumiTrackingProtectionRuleProviding?
+    private let trackingDataStore: SumiTrackingProtectionDataStore?
     private var currentPolicy: SumiContentBlockingPolicy
     private var compiledRulesByIdentifier: [String: ContentBlockerRulesManager.Rules] = [:]
     private var compilationGeneration = 0
+    private var trackingRefreshGeneration = 0
+    private var cancellables = Set<AnyCancellable>()
 
     private(set) var latestUpdate: ContentBlockerRulesManager.UpdateEvent?
     private(set) var lastCompilationError: Error?
 
     init(
         policy: SumiContentBlockingPolicy = .defaultPolicy,
-        compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler()
+        compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler(),
+        trackingProtectionSettings: SumiTrackingProtectionSettings? = nil,
+        trackingRuleSource: SumiTrackingProtectionRuleProviding? = nil,
+        trackingDataStore: SumiTrackingProtectionDataStore? = nil
     ) {
         currentPolicy = policy
         self.compiler = compiler
+        self.trackingProtectionSettings = trackingProtectionSettings
+        self.trackingRuleSource = trackingRuleSource
+        self.trackingDataStore = trackingDataStore
         privacyConfigurationManager = SumiContentBlockingPrivacyConfigurationManager(
             isContentBlockingEnabled: policy.shouldEnableContentBlockingFeature
         )
@@ -116,7 +132,10 @@ final class SumiContentBlockingService {
         latestUpdate = initialUpdate
         updatesSubject = CurrentValueSubject(initialUpdate)
 
-        if !policy.ruleLists.isEmpty {
+        if trackingProtectionSettings != nil {
+            bindTrackingProtection()
+            scheduleTrackingPolicyRefresh()
+        } else if !policy.ruleLists.isEmpty {
             scheduleCompilation(for: policy)
         }
     }
@@ -151,6 +170,52 @@ final class SumiContentBlockingService {
             publish(Self.emptyUpdate())
         } else {
             scheduleCompilation(for: policy)
+        }
+    }
+
+    private func bindTrackingProtection() {
+        trackingProtectionSettings?.changesPublisher
+            .sink { [weak self] in
+                self?.scheduleTrackingPolicyRefresh()
+            }
+            .store(in: &cancellables)
+
+        trackingDataStore?.changesPublisher
+            .sink { [weak self] in
+                self?.scheduleTrackingPolicyRefresh()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func scheduleTrackingPolicyRefresh() {
+        guard let trackingProtectionSettings, let trackingRuleSource else { return }
+
+        let trackingPolicy = trackingProtectionSettings.policy
+        if trackingPolicy.isFullyDisabled {
+            trackingRefreshGeneration += 1
+            setPolicy(.disabled)
+            return
+        }
+
+        trackingRefreshGeneration += 1
+        let generation = trackingRefreshGeneration
+
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard let self,
+                  generation == self.trackingRefreshGeneration
+            else { return }
+
+            do {
+                let ruleLists = try trackingRuleSource.ruleLists(for: trackingPolicy)
+                guard generation == self.trackingRefreshGeneration else { return }
+                self.lastCompilationError = nil
+                self.setPolicy(ruleLists.isEmpty ? .disabled : .enabled(ruleLists: ruleLists))
+            } catch {
+                guard generation == self.trackingRefreshGeneration else { return }
+                self.lastCompilationError = error
+                self.setPolicy(.disabled)
+            }
         }
     }
 
