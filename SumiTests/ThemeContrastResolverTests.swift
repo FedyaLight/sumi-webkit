@@ -38,6 +38,78 @@ final class ThemeContrastResolverTests: XCTestCase {
         XCTAssertEqual(scheme, .light)
     }
 
+    func testDefaultWorkspaceFollowsExplicitDarkWindowScheme() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        settings.themeUseSystemColors = false
+        settings.windowSchemeMode = .dark
+
+        let scheme = ThemeContrastResolver.resolvedChromeColorScheme(
+            theme: .default,
+            globalWindowScheme: .dark,
+            settings: settings
+        )
+
+        XCTAssertEqual(scheme, .dark)
+    }
+
+    func testDefaultWorkspaceFollowsExplicitLightWindowScheme() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        settings.themeUseSystemColors = false
+        settings.windowSchemeMode = .light
+
+        let scheme = ThemeContrastResolver.resolvedChromeColorScheme(
+            theme: .default,
+            globalWindowScheme: .light,
+            settings: settings
+        )
+
+        XCTAssertEqual(scheme, .light)
+    }
+
+    func testExplicitWorkspaceThemeStillUsesZenContrastOverWindowScheme() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        settings.themeUseSystemColors = false
+        settings.windowSchemeMode = .light
+
+        let scheme = ThemeContrastResolver.resolvedChromeColorScheme(
+            theme: makeTheme(hex: "#121212"),
+            globalWindowScheme: .light,
+            settings: settings
+        )
+
+        XCTAssertEqual(scheme, .dark)
+    }
+
+    func testExplicitFirstLightMonoPresetUsesThemeContrastOverDarkWindowScheme() throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        settings.themeUseSystemColors = false
+        settings.windowSchemeMode = .dark
+        let lightMonoTheme = try XCTUnwrap(
+            SumiWorkspaceThemePresets.groups.first?.presets.first?.workspaceTheme
+        )
+
+        let scheme = ThemeContrastResolver.resolvedChromeColorScheme(
+            theme: lightMonoTheme,
+            globalWindowScheme: .dark,
+            settings: settings
+        )
+
+        XCTAssertTrue(WorkspaceTheme.default.visuallyEquals(lightMonoTheme))
+        XCTAssertEqual(scheme, .light)
+    }
+
     func testUseSystemColorsShortCircuitsToGlobalScheme() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }

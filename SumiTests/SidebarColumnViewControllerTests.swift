@@ -155,12 +155,12 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         XCTAssertFalse(manager.isPresented(in: secondWindow))
     }
 
-    func testWorkspaceThemePickerDismissRecoveryUsesWindowAndOverlayAnchor() {
+    func testWorkspaceThemePickerDismissRecoveryUsesWindowAndPopoverAnchor() {
         let spy = SidebarHostRecoverySpy()
         let window = makeWindow()
         let anchor = NSView(frame: .zero)
 
-        WorkspaceThemePickerOverlay.performDismissRecovery(
+        WorkspaceThemePickerPopoverPresenter.performDismissRecovery(
             in: window,
             anchor: anchor,
             using: spy
@@ -178,12 +178,12 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         let window = makeWindow()
         let anchor = NSView(frame: .zero)
 
-        WorkspaceThemePickerOverlay.performDismissRecovery(
+        WorkspaceThemePickerPopoverPresenter.performDismissRecovery(
             in: window,
             anchor: anchor,
             using: spy
         )
-        WorkspaceThemePickerOverlay.performDismissRecovery(
+        WorkspaceThemePickerPopoverPresenter.performDismissRecovery(
             in: window,
             anchor: anchor,
             using: spy
@@ -1350,7 +1350,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
             commitWorkspaceTheme: { _, _ in },
             syncWorkspaceThemeAcrossWindows: { _, _ in },
             scheduleStructuralPersistence: {},
-            presentPicker: { presentedSession = $0 },
+            presentPicker: { session, _ in presentedSession = session },
             showDialog: { _, dialogSource in
                 shownDialogSource = dialogSource
             },
@@ -1362,6 +1362,50 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         XCTAssertNil(shownDialogSource)
         XCTAssertEqual(presentedSession?.hostWindowID, preferredWindow.id)
         XCTAssertTrue(presentedSession?.presentationSource === source)
+    }
+
+    func testWorkspaceAppearanceServiceCreatesFallbackThemePickerSourceForMenuEntryPoints() {
+        let service = WorkspaceAppearanceService()
+        let space = Space(name: "Personal")
+
+        let hostWindow = BrowserWindowState()
+        hostWindow.currentSpaceId = space.id
+        hostWindow.window = makeWindow()
+
+        let registry = WindowRegistry()
+        registry.register(hostWindow)
+        registry.setActive(hostWindow)
+
+        var presentedSession: WorkspaceThemePickerSession?
+        var presentedWindowState: BrowserWindowState?
+        let context = WorkspaceAppearanceService.Context(
+            currentSpace: { space },
+            spaceLookup: { $0 == space.id ? space : nil },
+            windowRegistry: { registry },
+            commitWorkspaceTheme: { _, _ in },
+            syncWorkspaceThemeAcrossWindows: { _, _ in },
+            scheduleStructuralPersistence: {},
+            presentPicker: { session, windowState in
+                presentedSession = session
+                presentedWindowState = windowState
+            },
+            showDialog: { _, _ in
+                XCTFail("Theme picker should present when a matching browser window exists")
+            },
+            closeDialog: {}
+        )
+
+        service.showGradientEditor(using: context)
+
+        XCTAssertEqual(presentedWindowState?.id, hostWindow.id)
+        XCTAssertEqual(presentedSession?.hostWindowID, hostWindow.id)
+        XCTAssertEqual(presentedSession?.transientSessionToken?.kind, .themePicker)
+        XCTAssertTrue(hostWindow.sidebarTransientSessionCoordinator.hasPinnedTransientUI(for: hostWindow.id))
+
+        hostWindow.sidebarTransientSessionCoordinator.finishSession(
+            presentedSession?.transientSessionToken,
+            reason: "WorkspaceAppearanceServiceTests"
+        )
     }
 
     func testWorkspaceAppearanceServiceFallbackDialogKeepsExplicitSidebarSource() {
@@ -1381,7 +1425,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
             commitWorkspaceTheme: { _, _ in },
             syncWorkspaceThemeAcrossWindows: { _, _ in },
             scheduleStructuralPersistence: {},
-            presentPicker: { _ in
+            presentPicker: { _, _ in
                 XCTFail("Theme picker should not present without a current space")
             },
             showDialog: { _, dialogSource in

@@ -55,32 +55,16 @@ enum ThemeContrastResolver {
             )
         }
 
-        // Match readability to the workspace gradient (same idea as Zen chrome reacting to context), not a separate settings accent.
-        let background = rgbComponents(of: theme.gradient.primaryColor)
-
-        let whiteCandidate = toolbarTextCandidate(for: .dark)
-        let blackCandidate = toolbarTextCandidate(for: .light)
-
-        let whiteContrast = contrastRatio(
-            between: background,
-            and: composite(
-                foreground: whiteCandidate.rgb,
-                alpha: whiteCandidate.alpha,
-                over: background
-            )
-        )
-        let blackContrast = contrastRatio(
-            between: background,
-            and: composite(
-                foreground: blackCandidate.rgb,
-                alpha: blackCandidate.alpha,
-                over: background
-            )
+        let zenResolution = ZenWorkspaceThemeResolver.resolve(
+            theme: theme,
+            globalWindowScheme: globalWindowScheme,
+            settings: settings,
+            isIncognito: isIncognito
         )
 
         return ThemeContrastDecision(
-            chromeColorScheme: whiteContrast > blackContrast ? .dark : .light,
-            blackContrast: blackContrast
+            chromeColorScheme: zenResolution.chromeColorScheme,
+            blackContrast: zenResolution.blackContrast
         )
     }
 
@@ -157,34 +141,9 @@ enum ThemeContrastResolver {
         }
     }
 
-    private static func toolbarTextCandidate(
-        for chromeScheme: ColorScheme
-    ) -> (rgb: [CGFloat], alpha: CGFloat) {
-        switch chromeScheme {
-        case .light:
-            return ([0, 0, 0], 0.8)
-        case .dark:
-            return ([1, 1, 1], 0.8)
-        @unknown default:
-            return ([1, 1, 1], 0.8)
-        }
-    }
-
     private static func rgbComponents(of color: Color) -> [CGFloat] {
         let components = color.sRGBComponents
         return [components.red, components.green, components.blue]
-    }
-
-    private static func composite(
-        foreground: [CGFloat],
-        alpha: CGFloat,
-        over background: [CGFloat]
-    ) -> [CGFloat] {
-        [
-            foreground[0] * alpha + background[0] * (1 - alpha),
-            foreground[1] * alpha + background[1] * (1 - alpha),
-            foreground[2] * alpha + background[2] * (1 - alpha),
-        ]
     }
 
     private static func contrastRatio(
@@ -523,8 +482,14 @@ enum ThemeChromeRecipeBuilder {
         context: ResolvedThemeContext,
         settings: SumiSettingsService
     ) -> ChromeThemeTokens {
-        let sourceAccent = ThemeContrastResolver.accent()
-        let targetAccent = ThemeContrastResolver.accent()
+        let sourceAccent = ZenWorkspaceThemeResolver.primaryColor(
+            theme: context.sourceWorkspaceTheme,
+            settings: settings
+        )
+        let targetAccent = ZenWorkspaceThemeResolver.primaryColor(
+            theme: context.targetWorkspaceTheme,
+            settings: settings
+        )
 
         let sourcePalette = ThemeChromePalette.make(
             scheme: context.sourceChromeColorScheme,

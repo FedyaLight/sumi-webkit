@@ -29,7 +29,10 @@ struct GradientEditorView: View {
     private var gradientThemeBinding: Binding<WorkspaceGradientTheme> {
         Binding(
             get: { workspaceTheme.gradientTheme },
-            set: { workspaceTheme.gradientTheme = $0 }
+            set: { updatedGradientTheme in
+                workspaceTheme.gradientTheme = updatedGradientTheme
+                workspaceTheme.usesExplicitColorScheme = !updatedGradientTheme.normalizedColors.isEmpty
+            }
         )
     }
 
@@ -40,6 +43,7 @@ struct GradientEditorView: View {
                 var updated = workspaceTheme.gradientTheme
                 updated.updateTexture(newValue)
                 workspaceTheme.gradientTheme = updated
+                workspaceTheme.usesExplicitColorScheme = !updated.normalizedColors.isEmpty
             }
         )
     }
@@ -312,6 +316,7 @@ struct GradientEditorView: View {
                 algorithm: resolvedHarmony.persistedAlgorithm
             )
             workspaceTheme.gradientTheme = updatedGradientTheme
+            workspaceTheme.usesExplicitColorScheme = !updatedColors.isEmpty
             editorHarmony = resolvedHarmony
             editorPreview.preferredPrimaryNodeID = updatedColors.first?.id
             editorPreview.activePrimaryNodeID = updatedColors.first?.id
