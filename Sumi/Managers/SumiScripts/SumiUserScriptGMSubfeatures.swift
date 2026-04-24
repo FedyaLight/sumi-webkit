@@ -9,6 +9,7 @@
 import WebKit
 
 /// Central entry: routes `method` from the JS shim to the appropriate handler on `UserScriptGMBridge`.
+@MainActor
 enum UserScriptGMDispatch {
 
     static func route(
@@ -35,6 +36,7 @@ enum UserScriptGMDispatch {
 
 // MARK: - Value storage & tab object
 
+@MainActor
 enum GMValueSubfeature {
     static func route(
         bridge: UserScriptGMBridge,
@@ -79,6 +81,7 @@ enum GMValueSubfeature {
 
 // MARK: - @resource
 
+@MainActor
 enum GMResourceSubfeature {
     static func route(
         bridge: UserScriptGMBridge,
@@ -102,6 +105,7 @@ enum GMResourceSubfeature {
 
 // MARK: - XHR / download
 
+@MainActor
 enum GMNetworkSubfeature {
     static func route(
         bridge: UserScriptGMBridge,
@@ -128,6 +132,7 @@ enum GMNetworkSubfeature {
 
 // MARK: - UI, menu, tabs, clipboard, notifications, window grants
 
+@MainActor
 enum GMUISubfeature {
     static func route(
         bridge: UserScriptGMBridge,
@@ -138,7 +143,7 @@ enum GMUISubfeature {
     ) -> Bool {
         switch method {
         case "GM_addStyle":
-            bridge.performAddStyle(args: args, webView: webView)
+            bridge.performAddStyle(callbackId: callbackId, webView: webView)
             return true
         case "GM_notification":
             bridge.performNotification(args: args)

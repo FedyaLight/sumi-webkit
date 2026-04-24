@@ -82,12 +82,12 @@ class BrowserConfiguration {
     func normalTabWebViewConfiguration(
         for profile: Profile,
         url: URL?,
-        additionalUserScripts: [WKUserScript] = []
+        userScriptsProvider: SumiNormalTabUserScripts? = nil
     ) -> WKWebViewConfiguration {
         let config = makeBaseWebViewConfiguration()
         config.websiteDataStore = profile.dataStore
         config.userContentController = SumiNormalTabUserContentControllerFactory
-            .makeController(additionalUserScripts: additionalUserScripts)
+            .makeController(scriptsProvider: userScriptsProvider)
         applyMediaSessionPolicy(to: config, profile: profile)
         applySitePermissionOverrides(to: config, url: url, profileId: profile.id)
         return config
@@ -111,7 +111,8 @@ class BrowserConfiguration {
             ?? source?.websiteDataStore
             ?? webViewConfiguration.websiteDataStore
         config.userContentController = SumiNormalTabUserContentControllerFactory
-            .makeController(additionalUserScripts: additionalUserScripts)
+            .makeController(scriptsProvider: SumiNormalTabUserScripts())
+        additionalUserScripts.forEach(config.userContentController.addUserScript)
 
         if let source {
             config.webExtensionController = source.webExtensionController

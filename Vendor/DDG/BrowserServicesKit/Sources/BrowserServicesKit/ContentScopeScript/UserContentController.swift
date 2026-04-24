@@ -119,6 +119,16 @@ final public class UserContentController: WKUserContentController {
                                         updateEvent: contentBlockingAssets.updateEvent)
     }
 
+    @MainActor
+    public func replaceUserScripts(with userScripts: UserScriptsProvider) async {
+        guard assetsPublisherCancellables != nil else { return }
+
+        let wkUserScripts = await userScripts.loadWKUserScripts()
+        removeInstalledUserScripts()
+        removeInstalledScriptMessageHandlers()
+        installUserScripts(wkUserScripts, handlers: userScripts.userScripts)
+    }
+
     enum ContentRuleListIdentifier: Hashable {
         case global(String), local(String)
     }
@@ -275,18 +285,21 @@ final public class UserContentController: WKUserContentController {
     }
 
     @MainActor
-    public func cleanUpBeforeClosing() {
-        Logger.contentBlocking.debug("\(self): 💀 cleanUpBeforeClosing")
-
-        self.removeAllUserScripts()
-
+    private func removeInstalledScriptMessageHandlers() {
         if #available(macOS 11.0, *) {
             self.removeAllScriptMessageHandlers()
         } else {
             self.scriptMessageHandler.registeredMessageNames.forEach(self.removeScriptMessageHandler)
         }
-
         self.scriptMessageHandler.clear()
+    }
+
+    @MainActor
+    public func cleanUpBeforeClosing() {
+        Logger.contentBlocking.debug("\(self): 💀 cleanUpBeforeClosing")
+
+        self.removeAllUserScripts()
+        self.removeInstalledScriptMessageHandlers()
         self.assetsPublisherCancellables = nil
 
         self.removeAllContentRuleLists()

@@ -46,7 +46,7 @@ final class UserScriptStore {
 
     // MARK: - Properties
 
-    private(set) var scripts: [UserScript] = []
+    private(set) var scripts: [SumiInstalledUserScript] = []
     /// `internal` so zip backup/import in `UserScriptStore+Backup.swift` can merge manifest fields.
     internal var manifest: Manifest = .default
     /// `internal` for SwiftData persistence helpers in `UserScriptStore+SwiftData.swift`.
@@ -113,7 +113,7 @@ final class UserScriptStore {
     }
 
     /// Return only scripts that match the given URL, sorted by weight (heavier first).
-    func scriptsForURL(_ url: URL) -> [UserScript] {
+    func scriptsForURL(_ url: URL) -> [SumiInstalledUserScript] {
         let originKey = UserScriptOriginPolicy.originKey(from: url)
         let mode = effectiveRunMode
         let allowMap = manifest.originAllow ?? [:]
@@ -261,7 +261,7 @@ final class UserScriptStore {
     /// This performs network and resource work asynchronously before atomically
     /// writing the compiled source into the scripts directory.
     @discardableResult
-    func installScript(from url: URL) async throws -> UserScript {
+    func installScript(from url: URL) async throws -> SumiInstalledUserScript {
         let (data, _) = try await URLSession.shared.data(from: url)
         guard let content = String(data: data, encoding: .utf8),
               let parsedMetadata = UserScriptMetadataParser.parse(content)
@@ -294,7 +294,7 @@ final class UserScriptStore {
             installURL: url
         )
 
-        let script = UserScript(
+        let script = SumiInstalledUserScript(
             id: scriptId,
             filename: filename,
             metadata: metadata,
@@ -346,7 +346,7 @@ final class UserScriptStore {
 
     // MARK: - File Loading
 
-    private func loadAllScripts() -> [UserScript] {
+    private func loadAllScripts() -> [SumiInstalledUserScript] {
         ensureDirectoryExists(scriptsDirectory)
 
         guard let urls = try? fileManager.contentsOfDirectory(
@@ -357,7 +357,7 @@ final class UserScriptStore {
             return []
         }
 
-        var result: [UserScript] = []
+        var result: [SumiInstalledUserScript] = []
 
         for url in urls {
             let filename = url.lastPathComponent
@@ -386,7 +386,7 @@ final class UserScriptStore {
             let storedMetadata = useLazyBody ? parsedMeta.replacingCode("") : parsedMeta
             let deferredURL: URL? = useLazyBody ? url : nil
 
-            let script = UserScript(
+            let script = SumiInstalledUserScript(
                 id: id,
                 filename: filename,
                 metadata: storedMetadata,

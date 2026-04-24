@@ -126,7 +126,7 @@ struct UserScriptMetadata {
 enum UserScriptMetadataParser {
 
     // RE for full metablock extraction
-    // Group 1/2/3: UserScript format (metablock, metas, code)
+    // Group 1/2/3: SumiInstalledUserScript format (metablock, metas, code)
     // Group 4/5/6: UserStyle format (metablock, metas, code)
     private static let metablockRE = try! NSRegularExpression(
         pattern: #"(?:(\/\/ ==UserScript==[ \t]*?\r?\n([\S\s]*?)\r?\n\/\/ ==\/UserScript==)([\S\s]*)|(\/\* ==UserStyle==[ \t]*?\r?\n([\S\s]*?)\r?\n==\/UserStyle== \*\/)([\S\s]*))"#,
@@ -161,7 +161,7 @@ enum UserScriptMetadataParser {
             return nil
         }
 
-        // Determine format: UserScript (groups 1,2,3) or UserStyle (groups 4,5,6)
+        // Determine format: SumiInstalledUserScript (groups 1,2,3) or UserStyle (groups 4,5,6)
         let metablockGroupIdx: Int
         let metasGroupIdx: Int
         let codeGroupIdx: Int

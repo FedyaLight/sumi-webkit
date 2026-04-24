@@ -202,13 +202,34 @@ __SUMI_BRIDGE_MARKER__
         return 'sumi_ec_req_' + String(Date.now()) + '_' + Math.random().toString(36).slice(2, 11);
     }
 
+    function unwrapNativeReply(reply) {
+        return Promise.resolve(reply).then(function(rawReply) {
+            var envelope = rawReply;
+            if (typeof envelope === 'string') {
+                try {
+                    envelope = JSON.parse(envelope);
+                } catch (_) {
+                    return rawReply;
+                }
+            }
+            if (envelope && envelope.error && envelope.error.message) {
+                throw new Error(envelope.error.message);
+            }
+            if (envelope && Object.prototype.hasOwnProperty.call(envelope, 'result')) {
+                return envelope.result;
+            }
+            return envelope;
+        });
+    }
+
     function requestViaNativeBridge(parsed) {
         var handler = nativeBridgeHandler();
         if (!handler || typeof handler.postMessage !== 'function') {
             return Promise.reject(new Error('Native extension bridge unavailable'));
         }
 
-        return Promise.resolve(handler.postMessage({
+        return unwrapNativeReply(handler.postMessage({
+            context: _nativeBridgeHandlerName,
             bridgeVersion: _bridgeVersion,
             featureName: 'runtime',
             method: 'sendMessage',
@@ -226,7 +247,8 @@ __SUMI_BRIDGE_MARKER__
             return Promise.reject(new Error('Native connect bridge unavailable'));
         }
 
-        return Promise.resolve(handler.postMessage({
+        return unwrapNativeReply(handler.postMessage({
+            context: _nativeBridgeHandlerName,
             bridgeVersion: _bridgeVersion,
             featureName: 'runtime',
             method: method,

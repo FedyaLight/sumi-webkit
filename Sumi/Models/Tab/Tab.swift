@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import BrowserServicesKit
 import Combine
 import Foundation
 import SwiftUI
@@ -36,9 +37,8 @@ enum SumiWebViewShutdown {
             webViewId: tabId
         )
 
-        let controller = webView.configuration.userContentController
-        for handlerName in Tab.coreScriptMessageHandlerNames(for: tabId) {
-            controller.removeScriptMessageHandler(forName: handlerName)
+        if let controller = webView.configuration.userContentController as? UserContentController {
+            controller.cleanUpBeforeClosing()
         }
 
         additionalTabCleanup?()

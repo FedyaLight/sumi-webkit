@@ -654,21 +654,7 @@ extension ExtensionManager {
     }
 
     private func removeManagedExternallyConnectableScriptsAndHandlers() {
-        let configuration = browserConfiguration.webViewConfiguration
-        let userContentController = configuration.userContentController
-        let preservedScripts = userContentController.userScripts.filter {
-            Self.isManagedExternallyConnectablePageBridgeScript($0) == false
-        }
-
-        if preservedScripts.count != userContentController.userScripts.count {
-            userContentController.removeAllUserScripts()
-            preservedScripts.forEach { userContentController.addUserScript($0) }
-        }
-
-        SumiExtensionMessageBroker.removeIfInstalled(
-            from: userContentController,
-            context: Self.externallyConnectableNativeBridgeHandlerName
-        )
+        installedPageBridgeIDs.removeAll()
     }
 
     private func pruneRuntimeAdapters() {

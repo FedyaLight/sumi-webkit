@@ -1,4 +1,5 @@
 import Foundation
+import BrowserServicesKit
 import SwiftData
 import WebKit
 import XCTest
@@ -1274,7 +1275,7 @@ extension ExtensionManagerTests {
         )
     }
 
-    func testPrepareWebViewForExtensionRuntimeInstallsNativeBridgeHandlerWhenPoliciesExist() async throws {
+    func testNormalTabUserScriptsInstallExternallyConnectableBrokerWhenPoliciesExist() async throws {
         let harness = try makeExtensionRuntimeHarness()
         let manager = makeExtensionManager(in: harness)
 
@@ -1303,17 +1304,22 @@ extension ExtensionManagerTests {
             packagePath: extensionRoot.path
         )
 
-        let configuration = harness.browserConfiguration
-            .cacheOptimizedWebViewConfiguration()
+        let scripts = manager.normalTabUserScripts()
+        XCTAssertEqual(scripts.count, 1)
+
+        let provider = SumiNormalTabUserScripts(managedUserScripts: scripts)
+        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+            scriptsProvider: provider
+        )
+        let configuration = WKWebViewConfiguration()
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        configuration.userContentController = controller
         let webView = WKWebView(frame: .zero, configuration: configuration)
         let allowedURL = try XCTUnwrap(
             URL(string: "https://accounts.example.com/index.html")
         )
 
-        manager.prepareWebViewForExtensionRuntime(
-            webView,
-            currentURL: allowedURL
-        )
+        await controller.awaitContentBlockingAssetsInstalled()
         try await loadHTMLString(
             "<html><body>allowed</body></html>",
             baseURL: allowedURL,
@@ -1333,21 +1339,26 @@ extension ExtensionManagerTests {
         XCTAssertEqual(result["hasNativeHandler"] as? Bool, true)
     }
 
-    func testPrepareWebViewForExtensionRuntimeSkipsNativeHandlerWithoutPolicy() async throws {
+    func testNormalTabUserScriptsSkipExternallyConnectableBrokerWithoutPolicy() async throws {
         let harness = try makeExtensionRuntimeHarness()
         let manager = makeExtensionManager(in: harness)
 
-        let configuration = harness.browserConfiguration
-            .cacheOptimizedWebViewConfiguration()
+        let scripts = manager.normalTabUserScripts()
+        XCTAssertTrue(scripts.isEmpty)
+
+        let provider = SumiNormalTabUserScripts(managedUserScripts: scripts)
+        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+            scriptsProvider: provider
+        )
+        let configuration = WKWebViewConfiguration()
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        configuration.userContentController = controller
         let webView = WKWebView(frame: .zero, configuration: configuration)
         let pageURL = try XCTUnwrap(
             URL(string: "https://accounts.example.com/index.html")
         )
 
-        manager.prepareWebViewForExtensionRuntime(
-            webView,
-            currentURL: pageURL
-        )
+        await controller.awaitContentBlockingAssetsInstalled()
         try await loadHTMLString(
             "<html><body>no-policy</body></html>",
             baseURL: pageURL,

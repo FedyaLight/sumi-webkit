@@ -2,75 +2,77 @@
 //  ExtensionManagerSupport+BrokerSubfeatures.swift
 //  Sumi
 //
-//  Subfeature adapters that route SumiExtensionMessageBroker messages
+//  Subfeature adapters that route BSK UserScriptMessageBroker messages
 //  to the existing ExtensionManager handlers for externally_connectable.
 //
 
 import Foundation
+import UserScript
 import WebKit
 
 // MARK: - Page-world subfeature (sendMessage + connect from web pages)
 
 @available(macOS 15.5, *)
 @MainActor
-final class ExternallyConnectablePageSubfeature: SumiExtensionSubfeature {
+final class ExternallyConnectablePageSubfeature: NSObject, Subfeature {
     let featureName = "runtime"
-    let messageOriginPolicy: SumiExtensionMessageOriginPolicy = .all
+    let messageOriginPolicy: MessageOriginPolicy = .all
+    weak var broker: UserScriptMessageBroker?
 
     weak var manager: ExtensionManager?
 
     init(manager: ExtensionManager) {
         self.manager = manager
+        super.init()
     }
 
-    func handler(forMethodNamed method: String) -> Handler? {
+    func with(broker: UserScriptMessageBroker) {
+        self.broker = broker
+    }
+
+    func handler(forMethodNamed method: String) -> Subfeature.Handler? {
         switch method {
         case "runtime.sendMessage", "sendMessage":
-            return { [weak self] message, replyHandler in
-                self?.manager?.handleExternallyConnectableNativeMessage(
-                    message.rawMessage,
-                    replyHandler: replyHandler
-                )
+            return { [weak self] _, original in
+                try await self?.relay(message: original)
             }
         case "runtime.connect.open", "runtime.connect.postMessage",
              "runtime.connect.disconnect":
-            return { [weak self] message, replyHandler in
-                self?.manager?.handleExternallyConnectableNativeMessage(
-                    message.rawMessage,
-                    replyHandler: replyHandler
-                )
+            return { [weak self] _, original in
+                try await self?.relay(message: original)
             }
         default:
             return nil
         }
     }
+
+    private func relay(message: WKScriptMessage) async throws -> SumiJSONValue {
+        guard let manager else {
+            throw ExternallyConnectableSubfeatureError.managerUnavailable
+        }
+
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<SumiJSONValue, Error>) in
+            manager.handleExternallyConnectableNativeMessage(message) { reply, errorMessage in
+                if let errorMessage {
+                    continuation.resume(throwing: ExternallyConnectableSubfeatureError.nativeError(errorMessage))
+                } else {
+                    continuation.resume(returning: SumiJSONValue(foundationObject: reply))
+                }
+            }
+        }
+    }
 }
 
-// MARK: - Isolated-world subfeature (connect adapter events from content scripts)
+private enum ExternallyConnectableSubfeatureError: LocalizedError {
+    case managerUnavailable
+    case nativeError(String)
 
-@available(macOS 15.5, *)
-@MainActor
-final class ExternallyConnectableIsolatedSubfeature: SumiExtensionSubfeature {
-    let featureName = "runtime.connect.event"
-    let messageOriginPolicy: SumiExtensionMessageOriginPolicy = .all
-
-    weak var manager: ExtensionManager?
-
-    init(manager: ExtensionManager) {
-        self.manager = manager
-    }
-
-    func handler(forMethodNamed method: String) -> Handler? {
-        switch method {
-        case "runtime.connect.event.message", "runtime.connect.event.disconnect":
-            return { [weak self] message, replyHandler in
-                self?.manager?.handleExternallyConnectableNativeMessage(
-                    message.rawMessage,
-                    replyHandler: replyHandler
-                )
-            }
-        default:
-            return nil
+    var errorDescription: String? {
+        switch self {
+        case .managerUnavailable:
+            return "Extension manager is unavailable"
+        case .nativeError(let message):
+            return message
         }
     }
 }

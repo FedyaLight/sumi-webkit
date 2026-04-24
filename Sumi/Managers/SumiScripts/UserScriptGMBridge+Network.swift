@@ -57,72 +57,74 @@ extension UserScriptGMBridge {
         let requestId = callbackId
 
         let task = URLSession.shared.dataTask(with: request) { [weak self, weak webView] data, response, error in
-            guard let self, let webView else { return }
+            Task { @MainActor [weak self, weak webView] in
+                guard let self, let webView else { return }
 
-            self.activeTasks.removeValue(forKey: requestId)
+                self.activeTasks.removeValue(forKey: requestId)
 
-            if let error {
-                let nsError = error as NSError
-                if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
-                    self.sendXHREvent("onabort", callbackId: callbackId, response: [
+                if let error {
+                    let nsError = error as NSError
+                    if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
+                        self.sendXHREvent("onabort", callbackId: callbackId, response: [
+                            "status": 0,
+                            "statusText": "abort",
+                            "responseText": "",
+                            "readyState": 4
+                        ], webView: webView)
+                        return
+                    }
+
+                    self.sendXHREvent("onerror", callbackId: callbackId, response: [
                         "status": 0,
-                        "statusText": "abort",
+                        "statusText": error.localizedDescription,
                         "responseText": "",
                         "readyState": 4
                     ], webView: webView)
                     return
                 }
 
-                self.sendXHREvent("onerror", callbackId: callbackId, response: [
-                    "status": 0,
-                    "statusText": error.localizedDescription,
-                    "responseText": "",
-                    "readyState": 4
-                ], webView: webView)
-                return
-            }
-
-            guard let httpResponse = response as? HTTPURLResponse else {
-                self.sendXHREvent("onerror", callbackId: callbackId, response: [
-                    "status": 0,
-                    "statusText": "No response",
-                    "readyState": 4
-                ], webView: webView)
-                return
-            }
-
-            let headers = httpResponse.allHeaderFields.map { "\($0.key): \($0.value)" }.joined(separator: "\r\n")
-
-            var responseText = ""
-            var responseValue: Any = ""
-
-            if let data {
-                switch responseType {
-                case "json":
-                    responseText = String(data: data, encoding: .utf8) ?? ""
-                    responseValue = responseText
-                case "arraybuffer", "blob":
-                    responseValue = data.base64EncodedString()
-                    responseText = ""
-                default:
-                    responseText = String(data: data, encoding: .utf8) ?? ""
-                    responseValue = responseText
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    self.sendXHREvent("onerror", callbackId: callbackId, response: [
+                        "status": 0,
+                        "statusText": "No response",
+                        "readyState": 4
+                    ], webView: webView)
+                    return
                 }
+
+                let headers = httpResponse.allHeaderFields.map { "\($0.key): \($0.value)" }.joined(separator: "\r\n")
+
+                var responseText = ""
+                var responseValue: Any = ""
+
+                if let data {
+                    switch responseType {
+                    case "json":
+                        responseText = String(data: data, encoding: .utf8) ?? ""
+                        responseValue = responseText
+                    case "arraybuffer", "blob":
+                        responseValue = data.base64EncodedString()
+                        responseText = ""
+                    default:
+                        responseText = String(data: data, encoding: .utf8) ?? ""
+                        responseValue = responseText
+                    }
+                }
+
+                let responseObj: [String: Any] = [
+                    "status": httpResponse.statusCode,
+                    "statusText": HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode),
+                    "responseHeaders": headers,
+                    "responseText": responseText,
+                    "response": responseValue,
+                    "responseType": responseType,
+                    "responseURL": httpResponse.url?.absoluteString ?? urlString,
+                    "finalUrl": httpResponse.url?.absoluteString ?? urlString,
+                    "readyState": 4
+                ]
+
+                self.sendXHREvent("onload", callbackId: callbackId, response: responseObj, webView: webView)
             }
-
-            let responseObj: [String: Any] = [
-                "status": httpResponse.statusCode,
-                "statusText": HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode),
-                "responseHeaders": headers,
-                "responseText": responseText,
-                "response": responseValue,
-                "responseType": responseType,
-                "responseURL": httpResponse.url?.absoluteString ?? urlString,
-                "finalUrl": httpResponse.url?.absoluteString ?? urlString,
-                "readyState": 4
-            ]
-
-            self.sendXHREvent("onload", callbackId: callbackId, response: responseObj, webView: webView)
         }
 
         activeTasks[requestId] = task
