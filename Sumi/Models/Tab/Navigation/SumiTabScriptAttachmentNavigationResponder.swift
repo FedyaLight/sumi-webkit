@@ -14,6 +14,11 @@ final class SumiTabScriptAttachmentNavigationResponder: NavigationResponder {
         for navigationAction: NavigationAction,
         preferences _: inout NavigationPreferences
     ) async -> NavigationActionPolicy? {
+        let signpostState = PerformanceTrace.beginInterval("NavigationPolicy.scriptAttachmentResponder")
+        defer {
+            PerformanceTrace.endInterval("NavigationPolicy.scriptAttachmentResponder", signpostState)
+        }
+
         guard navigationAction.isForMainFrame,
               let tab,
               let webView = navigationAction.targetFrame?.webView ?? navigationAction.sourceFrame.webView

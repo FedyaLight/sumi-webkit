@@ -18,6 +18,11 @@ final class SumiDownloadsNavigationResponder: NavigationResponder {
         for navigationAction: NavigationAction,
         preferences _: inout NavigationPreferences
     ) async -> NavigationActionPolicy? {
+        let signpostState = PerformanceTrace.beginInterval("NavigationPolicy.downloadActionResponder")
+        defer {
+            PerformanceTrace.endInterval("NavigationPolicy.downloadActionResponder", signpostState)
+        }
+
         if case .sessionRestoration = navigationAction.navigationType {
             isRestoringSessionState = true
         } else if isRestoringSessionState,
@@ -41,6 +46,11 @@ final class SumiDownloadsNavigationResponder: NavigationResponder {
     }
 
     func decidePolicy(for navigationResponse: NavigationResponse) async -> NavigationResponsePolicy? {
+        let signpostState = PerformanceTrace.beginInterval("NavigationPolicy.downloadResponseResponder")
+        defer {
+            PerformanceTrace.endInterval("NavigationPolicy.downloadResponseResponder", signpostState)
+        }
+
         let firstNavigationAction = navigationResponse.mainFrameNavigation?.redirectHistory.first
             ?? navigationResponse.mainFrameNavigation?.navigationAction
 

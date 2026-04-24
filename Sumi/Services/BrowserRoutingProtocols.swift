@@ -33,6 +33,7 @@ protocol ExternalURLHandling: AnyObject {
 protocol BrowserPersistenceHandling: AnyObject {
     var modelContext: ModelContext { get }
     func cleanupAllTabs()
+    func flushPendingWindowSessionPersistence()
     func flushRuntimeStatePersistenceAwaitingResult() async -> Int
     func persistFullReconcileAwaitingResult(reason: String) async -> Bool
 }

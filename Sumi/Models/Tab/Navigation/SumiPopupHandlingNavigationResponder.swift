@@ -90,6 +90,11 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
         for navigationAction: NavigationAction,
         preferences _: inout NavigationPreferences
     ) async -> NavigationActionPolicy? {
+        let signpostState = PerformanceTrace.beginInterval("NavigationPolicy.popupResponder")
+        defer {
+            PerformanceTrace.endInterval("NavigationPolicy.popupResponder", signpostState)
+        }
+
         guard let tab else { return .next }
 
         if tab.isPopupHost, isSumiInternalURL(navigationAction.url) {

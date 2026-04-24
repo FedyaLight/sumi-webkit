@@ -649,6 +649,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     func beginSuspendedRestoreIfNeeded() {
         guard isSuspended, !isSuspensionRestoreInProgress else { return }
         isSuspensionRestoreInProgress = true
+        webViewRuntime.suspensionRestoreTraceState = PerformanceTrace.beginInterval("TabSuspension.restore")
         PerformanceTrace.emitEvent("TabSuspension.restoreStart")
     }
 
@@ -657,6 +658,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         objectWillChange.send()
         isSuspended = false
         isSuspensionRestoreInProgress = false
+        if let traceState = webViewRuntime.suspensionRestoreTraceState {
+            PerformanceTrace.endInterval("TabSuspension.restore", traceState)
+            webViewRuntime.suspensionRestoreTraceState = nil
+        }
         PerformanceTrace.emitEvent("TabSuspension.restoreEnd")
         NotificationCenter.default.post(
             name: .sumiTabLifecycleDidChange,

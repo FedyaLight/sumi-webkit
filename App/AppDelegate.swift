@@ -551,6 +551,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
                 AppDelegate.log.info("Termination: MainActor task began")
 
+                persistenceHandler.flushPendingWindowSessionPersistence()
+
                 let runtimePersistStart = CFAbsoluteTimeGetCurrent()
                 let flushedRuntimeStates = await persistenceHandler
                     .flushRuntimeStatePersistenceAwaitingResult()

@@ -445,6 +445,6 @@ final class SplitViewManager: ObservableObject {
 
     private func persistWindowSessionIfPossible(for windowId: UUID) {
         guard let windowState = browserManager?.windowRegistry?.windows[windowId] else { return }
-        browserManager?.persistWindowSession(for: windowState)
+        browserManager?.schedulePersistWindowSession(for: windowState)
     }
 }

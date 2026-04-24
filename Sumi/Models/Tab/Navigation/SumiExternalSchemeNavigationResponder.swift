@@ -37,6 +37,11 @@ final class SumiExternalSchemeNavigationResponder: NavigationResponder {
         for navigationAction: NavigationAction,
         preferences _: inout NavigationPreferences
     ) async -> NavigationActionPolicy? {
+        let signpostState = PerformanceTrace.beginInterval("NavigationPolicy.externalSchemeResponder")
+        defer {
+            PerformanceTrace.endInterval("NavigationPolicy.externalSchemeResponder", signpostState)
+        }
+
         let externalURL = navigationAction.url
         guard externalURL.sumiIsExternalSchemeLink, externalURL.scheme != nil else {
             if navigationAction.isForMainFrame,

@@ -1,15 +1,16 @@
 import Foundation
+import UserScript
 import WebKit
 
-public final class SumiFaviconTransportUserScript: NSObject, UserScript, UserScriptMessaging, WKScriptMessageHandlerWithReply {
-    public let broker: UserScriptMessageBroker
-    public let source: String
-    public let injectionTime: WKUserScriptInjectionTime = .atDocumentEnd
-    public let forMainFrameOnly = true
-    public let requiresRunInPageContentWorld = false
-    public let messageNames: [String]
+final class SumiFaviconTransportUserScript: NSObject, UserScript, UserScriptMessaging, WKScriptMessageHandlerWithReply {
+    let broker: UserScriptMessageBroker
+    let source: String
+    let injectionTime: WKUserScriptInjectionTime = .atDocumentEnd
+    let forMainFrameOnly = true
+    let requiresRunInPageContentWorld = false
+    let messageNames: [String]
 
-    public init(context: String = "sumiFavicons") {
+    init(context: String = "sumiFavicons") {
         let broker = UserScriptMessageBroker(context: context)
         self.broker = broker
         self.messageNames = [context]
@@ -123,7 +124,7 @@ public final class SumiFaviconTransportUserScript: NSObject, UserScript, UserScr
         """
     }
 
-    public func userContentController(
+    func userContentController(
         _ userContentController: WKUserContentController,
         didReceive message: WKScriptMessage
     ) async -> (Any?, String?) {
@@ -136,25 +137,25 @@ public final class SumiFaviconTransportUserScript: NSObject, UserScript, UserScr
         }
     }
 
-    public func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         _ = userContentController
         _ = message
     }
 }
 
 @MainActor
-public final class SumiDDGFaviconUserScripts: UserScriptsProvider {
-    public let transportScript: SumiFaviconTransportUserScript
-    public let faviconScript = FaviconUserScript()
-    public lazy var userScripts: [UserScript] = [transportScript]
+final class SumiDDGFaviconUserScripts: UserScriptsProvider {
+    let transportScript: SumiFaviconTransportUserScript
+    let faviconScript = FaviconUserScript()
+    lazy var userScripts: [UserScript] = [transportScript]
 
-    public init() {
+    init() {
         let transportScript = SumiFaviconTransportUserScript()
         self.transportScript = transportScript
         transportScript.registerSubfeature(delegate: faviconScript)
     }
 
-    public func loadWKUserScripts() async -> [WKUserScript] {
+    func loadWKUserScripts() async -> [WKUserScript] {
         var scripts: [WKUserScript] = []
         scripts.reserveCapacity(userScripts.count)
         for userScript in userScripts {

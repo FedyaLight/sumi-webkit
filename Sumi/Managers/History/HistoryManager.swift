@@ -27,6 +27,8 @@ final class HistoryManager: ObservableObject {
     private let maxHistoryDays = 100
     private var cleanupTask: Task<Void, Never>?
     private var changeTask: Task<Void, Never>?
+    private var scheduledRefreshTask: Task<Void, Never>?
+    private static let changeRefreshDebounceNanoseconds: UInt64 = 120_000_000
 
     var currentProfileId: UUID?
 
@@ -42,10 +44,12 @@ final class HistoryManager: ObservableObject {
     deinit {
         cleanupTask?.cancel()
         changeTask?.cancel()
+        scheduledRefreshTask?.cancel()
     }
 
     func switchProfile(_ profileId: UUID?) {
         currentProfileId = profileId
+        scheduledRefreshTask?.cancel()
         Task { [weak self] in
             await self?.refresh()
         }
@@ -110,10 +114,19 @@ final class HistoryManager: ObservableObject {
             guard let self else { return }
             do {
                 try await operation(store)
-                await refresh()
+                scheduleCoalescedRefresh()
             } catch {
                 RuntimeDiagnostics.emit("Error updating history: \(error)")
             }
+        }
+    }
+
+    private func scheduleCoalescedRefresh() {
+        scheduledRefreshTask?.cancel()
+        scheduledRefreshTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: Self.changeRefreshDebounceNanoseconds)
+            guard !Task.isCancelled else { return }
+            await self?.refresh()
         }
     }
 
