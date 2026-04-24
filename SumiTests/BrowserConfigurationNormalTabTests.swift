@@ -27,6 +27,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let controller = try XCTUnwrap(configuration.userContentController as? UserContentController)
         await controller.awaitContentBlockingAssetsInstalled()
         XCTAssertFalse(configuration.userContentController.userScripts.isEmpty)
+        XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
     }
 
     func testNormalTabConfigurationCreatesDistinctControllersWithSharedProcessPool() {

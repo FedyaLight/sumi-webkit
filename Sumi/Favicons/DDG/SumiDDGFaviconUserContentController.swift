@@ -9,18 +9,27 @@ import WebKit
 @MainActor
 final class SumiNormalTabUserScripts: UserScriptsProvider {
     let faviconScripts = SumiDDGFaviconUserScripts()
+    private var contentBlockingUserScripts: [UserScript]
     private var managedUserScripts: [UserScript]
 
-    init(managedUserScripts: [UserScript] = []) {
+    init(
+        contentBlockingUserScripts: [UserScript] = [],
+        managedUserScripts: [UserScript] = []
+    ) {
+        self.contentBlockingUserScripts = contentBlockingUserScripts
         self.managedUserScripts = managedUserScripts
     }
 
     var userScripts: [UserScript] {
-        faviconScripts.userScripts + managedUserScripts
+        contentBlockingUserScripts + faviconScripts.userScripts + managedUserScripts
     }
 
     func replaceManagedUserScripts(_ userScripts: [UserScript]) {
         managedUserScripts = userScripts
+    }
+
+    func replaceContentBlockingUserScripts(_ userScripts: [UserScript]) {
+        contentBlockingUserScripts = userScripts
     }
 
     func loadWKUserScripts() async -> [WKUserScript] {
@@ -34,17 +43,23 @@ final class SumiNormalTabUserScripts: UserScriptsProvider {
     }
 }
 
-private struct SumiNormalTabUserContent: UserContentControllerNewContent {
+struct SumiNormalTabUserContent: UserContentControllerNewContent {
     typealias SourceProvider = SumiNormalTabUserScripts
     typealias UserScripts = SumiNormalTabUserScripts
 
-    let rulesUpdate = ContentBlockerRulesManager.UpdateEvent(
-        rules: [],
-        changes: [:],
-        completionTokens: []
-    )
+    let rulesUpdate: ContentBlockerRulesManager.UpdateEvent
     let sourceProvider: SumiNormalTabUserScripts
-    let makeUserScripts: @MainActor (SumiNormalTabUserScripts) -> SumiNormalTabUserScripts = { $0 }
+    let makeUserScripts: @MainActor (SumiNormalTabUserScripts) -> SumiNormalTabUserScripts
+
+    init(
+        rulesUpdate: ContentBlockerRulesManager.UpdateEvent,
+        sourceProvider: SumiNormalTabUserScripts,
+        makeUserScripts: @escaping @MainActor (SumiNormalTabUserScripts) -> SumiNormalTabUserScripts = { $0 }
+    ) {
+        self.rulesUpdate = rulesUpdate
+        self.sourceProvider = sourceProvider
+        self.makeUserScripts = makeUserScripts
+    }
 }
 
 private enum SumiNormalTabAssociatedKeys {
@@ -115,16 +130,15 @@ private final class SumiNormalTabUserContentControllerDelegate: UserContentContr
 @MainActor
 enum SumiNormalTabUserContentControllerFactory {
     static func makeController(
-        scriptsProvider: SumiNormalTabUserScripts? = nil
+        scriptsProvider: SumiNormalTabUserScripts? = nil,
+        contentBlockingService: SumiContentBlockingService? = nil
     ) -> UserContentController {
         let scriptsProvider = scriptsProvider ?? SumiNormalTabUserScripts()
-        let content = SumiNormalTabUserContent(
-            sourceProvider: scriptsProvider
-        )
+        let contentBlockingService = contentBlockingService ?? .shared
         let delegate = SumiNormalTabUserContentControllerDelegate()
         let controller = UserContentController(
-            assetsPublisher: Just(content).eraseToAnyPublisher(),
-            privacyConfigurationManager: SumiStaticPrivacyConfigurationManager()
+            assetsPublisher: contentBlockingService.userContentPublisher(for: scriptsProvider),
+            privacyConfigurationManager: contentBlockingService.privacyConfigurationManager
         )
         controller.delegate = delegate
         controller.sumiNormalTabControllerDelegate = delegate
