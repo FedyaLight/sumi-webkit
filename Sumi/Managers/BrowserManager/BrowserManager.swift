@@ -269,6 +269,7 @@ class BrowserManager: ObservableObject {
     private var structuralChangeCancellable: AnyCancellable?
     private var tabManagerLoadObserverToken: NSObjectProtocol?
     private var pendingWindowSessionPersistTasks: [UUID: Task<Void, Never>] = [:]
+    private var pendingWindowSessionPersistStates: [UUID: BrowserWindowState] = [:]
     private var pendingUserActivationsByWindow: [UUID: PendingUserTabActivation] = [:]
     private var userActivationFlushScheduledWindows: Set<UUID> = []
     private var deferredHistorySwipeWindowMutationsByWindow: [UUID: DeferredHistorySwipeWindowMutations] = [:]
@@ -484,7 +485,7 @@ class BrowserManager: ObservableObject {
         windowState.sidebarContentWidth = BrowserWindowState.sidebarContentWidth(for: clampedWidth)
         savedSidebarWidth = clampedWidth
         if persist {
-            persistWindowSession(for: windowState)
+            schedulePersistWindowSession(for: windowState)
         }
     }
 
@@ -969,6 +970,7 @@ class BrowserManager: ObservableObject {
     deinit {
         pendingWindowSessionPersistTasks.values.forEach { $0.cancel() }
         pendingWindowSessionPersistTasks.removeAll()
+        pendingWindowSessionPersistStates.removeAll()
         if let token = tabManagerLoadObserverToken {
             NotificationCenter.default.removeObserver(token)
         }
@@ -1637,8 +1639,8 @@ class BrowserManager: ObservableObject {
     func persistWindowSession(for windowState: BrowserWindowState) {
         pendingWindowSessionPersistTasks[windowState.id]?.cancel()
         pendingWindowSessionPersistTasks.removeValue(forKey: windowState.id)
-        windowSessionService.persistWindowSession(for: windowState, delegate: self)
-        refreshLastSessionWindowsStore(excludingWindowID: nil)
+        pendingWindowSessionPersistStates.removeValue(forKey: windowState.id)
+        persistWindowSessionNow(for: windowState)
     }
 
     func schedulePersistWindowSession(
@@ -1649,6 +1651,7 @@ class BrowserManager: ObservableObject {
 
         let windowId = windowState.id
         pendingWindowSessionPersistTasks[windowId]?.cancel()
+        pendingWindowSessionPersistStates[windowId] = windowState
         pendingWindowSessionPersistTasks[windowId] = Task { @MainActor [weak self, weak windowState] in
             try? await Task.sleep(nanoseconds: delayNanoseconds)
             guard !Task.isCancelled,
@@ -1659,9 +1662,39 @@ class BrowserManager: ObservableObject {
             }
 
             self.pendingWindowSessionPersistTasks.removeValue(forKey: windowId)
-            self.windowSessionService.persistWindowSession(for: windowState, delegate: self)
-            self.refreshLastSessionWindowsStore(excludingWindowID: nil)
+            self.pendingWindowSessionPersistStates.removeValue(forKey: windowId)
+            self.persistWindowSessionNow(for: windowState)
         }
+    }
+
+    func flushPendingWindowSessionPersistence() {
+        guard !pendingWindowSessionPersistStates.isEmpty else { return }
+
+        let pendingStates = pendingWindowSessionPersistStates.values.sorted {
+            $0.id.uuidString < $1.id.uuidString
+        }
+        pendingWindowSessionPersistTasks.values.forEach { $0.cancel() }
+        pendingWindowSessionPersistTasks.removeAll()
+        pendingWindowSessionPersistStates.removeAll()
+
+        let signpostState = PerformanceTrace.beginInterval("WindowSession.flushPendingPersistence")
+        defer {
+            PerformanceTrace.endInterval("WindowSession.flushPendingPersistence", signpostState)
+        }
+
+        for windowState in pendingStates {
+            persistWindowSessionNow(for: windowState)
+        }
+    }
+
+    private func persistWindowSessionNow(for windowState: BrowserWindowState) {
+        let signpostState = PerformanceTrace.beginInterval("WindowSession.persist")
+        defer {
+            PerformanceTrace.endInterval("WindowSession.persist", signpostState)
+        }
+
+        windowSessionService.persistWindowSession(for: windowState, delegate: self)
+        refreshLastSessionWindowsStore(excludingWindowID: nil)
     }
 
     private func preferredTabForWindow(_ windowState: BrowserWindowState) -> Tab? {

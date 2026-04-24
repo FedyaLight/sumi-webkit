@@ -5,6 +5,35 @@ import XCTest
 
 @MainActor
 final class WindowSessionServiceTests: XCTestCase {
+    func testBrowserManagerFlushesPendingWindowSessionWithoutWaitingForDebounce() throws {
+        UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey)
+        }
+
+        let browserManager = BrowserManager()
+        let windowState = BrowserWindowState()
+        let spaceId = UUID()
+        windowState.currentSpaceId = spaceId
+        windowState.sidebarWidth = 312
+        windowState.savedSidebarWidth = 312
+        windowState.sidebarContentWidth = BrowserWindowState.sidebarContentWidth(for: 312)
+
+        browserManager.schedulePersistWindowSession(
+            for: windowState,
+            delayNanoseconds: 60_000_000_000
+        )
+
+        XCTAssertNil(UserDefaults.standard.data(forKey: BrowserManager.lastWindowSessionKey))
+
+        browserManager.flushPendingWindowSessionPersistence()
+
+        let data = try XCTUnwrap(UserDefaults.standard.data(forKey: BrowserManager.lastWindowSessionKey))
+        let snapshot = try JSONDecoder().decode(WindowSessionSnapshot.self, from: data)
+        XCTAssertEqual(snapshot.currentSpaceId, spaceId)
+        XCTAssertEqual(snapshot.sidebarWidth, 312)
+    }
+
     func testSetupWindowStatePreservesSeededThemeUntilInitialTabManagerLoadCompletes() throws {
         let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
         XCTAssertFalse(tabManager.hasLoadedInitialData)

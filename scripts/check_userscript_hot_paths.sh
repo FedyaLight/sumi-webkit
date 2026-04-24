@@ -7,7 +7,7 @@ scan_paths=(
   "Sumi/Managers"
   "Sumi/Models"
   "Sumi/Components"
-  "Vendor/DDG/BrowserServicesKit/Sources/UserScript/SumiDDGFaviconSupport.swift"
+  "Sumi/Favicons/DDG/SumiDDGFaviconSupport.swift"
   "Vendor/DDG/BrowserServicesKit/Sources/BrowserServicesKit/ContentScopeScript/UserContentController.swift"
 )
 
@@ -19,9 +19,9 @@ is_allowed() {
     # BSK controller owns deterministic cleanup and the private per-script removal fallback.
     Vendor/DDG/BrowserServicesKit/Sources/BrowserServicesKit/ContentScopeScript/UserContentController.swift:*removeAllUserScripts*) return 0 ;;
     # Favicon transport observes bounded <link rel=icon> changes and posts a small typed payload.
-    Vendor/DDG/BrowserServicesKit/Sources/UserScript/SumiDDGFaviconSupport.swift:*MutationObserver*) return 0 ;;
-    Vendor/DDG/BrowserServicesKit/Sources/UserScript/SumiDDGFaviconSupport.swift:*setTimeout*) return 0 ;;
-    Vendor/DDG/BrowserServicesKit/Sources/UserScript/SumiDDGFaviconSupport.swift:*JSON.stringify*) return 0 ;;
+    Sumi/Favicons/DDG/SumiDDGFaviconSupport.swift:*MutationObserver*) return 0 ;;
+    Sumi/Favicons/DDG/SumiDDGFaviconSupport.swift:*setTimeout*) return 0 ;;
+    Sumi/Favicons/DDG/SumiDDGFaviconSupport.swift:*JSON.stringify*) return 0 ;;
     # WebExtension bridge compatibility: one-shot lastError/port-open timers, no DOM-frequency native posts.
     Sumi/Managers/ExtensionManager/ExtensionRuntimeResources/externally_connectable_page_bridge.js:*setTimeout*) return 0 ;;
     Sumi/Managers/ExtensionManager/ExtensionManager+ExternallyConnectableNativeMessaging.swift:*setTimeout*) return 0 ;;

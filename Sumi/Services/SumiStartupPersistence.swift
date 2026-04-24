@@ -89,7 +89,7 @@ final class SumiStartupPersistence {
         do {
             let resolvedContainer = try Self.openPersistentContainer()
             Self.log.info("SwiftData container initialized successfully")
-            Self.createStartupBackupIfPossible()
+            Self.scheduleStartupBackupIfPossible()
             self.container = resolvedContainer
         } catch {
             let classification = Self.classifyStoreError(error)
@@ -225,9 +225,15 @@ final class SumiStartupPersistence {
     // MARK: - Backup / Restore
     private enum PersistenceBackupError: Error { case storeNotFound, noBackupsFound }
 
+    nonisolated private static func scheduleStartupBackupIfPossible() {
+        DispatchQueue.global(qos: .utility).async {
+            Self.createStartupBackupIfPossible()
+        }
+    }
+
     nonisolated private static func createStartupBackupIfPossible() {
         do {
-            _ = try createBackup()
+            _ = try createBackupOnCurrentQueue()
         } catch let error as PersistenceBackupError {
             switch error {
             case .storeNotFound:
@@ -243,44 +249,40 @@ final class SumiStartupPersistence {
     }
 
     // Include SQLite sidecars (-wal/-shm) and back up into a directory
-    nonisolated private static func createBackup() throws -> URL {
-        try Self.runBlockingOnUtilityQueue {
-            let fm = FileManager.default
-            let source = Self.storeURL
-            guard fm.fileExists(atPath: source.path) else {
-                Self.log.info(
-                    "No existing store found to back up at \(source.path, privacy: .public)")
-                throw PersistenceBackupError.storeNotFound
-            }
-
-            // Ensure backups root exists
-            let backupsRoot = Self.backupsDirectoryURL
-
-            // Create a timestamped backup directory
-            let stamp = Self.makeBackupTimestamp()
-            let dirName = "\(Self.backupPrefix)\(stamp)"
-            let backupDir = backupsRoot.appendingPathComponent(dirName, isDirectory: true)
-            try fm.createDirectory(at: backupDir, withIntermediateDirectories: true)
-
-            // Gather store + sidecars
-            let candidates = [source] + Self.sidecarURLs(for: source)
-            for file in candidates {
-                if fm.fileExists(atPath: file.path) {
-                    let dest = backupDir.appendingPathComponent(
-                        file.lastPathComponent, isDirectory: false)
-                    do {
-                        try fm.copyItem(at: file, to: dest)
-                    } catch {
-                        Self.log.error(
-                            "Failed to copy \(file.lastPathComponent, privacy: .public) to backup: \(String(describing: error), privacy: .public)"
-                        )
-                        throw error
-                    }
-                }
-            }
-
-            return backupDir
+    nonisolated private static func createBackupOnCurrentQueue() throws -> URL {
+        let fm = FileManager.default
+        let source = Self.storeURL
+        guard fm.fileExists(atPath: source.path) else {
+            Self.log.info(
+                "No existing store found to back up at \(source.path, privacy: .public)")
+            throw PersistenceBackupError.storeNotFound
         }
+
+        // Ensure backups root exists.
+        let backupsRoot = Self.backupsDirectoryURL
+
+        let stamp = Self.makeBackupTimestamp()
+        let dirName = "\(Self.backupPrefix)\(stamp)"
+        let backupDir = backupsRoot.appendingPathComponent(dirName, isDirectory: true)
+        try fm.createDirectory(at: backupDir, withIntermediateDirectories: true)
+
+        let candidates = [source] + Self.sidecarURLs(for: source)
+        for file in candidates where fm.fileExists(atPath: file.path) {
+            let dest = backupDir.appendingPathComponent(
+                file.lastPathComponent,
+                isDirectory: false
+            )
+            do {
+                try fm.copyItem(at: file, to: dest)
+            } catch {
+                Self.log.error(
+                    "Failed to copy \(file.lastPathComponent, privacy: .public) to backup: \(String(describing: error), privacy: .public)"
+                )
+                throw error
+            }
+        }
+
+        return backupDir
     }
 
     // Restore the latest backup directory by copying files back next to the store

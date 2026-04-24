@@ -99,6 +99,30 @@ final class HistoryTabRecorderTests: XCTestCase {
         XCTAssertEqual(visits.first?.title, "Resolved Title")
     }
 
+    func testBurstNavigationHistoryWritesCoalesceUIRefresh() async throws {
+        let harness = try makeHarness()
+        try await settleHistoryTasks()
+
+        let baselineRevision = harness.browserManager.historyManager.revision
+
+        for index in 0..<3 {
+            harness.tab.historyRecorder.didCommitMainFrameNavigation(
+                to: URL(string: "https://example.com/burst-\(index)")!,
+                kind: .regular,
+                tab: harness.tab
+            )
+        }
+
+        try await waitForVisitCount(3, harness: harness)
+        try await waitUntil {
+            harness.browserManager.historyManager.revision > baselineRevision
+        }
+
+        let refreshedRevision = harness.browserManager.historyManager.revision
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(harness.browserManager.historyManager.revision, refreshedRevision)
+    }
+
     func testEphemeralAndNonHTTPURLsAreNotRecorded() async throws {
         let harness = try makeHarness()
         let ephemeralProfile = Profile.createEphemeral()
@@ -190,8 +214,8 @@ final class HistoryTabRecorderTests: XCTestCase {
 
     private func waitUntil(
         timeoutNanoseconds: UInt64 = 1_000_000_000,
-        file: StaticString,
-        line: UInt,
+        file: StaticString = #filePath,
+        line: UInt = #line,
         condition: () async throws -> Bool
     ) async throws {
         let deadline = Date().addingTimeInterval(TimeInterval(timeoutNanoseconds) / 1_000_000_000)

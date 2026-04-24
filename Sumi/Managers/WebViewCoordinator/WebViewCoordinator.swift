@@ -917,7 +917,9 @@ class WebViewCoordinator {
 
             if let controller = newWebView.configuration.userContentController as? UserContentController {
                 Task { @MainActor in
-                    await controller.awaitContentBlockingAssetsInstalled()
+                    await PerformanceTrace.withInterval("ContentBlocking.assetsInstallWait") {
+                        await controller.awaitContentBlockingAssetsInstalled()
+                    }
                     performLoad()
                 }
             } else {

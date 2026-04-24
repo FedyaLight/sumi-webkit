@@ -2,6 +2,7 @@ import Combine
 import Foundation
 import Navigation
 import ObjectiveC.runtime
+import OSLog
 import WebKit
 
 enum TabMainFrameNavigationKind {
@@ -115,6 +116,7 @@ final class TabWebViewRuntime {
     var lastSuspendedURL: URL?
     var lastSelectedAt: Date?
     var isSuspensionRestoreInProgress: Bool = false
+    var suspensionRestoreTraceState: OSSignpostIntervalState?
     var profileAwaitCancellable: AnyCancellable?
     var resolvedFaviconCacheKey: String?
     var faviconsTabExtension: FaviconsTabExtension?
