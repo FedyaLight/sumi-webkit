@@ -480,7 +480,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "Cancel")
         alert.buttons[safe: 1]?.keyEquivalent = "\u{1b}"
         alert.showsSuppressionButton = true
-        alert.suppressionButton?.title = "Do not warn before quitting again"
+        alert.suppressionButton?.title = "Don't show it again"
         return alert
     }
 
@@ -510,14 +510,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         _ response: NSApplication.ModalResponse,
         alert: NSAlert
     ) -> Bool {
+        if alert.suppressionButton?.state == .on {
+            setAskBeforeQuit(false)
+        }
+
         let shouldTerminate = response == .alertFirstButtonReturn
         guard shouldTerminate else {
             AppDelegate.log.info("Termination: cancelled by quit confirmation")
             return false
-        }
-
-        if alert.suppressionButton?.state == .on {
-            setAskBeforeQuit(false)
         }
         return true
     }

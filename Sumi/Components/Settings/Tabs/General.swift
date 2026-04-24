@@ -16,7 +16,7 @@ struct SettingsGeneralTab: View {
         @Bindable var settings = sumiSettings
         Form {
             Section("Sumi Window") {
-                Toggle("Warn before quitting Sumi", isOn: $settings.askBeforeQuit)
+                Toggle("Warn before quitting the browser", isOn: $settings.askBeforeQuit)
                 Toggle("Preview link URL on hover", isOn: $settings.showLinkStatusBar)
                 Toggle("Show Sidebar toggle button", isOn: $settings.showSidebarToggleButton)
                 Toggle("Show New Tab button in tab list", isOn: $settings.showNewTabButtonInTabList)

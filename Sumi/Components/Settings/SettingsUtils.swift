@@ -20,8 +20,8 @@ enum SumiExtensionsSettingsSubPane: String, CaseIterable, Hashable {
 }
 
 enum SettingsTabs: Hashable, CaseIterable {
-    case appearance
     case general
+    case appearance
     case privacy
     case profiles
     case shortcuts
@@ -68,8 +68,8 @@ enum SettingsTabs: Hashable, CaseIterable {
 
     var name: String {
         switch self {
+        case .general: return "General"
         case .appearance: return "Theme"
-        case .general: return "Layout"
         case .privacy: return "Privacy"
         case .profiles: return "Spaces & Essentials"
         case .shortcuts: return "Keyboard"
@@ -82,8 +82,8 @@ enum SettingsTabs: Hashable, CaseIterable {
 
     var icon: String {
         switch self {
+        case .general: return "gearshape"
         case .appearance: return "paintpalette"
-        case .general: return "rectangle.3.offgrid"
         case .privacy: return "lock.shield"
         case .profiles: return "square.grid.2x2"
         case .shortcuts: return "keyboard"
