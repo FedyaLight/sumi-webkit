@@ -146,6 +146,7 @@ extension Tab {
     }
 
     func setupWebView() {
+        beginSuspendedRestoreIfNeeded()
         let reusableExistingWebView = _existingWebView
 
         let configuration: WKWebViewConfiguration
@@ -289,6 +290,8 @@ extension Tab {
                 loadURL(url)
             }
         }
+
+        finishSuspendedRestoreIfNeeded()
     }
 
     func resolveProfile() -> Profile? {

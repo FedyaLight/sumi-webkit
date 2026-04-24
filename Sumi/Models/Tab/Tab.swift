@@ -284,6 +284,22 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { webViewRuntime.primaryWindowId }
         set { webViewRuntime.primaryWindowId = newValue }
     }
+    var isSuspended: Bool {
+        get { webViewRuntime.isSuspended }
+        set { webViewRuntime.isSuspended = newValue }
+    }
+    var lastSuspendedURL: URL? {
+        get { webViewRuntime.lastSuspendedURL }
+        set { webViewRuntime.lastSuspendedURL = newValue }
+    }
+    var lastSelectedAt: Date? {
+        get { webViewRuntime.lastSelectedAt }
+        set { webViewRuntime.lastSelectedAt = newValue }
+    }
+    var isSuspensionRestoreInProgress: Bool {
+        get { webViewRuntime.isSuspensionRestoreInProgress }
+        set { webViewRuntime.isSuspensionRestoreInProgress = newValue }
+    }
     var resolvedFaviconCacheKey: String? {
         get { webViewRuntime.resolvedFaviconCacheKey }
         set { webViewRuntime.resolvedFaviconCacheKey = newValue }
@@ -599,8 +615,50 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     func loadWebViewIfNeeded() {
         if _webView == nil {
+            beginSuspendedRestoreIfNeeded()
             setupWebView()
+            finishSuspendedRestoreIfNeeded()
         }
+    }
+
+    func noteSuspensionAccess(at date: Date = Date()) {
+        lastSelectedAt = date
+    }
+
+    func markSuspended(at date: Date = Date()) {
+        objectWillChange.send()
+        isSuspended = true
+        isSuspensionRestoreInProgress = false
+        lastSuspendedURL = url
+        if lastSelectedAt == nil {
+            lastSelectedAt = date
+        }
+        resetPlaybackActivity()
+        loadingState = .idle
+        SumiNativeNowPlayingController.shared.handleTabUnloaded(id)
+        SumiNativeNowPlayingController.shared.scheduleRefresh(delayNanoseconds: 0)
+        NotificationCenter.default.post(
+            name: .sumiTabLifecycleDidChange,
+            object: self
+        )
+    }
+
+    func beginSuspendedRestoreIfNeeded() {
+        guard isSuspended, !isSuspensionRestoreInProgress else { return }
+        isSuspensionRestoreInProgress = true
+        PerformanceTrace.emitEvent("TabSuspension.restoreStart")
+    }
+
+    func finishSuspendedRestoreIfNeeded() {
+        guard isSuspensionRestoreInProgress, _webView != nil else { return }
+        objectWillChange.send()
+        isSuspended = false
+        isSuspensionRestoreInProgress = false
+        PerformanceTrace.emitEvent("TabSuspension.restoreEnd")
+        NotificationCenter.default.post(
+            name: .sumiTabLifecycleDidChange,
+            object: self
+        )
     }
 
     func toggleMute() {

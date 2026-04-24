@@ -781,7 +781,7 @@ final class WebViewCoordinatorTests: XCTestCase {
         XCTAssertNil(secondTab.primaryWindowId)
     }
 
-    func testPrepareVisibleWebViewsRetainsHiddenTabsWhenTheyAreSoleLiveInstances() {
+    func testPrepareVisibleWebViewsLeavesSoleLiveHiddenTabsForSuspensionService() {
         let browserManager = BrowserManager()
         let coordinator = WebViewCoordinator()
         browserManager.webViewCoordinator = coordinator
@@ -824,7 +824,7 @@ final class WebViewCoordinatorTests: XCTestCase {
         XCTAssertNotNil(coordinator.getWebView(for: thirdTab.id, in: windowState.id))
     }
 
-    func testPrepareVisibleWebViewsKeepsHiddenTabsWhenTheyAreSoleLiveInstancesDuringSplit() {
+    func testPrepareVisibleWebViewsLeavesSplitHiddenSoleLiveTabsForSuspensionService() {
         let browserManager = BrowserManager()
         let coordinator = WebViewCoordinator()
         browserManager.webViewCoordinator = coordinator
@@ -899,8 +899,8 @@ final class WebViewCoordinatorTests: XCTestCase {
             in: browserManager.tabManager.currentSpace,
             activate: false
         )
-        let warmHiddenTab = browserManager.tabManager.createNewTab(
-            url: "https://example.com/warm-hidden",
+        let soleHiddenTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/sole-hidden",
             in: browserManager.tabManager.currentSpace,
             activate: false
         )
@@ -919,7 +919,7 @@ final class WebViewCoordinatorTests: XCTestCase {
             coordinator.getWebView(for: sharedTab.id, in: secondWindow.id)
         )
 
-        setCurrentTab(warmHiddenTab, in: firstWindow)
+        setCurrentTab(soleHiddenTab, in: firstWindow)
         _ = coordinator.prepareVisibleWebViews(for: firstWindow, browserManager: browserManager)
 
         setCurrentTab(currentTab, in: firstWindow)
@@ -929,7 +929,7 @@ final class WebViewCoordinatorTests: XCTestCase {
         XCTAssertTrue(
             coordinator.getWebView(for: sharedTab.id, in: secondWindow.id) === sharedCloneInSecondWindow
         )
-        XCTAssertNotNil(coordinator.getWebView(for: warmHiddenTab.id, in: firstWindow.id))
+        XCTAssertNotNil(coordinator.getWebView(for: soleHiddenTab.id, in: firstWindow.id))
         XCTAssertNotNil(coordinator.getWebView(for: currentTab.id, in: firstWindow.id))
     }
 

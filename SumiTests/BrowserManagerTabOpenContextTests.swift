@@ -86,7 +86,7 @@ final class BrowserManagerTabOpenContextTests: XCTestCase {
         XCTAssertTrue(newTab.isUnloaded)
     }
 
-    func testBackgroundOpenKeepsCurrentSelectionAndMaterializesTrackedWebView() {
+    func testBackgroundOpenKeepsCurrentSelectionAndDefersWebViewMaterialization() {
         let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
         let coordinator = WebViewCoordinator()
@@ -123,15 +123,12 @@ final class BrowserManagerTabOpenContextTests: XCTestCase {
 
         XCTAssertEqual(windowState.currentTabId, currentTab.id)
         XCTAssertEqual(newTab.spaceId, space.id)
-        XCTAssertFalse(newTab.isUnloaded)
-
-        let backgroundWebView = try! XCTUnwrap(newTab.existingWebView)
-        XCTAssertTrue(
-            coordinator.getWebView(for: newTab.id, in: windowState.id) === backgroundWebView
-        )
+        XCTAssertTrue(newTab.isUnloaded)
+        XCTAssertNil(newTab.existingWebView)
+        XCTAssertNil(coordinator.getWebView(for: newTab.id, in: windowState.id))
     }
 
-    func testBackgroundIncognitoOpenKeepsCurrentSelectionAndMaterializesTrackedWebView() {
+    func testBackgroundIncognitoOpenKeepsCurrentSelectionAndDefersWebViewMaterialization() {
         let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
         let coordinator = WebViewCoordinator()
@@ -166,12 +163,9 @@ final class BrowserManagerTabOpenContextTests: XCTestCase {
 
         XCTAssertEqual(windowState.currentTabId, currentTab.id)
         XCTAssertTrue(windowState.ephemeralTabs.contains(where: { $0.id == newTab.id }))
-        XCTAssertFalse(newTab.isUnloaded)
-
-        let backgroundWebView = try! XCTUnwrap(newTab.existingWebView)
-        XCTAssertTrue(
-            coordinator.getWebView(for: newTab.id, in: windowState.id) === backgroundWebView
-        )
+        XCTAssertTrue(newTab.isUnloaded)
+        XCTAssertNil(newTab.existingWebView)
+        XCTAssertNil(coordinator.getWebView(for: newTab.id, in: windowState.id))
     }
 
     func testPinTabUsesVisibleWindowProfileInsteadOfGlobalCurrentProfile() {

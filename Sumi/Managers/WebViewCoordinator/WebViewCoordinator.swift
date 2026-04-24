@@ -373,8 +373,6 @@ class WebViewCoordinator {
     @ObservationIgnored
     private var weakWebViewsByIdentifier: [ObjectIdentifier: WeakWKWebView] = [:]
 
-    private let hiddenWarmWebViewBufferPerWindow = 1
-
     // MARK: - Compositor Container Management
 
     func setCompositorContainerView(_ view: NSView?, for windowId: UUID) {
@@ -435,6 +433,13 @@ class WebViewCoordinator {
     func getAllWebViews(for tabId: UUID) -> [WKWebView] {
         guard let windowWebViews = webViewsByTabAndWindow[tabId] else { return [] }
         return Array(windowWebViews.values)
+    }
+
+    func liveWebViews(for tab: Tab) -> [WKWebView] {
+        uniqueWebViews(
+            getAllWebViews(for: tab.id)
+                + [tab.assignedWebView, tab.existingWebView].compactMap { $0 }
+        )
     }
 
     func windowIDs(for tabId: UUID) -> [UUID] {
@@ -853,6 +858,7 @@ class WebViewCoordinator {
     /// Internal method to create a WebView with proper configuration
     private func createWebViewInternal(for tab: Tab, in windowId: UUID, copyFrom: WKWebView? = nil) -> WKWebView {
         let tabId = tab.id
+        tab.beginSuspendedRestoreIfNeeded()
 
         let configuration = resolvedConfiguration(
             for: tab,
@@ -922,6 +928,7 @@ class WebViewCoordinator {
             }
         }
         newWebView.sumiSetAudioMuted(tab.audioState.isMuted)
+        tab.finishSuspendedRestoreIfNeeded()
         
         return newWebView
     }
@@ -1020,6 +1027,53 @@ class WebViewCoordinator {
         }
         refreshPrimaryTrackedWebView(for: tab, browserManager: tab.browserManager)
         return true
+    }
+
+    @discardableResult
+    func suspendWebViews(for tab: Tab, reason: String) -> Bool {
+        let liveWebViews = liveWebViews(for: tab)
+        guard !liveWebViews.isEmpty else { return false }
+        guard !liveWebViews.contains(where: isWebViewProtectedFromCompositorMutation) else {
+            RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
+                "Skipping suspension cleanup for protected tab=\(tab.id.uuidString.prefix(8)) reason=\(reason)."
+            }
+            return false
+        }
+
+        let trackedEntries = (webViewsByTabAndWindow[tab.id] ?? [:]).map { windowId, webView in
+            (TrackedWebViewOwner(tabID: tab.id, windowID: windowId), webView)
+        }
+        var cleanedIdentifiers: Set<ObjectIdentifier> = []
+
+        func cleanup(_ webView: WKWebView) {
+            let identifier = ObjectIdentifier(webView)
+            guard cleanedIdentifiers.insert(identifier).inserted else { return }
+            tab.cleanupCloneWebView(webView)
+        }
+
+        for (owner, webView) in trackedEntries {
+            removeWebViewFromContainers(webView)
+            _ = unregisterTrackedWebViewSlot(
+                owner: owner,
+                expectedWebView: webView
+            )
+            cleanup(webView)
+        }
+
+        for webView in liveWebViews {
+            cleanup(webView)
+        }
+
+        tab.cancelPendingMainFrameNavigation()
+        tab._webView = nil
+        tab._existingWebView = nil
+        tab.primaryWindowId = nil
+
+        RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
+            "Suspension released \(cleanedIdentifiers.count) WebView(s) for tab=\(tab.id.uuidString.prefix(8)) reason=\(reason)."
+        }
+
+        return !cleanedIdentifiers.isEmpty
     }
 
     // MARK: - Window Cleanup
@@ -1853,19 +1907,8 @@ class WebViewCoordinator {
         }
 
         let trackedEntries = trackedWebViews(in: windowId)
-        guard trackedEntries.count > visibleTabIDs.count + hiddenWarmWebViewBufferPerWindow else {
-            return
-        }
-
-        let hiddenWarmTabID = recentlyVisibleTabIDsByWindow[windowId]?.first(where: { tabId in
-            guard visibleTabIDs.contains(tabId) == false else { return false }
-            return webViewsByTabAndWindow[tabId]?[windowId] != nil
-        })
-
-        let hiddenWarmTabIDs: Set<UUID> = hiddenWarmTabID.map { Set([$0]) } ?? []
-        let retainedTabIDs = visibleTabIDs.union(hiddenWarmTabIDs)
         let hiddenEntries = trackedEntries.filter { owner, _ in
-            retainedTabIDs.contains(owner.tabID) == false
+            visibleTabIDs.contains(owner.tabID) == false
         }
 
         guard hiddenEntries.isEmpty == false else { return }
