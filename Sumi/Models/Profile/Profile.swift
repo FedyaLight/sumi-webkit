@@ -98,12 +98,10 @@ final class Profile: NSObject, Identifiable {
     // MARK: - Validation & Stats
     @MainActor
     func refreshDataStoreStats() async {
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            dataStore.httpCookieStore.getAllCookies { cookies in
-                self.cachedCookieCount = cookies.count
-                cont.resume()
-            }
-        }
+        cachedCookieCount = await SumiWebsiteDataCleanupService.shared
+            .fetchCookies(in: dataStore)
+            .count
+
         let types: Set<String> = [
             WKWebsiteDataTypeDiskCache,
             WKWebsiteDataTypeMemoryCache,
@@ -112,64 +110,27 @@ final class Profile: NSObject, Identifiable {
             WKWebsiteDataTypeFetchCache,
             WKWebsiteDataTypeServiceWorkerRegistrations
         ]
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            self.dataStore.fetchDataRecords(ofTypes: types) { records in
-                self.cachedRecordCount = records.count
-                cont.resume()
-            }
-        }
+        cachedRecordCount = await SumiWebsiteDataCleanupService.shared
+            .fetchWebsiteDataRecords(ofTypes: types, in: dataStore)
+            .count
     }
 
     // MARK: - Cleanup
     func clearAllData() async {
-        let allTypes: Set<String> = [
-            WKWebsiteDataTypeCookies,
-            WKWebsiteDataTypeDiskCache,
-            WKWebsiteDataTypeMemoryCache,
-            WKWebsiteDataTypeLocalStorage,
-            WKWebsiteDataTypeIndexedDBDatabases,
-            WKWebsiteDataTypeFetchCache,
-            WKWebsiteDataTypeServiceWorkerRegistrations
-        ]
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            self.dataStore.removeData(ofTypes: allTypes, modifiedSince: .distantPast) {
-                cont.resume()
-            }
-        }
+        await SumiWebsiteDataCleanupService.shared.clearAllProfileWebsiteData(in: dataStore)
         await refreshDataStoreStats()
     }
     
-    /// Destroys the ephemeral data store by clearing all data.
-    /// This should be called before releasing an ephemeral profile to ensure
-    /// all incognito data is wiped and the store can be properly deallocated.
-    /// - Parameter completion: Optional completion handler called when destruction is complete
-    func destroyEphemeralDataStore(completion: (() -> Void)? = nil) {
+    /// Releases the ephemeral profile's non-persistent store ownership.
+    /// Ephemeral profiles use `WKWebsiteDataStore.nonPersistent()` through the
+    /// normal BrowserConfiguration path, so teardown must not synchronously scan
+    /// or clear persistent WebKit storage.
+    func destroyEphemeralDataStore() {
         guard isEphemeral else {
             RuntimeDiagnostics.emit("⚠️ [Profile] Cannot destroy data store: profile is not ephemeral")
-            completion?()
             return
         }
-        
-        RuntimeDiagnostics.emit("🔒 [Profile] Destroying ephemeral data store for profile: \(id)")
-        
-        let allTypes = WKWebsiteDataStore.allWebsiteDataTypes()
-        
-        // Clear all data from the store
-        dataStore.removeData(ofTypes: allTypes, modifiedSince: .distantPast) { [weak self] in
-            guard let self = self else {
-                completion?()
-                return
-            }
-            
-            // Also clear cookies specifically
-            self.dataStore.httpCookieStore.getAllCookies { cookies in
-                for cookie in cookies {
-                    self.dataStore.httpCookieStore.delete(cookie)
-                }
-                
-                RuntimeDiagnostics.emit("🔒 [Profile] Ephemeral data store destroyed for profile: \(self.id)")
-                completion?()
-            }
-        }
+
+        RuntimeDiagnostics.emit("🔒 [Profile] Released ephemeral data store for profile: \(id)")
     }
 }

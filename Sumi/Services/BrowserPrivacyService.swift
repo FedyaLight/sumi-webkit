@@ -42,38 +42,29 @@ final class BrowserPrivacyService {
               let activeWindowId = context.activeWindowId()
         else { return }
 
-        Task { @MainActor in
+        if let webView = context.webViewLookup(currentTab.id, activeWindowId) {
+            reloadFromOrigin(currentTab, webView: webView)
+        } else if let webView = currentTab.existingWebView {
+            reloadFromOrigin(currentTab, webView: webView)
+        }
+
+        Task {
             await context.cacheManager.clearCacheForDomainExcludingCookies(host)
-            if let webView = context.webViewLookup(currentTab.id, activeWindowId) {
-                if #available(macOS 15.5, *) {
-                    currentTab.performMainFrameNavigationAfterHydrationIfNeeded(
-                        on: webView
-                    ) { resolvedWebView in
-                        resolvedWebView.reloadFromOrigin()
-                    }
-                } else {
-                    currentTab.performMainFrameNavigation(
-                        on: webView
-                    ) { resolvedWebView in
-                        resolvedWebView.reloadFromOrigin()
-                    }
-                }
-            } else {
-                if let webView = currentTab.existingWebView {
-                    if #available(macOS 15.5, *) {
-                        currentTab.performMainFrameNavigationAfterHydrationIfNeeded(
-                            on: webView
-                        ) { resolvedWebView in
-                            resolvedWebView.reloadFromOrigin()
-                        }
-                    } else {
-                        currentTab.performMainFrameNavigation(
-                            on: webView
-                        ) { resolvedWebView in
-                            resolvedWebView.reloadFromOrigin()
-                        }
-                    }
-                }
+        }
+    }
+
+    private func reloadFromOrigin(_ tab: Tab, webView: WKWebView) {
+        if #available(macOS 15.5, *) {
+            tab.performMainFrameNavigationAfterHydrationIfNeeded(
+                on: webView
+            ) { resolvedWebView in
+                resolvedWebView.reloadFromOrigin()
+            }
+        } else {
+            tab.performMainFrameNavigation(
+                on: webView
+            ) { resolvedWebView in
+                resolvedWebView.reloadFromOrigin()
             }
         }
     }

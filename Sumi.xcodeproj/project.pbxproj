@@ -15,7 +15,9 @@
 		A11DD020B11D000100000006 /* Persistence in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000006 /* Persistence */; };
 		A11DD020B11D000100000007 /* PrivacyConfig in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000007 /* PrivacyConfig */; };
 		A11DD020B11D000100000008 /* UserScript in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000008 /* UserScript */; };
+		A11DD020B11D000100000009 /* WKAbstractions in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000009 /* WKAbstractions */; };
 		A11DD021B11D000100000001 /* UserScript in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD011B11D000100000001 /* UserScript */; };
+		A11DD021B11D000100000002 /* WKAbstractions in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD011B11D000100000002 /* WKAbstractions */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -140,6 +142,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A11DD021B11D000100000001 /* UserScript in Frameworks */,
+				A11DD021B11D000100000002 /* WKAbstractions in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -162,6 +165,7 @@
 				A11DD020B11D000100000006 /* Persistence in Frameworks */,
 				A11DD020B11D000100000007 /* PrivacyConfig in Frameworks */,
 				A11DD020B11D000100000008 /* UserScript in Frameworks */,
+				A11DD020B11D000100000009 /* WKAbstractions in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -237,6 +241,7 @@
 			name = SumiTests;
 			packageProductDependencies = (
 				A11DD011B11D000100000001 /* UserScript */,
+				A11DD011B11D000100000002 /* WKAbstractions */,
 			);
 			productName = SumiTests;
 			productReference = 2C89252E2E88DFF9002236DC /* SumiTests.xctest */;
@@ -271,6 +276,7 @@
 				A11DD010B11D000100000006 /* Persistence */,
 				A11DD010B11D000100000007 /* PrivacyConfig */,
 				A11DD010B11D000100000008 /* UserScript */,
+				A11DD010B11D000100000009 /* WKAbstractions */,
 			);
 			productName = Sumi;
 			productReference = 7F8340FC2E37F39400674A5D /* Sumi.app */;
@@ -774,9 +780,17 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = UserScript;
 		};
+		A11DD010B11D000100000009 /* WKAbstractions */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = WKAbstractions;
+		};
 		A11DD011B11D000100000001 /* UserScript */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = UserScript;
+		};
+		A11DD011B11D000100000002 /* WKAbstractions */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = WKAbstractions;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
