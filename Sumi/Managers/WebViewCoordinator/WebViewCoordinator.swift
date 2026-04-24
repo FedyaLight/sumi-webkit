@@ -66,6 +66,7 @@ final class SumiWebViewContainerView: NSView {
     private var fullscreenStateObservation: NSKeyValueObservation?
 
     override var constraints: [NSLayoutConstraint] { [] }
+    override var isOpaque: Bool { true }
 
     init(tabID: UUID, windowID: UUID, webView: WKWebView) {
         self.tabID = tabID
@@ -89,6 +90,11 @@ final class SumiWebViewContainerView: NSView {
         super.layout()
         attachDisplayedWebViewIfNeeded()
         webView.sumiFullscreenTabContentViewForHost?.frame = bounds
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.windowBackgroundColor.setFill()
+        dirtyRect.fill()
     }
 
     override func removeFromSuperview() {

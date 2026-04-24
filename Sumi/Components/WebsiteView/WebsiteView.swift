@@ -20,39 +20,35 @@ struct LinkStatusBar: View {
     @State private var displayedLink: String? = nil
     
     var body: some View {
-        // Show the view if we have a link to display (current or last shown)
-        if let link = displayedLink, !link.isEmpty {
-            Text(displayText(for: link))
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(textColor)
-                .lineLimit(1)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 4)
-                .background(backgroundColor)
-                .clipShape(RoundedRectangle(cornerRadius: 999))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 999)
-                        .stroke(borderColor, lineWidth: 1)
-                )
-                .opacity(shouldShow ? 1 : 0)
-                .animation(.easeOut(duration: 0.25), value: shouldShow)
-                .onChange(of: hoveredLink) {_,  newLink in
-                    handleHoverChange(newLink: newLink)
-                }
-                .onAppear {
-                    handleHoverChange(newLink: hoveredLink)
-                }
-                .onDisappear {
-                    hoverTask?.cancel()
-                    hoverTask = nil
-                    shouldShow = false
-                    displayedLink = nil
-                }
-        } else {
-            Color.clear
-                .onChange(of: hoveredLink) {_,  newLink in
-                    handleHoverChange(newLink: newLink)
-                }
+        Group {
+            if let link = displayedLink, !link.isEmpty {
+                Text(displayText(for: link))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(textColor)
+                    .lineLimit(1)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .background(backgroundColor)
+                    .clipShape(RoundedRectangle(cornerRadius: 999))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 999)
+                            .stroke(borderColor, lineWidth: 1)
+                    )
+                    .opacity(shouldShow ? 1 : 0)
+                    .animation(.easeOut(duration: 0.25), value: shouldShow)
+            }
+        }
+        .onChange(of: hoveredLink) { _, newLink in
+            handleHoverChange(newLink: newLink)
+        }
+        .onAppear {
+            handleHoverChange(newLink: hoveredLink)
+        }
+        .onDisappear {
+            hoverTask?.cancel()
+            hoverTask = nil
+            shouldShow = false
+            displayedLink = nil
         }
     }
     
@@ -135,6 +131,7 @@ struct WebsiteView: View {
     @Environment(BrowserWindowState.self) private var windowState
     @EnvironmentObject var splitManager: SplitViewManager
     @Environment(\.sumiSettings) var sumiSettings
+    @ObservedObject private var sidebarDragState = SidebarDragState.shared
     @State private var hoveredLink: String?
     @State private var isCommandPressed: Bool = false
     
@@ -197,25 +194,22 @@ struct WebsiteView: View {
                     {
                         EmptyWebsiteView()
                     } else {
-                        GeometryReader { _ in
-                            TabCompositorWrapper(
-                                browserManager: browserManager,
-                                webViewCoordinator: webViewCoordinator,
-                                hoveredLink: $hoveredLink,
-                                isCommandPressed: $isCommandPressed,
-                                splitFraction: splitManager.dividerFraction(for: windowState.id),
-                                isSplit: splitManager.isSplit(for: windowState.id),
-                                leftId: splitManager.leftTabId(for: windowState.id),
-                                rightId: splitManager.rightTabId(for: windowState.id),
-                                windowState: windowState
-                            )
-                            .coordinateSpace(name: dragCoordinateSpace)
-                            .background(shouldShowSplit ? Color.clear : Color(nsColor: .windowBackgroundColor))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                            .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 0)
-                            .allowsHitTesting(true)
-                        }
+                        TabCompositorWrapper(
+                            browserManager: browserManager,
+                            webViewCoordinator: webViewCoordinator,
+                            hoveredLink: $hoveredLink,
+                            isCommandPressed: $isCommandPressed,
+                            splitFraction: splitManager.dividerFraction(for: windowState.id),
+                            splitOrientation: splitManager.orientation(for: windowState.id),
+                            isSplit: splitManager.isSplit(for: windowState.id),
+                            leftId: splitManager.leftTabId(for: windowState.id),
+                            rightId: splitManager.rightTabId(for: windowState.id),
+                            isSplitDropCaptureActive: sidebarDragState.isDragging && sidebarDragState.isInternalDragSession,
+                            windowState: windowState
+                        )
+                        .coordinateSpace(name: dragCoordinateSpace)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .allowsHitTesting(true)
                     }
                     // Removed SwiftUI contextMenu - it intercepts ALL right-clicks
                     // WKWebView's willOpenMenu will handle context menus for images
@@ -226,17 +220,16 @@ struct WebsiteView: View {
             VStack {
                 Spacer()
                 if sumiSettings.showLinkStatusBar {
-                    HStack {
-                        LinkStatusBar(
-                            hoveredLink: hoveredLink,
-                            isCommandPressed: isCommandPressed
-                        )
-                        .padding(10)
-                        Spacer()
-                    }
+                    LinkStatusBar(
+                        hoveredLink: hoveredLink,
+                        isCommandPressed: isCommandPressed
+                    )
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 
             }
+            .allowsHitTesting(false)
             
             // Split preview overlay - shows cards during drag operations
             if splitManager.getSplitState(for: windowState.id).isPreviewActive {
@@ -249,6 +242,7 @@ struct WebsiteView: View {
                         .spring(response: 0.3, dampingFraction: 0.6, blendDuration: 0.2),
                         value: splitManager.getSplitState(for: windowState.id).isPreviewActive
                     )
+                    .allowsHitTesting(false)
             }
             
         }
@@ -419,6 +413,7 @@ private struct MagneticCardView: View {
 // MARK: - Tab Compositor Wrapper
 struct WebsiteDisplayState: Equatable {
     let splitFraction: CGFloat
+    let splitOrientation: SplitOrientation
     let isSplit: Bool
     let leftId: UUID?
     let rightId: UUID?
@@ -427,9 +422,11 @@ struct WebsiteDisplayState: Equatable {
     let currentTabUnloaded: Bool
     let visibleTabIds: Set<UUID>
     let isPreviewActive: Bool
+    let isSplitDropCaptureActive: Bool
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.splitFraction == rhs.splitFraction
+            && lhs.splitOrientation == rhs.splitOrientation
             && lhs.isSplit == rhs.isSplit
             && lhs.leftId == rhs.leftId
             && lhs.rightId == rhs.rightId
@@ -438,6 +435,7 @@ struct WebsiteDisplayState: Equatable {
             && lhs.currentTabUnloaded == rhs.currentTabUnloaded
             && lhs.visibleTabIds == rhs.visibleTabIds
             && lhs.isPreviewActive == rhs.isPreviewActive
+            && lhs.isSplitDropCaptureActive == rhs.isSplitDropCaptureActive
     }
 }
 
@@ -455,13 +453,10 @@ final class WindowWebContentController: NSViewController {
     private var pendingDisplayState: WebsiteDisplayState?
     private var appliedDisplayState: WebsiteDisplayState?
     private var isDisplayStateApplyScheduled = false
-    private var lastAppliedSize: CGSize = .zero
-    private var lastMeasuredSize: CGSize = .zero
     private var lastHoverTabId: UUID?
     private var pendingSplitRepairKeepSide: SplitViewManager.Side? = nil
     private var hoveredLinkHandler: ((String?) -> Void)?
     private var commandHoverHandler: ((Bool) -> Void)?
-    private var accentColor: NSColor = .controlAccentColor
 
     init(
         browserManager: BrowserManager,
@@ -495,9 +490,6 @@ final class WindowWebContentController: NSViewController {
 
     override func viewDidLayout() {
         super.viewDidLayout()
-        let size = view.bounds.size
-        guard lastMeasuredSize != size else { return }
-        lastMeasuredSize = size
 
         if webViewCoordinator.hasActiveHistorySwipe(in: windowState.id) {
             browserManager.enqueueWindowMutationDuringHistorySwipe(
@@ -505,20 +497,15 @@ final class WindowWebContentController: NSViewController {
                 for: windowState
             )
             view.layoutSubtreeIfNeeded()
-            return
         }
-
-        scheduleDisplayStateApply()
     }
 
     func update(
         displayState: WebsiteDisplayState,
-        accentColor: NSColor,
         hoveredLinkHandler: @escaping (String?) -> Void,
         commandHoverHandler: @escaping (Bool) -> Void
     ) {
         pendingDisplayState = displayState
-        self.accentColor = accentColor
         self.hoveredLinkHandler = hoveredLinkHandler
         self.commandHoverHandler = commandHoverHandler
 
@@ -567,10 +554,8 @@ final class WindowWebContentController: NSViewController {
             currentTab: currentTab,
             displayState: displayState
         )
-        let currentSize = containerView.bounds.size
         guard appliedDisplayState != displayState
                 || hasStaleSubviews
-                || lastAppliedSize != currentSize
         else {
             return
         }
@@ -578,7 +563,6 @@ final class WindowWebContentController: NSViewController {
         let previousCurrentId = appliedDisplayState?.currentId
         apply(displayState: displayState, currentTab: currentTab)
         appliedDisplayState = displayState
-        lastAppliedSize = currentSize
 
         if previousCurrentId != displayState.currentId {
             restoreFocusIfNeeded(for: displayState.currentId)
@@ -587,7 +571,8 @@ final class WindowWebContentController: NSViewController {
 
     private func apply(displayState: WebsiteDisplayState, currentTab: Tab?) {
         let splitManager = browserManager.splitManager
-        containerView.configureOverlay(
+        containerView.setSplitDropCaptureActive(
+            displayState.isSplitDropCaptureActive,
             browserManager: browserManager,
             splitManager: splitManager,
             windowId: windowState.id
@@ -621,55 +606,16 @@ final class WindowWebContentController: NSViewController {
                 return
             }
 
-            let gap: CGFloat = 8
             let fraction = max(
                 splitManager.minFraction,
                 min(splitManager.maxFraction, displayState.splitFraction)
             )
-            let total = containerView.bounds
-            let orientation = splitManager.orientation(for: windowState.id)
-            let leftRect: NSRect
-            let rightRect: NSRect
-            if orientation == .horizontal {
-                let leftWidthRaw = floor(total.width * fraction)
-                let rightWidthRaw = max(0, total.width - leftWidthRaw)
-                leftRect = NSRect(
-                    x: total.minX,
-                    y: total.minY,
-                    width: max(1, leftWidthRaw - gap / 2),
-                    height: total.height
-                )
-                rightRect = NSRect(
-                    x: total.minX + leftWidthRaw + gap / 2,
-                    y: total.minY,
-                    width: max(1, rightWidthRaw - gap / 2),
-                    height: total.height
-                )
-            } else {
-                let topHeightRaw = floor(total.height * fraction)
-                let bottomHeightRaw = max(0, total.height - topHeightRaw)
-                leftRect = NSRect(
-                    x: total.minX,
-                    y: total.maxY - topHeightRaw,
-                    width: total.width,
-                    height: max(1, topHeightRaw - gap / 2)
-                )
-                rightRect = NSRect(
-                    x: total.minX,
-                    y: total.minY,
-                    width: total.width,
-                    height: max(1, bottomHeightRaw - gap / 2)
-                )
-            }
 
             showSplitPanes(
                 leftTab: leftTab,
                 rightTab: rightTab,
-                leftRect: leftRect,
-                rightRect: rightRect,
-                activeSide: splitManager.activeSide(for: windowState.id) ?? .left,
-                accent: accentColor,
-                orientation: orientation
+                fraction: fraction,
+                orientation: displayState.splitOrientation
             )
             return
         }
@@ -727,26 +673,11 @@ final class WindowWebContentController: NSViewController {
     }
 
     private func showSinglePane(tab: Tab?) {
-        containerView.singlePaneView.frame = containerView.bounds
+        containerView.setPaneLayout(.single)
+        containerView.layoutSubtreeIfNeeded()
         containerView.singlePaneView.isHidden = false
         containerView.leftPaneView.isHidden = true
         containerView.rightPaneView.isHidden = true
-        configurePaneContainer(
-            containerView.leftPaneView,
-            frame: .zero,
-            isActive: false,
-            accent: .clear,
-            side: .left,
-            orientation: .horizontal
-        )
-        configurePaneContainer(
-            containerView.rightPaneView,
-            frame: .zero,
-            isActive: false,
-            accent: .clear,
-            side: .right,
-            orientation: .horizontal
-        )
 
         if let tab, let host = webViewHost(for: tab) {
             _ = webViewCoordinator.attachHost(host, to: containerView.singlePaneView)
@@ -762,33 +693,16 @@ final class WindowWebContentController: NSViewController {
     private func showSplitPanes(
         leftTab: Tab?,
         rightTab: Tab?,
-        leftRect: NSRect,
-        rightRect: NSRect,
-        activeSide: SplitViewManager.Side,
-        accent: NSColor,
+        fraction: CGFloat,
         orientation: SplitOrientation
     ) {
+        containerView.setPaneLayout(.split(fraction: fraction, orientation: orientation))
+        containerView.layoutSubtreeIfNeeded()
         containerView.singlePaneView.isHidden = true
         webViewCoordinator.reconcileHostedSubviews(in: containerView.singlePaneView, keeping: nil)
 
         containerView.leftPaneView.isHidden = false
         containerView.rightPaneView.isHidden = false
-        configurePaneContainer(
-            containerView.leftPaneView,
-            frame: leftRect,
-            isActive: activeSide == .left,
-            accent: accent,
-            side: .left,
-            orientation: orientation
-        )
-        configurePaneContainer(
-            containerView.rightPaneView,
-            frame: rightRect,
-            isActive: activeSide == .right,
-            accent: accent,
-            side: .right,
-            orientation: orientation
-        )
 
         if let leftTab, let host = webViewHost(for: leftTab) {
             _ = webViewCoordinator.attachHost(host, to: containerView.leftPaneView)
@@ -803,87 +717,6 @@ final class WindowWebContentController: NSViewController {
         } else {
             webViewCoordinator.reconcileHostedSubviews(in: containerView.rightPaneView, keeping: nil)
         }
-    }
-
-    private func configurePaneContainer(
-        _ pane: NSView,
-        frame: NSRect,
-        isActive: Bool,
-        accent: NSColor,
-        side: SplitViewManager.Side,
-        orientation: SplitOrientation
-    ) {
-        let cornerRadius: CGFloat = 8
-        if let pane = pane as? PaneContainerView {
-            pane.applyLayout(
-                frame: frame,
-                isActive: isActive,
-                accent: accent,
-                side: side,
-                orientation: orientation,
-                cornerRadius: cornerRadius,
-                pathBuilder: createUnevenRoundedRectPath
-            )
-            return
-        }
-
-        pane.frame = frame
-        pane.autoresizingMask = []
-    }
-
-    private func createUnevenRoundedRectPath(
-        rect: CGRect,
-        topLeadingRadius: CGFloat,
-        bottomLeadingRadius: CGFloat,
-        bottomTrailingRadius: CGFloat,
-        topTrailingRadius: CGFloat
-    ) -> CGPath {
-        let path = CGMutablePath()
-
-        let minX = rect.minX
-        let minY = rect.minY
-        let maxX = rect.maxX
-        let maxY = rect.maxY
-
-        path.move(to: CGPoint(x: minX + topLeadingRadius, y: maxY))
-        path.addLine(to: CGPoint(x: maxX - topTrailingRadius, y: maxY))
-        if topTrailingRadius > 0 {
-            path.addArc(
-                tangent1End: CGPoint(x: maxX, y: maxY),
-                tangent2End: CGPoint(x: maxX, y: maxY - topTrailingRadius),
-                radius: topTrailingRadius
-            )
-        }
-
-        path.addLine(to: CGPoint(x: maxX, y: minY + bottomTrailingRadius))
-        if bottomTrailingRadius > 0 {
-            path.addArc(
-                tangent1End: CGPoint(x: maxX, y: minY),
-                tangent2End: CGPoint(x: maxX - bottomTrailingRadius, y: minY),
-                radius: bottomTrailingRadius
-            )
-        }
-
-        path.addLine(to: CGPoint(x: minX + bottomLeadingRadius, y: minY))
-        if bottomLeadingRadius > 0 {
-            path.addArc(
-                tangent1End: CGPoint(x: minX, y: minY),
-                tangent2End: CGPoint(x: minX, y: minY + bottomLeadingRadius),
-                radius: bottomLeadingRadius
-            )
-        }
-
-        path.addLine(to: CGPoint(x: minX, y: maxY - topLeadingRadius))
-        if topLeadingRadius > 0 {
-            path.addArc(
-                tangent1End: CGPoint(x: minX, y: maxY),
-                tangent2End: CGPoint(x: minX + topLeadingRadius, y: maxY),
-                radius: topLeadingRadius
-            )
-        }
-
-        path.closeSubpath()
-        return path
     }
 
     private func restoreFocusIfNeeded(for tabId: UUID?) {
@@ -946,12 +779,12 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
     @Binding var hoveredLink: String?
     @Binding var isCommandPressed: Bool
     var splitFraction: CGFloat
+    var splitOrientation: SplitOrientation
     var isSplit: Bool
     var leftId: UUID?
     var rightId: UUID?
+    var isSplitDropCaptureActive: Bool
     let windowState: BrowserWindowState
-    @Environment(\.resolvedThemeContext) private var themeContext
-    @Environment(\.sumiSettings) private var sumiSettings
 
     func makeNSViewController(context: Context) -> WindowWebContentController {
         WindowWebContentController(
@@ -966,7 +799,6 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
         let commandPressedBinding = $isCommandPressed
         controller.update(
             displayState: makeDisplayState(),
-            accentColor: NSColor(tokens.accent),
             hoveredLinkHandler: { hoveredLinkBinding.wrappedValue = $0 },
             commandHoverHandler: { commandPressedBinding.wrappedValue = $0 }
         )
@@ -991,15 +823,12 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
         return Set([leftId, rightId].compactMap { $0 })
     }
 
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
-
     private func makeDisplayState() -> WebsiteDisplayState {
         let currentTab = browserManager.currentTab(for: windowState)
         let currentId = currentTab?.id
         return WebsiteDisplayState(
             splitFraction: splitFraction,
+            splitOrientation: splitOrientation,
             isSplit: isSplit,
             leftId: leftId,
             rightId: rightId,
@@ -1007,50 +836,39 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
             compositorVersion: windowState.compositorVersion,
             currentTabUnloaded: currentTab?.isUnloaded ?? true,
             visibleTabIds: visibleTabIds(currentId: currentId),
-            isPreviewActive: browserManager.splitManager.getSplitState(for: windowState.id).isPreviewActive
+            isPreviewActive: browserManager.splitManager.getSplitState(for: windowState.id).isPreviewActive,
+            isSplitDropCaptureActive: isSplitDropCaptureActive
         )
     }
 }
 
-// MARK: - WebsiteView Extensions
-
-private extension WebsiteView {
-    var shouldShowSplit: Bool {
-        guard splitManager.isSplit(for: windowState.id) else { return false }
-        guard let current = browserManager.currentTab(for: windowState)?.id else { return false }
-        return current == splitManager.leftTabId(for: windowState.id) || current == splitManager.rightTabId(for: windowState.id)
-    }
-}
-
-// MARK: - Container View that forwards right-clicks to webviews
+// MARK: - Container View
 
 private class ContainerView: NSView {
-    let singlePaneView = NSView()
+    enum PaneLayout: Equatable {
+        case single
+        case split(fraction: CGFloat, orientation: SplitOrientation)
+    }
+
+    let singlePaneView = PaneContainerView()
     let leftPaneView = PaneContainerView()
     let rightPaneView = PaneContainerView()
-    let overlayView = SplitDropCaptureView(frame: .zero)
+    private let splitDropCaptureView = SplitDropCaptureView(frame: .zero)
+    private var paneLayout: PaneLayout = .single
 
     init(browserManager: BrowserManager, splitManager: SplitViewManager, windowId: UUID) {
         super.init(frame: .zero)
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.clear.cgColor
 
         singlePaneView.identifier = CompositorPaneDestination.single.viewIdentifier
         leftPaneView.identifier = CompositorPaneDestination.left.viewIdentifier
         rightPaneView.identifier = CompositorPaneDestination.right.viewIdentifier
-        singlePaneView.autoresizingMask = [.width, .height]
-        leftPaneView.wantsLayer = true
-        rightPaneView.wantsLayer = true
 
         addSubview(singlePaneView)
         addSubview(leftPaneView)
         addSubview(rightPaneView)
 
-        overlayView.autoresizingMask = [.width, .height]
-        overlayView.layer?.zPosition = 10_000
-        addSubview(overlayView)
-
-        configureOverlay(
+        setSplitDropCaptureActive(
+            false,
             browserManager: browserManager,
             splitManager: splitManager,
             windowId: windowId
@@ -1062,15 +880,45 @@ private class ContainerView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configureOverlay(
+    override var isOpaque: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.windowBackgroundColor.setFill()
+        dirtyRect.fill()
+    }
+
+    override func layout() {
+        super.layout()
+        applyPaneLayout()
+        if splitDropCaptureView.superview === self {
+            splitDropCaptureView.frame = bounds
+        }
+    }
+
+    func setPaneLayout(_ layout: PaneLayout) {
+        guard paneLayout != layout else { return }
+        paneLayout = layout
+        needsLayout = true
+    }
+
+    func setSplitDropCaptureActive(
+        _ isActive: Bool,
         browserManager: BrowserManager,
         splitManager: SplitViewManager,
         windowId: UUID
     ) {
-        overlayView.frame = bounds
-        overlayView.browserManager = browserManager
-        overlayView.splitManager = splitManager
-        overlayView.windowId = windowId
+        splitDropCaptureView.browserManager = browserManager
+        splitDropCaptureView.splitManager = splitManager
+        splitDropCaptureView.windowId = windowId
+
+        if isActive {
+            if splitDropCaptureView.superview !== self {
+                addSubview(splitDropCaptureView, positioned: .above, relativeTo: nil)
+            }
+            splitDropCaptureView.frame = bounds
+        } else if splitDropCaptureView.superview === self {
+            splitDropCaptureView.removeFromSuperview()
+        }
     }
 
     // Don't intercept events - let them pass through to webviews
@@ -1082,66 +930,99 @@ private class ContainerView: NSView {
         // internally, which works correctly when cursor rects don't override it.
     }
 
-    // Forward right-clicks to the webview below so context menus work
-    override func rightMouseDown(with event: NSEvent) {
-        // Find the webview at this point and forward the event
-        let point = convert(event.locationInWindow, from: nil)
-        // Use hitTest to find the actual view at this point (will skip overlay if hitTest returns nil)
-        if let hitView = hitTest(point) {
-            if let webView = hitView as? WKWebView {
-                webView.rightMouseDown(with: event)
-                return
-            }
-            // Check if hitView contains a webview
-            if let webView = findWebView(in: hitView, at: point) {
-                webView.rightMouseDown(with: event)
-                return
-            }
+    private func applyPaneLayout() {
+        switch paneLayout {
+        case .single:
+            singlePaneView.frame = pixelAligned(bounds)
+            leftPaneView.frame = .zero
+            rightPaneView.frame = .zero
+
+        case .split(let fraction, let orientation):
+            singlePaneView.frame = .zero
+            let frames = splitPaneFrames(fraction: fraction, orientation: orientation)
+            leftPaneView.frame = frames.left
+            rightPaneView.frame = frames.right
         }
-        // Defensive: `hitTest` can miss when overlay ordering changes; scan subviews for a WKWebView.
-        for subview in subviews.reversed() {
-            if let webView = findWebView(in: subview, at: point) {
-                webView.rightMouseDown(with: event)
-                return
-            }
-        }
-        super.rightMouseDown(with: event)
     }
-    
-    private func findWebView(in view: NSView, at point: NSPoint) -> WKWebView? {
-        let pointInView = view.convert(point, from: self)
-        if view.bounds.contains(pointInView) {
-            if let webView = view as? WKWebView {
-                return webView
-            }
-            for subview in view.subviews {
-                if let webView = findWebView(in: subview, at: point) {
-                    return webView
-                }
-            }
+
+    private func splitPaneFrames(
+        fraction: CGFloat,
+        orientation: SplitOrientation
+    ) -> (left: NSRect, right: NSRect) {
+        let total = pixelAligned(bounds)
+        let gap = pixelAlignedLength(8)
+        let halfGap = gap / 2
+
+        switch orientation {
+        case .horizontal:
+            let splitX = pixelAlignedCoordinate(total.minX + total.width * fraction)
+            let leftMaxX = pixelAlignedCoordinate(splitX - halfGap)
+            let rightMinX = pixelAlignedCoordinate(splitX + halfGap)
+            return (
+                left: pixelAligned(NSRect(
+                    x: total.minX,
+                    y: total.minY,
+                    width: max(1, leftMaxX - total.minX),
+                    height: total.height
+                )),
+                right: pixelAligned(NSRect(
+                    x: rightMinX,
+                    y: total.minY,
+                    width: max(1, total.maxX - rightMinX),
+                    height: total.height
+                ))
+            )
+
+        case .vertical:
+            let splitY = pixelAlignedCoordinate(total.maxY - total.height * fraction)
+            let bottomMaxY = pixelAlignedCoordinate(splitY - halfGap)
+            let topMinY = pixelAlignedCoordinate(splitY + halfGap)
+            return (
+                left: pixelAligned(NSRect(
+                    x: total.minX,
+                    y: topMinY,
+                    width: total.width,
+                    height: max(1, total.maxY - topMinY)
+                )),
+                right: pixelAligned(NSRect(
+                    x: total.minX,
+                    y: total.minY,
+                    width: total.width,
+                    height: max(1, bottomMaxY - total.minY)
+                ))
+            )
         }
-        return nil
+    }
+
+    private var backingScale: CGFloat {
+        window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+    }
+
+    private func pixelAlignedCoordinate(_ value: CGFloat) -> CGFloat {
+        (value * backingScale).rounded(.toNearestOrAwayFromZero) / backingScale
+    }
+
+    private func pixelAlignedLength(_ value: CGFloat) -> CGFloat {
+        max(0, pixelAlignedCoordinate(value))
+    }
+
+    private func pixelAligned(_ rect: NSRect) -> NSRect {
+        let minX = pixelAlignedCoordinate(rect.minX)
+        let minY = pixelAlignedCoordinate(rect.minY)
+        let maxX = pixelAlignedCoordinate(rect.maxX)
+        let maxY = pixelAlignedCoordinate(rect.maxY)
+        return NSRect(
+            x: minX,
+            y: minY,
+            width: max(0, maxX - minX),
+            height: max(0, maxY - minY)
+        )
     }
 }
 
 private final class PaneContainerView: NSView {
-    private let maskShapeLayer = CAShapeLayer()
-    private let borderShapeLayer = CAShapeLayer()
-    private var lastBounds: CGRect = .zero
-    private var lastIsActive = false
-    private var lastAccent = NSColor.clear
-    private var lastSide: SplitViewManager.Side = .left
-    private var lastOrientation: SplitOrientation = .horizontal
-    private var lastCornerRadius: CGFloat = 0
-
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        layer?.mask = maskShapeLayer
-        borderShapeLayer.fillColor = NSColor.clear.cgColor
-        borderShapeLayer.lineWidth = 1.0
-        layer?.addSublayer(borderShapeLayer)
     }
 
     @available(*, unavailable)
@@ -1149,56 +1030,10 @@ private final class PaneContainerView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func applyLayout(
-        frame: NSRect,
-        isActive: Bool,
-        accent: NSColor,
-        side: SplitViewManager.Side,
-        orientation: SplitOrientation,
-        cornerRadius: CGFloat,
-        pathBuilder: (
-            _ rect: CGRect,
-            _ topLeadingRadius: CGFloat,
-            _ bottomLeadingRadius: CGFloat,
-            _ bottomTrailingRadius: CGFloat,
-            _ topTrailingRadius: CGFloat
-        ) -> CGPath
-    ) {
-        self.frame = frame
-        autoresizingMask = []
+    override var isOpaque: Bool { true }
 
-        let needsPathUpdate =
-            bounds != lastBounds ||
-            side != lastSide ||
-            orientation != lastOrientation ||
-            abs(cornerRadius - lastCornerRadius) > 0.0001
-        let needsStyleUpdate =
-            isActive != lastIsActive ||
-            accent.isEqual(lastAccent) == false ||
-            needsPathUpdate
-
-        if needsPathUpdate {
-            let path = pathBuilder(
-                bounds,
-                orientation == .horizontal ? (side == .left ? 0 : cornerRadius) : (side == .left ? 0 : cornerRadius),
-                orientation == .horizontal ? cornerRadius : (side == .left ? cornerRadius : 0),
-                orientation == .horizontal ? cornerRadius : (side == .left ? cornerRadius : 0),
-                orientation == .horizontal ? (side == .right ? 0 : cornerRadius) : (side == .left ? 0 : cornerRadius)
-            )
-            maskShapeLayer.path = path
-            borderShapeLayer.path = path
-            lastBounds = bounds
-            lastSide = side
-            lastOrientation = orientation
-            lastCornerRadius = cornerRadius
-        }
-
-        if needsStyleUpdate {
-            borderShapeLayer.strokeColor = isActive
-                ? accent.withAlphaComponent(0.9).cgColor
-                : NSColor.clear.cgColor
-            lastIsActive = isActive
-            lastAccent = accent
-        }
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.windowBackgroundColor.setFill()
+        dirtyRect.fill()
     }
 }

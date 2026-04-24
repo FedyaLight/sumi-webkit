@@ -53,6 +53,48 @@ final class WebViewCoordinatorTests: XCTestCase {
         )
     }
 
+    func testSplitDropCaptureHitPolicyOnlyCapturesActiveCardRegions() {
+        let bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
+        let verticalCenter = bounds.midY
+
+        XCTAssertEqual(
+            SplitDropCaptureHitPolicy.side(
+                at: CGPoint(
+                    x: SplitDropCaptureHitPolicy.cardPadding + (SplitDropCaptureHitPolicy.cardWidth / 2),
+                    y: verticalCenter
+                ),
+                in: bounds
+            ),
+            .left
+        )
+        XCTAssertEqual(
+            SplitDropCaptureHitPolicy.side(
+                at: CGPoint(
+                    x: bounds.maxX - SplitDropCaptureHitPolicy.cardPadding - (SplitDropCaptureHitPolicy.cardWidth / 2),
+                    y: verticalCenter
+                ),
+                in: bounds
+            ),
+            .right
+        )
+        XCTAssertNil(
+            SplitDropCaptureHitPolicy.side(
+                at: CGPoint(x: bounds.midX, y: verticalCenter),
+                in: bounds
+            )
+        )
+        XCTAssertFalse(
+            SplitDropCaptureHitPolicy.shouldCaptureHit(
+                at: CGPoint(
+                    x: SplitDropCaptureHitPolicy.cardPadding + (SplitDropCaptureHitPolicy.cardWidth / 2),
+                    y: verticalCenter
+                ),
+                in: bounds,
+                isDragActive: false
+            )
+        )
+    }
+
     func testWebViewSyncLoadPolicySkipsOriginatingWebView() {
         let desiredURL = URL(string: "https://example.com/current")!
 

@@ -25,6 +25,7 @@ private enum WindowTransientChromeZIndex {
 /// Main window view that orchestrates the browser UI layout
 struct WindowView: View {
     @EnvironmentObject var browserManager: BrowserManager
+    @EnvironmentObject private var peekManager: PeekManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sumiSettings) var sumiSettings
@@ -79,9 +80,11 @@ struct WindowView: View {
             }
 
             // Peek overlay for external link previews
-            chromeThemeScope {
-                PeekOverlayView()
-                    .zIndex(WindowTransientChromeZIndex.peek)
+            if peekManager.isActive || peekManager.currentSession != nil {
+                chromeThemeScope {
+                    PeekOverlayView()
+                        .zIndex(WindowTransientChromeZIndex.peek)
+                }
             }
 
             chromeThemeScope {
