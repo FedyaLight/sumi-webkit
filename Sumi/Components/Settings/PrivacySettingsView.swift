@@ -10,15 +10,22 @@ import WebKit
 
 struct PrivacySettingsView: View {
     @EnvironmentObject var browserManager: BrowserManager
+    @StateObject private var trackingProtectionSettings = SumiTrackingProtectionSettings.shared
+    @StateObject private var trackingProtectionDataStore = SumiTrackingProtectionDataStore.shared
     @StateObject private var cookieManager = CookieManager()
     @StateObject private var cacheManager = CacheManager()
     @State private var showingCookieManager = false
     @State private var showingCacheManager = false
     @State private var isClearing = false
     @State private var clearingTask: Task<Void, Never>?
+    @State private var trackingOverrideHostInput = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
+            trackingProtectionSection
+
+            Divider()
+
             // Cookie Management Section
             VStack(alignment: .leading, spacing: 12) {
                 Text("Cookie Management")
@@ -180,6 +187,147 @@ struct PrivacySettingsView: View {
                 cacheManager: cacheManager,
                 clearsLoadedDataOnDisappear: false
             )
+        }
+    }
+
+    // MARK: - Tracking Protection
+
+    private var trackingProtectionSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Tracking Protection")
+                .font(.headline)
+
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle(
+                    "Tracking Protection",
+                    isOn: Binding(
+                        get: { trackingProtectionSettings.globalMode == .enabled },
+                        set: { isEnabled in
+                            trackingProtectionSettings.setGlobalMode(isEnabled ? .enabled : .disabled)
+                        }
+                    )
+                )
+
+                Text("Blocks known third-party trackers using WebKit-native content rules. Does not block ads.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                trackingDataControls
+
+                Divider()
+
+                trackingSiteOverrides
+            }
+            .padding()
+            .background(Color(NSColor.controlBackgroundColor))
+            .cornerRadius(8)
+        }
+    }
+
+    private var trackingDataControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Button("Update tracker data") {
+                    Task {
+                        await trackingProtectionDataStore.updateTrackerData()
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(trackingProtectionDataStore.isUpdating)
+
+                if trackingProtectionDataStore.isUpdating {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                }
+
+                if trackingProtectionDataStore.metadata.currentSource == .downloaded {
+                    Button("Reset to bundled tracker data") {
+                        trackingProtectionDataStore.resetToBundled()
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+
+            HStack(spacing: 6) {
+                Text("Current source:")
+                    .foregroundColor(.secondary)
+                Text(trackingProtectionDataStore.metadata.currentSource.rawValue)
+                    .fontWeight(.medium)
+            }
+            .font(.caption)
+
+            if let lastUpdateDate = trackingProtectionDataStore.metadata.lastSuccessfulUpdateDate {
+                Text("Last successful update: \(formatTrackingUpdateDate(lastUpdateDate))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                Text("Last successful update: Never")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            if let lastUpdateError = trackingProtectionDataStore.metadata.lastUpdateError,
+               !lastUpdateError.isEmpty {
+                Text("Last update error: \(lastUpdateError)")
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var trackingSiteOverrides: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Site Overrides")
+                .font(.subheadline)
+                .fontWeight(.medium)
+
+            if trackingProtectionSettings.sortedSiteOverrides.isEmpty {
+                Text("No site overrides.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(trackingProtectionSettings.sortedSiteOverrides, id: \.host) { item in
+                        HStack {
+                            Text(item.host)
+                                .lineLimit(1)
+                            Spacer()
+                            Menu(item.override.displayTitle) {
+                                Button("Use Global Setting") {
+                                    trackingProtectionSettings.removeSiteOverride(forNormalizedHost: item.host)
+                                }
+                                Button("Enable") {
+                                    _ = trackingProtectionSettings.setSiteOverride(.enabled, forUserInput: item.host)
+                                }
+                                Button("Disable") {
+                                    _ = trackingProtectionSettings.setSiteOverride(.disabled, forUserInput: item.host)
+                                }
+                            }
+                            .menuStyle(.button)
+                            .fixedSize()
+                        }
+                        .font(.caption)
+                    }
+                }
+            }
+
+            HStack(spacing: 8) {
+                TextField("example.com", text: $trackingOverrideHostInput)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 220)
+
+                Menu("Add") {
+                    Button("Enable for Site") {
+                        addTrackingOverride(.enabled)
+                    }
+                    Button("Disable for Site") {
+                        addTrackingOverride(.disabled)
+                    }
+                }
+                .menuStyle(.button)
+                .disabled(trackingOverrideHostInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
         }
     }
 
@@ -424,6 +572,22 @@ struct PrivacySettingsView: View {
         formatter.allowedUnits = [.useAll]
         formatter.countStyle = .file
         return formatter.string(fromByteCount: bytes)
+    }
+
+    private func formatTrackingUpdateDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    private func addTrackingOverride(_ override: SumiTrackingProtectionSiteOverride) {
+        if trackingProtectionSettings.setSiteOverride(
+            override,
+            forUserInput: trackingOverrideHostInput
+        ) {
+            trackingOverrideHostInput = ""
+        }
     }
 }
 

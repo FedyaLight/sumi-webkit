@@ -418,11 +418,11 @@ private class PermanentScriptMessageHandler: NSObject, WKScriptMessageHandler, W
 
     public func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let box = self.registeredMessageHandlers[message.messageName] else {
-            assertionFailure("no registered message handler for \(message.messageName)")
+            Logger.contentBlocking.debug("Dropping message for unregistered script handler \(message.messageName)")
             return
         }
         guard let handler = box.handler else {
-            assertionFailure("handler for \(message.messageName) has been unregistered")
+            Logger.contentBlocking.debug("Dropping message for released script handler \(message.messageName)")
             return
         }
         handler.userContentController(userContentController, didReceive: message)
@@ -430,15 +430,21 @@ private class PermanentScriptMessageHandler: NSObject, WKScriptMessageHandler, W
 
     public func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage, replyHandler: @escaping (Any?, String?) -> Void) {
         guard let box = self.registeredMessageHandlers[message.messageName] else {
-            assertionFailure("no registered message handler for \(message.messageName)")
+            Logger.contentBlocking.debug("Dropping message with reply for unregistered script handler \(message.messageName)")
+            replyHandler(nil, "Script message handler is unavailable.")
             return
         }
         guard let handler = box.handler else {
-            assertionFailure("handler for \(message.messageName) has been unregistered")
+            Logger.contentBlocking.debug("Dropping message with reply for released script handler \(message.messageName)")
+            replyHandler(nil, "Script message handler is unavailable.")
             return
         }
-        assert(handler is WKScriptMessageHandlerWithReply)
-        (handler as? WKScriptMessageHandlerWithReply)?.userContentController(userContentController, didReceive: message, replyHandler: replyHandler)
+        guard let replyHandlerTarget = handler as? WKScriptMessageHandlerWithReply else {
+            Logger.contentBlocking.debug("Dropping message with reply for non-reply script handler \(message.messageName)")
+            replyHandler(nil, "Script message handler does not support replies.")
+            return
+        }
+        replyHandlerTarget.userContentController(userContentController, didReceive: message, replyHandler: replyHandler)
     }
 
 }

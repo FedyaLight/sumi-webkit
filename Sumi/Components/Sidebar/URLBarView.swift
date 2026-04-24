@@ -429,6 +429,61 @@ struct URLBarZoomButtonVisibility {
     }
 }
 
+struct URLBarTrackingProtectionPresenter: Equatable {
+    struct ShieldIcon: Equatable {
+        let chromeIconName: String
+        let fallbackSystemName: String
+        let showsCheckmark: Bool
+    }
+
+    let rowTitle: String
+    let rowSubtitle: String?
+    let siteHost: String
+    let isEnabled: Bool
+    let shieldIcon: ShieldIcon
+    let shieldAccessibilityLabel: String
+    let shieldAccessibilityValue: String
+
+    static func make(
+        policy: SumiTrackingProtectionEffectivePolicy
+    ) -> URLBarTrackingProtectionPresenter {
+        let isEnabled = policy.isEnabled
+
+        return URLBarTrackingProtectionPresenter(
+            rowTitle: "Tracking Protection",
+            rowSubtitle: nil,
+            siteHost: policy.host ?? "Current site",
+            isEnabled: isEnabled,
+            shieldIcon: ShieldIcon(
+                chromeIconName: isEnabled ? "shield.fill" : "tracking-protection",
+                fallbackSystemName: isEnabled ? "shield.fill" : "shield",
+                showsCheckmark: isEnabled
+            ),
+            shieldAccessibilityLabel: isEnabled
+                ? "Disable Tracking Protection for this site"
+                : "Enable Tracking Protection for this site",
+            shieldAccessibilityValue: isEnabled ? "On" : "Off"
+        )
+    }
+
+    static func siteOverrideAfterToggle(
+        for policy: SumiTrackingProtectionEffectivePolicy
+    ) -> SumiTrackingProtectionSiteOverride {
+        policy.isEnabled ? .disabled : .enabled
+    }
+
+    var visibleStrings: [String] {
+        var strings = [
+            rowTitle,
+            siteHost,
+        ]
+        if let rowSubtitle {
+            strings.append(rowSubtitle)
+        }
+        return strings
+    }
+}
+
 private struct URLBarZoomPopoverView: View {
     @EnvironmentObject private var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
@@ -537,7 +592,7 @@ private struct URLBarZoomPopoverButtonStyle: ButtonStyle {
 private struct SiteControlsSettingRowModel: Equatable, Identifiable {
     enum Kind: Equatable {
         case autoplay(AutoplayOverrideState)
-        case trackingPlaceholder
+        case tracking(SumiTrackingProtectionEffectivePolicy)
         case cookies
         case localPage
     }
@@ -546,21 +601,23 @@ private struct SiteControlsSettingRowModel: Equatable, Identifiable {
     let chromeIconName: String?
     let fallbackSystemName: String
     let title: String
-    let subtitle: String
+    let subtitle: String?
     let kind: Kind
 
     var isDisabled: Bool {
         switch kind {
-        case .trackingPlaceholder:
-            return true
-        default:
+        case .autoplay,
+             .tracking,
+             .cookies,
+             .localPage:
             return false
         }
     }
 
     var isInteractive: Bool {
         switch kind {
-        case .autoplay:
+        case .autoplay,
+             .tracking:
             return true
         default:
             return false
@@ -627,6 +684,7 @@ private struct SiteControlsSnapshot: Equatable {
     let readerAvailability: ReaderAvailability
     let settingsRows: [SiteControlsSettingRowModel]
 
+    @MainActor
     static func resolve(
         url: URL?,
         profileId: UUID?,
@@ -685,14 +743,19 @@ private struct SiteControlsSnapshot: Equatable {
                 )
             }
 
+            let trackingPolicy = SumiTrackingProtectionSettings.shared.resolve(for: url)
             rows.append(
                 .init(
                     id: "tracking",
-                    chromeIconName: "tracking-protection",
-                    fallbackSystemName: "hand.raised.fill",
+                    chromeIconName: trackingPolicy.isEnabled
+                        ? nil
+                        : "tracking-protection",
+                    fallbackSystemName: trackingPolicy.isEnabled
+                        ? "shield.fill"
+                        : "shield",
                     title: "Tracking Protection",
-                    subtitle: "Unavailable",
-                    kind: .trackingPlaceholder
+                    subtitle: nil,
+                    kind: .tracking(trackingPolicy)
                 )
             )
             rows.append(
@@ -810,6 +873,9 @@ private struct URLBarHubPopover: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .sumiTabNavigationStateDidChange)) { notification in
             handleNavigationStateDidChange(notification)
+        }
+        .onReceive(SumiTrackingProtectionSettings.shared.changesPublisher) {
+            _ in refreshNonce += 1
         }
     }
 
@@ -935,19 +1001,29 @@ private struct URLBarHubPopover: View {
         return bookmarkManager.isBookmarked(currentTab.url)
     }
 
+    private var trackingProtectionPresenter: URLBarTrackingProtectionPresenter {
+        _ = refreshNonce
+        let policy = SumiTrackingProtectionSettings.shared.resolve(for: currentTab?.url)
+        return URLBarTrackingProtectionPresenter.make(policy: policy)
+    }
+
     private var settingsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HubSectionHeader(
                 title: "Settings",
                 actionTitle: "More",
                 action: {
-                    browserManager.openSettingsTab(selecting: .general, in: windowState)
+                    browserManager.openSettingsTab(selecting: .privacy, in: windowState)
                 }
             )
 
             VStack(spacing: 8) {
                 ForEach(snapshot.settingsRows) { row in
-                    HubSettingRow(model: row) {
+                    HubSettingRow(
+                        model: row,
+                        trackingPresenter: trackingPresenter(for: row),
+                        trackingToggleAction: trackingToggleAction(for: row)
+                    ) {
                         handleSettingAction(row)
                     }
                 }
@@ -972,7 +1048,7 @@ private struct URLBarHubPopover: View {
                 Divider()
 
                 Button("Site Settings") {
-                    browserManager.openSettingsTab(selecting: .general, in: windowState)
+                    browserManager.openSettingsTab(selecting: .privacy, in: windowState)
                     onClose()
                 }
             } label: {
@@ -1002,11 +1078,48 @@ private struct URLBarHubPopover: View {
             )
             rebuildCurrentTabAfterPermissionChange(currentTab)
             refreshNonce += 1
-        case .trackingPlaceholder,
-             .cookies,
+        case .tracking:
+            toggleTrackingProtectionForCurrentSite()
+        case .cookies,
              .localPage:
             break
         }
+    }
+
+    private func trackingPresenter(
+        for row: SiteControlsSettingRowModel
+    ) -> URLBarTrackingProtectionPresenter? {
+        guard case .tracking(let policy) = row.kind else {
+            return nil
+        }
+
+        return URLBarTrackingProtectionPresenter.make(policy: policy)
+    }
+
+    private func trackingToggleAction(
+        for row: SiteControlsSettingRowModel
+    ) -> (() -> Void)? {
+        guard case .tracking = row.kind, currentTab?.url.host != nil else {
+            return nil
+        }
+        return {
+            toggleTrackingProtectionForCurrentSite()
+        }
+    }
+
+    private func toggleTrackingProtectionForCurrentSite() {
+        let policy = SumiTrackingProtectionSettings.shared.resolve(for: currentTab?.url)
+        setTrackingProtectionOverride(
+            URLBarTrackingProtectionPresenter.siteOverrideAfterToggle(for: policy)
+        )
+    }
+
+    private func setTrackingProtectionOverride(
+        _ override: SumiTrackingProtectionSiteOverride
+    ) {
+        guard let currentTab else { return }
+        SumiTrackingProtectionSettings.shared.setSiteOverride(override, for: currentTab.url)
+        refreshNonce += 1
     }
 
     private func rebuildCurrentTabAfterPermissionChange(_ tab: Tab) {
@@ -1307,8 +1420,41 @@ private struct SumiFooterSecurityStatus: View {
     }
 }
 
+private struct SumiTrackingProtectionShieldIcon: View {
+    let presenter: URLBarTrackingProtectionPresenter
+    let size: CGFloat
+    let tint: Color
+    let checkTint: Color
+
+    var body: some View {
+        ZStack {
+            if presenter.shieldIcon.showsCheckmark {
+                Image(systemName: "shield.fill")
+                    .font(.system(size: size, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .symbolRenderingMode(.monochrome)
+
+                Image(systemName: "checkmark")
+                    .font(.system(size: max(size * 0.44, 8), weight: .black))
+                    .foregroundStyle(checkTint)
+                    .offset(y: -1)
+            } else {
+                SumiZenChromeIcon(
+                    iconName: presenter.shieldIcon.chromeIconName,
+                    fallbackSystemName: presenter.shieldIcon.fallbackSystemName,
+                    size: size,
+                    tint: tint
+                )
+            }
+        }
+        .frame(width: size, height: size)
+    }
+}
+
 private struct HubSettingRow: View {
     let model: SiteControlsSettingRowModel
+    let trackingPresenter: URLBarTrackingProtectionPresenter?
+    let trackingToggleAction: (() -> Void)?
     let action: () -> Void
 
     @Environment(\.sumiSettings) private var sumiSettings
@@ -1319,9 +1465,23 @@ private struct HubSettingRow: View {
         themeContext.tokens(settings: sumiSettings)
     }
 
+    init(
+        model: SiteControlsSettingRowModel,
+        trackingPresenter: URLBarTrackingProtectionPresenter? = nil,
+        trackingToggleAction: (() -> Void)? = nil,
+        action: @escaping () -> Void
+    ) {
+        self.model = model
+        self.trackingPresenter = trackingPresenter
+        self.trackingToggleAction = trackingToggleAction
+        self.action = action
+    }
+
     var body: some View {
         Group {
-            if model.isInteractive && !model.isDisabled {
+            if let trackingPresenter {
+                trackingRowContent(trackingPresenter)
+            } else if model.isInteractive && !model.isDisabled {
                 Button(action: action) {
                     rowContent
                 }
@@ -1340,6 +1500,50 @@ private struct HubSettingRow: View {
                 isHovered = hovering
             }
         }
+    }
+
+    private func trackingRowContent(
+        _ presenter: URLBarTrackingProtectionPresenter
+    ) -> some View {
+        Button {
+            trackingToggleAction?()
+        } label: {
+            HStack(spacing: 8) {
+                trackingShieldCapsule(presenter)
+
+                Text(presenter.rowTitle)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(tokens.primaryText)
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, minHeight: 34)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(presenter.shieldAccessibilityLabel)
+        .accessibilityLabel(presenter.shieldAccessibilityLabel)
+        .accessibilityValue(presenter.shieldAccessibilityValue)
+    }
+
+    private func trackingShieldCapsule(
+        _ presenter: URLBarTrackingProtectionPresenter
+    ) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(capsuleFill)
+                .scaleEffect(capsuleScale)
+
+            SumiTrackingProtectionShieldIcon(
+                presenter: presenter,
+                size: 17,
+                tint: presenter.isEnabled ? Color.black.opacity(0.88) : iconTint,
+                checkTint: Color.white
+            )
+        }
+        .frame(width: 34, height: 34)
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var rowContent: some View {
@@ -1362,10 +1566,12 @@ private struct HubSettingRow: View {
                 Text(model.title)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(tokens.primaryText)
-                Text(model.subtitle)
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(tokens.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let subtitle = model.subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(tokens.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             Spacer()
