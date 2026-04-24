@@ -272,9 +272,10 @@ extension ExtensionManager: NSPopoverDelegate {
         let baseConfiguration =
             extensionContext.webViewConfiguration
             ?? browserConfiguration.webViewConfiguration
-        let configuration = browserConfiguration.isolatedWebViewConfigurationCopy(
+        let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             from: baseConfiguration,
-            websiteDataStore: baseConfiguration.websiteDataStore
+            surface: .extensionOptions,
+            additionalUserScripts: baseConfiguration.userContentController.userScripts
         )
         prepareWebViewConfigurationForExtensionRuntime(
             configuration,

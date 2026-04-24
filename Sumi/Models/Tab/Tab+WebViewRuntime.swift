@@ -91,6 +91,18 @@ extension Tab {
         userContentController.add(self, name: coreScriptMessageHandlerName("SumiIdentity"))
     }
 
+    private func additionalUserScriptsForConfiguration(
+        from source: WKWebViewConfiguration? = nil
+    ) -> [WKUserScript] {
+        var scripts = source?.userContentController.userScripts ?? []
+        scripts.append(contentsOf: browserManager?.extensionManager.normalTabAdditionalUserScripts() ?? [])
+
+        var seenSources = Set<String>()
+        return scripts.filter { script in
+            seenSources.insert(script.source).inserted
+        }
+    }
+
     func cancelPendingMainFrameNavigation() {
         pendingMainFrameNavigationTask?.cancel()
         pendingMainFrameNavigationTask = nil
@@ -139,10 +151,19 @@ extension Tab {
         let configuration: WKWebViewConfiguration
         if let profile = resolveProfile() {
             if let override = webViewConfigurationOverride {
-                configuration = (override.copy() as? WKWebViewConfiguration) ?? override
+                configuration = BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
+                    from: override,
+                    for: profile,
+                    surface: .extensionOptions,
+                    additionalUserScripts: additionalUserScriptsForConfiguration(
+                        from: override
+                    )
+                )
             } else {
-                configuration = BrowserConfiguration.shared.cacheOptimizedWebViewConfiguration(
-                    for: profile
+                configuration = BrowserConfiguration.shared.normalTabWebViewConfiguration(
+                    for: profile,
+                    url: url,
+                    additionalUserScripts: additionalUserScriptsForConfiguration()
                 )
             }
         } else {
@@ -163,10 +184,6 @@ extension Tab {
                     }
             }
             return
-        }
-
-        if requiresPrimaryWebView {
-            configuration.userContentController = SumiDDGFaviconUserContentControllerFactory.makeController()
         }
 
         BrowserConfiguration.shared.applySitePermissionOverrides(
@@ -214,8 +231,8 @@ extension Tab {
 
         if let webView = _webView {
             installRuntimeObservers(on: webView)
-            if let scriptsProvider = webView.configuration.userContentController.sumiFaviconScriptsProvider {
-                ensureFaviconsTabExtension(using: scriptsProvider)
+            if let scriptsProvider = webView.configuration.userContentController.sumiNormalTabUserScriptsProvider {
+                ensureFaviconsTabExtension(using: scriptsProvider.faviconScripts)
             }
         }
 
@@ -305,9 +322,10 @@ extension Tab {
     }
 
     func applyWebViewConfigurationOverride(_ configuration: WKWebViewConfiguration) {
-        let isolatedConfiguration = BrowserConfiguration.shared.isolatedWebViewConfigurationCopy(
+        let isolatedConfiguration = BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
             from: configuration,
-            websiteDataStore: configuration.websiteDataStore
+            surface: .extensionOptions,
+            additionalUserScripts: additionalUserScriptsForConfiguration(from: configuration)
         )
         browserManager?.extensionManager.prepareWebViewConfigurationForExtensionRuntime(
             isolatedConfiguration,

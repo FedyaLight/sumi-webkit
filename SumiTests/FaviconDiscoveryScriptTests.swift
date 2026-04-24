@@ -8,8 +8,8 @@ import XCTest
 @MainActor
 final class FaviconDiscoveryScriptTests: XCTestCase {
     func testDDGUserContentControllerReportsInitialPayloadThroughFaviconUserScript() async throws {
-        let controller = SumiDDGFaviconUserContentControllerFactory.makeController()
-        let scriptsProvider = try XCTUnwrap(controller.sumiFaviconScriptsProvider)
+        let controller = SumiNormalTabUserContentControllerFactory.makeController()
+        let scriptsProvider = try XCTUnwrap(controller.sumiNormalTabUserScriptsProvider).faviconScripts
         let recorder = FaviconUserScriptRecorder()
         scriptsProvider.faviconScript.delegate = recorder
         await controller.awaitContentBlockingAssetsInstalled()
@@ -45,8 +45,8 @@ final class FaviconDiscoveryScriptTests: XCTestCase {
     }
 
     func testDDGUserContentControllerReportsDynamicHeadChanges() async throws {
-        let controller = SumiDDGFaviconUserContentControllerFactory.makeController()
-        let scriptsProvider = try XCTUnwrap(controller.sumiFaviconScriptsProvider)
+        let controller = SumiNormalTabUserContentControllerFactory.makeController()
+        let scriptsProvider = try XCTUnwrap(controller.sumiNormalTabUserScriptsProvider).faviconScripts
         let recorder = FaviconUserScriptRecorder()
         scriptsProvider.faviconScript.delegate = recorder
         await controller.awaitContentBlockingAssetsInstalled()
@@ -98,8 +98,8 @@ final class FaviconDiscoveryScriptTests: XCTestCase {
     }
 
     func testDDGUserContentControllerSuppressesNoiseWhenHeadChangesWithoutFaviconChange() async throws {
-        let controller = SumiDDGFaviconUserContentControllerFactory.makeController()
-        let scriptsProvider = try XCTUnwrap(controller.sumiFaviconScriptsProvider)
+        let controller = SumiNormalTabUserContentControllerFactory.makeController()
+        let scriptsProvider = try XCTUnwrap(controller.sumiNormalTabUserScriptsProvider).faviconScripts
         let recorder = FaviconUserScriptRecorder()
         scriptsProvider.faviconScript.delegate = recorder
         await controller.awaitContentBlockingAssetsInstalled()
@@ -148,10 +148,10 @@ final class FaviconDiscoveryScriptTests: XCTestCase {
     }
 
     func testSeparateDDGControllersKeepFaviconDeliveryIsolated() async throws {
-        let firstController = SumiDDGFaviconUserContentControllerFactory.makeController()
-        let secondController = SumiDDGFaviconUserContentControllerFactory.makeController()
-        let firstProvider = try XCTUnwrap(firstController.sumiFaviconScriptsProvider)
-        let secondProvider = try XCTUnwrap(secondController.sumiFaviconScriptsProvider)
+        let firstController = SumiNormalTabUserContentControllerFactory.makeController()
+        let secondController = SumiNormalTabUserContentControllerFactory.makeController()
+        let firstProvider = try XCTUnwrap(firstController.sumiNormalTabUserScriptsProvider).faviconScripts
+        let secondProvider = try XCTUnwrap(secondController.sumiNormalTabUserScriptsProvider).faviconScripts
         let firstRecorder = FaviconUserScriptRecorder()
         let secondRecorder = FaviconUserScriptRecorder()
         firstProvider.faviconScript.delegate = firstRecorder

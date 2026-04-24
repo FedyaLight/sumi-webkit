@@ -6,7 +6,17 @@ import PrivacyConfig
 import UserScript
 import WebKit
 
-private struct SumiFaviconUserContent: UserContentControllerNewContent {
+@MainActor
+final class SumiNormalTabUserScripts {
+    let faviconScripts = SumiDDGFaviconUserScripts()
+    let additionalWKUserScripts: [WKUserScript]
+
+    init(additionalWKUserScripts: [WKUserScript] = []) {
+        self.additionalWKUserScripts = additionalWKUserScripts
+    }
+}
+
+private struct SumiNormalTabUserContent: UserContentControllerNewContent {
     typealias SourceProvider = SumiDDGFaviconUserScripts
     typealias UserScripts = SumiDDGFaviconUserScripts
 
@@ -19,49 +29,49 @@ private struct SumiFaviconUserContent: UserContentControllerNewContent {
     let makeUserScripts: @MainActor (SumiDDGFaviconUserScripts) -> SumiDDGFaviconUserScripts = { $0 }
 }
 
-private enum SumiDDGFaviconAssociatedKeys {
+private enum SumiNormalTabAssociatedKeys {
     static var scriptsProvider = 0
     static var controllerDelegate = 0
     static var marker = 0
 }
 
 extension WKUserContentController {
-    fileprivate var sumiFaviconControllerDelegate: SumiDDGFaviconUserContentControllerDelegate? {
+    fileprivate var sumiNormalTabControllerDelegate: SumiNormalTabUserContentControllerDelegate? {
         get {
-            objc_getAssociatedObject(self, &SumiDDGFaviconAssociatedKeys.controllerDelegate) as? SumiDDGFaviconUserContentControllerDelegate
+            objc_getAssociatedObject(self, &SumiNormalTabAssociatedKeys.controllerDelegate) as? SumiNormalTabUserContentControllerDelegate
         }
         set {
             objc_setAssociatedObject(
                 self,
-                &SumiDDGFaviconAssociatedKeys.controllerDelegate,
+                &SumiNormalTabAssociatedKeys.controllerDelegate,
                 newValue,
                 .OBJC_ASSOCIATION_RETAIN_NONATOMIC
             )
         }
     }
 
-    var sumiFaviconScriptsProvider: SumiDDGFaviconUserScripts? {
+    var sumiNormalTabUserScriptsProvider: SumiNormalTabUserScripts? {
         get {
-            objc_getAssociatedObject(self, &SumiDDGFaviconAssociatedKeys.scriptsProvider) as? SumiDDGFaviconUserScripts
+            objc_getAssociatedObject(self, &SumiNormalTabAssociatedKeys.scriptsProvider) as? SumiNormalTabUserScripts
         }
         set {
             objc_setAssociatedObject(
                 self,
-                &SumiDDGFaviconAssociatedKeys.scriptsProvider,
+                &SumiNormalTabAssociatedKeys.scriptsProvider,
                 newValue,
                 .OBJC_ASSOCIATION_RETAIN_NONATOMIC
             )
         }
     }
 
-    var sumiUsesDDGFaviconUserContentController: Bool {
+    var sumiUsesNormalTabBrowserServicesKitUserContentController: Bool {
         get {
-            (objc_getAssociatedObject(self, &SumiDDGFaviconAssociatedKeys.marker) as? Bool) == true
+            (objc_getAssociatedObject(self, &SumiNormalTabAssociatedKeys.marker) as? Bool) == true
         }
         set {
             objc_setAssociatedObject(
                 self,
-                &SumiDDGFaviconAssociatedKeys.marker,
+                &SumiNormalTabAssociatedKeys.marker,
                 newValue,
                 .OBJC_ASSOCIATION_RETAIN_NONATOMIC
             )
@@ -69,7 +79,7 @@ extension WKUserContentController {
     }
 }
 
-private final class SumiDDGFaviconUserContentControllerDelegate: UserContentControllerDelegate {
+private final class SumiNormalTabUserContentControllerDelegate: UserContentControllerDelegate {
     @MainActor
     func userContentController(
         _ userContentController: UserContentController,
@@ -85,19 +95,26 @@ private final class SumiDDGFaviconUserContentControllerDelegate: UserContentCont
 }
 
 @MainActor
-enum SumiDDGFaviconUserContentControllerFactory {
-    static func makeController() -> UserContentController {
-        let scriptsProvider = SumiDDGFaviconUserScripts()
-        let content = SumiFaviconUserContent(sourceProvider: scriptsProvider)
-        let delegate = SumiDDGFaviconUserContentControllerDelegate()
+enum SumiNormalTabUserContentControllerFactory {
+    static func makeController(
+        additionalUserScripts: [WKUserScript] = []
+    ) -> UserContentController {
+        let scriptsProvider = SumiNormalTabUserScripts(
+            additionalWKUserScripts: additionalUserScripts
+        )
+        let content = SumiNormalTabUserContent(
+            sourceProvider: scriptsProvider.faviconScripts
+        )
+        let delegate = SumiNormalTabUserContentControllerDelegate()
         let controller = UserContentController(
             assetsPublisher: Just(content).eraseToAnyPublisher(),
             privacyConfigurationManager: SumiStaticPrivacyConfigurationManager()
         )
         controller.delegate = delegate
-        controller.sumiFaviconControllerDelegate = delegate
-        controller.sumiFaviconScriptsProvider = scriptsProvider
-        controller.sumiUsesDDGFaviconUserContentController = true
+        controller.sumiNormalTabControllerDelegate = delegate
+        controller.sumiNormalTabUserScriptsProvider = scriptsProvider
+        controller.sumiUsesNormalTabBrowserServicesKitUserContentController = true
+        scriptsProvider.additionalWKUserScripts.forEach(controller.addUserScript)
         return controller
     }
 }

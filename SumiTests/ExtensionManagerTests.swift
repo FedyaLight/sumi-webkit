@@ -948,7 +948,7 @@ final class ExtensionManagerTests: XCTestCase {
         XCTAssertNil(harness.browserConfiguration.webViewConfiguration.webExtensionController)
     }
 
-    func testIsolatedWebViewConfigurationCopyCreatesFreshUserContentController() {
+    func testAuxiliaryWebViewConfigurationCreatesFreshUserContentController() {
         let browserConfiguration = BrowserConfiguration()
         let template = browserConfiguration.webViewConfiguration
         template.userContentController.addUserScript(
@@ -959,15 +959,16 @@ final class ExtensionManagerTests: XCTestCase {
             )
         )
 
-        let isolated = browserConfiguration.isolatedWebViewConfigurationCopy(
+        let isolated = browserConfiguration.auxiliaryWebViewConfiguration(
             from: template,
-            websiteDataStore: template.websiteDataStore
+            surface: .extensionOptions,
+            additionalUserScripts: template.userContentController.userScripts
         )
 
         XCTAssertFalse(isolated.userContentController === template.userContentController)
-        XCTAssertEqual(
-            isolated.userContentController.userScripts.count,
-            template.userContentController.userScripts.count
+        XCTAssertTrue(
+            isolated.userContentController
+                .sumiUsesNormalTabBrowserServicesKitUserContentController
         )
     }
 }

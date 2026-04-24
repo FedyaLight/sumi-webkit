@@ -9,13 +9,22 @@ import AppKit
 import SwiftUI
 import WebKit
 
+enum BrowserConfigurationAuxiliarySurface: String {
+    case peek
+    case miniWindow
+    case extensionOptions
+}
+
 class BrowserConfiguration {
     static let shared = BrowserConfiguration()
 
+    private let sharedProcessPool = WKProcessPool()
+
     init() {}
 
-    private static func makeBaseWebViewConfiguration() -> WKWebViewConfiguration {
+    private func makeBaseWebViewConfiguration() -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
+        config.processPool = sharedProcessPool
         config.writingToolsBehavior = .none
 
         // Match Nook: the shared template configuration uses the default store.
@@ -60,83 +69,84 @@ class BrowserConfiguration {
     }
 
     lazy var webViewConfiguration: WKWebViewConfiguration = {
-        Self.makeBaseWebViewConfiguration()
+        makeBaseWebViewConfiguration()
     }()
 
-    // MARK: - Fresh User Content Controller
-    // Creates a fresh WKUserContentController but preserves shared user scripts
-    // (e.g., extension bridge scripts). This avoids cross-tab handler conflicts
-    // while keeping scripts that must be present on every tab.
-    func seededUserContentController(
-        from template: WKUserContentController? = nil,
-        keeping shouldKeepScript: ((WKUserScript) -> Bool)? = nil
-    ) -> WKUserContentController {
-        let sourceController = template ?? webViewConfiguration.userContentController
-        if sourceController.sumiUsesDDGFaviconUserContentController {
-            if Thread.isMainThread {
-                return MainActor.assumeIsolated {
-                    SumiDDGFaviconUserContentControllerFactory.makeController()
-                }
-            }
-
-            var controller: WKUserContentController!
-            DispatchQueue.main.sync {
-                controller = SumiDDGFaviconUserContentControllerFactory.makeController()
-            }
-            return controller
-        }
-
-        let controller = WKUserContentController()
-        for script in sourceController.userScripts {
-            if let shouldKeepScript, shouldKeepScript(script) == false {
-                continue
-            }
-            controller.addUserScript(script)
-        }
-        return controller
+    var normalTabProcessPool: WKProcessPool {
+        sharedProcessPool
     }
 
-    func isolatedWebViewConfigurationCopy(
-        from source: WKWebViewConfiguration,
-        websiteDataStore: WKWebsiteDataStore? = nil,
-        keeping shouldKeepScript: ((WKUserScript) -> Bool)? = nil
+    // MARK: - Normal Tab Configuration
+
+    @MainActor
+    func normalTabWebViewConfiguration(
+        for profile: Profile,
+        url: URL?,
+        additionalUserScripts: [WKUserScript] = []
     ) -> WKWebViewConfiguration {
-        let config = source.copy() as! WKWebViewConfiguration
-        config.userContentController = seededUserContentController(
-            from: source.userContentController,
-            keeping: shouldKeepScript
-        )
-        if let websiteDataStore {
-            config.websiteDataStore = websiteDataStore
+        let config = makeBaseWebViewConfiguration()
+        config.websiteDataStore = profile.dataStore
+        config.userContentController = SumiNormalTabUserContentControllerFactory
+            .makeController(additionalUserScripts: additionalUserScripts)
+        applyMediaSessionPolicy(to: config, profile: profile)
+        applySitePermissionOverrides(to: config, url: url, profileId: profile.id)
+        return config
+    }
+
+    // MARK: - Auxiliary Surface Configuration
+
+    /// Auxiliary WebViews are intentionally separate from primary normal tabs:
+    /// popup WebViews come from WebKit, Peek/MiniWindow use lightweight wrappers,
+    /// and extension option pages may start from WebKit extension context config.
+    @MainActor
+    func auxiliaryWebViewConfiguration(
+        from source: WKWebViewConfiguration? = nil,
+        for profile: Profile? = nil,
+        surface: BrowserConfigurationAuxiliarySurface,
+        additionalUserScripts: [WKUserScript] = []
+    ) -> WKWebViewConfiguration {
+        let config = makeBaseWebViewConfiguration()
+        config.websiteDataStore =
+            profile?.dataStore
+            ?? source?.websiteDataStore
+            ?? webViewConfiguration.websiteDataStore
+        config.userContentController = SumiNormalTabUserContentControllerFactory
+            .makeController(additionalUserScripts: additionalUserScripts)
+
+        if let source {
+            config.webExtensionController = source.webExtensionController
         }
-        config.defaultWebpagePreferences.allowsContentJavaScript = true
+
+        switch surface {
+        case .peek, .miniWindow, .extensionOptions:
+            break
+        }
+
+        applyMediaSessionPolicy(to: config, profile: profile)
         return config
     }
 
     // MARK: - Cache-Optimized Configuration
-    // Derives from shared config to preserve process pool and browser settings.
+    // Auxiliary compatibility path for non-primary surfaces that still request a
+    // generic browser-like WebView configuration.
     func cacheOptimizedWebViewConfiguration() -> WKWebViewConfiguration {
-        isolatedWebViewConfigurationCopy(
-            from: webViewConfiguration,
-            websiteDataStore: webViewConfiguration.websiteDataStore
-        )
+        MainActor.assumeIsolated {
+            auxiliaryWebViewConfiguration(surface: .miniWindow)
+        }
     }
 
     // MARK: - Profile-Aware Configurations
     @MainActor
     func webViewConfiguration(for profile: Profile) -> WKWebViewConfiguration {
-        let config = isolatedWebViewConfigurationCopy(
-            from: webViewConfiguration,
-            websiteDataStore: profile.dataStore
-        )
-        applyMediaSessionPolicy(to: config, profile: profile)
-
-        return config
+        normalTabWebViewConfiguration(for: profile, url: nil)
     }
 
     @MainActor
     func cacheOptimizedWebViewConfiguration(for profile: Profile) -> WKWebViewConfiguration {
-        let config = webViewConfiguration(for: profile)
+        let config = auxiliaryWebViewConfiguration(
+            for: profile,
+            surface: .miniWindow
+        )
         config.preferences.setValue(true, forKey: "allowsInlineMediaPlayback")
         config.preferences.setValue(true, forKey: "mediaDevicesEnabled")
         return config
