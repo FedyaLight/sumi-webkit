@@ -38,7 +38,7 @@ class SumiSettingsService {
     private let tabLayoutKey = "settings.tabLayout"
     private let customSearchEnginesKey = "settings.customSearchEngines"
 
-    var currentSettingsTab: SettingsTabs = .appearance
+    var currentSettingsTab: SettingsTabs = .general
 
     /// Safari extensions vs SumiScripts, when `currentSettingsTab == .extensions`.
     var extensionsSettingsSubPane: SumiExtensionsSettingsSubPane = .safariExtensions

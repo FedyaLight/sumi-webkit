@@ -174,7 +174,7 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
         popover.delegate = self
         popover.contentViewController = hostingController
         popover.contentSize = contentSize(for: browserManager.downloadManager)
-        popover.appearance = anchorView.window?.effectiveAppearance
+        popover.appearance = popoverAppearance(for: registration)
         let transientSessionToken = takeTransientSession(
             in: windowState,
             anchorView: anchorView
@@ -263,6 +263,7 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
         downloadManager: DownloadManager,
         contentSize: NSSize
     ) {
+        session.popover.appearance = popoverAppearance(for: registration)
         session.hostingController.rootView = rootView(
             registration: registration,
             downloadManager: downloadManager,
@@ -293,12 +294,38 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
         contentSize: NSSize
     ) -> AnyView {
         let settings = registration.settings ?? SumiSettingsService()
+        let colorScheme = popoverColorScheme(for: registration)
         return AnyView(
             DownloadsPopoverView(downloadManager: downloadManager)
                 .environment(\.sumiSettings, settings)
-                .environment(\.resolvedThemeContext, registration.themeContext)
+                .environment(\.resolvedThemeContext, popoverThemeContext(for: registration, colorScheme: colorScheme))
+                .environment(\.colorScheme, colorScheme)
                 .frame(width: Metrics.width, height: contentSize.height)
         )
+    }
+
+    private func popoverAppearance(for registration: AnchorRegistration) -> NSAppearance {
+        registration.view?.window?.effectiveAppearance ?? NSApplication.shared.effectiveAppearance
+    }
+
+    private func popoverColorScheme(for registration: AnchorRegistration) -> ColorScheme {
+        ColorScheme(downloadsPopoverAppearance: popoverAppearance(for: registration))
+    }
+
+    private func popoverThemeContext(
+        for registration: AnchorRegistration,
+        colorScheme: ColorScheme
+    ) -> ResolvedThemeContext {
+        var context = registration.themeContext
+        context.globalColorScheme = colorScheme
+        context.chromeColorScheme = colorScheme
+        context.sourceChromeColorScheme = colorScheme
+        context.targetChromeColorScheme = colorScheme
+        context.sourceWorkspaceTheme = context.workspaceTheme
+        context.targetWorkspaceTheme = context.workspaceTheme
+        context.isInteractiveTransition = false
+        context.transitionProgress = 1.0
+        return context
     }
 
     func contentSize(for downloadManager: DownloadManager) -> NSSize {
@@ -399,5 +426,12 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
             pendingSession.token,
             reason: reason
         )
+    }
+}
+
+private extension ColorScheme {
+    init(downloadsPopoverAppearance appearance: NSAppearance) {
+        let bestMatch = appearance.bestMatch(from: [.darkAqua, .aqua])
+        self = bestMatch == .darkAqua ? .dark : .light
     }
 }
