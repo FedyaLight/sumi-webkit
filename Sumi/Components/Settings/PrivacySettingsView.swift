@@ -304,11 +304,12 @@ struct PrivacySettingsView: View {
     
     private func clearAllWebsiteData() {
         runClearingOperation {
-            let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
             for profile in browserManager.profileManager.profiles {
-                await profile.dataStore.removeData(ofTypes: dataTypes, modifiedSince: Date.distantPast)
+                await SumiWebsiteDataCleanupService.shared
+                    .clearAllProfileWebsiteData(in: profile.dataStore)
             }
-            await WKWebsiteDataStore.default().removeData(ofTypes: dataTypes, modifiedSince: Date.distantPast)
+            await SumiWebsiteDataCleanupService.shared
+                .clearAllProfileWebsiteData(in: WKWebsiteDataStore.default())
             await synchronizeManagersWithCurrentProfile()
         }
     }
@@ -321,9 +322,17 @@ struct PrivacySettingsView: View {
         runClearingOperation {
             let cacheTypes: Set<String> = [WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache]
             for profile in browserManager.profileManager.profiles {
-                await profile.dataStore.removeData(ofTypes: cacheTypes, modifiedSince: Date.distantPast)
+                await SumiWebsiteDataCleanupService.shared.removeWebsiteData(
+                    ofTypes: cacheTypes,
+                    modifiedSince: .distantPast,
+                    in: profile.dataStore
+                )
             }
-            await WKWebsiteDataStore.default().removeData(ofTypes: cacheTypes, modifiedSince: Date.distantPast)
+            await SumiWebsiteDataCleanupService.shared.removeWebsiteData(
+                ofTypes: cacheTypes,
+                modifiedSince: .distantPast,
+                in: WKWebsiteDataStore.default()
+            )
             await synchronizeManagersWithCurrentProfile()
         }
     }

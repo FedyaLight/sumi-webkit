@@ -13,14 +13,20 @@ import SwiftUI
 class CookieManager: ObservableObject {
     // Active data store for cookie operations. Switchable per profile.
     private var dataStore: WKWebsiteDataStore?
+    private let cleanupService: any SumiWebsiteDataCleanupServicing
+    private var refreshGeneration: UInt64 = 0
     // Optional profile context for diagnostics and profiling
     var currentProfileId: UUID?
     @Published private(set) var cookies: [CookieInfo] = []
     @Published private(set) var domainGroups: [DomainCookieGroup] = []
     @Published private(set) var isLoading: Bool = false
     
-    init(dataStore: WKWebsiteDataStore? = nil) {
+    init(
+        dataStore: WKWebsiteDataStore? = nil,
+        cleanupService: (any SumiWebsiteDataCleanupServicing)? = nil
+    ) {
         self.dataStore = dataStore
+        self.cleanupService = cleanupService ?? SumiWebsiteDataCleanupService.shared
     }
 
     // MARK: - Profile Switching
@@ -37,6 +43,7 @@ class CookieManager: ObservableObject {
     }
 
     func clearLoadedData() {
+        refreshGeneration &+= 1
         cookies.removeAll(keepingCapacity: false)
         domainGroups.removeAll(keepingCapacity: false)
         isLoading = false
@@ -45,16 +52,18 @@ class CookieManager: ObservableObject {
     // MARK: - Public Methods
     
     func loadCookies() async {
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
         isLoading = true
         defer {
-            if !Task.isCancelled {
+            if refreshGeneration == generation && !Task.isCancelled {
                 isLoading = false
             }
         }
         
         let dataStore = activeDataStore()
-        let httpCookies = await dataStore.httpCookieStore.allCookiesAsync()
-        guard !Task.isCancelled else { return }
+        let httpCookies = await cleanupService.fetchCookies(in: dataStore)
+        guard refreshGeneration == generation, !Task.isCancelled else { return }
         let cookieInfos = httpCookies.map { CookieInfo(from: $0) }
         
         self.cookies = cookieInfos
@@ -62,93 +71,56 @@ class CookieManager: ObservableObject {
     }
     
     func deleteCookie(_ cookie: CookieInfo) async {
-        // Find the original HTTPCookie
         let dataStore = activeDataStore()
-        let httpCookies = await dataStore.httpCookieStore.allCookiesAsync()
-        
-        if let httpCookie = httpCookies.first(where: { 
-            $0.name == cookie.name && $0.domain == cookie.domain && $0.path == cookie.path 
-        }) {
-            await dataStore.httpCookieStore.deleteCookieAsync(httpCookie)
-        }
-        await loadCookies() // Refresh the list
+        await cleanupService.removeCookies(
+            .exact(SumiCookieIdentifier(cookie: cookie)),
+            in: dataStore
+        )
+        await loadCookies()
     }
     
     func deleteCookiesForDomain(_ domain: String) async {
         let dataStore = activeDataStore()
-        let httpCookies = await dataStore.httpCookieStore.allCookiesAsync()
-        let domainCookies = httpCookies.filter { $0.domain == domain || $0.domain == ".\(domain)" }
-        
-        for cookie in domainCookies {
-            await dataStore.httpCookieStore.deleteCookieAsync(cookie)
-        }
-        
-        await loadCookies() // Refresh the list
+        await cleanupService.removeCookies(.domains([domain]), in: dataStore)
+        await loadCookies()
     }
     
     func deleteAllCookies() async {
         let dataStore = activeDataStore()
-        let httpCookies = await dataStore.httpCookieStore.allCookiesAsync()
-        
-        for cookie in httpCookies {
-            await dataStore.httpCookieStore.deleteCookieAsync(cookie)
-        }
-        
-        await loadCookies() // Refresh the list
+        await cleanupService.removeCookies(.all, in: dataStore)
+        await loadCookies()
     }
     
     func deleteExpiredCookies() async {
         let dataStore = activeDataStore()
-        let httpCookies = await dataStore.httpCookieStore.allCookiesAsync()
-        let expiredCookies = httpCookies.filter { cookie in
-            guard let expiresDate = cookie.expiresDate else { return false }
-            return expiresDate < Date()
-        }
-        
-        for cookie in expiredCookies {
-            await dataStore.httpCookieStore.deleteCookieAsync(cookie)
-        }
-        
-        await loadCookies() // Refresh the list
+        await cleanupService.removeCookies(
+            .expired(referenceDate: Date()),
+            in: dataStore
+        )
+        await loadCookies()
     }
     
     // MARK: - Privacy-Compliant Cookie Management
     
     func deleteHighRiskCookies() async {
         let dataStore = activeDataStore()
-        let httpCookies = await dataStore.httpCookieStore.allCookiesAsync()
-        let cookieInfos = httpCookies.map { CookieInfo(from: $0) }
-        let highRiskCookies = cookieInfos.filter { $0.privacyRisk == .high }
-        
-        for cookieInfo in highRiskCookies {
-            if let httpCookie = httpCookies.first(where: { 
-                $0.name == cookieInfo.name && $0.domain == cookieInfo.domain && $0.path == cookieInfo.path 
-            }) {
-                await dataStore.httpCookieStore.deleteCookieAsync(httpCookie)
-            }
-        }
-        
+        await cleanupService.removeCookies(.highRisk, in: dataStore)
         await loadCookies()
     }
     
     func deleteThirdPartyCookies() async {
         let dataStore = activeDataStore()
-        let httpCookies = await dataStore.httpCookieStore.allCookiesAsync()
-        let thirdPartyCookies = httpCookies.filter { $0.domain.hasPrefix(".") }
-        
-        for cookie in thirdPartyCookies {
-            await dataStore.httpCookieStore.deleteCookieAsync(cookie)
-        }
-        
+        await cleanupService.removeCookies(.thirdParty, in: dataStore)
         await loadCookies()
     }
     
     func performPrivacyCleanup() async {
-        // Comprehensive privacy-compliant cleanup
-        await deleteExpiredCookies()
-        await deleteHighRiskCookies()
-        // Heuristic removal based on expiresDate has been removed to avoid deleting valid cookies.
-        // If creation/last-access metadata becomes available in future, revisit retention logic.
+        let dataStore = activeDataStore()
+        await cleanupService.removeCookies(
+            .expired(referenceDate: Date()),
+            in: dataStore
+        )
+        await cleanupService.removeCookies(.highRisk, in: dataStore)
         await loadCookies()
     }
     
@@ -256,27 +228,5 @@ extension CookieManager {
         details["Expires"] = cookie.expirationStatus
         
         return details
-    }
-}
-
-// MARK: - Async WKHTTPCookieStore Bridging
-
-extension WKHTTPCookieStore {
-    /// Async wrapper for `getAllCookies` that bridges the completion-handler API into Swift concurrency.
-    func allCookiesAsync() async -> [HTTPCookie] {
-        await withCheckedContinuation { continuation in
-            self.getAllCookies { cookies in
-                continuation.resume(returning: cookies)
-            }
-        }
-    }
-    
-    /// Async wrapper for `delete(_:completionHandler:)` to make each deletion awaitable.
-    func deleteCookieAsync(_ cookie: HTTPCookie) async {
-        await withCheckedContinuation { continuation in
-            self.delete(cookie) {
-                continuation.resume()
-            }
-        }
     }
 }

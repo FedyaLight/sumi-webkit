@@ -13,14 +13,20 @@ import SwiftUI
 class CacheManager: ObservableObject {
     // Active data store for cache operations. Switchable per profile.
     private var dataStore: WKWebsiteDataStore?
+    private let cleanupService: any SumiWebsiteDataCleanupServicing
+    private var refreshGeneration: UInt64 = 0
     // Optional profile context for diagnostics and profiling
     var currentProfileId: UUID?
     @Published private(set) var cacheEntries: [CacheInfo] = []
     @Published private(set) var domainGroups: [DomainCacheGroup] = []
     @Published private(set) var isLoading: Bool = false
     
-    init(dataStore: WKWebsiteDataStore? = nil) {
+    init(
+        dataStore: WKWebsiteDataStore? = nil,
+        cleanupService: (any SumiWebsiteDataCleanupServicing)? = nil
+    ) {
         self.dataStore = dataStore
+        self.cleanupService = cleanupService ?? SumiWebsiteDataCleanupService.shared
     }
 
     // MARK: - Profile Switching
@@ -37,6 +43,7 @@ class CacheManager: ObservableObject {
     }
 
     func clearLoadedData() {
+        refreshGeneration &+= 1
         cacheEntries.removeAll(keepingCapacity: false)
         domainGroups.removeAll(keepingCapacity: false)
         isLoading = false
@@ -45,27 +52,21 @@ class CacheManager: ObservableObject {
     // MARK: - Public Methods
     
     func loadCacheData() async {
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
         isLoading = true
         defer {
-            if !Task.isCancelled {
+            if refreshGeneration == generation && !Task.isCancelled {
                 isLoading = false
             }
         }
         
-        let cacheDataTypes: Set<String> = [
-            WKWebsiteDataTypeDiskCache,
-            WKWebsiteDataTypeMemoryCache,
-            WKWebsiteDataTypeOfflineWebApplicationCache,
-            WKWebsiteDataTypeWebSQLDatabases,
-            WKWebsiteDataTypeIndexedDBDatabases,
-            WKWebsiteDataTypeLocalStorage,
-            WKWebsiteDataTypeSessionStorage,
-            WKWebsiteDataTypeServiceWorkerRegistrations
-        ]
-        
         let dataStore = activeDataStore()
-        let records = await dataStore.dataRecords(ofTypes: cacheDataTypes)
-        guard !Task.isCancelled else { return }
+        let records = await cleanupService.fetchWebsiteDataRecords(
+            ofTypes: WKWebsiteDataStore.sumiCacheDataTypes,
+            in: dataStore
+        )
+        guard refreshGeneration == generation, !Task.isCancelled else { return }
         let cacheInfos = records.map { CacheInfo(from: $0) }
         
         self.cacheEntries = cacheInfos
@@ -74,98 +75,96 @@ class CacheManager: ObservableObject {
     
     func clearCacheForDomain(_ domain: String) async {
         let dataStore = activeDataStore()
-        let records = await dataStore.dataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes())
-        let domainRecords = records.filter { 
-            $0.displayName == domain || $0.displayName == ".\(domain)" 
-        }
-        
-        if !domainRecords.isEmpty {
-            await dataStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), for: domainRecords)
-            await loadCacheData() // Refresh the list
-        }
+        await cleanupService.removeWebsiteDataForDomain(
+            domain,
+            includingCookies: false,
+            in: dataStore
+        )
+        await loadCacheData()
     }
 
     /// Clears site data for a specific domain, excluding cookies
     /// to support a "hard refresh" that does not sign the user out.
     func clearCacheForDomainExcludingCookies(_ domain: String) async {
         let dataStore = activeDataStore()
-        let allTypes = WKWebsiteDataStore.allWebsiteDataTypes()
-        var typesExcludingCookies = allTypes
-        typesExcludingCookies.remove(WKWebsiteDataTypeCookies)
-        let records = await dataStore.dataRecords(ofTypes: allTypes)
-        let domainRecords = records.filter {
-            $0.displayName == domain || $0.displayName == ".\(domain)"
-        }
-
-        if !domainRecords.isEmpty {
-            await dataStore.removeData(ofTypes: typesExcludingCookies, for: domainRecords)
-            await loadCacheData()
-        }
+        await cleanupService.removeWebsiteDataForDomain(
+            domain,
+            includingCookies: false,
+            in: dataStore
+        )
+        await loadCacheData()
     }
     
     func clearDiskCache() async {
         let dataStore = activeDataStore()
-        await dataStore.removeData(ofTypes: [WKWebsiteDataTypeDiskCache], modifiedSince: Date.distantPast)
-        await loadCacheData() // Refresh the list
+        await cleanupService.removeWebsiteData(
+            ofTypes: [WKWebsiteDataTypeDiskCache],
+            modifiedSince: .distantPast,
+            in: dataStore
+        )
+        await loadCacheData()
     }
     
     func clearMemoryCache() async {
         let dataStore = activeDataStore()
-        await dataStore.removeData(ofTypes: [WKWebsiteDataTypeMemoryCache], modifiedSince: Date.distantPast)
-        await loadCacheData() // Refresh the list
+        await cleanupService.removeWebsiteData(
+            ofTypes: [WKWebsiteDataTypeMemoryCache],
+            modifiedSince: .distantPast,
+            in: dataStore
+        )
+        await loadCacheData()
     }
     
     func clearStaleCache() async {
         let dataStore = activeDataStore()
         // Clear cache older than 30 days
         let thirtyDaysAgo = Date().addingTimeInterval(-2592000) // 30 days
-        let allTypes = WKWebsiteDataStore.allWebsiteDataTypes()
-        await dataStore.removeData(ofTypes: allTypes, modifiedSince: thirtyDaysAgo)
-        await loadCacheData() // Refresh the list
+        await cleanupService.removeWebsiteData(
+            ofTypes: WKWebsiteDataStore.sumiCacheDataTypes,
+            modifiedSince: thirtyDaysAgo,
+            in: dataStore
+        )
+        await loadCacheData()
     }
     
     // MARK: - Privacy-Compliant Cache Management
     
     func clearPersonalDataCache() async {
         let dataStore = activeDataStore()
-        // Clear only personal data cache types (localStorage, sessionStorage)
-        let personalDataTypes: Set<String> = [
-            WKWebsiteDataTypeLocalStorage,
-            WKWebsiteDataTypeSessionStorage,
-            WKWebsiteDataTypeIndexedDBDatabases,
-            WKWebsiteDataTypeWebSQLDatabases
-        ]
-        
-        await dataStore.removeData(ofTypes: personalDataTypes, modifiedSince: Date.distantPast)
+        await cleanupService.removeWebsiteData(
+            ofTypes: WKWebsiteDataStore.sumiPersonalDataCacheTypes,
+            modifiedSince: .distantPast,
+            in: dataStore
+        )
         await loadCacheData()
     }
     
     func performPrivacyCompliantCleanup() async {
         let dataStore = activeDataStore()
-        // Comprehensive GDPR-compliant cache cleanup
-        
-        // 1. Clear all stale cache (90+ days)
         let ninetyDaysAgo = Date().addingTimeInterval(-7776000) // 90 days
-        await dataStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: ninetyDaysAgo)
-        
-        // 2. Clear personal data older than 30 days
+        await cleanupService.removeWebsiteData(
+            ofTypes: WKWebsiteDataStore.sumiCacheDataTypes,
+            modifiedSince: ninetyDaysAgo,
+            in: dataStore
+        )
+
         let thirtyDaysAgo = Date().addingTimeInterval(-2592000)
-        let personalDataTypes: Set<String> = [
-            WKWebsiteDataTypeLocalStorage,
-            WKWebsiteDataTypeSessionStorage,
-            WKWebsiteDataTypeIndexedDBDatabases,
-            WKWebsiteDataTypeWebSQLDatabases
-        ]
-        await dataStore.removeData(ofTypes: personalDataTypes, modifiedSince: thirtyDaysAgo)
-        
+        await cleanupService.removeWebsiteData(
+            ofTypes: WKWebsiteDataStore.sumiPersonalDataCacheTypes,
+            modifiedSince: thirtyDaysAgo,
+            in: dataStore
+        )
         await loadCacheData()
     }
     
     func clearAllCache() async {
         let dataStore = activeDataStore()
-        let allTypes = WKWebsiteDataStore.allWebsiteDataTypes()
-        await dataStore.removeData(ofTypes: allTypes, modifiedSince: Date.distantPast)
-        await loadCacheData() // Refresh the list
+        await cleanupService.removeWebsiteData(
+            ofTypes: WKWebsiteDataStore.sumiCacheDataTypes,
+            modifiedSince: .distantPast,
+            in: dataStore
+        )
+        await loadCacheData()
         
         // Also clear favicon cache
         Tab.clearFaviconCache()
@@ -173,13 +172,12 @@ class CacheManager: ObservableObject {
     
     func clearSpecificCache(_ cache: CacheInfo) async {
         let dataStore = activeDataStore()
-        let records = await dataStore.dataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes())
-        let targetRecord = records.first { $0.displayName == cache.domain }
-        
-        if let record = targetRecord {
-            await dataStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), for: [record])
-            await loadCacheData() // Refresh the list
-        }
+        await cleanupService.removeWebsiteDataForDomain(
+            cache.domain,
+            includingCookies: false,
+            in: dataStore
+        )
+        await loadCacheData()
     }
 
     // MARK: - Favicon Cache Management
