@@ -31,6 +31,7 @@ struct TabFolderView: View {
     @State private var measuredCollapsedFolderContentHeight: CGFloat = 0
     @State private var deferredExpandedHeightMutation = SidebarDeferredStateMutation<CGFloat>()
     @State private var deferredCollapsedHeightMutation = SidebarDeferredStateMutation<CGFloat>()
+    @State private var isFolderHeaderHovered = false
     @FocusState private var nameFieldFocused: Bool
 
     @EnvironmentObject var browserManager: BrowserManager
@@ -446,11 +447,7 @@ struct TabFolderView: View {
                 folderHeaderContainGuide
             }
         }
-        .sidebarHoverTarget(
-            folderHeaderHoverTarget,
-            isEnabled: isInteractive,
-            animation: .easeInOut(duration: 0.15)
-        )
+        .sidebarDDGHover($isFolderHeaderHovered, isEnabled: isInteractive)
     }
 
     @ViewBuilder
@@ -707,12 +704,10 @@ struct TabFolderView: View {
     }
 
     private var displayIsHovering: Bool {
-        windowState.sidebarInteractionState.isSidebarHoverActive(folderHeaderHoverTarget)
-            && !freezesHoverState
-    }
-
-    private var folderHeaderHoverTarget: SidebarHoverTarget {
-        .row("folder-header-\(folder.id.uuidString)")
+        SidebarHoverChrome.displayHover(
+            isFolderHeaderHovered,
+            freezesHoverState: freezesHoverState
+        )
     }
 
     private func alphabetizeTabs() {

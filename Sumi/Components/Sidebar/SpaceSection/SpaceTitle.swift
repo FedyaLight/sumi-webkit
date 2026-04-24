@@ -16,6 +16,7 @@ struct SpaceTitle: View {
 
     @State private var isRenaming: Bool = false
     @State private var draftName: String = ""
+    @State private var isRowHovered = false
     @FocusState private var nameFieldFocused: Bool
     
     @StateObject private var emojiManager = EmojiPickerManager()
@@ -106,11 +107,7 @@ struct SpaceTitle: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .contentShape(RoundedRectangle(cornerRadius: 12))
         .accessibilityIdentifier("space-title-\(space.id.uuidString)")
-        .sidebarHoverTarget(
-            rowHoverTarget,
-            isEnabled: isAppKitInteractionEnabled,
-            animation: .easeInOut(duration: 0.1)
-        )
+        .sidebarDDGHover($isRowHovered, isEnabled: isAppKitInteractionEnabled)
         .onChange(of: nameFieldFocused) { _, focused in
             // When losing focus during rename, commit
             if isRenaming && !focused {
@@ -151,12 +148,7 @@ struct SpaceTitle: View {
     }
 
     private var displayIsHovering: Bool {
-        windowState.sidebarInteractionState.isSidebarHoverActive(rowHoverTarget)
-            && !freezesHoverState
-    }
-
-    private var rowHoverTarget: SidebarHoverTarget {
-        .row("space-title-\(space.id.uuidString)")
+        SidebarHoverChrome.displayHover(isRowHovered, freezesHoverState: freezesHoverState)
     }
 
     // MARK: - Actions

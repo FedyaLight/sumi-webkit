@@ -199,7 +199,8 @@ private extension SidebarDragState {
         spaceId: UUID,
         profileId: UUID?,
         frame: CGRect,
-        renderMode: SidebarPageGeometryRenderMode
+        renderMode: SidebarPageGeometryRenderMode,
+        publish: Bool = true
     ) {
         applyPageGeometry(
             spaceId: spaceId,
@@ -208,12 +209,16 @@ private extension SidebarDragState {
             renderMode: renderMode,
             generation: activeGeometryGeneration
         )
+        if publish {
+            publishGeometrySnapshotForTesting()
+        }
     }
 
     func updateSectionFrame(
         spaceId: UUID,
         section: SidebarSectionPrefix,
-        frame: CGRect
+        frame: CGRect,
+        publish: Bool = true
     ) {
         applySectionFrame(
             spaceId: spaceId,
@@ -221,6 +226,9 @@ private extension SidebarDragState {
             frame: frame,
             generation: activeGeometryGeneration
         )
+        if publish {
+            publishGeometrySnapshotForTesting()
+        }
     }
 
     func updateFolderDropTarget(
@@ -243,6 +251,7 @@ private extension SidebarDragState {
             isActive: true,
             generation: activeGeometryGeneration
         )
+        publishGeometrySnapshotForTesting()
     }
 
     func updateRegularListHitTarget(spaceId: UUID, frame: CGRect, itemCount: Int) {
@@ -252,6 +261,7 @@ private extension SidebarDragState {
             itemCount: itemCount,
             generation: activeGeometryGeneration
         )
+        publishGeometrySnapshotForTesting()
     }
 
     func updateEssentialsLayoutMetrics(
@@ -307,6 +317,7 @@ private extension SidebarDragState {
             maxDropRowCount: resolvedMaxDropRowCount,
             generation: activeGeometryGeneration
         )
+        publishGeometrySnapshotForTesting()
     }
 
     private static func resolvedMetricsRowCount(
@@ -1115,12 +1126,14 @@ final class SidebarDragStateTests: XCTestCase {
             spaceId: spaceId,
             profileId: nil,
             frame: CGRect(x: 0, y: 0, width: 200, height: 300),
-            renderMode: .interactive
+            renderMode: .interactive,
+            publish: false
         )
         state.updateSectionFrame(
             spaceId: spaceId,
             section: .spaceRegular,
-            frame: CGRect(x: 0, y: 0, width: 200, height: 40)
+            frame: CGRect(x: 0, y: 0, width: 200, height: 40),
+            publish: false
         )
 
         XCTAssertEqual(state.geometrySnapshot, initialSnapshot)
@@ -1400,6 +1413,7 @@ final class SidebarDragStateTests: XCTestCase {
             itemCount: 2,
             generation: pendingGeneration
         )
+        state.publishGeometrySnapshotForTesting()
 
         XCTAssertEqual(state.pendingGeometryGeneration, nil)
         XCTAssertEqual(state.activeGeometryGeneration, pendingGeneration)
@@ -2929,83 +2943,14 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
         XCTAssertFalse(state.isContextMenuPresented)
     }
 
-    func testSidebarInteractionStateContextMenuBeginClearsSidebarHoverTargets() {
+    func testSidebarInteractionStateDragStartDoesNotBlockDragHitTesting() {
         let state = SidebarInteractionState()
-        let rowTarget = SidebarHoverTarget.row("regular-tab")
-        let actionTarget = SidebarHoverTarget.action("regular-tab-close")
-
-        state.setSidebarHover(rowTarget, active: true)
-        state.setSidebarHover(actionTarget, active: true)
-
-        XCTAssertTrue(state.isSidebarHoverActive(rowTarget))
-        XCTAssertTrue(state.isSidebarHoverActive(actionTarget))
-
-        let menuTokenID = state.beginContextMenuSessionForTesting()
-
-        XCTAssertTrue(state.isContextMenuPresented)
-        XCTAssertFalse(state.isSidebarHoverActive(rowTarget))
-        XCTAssertFalse(state.isSidebarHoverActive(actionTarget))
-
-        state.endContextMenuSessionForTesting(menuTokenID)
-    }
-
-    func testSidebarInteractionStateIgnoresHoverActivationWhileFrozen() {
-        let state = SidebarInteractionState()
-        let rowTarget = SidebarHoverTarget.row("regular-tab")
-        let actionTarget = SidebarHoverTarget.action("regular-tab-close")
-        let menuTokenID = state.beginContextMenuSessionForTesting()
-
-        state.setSidebarHover(rowTarget, active: true)
-        state.setSidebarHover(actionTarget, active: true)
-
-        XCTAssertTrue(state.freezesSidebarHoverState)
-        XCTAssertFalse(state.isSidebarHoverActive(rowTarget))
-        XCTAssertFalse(state.isSidebarHoverActive(actionTarget))
-
-        state.setSidebarHover(rowTarget, active: false)
-        state.setSidebarHover(actionTarget, active: false)
-
-        XCTAssertFalse(state.isSidebarHoverActive(rowTarget))
-        XCTAssertFalse(state.isSidebarHoverActive(actionTarget))
-
-        state.endContextMenuSessionForTesting(menuTokenID)
-    }
-
-    func testSidebarInteractionStateKeepsRowScopeExclusiveAndClearsActionsOnRowChange() {
-        let state = SidebarInteractionState()
-        let firstRow = SidebarHoverTarget.row("first-row")
-        let secondRow = SidebarHoverTarget.row("second-row")
-        let firstAction = SidebarHoverTarget.action("first-close")
-
-        state.setSidebarHover(firstRow, active: true)
-        state.setSidebarHover(firstAction, active: true)
-
-        XCTAssertTrue(state.isSidebarHoverActive(firstRow))
-        XCTAssertTrue(state.isSidebarHoverActive(firstAction))
-
-        state.setSidebarHover(secondRow, active: true)
-
-        XCTAssertFalse(state.isSidebarHoverActive(firstRow))
-        XCTAssertFalse(state.isSidebarHoverActive(firstAction))
-        XCTAssertTrue(state.isSidebarHoverActive(secondRow))
-    }
-
-    func testSidebarInteractionStateDragStartClearsHoverWithoutBlockingDragHitTesting() {
-        let state = SidebarInteractionState()
-        let rowTarget = SidebarHoverTarget.row("regular-tab")
-
-        state.setSidebarHover(rowTarget, active: true)
-        XCTAssertTrue(state.isSidebarHoverActive(rowTarget))
 
         state.syncSidebarItemDrag(true)
 
         XCTAssertEqual(state.activeKindsDescription, "drag")
         XCTAssertTrue(state.allowsSidebarDragSourceHitTesting)
         XCTAssertFalse(state.freezesSidebarHoverState)
-        XCTAssertFalse(state.isSidebarHoverActive(rowTarget))
-
-        state.setSidebarHover(rowTarget, active: true)
-        XCTAssertFalse(state.isSidebarHoverActive(rowTarget))
 
         state.syncSidebarItemDrag(false)
     }
@@ -3309,9 +3254,8 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
         controller.markMenuClosedForTesting(sessionID: secondSessionID)
         NotificationCenter.default.post(name: NSMenu.didEndTrackingNotification, object: secondMenu)
 
-        XCTAssertEqual(state.activeKindsDescription, "none")
-        XCTAssertEqual(secondSessionEvents, [])
         drainMainRunLoop()
+        XCTAssertEqual(state.activeKindsDescription, "none")
         XCTAssertEqual(secondSessionEvents, [true, false])
     }
 

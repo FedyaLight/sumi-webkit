@@ -22,6 +22,7 @@ struct SpacesListItem: View {
     let onHoverChange: ((Bool) -> Void)?
 
     @StateObject private var emojiManager = EmojiPickerManager()
+    @State private var isHovered = false
 
     private let dotSize: CGFloat = 6
 
@@ -56,21 +57,13 @@ struct SpacesListItem: View {
         .layoutPriority(isActive ? 1 : 0)
         .opacity(isFaded ? 0.3 : 1.0)
         .accessibilityIdentifier("space-icon-\(space.id.uuidString)")
-        .onHover { hovering in
-            onHoverChange?(hovering && !windowState.sidebarInteractionState.freezesSidebarHoverState)
+        .sidebarDDGHover($isHovered)
+        .onChange(of: displayIsHovering) { _, hovering in
+            onHoverChange?(hovering)
         }
         .onDisappear {
             onHoverChange?(false)
         }
-        .onChange(of: windowState.sidebarInteractionState.freezesSidebarHoverState) { _, freezes in
-            if freezes {
-                onHoverChange?(false)
-            }
-        }
-        .sidebarHoverTarget(
-            spaceSwitcherHoverTarget,
-            animation: .easeInOut(duration: 0.15)
-        )
         .sidebarAppKitContextMenu(entries: {
             spaceContextMenuEntries()
         })
@@ -119,12 +112,10 @@ struct SpacesListItem: View {
     }
 
     private var displayIsHovering: Bool {
-        windowState.sidebarInteractionState.isSidebarHoverActive(spaceSwitcherHoverTarget)
-            && !windowState.sidebarInteractionState.freezesSidebarHoverState
-    }
-
-    private var spaceSwitcherHoverTarget: SidebarHoverTarget {
-        .spaceSwitcher("space-icon-\(space.id.uuidString)")
+        SidebarHoverChrome.displayHover(
+            isHovered,
+            freezesHoverState: windowState.sidebarInteractionState.freezesSidebarHoverState
+        )
     }
 
     // MARK: - Context Menu
@@ -231,7 +222,6 @@ struct SpaceListItemButtonStyle: ButtonStyle {
         
         .scaleEffect(configuration.isPressed && isEnabled ? 0.95 : 1.0)
         .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
-        .animation(.easeInOut(duration: 0.15), value: isHovering)
     }
     
     private var size: CGFloat {

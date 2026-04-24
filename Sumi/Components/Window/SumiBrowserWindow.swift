@@ -25,8 +25,8 @@ enum SumiBrowserChromeConfiguration {
 enum SumiBrowserWindowShellConfiguration {
     static let defaultContentSize = NSSize(width: 1320, height: 820)
     static let minimumContentSize = NSSize(width: 470, height: 382)
-    static let backgroundColor = NSColor.windowBackgroundColor
-    static let isOpaque = true
+    static let backgroundColor = NSColor.clear
+    static let isOpaque = false
     static let isReleasedWhenClosed = false
     static let isMovable = true
 
@@ -74,6 +74,9 @@ extension NSWindow {
     func applyBrowserWindowShellConfiguration(shouldApplyInitialSize: Bool) {
         backgroundColor = SumiBrowserWindowShellConfiguration.backgroundColor
         isOpaque = SumiBrowserWindowShellConfiguration.isOpaque
+        contentView?.wantsLayer = true
+        contentView?.layer?.backgroundColor = NSColor.clear.cgColor
+        contentView?.layer?.isOpaque = false
         isReleasedWhenClosed = SumiBrowserWindowShellConfiguration.isReleasedWhenClosed
         isMovable = SumiBrowserWindowShellConfiguration.isMovable
         contentMinSize = SumiBrowserWindowShellConfiguration.minimumContentSize

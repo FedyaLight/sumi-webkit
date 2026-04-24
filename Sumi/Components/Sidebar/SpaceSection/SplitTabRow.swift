@@ -65,6 +65,8 @@ private struct SplitHalfTab: View {
     let onClose: () -> Void
     let isSplitActiveSide: Bool
 
+    @State private var isRowHovered = false
+    @State private var isCloseHovered = false
     @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject var splitManager: SplitViewManager
     @Environment(BrowserWindowState.self) private var windowState
@@ -79,7 +81,7 @@ private struct SplitHalfTab: View {
                     title: tab.name,
                     font: .systemFont(ofSize: 13, weight: .medium),
                     textColor: textTab,
-                    trailingFadePadding: displayIsHovering ? SidebarRowLayout.trailingActionFadePadding : 0
+                    trailingFadePadding: SidebarHoverChrome.trailingActionFadePadding
                 )
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             }
@@ -87,11 +89,7 @@ private struct SplitHalfTab: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
             .onTapGesture(perform: onActivate)
-            .sidebarHoverTarget(
-                rowHoverTarget,
-                isEnabled: isAppKitInteractionEnabled,
-                animation: .easeInOut(duration: 0.15)
-            )
+            .sidebarDDGHover($isRowHovered, isEnabled: isAppKitInteractionEnabled)
             .sidebarAppKitContextMenu(
                 isInteractionEnabled: isAppKitInteractionEnabled,
                 dragSource: SidebarDragSourceConfiguration(
@@ -158,13 +156,11 @@ private struct SplitHalfTab: View {
     }
 
     private var displayIsHovering: Bool {
-        windowState.sidebarInteractionState.isSidebarHoverActive(rowHoverTarget)
-            && !freezesHoverState
+        SidebarHoverChrome.displayHover(isRowHovered, freezesHoverState: freezesHoverState)
     }
 
     private var displayIsCloseHovering: Bool {
-        windowState.sidebarInteractionState.isSidebarHoverActive(closeHoverTarget)
-            && !freezesHoverState
+        SidebarHoverChrome.displayHover(isCloseHovered, freezesHoverState: freezesHoverState)
     }
 
     private var closeButton: some View {
@@ -189,25 +185,13 @@ private struct SplitHalfTab: View {
         .opacity(displayIsHovering ? 1 : 0)
         .allowsHitTesting(displayIsHovering && !freezesHoverState)
         .accessibilityHidden(!displayIsHovering)
-        .sidebarHoverTarget(
-            closeHoverTarget,
-            isEnabled: displayIsHovering && isAppKitInteractionEnabled,
-            animation: .easeInOut(duration: 0.15)
-        )
+        .sidebarDDGHover($isCloseHovered, isEnabled: displayIsHovering && isAppKitInteractionEnabled)
         .accessibilityIdentifier("space-split-tab-close-\(tab.id.uuidString)")
         .sidebarAppKitPrimaryAction(
             isEnabled: displayIsHovering && !freezesHoverState,
             isInteractionEnabled: isAppKitInteractionEnabled,
             action: onClose
         )
-    }
-
-    private var rowHoverTarget: SidebarHoverTarget {
-        .row("split-tab-\(tab.id.uuidString)")
-    }
-
-    private var closeHoverTarget: SidebarHoverTarget {
-        .action("split-tab-close-\(tab.id.uuidString)")
     }
 
 }

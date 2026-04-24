@@ -78,6 +78,10 @@ struct SidebarHoverOverlayView: View {
         presentationContext.isCollapsedOverlay
     }
 
+    private var drawsSidebarChromeBackground: Bool {
+        presentationContext.mode != .collapsedHidden
+    }
+
     private var sidebarPanelOffset: CGFloat {
         presentationContext.mode == .collapsedHidden ? hiddenOffset : 0
     }
@@ -138,13 +142,14 @@ struct SidebarHoverOverlayView: View {
         .frame(maxHeight: .infinity)
         .background {
             ZStack {
-                // Opaque chrome base (matches `WindowBackground`) so web content does not show through.
+                // Opaque resolved chrome base. Docked sidebar draws its own background so AppKit hosting
+                // views cannot leak a dynamic system background after WebKit/tab activation.
                 themeContext.tokens(settings: sumiSettings).windowBackground
-                    .opacity(usesCollapsedChrome ? 1 : 0)
+                    .opacity(drawsSidebarChromeBackground ? 1 : 0)
                 SpaceGradientBackgroundView()
                     .environmentObject(browserManager)
                     .environment(windowState)
-                    .opacity(usesCollapsedChrome ? 1 : 0)
+                    .opacity(drawsSidebarChromeBackground ? 1 : 0)
             }
             .clipShape(
                 RoundedRectangle(

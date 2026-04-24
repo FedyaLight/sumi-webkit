@@ -17,6 +17,9 @@ struct SpaceTab: View {
     var onMute: () -> Void
     var contextMenuEntries: [SidebarContextMenuEntry] = []
     @FocusState private var isTextFieldFocused: Bool
+    @State private var isRowHovered = false
+    @State private var isCloseHovered = false
+    @State private var isSpeakerHovered = false
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var settings
@@ -50,7 +53,6 @@ struct SpaceTab: View {
                                         : Color.clear
                                 )
                                 .frame(width: 22, height: 22)
-                                .animation(.easeInOut(duration: 0.05), value: displayIsSpeakerHovering)
                             ZStack {
                                 Image(systemName: tab.audioState.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                                     .font(.system(size: 12, weight: .medium))
@@ -67,11 +69,7 @@ struct SpaceTab: View {
                         }
                     }
                     .buttonStyle(PlainButtonStyle())
-                    .sidebarHoverTarget(
-                        speakerHoverTarget,
-                        isEnabled: isAppKitInteractionEnabled,
-                        animation: .easeInOut(duration: 0.05)
-                    )
+                    .sidebarDDGHover($isSpeakerHovered, isEnabled: isAppKitInteractionEnabled)
                     .accessibilityIdentifier("space-regular-tab-audio-\(tab.id.uuidString)")
                     .sidebarAppKitPrimaryAction(
                         isEnabled: !freezesHoverState,
@@ -109,7 +107,7 @@ struct SpaceTab: View {
                         title: tab.name,
                         font: .systemFont(ofSize: 13, weight: .medium),
                         textColor: textTab,
-                        trailingFadePadding: showsCloseButton ? SidebarRowLayout.trailingActionFadePadding : 0
+                        trailingFadePadding: SidebarHoverChrome.trailingActionFadePadding
                     )
                     .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                     .textSelection(.disabled) // Make text non-selectable
@@ -138,11 +136,7 @@ struct SpaceTab: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("tab-row-\(tab.id.uuidString)")
         .accessibilityValue(isCurrentTab ? "selected" : "not selected")
-        .sidebarHoverTarget(
-            rowHoverTarget,
-            isEnabled: isAppKitInteractionEnabled,
-            animation: .easeInOut(duration: 0.05)
-        )
+        .sidebarDDGHover($isRowHovered, isEnabled: isAppKitInteractionEnabled)
         .background(
             Group {
                 if tab.isRenaming {
@@ -206,22 +200,22 @@ struct SpaceTab: View {
     }
 
     private var displayIsHovering: Bool {
-        windowState.sidebarInteractionState.isSidebarHoverActive(rowHoverTarget)
-            && !freezesHoverState
+        SidebarHoverChrome.displayHover(isRowHovered, freezesHoverState: freezesHoverState)
     }
 
     private var displayIsCloseHovering: Bool {
-        windowState.sidebarInteractionState.isSidebarHoverActive(closeHoverTarget)
-            && !freezesHoverState
+        SidebarHoverChrome.displayHover(isCloseHovered, freezesHoverState: freezesHoverState)
     }
 
     private var displayIsSpeakerHovering: Bool {
-        windowState.sidebarInteractionState.isSidebarHoverActive(speakerHoverTarget)
-            && !freezesHoverState
+        SidebarHoverChrome.displayHover(isSpeakerHovered, freezesHoverState: freezesHoverState)
     }
 
     private var showsCloseButton: Bool {
-        displayIsHovering || isCurrentTab
+        SidebarHoverChrome.showsTrailingAction(
+            isHovered: displayIsHovering,
+            isSelected: isCurrentTab
+        )
     }
 
     private var closeButton: some View {
@@ -244,11 +238,7 @@ struct SpaceTab: View {
         .opacity(showsCloseButton ? 1 : 0)
         .allowsHitTesting(showsCloseButton && !freezesHoverState)
         .accessibilityHidden(!showsCloseButton)
-        .sidebarHoverTarget(
-            closeHoverTarget,
-            isEnabled: showsCloseButton && isAppKitInteractionEnabled,
-            animation: .easeInOut(duration: 0.05)
-        )
+        .sidebarDDGHover($isCloseHovered, isEnabled: showsCloseButton && isAppKitInteractionEnabled)
         .accessibilityIdentifier("space-regular-tab-close-\(tab.id.uuidString)")
         .sidebarAppKitPrimaryAction(
             isEnabled: showsCloseButton && !freezesHoverState,
@@ -257,15 +247,4 @@ struct SpaceTab: View {
         )
     }
 
-    private var rowHoverTarget: SidebarHoverTarget {
-        .row("regular-tab-\(tab.id.uuidString)")
-    }
-
-    private var closeHoverTarget: SidebarHoverTarget {
-        .action("regular-tab-close-\(tab.id.uuidString)")
-    }
-
-    private var speakerHoverTarget: SidebarHoverTarget {
-        .action("regular-tab-audio-\(tab.id.uuidString)")
-    }
 }

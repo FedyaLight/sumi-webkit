@@ -67,7 +67,7 @@ final class SumiWebViewContainerView: NSView {
     private var fullscreenStateObservation: NSKeyValueObservation?
 
     override var constraints: [NSLayoutConstraint] { [] }
-    override var isOpaque: Bool { true }
+    override var isOpaque: Bool { false }
 
     init(tabID: UUID, windowID: UUID, webView: WKWebView) {
         self.tabID = tabID
@@ -76,6 +76,7 @@ final class SumiWebViewContainerView: NSView {
         super.init(frame: .zero)
 
         autoresizingMask = [.width, .height]
+        configurePaintlessChrome()
         webView.translatesAutoresizingMaskIntoConstraints = true
         webView.autoresizingMask = [.width, .height]
         attachDisplayedWebViewIfNeeded()
@@ -94,8 +95,12 @@ final class SumiWebViewContainerView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.windowBackgroundColor.setFill()
-        dirtyRect.fill()
+        // Paintless host. Browser chrome fallback is resolved by SwiftUI WindowBackground.
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        configurePaintlessChrome()
     }
 
     override func removeFromSuperview() {
@@ -127,6 +132,12 @@ final class SumiWebViewContainerView: NSView {
         if displayedView.superview === self {
             displayedView.removeFromSuperview()
         }
+    }
+
+    private func configurePaintlessChrome() {
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.isOpaque = false
     }
 
     private func observeFullscreenState() {
