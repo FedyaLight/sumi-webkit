@@ -256,6 +256,10 @@ struct SpaceView: View {
         return sid == space.id
     }
 
+    private var dropGuideAnimation: Animation? {
+        isInteractive ? .easeInOut(duration: 0.14) : nil
+    }
+
     private var pinnedEmptyDropShowsRowPreview: Bool {
         showsEmptyPinnedDropPlaceholder
             && isHoveringThisSpacePinnedWhileEmpty
@@ -542,7 +546,6 @@ struct SpaceView: View {
         return VStack(spacing: 0) {
             ForEach(Array(allItems.enumerated()), id: \.element.id) { sourceIndex, item in
                 VStack(spacing: 0) {
-                    if isHoveredSpacePinned(before: sourceIndex) { dropLine().transition(.opacity) }
                     switch item {
                     case .folder(let folderId):
                         if let folder = folders.first(where: { $0.id == folderId }) {
@@ -553,11 +556,13 @@ struct SpaceView: View {
                             pinnedShortcutView(pin, topLevelPinnedIndex: sourceIndex)
                         }
                     }
-                    if isHoveredSpacePinned(after: sourceIndex, total: allItems.count) { dropLine().transition(.opacity) }
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .topLeading) {
+            spacePinnedDropGuideOverlay
+        }
         .animation(isInteractive ? .easeInOut(duration: 0.25) : nil, value: folders.count)
         .animation(isInteractive ? .easeInOut(duration: 0.25) : nil, value: spacePinnedItems.count)
         .padding(.bottom, 8) // Add padding to act as drag tail for spacePinned
@@ -853,17 +858,12 @@ struct SpaceView: View {
         return LazyVStack(spacing: 2) {
             ForEach(Array(currentTabs.enumerated()), id: \.element.id) { index, tab in
                 VStack(spacing: 0) {
-                    if dragState.isDragging, case .spaceRegular(let dsId, let slot) = dragState.hoveredSlot, dsId == space.id, slot == index {
-                        dropLine()
-                            .transition(.opacity)
-                    }
                     regularTabView(tab)
-                    if dragState.isDragging, case .spaceRegular(let dsId, let slot) = dragState.hoveredSlot, dsId == space.id, index == currentTabs.count - 1, slot >= currentTabs.count {
-                        dropLine()
-                            .transition(.opacity)
-                    }
                 }
             }
+        }
+        .overlay(alignment: .topLeading) {
+            regularDropGuideOverlay(itemCount: currentTabs.count)
         }
     }
 
@@ -968,14 +968,83 @@ struct SpaceView: View {
             .padding(.horizontal, isFolder ? 16 : 8)
     }
 
-    private func isHoveredSpacePinned(before index: Int) -> Bool {
-        if dragState.isDragging, case .spacePinned(let id, let s) = dragState.hoveredSlot, id == space.id, s == index { return true }
-        return false
+    private var spacePinnedDropGuideOverlay: some View {
+        GeometryReader { geometry in
+            if let localY = spacePinnedDropGuideLocalY(in: geometry) {
+                dropLine()
+                    .offset(y: localY - SidebarInsertionGuide.visualCenterY)
+                    .transition(.opacity)
+                    .animation(dropGuideAnimation, value: localY)
+            }
+        }
+        .allowsHitTesting(false)
     }
 
-    private func isHoveredSpacePinned(after index: Int, total: Int) -> Bool {
-        if dragState.isDragging, case .spacePinned(let id, let s) = dragState.hoveredSlot, id == space.id, index == total - 1, s == total { return true }
-        return false
+    private func regularDropGuideOverlay(itemCount: Int) -> some View {
+        GeometryReader { geometry in
+            if let localY = regularDropGuideLocalY(in: geometry, itemCount: itemCount) {
+                dropLine()
+                    .offset(y: localY - SidebarInsertionGuide.visualCenterY)
+                    .transition(.opacity)
+                    .animation(dropGuideAnimation, value: localY)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func spacePinnedDropGuideLocalY(in geometry: GeometryProxy) -> CGFloat? {
+        guard dragState.isDragging,
+              case .spacePinned(let hoveredSpaceId, let slot) = dragState.hoveredSlot,
+              hoveredSpaceId == space.id,
+              let globalY = spacePinnedDropGuideGlobalY(slot: slot) else {
+            return nil
+        }
+
+        return globalY - geometry.frame(in: .global).minY
+    }
+
+    private func spacePinnedDropGuideGlobalY(slot: Int) -> CGFloat? {
+        let items = dragState.topLevelPinnedItemTargets.values
+            .filter { $0.spaceId == space.id }
+            .sorted { lhs, rhs in
+                if lhs.topLevelIndex != rhs.topLevelIndex {
+                    return lhs.topLevelIndex < rhs.topLevelIndex
+                }
+                return lhs.itemId.uuidString < rhs.itemId.uuidString
+            }
+
+        guard !items.isEmpty else {
+            return dragState.sectionFrame(for: .spacePinned, in: space.id)?.minY
+        }
+
+        if let target = items.first(where: { $0.topLevelIndex >= slot }) {
+            return target.frame.minY
+        }
+
+        return items.last?.frame.maxY
+    }
+
+    private func regularDropGuideLocalY(in geometry: GeometryProxy, itemCount: Int) -> CGFloat? {
+        guard dragState.isDragging,
+              case .spaceRegular(let hoveredSpaceId, let slot) = dragState.hoveredSlot,
+              hoveredSpaceId == space.id,
+              let metrics = dragState.regularListHitTargets[space.id],
+              itemCount > 0 else {
+            return nil
+        }
+
+        let safeSlot = max(0, min(slot, itemCount))
+        let globalY: CGFloat
+        if safeSlot == itemCount {
+            globalY = metrics.frame.maxY
+        } else {
+            let rowSpacing = itemCount > 1
+                ? max(0, (metrics.frame.height - (CGFloat(itemCount) * SidebarRowLayout.rowHeight)) / CGFloat(itemCount - 1))
+                : 0
+            globalY = metrics.frame.minY + CGFloat(safeSlot) * (SidebarRowLayout.rowHeight + rowSpacing)
+        }
+
+        return globalY - geometry.frame(in: .global).minY
     }
 
     // MARK: - Folder Management
