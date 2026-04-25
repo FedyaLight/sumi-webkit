@@ -1522,6 +1522,8 @@ private struct ShortcutSidebarRowChrome: View {
                 .buttonStyle(.plain)
                 .sidebarDDGHover($isResetHovered, isEnabled: dragIsEnabled)
                 .accessibilityIdentifier(resetActionAccessibilityID ?? "shortcut-sidebar-reset")
+                .accessibilityLabel("Back to pinned URL")
+                .help("Back to pinned URL")
                 .sidebarAppKitPrimaryAction(
                     isInteractionEnabled: dragIsEnabled,
                     action: onResetToLaunchURL
@@ -1747,20 +1749,8 @@ private struct ShortcutSidebarRowChrome: View {
 
     @ViewBuilder
     private var titleStack: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            titleLabel
-
-            if runtimeAffordance.showsChangedURLSlash {
-                Text("Back to pinned url")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(tokens.secondaryText.opacity(0.75))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(height: 10, alignment: .topLeading)
-                    .opacity(displayIsResetHovering ? 0.65 : 0)
-                    .clipped()
-            }
-        }
+        titleLabel
+            .frame(height: SidebarRowLayout.titleHeight, alignment: .center)
     }
 
     @ViewBuilder

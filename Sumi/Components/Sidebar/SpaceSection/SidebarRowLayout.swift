@@ -7,6 +7,7 @@ import CoreGraphics
 
 enum SidebarRowLayout {
     static let rowHeight: CGFloat = 36
+    static let titleHeight: CGFloat = 16
     static let faviconSize: CGFloat = 18
     static let leadingInset: CGFloat = 12
     static let iconTrailingSpacing: CGFloat = 8
