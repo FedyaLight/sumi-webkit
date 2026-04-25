@@ -94,6 +94,11 @@ final class TabMediaRuntime {
     var audioStateCancellables: [ObjectIdentifier: AnyCancellable] = [:]
 }
 
+enum TabPageSuspensionVeto: Equatable {
+    case none
+    case pageReportedUnableToSuspend
+}
+
 @MainActor
 final class TabExtensionRuntimeState {
     var controllerGeneration: UInt64 = 0
@@ -115,6 +120,9 @@ final class TabWebViewRuntime {
     var isSuspended: Bool = false
     var lastSuspendedURL: URL?
     var lastSelectedAt: Date?
+    var pageSuspensionVeto: TabPageSuspensionVeto = .none
+    var hasPictureInPictureVideo: Bool = false
+    var isDisplayingPDFDocument: Bool = false
     var isSuspensionRestoreInProgress: Bool = false
     var suspensionRestoreTraceState: OSSignpostIntervalState?
     var profileAwaitCancellable: AnyCancellable?

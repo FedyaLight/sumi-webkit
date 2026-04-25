@@ -191,6 +191,188 @@ final class TabSuspensionServiceTests: XCTestCase {
         XCTAssertFalse(fileTab.isSuspended)
     }
 
+    func testSelectedTabEligibilityIsRejectedWithReason() {
+        let harness = makeHarness()
+        let selected = makeTab("https://example.com/current", harness: harness)
+
+        setCurrentTab(selected, in: harness.windowState)
+        attachWebView(to: selected, harness: harness)
+
+        XCTAssertEqual(
+            harness.service.suspensionEligibility(for: selected),
+            .ineligible(reason: .selected)
+        )
+    }
+
+    func testVisibleTabEligibilityIsRejectedWithReason() {
+        let harness = makeHarness()
+        let left = makeTab("https://example.com/left", harness: harness)
+        let right = makeTab("https://example.com/right", harness: harness)
+
+        setCurrentTab(left, in: harness.windowState)
+        var splitState = harness.browserManager.splitManager.getSplitState(for: harness.windowState.id)
+        splitState.isSplit = true
+        splitState.leftTabId = left.id
+        splitState.rightTabId = right.id
+        harness.browserManager.splitManager.setSplitState(splitState, for: harness.windowState.id)
+        attachWebView(to: left, harness: harness)
+        attachWebView(to: right, harness: harness)
+
+        XCTAssertEqual(
+            harness.service.suspensionEligibility(for: right),
+            .ineligible(reason: .visible)
+        )
+    }
+
+    func testLoadingTabEligibilityIsRejectedWithReason() {
+        let (harness, hidden) = makeEligibilitySubject()
+        hidden.loadingState = .didCommit
+
+        XCTAssertEqual(
+            harness.service.suspensionEligibility(for: hidden),
+            .ineligible(reason: .loading)
+        )
+    }
+
+    func testAudioTabEligibilityIsRejectedWithReason() {
+        let (harness, hidden) = makeEligibilitySubject()
+        hidden.applyAudioState(.unmuted(isPlayingAudio: true))
+
+        XCTAssertEqual(
+            harness.service.suspensionEligibility(for: hidden),
+            .ineligible(reason: .playingAudio)
+        )
+    }
+
+    func testCameraCaptureEligibilityIsRejectedWithReason() {
+        let (harness, hidden) = makeEligibilitySubject()
+
+        XCTAssertEqual(
+            harness.service.suspensionEligibility(
+                for: hidden,
+                webViewStates: [.init(isCapturingCamera: true)]
+            ),
+            .ineligible(reason: .cameraCapture)
+        )
+    }
+
+    func testMicrophoneCaptureEligibilityIsRejectedWithReason() {
+        let (harness, hidden) = makeEligibilitySubject()
+
+        XCTAssertEqual(
+            harness.service.suspensionEligibility(
+                for: hidden,
+                webViewStates: [.init(isCapturingMicrophone: true)]
+            ),
+            .ineligible(reason: .microphoneCapture)
+        )
+    }
+
+    func testFullscreenEligibilityIsRejectedWithReason() {
+        let (harness, hidden) = makeEligibilitySubject()
+
+        XCTAssertEqual(
+            harness.service.suspensionEligibility(
+                for: hidden,
+                webViewStates: [.init(isFullscreen: true)]
+            ),
+            .ineligible(reason: .fullscreen)
+        )
+    }
+
+    func testPictureInPictureEligibilityIsRejectedWithReason() {
+        let (harness, hidden) = makeEligibilitySubject()
+        hidden.hasPictureInPictureVideo = true
+
+        XCTAssertEqual(
+            harness.service.suspensionEligibility(for: hidden),
+            .ineligible(reason: .pictureInPicture)
+        )
+    }
+
+    func testPDFDocumentEligibilityIsRejectedWithReason() {
+        let (harness, hidden) = makeEligibilitySubject()
+        hidden.isDisplayingPDFDocument = true
+
+        XCTAssertEqual(
+            harness.service.suspensionEligibility(for: hidden),
+            .ineligible(reason: .pdfDocument)
+        )
+    }
+
+    func testPageVetoEligibilityIsRejectedWithReason() {
+        let (harness, hidden) = makeEligibilitySubject()
+        hidden.pageSuspensionVeto = .pageReportedUnableToSuspend
+
+        XCTAssertEqual(
+            harness.service.suspensionEligibility(for: hidden),
+            .ineligible(reason: .pageVeto)
+        )
+    }
+
+    func testUnsupportedURLSchemeEligibilityIsRejectedWithReason() {
+        let (harness, hidden) = makeEligibilitySubject(hiddenURL: "file:///tmp/suspension.html")
+
+        XCTAssertEqual(
+            harness.service.suspensionEligibility(for: hidden),
+            .ineligible(reason: .unsupportedURLScheme)
+        )
+    }
+
+    func testNormalHiddenHTTPSTabEligibilityIsEligible() {
+        let (harness, hidden) = makeEligibilitySubject()
+
+        XCTAssertEqual(harness.service.suspensionEligibility(for: hidden), .eligible)
+    }
+
+    func testPinnedLauncherEligibilityPreservesLauncherIdentity() {
+        let (harness, pinned) = makeEligibilitySubject(hiddenURL: "https://example.com/pinned")
+        pinned.isPinned = true
+
+        XCTAssertEqual(
+            harness.service.suspensionEligibility(for: pinned),
+            .ineligible(reason: .launcherRuntimeSuspensionDeferred)
+        )
+        XCTAssertNotNil(harness.browserManager.tabManager.tab(for: pinned.id))
+        XCTAssertFalse(pinned.isSuspended)
+    }
+
+    func testEssentialShortcutLiveInstanceEligibilityPreservesLauncherIdentity() {
+        let (harness, essential) = makeEligibilitySubject(hiddenURL: "https://example.com/essential")
+        essential.isShortcutLiveInstance = true
+        essential.shortcutPinRole = .essential
+
+        XCTAssertEqual(
+            harness.service.suspensionEligibility(for: essential),
+            .ineligible(reason: .launcherRuntimeSuspensionDeferred)
+        )
+        XCTAssertNotNil(harness.browserManager.tabManager.tab(for: essential.id))
+        XCTAssertFalse(essential.isSuspended)
+    }
+
+    func testPDFNavigationResponseUpdatesSuspensionDocumentStateWithoutBlocking() async {
+        let tab = Tab(url: URL(string: "https://example.com/document.pdf")!)
+        let responder = SumiTabLifecycleNavigationResponder(tab: tab)
+        let response = URLResponse(
+            url: tab.url,
+            mimeType: "application/pdf",
+            expectedContentLength: 42,
+            textEncodingName: nil
+        )
+
+        let policy = await responder.decidePolicy(
+            for: NavigationResponse(
+                response: response,
+                isForMainFrame: true,
+                canShowMIMEType: true,
+                mainFrameNavigation: nil
+            )
+        )
+
+        XCTAssertNil(policy)
+        XCTAssertTrue(tab.isDisplayingPDFDocument)
+    }
+
     func testAlreadySuspendedAndUnloadedTabsAreSkipped() {
         let harness = makeHarness()
         let selected = makeTab("https://example.com/current", harness: harness)
@@ -282,6 +464,36 @@ final class TabSuspensionServiceTests: XCTestCase {
         XCTAssertEqual(received, ["warning", "critical"])
     }
 
+    func testPrompt05DoesNotWireMemoryModeIdleEvictionOrOptionalModuleRuntimes() throws {
+        let suspensionSource = try Self.source(named: "Sumi/Managers/TabSuspensionService.swift")
+        let coordinatorSource = try Self.source(named: "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift")
+        let changedSources = [
+            suspensionSource,
+            try Self.source(named: "Sumi/Models/Tab/Tab.swift"),
+            try Self.source(named: "Sumi/Models/Tab/TabRuntimeState.swift"),
+            try Self.source(named: "Sumi/Models/Tab/Navigation/SumiTabLifecycleNavigationResponder.swift"),
+        ].joined(separator: "\n")
+
+        for source in [suspensionSource, coordinatorSource] {
+            XCTAssertFalse(source.contains("SumiMemoryMode"))
+            XCTAssertFalse(source.contains("memoryMode"))
+        }
+
+        XCTAssertFalse(suspensionSource.contains("tabUnloadTimeoutChanged"))
+        XCTAssertFalse(suspensionSource.contains("idle"))
+        XCTAssertFalse(coordinatorSource.contains("suspensionEligibility"))
+
+        for forbiddenConstructor in [
+            "SumiTrackingProtection(",
+            "SumiContentBlockingService(",
+            "ExtensionManager(",
+            "NativeMessagingHandler(",
+            "SumiScriptsManager(",
+        ] {
+            XCTAssertFalse(changedSources.contains(forbiddenConstructor))
+        }
+    }
+
     private struct Harness {
         let browserManager: BrowserManager
         let coordinator: WebViewCoordinator
@@ -330,6 +542,19 @@ final class TabSuspensionServiceTests: XCTestCase {
         )
     }
 
+    private func makeEligibilitySubject(
+        hiddenURL: String = "https://example.com/eligible"
+    ) -> (Harness, Tab) {
+        let harness = makeHarness()
+        let selected = makeTab("https://example.com/current", harness: harness)
+        let hidden = makeTab(hiddenURL, harness: harness)
+
+        setCurrentTab(selected, in: harness.windowState)
+        attachWebView(to: selected, harness: harness)
+        attachWebView(to: hidden, harness: harness)
+        return (harness, hidden)
+    }
+
     @discardableResult
     private func attachWebView(to tab: Tab, harness: Harness) -> WKWebView {
         let webView = WKWebView(frame: .zero)
@@ -342,5 +567,16 @@ final class TabSuspensionServiceTests: XCTestCase {
         windowState.currentTabId = tab.id
         windowState.currentSpaceId = tab.spaceId
         windowState.isShowingEmptyState = false
+    }
+
+    private static func source(named path: String) throws -> String {
+        let testURL = URL(fileURLWithPath: #filePath)
+        let repoRoot = testURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: repoRoot.appendingPathComponent(path),
+            encoding: .utf8
+        )
     }
 }

@@ -299,6 +299,18 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { webViewRuntime.lastSelectedAt }
         set { webViewRuntime.lastSelectedAt = newValue }
     }
+    var pageSuspensionVeto: TabPageSuspensionVeto {
+        get { webViewRuntime.pageSuspensionVeto }
+        set { webViewRuntime.pageSuspensionVeto = newValue }
+    }
+    var hasPictureInPictureVideo: Bool {
+        get { webViewRuntime.hasPictureInPictureVideo }
+        set { webViewRuntime.hasPictureInPictureVideo = newValue }
+    }
+    var isDisplayingPDFDocument: Bool {
+        get { webViewRuntime.isDisplayingPDFDocument }
+        set { webViewRuntime.isDisplayingPDFDocument = newValue }
+    }
     var isSuspensionRestoreInProgress: Bool {
         get { webViewRuntime.isSuspensionRestoreInProgress }
         set { webViewRuntime.isSuspensionRestoreInProgress = newValue }
@@ -626,6 +638,12 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     func noteSuspensionAccess(at date: Date = Date()) {
         lastSelectedAt = date
+    }
+
+    func resetPageSuspensionRuntimeState() {
+        pageSuspensionVeto = .none
+        hasPictureInPictureVideo = false
+        isDisplayingPDFDocument = false
     }
 
     func markSuspended(at date: Date = Date()) {
