@@ -8,6 +8,80 @@ struct TabSuspensionResult: Equatable {
     let suspendedTabIDs: [UUID]
 }
 
+enum TabSuspensionEligibility: Equatable {
+    case eligible
+    case ineligible(reason: Reason)
+
+    enum Reason: Equatable {
+        case selected
+        case visible
+        case loading
+        case playingAudio
+        case cameraCapture
+        case microphoneCapture
+        case fullscreen
+        case pictureInPicture
+        case pdfDocument
+        case unsupportedURLScheme
+        case pageVeto
+        case noLiveWebView
+        case alreadySuspended
+        case popupHost
+        case noPrimaryWebView
+        case compositorProtected
+        case launcherRuntimeSuspensionDeferred
+    }
+
+    var isEligible: Bool {
+        self == .eligible
+    }
+}
+
+struct TabSuspensionWebViewState: Equatable {
+    let isLoading: Bool
+    let isPlayingAudio: Bool
+    let isCapturingCamera: Bool
+    let isCapturingMicrophone: Bool
+    let isFullscreen: Bool
+    let isPictureInPicture: Bool
+    let isPDFDocument: Bool
+    let isProtectedFromCompositorMutation: Bool
+
+    init(
+        isLoading: Bool = false,
+        isPlayingAudio: Bool = false,
+        isCapturingCamera: Bool = false,
+        isCapturingMicrophone: Bool = false,
+        isFullscreen: Bool = false,
+        isPictureInPicture: Bool = false,
+        isPDFDocument: Bool = false,
+        isProtectedFromCompositorMutation: Bool = false
+    ) {
+        self.isLoading = isLoading
+        self.isPlayingAudio = isPlayingAudio
+        self.isCapturingCamera = isCapturingCamera
+        self.isCapturingMicrophone = isCapturingMicrophone
+        self.isFullscreen = isFullscreen
+        self.isPictureInPicture = isPictureInPicture
+        self.isPDFDocument = isPDFDocument
+        self.isProtectedFromCompositorMutation = isProtectedFromCompositorMutation
+    }
+
+    @MainActor
+    init(webView: WKWebView, tab: Tab, coordinator: WebViewCoordinator) {
+        self.init(
+            isLoading: webView.isLoading,
+            isPlayingAudio: webView.sumiAudioIsPlayingAudio,
+            isCapturingCamera: webView.cameraCaptureState != .none,
+            isCapturingMicrophone: webView.microphoneCaptureState != .none,
+            isFullscreen: webView.sumiIsInFullscreenElementPresentation,
+            isPictureInPicture: tab.hasPictureInPictureVideo,
+            isPDFDocument: tab.isDisplayingPDFDocument,
+            isProtectedFromCompositorMutation: coordinator.isWebViewProtectedFromCompositorMutation(webView)
+        )
+    }
+}
+
 @MainActor
 final class TabSuspensionService {
     private static let defaultMinimumInactiveInterval: TimeInterval = 10 * 60
@@ -90,7 +164,12 @@ final class TabSuspensionService {
         }
         let selectedIDs = selectedTabIDs()
         let liveWebViews = coordinator.liveWebViews(for: tab)
-        guard isEligible(tab, liveWebViews: liveWebViews, visibleTabIDs: visibleIDs, selectedTabIDs: selectedIDs) else {
+        guard suspensionEligibility(
+            for: tab,
+            liveWebViews: liveWebViews,
+            visibleTabIDs: visibleIDs,
+            selectedTabIDs: selectedIDs
+        ).isEligible else {
             return false
         }
 
@@ -109,6 +188,37 @@ final class TabSuspensionService {
         suspensionCandidates().map { $0.tab.id }
     }
 
+    func suspensionEligibility(for tab: Tab) -> TabSuspensionEligibility {
+        guard let browserManager,
+              let coordinator = browserManager.webViewCoordinator
+        else {
+            return .ineligible(reason: .noLiveWebView)
+        }
+
+        return suspensionEligibility(
+            for: tab,
+            liveWebViews: coordinator.liveWebViews(for: tab),
+            visibleTabIDs: visibleTabIDsByWindow().values.reduce(into: Set<UUID>()) {
+                $0.formUnion($1)
+            },
+            selectedTabIDs: selectedTabIDs()
+        )
+    }
+
+    func suspensionEligibility(
+        for tab: Tab,
+        webViewStates: [TabSuspensionWebViewState]
+    ) -> TabSuspensionEligibility {
+        suspensionEligibility(
+            for: tab,
+            webViewStates: webViewStates,
+            visibleTabIDs: visibleTabIDsByWindow().values.reduce(into: Set<UUID>()) {
+                $0.formUnion($1)
+            },
+            selectedTabIDs: selectedTabIDs()
+        )
+    }
+
     private func suspensionCandidates(inactiveBefore cutoffDate: Date? = nil) -> [Candidate] {
         guard let browserManager,
               let coordinator = browserManager.webViewCoordinator
@@ -122,12 +232,12 @@ final class TabSuspensionService {
         return allKnownTabs()
             .compactMap { tab -> Candidate? in
                 let webViews = coordinator.liveWebViews(for: tab)
-                guard isEligible(
-                    tab,
+                guard suspensionEligibility(
+                    for: tab,
                     liveWebViews: webViews,
                     visibleTabIDs: visibleIDs,
                     selectedTabIDs: selectedIDs
-                ) else {
+                ).isEligible else {
                     return nil
                 }
                 if let cutoffDate,
@@ -147,27 +257,63 @@ final class TabSuspensionService {
             }
     }
 
-    private func isEligible(
-        _ tab: Tab,
+    private func suspensionEligibility(
+        for tab: Tab,
         liveWebViews: [WKWebView],
         visibleTabIDs: Set<UUID>,
         selectedTabIDs: Set<UUID>
-    ) -> Bool {
-        guard tab.requiresPrimaryWebView else { return false }
-        guard isSuspensibleContentURL(tab.url) else { return false }
-        guard !isPinned(tab) else { return false }
-        guard !tab.isPopupHost else { return false }
-        guard !tab.isSuspended else { return false }
-        guard !liveWebViews.isEmpty else { return false }
-        guard !visibleTabIDs.contains(tab.id) else { return false }
-        guard !selectedTabIDs.contains(tab.id) else { return false }
-        guard !tab.isLoading else { return false }
-        guard !tab.audioState.isPlayingAudio else { return false }
-
-        for webView in liveWebViews {
-            guard canSuspend(webView) else { return false }
+    ) -> TabSuspensionEligibility {
+        guard let coordinator = browserManager?.webViewCoordinator else {
+            return .ineligible(reason: .noLiveWebView)
         }
-        return true
+
+        let states = liveWebViews.map {
+            TabSuspensionWebViewState(webView: $0, tab: tab, coordinator: coordinator)
+        }
+        return suspensionEligibility(
+            for: tab,
+            webViewStates: states,
+            visibleTabIDs: visibleTabIDs,
+            selectedTabIDs: selectedTabIDs
+        )
+    }
+
+    private func suspensionEligibility(
+        for tab: Tab,
+        webViewStates: [TabSuspensionWebViewState],
+        visibleTabIDs: Set<UUID>,
+        selectedTabIDs: Set<UUID>
+    ) -> TabSuspensionEligibility {
+        guard !selectedTabIDs.contains(tab.id) else { return .ineligible(reason: .selected) }
+        guard !visibleTabIDs.contains(tab.id) else { return .ineligible(reason: .visible) }
+        guard tab.requiresPrimaryWebView else { return .ineligible(reason: .noPrimaryWebView) }
+        guard isSuspensibleContentURL(tab.url) else { return .ineligible(reason: .unsupportedURLScheme) }
+
+        // Pinned tabs and Essentials are launchers. Current memory-pressure suspension keeps
+        // the launcher runtime intact; future Lightweight behavior may suspend only its
+        // WebView instance while preserving identity, placement, restore, and shortcuts.
+        guard !isPinned(tab) else { return .ineligible(reason: .launcherRuntimeSuspensionDeferred) }
+
+        guard !tab.isPopupHost else { return .ineligible(reason: .popupHost) }
+        guard !tab.isSuspended else { return .ineligible(reason: .alreadySuspended) }
+        guard !webViewStates.isEmpty else { return .ineligible(reason: .noLiveWebView) }
+        guard !tab.isLoading else { return .ineligible(reason: .loading) }
+        guard !tab.audioState.isPlayingAudio else { return .ineligible(reason: .playingAudio) }
+        guard tab.pageSuspensionVeto == .none else { return .ineligible(reason: .pageVeto) }
+        guard !tab.hasPictureInPictureVideo else { return .ineligible(reason: .pictureInPicture) }
+        guard !tab.isDisplayingPDFDocument else { return .ineligible(reason: .pdfDocument) }
+
+        for state in webViewStates {
+            guard !state.isProtectedFromCompositorMutation else { return .ineligible(reason: .compositorProtected) }
+            guard !state.isLoading else { return .ineligible(reason: .loading) }
+            guard !state.isPlayingAudio else { return .ineligible(reason: .playingAudio) }
+            guard !state.isCapturingCamera else { return .ineligible(reason: .cameraCapture) }
+            guard !state.isCapturingMicrophone else { return .ineligible(reason: .microphoneCapture) }
+            guard !state.isFullscreen else { return .ineligible(reason: .fullscreen) }
+            guard !state.isPictureInPicture else { return .ineligible(reason: .pictureInPicture) }
+            guard !state.isPDFDocument else { return .ineligible(reason: .pdfDocument) }
+        }
+        return .eligible
     }
 
     private func isSuspensibleContentURL(_ url: URL) -> Bool {
@@ -182,17 +328,6 @@ final class TabSuspensionService {
 
         guard let tabManager = browserManager?.tabManager else { return false }
         return tabManager.isGlobalPinned(tab) || tabManager.isSpacePinned(tab)
-    }
-
-    private func canSuspend(_ webView: WKWebView) -> Bool {
-        guard let coordinator = browserManager?.webViewCoordinator else { return false }
-        guard !coordinator.isWebViewProtectedFromCompositorMutation(webView) else { return false }
-        guard !webView.isLoading else { return false }
-        guard !webView.sumiAudioIsPlayingAudio else { return false }
-        guard webView.cameraCaptureState == .none else { return false }
-        guard webView.microphoneCaptureState == .none else { return false }
-        guard !webView.sumiIsInFullscreenElementPresentation else { return false }
-        return true
     }
 
     private func allKnownTabs() -> [Tab] {

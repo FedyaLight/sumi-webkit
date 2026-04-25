@@ -21,6 +21,7 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
         } else {
             tab.markRegularMainFrameNavigation(on: webView)
         }
+        tab.resetPageSuspensionRuntimeState()
 
         if let url = navigation.request.url {
             tab.browserManager?.extensionManager.prepareWebViewForExtensionRuntime(
@@ -50,6 +51,16 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
                 tab.url = newURL
             }
         }
+    }
+
+    func decidePolicy(for navigationResponse: NavigationResponse) async -> NavigationResponsePolicy? {
+        guard let tab,
+              navigationResponse.isForMainFrame
+        else { return .next }
+
+        tab.isDisplayingPDFDocument =
+            navigationResponse.response.mimeType?.lowercased() == "application/pdf"
+        return .next
     }
 
     func didCommit(_ navigation: Navigation) {
