@@ -260,6 +260,10 @@ struct SpaceView: View {
         isInteractive ? .easeInOut(duration: 0.14) : nil
     }
 
+    private var dropGuideEdgeAllowance: CGFloat {
+        SidebarInsertionGuide.visualCenterY
+    }
+
     private var pinnedEmptyDropShowsRowPreview: Bool {
         showsEmptyPinnedDropPlaceholder
             && isHoveringThisSpacePinnedWhileEmpty
@@ -544,6 +548,10 @@ struct SpaceView: View {
         let allItems = spacePinnedItems
         
         return VStack(spacing: 0) {
+            Color.clear
+                .frame(height: dropGuideEdgeAllowance)
+                .allowsHitTesting(false)
+
             ForEach(Array(allItems.enumerated()), id: \.element.id) { sourceIndex, item in
                 VStack(spacing: 0) {
                     switch item {
