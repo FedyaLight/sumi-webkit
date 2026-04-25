@@ -34,16 +34,31 @@ struct SumiHistoryTabRootView: View {
                 .layoutPriority(1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(themeContext.tokens(settings: sumiSettings).windowBackground)
+        .background(tokens.windowBackground)
+        .environment(\.resolvedThemeContext, surfaceThemeContext)
+        .environment(\.colorScheme, surfaceThemeContext.chromeColorScheme)
         .onAppear {
             viewModel.appear()
         }
+    }
+
+    private var surfaceThemeContext: ResolvedThemeContext {
+        themeContext.nativeSurfaceThemeContext
+    }
+
+    private var tokens: ChromeThemeTokens {
+        surfaceThemeContext.tokens(settings: sumiSettings)
+    }
+
+    private var selectionBackground: Color {
+        surfaceThemeContext.nativeSurfaceSelectionBackground
     }
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 28) {
             Text("History")
                 .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(tokens.primaryText)
                 .padding(.top, 4)
 
             VStack(alignment: .leading, spacing: 6) {
@@ -94,9 +109,9 @@ struct SumiHistoryTabRootView: View {
         .buttonStyle(.plain)
         .background(
             RoundedRectangle(cornerRadius: Layout.rowCornerRadius, style: .continuous)
-                .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+                .fill(isSelected ? selectionBackground : Color.clear)
         )
-        .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+        .foregroundStyle(tokens.primaryText)
     }
 
     private var content: some View {
@@ -112,18 +127,18 @@ struct SumiHistoryTabRootView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(tokens.secondaryText)
                 TextField("Search History", text: $viewModel.searchText)
                     .textFieldStyle(.plain)
             }
             .padding(.vertical, 11)
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .controlBackgroundColor).opacity(0.95))
+            .background(tokens.fieldBackground)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color(nsColor: .separatorColor).opacity(0.35), lineWidth: 1)
+                    .stroke(tokens.separator.opacity(0.55), lineWidth: 1)
             )
 
             headerControls
@@ -147,7 +162,7 @@ struct SumiHistoryTabRootView: View {
                     if viewModel.hasSelection {
                         Text("\(viewModel.selectionCount) Selected")
                             .font(.callout)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(tokens.secondaryText)
                             .transition(.move(edge: .leading).combined(with: .opacity))
 
                         Button("Open") {
@@ -178,7 +193,7 @@ struct SumiHistoryTabRootView: View {
             if let filter = viewModel.activeFilterDescription {
                 HStack(spacing: 8) {
                     Text(filter)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(tokens.secondaryText)
                     Button("Clear Filter") {
                         withAnimation(headerControlsAnimation) {
                             viewModel.clearFilters()
@@ -218,7 +233,7 @@ struct SumiHistoryTabRootView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     Text(section.title)
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(tokens.primaryText)
                         .padding(.horizontal, 22)
 
                     VStack(alignment: .leading, spacing: 2) {
@@ -240,7 +255,7 @@ struct SumiHistoryTabRootView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color(nsColor: .separatorColor).opacity(0.8), lineWidth: 1)
+                .stroke(tokens.separator.opacity(0.8), lineWidth: 1)
         )
     }
 
@@ -248,11 +263,12 @@ struct SumiHistoryTabRootView: View {
         VStack(alignment: .center, spacing: 12) {
             Image(systemName: "clock.arrow.circlepath")
                 .font(.system(size: 42))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(tokens.secondaryText)
             Text("No History")
                 .font(.title3.weight(.semibold))
+                .foregroundStyle(tokens.primaryText)
             Text("Visited pages will appear here.")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(tokens.secondaryText)
         }
         .frame(maxWidth: .infinity, minHeight: 260)
     }
@@ -262,6 +278,8 @@ struct SumiHistoryTabRootView: View {
 private struct HistoryRow: View {
     let item: HistoryListItem
     @ObservedObject var viewModel: HistoryPageViewModel
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isHovering = false
 
     private enum RowLayout {
@@ -269,6 +287,10 @@ private struct HistoryRow: View {
         static let timeWidth: CGFloat = 56
         static let faviconSize: CGFloat = 20
         static let menuWidth: CGFloat = 32
+    }
+
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
     }
 
     var body: some View {
@@ -286,7 +308,7 @@ private struct HistoryRow: View {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 15, weight: .semibold))
                     .rotationEffect(.degrees(90))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(tokens.primaryText)
                     .frame(width: RowLayout.menuWidth, height: 28)
                     .contentShape(Rectangle())
             }
@@ -377,7 +399,7 @@ private struct HistoryRow: View {
         HStack(spacing: 14) {
             Text(item.isSiteAggregate ? "" : item.timeText)
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(tokens.secondaryText)
                 .frame(width: RowLayout.timeWidth, alignment: .leading)
 
             favicon
@@ -386,23 +408,23 @@ private struct HistoryRow: View {
                 Text(item.displayTitle)
                     .font(.system(size: 14, weight: .semibold))
                     .lineLimit(1)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(tokens.primaryText)
                     .layoutPriority(2)
 
                 Text(item.domain)
                     .font(.callout)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(tokens.secondaryText)
                     .layoutPriority(-1)
 
                 if item.isSiteAggregate, item.visitCount > 0 {
                     Text("\(item.visitCount)")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(tokens.secondaryText)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(Color(nsColor: .controlBackgroundColor))
+                        .background(tokens.fieldBackground)
                         .clipShape(Capsule())
                 }
             }
@@ -413,16 +435,22 @@ private struct HistoryRow: View {
 
     private var rowBackgroundColor: Color {
         if viewModel.isSelected(item) {
-            return Color.accentColor.opacity(0.14)
+            return themeContext.nativeSurfaceSelectionBackground
         }
-        return isHovering ? Color.accentColor.opacity(0.08) : Color.clear
+        return isHovering ? tokens.fieldBackgroundHover : Color.clear
     }
 
 }
 
 private struct HistoryFaviconView: View {
     let url: URL
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
     @State private var image: NSImage?
+
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
+    }
 
     var body: some View {
         Group {
@@ -434,7 +462,7 @@ private struct HistoryFaviconView: View {
                 Image(systemName: "globe")
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(tokens.secondaryText)
             }
         }
         .task(id: url) {

@@ -9,7 +9,12 @@ import SwiftUI
 
 struct SettingsAppearanceTab: View {
     @Environment(\.sumiSettings) var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
     @EnvironmentObject private var browserManager: BrowserManager
+
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
+    }
 
     var body: some View {
         @Bindable var settings = sumiSettings
@@ -62,5 +67,8 @@ struct SettingsAppearanceTab: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tokens.windowBackground)
     }
 }

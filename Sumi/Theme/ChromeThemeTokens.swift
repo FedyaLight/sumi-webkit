@@ -46,6 +46,40 @@ extension ResolvedThemeContext {
             settings: settings
         )
     }
+
+    var nativeSurfaceColorScheme: ColorScheme {
+        if globalColorScheme == .dark
+            || chromeColorScheme == .dark
+            || sourceChromeColorScheme == .dark
+            || targetChromeColorScheme == .dark
+        {
+            return .dark
+        }
+        return .light
+    }
+
+    var nativeSurfaceThemeContext: ResolvedThemeContext {
+        let scheme = nativeSurfaceColorScheme
+        var context = self
+        context.globalColorScheme = scheme
+        context.chromeColorScheme = scheme
+        context.sourceChromeColorScheme = scheme
+        context.targetChromeColorScheme = scheme
+        context.isInteractiveTransition = false
+        context.transitionProgress = 1
+        return context
+    }
+
+    var nativeSurfaceSelectionBackground: Color {
+        switch nativeSurfaceColorScheme {
+        case .light:
+            return Color.black.opacity(0.10)
+        case .dark:
+            return Color.white.opacity(0.16)
+        @unknown default:
+            return Color.primary.opacity(0.12)
+        }
+    }
 }
 
 extension SumiSettingsService {
