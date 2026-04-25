@@ -87,7 +87,10 @@ class BrowserConfiguration {
         let config = makeBaseWebViewConfiguration()
         config.websiteDataStore = profile.dataStore
         config.userContentController = SumiNormalTabUserContentControllerFactory
-            .makeController(scriptsProvider: userScriptsProvider)
+            .makeController(
+                scriptsProvider: userScriptsProvider,
+                profileId: profile.id
+            )
         applyMediaSessionPolicy(to: config, profile: profile)
         applySitePermissionOverrides(to: config, url: url, profileId: profile.id)
         return config
@@ -111,7 +114,10 @@ class BrowserConfiguration {
             ?? source?.websiteDataStore
             ?? webViewConfiguration.websiteDataStore
         config.userContentController = SumiNormalTabUserContentControllerFactory
-            .makeController(scriptsProvider: SumiNormalTabUserScripts())
+            .makeController(
+                scriptsProvider: SumiNormalTabUserScripts(),
+                profileId: profile?.id
+            )
         additionalUserScripts.forEach(config.userContentController.addUserScript)
 
         if let source {

@@ -119,6 +119,7 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
             tab.setMuted(true)
         }
 
+        tab.browserManager?.enforceSiteDataPolicyAfterNavigation(for: tab)
         SumiNativeNowPlayingController.shared.scheduleRefresh(delayNanoseconds: 0)
     }
 

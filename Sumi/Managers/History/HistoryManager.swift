@@ -154,11 +154,20 @@ final class HistoryManager: ObservableObject {
         dataProvider.canClearHistory
     }
 
+    func visitRecords(matching query: HistoryQuery) -> [HistoryVisitRecord] {
+        dataProvider.visitRecords(for: query)
+    }
+
+    func visitDomains(matching query: HistoryQuery) -> Set<String> {
+        dataProvider.visitDomains(for: query)
+    }
+
     func delete(query: HistoryQuery) async {
+        let faviconDomains = faviconBurnDomains(for: query)
         await dataProvider.deleteVisits(matching: query)
-        if case .domainFilter(let domains) = query, !domains.isEmpty {
+        if !faviconDomains.isEmpty {
             await SumiFaviconSystem.shared.burnDomains(
-                domains,
+                faviconDomains,
                 remainingHistory: currentBrowsingHistory(),
                 savedLogins: BasicAuthCredentialStore().allCredentialHosts()
             )
@@ -187,6 +196,19 @@ final class HistoryManager: ObservableObject {
             savedLogins: BasicAuthCredentialStore().allCredentialHosts()
         )
         revision &+= 1
+    }
+
+    private func faviconBurnDomains(for query: HistoryQuery) -> Set<String> {
+        switch query {
+        case .domainFilter(let domains):
+            return domains
+        case .dateFilter(_), .timeRange(_, _):
+            return dataProvider.visitDomains(for: query)
+        case .rangeFilter(let range) where range != .all && range != .allSites:
+            return dataProvider.visitDomains(for: query)
+        case .searchTerm, .rangeFilter, .visits:
+            return []
+        }
     }
 
     private func currentBrowsingHistory() -> BrowsingHistory {

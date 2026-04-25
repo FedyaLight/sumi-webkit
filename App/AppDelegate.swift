@@ -536,6 +536,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         shouldTerminate: Bool
     ) {
         let persistenceHandlerSnapshot = self.persistenceHandler
+        let updateHandlerSnapshot = self.updateHandler
 
         DispatchQueue.main.async {
             Task { @MainActor in
@@ -593,6 +594,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     )
                 }
 
+                await updateHandlerSnapshot?.performSiteDataPolicyAllWindowsClosedCleanup()
                 persistenceHandler.cleanupAllTabs()
                 AppDelegate.log.info("Cleanup completed; WKWebView processes terminated")
             }

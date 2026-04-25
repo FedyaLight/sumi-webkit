@@ -131,13 +131,17 @@ private final class SumiNormalTabUserContentControllerDelegate: UserContentContr
 enum SumiNormalTabUserContentControllerFactory {
     static func makeController(
         scriptsProvider: SumiNormalTabUserScripts? = nil,
-        contentBlockingService: SumiContentBlockingService? = nil
+        contentBlockingService: SumiContentBlockingService? = nil,
+        profileId: UUID? = nil
     ) -> UserContentController {
         let scriptsProvider = scriptsProvider ?? SumiNormalTabUserScripts()
         let contentBlockingService = contentBlockingService ?? .shared
         let delegate = SumiNormalTabUserContentControllerDelegate()
         let controller = UserContentController(
-            assetsPublisher: contentBlockingService.userContentPublisher(for: scriptsProvider),
+            assetsPublisher: contentBlockingService.userContentPublisher(
+                for: scriptsProvider,
+                profileId: profileId
+            ),
             privacyConfigurationManager: contentBlockingService.privacyConfigurationManager
         )
         controller.delegate = delegate

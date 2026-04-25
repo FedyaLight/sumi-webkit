@@ -7,20 +7,17 @@ import XCTest
 final class HistoryPageViewModelTests: XCTestCase {
     private let fixedReferenceDate = ISO8601DateFormatter().date(from: "2026-04-23T12:00:00Z")!
 
-    func testInitialURLSelectsRangeAndSelectionUpdatesTabURL() throws {
+    func testHistoryTabUsesAllRangeByDefault() throws {
         let harness = try makeHarness()
 
         harness.browserManager.openHistoryTab(selecting: .older, in: harness.windowState)
         let viewModel = HistoryPageViewModel(browserManager: harness.browserManager, windowState: harness.windowState)
 
-        XCTAssertEqual(viewModel.selectedRange, .older)
+        XCTAssertEqual(viewModel.selectedRange, .all)
         XCTAssertFalse(harness.browserManager.currentTab(for: harness.windowState)?.requiresPrimaryWebView ?? true)
-
-        viewModel.selectRange(.today)
-
         XCTAssertEqual(
             harness.browserManager.currentTab(for: harness.windowState)?.url,
-            SumiSurface.historySurfaceURL(rangeQuery: HistoryRange.today.paneQueryValue)
+            SumiSurface.historySurfaceURL(rangeQuery: HistoryRange.all.paneQueryValue)
         )
     }
 
@@ -115,6 +112,43 @@ final class HistoryPageViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.selectionCount, 1)
         XCTAssertEqual(viewModel.sections.flatMap(\.items).map(\.title), ["Alpha"])
+    }
+
+    func testSelectAllVisibleItemsSelectsOnlyFilteredRows() async throws {
+        let harness = try makeHarness()
+        try await recordVisit(
+            url: URL(string: "https://www.youtube.com/watch?v=1")!,
+            title: "YouTube",
+            at: "2026-04-23T10:00:00Z",
+            harness: harness
+        )
+        try await recordVisit(
+            url: URL(string: "https://m.youtube.com/watch?v=2")!,
+            title: "YouTube Mobile",
+            at: "2026-04-23T09:00:00Z",
+            harness: harness
+        )
+        try await recordVisit(
+            url: URL(string: "https://reddit.com/r/browsers")!,
+            title: "Reddit",
+            at: "2026-04-23T08:00:00Z",
+            harness: harness
+        )
+        let viewModel = await makeLoadedViewModel(harness: harness)
+        let items = await waitForVisibleItems(in: viewModel, minimumCount: 3)
+        let youtubeItem = try XCTUnwrap(items.first { $0.siteDomain == "youtube.com" })
+
+        viewModel.showAllHistory(from: youtubeItem)
+        await drainMainQueue()
+
+        let filteredItems = viewModel.sections.flatMap(\.items)
+        XCTAssertEqual(filteredItems.count, 2)
+        XCTAssertTrue(filteredItems.allSatisfy { $0.siteDomain == "youtube.com" })
+
+        viewModel.selectAllVisibleItems()
+
+        XCTAssertEqual(viewModel.selectionCount, 2)
+        XCTAssertTrue(viewModel.allVisibleItemsSelected)
     }
 
     func testOpenSelectedItemsOpensURLsInVisibleOrderAndDeduplicates() async throws {

@@ -104,6 +104,36 @@ final class HistoryViewDataProviderTests: XCTestCase {
         XCTAssertEqual(remaining.first?.domain, "other.com")
     }
 
+    func testTimeRangeQueryOnlyMatchesVisitsInsideWindow() async throws {
+        let harness = try makeHarness()
+
+        try await harness.store.recordVisit(
+            url: URL(string: "https://recent.example")!,
+            title: "Recent",
+            visitedAt: date("2026-04-23T11:45:00Z"),
+            profileId: harness.profileID
+        )
+        try await harness.store.recordVisit(
+            url: URL(string: "https://old.example")!,
+            title: "Old",
+            visitedAt: date("2026-04-23T08:00:00Z"),
+            profileId: harness.profileID
+        )
+
+        await harness.provider.refreshData()
+
+        let query = HistoryQuery.timeRange(
+            start: date("2026-04-23T11:00:00Z"),
+            end: date("2026-04-23T12:00:00Z")
+        )
+        XCTAssertEqual(harness.provider.items(for: query).map(\.domain), ["recent.example"])
+
+        await harness.provider.deleteVisits(matching: query)
+
+        let remaining = harness.provider.items(for: .rangeFilter(.all))
+        XCTAssertEqual(remaining.map(\.domain), ["old.example"])
+    }
+
     func testSitesItemsAreSortedByDomainWithCounts() async throws {
         let harness = try makeHarness()
 
