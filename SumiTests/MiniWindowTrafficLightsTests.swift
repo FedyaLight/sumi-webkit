@@ -224,6 +224,80 @@ final class MiniWindowTrafficLightsTests: XCTestCase {
         assertButtonsHostedWithMiniWindowSpacing(in: host, window: window, nativeFrames: nativeFrames)
     }
 
+    func testMiniWindowTrafficLightsContainerRepairsHostedButtonStateChangedBySheetPass() throws {
+        let window = WindowChromeTestSupport.makePlainWindow()
+        let host = MiniWindowTrafficLightsContainerView(
+            frame: NSRect(x: 0, y: 0, width: 60, height: 20)
+        )
+        let nativeFrames = try XCTUnwrap(
+            window.nativeWindowControlsMetrics(for: WindowChromeTestSupport.standardButtonTypes)?.buttonFrames
+        )
+
+        window.contentView?.addSubview(host)
+        host.windowReference = window
+        host.layoutSubtreeIfNeeded()
+
+        let zoomButton = try XCTUnwrap(window.standardWindowButton(.zoomButton))
+        zoomButton.isHidden = true
+        zoomButton.alphaValue = 0.2
+        zoomButton.isEnabled = false
+        zoomButton.isBordered = true
+        zoomButton.translatesAutoresizingMaskIntoConstraints = false
+
+        NotificationCenter.default.post(name: NSWindow.willBeginSheetNotification, object: window)
+
+        assertButtonsHostedWithMiniWindowSpacing(in: host, window: window, nativeFrames: nativeFrames)
+        XCTAssertFalse(zoomButton.isHidden)
+        XCTAssertEqual(zoomButton.alphaValue, 0)
+        XCTAssertFalse(zoomButton.isBordered)
+        XCTAssertTrue(zoomButton.translatesAutoresizingMaskIntoConstraints)
+
+        NotificationCenter.default.post(name: NSWindow.didEndSheetNotification, object: window)
+        runMainLoopForSheetTransition()
+
+        XCTAssertEqual(zoomButton.alphaValue, 1)
+        XCTAssertTrue(zoomButton.isEnabled)
+    }
+
+    func testMiniWindowTrafficLightsContainerShieldsHostedButtonsDuringSheetTransition() throws {
+        let window = WindowChromeTestSupport.makePlainWindow()
+        let host = MiniWindowTrafficLightsContainerView(
+            frame: NSRect(x: 0, y: 0, width: 60, height: 20)
+        )
+        let nativeFrames = try XCTUnwrap(
+            window.nativeWindowControlsMetrics(for: WindowChromeTestSupport.standardButtonTypes)?.buttonFrames
+        )
+
+        window.contentView?.addSubview(host)
+        host.windowReference = window
+        host.layoutSubtreeIfNeeded()
+
+        let initialSubviewCount = host.subviews.count
+        NotificationCenter.default.post(name: NSWindow.willBeginSheetNotification, object: window)
+
+        XCTAssertGreaterThan(host.subviews.count, initialSubviewCount)
+        let shieldView = try XCTUnwrap(host.subviews.last)
+        for type in WindowChromeTestSupport.standardButtonTypes {
+            let button = try XCTUnwrap(window.standardWindowButton(type))
+            XCTAssertFalse(button === shieldView)
+        }
+        assertButtonsHostedWithMiniWindowSpacing(
+            in: host,
+            window: window,
+            nativeFrames: nativeFrames
+        )
+
+        NotificationCenter.default.post(name: NSWindow.didEndSheetNotification, object: window)
+        runMainLoopForSheetTransition()
+
+        XCTAssertFalse(host.subviews.contains { $0 === shieldView })
+        assertButtonsHostedWithMiniWindowSpacing(
+            in: host,
+            window: window,
+            nativeFrames: nativeFrames
+        )
+    }
+
     func testMiniWindowTrafficLightsContainerRefreshesStaleStartupFramesBeforeNormalRelayout() throws {
         let window = WindowChromeTestSupport.makePlainWindow()
         let nativeMetrics = try XCTUnwrap(window.nativeWindowControlsMetrics(for: WindowChromeTestSupport.standardButtonTypes))
@@ -292,6 +366,53 @@ final class MiniWindowTrafficLightsTests: XCTestCase {
         }
     }
 
+    func testMiniWindowTrafficLightsContainerPrepareForRemovalDuringWindowCloseKeepsButtonsHosted() {
+        let window = WindowChromeTestSupport.makePlainWindow()
+        let host = MiniWindowTrafficLightsContainerView(
+            frame: NSRect(x: 0, y: 0, width: 60, height: 20)
+        )
+        let nativeFrames = window.nativeWindowControlsMetrics(for: WindowChromeTestSupport.standardButtonTypes)?.buttonFrames
+        let nativeTitlebarView = window.titlebarView
+
+        window.contentView?.addSubview(host)
+        host.windowReference = window
+        host.layoutSubtreeIfNeeded()
+        window.prepareNativeWindowControlsForBrowserChromeWindowTeardown()
+        host.prepareForRemoval()
+
+        XCTAssertTrue(window.isBrowserChromeNativeWindowControlsTeardownInProgress)
+        assertButtonsHostedWithMiniWindowSpacing(
+            in: host,
+            window: window,
+            nativeFrames: nativeFrames ?? [:]
+        )
+        for type in WindowChromeTestSupport.standardButtonTypes {
+            XCTAssertFalse(window.standardWindowButton(type)?.superview === nativeTitlebarView)
+        }
+    }
+
+    func testMiniWindowTrafficLightsContainerWindowWillCloseSuppressesTitlebarRestore() {
+        let window = WindowChromeTestSupport.makePlainWindow()
+        let host = MiniWindowTrafficLightsContainerView(
+            frame: NSRect(x: 0, y: 0, width: 60, height: 20)
+        )
+        let nativeFrames = window.nativeWindowControlsMetrics(for: WindowChromeTestSupport.standardButtonTypes)?.buttonFrames
+
+        window.contentView?.addSubview(host)
+        host.windowReference = window
+        host.layoutSubtreeIfNeeded()
+
+        NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: window)
+        host.prepareForRemoval()
+
+        XCTAssertTrue(window.isBrowserChromeNativeWindowControlsTeardownInProgress)
+        assertButtonsHostedWithMiniWindowSpacing(
+            in: host,
+            window: window,
+            nativeFrames: nativeFrames ?? [:]
+        )
+    }
+
     private func assertButtonsHostedWithMiniWindowSpacing(
         in host: MiniWindowTrafficLightsContainerView,
         window: NSWindow,
@@ -324,5 +445,9 @@ final class MiniWindowTrafficLightsTests: XCTestCase {
 
     private func runMainLoopBriefly() {
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+    }
+
+    private func runMainLoopForSheetTransition() {
+        RunLoop.current.run(until: Date().addingTimeInterval(0.25))
     }
 }

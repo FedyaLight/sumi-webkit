@@ -68,9 +68,12 @@ final class NativeWindowControlsHostController {
     private var hasCompletedHostedLayout = false
     private var hostedValidationObservers: [NSObjectProtocol] = []
     private var hostedPreDisplayValidationObserver: CFRunLoopObserver?
+    private var hostedVisualShieldView: NSView?
+    private var hostedVisualShieldRemovalWorkItem: DispatchWorkItem?
     private var isHostedValidationScheduled = false
     private var isApplyingHostedLayout = false
     private let hostedFrameTolerance: CGFloat = 0.5
+    private let hostedVisualShieldRemovalDelay: TimeInterval = 0.18
 
     private(set) var cachedMetrics: NativeWindowControlsMetrics?
 
@@ -135,6 +138,9 @@ final class NativeWindowControlsHostController {
 
         if let hostView {
             claimButtons(into: hostView, refreshMetrics: hasCompletedHostedLayout == false)
+        } else if window?.isBrowserChromeNativeWindowControlsTeardownInProgress == true {
+            preferredHostView = previousHostView
+            enforceHostedLayoutIfNeeded()
         } else {
             restoreButtonsToTitlebar(excluding: previousHostView)
         }
@@ -147,6 +153,12 @@ final class NativeWindowControlsHostController {
 
         if preferredHostView === hostView {
             preferredHostView = nil
+        }
+
+        if window?.isBrowserChromeNativeWindowControlsTeardownInProgress == true {
+            preferredHostView = hostView
+            enforceHostedLayoutIfNeeded()
+            return
         }
 
         restoreButtonsToTitlebar(excluding: hostView)
@@ -190,6 +202,63 @@ final class NativeWindowControlsHostController {
         }
     }
 
+    func reassertHostedLayout() {
+        guard let preferredHostView else { return }
+        claimButtons(into: preferredHostView, refreshMetrics: false)
+    }
+
+    func beginHostedVisualShield() {
+        hostedVisualShieldRemovalWorkItem?.cancel()
+        hostedVisualShieldRemovalWorkItem = nil
+
+        guard let preferredHostView, let window else { return }
+
+        claimButtons(into: preferredHostView, refreshMetrics: false)
+        preferredHostView.layoutSubtreeIfNeeded()
+
+        if let hostedVisualShieldView {
+            keepHostedVisualShieldOnTop(in: preferredHostView)
+            hideHostedButtonsBehindVisualShield(window: window)
+            hostedVisualShieldView.needsDisplay = true
+            return
+        }
+
+        let shieldView = NativeWindowControlsVisualShieldView(frame: preferredHostView.bounds)
+        shieldView.autoresizingMask = [.width, .height]
+
+        for type in buttonTypes {
+            guard let button = window.standardWindowButton(type),
+                  let expectedFrame = expectedHostedFrame(for: type, in: preferredHostView, window: window)
+            else { continue }
+
+            let imageView = NSImageView(frame: expectedFrame)
+            imageView.imageScaling = .scaleAxesIndependently
+            imageView.image = button.nativeWindowControlsSnapshotImage()
+                ?? NSImage.nativeWindowControlsFallbackImage(
+                    for: type,
+                    size: button.bounds.size == .zero ? expectedFrame.size : button.bounds.size
+                )
+            shieldView.addSubview(imageView)
+        }
+
+        preferredHostView.addSubview(shieldView, positioned: .above, relativeTo: nil)
+        hostedVisualShieldView = shieldView
+        hideHostedButtonsBehindVisualShield(window: window)
+    }
+
+    func endHostedVisualShieldAfterAppKitPass() {
+        hostedVisualShieldRemovalWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                self?.endHostedVisualShield()
+            }
+        }
+        hostedVisualShieldRemovalWorkItem = workItem
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + hostedVisualShieldRemovalDelay, execute: workItem)
+    }
+
     func buttonsAreHosted(in hostView: NSView) -> Bool {
         guard let window else { return false }
 
@@ -224,10 +293,13 @@ final class NativeWindowControlsHostController {
         isApplyingHostedLayout = false
         installHostedValidationObservers(in: hostView, window: window)
         hasCompletedHostedLayout = true
+        hideHostedButtonsBehindVisualShield(window: window)
+        keepHostedVisualShieldOnTop(in: hostView)
     }
 
     private func restoreButtonsToTitlebar(excluding excludedSuperview: NSView? = nil) {
         removeHostedValidationObservers()
+        removeHostedVisualShield()
 
         guard let window,
               let nativeTitlebarView = window.refreshCachedNativeWindowControlsTitlebarView(
@@ -346,6 +418,42 @@ final class NativeWindowControlsHostController {
                 self?.performHostedValidationFromNotification(immediate: true)
             }
         )
+        hostedValidationObservers.append(
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification,
+                object: window,
+                queue: nil
+            ) { [weak self] _ in
+                self?.performWindowTeardownPreparationFromNotification()
+            }
+        )
+        hostedValidationObservers.append(
+            NotificationCenter.default.addObserver(
+                forName: NSApplication.willTerminateNotification,
+                object: nil,
+                queue: nil
+            ) { [weak self] _ in
+                self?.performWindowTeardownPreparationFromNotification()
+            }
+        )
+        hostedValidationObservers.append(
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.willBeginSheetNotification,
+                object: window,
+                queue: nil
+            ) { [weak self] _ in
+                self?.performSheetTransitionFromNotification(isBeginning: true)
+            }
+        )
+        hostedValidationObservers.append(
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.didEndSheetNotification,
+                object: window,
+                queue: nil
+            ) { [weak self] _ in
+                self?.performSheetTransitionFromNotification(isBeginning: false)
+            }
+        )
 
         for type in buttonTypes {
             guard let button = window.standardWindowButton(type) else { continue }
@@ -381,6 +489,30 @@ final class NativeWindowControlsHostController {
                 } else {
                     self?.scheduleHostedLayoutValidation()
                 }
+            }
+        }
+    }
+
+    private nonisolated func performWindowTeardownPreparationFromNotification() {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                prepareForWindowTeardown()
+            }
+        } else {
+            Task { @MainActor [weak self] in
+                self?.prepareForWindowTeardown()
+            }
+        }
+    }
+
+    private nonisolated func performSheetTransitionFromNotification(isBeginning: Bool) {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                handleSheetTransition(isBeginning: isBeginning)
+            }
+        } else {
+            Task { @MainActor [weak self] in
+                self?.handleSheetTransition(isBeginning: isBeginning)
             }
         }
     }
@@ -444,7 +576,60 @@ final class NativeWindowControlsHostController {
         enforceHostedLayoutIfNeeded()
     }
 
+    private func prepareForWindowTeardown() {
+        window?.prepareNativeWindowControlsForBrowserChromeWindowTeardown()
+        beginHostedVisualShield()
+        enforceHostedLayoutIfNeeded()
+    }
+
+    private func handleSheetTransition(isBeginning: Bool) {
+        if isBeginning {
+            beginHostedVisualShield()
+        } else {
+            enforceHostedLayoutIfNeeded()
+            endHostedVisualShieldAfterAppKitPass()
+        }
+
+        handleHostedButtonFrameChange()
+        scheduleHostedLayoutValidation()
+    }
+
+    private func endHostedVisualShield() {
+        hostedVisualShieldRemovalWorkItem?.cancel()
+        hostedVisualShieldRemovalWorkItem = nil
+        removeHostedVisualShield()
+        if let preferredHostView {
+            claimButtons(into: preferredHostView, refreshMetrics: false)
+        }
+    }
+
+    private func removeHostedVisualShield() {
+        hostedVisualShieldView?.removeFromSuperview()
+        hostedVisualShieldView = nil
+        hostedVisualShieldRemovalWorkItem?.cancel()
+        hostedVisualShieldRemovalWorkItem = nil
+    }
+
+    private func keepHostedVisualShieldOnTop(in hostView: NSView) {
+        guard let hostedVisualShieldView,
+              hostedVisualShieldView.superview === hostView
+        else { return }
+
+        hostedVisualShieldView.removeFromSuperview()
+        hostView.addSubview(hostedVisualShieldView, positioned: .above, relativeTo: nil)
+    }
+
+    private func hideHostedButtonsBehindVisualShield(window: NSWindow) {
+        guard hostedVisualShieldView != nil else { return }
+
+        for type in buttonTypes {
+            window.standardWindowButton(type)?.alphaValue = 0
+        }
+    }
+
     private func hostedButtonsNeedRepair(in hostView: NSView, window: NSWindow) -> Bool {
+        let isShielding = hostedVisualShieldView?.superview === hostView
+
         for type in buttonTypes {
             guard let button = window.standardWindowButton(type),
                   let expectedFrame = expectedHostedFrame(for: type, in: hostView, window: window)
@@ -453,6 +638,19 @@ final class NativeWindowControlsHostController {
             }
 
             if button.superview !== hostView {
+                return true
+            }
+
+            if isShielding == false,
+               (button.isHidden || abs(button.alphaValue - 1) > 0.01 || button.isEnabled == false) {
+                return true
+            }
+
+            if button.isBordered || button.translatesAutoresizingMaskIntoConstraints == false {
+                return true
+            }
+
+            if button.accessibilityIdentifier() != BrowserWindowControlsAccessibilityIdentifiers.identifier(for: type) {
                 return true
             }
 
@@ -479,6 +677,68 @@ final class NativeWindowControlsHostController {
     }
 }
 
+private final class NativeWindowControlsVisualShieldView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+}
+
+private extension NSButton {
+    func nativeWindowControlsSnapshotImage() -> NSImage? {
+        layoutSubtreeIfNeeded()
+
+        let snapshotBounds = bounds
+        guard snapshotBounds.width > 0,
+              snapshotBounds.height > 0,
+              let representation = bitmapImageRepForCachingDisplay(in: snapshotBounds)
+        else {
+            return nil
+        }
+
+        cacheDisplay(in: snapshotBounds, to: representation)
+
+        let image = NSImage(size: snapshotBounds.size)
+        image.addRepresentation(representation)
+        return image
+    }
+}
+
+private extension NSImage {
+    static func nativeWindowControlsFallbackImage(
+        for type: NSWindow.ButtonType,
+        size: NSSize
+    ) -> NSImage {
+        let resolvedSize = NSSize(
+            width: max(size.width, 14),
+            height: max(size.height, 14)
+        )
+        return NSImage(size: resolvedSize, flipped: false) { rect in
+            let color: NSColor
+            switch type {
+            case .closeButton:
+                color = .systemRed
+            case .miniaturizeButton:
+                color = .systemYellow
+            case .zoomButton:
+                color = .systemGreen
+            default:
+                color = .controlAccentColor
+            }
+
+            color.setFill()
+            let diameter = max(min(rect.width, rect.height) - 2, 1)
+            let circleRect = NSRect(
+                x: floor((rect.width - diameter) / 2),
+                y: floor((rect.height - diameter) / 2),
+                width: diameter,
+                height: diameter
+            )
+            NSBezierPath(ovalIn: circleRect).fill()
+            return true
+        }
+    }
+}
+
 private extension NSRect {
     func isApproximatelyEqual(to other: NSRect, tolerance: CGFloat) -> Bool {
         abs(minX - other.minX) <= tolerance
@@ -492,6 +752,7 @@ private enum NativeWindowControlsAssociatedKeys {
     static var titlebarView: UInt8 = 0
     static var cachedMetrics: UInt8 = 0
     static var hostController: UInt8 = 0
+    static var windowTeardownInProgress: UInt8 = 0
 }
 
 @MainActor
@@ -591,6 +852,61 @@ extension NSWindow {
                 .OBJC_ASSOCIATION_RETAIN_NONATOMIC
             )
         }
+    }
+
+    private(set) var isBrowserChromeNativeWindowControlsTeardownInProgress: Bool {
+        get {
+            (objc_getAssociatedObject(
+                self,
+                &NativeWindowControlsAssociatedKeys.windowTeardownInProgress
+            ) as? Bool) ?? false
+        }
+        set {
+            objc_setAssociatedObject(
+                self,
+                &NativeWindowControlsAssociatedKeys.windowTeardownInProgress,
+                newValue,
+                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+            )
+        }
+    }
+
+    func prepareNativeWindowControlsForBrowserChromeWindowTeardown() {
+        isBrowserChromeNativeWindowControlsTeardownInProgress = true
+        beginHostedNativeWindowControlsVisualShieldForBrowserChrome()
+    }
+
+    func reassertHostedNativeWindowControlsForBrowserChrome() {
+        guard let controller = objc_getAssociatedObject(
+            self,
+            &NativeWindowControlsAssociatedKeys.hostController
+        ) as? NativeWindowControlsHostController else {
+            return
+        }
+
+        controller.reassertHostedLayout()
+    }
+
+    func beginHostedNativeWindowControlsVisualShieldForBrowserChrome() {
+        guard let controller = objc_getAssociatedObject(
+            self,
+            &NativeWindowControlsAssociatedKeys.hostController
+        ) as? NativeWindowControlsHostController else {
+            return
+        }
+
+        controller.beginHostedVisualShield()
+    }
+
+    func endHostedNativeWindowControlsVisualShieldForBrowserChromeAfterAppKitPass() {
+        guard let controller = objc_getAssociatedObject(
+            self,
+            &NativeWindowControlsAssociatedKeys.hostController
+        ) as? NativeWindowControlsHostController else {
+            return
+        }
+
+        controller.endHostedVisualShieldAfterAppKitPass()
     }
 
     func browserChromeNativeWindowControlsHostController(
@@ -693,6 +1009,15 @@ extension NSWindow {
 
         return SumiBrowserChromeConfiguration.buttonTypes.allSatisfy { type in
             standardWindowButton(type) != nil
+        }
+    }
+}
+
+@MainActor
+extension NSApplication {
+    func prepareNativeWindowControlsForBrowserChromeTermination() {
+        for window in windows {
+            window.prepareNativeWindowControlsForBrowserChromeWindowTeardown()
         }
     }
 }

@@ -153,6 +153,15 @@ final class BrowserWindowChromeTests: XCTestCase {
         }
     }
 
+    func testSumiBrowserWindowCloseMarksNativeWindowControlsTeardown() {
+        let window = WindowChromeTestSupport.makeBrowserWindow()
+        WindowChromeTestSupport.retain(window)
+
+        XCTAssertFalse(window.isBrowserChromeNativeWindowControlsTeardownInProgress)
+        window.close()
+        XCTAssertTrue(window.isBrowserChromeNativeWindowControlsTeardownInProgress)
+    }
+
     func testNativeWindowControlsMetricsRefreshLiveButtonFrames() throws {
         let window = WindowChromeTestSupport.makeBrowserWindow()
         let initialMetrics = try XCTUnwrap(window.nativeWindowControlsMetrics())
