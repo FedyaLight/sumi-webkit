@@ -162,6 +162,7 @@ class BrowserManager: ObservableObject {
 
     var modelContext: ModelContext
     let startupWorkspaceTheme: WorkspaceTheme?
+    let moduleRegistry: SumiModuleRegistry
     let extensionManager: ExtensionManager
     let sumiScriptsManager: SumiScriptsManager
     let extensionSurfaceStore: BrowserExtensionSurfaceStore
@@ -264,10 +265,11 @@ class BrowserManager: ObservableObject {
     }
 
 
-    init() {
+    init(moduleRegistry: SumiModuleRegistry = .shared) {
         // Phase 1: initialize all stored properties
         let startupModelContext = SumiStartupPersistence.shared.container.mainContext
         self.modelContext = startupModelContext
+        self.moduleRegistry = moduleRegistry
         self.startupWorkspaceTheme = StartupWorkspaceThemeResolver.resolve(
             lastWindowSessionKey: Self.lastWindowSessionKey,
             modelContext: startupModelContext
