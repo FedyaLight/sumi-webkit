@@ -8,6 +8,73 @@ struct TabSuspensionResult: Equatable {
     let suspendedTabIDs: [UUID]
 }
 
+struct TabIdleSuspensionResult: Equatable {
+    let memoryMode: SumiMemoryMode
+    let policy: TabSuspensionPolicy
+    let candidateCount: Int
+    let warmTabCount: Int
+    let warmWebViewCount: Int
+    let suspendedCount: Int
+    let suspendedTabIDs: [UUID]
+}
+
+struct TabSuspensionPolicy: Equatable {
+    static let lightweightIdleThreshold: TimeInterval = 10 * 60
+    static let balancedIdleThreshold: TimeInterval = 30 * 60
+    static let performanceIdleThreshold: TimeInterval = 90 * 60
+
+    static let lightweightMaximumWarmHiddenWebViewCount = 0
+    static let balancedMaximumWarmHiddenWebViewCount = 2
+    static let performanceMaximumWarmHiddenWebViewCount = 5
+
+    static let lightweightEvaluationInterval: TimeInterval = 60
+    static let balancedEvaluationInterval: TimeInterval = 120
+    static let performanceEvaluationInterval: TimeInterval = 300
+
+    let idleThreshold: TimeInterval
+    let maximumWarmHiddenWebViewCount: Int
+    let allowsLauncherRuntimeSuspension: Bool
+    let evaluationInterval: TimeInterval
+
+    init(memoryMode: SumiMemoryMode) {
+        switch memoryMode {
+        case .lightweight:
+            self.init(
+                idleThreshold: Self.lightweightIdleThreshold,
+                maximumWarmHiddenWebViewCount: Self.lightweightMaximumWarmHiddenWebViewCount,
+                allowsLauncherRuntimeSuspension: false,
+                evaluationInterval: Self.lightweightEvaluationInterval
+            )
+        case .balanced:
+            self.init(
+                idleThreshold: Self.balancedIdleThreshold,
+                maximumWarmHiddenWebViewCount: Self.balancedMaximumWarmHiddenWebViewCount,
+                allowsLauncherRuntimeSuspension: false,
+                evaluationInterval: Self.balancedEvaluationInterval
+            )
+        case .performance:
+            self.init(
+                idleThreshold: Self.performanceIdleThreshold,
+                maximumWarmHiddenWebViewCount: Self.performanceMaximumWarmHiddenWebViewCount,
+                allowsLauncherRuntimeSuspension: false,
+                evaluationInterval: Self.performanceEvaluationInterval
+            )
+        }
+    }
+
+    private init(
+        idleThreshold: TimeInterval,
+        maximumWarmHiddenWebViewCount: Int,
+        allowsLauncherRuntimeSuspension: Bool,
+        evaluationInterval: TimeInterval
+    ) {
+        self.idleThreshold = idleThreshold
+        self.maximumWarmHiddenWebViewCount = maximumWarmHiddenWebViewCount
+        self.allowsLauncherRuntimeSuspension = allowsLauncherRuntimeSuspension
+        self.evaluationInterval = evaluationInterval
+    }
+}
+
 enum TabSuspensionEligibility: Equatable {
     case eligible
     case ineligible(reason: Reason)
@@ -94,21 +161,68 @@ final class TabSuspensionService {
     private weak var browserManager: BrowserManager?
     private let memoryMonitor: SumiMemoryPressureMonitoring?
     private let dateProvider: () -> Date
+    private let startsIdleSchedulerOnAttach: Bool
+    private var idleSuspensionTask: Task<Void, Never>?
+
+    private(set) var idleSchedulerStartCountForTesting = 0
 
     init(
         memoryMonitor: SumiMemoryPressureMonitoring?,
-        dateProvider: @escaping () -> Date = Date.init
+        dateProvider: @escaping () -> Date = Date.init,
+        startsIdleSchedulerOnAttach: Bool = true
     ) {
         self.memoryMonitor = memoryMonitor
         self.dateProvider = dateProvider
+        self.startsIdleSchedulerOnAttach = startsIdleSchedulerOnAttach
         self.memoryMonitor?.eventHandler = { [weak self] level in
             self?.handleMemoryPressure(level)
+        }
+    }
+
+    deinit {
+        MainActor.assumeIsolated {
+            stopIdleSuspensionScheduler()
+            memoryMonitor?.eventHandler = nil
+            memoryMonitor?.stop()
         }
     }
 
     func attach(browserManager: BrowserManager) {
         self.browserManager = browserManager
         memoryMonitor?.start()
+        if startsIdleSchedulerOnAttach {
+            startIdleSuspensionScheduler()
+        }
+    }
+
+    func startIdleSuspensionScheduler() {
+        guard idleSuspensionTask == nil else { return }
+        idleSchedulerStartCountForTesting += 1
+        idleSuspensionTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard let evaluationInterval = self?.currentSuspensionPolicy.evaluationInterval else { return }
+                do {
+                    try await Task.sleep(nanoseconds: Self.nanoseconds(for: evaluationInterval))
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled else { return }
+                self?.evaluateIdleSuspension()
+            }
+        }
+    }
+
+    func stopIdleSuspensionScheduler() {
+        idleSuspensionTask?.cancel()
+        idleSuspensionTask = nil
+    }
+
+    var isIdleSuspensionSchedulerRunningForTesting: Bool {
+        idleSuspensionTask != nil
+    }
+
+    func idleSuspensionPolicyForTesting() -> TabSuspensionPolicy {
+        currentSuspensionPolicy
     }
 
     @discardableResult
@@ -152,6 +266,20 @@ final class TabSuspensionService {
             suspendedTabIDs: suspendedTabIDs
         )
     }
+
+    @discardableResult
+    func evaluateIdleSuspension() -> TabIdleSuspensionResult {
+        evaluateIdleSuspension(webViewStatesByTabID: [:])
+    }
+
+#if DEBUG
+    @discardableResult
+    func evaluateIdleSuspensionForTesting(
+        webViewStatesByTabID: [UUID: [TabSuspensionWebViewState]]
+    ) -> TabIdleSuspensionResult {
+        evaluateIdleSuspension(webViewStatesByTabID: webViewStatesByTabID)
+    }
+#endif
 
     @discardableResult
     func suspend(_ tab: Tab, reason: String) -> Bool {
@@ -219,7 +347,54 @@ final class TabSuspensionService {
         )
     }
 
-    private func suspensionCandidates(inactiveBefore cutoffDate: Date? = nil) -> [Candidate] {
+    private var currentMemoryMode: SumiMemoryMode {
+        browserManager?.sumiSettings?.memoryMode ?? .balanced
+    }
+
+    private var currentSuspensionPolicy: TabSuspensionPolicy {
+        TabSuspensionPolicy(memoryMode: currentMemoryMode)
+    }
+
+    private func evaluateIdleSuspension(
+        webViewStatesByTabID: [UUID: [TabSuspensionWebViewState]]
+    ) -> TabIdleSuspensionResult {
+        let memoryMode = currentMemoryMode
+        let policy = TabSuspensionPolicy(memoryMode: memoryMode)
+        let candidates = suspensionCandidates(webViewStatesByTabID: webViewStatesByTabID)
+        let warmSet = warmCandidateTabIDs(
+            from: candidates,
+            maximumWarmHiddenWebViewCount: policy.maximumWarmHiddenWebViewCount
+        )
+        let cutoffDate = dateProvider().addingTimeInterval(-policy.idleThreshold)
+
+        var suspendedTabIDs: [UUID] = []
+        for candidate in candidates {
+            guard !warmSet.tabIDs.contains(candidate.tab.id) else { continue }
+            if let lastSelectedAt = candidate.tab.lastSelectedAt,
+               lastSelectedAt >= cutoffDate {
+                continue
+            }
+            guard suspend(candidate.tab, reason: "idle-\(memoryMode.rawValue)") else {
+                continue
+            }
+            suspendedTabIDs.append(candidate.tab.id)
+        }
+
+        return TabIdleSuspensionResult(
+            memoryMode: memoryMode,
+            policy: policy,
+            candidateCount: candidates.count,
+            warmTabCount: warmSet.tabIDs.count,
+            warmWebViewCount: warmSet.webViewCount,
+            suspendedCount: suspendedTabIDs.count,
+            suspendedTabIDs: suspendedTabIDs
+        )
+    }
+
+    private func suspensionCandidates(
+        inactiveBefore cutoffDate: Date? = nil,
+        webViewStatesByTabID: [UUID: [TabSuspensionWebViewState]] = [:]
+    ) -> [Candidate] {
         guard let browserManager,
               let coordinator = browserManager.webViewCoordinator
         else { return [] }
@@ -232,12 +407,22 @@ final class TabSuspensionService {
         return allKnownTabs()
             .compactMap { tab -> Candidate? in
                 let webViews = coordinator.liveWebViews(for: tab)
-                guard suspensionEligibility(
-                    for: tab,
-                    liveWebViews: webViews,
-                    visibleTabIDs: visibleIDs,
-                    selectedTabIDs: selectedIDs
-                ).isEligible else {
+                let eligibility = if let webViewStates = webViewStatesByTabID[tab.id] {
+                    suspensionEligibility(
+                        for: tab,
+                        webViewStates: webViewStates,
+                        visibleTabIDs: visibleIDs,
+                        selectedTabIDs: selectedIDs
+                    )
+                } else {
+                    suspensionEligibility(
+                        for: tab,
+                        liveWebViews: webViews,
+                        visibleTabIDs: visibleIDs,
+                        selectedTabIDs: selectedIDs
+                    )
+                }
+                guard eligibility.isEligible else {
                     return nil
                 }
                 if let cutoffDate,
@@ -255,6 +440,36 @@ final class TabSuspensionService {
                 }
                 return lhs.tab.id.uuidString < rhs.tab.id.uuidString
             }
+    }
+
+    private func warmCandidateTabIDs(
+        from candidates: [Candidate],
+        maximumWarmHiddenWebViewCount: Int
+    ) -> (tabIDs: Set<UUID>, webViewCount: Int) {
+        guard maximumWarmHiddenWebViewCount > 0 else {
+            return ([], 0)
+        }
+
+        var warmTabIDs = Set<UUID>()
+        var warmWebViewCount = 0
+        let mostRecentFirst = candidates.sorted { lhs, rhs in
+            let leftDate = lhs.tab.lastSelectedAt ?? .distantPast
+            let rightDate = rhs.tab.lastSelectedAt ?? .distantPast
+            if leftDate != rightDate {
+                return leftDate > rightDate
+            }
+            return lhs.tab.id.uuidString < rhs.tab.id.uuidString
+        }
+
+        for candidate in mostRecentFirst {
+            let webViewCount = candidate.webViews.count
+            guard webViewCount > 0 else { continue }
+            guard warmWebViewCount + webViewCount <= maximumWarmHiddenWebViewCount else { continue }
+            warmTabIDs.insert(candidate.tab.id)
+            warmWebViewCount += webViewCount
+        }
+
+        return (warmTabIDs, warmWebViewCount)
     }
 
     private func suspensionEligibility(
@@ -378,5 +593,9 @@ final class TabSuspensionService {
             visible[windowState.id] = Set(tabIDs)
         }
         return visible
+    }
+
+    private static func nanoseconds(for interval: TimeInterval) -> UInt64 {
+        UInt64(max(interval, 0) * 1_000_000_000)
     }
 }
