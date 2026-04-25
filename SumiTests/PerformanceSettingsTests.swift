@@ -74,15 +74,20 @@ final class PerformanceSettingsTests: XCTestCase {
         XCTAssertTrue(tabRootSource.contains("SettingsPerformanceTab()"))
     }
 
-    func testRuntimeServicesDoNotReadMemoryModeYet() throws {
+    func testOnlyTabSuspensionServiceReadsMemoryModeForRuntimePolicy() throws {
+        let suspensionSource = try Self.source(named: "Sumi/Managers/TabSuspensionService.swift")
+
+        XCTAssertTrue(suspensionSource.contains("SumiMemoryMode"))
+        XCTAssertTrue(suspensionSource.contains("memoryMode"))
+        XCTAssertTrue(suspensionSource.contains("TabSuspensionPolicy"))
+
         for sourcePath in [
-            "Sumi/Managers/TabSuspensionService.swift",
             "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift",
             "Sumi/Managers/BrowserManager/BrowserManager.swift",
         ] {
             let source = try Self.source(named: sourcePath)
-            XCTAssertFalse(source.contains("SumiMemoryMode"), "\(sourcePath) should not consume memory modes yet")
-            XCTAssertFalse(source.contains("memoryMode"), "\(sourcePath) should not consume memory modes yet")
+            XCTAssertFalse(source.contains("SumiMemoryMode"), "\(sourcePath) should not consume memory modes")
+            XCTAssertFalse(source.contains("memoryMode"), "\(sourcePath) should not consume memory modes")
         }
     }
 
