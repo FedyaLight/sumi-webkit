@@ -88,10 +88,6 @@ struct SumiCookieIdentifier: Hashable, Sendable {
         self.init(name: cookie.name, domain: cookie.domain, path: cookie.path)
     }
 
-    init(cookie: CookieInfo) {
-        self.init(name: cookie.name, domain: cookie.domain, path: cookie.path)
-    }
-
     func matches(_ cookie: HTTPCookie) -> Bool {
         cookie.name == name && cookie.domain == domain && cookie.path == path
     }
@@ -102,9 +98,6 @@ enum SumiCookieRemovalSelection: Hashable, Sendable {
     case exact(SumiCookieIdentifier)
     case exactDomains(Set<String>)
     case domains(Set<String>)
-    case expired(referenceDate: Date)
-    case highRisk
-    case thirdParty
 
     func matches(_ cookie: HTTPCookie) -> Bool {
         switch self {
@@ -116,13 +109,6 @@ enum SumiCookieRemovalSelection: Hashable, Sendable {
             return domains.contains { cookie.belongsExactlyTo($0) }
         case .domains(let domains):
             return domains.contains { cookie.belongsTo($0) }
-        case .expired(let referenceDate):
-            guard let expiresDate = cookie.expiresDate else { return false }
-            return expiresDate < referenceDate
-        case .highRisk:
-            return CookieInfo(from: cookie).privacyRisk == .high
-        case .thirdParty:
-            return cookie.domain.hasPrefix(".")
         }
     }
 }

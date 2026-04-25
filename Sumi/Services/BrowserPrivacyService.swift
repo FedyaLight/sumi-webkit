@@ -3,36 +3,23 @@ import WebKit
 @MainActor
 final class BrowserPrivacyService {
     struct Context {
-        let cookieManager: CookieManager
-        let cacheManager: CacheManager
+        let currentDataStore: @MainActor () -> WKWebsiteDataStore
         let currentTab: @MainActor () -> Tab?
         let activeWindowId: @MainActor () -> UUID?
         let webViewLookup: @MainActor (UUID, UUID) -> WKWebView?
     }
 
+    private let cleanupService: any SumiWebsiteDataCleanupServicing
+
+    init(cleanupService: (any SumiWebsiteDataCleanupServicing)? = nil) {
+        self.cleanupService = cleanupService ?? SumiWebsiteDataCleanupService.shared
+    }
+
     func clearCurrentPageCookies(using context: Context) {
         guard let host = context.currentTab()?.url.host else { return }
+        let dataStore = context.currentDataStore()
         Task {
-            await context.cookieManager.deleteCookiesForDomain(host)
-        }
-    }
-
-    func clearAllCookies(using context: Context) {
-        Task {
-            await context.cookieManager.deleteAllCookies()
-        }
-    }
-
-    func clearExpiredCookies(using context: Context) {
-        Task {
-            await context.cookieManager.deleteExpiredCookies()
-        }
-    }
-
-    func clearCurrentPageCache(using context: Context) {
-        guard let host = context.currentTab()?.url.host else { return }
-        Task {
-            await context.cacheManager.clearCacheForDomain(host)
+            await cleanupService.removeCookies(.domains([host]), in: dataStore)
         }
     }
 
@@ -48,8 +35,13 @@ final class BrowserPrivacyService {
             reloadFromOrigin(currentTab, webView: webView)
         }
 
+        let dataStore = context.currentDataStore()
         Task {
-            await context.cacheManager.clearCacheForDomainExcludingCookies(host)
+            await cleanupService.removeWebsiteDataForDomain(
+                host,
+                includingCookies: false,
+                in: dataStore
+            )
         }
     }
 
@@ -67,58 +59,5 @@ final class BrowserPrivacyService {
                 resolvedWebView.reloadFromOrigin()
             }
         }
-    }
-
-    func clearStaleCache(using context: Context) {
-        Task {
-            await context.cacheManager.clearStaleCache()
-        }
-    }
-
-    func clearDiskCache(using context: Context) {
-        Task {
-            await context.cacheManager.clearDiskCache()
-        }
-    }
-
-    func clearMemoryCache(using context: Context) {
-        Task {
-            await context.cacheManager.clearMemoryCache()
-        }
-    }
-
-    func clearAllCache(using context: Context) {
-        Task {
-            await context.cacheManager.clearAllCache()
-        }
-    }
-
-    func clearThirdPartyCookies(using context: Context) {
-        Task {
-            await context.cookieManager.deleteThirdPartyCookies()
-        }
-    }
-
-    func clearHighRiskCookies(using context: Context) {
-        Task {
-            await context.cookieManager.deleteHighRiskCookies()
-        }
-    }
-
-    func performPrivacyCleanup(using context: Context) {
-        Task {
-            await context.cookieManager.performPrivacyCleanup()
-            await context.cacheManager.performPrivacyCompliantCleanup()
-        }
-    }
-
-    func clearPersonalDataCache(using context: Context) {
-        Task {
-            await context.cacheManager.clearPersonalDataCache()
-        }
-    }
-
-    func clearFaviconCache(using context: Context) {
-        context.cacheManager.clearFaviconCache()
     }
 }

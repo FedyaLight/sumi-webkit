@@ -7,7 +7,6 @@
 
 import AppKit
 import SwiftUI
-import WebKit
 
 struct SumiCommands: Commands {
     let browserManager: BrowserManager
@@ -130,84 +129,13 @@ struct SumiCommands: Commands {
         }
 
         CommandMenu("Privacy") {
-            Menu("Clear Cookies") {
-                Button("Clear Cookies for Current Site") {
-                    browserManager.clearCurrentPageCookies()
-                }
-                .disabled(browserManager.currentTabForActiveWindow()?.url.host == nil)
-
-                Button("Clear Expired Cookies") {
-                    browserManager.clearExpiredCookies()
-                }
-
-                Divider()
-
-                Button("Clear All Cookies") {
-                    browserManager.clearAllCookies()
-                }
-
-                Divider()
-
-                Button("Clear Third-Party Cookies") {
-                    browserManager.clearThirdPartyCookies()
-                }
-
-                Button("Clear High-Risk Cookies") {
-                    browserManager.clearHighRiskCookies()
-                }
+            Button("Clear Cookies for Current Site") {
+                browserManager.clearCurrentPageCookies()
             }
-
-            Menu("Clear Cache") {
-                Button("Clear Cache for Current Site") {
-                    browserManager.clearCurrentPageCache()
-                }
-                .disabled(browserManager.currentTabForActiveWindow()?.url.host == nil)
-
-                Button("Clear Stale Cache") {
-                    browserManager.clearStaleCache()
-                }
-
-                Button("Clear Disk Cache") {
-                    browserManager.clearDiskCache()
-                }
-
-                Button("Clear Memory Cache") {
-                    browserManager.clearMemoryCache()
-                }
-
-                Divider()
-
-                Button("Clear All Cache") {
-                    browserManager.clearAllCache()
-                }
-
-                Divider()
-
-                Button("Clear Personal Data Cache") {
-                    browserManager.clearPersonalDataCache()
-                }
-
-                Button("Clear Favicon Cache") {
-                    browserManager.clearFaviconCache()
-                }
-            }
-
-            Divider()
-
-            Button("Privacy Cleanup") {
-                browserManager.performPrivacyCleanup()
-            }
+            .disabled(browserManager.currentTabForActiveWindow()?.url.host == nil)
 
             Button("Clear Browsing History") {
                 browserManager.clearAllHistoryFromMenu()
-            }
-
-            Button("Clear All Website Data") {
-                Task {
-                    let dataStore = WKWebsiteDataStore.default()
-                    let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
-                    await dataStore.removeData(ofTypes: dataTypes, modifiedSince: Date.distantPast)
-                }
             }
         }
 

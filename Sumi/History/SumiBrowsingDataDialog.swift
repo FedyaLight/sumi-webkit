@@ -349,8 +349,6 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
             historyManager: browserManager.historyManager,
             dataStore: currentProfile.dataStore
         )
-        await browserManager.cookieManager.loadCookies()
-        await browserManager.cacheManager.loadCacheData()
         await currentProfile.refreshDataStoreStats()
 
         isDeleting = false

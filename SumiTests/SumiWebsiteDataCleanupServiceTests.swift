@@ -261,66 +261,6 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         XCTAssertEqual(cookieStore.deletedCookies.map(\.domain), ["preserved.example"])
     }
 
-    func testCookieManagerIgnoresStaleRefreshResults() async {
-        let service = FakeCleanupService()
-        service.cookieResponses = [
-            [.make(name: "old", domain: "old.example")],
-            [.make(name: "new", domain: "new.example")]
-        ]
-        service.cookieFetchDelays = [50_000_000, 0]
-        let manager = CookieManager(
-            dataStore: .nonPersistent(),
-            cleanupService: service
-        )
-
-        let first = Task { @MainActor in await manager.loadCookies() }
-        await Task.yield()
-        let second = Task { @MainActor in await manager.loadCookies() }
-        await first.value
-        await second.value
-
-        XCTAssertEqual(manager.cookies.map(\.name), ["new"])
-        XCTAssertFalse(manager.isLoading)
-    }
-
-    func testCookieDeleteRefreshesOncePerOperation() async {
-        let service = FakeCleanupService()
-        service.cookieResponses = [
-            [.make(name: "remaining", domain: "example.com")]
-        ]
-        let manager = CookieManager(
-            dataStore: .nonPersistent(),
-            cleanupService: service
-        )
-
-        await manager.deleteCookiesForDomain("example.com")
-
-        XCTAssertEqual(service.cookieRemovalSelections, [.domains(["example.com"])])
-        XCTAssertEqual(service.cookieFetchCount, 1)
-    }
-
-    func testCacheManagerIgnoresStaleRefreshResults() async {
-        let service = FakeCleanupService()
-        service.recordResponses = [
-            [FakeWKWebsiteDataRecord(displayName: "old.example")],
-            [FakeWKWebsiteDataRecord(displayName: "new.example")]
-        ]
-        service.recordFetchDelays = [50_000_000, 0]
-        let manager = CacheManager(
-            dataStore: .nonPersistent(),
-            cleanupService: service
-        )
-
-        let first = Task { @MainActor in await manager.loadCacheData() }
-        await Task.yield()
-        let second = Task { @MainActor in await manager.loadCacheData() }
-        await first.value
-        await second.value
-
-        XCTAssertEqual(manager.cacheEntries.map(\.domain), ["new.example"])
-        XCTAssertFalse(manager.isLoading)
-    }
-
     func testSiteDataPolicyStoreScopesRulesByProfileAndHost() {
         let suiteName = "SumiSiteDataPolicyStoreTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -428,8 +368,6 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         let paths = [
             "Sumi/Services/SumiBrowsingDataCleanupService.swift",
             "Sumi/Services/SumiWebsiteDataCleanupService.swift",
-            "Sumi/Managers/CookieManager/CookieManager.swift",
-            "Sumi/Managers/CacheManager/CacheManager.swift",
             "Sumi/Services/BrowserPrivacyService.swift",
             "Sumi/Models/Profile/Profile.swift",
             "Sumi/Components/Settings/PrivacySettingsView.swift"
@@ -466,6 +404,30 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         XCTAssertFalse(sources.contains("CacheManager"))
         XCTAssertFalse(sources.contains("removeData("))
         XCTAssertFalse(sources.contains("httpCookieStore"))
+    }
+
+    func testRuntimeCleanupPathsDoNotReferenceLegacyCookieCacheManagers() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let paths = [
+            "Sumi/Services/BrowserPrivacyService.swift",
+            "Sumi/Managers/BrowserManager/BrowserManager+Privacy.swift",
+            "Sumi/Managers/BrowserManager/BrowserManager.swift",
+            "Sumi/History/SumiBrowsingDataDialog.swift",
+            "Sumi/Components/Settings/PrivacySettingsView.swift"
+        ]
+
+        let source = try paths
+            .map { path in
+                try String(contentsOf: repoRoot.appendingPathComponent(path), encoding: .utf8)
+            }
+            .joined(separator: "\n")
+
+        XCTAssertFalse(source.contains("CookieManager"))
+        XCTAssertFalse(source.contains("CacheManager"))
+        XCTAssertFalse(source.contains("cookieManager"))
+        XCTAssertFalse(source.contains("cacheManager"))
     }
 
     func testBrowsingDataFiniteRangeDeletesHistoryAndVisitedDomainData() async throws {
