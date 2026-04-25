@@ -109,17 +109,18 @@ final class SumiTabTitleViewTests: XCTestCase {
                     textColor: .primary,
                     fadeWidth: 32,
                     trailingFadePadding: SidebarRowLayout.trailingActionFadePadding,
-                    animated: false
+                    animated: false,
+                    height: SidebarRowLayout.titleHeight
                 )
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
 
                 Color.clear
-                    .frame(width: SidebarRowLayout.trailingActionSize, height: 16)
+                    .frame(width: SidebarRowLayout.trailingActionSize, height: SidebarRowLayout.titleHeight)
                     .padding(.trailing, SidebarRowLayout.trailingInset)
             }
-            .frame(width: 120, height: 16)
+            .frame(width: 120, height: SidebarRowLayout.titleHeight)
         )
-        host.frame = NSRect(x: 0, y: 0, width: 120, height: 16)
+        host.frame = NSRect(x: 0, y: 0, width: 120, height: SidebarRowLayout.titleHeight)
         host.layoutSubtreeIfNeeded()
 
         let titleView = try XCTUnwrap(findSubview(ofType: SumiTabTitleView.self, in: host))
@@ -134,8 +135,32 @@ final class SumiTabTitleViewTests: XCTestCase {
         )
     }
 
+    func testSwiftUIHostedLabelStaysVerticallyCenteredInSidebarRow() throws {
+        let host = NSHostingView(
+            rootView: HStack(spacing: 0) {
+                SumiTabTitleLabel(
+                    title: "Subscriptions - YouTube",
+                    font: .systemFont(ofSize: 13, weight: .medium),
+                    textColor: .primary,
+                    animated: false,
+                    height: SidebarRowLayout.titleHeight
+                )
+                .frame(height: SidebarRowLayout.titleHeight, alignment: .center)
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(width: 180, height: SidebarRowLayout.rowHeight, alignment: .center)
+        )
+        host.frame = NSRect(x: 0, y: 0, width: 180, height: SidebarRowLayout.rowHeight)
+        host.layoutSubtreeIfNeeded()
+
+        let titleView = try XCTUnwrap(findSubview(ofType: SumiTabTitleView.self, in: host))
+        let titleFrameInHost = titleView.convert(titleView.bounds, to: host)
+        XCTAssertEqual(titleFrameInHost.height, SidebarRowLayout.titleHeight, accuracy: 0.5)
+        XCTAssertEqual(titleFrameInHost.midY, SidebarRowLayout.rowHeight / 2, accuracy: 1.0)
+    }
+
     private func makeView(width: CGFloat) -> SumiTabTitleView {
-        let view = SumiTabTitleView(frame: NSRect(x: 0, y: 0, width: width, height: 16))
+        let view = SumiTabTitleView(frame: NSRect(x: 0, y: 0, width: width, height: SidebarRowLayout.titleHeight))
         view.layoutSubtreeIfNeeded()
         return view
     }
