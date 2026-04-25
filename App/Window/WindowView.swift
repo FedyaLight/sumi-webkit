@@ -160,12 +160,12 @@ struct WindowView: View {
                 effectiveAppearanceRevision &+= 1
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .applicationDidChangeEffectiveAppearance)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .sumiApplicationDidChangeEffectiveAppearance)) { _ in
             Task { @MainActor in
                 effectiveAppearanceRevision &+= 1
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .windowDidChangeEffectiveAppearance)) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: .sumiWindowDidChangeEffectiveAppearance)) { notification in
             guard let window = notification.object as? NSWindow,
                   window === windowState.window
             else { return }
@@ -173,7 +173,9 @@ struct WindowView: View {
                 effectiveAppearanceRevision &+= 1
             }
         }
-        .preferredColorScheme(preferredColorScheme)
+        // Keep Sumi's theme override inside SwiftUI. `preferredColorScheme` propagates upward into the
+        // AppKit window presentation, which lets AppKit relayout native titlebar-owned traffic lights.
+        .environment(\.colorScheme, globalColorScheme)
     }
 
     // MARK: - Layout Components
@@ -231,17 +233,6 @@ struct WindowView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var preferredColorScheme: ColorScheme? {
-        switch sumiSettings.windowSchemeMode {
-        case .auto:
-            return nil
-        case .light:
-            return .light
-        case .dark:
-            return .dark
-        }
-    }
-
     private var appKitGlobalAppearance: NSAppearance {
         windowState.window?.effectiveAppearance ?? NSApplication.shared.effectiveAppearance
     }
@@ -280,15 +271,6 @@ private extension ColorScheme {
         let best = appearance.bestMatch(from: [.darkAqua, .aqua])
         self = best == .darkAqua ? .dark : .light
     }
-}
-
-private extension Notification.Name {
-    static let applicationDidChangeEffectiveAppearance = Notification.Name(
-        rawValue: "NSApplicationDidChangeEffectiveAppearanceNotification"
-    )
-    static let windowDidChangeEffectiveAppearance = Notification.Name(
-        rawValue: "NSWindowDidChangeEffectiveAppearanceNotification"
-    )
 }
 
 // MARK: - Profile Switch Toast View

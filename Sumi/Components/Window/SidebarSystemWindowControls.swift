@@ -3,6 +3,7 @@ import SwiftUI
 
 enum SidebarChromeMetrics {
     static let horizontalPadding: CGFloat = 8
+    static let windowControlsLeadingInset: CGFloat = 8
     static let controlStripHeight: CGFloat = 38
     static let controlSpacing: CGFloat = 8
 }
@@ -53,6 +54,7 @@ final class SidebarSystemWindowControlsContainerView: NSView {
     private weak var preferredWindowReference: NSWindow?
     private weak var windowReference: NSWindow?
     private var isFullscreenState = false
+    private var isDeferredAppearanceRelayoutScheduled = false
 
     var presentationMode: SidebarPresentationMode = .docked {
         didSet {
@@ -144,6 +146,25 @@ final class SidebarSystemWindowControlsContainerView: NSView {
                 self?.handleWindowNotification(name)
             }
         }
+
+        windowObservers.append(
+            NotificationCenter.default.addObserver(
+                forName: .sumiWindowDidChangeEffectiveAppearance,
+                object: windowReference,
+                queue: nil
+            ) { [weak self] _ in
+                self?.handleEffectiveAppearanceChange()
+            }
+        )
+        windowObservers.append(
+            NotificationCenter.default.addObserver(
+                forName: .sumiApplicationDidChangeEffectiveAppearance,
+                object: nil,
+                queue: nil
+            ) { [weak self] _ in
+                self?.handleEffectiveAppearanceChange()
+            }
+        )
     }
 
     private func removeWindowObservers() {
@@ -231,5 +252,28 @@ final class SidebarSystemWindowControlsContainerView: NSView {
 
         nativeWindowControlsHostController?.handleWindowGeometryChange()
         updatePlacementIfNeeded(force: true)
+    }
+
+    private func handleEffectiveAppearanceChange() {
+        nativeWindowControlsHostController?.handleEffectiveAppearanceChange()
+        nativeWindowControlsHostController?.enforceHostedLayoutIfNeeded()
+        updatePlacementIfNeeded(force: true)
+        scheduleDeferredAppearanceRelayout()
+    }
+
+    private func scheduleDeferredAppearanceRelayout() {
+        guard isDeferredAppearanceRelayoutScheduled == false else { return }
+
+        isDeferredAppearanceRelayoutScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+
+            self.isDeferredAppearanceRelayoutScheduled = false
+            self.nativeWindowControlsHostController?.handleEffectiveAppearanceChange()
+            self.nativeWindowControlsHostController?.enforceHostedLayoutIfNeeded()
+            self.updatePlacementIfNeeded(force: true)
+            self.needsLayout = true
+            self.layoutSubtreeIfNeeded()
+        }
     }
 }

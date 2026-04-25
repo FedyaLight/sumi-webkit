@@ -136,7 +136,7 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         assertButtonsHosted(in: host, window: window)
     }
 
-    func testSidebarSystemWindowControlsContainerUsesButtonGroupWidthForEmbeddedAlignment() {
+    func testSidebarSystemWindowControlsContainerUsesButtonGroupWidthAndLeadingInsetForEmbeddedAlignment() {
         let window = WindowChromeTestSupport.makeBrowserWindow()
         let host = makeHost()
 
@@ -148,7 +148,7 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         let metrics = window.nativeWindowControlsMetrics()
 
         XCTAssertEqual(host.currentPlacement, .sidebar)
-        XCTAssertEqual(host.intrinsicContentSize.width, ceil(metrics?.buttonGroupWidth ?? 0))
+        XCTAssertEqual(host.intrinsicContentSize.width, expectedHostedWidth(for: window))
         XCTAssertLessThan(
             host.intrinsicContentSize.width,
             ceil(metrics?.buttonGroupRect.maxX ?? 0)
@@ -217,6 +217,167 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         assertHostedLayoutRefreshes(after: NSWindow.didChangeScreenNotification)
     }
 
+    func testSidebarSystemWindowControlsContainerRefreshesHostedLayoutAfterWindowAppearanceNotification() {
+        assertHostedLayoutRefreshes(after: .sumiWindowDidChangeEffectiveAppearance)
+    }
+
+    func testSidebarSystemWindowControlsContainerRefreshesHostedLayoutAfterApplicationAppearanceNotification() {
+        assertHostedLayoutRefreshes(after: .sumiApplicationDidChangeEffectiveAppearance, postsWindowObject: false)
+    }
+
+    func testSidebarSystemWindowControlsContainerDoesNotOverwriteMetricsFromTransientTitlebarAppearanceShift() {
+        let window = WindowChromeTestSupport.makeBrowserWindow()
+        let host = makeHost()
+
+        window.contentView?.addSubview(host)
+        host.presentationMode = .docked
+        host.syncWindowReference(window)
+        host.layoutSubtreeIfNeeded()
+
+        let controller = window.browserChromeNativeWindowControlsHostController()
+        guard let initialMetrics = controller.cachedMetrics,
+              let titlebarView = window.titlebarView
+        else {
+            XCTFail("Expected cached metrics and titlebar view.")
+            return
+        }
+
+        for type in WindowChromeTestSupport.standardButtonTypes {
+            guard let button = window.standardWindowButton(type),
+                  let frame = initialMetrics.buttonFrames[type]
+            else {
+                XCTFail("Expected standard window button for \(type).")
+                return
+            }
+
+            button.removeFromSuperview()
+            titlebarView.addSubview(button)
+            button.frame = frame.offsetBy(dx: -18, dy: 0)
+        }
+
+        NotificationCenter.default.post(
+            name: .sumiWindowDidChangeEffectiveAppearance,
+            object: window
+        )
+
+        XCTAssertEqual(controller.cachedMetrics, initialMetrics)
+        assertButtonsHosted(in: host, window: window)
+        assertHostedFramesMatchMetrics(in: host, window: window, metrics: initialMetrics)
+    }
+
+    func testSidebarSystemWindowControlsContainerReclaimsButtonsAfterLateAppearanceTitlebarPass() throws {
+        let window = WindowChromeTestSupport.makeBrowserWindow()
+        let host = makeHost()
+
+        window.contentView?.addSubview(host)
+        host.presentationMode = .docked
+        host.syncWindowReference(window)
+        host.layoutSubtreeIfNeeded()
+
+        let controller = window.browserChromeNativeWindowControlsHostController()
+        let initialMetrics = try XCTUnwrap(controller.cachedMetrics)
+        let titlebarView = try XCTUnwrap(window.titlebarView)
+
+        NotificationCenter.default.post(
+            name: .sumiWindowDidChangeEffectiveAppearance,
+            object: window
+        )
+
+        for type in WindowChromeTestSupport.standardButtonTypes {
+            let button = try XCTUnwrap(window.standardWindowButton(type))
+            let nativeFrame = try XCTUnwrap(initialMetrics.buttonFrames[type])
+
+            button.removeFromSuperview()
+            titlebarView.addSubview(button)
+            button.frame = nativeFrame.offsetBy(dx: -18, dy: 0)
+        }
+
+        runMainLoopBriefly()
+
+        XCTAssertEqual(controller.cachedMetrics, initialMetrics)
+        assertButtonsHosted(in: host, window: window)
+        assertHostedFramesMatchMetrics(in: host, window: window, metrics: initialMetrics)
+    }
+
+    func testSidebarSystemWindowControlsContainerRepairsHostedFrameDriftFromFrameNotificationSynchronously() throws {
+        let window = WindowChromeTestSupport.makeBrowserWindow()
+        let host = makeHost()
+
+        window.contentView?.addSubview(host)
+        host.presentationMode = .docked
+        host.syncWindowReference(window)
+        host.layoutSubtreeIfNeeded()
+
+        let controller = window.browserChromeNativeWindowControlsHostController()
+        let initialMetrics = try XCTUnwrap(controller.cachedMetrics)
+        let closeButton = try XCTUnwrap(window.standardWindowButton(.closeButton))
+
+        closeButton.frame = closeButton.frame.offsetBy(dx: -12, dy: 0)
+
+        XCTAssertEqual(controller.cachedMetrics, initialMetrics)
+        assertButtonsHosted(in: host, window: window)
+        assertHostedFramesMatchMetrics(in: host, window: window, metrics: initialMetrics)
+    }
+
+    func testSidebarSystemWindowControlsContainerReclaimsReparentedButtonsOnWindowUpdate() throws {
+        let window = WindowChromeTestSupport.makeBrowserWindow()
+        let host = makeHost()
+
+        window.contentView?.addSubview(host)
+        host.presentationMode = .docked
+        host.syncWindowReference(window)
+        host.layoutSubtreeIfNeeded()
+
+        let controller = window.browserChromeNativeWindowControlsHostController()
+        let initialMetrics = try XCTUnwrap(controller.cachedMetrics)
+        let titlebarView = try XCTUnwrap(window.titlebarView)
+
+        for type in WindowChromeTestSupport.standardButtonTypes {
+            let button = try XCTUnwrap(window.standardWindowButton(type))
+            button.removeFromSuperview()
+            titlebarView.addSubview(button)
+        }
+
+        NotificationCenter.default.post(name: NSWindow.didUpdateNotification, object: window)
+
+        XCTAssertEqual(controller.cachedMetrics, initialMetrics)
+        assertButtonsHosted(in: host, window: window)
+        assertHostedFramesMatchMetrics(in: host, window: window, metrics: initialMetrics)
+    }
+
+    func testSidebarSystemWindowControlsContainerRefreshesStaleStartupMetricsBeforeFirstHosting() throws {
+        let window = WindowChromeTestSupport.makeBrowserWindow()
+        let correctMetrics = try XCTUnwrap(window.nativeWindowControlsMetrics())
+        let controller = window.browserChromeNativeWindowControlsHostController()
+
+        for type in WindowChromeTestSupport.standardButtonTypes {
+            let button = try XCTUnwrap(window.standardWindowButton(type))
+            let frame = try XCTUnwrap(correctMetrics.buttonFrames[type])
+            button.frame = frame.offsetBy(dx: -18, dy: 0)
+        }
+        controller.handleWindowGeometryChange()
+        XCTAssertEqual(
+            controller.cachedMetrics?.buttonGroupRect.minX,
+            correctMetrics.buttonGroupRect.minX - 18
+        )
+
+        for type in WindowChromeTestSupport.standardButtonTypes {
+            let button = try XCTUnwrap(window.standardWindowButton(type))
+            let frame = try XCTUnwrap(correctMetrics.buttonFrames[type])
+            button.frame = frame
+        }
+
+        let host = makeHost()
+        window.contentView?.addSubview(host)
+        host.presentationMode = .docked
+        host.syncWindowReference(window)
+        host.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(controller.cachedMetrics, correctMetrics)
+        assertButtonsHosted(in: host, window: window)
+        assertHostedFramesMatchMetrics(in: host, window: window, metrics: correctMetrics)
+    }
+
     func testSidebarSystemWindowControlsContainerUpdatesPlacementAcrossFullscreenLifecycle() {
         let window = WindowChromeTestSupport.makeBrowserWindow()
         let host = makeHost()
@@ -249,6 +410,7 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
 
     private func assertHostedLayoutRefreshes(
         after notificationName: Notification.Name,
+        postsWindowObject: Bool = true,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
@@ -265,7 +427,7 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         let expectedGroupHeight = metrics?.buttonGroupSize.height ?? 0
         let expectedYOffset = floor((host.bounds.height - expectedGroupHeight) / 2)
         guard let expectedCloseFrame = metrics?.normalizedButtonFrames[.closeButton]?.offsetBy(
-            dx: 0,
+            dx: SidebarChromeMetrics.windowControlsLeadingInset,
             dy: expectedYOffset
         ) else {
             XCTFail("Expected cached close-button metrics.", file: file, line: line)
@@ -278,7 +440,10 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         }
 
         closeButton.frame = closeButton.frame.offsetBy(dx: 17, dy: 5)
-        NotificationCenter.default.post(name: notificationName, object: window)
+        NotificationCenter.default.post(
+            name: notificationName,
+            object: postsWindowObject ? window : nil
+        )
 
         XCTAssertEqual(
             closeButton.frame,
@@ -311,8 +476,45 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         }
     }
 
+    private func assertHostedFramesMatchMetrics(
+        in host: SidebarSystemWindowControlsContainerView,
+        window: NSWindow,
+        metrics: NativeWindowControlsMetrics,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let expectedGroupHeight = metrics.buttonGroupSize.height
+        let expectedYOffset = floor((host.bounds.height - expectedGroupHeight) / 2)
+
+        for type in WindowChromeTestSupport.standardButtonTypes {
+            guard let button = window.standardWindowButton(type),
+                  let normalizedFrame = metrics.normalizedButtonFrames[type]
+            else {
+                XCTFail("Expected standard window button for \(type).", file: file, line: line)
+                return
+            }
+
+            XCTAssertEqual(
+                button.frame,
+                normalizedFrame.offsetBy(
+                    dx: SidebarChromeMetrics.windowControlsLeadingInset,
+                    dy: expectedYOffset
+                ),
+                file: file,
+                line: line
+            )
+        }
+    }
+
     private func expectedHostedWidth(for window: NSWindow) -> CGFloat {
-        ceil(window.nativeWindowControlsMetrics()?.buttonGroupWidth ?? 0)
+        ceil(
+            (window.nativeWindowControlsMetrics()?.buttonGroupWidth ?? 0)
+                + SidebarChromeMetrics.windowControlsLeadingInset
+        )
+    }
+
+    private func runMainLoopBriefly() {
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
     }
 
     private func makeHost() -> SidebarSystemWindowControlsContainerView {

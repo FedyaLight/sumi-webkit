@@ -187,4 +187,30 @@ final class BrowserWindowChromeTests: XCTestCase {
             )
         }
     }
+
+    func testNativeWindowControlsMetricsDoNotTreatContentHostAsTitlebar() throws {
+        let window = WindowChromeTestSupport.makePlainWindow()
+        let nativeTitlebarView = try XCTUnwrap(window.standardWindowButton(.closeButton)?.superview)
+        let contentView = try XCTUnwrap(window.contentView)
+        let hostView = NSView(frame: NSRect(x: 0, y: 0, width: 80, height: 28))
+
+        contentView.addSubview(hostView)
+        for type in WindowChromeTestSupport.standardButtonTypes {
+            let button = try XCTUnwrap(window.standardWindowButton(type))
+            button.removeFromSuperview()
+            hostView.addSubview(button)
+        }
+
+        XCTAssertNil(window.captureNativeWindowControlsMetricsIfButtonsInTitlebar())
+        XCTAssertNil(window.titlebarView)
+
+        for type in WindowChromeTestSupport.standardButtonTypes {
+            let button = try XCTUnwrap(window.standardWindowButton(type))
+            button.removeFromSuperview()
+            nativeTitlebarView.addSubview(button)
+        }
+
+        XCTAssertNotNil(window.captureNativeWindowControlsMetricsIfButtonsInTitlebar())
+        XCTAssertTrue(window.titlebarView === nativeTitlebarView)
+    }
 }
