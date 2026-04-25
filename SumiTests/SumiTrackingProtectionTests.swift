@@ -142,6 +142,54 @@ final class SumiTrackingProtectionTests: XCTestCase {
         XCTAssertTrue(service.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking))
     }
 
+    func testManualUpdateWhileEnabledRegeneratesProfileScopedRules() async throws {
+        let settings = makeSettings()
+        let dataStore = makeDataStore()
+        let ruleSource = CountingTrackingRuleSource { requestCount, _ in
+            [Self.validRuleListDefinition(hostSuffix: "profile-enabled-update-\(requestCount)")]
+        }
+        let service = SumiContentBlockingService(
+            policy: .disabled,
+            trackingProtectionSettings: settings,
+            trackingRuleSource: ruleSource,
+            trackingDataStore: dataStore
+        )
+        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: service,
+            profileId: UUID()
+        )
+        await controller.awaitContentBlockingAssetsInstalled()
+
+        settings.setGlobalMode(.enabled)
+        try await waitUntil {
+            controller.contentBlockingAssets?.globalRuleLists.count == 1
+        }
+        let enabledIdentifier = try XCTUnwrap(
+            controller.contentBlockingAssets?.updateEvent.rules.first?.identifier.stringValue
+        )
+
+        let trackerData = try Self.trackerDataJSON(domain: "profile-manual-enabled.example")
+        let updater = SumiTrackerDataUpdater(fetch: { request in
+            (
+                trackerData,
+                Self.httpResponse(
+                    url: request.url,
+                    statusCode: 200,
+                    headers: ["ETag": "\"profile-manual-enabled\""]
+                )
+            )
+        })
+
+        await dataStore.updateTrackerData(using: updater)
+        try await waitUntil {
+            controller.contentBlockingAssets?.updateEvent.rules.first?.identifier.stringValue != enabledIdentifier
+        }
+
+        XCTAssertEqual(dataStore.metadata.currentSource, .downloaded)
+        XCTAssertEqual(dataStore.downloadedETag, "\"profile-manual-enabled\"")
+        XCTAssertTrue(service.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking))
+    }
+
     func testFailedManualUpdatePreservesLastGoodDownloadedData() async throws {
         let dataStore = makeDataStore()
         let lastGoodData = try Self.trackerDataJSON(domain: "last-good.example")
@@ -290,6 +338,41 @@ final class SumiTrackingProtectionTests: XCTestCase {
         XCTAssertEqual(settings.globalMode, .enabled)
         XCTAssertEqual(settings.override(for: url), .disabled)
         XCTAssertFalse(settings.resolve(for: url).isEnabled)
+    }
+
+    func testProfileScopedControllerRefreshesWhenSiteOverrideDisablesTrackingProtection() async throws {
+        let settings = makeSettings()
+        let url = URL(string: "https://www.example.com/path")!
+        let ruleSource = CountingTrackingRuleSource { requestCount, _ in
+            [Self.validRuleListDefinition(hostSuffix: "profile-site-override-\(requestCount)")]
+        }
+        let service = SumiContentBlockingService(
+            policy: .disabled,
+            trackingProtectionSettings: settings,
+            trackingRuleSource: ruleSource
+        )
+        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: service,
+            profileId: UUID()
+        )
+        await controller.awaitContentBlockingAssetsInstalled()
+
+        settings.setGlobalMode(.enabled)
+        try await waitUntil {
+            controller.contentBlockingAssets?.globalRuleLists.count == 1
+        }
+        let enabledIdentifier = try XCTUnwrap(
+            controller.contentBlockingAssets?.updateEvent.rules.first?.identifier.stringValue
+        )
+
+        settings.setSiteOverride(.disabled, for: url)
+        try await waitUntil {
+            controller.contentBlockingAssets?.updateEvent.rules.first?.identifier.stringValue != enabledIdentifier
+        }
+
+        XCTAssertFalse(settings.resolve(for: url).isEnabled)
+        XCTAssertEqual(settings.override(for: url), .disabled)
+        XCTAssertEqual(ruleSource.policies.last?.disabledSiteHosts, ["example.com"])
     }
 
     func testRapidPolicyChangesAreCoalescedBeforeRuleGeneration() async throws {

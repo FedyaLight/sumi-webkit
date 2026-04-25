@@ -207,13 +207,13 @@ final class SumiContentBlockingService {
     private func bindTrackingProtection() {
         trackingProtectionSettings?.changesPublisher
             .sink { [weak self] in
-                self?.scheduleTrackingPolicyRefresh()
+                self?.scheduleTrackingPolicyRefresh(refreshProfileSubjects: true)
             }
             .store(in: &cancellables)
 
         trackingDataStore?.changesPublisher
             .sink { [weak self] in
-                self?.scheduleTrackingPolicyRefresh()
+                self?.scheduleTrackingPolicyRefresh(refreshProfileSubjects: true)
             }
             .store(in: &cancellables)
 
@@ -221,16 +221,12 @@ final class SumiContentBlockingService {
             .sink { [weak self] in
                 guard let self else { return }
                 self.scheduleTrackingPolicyRefresh()
-                for key in self.profileUpdateSubjects.keys {
-                    if let profileId = UUID(uuidString: key) {
-                        self.scheduleProfilePolicyRefresh(profileId: profileId)
-                    }
-                }
+                self.scheduleActiveProfilePolicyRefreshes()
             }
             .store(in: &cancellables)
     }
 
-    private func scheduleTrackingPolicyRefresh() {
+    private func scheduleTrackingPolicyRefresh(refreshProfileSubjects: Bool = false) {
         trackingRefreshGeneration += 1
         let generation = trackingRefreshGeneration
 
@@ -245,10 +241,27 @@ final class SumiContentBlockingService {
                 guard generation == self.trackingRefreshGeneration else { return }
                 self.lastCompilationError = nil
                 self.setPolicy(ruleLists.isEmpty ? .disabled : .enabled(ruleLists: ruleLists))
+                if refreshProfileSubjects {
+                    self.scheduleActiveProfilePolicyRefreshes(delayNanoseconds: 0)
+                }
             } catch {
                 guard generation == self.trackingRefreshGeneration else { return }
                 self.lastCompilationError = error
                 self.setPolicy(.disabled)
+                if refreshProfileSubjects {
+                    self.scheduleActiveProfilePolicyRefreshes(delayNanoseconds: 0)
+                }
+            }
+        }
+    }
+
+    private func scheduleActiveProfilePolicyRefreshes(delayNanoseconds: UInt64 = 150_000_000) {
+        for key in Array(profileUpdateSubjects.keys) {
+            if let profileId = UUID(uuidString: key) {
+                scheduleProfilePolicyRefresh(
+                    profileId: profileId,
+                    delayNanoseconds: delayNanoseconds
+                )
             }
         }
     }
