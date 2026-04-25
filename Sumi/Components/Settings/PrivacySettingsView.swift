@@ -8,50 +8,52 @@
 import SwiftUI
 
 struct PrivacySettingsView: View {
-    @StateObject private var trackingProtectionSettings = SumiTrackingProtectionSettings.shared
-    @StateObject private var trackingProtectionDataStore = SumiTrackingProtectionDataStore.shared
-    @State private var trackingOverrideHostInput = ""
-
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            trackingProtectionSection
+            SumiSettingsModuleToggleGate(descriptor: .trackingProtection) {
+                LegacyTrackingProtectionRuntimeSettingsView()
+            }
+
+            SumiSettingsModuleToggleGate(descriptor: .adBlocking)
 
             Spacer()
         }
         .padding()
         .frame(minWidth: 520, minHeight: 360)
     }
+}
 
-    private var trackingProtectionSection: some View {
+private struct LegacyTrackingProtectionRuntimeSettingsView: View {
+    @StateObject private var trackingProtectionSettings = SumiTrackingProtectionSettings.shared
+    @StateObject private var trackingProtectionDataStore = SumiTrackingProtectionDataStore.shared
+    @State private var trackingOverrideHostInput = ""
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Tracking Protection")
-                .font(.headline)
-
-            VStack(alignment: .leading, spacing: 12) {
-                Toggle(
-                    "Tracking Protection",
-                    isOn: Binding(
-                        get: { trackingProtectionSettings.globalMode == .enabled },
-                        set: { isEnabled in
-                            trackingProtectionSettings.setGlobalMode(isEnabled ? .enabled : .disabled)
-                        }
-                    )
+            Toggle(
+                "Current protection mode",
+                isOn: Binding(
+                    get: { trackingProtectionSettings.globalMode == .enabled },
+                    set: { isEnabled in
+                        trackingProtectionSettings.setGlobalMode(isEnabled ? .enabled : .disabled)
+                    }
                 )
+            )
 
-                Text("Blocks known third-party trackers using WebKit-native content rules. Does not block ads.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+            Text("Controls the existing WebKit-native tracking rules. This remains separate from the module availability switch until Tracking Protection runtime gating lands.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
-                trackingDataControls
+            trackingDataControls
 
-                Divider()
+            Divider()
 
-                trackingSiteOverrides
-            }
-            .padding()
-            .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(8)
+            trackingSiteOverrides
         }
+        .padding()
+        .background(Color(NSColor.controlBackgroundColor))
+        .cornerRadius(8)
     }
 
     private var trackingDataControls: some View {
