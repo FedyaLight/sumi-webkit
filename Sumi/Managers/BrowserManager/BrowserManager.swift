@@ -176,28 +176,6 @@ class BrowserManager: ObservableObject {
     var bookmarkManager: SumiBookmarkManager
     var recentlyClosedManager: RecentlyClosedManager
     var lastSessionWindowsStore: LastSessionWindowsStore
-    private var cachedCookieManager: CookieManager?
-    var cookieManager: CookieManager {
-        if let cachedCookieManager {
-            return cachedCookieManager
-        }
-
-        let manager = CookieManager(dataStore: currentProfile?.dataStore)
-        manager.currentProfileId = currentProfile?.id
-        cachedCookieManager = manager
-        return manager
-    }
-    private var cachedCacheManager: CacheManager?
-    var cacheManager: CacheManager {
-        if let cachedCacheManager {
-            return cachedCacheManager
-        }
-
-        let manager = CacheManager(dataStore: currentProfile?.dataStore)
-        manager.currentProfileId = currentProfile?.id
-        cachedCacheManager = manager
-        return manager
-    }
     var compositorManager: TabCompositorManager
     let tabSuspensionService: TabSuspensionService
     var splitManager: SplitViewManager
@@ -431,19 +409,6 @@ class BrowserManager: ObservableObject {
                 }
                 self.currentProfile = profile
                 self.windowRegistry?.activeWindow?.currentProfileId = profile.id
-                if self.cachedCookieManager != nil || self.cachedCacheManager != nil {
-                    let dataStore = profile.dataStore
-                    self.cachedCookieManager?.switchDataStore(
-                        dataStore,
-                        profileId: profile.id,
-                        eagerLoad: false
-                    )
-                    self.cachedCacheManager?.switchDataStore(
-                        dataStore,
-                        profileId: profile.id,
-                        eagerLoad: false
-                    )
-                }
                 self.extensionManager.switchProfile(profile)
                 // Update history filtering
                 self.historyManager.switchProfile(profile.id)
