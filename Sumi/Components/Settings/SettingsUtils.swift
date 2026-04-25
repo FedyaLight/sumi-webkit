@@ -22,6 +22,7 @@ enum SumiExtensionsSettingsSubPane: String, CaseIterable, Hashable {
 enum SettingsTabs: Hashable, CaseIterable {
     case general
     case appearance
+    case performance
     case privacy
     case profiles
     case shortcuts
@@ -70,6 +71,7 @@ enum SettingsTabs: Hashable, CaseIterable {
         switch self {
         case .general: return "General"
         case .appearance: return "Theme"
+        case .performance: return "Performance"
         case .privacy: return "Privacy"
         case .profiles: return "Spaces & Essentials"
         case .shortcuts: return "Keyboard"
@@ -84,6 +86,7 @@ enum SettingsTabs: Hashable, CaseIterable {
         switch self {
         case .general: return "gearshape"
         case .appearance: return "paintpalette"
+        case .performance: return "speedometer"
         case .privacy: return "lock.shield"
         case .profiles: return "square.grid.2x2"
         case .shortcuts: return "keyboard"
@@ -99,6 +102,7 @@ enum SettingsTabs: Hashable, CaseIterable {
         switch self {
         case .appearance: return "appearance"
         case .general: return "general"
+        case .performance: return "performance"
         case .privacy: return "privacy"
         case .profiles: return "profiles"
         case .shortcuts: return "shortcuts"
@@ -113,6 +117,7 @@ enum SettingsTabs: Hashable, CaseIterable {
         switch paneQueryValue.lowercased() {
         case "appearance": self = .appearance
         case "general": self = .general
+        case "performance": self = .performance
         case "privacy": self = .privacy
         case "profiles": self = .profiles
         case "shortcuts": self = .shortcuts

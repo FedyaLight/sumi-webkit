@@ -37,6 +37,7 @@ class SumiSettingsService {
     private let didFinishOnboardingKey = "settings.didFinishOnboarding"
     private let tabLayoutKey = "settings.tabLayout"
     private let customSearchEnginesKey = "settings.customSearchEngines"
+    private let memoryModeKey = "settings.memoryMode"
 
     var currentSettingsTab: SettingsTabs = .general
 
@@ -211,6 +212,12 @@ class SumiSettingsService {
         }
     }
 
+    var memoryMode: SumiMemoryMode {
+        didSet {
+            userDefaults.set(memoryMode.rawValue, forKey: memoryModeKey)
+        }
+    }
+
     init(
         userDefaults: UserDefaults = .standard
     ) {
@@ -240,6 +247,7 @@ class SumiSettingsService {
             pinnedTabsLookKey: "large",
             didFinishOnboardingKey: true,
             tabLayoutKey: TabLayout.sidebar.rawValue,
+            memoryModeKey: SumiMemoryMode.balanced.rawValue,
         ])
 
         // Initialize properties from UserDefaults
@@ -297,6 +305,9 @@ class SumiSettingsService {
         self.pinnedTabsLook = PinnedTabsConfiguration(rawValue: userDefaults.string(forKey: pinnedTabsLookKey) ?? "large") ?? .large
         self.tabLayout = TabLayout(rawValue: userDefaults.string(forKey: tabLayoutKey) ?? TabLayout.sidebar.rawValue) ?? .sidebar
         self.didFinishOnboarding = userDefaults.bool(forKey: didFinishOnboardingKey)
+        self.memoryMode = SumiMemoryMode(
+            rawValue: userDefaults.string(forKey: memoryModeKey) ?? SumiMemoryMode.balanced.rawValue
+        ) ?? .balanced
 
         if let data = userDefaults.data(forKey: siteSearchEntriesKey),
            let decoded = try? JSONDecoder().decode([SiteSearchEntry].self, from: data) {
@@ -352,6 +363,22 @@ class SumiSettingsService {
         }
         if !didFinishOnboarding {
             didFinishOnboarding = true
+        }
+    }
+}
+
+enum SumiMemoryMode: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
+    case lightweight
+    case balanced
+    case performance
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .lightweight: return "Lightweight"
+        case .balanced: return "Balanced"
+        case .performance: return "Performance"
         }
     }
 }

@@ -6,10 +6,29 @@ final class SettingsNavigationTests: XCTestCase {
     func testSidebarOrderingKeepsAboutLastAndHidesUserscripts() {
         XCTAssertEqual(
             SettingsTabs.ordered,
-            [.general, .appearance, .privacy, .profiles, .shortcuts, .extensions, .advanced, .about]
+            [.general, .appearance, .performance, .privacy, .profiles, .shortcuts, .extensions, .advanced, .about]
         )
         XCTAssertEqual(SettingsTabs.ordered.last, .about)
         XCTAssertFalse(SettingsTabs.ordered.contains(.userScripts))
+    }
+
+    func testPerformancePaneQueryRoundTripsThroughSettingsSurfaceURL() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        settings.currentSettingsTab = .performance
+
+        XCTAssertEqual(SettingsTabs(paneQueryValue: "performance"), .performance)
+        XCTAssertEqual(
+            settings.settingsSurfaceURLForCurrentNavigation(),
+            SettingsTabs.performance.settingsSurfaceURL
+        )
+
+        settings.currentSettingsTab = .general
+        settings.applyNavigationFromSettingsSurfaceURL(SettingsTabs.performance.settingsSurfaceURL)
+
+        XCTAssertEqual(settings.currentSettingsTab, .performance)
     }
 
     func testAboutPaneQueryRoundTripsThroughSettingsSurfaceURL() {
