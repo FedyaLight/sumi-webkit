@@ -11,6 +11,7 @@ import SwiftUI
 
 struct SumiSettingsTabRootView: View {
     @Environment(\.sumiSettings) private var sumiSettingsModel
+    @Environment(\.resolvedThemeContext) private var themeContext
     @ObservedObject var browserManager: BrowserManager
     /// When `nil` (e.g. standalone preview), sidebar still works; tab URL sync is skipped.
     var windowState: BrowserWindowState?
@@ -31,7 +32,7 @@ struct SumiSettingsTabRootView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(themeContext.tokens(settings: sumiSettingsModel).windowBackground)
         .onChange(of: sumiSettings.currentSettingsTab) { _, _ in
             syncSettingsURLToActiveTab(sumiSettings: sumiSettings)
         }

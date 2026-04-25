@@ -180,11 +180,7 @@ struct WindowView: View {
 
     @ViewBuilder
     private func WindowBackground() -> some View {
-        ZStack {
-            windowBackgroundColor
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            SpaceGradientBackgroundView(surface: .toolbarChrome)
-        }
+        SpaceGradientBackgroundView(surface: .toolbarChrome)
         .backgroundDraggable()
         .environment(windowState)
     }
@@ -192,13 +188,14 @@ struct WindowView: View {
     @ViewBuilder
     private func SidebarWebViewStack() -> some View {
         let sidebarVisible = windowState.isSidebarVisible
+        let elementSeparation = BrowserChromeGeometry.elementSeparation
         
         HStack(spacing: 0) {
             SidebarDockedSpacer()
             WebContent()
         }
-        .padding(.trailing, 8)
-        .padding(.leading, sidebarVisible ? 0 : 8)
+        .padding(.trailing, elementSeparation)
+        .padding(.leading, sidebarVisible ? 0 : elementSeparation)
     }
 
     @ViewBuilder
@@ -230,7 +227,7 @@ struct WindowView: View {
                 .zIndex(3500)
             }
         }
-        .padding(.bottom, 8)
+        .padding(.bottom, BrowserChromeGeometry.elementSeparation)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -274,10 +271,6 @@ struct WindowView: View {
     ) -> some View {
         content()
             .environment(\.resolvedThemeContext, resolvedThemeContext)
-    }
-
-    private var windowBackgroundColor: Color {
-        resolvedThemeContext.tokens(settings: sumiSettings).windowBackground
     }
 }
 
