@@ -131,18 +131,19 @@ struct WebsiteView: View {
     @Environment(BrowserWindowState.self) private var windowState
     @EnvironmentObject var splitManager: SplitViewManager
     @Environment(\.sumiSettings) var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
     @ObservedObject private var sidebarDragState = SidebarDragState.shared
     @State private var hoveredLink: String?
     @State private var isCommandPressed: Bool = false
     
     private let dragCoordinateSpace = "splitPreview"
 
-    private var cornerRadius: CGFloat {
-        if #available(macOS 26.0, *) {
-            return 8
-        } else {
-            return 8
-        }
+    private var chromeGeometry: BrowserChromeGeometry {
+        BrowserChromeGeometry(settings: sumiSettings)
+    }
+
+    private var contentSurfaceBackground: Color {
+        themeContext.tokens(settings: sumiSettings).windowBackground
     }
 
     var body: some View {
@@ -158,9 +159,10 @@ struct WebsiteView: View {
                         )
                         .environmentObject(browserManager)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color(nsColor: .windowBackgroundColor))
-                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                        .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 0)
+                        .browserContentSurface(
+                            geometry: chromeGeometry,
+                            background: contentSurfaceBackground
+                        )
                         .allowsHitTesting(true)
                     } else if splitManager.isSplit(for: windowState.id) == false,
                        browserManager.currentTab(for: windowState)?.representsSumiBookmarksSurface == true
@@ -171,9 +173,10 @@ struct WebsiteView: View {
                         )
                         .environmentObject(browserManager)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color(nsColor: .windowBackgroundColor))
-                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                        .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 0)
+                        .browserContentSurface(
+                            geometry: chromeGeometry,
+                            background: contentSurfaceBackground
+                        )
                         .allowsHitTesting(true)
                     } else if splitManager.isSplit(for: windowState.id) == false,
                        browserManager.currentTab(for: windowState)?.representsSumiSettingsSurface == true
@@ -185,9 +188,10 @@ struct WebsiteView: View {
                         .environmentObject(browserManager)
                         .environmentObject(browserManager.extensionSurfaceStore)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color(nsColor: .windowBackgroundColor))
-                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                        .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 0)
+                        .browserContentSurface(
+                            geometry: chromeGeometry,
+                            background: contentSurfaceBackground
+                        )
                         .allowsHitTesting(true)
                     } else if splitManager.isSplit(for: windowState.id) == false,
                               browserManager.currentTab(for: windowState)?.representsSumiEmptySurface == true
@@ -205,10 +209,15 @@ struct WebsiteView: View {
                             leftId: splitManager.leftTabId(for: windowState.id),
                             rightId: splitManager.rightTabId(for: windowState.id),
                             isSplitDropCaptureActive: sidebarDragState.isDragging && sidebarDragState.isInternalDragSession,
+                            chromeGeometry: chromeGeometry,
                             windowState: windowState
                         )
                         .coordinateSpace(name: dragCoordinateSpace)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .browserContentSurface(
+                            geometry: chromeGeometry,
+                            background: contentSurfaceBackground
+                        )
                         .allowsHitTesting(true)
                     }
                     // Removed SwiftUI contextMenu - it intercepts ALL right-clicks
@@ -249,6 +258,37 @@ struct WebsiteView: View {
         .id(windowState.nativeSurfaceRoutingRevision)
     }
 
+}
+
+private struct BrowserContentSurfaceModifier: ViewModifier {
+    let geometry: BrowserChromeGeometry
+    let background: Color
+
+    func body(content: Content) -> some View {
+        content
+            .background(background)
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: geometry.contentRadius,
+                    style: .continuous
+                )
+            )
+            .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 0)
+    }
+}
+
+private extension View {
+    func browserContentSurface(
+        geometry: BrowserChromeGeometry,
+        background: Color
+    ) -> some View {
+        modifier(
+            BrowserContentSurfaceModifier(
+                geometry: geometry,
+                background: background
+            )
+        )
+    }
 }
 
 // MARK: - Split Preview Overlay
@@ -444,10 +484,12 @@ final class WindowWebContentController: NSViewController {
     private let browserManager: BrowserManager
     private let webViewCoordinator: WebViewCoordinator
     private let windowState: BrowserWindowState
+    private var chromeGeometry: BrowserChromeGeometry
     private lazy var containerView = ContainerView(
         browserManager: browserManager,
         splitManager: browserManager.splitManager,
-        windowId: windowState.id
+        windowId: windowState.id,
+        chromeGeometry: chromeGeometry
     )
 
     private var pendingDisplayState: WebsiteDisplayState?
@@ -461,10 +503,12 @@ final class WindowWebContentController: NSViewController {
     init(
         browserManager: BrowserManager,
         webViewCoordinator: WebViewCoordinator,
+        chromeGeometry: BrowserChromeGeometry,
         windowState: BrowserWindowState
     ) {
         self.browserManager = browserManager
         self.webViewCoordinator = webViewCoordinator
+        self.chromeGeometry = chromeGeometry
         self.windowState = windowState
         super.init(nibName: nil, bundle: nil)
     }
@@ -503,8 +547,14 @@ final class WindowWebContentController: NSViewController {
     func update(
         displayState: WebsiteDisplayState,
         hoveredLinkHandler: @escaping (String?) -> Void,
-        commandHoverHandler: @escaping (Bool) -> Void
+        commandHoverHandler: @escaping (Bool) -> Void,
+        chromeGeometry: BrowserChromeGeometry
     ) {
+        if self.chromeGeometry != chromeGeometry {
+            self.chromeGeometry = chromeGeometry
+            containerView.setChromeGeometry(chromeGeometry)
+        }
+
         pendingDisplayState = displayState
         self.hoveredLinkHandler = hoveredLinkHandler
         self.commandHoverHandler = commandHoverHandler
@@ -784,12 +834,14 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
     var leftId: UUID?
     var rightId: UUID?
     var isSplitDropCaptureActive: Bool
+    var chromeGeometry: BrowserChromeGeometry
     let windowState: BrowserWindowState
 
     func makeNSViewController(context: Context) -> WindowWebContentController {
         WindowWebContentController(
             browserManager: browserManager,
             webViewCoordinator: webViewCoordinator,
+            chromeGeometry: chromeGeometry,
             windowState: windowState
         )
     }
@@ -800,7 +852,8 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
         controller.update(
             displayState: makeDisplayState(),
             hoveredLinkHandler: { hoveredLinkBinding.wrappedValue = $0 },
-            commandHoverHandler: { commandPressedBinding.wrappedValue = $0 }
+            commandHoverHandler: { commandPressedBinding.wrappedValue = $0 },
+            chromeGeometry: chromeGeometry
         )
     }
 
@@ -845,10 +898,16 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
 // MARK: - Container View
 
 private enum WebColumnPaintlessChrome {
-    static func configure(_ view: NSView) {
+    static func configure(
+        _ view: NSView,
+        cornerRadius: CGFloat = 0,
+        clipsToBounds: Bool = false
+    ) {
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.clear.cgColor
         view.layer?.isOpaque = false
+        view.layer?.cornerRadius = cornerRadius
+        view.layer?.masksToBounds = clipsToBounds
     }
 }
 
@@ -863,13 +922,18 @@ private class ContainerView: NSView {
     let rightPaneView = PaneContainerView()
     private let splitDropCaptureView = SplitDropCaptureView(frame: .zero)
     private var paneLayout: PaneLayout = .single
+    private var chromeGeometry: BrowserChromeGeometry
 
-    init(browserManager: BrowserManager, splitManager: SplitViewManager, windowId: UUID) {
+    init(
+        browserManager: BrowserManager,
+        splitManager: SplitViewManager,
+        windowId: UUID,
+        chromeGeometry: BrowserChromeGeometry
+    ) {
+        self.chromeGeometry = chromeGeometry
         super.init(frame: .zero)
         WebColumnPaintlessChrome.configure(self)
-        WebColumnPaintlessChrome.configure(singlePaneView)
-        WebColumnPaintlessChrome.configure(leftPaneView)
-        WebColumnPaintlessChrome.configure(rightPaneView)
+        applyChromeGeometry()
 
         singlePaneView.identifier = CompositorPaneDestination.single.viewIdentifier
         leftPaneView.identifier = CompositorPaneDestination.left.viewIdentifier
@@ -901,9 +965,7 @@ private class ContainerView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         WebColumnPaintlessChrome.configure(self)
-        WebColumnPaintlessChrome.configure(singlePaneView)
-        WebColumnPaintlessChrome.configure(leftPaneView)
-        WebColumnPaintlessChrome.configure(rightPaneView)
+        applyChromeGeometry()
     }
 
     override func layout() {
@@ -917,6 +979,13 @@ private class ContainerView: NSView {
     func setPaneLayout(_ layout: PaneLayout) {
         guard paneLayout != layout else { return }
         paneLayout = layout
+        needsLayout = true
+    }
+
+    func setChromeGeometry(_ geometry: BrowserChromeGeometry) {
+        guard chromeGeometry != geometry else { return }
+        chromeGeometry = geometry
+        applyChromeGeometry()
         needsLayout = true
     }
 
@@ -964,12 +1033,18 @@ private class ContainerView: NSView {
         }
     }
 
+    private func applyChromeGeometry() {
+        singlePaneView.setChromeGeometry(chromeGeometry)
+        leftPaneView.setChromeGeometry(chromeGeometry)
+        rightPaneView.setChromeGeometry(chromeGeometry)
+    }
+
     private func splitPaneFrames(
         fraction: CGFloat,
         orientation: SplitOrientation
     ) -> (left: NSRect, right: NSRect) {
         let total = pixelAligned(bounds)
-        let gap = pixelAlignedLength(8)
+        let gap = pixelAlignedLength(chromeGeometry.elementSeparation)
         let halfGap = gap / 2
 
         switch orientation {
@@ -1040,9 +1115,11 @@ private class ContainerView: NSView {
 }
 
 private final class PaneContainerView: NSView {
+    private var chromeGeometry = BrowserChromeGeometry()
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        WebColumnPaintlessChrome.configure(self)
+        applyChromeGeometry()
     }
 
     @available(*, unavailable)
@@ -1058,6 +1135,20 @@ private final class PaneContainerView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        WebColumnPaintlessChrome.configure(self)
+        applyChromeGeometry()
+    }
+
+    func setChromeGeometry(_ geometry: BrowserChromeGeometry) {
+        guard chromeGeometry != geometry else { return }
+        chromeGeometry = geometry
+        applyChromeGeometry()
+    }
+
+    private func applyChromeGeometry() {
+        WebColumnPaintlessChrome.configure(
+            self,
+            cornerRadius: chromeGeometry.contentRadius,
+            clipsToBounds: true
+        )
     }
 }

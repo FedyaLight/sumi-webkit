@@ -2,6 +2,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SumiBookmarksTabRootView: View {
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
     @ObservedObject var browserManager: BrowserManager
     @StateObject private var viewModel: SumiBookmarksPageViewModel
     @State private var bookmarkDraft: SumiBookmarkFormDraft?
@@ -31,7 +33,7 @@ struct SumiBookmarksTabRootView: View {
             content
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(themeContext.tokens(settings: sumiSettings).windowBackground)
         .overlay(alignment: .topLeading) {
             Button {
                 searchFocused = true

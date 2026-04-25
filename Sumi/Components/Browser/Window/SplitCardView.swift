@@ -13,9 +13,16 @@ struct SplitCardView: View {
     var text: String
     var isTabHovered: Bool
     var accentColor: Color = .blue
+
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
     
     private var currentTextColor: Color {
         isTabHovered ? accentColor : .white
+    }
+
+    private var backgroundColor: Color {
+        themeContext.tokens(settings: sumiSettings).commandPaletteBackground
     }
     
     var body: some View {
@@ -41,7 +48,7 @@ struct SplitCardView: View {
         .padding(8)
         .background(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(Color(.windowBackgroundColor).opacity(0.92))
+                .fill(backgroundColor.opacity(0.92))
         )
         .background(Color(currentTextColor).opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 24))

@@ -211,6 +211,42 @@ final class SidebarThemeResolutionTests: XCTestCase {
         XCTAssertFalse(source.contains("Color(.windowBackgroundColor)"))
     }
 
+    func testWindowBackgroundOwnsSingleResolvedChromeGradientLayer() throws {
+        let source = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "App/Window/WindowView.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains("SpaceGradientBackgroundView(surface: .toolbarChrome)"))
+        XCTAssertTrue(source.contains("BrowserChromeGeometry.elementSeparation"))
+        XCTAssertFalse(source.contains("windowBackgroundColor"))
+        XCTAssertFalse(source.contains("tokens(settings: sumiSettings).windowBackground"))
+    }
+
+    func testBrowserChromeGeometryUsesZenContentRadiusFormula() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = makeThemeSettings(defaults: harness.defaults)
+
+        let defaultGeometry = BrowserChromeGeometry(settings: settings)
+        XCTAssertEqual(defaultGeometry.elementSeparation, 8)
+        XCTAssertEqual(defaultGeometry.outerRadius, 7)
+        XCTAssertEqual(defaultGeometry.contentRadius, 5)
+
+        settings.themeBorderRadius = 14
+        let wideGeometry = BrowserChromeGeometry(settings: settings)
+        XCTAssertEqual(wideGeometry.outerRadius, 14)
+        XCTAssertEqual(wideGeometry.contentRadius, 10)
+
+        settings.themeBorderRadius = 6
+        let clampedGeometry = BrowserChromeGeometry(settings: settings)
+        XCTAssertEqual(clampedGeometry.outerRadius, 6)
+        XCTAssertEqual(clampedGeometry.contentRadius, 5)
+    }
+
     func testSidebarColumnHostIsPaintlessAndDoesNotLeakAppKitWindowBackground() throws {
         let source = try String(
             contentsOf: Self.repoRoot.appendingPathComponent(
@@ -228,7 +264,7 @@ final class SidebarThemeResolutionTests: XCTestCase {
         XCTAssertFalse(source.contains("windowBackgroundColor"))
     }
 
-    func testDockedSidebarBackgroundUsesResolvedThemeContext() throws {
+    func testOnlyCollapsedSidebarOverlayDrawsOwnResolvedThemeBackground() throws {
         let source = try String(
             contentsOf: Self.repoRoot.appendingPathComponent(
                 "Sumi/Components/Sidebar/SidebarHoverOverlayView.swift"
@@ -236,11 +272,12 @@ final class SidebarThemeResolutionTests: XCTestCase {
             encoding: .utf8
         )
 
-        XCTAssertTrue(source.contains("private var drawsSidebarChromeBackground"))
-        XCTAssertTrue(source.contains("presentationContext.mode != .collapsedHidden"))
+        XCTAssertTrue(source.contains("private var drawsCollapsedSidebarChromeBackground"))
+        XCTAssertTrue(source.contains("presentationContext.mode == .collapsedVisible"))
         XCTAssertTrue(source.contains("themeContext.tokens(settings: sumiSettings).windowBackground"))
         XCTAssertTrue(source.contains("SpaceGradientBackgroundView(surface: .toolbarChrome)"))
-        XCTAssertTrue(source.contains(".opacity(drawsSidebarChromeBackground ? 1 : 0)"))
+        XCTAssertTrue(source.contains(".opacity(drawsCollapsedSidebarChromeBackground ? 1 : 0)"))
+        XCTAssertFalse(source.contains("drawsSidebarChromeBackground"))
     }
 
     func testBrowserWindowShellDoesNotUseDynamicAppKitBackgroundForChromeFallback() throws {
@@ -271,7 +308,63 @@ final class SidebarThemeResolutionTests: XCTestCase {
         XCTAssertTrue(webColumnSource.contains("WebColumnPaintlessChrome.configure"))
         XCTAssertTrue(webColumnSource.contains("view.layer?.backgroundColor = NSColor.clear.cgColor"))
         XCTAssertTrue(webColumnSource.contains("override var isOpaque: Bool { false }"))
+        XCTAssertTrue(webColumnSource.contains("view.layer?.cornerRadius = cornerRadius"))
+        XCTAssertTrue(webColumnSource.contains("view.layer?.masksToBounds = clipsToBounds"))
+        XCTAssertTrue(webColumnSource.contains("singlePaneView.setChromeGeometry(chromeGeometry)"))
+        XCTAssertTrue(webColumnSource.contains("chromeGeometry.elementSeparation"))
         XCTAssertFalse(webColumnSource.contains("NSColor.windowBackgroundColor.setFill()"))
+    }
+
+    func testWebsiteChromeSurfacesUseResolvedTokensAndZenGeometry() throws {
+        let websiteSource = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "Sumi/Components/WebsiteView/WebsiteView.swift"
+            ),
+            encoding: .utf8
+        )
+        let emptySource = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "Sumi/Components/WebsiteView/EmptyWebsiteView.swift"
+            ),
+            encoding: .utf8
+        )
+        let historySource = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "Sumi/History/SumiHistoryTabRootView.swift"
+            ),
+            encoding: .utf8
+        )
+        let bookmarksSource = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "Sumi/Bookmarks/SumiBookmarksTabRootView.swift"
+            ),
+            encoding: .utf8
+        )
+        let settingsSource = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "Sumi/Components/Settings/SumiSettingsTabRootView.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(websiteSource.contains("BrowserChromeGeometry(settings: sumiSettings)"))
+        XCTAssertTrue(websiteSource.contains(".browserContentSurface("))
+        XCTAssertTrue(websiteSource.contains("themeContext.tokens(settings: sumiSettings).windowBackground"))
+        XCTAssertTrue(emptySource.contains("BrowserChromeGeometry(settings: sumiSettings)"))
+        XCTAssertTrue(emptySource.contains("themeContext.tokens(settings: sumiSettings).windowBackground"))
+        XCTAssertTrue(historySource.contains("themeContext.tokens(settings: sumiSettings).windowBackground"))
+        XCTAssertTrue(bookmarksSource.contains("themeContext.tokens(settings: sumiSettings).windowBackground"))
+        XCTAssertTrue(settingsSource.contains("themeContext.tokens(settings: sumiSettingsModel).windowBackground"))
+
+        let resolvedChromeSurfaceSources = [
+            websiteSource,
+            emptySource,
+            historySource,
+            bookmarksSource,
+            settingsSource
+        ].joined(separator: "\n")
+        XCTAssertFalse(resolvedChromeSurfaceSources.contains("Color(nsColor: .windowBackgroundColor)"))
+        XCTAssertFalse(resolvedChromeSurfaceSources.contains("Color(.windowBackgroundColor)"))
     }
 
     func testWebViewHostIsPaintlessChromeFallback() throws {

@@ -2,6 +2,8 @@ import AppKit
 import SwiftUI
 
 struct SumiHistoryTabRootView: View {
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
     @ObservedObject var browserManager: BrowserManager
     @StateObject private var viewModel: HistoryPageViewModel
 
@@ -28,7 +30,7 @@ struct SumiHistoryTabRootView: View {
             content
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(themeContext.tokens(settings: sumiSettings).windowBackground)
         .onAppear {
             viewModel.appear()
         }

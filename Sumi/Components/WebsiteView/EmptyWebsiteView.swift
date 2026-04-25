@@ -8,19 +8,22 @@
 import SwiftUI
 
 struct EmptyWebsiteView: View {
-    private var cornerRadius: CGFloat {
-        if #available(macOS 26.0, *) {
-            return 12
-        } else {
-            return 6
-        }
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
+
+    private var chromeGeometry: BrowserChromeGeometry {
+        BrowserChromeGeometry(settings: sumiSettings)
+    }
+
+    private var backgroundColor: Color {
+        themeContext.tokens(settings: sumiSettings).windowBackground
     }
 
     var body: some View {
-        Color(nsColor: .windowBackgroundColor)
+        backgroundColor
             .opacity(0.2)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: chromeGeometry.contentRadius, style: .continuous))
             .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 0)
             .accessibilityHidden(true)
     }
