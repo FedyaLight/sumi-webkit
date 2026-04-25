@@ -9,8 +9,13 @@ import SwiftUI
 
 struct SettingsGeneralTab: View {
     @Environment(\.sumiSettings) var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
     @State private var showingAddSite = false
     @State private var showingAddEngine = false
+
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
+    }
 
     var body: some View {
         @Bindable var settings = sumiSettings
@@ -112,6 +117,9 @@ struct SettingsGeneralTab: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tokens.windowBackground)
         .sheet(isPresented: $showingAddSite) {
             SiteSearchEntryEditor(entry: nil) { newEntry in
                 sumiSettings.siteSearchEntries.append(newEntry)

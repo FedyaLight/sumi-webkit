@@ -33,7 +33,9 @@ struct SumiBookmarksTabRootView: View {
             content
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(themeContext.tokens(settings: sumiSettings).windowBackground)
+        .background(tokens.windowBackground)
+        .environment(\.resolvedThemeContext, surfaceThemeContext)
+        .environment(\.colorScheme, surfaceThemeContext.chromeColorScheme)
         .overlay(alignment: .topLeading) {
             Button {
                 searchFocused = true
@@ -93,10 +95,23 @@ struct SumiBookmarksTabRootView: View {
         }
     }
 
+    private var surfaceThemeContext: ResolvedThemeContext {
+        themeContext.nativeSurfaceThemeContext
+    }
+
+    private var tokens: ChromeThemeTokens {
+        surfaceThemeContext.tokens(settings: sumiSettings)
+    }
+
+    private var selectionBackground: Color {
+        surfaceThemeContext.nativeSurfaceSelectionBackground
+    }
+
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Bookmarks")
                 .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(tokens.primaryText)
                 .padding(.horizontal, 22)
                 .padding(.top, 28)
                 .padding(.bottom, 18)
@@ -134,9 +149,9 @@ struct SumiBookmarksTabRootView: View {
         .buttonStyle(.plain)
         .background(
             RoundedRectangle(cornerRadius: Layout.rowCornerRadius, style: .continuous)
-                .fill(selected ? Color.accentColor.opacity(0.15) : Color.clear)
+                .fill(selected ? selectionBackground : Color.clear)
         )
-        .foregroundStyle(selected ? Color.accentColor : Color.primary)
+        .foregroundStyle(tokens.primaryText)
         .onDrop(of: [.text], isTargeted: nil) { _ in
             viewModel.dropDraggedItems(toParentID: folder.id)
         }
@@ -227,7 +242,7 @@ struct SumiBookmarksTabRootView: View {
             if viewModel.hasSelection {
                 HStack(spacing: 10) {
                     Text("\(viewModel.selectionCount) Selected")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(tokens.secondaryText)
                     Button("Open") {
                         viewModel.openSelected()
                     }
@@ -239,7 +254,7 @@ struct SumiBookmarksTabRootView: View {
             } else if let message = viewModel.statusMessage {
                 Text(message)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(tokens.secondaryText)
             }
         }
         .padding(.horizontal, 28)
@@ -249,18 +264,18 @@ struct SumiBookmarksTabRootView: View {
     private var searchField: some View {
         HStack(spacing: 9) {
             Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(tokens.secondaryText)
             TextField("Search Bookmarks", text: $viewModel.searchText)
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
         }
         .padding(.vertical, 9)
         .padding(.horizontal, 12)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(tokens.fieldBackground)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color(nsColor: .separatorColor).opacity(0.65), lineWidth: 1)
+                .stroke(tokens.separator.opacity(0.65), lineWidth: 1)
         )
     }
 
@@ -312,11 +327,12 @@ struct SumiBookmarksTabRootView: View {
         VStack(alignment: .center, spacing: 12) {
             Image(systemName: "book.closed")
                 .font(.system(size: 42))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(tokens.secondaryText)
             Text("No Bookmarks")
                 .font(.title3.weight(.semibold))
+                .foregroundStyle(tokens.primaryText)
             Text("Saved pages and folders will appear here.")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(tokens.secondaryText)
         }
         .frame(maxWidth: .infinity, minHeight: 280)
     }
@@ -337,7 +353,13 @@ private struct SumiBookmarkEntityRow: View {
     let openMode: (BrowserManager.HistoryOpenMode) -> Void
     let newFolder: () -> Void
     let searchActive: Bool
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isHovering = false
+
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -346,23 +368,24 @@ private struct SumiBookmarkEntityRow: View {
                 Text(entity.title)
                     .lineLimit(1)
                     .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(tokens.primaryText)
                 if entity.isBookmark {
                     Text(entity.displayURL)
                         .lineLimit(1)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(tokens.secondaryText)
                 } else {
                     Text("\(entity.childBookmarkCount) bookmarks")
                         .lineLimit(1)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(tokens.secondaryText)
                 }
             }
             Spacer(minLength: 12)
             if let parentTitle = entity.parentTitle, searchActive {
                 Text(parentTitle)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(tokens.secondaryText)
             }
         }
         .padding(.vertical, 9)
@@ -384,7 +407,7 @@ private struct SumiBookmarkEntityRow: View {
         if entity.isFolder {
             Image(systemName: "folder")
                 .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(tokens.secondaryText)
                 .frame(width: 22, height: 22)
         } else if let url = entity.url,
                   let cacheKey = SumiFaviconResolver.cacheKey(for: url),
@@ -396,7 +419,7 @@ private struct SumiBookmarkEntityRow: View {
         } else {
             Image(systemName: "globe")
                 .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(tokens.secondaryText)
                 .frame(width: 22, height: 22)
         }
     }
@@ -439,10 +462,10 @@ private struct SumiBookmarkEntityRow: View {
 
     private var rowBackgroundColor: Color {
         if isSelected {
-            return Color.accentColor.opacity(0.16)
+            return themeContext.nativeSurfaceSelectionBackground
         }
         if isHovering {
-            return Color(nsColor: .controlBackgroundColor).opacity(0.75)
+            return tokens.fieldBackgroundHover
         }
         return Color.clear
     }

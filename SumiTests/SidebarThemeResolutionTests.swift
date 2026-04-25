@@ -106,12 +106,22 @@ final class SidebarThemeResolutionTests: XCTestCase {
         let tokens = windowState
             .resolvedThemeContext(global: .dark, settings: settings)
             .tokens(settings: settings)
+        let nativeSurfaceContext = windowState
+            .resolvedThemeContext(global: .dark, settings: settings)
+            .nativeSurfaceThemeContext
+        let nativeSurfaceTokens = nativeSurfaceContext.tokens(settings: settings)
 
         XCTAssertTrue(WorkspaceTheme.default.visuallyEquals(lightMonoTheme))
         XCTAssertTrue(lightMonoTheme.usesExplicitColorScheme)
         XCTAssertEqual(snapshot.chromeColorScheme, .light)
         XCTAssertEqual(snapshot.chromeDarknessProgress, 0, accuracy: 0.0001)
         XCTAssertEqual(tokens.primaryText, Color.black.opacity(0.84))
+        XCTAssertEqual(nativeSurfaceContext.globalColorScheme, .dark)
+        XCTAssertEqual(nativeSurfaceContext.chromeColorScheme, .dark)
+        XCTAssertEqual(nativeSurfaceContext.sourceChromeColorScheme, .dark)
+        XCTAssertEqual(nativeSurfaceContext.targetChromeColorScheme, .dark)
+        XCTAssertEqual(nativeSurfaceTokens.primaryText, Color.white.opacity(0.92))
+        XCTAssertEqual(nativeSurfaceContext.nativeSurfaceSelectionBackground, Color.white.opacity(0.16))
     }
 
     func testActivatingTabDoesNotChangeSidebarThemeSnapshotForSameSpace() {
@@ -362,16 +372,41 @@ final class SidebarThemeResolutionTests: XCTestCase {
         XCTAssertTrue(websiteSource.contains("BrowserChromeGeometry(settings: sumiSettings)"))
         XCTAssertTrue(websiteSource.contains(".browserContentSurface("))
         XCTAssertTrue(websiteSource.contains("themeContext.tokens(settings: sumiSettings).windowBackground"))
+        XCTAssertTrue(websiteSource.contains("themeContext.nativeSurfaceThemeContext.tokens(settings: sumiSettings).windowBackground"))
+        XCTAssertTrue(websiteSource.contains("background: nativeSurfaceContentSurfaceBackground"))
         XCTAssertTrue(browserSurfaceSource.contains("struct BrowserContentSurfaceModifier"))
         XCTAssertTrue(browserSurfaceSource.contains("RoundedRectangle("))
         XCTAssertTrue(browserSurfaceSource.contains("cornerRadius: geometry.contentRadius"))
         XCTAssertTrue(compositorSource.contains("WindowWebContentController"))
         XCTAssertTrue(compositorSource.contains("TabCompositorWrapper"))
         XCTAssertTrue(emptySource.contains("BrowserChromeGeometry(settings: sumiSettings)"))
-        XCTAssertTrue(emptySource.contains("themeContext.tokens(settings: sumiSettings).windowBackground"))
-        XCTAssertTrue(historySource.contains("themeContext.tokens(settings: sumiSettings).windowBackground"))
-        XCTAssertTrue(bookmarksSource.contains("themeContext.tokens(settings: sumiSettings).windowBackground"))
-        XCTAssertTrue(settingsSource.contains("themeContext.tokens(settings: sumiSettingsModel).windowBackground"))
+        XCTAssertTrue(emptySource.contains("themeContext.tokens(settings: sumiSettings)"))
+        XCTAssertTrue(emptySource.contains(".windowBackground"))
+        XCTAssertTrue(historySource.contains("surfaceThemeContext.tokens(settings: sumiSettings)"))
+        XCTAssertTrue(historySource.contains("tokens.windowBackground"))
+        XCTAssertTrue(bookmarksSource.contains("surfaceThemeContext.tokens(settings: sumiSettings)"))
+        XCTAssertTrue(bookmarksSource.contains("tokens.windowBackground"))
+        XCTAssertTrue(settingsSource.contains("surfaceThemeContext.tokens(settings: sumiSettingsModel)"))
+        XCTAssertTrue(settingsSource.contains("tokens.windowBackground"))
+        XCTAssertTrue(historySource.contains("themeContext.nativeSurfaceThemeContext"))
+        XCTAssertTrue(bookmarksSource.contains("themeContext.nativeSurfaceThemeContext"))
+        XCTAssertTrue(settingsSource.contains("themeContext.nativeSurfaceThemeContext"))
+        XCTAssertTrue(historySource.contains("nativeSurfaceSelectionBackground"))
+        XCTAssertTrue(bookmarksSource.contains("nativeSurfaceSelectionBackground"))
+        XCTAssertTrue(settingsSource.contains("nativeSurfaceSelectionBackground"))
+        XCTAssertTrue(historySource.contains(".environment(\\.colorScheme, surfaceThemeContext.chromeColorScheme)"))
+        XCTAssertTrue(bookmarksSource.contains(".environment(\\.colorScheme, surfaceThemeContext.chromeColorScheme)"))
+        XCTAssertTrue(settingsSource.contains(".environment(\\.colorScheme, surfaceThemeContext.chromeColorScheme)"))
+        XCTAssertFalse(historySource.contains("isSelected ? tokens.accent"))
+        XCTAssertFalse(bookmarksSource.contains("selected ? tokens.accent"))
+        XCTAssertFalse(settingsSource.contains("selected ? tokens.accent"))
+        XCTAssertFalse(settingsSource.contains("contentMaxWidth"))
+
+        for source in [historySource, bookmarksSource] {
+            XCTAssertFalse(source.contains("windowBackgroundColor"))
+            XCTAssertFalse(source.contains("controlBackgroundColor"))
+            XCTAssertFalse(source.contains("separatorColor"))
+        }
 
         let resolvedChromeSurfaceSources = [
             websiteSource,

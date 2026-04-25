@@ -145,6 +145,10 @@ struct WebsiteView: View {
         themeContext.tokens(settings: sumiSettings).windowBackground
     }
 
+    private var nativeSurfaceContentSurfaceBackground: Color {
+        themeContext.nativeSurfaceThemeContext.tokens(settings: sumiSettings).windowBackground
+    }
+
     var body: some View {
         ZStack() {
             Group {
@@ -160,7 +164,7 @@ struct WebsiteView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .browserContentSurface(
                             geometry: chromeGeometry,
-                            background: contentSurfaceBackground
+                            background: nativeSurfaceContentSurfaceBackground
                         )
                         .allowsHitTesting(true)
                     } else if splitManager.isSplit(for: windowState.id) == false,
@@ -174,7 +178,7 @@ struct WebsiteView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .browserContentSurface(
                             geometry: chromeGeometry,
-                            background: contentSurfaceBackground
+                            background: nativeSurfaceContentSurfaceBackground
                         )
                         .allowsHitTesting(true)
                     } else if splitManager.isSplit(for: windowState.id) == false,
@@ -189,7 +193,7 @@ struct WebsiteView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .browserContentSurface(
                             geometry: chromeGeometry,
-                            background: contentSurfaceBackground
+                            background: nativeSurfaceContentSurfaceBackground
                         )
                         .allowsHitTesting(true)
                     } else if splitManager.isSplit(for: windowState.id) == false,
