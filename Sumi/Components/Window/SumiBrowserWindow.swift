@@ -132,6 +132,11 @@ final class SumiBrowserWindow: NSWindow {
         nil
     }
 
+    override func close() {
+        prepareNativeWindowControlsForBrowserChromeWindowTeardown()
+        super.close()
+    }
+
     override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
         let didChange = super.makeFirstResponder(responder)
         if didChange {

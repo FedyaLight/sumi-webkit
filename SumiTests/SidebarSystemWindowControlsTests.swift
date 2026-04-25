@@ -172,6 +172,42 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         }
     }
 
+    func testSidebarSystemWindowControlsContainerTeardownDuringWindowCloseKeepsButtonsHosted() {
+        let window = WindowChromeTestSupport.makeBrowserWindow()
+        let host = makeHost()
+        let nativeTitlebarView = window.titlebarView
+
+        window.contentView?.addSubview(host)
+        host.presentationMode = .collapsedVisible
+        host.syncWindowReference(window)
+        host.layoutSubtreeIfNeeded()
+        window.prepareNativeWindowControlsForBrowserChromeWindowTeardown()
+        host.prepareForRemoval()
+
+        XCTAssertEqual(host.currentPlacement, .titlebar)
+        XCTAssertTrue(window.isBrowserChromeNativeWindowControlsTeardownInProgress)
+        for type in WindowChromeTestSupport.standardButtonTypes {
+            XCTAssertTrue(window.standardWindowButton(type)?.superview === host)
+            XCTAssertFalse(window.standardWindowButton(type)?.superview === nativeTitlebarView)
+        }
+    }
+
+    func testSidebarSystemWindowControlsContainerWindowWillCloseSuppressesTitlebarRestore() {
+        let window = WindowChromeTestSupport.makeBrowserWindow()
+        let host = makeHost()
+
+        window.contentView?.addSubview(host)
+        host.presentationMode = .docked
+        host.syncWindowReference(window)
+        host.layoutSubtreeIfNeeded()
+
+        NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: window)
+        host.prepareForRemoval()
+
+        XCTAssertTrue(window.isBrowserChromeNativeWindowControlsTeardownInProgress)
+        assertButtonsHosted(in: host, window: window)
+    }
+
     func testSidebarSystemWindowControlsContainerHandsOffButtonsBetweenHosts() {
         let window = WindowChromeTestSupport.makeBrowserWindow()
         let firstHost = makeHost()
@@ -345,6 +381,69 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         assertHostedFramesMatchMetrics(in: host, window: window, metrics: initialMetrics)
     }
 
+    func testSidebarSystemWindowControlsContainerRepairsHostedButtonStateChangedBySheetPass() throws {
+        let window = WindowChromeTestSupport.makeBrowserWindow()
+        let host = makeHost()
+
+        window.contentView?.addSubview(host)
+        host.presentationMode = .docked
+        host.syncWindowReference(window)
+        host.layoutSubtreeIfNeeded()
+
+        let controller = window.browserChromeNativeWindowControlsHostController()
+        let initialMetrics = try XCTUnwrap(controller.cachedMetrics)
+        let zoomButton = try XCTUnwrap(window.standardWindowButton(.zoomButton))
+
+        zoomButton.isHidden = true
+        zoomButton.alphaValue = 0.2
+        zoomButton.isEnabled = false
+        zoomButton.isBordered = true
+        zoomButton.translatesAutoresizingMaskIntoConstraints = false
+
+        NotificationCenter.default.post(name: NSWindow.willBeginSheetNotification, object: window)
+
+        XCTAssertEqual(controller.cachedMetrics, initialMetrics)
+        assertButtonsHosted(in: host, window: window)
+        assertHostedFramesMatchMetrics(in: host, window: window, metrics: initialMetrics)
+        XCTAssertFalse(zoomButton.isHidden)
+        XCTAssertEqual(zoomButton.alphaValue, 0)
+        XCTAssertFalse(zoomButton.isBordered)
+        XCTAssertTrue(zoomButton.translatesAutoresizingMaskIntoConstraints)
+
+        NotificationCenter.default.post(name: NSWindow.didEndSheetNotification, object: window)
+        runMainLoopForSheetTransition()
+
+        XCTAssertEqual(zoomButton.alphaValue, 1)
+        XCTAssertTrue(zoomButton.isEnabled)
+    }
+
+    func testSidebarSystemWindowControlsContainerShieldsHostedButtonsDuringSheetTransition() throws {
+        let window = WindowChromeTestSupport.makeBrowserWindow()
+        let host = makeHost()
+
+        window.contentView?.addSubview(host)
+        host.presentationMode = .docked
+        host.syncWindowReference(window)
+        host.layoutSubtreeIfNeeded()
+
+        let initialSubviewCount = host.subviews.count
+        window.beginHostedNativeWindowControlsVisualShieldForBrowserChrome()
+
+        XCTAssertGreaterThan(host.subviews.count, initialSubviewCount)
+        let shieldView = try XCTUnwrap(host.subviews.last)
+        for type in WindowChromeTestSupport.standardButtonTypes {
+            let button = try XCTUnwrap(window.standardWindowButton(type))
+            XCTAssertFalse(button === shieldView)
+        }
+        assertButtonsHosted(in: host, window: window)
+
+        window.endHostedNativeWindowControlsVisualShieldForBrowserChromeAfterAppKitPass()
+        runMainLoopForSheetTransition()
+
+        XCTAssertFalse(host.subviews.contains { $0 === shieldView })
+        assertButtonsHosted(in: host, window: window)
+    }
+
     func testSidebarSystemWindowControlsContainerRefreshesStaleStartupMetricsBeforeFirstHosting() throws {
         let window = WindowChromeTestSupport.makeBrowserWindow()
         let correctMetrics = try XCTUnwrap(window.nativeWindowControlsMetrics())
@@ -515,6 +614,10 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
 
     private func runMainLoopBriefly() {
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+    }
+
+    private func runMainLoopForSheetTransition() {
+        RunLoop.current.run(until: Date().addingTimeInterval(0.25))
     }
 
     private func makeHost() -> SidebarSystemWindowControlsContainerView {
