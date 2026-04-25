@@ -1272,7 +1272,11 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         RuntimeDiagnostics.emit(
             "🧭 Sidebar mouseDragged starting drag owner=\(recoveryDebugDescription) distance=\(String(format: "%.2f", distance))"
         )
-        startDrag(with: mouseDownEvent ?? event)
+        startDrag(
+            with: event,
+            sessionEvent: mouseDownEvent ?? event,
+            anchorPoint: mouseDownPoint
+        )
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -1336,8 +1340,14 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         movedTo screenPoint: NSPoint
     ) {
         guard didStartDrag,
-              let location = currentGlobalLocation(fromScreenPoint: screenPoint) else { return }
-        updateInternalDragState(at: location)
+              let locations = SidebarDragLocationMapper.sourceLocationsFromScreenPoint(
+                callbackScreenPoint: screenPoint,
+                in: self
+              ) else { return }
+        updateInternalDragState(
+            at: locations.dropLocation,
+            previewLocation: locations.previewLocation
+        )
     }
 
     func setTransientInteractionEnabled(_ isEnabled: Bool) {
@@ -1490,7 +1500,11 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         )
     }
 
-    private func startDrag(with event: NSEvent) {
+    private func startDrag(
+        with event: NSEvent,
+        sessionEvent: NSEvent,
+        anchorPoint: CGPoint?
+    ) {
         guard let configuration = itemConfiguration.dragSource,
               isInteractive,
               configuration.isEnabled,
@@ -1500,17 +1514,26 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         }
 
         let point = convert(event.locationInWindow, from: nil)
+        let resolvedAnchorPoint = anchorPoint ?? point
         guard let previewSession = SidebarDragPreviewSessionFactory.make(
             configuration: configuration,
             sourceSize: bounds.size,
-            sourceOffsetFromBottomLeading: point
+            sourceOffsetFromBottomLeading: resolvedAnchorPoint
         ) else { return }
 
         didStartDrag = true
-        let dragLocation = currentGlobalLocation(for: point)
+        let dragLocation = SidebarDragLocationMapper.swiftUIGlobalPoint(
+            fromLocalPoint: point,
+            in: self
+        )
+        let previewLocation = SidebarDragLocationMapper.swiftUIPreviewPoint(
+            fromLocalPoint: point,
+            in: self
+        )
         SidebarDragState.shared.beginInternalDragSession(
             itemId: configuration.item.tabId,
             location: dragLocation,
+            previewLocation: previewLocation,
             previewKind: configuration.previewKind,
             previewAssets: previewSession.previewAssets,
             previewModel: previewSession.previewModel
@@ -1525,38 +1548,32 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
             sourceID: itemConfiguration.sourceID,
             viewDescription: debugViewDescription
         )
-        updateInternalDragState(at: dragLocation)
+        updateInternalDragState(
+            at: dragLocation,
+            previewLocation: previewLocation
+        )
 
         let dragItem = NSDraggingItem(pasteboardWriter: configuration.item.pasteboardItem())
         let frame = NSRect(
-            x: point.x - previewSession.primaryAsset.anchorOffset.x,
-            y: point.y - previewSession.primaryAsset.anchorOffset.y,
+            x: resolvedAnchorPoint.x - previewSession.primaryAsset.anchorOffset.x,
+            y: resolvedAnchorPoint.y - previewSession.primaryAsset.anchorOffset.y,
             width: previewSession.primaryAsset.size.width,
             height: previewSession.primaryAsset.size.height
         )
         dragItem.setDraggingFrame(frame, contents: transparentImage(size: previewSession.primaryAsset.size))
 
-        let session = beginDraggingSession(with: [dragItem], event: event, source: self)
+        let session = beginDraggingSession(with: [dragItem], event: sessionEvent, source: self)
         session.animatesToStartingPositionsOnCancelOrFail = true
     }
 
-    private func currentGlobalLocation(for localPoint: CGPoint) -> CGPoint {
-        guard let window else { return localPoint }
-        let pointInWindow = convert(localPoint, to: nil)
-        let windowHeight = window.contentView?.bounds.height ?? window.frame.height
-        return CGPoint(x: pointInWindow.x, y: windowHeight - pointInWindow.y)
-    }
-
-    private func currentGlobalLocation(fromScreenPoint screenPoint: NSPoint) -> CGPoint? {
-        guard let window else { return nil }
-        let pointInWindow = window.convertPoint(fromScreen: screenPoint)
-        return currentGlobalLocation(for: convert(pointInWindow, from: nil))
-    }
-
-    private func updateInternalDragState(at location: CGPoint) {
+    private func updateInternalDragState(
+        at location: CGPoint,
+        previewLocation: CGPoint? = nil
+    ) {
         guard let configuration = itemConfiguration.dragSource else { return }
         SidebarDropResolver.updateState(
             location: location,
+            previewLocation: previewLocation,
             state: SidebarDragState.shared,
             draggedItem: configuration.item
         )

@@ -252,6 +252,14 @@ extension TabManager {
         openTargetFolder: Bool = true
     ) -> ShortcutPin? {
         return withStructuralUpdateTransaction {
+            let adjustedIndex = adjustedShortcutMoveIndex(
+                pin,
+                to: role,
+                profileId: profileId,
+                spaceId: spaceId,
+                folderId: folderId,
+                proposedIndex: index
+            )
             removeShortcutPinFromContainers(pin)
             let movedPin = cloneShortcutPin(
                 pin,
@@ -259,11 +267,11 @@ extension TabManager {
                 profileId: profileId,
                 spaceId: spaceId,
                 folderId: folderId,
-                index: index
+                index: adjustedIndex
             )
             let inserted = insertShortcutPin(
                 movedPin,
-                at: index,
+                at: adjustedIndex,
                 openTargetFolder: openTargetFolder
             )
             if let inserted {
@@ -430,6 +438,50 @@ extension TabManager {
 }
 
 private extension TabManager {
+    func adjustedShortcutMoveIndex(
+        _ pin: ShortcutPin,
+        to role: ShortcutPinRole,
+        profileId: UUID?,
+        spaceId: UUID?,
+        folderId: UUID?,
+        proposedIndex: Int
+    ) -> Int {
+        guard pin.role == role,
+              pin.profileId == profileId,
+              pin.spaceId == spaceId,
+              pin.folderId == folderId else {
+            return proposedIndex
+        }
+
+        let currentIndex: Int?
+        switch role {
+        case .essential:
+            guard let profileId else { return proposedIndex }
+            currentIndex = pinnedByProfile[profileId]?.firstIndex(where: { $0.id == pin.id })
+        case .spacePinned:
+            guard let spaceId else { return proposedIndex }
+            if folderId == nil {
+                currentIndex = topLevelSpacePinnedItems(for: spaceId).firstIndex {
+                    if case .shortcut(let existingPin) = $0 {
+                        return existingPin.id == pin.id
+                    }
+                    return false
+                }
+            } else {
+                currentIndex = spacePinnedPins(for: spaceId)
+                    .filter { $0.folderId == folderId }
+                    .sorted {
+                        if $0.index != $1.index { return $0.index < $1.index }
+                        return $0.id.uuidString < $1.id.uuidString
+                    }
+                    .firstIndex(where: { $0.id == pin.id })
+            }
+        }
+
+        guard let currentIndex else { return proposedIndex }
+        return currentIndex < proposedIndex ? proposedIndex - 1 : proposedIndex
+    }
+
     func cloneShortcutPin(
         _ pin: ShortcutPin,
         role: ShortcutPinRole,

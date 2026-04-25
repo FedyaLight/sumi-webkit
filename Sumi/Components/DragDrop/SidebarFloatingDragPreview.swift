@@ -61,7 +61,7 @@ struct SidebarFloatingDragPreview: View {
     var body: some View {
         GeometryReader { geo in
             if let previewModel = dragState.previewModel,
-               let dragLocation = dragState.dragLocation {
+               let dragLocation = dragState.previewDragLocation ?? dragState.dragLocation {
                 let previewKind = SidebarFloatingDragPreviewPolicy.resolvedPreviewKind(
                     model: previewModel,
                     hoveredSlot: dragState.hoveredSlot
@@ -80,7 +80,7 @@ struct SidebarFloatingDragPreview: View {
                     .animation(.easeInOut(duration: 0.15), value: size)
                     .animation(.easeInOut(duration: 0.15), value: dragState.hoveredSlot)
             } else if let asset = currentAsset,
-                      let dragLocation = dragState.dragLocation {
+                      let dragLocation = dragState.previewDragLocation ?? dragState.dragLocation {
                 fallbackImagePreview(asset: asset)
                     .position(
                         x: (dragLocation.x - geo.frame(in: .global).minX) - asset.anchorOffset.x + (asset.size.width / 2),
@@ -172,6 +172,12 @@ struct SidebarFloatingDragPreview: View {
             ?? metrics.profileId
             ?? windowState.currentProfileId
             ?? browserManager.currentProfile?.id
+        if let slotFrame = metrics.dropSlotFrames.first(where: { $0.slot == slot }),
+           slotFrame.frame.width > 0,
+           slotFrame.frame.height > 0 {
+            return slotFrame.frame.size
+        }
+
         let pins = profileId.map { browserManager.tabManager.essentialPins(for: $0) } ?? []
         let projection = SidebarEssentialsProjectionPolicy.make(
             items: pins,

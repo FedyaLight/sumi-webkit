@@ -254,6 +254,42 @@ private extension SidebarDragState {
         publishGeometrySnapshotForTesting()
     }
 
+    func updateTopLevelPinnedItemTarget(
+        itemId: UUID,
+        kind: SidebarTopLevelPinnedItemKind,
+        spaceId: UUID,
+        topLevelIndex: Int,
+        frame: CGRect
+    ) {
+        applyTopLevelPinnedItemTarget(
+            itemId: itemId,
+            kind: kind,
+            spaceId: spaceId,
+            topLevelIndex: topLevelIndex,
+            frame: frame,
+            isActive: true,
+            generation: activeGeometryGeneration
+        )
+        publishGeometrySnapshotForTesting()
+    }
+
+    func updateFolderChildDropTarget(
+        folderId: UUID,
+        childId: UUID,
+        index: Int,
+        frame: CGRect
+    ) {
+        applyFolderChildDropTarget(
+            folderId: folderId,
+            childId: childId,
+            index: index,
+            frame: frame,
+            isActive: true,
+            generation: activeGeometryGeneration
+        )
+        publishGeometrySnapshotForTesting()
+    }
+
     func updateRegularListHitTarget(spaceId: UUID, frame: CGRect, itemCount: Int) {
         applyRegularListHitTarget(
             spaceId: spaceId,
@@ -278,7 +314,8 @@ private extension SidebarDragState {
         canAcceptDrop: Bool = true,
         visibleItemCount: Int? = nil,
         visibleRowCount: Int? = nil,
-        maxDropRowCount: Int? = nil
+        maxDropRowCount: Int? = nil,
+        dropSlotFrames: [SidebarEssentialsDropSlotMetrics] = []
     ) {
         let resolvedVisibleRowCount = max(
             visibleRowCount ?? Self.resolvedMetricsRowCount(
@@ -305,6 +342,7 @@ private extension SidebarDragState {
             profileId: profileId,
             frame: frame,
             dropFrame: dropFrame,
+            dropSlotFrames: dropSlotFrames,
             itemCount: itemCount,
             columnCount: columnCount,
             firstSyntheticRowSlot: firstSyntheticRowSlot,
@@ -390,7 +428,8 @@ private func registerSidebarEssentialsMetrics(
     canAcceptDrop: Bool = true,
     visibleItemCount: Int? = nil,
     visibleRowCount: Int? = nil,
-    maxDropRowCount: Int? = nil
+    maxDropRowCount: Int? = nil,
+    dropSlotFrames: [SidebarEssentialsDropSlotMetrics] = []
 ) {
     ensureSidebarInteractivePage(state, spaceId: spaceId, profileId: profileId)
     let resolvedRowCount = rowCount
@@ -409,7 +448,8 @@ private func registerSidebarEssentialsMetrics(
         canAcceptDrop: canAcceptDrop,
         visibleItemCount: visibleItemCount,
         visibleRowCount: visibleRowCount,
-        maxDropRowCount: maxDropRowCount
+        maxDropRowCount: maxDropRowCount,
+        dropSlotFrames: dropSlotFrames
     )
 }
 
@@ -425,6 +465,106 @@ final class SidebarCurrentDragResolverTests: XCTestCase {
     override func tearDown() {
         state = nil
         super.tearDown()
+    }
+
+    func testDragLocationMapperFlipsWindowPointIntoSwiftUITopLeftSpace() {
+        let location = SidebarDragLocationMapper.swiftUITopLeftPoint(
+            windowPoint: CGPoint(x: 80, y: 292),
+            contentHeight: 400
+        )
+
+        XCTAssertEqual(location, CGPoint(x: 80, y: 108))
+    }
+
+    func testDragLocationMapperUsesSwiftUILayoutTopBoundaryWhenChromeIsPresent() {
+        let location = SidebarDragLocationMapper.swiftUITopLeftPoint(
+            windowPoint: CGPoint(x: 80, y: 220),
+            topBoundaryY: 328
+        )
+
+        XCTAssertEqual(location, CGPoint(x: 80, y: 108))
+    }
+
+    func testDragLocationMapperKeepsDropAndPreviewInFullContentSpace() {
+        let window = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 320, height: 400),
+            styleMask: [.titled, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = NSView(frame: CGRect(x: 0, y: 0, width: 320, height: 400))
+        let windowPoint = CGPoint(x: 80, y: 220)
+
+        let dropLocation = SidebarDragLocationMapper.swiftUIGlobalPoint(
+            fromWindowPoint: windowPoint,
+            in: window
+        )
+        let previewLocation = SidebarDragLocationMapper.swiftUIPreviewPoint(
+            fromWindowPoint: windowPoint,
+            in: window
+        )
+
+        XCTAssertEqual(dropLocation, CGPoint(x: 80, y: 180))
+        XCTAssertEqual(previewLocation, dropLocation)
+    }
+
+    func testDragLocationMapperPrefersCurrentMousePointForSourceCallbacks() {
+        let callbackPoint = NSPoint(x: 10, y: 20)
+        let currentMousePoint = NSPoint(x: 100, y: 220)
+
+        XCTAssertEqual(
+            SidebarDragLocationMapper.preferredSourceScreenPoint(
+                callbackScreenPoint: callbackPoint,
+                currentMouseScreenPoint: currentMousePoint
+            ),
+            currentMousePoint
+        )
+        XCTAssertEqual(
+            SidebarDragLocationMapper.preferredSourceScreenPoint(
+                callbackScreenPoint: callbackPoint,
+                currentMouseScreenPoint: nil
+            ),
+            callbackPoint
+        )
+    }
+
+    func testConvertedCursorRowsResolveSpacePinnedSlotsWithoutVerticalOffset() {
+        let spaceId = UUID()
+        let draggedTab = SumiDragItem(tabId: UUID(), title: "Dragged")
+        let swiftUILayoutTopBoundary: CGFloat = 360
+        registerSidebarSectionFrame(
+            state,
+            spaceId: spaceId,
+            section: .spacePinned,
+            frame: CGRect(
+                x: 0,
+                y: 100,
+                width: 240,
+                height: SidebarRowLayout.rowHeight * 4
+            )
+        )
+
+        let cursorRows: [(topLeftY: CGFloat, expectedSlot: Int)] = [
+            (108, 0),
+            (144, 1),
+            (180, 2),
+        ]
+
+        for row in cursorRows {
+            let windowPoint = CGPoint(
+                x: 80,
+                y: swiftUILayoutTopBoundary - row.topLeftY
+            )
+            let location = SidebarDragLocationMapper.swiftUITopLeftPoint(
+                windowPoint: windowPoint,
+                topBoundaryY: swiftUILayoutTopBoundary
+            )
+
+            XCTAssertEqual(
+                resolve(location, spaceId: spaceId, draggedItem: draggedTab).slot,
+                .spacePinned(spaceId: spaceId, slot: row.expectedSlot)
+            )
+        }
     }
 
     func testFolderDragItemUsesFolderKind() {
@@ -458,7 +598,7 @@ final class SidebarCurrentDragResolverTests: XCTestCase {
         XCTAssertEqual(SumiDragItem.fromPasteboard(pasteboard), item)
     }
 
-    func testFolderHeaderBandsResolveBeforeContainAfter() {
+    func testClosedFolderHeaderTopBandResolvesBeforeThenContain() {
         let spaceId = UUID()
         let folderId = UUID()
         registerFolder(
@@ -471,19 +611,15 @@ final class SidebarCurrentDragResolverTests: XCTestCase {
         )
         let draggedTab = SumiDragItem(tabId: UUID(), title: "Dragged")
 
-        XCTAssertEqual(
-            resolve(CGPoint(x: 80, y: 106), spaceId: spaceId, draggedItem: draggedTab).slot,
-            .spacePinned(spaceId: spaceId, slot: 3)
-        )
+        let before = resolve(CGPoint(x: 80, y: 106), spaceId: spaceId, draggedItem: draggedTab)
+        XCTAssertEqual(before.slot, .spacePinned(spaceId: spaceId, slot: 3))
+        XCTAssertEqual(before.folderIntent, .none)
 
-        let contain = resolve(CGPoint(x: 80, y: 120), spaceId: spaceId, draggedItem: draggedTab)
-        XCTAssertEqual(contain.slot, .folder(folderId: folderId, slot: 2))
-        XCTAssertEqual(contain.folderIntent, .contain(folderId: folderId))
-
-        XCTAssertEqual(
-            resolve(CGPoint(x: 80, y: 134), spaceId: spaceId, draggedItem: draggedTab).slot,
-            .spacePinned(spaceId: spaceId, slot: 4)
-        )
+        for y in [112, 120, 134] as [CGFloat] {
+            let contain = resolve(CGPoint(x: 80, y: y), spaceId: spaceId, draggedItem: draggedTab)
+            XCTAssertEqual(contain.slot, .folder(folderId: folderId, slot: 2))
+            XCTAssertEqual(contain.folderIntent, .contain(folderId: folderId))
+        }
     }
 
     func testOpenFolderBodyUsesRowMidpointForChildInsertion() {
@@ -518,7 +654,48 @@ final class SidebarCurrentDragResolverTests: XCTestCase {
         )
     }
 
-    func testOpenFolderHeaderMiddleResolvesContainWithoutChildInsertIntent() {
+    func testOpenFolderChildFramesDefineInteriorSlotsAndAfterBoundary() {
+        let spaceId = UUID()
+        let folderId = UUID()
+        let draggedTab = SumiDragItem(tabId: UUID(), title: "Dragged")
+        registerFolder(
+            folderId,
+            spaceId: spaceId,
+            topLevelIndex: 2,
+            childCount: 3,
+            isOpen: true,
+            headerFrame: CGRect(x: 0, y: 100, width: 240, height: SidebarRowLayout.rowHeight),
+            bodyFrame: CGRect(x: 0, y: 136, width: 240, height: 144),
+            childFrames: [
+                CGRect(x: 14, y: 144, width: 226, height: SidebarRowLayout.rowHeight),
+                CGRect(x: 14, y: 184, width: 226, height: SidebarRowLayout.rowHeight),
+                CGRect(x: 14, y: 224, width: 226, height: SidebarRowLayout.rowHeight),
+            ]
+        )
+
+        XCTAssertEqual(
+            resolve(CGPoint(x: 80, y: 142), spaceId: spaceId, draggedItem: draggedTab).slot,
+            .folder(folderId: folderId, slot: 0)
+        )
+        XCTAssertEqual(
+            resolve(CGPoint(x: 80, y: 163), spaceId: spaceId, draggedItem: draggedTab).slot,
+            .folder(folderId: folderId, slot: 1)
+        )
+        XCTAssertEqual(
+            resolve(CGPoint(x: 80, y: 182), spaceId: spaceId, draggedItem: draggedTab).slot,
+            .folder(folderId: folderId, slot: 1)
+        )
+        XCTAssertEqual(
+            resolve(CGPoint(x: 80, y: 204), spaceId: spaceId, draggedItem: draggedTab).slot,
+            .folder(folderId: folderId, slot: 2)
+        )
+
+        let belowLastRow = resolve(CGPoint(x: 80, y: 262), spaceId: spaceId, draggedItem: draggedTab)
+        XCTAssertEqual(belowLastRow.slot, .spacePinned(spaceId: spaceId, slot: 3))
+        XCTAssertEqual(belowLastRow.folderIntent, .none)
+    }
+
+    func testOpenFolderHeaderResolvesToFirstChildInsertionSlot() {
         let spaceId = UUID()
         let folderId = UUID()
         registerFolder(
@@ -530,14 +707,22 @@ final class SidebarCurrentDragResolverTests: XCTestCase {
             headerFrame: CGRect(x: 0, y: 100, width: 240, height: 40)
         )
 
+        let before = resolve(
+            CGPoint(x: 80, y: 106),
+            spaceId: spaceId,
+            draggedItem: SumiDragItem(tabId: UUID(), title: "Dragged")
+        )
+        XCTAssertEqual(before.slot, .spacePinned(spaceId: spaceId, slot: 1))
+        XCTAssertEqual(before.folderIntent, .none)
+
         let resolution = resolve(
             CGPoint(x: 80, y: 120),
             spaceId: spaceId,
             draggedItem: SumiDragItem(tabId: UUID(), title: "Dragged")
         )
 
-        XCTAssertEqual(resolution.slot, .folder(folderId: folderId, slot: 3))
-        XCTAssertEqual(resolution.folderIntent, .contain(folderId: folderId))
+        XCTAssertEqual(resolution.slot, .folder(folderId: folderId, slot: 0))
+        XCTAssertEqual(resolution.folderIntent, .insertIntoFolder(folderId: folderId, index: 0))
     }
 
     func testOpenLastFolderAfterZoneResolvesTopLevelAfterFolder() {
@@ -595,7 +780,7 @@ final class SidebarCurrentDragResolverTests: XCTestCase {
 
         let emptyResolution = resolve(CGPoint(x: 80, y: 50), spaceId: spaceId, draggedItem: draggedTab)
         XCTAssertEqual(emptyResolution.slot, .folder(folderId: emptyFolderId, slot: 0))
-        XCTAssertEqual(emptyResolution.folderIntent, .contain(folderId: emptyFolderId))
+        XCTAssertEqual(emptyResolution.folderIntent, .insertIntoFolder(folderId: emptyFolderId, index: 0))
     }
 
     func testFolderHitTargetWinsOverOverlappingSpacePinnedFrame() {
@@ -651,14 +836,111 @@ final class SidebarCurrentDragResolverTests: XCTestCase {
         )
         XCTAssertEqual(
             resolve(CGPoint(x: 80, y: 120), spaceId: spaceId, draggedItem: draggedFolder).slot,
-            .empty
+            .spacePinned(spaceId: spaceId, slot: 3)
         )
         XCTAssertEqual(
             resolve(CGPoint(x: 80, y: 160), spaceId: spaceId, draggedItem: draggedFolder).slot,
-            .empty
+            .spacePinned(spaceId: spaceId, slot: 2)
         )
         XCTAssertEqual(
             resolve(CGPoint(x: 80, y: 292), spaceId: spaceId, draggedItem: draggedFolder).slot,
+            .spacePinned(spaceId: spaceId, slot: 3)
+        )
+    }
+
+    func testFolderDragUsesCompositeTopLevelFrameOverOpenFolderBody() {
+        let spaceId = UUID()
+        let folderId = UUID()
+        let draggedFolder = SumiDragItem.folder(folderId: UUID(), title: "Other Folder")
+        registerSidebarSectionFrame(
+            state,
+            spaceId: spaceId,
+            section: .spacePinned,
+            frame: CGRect(x: 0, y: 80, width: 240, height: 260)
+        )
+        registerTopLevelPinnedItem(
+            itemId: folderId,
+            kind: .folder(folderId),
+            spaceId: spaceId,
+            topLevelIndex: 2,
+            frame: CGRect(x: 0, y: 100, width: 240, height: 180)
+        )
+        registerFolder(
+            folderId,
+            spaceId: spaceId,
+            topLevelIndex: 2,
+            childCount: 4,
+            isOpen: true,
+            headerFrame: CGRect(x: 0, y: 100, width: 240, height: SidebarRowLayout.rowHeight),
+            bodyFrame: CGRect(x: 0, y: 136, width: 240, height: SidebarRowLayout.rowHeight * 4)
+        )
+
+        XCTAssertEqual(
+            resolve(CGPoint(x: 80, y: 150), spaceId: spaceId, draggedItem: draggedFolder).slot,
+            .spacePinned(spaceId: spaceId, slot: 2)
+        )
+        XCTAssertEqual(
+            resolve(CGPoint(x: 80, y: 230), spaceId: spaceId, draggedItem: draggedFolder).slot,
+            .spacePinned(spaceId: spaceId, slot: 3)
+        )
+        XCTAssertEqual(
+            resolve(CGPoint(x: 80, y: 150), spaceId: spaceId, draggedItem: .folder(folderId: folderId, title: "Self")).slot,
+            .empty
+        )
+    }
+
+    func testMixedTopLevelPinnedUsesReportedItemFramesForVariableHeightFolders() {
+        let spaceId = UUID()
+        let firstShortcutId = UUID()
+        let folderId = UUID()
+        let lastShortcutId = UUID()
+        let draggedTab = SumiDragItem(tabId: UUID(), title: "Dragged")
+        registerSidebarSectionFrame(
+            state,
+            spaceId: spaceId,
+            section: .spacePinned,
+            frame: CGRect(x: 0, y: 100, width: 240, height: 260)
+        )
+        registerTopLevelPinnedItem(
+            itemId: firstShortcutId,
+            kind: .shortcut(firstShortcutId),
+            spaceId: spaceId,
+            topLevelIndex: 0,
+            frame: CGRect(x: 0, y: 100, width: 240, height: SidebarRowLayout.rowHeight)
+        )
+        registerTopLevelPinnedItem(
+            itemId: folderId,
+            kind: .folder(folderId),
+            spaceId: spaceId,
+            topLevelIndex: 1,
+            frame: CGRect(x: 0, y: 140, width: 240, height: 150)
+        )
+        registerTopLevelPinnedItem(
+            itemId: lastShortcutId,
+            kind: .shortcut(lastShortcutId),
+            spaceId: spaceId,
+            topLevelIndex: 2,
+            frame: CGRect(x: 0, y: 300, width: 240, height: SidebarRowLayout.rowHeight)
+        )
+
+        XCTAssertEqual(
+            resolve(CGPoint(x: 80, y: 112), spaceId: spaceId, draggedItem: draggedTab).slot,
+            .spacePinned(spaceId: spaceId, slot: 0)
+        )
+        XCTAssertEqual(
+            resolve(CGPoint(x: 80, y: 130), spaceId: spaceId, draggedItem: draggedTab).slot,
+            .spacePinned(spaceId: spaceId, slot: 1)
+        )
+        XCTAssertEqual(
+            resolve(CGPoint(x: 80, y: 160), spaceId: spaceId, draggedItem: draggedTab).slot,
+            .spacePinned(spaceId: spaceId, slot: 1)
+        )
+        XCTAssertEqual(
+            resolve(CGPoint(x: 80, y: 250), spaceId: spaceId, draggedItem: draggedTab).slot,
+            .spacePinned(spaceId: spaceId, slot: 2)
+        )
+        XCTAssertEqual(
+            resolve(CGPoint(x: 80, y: 322), spaceId: spaceId, draggedItem: draggedTab).slot,
             .spacePinned(spaceId: spaceId, slot: 3)
         )
     }
@@ -794,6 +1076,79 @@ final class SidebarCurrentDragResolverTests: XCTestCase {
         )
 
         XCTAssertEqual(resolution.slot, .empty)
+    }
+
+    func testEssentialsResolutionUsesExplicitSlotFramesForHoverPreviewAndFinalSlot() {
+        let spaceId = UUID()
+        let itemId = UUID()
+        let draggedTab = SumiDragItem(tabId: itemId, title: "Dragged")
+        let dropSlotFrames = [
+            SidebarEssentialsDropSlotMetrics(
+                slot: 0,
+                frame: CGRect(x: 0, y: 0, width: 70, height: 32)
+            ),
+            SidebarEssentialsDropSlotMetrics(
+                slot: 1,
+                frame: CGRect(x: 80, y: 0, width: 70, height: 32)
+            ),
+            SidebarEssentialsDropSlotMetrics(
+                slot: 2,
+                frame: CGRect(x: 100, y: 40, width: 70, height: 32)
+            ),
+            SidebarEssentialsDropSlotMetrics(
+                slot: 3,
+                frame: CGRect(x: 0, y: 40, width: 70, height: 32)
+            ),
+        ]
+        registerSidebarSectionFrame(
+            state,
+            spaceId: spaceId,
+            section: .essentials,
+            frame: CGRect(x: 0, y: 0, width: 180, height: 32)
+        )
+        registerSidebarEssentialsMetrics(
+            state,
+            spaceId: spaceId,
+            frame: CGRect(x: 0, y: 0, width: 180, height: 32),
+            dropFrame: CGRect(x: 0, y: 0, width: 180, height: 72),
+            itemCount: 3,
+            columnCount: 2,
+            firstSyntheticRowSlot: 2,
+            rowCount: 1,
+            itemSize: CGSize(width: 70, height: 32),
+            gridSpacing: 8,
+            visibleItemCount: 3,
+            visibleRowCount: 1,
+            maxDropRowCount: 2,
+            dropSlotFrames: dropSlotFrames
+        )
+        state.beginInternalDragSession(
+            itemId: itemId,
+            location: CGPoint(x: 30, y: 52),
+            previewKind: .row,
+            previewAssets: [
+                .row: makePreviewAsset(),
+                .essentialsTile: makePreviewAsset(),
+            ]
+        )
+
+        let hoverResolution = SidebarDropResolver.updateState(
+            location: CGPoint(x: 30, y: 52),
+            state: state,
+            draggedItem: draggedTab
+        )
+        let finalResolution = SidebarDropResolver.resolve(
+            location: CGPoint(x: 30, y: 52),
+            state: state,
+            draggedItem: draggedTab
+        )
+
+        XCTAssertEqual(hoverResolution, finalResolution)
+        XCTAssertEqual(state.hoveredSlot, .essentials(slot: 3))
+        XCTAssertEqual(
+            state.essentialsPreviewState(for: spaceId),
+            SidebarEssentialsPreviewState(expandedDropRowCount: 2, ghostSlot: 3)
+        )
     }
 
     func testInteractiveHoveredPageScopesEssentialsResolutionToSecondaryProfile() {
@@ -978,7 +1333,8 @@ final class SidebarCurrentDragResolverTests: XCTestCase {
         isOpen: Bool,
         headerFrame: CGRect? = nil,
         bodyFrame: CGRect? = nil,
-        afterFrame: CGRect? = nil
+        afterFrame: CGRect? = nil,
+        childFrames: [CGRect] = []
     ) {
         if let headerFrame {
             state.updateFolderDropTarget(
@@ -1015,6 +1371,41 @@ final class SidebarCurrentDragResolverTests: XCTestCase {
                 frame: afterFrame
             )
         }
+
+        for (index, childFrame) in childFrames.enumerated() {
+            state.updateFolderChildDropTarget(
+                folderId: folderId,
+                childId: UUID(),
+                index: index,
+                frame: childFrame
+            )
+        }
+    }
+
+    private func registerTopLevelPinnedItem(
+        itemId: UUID,
+        kind: SidebarTopLevelPinnedItemKind,
+        spaceId: UUID,
+        topLevelIndex: Int,
+        frame: CGRect
+    ) {
+        state.updateTopLevelPinnedItemTarget(
+            itemId: itemId,
+            kind: kind,
+            spaceId: spaceId,
+            topLevelIndex: topLevelIndex,
+            frame: frame
+        )
+    }
+
+    private func makePreviewAsset() -> SidebarDragPreviewAsset {
+        let imageSize = CGSize(width: 80, height: 32)
+        let image = NSImage(size: imageSize)
+        return SidebarDragPreviewAsset(
+            image: image,
+            size: imageSize,
+            anchorOffset: CGPoint(x: 8, y: 8)
+        )
     }
 
     private func resetState() {
@@ -1040,10 +1431,12 @@ final class SidebarDragStateTests: XCTestCase {
     func testBeginInternalDragSessionPublishesImmediatePreviewState() {
         let itemId = UUID()
         let location = CGPoint(x: 42, y: 64)
+        let previewLocation = CGPoint(x: 42, y: 96)
 
         state.beginInternalDragSession(
             itemId: itemId,
             location: location,
+            previewLocation: previewLocation,
             previewKind: .row,
             previewAssets: [.row: makePreviewAsset()]
         )
@@ -1052,8 +1445,29 @@ final class SidebarDragStateTests: XCTestCase {
         XCTAssertTrue(state.isInternalDragSession)
         XCTAssertEqual(state.activeDragItemId, itemId)
         XCTAssertEqual(state.dragLocation, location)
+        XCTAssertEqual(state.previewDragLocation, previewLocation)
         XCTAssertEqual(state.previewKind, .row)
         XCTAssertNotNil(state.previewAssets[.row])
+    }
+
+    func testDropResolverUpdatesLogicalAndPreviewLocationsSeparately() {
+        let itemId = UUID()
+        state.beginInternalDragSession(
+            itemId: itemId,
+            location: CGPoint(x: 0, y: 0),
+            previewKind: .row,
+            previewAssets: [.row: makePreviewAsset()]
+        )
+
+        SidebarDropResolver.updateState(
+            location: CGPoint(x: 24, y: 48),
+            previewLocation: CGPoint(x: 24, y: 120),
+            state: state,
+            draggedItem: SumiDragItem(tabId: itemId, title: "Dragged")
+        )
+
+        XCTAssertEqual(state.dragLocation, CGPoint(x: 24, y: 48))
+        XCTAssertEqual(state.previewDragLocation, CGPoint(x: 24, y: 120))
     }
 
     func testResetInteractionStateClearsPreviewAndHoverState() {
