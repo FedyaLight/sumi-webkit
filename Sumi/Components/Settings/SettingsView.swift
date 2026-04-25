@@ -100,7 +100,6 @@ struct SumiExtensionsSettingsPane: View {
 
     var body: some View {
         @Bindable var sumiSettings = sumiSettingsModel
-        let installedExtensions = extensionSurfaceStore.installedExtensions
 
         VStack(alignment: .leading, spacing: 16) {
             Picker("Section", selection: $sumiSettings.extensionsSettingsSubPane) {
@@ -113,14 +112,23 @@ struct SumiExtensionsSettingsPane: View {
 
             switch sumiSettings.extensionsSettingsSubPane {
             case .safariExtensions:
-                safariExtensionsBody(installedExtensions: installedExtensions)
+                SumiSettingsModuleToggleGate(descriptor: .extensions) {
+                    safariExtensionsBody(
+                        installedExtensions: extensionSurfaceStore.installedExtensions
+                    )
                     .task {
                         if discoveredSafariExtensions.isEmpty {
                             discoverSafariExtensions()
                         }
                     }
+                    .onDisappear {
+                        cancelExtensionPaneTasks()
+                    }
+                }
             case .userScripts:
-                SumiScriptsManagerView(manager: browserManager.sumiScriptsManager)
+                SumiSettingsModuleToggleGate(descriptor: .userScripts) {
+                    SumiScriptsManagerView(manager: browserManager.sumiScriptsManager)
+                }
             }
         }
         .onDisappear {

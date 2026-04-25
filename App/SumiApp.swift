@@ -36,6 +36,7 @@ struct SumiApp: App {
                 .environment(windowRegistry)
                 .environment(webViewCoordinator)
                 .environment(\.sumiSettings, settingsManager)
+                .environment(\.sumiModuleRegistry, browserManager.moduleRegistry)
                 .environment(keyboardShortcutManager)
                 .onAppear {
                     setupApplicationLifecycle()
