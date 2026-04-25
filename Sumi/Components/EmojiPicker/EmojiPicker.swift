@@ -29,13 +29,17 @@ class EmojiPickerManager: NSObject, ObservableObject {
     @Published var committedEmoji: String = ""
 
     private let pickerViewModel = EmojiPickerViewModel()
-    private var emojiHostingController: NSHostingController<SumiEmojiPickerPanel>?
+    private var emojiHostingController: NSHostingController<AnyView>?
     private var activePresentationSource: SidebarTransientPresentationSource?
     private var transientSessionToken: SidebarTransientSessionToken?
     private var activeCommitHandler: ((String) -> Void)?
+    private var activeSettings: SumiSettingsService?
+    private var activeThemeContext: ResolvedThemeContext?
 
     func toggle(
         source: SidebarTransientPresentationSource? = nil,
+        settings: SumiSettingsService? = nil,
+        themeContext: ResolvedThemeContext? = nil,
         onCommit: ((String) -> Void)? = nil
     ) {
         guard let anchorView = anchorView else { return }
@@ -48,6 +52,8 @@ class EmojiPickerManager: NSObject, ObservableObject {
         committedEmoji = ""
         activePresentationSource = source
         activeCommitHandler = onCommit
+        activeSettings = settings
+        activeThemeContext = themeContext
         transientSessionToken = source.flatMap {
             $0.coordinator?.beginSession(
                 kind: .emojiPopover,
@@ -115,15 +121,12 @@ class EmojiPickerManager: NSObject, ObservableObject {
     }
 
     private func ensureHostingController() {
-        guard emojiHostingController == nil else { return }
-        let panel = SumiEmojiPickerPanel(
-            model: pickerViewModel,
-            onEmojiSelected: { [weak self] emoji in
-                DispatchQueue.main.async { [weak self] in
-                    self?.selectedEmoji = emoji
-                }
-            }
-        )
+        let panel = makePanel()
+        if let emojiHostingController {
+            emojiHostingController.rootView = panel
+            return
+        }
+
         let hosting = NSHostingController(rootView: panel)
         hosting.view.frame = NSRect(
             x: 0,
@@ -132,6 +135,31 @@ class EmojiPickerManager: NSObject, ObservableObject {
             height: SumiEmojiPickerMetrics.popoverHeight
         )
         emojiHostingController = hosting
+    }
+
+    private func makePanel() -> AnyView {
+        let panel = SumiEmojiPickerPanel(
+            model: pickerViewModel,
+            onEmojiSelected: { [weak self] emoji in
+                DispatchQueue.main.async { [weak self] in
+                    self?.selectedEmoji = emoji
+                }
+            }
+        )
+
+        if let activeSettings, let activeThemeContext {
+            return AnyView(
+                panel
+                    .environment(\.sumiSettings, activeSettings)
+                    .environment(\.resolvedThemeContext, activeThemeContext)
+            )
+        }
+
+        if let activeSettings {
+            return AnyView(panel.environment(\.sumiSettings, activeSettings))
+        }
+
+        return AnyView(panel)
     }
 }
 

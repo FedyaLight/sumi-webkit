@@ -297,7 +297,7 @@ final class SidebarThemeResolutionTests: XCTestCase {
     func testWebsiteCompositorContainersArePaintlessChromeFallbacks() throws {
         let source = try String(
             contentsOf: Self.repoRoot.appendingPathComponent(
-                "Sumi/Components/WebsiteView/WebsiteView.swift"
+                "Sumi/Components/WebsiteView/WebsiteCompositorView.swift"
             ),
             encoding: .utf8
         )
@@ -319,6 +319,18 @@ final class SidebarThemeResolutionTests: XCTestCase {
         let websiteSource = try String(
             contentsOf: Self.repoRoot.appendingPathComponent(
                 "Sumi/Components/WebsiteView/WebsiteView.swift"
+            ),
+            encoding: .utf8
+        )
+        let browserSurfaceSource = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "Sumi/Components/WebsiteView/BrowserContentSurface.swift"
+            ),
+            encoding: .utf8
+        )
+        let compositorSource = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "Sumi/Components/WebsiteView/WebsiteCompositorView.swift"
             ),
             encoding: .utf8
         )
@@ -350,6 +362,11 @@ final class SidebarThemeResolutionTests: XCTestCase {
         XCTAssertTrue(websiteSource.contains("BrowserChromeGeometry(settings: sumiSettings)"))
         XCTAssertTrue(websiteSource.contains(".browserContentSurface("))
         XCTAssertTrue(websiteSource.contains("themeContext.tokens(settings: sumiSettings).windowBackground"))
+        XCTAssertTrue(browserSurfaceSource.contains("struct BrowserContentSurfaceModifier"))
+        XCTAssertTrue(browserSurfaceSource.contains("RoundedRectangle("))
+        XCTAssertTrue(browserSurfaceSource.contains("cornerRadius: geometry.contentRadius"))
+        XCTAssertTrue(compositorSource.contains("WindowWebContentController"))
+        XCTAssertTrue(compositorSource.contains("TabCompositorWrapper"))
         XCTAssertTrue(emptySource.contains("BrowserChromeGeometry(settings: sumiSettings)"))
         XCTAssertTrue(emptySource.contains("themeContext.tokens(settings: sumiSettings).windowBackground"))
         XCTAssertTrue(historySource.contains("themeContext.tokens(settings: sumiSettings).windowBackground"))
@@ -358,6 +375,7 @@ final class SidebarThemeResolutionTests: XCTestCase {
 
         let resolvedChromeSurfaceSources = [
             websiteSource,
+            browserSurfaceSource,
             emptySource,
             historySource,
             bookmarksSource,
@@ -365,6 +383,98 @@ final class SidebarThemeResolutionTests: XCTestCase {
         ].joined(separator: "\n")
         XCTAssertFalse(resolvedChromeSurfaceSources.contains("Color(nsColor: .windowBackgroundColor)"))
         XCTAssertFalse(resolvedChromeSurfaceSources.contains("Color(.windowBackgroundColor)"))
+    }
+
+    func testFloatingChromeSurfacesUseResolvedTokenFills() throws {
+        let surfaceSource = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "Sumi/Theme/FloatingChromeSurface.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(surfaceSource.contains("enum FloatingChromeSurfaceRole"))
+        XCTAssertTrue(surfaceSource.contains("tokens.commandPaletteBackground"))
+        XCTAssertTrue(surfaceSource.contains("tokens.commandPaletteChipBackground"))
+        XCTAssertTrue(surfaceSource.contains("tokens.commandPaletteRowHover"))
+        XCTAssertTrue(surfaceSource.contains("tokens.commandPaletteRowSelected"))
+        XCTAssertTrue(surfaceSource.contains("themeContext.tokens(settings: sumiSettings)"))
+        XCTAssertFalse(surfaceSource.contains("windowBackgroundColor"))
+        XCTAssertFalse(surfaceSource.contains("controlBackgroundColor"))
+    }
+
+    func testTargetedFloatingSurfacesDoNotUseAppKitBackgroundColors() throws {
+        let paths = [
+            "Sumi/Managers/DialogManager/DialogManager.swift",
+            "Sumi/Components/EmojiPicker/SumiEmojiPickerPanel.swift",
+            "Sumi/Managers/SumiScripts/UI/SumiScriptsPopupView.swift",
+            "Sumi/Managers/ExternalMiniWindowManager/MiniBrowserWindowView.swift"
+        ]
+
+        for path in paths {
+            let source = try String(
+                contentsOf: Self.repoRoot.appendingPathComponent(path),
+                encoding: .utf8
+            )
+            XCTAssertFalse(source.contains("windowBackgroundColor"), path)
+            XCTAssertFalse(source.contains("controlBackgroundColor"), path)
+        }
+
+        let dialogSource = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "Sumi/Managers/DialogManager/DialogManager.swift"
+            ),
+            encoding: .utf8
+        )
+        let emojiSource = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "Sumi/Components/EmojiPicker/SumiEmojiPickerPanel.swift"
+            ),
+            encoding: .utf8
+        )
+        let scriptsSource = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "Sumi/Managers/SumiScripts/UI/SumiScriptsPopupView.swift"
+            ),
+            encoding: .utf8
+        )
+        let miniSource = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "Sumi/Managers/ExternalMiniWindowManager/MiniBrowserWindowView.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(dialogSource.contains(".floatingChromeSurface("))
+        XCTAssertTrue(emojiSource.contains("FloatingChromeSurfaceFill(.panel)"))
+        XCTAssertTrue(scriptsSource.contains("FloatingChromeSurfaceFill(.panel)"))
+        XCTAssertTrue(scriptsSource.contains("FloatingChromeSurfaceFill(.elevated)"))
+        XCTAssertTrue(miniSource.contains("FloatingChromeSurfaceFill(.panel)"))
+    }
+
+    func testMiniBrowserWindowUsesNeutralResolvedThemeContext() throws {
+        let managerSource = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "Sumi/Managers/ExternalMiniWindowManager/ExternalMiniWindowManager.swift"
+            ),
+            encoding: .utf8
+        )
+        let themeSource = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "Sumi/Managers/ExternalMiniWindowManager/MiniBrowserWindowThemeContext.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(managerSource.contains("let resolvedSettings = settings ?? SumiSettingsService()"))
+        XCTAssertTrue(managerSource.contains("MiniBrowserWindowThemeContextResolver.make("))
+        XCTAssertTrue(managerSource.contains(".environment(\\.sumiSettings, resolvedSettings)"))
+        XCTAssertTrue(managerSource.contains(".environment(\\.resolvedThemeContext, neutralThemeContext)"))
+        XCTAssertTrue(themeSource.contains("settings.windowSchemeMode"))
+        XCTAssertTrue(themeSource.contains("workspaceTheme: .default"))
+        XCTAssertTrue(themeSource.contains("sourceWorkspaceTheme: .default"))
+        XCTAssertTrue(themeSource.contains("targetWorkspaceTheme: .default"))
+        XCTAssertFalse(themeSource.contains("ZenWorkspaceThemeResolver.resolve"))
     }
 
     func testWebViewHostIsPaintlessChromeFallback() throws {

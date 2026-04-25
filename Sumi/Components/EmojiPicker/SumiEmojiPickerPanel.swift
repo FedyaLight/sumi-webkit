@@ -81,7 +81,7 @@ struct SumiEmojiPickerPanel: View {
         }
         .padding(12)
         .frame(width: SumiEmojiPickerMetrics.popoverWidth, height: SumiEmojiPickerMetrics.popoverHeight)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(FloatingChromeSurfaceFill(.panel))
         .modifier(SumiEmojiPickerAppearModifier())
         .accessibilityIdentifier("emoji-picker-panel")
         .onAppear {

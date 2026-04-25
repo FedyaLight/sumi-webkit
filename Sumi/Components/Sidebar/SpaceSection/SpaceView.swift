@@ -1693,7 +1693,9 @@ private struct ShortcutSidebarRowChrome: View {
             SumiPersistentGlyph.presentsAsEmoji(iconAsset) ? iconAsset : nil
         } ?? ""
         emojiManager.toggle(
-            source: windowState.resolveSidebarPresentationSource()
+            source: windowState.resolveSidebarPresentationSource(),
+            settings: sumiSettings,
+            themeContext: themeContext
         ) { picked in
             let normalized = SumiPersistentGlyph.normalizedLauncherIconValue(picked)
             onLauncherIconSelected?(normalized)

@@ -301,6 +301,8 @@ struct SpaceTitle: View {
         emojiManager.selectedEmoji = SumiPersistentGlyph.presentsAsEmoji(space.icon) ? space.icon : ""
         emojiManager.toggle(
             source: windowState.resolveSidebarPresentationSource(),
+            settings: sumiSettings,
+            themeContext: themeContext,
             onCommit: commitSpaceIcon
         )
     }

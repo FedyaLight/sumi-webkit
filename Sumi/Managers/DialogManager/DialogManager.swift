@@ -162,13 +162,13 @@ struct DialogCard<Content: View>: View {
         content
             .padding(16)
             .frame(maxWidth: 500, alignment: .leading)
-            .background(Color(.windowBackgroundColor).opacity(0.97))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(.white.opacity(0.25), lineWidth: 1)
-            }
-            .shadow(color: .black, radius: 1, y: 0)
+            .floatingChromeSurface(
+                .panel,
+                opacity: 0.97,
+                cornerRadius: 12,
+                drawsBorder: true,
+                drawsShadow: true
+            )
     }
 }
 
