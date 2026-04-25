@@ -179,6 +179,8 @@ struct SumiSettingsTabRootView: View {
                     SettingsAppearanceTab()
                 case .general:
                     SettingsGeneralTab()
+                case .performance:
+                    SettingsPerformanceTab()
                 case .privacy:
                     PrivacySettingsView()
                 case .profiles:
