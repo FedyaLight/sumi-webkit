@@ -1767,7 +1767,9 @@ private struct ShortcutSidebarRowChrome: View {
             title: resolvedTitle,
             font: .systemFont(ofSize: 13, weight: .medium),
             textColor: textColor,
-            trailingFadePadding: SidebarHoverChrome.trailingActionFadePadding,
+            trailingFadePadding: SidebarHoverChrome.trailingFadePadding(
+                showsTrailingAction: showsActionButton
+            ),
             animated: liveTab != nil
         )
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
