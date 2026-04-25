@@ -31,6 +31,14 @@ final class SumiTabTitleViewTests: XCTestCase {
         XCTAssertEqual(maskLayer.endPoint.x, 0.875, accuracy: 0.001)
     }
 
+    func testHoverChromeOnlyReservesFadePaddingWhenTrailingActionShows() {
+        XCTAssertEqual(SidebarHoverChrome.trailingFadePadding(showsTrailingAction: false), 0)
+        XCTAssertEqual(
+            SidebarHoverChrome.trailingFadePadding(showsTrailingAction: true),
+            SidebarRowLayout.trailingActionFadePadding
+        )
+    }
+
     func testTitleViewAnimatesPreviousAndCurrentTitleDuringTransition() throws {
         let view = makeView(width: 200)
         view.apply(
