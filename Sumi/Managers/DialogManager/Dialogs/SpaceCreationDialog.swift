@@ -77,6 +77,8 @@ struct SpaceCreationContent: View {
     @StateObject private var emojiManager = EmojiPickerManager()
     @State private var isProfileCreationPresented = false
     @EnvironmentObject var browserManager: BrowserManager
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -100,7 +102,10 @@ struct SpaceCreationContent: View {
 
                 HStack(spacing: 12) {
                     Button {
-                        emojiManager.toggle()
+                        emojiManager.toggle(
+                            settings: sumiSettings,
+                            themeContext: themeContext
+                        )
                     } label: {
                         Text(
                             emojiManager.selectedEmoji.isEmpty

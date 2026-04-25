@@ -172,12 +172,15 @@ final class MiniBrowserWindowController: NSWindowController, NSWindowDelegate {
             session: session,
             adoptAction: adoptAction
         )
-        let contentView: AnyView
-        if let settings {
-            contentView = AnyView(baseView.environment(\.sumiSettings, settings))
-        } else {
-            contentView = AnyView(baseView)
-        }
+        let resolvedSettings = settings ?? SumiSettingsService()
+        let neutralThemeContext = MiniBrowserWindowThemeContextResolver.make(
+            settings: resolvedSettings
+        )
+        let contentView = AnyView(
+            baseView
+                .environment(\.sumiSettings, resolvedSettings)
+                .environment(\.resolvedThemeContext, neutralThemeContext)
+        )
 
         let hostingController = NSHostingController(rootView: contentView)
         let window = NSWindow(

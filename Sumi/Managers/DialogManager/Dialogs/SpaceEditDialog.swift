@@ -88,6 +88,8 @@ private struct SpaceEditContent: View {
 
     @StateObject private var emojiManager = EmojiPickerManager()
     @EnvironmentObject var browserManager: BrowserManager
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -111,7 +113,10 @@ private struct SpaceEditContent: View {
 
                 HStack(spacing: 12) {
                     Button {
-                        emojiManager.toggle()
+                        emojiManager.toggle(
+                            settings: sumiSettings,
+                            themeContext: themeContext
+                        )
                     } label: {
                         SpaceIconView(icon: currentIcon)
                             .frame(width: 28, height: 28)

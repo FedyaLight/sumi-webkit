@@ -13,7 +13,7 @@ struct MiniBrowserWindowView: View {
             webContent
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(NSColor.windowBackgroundColor))
+        .background(FloatingChromeSurfaceFill(.panel))
         .ignoresSafeArea(.container, edges: .top)
         .background(WindowAccessor { window in
             guard hostingWindow !== window else { return }

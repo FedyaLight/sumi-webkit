@@ -47,7 +47,7 @@ struct SumiScriptsPopupView: View {
             footerView
         }
         .frame(width: 320)
-        .background(Color(NSColor.windowBackgroundColor)) // Opaque background
+        .background(FloatingChromeSurfaceFill(.panel))
     }
 
     // MARK: - Components
@@ -62,7 +62,7 @@ struct SumiScriptsPopupView: View {
                 .labelsHidden()
         }
         .padding()
-        .background(Color(NSColor.controlBackgroundColor)) // Opaque header
+        .background(FloatingChromeSurfaceFill(.elevated))
     }
 
     private var disabledStateView: some View {
@@ -175,7 +175,7 @@ struct SumiScriptsPopupView: View {
             .help("Reload Scripts from Disk")
         }
         .padding(10)
-        .background(Color(NSColor.controlBackgroundColor)) // Opaque footer
+        .background(FloatingChromeSurfaceFill(.elevated))
     }
 
     private func sectionHeader(_ title: String) -> some View {
@@ -185,7 +185,7 @@ struct SumiScriptsPopupView: View {
             .padding(.horizontal)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(NSColor.windowBackgroundColor))
+            .background(FloatingChromeSurfaceFill(.panel))
     }
 
 }
@@ -293,7 +293,7 @@ struct ScriptRow: View {
             }
             .padding(.horizontal)
             .padding(.vertical, 10)
-            .background(Color(NSColor.controlBackgroundColor))
+            .background(FloatingChromeSurfaceFill(.elevated))
 
             // Menu Commands for this script
             if !script.menuCommands.isEmpty {
@@ -311,7 +311,7 @@ struct ScriptRow: View {
                         }
                         .padding(.horizontal, 24)
                         .padding(.vertical, 6)
-                        .background(Color(NSColor.controlBackgroundColor))
+                        .background(FloatingChromeSurfaceFill(.elevated))
                     }
                     .buttonStyle(.plain)
                     .dividerOver()
