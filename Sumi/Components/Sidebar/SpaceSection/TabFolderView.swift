@@ -273,7 +273,7 @@ struct TabFolderView: View {
 
     private var folderBodyVisibleContent: some View {
         ZStack(alignment: .topLeading) {
-            folderContent
+            folderContent()
                 .opacity(folder.isOpen ? 1 : 0)
                 .allowsHitTesting(folder.isOpen)
 
@@ -286,7 +286,7 @@ struct TabFolderView: View {
 
     private var folderBodyHeightMeasurements: some View {
         ZStack(alignment: .topLeading) {
-            folderContent
+            folderContent(reportsGeometry: false)
                 .fixedSize(horizontal: false, vertical: true)
                 .background {
                     FolderBodyHeightReader { height in
@@ -514,15 +514,26 @@ struct TabFolderView: View {
         .padding(.bottom, 4)
     }
 
-    private var folderContent: some View {
+    private func folderContent(reportsGeometry: Bool = true) -> some View {
         let items = folderItems
         
         return VStack(spacing: 0) {
-            ForEach(items, id: \.self) { item in
+            ForEach(Array(items.enumerated()), id: \.element) { index, item in
                 switch item {
                 case .shortcut(let pinId):
                     if let pin = shortcutPinsInFolder.first(where: { $0.id == pinId }) {
-                        folderShortcutView(pin)
+                        if reportsGeometry {
+                            folderShortcutView(pin)
+                                .sidebarFolderChildDropGeometry(
+                                    folderId: folder.id,
+                                    childId: pin.id,
+                                    index: index,
+                                    generation: dragState.sidebarGeometryGeneration,
+                                    isActive: isInteractive && folder.isOpen
+                                )
+                        } else {
+                            folderShortcutView(pin)
+                        }
                     }
                 }
             }

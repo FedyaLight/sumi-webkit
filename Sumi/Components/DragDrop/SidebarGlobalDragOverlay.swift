@@ -29,8 +29,8 @@ struct SidebarDropResolution: Equatable {
 
 @MainActor
 enum SidebarDropResolver {
-    private static let folderContainThreshold: CGFloat = 0.2
     private static let rowStride: CGFloat = SidebarRowLayout.rowHeight
+    private static let folderHeaderTopLevelBeforeBandHeight: CGFloat = 10
 
     static func resolve(
         location: CGPoint,
@@ -76,6 +76,7 @@ enum SidebarDropResolver {
         if let pinnedResolution = resolveSpacePinnedTarget(
             location: location,
             state: state,
+            draggedItem: draggedItem,
             hoveredPage: hoveredPage
         ) {
             return pinnedResolution
@@ -101,10 +102,14 @@ enum SidebarDropResolver {
     @discardableResult
     static func updateState(
         location: CGPoint,
+        previewLocation: CGPoint? = nil,
         state: SidebarDragState,
         draggedItem: SumiDragItem?
     ) -> SidebarDropResolution {
-        state.updateDragLocation(location)
+        state.updateDragLocation(
+            location,
+            previewLocation: previewLocation
+        )
         let resolution = resolve(
             location: location,
             state: state,
@@ -123,11 +128,43 @@ enum SidebarDropResolver {
     private static func resolveSpacePinnedTarget(
         location: CGPoint,
         state: SidebarDragState,
+        draggedItem: SumiDragItem?,
         hoveredPage: SidebarPageGeometryMetrics?
     ) -> SidebarDropResolution? {
         guard let hoveredPage,
               let pinnedFrame = state.sectionFrame(for: .spacePinned, in: hoveredPage.spaceId),
               pinnedFrame.contains(location) else {
+            return nil
+        }
+
+        let topLevelItems = state.topLevelPinnedItemTargets.values
+            .filter { $0.spaceId == hoveredPage.spaceId }
+            .sorted { lhs, rhs in
+                if lhs.topLevelIndex != rhs.topLevelIndex {
+                    return lhs.topLevelIndex < rhs.topLevelIndex
+                }
+                return lhs.itemId.uuidString < rhs.itemId.uuidString
+            }
+
+        if !topLevelItems.isEmpty,
+           let slot = resolveTopLevelPinnedSlot(location: location, topLevelItems: topLevelItems) {
+            if draggedItem?.kind == .folder,
+               let directItem = topLevelItems.first(where: { $0.frame.contains(location) }),
+               directItem.itemId == draggedItem?.tabId {
+                return emptyResolution
+            }
+
+            return SidebarDropResolution(
+                slot: .spacePinned(spaceId: hoveredPage.spaceId, slot: slot),
+                targetSpaceId: hoveredPage.spaceId,
+                targetProfileId: hoveredPage.profileId,
+                folderIntent: .none,
+                activeHoveredFolderId: nil
+            )
+        }
+
+        let hasFolderTargets = state.folderDropTargets.values.contains { $0.spaceId == hoveredPage.spaceId }
+        guard !hasFolderTargets else {
             return nil
         }
 
@@ -142,6 +179,48 @@ enum SidebarDropResolver {
             folderIntent: .none,
             activeHoveredFolderId: nil
         )
+    }
+
+    private static func resolveTopLevelPinnedSlot(
+        location: CGPoint,
+        topLevelItems: [SidebarTopLevelPinnedItemMetrics]
+    ) -> Int? {
+        guard let firstItem = topLevelItems.first,
+              let lastItem = topLevelItems.last else {
+            return 0
+        }
+
+        if location.y < firstItem.frame.minY {
+            return firstItem.topLevelIndex
+        }
+
+        for item in topLevelItems where item.frame.contains(location) {
+            return location.y < item.frame.midY
+                ? item.topLevelIndex
+                : item.topLevelIndex + 1
+        }
+
+        for pair in zip(topLevelItems, topLevelItems.dropFirst()) {
+            let previous = pair.0
+            let next = pair.1
+            if location.y >= previous.frame.maxY, location.y < next.frame.minY {
+                return location.y < ((previous.frame.maxY + next.frame.minY) / 2)
+                    ? previous.topLevelIndex + 1
+                    : next.topLevelIndex
+            }
+        }
+
+        if location.y >= lastItem.frame.maxY {
+            return lastItem.topLevelIndex + 1
+        }
+
+        let nearest = topLevelItems.min { lhs, rhs in
+            abs(location.y - lhs.frame.midY) < abs(location.y - rhs.frame.midY)
+        }
+        guard let nearest else { return nil }
+        return location.y < nearest.frame.midY
+            ? nearest.topLevelIndex
+            : nearest.topLevelIndex + 1
     }
 
     private static func resolveFolderTarget(
@@ -166,6 +245,7 @@ enum SidebarDropResolver {
                     target,
                     frame: headerFrame,
                     location: location,
+                    state: state,
                     draggedItem: draggedItem
                 )
             }
@@ -175,6 +255,7 @@ enum SidebarDropResolver {
                     target,
                     frame: bodyFrame,
                     location: location,
+                    state: state,
                     draggedItem: draggedItem
                 )
             }
@@ -194,35 +275,28 @@ enum SidebarDropResolver {
         _ target: SidebarFolderDropTargetMetrics,
         frame: CGRect,
         location: CGPoint,
+        state: SidebarDragState,
         draggedItem: SumiDragItem?
     ) -> SidebarDropResolution {
         if draggedItem?.kind == .folder, draggedItem?.tabId == target.folderId {
             return emptyResolution
         }
 
-        let ratio = frame.height > 0 ? (location.y - frame.minY) / frame.height : 0.5
-        if ratio < folderContainThreshold {
-            return SidebarDropResolution(
-                slot: .spacePinned(spaceId: target.spaceId, slot: target.topLevelIndex),
-                targetSpaceId: target.spaceId,
-                targetProfileId: nil,
-                folderIntent: .none,
-                activeHoveredFolderId: nil
+        if draggedItem?.kind == .folder {
+            return topLevelPinnedReorderResolution(
+                for: target,
+                location: location,
+                state: state,
+                fallbackFrame: frame
             )
         }
 
-        if ratio > 1 - folderContainThreshold {
-            return SidebarDropResolution(
-                slot: .spacePinned(spaceId: target.spaceId, slot: target.topLevelIndex + 1),
-                targetSpaceId: target.spaceId,
-                targetProfileId: nil,
-                folderIntent: .none,
-                activeHoveredFolderId: nil
-            )
+        if location.y < frame.minY + min(folderHeaderTopLevelBeforeBandHeight, frame.height / 3) {
+            return topLevelPinnedResolution(for: target, slot: target.topLevelIndex)
         }
 
-        guard draggedItem?.kind != .folder else {
-            return emptyResolution
+        if target.isOpen {
+            return insertIntoFolderResolution(for: target, index: 0)
         }
 
         return containResolution(for: target)
@@ -232,25 +306,89 @@ enum SidebarDropResolver {
         _ target: SidebarFolderDropTargetMetrics,
         frame: CGRect,
         location: CGPoint,
+        state: SidebarDragState,
         draggedItem: SumiDragItem?
     ) -> SidebarDropResolution {
-        guard draggedItem?.kind != .folder else {
+        if draggedItem?.kind == .folder, draggedItem?.tabId == target.folderId {
             return emptyResolution
         }
 
-        guard target.isOpen, target.childCount > 0 else {
+        if draggedItem?.kind == .folder {
+            return topLevelPinnedReorderResolution(
+                for: target,
+                location: location,
+                state: state,
+                fallbackFrame: frame
+            )
+        }
+
+        guard target.isOpen else {
             return containResolution(for: target)
         }
 
+        guard target.childCount > 0 else {
+            return insertIntoFolderResolution(for: target, index: 0)
+        }
+
+        let childTargets = state.folderChildDropTargets.values
+            .filter { $0.folderId == target.folderId }
+            .sorted { lhs, rhs in
+                if lhs.index != rhs.index { return lhs.index < rhs.index }
+                return lhs.childId.uuidString < rhs.childId.uuidString
+            }
+
+        if let childResolution = resolveOpenFolderChildRows(
+            target,
+            location: location,
+            childTargets: childTargets
+        ) {
+            return childResolution
+        }
+
         let localY = max(0, location.y - frame.minY)
+        let rowContentHeight = CGFloat(target.childCount) * rowStride
+        guard localY <= rowContentHeight else {
+            return topLevelPinnedResolution(for: target, slot: target.topLevelIndex + 1)
+        }
+
         let safeIndex = midpointSlotIndex(localY: localY, itemCount: target.childCount)
-        return SidebarDropResolution(
-            slot: .folder(folderId: target.folderId, slot: safeIndex),
-            targetSpaceId: target.spaceId,
-            targetProfileId: nil,
-            folderIntent: .insertIntoFolder(folderId: target.folderId, index: safeIndex),
-            activeHoveredFolderId: target.folderId
-        )
+        return insertIntoFolderResolution(for: target, index: safeIndex)
+    }
+
+    private static func resolveOpenFolderChildRows(
+        _ target: SidebarFolderDropTargetMetrics,
+        location: CGPoint,
+        childTargets: [SidebarFolderChildDropTargetMetrics]
+    ) -> SidebarDropResolution? {
+        guard let firstChild = childTargets.first,
+              let lastChild = childTargets.last else {
+            return nil
+        }
+
+        if location.y < firstChild.frame.minY {
+            return insertIntoFolderResolution(for: target, index: 0)
+        }
+
+        for child in childTargets where child.frame.contains(location) {
+            let index = location.y < child.frame.midY
+                ? child.index
+                : child.index + 1
+            return insertIntoFolderResolution(for: target, index: index)
+        }
+
+        for pair in zip(childTargets, childTargets.dropFirst()) {
+            let previous = pair.0
+            let next = pair.1
+            if location.y >= previous.frame.maxY, location.y < next.frame.minY {
+                return insertIntoFolderResolution(for: target, index: previous.index + 1)
+            }
+        }
+
+        if location.y > lastChild.frame.maxY {
+            return topLevelPinnedResolution(for: target, slot: target.topLevelIndex + 1)
+        }
+
+        return nil
     }
 
     private static func resolveFolderAfter(
@@ -261,13 +399,7 @@ enum SidebarDropResolver {
             return emptyResolution
         }
 
-        return SidebarDropResolution(
-            slot: .spacePinned(spaceId: target.spaceId, slot: target.topLevelIndex + 1),
-            targetSpaceId: target.spaceId,
-            targetProfileId: nil,
-            folderIntent: .none,
-            activeHoveredFolderId: nil
-        )
+        return topLevelPinnedResolution(for: target, slot: target.topLevelIndex + 1)
     }
 
     private static func containResolution(
@@ -280,6 +412,49 @@ enum SidebarDropResolver {
             folderIntent: .contain(folderId: target.folderId),
             activeHoveredFolderId: target.folderId
         )
+    }
+
+    private static func insertIntoFolderResolution(
+        for target: SidebarFolderDropTargetMetrics,
+        index: Int
+    ) -> SidebarDropResolution {
+        let safeIndex = max(0, min(index, target.childCount))
+        return SidebarDropResolution(
+            slot: .folder(folderId: target.folderId, slot: safeIndex),
+            targetSpaceId: target.spaceId,
+            targetProfileId: nil,
+            folderIntent: .insertIntoFolder(folderId: target.folderId, index: safeIndex),
+            activeHoveredFolderId: target.folderId
+        )
+    }
+
+    private static func topLevelPinnedResolution(
+        for target: SidebarFolderDropTargetMetrics,
+        slot: Int
+    ) -> SidebarDropResolution {
+        SidebarDropResolution(
+            slot: .spacePinned(spaceId: target.spaceId, slot: max(0, slot)),
+            targetSpaceId: target.spaceId,
+            targetProfileId: nil,
+            folderIntent: .none,
+            activeHoveredFolderId: nil
+        )
+    }
+
+    private static func topLevelPinnedReorderResolution(
+        for target: SidebarFolderDropTargetMetrics,
+        location: CGPoint,
+        state: SidebarDragState,
+        fallbackFrame: CGRect
+    ) -> SidebarDropResolution {
+        let reportedFrame = state.topLevelPinnedItemTargets[target.folderId].flatMap { metrics in
+            metrics.spaceId == target.spaceId ? metrics.frame : nil
+        }
+        let itemFrame = reportedFrame ?? fallbackFrame
+        let slot = location.y < itemFrame.midY
+            ? target.topLevelIndex
+            : target.topLevelIndex + 1
+        return topLevelPinnedResolution(for: target, slot: slot)
     }
 
     private static var emptyResolution: SidebarDropResolution {
@@ -413,27 +588,7 @@ enum SidebarDropResolver {
             )
         }
 
-        let localX = max(0, location.x - metrics.dropFrame.minX)
-        let localY = max(0, location.y - metrics.dropFrame.minY)
-        let columnCount = max(metrics.columnCount, 1)
-        let columnStride = metrics.itemSize.width + metrics.gridSpacing
-        let rowStride = metrics.itemSize.height + metrics.gridSpacing
-        let column = max(
-            0,
-            min(
-                columnCount - 1,
-                Int(floor((localX + (metrics.gridSpacing / 2)) / max(columnStride, 1)))
-            )
-        )
-        let maxDropRowIndex = max(metrics.maxDropRowCount - 1, 0)
-        let row = max(
-            0,
-            min(
-                maxDropRowIndex,
-                Int(floor((localY + (metrics.gridSpacing / 2)) / max(rowStride, 1)))
-            )
-        )
-        let slot = max(0, min((row * columnCount) + column, metrics.visibleItemCount))
+        let slot = resolvedEssentialsSlot(location: location, metrics: metrics)
 
         return SidebarDropResolution(
             slot: .essentials(slot: slot),
@@ -442,6 +597,51 @@ enum SidebarDropResolver {
             folderIntent: .none,
             activeHoveredFolderId: nil
         )
+    }
+
+    private static func resolvedEssentialsSlot(
+        location: CGPoint,
+        metrics: SidebarEssentialsLayoutMetrics
+    ) -> Int {
+        let orderedSlots = metrics.dropSlotFrames.sorted { lhs, rhs in
+            if lhs.slot != rhs.slot { return lhs.slot < rhs.slot }
+            if lhs.frame.minY != rhs.frame.minY { return lhs.frame.minY < rhs.frame.minY }
+            return lhs.frame.minX < rhs.frame.minX
+        }
+
+        if let containingSlot = orderedSlots.first(where: { $0.frame.contains(location) }) {
+            return max(0, min(containingSlot.slot, metrics.visibleItemCount))
+        }
+
+        guard let nearestSlot = orderedSlots.min(by: { lhs, rhs in
+            squaredDistance(from: location, to: lhs.frame) < squaredDistance(from: location, to: rhs.frame)
+        }) else {
+            return 0
+        }
+
+        return max(0, min(nearestSlot.slot, metrics.visibleItemCount))
+    }
+
+    private static func squaredDistance(from point: CGPoint, to rect: CGRect) -> CGFloat {
+        let dx: CGFloat
+        if point.x < rect.minX {
+            dx = rect.minX - point.x
+        } else if point.x > rect.maxX {
+            dx = point.x - rect.maxX
+        } else {
+            dx = 0
+        }
+
+        let dy: CGFloat
+        if point.y < rect.minY {
+            dy = rect.minY - point.y
+        } else if point.y > rect.maxY {
+            dy = point.y - rect.maxY
+        } else {
+            dy = 0
+        }
+
+        return (dx * dx) + (dy * dy)
     }
 
     private static func midpointSlotIndex(localY: CGFloat, itemCount: Int? = nil) -> Int {
@@ -549,19 +749,28 @@ class SidebarDragNSView: NSView {
         draggedItem: SumiDragItem?
     ) -> SidebarDropResolution? {
         guard let swiftUILocation = resolvedSwiftUILocation(for: sender) else { return nil }
+        let previewLocation = resolvedSwiftUIPreviewLocation(for: sender)
         let state = SidebarDragState.shared
         return SidebarDropResolver.updateState(
             location: swiftUILocation,
+            previewLocation: previewLocation,
             state: state,
             draggedItem: draggedItem
         )
     }
 
     private func resolvedSwiftUILocation(for sender: NSDraggingInfo) -> CGPoint? {
-        guard let window = windowState?.window else { return nil }
-        let location = sender.draggingLocation
-        let windowHeight = window.contentView?.bounds.height ?? window.frame.height
-        return CGPoint(x: location.x, y: windowHeight - location.y)
+        SidebarDragLocationMapper.swiftUIGlobalPoint(
+            fromWindowPoint: sender.draggingLocation,
+            in: self
+        )
+    }
+
+    private func resolvedSwiftUIPreviewLocation(for sender: NSDraggingInfo) -> CGPoint? {
+        SidebarDragLocationMapper.swiftUIPreviewPoint(
+            fromWindowPoint: sender.draggingLocation,
+            in: self
+        )
     }
     
     // Dynamic Resolution Helpers

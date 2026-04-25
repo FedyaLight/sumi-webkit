@@ -550,7 +550,7 @@ struct SpaceView: View {
                         }
                     case .shortcut(let pinId):
                         if let pin = topLevelPinnedPins.first(where: { $0.id == pinId }) {
-                            pinnedShortcutView(pin)
+                            pinnedShortcutView(pin, topLevelPinnedIndex: sourceIndex)
                         }
                     }
                     if isHoveredSpacePinned(after: sourceIndex, total: allItems.count) { dropLine().transition(.opacity) }
@@ -604,10 +604,18 @@ struct SpaceView: View {
         )
         .environmentObject(browserManager)
         .environment(windowState)
+        .sidebarTopLevelPinnedItemGeometry(
+            itemId: folder.id,
+            kind: .folder(folder.id),
+            spaceId: space.id,
+            topLevelIndex: topLevelPinnedIndex,
+            generation: dragState.sidebarGeometryGeneration,
+            isActive: isInteractive
+        )
         .transition(.opacity.animation(.easeInOut(duration: 0.12)))
     }
 
-    private func pinnedShortcutView(_ pin: ShortcutPin) -> some View {
+    private func pinnedShortcutView(_ pin: ShortcutPin, topLevelPinnedIndex: Int) -> some View {
         let activeTab = activeShortcutTab(for: pin)
         let rowId = activeTab?.id ?? pin.id
         return ShortcutSidebarRow(
@@ -634,6 +642,14 @@ struct SpaceView: View {
             dragState.isDragging && dragState.activeDragItemId == pin.id
                 ? 0.001
                 : 1
+        )
+        .sidebarTopLevelPinnedItemGeometry(
+            itemId: pin.id,
+            kind: .shortcut(pin.id),
+            spaceId: space.id,
+            topLevelIndex: topLevelPinnedIndex,
+            generation: dragState.sidebarGeometryGeneration,
+            isActive: isInteractive
         )
         .background {
             if windowState.currentTabId == rowId {

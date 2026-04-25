@@ -202,7 +202,8 @@ extension TabManager {
             var arr = pinnedByProfile[pid] ?? []
             guard let currentIndex = arr.firstIndex(where: { $0.id == pin.id }) else { return }
             if currentIndex < arr.count { arr.remove(at: currentIndex) }
-            arr.insert(pin, at: max(0, min(index, arr.count)))
+            let adjustedIndex = currentIndex < index ? index - 1 : index
+            arr.insert(pin, at: max(0, min(adjustedIndex, arr.count)))
             setPinnedTabs(reindexed(arr), for: pid)
             scheduleStructuralPersistence()
         }

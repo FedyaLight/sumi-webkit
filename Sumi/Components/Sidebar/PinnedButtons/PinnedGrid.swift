@@ -264,7 +264,7 @@ enum SidebarEssentialsProjectionPolicy {
         return max(availableWidth / CGFloat(columns), configuration.minWidth)
     }
 
-    private static func projectedRows(
+    static func projectedRows(
         from items: [ShortcutPin?],
         capacityColumnCount: Int,
         width: CGFloat,
@@ -384,6 +384,12 @@ struct PinnedGrid: View {
             maxDropRowCount: maxDropRowCount,
             configuration: pinnedTabsConfiguration
         )
+        let dropSlotFrames = resolvedDropSlotFrames(
+            for: projectedLayout,
+            revealTileSize: revealTileSize,
+            maxDropRowCount: maxDropRowCount,
+            configuration: pinnedTabsConfiguration
+        )
 
         ZStack(alignment: .topLeading) {
             if items.isEmpty {
@@ -460,6 +466,7 @@ struct PinnedGrid: View {
             visibleRowCount: visibleRowCount,
             maxDropRowCount: maxDropRowCount,
             dropFrame: dropFrame,
+            dropSlotFrames: dropSlotFrames,
             itemSize: projectedLayout.tileSize,
             gridSpacing: pinnedTabsConfiguration.gridSpacing,
             canAcceptDrop: projectedLayout.canAcceptDrop,
@@ -739,6 +746,62 @@ struct PinnedGrid: View {
         }
 
         return rows
+    }
+
+    private func resolvedDropSlotFrames(
+        for layout: SidebarEssentialsProjectedLayout,
+        revealTileSize: CGSize,
+        maxDropRowCount: Int,
+        configuration: PinnedTabsConfiguration
+    ) -> [SidebarEssentialsDropSlotMetrics] {
+        guard layout.visibleItemCount > 0 else {
+            return [
+                SidebarEssentialsDropSlotMetrics(
+                    slot: 0,
+                    frame: CGRect(origin: .zero, size: revealTileSize)
+                )
+            ]
+        }
+
+        let maxSlot = min(layout.visibleItemCount, SidebarEssentialsProjectionPolicy.maxItems)
+        return (0...maxSlot).compactMap { slot in
+            var items = layout.visibleItems
+            let safeSlot = max(0, min(slot, items.count))
+            items.insert(nil, at: safeSlot)
+
+            let rows = SidebarEssentialsProjectionPolicy.projectedRows(
+                from: items,
+                capacityColumnCount: layout.capacityColumnCount,
+                width: width,
+                configuration: configuration
+            )
+            guard let rowIndex = rows.firstIndex(where: { row in
+                row.items.contains { item in
+                    if case .none = item { return true }
+                    return false
+                }
+            }),
+                  rowIndex < max(maxDropRowCount, 1)
+            else { return nil }
+
+            let row = rows[rowIndex]
+            guard let columnIndex = row.items.firstIndex(where: { item in
+                if case .none = item { return true }
+                return false
+            }) else {
+                return nil
+            }
+
+            return SidebarEssentialsDropSlotMetrics(
+                slot: safeSlot,
+                frame: CGRect(
+                    x: CGFloat(columnIndex) * (row.tileSize.width + configuration.gridSpacing),
+                    y: CGFloat(rowIndex) * (row.tileSize.height + configuration.gridSpacing),
+                    width: row.tileSize.width,
+                    height: row.tileSize.height
+                )
+            )
+        }
     }
 
 }
