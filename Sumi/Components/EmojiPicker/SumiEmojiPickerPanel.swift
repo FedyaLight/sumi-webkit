@@ -49,17 +49,13 @@ struct SumiEmojiPickerPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField(
-                "",
+            SumiEmojiSearchField(
                 text: Binding(
                     get: { model.searchText },
                     set: { model.setSearchText($0) }
                 ),
-                prompt: Text("Search emojis...")
-                    .foregroundStyle(.secondary)
+                placeholder: "Search emojis..."
             )
-            .textFieldStyle(.roundedBorder)
-            .font(.system(size: 13))
             .accessibilityIdentifier("emoji-picker-search")
 
             ScrollView {
@@ -96,6 +92,64 @@ struct SumiEmojiPickerPanel: View {
                 in: SumiEmojiCatalog.allEntries
             )
         }
+    }
+}
+
+private struct SumiEmojiSearchField: View {
+    @Binding var text: String
+    let placeholder: String
+
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @FocusState private var isFocused: Bool
+
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
+    }
+
+    private var fieldFont: Font {
+        .system(size: 13)
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(tokens.secondaryText)
+                .frame(width: 14, height: 14)
+
+            ZStack(alignment: .leading) {
+                if text.isEmpty {
+                    Text(placeholder)
+                        .font(fieldFont)
+                        .foregroundStyle(tokens.secondaryText)
+                        .lineLimit(1)
+                        .allowsHitTesting(false)
+                }
+
+                TextField("", text: $text)
+                    .textFieldStyle(.plain)
+                    .font(fieldFont)
+                    .foregroundStyle(tokens.primaryText)
+                    .tint(tokens.accent)
+                    .focused($isFocused)
+                    .accessibilityLabel(placeholder)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 34)
+        .background(tokens.commandPaletteChipBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(
+                    isFocused ? tokens.accent.opacity(0.82) : tokens.separator.opacity(0.72),
+                    lineWidth: isFocused ? 1.5 : 1
+                )
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .animation(.easeInOut(duration: 0.14), value: isFocused)
     }
 }
 
