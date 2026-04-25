@@ -137,6 +137,9 @@ struct SumiApp: App {
 
         windowRegistry.onAllWindowsClosed = { [weak browserManager] in
             browserManager?.windowSessionService.prepareForAllWindowsClosed()
+            Task { @MainActor [weak browserManager] in
+                await browserManager?.performSiteDataPolicyAllWindowsClosedCleanup()
+            }
         }
     }
 }

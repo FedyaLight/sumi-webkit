@@ -72,9 +72,7 @@ class DialogManager {
 
         let recoveryWindow = presentedWindow ?? presentationWindowResolver()
 
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
+        withAnimation(.bouncy(duration: 0.2, extraBounce: -0.1)) {
             isVisible = false
             activeDialog = nil
         }

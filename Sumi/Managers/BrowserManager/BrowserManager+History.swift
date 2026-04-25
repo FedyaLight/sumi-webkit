@@ -91,9 +91,9 @@ extension BrowserManager {
 
     private func openHistoryTab(
         inResolvedWindow targetWindow: BrowserWindowState,
-        selecting range: HistoryRange
+        selecting _: HistoryRange
     ) {
-        let historyURL = SumiSurface.historySurfaceURL(rangeQuery: range.paneQueryValue)
+        let historyURL = SumiSurface.historySurfaceURL(rangeQuery: HistoryRange.all.paneQueryValue)
         let newTab = openNewTab(
             url: historyURL.absoluteString,
             context: .foreground(

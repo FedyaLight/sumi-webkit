@@ -70,6 +70,14 @@ final class HistoryViewDataProvider {
         items(matching: query)
     }
 
+    func visitRecords(for query: HistoryQuery) -> [HistoryVisitRecord] {
+        matchingVisits(for: query)
+    }
+
+    func visitDomains(for query: HistoryQuery) -> Set<String> {
+        Set(matchingVisits(for: query).map { $0.siteDomain ?? $0.domain })
+    }
+
     func deleteVisits(matching query: HistoryQuery) async {
         do {
             let ids = matchingRecordIDs(for: query)
@@ -202,6 +210,11 @@ final class HistoryViewDataProvider {
                 guard let visitedAt = $0.visitedAt else { return false }
                 return start..<end ~= visitedAt
             }
+        case .timeRange(let start, let end):
+            return allItems.filter {
+                guard let visitedAt = $0.visitedAt else { return false }
+                return start..<end ~= visitedAt
+            }
         case .searchTerm(let term):
             guard !term.isEmpty else { return allItems }
             return allItems.filter { $0.matches(term) }
@@ -234,6 +247,8 @@ final class HistoryViewDataProvider {
             guard let end = calendar.date(byAdding: .day, value: 1, to: start) else {
                 return []
             }
+            return rawVisits.filter { start..<end ~= $0.visitedAt }
+        case .timeRange(let start, let end):
             return rawVisits.filter { start..<end ~= $0.visitedAt }
         case .searchTerm(let term):
             guard !term.isEmpty else { return rawVisits }

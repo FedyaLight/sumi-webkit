@@ -300,6 +300,7 @@ enum HistoryQuery: Equatable, Hashable {
     case domainFilter(Set<String>)
     case rangeFilter(HistoryRange)
     case dateFilter(Date)
+    case timeRange(start: Date, end: Date)
     case visits([VisitIdentifier])
 }
 

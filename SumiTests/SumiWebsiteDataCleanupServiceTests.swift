@@ -1,3 +1,4 @@
+import SwiftData
 import WebKit
 import WKAbstractions
 import XCTest
@@ -73,6 +74,147 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         XCTAssertEqual(
             Set(store.recordRemovals[0].records.map(\.displayName)),
             Set(["example.com", "sub.example.com"])
+        )
+    }
+
+    func testBulkDomainScopedDeletionFetchesRecordsOnceAndDeletesMatchingCookies() async {
+        let cookieStore = FakeDDGCookieStore(cookies: [
+            .make(domain: "example.com"),
+            .make(domain: "sub.example.com"),
+            .make(domain: "other.com")
+        ])
+        let store = FakeDDGWebsiteDataStore(
+            cookieStore: cookieStore,
+            records: [
+                FakeDDGWebsiteDataRecord(displayName: "example.com"),
+                FakeDDGWebsiteDataRecord(displayName: "sub.example.com"),
+                FakeDDGWebsiteDataRecord(displayName: "unrelated.com")
+            ]
+        )
+        let service = SumiWebsiteDataCleanupService()
+
+        await service.removeWebsiteDataForDomains(
+            ["example.com"],
+            ofTypes: WKWebsiteDataStore.sumiCacheDataTypes,
+            includingCookies: true,
+            using: store,
+            storeIdentifier: "bulk-domain-store"
+        )
+
+        XCTAssertEqual(store.fetchTypes, [WKWebsiteDataStore.sumiCacheDataTypes])
+        XCTAssertEqual(store.recordRemovals.count, 1)
+        XCTAssertEqual(store.recordRemovals[0].types, WKWebsiteDataStore.sumiCacheDataTypes)
+        XCTAssertEqual(
+            Set(store.recordRemovals[0].records.map(\.displayName)),
+            Set(["example.com", "sub.example.com"])
+        )
+        XCTAssertEqual(
+            Set(cookieStore.deletedCookies.map(\.domain)),
+            Set(["example.com", "sub.example.com"])
+        )
+    }
+
+    func testSiteDataEntriesIncludeCurrentSiteAndSubdomainsWithExactCounts() async {
+        let cookieStore = FakeDDGCookieStore(cookies: [
+            .make(name: "root", domain: "example.com"),
+            .make(name: "sub", domain: ".sub.example.com"),
+            .make(name: "other", domain: "other.com")
+        ])
+        let store = FakeDDGWebsiteDataStore(
+            cookieStore: cookieStore,
+            records: [
+                FakeDDGWebsiteDataRecord(displayName: "example.com"),
+                FakeDDGWebsiteDataRecord(displayName: "sub.example.com"),
+                FakeDDGWebsiteDataRecord(displayName: "unrelated.com")
+            ]
+        )
+        let service = SumiWebsiteDataCleanupService()
+
+        let entries = await service.fetchSiteDataEntries(
+            forDomain: "example.com",
+            ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
+            using: store
+        )
+
+        XCTAssertEqual(entries.map(\.domain), ["example.com", "sub.example.com"])
+        XCTAssertEqual(entries[0].cookieCount, 1)
+        XCTAssertEqual(entries[0].recordCount, 1)
+        XCTAssertEqual(entries[1].cookieCount, 1)
+        XCTAssertEqual(entries[1].recordCount, 1)
+    }
+
+    func testExactHostDeletionDoesNotDeleteParentOrSiblingData() async {
+        let cookieStore = FakeDDGCookieStore(cookies: [
+            .make(name: "root", domain: "example.com"),
+            .make(name: "sharedRoot", domain: ".example.com"),
+            .make(name: "sub", domain: "sub.example.com"),
+            .make(name: "sibling", domain: "sibling.example.com"),
+            .make(name: "other", domain: "other.com")
+        ])
+        let store = FakeDDGWebsiteDataStore(
+            cookieStore: cookieStore,
+            records: [
+                FakeDDGWebsiteDataRecord(displayName: "example.com"),
+                FakeDDGWebsiteDataRecord(displayName: "sub.example.com"),
+                FakeDDGWebsiteDataRecord(displayName: "sibling.example.com"),
+                FakeDDGWebsiteDataRecord(displayName: "other.com")
+            ]
+        )
+        let service = SumiWebsiteDataCleanupService()
+
+        await service.removeWebsiteDataForExactHost(
+            "sub.example.com",
+            ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
+            includingCookies: true,
+            using: store,
+            storeIdentifier: "exact-sub-host-store"
+        )
+
+        XCTAssertEqual(store.recordRemovals.count, 1)
+        XCTAssertEqual(store.recordRemovals[0].records.map(\.displayName), ["sub.example.com"])
+        XCTAssertEqual(cookieStore.deletedCookies.map(\.domain), ["sub.example.com"])
+        XCTAssertEqual(
+            Set(cookieStore.cookies.map(\.domain)),
+            Set(["example.com", ".example.com", "sibling.example.com", "other.com"])
+        )
+    }
+
+    func testExactRootHostDeletionDeletesOnlyRootNormalizedCookieDomain() async {
+        let cookieStore = FakeDDGCookieStore(cookies: [
+            .make(name: "root", domain: "example.com"),
+            .make(name: "sharedRoot", domain: ".example.com"),
+            .make(name: "sub", domain: "sub.example.com"),
+            .make(name: "sibling", domain: "sibling.example.com"),
+            .make(name: "other", domain: "other.com")
+        ])
+        let store = FakeDDGWebsiteDataStore(
+            cookieStore: cookieStore,
+            records: [
+                FakeDDGWebsiteDataRecord(displayName: "example.com"),
+                FakeDDGWebsiteDataRecord(displayName: "sub.example.com"),
+                FakeDDGWebsiteDataRecord(displayName: "sibling.example.com"),
+                FakeDDGWebsiteDataRecord(displayName: "other.com")
+            ]
+        )
+        let service = SumiWebsiteDataCleanupService()
+
+        await service.removeWebsiteDataForExactHost(
+            "example.com",
+            ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
+            includingCookies: true,
+            using: store,
+            storeIdentifier: "exact-root-host-store"
+        )
+
+        XCTAssertEqual(store.recordRemovals.count, 1)
+        XCTAssertEqual(store.recordRemovals[0].records.map(\.displayName), ["example.com"])
+        XCTAssertEqual(
+            Set(cookieStore.deletedCookies.map(\.domain)),
+            Set(["example.com", ".example.com"])
+        )
+        XCTAssertEqual(
+            Set(cookieStore.cookies.map(\.domain)),
+            Set(["sub.example.com", "sibling.example.com", "other.com"])
         )
     }
 
@@ -179,11 +321,112 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         XCTAssertFalse(manager.isLoading)
     }
 
+    func testSiteDataPolicyStoreScopesRulesByProfileAndHost() {
+        let suiteName = "SumiSiteDataPolicyStoreTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = SumiSiteDataPolicyStore(userDefaults: defaults)
+        let profileA = UUID()
+        let profileB = UUID()
+
+        store.setBlockStorage(true, forHost: ".YouTube.com", profileId: profileA)
+        store.setDeleteWhenAllWindowsClosed(true, forHost: "accounts.youtube.com", profileId: profileB)
+
+        XCTAssertTrue(store.state(forHost: "youtube.com", profileId: profileA).blockStorage)
+        XCTAssertFalse(store.state(forHost: "youtube.com", profileId: profileB).blockStorage)
+        XCTAssertEqual(store.hostsBlockingStorage(profileId: profileA), ["youtube.com"])
+        XCTAssertEqual(store.hostsDeletingWhenAllWindowsClosed(profileId: profileB), ["accounts.youtube.com"])
+    }
+
+    func testSiteDataCookieBlockingRuleSourceUsesProfileScopedHosts() throws {
+        let suiteName = "SumiSiteDataRuleSourceTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = SumiSiteDataPolicyStore(userDefaults: defaults)
+        let profileA = UUID()
+        let profileB = UUID()
+        store.setBlockStorage(true, forHost: "youtube.com", profileId: profileA)
+        store.setBlockStorage(true, forHost: "reddit.com", profileId: profileB)
+        let source = SumiSiteDataCookieBlockingRuleSource(policyStore: store)
+
+        let profileARules = try source.ruleLists(profileId: profileA)
+        let encoded = profileARules.first?.encodedContentRuleList ?? ""
+
+        XCTAssertEqual(profileARules.count, 1)
+        XCTAssertTrue(encoded.contains("\"block-cookies\""))
+        XCTAssertTrue(encoded.contains("*youtube.com"))
+        XCTAssertFalse(encoded.contains("*reddit.com"))
+    }
+
+    func testSiteDataBlockStoragePolicyDeletesExactHostImmediately() async {
+        let suiteName = "SumiSiteDataBlockStorageTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = SumiSiteDataPolicyStore(userDefaults: defaults)
+        let cleanupService = FakeCleanupService()
+        let service = SumiSiteDataPolicyEnforcementService(
+            policyStore: store,
+            cleanupService: cleanupService
+        )
+        let profile = Profile(
+            name: "Primary",
+            icon: "person.crop.circle",
+            dataStore: .nonPersistent()
+        )
+
+        await service.setBlockStorage(true, forHost: ".YouTube.com", profile: profile)
+
+        XCTAssertTrue(store.state(forHost: "youtube.com", profileId: profile.id).blockStorage)
+        XCTAssertEqual(cleanupService.removedExactHosts.count, 1)
+        XCTAssertEqual(cleanupService.removedExactHosts[0].host, "youtube.com")
+        XCTAssertTrue(cleanupService.removedExactHosts[0].includingCookies)
+        XCTAssertEqual(cleanupService.removedExactHosts[0].dataTypes, WKWebsiteDataStore.allWebsiteDataTypes())
+    }
+
+    func testSiteDataDeleteWhenAllWindowsClosePolicyRunsDeferredCleanup() async {
+        let suiteName = "SumiSiteDataDeleteOnCloseTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = SumiSiteDataPolicyStore(userDefaults: defaults)
+        let cleanupService = FakeCleanupService()
+        let service = SumiSiteDataPolicyEnforcementService(
+            policyStore: store,
+            cleanupService: cleanupService
+        )
+        let profile = Profile(
+            name: "Primary",
+            icon: "person.crop.circle",
+            dataStore: .nonPersistent()
+        )
+
+        service.setDeleteWhenAllWindowsClosed(
+            true,
+            forHost: "accounts.youtube.com",
+            profile: profile
+        )
+
+        XCTAssertTrue(
+            store.state(
+                forHost: "accounts.youtube.com",
+                profileId: profile.id
+            ).deleteWhenAllWindowsClosed
+        )
+        XCTAssertTrue(cleanupService.removedExactHosts.isEmpty)
+
+        await service.performAllWindowsClosedCleanup(profiles: [profile])
+
+        XCTAssertEqual(cleanupService.removedExactHosts.count, 1)
+        XCTAssertEqual(cleanupService.removedExactHosts[0].host, "accounts.youtube.com")
+        XCTAssertTrue(cleanupService.removedExactHosts[0].includingCookies)
+        XCTAssertEqual(cleanupService.removedExactHosts[0].dataTypes, WKWebsiteDataStore.allWebsiteDataTypes())
+    }
+
     func testNoSynchronousWaitsRemainInCleanupPaths() throws {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         let paths = [
+            "Sumi/Services/SumiBrowsingDataCleanupService.swift",
             "Sumi/Services/SumiWebsiteDataCleanupService.swift",
             "Sumi/Managers/CookieManager/CookieManager.swift",
             "Sumi/Managers/CacheManager/CacheManager.swift",
@@ -224,6 +467,103 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         XCTAssertFalse(sources.contains("removeData("))
         XCTAssertFalse(sources.contains("httpCookieStore"))
     }
+
+    func testBrowsingDataFiniteRangeDeletesHistoryAndVisitedDomainData() async throws {
+        let harness = try makeHistoryHarness()
+        let cleanupService = FakeCleanupService()
+        let service = SumiBrowsingDataCleanupService(
+            websiteDataCleanupService: cleanupService,
+            referenceDateProvider: { historyTestDate("2026-04-23T12:00:00Z") }
+        )
+
+        try await harness.historyManager.store.recordVisit(
+            url: URL(string: "https://www.reddit.com/r/browsers")!,
+            title: "Recent",
+            visitedAt: historyTestDate("2026-04-23T11:45:00Z"),
+            profileId: harness.profileID
+        )
+        try await harness.historyManager.store.recordVisit(
+            url: URL(string: "https://old.example")!,
+            title: "Old",
+            visitedAt: historyTestDate("2026-04-23T09:00:00Z"),
+            profileId: harness.profileID
+        )
+        await harness.historyManager.refresh()
+
+        await service.clear(
+            range: .lastHour,
+            categories: [.history, .siteData, .cache],
+            historyManager: harness.historyManager,
+            dataStore: .nonPersistent()
+        )
+
+        let remaining = harness.historyManager.visitRecords(matching: .rangeFilter(.all))
+        XCTAssertEqual(remaining.map(\.domain), ["old.example"])
+        XCTAssertEqual(cleanupService.removedDomainSets.count, 1)
+        XCTAssertEqual(cleanupService.removedDomainSets[0].domains, ["reddit.com"])
+        XCTAssertEqual(
+            cleanupService.removedDomainSets[0].dataTypes,
+            WKWebsiteDataStore.allWebsiteDataTypes()
+        )
+        XCTAssertTrue(cleanupService.removedDomainSets[0].includingCookies)
+    }
+
+    func testBrowsingDataAllTimeClearsCurrentProfileHistoryAndWebsiteData() async throws {
+        let harness = try makeHistoryHarness()
+        let cleanupService = FakeCleanupService()
+        let service = SumiBrowsingDataCleanupService(
+            websiteDataCleanupService: cleanupService,
+            referenceDateProvider: { historyTestDate("2026-04-23T12:00:00Z") }
+        )
+        let otherProfileID = UUID()
+
+        try await harness.historyManager.store.recordVisit(
+            url: URL(string: "https://current.example")!,
+            title: "Current",
+            visitedAt: historyTestDate("2026-04-23T11:45:00Z"),
+            profileId: harness.profileID
+        )
+        try await harness.historyManager.store.recordVisit(
+            url: URL(string: "https://other.example")!,
+            title: "Other",
+            visitedAt: historyTestDate("2026-04-23T11:30:00Z"),
+            profileId: otherProfileID
+        )
+        await harness.historyManager.refresh()
+
+        await service.clear(
+            range: .allTime,
+            categories: [.history, .siteData],
+            historyManager: harness.historyManager,
+            dataStore: .nonPersistent()
+        )
+
+        let currentProfileRemaining = harness.historyManager.visitRecords(matching: .rangeFilter(.all))
+        let otherProfileVisits = try await harness.historyManager.store.visits(profileId: otherProfileID)
+        XCTAssertTrue(currentProfileRemaining.isEmpty)
+        XCTAssertEqual(otherProfileVisits.map(\.domain), ["other.example"])
+        XCTAssertEqual(cleanupService.clearedProfileStores, 1)
+    }
+}
+
+@MainActor
+private func makeHistoryHarness() throws -> (
+    container: ModelContainer,
+    historyManager: HistoryManager,
+    profileID: UUID
+) {
+    let container = try ModelContainer(
+        for: Schema([HistoryEntryEntity.self, HistoryVisitEntity.self]),
+        configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+    )
+    let context = ModelContext(container)
+    let profileID = UUID()
+    let historyManager = HistoryManager(context: context, profileId: profileID)
+    return (container, historyManager, profileID)
+}
+
+private func historyTestDate(_ value: String) -> Date {
+    ISO8601DateFormatter().date(from: value)!
 }
 
 @MainActor
@@ -311,6 +651,16 @@ private final class FakeCleanupService: SumiWebsiteDataCleanupServicing {
     private(set) var cookieRemovalSelections: [SumiCookieRemovalSelection] = []
     private(set) var removedWebsiteDataTypes: [Set<String>] = []
     private(set) var removedDomains: [(domain: String, includingCookies: Bool)] = []
+    private(set) var removedExactHosts: [(
+        host: String,
+        dataTypes: Set<String>,
+        includingCookies: Bool
+    )] = []
+    private(set) var removedDomainSets: [(
+        domains: Set<String>,
+        dataTypes: Set<String>,
+        includingCookies: Bool
+    )] = []
     private(set) var clearedProfileStores = 0
 
     func fetchCookies(in dataStore: WKWebsiteDataStore) async -> [HTTPCookie] {
@@ -331,6 +681,17 @@ private final class FakeCleanupService: SumiWebsiteDataCleanupServicing {
         recordFetchCount += 1
         await delay(recordFetchDelays[safe: index] ?? 0)
         return recordResponses[safe: index] ?? []
+    }
+
+    func fetchSiteDataEntries(
+        forDomain domain: String,
+        ofTypes dataTypes: Set<String>,
+        in dataStore: WKWebsiteDataStore
+    ) async -> [SumiSiteDataEntry] {
+        _ = domain
+        _ = dataTypes
+        _ = dataStore
+        return []
     }
 
     func removeCookies(
@@ -358,6 +719,26 @@ private final class FakeCleanupService: SumiWebsiteDataCleanupServicing {
     ) async {
         _ = dataStore
         removedDomains.append((domain, includingCookies))
+    }
+
+    func removeWebsiteDataForExactHost(
+        _ host: String,
+        ofTypes dataTypes: Set<String>,
+        includingCookies: Bool,
+        in dataStore: WKWebsiteDataStore
+    ) async {
+        _ = dataStore
+        removedExactHosts.append((host, dataTypes, includingCookies))
+    }
+
+    func removeWebsiteDataForDomains(
+        _ domains: Set<String>,
+        ofTypes dataTypes: Set<String>,
+        includingCookies: Bool,
+        in dataStore: WKWebsiteDataStore
+    ) async {
+        _ = dataStore
+        removedDomainSets.append((domains, dataTypes, includingCookies))
     }
 
     func clearAllProfileWebsiteData(in dataStore: WKWebsiteDataStore) async {

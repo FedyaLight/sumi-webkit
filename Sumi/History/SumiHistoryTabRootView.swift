@@ -8,9 +8,12 @@ struct SumiHistoryTabRootView: View {
     @StateObject private var viewModel: HistoryPageViewModel
 
     private enum Layout {
-        static let sidebarWidth: CGFloat = 240
-        static let contentMaxWidth: CGFloat = 920
+        static let sidebarWidth: CGFloat = 220
         static let rowCornerRadius: CGFloat = 8
+    }
+
+    private var headerControlsAnimation: Animation {
+        .easeInOut(duration: 0.18)
     }
 
     init(browserManager: BrowserManager, windowState: BrowserWindowState?) {
@@ -28,6 +31,7 @@ struct SumiHistoryTabRootView: View {
             sidebar
             Divider()
             content
+                .layoutPriority(1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(themeContext.tokens(settings: sumiSettings).windowBackground)
@@ -37,43 +41,62 @@ struct SumiHistoryTabRootView: View {
     }
 
     private var sidebar: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(viewModel.ranges) { range in
-                    sidebarRow(range)
+        VStack(alignment: .leading, spacing: 28) {
+            Text("History")
+                .font(.system(size: 26, weight: .semibold))
+                .padding(.top, 4)
+
+            VStack(alignment: .leading, spacing: 6) {
+                navigationRow(
+                    title: "History",
+                    iconName: "clock.arrow.circlepath",
+                    isSelected: true
+                ) {}
+
+                navigationRow(
+                    title: "Browsing data",
+                    iconName: "trash",
+                    isSelected: false
+                ) {
+                    viewModel.showBrowsingDataDialog()
                 }
             }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 8)
+
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 18)
         .frame(width: Layout.sidebarWidth, alignment: .leading)
     }
 
-    private func sidebarRow(_ range: HistoryRangeCount) -> some View {
-        let selected = viewModel.selectedRange == range.id && viewModel.activeFilterDescription == nil
+    private func navigationRow(
+        title: String,
+        iconName: String,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
         return Button {
-            viewModel.selectRange(range.id)
+            action()
         } label: {
             HStack(spacing: 10) {
-                Image(systemName: iconName(for: range.id))
-                    .frame(width: 18, alignment: .center)
-                Text(range.id.title)
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                Text("\(range.count)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Image(systemName: iconName)
+                    .font(.system(size: 16, weight: .medium))
+                    .frame(width: 20, alignment: .center)
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .lineLimit(2)
+                Spacer()
             }
-            .padding(.vertical, 8)
-            .padding(.horizontal, 10)
+            .padding(.vertical, 11)
+            .padding(.horizontal, 14)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .background(
             RoundedRectangle(cornerRadius: Layout.rowCornerRadius, style: .continuous)
-                .fill(selected ? Color.accentColor.opacity(0.14) : Color.clear)
+                .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
         )
-        .foregroundStyle(selected ? Color.accentColor : Color.primary)
+        .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
     }
 
     private var content: some View {
@@ -86,91 +109,139 @@ struct SumiHistoryTabRootView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center, spacing: 14) {
-                Text("History")
-                    .font(.system(size: 28, weight: .semibold))
-                Spacer()
-                if viewModel.hasSelection {
-                    Text("\(viewModel.selectionCount) Selected")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    Button("Open") {
-                        viewModel.openSelectedItems()
-                    }
-                    Button("Delete") {
-                        viewModel.deleteSelectedItems()
-                    }
-                    Button("Clear Selection") {
-                        viewModel.clearSelection()
-                    }
-                } else if viewModel.canDeleteVisibleResults {
-                    Button("Delete Results") {
-                        viewModel.deleteVisibleResults()
-                    }
-                }
-                Button("Clear All") {
-                    viewModel.clearAllHistory()
-                }
-                .disabled(!viewModel.canClearHistory)
-            }
-
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
                 TextField("Search History", text: $viewModel.searchText)
                     .textFieldStyle(.plain)
             }
-            .padding(.vertical, 9)
-            .padding(.horizontal, 12)
-            .background(Color(nsColor: .controlBackgroundColor))
+            .padding(.vertical, 11)
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.95))
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color(nsColor: .separatorColor).opacity(0.65), lineWidth: 1)
+                    .stroke(Color(nsColor: .separatorColor).opacity(0.35), lineWidth: 1)
             )
+
+            headerControls
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 10)
+    }
+
+    @ViewBuilder
+    private var headerControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if viewModel.hasVisibleItems {
+                HStack(spacing: 12) {
+                    Button("Select All") {
+                        withAnimation(headerControlsAnimation) {
+                            viewModel.selectAllVisibleItems()
+                        }
+                    }
+                    .disabled(viewModel.allVisibleItemsSelected)
+
+                    if viewModel.hasSelection {
+                        Text("\(viewModel.selectionCount) Selected")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .transition(.move(edge: .leading).combined(with: .opacity))
+
+                        Button("Open") {
+                            viewModel.openSelectedItems()
+                        }
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+
+                        Button("Delete") {
+                            withAnimation(headerControlsAnimation) {
+                                viewModel.deleteSelectedItems()
+                            }
+                        }
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+
+                        Button("Clear Selection") {
+                            withAnimation(headerControlsAnimation) {
+                                viewModel.clearSelection()
+                            }
+                        }
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 2)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
 
             if let filter = viewModel.activeFilterDescription {
                 HStack(spacing: 8) {
                     Text(filter)
                         .foregroundStyle(.secondary)
                     Button("Clear Filter") {
-                        viewModel.clearFilters()
+                        withAnimation(headerControlsAnimation) {
+                            viewModel.clearFilters()
+                        }
                     }
                     .buttonStyle(.link)
                 }
                 .font(.callout)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .padding(.horizontal, 28)
-        .padding(.vertical, 22)
+        .animation(headerControlsAnimation, value: viewModel.hasVisibleItems)
+        .animation(headerControlsAnimation, value: viewModel.hasSelection)
+        .animation(headerControlsAnimation, value: viewModel.selectionCount)
+        .animation(headerControlsAnimation, value: viewModel.activeFilterDescription)
     }
 
     private var historyList: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 18, pinnedViews: []) {
+            VStack(alignment: .center, spacing: 0) {
                 if viewModel.sections.isEmpty || !viewModel.hasVisibleItems {
                     emptyState
                 } else {
-                    ForEach(viewModel.sections) { section in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(section.title)
-                                .font(.headline)
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 2)
-                            VStack(alignment: .leading, spacing: 2) {
-                                ForEach(section.items) { item in
-                                    HistoryRow(item: item, viewModel: viewModel)
-                                }
-                            }
-                        }
-                    }
+                    historyCard
                 }
             }
-            .frame(maxWidth: Layout.contentMaxWidth, alignment: .leading)
-            .padding(.horizontal, 28)
-            .padding(.vertical, 22)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 26)
         }
+    }
+
+    private var historyCard: some View {
+        LazyVStack(alignment: .leading, spacing: 0, pinnedViews: []) {
+            ForEach(viewModel.sections) { section in
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(section.title)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 22)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(section.items) { item in
+                            HistoryRow(item: item, viewModel: viewModel)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.vertical, 20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                if section.id != viewModel.sections.last?.id {
+                    Divider()
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.8), lineWidth: 1)
+        )
     }
 
     private var emptyState: some View {
@@ -186,18 +257,6 @@ struct SumiHistoryTabRootView: View {
         .frame(maxWidth: .infinity, minHeight: 260)
     }
 
-    private func iconName(for range: HistoryRange) -> String {
-        switch range {
-        case .all:
-            return "clock.arrow.circlepath"
-        case .allSites:
-            return "globe"
-        case .older:
-            return "archivebox"
-        default:
-            return "calendar"
-        }
-    }
 }
 
 private struct HistoryRow: View {
@@ -205,14 +264,40 @@ private struct HistoryRow: View {
     @ObservedObject var viewModel: HistoryPageViewModel
     @State private var isHovering = false
 
+    private enum RowLayout {
+        static let selectionWidth: CGFloat = 22
+        static let timeWidth: CGFloat = 56
+        static let faviconSize: CGFloat = 20
+        static let menuWidth: CGFloat = 32
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             selectionControl
+                .frame(width: RowLayout.selectionWidth, alignment: .center)
 
             rowOpenButton
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
+
+            Menu {
+                rowMenuContent
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 15, weight: .semibold))
+                    .rotationEffect(.degrees(90))
+                    .foregroundStyle(.primary)
+                    .frame(width: RowLayout.menuWidth, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(width: RowLayout.menuWidth, alignment: .center)
+            .help("More")
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .padding(.horizontal, 22)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(rowBackgroundColor)
@@ -221,26 +306,31 @@ private struct HistoryRow: View {
             isHovering = hovering
         }
         .contextMenu {
-            Button("Open") {
-                viewModel.open(item, mode: .currentTab)
-            }
-            Button("Open in New Tab") {
-                viewModel.open(item, mode: .newTab)
-            }
-            Button("Open in New Window") {
-                viewModel.open(item, mode: .newWindow)
-            }
-            Divider()
-            Button("Show All History From This Site") {
-                viewModel.showAllHistory(from: item)
-            }
-            Button("Copy Link") {
-                viewModel.copyLink(item)
-            }
-            Divider()
-            Button(item.isSiteAggregate ? "Delete Site History" : "Delete") {
-                viewModel.delete(item)
-            }
+            rowMenuContent
+        }
+    }
+
+    @ViewBuilder
+    private var rowMenuContent: some View {
+        Button("Open") {
+            viewModel.open(item, mode: .currentTab)
+        }
+        Button("Open in New Tab") {
+            viewModel.open(item, mode: .newTab)
+        }
+        Button("Open in New Window") {
+            viewModel.open(item, mode: .newWindow)
+        }
+        Divider()
+        Button("Show All History From This Site") {
+            viewModel.showAllHistory(from: item)
+        }
+        Button("Copy Link") {
+            viewModel.copyLink(item)
+        }
+        Divider()
+        Button(item.isSiteAggregate ? "Delete Site History" : "Delete") {
+            viewModel.delete(item)
         }
     }
 
@@ -248,21 +338,19 @@ private struct HistoryRow: View {
         Button {
             viewModel.openFromRow(item)
         } label: {
-            HStack(spacing: 12) {
-                favicon
-
-                rowContent
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+            rowContent
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .layoutPriority(1)
         .accessibilityLabel(item.displayTitle)
     }
 
     private var favicon: some View {
         HistoryFaviconView(url: item.url)
-            .frame(width: 20, height: 20)
+            .frame(width: RowLayout.faviconSize, height: RowLayout.faviconSize)
     }
 
     private var selectionControl: some View {
@@ -286,33 +374,39 @@ private struct HistoryRow: View {
     }
 
     private var rowContent: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 8) {
-                    Text(item.displayTitle)
-                        .lineLimit(1)
-                        .foregroundStyle(.primary)
-                    if item.isSiteAggregate, item.visitCount > 0 {
-                        Text("\(item.visitCount)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color(nsColor: .controlBackgroundColor))
-                            .clipShape(Capsule())
-                    }
-                }
-                Text(subtitle)
+        HStack(spacing: 14) {
+            Text(item.isSiteAggregate ? "" : item.timeText)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .frame(width: RowLayout.timeWidth, alignment: .leading)
+
+            favicon
+
+            HStack(spacing: 8) {
+                Text(item.displayTitle)
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
+                    .foregroundStyle(.primary)
+                    .layoutPriority(2)
+
+                Text(item.domain)
                     .font(.callout)
                     .lineLimit(1)
+                    .truncationMode(.middle)
                     .foregroundStyle(.secondary)
+                    .layoutPriority(-1)
+
+                if item.isSiteAggregate, item.visitCount > 0 {
+                    Text("\(item.visitCount)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color(nsColor: .controlBackgroundColor))
+                        .clipShape(Capsule())
+                }
             }
-            Spacer(minLength: 16)
-            if item.isSiteAggregate == false {
-                Text(item.timeText)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -324,12 +418,6 @@ private struct HistoryRow: View {
         return isHovering ? Color.accentColor.opacity(0.08) : Color.clear
     }
 
-    private var subtitle: String {
-        if item.isSiteAggregate {
-            return item.domain
-        }
-        return item.displayURL
-    }
 }
 
 private struct HistoryFaviconView: View {

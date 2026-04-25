@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import SwiftUI
 
 @MainActor
 final class HistoryPageViewModel: ObservableObject {
@@ -28,6 +29,8 @@ final class HistoryPageViewModel: ObservableObject {
     private weak var windowState: BrowserWindowState?
     private let historyManager: HistoryManager
     private let confirmDeletion: @MainActor (_ title: String, _ message: String) -> Bool
+    private let calendar = Calendar.autoupdatingCurrent
+    private let sectionDateFormatter: DateFormatter
     private var revisionCancellable: AnyCancellable?
     private var snapshotTask: Task<Void, Never>?
     private var snapshotGeneration: UInt64 = 0
@@ -42,10 +45,12 @@ final class HistoryPageViewModel: ObservableObject {
         self.windowState = windowState
         self.historyManager = browserManager.historyManager
         self.confirmDeletion = confirmDeletion
-        let initialRange = windowState
-            .flatMap { browserManager.currentTab(for: $0) }
-            .flatMap { SumiSurface.historyRange(from: $0.url) } ?? .all
-        self.selectedRange = initialRange
+        let sectionDateFormatter = DateFormatter()
+        sectionDateFormatter.locale = Locale(identifier: "en_US")
+        sectionDateFormatter.calendar = calendar
+        sectionDateFormatter.dateFormat = "EEEE, MMMM d, yyyy"
+        self.sectionDateFormatter = sectionDateFormatter
+        self.selectedRange = .all
 
         revisionCancellable = historyManager.$revision
             .sink { [weak self] _ in
@@ -72,8 +77,18 @@ final class HistoryPageViewModel: ObservableObject {
         selectedItemIDs.count
     }
 
+    var visibleItemCount: Int {
+        visibleItems.count
+    }
+
     var hasSelection: Bool {
         !selectedItemIDs.isEmpty
+    }
+
+    var allVisibleItemsSelected: Bool {
+        guard !visibleItems.isEmpty else { return false }
+        let visibleIDs = Set(visibleItems.map(\.id))
+        return visibleIDs.isSubset(of: selectedItemIDs)
     }
 
     var canDeleteVisibleResults: Bool {
@@ -94,12 +109,6 @@ final class HistoryPageViewModel: ObservableObject {
     }
 
     func appear() {
-        if let tab = activeHistoryTab(),
-           let range = SumiSurface.historyRange(from: tab.url),
-           range != selectedRange {
-            selectedRange = range
-        }
-
         guard hasAppeared == false else {
             scheduleSnapshotRebuild()
             return
@@ -166,6 +175,10 @@ final class HistoryPageViewModel: ObservableObject {
         selectedItemIDs.removeAll()
     }
 
+    func selectAllVisibleItems() {
+        selectedItemIDs.formUnion(visibleItems.map(\.id))
+    }
+
     func openSelectedItems() {
         guard let browserManager,
               let windowState
@@ -202,6 +215,13 @@ final class HistoryPageViewModel: ObservableObject {
         browserManager?.clearAllHistoryFromMenu()
     }
 
+    func showBrowsingDataDialog() {
+        guard let browserManager else { return }
+        browserManager.showDialog(
+            SumiBrowsingDataDialog(browserManager: browserManager)
+        )
+    }
+
     private var trimmedSearchText: String {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -232,8 +252,10 @@ final class HistoryPageViewModel: ObservableObject {
         let baseQuery: HistoryQuery
         if let domainFilter {
             baseQuery = .domainFilter([domainFilter])
+        } else if selectedRange == .allSites {
+            baseQuery = .rangeFilter(.allSites)
         } else {
-            baseQuery = .rangeFilter(selectedRange)
+            baseQuery = .rangeFilter(.all)
         }
 
         let baseItems = historyManager.dataProvider.items(for: baseQuery)
@@ -253,19 +275,47 @@ final class HistoryPageViewModel: ObservableObject {
             return [.init(id: "sites", title: HistoryRange.allSites.title, items: items)]
         }
 
-        var order: [String] = []
-        var grouped: [String: [HistoryListItem]] = [:]
+        var order: [Date] = []
+        var grouped: [Date: [HistoryListItem]] = [:]
+        var undatedItems: [HistoryListItem] = []
         for item in items {
-            let title = item.relativeDay.isEmpty ? "History" : item.relativeDay
-            if grouped[title] == nil {
-                order.append(title)
+            guard let visitedAt = item.visitedAt else {
+                undatedItems.append(item)
+                continue
             }
-            grouped[title, default: []].append(item)
+            let day = calendar.startOfDay(for: visitedAt)
+            if grouped[day] == nil {
+                order.append(day)
+            }
+            grouped[day, default: []].append(item)
         }
 
-        return order.map { title in
-            .init(id: title, title: title, items: grouped[title] ?? [])
+        var sections = order.map { day in
+            HistorySection(
+                id: "day:\(day.timeIntervalSince1970)",
+                title: sectionTitle(for: day),
+                items: grouped[day] ?? []
+            )
         }
+
+        if !undatedItems.isEmpty {
+            sections.append(.init(id: "history", title: "History", items: undatedItems))
+        }
+        return sections
+    }
+
+    private func sectionTitle(for day: Date) -> String {
+        let referenceDate = Date()
+        let fullDate = sectionDateFormatter.string(from: day)
+        if calendar.isDate(day, inSameDayAs: referenceDate) {
+            return "Today - \(fullDate)"
+        }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: referenceDate),
+           calendar.isDate(day, inSameDayAs: yesterday)
+        {
+            return "Yesterday - \(fullDate)"
+        }
+        return fullDate
     }
 
     private func syncSelectedRangeToActiveTab() {
@@ -370,9 +420,12 @@ final class HistoryPageViewModel: ObservableObject {
     }
 
     private func selectedVisibleItems() -> [HistoryListItem] {
-        sections
-            .flatMap(\.items)
+        visibleItems
             .filter { selectedItemIDs.contains($0.id) }
+    }
+
+    private var visibleItems: [HistoryListItem] {
+        sections.flatMap(\.items)
     }
 
     private func pruneSelection(toVisibleItems items: [HistoryListItem]) {

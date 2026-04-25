@@ -9,6 +9,11 @@ protocol SumiWebsiteDataCleanupServicing: AnyObject {
         ofTypes dataTypes: Set<String>,
         in dataStore: WKWebsiteDataStore
     ) async -> [WKWebsiteDataRecord]
+    func fetchSiteDataEntries(
+        forDomain domain: String,
+        ofTypes dataTypes: Set<String>,
+        in dataStore: WKWebsiteDataStore
+    ) async -> [SumiSiteDataEntry]
     func removeCookies(
         _ selection: SumiCookieRemovalSelection,
         in dataStore: WKWebsiteDataStore
@@ -23,7 +28,49 @@ protocol SumiWebsiteDataCleanupServicing: AnyObject {
         includingCookies: Bool,
         in dataStore: WKWebsiteDataStore
     ) async
+    func removeWebsiteDataForExactHost(
+        _ host: String,
+        ofTypes dataTypes: Set<String>,
+        includingCookies: Bool,
+        in dataStore: WKWebsiteDataStore
+    ) async
+    func removeWebsiteDataForDomains(
+        _ domains: Set<String>,
+        ofTypes dataTypes: Set<String>,
+        includingCookies: Bool,
+        in dataStore: WKWebsiteDataStore
+    ) async
     func clearAllProfileWebsiteData(in dataStore: WKWebsiteDataStore) async
+}
+
+struct SumiSiteDataEntry: Identifiable, Hashable, Sendable {
+    let domain: String
+    let cookieCount: Int
+    let recordCount: Int
+
+    var id: String { domain }
+    var hasData: Bool { cookieCount > 0 || recordCount > 0 }
+}
+
+enum SumiWebsiteDataDomain {
+    static func normalized(_ value: String) -> String {
+        let trimmedValue = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let withoutLeadingDot = trimmedValue.hasPrefix(".")
+            ? String(trimmedValue.dropFirst())
+            : trimmedValue
+        return withoutLeadingDot.lowercased()
+    }
+
+    static func belongs(_ value: String, to domain: String) -> Bool {
+        let normalizedValue = normalized(value)
+        let normalizedDomain = normalized(domain)
+        guard !normalizedValue.isEmpty, !normalizedDomain.isEmpty else {
+            return false
+        }
+        if normalizedValue == normalizedDomain { return true }
+        return normalizedValue.hasSuffix(".\(normalizedDomain)")
+    }
 }
 
 struct SumiCookieIdentifier: Hashable, Sendable {
@@ -53,6 +100,7 @@ struct SumiCookieIdentifier: Hashable, Sendable {
 enum SumiCookieRemovalSelection: Hashable, Sendable {
     case all
     case exact(SumiCookieIdentifier)
+    case exactDomains(Set<String>)
     case domains(Set<String>)
     case expired(referenceDate: Date)
     case highRisk
@@ -64,6 +112,8 @@ enum SumiCookieRemovalSelection: Hashable, Sendable {
             return true
         case .exact(let identifier):
             return identifier.matches(cookie)
+        case .exactDomains(let domains):
+            return domains.contains { cookie.belongsExactlyTo($0) }
         case .domains(let domains):
             return domains.contains { cookie.belongsTo($0) }
         case .expired(let referenceDate):
@@ -133,6 +183,55 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
         await store.dataRecords(ofTypes: dataTypes)
     }
 
+    func fetchSiteDataEntries(
+        forDomain domain: String,
+        ofTypes dataTypes: Set<String>,
+        in dataStore: WKWebsiteDataStore
+    ) async -> [SumiSiteDataEntry] {
+        await fetchSiteDataEntries(
+            forDomain: domain,
+            ofTypes: dataTypes,
+            using: WebsiteDataStoreWrapper(wrapped: dataStore)
+        )
+    }
+
+    func fetchSiteDataEntries<Store: DDGWebsiteDataStore>(
+        forDomain domain: String,
+        ofTypes dataTypes: Set<String>,
+        using store: Store
+    ) async -> [SumiSiteDataEntry] {
+        let normalizedDomain = domain.normalizedWebsiteDataDomain
+        guard !normalizedDomain.isEmpty else { return [] }
+
+        let cookies = await store.httpCookieStore.allCookies()
+        let records = await store.dataRecords(ofTypes: dataTypes)
+
+        let cookieDomains = cookies
+            .map { $0.domain.normalizedWebsiteDataDomain }
+            .filter { $0.belongsToWebsiteDataDomain(normalizedDomain) }
+
+        let recordDomains = records
+            .map { $0.displayName.normalizedWebsiteDataDomain }
+            .filter { $0.belongsToWebsiteDataDomain(normalizedDomain) }
+
+        let domains = Set(cookieDomains + recordDomains).filter { !$0.isEmpty }
+        return domains.map { entryDomain in
+            SumiSiteDataEntry(
+                domain: entryDomain,
+                cookieCount: cookies.filter { $0.belongsExactlyTo(entryDomain) }.count,
+                recordCount: records.filter {
+                    $0.displayName.normalizedWebsiteDataDomain == entryDomain
+                }.count
+            )
+        }
+        .filter(\.hasData)
+        .sorted { lhs, rhs in
+            if lhs.domain == normalizedDomain { return true }
+            if rhs.domain == normalizedDomain { return false }
+            return lhs.domain.localizedStandardCompare(rhs.domain) == .orderedAscending
+        }
+    }
+
     func removeCookies(
         _ selection: SumiCookieRemovalSelection,
         in dataStore: WKWebsiteDataStore
@@ -195,6 +294,94 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
             using: WebsiteDataStoreWrapper(wrapped: dataStore),
             storeIdentifier: identifier(for: dataStore)
         )
+    }
+
+    func removeWebsiteDataForDomains(
+        _ domains: Set<String>,
+        ofTypes dataTypes: Set<String>,
+        includingCookies: Bool,
+        in dataStore: WKWebsiteDataStore
+    ) async {
+        await removeWebsiteDataForDomains(
+            domains,
+            ofTypes: dataTypes,
+            includingCookies: includingCookies,
+            using: WebsiteDataStoreWrapper(wrapped: dataStore),
+            storeIdentifier: identifier(for: dataStore)
+        )
+    }
+
+    func removeWebsiteDataForExactHost(
+        _ host: String,
+        ofTypes dataTypes: Set<String>,
+        includingCookies: Bool,
+        in dataStore: WKWebsiteDataStore
+    ) async {
+        await removeWebsiteDataForExactHost(
+            host,
+            ofTypes: dataTypes,
+            includingCookies: includingCookies,
+            using: WebsiteDataStoreWrapper(wrapped: dataStore),
+            storeIdentifier: identifier(for: dataStore)
+        )
+    }
+
+    func removeWebsiteDataForDomains<Store: DDGWebsiteDataStore>(
+        _ domains: Set<String>,
+        ofTypes dataTypes: Set<String>,
+        includingCookies: Bool,
+        using store: Store,
+        storeIdentifier: String
+    ) async {
+        let normalizedDomains = Set(
+            domains
+                .map(\.normalizedWebsiteDataDomain)
+                .filter { !$0.isEmpty }
+        )
+        guard !normalizedDomains.isEmpty else { return }
+
+        await coalesced(
+            operation: .removeDomainsWebsiteData(
+                domains: normalizedDomains,
+                dataTypes: dataTypes,
+                includingCookies: includingCookies
+            ),
+            storeIdentifier: storeIdentifier
+        ) {
+            await self.performRemoveWebsiteDataForDomains(
+                normalizedDomains,
+                ofTypes: dataTypes,
+                includingCookies: includingCookies,
+                using: store
+            )
+        }
+    }
+
+    func removeWebsiteDataForExactHost<Store: DDGWebsiteDataStore>(
+        _ host: String,
+        ofTypes dataTypes: Set<String>,
+        includingCookies: Bool,
+        using store: Store,
+        storeIdentifier: String
+    ) async {
+        let normalizedHost = host.normalizedWebsiteDataDomain
+        guard !normalizedHost.isEmpty else { return }
+
+        await coalesced(
+            operation: .removeExactHostWebsiteData(
+                host: normalizedHost,
+                dataTypes: dataTypes,
+                includingCookies: includingCookies
+            ),
+            storeIdentifier: storeIdentifier
+        ) {
+            await self.performRemoveWebsiteDataForExactHost(
+                normalizedHost,
+                ofTypes: dataTypes,
+                includingCookies: includingCookies,
+                using: store
+            )
+        }
     }
 
     func removeWebsiteDataForDomain<Store: DDGWebsiteDataStore>(
@@ -265,19 +452,53 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
         let normalizedDomain = domain.normalizedWebsiteDataDomain
         guard !normalizedDomain.isEmpty else { return }
 
-        let records = await store.dataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes())
-        let matchingRecords = records.filter { record in
-            record.displayName.belongsToWebsiteDataDomain(normalizedDomain)
-                && !preservationPolicy.shouldPreserveDataRecord(displayName: record.displayName)
-        }
-
         let dataTypes = includingCookies
             ? WKWebsiteDataStore.allWebsiteDataTypes()
             : WKWebsiteDataStore.allWebsiteDataTypesExceptCookies
+        await performRemoveWebsiteDataForDomains(
+            [normalizedDomain],
+            ofTypes: dataTypes,
+            includingCookies: includingCookies,
+            using: store
+        )
+    }
+
+    private func performRemoveWebsiteDataForDomains<Store: DDGWebsiteDataStore>(
+        _ normalizedDomains: Set<String>,
+        ofTypes dataTypes: Set<String>,
+        includingCookies: Bool,
+        using store: Store
+    ) async {
+        let records = await store.dataRecords(ofTypes: dataTypes)
+        let matchingRecords = records.filter { record in
+            normalizedDomains.contains { domain in
+                record.displayName.belongsToWebsiteDataDomain(domain)
+            } && !preservationPolicy.shouldPreserveDataRecord(displayName: record.displayName)
+        }
+
         await store.removeData(ofTypes: dataTypes, for: matchingRecords)
 
         if includingCookies {
-            await performRemoveCookies(.domains([normalizedDomain]), using: store)
+            await performRemoveCookies(.domains(normalizedDomains), using: store)
+        }
+    }
+
+    private func performRemoveWebsiteDataForExactHost<Store: DDGWebsiteDataStore>(
+        _ normalizedHost: String,
+        ofTypes dataTypes: Set<String>,
+        includingCookies: Bool,
+        using store: Store
+    ) async {
+        let records = await store.dataRecords(ofTypes: dataTypes)
+        let matchingRecords = records.filter { record in
+            record.displayName.normalizedWebsiteDataDomain == normalizedHost
+                && !preservationPolicy.shouldPreserveDataRecord(displayName: record.displayName)
+        }
+
+        await store.removeData(ofTypes: dataTypes, for: matchingRecords)
+
+        if includingCookies {
+            await performRemoveCookies(.exactDomains([normalizedHost]), using: store)
         }
     }
 
@@ -334,6 +555,16 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
         case removeCookies(SumiCookieRemovalSelection)
         case removeWebsiteData(types: Set<String>, modifiedSince: Date)
         case removeDomainWebsiteData(domain: String, includingCookies: Bool)
+        case removeExactHostWebsiteData(
+            host: String,
+            dataTypes: Set<String>,
+            includingCookies: Bool
+        )
+        case removeDomainsWebsiteData(
+            domains: Set<String>,
+            dataTypes: Set<String>,
+            includingCookies: Bool
+        )
     }
 }
 
@@ -399,27 +630,18 @@ extension HTTPCookie {
         if normalizedCookieDomain == normalizedDomain { return true }
         return normalizedCookieDomain.hasSuffix(".\(normalizedDomain)")
     }
+
+    func belongsExactlyTo(_ host: String) -> Bool {
+        domain.normalizedWebsiteDataDomain == host.normalizedWebsiteDataDomain
+    }
 }
 
-private extension String {
+extension String {
     var normalizedWebsiteDataDomain: String {
-        trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingPrefix(".")
-            .lowercased()
+        SumiWebsiteDataDomain.normalized(self)
     }
 
     func belongsToWebsiteDataDomain(_ domain: String) -> Bool {
-        let normalizedSelf = normalizedWebsiteDataDomain
-        let normalizedDomain = domain.normalizedWebsiteDataDomain
-        guard !normalizedSelf.isEmpty, !normalizedDomain.isEmpty else {
-            return false
-        }
-        if normalizedSelf == normalizedDomain { return true }
-        return normalizedSelf.hasSuffix(".\(normalizedDomain)")
-    }
-
-    func trimmingPrefix(_ prefix: String) -> String {
-        guard hasPrefix(prefix) else { return self }
-        return String(dropFirst(prefix.count))
+        SumiWebsiteDataDomain.belongs(self, to: domain)
     }
 }

@@ -43,7 +43,7 @@ final class HistoryNavigationTests: XCTestCase {
         XCTAssertEqual(historyTabs.count, 2)
         XCTAssertEqual(
             historyTabs.last?.url,
-            SumiSurface.historySurfaceURL(rangeQuery: HistoryRange.older.paneQueryValue)
+            SumiSurface.historySurfaceURL(rangeQuery: HistoryRange.all.paneQueryValue)
         )
         XCTAssertEqual(windowState.currentTabId, historyTabs.last?.id)
     }
