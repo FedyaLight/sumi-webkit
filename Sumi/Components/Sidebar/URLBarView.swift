@@ -1361,6 +1361,38 @@ private struct URLBarSiteDataDetailsView: View {
     }
 
     var body: some View {
+        ZStack {
+            content
+
+            if let entry = pendingDeletionEntry {
+                URLBarSiteDataDeleteConfirmationView(
+                    domain: entry.domain,
+                    onCancel: {
+                        pendingDeletionEntry = nil
+                    },
+                    onDelete: {
+                        delete(entry)
+                    }
+                )
+                .transition(
+                    .scale(scale: 0.98, anchor: .center)
+                        .combined(with: .opacity)
+                )
+                .zIndex(1)
+            }
+        }
+        .animation(.easeInOut(duration: 0.16), value: pendingDeletionEntry?.id)
+        .task(id: loadKey) {
+            await model.load(url: currentTab?.url, profile: profile)
+        }
+        .onReceive(SumiSiteDataPolicyStore.shared.changesPublisher) { _ in
+            Task {
+                await model.load(url: currentTab?.url, profile: profile)
+            }
+        }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
                 .padding(.horizontal, 10)
@@ -1387,28 +1419,6 @@ private struct URLBarSiteDataDetailsView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-        }
-        .task(id: loadKey) {
-            await model.load(url: currentTab?.url, profile: profile)
-        }
-        .onReceive(SumiSiteDataPolicyStore.shared.changesPublisher) { _ in
-            Task {
-                await model.load(url: currentTab?.url, profile: profile)
-            }
-        }
-        .alert(
-            "Delete cookies and site data?",
-            isPresented: deleteConfirmationBinding,
-            presenting: pendingDeletionEntry
-        ) { entry in
-            Button("Delete", role: .destructive) {
-                delete(entry)
-            }
-            Button("Cancel", role: .cancel) {
-                pendingDeletionEntry = nil
-            }
-        } message: { entry in
-            Text("This will delete cookies and site data for \(entry.domain).")
         }
     }
 
@@ -1521,17 +1531,6 @@ private struct URLBarSiteDataDetailsView: View {
         }
     }
 
-    private var deleteConfirmationBinding: Binding<Bool> {
-        Binding(
-            get: { pendingDeletionEntry != nil },
-            set: { isPresented in
-                if !isPresented {
-                    pendingDeletionEntry = nil
-                }
-            }
-        )
-    }
-
     private func delete(_ entry: SumiSiteDataEntry) {
         pendingDeletionEntry = nil
         Task {
@@ -1541,6 +1540,127 @@ private struct URLBarSiteDataDetailsView: View {
                 profile: profile
             )
             onDidMutate()
+        }
+    }
+}
+
+private struct URLBarSiteDataDeleteConfirmationView: View {
+    let domain: String
+    let onCancel: () -> Void
+    let onDelete: () -> Void
+
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black
+                .opacity(colorScheme == .dark ? 0.28 : 0.12)
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onCancel)
+
+            VStack(spacing: 14) {
+                Image(systemName: "trash.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 48, height: 48)
+                    .background(destructiveColor)
+                    .clipShape(Circle())
+
+                VStack(spacing: 6) {
+                    Text("Delete cookies and site data?")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(tokens.primaryText)
+                        .multilineTextAlignment(.center)
+                    Text("This will delete cookies and site data for \(domain).")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(tokens.secondaryText)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: 10) {
+                    Button("Cancel", action: onCancel)
+                        .buttonStyle(URLBarSiteDataConfirmationButtonStyle(role: .secondary))
+
+                    Button("Delete", action: onDelete)
+                        .buttonStyle(URLBarSiteDataConfirmationButtonStyle(role: .destructive))
+                }
+            }
+            .padding(18)
+            .frame(maxWidth: 330)
+            .background(tokens.commandPaletteBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(tokens.separator.opacity(0.65), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.45 : 0.18), radius: 18, x: 0, y: 8)
+            .padding(16)
+        }
+    }
+
+    private var destructiveColor: Color {
+        Color(red: 0.94, green: 0.05, blue: 0.16)
+    }
+}
+
+private struct URLBarSiteDataConfirmationButtonStyle: ButtonStyle {
+    enum Role {
+        case secondary
+        case destructive
+    }
+
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovering = false
+
+    let role: Role
+
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
+    }
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13.5, weight: .semibold))
+            .foregroundStyle(foregroundColor)
+            .frame(maxWidth: .infinity)
+            .frame(height: 36)
+            .background(backgroundColor(isPressed: configuration.isPressed))
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .opacity(isEnabled ? 1 : 0.5)
+            .scaleEffect(configuration.isPressed && isEnabled ? 0.98 : 1)
+            .onHover { hovering in
+                isHovering = hovering
+            }
+    }
+
+    private var foregroundColor: Color {
+        switch role {
+        case .secondary:
+            return tokens.primaryText
+        case .destructive:
+            return .white
+        }
+    }
+
+    private func backgroundColor(isPressed: Bool) -> Color {
+        switch role {
+        case .secondary:
+            return isPressed || isHovering
+                ? tokens.fieldBackgroundHover
+                : tokens.fieldBackground
+        case .destructive:
+            let base = Color(red: 0.94, green: 0.05, blue: 0.16)
+            return isPressed || isHovering ? base.opacity(0.88) : base
         }
     }
 }
@@ -1569,21 +1689,23 @@ private struct URLBarSiteDataEntryRow: View {
                 titleArea
 
                 Button(action: onDelete) {
-                    if isDeleting {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Image(systemName: "trash")
-                            .font(.system(size: 13, weight: .semibold))
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(isDeleteHovered ? tokens.fieldBackgroundHover : Color.clear)
+
+                        if isDeleting {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "trash")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
                     }
+                    .frame(width: 32, height: 32)
+                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(tokens.secondaryText)
-                .frame(width: 32, height: 32)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(isDeleteHovered ? tokens.fieldBackgroundHover : Color.clear)
-                )
                 .disabled(isDeleting)
                 .help("Delete data for \(entry.domain)")
                 .onHover { hovering in
