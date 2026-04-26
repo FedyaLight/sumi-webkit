@@ -310,6 +310,19 @@ final class TabSuspensionServiceTests: XCTestCase {
         )
     }
 
+    func testPageSuspensionRuntimeStateResetClearsNativeVetoAndDocumentFlags() {
+        let tab = Tab(url: URL(string: "https://example.com/reset")!)
+        tab.pageSuspensionVeto = .pageReportedUnableToSuspend
+        tab.hasPictureInPictureVideo = true
+        tab.isDisplayingPDFDocument = true
+
+        tab.resetPageSuspensionRuntimeState()
+
+        XCTAssertEqual(tab.pageSuspensionVeto, .none)
+        XCTAssertFalse(tab.hasPictureInPictureVideo)
+        XCTAssertFalse(tab.isDisplayingPDFDocument)
+    }
+
     func testUnsupportedURLSchemeEligibilityIsRejectedWithReason() {
         let (harness, hidden) = makeEligibilitySubject(hiddenURL: "file:///tmp/suspension.html")
 
@@ -725,6 +738,28 @@ final class TabSuspensionServiceTests: XCTestCase {
         XCTAssertEqual(service.idleSchedulerStartCountForTesting, 1)
     }
 
+    func testPrompt065DDGAuditDocumentationRecordsAlignmentAndSumiPolicy() throws {
+        let source = try Self.source(named: "docs/sumi-performance-modular-execution-state.md")
+
+        for requiredText in [
+            "Prompt 06.5",
+            "DDG uses a default minimum inactive interval of about 10 minutes",
+            "memory-pressure driven",
+            "not a user-facing three-mode idle policy",
+            "page-level canBeSuspended veto",
+            "Sumi-specific product policy",
+            "Lightweight",
+            "Balanced",
+            "Performance",
+            "page-level veto bridge status: implemented",
+        ] {
+            XCTAssertTrue(
+                source.contains(requiredText),
+                "Missing Prompt 06.5 audit text: \(requiredText)"
+            )
+        }
+    }
+
     func testPrompt06WiresMemoryModeIdleSuspensionWithoutEvictionOrOptionalModuleRuntimes() throws {
         let suspensionSource = try Self.source(named: "Sumi/Managers/TabSuspensionService.swift")
         let coordinatorSource = try Self.source(named: "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift")
@@ -754,6 +789,36 @@ final class TabSuspensionServiceTests: XCTestCase {
             "SumiScriptsManager(",
         ] {
             XCTAssertFalse(changedSources.contains(forbiddenConstructor))
+        }
+    }
+
+    func testPrompt065PageVetoBridgeDoesNotChangeEvictionOrOptionalModuleRuntimes() throws {
+        let tabScriptSource = try Self.source(named: "Sumi/Models/Tab/Tab+ScriptMessageHandler.swift")
+        let lifecycleSource = try Self.source(named: "Sumi/Models/Tab/Navigation/SumiTabLifecycleNavigationResponder.swift")
+        let coordinatorSource = try Self.source(named: "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift")
+
+        XCTAssertTrue(tabScriptSource.contains("SumiTabSuspensionUserScript"))
+        XCTAssertTrue(tabScriptSource.contains("window.__sumiTabSuspension"))
+        XCTAssertTrue(tabScriptSource.contains("featureName: \"tabSuspension\""))
+        XCTAssertTrue(tabScriptSource.contains("method: \"canBeSuspended\""))
+        XCTAssertTrue(tabScriptSource.contains("pageSuspensionVeto"))
+        XCTAssertTrue(tabScriptSource.contains("pageReportedUnableToSuspend"))
+        XCTAssertTrue(lifecycleSource.contains("navigation.navigationAction.isForMainFrame"))
+        XCTAssertTrue(lifecycleSource.contains("tab.resetPageSuspensionRuntimeState()"))
+
+        XCTAssertFalse(tabScriptSource.contains("canEvictHiddenWebView"))
+        XCTAssertFalse(tabScriptSource.contains("createWebViewInternal"))
+        XCTAssertFalse(coordinatorSource.contains("SumiTabSuspensionUserScript"))
+
+        for forbiddenConstructor in [
+            "SumiTrackingProtection(",
+            "SumiContentBlockingService(",
+            "ExtensionManager(",
+            "NativeMessagingHandler(",
+            "SumiScriptsManager(",
+            "UserScriptStore(",
+        ] {
+            XCTAssertFalse(tabScriptSource.contains(forbiddenConstructor))
         }
     }
 

@@ -8,6 +8,7 @@ extension Tab {
         [
             SumiLinkInteractionUserScript(tab: self),
             SumiIdentityUserScript(tab: self),
+            SumiTabSuspensionUserScript(tab: self),
         ]
     }
 
@@ -424,6 +425,114 @@ private struct SumiCommandClickPayload {
             shiftKey: dictionary["shiftKey"] as? Bool ?? false,
             metaKey: dictionary["metaKey"] as? Bool ?? false
         )
+    }
+}
+
+@MainActor
+private final class SumiTabSuspensionUserScript: NSObject, UserScript, UserScriptMessaging, WKScriptMessageHandlerWithReply {
+    private let context: String
+    let broker: UserScriptMessageBroker
+    let source: String
+    let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
+    let forMainFrameOnly = true
+    let requiresRunInPageContentWorld = true
+    let messageNames: [String]
+
+    init(tab: Tab) {
+        self.context = "sumiTabSuspension_\(tab.id.uuidString)"
+        self.broker = UserScriptMessageBroker(context: context, requiresRunInPageContentWorld: true)
+        self.messageNames = [context]
+        self.source = Self.makeSource(context: context)
+        super.init()
+        registerSubfeature(delegate: SumiTabSuspensionSubfeature(tab: tab))
+    }
+
+    private static func makeSource(context: String) -> String {
+        """
+        (function() {
+            if (window.__sumiTabSuspensionInstalled) { return; }
+            window.__sumiTabSuspensionInstalled = true;
+
+            const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers["\(context)"];
+            if (!handler) { return; }
+
+            function reportCanBeSuspended(canBeSuspended) {
+                if (typeof canBeSuspended !== "boolean") { return; }
+                return handler.postMessage({
+                    context: "\(context)",
+                    featureName: "tabSuspension",
+                    method: "canBeSuspended",
+                    params: { canBeSuspended: canBeSuspended }
+                });
+            }
+
+            window.__sumiTabSuspension = Object.freeze({
+                canBeSuspended: reportCanBeSuspended
+            });
+        })();
+        """
+    }
+
+    @MainActor
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) async -> (Any?, String?) {
+        let action = broker.messageHandlerFor(message)
+        do {
+            let json = try await broker.execute(action: action, original: message)
+            return (json, nil)
+        } catch {
+            return (nil, error.localizedDescription)
+        }
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        _ = userContentController
+        _ = message
+    }
+}
+
+@MainActor
+private final class SumiTabSuspensionSubfeature: NSObject, Subfeature {
+    let featureName = "tabSuspension"
+    let messageOriginPolicy: MessageOriginPolicy = .all
+    weak var broker: UserScriptMessageBroker?
+    weak var tab: Tab?
+
+    init(tab: Tab) {
+        self.tab = tab
+        super.init()
+    }
+
+    func with(broker: UserScriptMessageBroker) {
+        self.broker = broker
+    }
+
+    func handler(forMethodNamed methodName: String) -> Subfeature.Handler? {
+        guard methodName == "canBeSuspended" else { return nil }
+        return { [weak self] params, _ in
+            guard let payload = SumiTabSuspensionPayload.decode(from: params) else {
+                return nil
+            }
+
+            self?.tab?.pageSuspensionVeto = payload.canBeSuspended
+                ? .none
+                : .pageReportedUnableToSuspend
+            return SumiJSONValue.object(["accepted": .bool(true)])
+        }
+    }
+}
+
+private struct SumiTabSuspensionPayload {
+    let canBeSuspended: Bool
+
+    static func decode(from params: Any) -> SumiTabSuspensionPayload? {
+        guard let dictionary = params as? [String: Any],
+              let canBeSuspended = dictionary["canBeSuspended"] as? Bool
+        else { return nil }
+
+        return SumiTabSuspensionPayload(canBeSuspended: canBeSuspended)
     }
 }
 

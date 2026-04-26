@@ -1,4 +1,5 @@
 import BrowserServicesKit
+import Foundation
 import WebKit
 import XCTest
 @testable import Sumi
@@ -136,8 +137,111 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         await fulfillment(of: [unknownDidNotFire], timeout: 0.5)
     }
 
+    func testTabSuspensionPageAPIUpdatesPageVetoState() async throws {
+        let tab = Tab(name: "Suspension")
+        let webView = try await makeWebView(with: tab)
+
+        try await evaluate(
+            "window.__sumiTabSuspension.canBeSuspended(false);",
+            in: webView
+        )
+        await waitForPageVeto(.pageReportedUnableToSuspend, on: tab)
+
+        try await evaluate(
+            "window.__sumiTabSuspension.canBeSuspended(true);",
+            in: webView
+        )
+        await waitForPageVeto(.none, on: tab)
+    }
+
+    func testTabSuspensionMessagesRemainScopedByContext() async throws {
+        let firstTab = Tab(name: "First Suspension")
+        let secondTab = Tab(name: "Second Suspension")
+        let scriptsProvider = SumiNormalTabUserScripts(
+            managedUserScripts: firstTab.normalTabCoreUserScripts() + secondTab.normalTabCoreUserScripts()
+        )
+        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+            scriptsProvider: scriptsProvider
+        )
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController = controller
+        let webView = WKWebView(
+            frame: CGRect(x: 0, y: 0, width: 800, height: 600),
+            configuration: configuration
+        )
+
+        await controller.awaitContentBlockingAssetsInstalled()
+        try await loadBlankDocument(into: webView)
+
+        try await postTabSuspensionCanBeSuspended(
+            false,
+            context: tabSuspensionContext(for: secondTab),
+            in: webView
+        )
+
+        await waitForPageVeto(.pageReportedUnableToSuspend, on: secondTab)
+        XCTAssertEqual(firstTab.pageSuspensionVeto, .none)
+    }
+
+    func testMalformedAndIrrelevantTabSuspensionMessagesAreIgnoredSafely() async throws {
+        let tab = Tab(name: "Malformed Suspension")
+        let webView = try await makeWebView(with: tab)
+
+        try await evaluate(
+            """
+            const handler = window.webkit?.messageHandlers?.["\(tabSuspensionContext(for: tab))"];
+            handler.postMessage({
+                context: "\(tabSuspensionContext(for: tab))",
+                featureName: "tabSuspension",
+                method: "canBeSuspended",
+                params: { canBeSuspended: "false" }
+            });
+            handler.postMessage({
+                context: "\(tabSuspensionContext(for: tab))",
+                featureName: "tabSuspension",
+                method: "unknownMethod",
+                params: { canBeSuspended: false }
+            });
+            handler.postMessage({
+                context: "\(tabSuspensionContext(for: tab))",
+                featureName: "unknownFeature",
+                method: "canBeSuspended",
+                params: { canBeSuspended: false }
+            });
+            """,
+            in: webView
+        )
+
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(tab.pageSuspensionVeto, .none)
+    }
+
+    func testTabSuspensionBridgeDoesNotStartOptionalModuleRuntimes() throws {
+        let source = try Self.source(named: "Sumi/Models/Tab/Tab+ScriptMessageHandler.swift")
+
+        XCTAssertTrue(source.contains("SumiTabSuspensionUserScript"))
+        XCTAssertTrue(source.contains("window.__sumiTabSuspension"))
+        XCTAssertTrue(source.contains("featureName: \"tabSuspension\""))
+        XCTAssertTrue(source.contains("method: \"canBeSuspended\""))
+
+        for forbiddenConstructor in [
+            "SumiTrackingProtection(",
+            "SumiContentBlockingService(",
+            "ExtensionManager(",
+            "NativeMessagingHandler(",
+            "SumiScriptsManager(",
+            "UserScriptStore(",
+        ] {
+            XCTAssertFalse(source.contains(forbiddenConstructor))
+        }
+    }
+
     private func linkContext(for tab: Tab) -> String {
         "sumiLinkInteraction_\(tab.id.uuidString)"
+    }
+
+    private func tabSuspensionContext(for tab: Tab) -> String {
+        "sumiTabSuspension_\(tab.id.uuidString)"
     }
 
     private func makeWebView(with tab: Tab) async throws -> WKWebView {
@@ -172,6 +276,50 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
             }
             """,
             in: webView
+        )
+    }
+
+    private func postTabSuspensionCanBeSuspended(_ canBeSuspended: Bool, context: String, in webView: WKWebView) async throws {
+        try await evaluate(
+            """
+            const handler = window.webkit?.messageHandlers?.["\(context)"];
+            if (handler) {
+                handler.postMessage({
+                    context: "\(context)",
+                    featureName: "tabSuspension",
+                    method: "canBeSuspended",
+                    params: { canBeSuspended: \(canBeSuspended ? "true" : "false") }
+                });
+            }
+            """,
+            in: webView
+        )
+    }
+
+    private func waitForPageVeto(
+        _ expected: TabPageSuspensionVeto,
+        on tab: Tab,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        for _ in 0..<100 {
+            if tab.pageSuspensionVeto == expected {
+                return
+            }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        XCTAssertEqual(tab.pageSuspensionVeto, expected, file: file, line: line)
+    }
+
+    private static func source(named path: String) throws -> String {
+        let testURL = URL(fileURLWithPath: #filePath)
+        let repoRoot = testURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: repoRoot.appendingPathComponent(path),
+            encoding: .utf8
         )
     }
 
