@@ -228,6 +228,8 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
             "SumiTrackingProtection(",
             "SumiContentBlockingService(",
             "ExtensionManager(",
+            "SumiExtensionsModule",
+            "extensionsModule",
             "NativeMessagingHandler(",
             "SumiScriptsManager(",
             "SumiUserscriptsModule",

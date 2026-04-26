@@ -27,6 +27,17 @@ final class SumiModuleRegistryTests: XCTestCase {
         XCTAssertNil(harness.defaults.object(forKey: store.key(for: .trackingProtection)))
     }
 
+    func testCleanInstallDefaultsExtensionsDisabled() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let store = SumiModuleSettingsStore(userDefaults: harness.defaults)
+        let registry = SumiModuleRegistry(settingsStore: store)
+
+        XCTAssertFalse(registry.isEnabled(.extensions))
+        XCTAssertNil(harness.defaults.object(forKey: store.key(for: .extensions)))
+    }
+
     func testCleanInstallDefaultsUserscriptsDisabled() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -106,6 +117,24 @@ final class SumiModuleRegistryTests: XCTestCase {
         registry.disable(.trackingProtection)
         XCTAssertFalse(
             SumiModuleRegistry(settingsStore: store).isEnabled(.trackingProtection)
+        )
+    }
+
+    func testExtensionsEnableDisablePersists() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let store = SumiModuleSettingsStore(userDefaults: harness.defaults)
+        let registry = SumiModuleRegistry(settingsStore: store)
+
+        registry.enable(.extensions)
+        XCTAssertTrue(
+            SumiModuleRegistry(settingsStore: store).isEnabled(.extensions)
+        )
+
+        registry.disable(.extensions)
+        XCTAssertFalse(
+            SumiModuleRegistry(settingsStore: store).isEnabled(.extensions)
         )
     }
 

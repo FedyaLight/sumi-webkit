@@ -113,16 +113,19 @@ struct SumiExtensionsSettingsPane: View {
             switch sumiSettings.extensionsSettingsSubPane {
             case .safariExtensions:
                 SumiSettingsModuleToggleGate(descriptor: .extensions) {
-                    safariExtensionsBody(
-                        installedExtensions: extensionSurfaceStore.installedExtensions
-                    )
-                    .task {
-                        if discoveredSafariExtensions.isEmpty {
-                            discoverSafariExtensions()
+                    if let extensionManager = browserManager.extensionsModule.managerIfEnabled() {
+                        safariExtensionsBody(
+                            extensionManager: extensionManager,
+                            installedExtensions: extensionSurfaceStore.installedExtensions
+                        )
+                        .task {
+                            if discoveredSafariExtensions.isEmpty {
+                                discoverSafariExtensions()
+                            }
                         }
-                    }
-                    .onDisappear {
-                        cancelExtensionPaneTasks()
+                        .onDisappear {
+                            cancelExtensionPaneTasks()
+                        }
                     }
                 }
             case .userScripts:
@@ -144,11 +147,14 @@ struct SumiExtensionsSettingsPane: View {
     }
 
     @ViewBuilder
-    private func safariExtensionsBody(installedExtensions: [InstalledExtension]) -> some View {
+    private func safariExtensionsBody(
+        extensionManager: ExtensionManager,
+        installedExtensions: [InstalledExtension]
+    ) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             SettingsSectionCard(
                 title: "Extensions",
-                subtitle: browserManager.extensionManager.extensionsLoaded
+                subtitle: extensionManager.extensionsLoaded
                     ? "Sumi is using the rebuilt Safari/WebExtension backend"
                     : "Sumi is loading installed Safari extensions"
             ) {
@@ -170,7 +176,7 @@ struct SumiExtensionsSettingsPane: View {
                         .disabled(isDiscoveringSafariExtensions)
                     }
 
-                    Text(browserManager.extensionManager.isExtensionSupportAvailable
+                    Text(extensionManager.isExtensionSupportAvailable
                         ? "Safari extensions can be installed from `.app`, `.appex`, or unpacked directories with a `manifest.json`. Chromium and Mozilla direct runtimes remain intentionally disabled."
                         : "Safari Web Extensions require macOS 15.5 or newer in this Sumi build."
                     )
@@ -241,7 +247,7 @@ struct SumiExtensionsSettingsPane: View {
         isDiscoveringSafariExtensions = true
 
         discoveryTask = Task { @MainActor in
-            let results = await browserManager.extensionManager.discoverSafariExtensions()
+            let results = await browserManager.extensionsModule.discoverSafariExtensions()
             guard !Task.isCancelled else { return }
             discoveredSafariExtensions = results
             isDiscoveringSafariExtensions = false
@@ -257,7 +263,7 @@ struct SumiExtensionsSettingsPane: View {
             statusMessage = nil
             busyExtensionIDs.insert(info.id)
         }
-        browserManager.extensionManager.installSafariExtension(info) { result in
+        browserManager.extensionsModule.installSafariExtension(info) { result in
             SettingsViewStateDeferral.schedule {
                 guard busyExtensionIDs.contains(info.id) else { return }
                 busyExtensionIDs.remove(info.id)
@@ -278,12 +284,12 @@ struct SumiExtensionsSettingsPane: View {
             let nextStatusMessage: String
             do {
                 if extensionRecord.isEnabled {
-                    try await browserManager.extensionManager.disableExtension(
+                    try await browserManager.extensionsModule.disableExtension(
                         extensionRecord.id
                     )
                     nextStatusMessage = "Disabled \(extensionRecord.name)."
                 } else {
-                    let enabled = try await browserManager.extensionManager.enableExtension(
+                    let enabled = try await browserManager.extensionsModule.enableExtension(
                         extensionRecord.id
                     )
                     nextStatusMessage = "Enabled \(enabled.name)."
@@ -304,7 +310,7 @@ struct SumiExtensionsSettingsPane: View {
         extensionOperationTasks[extensionRecord.id] = Task { @MainActor in
             let nextStatusMessage: String
             do {
-                try await browserManager.extensionManager.uninstallExtension(
+                try await browserManager.extensionsModule.uninstallExtension(
                     extensionRecord.id
                 )
                 nextStatusMessage = "Removed \(extensionRecord.name)."

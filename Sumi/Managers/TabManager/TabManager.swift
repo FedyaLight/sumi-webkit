@@ -939,7 +939,7 @@ class TabManager: ObservableObject {
 
             guard let tab = removed else { return }
 
-            browserManager?.extensionManager.notifyTabClosed(tab)
+            browserManager?.extensionsModule.notifyTabClosedIfLoaded(tab)
 
             browserManager?.windowRegistry?.windows.values.forEach { windowState in
                 windowState.removeFromRegularTabHistory(tab.id)
@@ -1052,7 +1052,7 @@ class TabManager: ObservableObject {
         }
 
         if previous?.id != tab.id {
-            browserManager?.extensionManager.notifyTabActivated(
+            browserManager?.extensionsModule.notifyTabActivatedIfLoaded(
                 newTab: tab,
                 previous: previous
             )

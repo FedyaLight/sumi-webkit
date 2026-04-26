@@ -24,7 +24,7 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
         tab.resetPageSuspensionRuntimeState()
 
         if let url = navigation.request.url {
-            tab.browserManager?.extensionManager.prepareWebViewForExtensionRuntime(
+            tab.browserManager?.extensionsModule.prepareWebViewForExtensionRuntime(
                 webView,
                 currentURL: url,
                 reason: "SumiTabLifecycleNavigationResponder.willStart"
@@ -39,7 +39,7 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
         else { return }
 
         tab.loadingState = .didStartProvisionalNavigation
-        tab.browserManager?.extensionManager.notifyTabPropertiesChanged(tab, properties: [.loading])
+        tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.loading])
 
         if let newURL = webView.url {
             if newURL.absoluteString != tab.url.absoluteString {
@@ -70,7 +70,7 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
         else { return }
 
         tab.loadingState = .didCommit
-        tab.browserManager?.extensionManager.notifyTabPropertiesChanged(tab, properties: [.loading])
+        tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.loading])
 
         if let newURL = webView.url {
             tab.url = newURL
@@ -81,14 +81,14 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
                 kind: tab.pendingMainFrameNavigationKind == .backForward ? .backForward : .regular,
                 tab: tab
             )
-            tab.browserManager?.extensionManager.markTabEligibleAfterCommittedNavigation(
+            tab.browserManager?.extensionsModule.markTabEligibleAfterCommittedNavigationIfLoaded(
                 tab,
                 reason: "SumiTabLifecycleNavigationResponder.didCommit"
             )
             if tab.pendingMainFrameNavigationKind != .backForward {
                 tab.browserManager?.syncTabAcrossWindows(tab.id, originatingWebView: webView)
             }
-            tab.browserManager?.extensionManager.notifyTabPropertiesChanged(tab, properties: [.URL, .loading])
+            tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.URL, .loading])
         }
 
         NotificationCenter.default.post(
@@ -105,7 +105,7 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
         else { return }
 
         tab.loadingState = .didFinish
-        tab.browserManager?.extensionManager.notifyTabPropertiesChanged(tab, properties: [.loading])
+        tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.loading])
 
         if let newURL = webView.url {
             tab.url = newURL
@@ -151,7 +151,7 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
             tab.pendingMainFrameNavigationKind = nil
         }
 
-        tab.browserManager?.extensionManager.notifyTabPropertiesChanged(tab, properties: [.URL])
+        tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.URL])
     }
 
     func navigation(_ navigation: Navigation, didFailWith error: WKError) {
@@ -163,7 +163,7 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
         tab.loadingState = .didFail(error)
         tab.finishBackForwardNavigationTracking(using: webView)
         tab.updateNavigationState()
-        tab.browserManager?.extensionManager.notifyTabPropertiesChanged(tab, properties: [.loading])
+        tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.loading])
     }
 
     func didReceive(

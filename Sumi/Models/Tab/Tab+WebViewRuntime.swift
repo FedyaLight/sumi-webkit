@@ -57,7 +57,7 @@ extension Tab {
             return nil
         }
 
-        browserManager?.extensionManager.prepareWebViewConfigurationForExtensionRuntime(
+        browserManager?.extensionsModule.prepareWebViewConfigurationForExtensionRuntime(
             configuration,
             reason: "\(reason).configuration"
         )
@@ -89,7 +89,7 @@ extension Tab {
             ensureFaviconsTabExtension(using: scriptsProvider.faviconScripts)
         }
 
-        browserManager?.extensionManager.prepareWebViewForExtensionRuntime(
+        browserManager?.extensionsModule.prepareWebViewForExtensionRuntime(
             webView,
             currentURL: url,
             reason: reason
@@ -97,7 +97,7 @@ extension Tab {
     }
 
     func registerNormalTabWithExtensionRuntimeIfNeeded(reason: String) {
-        browserManager?.extensionManager.registerTabWithExtensionRuntime(
+        browserManager?.extensionsModule.registerTabWithExtensionRuntimeIfLoaded(
             self,
             reason: reason
         )
@@ -107,7 +107,7 @@ extension Tab {
            let windowState = browserManager.windowRegistry?.windows[windowId],
            browserManager.currentTab(for: windowState)?.id == id
         {
-            browserManager.extensionManager.notifyTabActivated(
+            browserManager.extensionsModule.notifyTabActivatedIfLoaded(
                 newTab: self,
                 previous: nil
             )
@@ -122,7 +122,7 @@ extension Tab {
 
     func normalTabManagedUserScripts(for targetURL: URL?) -> [UserScript] {
         var scripts = normalTabCoreUserScripts()
-        scripts.append(contentsOf: browserManager?.extensionManager.normalTabUserScripts() ?? [])
+        scripts.append(contentsOf: browserManager?.extensionsModule.normalTabUserScripts() ?? [])
 
         if let targetURL {
             scripts.append(
@@ -244,7 +244,7 @@ extension Tab {
 
         if _webView == nil {
             if let auxiliaryOverrideConfiguration {
-                browserManager?.extensionManager.prepareWebViewConfigurationForExtensionRuntime(
+                browserManager?.extensionsModule.prepareWebViewConfigurationForExtensionRuntime(
                     auxiliaryOverrideConfiguration,
                     reason: "Tab.setupWebView.configuration"
                 )
@@ -341,7 +341,7 @@ extension Tab {
             surface: .extensionOptions,
             additionalUserScripts: configuration.userContentController.userScripts
         )
-        browserManager?.extensionManager.prepareWebViewConfigurationForExtensionRuntime(
+        browserManager?.extensionsModule.prepareWebViewConfigurationForExtensionRuntime(
             isolatedConfiguration,
             reason: "Tab.applyWebViewConfigurationOverride"
         )
@@ -432,7 +432,7 @@ extension Tab {
         if let scriptsProvider = webView.configuration.userContentController.sumiNormalTabUserScriptsProvider {
             ensureFaviconsTabExtension(using: scriptsProvider.faviconScripts)
         }
-        browserManager?.extensionManager.prepareWebViewForExtensionRuntime(
+        browserManager?.extensionsModule.prepareWebViewForExtensionRuntime(
             webView,
             currentURL: url,
             reason: reason

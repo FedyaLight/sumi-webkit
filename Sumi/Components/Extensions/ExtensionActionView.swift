@@ -111,8 +111,7 @@ struct ExtensionActionView: View {
         case .compactStrip:
             CompactExtensionActionStrip(
                 extensions: extensions,
-                visibleActionLimit: visibleActionLimit,
-                extensionManager: browserManager.extensionManager
+                visibleActionLimit: visibleActionLimit
             )
             .environmentObject(browserManager)
         case .hubTiles:
@@ -127,8 +126,10 @@ struct ExtensionActionView: View {
                         .environmentObject(browserManager)
                 }
 
-                InstallExtensionTileButton()
-                    .environmentObject(browserManager)
+                if browserManager.extensionsModule.isEnabled {
+                    InstallExtensionTileButton()
+                        .environmentObject(browserManager)
+                }
             }
         }
     }
@@ -145,7 +146,6 @@ struct ExtensionActionView: View {
 private struct CompactExtensionActionStrip: View {
     let extensions: [InstalledExtension]
     let visibleActionLimit: Int?
-    @ObservedObject var extensionManager: ExtensionManager
     @EnvironmentObject private var browserManager: BrowserManager
 
     var body: some View {
@@ -172,7 +172,7 @@ private struct CompactExtensionActionStrip: View {
     }
 
     private var pinnedSlots: [PinnedToolbarSlot] {
-        extensionManager.orderedPinnedToolbarSlots(
+        browserManager.extensionsModule.orderedPinnedToolbarSlots(
             enabledExtensions: enabledExtensions,
             sumiScriptsManagerEnabled: browserManager.userscriptsModule.isEnabled
         )
@@ -206,7 +206,7 @@ private struct SumiScriptsToolbarControl: View {
     private var sumiToolbarId: String { SumiScriptsToolbarConstants.nativeToolbarItemID }
 
     private var isPinnedToToolbar: Bool {
-        browserManager.extensionManager.isPinnedToToolbar(sumiToolbarId)
+        browserManager.extensionsModule.isPinnedToToolbar(sumiToolbarId)
     }
 
     private var tokens: ChromeThemeTokens {
@@ -302,9 +302,9 @@ private struct SumiScriptsToolbarControl: View {
 
     private func toggleSumiScriptsToolbarPin() {
         if isPinnedToToolbar {
-            browserManager.extensionManager.unpinFromToolbar(sumiToolbarId)
+            browserManager.extensionsModule.unpinFromToolbar(sumiToolbarId)
         } else {
-            browserManager.extensionManager.pinToToolbar(sumiToolbarId)
+            browserManager.extensionsModule.pinToToolbar(sumiToolbarId)
         }
     }
 
@@ -404,7 +404,7 @@ struct ExtensionActionButton: View {
                     .background(
                         ActionAnchorView(
                             extensionId: ext.id,
-                            extensionManager: browserManager.extensionManager
+                            extensionsModule: browserManager.extensionsModule
                         )
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 7))
@@ -416,7 +416,7 @@ struct ExtensionActionButton: View {
                     .background(
                         ActionAnchorView(
                             extensionId: ext.id,
-                            extensionManager: browserManager.extensionManager
+                            extensionsModule: browserManager.extensionsModule
                         )
                     )
                     .overlay {
@@ -486,15 +486,15 @@ struct ExtensionActionButton: View {
     }
 
     private var isPinnedToToolbar: Bool {
-        browserManager.extensionManager.isPinnedToToolbar(ext.id)
+        browserManager.extensionsModule.isPinnedToToolbar(ext.id)
     }
 
     private func showExtensionPopup() {
-        browserManager.extensionManager.requestExtensionRuntime(
+        browserManager.extensionsModule.requestExtensionRuntime(
             reason: .extensionAction
         )
 
-        guard let extensionContext = browserManager.extensionManager.getExtensionContext(for: ext.id) else {
+        guard let extensionContext = browserManager.extensionsModule.getExtensionContext(for: ext.id) else {
             browserManager.showBrowserExtensionsUnavailableAlert(
                 extensionName: ext.name
             )
@@ -503,16 +503,16 @@ struct ExtensionActionButton: View {
 
         let currentTab = browserManager.currentTab(for: windowState)
         let adapter = currentTab.flatMap {
-            browserManager.extensionManager.stableAdapter(for: $0)
+            browserManager.extensionsModule.stableAdapter(for: $0)
         }
         extensionContext.performAction(for: adapter)
     }
 
     private func toggleToolbarPin() {
         if isPinnedToToolbar {
-            browserManager.extensionManager.unpinFromToolbar(ext.id)
+            browserManager.extensionsModule.unpinFromToolbar(ext.id)
         } else {
-            browserManager.extensionManager.pinToToolbar(ext.id)
+            browserManager.extensionsModule.pinToToolbar(ext.id)
         }
     }
 
@@ -629,19 +629,19 @@ private struct InstallExtensionTileButton: View {
 @available(macOS 15.5, *)
 private struct ActionAnchorView: NSViewRepresentable {
     let extensionId: String
-    let extensionManager: ExtensionManager
+    let extensionsModule: SumiExtensionsModule
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
-        DispatchQueue.main.async { [extensionManager] in
-            extensionManager.setActionAnchor(for: extensionId, anchorView: view)
+        DispatchQueue.main.async { [extensionsModule] in
+            extensionsModule.setActionAnchorIfLoaded(for: extensionId, anchorView: view)
         }
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async { [extensionManager] in
-            extensionManager.setActionAnchor(for: extensionId, anchorView: nsView)
+        DispatchQueue.main.async { [extensionsModule] in
+            extensionsModule.setActionAnchorIfLoaded(for: extensionId, anchorView: nsView)
         }
     }
 }

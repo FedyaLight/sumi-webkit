@@ -7,11 +7,13 @@ import SwiftData
 final class ExtensionToolbarStateTests: XCTestCase {
     private var containers: [ModelContainer] = []
     private var defaultsSnapshots: [String: Data?] = [:]
+    private var extensionDirectories: [URL] = []
 
     override func setUpWithError() throws {
         try super.setUpWithError()
         containers = []
         defaultsSnapshots = [:]
+        extensionDirectories = []
         preserveDefaultsValueIfNeeded(for: pinnedToolbarStorageKey)
         UserDefaults.standard.removeObject(forKey: pinnedToolbarStorageKey)
     }
@@ -27,6 +29,8 @@ final class ExtensionToolbarStateTests: XCTestCase {
         }
 
         containers.removeAll()
+        extensionDirectories.forEach { try? FileManager.default.removeItem(at: $0) }
+        extensionDirectories.removeAll()
         defaultsSnapshots.removeAll()
         try super.tearDownWithError()
     }
@@ -61,12 +65,22 @@ final class ExtensionToolbarStateTests: XCTestCase {
 
     func testPinnedToolbarStateRestoresForSameProfile() throws {
         let profile = Profile(name: "Persisted")
-        let manager = makeManager(initialProfile: profile)
+        let installedExtensions = [
+            makeExtension(id: "alpha", isEnabled: true),
+            makeExtension(id: "beta", isEnabled: true),
+        ]
+        let manager = makeManager(
+            initialProfile: profile,
+            installedExtensions: installedExtensions
+        )
 
         manager.pinToToolbar("alpha")
         manager.pinToToolbar("beta")
 
-        let restored = makeManager(initialProfile: profile)
+        let restored = makeManager(
+            initialProfile: profile,
+            installedExtensions: installedExtensions
+        )
 
         XCTAssertEqual(restored.pinnedToolbarExtensionIDs, ["alpha", "beta"])
     }
@@ -101,12 +115,18 @@ final class ExtensionToolbarStateTests: XCTestCase {
         XCTAssertEqual(manager.pinnedToolbarExtensionIDs, ["present"])
     }
 
-    private func makeManager(initialProfile: Profile) -> ExtensionManager {
+    private func makeManager(
+        initialProfile: Profile,
+        installedExtensions: [InstalledExtension] = []
+    ) -> ExtensionManager {
         let container = try! ModelContainer(
             for: Schema([ExtensionEntity.self]),
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
         containers.append(container)
+        installedExtensions
+            .map(ExtensionEntity.init(record:))
+            .forEach(container.mainContext.insert)
 
         return ExtensionManager(
             context: container.mainContext,
@@ -128,7 +148,19 @@ final class ExtensionToolbarStateTests: XCTestCase {
         id: String,
         isEnabled: Bool
     ) -> InstalledExtension {
-        InstalledExtension(
+        let packageURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "SumiExtensionToolbarStateTests-\(UUID().uuidString)",
+                isDirectory: true
+            )
+            .appendingPathComponent(id, isDirectory: true)
+        try? FileManager.default.createDirectory(
+            at: packageURL,
+            withIntermediateDirectories: true
+        )
+        extensionDirectories.append(packageURL.deletingLastPathComponent())
+
+        return InstalledExtension(
             id: id,
             name: id,
             version: "1.0",
@@ -137,14 +169,14 @@ final class ExtensionToolbarStateTests: XCTestCase {
             isEnabled: isEnabled,
             installDate: Date(timeIntervalSince1970: 0),
             lastUpdateDate: Date(timeIntervalSince1970: 0),
-            packagePath: "/tmp/\(id)",
+            packagePath: packageURL.path,
             iconPath: nil,
             sourceKind: .directory,
             backgroundModel: .none,
             incognitoMode: .spanning,
             sourcePathFingerprint: id,
             manifestRootFingerprint: id,
-            sourceBundlePath: "/tmp/\(id)",
+            sourceBundlePath: packageURL.path,
             teamID: nil,
             appBundleID: nil,
             appexBundleID: nil,
