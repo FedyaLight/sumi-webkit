@@ -83,6 +83,9 @@ final class SumiExtensionsModuleTests: XCTestCase {
             for: webView,
             reason: "SumiExtensionsModuleTests.disabled.release"
         )
+        module.cancelNativeMessagingSessionsIfLoaded(
+            reason: "SumiExtensionsModuleTests.disabled.nativeMessaging"
+        )
 
         XCTAssertTrue(
             module.orderedPinnedToolbarSlots(

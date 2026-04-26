@@ -557,8 +557,7 @@ extension ExtensionManager {
         backgroundWakeTasks.removeAll()
         backgroundRuntimeStateByExtensionID.removeAll()
         recentExtensionTabOpenRequests.removeAll()
-        nativeMessagePortHandlers.removeAll()
-        nativeMessagePortExtensionIDs.removeAll()
+        cancelNativeMessagingSessions(reason: "resetLoadedExtensionRuntimeStateForReload")
         externallyConnectablePolicies.removeAll()
         clearExternallyConnectablePendingRequests()
         clearExternallyConnectableNativePorts()
@@ -617,9 +616,7 @@ extension ExtensionManager {
         }
 
         Array(optionsWindows.keys).forEach { closeOptionsWindow(for: $0) }
-        nativeMessagePortHandlers.values.forEach { $0.disconnect() }
-        nativeMessagePortHandlers.removeAll()
-        nativeMessagePortExtensionIDs.removeAll()
+        cancelNativeMessagingSessions(reason: reason)
         clearExternallyConnectableNativePorts()
         clearExternallyConnectablePendingRequests()
         ecRegistry.clearAllTrackedPageURLs()
@@ -651,6 +648,17 @@ extension ExtensionManager {
         }
 
         extensionRuntimeTrace("runtimeTeardown complete reason=\(reason)")
+    }
+
+    func cancelNativeMessagingSessions(reason: String) {
+        guard nativeMessagePortHandlers.isEmpty == false else { return }
+
+        extensionRuntimeTrace(
+            "nativeMessagingCancelSessions reason=\(reason) count=\(nativeMessagePortHandlers.count)"
+        )
+        nativeMessagePortHandlers.values.forEach { $0.disconnect() }
+        nativeMessagePortHandlers.removeAll()
+        nativeMessagePortExtensionIDs.removeAll()
     }
 
     private func removeManagedExternallyConnectableScriptsAndHandlers() {

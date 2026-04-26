@@ -132,6 +132,9 @@ extension BrowserManager {
 
     func cleanupAllTabs() {
         RuntimeDiagnostics.emit("🔄 [BrowserManager] Cleaning up all tabs")
+        extensionsModule.cancelNativeMessagingSessionsIfLoaded(
+            reason: "BrowserManager.cleanupAllTabs"
+        )
         let allTabs = tabManager.pinnedTabs + tabManager.tabs
 
         for tab in allTabs {
