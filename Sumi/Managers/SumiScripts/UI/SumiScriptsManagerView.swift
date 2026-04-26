@@ -51,9 +51,6 @@ struct SumiScriptsManagerView: View {
             }
             
             Spacer()
-            
-            Toggle("Manager Enabled", isOn: $manager.isEnabled)
-                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
         }
     }
 

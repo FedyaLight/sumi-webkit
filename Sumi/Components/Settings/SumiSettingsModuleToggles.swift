@@ -8,6 +8,10 @@ private struct SumiTrackingProtectionModuleEnvironmentKey: EnvironmentKey {
     static let defaultValue = SumiTrackingProtectionModule.shared
 }
 
+private struct SumiUserscriptsModuleEnvironmentKey: EnvironmentKey {
+    static let defaultValue = SumiUserscriptsModule.shared
+}
+
 extension EnvironmentValues {
     var sumiModuleRegistry: SumiModuleRegistry {
         get { self[SumiModuleRegistryEnvironmentKey.self] }
@@ -17,6 +21,11 @@ extension EnvironmentValues {
     var sumiTrackingProtectionModule: SumiTrackingProtectionModule {
         get { self[SumiTrackingProtectionModuleEnvironmentKey.self] }
         set { self[SumiTrackingProtectionModuleEnvironmentKey.self] = newValue }
+    }
+
+    var sumiUserscriptsModule: SumiUserscriptsModule {
+        get { self[SumiUserscriptsModuleEnvironmentKey.self] }
+        set { self[SumiUserscriptsModuleEnvironmentKey.self] = newValue }
     }
 }
 
@@ -87,6 +96,7 @@ struct SumiSettingsModuleToggleGate<EnabledContent: View>: View {
     @ViewBuilder let enabledContent: () -> EnabledContent
 
     @Environment(\.sumiModuleRegistry) private var moduleRegistry
+    @Environment(\.sumiUserscriptsModule) private var userscriptsModule
     @State private var cachedIsEnabled: Bool?
 
     init(
@@ -128,10 +138,18 @@ struct SumiSettingsModuleToggleGate<EnabledContent: View>: View {
         Binding(
             get: { effectiveIsEnabled },
             set: { newValue in
-                model.setEnabled(newValue)
+                setModuleEnabled(newValue)
                 cachedIsEnabled = newValue
             }
         )
+    }
+
+    private func setModuleEnabled(_ isEnabled: Bool) {
+        if descriptor.moduleID == .userScripts {
+            userscriptsModule.setEnabled(isEnabled)
+        } else {
+            model.setEnabled(isEnabled)
+        }
     }
 }
 

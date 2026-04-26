@@ -884,7 +884,7 @@ private struct URLBarHubPopover: View {
 
     private var showsExtensionSection: Bool {
         if #available(macOS 15.5, *) {
-            let sumiScriptsEnabled = browserManager.sumiScriptsManager.isEnabled
+            let sumiScriptsEnabled = browserManager.userscriptsModule.isEnabled
             return !extensionSurfaceStore.enabledExtensions.isEmpty || sumiScriptsEnabled
         }
 

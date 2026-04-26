@@ -32,7 +32,7 @@ enum SumiWebViewShutdown {
             for: webView,
             reason: "WebView cleanup"
         )
-        browserManager?.sumiScriptsManager.cleanupWebView(
+        browserManager?.userscriptsModule.cleanupWebViewIfLoaded(
             controller: webView.configuration.userContentController,
             webViewId: tabId
         )

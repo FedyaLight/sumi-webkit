@@ -19,7 +19,7 @@ final class SumiInstallNavigationResponder: NavigationResponder {
         }
 
         guard navigationAction.isForMainFrame,
-              tab?.browserManager?.sumiScriptsManager.interceptInstallNavigationIfNeeded(navigationAction.url) == true
+              tab?.browserManager?.userscriptsModule.interceptInstallNavigationIfNeeded(navigationAction.url) == true
         else { return .next }
 
         return .cancel
@@ -32,7 +32,7 @@ final class SumiInstallNavigationResponder: NavigationResponder {
         }
 
         guard navigationResponse.isForMainFrame,
-              tab?.browserManager?.sumiScriptsManager.interceptInstallNavigationIfNeeded(navigationResponse.url) == true
+              tab?.browserManager?.userscriptsModule.interceptInstallNavigationIfNeeded(navigationResponse.url) == true
         else { return .next }
 
         return .cancel

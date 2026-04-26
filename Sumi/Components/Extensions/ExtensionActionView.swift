@@ -117,7 +117,7 @@ struct ExtensionActionView: View {
             .environmentObject(browserManager)
         case .hubTiles:
             LazyVGrid(columns: hubTileColumns, alignment: .leading, spacing: 8) {
-                if browserManager.sumiScriptsManager.isEnabled {
+                if browserManager.userscriptsModule.isEnabled {
                     SumiScriptsToolbarControl(layout: .hubTile)
                         .environmentObject(browserManager)
                 }
@@ -174,7 +174,7 @@ private struct CompactExtensionActionStrip: View {
     private var pinnedSlots: [PinnedToolbarSlot] {
         extensionManager.orderedPinnedToolbarSlots(
             enabledExtensions: enabledExtensions,
-            sumiScriptsManagerEnabled: browserManager.sumiScriptsManager.isEnabled
+            sumiScriptsManagerEnabled: browserManager.userscriptsModule.isEnabled
         )
     }
 
@@ -266,14 +266,16 @@ private struct SumiScriptsToolbarControl: View {
     @ViewBuilder
     private var sumiScriptsPopover: some View {
         let currentTab = browserManager.currentTab(for: windowState)
-        SumiScriptsPopupView(
-            manager: browserManager.sumiScriptsManager,
-            currentURL: currentTab?.url,
-            webView: currentTab.map {
-                browserManager.getWebView(for: $0.id, in: windowState.id)
-                    ?? $0.existingWebView
-            } ?? nil
-        )
+        if let manager = browserManager.userscriptsModule.managerIfEnabled() {
+            SumiScriptsPopupView(
+                manager: manager,
+                currentURL: currentTab?.url,
+                webView: currentTab.map {
+                    browserManager.getWebView(for: $0.id, in: windowState.id)
+                        ?? $0.existingWebView
+                } ?? nil
+            )
+        }
     }
 
     private var hubBackgroundFill: some ShapeStyle {

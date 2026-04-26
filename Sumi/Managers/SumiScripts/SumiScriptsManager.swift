@@ -4,17 +4,18 @@
 //
 //  Main coordinator for the native Userscript Manager system.
 //
-//  This module behaves as a pre-installed extension that can be fully
-//  disabled — when disabled, all watchers, handlers, and injection
-//  hooks are torn down, resulting in zero resource consumption.
+//  This manager is owned by SumiUserscriptsModule and is constructed only
+//  on the enabled userscripts path. When deactivated, all watchers,
+//  handlers, and injection hooks are torn down.
 //
 //  Lifecycle:
-//  - On initialization, loads scripts from disk (if enabled)
+//  - On module activation, loads scripts from disk
 //  - On navigation policy: prepares BSK UserScript adapters for the URL
 //  - On disable: releases all native GM bridge state
 //
 //  INTEGRATION NOTES:
-//  This module is standalone. To integrate with Tab lifecycle, see INTEGRATION.md.
+//  Runtime access goes through SumiUserscriptsModule. To integrate with Tab
+//  lifecycle, see INTEGRATION.md.
 //
 //  Dependency sketch:
 //  Tab (WebView/Navigation) → SumiScriptsManager
@@ -62,6 +63,8 @@ final class SumiScriptsManager: ObservableObject {
     private var store: UserScriptStore?
     private var injector: UserScriptInjector?
     private let context: ModelContext?
+    private let storeFactory: @MainActor (ModelContext?) -> UserScriptStore
+    private let injectorFactory: @MainActor () -> UserScriptInjector
     weak var browserManager: BrowserManager?
 
     // Track which webViews have been configured (to avoid double injection)
@@ -73,15 +76,18 @@ final class SumiScriptsManager: ObservableObject {
 
     // MARK: - Init
 
-    init(context: ModelContext? = nil) {
-        self.context = context
-        // Check if the system was previously enabled
-        let wasEnabled = UserDefaults.standard.bool(forKey: "SumiScripts.enabled")
-        if wasEnabled {
-            // Activate silently — no didSet triggered during init
-            activate()
-            isEnabled = true
+    init(
+        context: ModelContext? = nil,
+        storeFactory: @escaping @MainActor (ModelContext?) -> UserScriptStore = {
+            UserScriptStore(context: $0)
+        },
+        injectorFactory: @escaping @MainActor () -> UserScriptInjector = {
+            UserScriptInjector()
         }
+    ) {
+        self.context = context
+        self.storeFactory = storeFactory
+        self.injectorFactory = injectorFactory
     }
 
     func attach(browserManager: BrowserManager) {
@@ -92,6 +98,22 @@ final class SumiScriptsManager: ObservableObject {
 
     // MARK: - Activation / Deactivation
 
+    func activateFromUserscriptsModule() {
+        guard isEnabled == false else {
+            activate()
+            return
+        }
+        isEnabled = true
+    }
+
+    func deactivateFromUserscriptsModule() {
+        guard isEnabled else {
+            deactivate()
+            return
+        }
+        isEnabled = false
+    }
+
     /// Fully activate the userscript system:
     /// - Creates the store (loads scripts from disk, starts watcher)
     /// - Creates the injector
@@ -99,7 +121,7 @@ final class SumiScriptsManager: ObservableObject {
     private func activate() {
         guard store == nil else { return }
 
-        let newStore = UserScriptStore(context: context)
+        let newStore = storeFactory(context)
         newStore.onScriptsChanged = { [weak self] in
             Task { @MainActor in
                 self?.totalScriptCount = self?.store?.scripts.count ?? 0
@@ -107,7 +129,7 @@ final class SumiScriptsManager: ObservableObject {
         }
 
         store = newStore
-        let newInjector = UserScriptInjector()
+        let newInjector = injectorFactory()
         newInjector.tabHandler = self
         newInjector.browserManager = browserManager
         injector = newInjector
