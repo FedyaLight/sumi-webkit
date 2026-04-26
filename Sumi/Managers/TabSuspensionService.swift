@@ -42,7 +42,7 @@ struct TabSuspensionPolicy: Equatable {
             self.init(
                 idleThreshold: Self.lightweightIdleThreshold,
                 maximumWarmHiddenWebViewCount: Self.lightweightMaximumWarmHiddenWebViewCount,
-                allowsLauncherRuntimeSuspension: false,
+                allowsLauncherRuntimeSuspension: true,
                 evaluationInterval: Self.lightweightEvaluationInterval
             )
         case .balanced:
@@ -73,6 +73,12 @@ struct TabSuspensionPolicy: Equatable {
         self.allowsLauncherRuntimeSuspension = allowsLauncherRuntimeSuspension
         self.evaluationInterval = evaluationInterval
     }
+}
+
+struct TabSuspensionEvaluationContext: Equatable {
+    let visibleTabIDs: Set<UUID>
+    let selectedTabIDs: Set<UUID>
+    let policy: TabSuspensionPolicy
 }
 
 enum TabSuspensionEligibility: Equatable {
@@ -283,20 +289,24 @@ final class TabSuspensionService {
 
     @discardableResult
     func suspend(_ tab: Tab, reason: String) -> Bool {
+        suspend(tab, reason: reason, context: suspensionEvaluationContext())
+    }
+
+    @discardableResult
+    func suspend(
+        _ tab: Tab,
+        reason: String,
+        context: TabSuspensionEvaluationContext
+    ) -> Bool {
         guard let browserManager,
               let coordinator = browserManager.webViewCoordinator
         else { return false }
 
-        let visibleIDs = visibleTabIDsByWindow().values.reduce(into: Set<UUID>()) {
-            $0.formUnion($1)
-        }
-        let selectedIDs = selectedTabIDs()
         let liveWebViews = coordinator.liveWebViews(for: tab)
         guard suspensionEligibility(
             for: tab,
             liveWebViews: liveWebViews,
-            visibleTabIDs: visibleIDs,
-            selectedTabIDs: selectedIDs
+            context: context
         ).isEligible else {
             return false
         }
@@ -326,10 +336,7 @@ final class TabSuspensionService {
         return suspensionEligibility(
             for: tab,
             liveWebViews: coordinator.liveWebViews(for: tab),
-            visibleTabIDs: visibleTabIDsByWindow().values.reduce(into: Set<UUID>()) {
-                $0.formUnion($1)
-            },
-            selectedTabIDs: selectedTabIDs()
+            context: suspensionEvaluationContext()
         )
     }
 
@@ -340,10 +347,21 @@ final class TabSuspensionService {
         suspensionEligibility(
             for: tab,
             webViewStates: webViewStates,
+            context: suspensionEvaluationContext()
+        )
+    }
+
+    func suspensionEvaluationContext() -> TabSuspensionEvaluationContext {
+        suspensionEvaluationContext(policy: currentSuspensionPolicy)
+    }
+
+    func suspensionEvaluationContext(policy: TabSuspensionPolicy) -> TabSuspensionEvaluationContext {
+        TabSuspensionEvaluationContext(
             visibleTabIDs: visibleTabIDsByWindow().values.reduce(into: Set<UUID>()) {
                 $0.formUnion($1)
             },
-            selectedTabIDs: selectedTabIDs()
+            selectedTabIDs: selectedTabIDs(),
+            policy: policy
         )
     }
 
@@ -360,7 +378,11 @@ final class TabSuspensionService {
     ) -> TabIdleSuspensionResult {
         let memoryMode = currentMemoryMode
         let policy = TabSuspensionPolicy(memoryMode: memoryMode)
-        let candidates = suspensionCandidates(webViewStatesByTabID: webViewStatesByTabID)
+        let context = suspensionEvaluationContext(policy: policy)
+        let candidates = suspensionCandidates(
+            webViewStatesByTabID: webViewStatesByTabID,
+            context: context
+        )
         let warmSet = warmCandidateTabIDs(
             from: candidates,
             maximumWarmHiddenWebViewCount: policy.maximumWarmHiddenWebViewCount
@@ -374,7 +396,7 @@ final class TabSuspensionService {
                lastSelectedAt >= cutoffDate {
                 continue
             }
-            guard suspend(candidate.tab, reason: "idle-\(memoryMode.rawValue)") else {
+            guard suspend(candidate.tab, reason: "idle-\(memoryMode.rawValue)", context: context) else {
                 continue
             }
             suspendedTabIDs.append(candidate.tab.id)
@@ -393,16 +415,14 @@ final class TabSuspensionService {
 
     private func suspensionCandidates(
         inactiveBefore cutoffDate: Date? = nil,
-        webViewStatesByTabID: [UUID: [TabSuspensionWebViewState]] = [:]
+        webViewStatesByTabID: [UUID: [TabSuspensionWebViewState]] = [:],
+        context: TabSuspensionEvaluationContext? = nil
     ) -> [Candidate] {
         guard let browserManager,
               let coordinator = browserManager.webViewCoordinator
         else { return [] }
 
-        let visibleIDs = visibleTabIDsByWindow().values.reduce(into: Set<UUID>()) {
-            $0.formUnion($1)
-        }
-        let selectedIDs = selectedTabIDs()
+        let context = context ?? suspensionEvaluationContext()
 
         return allKnownTabs()
             .compactMap { tab -> Candidate? in
@@ -411,15 +431,13 @@ final class TabSuspensionService {
                     suspensionEligibility(
                         for: tab,
                         webViewStates: webViewStates,
-                        visibleTabIDs: visibleIDs,
-                        selectedTabIDs: selectedIDs
+                        context: context
                     )
                 } else {
                     suspensionEligibility(
                         for: tab,
                         liveWebViews: webViews,
-                        visibleTabIDs: visibleIDs,
-                        selectedTabIDs: selectedIDs
+                        context: context
                     )
                 }
                 guard eligibility.isEligible else {
@@ -472,11 +490,10 @@ final class TabSuspensionService {
         return (warmTabIDs, warmWebViewCount)
     }
 
-    private func suspensionEligibility(
+    func suspensionEligibility(
         for tab: Tab,
         liveWebViews: [WKWebView],
-        visibleTabIDs: Set<UUID>,
-        selectedTabIDs: Set<UUID>
+        context: TabSuspensionEvaluationContext
     ) -> TabSuspensionEligibility {
         guard let coordinator = browserManager?.webViewCoordinator else {
             return .ineligible(reason: .noLiveWebView)
@@ -488,26 +505,25 @@ final class TabSuspensionService {
         return suspensionEligibility(
             for: tab,
             webViewStates: states,
-            visibleTabIDs: visibleTabIDs,
-            selectedTabIDs: selectedTabIDs
+            context: context
         )
     }
 
-    private func suspensionEligibility(
+    func suspensionEligibility(
         for tab: Tab,
         webViewStates: [TabSuspensionWebViewState],
-        visibleTabIDs: Set<UUID>,
-        selectedTabIDs: Set<UUID>
+        context: TabSuspensionEvaluationContext
     ) -> TabSuspensionEligibility {
-        guard !selectedTabIDs.contains(tab.id) else { return .ineligible(reason: .selected) }
-        guard !visibleTabIDs.contains(tab.id) else { return .ineligible(reason: .visible) }
+        guard !context.selectedTabIDs.contains(tab.id) else { return .ineligible(reason: .selected) }
+        guard !context.visibleTabIDs.contains(tab.id) else { return .ineligible(reason: .visible) }
         guard tab.requiresPrimaryWebView else { return .ineligible(reason: .noPrimaryWebView) }
         guard isSuspensibleContentURL(tab.url) else { return .ineligible(reason: .unsupportedURLScheme) }
 
-        // Pinned tabs and Essentials are launchers. Current memory-pressure suspension keeps
-        // the launcher runtime intact; future Lightweight behavior may suspend only its
-        // WebView instance while preserving identity, placement, restore, and shortcuts.
-        guard !isPinned(tab) else { return .ineligible(reason: .launcherRuntimeSuspensionDeferred) }
+        // Pinned tabs and Essentials are launchers; only Lightweight may release their
+        // live WebView runtime while preserving the launcher tab/pin identity.
+        if isPinned(tab), !context.policy.allowsLauncherRuntimeSuspension {
+            return .ineligible(reason: .launcherRuntimeSuspensionDeferred)
+        }
 
         guard !tab.isPopupHost else { return .ineligible(reason: .popupHost) }
         guard !tab.isSuspended else { return .ineligible(reason: .alreadySuspended) }
