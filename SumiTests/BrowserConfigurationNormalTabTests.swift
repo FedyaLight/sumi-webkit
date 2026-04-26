@@ -98,6 +98,32 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         assertNoTabSuspensionBridge(in: miniWindowConfiguration)
     }
 
+    func testCacheOptimizedConfigurationIsAuxiliaryOnly() {
+        let browserConfiguration = BrowserConfiguration()
+        let configuration = browserConfiguration.cacheOptimizedWebViewConfiguration()
+
+        assertNoTabSuspensionBridge(in: configuration)
+    }
+
+    func testNormalTabConfigurationInstallsCoreScriptProvider() throws {
+        let browserConfiguration = BrowserConfiguration()
+        let profile = Profile(name: "Default")
+        let tab = Tab(url: URL(string: "https://example.com/core")!)
+        let configuration = browserConfiguration.normalTabWebViewConfiguration(
+            for: profile,
+            url: tab.url,
+            userScriptsProvider: tab.normalTabUserScriptsProvider(for: tab.url)
+        )
+
+        let provider = try XCTUnwrap(configuration.userContentController.sumiNormalTabUserScriptsProvider)
+        let sources = provider.userScripts.map(\.source).joined(separator: "\n")
+
+        XCTAssertTrue(sources.contains("sumiLinkInteraction_\(tab.id.uuidString)"))
+        XCTAssertTrue(sources.contains("sumiIdentity_\(tab.id.uuidString)"))
+        XCTAssertTrue(sources.contains("sumiTabSuspension_\(tab.id.uuidString)"))
+        XCTAssertTrue(sources.contains("__sumiTabSuspension"))
+    }
+
     func testTabSuspensionBridgeScriptIsMainFrameOnly() throws {
         let tab = Tab(name: "Bridge")
         let bridgeScript = try XCTUnwrap(
@@ -129,6 +155,24 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let lifecycleSource = try String(contentsOf: lifecycleSourceURL, encoding: .utf8)
         XCTAssertFalse(lifecycleSource.contains("injectDocumentIdleScripts"))
         XCTAssertFalse(lifecycleSource.contains("evaluateJavaScript"))
+    }
+
+    func testCoordinatorDoesNotCreateNormalWebViewsOrFallbackToPeek() throws {
+        let testURL = URL(fileURLWithPath: #filePath)
+        let repoRoot = testURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = repoRoot
+            .appendingPathComponent("Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        XCTAssertFalse(source.contains("createWebViewInternal"))
+        XCTAssertFalse(source.contains("normalTabWebViewConfiguration"))
+        XCTAssertFalse(source.contains("auxiliaryWebViewConfiguration"))
+        XCTAssertFalse(source.contains("surface: .peek"))
+        XCTAssertFalse(source.contains("FocusableWKWebView(frame: .zero"))
+        XCTAssertTrue(source.contains("tab.ensureWebView()"))
+        XCTAssertTrue(source.contains("tab.makeNormalTabWebView"))
     }
 
     private func assertNoTabSuspensionBridge(

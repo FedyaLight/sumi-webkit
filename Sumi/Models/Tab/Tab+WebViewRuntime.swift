@@ -50,6 +50,70 @@ extension Tab {
         applyRestoredNavigationState()
     }
 
+    /// Creates a fully configured normal-tab WebView. This is the single
+    /// construction path for primary and clone normal-tab runtimes.
+    func makeNormalTabWebView(reason: String) -> WKWebView? {
+        guard let configuration = normalTabWebViewConfiguration(reason: reason) else {
+            return nil
+        }
+
+        browserManager?.extensionManager.prepareWebViewConfigurationForExtensionRuntime(
+            configuration,
+            reason: "\(reason).configuration"
+        )
+
+        let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
+        configureNormalTabWebView(webView, reason: reason)
+        return webView
+    }
+
+    func configureNormalTabWebView(_ webView: FocusableWKWebView, reason: String) {
+        installNavigationDelegate(on: webView)
+        webView.uiDelegate = self
+        webView.allowsBackForwardNavigationGestures = true
+        webView.allowsMagnification = true
+        webView.setValue(true, forKey: "drawsBackground")
+        webView.owningTab = self
+        SumiUserAgent.apply(to: webView)
+
+        if #available(macOS 13.3, *), RuntimeDiagnostics.isDeveloperInspectionEnabled {
+            webView.isInspectable = true
+        }
+
+        webView.allowsLinkPreview = true
+        webView.configuration.preferences.isFraudulentWebsiteWarningEnabled = true
+        webView.configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+
+        installRuntimeObservers(on: webView)
+        if let scriptsProvider = webView.configuration.userContentController.sumiNormalTabUserScriptsProvider {
+            ensureFaviconsTabExtension(using: scriptsProvider.faviconScripts)
+        }
+
+        browserManager?.extensionManager.prepareWebViewForExtensionRuntime(
+            webView,
+            currentURL: url,
+            reason: reason
+        )
+    }
+
+    func registerNormalTabWithExtensionRuntimeIfNeeded(reason: String) {
+        browserManager?.extensionManager.registerTabWithExtensionRuntime(
+            self,
+            reason: reason
+        )
+
+        if let browserManager,
+           let windowId = primaryWindowId,
+           let windowState = browserManager.windowRegistry?.windows[windowId],
+           browserManager.currentTab(for: windowState)?.id == id
+        {
+            browserManager.extensionManager.notifyTabActivated(
+                newTab: self,
+                previous: nil
+            )
+        }
+    }
+
     // MARK: - WebView Runtime
 
     func normalTabUserScriptsProvider(for targetURL: URL?) -> SumiNormalTabUserScripts {
@@ -133,93 +197,83 @@ extension Tab {
     func setupWebView() {
         beginSuspendedRestoreIfNeeded()
         let reusableExistingWebView = _existingWebView
+        var didReuseExistingWebView = false
 
-        let configuration: WKWebViewConfiguration
-        if let profile = resolveProfile() {
-            if let override = webViewConfigurationOverride {
-                configuration = BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
-                    from: override,
-                    for: profile,
-                    surface: .extensionOptions,
-                    additionalUserScripts: override.userContentController.userScripts
-                )
-            } else {
-                configuration = BrowserConfiguration.shared.normalTabWebViewConfiguration(
-                    for: profile,
-                    url: url,
-                    userScriptsProvider: normalTabUserScriptsProvider(for: url)
-                )
-            }
-        } else {
-            if profileAwaitCancellable == nil {
-                RuntimeDiagnostics.emit(
-                    "[Tab] No profile resolved yet; deferring WebView creation and observing currentProfile…"
-                )
-                profileAwaitCancellable = browserManager?
-                    .$currentProfile
-                    .receive(on: RunLoop.main)
-                    .sink { [weak self] value in
-                        guard let self else { return }
-                        if value != nil && self._webView == nil {
-                            self.profileAwaitCancellable?.cancel()
-                            self.profileAwaitCancellable = nil
-                            self.setupWebView()
-                        }
-                    }
-            }
+        guard let profile = resolveProfile() else {
+            deferNormalTabWebViewCreationUntilProfileAvailable()
             return
         }
 
-        BrowserConfiguration.shared.applySitePermissionOverrides(
-            to: configuration,
-            url: url,
-            profileId: resolveProfile()?.id ?? profileId
-        )
-        BrowserConfiguration.shared.applyMediaSessionPolicy(
-            to: configuration,
-            profile: resolveProfile()
-        )
+        let auxiliaryOverrideConfiguration = webViewConfigurationOverride.map { override in
+            BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
+                from: override,
+                for: profile,
+                surface: .extensionOptions,
+                additionalUserScripts: override.userContentController.userScripts
+            )
+        }
+
+        if let auxiliaryOverrideConfiguration {
+            BrowserConfiguration.shared.applySitePermissionOverrides(
+                to: auxiliaryOverrideConfiguration,
+                url: url,
+                profileId: profile.id
+            )
+            BrowserConfiguration.shared.applyMediaSessionPolicy(
+                to: auxiliaryOverrideConfiguration,
+                profile: profile
+            )
+        }
 
         if let existingWebView = reusableExistingWebView {
-            _webView = existingWebView
-            Task { @MainActor [weak self, weak existingWebView] in
-                guard let self, let existingWebView else { return }
-                await self.replaceNormalTabUserScripts(
-                    on: existingWebView.configuration.userContentController,
-                    for: self.url
+            if canReuseAsNormalTabWebView(existingWebView) {
+                _webView = existingWebView
+                didReuseExistingWebView = true
+                Task { @MainActor [weak self, weak existingWebView] in
+                    guard let self, let existingWebView else { return }
+                    await self.replaceNormalTabUserScripts(
+                        on: existingWebView.configuration.userContentController,
+                        for: self.url
+                    )
+                }
+            } else {
+                cleanupCloneWebView(existingWebView)
+                _existingWebView = nil
+            }
+        }
+
+        if _webView == nil {
+            if let auxiliaryOverrideConfiguration {
+                browserManager?.extensionManager.prepareWebViewConfigurationForExtensionRuntime(
+                    auxiliaryOverrideConfiguration,
+                    reason: "Tab.setupWebView.configuration"
                 )
-            }
-        } else {
-            browserManager?.extensionManager.prepareWebViewConfigurationForExtensionRuntime(
-                configuration,
-                reason: "Tab.setupWebView.configuration"
-            )
-            let newWebView = FocusableWKWebView(frame: .zero, configuration: configuration)
-            _webView = newWebView
-            if let fv = _webView as? FocusableWKWebView {
-                fv.owningTab = self
+                let newWebView = FocusableWKWebView(frame: .zero, configuration: auxiliaryOverrideConfiguration)
+                _webView = newWebView
+                configureAuxiliaryOverrideWebView(newWebView, reason: "Tab.setupWebView")
+            } else {
+                _webView = makeNormalTabWebView(reason: "Tab.setupWebView")
             }
         }
 
         if let webView = _webView {
-            installNavigationDelegate(on: webView)
-        }
-        _webView?.uiDelegate = self
-        _webView?.allowsBackForwardNavigationGestures = true
-        _webView?.allowsMagnification = true
-
-        if let webView = _webView {
-            installRuntimeObservers(on: webView)
-            if let scriptsProvider = webView.configuration.userContentController.sumiNormalTabUserScriptsProvider {
-                ensureFaviconsTabExtension(using: scriptsProvider.faviconScripts)
+            if didReuseExistingWebView || !(webView is FocusableWKWebView) {
+                installNavigationDelegate(on: webView)
+                webView.uiDelegate = self
+                webView.allowsBackForwardNavigationGestures = true
+                webView.allowsMagnification = true
+                installRuntimeObservers(on: webView)
+                if let scriptsProvider = webView.configuration.userContentController.sumiNormalTabUserScriptsProvider {
+                    ensureFaviconsTabExtension(using: scriptsProvider.faviconScripts)
+                }
             }
         }
 
         if reusableExistingWebView == nil {
-            if let webView = _webView {
+            if let webView = _webView, webViewConfigurationOverride != nil {
                 SumiUserAgent.apply(to: webView)
+                webView.setValue(true, forKey: "drawsBackground")
             }
-            _webView?.setValue(true, forKey: "drawsBackground")
         }
 
         if let webView = _webView {
@@ -230,28 +284,9 @@ extension Tab {
             webView.allowsLinkPreview = true
             webView.configuration.preferences.isFraudulentWebsiteWarningEnabled = true
             webView.configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
-            browserManager?.extensionManager.prepareWebViewForExtensionRuntime(
-                webView,
-                currentURL: url,
-                reason: "Tab.setupWebView"
-            )
         }
 
-        browserManager?.extensionManager.registerTabWithExtensionRuntime(
-            self,
-            reason: "Tab.setupWebView"
-        )
-
-        if let browserManager,
-           let windowId = primaryWindowId,
-           let windowState = browserManager.windowRegistry?.windows[windowId],
-           browserManager.currentTab(for: windowState)?.id == id
-        {
-            browserManager.extensionManager.notifyTabActivated(
-                newTab: self,
-                previous: nil
-            )
-        }
+        registerNormalTabWithExtensionRuntimeIfNeeded(reason: "Tab.setupWebView")
 
         if !isPopupHost && _existingWebView == nil {
             if let controller = _webView?.configuration.userContentController as? UserContentController {
@@ -311,5 +346,87 @@ extension Tab {
             reason: "Tab.applyWebViewConfigurationOverride"
         )
         webViewConfigurationOverride = isolatedConfiguration
+    }
+
+    private func normalTabWebViewConfiguration(reason: String) -> WKWebViewConfiguration? {
+        guard let profile = resolveProfile() else {
+            RuntimeDiagnostics.emit(
+                "[Tab] Unable to create normal WebView during \(reason); profile is unresolved."
+            )
+            deferNormalTabWebViewCreationUntilProfileAvailable()
+            return nil
+        }
+
+        let configuration = BrowserConfiguration.shared.normalTabWebViewConfiguration(
+            for: profile,
+            url: url,
+            userScriptsProvider: normalTabUserScriptsProvider(for: url)
+        )
+        BrowserConfiguration.shared.applySitePermissionOverrides(
+            to: configuration,
+            url: url,
+            profileId: profile.id
+        )
+        BrowserConfiguration.shared.applyMediaSessionPolicy(
+            to: configuration,
+            profile: profile
+        )
+        return configuration
+    }
+
+    private func deferNormalTabWebViewCreationUntilProfileAvailable() {
+        guard profileAwaitCancellable == nil else { return }
+
+        RuntimeDiagnostics.emit(
+            "[Tab] No profile resolved yet; deferring WebView creation and observing currentProfile…"
+        )
+        profileAwaitCancellable = browserManager?
+            .$currentProfile
+            .receive(on: RunLoop.main)
+            .sink { [weak self] value in
+                guard let self else { return }
+                if value != nil && self._webView == nil {
+                    self.profileAwaitCancellable?.cancel()
+                    self.profileAwaitCancellable = nil
+                    self.setupWebView()
+                }
+            }
+    }
+
+    private func canReuseAsNormalTabWebView(_ webView: WKWebView) -> Bool {
+        guard webView.configuration.processPool === BrowserConfiguration.shared.normalTabProcessPool else {
+            return false
+        }
+        guard let profile = resolveProfile(),
+              webView.configuration.websiteDataStore === profile.dataStore
+        else {
+            return false
+        }
+        guard let provider = webView.configuration.userContentController.sumiNormalTabUserScriptsProvider else {
+            return false
+        }
+        let suspensionContext = "sumiTabSuspension_\(id.uuidString)"
+        return provider.userScripts.contains { script in
+            script.source.contains(suspensionContext)
+        }
+    }
+
+    private func configureAuxiliaryOverrideWebView(_ webView: FocusableWKWebView, reason: String) {
+        installNavigationDelegate(on: webView)
+        webView.uiDelegate = self
+        webView.allowsBackForwardNavigationGestures = true
+        webView.allowsMagnification = true
+        webView.setValue(true, forKey: "drawsBackground")
+        webView.owningTab = self
+        SumiUserAgent.apply(to: webView)
+        installRuntimeObservers(on: webView)
+        if let scriptsProvider = webView.configuration.userContentController.sumiNormalTabUserScriptsProvider {
+            ensureFaviconsTabExtension(using: scriptsProvider.faviconScripts)
+        }
+        browserManager?.extensionManager.prepareWebViewForExtensionRuntime(
+            webView,
+            currentURL: url,
+            reason: reason
+        )
     }
 }
