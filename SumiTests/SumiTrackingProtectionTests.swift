@@ -215,196 +215,365 @@ final class SumiTrackingProtectionTests: XCTestCase {
         })
     }
 
-    func testManualUpdateWhileDisabledStoresOnlyAndDoesNotCompileOrAttach() async throws {
-        let settings = makeSettings()
-        let dataStore = makeDataStore()
-        let ruleSource = CountingTrackingRuleSource()
-        let compiler = RejectingTrackingContentRuleListCompiler()
-        let service = SumiContentBlockingService(
-            policy: .disabled,
-            compiler: compiler,
-            trackingProtectionSettings: settings,
-            trackingRuleSource: ruleSource,
-            trackingDataStore: dataStore
+    func testManualUpdateWhileModuleDisabledIsNoOpAndConstructsNoRuntime() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
-        let controller = SumiNormalTabUserContentControllerFactory.makeController(
-            contentBlockingService: service
+        let probe = TrackingProtectionModuleFactoryProbe()
+        var updaterFactoryCount = 0
+        let module = SumiTrackingProtectionModule(
+            moduleRegistry: registry,
+            settingsFactory: {
+                probe.settingsCount += 1
+                return self.makeSettings()
+            },
+            dataStoreFactory: {
+                probe.dataStoreCount += 1
+                return self.makeDataStore()
+            },
+            contentBlockingServiceFactory: { _, _ in
+                probe.serviceCount += 1
+                return SumiContentBlockingService(policy: .disabled)
+            }
         )
-        await controller.awaitContentBlockingAssetsInstalled()
 
-        let trackerData = try Self.trackerDataJSON(domain: "manual-disabled.example")
-        let updater = SumiTrackerDataUpdater(fetch: { request in
-            (
-                trackerData,
-                Self.httpResponse(
-                    url: request.url,
-                    statusCode: 200,
-                    headers: ["ETag": "\"manual-disabled\""]
+        let result = await module.updateTrackerDataManually {
+            updaterFactoryCount += 1
+            return SumiTrackerDataUpdater(fetch: { request in
+                (
+                    try Self.trackerDataJSON(domain: "disabled-update.example"),
+                    Self.httpResponse(url: request.url, statusCode: 200)
                 )
-            )
-        })
+            })
+        }
 
-        await dataStore.updateTrackerData(using: updater)
-        try await Task.sleep(nanoseconds: 250_000_000)
-
-        XCTAssertEqual(dataStore.metadata.currentSource, .downloaded)
-        XCTAssertEqual(dataStore.downloadedETag, "\"manual-disabled\"")
-        XCTAssertEqual(ruleSource.requestCount, 0)
-        XCTAssertEqual(compiler.lookupCount, 0)
-        XCTAssertEqual(compiler.compileCount, 0)
-        XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
+        XCTAssertEqual(result, .disabled)
+        XCTAssertEqual(updaterFactoryCount, 0)
+        XCTAssertEqual(probe.settingsCount, 0)
+        XCTAssertEqual(probe.dataStoreCount, 0)
+        XCTAssertEqual(probe.serviceCount, 0)
     }
 
-    func testManualUpdateWhileEnabledRegeneratesCompilesAndPublishesRules() async throws {
-        let settings = makeSettings()
-        let dataStore = makeDataStore()
-        let ruleSource = CountingTrackingRuleSource { requestCount, _ in
-            [Self.validRuleListDefinition(hostSuffix: "enabled-update-\(requestCount)")]
-        }
-        let compiler = CountingTrackingContentRuleListCompiler()
-        let service = SumiContentBlockingService(
-            policy: .disabled,
-            compiler: compiler,
-            trackingProtectionSettings: settings,
-            trackingRuleSource: ruleSource,
-            trackingDataStore: dataStore
+    func testManualUpdateWhileEnabledStagesValidatesCommitsAndPublishesRules() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
+        registry.enable(.trackingProtection)
+        let settings = makeSettings()
+        settings.setGlobalMode(.enabled)
+        let dataStore = makeDataStore()
+        let compiler = CountingTrackingContentRuleListCompiler()
+        let module = SumiTrackingProtectionModule(
+            moduleRegistry: registry,
+            settingsFactory: { settings },
+            dataStoreFactory: { dataStore },
+            contentBlockingServiceFactory: { settings, dataStore in
+                SumiContentBlockingService(
+                    policy: .disabled,
+                    compiler: compiler,
+                    trackingProtectionSettings: settings,
+                    trackingRuleSource: SumiEmbeddedDDGTrackerDataRuleSource(dataStore: dataStore),
+                    trackingDataStore: dataStore
+                )
+            }
+        )
+        let trackerData = try Self.trackerDataJSON(domain: "manual-enabled.example")
+
+        let result = await module.updateTrackerDataManually {
+            SumiTrackerDataUpdater(fetch: { request in
+                (
+                    trackerData,
+                    Self.httpResponse(
+                        url: request.url,
+                        statusCode: 200,
+                        headers: ["ETag": "\"manual-enabled\""]
+                    )
+                )
+            })
+        }
+
+        guard case .downloaded(_, let resultETag) = result,
+              resultETag == "\"manual-enabled\""
+        else {
+            return XCTFail("Expected downloaded result, got \(result)")
+        }
+        let activeDataSet = try dataStore.loadActiveDataSet()
+        XCTAssertEqual(dataStore.metadata.currentSource, .downloaded)
+        XCTAssertEqual(dataStore.downloadedETag, "\"manual-enabled\"")
+        XCTAssertEqual(activeDataSet.trackerData.trackers.keys.sorted(), ["manual-enabled.example"])
+        XCTAssertNotNil(dataStore.metadata.lastSuccessfulUpdateDate)
+        XCTAssertNil(dataStore.metadata.lastUpdateError)
+        XCTAssertGreaterThanOrEqual(compiler.compileCount, 1)
+
+        let service = try XCTUnwrap(module.contentBlockingServiceIfEnabled())
         let controller = SumiNormalTabUserContentControllerFactory.makeController(
             contentBlockingService: service
         )
         await controller.awaitContentBlockingAssetsInstalled()
-
-        settings.setGlobalMode(.enabled)
         try await waitUntil {
-            ruleSource.requestCount == 1 && controller.contentBlockingAssets?.globalRuleLists.count == 1
+            controller.contentBlockingAssets?.globalRuleLists.count == 1
         }
-
-        let trackerData = try Self.trackerDataJSON(domain: "manual-enabled.example")
-        let updater = SumiTrackerDataUpdater(fetch: { request in
-            (
-                trackerData,
-                Self.httpResponse(
-                    url: request.url,
-                    statusCode: 200,
-                    headers: ["ETag": "\"manual-enabled\""]
-                )
-            )
-        })
-
-        await dataStore.updateTrackerData(using: updater)
-        try await waitUntil {
-            ruleSource.requestCount == 2
-                && compiler.compileCount >= 2
-                && controller.contentBlockingAssets?.globalRuleLists.count == 1
-        }
-
-        XCTAssertEqual(dataStore.metadata.currentSource, .downloaded)
-        XCTAssertEqual(dataStore.downloadedETag, "\"manual-enabled\"")
         XCTAssertTrue(service.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking))
     }
 
-    func testManualUpdateWhileEnabledRegeneratesProfileScopedRules() async throws {
-        let settings = makeSettings()
-        let dataStore = makeDataStore()
-        let ruleSource = CountingTrackingRuleSource { requestCount, _ in
-            [Self.validRuleListDefinition(hostSuffix: "profile-enabled-update-\(requestCount)")]
-        }
-        let service = SumiContentBlockingService(
-            policy: .disabled,
-            trackingProtectionSettings: settings,
-            trackingRuleSource: ruleSource,
-            trackingDataStore: dataStore
+    func testManualUpdateWhileEnabledRefreshesProfileScopedRules() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
+        registry.enable(.trackingProtection)
+        let settings = makeSettings()
+        settings.setGlobalMode(.enabled)
+        let dataStore = makeDataStore()
+        let module = SumiTrackingProtectionModule(
+            moduleRegistry: registry,
+            settingsFactory: { settings },
+            dataStoreFactory: { dataStore },
+            contentBlockingServiceFactory: { settings, dataStore in
+                SumiContentBlockingService(
+                    policy: .disabled,
+                    trackingProtectionSettings: settings,
+                    trackingRuleSource: SumiEmbeddedDDGTrackerDataRuleSource(dataStore: dataStore),
+                    trackingDataStore: dataStore
+                )
+            }
+        )
+        let service = try XCTUnwrap(module.contentBlockingServiceIfEnabled())
         let controller = SumiNormalTabUserContentControllerFactory.makeController(
             contentBlockingService: service,
             profileId: UUID()
         )
         await controller.awaitContentBlockingAssetsInstalled()
-
-        settings.setGlobalMode(.enabled)
         try await waitUntil {
             controller.contentBlockingAssets?.globalRuleLists.count == 1
         }
-        let enabledIdentifier = try XCTUnwrap(
+        let originalIdentifier = try XCTUnwrap(
+            controller.contentBlockingAssets?.updateEvent.rules.first?.identifier.stringValue
+        )
+        let trackerData = try Self.trackerDataJSON(domain: "profile-manual-enabled.example")
+
+        let result = await module.updateTrackerDataManually {
+            SumiTrackerDataUpdater(fetch: { request in
+                (
+                    trackerData,
+                    Self.httpResponse(
+                        url: request.url,
+                        statusCode: 200,
+                        headers: ["ETag": "\"profile-manual-enabled\""]
+                    )
+                )
+            })
+        }
+
+        guard case .downloaded = result else {
+            return XCTFail("Expected downloaded result, got \(result)")
+        }
+        try await waitUntil {
+            controller.contentBlockingAssets?.updateEvent.rules.first?.identifier.stringValue != originalIdentifier
+        }
+        XCTAssertEqual(dataStore.metadata.currentSource, .downloaded)
+        XCTAssertEqual(dataStore.downloadedETag, "\"profile-manual-enabled\"")
+    }
+
+    func testFailedManualDownloadKeepsPreviousWorkingVersionAndRecordsError() async throws {
+        let (module, dataStore, controller) = try await makePreviousWorkingUpdateHarness(
+            previousDomain: "last-good-download.example",
+            previousETag: "\"last-good-download\""
+        )
+        let originalIdentifier = try XCTUnwrap(
             controller.contentBlockingAssets?.updateEvent.rules.first?.identifier.stringValue
         )
 
-        let trackerData = try Self.trackerDataJSON(domain: "profile-manual-enabled.example")
-        let updater = SumiTrackerDataUpdater(fetch: { request in
-            (
-                trackerData,
-                Self.httpResponse(
-                    url: request.url,
-                    statusCode: 200,
-                    headers: ["ETag": "\"profile-manual-enabled\""]
+        let result = await module.updateTrackerDataManually {
+            SumiTrackerDataUpdater(fetch: { request in
+                (
+                    Data("{}".utf8),
+                    Self.httpResponse(url: request.url, statusCode: 503)
                 )
-            )
-        })
-
-        await dataStore.updateTrackerData(using: updater)
-        try await waitUntil {
-            controller.contentBlockingAssets?.updateEvent.rules.first?.identifier.stringValue != enabledIdentifier
+            })
         }
 
-        XCTAssertEqual(dataStore.metadata.currentSource, .downloaded)
-        XCTAssertEqual(dataStore.downloadedETag, "\"profile-manual-enabled\"")
-        XCTAssertTrue(service.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking))
-    }
-
-    func testFailedManualUpdatePreservesLastGoodDownloadedData() async throws {
-        let dataStore = makeDataStore()
-        let lastGoodData = try Self.trackerDataJSON(domain: "last-good.example")
-        try dataStore.storeDownloadedData(lastGoodData, etag: "\"last-good\"")
-
-        let failingUpdater = SumiTrackerDataUpdater(fetch: { request in
-            (
-                Data("{}".utf8),
-                Self.httpResponse(url: request.url, statusCode: 503)
-            )
-        })
-
-        await dataStore.updateTrackerData(using: failingUpdater)
-
+        guard case .failed = result else {
+            return XCTFail("Expected failed result, got \(result)")
+        }
         let activeDataSet = try dataStore.loadActiveDataSet()
-        XCTAssertEqual(dataStore.metadata.currentSource, .downloaded)
-        XCTAssertEqual(activeDataSet.etag, "\"last-good\"")
-        XCTAssertEqual(activeDataSet.trackerData.trackers.keys.sorted(), ["last-good.example"])
+        XCTAssertEqual(activeDataSet.etag, "\"last-good-download\"")
+        XCTAssertEqual(activeDataSet.trackerData.trackers.keys.sorted(), ["last-good-download.example"])
+        XCTAssertEqual(
+            controller.contentBlockingAssets?.updateEvent.rules.first?.identifier.stringValue,
+            originalIdentifier
+        )
         XCTAssertNotNil(dataStore.metadata.lastUpdateError)
     }
 
-    func testResetToBundledPublishesOnlyWhenProtectionIsActive() async throws {
-        let settings = makeSettings()
-        let dataStore = makeDataStore()
-        let ruleSource = CountingTrackingRuleSource { requestCount, _ in
-            [Self.validRuleListDefinition(hostSuffix: "reset-\(requestCount)")]
+    func testInvalidManualUpdateDataKeepsPreviousWorkingVersionAndRecordsError() async throws {
+        let (module, dataStore, controller) = try await makePreviousWorkingUpdateHarness(
+            previousDomain: "last-good-invalid.example",
+            previousETag: "\"last-good-invalid\""
+        )
+        let originalIdentifier = try XCTUnwrap(
+            controller.contentBlockingAssets?.updateEvent.rules.first?.identifier.stringValue
+        )
+
+        let result = await module.updateTrackerDataManually {
+            SumiTrackerDataUpdater(fetch: { request in
+                (
+                    Data("{\"trackers\":".utf8),
+                    Self.httpResponse(url: request.url, statusCode: 200)
+                )
+            })
         }
-        let service = SumiContentBlockingService(
-            policy: .disabled,
-            trackingProtectionSettings: settings,
-            trackingRuleSource: ruleSource,
-            trackingDataStore: dataStore
-        )
-        _ = service
 
-        try dataStore.storeDownloadedData(
-            Self.trackerDataJSON(domain: "reset-disabled.example"),
-            etag: "\"reset-disabled\""
+        guard case .failed = result else {
+            return XCTFail("Expected failed result, got \(result)")
+        }
+        let activeDataSet = try dataStore.loadActiveDataSet()
+        XCTAssertEqual(activeDataSet.etag, "\"last-good-invalid\"")
+        XCTAssertEqual(activeDataSet.trackerData.trackers.keys.sorted(), ["last-good-invalid.example"])
+        XCTAssertEqual(
+            controller.contentBlockingAssets?.updateEvent.rules.first?.identifier.stringValue,
+            originalIdentifier
         )
-        dataStore.resetToBundled()
-        try await Task.sleep(nanoseconds: 250_000_000)
-        XCTAssertEqual(ruleSource.requestCount, 0)
-        XCTAssertEqual(dataStore.metadata.currentSource, .bundled)
+        XCTAssertNotNil(dataStore.metadata.lastUpdateError)
+    }
 
+    func testManualUpdateCompileFailureKeepsPreviousWorkingVersionAndRecordsError() async throws {
+        let compiler = FailingAfterSuccessfulCompilesTrackingContentRuleListCompiler(
+            allowedSuccessfulCompiles: 1
+        )
+        let (module, dataStore, controller) = try await makePreviousWorkingUpdateHarness(
+            previousDomain: "last-good-compile.example",
+            previousETag: "\"last-good-compile\"",
+            compiler: compiler
+        )
+        let originalIdentifier = try XCTUnwrap(
+            controller.contentBlockingAssets?.updateEvent.rules.first?.identifier.stringValue
+        )
+        let trackerData = try Self.trackerDataJSON(domain: "compile-failure.example")
+
+        let result = await module.updateTrackerDataManually {
+            SumiTrackerDataUpdater(fetch: { request in
+                (
+                    trackerData,
+                    Self.httpResponse(
+                        url: request.url,
+                        statusCode: 200,
+                        headers: ["ETag": "\"compile-failure\""]
+                    )
+                )
+            })
+        }
+
+        guard case .failed = result else {
+            return XCTFail("Expected failed result, got \(result)")
+        }
+        let activeDataSet = try dataStore.loadActiveDataSet()
+        XCTAssertEqual(activeDataSet.etag, "\"last-good-compile\"")
+        XCTAssertEqual(activeDataSet.trackerData.trackers.keys.sorted(), ["last-good-compile.example"])
+        XCTAssertEqual(
+            controller.contentBlockingAssets?.updateEvent.rules.first?.identifier.stringValue,
+            originalIdentifier
+        )
+        XCTAssertNotNil(dataStore.metadata.lastUpdateError)
+    }
+
+    func testManualUpdatePersistenceFailureKeepsPreviousWorkingVersionAndRecordsError() async throws {
+        let blockedStorageParent = makeTemporaryDirectory()
+        try FileManager.default.createDirectory(
+            at: blockedStorageParent,
+            withIntermediateDirectories: true
+        )
+        let blockedStoragePath = blockedStorageParent.appendingPathComponent("blocked-storage")
+        try Data("not-a-directory".utf8).write(to: blockedStoragePath)
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.trackingProtection)
+        let settings = makeSettings()
         settings.setGlobalMode(.enabled)
-        try await waitUntil { ruleSource.requestCount == 1 }
-        try dataStore.storeDownloadedData(
-            Self.trackerDataJSON(domain: "reset-enabled.example"),
-            etag: "\"reset-enabled\""
+        let dataStore = SumiTrackingProtectionDataStore(
+            userDefaults: makeUserDefaults(),
+            storageDirectory: blockedStoragePath,
+            bundledProvider: StaticBundledTrackerDataProvider()
         )
-        try await waitUntil { ruleSource.requestCount == 2 }
-        dataStore.resetToBundled()
-        try await waitUntil { ruleSource.requestCount == 3 }
+        let module = SumiTrackingProtectionModule(
+            moduleRegistry: registry,
+            settingsFactory: { settings },
+            dataStoreFactory: { dataStore },
+            contentBlockingServiceFactory: { settings, dataStore in
+                SumiContentBlockingService(
+                    policy: .disabled,
+                    trackingProtectionSettings: settings,
+                    trackingRuleSource: SumiEmbeddedDDGTrackerDataRuleSource(dataStore: dataStore),
+                    trackingDataStore: dataStore
+                )
+            }
+        )
+        let service = try XCTUnwrap(module.contentBlockingServiceIfEnabled())
+        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: service
+        )
+        await controller.awaitContentBlockingAssetsInstalled()
+        try await waitUntil {
+            controller.contentBlockingAssets?.globalRuleLists.count == 1
+        }
+        let originalIdentifier = try XCTUnwrap(
+            controller.contentBlockingAssets?.updateEvent.rules.first?.identifier.stringValue
+        )
+        let trackerData = try Self.trackerDataJSON(domain: "persistence-failure.example")
+
+        let result = await module.updateTrackerDataManually {
+            SumiTrackerDataUpdater(fetch: { request in
+                (
+                    trackerData,
+                    Self.httpResponse(
+                        url: request.url,
+                        statusCode: 200,
+                        headers: ["ETag": "\"persistence-failure\""]
+                    )
+                )
+            })
+        }
+
+        guard case .failed = result else {
+            return XCTFail("Expected failed result, got \(result)")
+        }
+        let activeDataSet = try dataStore.loadActiveDataSet()
         XCTAssertEqual(dataStore.metadata.currentSource, .bundled)
+        XCTAssertEqual(activeDataSet.trackerData.trackers.keys.sorted(), ["bundled.example"])
+        XCTAssertEqual(
+            controller.contentBlockingAssets?.updateEvent.rules.first?.identifier.stringValue,
+            originalIdentifier
+        )
+        XCTAssertNotNil(dataStore.metadata.lastUpdateError)
+    }
+
+    func testManualResetToBundledIsExplicitAndPublishesAfterValidation() async throws {
+        let (module, dataStore, controller) = try await makePreviousWorkingUpdateHarness(
+            previousDomain: "downloaded-before-reset.example",
+            previousETag: "\"downloaded-before-reset\""
+        )
+        let originalIdentifier = try XCTUnwrap(
+            controller.contentBlockingAssets?.updateEvent.rules.first?.identifier.stringValue
+        )
+
+        let result = await module.resetTrackerDataToBundledManually()
+
+        XCTAssertEqual(result, .resetToBundled)
+        try await waitUntil {
+            controller.contentBlockingAssets?.updateEvent.rules.first?.identifier.stringValue != originalIdentifier
+        }
+        let activeDataSet = try dataStore.loadActiveDataSet()
+        XCTAssertEqual(dataStore.metadata.currentSource, .bundled)
+        XCTAssertEqual(activeDataSet.trackerData.trackers.keys.sorted(), ["bundled.example"])
+        XCTAssertNil(dataStore.metadata.lastUpdateError)
     }
 
     func testGeneratedRulesAreTrackerOnlyAndRespectSitePolicyScopes() throws {
@@ -577,6 +746,45 @@ final class SumiTrackingProtectionTests: XCTestCase {
         }
     }
 
+    func testManualTrackerDataUpdateIsNotStartedByStartupSettingsOrNormalTabs() throws {
+        for relativePath in [
+            "Sumi/Managers/BrowserManager/BrowserManager.swift",
+            "Sumi/Models/BrowserConfig/BrowserConfig.swift",
+            "Sumi/Models/Tab/Tab+WebViewRuntime.swift",
+        ] {
+            let source = try Self.source(named: relativePath)
+            XCTAssertFalse(source.contains("updateTrackerDataManually"), relativePath)
+            XCTAssertFalse(source.contains("SumiTrackerDataUpdater("), relativePath)
+        }
+
+        let settingsSource = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
+        XCTAssertTrue(settingsSource.contains("Button(\"Update tracker data\")"))
+        XCTAssertTrue(settingsSource.contains("await trackingProtectionModule.updateTrackerDataManually()"))
+        XCTAssertFalse(settingsSource.contains(".task"))
+        XCTAssertFalse(settingsSource.contains(".onAppear"))
+        XCTAssertFalse(settingsSource.contains("SumiTrackerDataUpdater("))
+    }
+
+    func testTrackerDataUpdateHasNoAutomaticTimerOrSleepScheduler() throws {
+        let moduleSource = try Self.source(named: "Sumi/ContentBlocking/SumiTrackingProtectionModule.swift")
+        let dataSource = try Self.source(named: "Sumi/ContentBlocking/SumiTrackingProtection.swift")
+        let serviceSource = try Self.source(named: "Sumi/ContentBlocking/SumiContentBlockingService.swift")
+
+        for source in [moduleSource, dataSource] {
+            XCTAssertFalse(source.contains("Timer"))
+            XCTAssertFalse(source.contains("scheduledTimer"))
+            XCTAssertFalse(source.contains("Task.sleep"))
+        }
+        XCTAssertFalse(moduleSource.localizedCaseInsensitiveContains("stale"))
+        XCTAssertFalse(dataSource.localizedCaseInsensitiveContains("stale"))
+
+        XCTAssertEqual(serviceSource.components(separatedBy: "Task.sleep").count - 1, 2)
+        XCTAssertTrue(serviceSource.contains("scheduleTrackingPolicyRefresh"))
+        XCTAssertTrue(serviceSource.contains("scheduleProfilePolicyRefresh"))
+        XCTAssertFalse(serviceSource.contains("SumiTrackerDataUpdater("))
+        XCTAssertFalse(serviceSource.contains("updateTrackerDataManually"))
+    }
+
     private func makeSettings() -> SumiTrackingProtectionSettings {
         SumiTrackingProtectionSettings(userDefaults: makeUserDefaults())
     }
@@ -587,6 +795,53 @@ final class SumiTrackingProtectionTests: XCTestCase {
             storageDirectory: makeTemporaryDirectory(),
             bundledProvider: StaticBundledTrackerDataProvider()
         )
+    }
+
+    private func makePreviousWorkingUpdateHarness(
+        previousDomain: String,
+        previousETag: String,
+        compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler()
+    ) async throws -> (
+        module: SumiTrackingProtectionModule,
+        dataStore: SumiTrackingProtectionDataStore,
+        controller: UserContentController
+    ) {
+        let harness = TestDefaultsHarness()
+        defaultsSuites.append(harness.suiteName)
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.trackingProtection)
+        let settings = makeSettings()
+        settings.setGlobalMode(.enabled)
+        let dataStore = makeDataStore()
+        try dataStore.storeDownloadedData(
+            Self.trackerDataJSON(domain: previousDomain),
+            etag: previousETag
+        )
+        let module = SumiTrackingProtectionModule(
+            moduleRegistry: registry,
+            settingsFactory: { settings },
+            dataStoreFactory: { dataStore },
+            contentBlockingServiceFactory: { settings, dataStore in
+                SumiContentBlockingService(
+                    policy: .disabled,
+                    compiler: compiler,
+                    trackingProtectionSettings: settings,
+                    trackingRuleSource: SumiEmbeddedDDGTrackerDataRuleSource(dataStore: dataStore),
+                    trackingDataStore: dataStore
+                )
+            }
+        )
+        let service = try XCTUnwrap(module.contentBlockingServiceIfEnabled())
+        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: service
+        )
+        await controller.awaitContentBlockingAssetsInstalled()
+        try await waitUntil {
+            controller.contentBlockingAssets?.globalRuleLists.count == 1
+        }
+        return (module, dataStore, controller)
     }
 
     private func makeUserDefaults() -> UserDefaults {
@@ -792,6 +1047,37 @@ private final class CountingTrackingContentRuleListCompiler: SumiContentRuleList
         encodedContentRuleList: String
     ) async throws -> WKContentRuleList {
         compileCount += 1
+        return try await wrapped.compileContentRuleList(
+            forIdentifier: identifier,
+            encodedContentRuleList: encodedContentRuleList
+        )
+    }
+}
+
+@MainActor
+private final class FailingAfterSuccessfulCompilesTrackingContentRuleListCompiler: SumiContentRuleListCompiling {
+    private let wrapped = SumiWKContentRuleListCompiler()
+    private let allowedSuccessfulCompiles: Int
+    private(set) var lookupCount = 0
+    private(set) var compileCount = 0
+
+    init(allowedSuccessfulCompiles: Int) {
+        self.allowedSuccessfulCompiles = allowedSuccessfulCompiles
+    }
+
+    func lookUpContentRuleList(forIdentifier identifier: String) async -> WKContentRuleList? {
+        lookupCount += 1
+        return await wrapped.lookUpContentRuleList(forIdentifier: identifier)
+    }
+
+    func compileContentRuleList(
+        forIdentifier identifier: String,
+        encodedContentRuleList: String
+    ) async throws -> WKContentRuleList {
+        compileCount += 1
+        guard compileCount <= allowedSuccessfulCompiles else {
+            throw SumiTrackingProtectionTestError.unexpectedCompile
+        }
         return try await wrapped.compileContentRuleList(
             forIdentifier: identifier,
             encodedContentRuleList: encodedContentRuleList

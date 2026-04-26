@@ -334,6 +334,20 @@ final class SumiTrackingProtectionDataStore: ObservableObject {
         userDefaults.string(forKey: DefaultsKey.downloadedETag)
     }
 
+    var activeETag: String {
+        downloadedETag ?? bundledProvider.embeddedDataEtag
+    }
+
+    func beginManualUpdate() -> Bool {
+        guard !isUpdating else { return false }
+        isUpdating = true
+        return true
+    }
+
+    func endManualUpdate() {
+        isUpdating = false
+    }
+
     func loadActiveDataSet() throws -> SumiTrackerDataSet {
         if let downloadedETag,
            fileManager.fileExists(atPath: downloadedDataURL.path),
@@ -348,6 +362,10 @@ final class SumiTrackingProtectionDataStore: ObservableObject {
             )
         }
 
+        return try loadBundledDataSet()
+    }
+
+    func loadBundledDataSet() throws -> SumiTrackerDataSet {
         let bundledData = try bundledProvider.embeddedData()
         let trackerData = try JSONDecoder().decode(TrackerData.self, from: bundledData)
         return SumiTrackerDataSet(
@@ -358,7 +376,22 @@ final class SumiTrackingProtectionDataStore: ObservableObject {
         )
     }
 
-    func storeDownloadedData(_ data: Data, etag: String, date: Date = Date()) throws {
+    func downloadedDataSet(from data: Data, etag: String) throws -> SumiTrackerDataSet {
+        let trackerData = try JSONDecoder().decode(TrackerData.self, from: data)
+        return SumiTrackerDataSet(
+            trackerData: trackerData,
+            encodedTrackerData: String(data: data, encoding: .utf8) ?? "{}",
+            etag: etag,
+            source: .downloaded
+        )
+    }
+
+    func storeDownloadedData(
+        _ data: Data,
+        etag: String,
+        date: Date = Date(),
+        notifyChanges: Bool = true
+    ) throws {
         _ = try JSONDecoder().decode(TrackerData.self, from: data)
         try fileManager.createDirectory(
             at: storageDirectory,
@@ -369,7 +402,9 @@ final class SumiTrackingProtectionDataStore: ObservableObject {
         userDefaults.set(date, forKey: DefaultsKey.lastSuccessfulUpdateDate)
         userDefaults.removeObject(forKey: DefaultsKey.lastUpdateError)
         reloadMetadata()
-        changesSubject.send(())
+        if notifyChanges {
+            changesSubject.send(())
+        }
     }
 
     func noteSuccessfulNotModifiedUpdate(date: Date = Date()) {
@@ -383,30 +418,14 @@ final class SumiTrackingProtectionDataStore: ObservableObject {
         reloadMetadata()
     }
 
-    func resetToBundled() {
+    func resetToBundled(notifyChanges: Bool = true) {
         try? fileManager.removeItem(at: downloadedDataURL)
         userDefaults.removeObject(forKey: DefaultsKey.downloadedETag)
         userDefaults.removeObject(forKey: DefaultsKey.lastSuccessfulUpdateDate)
         userDefaults.removeObject(forKey: DefaultsKey.lastUpdateError)
         reloadMetadata()
-        changesSubject.send(())
-    }
-
-    func updateTrackerData(using updater: SumiTrackerDataUpdater = SumiTrackerDataUpdater()) async {
-        guard !isUpdating else { return }
-        isUpdating = true
-        defer { isUpdating = false }
-
-        do {
-            let result = try await updater.updateTrackerData(currentETag: downloadedETag ?? bundledProvider.embeddedDataEtag)
-            switch result {
-            case .downloaded(let data, let etag, let date):
-                try storeDownloadedData(data, etag: etag, date: date)
-            case .notModified(let date):
-                noteSuccessfulNotModifiedUpdate(date: date)
-            }
-        } catch {
-            recordUpdateError(error)
+        if notifyChanges {
+            changesSubject.send(())
         }
     }
 
@@ -505,9 +524,17 @@ final class SumiEmbeddedDDGTrackerDataRuleSource: SumiTrackingProtectionRuleProv
 
     func ruleLists(for policy: SumiTrackingProtectionPolicy) throws -> [SumiContentRuleListDefinition] {
         guard policy.requiresRuleList else { return [] }
-
         let dataSet = try dataStore.loadActiveDataSet()
-        let builder = ContentBlockerRulesBuilder(trackerData: dataSet.trackerData)
+        return try Self.ruleLists(for: policy, trackerData: dataSet.trackerData)
+    }
+
+    static func ruleLists(
+        for policy: SumiTrackingProtectionPolicy,
+        trackerData: TrackerData
+    ) throws -> [SumiContentRuleListDefinition] {
+        guard policy.requiresRuleList else { return [] }
+
+        let builder = ContentBlockerRulesBuilder(trackerData: trackerData)
 
         let rules: [ContentBlockerRule]
         switch policy.globalMode {

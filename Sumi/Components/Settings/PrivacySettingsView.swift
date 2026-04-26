@@ -16,6 +16,7 @@ struct PrivacySettingsView: View {
                 if let settings = trackingProtectionModule.settingsIfEnabled(),
                    let dataStore = trackingProtectionModule.dataStoreIfEnabled() {
                     LegacyTrackingProtectionRuntimeSettingsView(
+                        trackingProtectionModule: trackingProtectionModule,
                         trackingProtectionSettings: settings,
                         trackingProtectionDataStore: dataStore
                     )
@@ -32,6 +33,7 @@ struct PrivacySettingsView: View {
 }
 
 private struct LegacyTrackingProtectionRuntimeSettingsView: View {
+    let trackingProtectionModule: SumiTrackingProtectionModule
     @ObservedObject var trackingProtectionSettings: SumiTrackingProtectionSettings
     @ObservedObject var trackingProtectionDataStore: SumiTrackingProtectionDataStore
     @State private var trackingOverrideHostInput = ""
@@ -69,11 +71,14 @@ private struct LegacyTrackingProtectionRuntimeSettingsView: View {
             HStack(spacing: 8) {
                 Button("Update tracker data") {
                     Task {
-                        await trackingProtectionDataStore.updateTrackerData()
+                        await trackingProtectionModule.updateTrackerDataManually()
                     }
                 }
                 .buttonStyle(.bordered)
-                .disabled(trackingProtectionDataStore.isUpdating)
+                .disabled(
+                    trackingProtectionDataStore.isUpdating
+                        || !trackingProtectionModule.isEnabled
+                )
 
                 if trackingProtectionDataStore.isUpdating {
                     ProgressView()
@@ -82,9 +87,15 @@ private struct LegacyTrackingProtectionRuntimeSettingsView: View {
 
                 if trackingProtectionDataStore.metadata.currentSource == .downloaded {
                     Button("Reset to bundled tracker data") {
-                        trackingProtectionDataStore.resetToBundled()
+                        Task {
+                            await trackingProtectionModule.resetTrackerDataToBundledManually()
+                        }
                     }
                     .buttonStyle(.bordered)
+                    .disabled(
+                        trackingProtectionDataStore.isUpdating
+                            || !trackingProtectionModule.isEnabled
+                    )
                 }
             }
 

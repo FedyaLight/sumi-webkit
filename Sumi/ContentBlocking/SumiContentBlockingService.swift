@@ -82,6 +82,11 @@ enum SumiContentBlockingCompilationError: Error {
     case missingCompiledRuleList(String)
 }
 
+struct SumiPreparedContentBlockingUpdate {
+    let policy: SumiContentBlockingPolicy
+    let updateEvent: ContentBlockerRulesManager.UpdateEvent
+}
+
 @MainActor
 final class SumiContentBlockingService {
     let privacyConfigurationManager: SumiContentBlockingPrivacyConfigurationManager
@@ -187,6 +192,7 @@ final class SumiContentBlockingService {
     func setPolicy(_ policy: SumiContentBlockingPolicy) {
         guard policy != currentPolicy else { return }
 
+        let previousPolicy = currentPolicy
         currentPolicy = policy
         privacyConfigurationManager.setContentBlockingEnabled(policy.shouldEnableContentBlockingFeature)
 
@@ -194,7 +200,48 @@ final class SumiContentBlockingService {
             lastCompilationError = nil
             publish(Self.emptyUpdate())
         } else {
-            scheduleCompilation(for: policy)
+            scheduleCompilation(for: policy, previousPolicy: previousPolicy)
+        }
+    }
+
+    func validateManualTrackingRuleLists(
+        _ definitions: [SumiContentRuleListDefinition]
+    ) async throws {
+        _ = try await updateEvent(for: definitions)
+    }
+
+    func prepareManualTrackingDataUpdate(
+        trackingRuleLists: [SumiContentRuleListDefinition]
+    ) async throws -> SumiPreparedContentBlockingUpdate {
+        var definitions = trackingRuleLists
+        if let siteDataRuleSource {
+            definitions.append(contentsOf: try siteDataRuleSource.ruleLists(profileId: nil))
+        }
+
+        let policy: SumiContentBlockingPolicy = definitions.isEmpty
+            ? .disabled
+            : .enabled(ruleLists: definitions)
+        let update = try await updateEvent(for: definitions)
+        return SumiPreparedContentBlockingUpdate(
+            policy: policy,
+            updateEvent: update
+        )
+    }
+
+    func commitPreparedManualTrackingDataUpdate(
+        _ preparedUpdate: SumiPreparedContentBlockingUpdate,
+        refreshProfileSubjects: Bool = true
+    ) {
+        compilationGeneration += 1
+        trackingRefreshGeneration += 1
+        currentPolicy = preparedUpdate.policy
+        lastCompilationError = nil
+        privacyConfigurationManager.setContentBlockingEnabled(
+            preparedUpdate.policy.shouldEnableContentBlockingFeature
+        )
+        publish(preparedUpdate.updateEvent)
+        if refreshProfileSubjects {
+            scheduleActiveProfilePolicyRefreshes(delayNanoseconds: 0)
         }
     }
 
@@ -241,7 +288,6 @@ final class SumiContentBlockingService {
             } catch {
                 guard generation == self.trackingRefreshGeneration else { return }
                 self.lastCompilationError = error
-                self.setPolicy(.disabled)
                 if refreshProfileSubjects {
                     self.scheduleActiveProfilePolicyRefreshes(delayNanoseconds: 0)
                 }
@@ -285,7 +331,10 @@ final class SumiContentBlockingService {
             } catch {
                 guard self.profileRefreshGenerations[key] == generation else { return }
                 self.lastCompilationError = error
-                self.profileSubject(for: profileId).send(Self.emptyUpdate())
+                let subject = self.profileSubject(for: profileId)
+                if subject.value == nil {
+                    subject.send(Self.emptyUpdate())
+                }
             }
         }
     }
@@ -310,16 +359,27 @@ final class SumiContentBlockingService {
         return ruleLists
     }
 
-    private func scheduleCompilation(for policy: SumiContentBlockingPolicy) {
+    private func scheduleCompilation(
+        for policy: SumiContentBlockingPolicy,
+        previousPolicy: SumiContentBlockingPolicy? = nil
+    ) {
         compilationGeneration += 1
         let generation = compilationGeneration
 
         Task { [weak self] in
-            await self?.compileAndPublish(policy: policy, generation: generation)
+            await self?.compileAndPublish(
+                policy: policy,
+                generation: generation,
+                previousPolicy: previousPolicy
+            )
         }
     }
 
-    private func compileAndPublish(policy: SumiContentBlockingPolicy, generation: Int) async {
+    private func compileAndPublish(
+        policy: SumiContentBlockingPolicy,
+        generation: Int,
+        previousPolicy: SumiContentBlockingPolicy?
+    ) async {
         do {
             let update = try await updateEvent(for: policy.ruleLists)
 
@@ -330,8 +390,17 @@ final class SumiContentBlockingService {
         } catch {
             guard generation == compilationGeneration, policy == currentPolicy else { return }
             lastCompilationError = error
-            privacyConfigurationManager.setContentBlockingEnabled(false)
-            publish(Self.emptyUpdate())
+            if let previousPolicy,
+               latestUpdate?.rules.isEmpty == false {
+                currentPolicy = previousPolicy
+                privacyConfigurationManager.setContentBlockingEnabled(
+                    previousPolicy.shouldEnableContentBlockingFeature
+                )
+            } else {
+                currentPolicy = .disabled
+                privacyConfigurationManager.setContentBlockingEnabled(false)
+                publish(Self.emptyUpdate())
+            }
         }
     }
 

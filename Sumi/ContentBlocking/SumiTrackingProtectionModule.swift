@@ -1,6 +1,15 @@
 import Combine
 import Foundation
 
+enum SumiTrackingProtectionManualUpdateResult: Equatable, Sendable {
+    case disabled
+    case alreadyInProgress
+    case downloaded(date: Date, etag: String)
+    case notModified(date: Date)
+    case resetToBundled
+    case failed(message: String)
+}
+
 @MainActor
 final class SumiTrackingProtectionModule {
     static let shared = SumiTrackingProtectionModule()
@@ -84,5 +93,124 @@ final class SumiTrackingProtectionModule {
 
     func settingsChangesPublisherIfEnabled() -> AnyPublisher<Void, Never> {
         settingsIfEnabled()?.changesPublisher ?? Empty().eraseToAnyPublisher()
+    }
+
+    func updateTrackerDataManually(
+        updaterFactory: () -> SumiTrackerDataUpdater = { SumiTrackerDataUpdater() }
+    ) async -> SumiTrackingProtectionManualUpdateResult {
+        guard isEnabled else { return .disabled }
+        guard let settings = settingsIfEnabled(),
+              let dataStore = dataStoreIfEnabled(),
+              let service = contentBlockingServiceIfEnabled()
+        else { return .disabled }
+
+        guard dataStore.beginManualUpdate() else {
+            return .alreadyInProgress
+        }
+        defer { dataStore.endManualUpdate() }
+
+        do {
+            let updater = updaterFactory()
+            let updateResult = try await updater.updateTrackerData(
+                currentETag: dataStore.activeETag
+            )
+
+            switch updateResult {
+            case .downloaded(let data, let etag, let date):
+                let stagedDataSet = try dataStore.downloadedDataSet(
+                    from: data,
+                    etag: etag
+                )
+                let preparedUpdate = try await prepareManualTrackingDataUpdate(
+                    dataSet: stagedDataSet,
+                    settings: settings,
+                    service: service
+                )
+                try dataStore.storeDownloadedData(
+                    data,
+                    etag: etag,
+                    date: date,
+                    notifyChanges: false
+                )
+                service.commitPreparedManualTrackingDataUpdate(preparedUpdate)
+                return .downloaded(date: date, etag: etag)
+
+            case .notModified(let date):
+                dataStore.noteSuccessfulNotModifiedUpdate(date: date)
+                return .notModified(date: date)
+            }
+        } catch {
+            dataStore.recordUpdateError(error)
+            return .failed(message: Self.errorMessage(error))
+        }
+    }
+
+    func resetTrackerDataToBundledManually() async -> SumiTrackingProtectionManualUpdateResult {
+        guard isEnabled else { return .disabled }
+        guard let settings = settingsIfEnabled(),
+              let dataStore = dataStoreIfEnabled(),
+              let service = contentBlockingServiceIfEnabled()
+        else { return .disabled }
+
+        guard dataStore.beginManualUpdate() else {
+            return .alreadyInProgress
+        }
+        defer { dataStore.endManualUpdate() }
+
+        do {
+            let bundledDataSet = try dataStore.loadBundledDataSet()
+            let preparedUpdate = try await prepareManualTrackingDataUpdate(
+                dataSet: bundledDataSet,
+                settings: settings,
+                service: service
+            )
+            dataStore.resetToBundled(notifyChanges: false)
+            service.commitPreparedManualTrackingDataUpdate(preparedUpdate)
+            return .resetToBundled
+        } catch {
+            dataStore.recordUpdateError(error)
+            return .failed(message: Self.errorMessage(error))
+        }
+    }
+
+    private func prepareManualTrackingDataUpdate(
+        dataSet: SumiTrackerDataSet,
+        settings: SumiTrackingProtectionSettings,
+        service: SumiContentBlockingService
+    ) async throws -> SumiPreparedContentBlockingUpdate {
+        let validationRuleLists = try SumiEmbeddedDDGTrackerDataRuleSource.ruleLists(
+            for: validationPolicy(for: settings.policy),
+            trackerData: dataSet.trackerData
+        )
+        try await service.validateManualTrackingRuleLists(validationRuleLists)
+
+        let activeTrackingRuleLists = try SumiEmbeddedDDGTrackerDataRuleSource.ruleLists(
+            for: settings.policy,
+            trackerData: dataSet.trackerData
+        )
+        return try await service.prepareManualTrackingDataUpdate(
+            trackingRuleLists: activeTrackingRuleLists
+        )
+    }
+
+    private func validationPolicy(
+        for policy: SumiTrackingProtectionPolicy
+    ) -> SumiTrackingProtectionPolicy {
+        guard policy.requiresRuleList else {
+            return SumiTrackingProtectionPolicy(
+                globalMode: .enabled,
+                enabledSiteHosts: [],
+                disabledSiteHosts: []
+            )
+        }
+        return policy
+    }
+
+    private static func errorMessage(_ error: Error) -> String {
+        if let localizedError = error as? LocalizedError,
+           let description = localizedError.errorDescription {
+            return description
+        }
+        return error.localizedDescription
     }
 }
