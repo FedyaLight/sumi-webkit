@@ -2046,7 +2046,7 @@ class WebViewCoordinator {
         if let windowState = browserManager.windowRegistry?.windows[windowId],
            browserManager.currentTab(for: windowState)?.id == tab.id
         {
-            browserManager.extensionManager.notifyTabActivated(
+            browserManager.extensionsModule.notifyTabActivatedIfLoaded(
                 newTab: tab,
                 previous: nil
             )

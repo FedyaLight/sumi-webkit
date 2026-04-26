@@ -32,7 +32,7 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
 
         if let requestURL,
            Tab.isExtensionOriginatedExternalPopupNavigation(sourceURL: sourceURL, requestURL: requestURL),
-           browserManager.extensionManager.consumeRecentlyOpenedExtensionTabRequest(for: requestURL) {
+           browserManager.extensionsModule.consumeRecentlyOpenedExtensionTabRequestIfLoaded(for: requestURL) {
             return nil
         }
 
@@ -183,7 +183,7 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
 
         childTab.adoptPopupWebView(childWebView)
         if isExtensionOriginated {
-            browserManager.extensionManager.prepareWebViewForExtensionRuntime(
+            browserManager.extensionsModule.prepareWebViewForExtensionRuntime(
                 childWebView,
                 currentURL: navigationAction.request.url,
                 reason: "SumiPopupHandlingNavigationResponder.createChildWebView"

@@ -28,7 +28,7 @@ enum SumiWebViewShutdown {
         webView.stopLoading()
         stopNativeMedia(on: webView)
 
-        browserManager?.extensionManager.releaseExternallyConnectableRuntime(
+        browserManager?.extensionsModule.releaseExternallyConnectableRuntimeIfLoaded(
             for: webView,
             reason: "WebView cleanup"
         )
@@ -940,7 +940,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             if pendingMainFrameNavigationKind != .backForward {
                 browserManager?.tabManager.scheduleRuntimeStatePersistence(for: self)
             }
-            browserManager?.extensionManager.notifyTabPropertiesChanged(
+            browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(
                 self,
                 properties: [.title]
             )
@@ -965,7 +965,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         if pendingMainFrameNavigationKind != .backForward {
             browserManager?.tabManager.scheduleRuntimeStatePersistence(for: self)
         }
-        browserManager?.extensionManager.notifyTabPropertiesChanged(
+        browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(
             self,
             properties: [.title]
         )

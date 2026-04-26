@@ -127,7 +127,7 @@ extension BrowserManager {
     }
 
     func showExtensionInstallDialog() {
-        extensionManager.showExtensionInstallDialog()
+        extensionsModule.showExtensionInstallDialog()
     }
 
     func cleanupAllTabs() {

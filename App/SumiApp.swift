@@ -38,6 +38,7 @@ struct SumiApp: App {
                 .environment(\.sumiSettings, settingsManager)
                 .environment(\.sumiModuleRegistry, browserManager.moduleRegistry)
                 .environment(\.sumiTrackingProtectionModule, browserManager.trackingProtectionModule)
+                .environment(\.sumiExtensionsModule, browserManager.extensionsModule)
                 .environment(\.sumiUserscriptsModule, browserManager.userscriptsModule)
                 .environment(keyboardShortcutManager)
                 .onAppear {
@@ -109,7 +110,7 @@ struct SumiApp: App {
             // Only cleanup if browserManager still exists (it's captured weakly)
             if let browserManager = browserManager {
                 browserManager.handleWindowWillClose(windowId)
-                browserManager.extensionManager.notifyWindowClosed(windowId)
+                browserManager.extensionsModule.notifyWindowClosedIfLoaded(windowId)
                 webViewCoordinator.cleanupWindow(
                     windowId,
                     tabManager: browserManager.tabManager

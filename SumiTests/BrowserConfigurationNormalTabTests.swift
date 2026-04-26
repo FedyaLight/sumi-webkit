@@ -1,4 +1,5 @@
 import BrowserServicesKit
+import SwiftData
 import TrackerRadarKit
 import UserScript
 import WebKit
@@ -81,6 +82,32 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(module.hasLoadedRuntime)
     }
 
+    func testBrowserManagerStartupWithExtensionsDisabledDoesNotInitializeExtensionsRuntime() throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        let probe = NormalTabExtensionsRuntimeProbe()
+        let container = try Self.makeInMemoryExtensionContainer()
+        let module = makeProbeExtensionsModule(
+            registry: registry,
+            probe: probe,
+            context: container.mainContext
+        )
+
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            extensionsModule: module
+        )
+
+        XCTAssertNotNil(browserManager.currentProfile)
+        XCTAssertFalse(registry.isEnabled(.extensions))
+        XCTAssertEqual(probe.managerCount, 0)
+        XCTAssertFalse(module.hasLoadedRuntime)
+        XCTAssertTrue(browserManager.extensionSurfaceStore.installedExtensions.isEmpty)
+    }
+
     func testTabNormalWebViewCreationWithTrackingDisabledDoesNotInitializeTrackingRuntime() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -154,6 +181,49 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertEqual(probe.managerCount, 0)
         XCTAssertEqual(probe.storeCount, 0)
         XCTAssertEqual(probe.injectorCount, 0)
+    }
+
+    func testTabNormalWebViewCreationWithExtensionsDisabledDoesNotInitializeExtensionsRuntime() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        let probe = NormalTabExtensionsRuntimeProbe()
+        let container = try Self.makeInMemoryExtensionContainer()
+        let module = makeProbeExtensionsModule(
+            registry: registry,
+            probe: probe,
+            context: container.mainContext
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            extensionsModule: module
+        )
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/extensions-disabled",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+
+        tab.setupWebView()
+
+        let webView = try XCTUnwrap(tab.existingWebView)
+        let controller = try XCTUnwrap(webView.configuration.userContentController as? UserContentController)
+        await controller.awaitContentBlockingAssetsInstalled()
+        let provider = try XCTUnwrap(
+            webView.configuration.userContentController.sumiNormalTabUserScriptsProvider
+        )
+        let sources = provider.userScripts.map(\.source).joined(separator: "\n")
+
+        XCTAssertTrue(sources.contains("sumiLinkInteraction_\(tab.id.uuidString)"))
+        XCTAssertTrue(sources.contains("sumiIdentity_\(tab.id.uuidString)"))
+        XCTAssertTrue(sources.contains("sumiTabSuspension_\(tab.id.uuidString)"))
+        XCTAssertFalse(sources.contains("SUMI_EC_PAGE_BRIDGE:"))
+        XCTAssertFalse(sources.contains("sumiExternallyConnectableRuntime"))
+        XCTAssertNil(webView.configuration.webExtensionController)
+        XCTAssertEqual(probe.managerCount, 0)
+        XCTAssertFalse(module.hasLoadedRuntime)
     }
 
     func testEnabledTrackingModuleAttachesRulesAndDisableBlocksFutureNormalTabs() async throws {
@@ -581,6 +651,27 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         }
     }
 
+    func testAuxiliaryAndFaviconPathsDoNotAccessExtensionsRuntime() throws {
+        for relativePath in [
+            "Sumi/Managers/PeekManager/PeekWebView.swift",
+            "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
+            "Sumi/Favicons/DDG/Model/FaviconDownloader.swift",
+            "Sumi/Models/BrowserConfig/BrowserConfig.swift",
+        ] {
+            let source = try Self.source(named: relativePath)
+            XCTAssertFalse(source.contains("extensionsModule"), relativePath)
+            XCTAssertFalse(source.contains("SumiExtensionsModule"), relativePath)
+            XCTAssertFalse(source.contains("ExtensionManager("), relativePath)
+            XCTAssertFalse(source.contains("NativeMessagingHandler("), relativePath)
+        }
+
+        let tabRuntimeSource = try Self.source(named: "Sumi/Models/Tab/Tab+WebViewRuntime.swift")
+        XCTAssertTrue(tabRuntimeSource.contains("extensionsModule.prepareWebViewConfigurationForExtensionRuntime"))
+        XCTAssertTrue(tabRuntimeSource.contains("extensionsModule.normalTabUserScripts()"))
+        XCTAssertFalse(tabRuntimeSource.contains("ExtensionManager("))
+        XCTAssertFalse(tabRuntimeSource.contains("NativeMessagingHandler("))
+    }
+
     func testCacheOptimizedConfigurationIsAuxiliaryOnly() {
         let browserConfiguration = BrowserConfiguration()
         let configuration = browserConfiguration.cacheOptimizedWebViewConfiguration()
@@ -668,6 +759,16 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(source.contains("SumiScriptsManager("))
     }
 
+    func testBrowserManagerDoesNotConstructExtensionManagerAtStartup() throws {
+        let source = try Self.source(named: "Sumi/Managers/BrowserManager/BrowserManager.swift")
+
+        XCTAssertTrue(source.contains("let extensionsModule: SumiExtensionsModule"))
+        XCTAssertTrue(source.contains("self.extensionsModule.attach(browserManager: self)"))
+        XCTAssertFalse(source.contains("let extensionManager"))
+        XCTAssertFalse(source.contains("self.extensionManager"))
+        XCTAssertFalse(source.contains("ExtensionManager("))
+    }
+
     private func assertNoTabSuspensionBridge(
         in configuration: WKWebViewConfiguration,
         file: StaticString = #filePath,
@@ -734,6 +835,25 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
                         probe.injectorCount += 1
                         return UserScriptInjector()
                     }
+                )
+            }
+        )
+    }
+
+    private func makeProbeExtensionsModule(
+        registry: SumiModuleRegistry,
+        probe: NormalTabExtensionsRuntimeProbe,
+        context: ModelContext
+    ) -> SumiExtensionsModule {
+        SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: context,
+            managerFactory: { context, initialProfile, browserConfiguration in
+                probe.managerCount += 1
+                return ExtensionManager(
+                    context: context,
+                    initialProfile: initialProfile,
+                    browserConfiguration: browserConfiguration
                 )
             }
         )
@@ -809,6 +929,13 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let sourceURL = repoRoot.appendingPathComponent(relativePath)
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
+
+    private static func makeInMemoryExtensionContainer() throws -> ModelContainer {
+        try ModelContainer(
+            for: Schema([ExtensionEntity.self]),
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+    }
 }
 
 @MainActor
@@ -822,6 +949,10 @@ private final class NormalTabUserscriptsRuntimeProbe {
     var managerCount = 0
     var storeCount = 0
     var injectorCount = 0
+}
+
+private final class NormalTabExtensionsRuntimeProbe {
+    var managerCount = 0
 }
 
 private final class TestNormalTabUserScript: NSObject, UserScript {

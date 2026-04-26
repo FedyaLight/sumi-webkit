@@ -45,7 +45,7 @@ struct SidebarHeader: View {
     private var extensionActionCluster: some View {
         if #available(macOS 15.5, *) {
             let enabledExtensions = extensionSurfaceStore.enabledExtensions
-            let totalActions = browserManager.extensionManager.orderedPinnedToolbarSlots(
+            let totalActions = browserManager.extensionsModule.orderedPinnedToolbarSlots(
                 enabledExtensions: enabledExtensions.filter { $0.isEnabled },
                 sumiScriptsManagerEnabled: browserManager.userscriptsModule.isEnabled
             ).count

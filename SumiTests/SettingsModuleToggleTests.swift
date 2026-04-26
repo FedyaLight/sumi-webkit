@@ -165,6 +165,36 @@ final class SettingsModuleToggleTests: XCTestCase {
         }
     }
 
+    func testExtensionsToggleForwardsThroughExtensionsModule() throws {
+        let toggleSource = try Self.source(named: "Sumi/Components/Settings/SumiSettingsModuleToggles.swift")
+
+        XCTAssertTrue(toggleSource.contains("sumiExtensionsModule"))
+        XCTAssertTrue(toggleSource.contains("extensionsModule.setEnabled(isEnabled)"))
+        XCTAssertFalse(toggleSource.contains("ExtensionManager("))
+        XCTAssertFalse(toggleSource.contains("BrowserExtensionSurfaceStore("))
+    }
+
+    func testExtensionsSettingsRuntimeAccessStaysBehindModuleGate() throws {
+        let settingsSource = try Self.source(named: "Sumi/Components/Settings/SettingsView.swift")
+
+        XCTAssertTrue(settingsSource.contains("SumiSettingsModuleToggleGate(descriptor: .extensions)"))
+        XCTAssertTrue(settingsSource.contains("browserManager.extensionsModule.managerIfEnabled()"))
+        XCTAssertTrue(settingsSource.contains("browserManager.extensionsModule.discoverSafariExtensions()"))
+        XCTAssertTrue(settingsSource.contains("browserManager.extensionsModule.installSafariExtension"))
+        XCTAssertTrue(settingsSource.contains("browserManager.extensionsModule.enableExtension"))
+        XCTAssertTrue(settingsSource.contains("browserManager.extensionsModule.disableExtension"))
+        XCTAssertTrue(settingsSource.contains("browserManager.extensionsModule.uninstallExtension"))
+
+        for forbiddenPattern in [
+            "browserManager.extensionManager",
+            "ExtensionManager(",
+            "BrowserExtensionSurfaceStore(",
+            "NativeMessagingHandler(",
+        ] {
+            XCTAssertFalse(settingsSource.contains(forbiddenPattern), forbiddenPattern)
+        }
+    }
+
     func testOpeningSettingsWhileDisabledDoesNotReferenceEnabledRuleListPipeline() throws {
         let source = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
 

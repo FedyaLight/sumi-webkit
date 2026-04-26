@@ -164,9 +164,11 @@ class BrowserManager: ObservableObject {
     let startupWorkspaceTheme: WorkspaceTheme?
     let moduleRegistry: SumiModuleRegistry
     let trackingProtectionModule: SumiTrackingProtectionModule
-    let extensionManager: ExtensionManager
+    let extensionsModule: SumiExtensionsModule
     let userscriptsModule: SumiUserscriptsModule
-    let extensionSurfaceStore: BrowserExtensionSurfaceStore
+    var extensionSurfaceStore: BrowserExtensionSurfaceStore {
+        extensionsModule.surfaceStore
+    }
     var tabManager: TabManager
     var profileManager: ProfileManager
     var dialogManager: DialogManager
@@ -269,6 +271,7 @@ class BrowserManager: ObservableObject {
     init(
         moduleRegistry: SumiModuleRegistry = .shared,
         trackingProtectionModule: SumiTrackingProtectionModule? = nil,
+        extensionsModule: SumiExtensionsModule? = nil,
         userscriptsModule: SumiUserscriptsModule? = nil
     ) {
         // Phase 1: initialize all stored properties
@@ -291,13 +294,12 @@ class BrowserManager: ObservableObject {
         self.profileManager.ensureDefaultProfile()
         let initialProfile = self.profileManager.profiles.first
         self.currentProfile = initialProfile
-        self.extensionManager = ExtensionManager(
-            context: startupModelContext,
-            initialProfile: initialProfile
-        )
-        self.extensionSurfaceStore = BrowserExtensionSurfaceStore(
-            extensionManager: extensionManager
-        )
+        self.extensionsModule = extensionsModule
+            ?? SumiExtensionsModule(
+                moduleRegistry: moduleRegistry,
+                context: startupModelContext,
+                initialProfileProvider: { initialProfile }
+            )
 
         self.tabManager = TabManager(browserManager: nil, context: startupModelContext)
         // settingsManager will be injected from SumiApp
@@ -329,7 +331,7 @@ class BrowserManager: ObservableObject {
         self.tabManager.browserManager = self
         self.tabManager.reattachBrowserManager(self)
         self.downloadManager.browserManager = self
-        self.extensionManager.attach(browserManager: self)
+        self.extensionsModule.attach(browserManager: self)
         self.userscriptsModule.attach(browserManager: self)
         bindTabManagerStructuralUpdates()
         self.externalMiniWindowManager.attach(browserManager: self)
@@ -422,7 +424,7 @@ class BrowserManager: ObservableObject {
                 }
                 self.currentProfile = profile
                 self.windowRegistry?.activeWindow?.currentProfileId = profile.id
-                self.extensionManager.switchProfile(profile)
+                self.extensionsModule.switchProfileIfLoaded(profile)
                 // Update history filtering
                 self.historyManager.switchProfile(profile.id)
                 // TabManager awareness (updates currentTab/currentSpace visibility)
@@ -963,7 +965,7 @@ class BrowserManager: ObservableObject {
     /// Window ↔ `NSWindow` association uses heuristics until window creation is fully owned by the shell layer.
     func setupWindowState(_ windowState: BrowserWindowState) {
         windowSessionService.setupWindowState(windowState, delegate: self)
-        extensionManager.notifyWindowOpened(windowState)
+        extensionsModule.notifyWindowOpenedIfLoaded(windowState)
 
         if let window = NSApplication.shared.windows.first(where: {
             $0.contentView?.subviews.contains(where: {
@@ -983,7 +985,7 @@ class BrowserManager: ObservableObject {
         splitManager.refreshPublishedState(for: windowState.id)
         windowSessionService.setActiveWindowState(windowState, delegate: self)
         updateFindManagerCurrentTab()
-        extensionManager.notifyWindowFocused(windowState)
+        extensionsModule.notifyWindowFocusedIfLoaded(windowState)
         adoptProfileIfNeeded(for: windowState, context: .windowActivation)
         SumiNativeNowPlayingController.shared.scheduleRefresh(delayNanoseconds: 0)
     }
@@ -1207,7 +1209,7 @@ class BrowserManager: ObservableObject {
         let previousTab = previousTabId.flatMap { previousId in
             tabManager.tab(for: previousId)
         }
-        extensionManager.notifyTabActivated(newTab: tab, previous: previousTab)
+        extensionsModule.notifyTabActivatedIfLoaded(newTab: tab, previous: previousTab)
 
         // Update global tab state for the active window
         if windowRegistry?.activeWindow?.id == windowState.id {
