@@ -62,6 +62,51 @@ struct SumiNormalTabUserContent: UserContentControllerNewContent {
     }
 }
 
+@MainActor
+struct SumiNormalTabContentBlockingAssetSource {
+    let assetsPublisher: AnyPublisher<SumiNormalTabUserContent, Never>
+    let privacyConfigurationManager: PrivacyConfigurationManaging
+
+    static func disabledEmpty(
+        scriptsProvider: SumiNormalTabUserScripts
+    ) -> SumiNormalTabContentBlockingAssetSource {
+        SumiNormalTabContentBlockingAssetSource(
+            assetsPublisher: Just(
+                SumiNormalTabUserContent(
+                    rulesUpdate: disabledContentBlockingUpdate(),
+                    sourceProvider: scriptsProvider
+                )
+            )
+            .eraseToAnyPublisher(),
+            privacyConfigurationManager: SumiContentBlockingPrivacyConfigurationManager(
+                isContentBlockingEnabled: false
+            )
+        )
+    }
+
+    static func enabled(
+        contentBlockingService: SumiContentBlockingService,
+        scriptsProvider: SumiNormalTabUserScripts,
+        profileId: UUID?
+    ) -> SumiNormalTabContentBlockingAssetSource {
+        SumiNormalTabContentBlockingAssetSource(
+            assetsPublisher: contentBlockingService.userContentPublisher(
+                for: scriptsProvider,
+                profileId: profileId
+            ),
+            privacyConfigurationManager: contentBlockingService.privacyConfigurationManager
+        )
+    }
+
+    private static func disabledContentBlockingUpdate() -> ContentBlockerRulesManager.UpdateEvent {
+        ContentBlockerRulesManager.UpdateEvent(
+            rules: [],
+            changes: [:],
+            completionTokens: []
+        )
+    }
+}
+
 private enum SumiNormalTabAssociatedKeys {
     static var scriptsProvider = 0
     static var controllerDelegate = 0
@@ -135,45 +180,28 @@ enum SumiNormalTabUserContentControllerFactory {
         profileId: UUID? = nil
     ) -> UserContentController {
         let scriptsProvider = scriptsProvider ?? SumiNormalTabUserScripts()
-        let assetsPublisher: AnyPublisher<SumiNormalTabUserContent, Never>
-        let privacyConfigurationManager: PrivacyConfigurationManaging
-
+        let assetSource: SumiNormalTabContentBlockingAssetSource
         if let contentBlockingService {
-            assetsPublisher = contentBlockingService.userContentPublisher(
-                for: scriptsProvider,
+            assetSource = .enabled(
+                contentBlockingService: contentBlockingService,
+                scriptsProvider: scriptsProvider,
                 profileId: profileId
             )
-            privacyConfigurationManager = contentBlockingService.privacyConfigurationManager
         } else {
-            assetsPublisher = Just(
-                SumiNormalTabUserContent(
-                    rulesUpdate: disabledContentBlockingUpdate(),
-                    sourceProvider: scriptsProvider
-                )
-            )
-            .eraseToAnyPublisher()
-            privacyConfigurationManager = SumiContentBlockingPrivacyConfigurationManager(
-                isContentBlockingEnabled: false
+            assetSource = .disabledEmpty(
+                scriptsProvider: scriptsProvider
             )
         }
 
         let delegate = SumiNormalTabUserContentControllerDelegate()
         let controller = UserContentController(
-            assetsPublisher: assetsPublisher,
-            privacyConfigurationManager: privacyConfigurationManager
+            assetsPublisher: assetSource.assetsPublisher,
+            privacyConfigurationManager: assetSource.privacyConfigurationManager
         )
         controller.delegate = delegate
         controller.sumiNormalTabControllerDelegate = delegate
         controller.sumiNormalTabUserScriptsProvider = scriptsProvider
         controller.sumiUsesNormalTabBrowserServicesKitUserContentController = true
         return controller
-    }
-
-    private static func disabledContentBlockingUpdate() -> ContentBlockerRulesManager.UpdateEvent {
-        ContentBlockerRulesManager.UpdateEvent(
-            rules: [],
-            changes: [:],
-            completionTokens: []
-        )
     }
 }

@@ -147,6 +147,16 @@ final class SettingsModuleToggleTests: XCTestCase {
         }
     }
 
+    func testOpeningSettingsWhileDisabledDoesNotReferenceEnabledRuleListPipeline() throws {
+        let source = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
+
+        XCTAssertTrue(source.contains("SumiSettingsModuleToggleGate(descriptor: .trackingProtection)"))
+        XCTAssertFalse(source.contains("contentBlockingAssetsIfEnabled"))
+        XCTAssertFalse(source.contains("contentBlockingServiceIfEnabled"))
+        XCTAssertFalse(source.contains("SumiTrackingRuleListProvider"))
+        XCTAssertFalse(source.contains("SumiTrackingContentBlockingAssets"))
+    }
+
     func testTrackingProtectionSettingsAvoidAutomaticOrBrowserUpdateCopy() throws {
         let source = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
 

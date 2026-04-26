@@ -452,6 +452,19 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         assertNoTabSuspensionBridge(in: miniWindowConfiguration)
     }
 
+    func testAuxiliaryExtensionOptionsConfigurationInstallsNoTrackingRuleLists() async throws {
+        let browserConfiguration = BrowserConfiguration()
+        let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
+            surface: .extensionOptions
+        )
+
+        let controller = try XCTUnwrap(configuration.userContentController as? UserContentController)
+        await controller.awaitContentBlockingAssetsInstalled()
+
+        XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
+        XCTAssertFalse(controller.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking))
+    }
+
     func testAuxiliaryAndFaviconPathsDoNotAccessTrackingRuntime() throws {
         for relativePath in [
             "Sumi/Managers/PeekManager/PeekWebView.swift",
