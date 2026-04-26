@@ -5,6 +5,7 @@
 //  Native messaging host lookup and process bridge for Sumi's WebExtension runtime.
 //
 
+import Darwin
 import Foundation
 import OSLog
 import WebKit
@@ -22,6 +23,615 @@ private struct NativeMessagingHostManifest {
 }
 
 @available(macOS 15.5, *)
+private final class NativeMessagingProcessSession {
+    enum CloseReason {
+        case cancelled
+        case endOfFile
+        case processExited(Int32)
+        case error(Error)
+    }
+
+    private struct PendingWrite {
+        var data: Data
+        var offset: Int
+        let completion: ((Error?) -> Void)?
+    }
+
+    private static let readChunkSize = 64 * 1024
+    private static let maximumInboundMessageSize = 1024 * 1024
+    private static let maximumQueuedWriteCount = 64
+    private static let maximumQueuedWriteBytes = 16 * 1024 * 1024
+    private static let processExitDrainGrace: TimeInterval = 0.5
+
+    private let manifest: NativeMessagingHostManifest
+    private let closeOnMalformedMessage: Bool
+    private let stateQueue: DispatchQueue
+    private let onMessage: (Any) -> Void
+    private let onClose: (CloseReason) -> Void
+
+    private var process: Process?
+    private var inputPipe: Pipe?
+    private var outputPipe: Pipe?
+    private var errorPipe: Pipe?
+    private var stdinHandle: FileHandle?
+    private var stdoutHandle: FileHandle?
+    private var stderrHandle: FileHandle?
+    private var stdinWriteSource: DispatchSourceWrite?
+    private var stdoutReadSource: DispatchSourceRead?
+    private var stderrReadSource: DispatchSourceRead?
+    private var isWriteSourceResumed = false
+    private var pendingWrites: [PendingWrite] = []
+    private var queuedWriteBytes = 0
+    private var outputBuffer = Data()
+    private var isClosed = false
+    private var processExitStatus: Int32?
+
+    init(
+        manifest: NativeMessagingHostManifest,
+        closeOnMalformedMessage: Bool,
+        onMessage: @escaping (Any) -> Void,
+        onClose: @escaping (CloseReason) -> Void
+    ) {
+        self.manifest = manifest
+        self.closeOnMalformedMessage = closeOnMalformedMessage
+        self.onMessage = onMessage
+        self.onClose = onClose
+        self.stateQueue = DispatchQueue(
+            label: "app.sumi.native-messaging.session.\(UUID().uuidString)",
+            qos: .userInitiated
+        )
+    }
+
+    func start(completion: @escaping (Result<Void, Error>) -> Void) {
+        stateQueue.async { [weak self] in
+            guard let self else { return }
+
+            do {
+                try self.startLocked()
+                completion(.success(()))
+            } catch {
+                self.closeHandlesAfterLaunchFailure()
+                completion(.failure(error))
+            }
+        }
+    }
+
+    func send(
+        _ message: Any,
+        completion: ((Error?) -> Void)? = nil
+    ) {
+        stateQueue.async { [weak self] in
+            guard let self else { return }
+            guard self.isClosed == false else {
+                completion?(Self.error(
+                    code: 6,
+                    message: "Native messaging session is closed"
+                ))
+                return
+            }
+
+            let frame: Data
+            do {
+                frame = try Self.frame(for: message)
+            } catch {
+                completion?(error)
+                return
+            }
+
+            guard self.pendingWrites.count < Self.maximumQueuedWriteCount,
+                  self.queuedWriteBytes + frame.count <= Self.maximumQueuedWriteBytes
+            else {
+                completion?(Self.error(
+                    code: 7,
+                    message: "Native messaging write queue is full"
+                ))
+                return
+            }
+
+            self.pendingWrites.append(
+                PendingWrite(data: frame, offset: 0, completion: completion)
+            )
+            self.queuedWriteBytes += frame.count
+            self.resumeWriteSourceIfNeeded()
+        }
+    }
+
+    func cancel(notify: Bool = true) {
+        stateQueue.async {
+            self.closeLocked(.cancelled, notify: notify)
+        }
+    }
+
+    private func startLocked() throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: manifest.path)
+
+        let input = Pipe()
+        let output = Pipe()
+        let error = Pipe()
+        let stdinHandle = input.fileHandleForWriting
+        let stdoutHandle = output.fileHandleForReading
+        let stderrHandle = error.fileHandleForReading
+
+        try Self.setNonBlocking(stdinHandle.fileDescriptor)
+        try Self.setNonBlocking(stdoutHandle.fileDescriptor)
+        try Self.setNonBlocking(stderrHandle.fileDescriptor)
+
+        process.standardInput = input
+        process.standardOutput = output
+        process.standardError = error
+
+        self.process = process
+        self.inputPipe = input
+        self.outputPipe = output
+        self.errorPipe = error
+        self.stdinHandle = stdinHandle
+        self.stdoutHandle = stdoutHandle
+        self.stderrHandle = stderrHandle
+
+        process.terminationHandler = { [weak self] process in
+            self?.stateQueue.async { [weak self] in
+                self?.handleProcessExit(status: process.terminationStatus)
+            }
+        }
+
+        configureSources()
+        try process.run()
+        stdoutReadSource?.resume()
+        stderrReadSource?.resume()
+    }
+
+    private func configureSources() {
+        guard let stdoutHandle, let stderrHandle, let stdinHandle else {
+            return
+        }
+
+        let stdoutSource = DispatchSource.makeReadSource(
+            fileDescriptor: stdoutHandle.fileDescriptor,
+            queue: stateQueue
+        )
+        stdoutSource.setEventHandler { [weak self] in
+            self?.readAvailableOutput()
+        }
+        stdoutSource.setCancelHandler { [weak self] in
+            self?.closeStdoutHandle()
+        }
+        stdoutReadSource = stdoutSource
+
+        let stderrSource = DispatchSource.makeReadSource(
+            fileDescriptor: stderrHandle.fileDescriptor,
+            queue: stateQueue
+        )
+        stderrSource.setEventHandler { [weak self] in
+            self?.drainAvailableErrorOutput()
+        }
+        stderrSource.setCancelHandler { [weak self] in
+            self?.closeStderrHandle()
+        }
+        stderrReadSource = stderrSource
+
+        let stdinSource = DispatchSource.makeWriteSource(
+            fileDescriptor: stdinHandle.fileDescriptor,
+            queue: stateQueue
+        )
+        stdinSource.setEventHandler { [weak self] in
+            self?.writeAvailableInput()
+        }
+        stdinSource.setCancelHandler { [weak self] in
+            self?.closeStdinHandle()
+        }
+        stdinWriteSource = stdinSource
+    }
+
+    private func resumeWriteSourceIfNeeded() {
+        guard let stdinWriteSource, isWriteSourceResumed == false else {
+            return
+        }
+        isWriteSourceResumed = true
+        stdinWriteSource.resume()
+    }
+
+    private func suspendWriteSourceIfNeeded() {
+        guard let stdinWriteSource,
+              isWriteSourceResumed,
+              pendingWrites.isEmpty,
+              isClosed == false
+        else {
+            return
+        }
+        stdinWriteSource.suspend()
+        isWriteSourceResumed = false
+    }
+
+    private func readAvailableOutput() {
+        guard isClosed == false,
+              let stdoutHandle
+        else { return }
+
+        var buffer = [UInt8](repeating: 0, count: Self.readChunkSize)
+        while true {
+            let count = buffer.withUnsafeMutableBytes { rawBuffer in
+                Darwin.read(
+                    stdoutHandle.fileDescriptor,
+                    rawBuffer.baseAddress,
+                    rawBuffer.count
+                )
+            }
+
+            if count > 0 {
+                outputBuffer.append(contentsOf: buffer.prefix(count))
+                parseOutputBuffer()
+                if isClosed {
+                    return
+                }
+                continue
+            }
+
+            if count == 0 {
+                closeForOutputEndLocked()
+                return
+            }
+
+            if errno == EAGAIN || errno == EWOULDBLOCK {
+                return
+            }
+
+            if errno == EINTR {
+                continue
+            }
+
+            closeLocked(.error(Self.posixError(message: "Native host output read failed")), notify: true)
+            return
+        }
+    }
+
+    private func drainAvailableErrorOutput() {
+        guard isClosed == false,
+              let stderrHandle
+        else { return }
+
+        var buffer = [UInt8](repeating: 0, count: Self.readChunkSize)
+        while true {
+            let count = buffer.withUnsafeMutableBytes { rawBuffer in
+                Darwin.read(
+                    stderrHandle.fileDescriptor,
+                    rawBuffer.baseAddress,
+                    rawBuffer.count
+                )
+            }
+
+            if count > 0 {
+                continue
+            }
+
+            if count == 0 {
+                stderrReadSource?.cancel()
+                stderrReadSource = nil
+                return
+            }
+
+            if errno == EAGAIN || errno == EWOULDBLOCK {
+                return
+            }
+
+            if errno == EINTR {
+                continue
+            }
+
+            stderrReadSource?.cancel()
+            stderrReadSource = nil
+            return
+        }
+    }
+
+    private func writeAvailableInput() {
+        guard isClosed == false,
+              let stdinHandle
+        else { return }
+
+        while pendingWrites.isEmpty == false {
+            var entry = pendingWrites[0]
+            let remaining = entry.data.count - entry.offset
+            let count = entry.data.withUnsafeBytes { rawBuffer in
+                Darwin.write(
+                    stdinHandle.fileDescriptor,
+                    rawBuffer.baseAddress?.advanced(by: entry.offset),
+                    remaining
+                )
+            }
+
+            if count > 0 {
+                entry.offset += count
+                queuedWriteBytes -= count
+                pendingWrites[0] = entry
+
+                if entry.offset == entry.data.count {
+                    let completion = pendingWrites.removeFirst().completion
+                    completion?(nil)
+                }
+                continue
+            }
+
+            if count == 0 {
+                let error = Self.error(
+                    code: 8,
+                    message: "Native host input pipe closed"
+                )
+                failPendingWrites(error)
+                closeLocked(.error(error), notify: true)
+                return
+            }
+
+            if errno == EAGAIN || errno == EWOULDBLOCK {
+                return
+            }
+
+            if errno == EINTR {
+                continue
+            }
+
+            let error = Self.posixError(message: "Native host input write failed")
+            failPendingWrites(error)
+            closeLocked(.error(error), notify: true)
+            return
+        }
+
+        suspendWriteSourceIfNeeded()
+    }
+
+    private func parseOutputBuffer() {
+        while outputBuffer.count >= 4 {
+            let length = Self.decodeLength(from: outputBuffer)
+            guard length <= Self.maximumInboundMessageSize else {
+                closeLocked(.error(Self.error(
+                    code: 5,
+                    message: "Native host response exceeds maximum size"
+                )), notify: true)
+                return
+            }
+
+            let payloadLength = Int(length)
+            let totalLength = 4 + payloadLength
+            guard outputBuffer.count >= totalLength else {
+                break
+            }
+
+            let payload = outputBuffer.subdata(in: 4..<totalLength)
+            outputBuffer.removeSubrange(0..<totalLength)
+
+            do {
+                let object = try JSONSerialization.jsonObject(with: payload)
+                onMessage(object)
+            } catch {
+                if closeOnMalformedMessage {
+                    closeLocked(.error(error), notify: true)
+                    return
+                }
+            }
+        }
+    }
+
+    private func handleProcessExit(status: Int32) {
+        guard isClosed == false else { return }
+
+        processExitStatus = status
+        drainOutputAfterProcessExit(
+            status: status,
+            deadline: Date().addingTimeInterval(Self.processExitDrainGrace)
+        )
+    }
+
+    private func drainOutputAfterProcessExit(status: Int32, deadline: Date) {
+        readAvailableOutput()
+        guard isClosed == false,
+              processExitStatus == status
+        else { return }
+
+        guard Date() >= deadline else {
+            stateQueue.asyncAfter(deadline: .now() + 0.025) { [weak self] in
+                self?.drainOutputAfterProcessExit(
+                    status: status,
+                    deadline: deadline
+                )
+            }
+            return
+        }
+
+        if outputBuffer.isEmpty {
+            closeLocked(.processExited(status), notify: true)
+        } else {
+            closeLocked(.error(Self.error(
+                code: 3,
+                message: "Native host sent a truncated response"
+            )), notify: true)
+        }
+    }
+
+    private func closeForOutputEndLocked() {
+        guard outputBuffer.isEmpty else {
+            closeLocked(.error(Self.error(
+                code: 3,
+                message: "Native host sent a truncated response"
+            )), notify: true)
+            return
+        }
+
+        closeLocked(.endOfFile, notify: true)
+    }
+
+    private func closeLocked(_ reason: CloseReason, notify: Bool) {
+        guard isClosed == false else { return }
+
+        isClosed = true
+        let completions = pendingWrites.map(\.completion)
+        let writeError = Self.closeReasonError(reason)
+        pendingWrites.removeAll()
+        queuedWriteBytes = 0
+
+        stdoutReadSource?.cancel()
+        stdoutReadSource = nil
+        stderrReadSource?.cancel()
+        stderrReadSource = nil
+        if let stdinWriteSource {
+            if isWriteSourceResumed == false {
+                stdinWriteSource.resume()
+            }
+            stdinWriteSource.cancel()
+            self.stdinWriteSource = nil
+            isWriteSourceResumed = true
+        } else {
+            closeStdinHandle()
+        }
+
+        if let process, process.isRunning {
+            process.terminate()
+        }
+        process?.terminationHandler = nil
+        process = nil
+        inputPipe = nil
+        outputPipe = nil
+        errorPipe = nil
+        outputBuffer.removeAll()
+        processExitStatus = nil
+
+        completions.forEach { $0?(writeError) }
+
+        if notify {
+            onClose(reason)
+        }
+    }
+
+    private func failPendingWrites(_ error: Error) {
+        let completions = pendingWrites.map(\.completion)
+        pendingWrites.removeAll()
+        queuedWriteBytes = 0
+        completions.forEach { $0?(error) }
+    }
+
+    private func closeHandlesAfterLaunchFailure() {
+        if let stdoutReadSource {
+            stdoutReadSource.resume()
+            stdoutReadSource.cancel()
+            self.stdoutReadSource = nil
+        } else {
+            closeStdoutHandle()
+        }
+
+        if let stderrReadSource {
+            stderrReadSource.resume()
+            stderrReadSource.cancel()
+            self.stderrReadSource = nil
+        } else {
+            closeStderrHandle()
+        }
+
+        if let stdinWriteSource {
+            stdinWriteSource.resume()
+            stdinWriteSource.cancel()
+            self.stdinWriteSource = nil
+            isWriteSourceResumed = true
+        } else {
+            closeStdinHandle()
+        }
+
+        inputPipe = nil
+        outputPipe = nil
+        errorPipe = nil
+        process = nil
+    }
+
+    private func closeStdinHandle() {
+        try? stdinHandle?.close()
+        stdinHandle = nil
+    }
+
+    private func closeStdoutHandle() {
+        try? stdoutHandle?.close()
+        stdoutHandle = nil
+    }
+
+    private func closeStderrHandle() {
+        try? stderrHandle?.close()
+        stderrHandle = nil
+    }
+
+    private static func frame(for message: Any) throws -> Data {
+        let jsonData = try JSONSerialization.data(withJSONObject: message)
+        guard jsonData.count <= Int(UInt32.max) else {
+            throw error(
+                code: 9,
+                message: "Native message exceeds maximum encodable size"
+            )
+        }
+
+        var length = UInt32(jsonData.count)
+        var frame = Data(bytes: &length, count: 4)
+        frame.append(jsonData)
+        return frame
+    }
+
+    private static func decodeLength(from data: Data) -> UInt32 {
+        var bytes = [UInt8](repeating: 0, count: 4)
+        bytes.withUnsafeMutableBufferPointer { pointer in
+            data.copyBytes(to: pointer, from: 0..<4)
+        }
+        return bytes.withUnsafeBufferPointer { pointer in
+            var value: UInt32 = 0
+            memcpy(&value, pointer.baseAddress, 4)
+            return value
+        }
+    }
+
+    private static func setNonBlocking(_ fileDescriptor: Int32) throws {
+        let flags = fcntl(fileDescriptor, F_GETFL)
+        guard flags >= 0 else {
+            throw posixError(message: "Native messaging pipe configuration failed")
+        }
+
+        guard fcntl(fileDescriptor, F_SETFL, flags | O_NONBLOCK) >= 0 else {
+            throw posixError(message: "Native messaging pipe configuration failed")
+        }
+    }
+
+    private static func closeReasonError(_ reason: CloseReason) -> Error {
+        switch reason {
+        case .cancelled:
+            return CancellationError()
+        case .endOfFile:
+            return error(
+                code: 2,
+                message: "Native host closed without sending a response"
+            )
+        case .processExited:
+            return error(
+                code: 2,
+                message: "Native host closed without sending a response"
+            )
+        case .error(let error):
+            return error
+        }
+    }
+
+    private static func posixError(message: String) -> NSError {
+        NSError(
+            domain: NSPOSIXErrorDomain,
+            code: Int(errno),
+            userInfo: [
+                NSLocalizedDescriptionKey: "\(message): \(String(cString: strerror(errno)))",
+            ]
+        )
+    }
+
+    private static func error(code: Int, message: String) -> NSError {
+        NSError(
+            domain: "NativeMessaging",
+            code: code,
+            userInfo: [NSLocalizedDescriptionKey: message]
+        )
+    }
+}
+
+@available(macOS 15.5, *)
 final class NativeMessagingHandler: NSObject {
     private static let logger = Logger.sumi(category: "NativeMessaging")
     private static let missingHostBackoff: TimeInterval = 5
@@ -34,11 +644,8 @@ final class NativeMessagingHandler: NSObject {
     private let appBundleURL: URL
     private let responseTimeout: TimeInterval
 
-    private var process: Process?
-    private var inputPipe: Pipe?
-    private var outputPipe: Pipe?
+    private var session: NativeMessagingProcessSession?
     private weak var port: WKWebExtension.MessagePort?
-    private var outputBuffer = Data()
     private var onDisconnect: (() -> Void)?
 
     init(
@@ -138,86 +745,69 @@ final class NativeMessagingHandler: NSObject {
         _ message: Any,
         completion: @escaping (Any?, Error?) -> Void
     ) {
-        launchProcess { [weak self] result in
-            guard let self else { return }
-
-            switch result {
-            case .failure(let error):
-                Self.logger.warning("Native messaging send failed: \(error.localizedDescription, privacy: .public). Delaying failure to prevent extension retry loops.")
-                DispatchQueue.main.asyncAfter(deadline: .now() + Self.missingHostBackoff) {
-                    completion(nil, error)
+        do {
+            let manifest = try loadManifest()
+            weak var sessionReference: NativeMessagingProcessSession?
+            let session = NativeMessagingProcessSession(
+                manifest: manifest,
+                closeOnMalformedMessage: true,
+                onMessage: { [weak self] response in
+                    self?.completeSingleShot(
+                        session: sessionReference,
+                        response: response,
+                        error: nil,
+                        completion: completion
+                    )
+                },
+                onClose: { [weak self] reason in
+                    self?.completeSingleShot(
+                        session: sessionReference,
+                        response: nil,
+                        error: Self.error(from: reason),
+                        completion: completion
+                    )
                 }
-            case .success:
-                do {
-                    self.outputPipe?.fileHandleForReading.readabilityHandler = nil
-                    try self.writeMessage(message)
-                } catch {
-                    self.terminate()
-                    completion(nil, error)
-                    return
-                }
+            )
+            sessionReference = session
+            self.session = session
 
-                let responseHandle = self.outputPipe?.fileHandleForReading
-                DispatchQueue.global(qos: .userInitiated).async {
-                    var response: Any?
-                    var readError: Error?
-                    let semaphore = DispatchSemaphore(value: 0)
+            session.start { [weak self, weak session] result in
+                DispatchQueue.main.async {
+                    guard let self, let session, self.session === session else {
+                        return
+                    }
 
-                    DispatchQueue.global(qos: .userInitiated).async {
-                        defer { semaphore.signal() }
-
-                        guard let responseHandle else {
-                            readError = NSError(
-                                domain: "NativeMessaging",
-                                code: 1,
-                                userInfo: [NSLocalizedDescriptionKey: "Native host output pipe is unavailable"]
+                    switch result {
+                    case .failure(let error):
+                        Self.logger.warning("Native messaging send failed: \(error.localizedDescription, privacy: .public). Delaying failure to prevent extension retry loops.")
+                        DispatchQueue.main.asyncAfter(deadline: .now() + Self.missingHostBackoff) { [weak self, weak session] in
+                            guard let self, let session, self.session === session else {
+                                return
+                            }
+                            self.session = nil
+                            completion(nil, error)
+                        }
+                    case .success:
+                        self.startResponseTimeout(
+                            for: session,
+                            completion: completion
+                        )
+                        session.send(message) { [weak self, weak session] error in
+                            guard let error else { return }
+                            self?.completeSingleShot(
+                                session: session,
+                                response: nil,
+                                error: error,
+                                completion: completion
                             )
-                            return
-                        }
-
-                        do {
-                            let lengthData = responseHandle.readData(ofLength: 4)
-                            guard lengthData.count == 4 else {
-                                throw NSError(
-                                    domain: "NativeMessaging",
-                                    code: 2,
-                                    userInfo: [NSLocalizedDescriptionKey: "Native host closed without sending a response"]
-                                )
-                            }
-
-                            let length = lengthData.withUnsafeBytes { $0.load(as: UInt32.self) }
-                            let payloadData = responseHandle.readData(ofLength: Int(length))
-                            guard payloadData.count == Int(length) else {
-                                throw NSError(
-                                    domain: "NativeMessaging",
-                                    code: 3,
-                                    userInfo: [NSLocalizedDescriptionKey: "Native host sent a truncated response"]
-                                )
-                            }
-
-                            response = try JSONSerialization.jsonObject(with: payloadData)
-                        } catch {
-                            readError = error
-                        }
-                    }
-
-                    let waitResult = semaphore.wait(timeout: .now() + self.responseTimeout)
-                    DispatchQueue.main.async {
-                        self.terminate()
-
-                        if waitResult == .timedOut {
-                            completion(nil, NSError(
-                                domain: "NativeMessaging",
-                                code: 4,
-                                userInfo: [NSLocalizedDescriptionKey: "Native host response timed out"]
-                            ))
-                        } else if let readError {
-                            completion(nil, readError)
-                        } else {
-                            completion(response, nil)
                         }
                     }
                 }
+            }
+        } catch {
+            Self.logger.warning("Native messaging send failed: \(error.localizedDescription, privacy: .public). Delaying failure to prevent extension retry loops.")
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.missingHostBackoff) {
+                completion(nil, error)
             }
         }
     }
@@ -229,70 +819,174 @@ final class NativeMessagingHandler: NSObject {
         self.port = port
         self.onDisconnect = onDisconnect
 
-        port.messageHandler = { [weak self] _, message in
-            guard let message else { return }
-            do {
-                try self?.writeMessage(message)
-            } catch {
-                Self.logger.error("Failed to send message to native host: \(error.localizedDescription, privacy: .public)")
-            }
-        }
-
-        port.disconnectHandler = { [weak self] _ in
-            self?.terminate()
-        }
-
-        launchProcess { [weak self] result in
-            guard let self else { return }
-
-            switch result {
-            case .failure(let error):
-                Self.logger.warning("Native messaging connection failed: \(error.localizedDescription, privacy: .public). Delaying disconnect to prevent extension retry loops.")
-                DispatchQueue.main.asyncAfter(deadline: .now() + Self.missingHostBackoff) { [weak port, weak self] in
-                    port?.disconnect()
-                    self?.terminate()
+        do {
+            let manifest = try loadManifest()
+            let session = NativeMessagingProcessSession(
+                manifest: manifest,
+                closeOnMalformedMessage: false,
+                onMessage: { [weak self] object in
+                    DispatchQueue.main.async {
+                        self?.port?.sendMessage(object) { _ in }
+                    }
+                },
+                onClose: { [weak self] _ in
+                    DispatchQueue.main.async {
+                        self?.finishConnection(disconnectPort: true)
+                    }
                 }
-            case .success:
-                self.outputPipe?.fileHandleForReading.readabilityHandler = { [weak self] handle in
-                    let data = handle.availableData
-                    guard data.isEmpty == false else {
-                        self?.terminate()
+            )
+            self.session = session
+
+            port.messageHandler = { [weak self] _, message in
+                guard let message else { return }
+                self?.session?.send(message) { error in
+                    if let error {
+                        Self.logger.error("Failed to send message to native host: \(error.localizedDescription, privacy: .public)")
+                    }
+                }
+            }
+
+            port.disconnectHandler = { [weak self] _ in
+                self?.disconnect()
+            }
+
+            session.start { [weak self, weak session, weak port] result in
+                DispatchQueue.main.async {
+                    guard let self, let session, self.session === session else {
                         return
                     }
-                    self?.handleOutput(data)
+
+                    if case .failure(let error) = result {
+                        Self.logger.warning("Native messaging connection failed: \(error.localizedDescription, privacy: .public). Delaying disconnect to prevent extension retry loops.")
+                        DispatchQueue.main.asyncAfter(deadline: .now() + Self.missingHostBackoff) { [weak self, weak session, weak port] in
+                            guard let self, let session, self.session === session else {
+                                return
+                            }
+                            port?.disconnect()
+                            self.finishConnection(disconnectPort: false)
+                        }
+                    }
                 }
+            }
+        } catch {
+            Self.logger.warning("Native messaging connection failed: \(error.localizedDescription, privacy: .public). Delaying disconnect to prevent extension retry loops.")
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.missingHostBackoff) { [weak self, weak port] in
+                port?.disconnect()
+                self?.finishConnection(disconnectPort: false)
             }
         }
     }
 
     func disconnect() {
-        terminate()
+        finishConnection(disconnectPort: false)
     }
 
-    private func launchProcess(
-        completion: @escaping (Result<Void, Error>) -> Void
-    ) {
-        do {
-            let manifest = try loadManifest()
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: manifest.path)
+    #if DEBUG
+        func debugConnectForTesting(
+            onReady: @escaping (Error?) -> Void,
+            onMessage: @escaping (Any) -> Void,
+            onDisconnect: @escaping () -> Void
+        ) {
+            self.onDisconnect = onDisconnect
 
-            let input = Pipe()
-            let output = Pipe()
-            let error = Pipe()
-            process.standardInput = input
-            process.standardOutput = output
-            process.standardError = error
+            do {
+                let manifest = try loadManifest()
+                let session = NativeMessagingProcessSession(
+                    manifest: manifest,
+                    closeOnMalformedMessage: false,
+                    onMessage: { object in
+                        DispatchQueue.main.async {
+                            onMessage(object)
+                        }
+                    },
+                    onClose: { [weak self] _ in
+                        DispatchQueue.main.async {
+                            self?.finishConnection(disconnectPort: false)
+                        }
+                    }
+                )
+                self.session = session
+                session.start { [weak self, weak session] result in
+                    DispatchQueue.main.async {
+                        guard let self, let session, self.session === session else {
+                            return
+                        }
 
-            self.process = process
-            self.inputPipe = input
-            self.outputPipe = output
-
-            try process.run()
-            completion(.success(()))
-        } catch {
-            completion(.failure(error))
+                        switch result {
+                        case .success:
+                            onReady(nil)
+                        case .failure(let error):
+                            self.finishConnection(disconnectPort: false)
+                            onReady(error)
+                        }
+                    }
+                }
+            } catch {
+                onReady(error)
+            }
         }
+
+        func debugPostMessageForTesting(
+            _ message: Any,
+            completion: ((Error?) -> Void)? = nil
+        ) {
+            session?.send(message, completion: completion)
+        }
+    #endif
+
+    private func startResponseTimeout(
+        for session: NativeMessagingProcessSession,
+        completion: @escaping (Any?, Error?) -> Void
+    ) {
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + responseTimeout) { [weak self, weak session] in
+            self?.completeSingleShot(
+                session: session,
+                response: nil,
+                error: NSError(
+                    domain: "NativeMessaging",
+                    code: 4,
+                    userInfo: [NSLocalizedDescriptionKey: "Native host response timed out"]
+                ),
+                completion: completion
+            )
+        }
+    }
+
+    private func completeSingleShot(
+        session: NativeMessagingProcessSession?,
+        response: Any?,
+        error: Error?,
+        completion: @escaping (Any?, Error?) -> Void
+    ) {
+        DispatchQueue.main.async { [weak self, weak session] in
+            guard let self,
+                  let session,
+                  self.session === session
+            else {
+                return
+            }
+
+            self.session = nil
+            session.cancel(notify: false)
+            completion(response, error)
+        }
+    }
+
+    private func finishConnection(disconnectPort: Bool) {
+        let session = self.session
+        self.session = nil
+        session?.cancel(notify: false)
+
+        let port = self.port
+        self.port = nil
+
+        let onDisconnect = self.onDisconnect
+        self.onDisconnect = nil
+
+        if disconnectPort {
+            port?.disconnect()
+        }
+        onDisconnect?()
     }
 
     private func loadManifest() throws -> NativeMessagingHostManifest {
@@ -320,48 +1014,26 @@ final class NativeMessagingHandler: NSObject {
         )
     }
 
-    private func writeMessage(_ message: Any) throws {
-        guard let inputPipe else {
-            throw NSError(
+    private static func error(
+        from reason: NativeMessagingProcessSession.CloseReason
+    ) -> Error {
+        switch reason {
+        case .cancelled:
+            return CancellationError()
+        case .endOfFile:
+            return NSError(
                 domain: "NativeMessaging",
-                code: 4,
-                userInfo: [NSLocalizedDescriptionKey: "Native host input pipe is unavailable"]
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Native host closed without sending a response"]
             )
+        case .processExited:
+            return NSError(
+                domain: "NativeMessaging",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Native host closed without sending a response"]
+            )
+        case .error(let error):
+            return error
         }
-
-        let jsonData = try JSONSerialization.data(withJSONObject: message)
-        var length = UInt32(jsonData.count)
-        let lengthData = Data(bytes: &length, count: 4)
-        try inputPipe.fileHandleForWriting.write(contentsOf: lengthData)
-        try inputPipe.fileHandleForWriting.write(contentsOf: jsonData)
-    }
-
-    private func handleOutput(_ data: Data) {
-        outputBuffer.append(data)
-
-        while outputBuffer.count >= 4 {
-            let length = outputBuffer.withUnsafeBytes { $0.load(as: UInt32.self) }
-            let totalLength = 4 + Int(length)
-            guard outputBuffer.count >= totalLength else { break }
-
-            let payload = outputBuffer.subdata(in: 4..<totalLength)
-            outputBuffer.removeSubrange(0..<totalLength)
-
-            if let object = try? JSONSerialization.jsonObject(with: payload) {
-                port?.sendMessage(object) { _ in }
-            }
-        }
-    }
-
-    private func terminate() {
-        outputPipe?.fileHandleForReading.readabilityHandler = nil
-        if process?.isRunning == true {
-            process?.terminate()
-        }
-        process = nil
-        inputPipe = nil
-        outputPipe = nil
-        onDisconnect?()
-        onDisconnect = nil
     }
 }
