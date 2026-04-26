@@ -696,7 +696,8 @@ private struct SiteControlsSnapshot: Equatable {
     static func resolve(
         url: URL?,
         profileId: UUID?,
-        showsAutoplayPermission: Bool = false
+        showsAutoplayPermission: Bool = false,
+        trackingProtectionModule: SumiTrackingProtectionModule? = nil
     ) -> SiteControlsSnapshot {
         guard let url else {
             return SiteControlsSnapshot(
@@ -751,21 +752,22 @@ private struct SiteControlsSnapshot: Equatable {
                 )
             }
 
-            let trackingPolicy = SumiTrackingProtectionSettings.shared.resolve(for: url)
-            rows.append(
-                .init(
-                    id: "tracking",
-                    chromeIconName: trackingPolicy.isEnabled
-                        ? nil
-                        : "tracking-protection",
-                    fallbackSystemName: trackingPolicy.isEnabled
-                        ? "shield.fill"
-                        : "shield",
-                    title: "Tracking Protection",
-                    subtitle: nil,
-                    kind: .tracking(trackingPolicy)
+            if let trackingPolicy = trackingProtectionModule?.effectivePolicyIfEnabled(for: url) {
+                rows.append(
+                    .init(
+                        id: "tracking",
+                        chromeIconName: trackingPolicy.isEnabled
+                            ? nil
+                            : "tracking-protection",
+                        fallbackSystemName: trackingPolicy.isEnabled
+                            ? "shield.fill"
+                            : "shield",
+                        title: "Tracking Protection",
+                        subtitle: nil,
+                        kind: .tracking(trackingPolicy)
+                    )
                 )
-            )
+            }
             rows.append(
                 .init(
                     id: "cookies",
@@ -848,7 +850,8 @@ private struct URLBarHubPopover: View {
         return SiteControlsSnapshot.resolve(
             url: currentTab?.url,
             profileId: profileId,
-            showsAutoplayPermission: currentTab?.audioState.isPlayingAudio == true
+            showsAutoplayPermission: currentTab?.audioState.isPlayingAudio == true,
+            trackingProtectionModule: browserManager.trackingProtectionModule
         )
     }
 
@@ -889,7 +892,7 @@ private struct URLBarHubPopover: View {
         .onReceive(NotificationCenter.default.publisher(for: .sumiTabNavigationStateDidChange)) { notification in
             handleNavigationStateDidChange(notification)
         }
-        .onReceive(SumiTrackingProtectionSettings.shared.changesPublisher) {
+        .onReceive(browserManager.trackingProtectionModule.settingsChangesPublisherIfEnabled()) {
             _ in refreshNonce += 1
         }
     }
@@ -1093,12 +1096,6 @@ private struct URLBarHubPopover: View {
         return bookmarkManager.isBookmarked(currentTab.url)
     }
 
-    private var trackingProtectionPresenter: URLBarTrackingProtectionPresenter {
-        _ = refreshNonce
-        let policy = SumiTrackingProtectionSettings.shared.resolve(for: currentTab?.url)
-        return URLBarTrackingProtectionPresenter.make(policy: policy)
-    }
-
     private var settingsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HubSectionHeader(
@@ -1194,7 +1191,10 @@ private struct URLBarHubPopover: View {
     }
 
     private func toggleTrackingProtectionForCurrentSite() {
-        let policy = SumiTrackingProtectionSettings.shared.resolve(for: currentTab?.url)
+        guard let settings = browserManager.trackingProtectionModule.settingsIfEnabled() else {
+            return
+        }
+        let policy = settings.resolve(for: currentTab?.url)
         setTrackingProtectionOverride(
             URLBarTrackingProtectionPresenter.siteOverrideAfterToggle(for: policy)
         )
@@ -1203,8 +1203,10 @@ private struct URLBarHubPopover: View {
     private func setTrackingProtectionOverride(
         _ override: SumiTrackingProtectionSiteOverride
     ) {
-        guard let currentTab else { return }
-        SumiTrackingProtectionSettings.shared.setSiteOverride(override, for: currentTab.url)
+        guard let currentTab,
+              let settings = browserManager.trackingProtectionModule.settingsIfEnabled()
+        else { return }
+        settings.setSiteOverride(override, for: currentTab.url)
         refreshNonce += 1
     }
 

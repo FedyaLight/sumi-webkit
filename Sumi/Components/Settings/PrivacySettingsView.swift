@@ -8,10 +8,18 @@
 import SwiftUI
 
 struct PrivacySettingsView: View {
+    @Environment(\.sumiTrackingProtectionModule) private var trackingProtectionModule
+
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             SumiSettingsModuleToggleGate(descriptor: .trackingProtection) {
-                LegacyTrackingProtectionRuntimeSettingsView()
+                if let settings = trackingProtectionModule.settingsIfEnabled(),
+                   let dataStore = trackingProtectionModule.dataStoreIfEnabled() {
+                    LegacyTrackingProtectionRuntimeSettingsView(
+                        trackingProtectionSettings: settings,
+                        trackingProtectionDataStore: dataStore
+                    )
+                }
             }
 
             SumiSettingsModuleToggleGate(descriptor: .adBlocking)
@@ -24,8 +32,8 @@ struct PrivacySettingsView: View {
 }
 
 private struct LegacyTrackingProtectionRuntimeSettingsView: View {
-    @StateObject private var trackingProtectionSettings = SumiTrackingProtectionSettings.shared
-    @StateObject private var trackingProtectionDataStore = SumiTrackingProtectionDataStore.shared
+    @ObservedObject var trackingProtectionSettings: SumiTrackingProtectionSettings
+    @ObservedObject var trackingProtectionDataStore: SumiTrackingProtectionDataStore
     @State private var trackingOverrideHostInput = ""
 
     var body: some View {
@@ -40,7 +48,7 @@ private struct LegacyTrackingProtectionRuntimeSettingsView: View {
                 )
             )
 
-            Text("Controls the existing WebKit-native tracking rules. This remains separate from the module availability switch until Tracking Protection runtime gating lands.")
+            Text("Controls the existing WebKit-native tracking rules while the Tracking Protection module is enabled.")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

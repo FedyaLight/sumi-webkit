@@ -124,6 +124,25 @@ final class SettingsModuleToggleTests: XCTestCase {
         }
     }
 
+    func testTrackingProtectionSettingsRuntimeAccessStaysBehindModuleGate() throws {
+        let source = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
+
+        XCTAssertTrue(source.contains("SumiSettingsModuleToggleGate(descriptor: .trackingProtection)"))
+        XCTAssertTrue(source.contains("sumiTrackingProtectionModule"))
+        XCTAssertTrue(source.contains("settingsIfEnabled()"))
+        XCTAssertTrue(source.contains("dataStoreIfEnabled()"))
+
+        for forbiddenPattern in [
+            "SumiTrackingProtectionSettings.shared",
+            "SumiTrackingProtectionDataStore.shared",
+            "SumiContentBlockingService(",
+            "SumiEmbeddedDDGTrackerDataRuleSource(",
+            "SumiTrackerDataUpdater(",
+        ] {
+            XCTAssertFalse(source.contains(forbiddenPattern), "\(forbiddenPattern) is referenced by Privacy settings")
+        }
+    }
+
     func testSettingsSourcesAvoidDisallowedModuleSurfaces() throws {
         let source = try Self.combinedSource(in: "Sumi/Components/Settings")
         let targetWord = "tr" + "acker"

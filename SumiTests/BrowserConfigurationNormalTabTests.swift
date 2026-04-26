@@ -30,6 +30,119 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
     }
 
+    func testBrowserManagerStartupWithTrackingDisabledDoesNotInitializeTrackingRuntime() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        let probe = NormalTabTrackingRuntimeProbe()
+        let module = makeProbeTrackingModule(
+            registry: registry,
+            probe: probe,
+            defaults: harness.defaults
+        )
+
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            trackingProtectionModule: module
+        )
+
+        XCTAssertNotNil(browserManager.currentProfile)
+        XCTAssertFalse(registry.isEnabled(.trackingProtection))
+        XCTAssertEqual(probe.settingsCount, 0)
+        XCTAssertEqual(probe.dataStoreCount, 0)
+        XCTAssertEqual(probe.serviceCount, 0)
+    }
+
+    func testTabNormalWebViewCreationWithTrackingDisabledDoesNotInitializeTrackingRuntime() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        let probe = NormalTabTrackingRuntimeProbe()
+        let module = makeProbeTrackingModule(
+            registry: registry,
+            probe: probe,
+            defaults: harness.defaults
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            trackingProtectionModule: module
+        )
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/tracking-disabled",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+
+        tab.setupWebView()
+
+        let webView = try XCTUnwrap(tab.existingWebView)
+        let controller = try XCTUnwrap(webView.configuration.userContentController as? UserContentController)
+        await controller.awaitContentBlockingAssetsInstalled()
+
+        XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
+        XCTAssertEqual(probe.settingsCount, 0)
+        XCTAssertEqual(probe.dataStoreCount, 0)
+        XCTAssertEqual(probe.serviceCount, 0)
+    }
+
+    func testEnabledTrackingModuleAttachesRulesAndDisableBlocksFutureNormalTabs() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.trackingProtection)
+        let probe = NormalTabTrackingRuntimeProbe()
+        let service = SumiContentBlockingService(
+            policy: .enabled(ruleLists: [Self.validRuleListDefinition()])
+        )
+        let module = makeProbeTrackingModule(
+            registry: registry,
+            probe: probe,
+            defaults: harness.defaults,
+            service: service
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            trackingProtectionModule: module
+        )
+
+        let enabledTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/tracking-enabled",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        enabledTab.setupWebView()
+        let enabledController = try XCTUnwrap(
+            enabledTab.existingWebView?.configuration.userContentController as? UserContentController
+        )
+        await enabledController.awaitContentBlockingAssetsInstalled()
+        try await waitForAssets(on: enabledController) { $0.globalRuleLists.count == 1 }
+
+        XCTAssertEqual(probe.settingsCount, 1)
+        XCTAssertEqual(probe.dataStoreCount, 1)
+        XCTAssertEqual(probe.serviceCount, 1)
+
+        registry.disable(.trackingProtection)
+        let disabledTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/tracking-disabled-after-toggle",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        disabledTab.setupWebView()
+        let disabledController = try XCTUnwrap(
+            disabledTab.existingWebView?.configuration.userContentController as? UserContentController
+        )
+        await disabledController.awaitContentBlockingAssetsInstalled()
+
+        XCTAssertEqual(disabledController.contentBlockingAssets?.globalRuleLists.count, 0)
+        XCTAssertEqual(probe.serviceCount, 1)
+    }
+
     func testNormalTabConfigurationCreatesDistinctControllersWithSharedProcessPool() {
         let browserConfiguration = BrowserConfiguration()
         let profile = Profile(name: "Default")
@@ -96,6 +209,21 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
         assertNoTabSuspensionBridge(in: peekConfiguration)
         assertNoTabSuspensionBridge(in: miniWindowConfiguration)
+    }
+
+    func testAuxiliaryAndFaviconPathsDoNotAccessTrackingRuntime() throws {
+        for relativePath in [
+            "Sumi/Managers/PeekManager/PeekWebView.swift",
+            "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
+            "Sumi/Favicons/DDG/Model/FaviconDownloader.swift",
+        ] {
+            let source = try Self.source(named: relativePath)
+            XCTAssertFalse(source.contains("trackingProtectionModule"), relativePath)
+            XCTAssertFalse(source.contains("contentBlockingServiceIfEnabled"), relativePath)
+            XCTAssertFalse(source.contains("SumiContentBlockingService"), relativePath)
+            XCTAssertFalse(source.contains("SumiTrackingProtectionSettings"), relativePath)
+            XCTAssertFalse(source.contains("SumiTrackingProtectionDataStore"), relativePath)
+        }
     }
 
     func testCacheOptimizedConfigurationIsAuxiliaryOnly() {
@@ -188,6 +316,82 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(source.contains("sumiTabSuspension_"), file: file, line: line)
         XCTAssertFalse(source.contains("tabSuspension"), file: file, line: line)
     }
+
+    private func makeProbeTrackingModule(
+        registry: SumiModuleRegistry,
+        probe: NormalTabTrackingRuntimeProbe,
+        defaults: UserDefaults,
+        service: SumiContentBlockingService? = nil
+    ) -> SumiTrackingProtectionModule {
+        SumiTrackingProtectionModule(
+            moduleRegistry: registry,
+            settingsFactory: {
+                probe.settingsCount += 1
+                return SumiTrackingProtectionSettings(userDefaults: defaults)
+            },
+            dataStoreFactory: {
+                probe.dataStoreCount += 1
+                return SumiTrackingProtectionDataStore(
+                    userDefaults: defaults,
+                    storageDirectory: FileManager.default.temporaryDirectory
+                        .appendingPathComponent("SumiNormalTabTrackingRuntime-\(UUID().uuidString)", isDirectory: true)
+                )
+            },
+            contentBlockingServiceFactory: { _, _ in
+                probe.serviceCount += 1
+                return service ?? SumiContentBlockingService(policy: .disabled)
+            }
+        )
+    }
+
+    private static func validRuleListDefinition() -> SumiContentRuleListDefinition {
+        SumiContentRuleListDefinition(
+            name: "SumiNormalTabTrackingTestRules-\(UUID().uuidString)",
+            encodedContentRuleList: """
+            [
+              {
+                "trigger": {
+                  "url-filter": ".*normal-tab-blocked\\\\.example/.*"
+                },
+                "action": {
+                  "type": "block"
+                }
+              }
+            ]
+            """
+        )
+    }
+
+    @discardableResult
+    private func waitForAssets(
+        on controller: UserContentController,
+        where predicate: @escaping (UserContentController.ContentBlockingAssets) -> Bool
+    ) async throws -> UserContentController.ContentBlockingAssets {
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            if let assets = controller.contentBlockingAssets, predicate(assets) {
+                return assets
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTFail("Timed out waiting for normal-tab content-blocking assets")
+        return try XCTUnwrap(controller.contentBlockingAssets)
+    }
+
+    private static func source(named relativePath: String) throws -> String {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = repoRoot.appendingPathComponent(relativePath)
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+}
+
+@MainActor
+private final class NormalTabTrackingRuntimeProbe {
+    var settingsCount = 0
+    var dataStoreCount = 0
+    var serviceCount = 0
 }
 
 private final class TestNormalTabUserScript: NSObject, UserScript {

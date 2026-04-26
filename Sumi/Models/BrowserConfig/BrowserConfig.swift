@@ -82,13 +82,15 @@ class BrowserConfiguration {
     func normalTabWebViewConfiguration(
         for profile: Profile,
         url: URL?,
-        userScriptsProvider: SumiNormalTabUserScripts? = nil
+        userScriptsProvider: SumiNormalTabUserScripts? = nil,
+        contentBlockingService: SumiContentBlockingService? = nil
     ) -> WKWebViewConfiguration {
         let config = makeBaseWebViewConfiguration()
         config.websiteDataStore = profile.dataStore
         config.userContentController = SumiNormalTabUserContentControllerFactory
             .makeController(
                 scriptsProvider: userScriptsProvider,
+                contentBlockingService: contentBlockingService,
                 profileId: profile.id
             )
         applyMediaSessionPolicy(to: config, profile: profile)
