@@ -781,7 +781,305 @@ final class WebViewCoordinatorTests: XCTestCase {
         XCTAssertNil(secondTab.primaryWindowId)
     }
 
-    func testPrepareVisibleWebViewsLeavesSoleLiveHiddenTabsForSuspensionService() {
+    func testPrepareVisibleWebViewsEvictsEligibleSoleLiveHiddenTabInLightweightMode() throws {
+        let browserManager = BrowserManager()
+        let coordinator = WebViewCoordinator()
+        browserManager.webViewCoordinator = coordinator
+        let settings = installMemoryMode(.lightweight, on: browserManager)
+        let (_, windowState) = makeWindowContext(browserManager: browserManager)
+
+        let hiddenTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/lightweight-hidden",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let selectedTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/lightweight-selected",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+
+        setCurrentTab(hiddenTab, in: windowState)
+        _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+        let hiddenWebView = try XCTUnwrap(coordinator.getWebView(for: hiddenTab.id, in: windowState.id))
+
+        setCurrentTab(selectedTab, in: windowState)
+        _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+
+        XCTAssertNil(coordinator.getWebView(for: hiddenTab.id, in: windowState.id))
+        XCTAssertNil(coordinator.windowID(containing: hiddenWebView))
+        XCTAssertNil(hiddenTab.existingWebView)
+        XCTAssertNil(hiddenTab.primaryWindowId)
+        XCTAssertTrue(hiddenTab.isSuspended)
+        XCTAssertNotNil(coordinator.getWebView(for: selectedTab.id, in: windowState.id))
+        _ = settings
+    }
+
+    func testSelectingEvictedHiddenTabRestoresExactlyOneWebView() throws {
+        let browserManager = BrowserManager()
+        let coordinator = WebViewCoordinator()
+        browserManager.webViewCoordinator = coordinator
+        let settings = installMemoryMode(.lightweight, on: browserManager)
+        let (_, windowState) = makeWindowContext(browserManager: browserManager)
+
+        let evictedTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/restore-evicted",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let selectedTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/restore-selected",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+
+        setCurrentTab(evictedTab, in: windowState)
+        _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+        setCurrentTab(selectedTab, in: windowState)
+        _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+
+        XCTAssertTrue(evictedTab.isSuspended)
+        XCTAssertEqual(coordinator.liveWebViews(for: evictedTab).count, 0)
+
+        browserManager.selectTab(
+            evictedTab,
+            in: windowState,
+            loadPolicy: .immediate
+        )
+        _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+        let restoredWebView = try XCTUnwrap(coordinator.getWebView(for: evictedTab.id, in: windowState.id))
+
+        XCTAssertFalse(evictedTab.isSuspended)
+        XCTAssertTrue(evictedTab.existingWebView === restoredWebView)
+        XCTAssertEqual(coordinator.liveWebViews(for: evictedTab).count, 1)
+
+        _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+        XCTAssertTrue(coordinator.getWebView(for: evictedTab.id, in: windowState.id) === restoredWebView)
+        XCTAssertEqual(coordinator.liveWebViews(for: evictedTab).count, 1)
+        _ = settings
+    }
+
+    func testURLSyncDoesNotResurrectEvictedHiddenWebViews() throws {
+        let browserManager = BrowserManager()
+        let coordinator = WebViewCoordinator()
+        browserManager.webViewCoordinator = coordinator
+        let settings = installMemoryMode(.lightweight, on: browserManager)
+        let (_, windowState) = makeWindowContext(browserManager: browserManager)
+
+        let evictedTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/sync-hidden",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let selectedTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/sync-selected",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+
+        setCurrentTab(evictedTab, in: windowState)
+        _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+        setCurrentTab(selectedTab, in: windowState)
+        _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+
+        XCTAssertTrue(evictedTab.isSuspended)
+        evictedTab.url = URL(string: "https://example.com/sync-updated")!
+        browserManager.syncTabAcrossWindows(evictedTab.id)
+
+        XCTAssertNil(coordinator.getWebView(for: evictedTab.id, in: windowState.id))
+        XCTAssertNil(evictedTab.existingWebView)
+        XCTAssertEqual(coordinator.liveWebViews(for: evictedTab).count, 0)
+        _ = settings
+    }
+
+    func testRepeatedHiddenEvictionDoesNotRetryAlreadySuspendedTabs() throws {
+        let browserManager = BrowserManager()
+        let coordinator = WebViewCoordinator()
+        browserManager.webViewCoordinator = coordinator
+        let settings = installMemoryMode(.lightweight, on: browserManager)
+        let (_, windowState) = makeWindowContext(browserManager: browserManager)
+
+        let evictedTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/repeated-hidden",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let selectedTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/repeated-selected",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+
+        setCurrentTab(evictedTab, in: windowState)
+        _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+        let originalWebView = try XCTUnwrap(coordinator.getWebView(for: evictedTab.id, in: windowState.id))
+
+        setCurrentTab(selectedTab, in: windowState)
+        _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+        _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+
+        XCTAssertTrue(evictedTab.isSuspended)
+        XCTAssertNil(coordinator.windowID(containing: originalWebView))
+        XCTAssertNil(coordinator.getWebView(for: evictedTab.id, in: windowState.id))
+        XCTAssertNil(evictedTab.existingWebView)
+        XCTAssertEqual(coordinator.liveWebViews(for: evictedTab).count, 0)
+        XCTAssertEqual(coordinator.liveWebViews(for: selectedTab).count, 1)
+        _ = settings
+    }
+
+    func testHiddenEvictionPreservesSelectedVisibleAndEligibilityVetoedTabs() throws {
+        let browserManager = BrowserManager()
+        let coordinator = WebViewCoordinator()
+        browserManager.webViewCoordinator = coordinator
+        let settings = installMemoryMode(.lightweight, on: browserManager)
+        let (_, windowState) = makeWindowContext(browserManager: browserManager)
+
+        let selectedTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/veto-selected",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let loadingTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/veto-loading",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let audioTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/veto-audio",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let pipTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/veto-pip",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let pdfTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/veto-pdf",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let pageVetoTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/veto-page",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let fileTab = browserManager.tabManager.createNewTab(
+            url: "file:///tmp/sumi-hidden-veto.html",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let protectedTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/veto-protected",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let eligibleTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/veto-eligible",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+
+        let hiddenTabs = [
+            loadingTab,
+            audioTab,
+            pipTab,
+            pdfTab,
+            pageVetoTab,
+            fileTab,
+            protectedTab,
+            eligibleTab,
+        ]
+        var webViewsByTabID: [UUID: WKWebView] = [:]
+        for tab in hiddenTabs {
+            webViewsByTabID[tab.id] = coordinator.getOrCreateWebView(
+                for: tab,
+                in: windowState.id
+            )
+        }
+
+        loadingTab.loadingState = .didCommit
+        audioTab.applyAudioState(.unmuted(isPlayingAudio: true))
+        pipTab.hasPictureInPictureVideo = true
+        pdfTab.isDisplayingPDFDocument = true
+        pageVetoTab.pageSuspensionVeto = .pageReportedUnableToSuspend
+        coordinator.beginHistorySwipeProtection(
+            tabId: protectedTab.id,
+            webView: try XCTUnwrap(webViewsByTabID[protectedTab.id]),
+            originURL: protectedTab.url,
+            originHistoryItem: nil
+        )
+
+        setCurrentTab(selectedTab, in: windowState)
+        _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+
+        XCTAssertNotNil(coordinator.getWebView(for: selectedTab.id, in: windowState.id))
+        for tab in [loadingTab, audioTab, pipTab, pdfTab, pageVetoTab, fileTab, protectedTab] {
+            XCTAssertTrue(
+                coordinator.getWebView(for: tab.id, in: windowState.id) === webViewsByTabID[tab.id],
+                "Expected vetoed tab to keep its WebView: \(tab.url.absoluteString)"
+            )
+            XCTAssertFalse(tab.isSuspended)
+        }
+        XCTAssertNil(coordinator.getWebView(for: eligibleTab.id, in: windowState.id))
+        XCTAssertTrue(eligibleTab.isSuspended)
+
+        coordinator.finishHistorySwipeProtection(
+            tabId: protectedTab.id,
+            webView: webViewsByTabID[protectedTab.id],
+            currentURL: protectedTab.url,
+            currentHistoryItem: nil
+        )
+        _ = settings
+    }
+
+    func testHiddenEvictionPreservesActiveSplitVisibleTabsInLightweightMode() throws {
+        let browserManager = BrowserManager()
+        let coordinator = WebViewCoordinator()
+        browserManager.webViewCoordinator = coordinator
+        let settings = installMemoryMode(.lightweight, on: browserManager)
+        let (_, windowState) = makeWindowContext(browserManager: browserManager)
+
+        let leftTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/lightweight-split-left",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let rightTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/lightweight-split-right",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let hiddenTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/lightweight-split-hidden",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+
+        setCurrentTab(leftTab, in: windowState)
+        browserManager.splitManager.enterSplit(
+            with: rightTab,
+            placeOn: .right,
+            in: windowState,
+            animate: false
+        )
+        _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+        let leftWebView = try XCTUnwrap(coordinator.getWebView(for: leftTab.id, in: windowState.id))
+        let rightWebView = try XCTUnwrap(coordinator.getWebView(for: rightTab.id, in: windowState.id))
+        _ = coordinator.getOrCreateWebView(for: hiddenTab, in: windowState.id)
+
+        _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+
+        XCTAssertTrue(coordinator.getWebView(for: leftTab.id, in: windowState.id) === leftWebView)
+        XCTAssertTrue(coordinator.getWebView(for: rightTab.id, in: windowState.id) === rightWebView)
+        XCTAssertFalse(leftTab.isSuspended)
+        XCTAssertFalse(rightTab.isSuspended)
+        XCTAssertNil(coordinator.getWebView(for: hiddenTab.id, in: windowState.id))
+        XCTAssertTrue(hiddenTab.isSuspended)
+        _ = settings
+    }
+
+    func testPrepareVisibleWebViewsKeepsBalancedWarmHiddenTabs() {
         let browserManager = BrowserManager()
         let coordinator = WebViewCoordinator()
         browserManager.webViewCoordinator = coordinator
@@ -824,7 +1122,7 @@ final class WebViewCoordinatorTests: XCTestCase {
         XCTAssertNotNil(coordinator.getWebView(for: thirdTab.id, in: windowState.id))
     }
 
-    func testPrepareVisibleWebViewsLeavesSplitHiddenSoleLiveTabsForSuspensionService() {
+    func testPrepareVisibleWebViewsKeepsBalancedWarmSplitHiddenTabs() {
         let browserManager = BrowserManager()
         let coordinator = WebViewCoordinator()
         browserManager.webViewCoordinator = coordinator
@@ -883,7 +1181,7 @@ final class WebViewCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.windowID(containing: secondHiddenWebView), windowState.id)
     }
 
-    func testPrepareVisibleWebViewsEvictsHiddenCloneWhenAnotherLiveInstanceExists() {
+    func testPrepareVisibleWebViewsPreservesHiddenCloneWhenTabIsVisibleInAnotherWindow() {
         let browserManager = BrowserManager()
         let coordinator = WebViewCoordinator()
         browserManager.webViewCoordinator = coordinator
@@ -925,12 +1223,24 @@ final class WebViewCoordinatorTests: XCTestCase {
         setCurrentTab(currentTab, in: firstWindow)
         _ = coordinator.prepareVisibleWebViews(for: firstWindow, browserManager: browserManager)
 
-        XCTAssertNil(coordinator.getWebView(for: sharedTab.id, in: firstWindow.id))
+        XCTAssertNotNil(coordinator.getWebView(for: sharedTab.id, in: firstWindow.id))
         XCTAssertTrue(
             coordinator.getWebView(for: sharedTab.id, in: secondWindow.id) === sharedCloneInSecondWindow
         )
         XCTAssertNotNil(coordinator.getWebView(for: soleHiddenTab.id, in: firstWindow.id))
         XCTAssertNotNil(coordinator.getWebView(for: currentTab.id, in: firstWindow.id))
+    }
+
+    private func installMemoryMode(
+        _ mode: SumiMemoryMode,
+        on browserManager: BrowserManager
+    ) -> SumiSettingsService {
+        let defaultsHarness = TestDefaultsHarness()
+        let settings = SumiSettingsService(userDefaults: defaultsHarness.defaults)
+        settings.memoryMode = mode
+        browserManager.sumiSettings = settings
+        browserManager.tabManager.sumiSettings = settings
+        return settings
     }
 
     private func setCurrentTab(_ tab: Tab, in windowState: BrowserWindowState) {

@@ -89,6 +89,28 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertTrue(configuration.websiteDataStore === profile.dataStore)
     }
 
+    func testAuxiliaryConfigurationsDoNotInstallTabSuspensionBridge() {
+        let browserConfiguration = BrowserConfiguration()
+        let peekConfiguration = browserConfiguration.auxiliaryWebViewConfiguration(surface: .peek)
+        let miniWindowConfiguration = browserConfiguration.auxiliaryWebViewConfiguration(surface: .miniWindow)
+
+        assertNoTabSuspensionBridge(in: peekConfiguration)
+        assertNoTabSuspensionBridge(in: miniWindowConfiguration)
+    }
+
+    func testTabSuspensionBridgeScriptIsMainFrameOnly() throws {
+        let tab = Tab(name: "Bridge")
+        let bridgeScript = try XCTUnwrap(
+            tab.normalTabCoreUserScripts().first { script in
+                script.source.contains("__sumiTabSuspension")
+            }
+        )
+
+        XCTAssertTrue(bridgeScript.source.contains("sumiTabSuspension_"))
+        XCTAssertTrue(bridgeScript.source.contains("tabSuspension"))
+        XCTAssertTrue(bridgeScript.forMainFrameOnly)
+    }
+
     func testPrimaryTabSetupUsesCentralFactoryNotFaviconOnlyFactoryOrScriptRemoval() throws {
         let testURL = URL(fileURLWithPath: #filePath)
         let repoRoot = testURL
@@ -107,6 +129,20 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let lifecycleSource = try String(contentsOf: lifecycleSourceURL, encoding: .utf8)
         XCTAssertFalse(lifecycleSource.contains("injectDocumentIdleScripts"))
         XCTAssertFalse(lifecycleSource.contains("evaluateJavaScript"))
+    }
+
+    private func assertNoTabSuspensionBridge(
+        in configuration: WKWebViewConfiguration,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let source = configuration.userContentController.userScripts
+            .map(\.source)
+            .joined(separator: "\n")
+
+        XCTAssertFalse(source.contains("__sumiTabSuspension"), file: file, line: line)
+        XCTAssertFalse(source.contains("sumiTabSuspension_"), file: file, line: line)
+        XCTAssertFalse(source.contains("tabSuspension"), file: file, line: line)
     }
 }
 

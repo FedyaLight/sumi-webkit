@@ -149,7 +149,7 @@ final class TabSuspensionServiceTests: XCTestCase {
         XCTAssertTrue(newest.isSuspended)
     }
 
-    func testPinnedHiddenTabsAreNeverSuspended() {
+    func testPinnedHiddenTabsRemainDeferredOutsideLightweight() {
         let harness = makeHarness()
         let selected = makeTab("https://example.com/current", harness: harness)
         let pinned = makeTab("https://example.com/pinned", harness: harness)
@@ -500,7 +500,7 @@ final class TabSuspensionServiceTests: XCTestCase {
         XCTAssertLessThan(lightweight.evaluationInterval, balanced.evaluationInterval)
         XCTAssertLessThan(balanced.evaluationInterval, performance.evaluationInterval)
 
-        XCTAssertFalse(lightweight.allowsLauncherRuntimeSuspension)
+        XCTAssertTrue(lightweight.allowsLauncherRuntimeSuspension)
         XCTAssertFalse(balanced.allowsLauncherRuntimeSuspension)
         XCTAssertFalse(performance.allowsLauncherRuntimeSuspension)
     }
@@ -654,12 +654,6 @@ final class TabSuspensionServiceTests: XCTestCase {
         alreadySuspended = addVetoedTab { $0.isSuspended = true }
         addVetoedTab { $0.isPopupHost = true }
         addVetoedTab(SumiSurface.emptyTabURL.absoluteString) { _ in }
-        addVetoedTab { $0.isPinned = true }
-        addVetoedTab {
-            $0.isShortcutLiveInstance = true
-            $0.shortcutPinRole = .essential
-        }
-
         let camera = addVetoedTab { _ in }
         stateOverrides[camera.id] = [.init(isCapturingCamera: true)]
         let microphone = addVetoedTab { _ in }
@@ -681,40 +675,319 @@ final class TabSuspensionServiceTests: XCTestCase {
         XCTAssertTrue(alreadySuspended?.isSuspended == true)
     }
 
-    func testIdleEvaluationKeepsPinnedAndEssentialsDeferredUntilPrompt07() {
+    func testLightweightIdleEvaluationSuspendsLegacyPinnedRuntimeOnly() throws {
         let harness = makeHarness(memoryMode: .lightweight)
         let selected = makeTab("https://example.com/current", harness: harness)
         let pinned = makeTab("https://example.com/pinned", harness: harness)
+        let originalID = pinned.id
+        let originalURL = pinned.url
+        let originalTitle = pinned.name
+
+        setCurrentTab(selected, in: harness.windowState)
+        attachWebView(to: selected, harness: harness)
+        attachWebView(to: pinned, harness: harness)
+        pinned.isPinned = true
+        pinned.lastSelectedAt = now.addingTimeInterval(-7200)
+
+        let result = harness.service.evaluateIdleSuspension()
+
+        XCTAssertEqual(result.suspendedTabIDs, [pinned.id])
+        XCTAssertTrue(pinned.isSuspended)
+        XCTAssertNil(pinned.existingWebView)
+        XCTAssertNil(pinned.primaryWindowId)
+        XCTAssertTrue(pinned.isPinned)
+        XCTAssertEqual(pinned.id, originalID)
+        XCTAssertEqual(pinned.url, originalURL)
+        XCTAssertEqual(pinned.name, originalTitle)
+        XCTAssertTrue(harness.browserManager.tabManager.tab(for: pinned.id) === pinned)
+
+        harness.browserManager.selectTab(
+            pinned,
+            in: harness.windowState,
+            loadPolicy: .immediate
+        )
+        _ = harness.coordinator.prepareVisibleWebViews(
+            for: harness.windowState,
+            browserManager: harness.browserManager
+        )
+
+        XCTAssertFalse(pinned.isSuspended)
+        XCTAssertEqual(harness.coordinator.liveWebViews(for: pinned).count, 1)
+        XCTAssertTrue(
+            harness.coordinator.getWebView(for: pinned.id, in: harness.windowState.id) === pinned.existingWebView
+        )
+    }
+
+    func testLightweightIdleEvaluationSuspendsEssentialLauncherRuntimeOnly() throws {
+        let harness = makeHarness(memoryMode: .lightweight)
+        let selected = makeTab("https://example.com/current", harness: harness)
+        let profileId = try XCTUnwrap(harness.browserManager.currentProfile?.id)
+        let pin = makeShortcutPin(
+            role: .essential,
+            profileId: profileId,
+            spaceId: nil,
+            index: 0,
+            launchURL: URL(string: "https://example.com/essential")!,
+            title: "Essential",
+            iconAsset: "star.fill"
+        )
+
+        harness.browserManager.tabManager.setPinnedTabs([pin], for: profileId)
+        let liveTab = harness.browserManager.tabManager.activateShortcutPin(
+            pin,
+            in: harness.windowState.id,
+            currentSpaceId: harness.windowState.currentSpaceId
+        )
+
+        setCurrentTab(selected, in: harness.windowState)
+        attachWebView(to: selected, harness: harness)
+        attachWebView(to: liveTab, harness: harness)
+        liveTab.lastSelectedAt = now.addingTimeInterval(-7200)
+
+        let result = harness.service.evaluateIdleSuspension()
+
+        XCTAssertEqual(result.suspendedTabIDs, [liveTab.id])
+        XCTAssertTrue(liveTab.isSuspended)
+        XCTAssertNil(liveTab.existingWebView)
+        XCTAssertNil(liveTab.primaryWindowId)
+        assertShortcutPin(
+            try XCTUnwrap(harness.browserManager.tabManager.essentialPins(for: profileId).first),
+            matches: pin
+        )
+        XCTAssertTrue(
+            harness.browserManager.tabManager.shortcutLiveTab(
+                for: pin.id,
+                in: harness.windowState.id
+            ) === liveTab
+        )
+        XCTAssertEqual(liveTab.shortcutPinId, pin.id)
+        XCTAssertEqual(liveTab.shortcutPinRole, .essential)
+
+        let reactivated = harness.browserManager.tabManager.activateShortcutPin(
+            pin,
+            in: harness.windowState.id,
+            currentSpaceId: harness.windowState.currentSpaceId
+        )
+        XCTAssertTrue(reactivated === liveTab)
+        harness.browserManager.selectTab(
+            reactivated,
+            in: harness.windowState,
+            loadPolicy: .immediate
+        )
+        _ = harness.coordinator.prepareVisibleWebViews(
+            for: harness.windowState,
+            browserManager: harness.browserManager
+        )
+
+        XCTAssertEqual(harness.windowState.currentShortcutPinId, pin.id)
+        XCTAssertEqual(harness.windowState.currentShortcutPinRole, .essential)
+        XCTAssertFalse(liveTab.isSuspended)
+        XCTAssertEqual(harness.coordinator.liveWebViews(for: liveTab).count, 1)
+        XCTAssertTrue(
+            harness.coordinator.getWebView(for: liveTab.id, in: harness.windowState.id) === liveTab.existingWebView
+        )
+        assertShortcutPin(
+            try XCTUnwrap(harness.browserManager.tabManager.essentialPins(for: profileId).first),
+            matches: pin
+        )
+    }
+
+    func testLightweightIdleEvaluationSuspendsSpacePinnedLauncherRuntimeOnly() throws {
+        let harness = makeHarness(memoryMode: .lightweight)
+        let selected = makeTab("https://example.com/current", harness: harness)
+        let spaceId = try XCTUnwrap(harness.windowState.currentSpaceId)
+        let pin = makeShortcutPin(
+            role: .spacePinned,
+            profileId: nil,
+            spaceId: spaceId,
+            index: 0,
+            launchURL: URL(string: "https://example.com/space-pinned")!,
+            title: "Space Pinned",
+            iconAsset: nil
+        )
+
+        harness.browserManager.tabManager.setSpacePinnedShortcuts([pin], for: spaceId)
+        let liveTab = harness.browserManager.tabManager.activateShortcutPin(
+            pin,
+            in: harness.windowState.id,
+            currentSpaceId: spaceId
+        )
+
+        setCurrentTab(selected, in: harness.windowState)
+        attachWebView(to: selected, harness: harness)
+        attachWebView(to: liveTab, harness: harness)
+        liveTab.lastSelectedAt = now.addingTimeInterval(-7200)
+
+        let result = harness.service.evaluateIdleSuspension()
+
+        XCTAssertEqual(result.suspendedTabIDs, [liveTab.id])
+        XCTAssertTrue(liveTab.isSuspended)
+        XCTAssertNil(liveTab.existingWebView)
+        XCTAssertNil(liveTab.primaryWindowId)
+        assertShortcutPin(
+            try XCTUnwrap(harness.browserManager.tabManager.spacePinnedPins(for: spaceId).first),
+            matches: pin
+        )
+        XCTAssertTrue(
+            harness.browserManager.tabManager.shortcutLiveTab(
+                for: pin.id,
+                in: harness.windowState.id
+            ) === liveTab
+        )
+        XCTAssertEqual(liveTab.shortcutPinId, pin.id)
+        XCTAssertEqual(liveTab.shortcutPinRole, .spacePinned)
+
+        let reactivated = harness.browserManager.tabManager.activateShortcutPin(
+            pin,
+            in: harness.windowState.id,
+            currentSpaceId: spaceId
+        )
+        XCTAssertTrue(reactivated === liveTab)
+        harness.browserManager.selectTab(
+            reactivated,
+            in: harness.windowState,
+            loadPolicy: .immediate
+        )
+        _ = harness.coordinator.prepareVisibleWebViews(
+            for: harness.windowState,
+            browserManager: harness.browserManager
+        )
+
+        XCTAssertEqual(harness.windowState.currentShortcutPinId, pin.id)
+        XCTAssertEqual(harness.windowState.currentShortcutPinRole, .spacePinned)
+        XCTAssertFalse(liveTab.isSuspended)
+        XCTAssertEqual(harness.coordinator.liveWebViews(for: liveTab).count, 1)
+        XCTAssertTrue(
+            harness.coordinator.getWebView(for: liveTab.id, in: harness.windowState.id) === liveTab.existingWebView
+        )
+        assertShortcutPin(
+            try XCTUnwrap(harness.browserManager.tabManager.spacePinnedPins(for: spaceId).first),
+            matches: pin
+        )
+    }
+
+    func testBalancedAndPerformanceKeepLauncherRuntimeDeferred() {
+        for mode in [SumiMemoryMode.balanced, .performance] {
+            let harness = makeHarness(memoryMode: mode)
+            let selected = makeTab("https://example.com/current-\(mode.rawValue)", harness: harness)
+            let pinned = makeTab("https://example.com/pinned-\(mode.rawValue)", harness: harness)
+            let essential = makeTab("https://example.com/essential-\(mode.rawValue)", harness: harness)
+            let eligible = makeTab("https://example.com/eligible-\(mode.rawValue)", harness: harness)
+
+            setCurrentTab(selected, in: harness.windowState)
+            attachWebView(to: selected, harness: harness)
+            attachWebView(to: pinned, harness: harness)
+            attachWebView(to: essential, harness: harness)
+            attachWebView(to: eligible, harness: harness)
+            pinned.isPinned = true
+            essential.isShortcutLiveInstance = true
+            essential.shortcutPinRole = .essential
+            pinned.lastSelectedAt = now.addingTimeInterval(-7200)
+            essential.lastSelectedAt = now.addingTimeInterval(-7200)
+            eligible.lastSelectedAt = now.addingTimeInterval(-7200)
+
+            let result = harness.service.handleMemoryPressure(.critical)
+
+            XCTAssertEqual(result.suspendedTabIDs, [eligible.id], "mode=\(mode.rawValue)")
+            XCTAssertFalse(pinned.isSuspended, "mode=\(mode.rawValue)")
+            XCTAssertFalse(essential.isSuspended, "mode=\(mode.rawValue)")
+            XCTAssertNotNil(harness.browserManager.tabManager.tab(for: pinned.id))
+            XCTAssertNotNil(harness.browserManager.tabManager.tab(for: essential.id))
+            XCTAssertEqual(
+                harness.service.suspensionEligibility(for: pinned),
+                .ineligible(reason: .launcherRuntimeSuspensionDeferred),
+                "mode=\(mode.rawValue)"
+            )
+            XCTAssertEqual(
+                harness.service.suspensionEligibility(for: essential),
+                .ineligible(reason: .launcherRuntimeSuspensionDeferred),
+                "mode=\(mode.rawValue)"
+            )
+        }
+    }
+
+    func testBalancedAndPerformanceKeepShortcutLauncherPinsAndOrderDeferred() throws {
+        for mode in [SumiMemoryMode.balanced, .performance] {
+            let harness = makeHarness(memoryMode: mode)
+            let selected = makeTab("https://example.com/current-\(mode.rawValue)", harness: harness)
+            let profileId = try XCTUnwrap(harness.browserManager.currentProfile?.id)
+            let spaceId = try XCTUnwrap(harness.windowState.currentSpaceId)
+            let essential = makeShortcutPin(
+                role: .essential,
+                profileId: profileId,
+                spaceId: nil,
+                index: 0,
+                launchURL: URL(string: "https://example.com/essential-\(mode.rawValue)")!,
+                title: "Essential \(mode.rawValue)",
+                iconAsset: "star.fill"
+            )
+            let spacePinned = makeShortcutPin(
+                role: .spacePinned,
+                profileId: nil,
+                spaceId: spaceId,
+                index: 1,
+                launchURL: URL(string: "https://example.com/space-\(mode.rawValue)")!,
+                title: "Space \(mode.rawValue)",
+                iconAsset: nil
+            )
+
+            harness.browserManager.tabManager.setPinnedTabs([essential], for: profileId)
+            harness.browserManager.tabManager.setSpacePinnedShortcuts([spacePinned], for: spaceId)
+            let essentialLiveTab = harness.browserManager.tabManager.activateShortcutPin(
+                essential,
+                in: harness.windowState.id,
+                currentSpaceId: spaceId
+            )
+            let spacePinnedLiveTab = harness.browserManager.tabManager.activateShortcutPin(
+                spacePinned,
+                in: harness.windowState.id,
+                currentSpaceId: spaceId
+            )
+
+            setCurrentTab(selected, in: harness.windowState)
+            attachWebView(to: selected, harness: harness)
+            attachWebView(to: essentialLiveTab, harness: harness)
+            attachWebView(to: spacePinnedLiveTab, harness: harness)
+            essentialLiveTab.lastSelectedAt = now.addingTimeInterval(-7200)
+            spacePinnedLiveTab.lastSelectedAt = now.addingTimeInterval(-7200)
+
+            let result = harness.service.evaluateIdleSuspension()
+
+            XCTAssertTrue(result.suspendedTabIDs.isEmpty, "mode=\(mode.rawValue)")
+            XCTAssertFalse(essentialLiveTab.isSuspended, "mode=\(mode.rawValue)")
+            XCTAssertFalse(spacePinnedLiveTab.isSuspended, "mode=\(mode.rawValue)")
+            assertShortcutPin(
+                try XCTUnwrap(harness.browserManager.tabManager.essentialPins(for: profileId).first),
+                matches: essential
+            )
+            assertShortcutPin(
+                try XCTUnwrap(harness.browserManager.tabManager.spacePinnedPins(for: spaceId).first),
+                matches: spacePinned
+            )
+        }
+    }
+
+    func testLightweightIdleEvaluationSuspendsSimpleShortcutLiveInstanceRuntimeOnly() {
+        let harness = makeHarness(memoryMode: .lightweight)
+        let selected = makeTab("https://example.com/current", harness: harness)
         let essential = makeTab("https://example.com/essential", harness: harness)
         let eligible = makeTab("https://example.com/eligible", harness: harness)
 
         setCurrentTab(selected, in: harness.windowState)
         attachWebView(to: selected, harness: harness)
-        attachWebView(to: pinned, harness: harness)
         attachWebView(to: essential, harness: harness)
         attachWebView(to: eligible, harness: harness)
-        pinned.isPinned = true
         essential.isShortcutLiveInstance = true
         essential.shortcutPinRole = .essential
-        pinned.lastSelectedAt = now.addingTimeInterval(-7200)
         essential.lastSelectedAt = now.addingTimeInterval(-7200)
         eligible.lastSelectedAt = now.addingTimeInterval(-7200)
 
         let result = harness.service.evaluateIdleSuspension()
 
-        XCTAssertEqual(result.suspendedTabIDs, [eligible.id])
-        XCTAssertFalse(pinned.isSuspended)
-        XCTAssertFalse(essential.isSuspended)
-        XCTAssertNotNil(harness.browserManager.tabManager.tab(for: pinned.id))
+        XCTAssertEqual(Set(result.suspendedTabIDs), Set([essential.id, eligible.id]))
+        XCTAssertTrue(essential.isSuspended)
+        XCTAssertTrue(eligible.isSuspended)
         XCTAssertNotNil(harness.browserManager.tabManager.tab(for: essential.id))
-        XCTAssertEqual(
-            harness.service.suspensionEligibility(for: pinned),
-            .ineligible(reason: .launcherRuntimeSuspensionDeferred)
-        )
-        XCTAssertEqual(
-            harness.service.suspensionEligibility(for: essential),
-            .ineligible(reason: .launcherRuntimeSuspensionDeferred)
-        )
     }
 
     func testIdleSchedulerStartAndStopAreIdempotent() {
@@ -778,8 +1051,8 @@ final class TabSuspensionServiceTests: XCTestCase {
         XCTAssertFalse(suspensionSource.contains("tabUnloadTimeoutChanged"))
         XCTAssertFalse(suspensionSource.contains("canEvictHiddenWebView"))
         XCTAssertFalse(suspensionSource.contains("createWebViewInternal"))
-        XCTAssertFalse(coordinatorSource.contains("TabSuspensionPolicy"))
-        XCTAssertFalse(coordinatorSource.contains("suspensionEligibility"))
+        XCTAssertTrue(coordinatorSource.contains("suspensionEligibility"))
+        XCTAssertFalse(coordinatorSource.contains("NormalTabWebViewFactory"))
 
         for forbiddenConstructor in [
             "SumiTrackingProtection(",
@@ -876,6 +1149,46 @@ final class TabSuspensionServiceTests: XCTestCase {
             in: harness.browserManager.tabManager.currentSpace,
             activate: false
         )
+    }
+
+    private func makeShortcutPin(
+        role: ShortcutPinRole,
+        profileId: UUID?,
+        spaceId: UUID?,
+        index: Int,
+        launchURL: URL,
+        title: String,
+        iconAsset: String?
+    ) -> ShortcutPin {
+        ShortcutPin(
+            id: UUID(),
+            role: role,
+            profileId: profileId,
+            spaceId: spaceId,
+            index: index,
+            folderId: nil,
+            launchURL: launchURL,
+            title: title,
+            iconAsset: iconAsset
+        )
+    }
+
+    private func assertShortcutPin(
+        _ actual: ShortcutPin,
+        matches expected: ShortcutPin,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(actual.id, expected.id, file: file, line: line)
+        XCTAssertEqual(actual.role, expected.role, file: file, line: line)
+        XCTAssertEqual(actual.profileId, expected.profileId, file: file, line: line)
+        XCTAssertEqual(actual.spaceId, expected.spaceId, file: file, line: line)
+        XCTAssertEqual(actual.index, expected.index, file: file, line: line)
+        XCTAssertEqual(actual.folderId, expected.folderId, file: file, line: line)
+        XCTAssertEqual(actual.launchURL, expected.launchURL, file: file, line: line)
+        XCTAssertEqual(actual.title, expected.title, file: file, line: line)
+        XCTAssertEqual(actual.systemIconName, expected.systemIconName, file: file, line: line)
+        XCTAssertEqual(actual.iconAsset, expected.iconAsset, file: file, line: line)
     }
 
     private func makeEligibilitySubject(
