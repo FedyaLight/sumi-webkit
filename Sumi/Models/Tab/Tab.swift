@@ -239,6 +239,17 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { webViewRuntime.webViewConfigurationOverride }
         set { webViewRuntime.webViewConfigurationOverride = newValue }
     }
+    var trackingProtectionAppliedAttachmentState: SumiTrackingProtectionAttachmentState? {
+        get { webViewRuntime.trackingProtectionAppliedAttachmentState }
+        set { webViewRuntime.trackingProtectionAppliedAttachmentState = newValue }
+    }
+    var trackingProtectionReloadRequirement: SumiTrackingProtectionReloadRequirement? {
+        get { webViewRuntime.trackingProtectionReloadRequirement }
+        set { webViewRuntime.trackingProtectionReloadRequirement = newValue }
+    }
+    var isTrackingProtectionReloadRequired: Bool {
+        trackingProtectionReloadRequirement != nil
+    }
     var didNotifyOpenToExtensions: Bool {
         get { webViewRuntime.extensionRuntimeState.didReportOpenForGeneration != 0 }
         set {
@@ -497,6 +508,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             return
         }
 
+        let rebuiltWebView = rebuildNormalWebViewForTrackingProtectionIfNeeded(
+            targetURL: newURL,
+            reason: "Tab.loadURL.trackingProtectionPolicy"
+        )
         resetPlaybackActivity()
         // The muted part of audioState is preserved to maintain the user's mute preference.
 
@@ -504,24 +519,14 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             // Grant read access to the containing directory for local resources
             let directoryURL = newURL.deletingLastPathComponent()
             if let webView = _webView {
-                if #available(macOS 15.5, *) {
-                    performMainFrameNavigationAfterHydrationIfNeeded(
-                        on: webView
-                    ) { resolvedWebView in
-                        resolvedWebView.loadFileURL(
-                            newURL,
-                            allowingReadAccessTo: directoryURL
-                        )
-                    }
-                } else {
-                    performMainFrameNavigation(
-                        on: webView
-                    ) { resolvedWebView in
-                        resolvedWebView.loadFileURL(
-                            newURL,
-                            allowingReadAccessTo: directoryURL
-                        )
-                    }
+                performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
+                    on: webView,
+                    waitForContentBlockingAssets: rebuiltWebView
+                ) { resolvedWebView in
+                    resolvedWebView.loadFileURL(
+                        newURL,
+                        allowingReadAccessTo: directoryURL
+                    )
                 }
             }
         } else {
@@ -536,18 +541,11 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             }
             request.timeoutInterval = 30.0
             if let webView = _webView {
-                if #available(macOS 15.5, *) {
-                    performMainFrameNavigationAfterHydrationIfNeeded(
-                        on: webView
-                    ) { resolvedWebView in
-                        resolvedWebView.load(request)
-                    }
-                } else {
-                    performMainFrameNavigation(
-                        on: webView
-                    ) { resolvedWebView in
-                        resolvedWebView.load(request)
-                    }
+                performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
+                    on: webView,
+                    waitForContentBlockingAssets: rebuiltWebView
+                ) { resolvedWebView in
+                    resolvedWebView.load(request)
                 }
             }
         }
@@ -644,6 +642,146 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         pageSuspensionVeto = .none
         hasPictureInPictureVideo = false
         isDisplayingPDFDocument = false
+    }
+
+    func trackingProtectionDesiredAttachmentState(
+        for targetURL: URL?
+    ) -> SumiTrackingProtectionAttachmentState {
+        guard let module = browserManager?.trackingProtectionModule else {
+            return .disabled(siteHost: nil)
+        }
+        return module.effectivePolicy(for: targetURL).attachmentState
+    }
+
+    func noteTrackingProtectionAttachmentApplied(
+        _ state: SumiTrackingProtectionAttachmentState
+    ) {
+        trackingProtectionAppliedAttachmentState = state
+    }
+
+    func markTrackingProtectionReloadRequiredIfNeeded(
+        afterChangingOverrideFor changedURL: URL?
+    ) {
+        guard let module = browserManager?.trackingProtectionModule,
+              let changedHost = module.normalizedSiteHost(for: changedURL),
+              changedHost == module.normalizedSiteHost(for: url)
+        else { return }
+
+        updateTrackingProtectionReloadRequirementForCurrentSite()
+    }
+
+    func updateTrackingProtectionReloadRequirementForCurrentSite() {
+        guard existingWebView != nil else {
+            clearTrackingProtectionReloadRequirement()
+            return
+        }
+
+        let desiredState = trackingProtectionDesiredAttachmentState(for: url)
+        guard desiredState.siteHost != nil,
+              let appliedState = trackingProtectionAppliedAttachmentState,
+              appliedState.isEnabled != desiredState.isEnabled
+        else {
+            clearTrackingProtectionReloadRequirement()
+            return
+        }
+
+        setTrackingProtectionReloadRequirement(
+            SumiTrackingProtectionReloadRequirement(
+                siteHost: desiredState.siteHost,
+                desiredAttachmentState: desiredState
+            )
+        )
+    }
+
+    func clearTrackingProtectionReloadRequirementIfResolved(for committedURL: URL) {
+        guard let requirement = trackingProtectionReloadRequirement else { return }
+
+        let committedState = trackingProtectionDesiredAttachmentState(for: committedURL)
+        if committedState.siteHost != requirement.siteHost
+            || trackingProtectionAppliedAttachmentState?.isEnabled == committedState.isEnabled {
+            clearTrackingProtectionReloadRequirement()
+        }
+    }
+
+    func trackingProtectionAttachmentRequiresNormalWebViewRebuild(
+        for targetURL: URL?
+    ) -> Bool {
+        guard existingWebView != nil,
+              webViewConfigurationOverride == nil,
+              !isPopupHost
+        else { return false }
+
+        let desiredState = trackingProtectionDesiredAttachmentState(for: targetURL)
+        guard let appliedState = trackingProtectionAppliedAttachmentState else {
+            return desiredState.isEnabled
+        }
+        return appliedState.isEnabled != desiredState.isEnabled
+    }
+
+    @discardableResult
+    func rebuildNormalWebViewForTrackingProtectionIfNeeded(
+        targetURL: URL?,
+        reason: String
+    ) -> Bool {
+        guard trackingProtectionAttachmentRequiresNormalWebViewRebuild(for: targetURL),
+              let previousWebView = existingWebView
+        else { return false }
+
+        let coordinator = browserManager?.webViewCoordinator
+        let previousWindowId = primaryWindowId ?? coordinator?.windowID(containing: previousWebView)
+        let hadTrackedWebViews = coordinator?.windowIDs(for: id).isEmpty == false
+        let previousAppliedState = trackingProtectionAppliedAttachmentState
+
+        guard let replacementWebView = makeNormalTabWebView(reason: reason) else {
+            return false
+        }
+
+        let removedTrackedWebViews = coordinator?.removeAllWebViews(for: self) ?? false
+        if hadTrackedWebViews && !removedTrackedWebViews {
+            trackingProtectionAppliedAttachmentState = previousAppliedState
+            return false
+        }
+
+        if !removedTrackedWebViews {
+            cleanupCloneWebView(previousWebView)
+            _webView = nil
+            primaryWindowId = nil
+        }
+
+        if let previousWindowId {
+            coordinator?.setWebView(replacementWebView, for: id, in: previousWindowId)
+            assignWebViewToWindow(replacementWebView, windowId: previousWindowId)
+            if let windowState = browserManager?.windowRegistry?.windows[previousWindowId] {
+                browserManager?.refreshCompositor(for: windowState)
+            }
+        } else {
+            _webView = replacementWebView
+        }
+
+        return true
+    }
+
+    private func setTrackingProtectionReloadRequirement(
+        _ requirement: SumiTrackingProtectionReloadRequirement
+    ) {
+        guard trackingProtectionReloadRequirement != requirement else { return }
+        trackingProtectionReloadRequirement = requirement
+        notifyTrackingProtectionReloadRequirementChanged()
+    }
+
+    private func clearTrackingProtectionReloadRequirement() {
+        guard trackingProtectionReloadRequirement != nil else { return }
+        trackingProtectionReloadRequirement = nil
+        notifyTrackingProtectionReloadRequirementChanged()
+    }
+
+    private func notifyTrackingProtectionReloadRequirementChanged() {
+        objectWillChange.send()
+        NotificationCenter.default.post(
+            name: .sumiTabNavigationStateDidChange,
+            object: self,
+            userInfo: ["tabId": id]
+        )
     }
 
     func markSuspended(at date: Date = Date()) {

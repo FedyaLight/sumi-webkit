@@ -27,6 +27,7 @@ enum SumiTrackingProtectionSiteOverride: String, Codable, CaseIterable, Sendable
 }
 
 enum SumiTrackingProtectionEffectiveSource: Equatable, Sendable {
+    case moduleDisabled
     case global
     case siteOverride(SumiTrackingProtectionSiteOverride)
 }
@@ -35,6 +36,21 @@ struct SumiTrackingProtectionEffectivePolicy: Equatable, Sendable {
     let host: String?
     let isEnabled: Bool
     let source: SumiTrackingProtectionEffectiveSource
+}
+
+struct SumiTrackingProtectionAttachmentState: Equatable, Sendable {
+    let siteHost: String?
+    let isEnabled: Bool
+
+    static func disabled(siteHost: String?) -> SumiTrackingProtectionAttachmentState {
+        SumiTrackingProtectionAttachmentState(siteHost: siteHost, isEnabled: false)
+    }
+}
+
+extension SumiTrackingProtectionEffectivePolicy {
+    var attachmentState: SumiTrackingProtectionAttachmentState {
+        SumiTrackingProtectionAttachmentState(siteHost: host, isEnabled: isEnabled)
+    }
 }
 
 struct SumiTrackingProtectionPolicy: Equatable, Sendable {
@@ -51,6 +67,40 @@ struct SumiTrackingProtectionPolicy: Equatable, Sendable {
     }
 }
 
+struct SumiTrackingProtectionSiteNormalizer {
+    private let tld: TLD
+
+    init(tld: TLD = TLD()) {
+        self.tld = tld
+    }
+
+    func normalizedHost(for url: URL?) -> String? {
+        guard let rawHost = url?.host else { return nil }
+        return normalizedHost(fromRawHost: rawHost)
+    }
+
+    func normalizedHost(fromUserInput input: String) -> String? {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if let url = URL(string: trimmed), url.host != nil {
+            return normalizedHost(for: url)
+        }
+        if let url = URL(string: "https://\(trimmed)"), url.host != nil {
+            return normalizedHost(for: url)
+        }
+        return normalizedHost(fromRawHost: trimmed)
+    }
+
+    func normalizedHost(fromRawHost rawHost: String) -> String? {
+        let host = rawHost
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            .lowercased()
+        guard !host.isEmpty else { return nil }
+        return tld.eTLDplus1(host) ?? host
+    }
+}
+
 @MainActor
 final class SumiTrackingProtectionSettings: ObservableObject {
     static let shared = SumiTrackingProtectionSettings()
@@ -64,7 +114,7 @@ final class SumiTrackingProtectionSettings: ObservableObject {
     @Published private(set) var siteOverrides: [String: SumiTrackingProtectionSiteOverride]
 
     private let userDefaults: UserDefaults
-    private let tld: TLD
+    private let siteNormalizer: SumiTrackingProtectionSiteNormalizer
     private let changesSubject = PassthroughSubject<Void, Never>()
 
     var changesPublisher: AnyPublisher<Void, Never> {
@@ -73,7 +123,7 @@ final class SumiTrackingProtectionSettings: ObservableObject {
 
     init(userDefaults: UserDefaults = .standard, tld: TLD = TLD()) {
         self.userDefaults = userDefaults
-        self.tld = tld
+        self.siteNormalizer = SumiTrackingProtectionSiteNormalizer(tld: tld)
 
         if let rawMode = userDefaults.string(forKey: DefaultsKey.globalMode),
            let mode = SumiTrackingProtectionGlobalMode(rawValue: rawMode) {
@@ -163,20 +213,11 @@ final class SumiTrackingProtectionSettings: ObservableObject {
     }
 
     func normalizedHost(for url: URL?) -> String? {
-        guard let rawHost = url?.host else { return nil }
-        return normalizedHost(fromRawHost: rawHost)
+        siteNormalizer.normalizedHost(for: url)
     }
 
     func normalizedHost(fromUserInput input: String) -> String? {
-        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        if let url = URL(string: trimmed), url.host != nil {
-            return normalizedHost(for: url)
-        }
-        if let url = URL(string: "https://\(trimmed)"), url.host != nil {
-            return normalizedHost(for: url)
-        }
-        return normalizedHost(fromRawHost: trimmed)
+        siteNormalizer.normalizedHost(fromUserInput: input)
     }
 
     private func setSiteOverride(
@@ -192,16 +233,6 @@ final class SumiTrackingProtectionSettings: ObservableObject {
         guard updated != siteOverrides else { return }
         siteOverrides = updated
         persistSiteOverrides()
-        changesSubject.send(())
-    }
-
-    private func normalizedHost(fromRawHost rawHost: String) -> String? {
-        let host = rawHost
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
-            .lowercased()
-        guard !host.isEmpty else { return nil }
-        return tld.eTLDplus1(host) ?? host
     }
 
     private func persistSiteOverrides() {

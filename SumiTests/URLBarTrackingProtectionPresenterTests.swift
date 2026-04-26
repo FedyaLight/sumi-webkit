@@ -14,6 +14,8 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
 
         XCTAssertEqual(presenter.rowTitle, "Tracking Protection")
         XCTAssertNil(presenter.rowSubtitle)
+        XCTAssertEqual(presenter.siteOverride, .inherit)
+        XCTAssertFalse(presenter.isReloadRequired)
         XCTAssertEqual(presenter.shieldIcon.chromeIconName, "shield.fill")
         XCTAssertEqual(presenter.shieldIcon.fallbackSystemName, "shield.fill")
         XCTAssertTrue(presenter.shieldIcon.showsCheckmark)
@@ -31,6 +33,8 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
         )
 
         XCTAssertNil(presenter.rowSubtitle)
+        XCTAssertEqual(presenter.siteOverride, .inherit)
+        XCTAssertFalse(presenter.isReloadRequired)
         XCTAssertEqual(presenter.shieldIcon.chromeIconName, "tracking-protection")
         XCTAssertEqual(presenter.shieldIcon.fallbackSystemName, "shield")
         XCTAssertFalse(presenter.shieldIcon.showsCheckmark)
@@ -38,7 +42,7 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
         XCTAssertEqual(presenter.shieldAccessibilityValue, "Off")
     }
 
-    func testPresenterDoesNotExposeLegacyURLHubMenuSubtitleOrDetailsText() {
+    func testPresenterDoesNotExposeModeChoiceStrings() {
         let presenter = URLBarTrackingProtectionPresenter.make(
             policy: SumiTrackingProtectionEffectivePolicy(
                 host: "example.com",
@@ -49,12 +53,45 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
         let visibleText = presenter.visibleStrings.joined(separator: "\n")
 
         XCTAssertFalse(visibleText.contains("Use Global Setting"))
+        XCTAssertFalse(visibleText.contains("Enable for This Site"))
+        XCTAssertFalse(visibleText.contains("Disable for This Site"))
+    }
+
+    func testReloadRequiredStateAppearsInPresenter() {
+        let presenter = URLBarTrackingProtectionPresenter.make(
+            policy: SumiTrackingProtectionEffectivePolicy(
+                host: "example.com",
+                isEnabled: false,
+                source: .siteOverride(.disabled)
+            ),
+            siteOverride: .disabled,
+            isReloadRequired: true
+        )
+
+        XCTAssertEqual(presenter.rowSubtitle, "Reload required")
+        XCTAssertTrue(presenter.isReloadRequired)
+        XCTAssertTrue(presenter.visibleStrings.contains("Reload required"))
+        XCTAssertFalse(presenter.visibleStrings.contains("Reload"))
+    }
+
+    func testPresenterDoesNotExposeLegacyURLHubDetailsText() {
+        let presenter = URLBarTrackingProtectionPresenter.make(
+            policy: SumiTrackingProtectionEffectivePolicy(
+                host: "example.com",
+                isEnabled: true,
+                source: .global
+            )
+        )
+        let visibleText = presenter.visibleStrings.joined(separator: "\n")
+
+        XCTAssertFalse(visibleText.contains("Use Global Setting"))
+        XCTAssertFalse(visibleText.contains("Enable for This Site"))
+        XCTAssertFalse(visibleText.contains("Disable for This Site"))
         XCTAssertFalse(visibleText.contains("Tracking Protection On"))
         XCTAssertFalse(visibleText.contains("Tracking Protection Off"))
         XCTAssertFalse(visibleText.contains("View protection details"))
         XCTAssertFalse(visibleText.contains("Click to see"))
         XCTAssertFalse(visibleText.contains("Source"))
-        XCTAssertFalse(visibleText.contains("Disable for this site"))
         XCTAssertFalse(visibleText.contains("No tracker activity"))
         XCTAssertFalse(visibleText.contains("Reload to apply changes"))
     }
@@ -80,6 +117,39 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
                 )
             ),
             .disabled
+        )
+    }
+
+    func testURLBarSourceKeepsControlsModuleGatedAndManualReloadOnly() throws {
+        let source = try Self.source(named: "Sumi/Components/Sidebar/URLBarView.swift")
+
+        XCTAssertTrue(source.contains("effectivePolicyIfEnabled(for: url)"))
+        XCTAssertTrue(source.contains("case .tracking(let policy, _, _)"))
+        XCTAssertTrue(source.contains("siteOverrideAfterToggle(for: policy)"))
+        XCTAssertTrue(source.contains("Reload required"))
+        XCTAssertTrue(source.contains("currentTab.markTrackingProtectionReloadRequiredIfNeeded"))
+        XCTAssertFalse(source.contains("Use Global Setting"))
+        XCTAssertFalse(source.contains("Enable for This Site"))
+        XCTAssertFalse(source.contains("Disable for This Site"))
+        XCTAssertFalse(source.contains("overrideChoices"))
+        XCTAssertFalse(source.contains("trackingReloadAction"))
+        XCTAssertFalse(source.contains("Button(\"Reload\")"))
+        XCTAssertFalse(source.contains("currentTab?.refresh()"))
+        XCTAssertFalse(source.contains("checkmark.circle.fill"))
+        XCTAssertFalse(source.contains("Image(systemName: presenter.isEnabled ?"))
+        XCTAssertFalse(source.localizedCaseInsensitiveContains("unified site settings"))
+        XCTAssertFalse(source.localizedCaseInsensitiveContains("onboarding"))
+        XCTAssertFalse(source.localizedCaseInsensitiveContains("stale tracker"))
+        XCTAssertFalse(source.localizedCaseInsensitiveContains("automatic tracker"))
+    }
+
+    private static func source(named relativePath: String) throws -> String {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: repoRoot.appendingPathComponent(relativePath),
+            encoding: .utf8
         )
     }
 }

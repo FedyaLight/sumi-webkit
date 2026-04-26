@@ -75,6 +75,7 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
         if let newURL = webView.url {
             tab.url = newURL
             tab.noteCommittedMainDocumentNavigation(to: newURL)
+            tab.clearTrackingProtectionReloadRequirementIfResolved(for: newURL)
             tab.historyRecorder.didCommitMainFrameNavigation(
                 to: newURL,
                 kind: tab.pendingMainFrameNavigationKind == .backForward ? .backForward : .regular,

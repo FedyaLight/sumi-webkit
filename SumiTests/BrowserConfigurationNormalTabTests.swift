@@ -97,6 +97,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
         registry.enable(.trackingProtection)
+        SumiTrackingProtectionSettings(userDefaults: harness.defaults).setGlobalMode(.enabled)
         let probe = NormalTabTrackingRuntimeProbe()
         let service = SumiContentBlockingService(
             policy: .enabled(ruleLists: [Self.validRuleListDefinition()])
@@ -142,6 +143,172 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
         XCTAssertEqual(disabledController.contentBlockingAssets?.globalRuleLists.count, 0)
         XCTAssertEqual(probe.serviceCount, 1)
+    }
+
+    func testEnabledTrackingModuleWithSiteDisabledAttachesNoRulesAndNoService() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.trackingProtection)
+        let settings = SumiTrackingProtectionSettings(userDefaults: harness.defaults)
+        settings.setGlobalMode(.enabled)
+        settings.setSiteOverride(.disabled, for: URL(string: "https://www.example.com/path")!)
+        let probe = NormalTabTrackingRuntimeProbe()
+        let service = SumiContentBlockingService(
+            policy: .enabled(ruleLists: [Self.validRuleListDefinition()])
+        )
+        let module = makeProbeTrackingModule(
+            registry: registry,
+            probe: probe,
+            defaults: harness.defaults,
+            service: service
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            trackingProtectionModule: module
+        )
+
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://sub.example.com/site-disabled",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        tab.setupWebView()
+        let controller = try XCTUnwrap(
+            tab.existingWebView?.configuration.userContentController as? UserContentController
+        )
+        await controller.awaitContentBlockingAssetsInstalled()
+
+        XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
+        XCTAssertEqual(probe.settingsCount, 1)
+        XCTAssertEqual(probe.dataStoreCount, 0)
+        XCTAssertEqual(probe.serviceCount, 0)
+        XCTAssertEqual(
+            tab.trackingProtectionAppliedAttachmentState,
+            SumiTrackingProtectionAttachmentState(siteHost: "example.com", isEnabled: false)
+        )
+    }
+
+    func testSiteOverrideChangeMarksReloadRequiredAndManualRebuildAppliesPolicy() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.trackingProtection)
+        let settings = SumiTrackingProtectionSettings(userDefaults: harness.defaults)
+        settings.setGlobalMode(.enabled)
+        let probe = NormalTabTrackingRuntimeProbe()
+        let service = SumiContentBlockingService(
+            policy: .enabled(ruleLists: [Self.validRuleListDefinition()])
+        )
+        let module = SumiTrackingProtectionModule(
+            moduleRegistry: registry,
+            settingsFactory: {
+                probe.settingsCount += 1
+                return settings
+            },
+            dataStoreFactory: {
+                probe.dataStoreCount += 1
+                return SumiTrackingProtectionDataStore(
+                    userDefaults: harness.defaults,
+                    storageDirectory: FileManager.default.temporaryDirectory
+                        .appendingPathComponent("SumiNormalTabReloadRequired-\(UUID().uuidString)", isDirectory: true)
+                )
+            },
+            contentBlockingServiceFactory: { _, _ in
+                probe.serviceCount += 1
+                return service
+            }
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            trackingProtectionModule: module
+        )
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://www.example.com/reload-required",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        tab.setupWebView()
+        let originalWebView = try XCTUnwrap(tab.existingWebView)
+        let originalController = try XCTUnwrap(
+            originalWebView.configuration.userContentController as? UserContentController
+        )
+        await originalController.awaitContentBlockingAssetsInstalled()
+        try await waitForAssets(on: originalController) { $0.globalRuleLists.count == 1 }
+
+        settings.setSiteOverride(.disabled, for: tab.url)
+        tab.markTrackingProtectionReloadRequiredIfNeeded(afterChangingOverrideFor: tab.url)
+
+        XCTAssertTrue(tab.isTrackingProtectionReloadRequired)
+        XCTAssertTrue(tab.existingWebView === originalWebView)
+
+        XCTAssertTrue(
+            tab.rebuildNormalWebViewForTrackingProtectionIfNeeded(
+                targetURL: tab.url,
+                reason: "BrowserConfigurationNormalTabTests.manualReload"
+            )
+        )
+        let rebuiltWebView = try XCTUnwrap(tab.existingWebView)
+        XCTAssertFalse(rebuiltWebView === originalWebView)
+        let rebuiltController = try XCTUnwrap(
+            rebuiltWebView.configuration.userContentController as? UserContentController
+        )
+        await rebuiltController.awaitContentBlockingAssetsInstalled()
+        XCTAssertEqual(rebuiltController.contentBlockingAssets?.globalRuleLists.count, 0)
+
+        tab.clearTrackingProtectionReloadRequirementIfResolved(for: tab.url)
+        XCTAssertFalse(tab.isTrackingProtectionReloadRequired)
+    }
+
+    func testChangingOverrideForNonCurrentSiteDoesNotMarkReloadRequired() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.trackingProtection)
+        let settings = SumiTrackingProtectionSettings(userDefaults: harness.defaults)
+        settings.setGlobalMode(.enabled)
+        let service = SumiContentBlockingService(
+            policy: .enabled(ruleLists: [Self.validRuleListDefinition()])
+        )
+        let module = SumiTrackingProtectionModule(
+            moduleRegistry: registry,
+            settingsFactory: { settings },
+            dataStoreFactory: {
+                SumiTrackingProtectionDataStore(
+                    userDefaults: harness.defaults,
+                    storageDirectory: FileManager.default.temporaryDirectory
+                        .appendingPathComponent("SumiNormalTabNonCurrentOverride-\(UUID().uuidString)", isDirectory: true)
+                )
+            },
+            contentBlockingServiceFactory: { _, _ in service }
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            trackingProtectionModule: module
+        )
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://www.example.com/current",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        tab.setupWebView()
+        let controller = try XCTUnwrap(
+            tab.existingWebView?.configuration.userContentController as? UserContentController
+        )
+        await controller.awaitContentBlockingAssetsInstalled()
+        try await waitForAssets(on: controller) { $0.globalRuleLists.count == 1 }
+
+        let otherURL = URL(string: "https://www.other.example/path")!
+        settings.setSiteOverride(.disabled, for: otherURL)
+        tab.markTrackingProtectionReloadRequiredIfNeeded(afterChangingOverrideFor: otherURL)
+
+        XCTAssertFalse(tab.isTrackingProtectionReloadRequired)
     }
 
     func testNormalTabsAfterManualTrackerDataUpdateUseCommittedWorkingRules() async throws {

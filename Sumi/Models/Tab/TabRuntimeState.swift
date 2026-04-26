@@ -21,6 +21,11 @@ struct TabBackForwardNavigationContext {
     let originHistoryItem: WKBackForwardListItem?
 }
 
+struct SumiTrackingProtectionReloadRequirement: Equatable {
+    let siteHost: String?
+    let desiredAttachmentState: SumiTrackingProtectionAttachmentState
+}
+
 enum BackForwardNavigationSettleDecision {
     static func shouldApplyDeferredActions(
         originURL: URL?,
@@ -126,6 +131,8 @@ final class TabWebViewRuntime {
     var isSuspensionRestoreInProgress: Bool = false
     var suspensionRestoreTraceState: OSSignpostIntervalState?
     var profileAwaitCancellable: AnyCancellable?
+    var trackingProtectionAppliedAttachmentState: SumiTrackingProtectionAttachmentState?
+    var trackingProtectionReloadRequirement: SumiTrackingProtectionReloadRequirement?
     var resolvedFaviconCacheKey: String?
     var faviconsTabExtension: FaviconsTabExtension?
     var faviconCancellables: Set<AnyCancellable> = []

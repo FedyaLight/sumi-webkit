@@ -357,12 +357,19 @@ extension Tab {
             return nil
         }
 
+        let trackingProtectionDecision = browserManager?.trackingProtectionModule
+            .normalTabContentBlockingDecision(for: url)
+        if let trackingProtectionDecision {
+            noteTrackingProtectionAttachmentApplied(
+                trackingProtectionDecision.attachmentState
+            )
+        }
+
         let configuration = BrowserConfiguration.shared.normalTabWebViewConfiguration(
             for: profile,
             url: url,
             userScriptsProvider: normalTabUserScriptsProvider(for: url),
-            contentBlockingService: browserManager?.trackingProtectionModule
-                .contentBlockingServiceIfEnabled()
+            contentBlockingService: trackingProtectionDecision?.contentBlockingService
         )
         BrowserConfiguration.shared.applySitePermissionOverrides(
             to: configuration,
