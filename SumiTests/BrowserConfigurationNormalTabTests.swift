@@ -1,4 +1,5 @@
 import BrowserServicesKit
+import TrackerRadarKit
 import UserScript
 import WebKit
 import XCTest
@@ -141,6 +142,79 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
         XCTAssertEqual(disabledController.contentBlockingAssets?.globalRuleLists.count, 0)
         XCTAssertEqual(probe.serviceCount, 1)
+    }
+
+    func testNormalTabsAfterManualTrackerDataUpdateUseCommittedWorkingRules() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.trackingProtection)
+        let settings = SumiTrackingProtectionSettings(userDefaults: harness.defaults)
+        settings.setGlobalMode(.enabled)
+        let storageDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SumiNormalTabManualUpdate-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: storageDirectory) }
+        let dataStore = SumiTrackingProtectionDataStore(
+            userDefaults: harness.defaults,
+            storageDirectory: storageDirectory
+        )
+        try dataStore.storeDownloadedData(
+            Self.trackerDataJSON(domain: "initial-normal-manual.example"),
+            etag: "\"initial-normal-manual\""
+        )
+        let module = SumiTrackingProtectionModule(
+            moduleRegistry: registry,
+            settingsFactory: { settings },
+            dataStoreFactory: { dataStore },
+            contentBlockingServiceFactory: { settings, dataStore in
+                SumiContentBlockingService(
+                    policy: .disabled,
+                    trackingProtectionSettings: settings,
+                    trackingRuleSource: SumiEmbeddedDDGTrackerDataRuleSource(dataStore: dataStore),
+                    trackingDataStore: dataStore
+                )
+            }
+        )
+        let updatedTrackerData = try Self.trackerDataJSON(domain: "updated-normal-manual.example")
+
+        let updateResult = await module.updateTrackerDataManually {
+            SumiTrackerDataUpdater(fetch: { request in
+                (
+                    updatedTrackerData,
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 200,
+                        httpVersion: nil,
+                        headerFields: ["ETag": "\"updated-normal-manual\""]
+                    )!
+                )
+            })
+        }
+
+        guard case .downloaded = updateResult else {
+            return XCTFail("Expected downloaded result, got \(updateResult)")
+        }
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            trackingProtectionModule: module
+        )
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/after-manual-update",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        tab.setupWebView()
+        let controller = try XCTUnwrap(
+            tab.existingWebView?.configuration.userContentController as? UserContentController
+        )
+        await controller.awaitContentBlockingAssetsInstalled()
+        try await waitForAssets(on: controller) { $0.globalRuleLists.count == 1 }
+
+        let activeDataSet = try dataStore.loadActiveDataSet()
+        XCTAssertEqual(activeDataSet.trackerData.trackers.keys.sorted(), ["updated-normal-manual.example"])
+        XCTAssertEqual(dataStore.downloadedETag, "\"updated-normal-manual\"")
     }
 
     func testNormalTabConfigurationCreatesDistinctControllersWithSharedProcessPool() {
@@ -360,6 +434,35 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             ]
             """
         )
+    }
+
+    private static func trackerDataJSON(domain: String) throws -> Data {
+        let ownerName = "Tracker Example"
+        let tracker = KnownTracker(
+            domain: domain,
+            defaultAction: .block,
+            owner: KnownTracker.Owner(
+                name: ownerName,
+                displayName: ownerName,
+                ownedBy: nil
+            ),
+            prevalence: 1,
+            subdomains: nil,
+            categories: ["Analytics"],
+            rules: nil
+        )
+        let entity = Entity(
+            displayName: ownerName,
+            domains: [domain],
+            prevalence: 1
+        )
+        let trackerData = TrackerData(
+            trackers: [domain: tracker],
+            entities: [ownerName: entity],
+            domains: [domain: ownerName],
+            cnames: nil
+        )
+        return try JSONEncoder().encode(trackerData)
     }
 
     @discardableResult

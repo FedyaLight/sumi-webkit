@@ -131,6 +131,8 @@ final class SettingsModuleToggleTests: XCTestCase {
         XCTAssertTrue(source.contains("sumiTrackingProtectionModule"))
         XCTAssertTrue(source.contains("settingsIfEnabled()"))
         XCTAssertTrue(source.contains("dataStoreIfEnabled()"))
+        XCTAssertTrue(source.contains("await trackingProtectionModule.updateTrackerDataManually()"))
+        XCTAssertTrue(source.contains("await trackingProtectionModule.resetTrackerDataToBundledManually()"))
 
         for forbiddenPattern in [
             "SumiTrackingProtectionSettings.shared",
@@ -138,9 +140,23 @@ final class SettingsModuleToggleTests: XCTestCase {
             "SumiContentBlockingService(",
             "SumiEmbeddedDDGTrackerDataRuleSource(",
             "SumiTrackerDataUpdater(",
+            "trackingProtectionDataStore.updateTrackerData",
+            "trackingProtectionDataStore.resetToBundled",
         ] {
             XCTAssertFalse(source.contains(forbiddenPattern), "\(forbiddenPattern) is referenced by Privacy settings")
         }
+    }
+
+    func testTrackingProtectionSettingsAvoidAutomaticOrBrowserUpdateCopy() throws {
+        let source = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
+
+        XCTAssertTrue(source.contains("Update tracker data"))
+        XCTAssertTrue(source.contains("Reset to bundled tracker data"))
+        XCTAssertFalse(source.localizedCaseInsensitiveContains("stale"))
+        XCTAssertFalse(source.localizedCaseInsensitiveContains("automatic update"))
+        XCTAssertFalse(source.localizedCaseInsensitiveContains("browser update"))
+        XCTAssertFalse(source.localizedCaseInsensitiveContains("app update"))
+        XCTAssertFalse(source.localizedCaseInsensitiveContains("application update"))
     }
 
     func testSettingsSourcesAvoidDisallowedModuleSurfaces() throws {
