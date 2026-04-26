@@ -8,6 +8,18 @@ import XCTest
 
 @MainActor
 final class SumiContentBlockingInfrastructureTests: XCTestCase {
+    func testDefaultFactoryInstallsDisabledAssetsWithoutContentBlockingService() async throws {
+        let controller = SumiNormalTabUserContentControllerFactory.makeController()
+
+        await controller.awaitContentBlockingAssetsInstalled()
+
+        XCTAssertTrue(controller.contentBlockingAssetsInstalled)
+        XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
+        XCTAssertFalse(controller.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking))
+        XCTAssertTrue(controller.sumiUsesNormalTabBrowserServicesKitUserContentController)
+        XCTAssertFalse(controller.userScripts.isEmpty)
+    }
+
     func testDefaultPolicyInstallsNoGlobalRuleListsThroughBSKController() async throws {
         let service = SumiContentBlockingService(policy: .disabled)
         let controller = SumiNormalTabUserContentControllerFactory.makeController(

@@ -360,7 +360,9 @@ extension Tab {
         let configuration = BrowserConfiguration.shared.normalTabWebViewConfiguration(
             for: profile,
             url: url,
-            userScriptsProvider: normalTabUserScriptsProvider(for: url)
+            userScriptsProvider: normalTabUserScriptsProvider(for: url),
+            contentBlockingService: browserManager?.trackingProtectionModule
+                .contentBlockingServiceIfEnabled()
         )
         BrowserConfiguration.shared.applySitePermissionOverrides(
             to: configuration,

@@ -1,4 +1,5 @@
 import Combine
+import BrowserServicesKit
 import WebKit
 import XCTest
 @testable import Sumi
@@ -245,7 +246,7 @@ final class WebViewCoordinatorTests: XCTestCase {
         browserManager.webViewCoordinator = coordinator
 
         let tab = browserManager.tabManager.createNewTab(
-            url: "https://example.com/title-observer",
+            url: "about:blank",
             in: browserManager.tabManager.currentSpace,
             activate: false
         )
@@ -266,6 +267,11 @@ final class WebViewCoordinatorTests: XCTestCase {
             for: tab,
             in: windowId
         ))
+        if let controller = webView.configuration.userContentController as? UserContentController {
+            await controller.awaitContentBlockingAssetsInstalled()
+        }
+        await Task.yield()
+        webView.stopLoading()
         webView.loadHTMLString(
             """
             <!doctype html>

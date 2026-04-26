@@ -135,19 +135,45 @@ enum SumiNormalTabUserContentControllerFactory {
         profileId: UUID? = nil
     ) -> UserContentController {
         let scriptsProvider = scriptsProvider ?? SumiNormalTabUserScripts()
-        let contentBlockingService = contentBlockingService ?? .shared
-        let delegate = SumiNormalTabUserContentControllerDelegate()
-        let controller = UserContentController(
-            assetsPublisher: contentBlockingService.userContentPublisher(
+        let assetsPublisher: AnyPublisher<SumiNormalTabUserContent, Never>
+        let privacyConfigurationManager: PrivacyConfigurationManaging
+
+        if let contentBlockingService {
+            assetsPublisher = contentBlockingService.userContentPublisher(
                 for: scriptsProvider,
                 profileId: profileId
-            ),
-            privacyConfigurationManager: contentBlockingService.privacyConfigurationManager
+            )
+            privacyConfigurationManager = contentBlockingService.privacyConfigurationManager
+        } else {
+            assetsPublisher = Just(
+                SumiNormalTabUserContent(
+                    rulesUpdate: disabledContentBlockingUpdate(),
+                    sourceProvider: scriptsProvider
+                )
+            )
+            .eraseToAnyPublisher()
+            privacyConfigurationManager = SumiContentBlockingPrivacyConfigurationManager(
+                isContentBlockingEnabled: false
+            )
+        }
+
+        let delegate = SumiNormalTabUserContentControllerDelegate()
+        let controller = UserContentController(
+            assetsPublisher: assetsPublisher,
+            privacyConfigurationManager: privacyConfigurationManager
         )
         controller.delegate = delegate
         controller.sumiNormalTabControllerDelegate = delegate
         controller.sumiNormalTabUserScriptsProvider = scriptsProvider
         controller.sumiUsesNormalTabBrowserServicesKitUserContentController = true
         return controller
+    }
+
+    private static func disabledContentBlockingUpdate() -> ContentBlockerRulesManager.UpdateEvent {
+        ContentBlockerRulesManager.UpdateEvent(
+            rules: [],
+            changes: [:],
+            completionTokens: []
+        )
     }
 }

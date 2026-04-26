@@ -24,6 +24,167 @@ final class SumiTrackingProtectionTests: XCTestCase {
         super.tearDown()
     }
 
+    func testDisabledModuleDoesNotConstructTrackingRuntimeFactories() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        let probe = TrackingProtectionModuleFactoryProbe()
+        let module = SumiTrackingProtectionModule(
+            moduleRegistry: registry,
+            settingsFactory: {
+                probe.settingsCount += 1
+                return self.makeSettings()
+            },
+            dataStoreFactory: {
+                probe.dataStoreCount += 1
+                return self.makeDataStore()
+            },
+            contentBlockingServiceFactory: { _, _ in
+                probe.serviceCount += 1
+                return SumiContentBlockingService(policy: .disabled)
+            }
+        )
+
+        XCTAssertFalse(module.isEnabled)
+        XCTAssertNil(module.settingsIfEnabled())
+        XCTAssertNil(module.dataStoreIfEnabled())
+        XCTAssertNil(module.contentBlockingServiceIfEnabled())
+        XCTAssertEqual(probe.settingsCount, 0)
+        XCTAssertEqual(probe.dataStoreCount, 0)
+        XCTAssertEqual(probe.serviceCount, 0)
+    }
+
+    func testEnabledModuleConstructsRuntimeLazilyOnce() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.trackingProtection)
+        let settings = makeSettings()
+        let dataStore = makeDataStore()
+        let service = SumiContentBlockingService(policy: .disabled)
+        let probe = TrackingProtectionModuleFactoryProbe()
+        let module = SumiTrackingProtectionModule(
+            moduleRegistry: registry,
+            settingsFactory: {
+                probe.settingsCount += 1
+                return settings
+            },
+            dataStoreFactory: {
+                probe.dataStoreCount += 1
+                return dataStore
+            },
+            contentBlockingServiceFactory: { _, _ in
+                probe.serviceCount += 1
+                return service
+            }
+        )
+
+        XCTAssertTrue(module.isEnabled)
+        XCTAssertEqual(probe.settingsCount, 0)
+        XCTAssertTrue(module.settingsIfEnabled() === settings)
+        XCTAssertEqual(probe.settingsCount, 1)
+        XCTAssertEqual(probe.dataStoreCount, 0)
+        XCTAssertEqual(probe.serviceCount, 0)
+
+        XCTAssertTrue(module.contentBlockingServiceIfEnabled() === service)
+        XCTAssertTrue(module.contentBlockingServiceIfEnabled() === service)
+        XCTAssertEqual(probe.settingsCount, 1)
+        XCTAssertEqual(probe.dataStoreCount, 1)
+        XCTAssertEqual(probe.serviceCount, 1)
+    }
+
+    func testDisablingModulePreventsFutureRuntimeAccess() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.trackingProtection)
+        let probe = TrackingProtectionModuleFactoryProbe()
+        let module = SumiTrackingProtectionModule(
+            moduleRegistry: registry,
+            settingsFactory: {
+                probe.settingsCount += 1
+                return self.makeSettings()
+            },
+            dataStoreFactory: {
+                probe.dataStoreCount += 1
+                return self.makeDataStore()
+            },
+            contentBlockingServiceFactory: { _, _ in
+                probe.serviceCount += 1
+                return SumiContentBlockingService(policy: .disabled)
+            }
+        )
+
+        XCTAssertNotNil(module.contentBlockingServiceIfEnabled())
+        XCTAssertEqual(probe.serviceCount, 1)
+
+        registry.disable(.trackingProtection)
+
+        XCTAssertFalse(module.isEnabled)
+        XCTAssertNil(module.settingsIfEnabled())
+        XCTAssertNil(module.dataStoreIfEnabled())
+        XCTAssertNil(module.contentBlockingServiceIfEnabled())
+        XCTAssertEqual(probe.serviceCount, 1)
+    }
+
+    func testEnabledModuleServicePreservesExistingTrackingContentBlockingBehavior() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.trackingProtection)
+        let settings = makeSettings()
+        settings.setGlobalMode(.enabled)
+        let dataStore = makeDataStore()
+        let ruleSource = CountingTrackingRuleSource { requestCount, _ in
+            [Self.validRuleListDefinition(hostSuffix: "module-enabled-\(requestCount)")]
+        }
+        let probe = TrackingProtectionModuleFactoryProbe()
+        let module = SumiTrackingProtectionModule(
+            moduleRegistry: registry,
+            settingsFactory: {
+                probe.settingsCount += 1
+                return settings
+            },
+            dataStoreFactory: {
+                probe.dataStoreCount += 1
+                return dataStore
+            },
+            contentBlockingServiceFactory: { settings, dataStore in
+                probe.serviceCount += 1
+                return SumiContentBlockingService(
+                    policy: .disabled,
+                    trackingProtectionSettings: settings,
+                    trackingRuleSource: ruleSource,
+                    trackingDataStore: dataStore
+                )
+            }
+        )
+
+        let service = try XCTUnwrap(module.contentBlockingServiceIfEnabled())
+        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: service
+        )
+
+        await controller.awaitContentBlockingAssetsInstalled()
+        try await waitUntil {
+            controller.contentBlockingAssets?.globalRuleLists.count == 1
+        }
+
+        XCTAssertEqual(probe.settingsCount, 1)
+        XCTAssertEqual(probe.dataStoreCount, 1)
+        XCTAssertEqual(probe.serviceCount, 1)
+        XCTAssertEqual(ruleSource.requestCount, 1)
+        XCTAssertTrue(service.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking))
+    }
+
     func testDefaultDisabledLoadsNoTrackerDataAndCompilesNoRules() async throws {
         let settings = makeSettings()
         let source = CountingTrackingRuleSource()
@@ -397,6 +558,25 @@ final class SumiTrackingProtectionTests: XCTestCase {
         XCTAssertEqual(source.policies.last?.disabledSiteHosts, ["example.com"])
     }
 
+    func testProductionSourcesDoNotUseSharedTrackingRuntimeOutsideModule() throws {
+        let guardedSources = [
+            "Sumi/Components/Settings/PrivacySettingsView.swift",
+            "Sumi/Components/Sidebar/URLBarView.swift",
+            "Sumi/Favicons/DDG/SumiDDGFaviconUserContentController.swift",
+            "Sumi/Managers/BrowserManager/BrowserManager.swift",
+            "Sumi/Models/BrowserConfig/BrowserConfig.swift",
+            "Sumi/Models/Tab/Tab+WebViewRuntime.swift",
+        ]
+
+        for relativePath in guardedSources {
+            let source = try Self.source(named: relativePath)
+            XCTAssertFalse(source.contains("SumiContentBlockingService.shared"), relativePath)
+            XCTAssertFalse(source.contains("SumiTrackingProtectionSettings.shared"), relativePath)
+            XCTAssertFalse(source.contains("SumiTrackingProtectionDataStore.shared"), relativePath)
+            XCTAssertFalse(source.contains("SumiEmbeddedDDGTrackerDataRuleSource("), relativePath)
+        }
+    }
+
     private func makeSettings() -> SumiTrackingProtectionSettings {
         SumiTrackingProtectionSettings(userDefaults: makeUserDefaults())
     }
@@ -529,6 +709,21 @@ final class SumiTrackingProtectionTests: XCTestCase {
         }
         XCTFail("Timed out waiting for tracking-protection condition")
     }
+
+    private static func source(named relativePath: String) throws -> String {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = repoRoot.appendingPathComponent(relativePath)
+        return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+}
+
+@MainActor
+private final class TrackingProtectionModuleFactoryProbe {
+    var settingsCount = 0
+    var dataStoreCount = 0
+    var serviceCount = 0
 }
 
 private struct StaticBundledTrackerDataProvider: SumiBundledTrackerDataProviding {

@@ -62,6 +62,8 @@ extension BrowserManager {
                     .environment(windowRegistry)
                     .environment(webViewCoordinator)
                     .environment(\.sumiSettings, self.sumiSettings ?? SumiSettingsService())
+                    .environment(\.sumiModuleRegistry, self.moduleRegistry)
+                    .environment(\.sumiTrackingProtectionModule, self.trackingProtectionModule)
 
                 return NSHostingView(rootView: contentView)
             },

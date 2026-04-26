@@ -4,10 +4,19 @@ private struct SumiModuleRegistryEnvironmentKey: EnvironmentKey {
     static let defaultValue = SumiModuleRegistry.shared
 }
 
+private struct SumiTrackingProtectionModuleEnvironmentKey: EnvironmentKey {
+    static let defaultValue = SumiTrackingProtectionModule.shared
+}
+
 extension EnvironmentValues {
     var sumiModuleRegistry: SumiModuleRegistry {
         get { self[SumiModuleRegistryEnvironmentKey.self] }
         set { self[SumiModuleRegistryEnvironmentKey.self] = newValue }
+    }
+
+    var sumiTrackingProtectionModule: SumiTrackingProtectionModule {
+        get { self[SumiTrackingProtectionModuleEnvironmentKey.self] }
+        set { self[SumiTrackingProtectionModuleEnvironmentKey.self] = newValue }
     }
 }
 

@@ -84,15 +84,6 @@ enum SumiContentBlockingCompilationError: Error {
 
 @MainActor
 final class SumiContentBlockingService {
-    static let shared = SumiContentBlockingService(
-        policy: .defaultPolicy,
-        trackingProtectionSettings: .shared,
-        trackingRuleSource: SumiEmbeddedDDGTrackerDataRuleSource(),
-        trackingDataStore: .shared,
-        siteDataPolicyStore: .shared,
-        siteDataRuleSource: SumiSiteDataCookieBlockingRuleSource()
-    )
-
     let privacyConfigurationManager: SumiContentBlockingPrivacyConfigurationManager
 
     private let compiler: SumiContentRuleListCompiling
@@ -174,6 +165,9 @@ final class SumiContentBlockingService {
         profileId: UUID?
     ) -> AnyPublisher<SumiNormalTabUserContent, Never> {
         guard let profileId else {
+            return userContentPublisher(for: scriptsProvider)
+        }
+        guard trackingProtectionSettings != nil || siteDataRuleSource != nil else {
             return userContentPublisher(for: scriptsProvider)
         }
 
