@@ -20,6 +20,25 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
         XCTAssertFalse(controller.userScripts.isEmpty)
     }
 
+    func testDisabledEmptyAssetSourceIsCheapAndHasNoRuleLists() async throws {
+        let scriptsProvider = SumiNormalTabUserScripts()
+        let assetSource = SumiNormalTabContentBlockingAssetSource.disabledEmpty(
+            scriptsProvider: scriptsProvider
+        )
+        let controller = UserContentController(
+            assetsPublisher: assetSource.assetsPublisher,
+            privacyConfigurationManager: assetSource.privacyConfigurationManager
+        )
+        let delegate = NoOpUserContentControllerDelegate()
+        controller.delegate = delegate
+
+        await controller.awaitContentBlockingAssetsInstalled()
+
+        XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
+        XCTAssertFalse(assetSource.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking))
+        XCTAssertTrue(scriptsProvider.userScripts.isEmpty == false)
+    }
+
     func testDefaultPolicyInstallsNoGlobalRuleListsThroughBSKController() async throws {
         let service = SumiContentBlockingService(policy: .disabled)
         let controller = SumiNormalTabUserContentControllerFactory.makeController(
@@ -221,6 +240,21 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
                 cancellable?.cancel()
             }
         }
+    }
+}
+
+private final class NoOpUserContentControllerDelegate: UserContentControllerDelegate {
+    @MainActor
+    func userContentController(
+        _ userContentController: UserContentController,
+        didInstallContentRuleLists contentRuleLists: [String: WKContentRuleList],
+        userScripts: UserScriptsProvider,
+        updateEvent: ContentBlockerRulesManager.UpdateEvent
+    ) {
+        _ = userContentController
+        _ = contentRuleLists
+        _ = userScripts
+        _ = updateEvent
     }
 }
 

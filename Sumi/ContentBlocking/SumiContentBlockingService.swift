@@ -93,6 +93,7 @@ final class SumiContentBlockingService {
 
     private let compiler: SumiContentRuleListCompiling
     private let updatesSubject: CurrentValueSubject<ContentBlockerRulesManager.UpdateEvent?, Never>
+    private let ruleListProvider: SumiContentRuleListSetProviding?
     private let trackingProtectionSettings: SumiTrackingProtectionSettings?
     private let trackingRuleSource: SumiTrackingProtectionRuleProviding?
     private let trackingDataStore: SumiTrackingProtectionDataStore?
@@ -112,6 +113,7 @@ final class SumiContentBlockingService {
     init(
         policy: SumiContentBlockingPolicy = .defaultPolicy,
         compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler(),
+        ruleListProvider: SumiContentRuleListSetProviding? = nil,
         trackingProtectionSettings: SumiTrackingProtectionSettings? = nil,
         trackingRuleSource: SumiTrackingProtectionRuleProviding? = nil,
         trackingDataStore: SumiTrackingProtectionDataStore? = nil,
@@ -120,6 +122,7 @@ final class SumiContentBlockingService {
     ) {
         currentPolicy = policy
         self.compiler = compiler
+        self.ruleListProvider = ruleListProvider
         self.trackingProtectionSettings = trackingProtectionSettings
         self.trackingRuleSource = trackingRuleSource
         self.trackingDataStore = trackingDataStore
@@ -138,7 +141,10 @@ final class SumiContentBlockingService {
         latestUpdate = initialUpdate
         updatesSubject = CurrentValueSubject(initialUpdate)
 
-        if trackingProtectionSettings != nil || siteDataPolicyStore != nil {
+        if let ruleListProvider {
+            bindRuleListProvider(ruleListProvider)
+            scheduleTrackingPolicyRefresh()
+        } else if trackingProtectionSettings != nil || siteDataPolicyStore != nil {
             bindTrackingProtection()
             scheduleTrackingPolicyRefresh()
         } else if !policy.ruleLists.isEmpty {
@@ -172,7 +178,10 @@ final class SumiContentBlockingService {
         guard let profileId else {
             return userContentPublisher(for: scriptsProvider)
         }
-        guard trackingProtectionSettings != nil || siteDataRuleSource != nil else {
+        guard ruleListProvider?.hasProfileSpecificRuleLists == true
+            || trackingProtectionSettings != nil
+            || siteDataRuleSource != nil
+        else {
             return userContentPublisher(for: scriptsProvider)
         }
 
@@ -207,17 +216,45 @@ final class SumiContentBlockingService {
     func validateManualTrackingRuleLists(
         _ definitions: [SumiContentRuleListDefinition]
     ) async throws {
-        _ = try await updateEvent(for: definitions)
+        try await validateRuleLists(definitions)
     }
 
     func prepareManualTrackingDataUpdate(
         trackingRuleLists: [SumiContentRuleListDefinition]
     ) async throws -> SumiPreparedContentBlockingUpdate {
         var definitions = trackingRuleLists
-        if let siteDataRuleSource {
+        if let ruleListProvider {
+            definitions.append(
+                contentsOf: try ruleListProvider
+                    .ruleListSet(profileId: nil)
+                    .siteDataCookieBlocking
+            )
+        } else if let siteDataRuleSource {
             definitions.append(contentsOf: try siteDataRuleSource.ruleLists(profileId: nil))
         }
 
+        return try await prepareRuleListUpdate(ruleLists: definitions)
+    }
+
+    func commitPreparedManualTrackingDataUpdate(
+        _ preparedUpdate: SumiPreparedContentBlockingUpdate,
+        refreshProfileSubjects: Bool = true
+    ) {
+        commitPreparedContentBlockingUpdate(
+            preparedUpdate,
+            refreshProfileSubjects: refreshProfileSubjects
+        )
+    }
+
+    func validateRuleLists(
+        _ definitions: [SumiContentRuleListDefinition]
+    ) async throws {
+        _ = try await updateEvent(for: definitions)
+    }
+
+    func prepareRuleListUpdate(
+        ruleLists definitions: [SumiContentRuleListDefinition]
+    ) async throws -> SumiPreparedContentBlockingUpdate {
         let policy: SumiContentBlockingPolicy = definitions.isEmpty
             ? .disabled
             : .enabled(ruleLists: definitions)
@@ -228,7 +265,7 @@ final class SumiContentBlockingService {
         )
     }
 
-    func commitPreparedManualTrackingDataUpdate(
+    func commitPreparedContentBlockingUpdate(
         _ preparedUpdate: SumiPreparedContentBlockingUpdate,
         refreshProfileSubjects: Bool = true
     ) {
@@ -243,6 +280,14 @@ final class SumiContentBlockingService {
         if refreshProfileSubjects {
             scheduleActiveProfilePolicyRefreshes(delayNanoseconds: 0)
         }
+    }
+
+    private func bindRuleListProvider(_ provider: SumiContentRuleListSetProviding) {
+        provider.changesPublisher
+            .sink { [weak self] in
+                self?.scheduleTrackingPolicyRefresh(refreshProfileSubjects: true)
+            }
+            .store(in: &cancellables)
     }
 
     private func bindTrackingProtection() {
@@ -327,6 +372,11 @@ final class SumiContentBlockingService {
                 guard self.profileRefreshGenerations[key] == generation else { return }
                 let update = try await self.updateEvent(for: ruleLists)
                 guard self.profileRefreshGenerations[key] == generation else { return }
+                if !ruleLists.isEmpty {
+                    self.privacyConfigurationManager.setContentBlockingEnabled(true)
+                } else if self.currentPolicy.ruleLists.isEmpty {
+                    self.privacyConfigurationManager.setContentBlockingEnabled(false)
+                }
                 self.profileSubject(for: profileId).send(update)
             } catch {
                 guard self.profileRefreshGenerations[key] == generation else { return }
@@ -340,6 +390,10 @@ final class SumiContentBlockingService {
     }
 
     private func ruleLists(profileId: UUID?) throws -> [SumiContentRuleListDefinition] {
+        if let ruleListProvider {
+            return try ruleListProvider.ruleListSet(profileId: profileId).allDefinitions
+        }
+
         var ruleLists: [SumiContentRuleListDefinition] = []
 
         if let trackingProtectionSettings,

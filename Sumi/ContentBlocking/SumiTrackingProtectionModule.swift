@@ -12,10 +12,14 @@ enum SumiTrackingProtectionManualUpdateResult: Equatable, Sendable {
 
 struct SumiTrackingProtectionNormalTabContentBlockingDecision {
     let effectivePolicy: SumiTrackingProtectionEffectivePolicy
-    let contentBlockingService: SumiContentBlockingService?
+    let contentBlockingAssets: SumiTrackingContentBlockingAssets?
 
     var attachmentState: SumiTrackingProtectionAttachmentState {
         effectivePolicy.attachmentState
+    }
+
+    var contentBlockingService: SumiContentBlockingService? {
+        contentBlockingAssets?.contentBlockingService
     }
 }
 
@@ -26,40 +30,51 @@ final class SumiTrackingProtectionModule {
     private let moduleRegistry: SumiModuleRegistry
     private let settingsFactory: @MainActor () -> SumiTrackingProtectionSettings
     private let dataStoreFactory: @MainActor () -> SumiTrackingProtectionDataStore
-    private let contentBlockingServiceFactory: @MainActor (
+    private let contentBlockingAssetsFactory: @MainActor (
         SumiTrackingProtectionSettings,
         SumiTrackingProtectionDataStore
-    ) -> SumiContentBlockingService
+    ) -> SumiTrackingContentBlockingAssets
     private let siteNormalizer: SumiTrackingProtectionSiteNormalizer
 
     private var cachedSettings: SumiTrackingProtectionSettings?
     private var cachedDataStore: SumiTrackingProtectionDataStore?
-    private var cachedContentBlockingService: SumiContentBlockingService?
-    private var cachedContentBlockingServicePolicy: SumiTrackingProtectionPolicy?
+    private var cachedContentBlockingAssets: SumiTrackingContentBlockingAssets?
 
     init(
         moduleRegistry: SumiModuleRegistry = .shared,
         settingsFactory: @escaping @MainActor () -> SumiTrackingProtectionSettings = { .shared },
         dataStoreFactory: @escaping @MainActor () -> SumiTrackingProtectionDataStore = { .shared },
-        contentBlockingServiceFactory: @escaping @MainActor (
+        contentBlockingAssetsFactory: (@MainActor (
             SumiTrackingProtectionSettings,
             SumiTrackingProtectionDataStore
-        ) -> SumiContentBlockingService = { settings, dataStore in
-            SumiContentBlockingService(
-                policy: .defaultPolicy,
-                trackingProtectionSettings: settings,
-                trackingRuleSource: SumiEmbeddedDDGTrackerDataRuleSource(dataStore: dataStore),
-                trackingDataStore: dataStore,
-                siteDataPolicyStore: .shared,
-                siteDataRuleSource: SumiSiteDataCookieBlockingRuleSource()
-            )
-        },
+        ) -> SumiTrackingContentBlockingAssets)? = nil,
+        contentBlockingServiceFactory: (@MainActor (
+            SumiTrackingProtectionSettings,
+            SumiTrackingProtectionDataStore
+        ) -> SumiContentBlockingService)? = nil,
         siteNormalizer: SumiTrackingProtectionSiteNormalizer = SumiTrackingProtectionSiteNormalizer()
     ) {
         self.moduleRegistry = moduleRegistry
         self.settingsFactory = settingsFactory
         self.dataStoreFactory = dataStoreFactory
-        self.contentBlockingServiceFactory = contentBlockingServiceFactory
+        self.contentBlockingAssetsFactory = { settings, dataStore in
+            if let contentBlockingAssetsFactory {
+                return contentBlockingAssetsFactory(settings, dataStore)
+            }
+
+            let ruleListProvider = SumiTrackingRuleListProvider(
+                settings: settings,
+                dataStore: dataStore,
+                siteDataPolicyStore: .shared
+            )
+            if let contentBlockingServiceFactory {
+                return SumiTrackingContentBlockingAssets(
+                    ruleListProvider: ruleListProvider,
+                    contentBlockingService: contentBlockingServiceFactory(settings, dataStore)
+                )
+            }
+            return SumiTrackingContentBlockingAssets(ruleListProvider: ruleListProvider)
+        }
         self.siteNormalizer = siteNormalizer
     }
 
@@ -87,22 +102,23 @@ final class SumiTrackingProtectionModule {
         return dataStore
     }
 
-    func contentBlockingServiceIfEnabled() -> SumiContentBlockingService? {
+    func contentBlockingAssetsIfEnabled() -> SumiTrackingContentBlockingAssets? {
         guard isEnabled else { return nil }
         let settings = settingsIfEnabled()
         let dataStore = dataStoreIfEnabled()
         guard let settings, let dataStore else { return nil }
 
-        let currentPolicy = settings.policy
-        if let cachedContentBlockingService,
-           cachedContentBlockingServicePolicy == currentPolicy {
-            return cachedContentBlockingService
+        if let cachedContentBlockingAssets {
+            return cachedContentBlockingAssets
         }
 
-        let service = contentBlockingServiceFactory(settings, dataStore)
-        cachedContentBlockingService = service
-        cachedContentBlockingServicePolicy = currentPolicy
-        return service
+        let assets = contentBlockingAssetsFactory(settings, dataStore)
+        cachedContentBlockingAssets = assets
+        return assets
+    }
+
+    func contentBlockingServiceIfEnabled() -> SumiContentBlockingService? {
+        contentBlockingAssetsIfEnabled()?.contentBlockingService
     }
 
     func normalizedSiteHost(for url: URL?) -> String? {
@@ -140,13 +156,13 @@ final class SumiTrackingProtectionModule {
         guard policy.isEnabled else {
             return SumiTrackingProtectionNormalTabContentBlockingDecision(
                 effectivePolicy: policy,
-                contentBlockingService: nil
+                contentBlockingAssets: nil
             )
         }
 
         return SumiTrackingProtectionNormalTabContentBlockingDecision(
             effectivePolicy: policy,
-            contentBlockingService: contentBlockingServiceIfEnabled()
+            contentBlockingAssets: contentBlockingAssetsIfEnabled()
         )
     }
 
@@ -160,7 +176,7 @@ final class SumiTrackingProtectionModule {
         guard isEnabled else { return .disabled }
         guard let settings = settingsIfEnabled(),
               let dataStore = dataStoreIfEnabled(),
-              let service = contentBlockingServiceIfEnabled()
+              let assets = contentBlockingAssetsIfEnabled()
         else { return .disabled }
 
         guard dataStore.beginManualUpdate() else {
@@ -183,7 +199,7 @@ final class SumiTrackingProtectionModule {
                 let preparedUpdate = try await prepareManualTrackingDataUpdate(
                     dataSet: stagedDataSet,
                     settings: settings,
-                    service: service
+                    assets: assets
                 )
                 try dataStore.storeDownloadedData(
                     data,
@@ -191,7 +207,7 @@ final class SumiTrackingProtectionModule {
                     date: date,
                     notifyChanges: false
                 )
-                service.commitPreparedManualTrackingDataUpdate(preparedUpdate)
+                assets.commitPreparedManualTrackingDataUpdate(preparedUpdate)
                 return .downloaded(date: date, etag: etag)
 
             case .notModified(let date):
@@ -208,7 +224,7 @@ final class SumiTrackingProtectionModule {
         guard isEnabled else { return .disabled }
         guard let settings = settingsIfEnabled(),
               let dataStore = dataStoreIfEnabled(),
-              let service = contentBlockingServiceIfEnabled()
+              let assets = contentBlockingAssetsIfEnabled()
         else { return .disabled }
 
         guard dataStore.beginManualUpdate() else {
@@ -221,10 +237,10 @@ final class SumiTrackingProtectionModule {
             let preparedUpdate = try await prepareManualTrackingDataUpdate(
                 dataSet: bundledDataSet,
                 settings: settings,
-                service: service
+                assets: assets
             )
             dataStore.resetToBundled(notifyChanges: false)
-            service.commitPreparedManualTrackingDataUpdate(preparedUpdate)
+            assets.commitPreparedManualTrackingDataUpdate(preparedUpdate)
             return .resetToBundled
         } catch {
             dataStore.recordUpdateError(error)
@@ -235,20 +251,12 @@ final class SumiTrackingProtectionModule {
     private func prepareManualTrackingDataUpdate(
         dataSet: SumiTrackerDataSet,
         settings: SumiTrackingProtectionSettings,
-        service: SumiContentBlockingService
+        assets: SumiTrackingContentBlockingAssets
     ) async throws -> SumiPreparedContentBlockingUpdate {
-        let validationRuleLists = try SumiEmbeddedDDGTrackerDataRuleSource.ruleLists(
-            for: validationPolicy(for: settings.policy),
-            trackerData: dataSet.trackerData
-        )
-        try await service.validateManualTrackingRuleLists(validationRuleLists)
-
-        let activeTrackingRuleLists = try SumiEmbeddedDDGTrackerDataRuleSource.ruleLists(
-            for: settings.policy,
-            trackerData: dataSet.trackerData
-        )
-        return try await service.prepareManualTrackingDataUpdate(
-            trackingRuleLists: activeTrackingRuleLists
+        try await assets.prepareManualTrackingDataUpdate(
+            dataSet: dataSet,
+            activePolicy: settings.policy,
+            validationPolicy: validationPolicy(for: settings.policy)
         )
     }
 

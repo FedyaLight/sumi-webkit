@@ -56,6 +56,47 @@ final class SumiTrackingProtectionTests: XCTestCase {
         XCTAssertEqual(probe.serviceCount, 0)
     }
 
+    func testDisabledModuleDoesNotConstructRuleListProviderOrEnabledAssets() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        let probe = TrackingProtectionModuleFactoryProbe()
+        let module = SumiTrackingProtectionModule(
+            moduleRegistry: registry,
+            settingsFactory: {
+                probe.settingsCount += 1
+                return self.makeSettings()
+            },
+            dataStoreFactory: {
+                probe.dataStoreCount += 1
+                return self.makeDataStore()
+            },
+            contentBlockingAssetsFactory: { settings, dataStore in
+                probe.assetsCount += 1
+                let ruleListProvider = SumiTrackingRuleListProvider(
+                    settings: settings,
+                    dataStore: dataStore
+                )
+                return SumiTrackingContentBlockingAssets(
+                    ruleListProvider: ruleListProvider
+                )
+            }
+        )
+
+        XCTAssertNil(module.contentBlockingAssetsIfEnabled())
+        XCTAssertNil(module.contentBlockingServiceIfEnabled())
+        XCTAssertNil(
+            module.normalTabContentBlockingDecision(
+                for: URL(string: "https://www.example.com/path")!
+            ).contentBlockingAssets
+        )
+        XCTAssertEqual(probe.settingsCount, 0)
+        XCTAssertEqual(probe.dataStoreCount, 0)
+        XCTAssertEqual(probe.assetsCount, 0)
+    }
+
     func testEnabledModuleConstructsRuntimeLazilyOnce() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -95,6 +136,132 @@ final class SumiTrackingProtectionTests: XCTestCase {
         XCTAssertEqual(probe.settingsCount, 1)
         XCTAssertEqual(probe.dataStoreCount, 1)
         XCTAssertEqual(probe.serviceCount, 1)
+    }
+
+    func testEnabledModuleExposesAndCachesModuleOwnedRuleListAssets() throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.trackingProtection)
+        let settings = makeSettings()
+        settings.setGlobalMode(.enabled)
+        let dataStore = makeDataStore()
+        let ruleSource = CountingTrackingRuleSource { requestCount, _ in
+            [Self.validRuleListDefinition(hostSuffix: "module-assets-\(requestCount)")]
+        }
+        let probe = TrackingProtectionModuleFactoryProbe()
+        let module = SumiTrackingProtectionModule(
+            moduleRegistry: registry,
+            settingsFactory: {
+                probe.settingsCount += 1
+                return settings
+            },
+            dataStoreFactory: {
+                probe.dataStoreCount += 1
+                return dataStore
+            },
+            contentBlockingAssetsFactory: { settings, dataStore in
+                probe.assetsCount += 1
+                let ruleListProvider = SumiTrackingRuleListProvider(
+                    settings: settings,
+                    dataStore: dataStore,
+                    trackingRuleSource: ruleSource,
+                    siteDataPolicyStore: nil
+                )
+                return SumiTrackingContentBlockingAssets(
+                    ruleListProvider: ruleListProvider
+                )
+            }
+        )
+
+        let assets = try XCTUnwrap(module.contentBlockingAssetsIfEnabled())
+        XCTAssertTrue(module.contentBlockingAssetsIfEnabled() === assets)
+        XCTAssertTrue(module.contentBlockingServiceIfEnabled() === assets.contentBlockingService)
+        XCTAssertTrue(
+            module.normalTabContentBlockingDecision(
+                for: URL(string: "https://www.example.com/path")!
+            ).contentBlockingAssets === assets
+        )
+        XCTAssertEqual(probe.settingsCount, 1)
+        XCTAssertEqual(probe.dataStoreCount, 1)
+        XCTAssertEqual(probe.assetsCount, 1)
+
+        let ruleListSet = try assets.ruleListProvider.ruleListSet(profileId: nil)
+        XCTAssertEqual(ruleListSet.definitions(for: .trackerDataSet).count, 1)
+        XCTAssertEqual(ruleListSet.definitions(for: .siteDataCookieBlocking).count, 0)
+    }
+
+    func testTrackingRuleListProviderBuildsKindedSetFromCurrentWorkingData() throws {
+        let settings = makeSettings()
+        settings.setGlobalMode(.enabled)
+        let dataStore = makeDataStore()
+        let provider = SumiTrackingRuleListProvider(
+            settings: settings,
+            dataStore: dataStore,
+            siteDataPolicyStore: nil
+        )
+
+        let ruleListSet = try provider.ruleListSet(profileId: nil)
+
+        XCTAssertEqual(ruleListSet.trackerDataSet.count, 1)
+        XCTAssertEqual(ruleListSet.siteDataCookieBlocking.count, 0)
+        XCTAssertEqual(ruleListSet.allDefinitions.count, 1)
+        XCTAssertFalse(ruleListSet.isEmpty)
+        XCTAssertEqual(
+            ruleListSet.definitions(for: .trackerDataSet),
+            ruleListSet.trackerDataSet
+        )
+    }
+
+    func testEnabledModuleOwnedAssetsAttachRulesForProfiledNormalTabs() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.trackingProtection)
+        let settings = makeSettings()
+        settings.setGlobalMode(.enabled)
+        let dataStore = makeDataStore()
+        let ruleSource = CountingTrackingRuleSource { requestCount, _ in
+            [Self.validRuleListDefinition(hostSuffix: "profiled-assets-\(requestCount)")]
+        }
+        let module = SumiTrackingProtectionModule(
+            moduleRegistry: registry,
+            settingsFactory: { settings },
+            dataStoreFactory: { dataStore },
+            contentBlockingAssetsFactory: { settings, dataStore in
+                let ruleListProvider = SumiTrackingRuleListProvider(
+                    settings: settings,
+                    dataStore: dataStore,
+                    trackingRuleSource: ruleSource,
+                    siteDataRuleSource: EmptySiteDataRuleSource()
+                )
+                return SumiTrackingContentBlockingAssets(
+                    ruleListProvider: ruleListProvider
+                )
+            }
+        )
+
+        let assets = try XCTUnwrap(module.contentBlockingAssetsIfEnabled())
+        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: assets.contentBlockingService,
+            profileId: UUID()
+        )
+
+        await controller.awaitContentBlockingAssetsInstalled()
+        try await waitUntil {
+            controller.contentBlockingAssets?.globalRuleLists.count == 1
+        }
+
+        XCTAssertTrue(
+            assets.contentBlockingService.privacyConfigurationManager
+                .privacyConfig
+                .isEnabled(featureKey: .contentBlocking)
+        )
+        XCTAssertGreaterThanOrEqual(ruleSource.requestCount, 1)
     }
 
     func testDisablingModulePreventsFutureRuntimeAccess() {
@@ -873,6 +1040,21 @@ final class SumiTrackingProtectionTests: XCTestCase {
         XCTAssertFalse(serviceSource.contains("updateTrackerDataManually"))
     }
 
+    func testTrackingRuleListPipelineAvoidsFutureDDGAndAdBlockingRuntimeFeatures() throws {
+        let source = try Self.source(named: "Sumi/ContentBlocking/SumiTrackingRuleListPipeline.swift")
+
+        XCTAssertTrue(source.contains("SumiTrackingRuleListKind"))
+        XCTAssertTrue(source.contains("SumiTrackingRuleListProvider"))
+        XCTAssertTrue(source.contains("SumiTrackingContentBlockingAssets"))
+        XCTAssertFalse(source.contains("ClickToLoad"))
+        XCTAssertFalse(source.localizedCaseInsensitiveContains("surrogate"))
+        XCTAssertFalse(source.localizedCaseInsensitiveContains("adblock"))
+        XCTAssertFalse(source.localizedCaseInsensitiveContains("cosmetic"))
+        XCTAssertFalse(source.contains("Timer"))
+        XCTAssertFalse(source.contains("scheduledTimer"))
+        XCTAssertFalse(source.contains("SumiTrackerDataUpdater("))
+    }
+
     private func makeSettings() -> SumiTrackingProtectionSettings {
         SumiTrackingProtectionSettings(userDefaults: makeUserDefaults())
     }
@@ -1067,6 +1249,7 @@ private final class TrackingProtectionModuleFactoryProbe {
     var settingsCount = 0
     var dataStoreCount = 0
     var serviceCount = 0
+    var assetsCount = 0
 }
 
 private struct StaticBundledTrackerDataProvider: SumiBundledTrackerDataProviding {
@@ -1094,6 +1277,14 @@ private final class CountingTrackingRuleSource: SumiTrackingProtectionRuleProvid
         requestCount += 1
         policies.append(policy)
         return makeDefinitions(requestCount, policy)
+    }
+}
+
+@MainActor
+private final class EmptySiteDataRuleSource: SumiSiteDataContentRuleProviding {
+    func ruleLists(profileId: UUID?) throws -> [SumiContentRuleListDefinition] {
+        _ = profileId
+        return []
     }
 }
 
