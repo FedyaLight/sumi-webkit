@@ -522,11 +522,12 @@ class WebViewCoordinator {
 
             browserManager.compositorManager.markTabAccessed(tab.id)
             if getWebView(for: tab.id, in: windowState.id) == nil {
-                _ = getOrCreateWebView(
+                if getOrCreateWebView(
                     for: tab,
                     in: windowState.id
-                )
-                didCreateWebView = true
+                ) != nil {
+                    didCreateWebView = true
+                }
             }
         }
 
@@ -818,7 +819,7 @@ class WebViewCoordinator {
     /// - If no window is displaying this tab yet, creates a "primary" WebView
     /// - If another window is already displaying this tab, creates a "clone" WebView
     /// - Returns existing WebView if this window already has one
-    func getOrCreateWebView(for tab: Tab, in windowId: UUID) -> WKWebView {
+    func getOrCreateWebView(for tab: Tab, in windowId: UUID) -> WKWebView? {
         let tabId = tab.id
 
         // Check if this window already has a WebView for this tab
@@ -850,81 +851,53 @@ class WebViewCoordinator {
     
     /// Creates the "primary" WebView - the first WebView for a tab
     /// This WebView is owned by the tab and is the "source of truth"
-    private func createPrimaryWebView(for tab: Tab, in windowId: UUID) -> WKWebView {
+    private func createPrimaryWebView(for tab: Tab, in windowId: UUID) -> WKWebView? {
         if let adoptedWebView = adoptExistingPrimaryWebViewIfNeeded(for: tab, in: windowId) {
             return adoptedWebView
         }
 
-        let webView = createWebViewInternal(for: tab, in: windowId)
+        guard let webView = tab.ensureWebView() else {
+            assertionFailure("Unable to create normal tab WebView without a resolved profile")
+            return nil
+        }
         tab.assignWebViewToWindow(webView, windowId: windowId)
+        setWebView(webView, for: tab.id, in: windowId)
         return webView
     }
     
     /// Creates a "clone" WebView - additional WebViews for multi-window display
     /// These share the configuration but are separate instances
-    private func createCloneWebView(for tab: Tab, in windowId: UUID, primaryWindowId: UUID) -> WKWebView {
-        let tabId = tab.id
-
-        // Get the primary WebView to copy configuration
-        let primaryWebView = getWebView(for: tabId, in: primaryWindowId)
-        
-        // Create clone with shared configuration
-        return createWebViewInternal(for: tab, in: windowId, copyFrom: primaryWebView)
-    }
-    
-    /// Internal method to create a WebView with proper configuration
-    private func createWebViewInternal(for tab: Tab, in windowId: UUID, copyFrom: WKWebView? = nil) -> WKWebView {
-        let tabId = tab.id
-        tab.beginSuspendedRestoreIfNeeded()
-
-        let configuration = resolvedConfiguration(
-            for: tab,
-            copying: copyFrom ?? tab.existingWebView
-        )
-        BrowserConfiguration.shared.applySitePermissionOverrides(
-            to: configuration,
-            url: tab.url,
-            profileId: tab.resolveProfile()?.id ?? tab.profileId
-        )
-        tab.browserManager?.extensionManager.prepareWebViewConfigurationForExtensionRuntime(
-            configuration,
-            reason: "WebViewCoordinator.createWebViewInternal.configuration"
-        )
-
-        let newWebView = FocusableWKWebView(frame: .zero, configuration: configuration)
-        tab.installNavigationDelegate(on: newWebView)
-        newWebView.uiDelegate = tab
-        newWebView.allowsBackForwardNavigationGestures = true
-        newWebView.allowsMagnification = true
-        newWebView.setValue(true, forKey: "drawsBackground")
-        newWebView.owningTab = tab
-        tab.installRuntimeObservers(on: newWebView)
-        if let scriptsProvider = newWebView.configuration.userContentController.sumiNormalTabUserScriptsProvider {
-            tab.ensureFaviconsTabExtension(using: scriptsProvider.faviconScripts)
+    private func createCloneWebView(for tab: Tab, in windowId: UUID, primaryWindowId: UUID) -> WKWebView? {
+        guard getWebView(for: tab.id, in: primaryWindowId) != nil else {
+            assertionFailure("Cannot create a clone WebView before the primary WebView is tracked")
+            return nil
         }
-        setWebView(newWebView, for: tabId, in: windowId)
+        guard let newWebView = tab.makeNormalTabWebView(reason: "WebViewCoordinator.createCloneWebView") else {
+            assertionFailure("Unable to create normal tab clone WebView without a resolved profile")
+            return nil
+        }
 
-        // Only load URL if this is the primary or if we're creating a clone
-        // For clones, we sync the URL via syncTab later
+        setWebView(newWebView, for: tab.id, in: windowId)
+        loadInitialURLIfNeeded(for: newWebView, tab: tab)
+        newWebView.sumiSetAudioMuted(tab.audioState.isMuted)
+        notifyTabActivatedIfCurrent(tab, in: windowId)
+        return newWebView
+    }
+
+    private func loadInitialURLIfNeeded(for webView: WKWebView, tab: Tab) {
         if let url = URL(string: tab.url.absoluteString) {
-            prepareInitialExtensionNavigation(
-                for: newWebView,
-                tab: tab,
-                in: windowId,
-                url: url
-            )
-            let performLoad = { [weak tab, weak newWebView] in
-                guard let tab, let newWebView else { return }
+            let performLoad = { [weak tab, weak webView] in
+                guard let tab, let webView else { return }
                 if #available(macOS 15.5, *) {
                     tab.performMainFrameNavigationAfterHydrationIfNeeded(
-                        on: newWebView
+                        on: webView
                     ) { resolvedWebView in
                         guard !resolvedWebView.isLoading, resolvedWebView.url == nil else { return }
                         resolvedWebView.load(URLRequest(url: url))
                     }
                 } else {
                     tab.performMainFrameNavigation(
-                        on: newWebView
+                        on: webView
                     ) { resolvedWebView in
                         guard !resolvedWebView.isLoading, resolvedWebView.url == nil else { return }
                         resolvedWebView.load(URLRequest(url: url))
@@ -932,7 +905,7 @@ class WebViewCoordinator {
                 }
             }
 
-            if let controller = newWebView.configuration.userContentController as? UserContentController {
+            if let controller = webView.configuration.userContentController as? UserContentController {
                 Task { @MainActor in
                     await PerformanceTrace.withInterval("ContentBlocking.assetsInstallWait") {
                         await controller.awaitContentBlockingAssetsInstalled()
@@ -943,10 +916,6 @@ class WebViewCoordinator {
                 performLoad()
             }
         }
-        newWebView.sumiSetAudioMuted(tab.audioState.isMuted)
-        tab.finishSuspendedRestoreIfNeeded()
-        
-        return newWebView
     }
 
     func removeWebViewFromContainers(_ webView: WKWebView) {
@@ -1292,21 +1261,21 @@ class WebViewCoordinator {
         tab.primaryWindowId = nil
         tab.url = targetURL
 
-        let recreatedPrimary = createWebViewInternal(
-            for: tab,
-            in: primaryWindowId,
-            copyFrom: nil
-        )
+        guard let recreatedPrimary = tab.ensureWebView() else {
+            assertionFailure("Unable to rebuild normal tab WebView without a resolved profile")
+            return
+        }
         tab.assignWebViewToWindow(recreatedPrimary, windowId: primaryWindowId)
+        setWebView(recreatedPrimary, for: tab.id, in: primaryWindowId)
 
         for windowId in targetWindowIds
             .filter({ $0 != primaryWindowId })
             .sorted(by: { $0.uuidString < $1.uuidString })
         {
-            _ = createWebViewInternal(
+            _ = createCloneWebView(
                 for: tab,
                 in: windowId,
-                copyFrom: recreatedPrimary
+                primaryWindowId: primaryWindowId
             )
         }
 
@@ -2071,50 +2040,8 @@ class WebViewCoordinator {
 #endif
     }
 
-    private func resolvedConfiguration(
-        for tab: Tab,
-        copying sourceWebView: WKWebView?
-    ) -> WKWebViewConfiguration {
-        let resolvedProfile = tab.resolveProfile()
-        let configuration: WKWebViewConfiguration
-
-        if let profile = resolvedProfile {
-            configuration = BrowserConfiguration.shared.normalTabWebViewConfiguration(
-                for: profile,
-                url: tab.url,
-                userScriptsProvider: tab.normalTabUserScriptsProvider(for: tab.url)
-            )
-        } else if let sourceWebView {
-            configuration = BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
-                from: sourceWebView.configuration,
-                surface: .peek
-            )
-        } else {
-            configuration = BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
-                surface: .peek
-            )
-        }
-
-        BrowserConfiguration.shared.applyMediaSessionPolicy(
-            to: configuration,
-            profile: resolvedProfile
-        )
-        return configuration
-    }
-
-    private func prepareInitialExtensionNavigation(
-        for webView: WKWebView,
-        tab: Tab,
-        in windowId: UUID,
-        url: URL
-    ) {
+    private func notifyTabActivatedIfCurrent(_ tab: Tab, in windowId: UUID) {
         guard let browserManager = tab.browserManager else { return }
-
-        browserManager.extensionManager.prepareWebViewForExtensionRuntime(
-            webView,
-            currentURL: url,
-            reason: "WebViewCoordinator.prepareInitialExtensionNavigation"
-        )
 
         if let windowState = browserManager.windowRegistry?.windows[windowId],
            browserManager.currentTab(for: windowState)?.id == tab.id
@@ -2124,7 +2051,6 @@ class WebViewCoordinator {
                 previous: nil
             )
         }
-
     }
 
     private func performFallbackWebViewCleanup(

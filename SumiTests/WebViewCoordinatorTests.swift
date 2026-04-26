@@ -162,10 +162,10 @@ final class WebViewCoordinatorTests: XCTestCase {
         let preCreatedWebView = try! XCTUnwrap(tab.existingWebView)
         let windowId = UUID()
 
-        let resolvedWebView = coordinator.getOrCreateWebView(
+        let resolvedWebView = try! XCTUnwrap(coordinator.getOrCreateWebView(
             for: tab,
             in: windowId
-        )
+        ))
 
         XCTAssertTrue(resolvedWebView === preCreatedWebView)
         XCTAssertTrue(coordinator.getWebView(for: tab.id, in: windowId) === preCreatedWebView)
@@ -262,10 +262,10 @@ final class WebViewCoordinatorTests: XCTestCase {
             }
             .store(in: &cancellables)
 
-        let webView = coordinator.getOrCreateWebView(
+        let webView = try! XCTUnwrap(coordinator.getOrCreateWebView(
             for: tab,
             in: windowId
-        )
+        ))
         webView.loadHTMLString(
             """
             <!doctype html>
@@ -506,10 +506,10 @@ final class WebViewCoordinatorTests: XCTestCase {
         windowState.currentTabId = tab.id
         windowState.currentSpaceId = tab.spaceId
 
-        let webView = coordinator.getOrCreateWebView(
+        let webView = try! XCTUnwrap(coordinator.getOrCreateWebView(
             for: tab,
             in: windowState.id
-        )
+        ))
 
         coordinator.beginHistorySwipeProtection(
             tabId: tab.id,
@@ -543,10 +543,10 @@ final class WebViewCoordinatorTests: XCTestCase {
         windowState.currentTabId = tab.id
         windowState.currentSpaceId = tab.spaceId
 
-        let webView = coordinator.getOrCreateWebView(
+        let webView = try! XCTUnwrap(coordinator.getOrCreateWebView(
             for: tab,
             in: windowState.id
-        )
+        ))
 
         coordinator.beginHistorySwipeProtection(
             tabId: tab.id,
@@ -588,10 +588,10 @@ final class WebViewCoordinatorTests: XCTestCase {
             animate: false
         )
 
-        let leftWebView = coordinator.getOrCreateWebView(
+        let leftWebView = try! XCTUnwrap(coordinator.getOrCreateWebView(
             for: leftTab,
             in: windowState.id
-        )
+        ))
 
         coordinator.beginHistorySwipeProtection(
             tabId: leftTab.id,
@@ -645,7 +645,71 @@ final class WebViewCoordinatorTests: XCTestCase {
                 browserManager: browserManager
             )
         )
-        XCTAssertNotNil(coordinator.getWebView(for: tab.id, in: windowState.id))
+        let webView = try! XCTUnwrap(coordinator.getWebView(for: tab.id, in: windowState.id))
+        XCTAssertTrue(webView === tab.existingWebView)
+        assertNormalTabWebView(webView, for: tab, browserManager: browserManager)
+    }
+
+    func testCloneWebViewUsesNormalTabRuntimePath() {
+        let browserManager = BrowserManager()
+        let coordinator = WebViewCoordinator()
+        browserManager.webViewCoordinator = coordinator
+        let (registry, firstWindow) = makeWindowContext(browserManager: browserManager)
+
+        let secondWindow = BrowserWindowState()
+        secondWindow.tabManager = browserManager.tabManager
+        secondWindow.currentSpaceId = firstWindow.currentSpaceId
+        registry.register(secondWindow)
+
+        let sharedTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/shared-normal-runtime",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+
+        setCurrentTab(sharedTab, in: firstWindow)
+        _ = coordinator.prepareVisibleWebViews(for: firstWindow, browserManager: browserManager)
+        let primaryWebView = try! XCTUnwrap(coordinator.getWebView(for: sharedTab.id, in: firstWindow.id))
+
+        setCurrentTab(sharedTab, in: secondWindow)
+        _ = coordinator.prepareVisibleWebViews(for: secondWindow, browserManager: browserManager)
+        let cloneWebView = try! XCTUnwrap(coordinator.getWebView(for: sharedTab.id, in: secondWindow.id))
+
+        XCTAssertFalse(primaryWebView === cloneWebView)
+        XCTAssertTrue(sharedTab.existingWebView === primaryWebView)
+        XCTAssertEqual(coordinator.liveWebViews(for: sharedTab).count, 2)
+        assertNormalTabWebView(primaryWebView, for: sharedTab, browserManager: browserManager)
+        assertNormalTabWebView(cloneWebView, for: sharedTab, browserManager: browserManager)
+    }
+
+    func testDisabledModuleRegistryDoesNotChangeNormalWebViewCreation() {
+        let defaults = TestDefaultsHarness()
+        let moduleRegistry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: defaults.defaults)
+        )
+        for moduleID in SumiModuleID.allCases {
+            moduleRegistry.disable(moduleID)
+        }
+
+        let browserManager = BrowserManager(moduleRegistry: moduleRegistry)
+        let coordinator = WebViewCoordinator()
+        browserManager.webViewCoordinator = coordinator
+        let (_, windowState) = makeWindowContext(browserManager: browserManager)
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/modules-disabled",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+
+        setCurrentTab(tab, in: windowState)
+        _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+        let webView = try! XCTUnwrap(coordinator.getWebView(for: tab.id, in: windowState.id))
+
+        assertNormalTabWebView(webView, for: tab, browserManager: browserManager)
+        for moduleID in SumiModuleID.allCases {
+            XCTAssertFalse(moduleRegistry.isEnabled(moduleID))
+        }
+        defaults.reset()
     }
 
     func testPrepareVisibleWebViewsCreatesBothSplitPaneWebViews() {
@@ -992,10 +1056,10 @@ final class WebViewCoordinatorTests: XCTestCase {
         ]
         var webViewsByTabID: [UUID: WKWebView] = [:]
         for tab in hiddenTabs {
-            webViewsByTabID[tab.id] = coordinator.getOrCreateWebView(
+            webViewsByTabID[tab.id] = try! XCTUnwrap(coordinator.getOrCreateWebView(
                 for: tab,
                 in: windowState.id
-            )
+            ))
         }
 
         loadingTab.loadingState = .didCommit
@@ -1160,14 +1224,14 @@ final class WebViewCoordinatorTests: XCTestCase {
         _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
         let leftWebView = try! XCTUnwrap(coordinator.getWebView(for: leftTab.id, in: windowState.id))
         let rightWebView = try! XCTUnwrap(coordinator.getWebView(for: rightTab.id, in: windowState.id))
-        let hiddenWebView = coordinator.getOrCreateWebView(
+        let hiddenWebView = try! XCTUnwrap(coordinator.getOrCreateWebView(
             for: hiddenTab,
             in: windowState.id
-        )
-        let secondHiddenWebView = coordinator.getOrCreateWebView(
+        ))
+        let secondHiddenWebView = try! XCTUnwrap(coordinator.getOrCreateWebView(
             for: secondHiddenTab,
             in: windowState.id
-        )
+        ))
 
         _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
 
@@ -1278,5 +1342,36 @@ final class WebViewCoordinatorTests: XCTestCase {
         root.addSubview(rightPane)
 
         return (root, singlePane, leftPane, rightPane)
+    }
+
+    private func assertNormalTabWebView(
+        _ webView: WKWebView,
+        for tab: Tab,
+        browserManager: BrowserManager,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let profile = tab.resolveProfile() ?? browserManager.currentProfile
+
+        XCTAssertTrue(
+            webView.configuration.processPool === BrowserConfiguration.shared.normalTabProcessPool,
+            file: file,
+            line: line
+        )
+        XCTAssertTrue(
+            webView.configuration.websiteDataStore === profile?.dataStore,
+            file: file,
+            line: line
+        )
+
+        guard let provider = webView.configuration.userContentController.sumiNormalTabUserScriptsProvider else {
+            XCTFail("Expected normal-tab user scripts provider", file: file, line: line)
+            return
+        }
+        let sources = provider.userScripts.map(\.source).joined(separator: "\n")
+        XCTAssertTrue(sources.contains("sumiLinkInteraction_\(tab.id.uuidString)"), file: file, line: line)
+        XCTAssertTrue(sources.contains("sumiIdentity_\(tab.id.uuidString)"), file: file, line: line)
+        XCTAssertTrue(sources.contains("sumiTabSuspension_\(tab.id.uuidString)"), file: file, line: line)
+        XCTAssertTrue(sources.contains("__sumiTabSuspension"), file: file, line: line)
     }
 }
