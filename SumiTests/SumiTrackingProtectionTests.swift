@@ -638,6 +638,91 @@ final class SumiTrackingProtectionTests: XCTestCase {
         XCTAssertEqual(reloaded.resolve(for: url).source, .siteOverride(.enabled))
     }
 
+    func testDefaultSiteOverrideIsInheritAndHostNormalizationUsesRegistrableDomain() throws {
+        let settings = makeSettings()
+
+        let url = URL(string: "https://sub.www.example.co.uk/path?tracker=1")!
+
+        XCTAssertEqual(settings.override(for: url), .inherit)
+        XCTAssertEqual(settings.normalizedHost(for: url), "example.co.uk")
+        XCTAssertEqual(settings.normalizedHost(fromUserInput: "WWW.Example.COM/path?q=1"), "example.com")
+    }
+
+    func testModuleDisabledEffectivePolicyIsDisabledWithoutConstructingRuntime() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        let probe = TrackingProtectionModuleFactoryProbe()
+        let module = SumiTrackingProtectionModule(
+            moduleRegistry: registry,
+            settingsFactory: {
+                probe.settingsCount += 1
+                return self.makeSettings()
+            },
+            dataStoreFactory: {
+                probe.dataStoreCount += 1
+                return self.makeDataStore()
+            },
+            contentBlockingServiceFactory: { _, _ in
+                probe.serviceCount += 1
+                return SumiContentBlockingService(
+                    policy: .enabled(ruleLists: [Self.validRuleListDefinition(hostSuffix: "disabled-module")])
+                )
+            }
+        )
+
+        let policy = module.effectivePolicy(for: URL(string: "https://www.example.com/path")!)
+        let decision = module.normalTabContentBlockingDecision(for: URL(string: "https://www.example.com/path")!)
+
+        XCTAssertEqual(policy.host, "example.com")
+        XCTAssertFalse(policy.isEnabled)
+        XCTAssertEqual(policy.source, .moduleDisabled)
+        XCTAssertNil(decision.contentBlockingService)
+        XCTAssertEqual(probe.settingsCount, 0)
+        XCTAssertEqual(probe.dataStoreCount, 0)
+        XCTAssertEqual(probe.serviceCount, 0)
+    }
+
+    func testEnabledModuleEffectivePolicyFollowsGlobalAndSiteOverrides() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.trackingProtection)
+        let settings = SumiTrackingProtectionSettings(userDefaults: harness.defaults)
+        let module = SumiTrackingProtectionModule(
+            moduleRegistry: registry,
+            settingsFactory: { settings },
+            dataStoreFactory: { self.makeDataStore() },
+            contentBlockingServiceFactory: { _, _ in
+                SumiContentBlockingService(policy: .disabled)
+            }
+        )
+        let url = URL(string: "https://www.example.com/path")!
+
+        var policy = module.effectivePolicy(for: url)
+        XCTAssertFalse(policy.isEnabled)
+        XCTAssertEqual(policy.source, .global)
+
+        settings.setGlobalMode(.enabled)
+        policy = module.effectivePolicy(for: url)
+        XCTAssertTrue(policy.isEnabled)
+        XCTAssertEqual(policy.source, .global)
+
+        settings.setSiteOverride(.disabled, for: url)
+        policy = module.effectivePolicy(for: url)
+        XCTAssertFalse(policy.isEnabled)
+        XCTAssertEqual(policy.source, .siteOverride(.disabled))
+
+        settings.setSiteOverride(.enabled, for: url)
+        policy = module.effectivePolicy(for: url)
+        XCTAssertTrue(policy.isEnabled)
+        XCTAssertEqual(policy.source, .siteOverride(.enabled))
+    }
+
     func testURLHubToggleOverrideEnablesSiteWithoutChangingGlobalMode() throws {
         let settings = makeSettings()
         let url = URL(string: "https://www.example.com/path")!
@@ -670,7 +755,7 @@ final class SumiTrackingProtectionTests: XCTestCase {
         XCTAssertFalse(settings.resolve(for: url).isEnabled)
     }
 
-    func testProfileScopedControllerRefreshesWhenSiteOverrideDisablesTrackingProtection() async throws {
+    func testExistingControllerDoesNotRefreshWhenSiteOverrideChangesBeforeManualReload() async throws {
         let settings = makeSettings()
         let url = URL(string: "https://www.example.com/path")!
         let ruleSource = CountingTrackingRuleSource { requestCount, _ in
@@ -694,15 +779,18 @@ final class SumiTrackingProtectionTests: XCTestCase {
         let enabledIdentifier = try XCTUnwrap(
             controller.contentBlockingAssets?.updateEvent.rules.first?.identifier.stringValue
         )
+        let requestCountAfterGlobalEnable = ruleSource.requestCount
 
         settings.setSiteOverride(.disabled, for: url)
-        try await waitUntil {
-            controller.contentBlockingAssets?.updateEvent.rules.first?.identifier.stringValue != enabledIdentifier
-        }
+        try await Task.sleep(nanoseconds: 250_000_000)
 
         XCTAssertFalse(settings.resolve(for: url).isEnabled)
         XCTAssertEqual(settings.override(for: url), .disabled)
-        XCTAssertEqual(ruleSource.policies.last?.disabledSiteHosts, ["example.com"])
+        XCTAssertEqual(ruleSource.requestCount, requestCountAfterGlobalEnable)
+        XCTAssertEqual(
+            controller.contentBlockingAssets?.updateEvent.rules.first?.identifier.stringValue,
+            enabledIdentifier
+        )
     }
 
     func testRapidPolicyChangesAreCoalescedBeforeRuleGeneration() async throws {

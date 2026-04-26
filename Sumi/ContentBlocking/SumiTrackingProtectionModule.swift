@@ -10,6 +10,15 @@ enum SumiTrackingProtectionManualUpdateResult: Equatable, Sendable {
     case failed(message: String)
 }
 
+struct SumiTrackingProtectionNormalTabContentBlockingDecision {
+    let effectivePolicy: SumiTrackingProtectionEffectivePolicy
+    let contentBlockingService: SumiContentBlockingService?
+
+    var attachmentState: SumiTrackingProtectionAttachmentState {
+        effectivePolicy.attachmentState
+    }
+}
+
 @MainActor
 final class SumiTrackingProtectionModule {
     static let shared = SumiTrackingProtectionModule()
@@ -21,10 +30,12 @@ final class SumiTrackingProtectionModule {
         SumiTrackingProtectionSettings,
         SumiTrackingProtectionDataStore
     ) -> SumiContentBlockingService
+    private let siteNormalizer: SumiTrackingProtectionSiteNormalizer
 
     private var cachedSettings: SumiTrackingProtectionSettings?
     private var cachedDataStore: SumiTrackingProtectionDataStore?
     private var cachedContentBlockingService: SumiContentBlockingService?
+    private var cachedContentBlockingServicePolicy: SumiTrackingProtectionPolicy?
 
     init(
         moduleRegistry: SumiModuleRegistry = .shared,
@@ -42,12 +53,14 @@ final class SumiTrackingProtectionModule {
                 siteDataPolicyStore: .shared,
                 siteDataRuleSource: SumiSiteDataCookieBlockingRuleSource()
             )
-        }
+        },
+        siteNormalizer: SumiTrackingProtectionSiteNormalizer = SumiTrackingProtectionSiteNormalizer()
     ) {
         self.moduleRegistry = moduleRegistry
         self.settingsFactory = settingsFactory
         self.dataStoreFactory = dataStoreFactory
         self.contentBlockingServiceFactory = contentBlockingServiceFactory
+        self.siteNormalizer = siteNormalizer
     }
 
     var isEnabled: Bool {
@@ -76,19 +89,65 @@ final class SumiTrackingProtectionModule {
 
     func contentBlockingServiceIfEnabled() -> SumiContentBlockingService? {
         guard isEnabled else { return nil }
-        if let cachedContentBlockingService {
-            return cachedContentBlockingService
-        }
         let settings = settingsIfEnabled()
         let dataStore = dataStoreIfEnabled()
         guard let settings, let dataStore else { return nil }
+
+        let currentPolicy = settings.policy
+        if let cachedContentBlockingService,
+           cachedContentBlockingServicePolicy == currentPolicy {
+            return cachedContentBlockingService
+        }
+
         let service = contentBlockingServiceFactory(settings, dataStore)
         cachedContentBlockingService = service
+        cachedContentBlockingServicePolicy = currentPolicy
         return service
+    }
+
+    func normalizedSiteHost(for url: URL?) -> String? {
+        siteNormalizer.normalizedHost(for: url)
+    }
+
+    func effectivePolicy(for url: URL?) -> SumiTrackingProtectionEffectivePolicy {
+        guard isEnabled else {
+            return SumiTrackingProtectionEffectivePolicy(
+                host: normalizedSiteHost(for: url),
+                isEnabled: false,
+                source: .moduleDisabled
+            )
+        }
+        return settingsIfEnabled()?.resolve(for: url)
+            ?? SumiTrackingProtectionEffectivePolicy(
+                host: normalizedSiteHost(for: url),
+                isEnabled: false,
+                source: .moduleDisabled
+            )
     }
 
     func effectivePolicyIfEnabled(for url: URL?) -> SumiTrackingProtectionEffectivePolicy? {
         settingsIfEnabled()?.resolve(for: url)
+    }
+
+    func siteOverrideIfEnabled(for url: URL?) -> SumiTrackingProtectionSiteOverride? {
+        settingsIfEnabled()?.override(for: url)
+    }
+
+    func normalTabContentBlockingDecision(
+        for url: URL?
+    ) -> SumiTrackingProtectionNormalTabContentBlockingDecision {
+        let policy = effectivePolicy(for: url)
+        guard policy.isEnabled else {
+            return SumiTrackingProtectionNormalTabContentBlockingDecision(
+                effectivePolicy: policy,
+                contentBlockingService: nil
+            )
+        }
+
+        return SumiTrackingProtectionNormalTabContentBlockingDecision(
+            effectivePolicy: policy,
+            contentBlockingService: contentBlockingServiceIfEnabled()
+        )
     }
 
     func settingsChangesPublisherIfEnabled() -> AnyPublisher<Void, Never> {

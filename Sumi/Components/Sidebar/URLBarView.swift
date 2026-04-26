@@ -440,6 +440,8 @@ struct URLBarTrackingProtectionPresenter: Equatable {
     let rowSubtitle: String?
     let siteHost: String
     let isEnabled: Bool
+    let siteOverride: SumiTrackingProtectionSiteOverride
+    let isReloadRequired: Bool
     let shieldIcon: ShieldIcon
     let shieldAccessibilityLabel: String
     let shieldAccessibilityValue: String
@@ -447,13 +449,27 @@ struct URLBarTrackingProtectionPresenter: Equatable {
     static func make(
         policy: SumiTrackingProtectionEffectivePolicy
     ) -> URLBarTrackingProtectionPresenter {
+        make(
+            policy: policy,
+            siteOverride: .inherit,
+            isReloadRequired: false
+        )
+    }
+
+    static func make(
+        policy: SumiTrackingProtectionEffectivePolicy,
+        siteOverride: SumiTrackingProtectionSiteOverride,
+        isReloadRequired: Bool
+    ) -> URLBarTrackingProtectionPresenter {
         let isEnabled = policy.isEnabled
 
         return URLBarTrackingProtectionPresenter(
             rowTitle: "Tracking Protection",
-            rowSubtitle: nil,
+            rowSubtitle: isReloadRequired ? "Reload required" : nil,
             siteHost: policy.host ?? "Current site",
             isEnabled: isEnabled,
+            siteOverride: siteOverride,
+            isReloadRequired: isReloadRequired,
             shieldIcon: ShieldIcon(
                 chromeIconName: isEnabled ? "shield.fill" : "tracking-protection",
                 fallbackSystemName: isEnabled ? "shield.fill" : "shield",
@@ -592,7 +608,11 @@ private struct URLBarZoomPopoverButtonStyle: ButtonStyle {
 private struct SiteControlsSettingRowModel: Equatable, Identifiable {
     enum Kind: Equatable {
         case autoplay(AutoplayOverrideState)
-        case tracking(SumiTrackingProtectionEffectivePolicy)
+        case tracking(
+            policy: SumiTrackingProtectionEffectivePolicy,
+            siteOverride: SumiTrackingProtectionSiteOverride,
+            reloadRequired: Bool
+        )
         case cookies
         case localPage
     }
@@ -607,7 +627,7 @@ private struct SiteControlsSettingRowModel: Equatable, Identifiable {
     var isDisabled: Bool {
         switch kind {
         case .autoplay,
-             .tracking,
+             .tracking(_, _, _),
              .cookies,
              .localPage:
             return false
@@ -617,7 +637,7 @@ private struct SiteControlsSettingRowModel: Equatable, Identifiable {
     var isInteractive: Bool {
         switch kind {
         case .autoplay,
-             .tracking,
+             .tracking(_, _, _),
              .cookies:
             return true
         default:
@@ -697,7 +717,8 @@ private struct SiteControlsSnapshot: Equatable {
         url: URL?,
         profileId: UUID?,
         showsAutoplayPermission: Bool = false,
-        trackingProtectionModule: SumiTrackingProtectionModule? = nil
+        trackingProtectionModule: SumiTrackingProtectionModule? = nil,
+        trackingProtectionReloadRequired: Bool = false
     ) -> SiteControlsSnapshot {
         guard let url else {
             return SiteControlsSnapshot(
@@ -753,6 +774,7 @@ private struct SiteControlsSnapshot: Equatable {
             }
 
             if let trackingPolicy = trackingProtectionModule?.effectivePolicyIfEnabled(for: url) {
+                let siteOverride = trackingProtectionModule?.siteOverrideIfEnabled(for: url) ?? .inherit
                 rows.append(
                     .init(
                         id: "tracking",
@@ -763,8 +785,12 @@ private struct SiteControlsSnapshot: Equatable {
                             ? "shield.fill"
                             : "shield",
                         title: "Tracking Protection",
-                        subtitle: nil,
-                        kind: .tracking(trackingPolicy)
+                        subtitle: trackingProtectionReloadRequired ? "Reload required" : nil,
+                        kind: .tracking(
+                            policy: trackingPolicy,
+                            siteOverride: siteOverride,
+                            reloadRequired: trackingProtectionReloadRequired
+                        )
                     )
                 )
             }
@@ -851,7 +877,8 @@ private struct URLBarHubPopover: View {
             url: currentTab?.url,
             profileId: profileId,
             showsAutoplayPermission: currentTab?.audioState.isPlayingAudio == true,
-            trackingProtectionModule: browserManager.trackingProtectionModule
+            trackingProtectionModule: browserManager.trackingProtectionModule,
+            trackingProtectionReloadRequired: currentTab?.isTrackingProtectionReloadRequired == true
         )
     }
 
@@ -1110,8 +1137,7 @@ private struct URLBarHubPopover: View {
                 ForEach(snapshot.settingsRows) { row in
                     HubSettingRow(
                         model: row,
-                        trackingPresenter: trackingPresenter(for: row),
-                        trackingToggleAction: trackingToggleAction(for: row)
+                        trackingPresenter: trackingPresenter(for: row)
                     ) {
                         handleSettingAction(row)
                     }
@@ -1160,8 +1186,10 @@ private struct URLBarHubPopover: View {
             )
             rebuildCurrentTabAfterPermissionChange(currentTab)
             refreshNonce += 1
-        case .tracking:
-            toggleTrackingProtectionForCurrentSite()
+        case .tracking(let policy, _, _):
+            setTrackingProtectionOverride(
+                URLBarTrackingProtectionPresenter.siteOverrideAfterToggle(for: policy)
+            )
         case .cookies:
             setMode(.siteDataDetails, direction: .forward)
         case .localPage:
@@ -1172,31 +1200,14 @@ private struct URLBarHubPopover: View {
     private func trackingPresenter(
         for row: SiteControlsSettingRowModel
     ) -> URLBarTrackingProtectionPresenter? {
-        guard case .tracking(let policy) = row.kind else {
+        guard case .tracking(let policy, let siteOverride, let reloadRequired) = row.kind else {
             return nil
         }
 
-        return URLBarTrackingProtectionPresenter.make(policy: policy)
-    }
-
-    private func trackingToggleAction(
-        for row: SiteControlsSettingRowModel
-    ) -> (() -> Void)? {
-        guard case .tracking = row.kind, currentTab?.url.host != nil else {
-            return nil
-        }
-        return {
-            toggleTrackingProtectionForCurrentSite()
-        }
-    }
-
-    private func toggleTrackingProtectionForCurrentSite() {
-        guard let settings = browserManager.trackingProtectionModule.settingsIfEnabled() else {
-            return
-        }
-        let policy = settings.resolve(for: currentTab?.url)
-        setTrackingProtectionOverride(
-            URLBarTrackingProtectionPresenter.siteOverrideAfterToggle(for: policy)
+        return URLBarTrackingProtectionPresenter.make(
+            policy: policy,
+            siteOverride: siteOverride,
+            isReloadRequired: reloadRequired
         )
     }
 
@@ -1207,6 +1218,9 @@ private struct URLBarHubPopover: View {
               let settings = browserManager.trackingProtectionModule.settingsIfEnabled()
         else { return }
         settings.setSiteOverride(override, for: currentTab.url)
+        currentTab.markTrackingProtectionReloadRequiredIfNeeded(
+            afterChangingOverrideFor: currentTab.url
+        )
         refreshNonce += 1
     }
 
@@ -2138,7 +2152,6 @@ private struct SumiTrackingProtectionShieldIcon: View {
 private struct HubSettingRow: View {
     let model: SiteControlsSettingRowModel
     let trackingPresenter: URLBarTrackingProtectionPresenter?
-    let trackingToggleAction: (() -> Void)?
     let action: () -> Void
 
     @Environment(\.sumiSettings) private var sumiSettings
@@ -2152,19 +2165,21 @@ private struct HubSettingRow: View {
     init(
         model: SiteControlsSettingRowModel,
         trackingPresenter: URLBarTrackingProtectionPresenter? = nil,
-        trackingToggleAction: (() -> Void)? = nil,
         action: @escaping () -> Void
     ) {
         self.model = model
         self.trackingPresenter = trackingPresenter
-        self.trackingToggleAction = trackingToggleAction
         self.action = action
     }
 
     var body: some View {
         Group {
             if let trackingPresenter {
-                trackingRowContent(trackingPresenter)
+                Button(action: action) {
+                    trackingRowContent(trackingPresenter)
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
             } else if model.isInteractive && !model.isDisabled {
                 Button(action: action) {
                     rowContent
@@ -2190,23 +2205,27 @@ private struct HubSettingRow: View {
     private func trackingRowContent(
         _ presenter: URLBarTrackingProtectionPresenter
     ) -> some View {
-        Button {
-            trackingToggleAction?()
-        } label: {
-            HStack(spacing: 8) {
-                trackingShieldCapsule(presenter)
+        HStack(spacing: 8) {
+            trackingShieldCapsule(presenter)
 
+            VStack(alignment: .leading, spacing: 2) {
                 Text(presenter.rowTitle)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(tokens.primaryText)
                     .lineLimit(1)
 
-                Spacer(minLength: 0)
+                if let rowSubtitle = presenter.rowSubtitle {
+                    Text(rowSubtitle)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(tokens.secondaryText)
+                        .lineLimit(1)
+                }
             }
-            .frame(maxWidth: .infinity, minHeight: 34)
-            .contentShape(Rectangle())
+            .frame(maxWidth: .infinity, alignment: .leading)
+
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+        .contentShape(Rectangle())
         .help(presenter.shieldAccessibilityLabel)
         .accessibilityLabel(presenter.shieldAccessibilityLabel)
         .accessibilityValue(presenter.shieldAccessibilityValue)

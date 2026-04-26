@@ -1,3 +1,4 @@
+import BrowserServicesKit
 import Foundation
 import WebKit
 
@@ -16,23 +17,46 @@ extension Tab {
 
     func refresh() {
         loadingState = .didStartProvisionalNavigation
+        let targetURL = _webView?.url ?? url
+        let rebuiltWebView = rebuildNormalWebViewForTrackingProtectionIfNeeded(
+            targetURL: targetURL,
+            reason: "Tab.refresh.trackingProtectionPolicy"
+        )
         if let webView = _webView
         {
-            if #available(macOS 15.5, *) {
-                performMainFrameNavigationAfterHydrationIfNeeded(
-                    on: webView
+            if rebuiltWebView {
+                performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
+                    on: webView,
+                    waitForContentBlockingAssets: true
                 ) { resolvedWebView in
-                    resolvedWebView.reload()
+                    if targetURL.isFileURL {
+                        resolvedWebView.loadFileURL(
+                            targetURL,
+                            allowingReadAccessTo: targetURL.deletingLastPathComponent()
+                        )
+                    } else {
+                        resolvedWebView.load(URLRequest(url: targetURL))
+                    }
                 }
             } else {
-                performMainFrameNavigation(
-                    on: webView
-                ) { resolvedWebView in
-                    resolvedWebView.reload()
+                if #available(macOS 15.5, *) {
+                    performMainFrameNavigationAfterHydrationIfNeeded(
+                        on: webView
+                    ) { resolvedWebView in
+                        resolvedWebView.reload()
+                    }
+                } else {
+                    performMainFrameNavigation(
+                        on: webView
+                    ) { resolvedWebView in
+                        resolvedWebView.reload()
+                    }
                 }
             }
         }
-        browserManager?.reloadTabAcrossWindows(id)
+        if !rebuiltWebView {
+            browserManager?.reloadTabAcrossWindows(id)
+        }
     }
 
     func updateNavigationState() {
@@ -83,6 +107,44 @@ extension Tab {
                 object: self,
                 userInfo: ["tabId": id]
             )
+        }
+    }
+
+    func performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
+        on webView: WKWebView,
+        waitForContentBlockingAssets: Bool,
+        performLoad: @escaping @MainActor (WKWebView) -> Void
+    ) {
+        guard waitForContentBlockingAssets,
+              let controller = webView.configuration.userContentController as? UserContentController
+        else {
+            if #available(macOS 15.5, *) {
+                performMainFrameNavigationAfterHydrationIfNeeded(
+                    on: webView,
+                    performLoad: performLoad
+                )
+            } else {
+                performMainFrameNavigation(
+                    on: webView,
+                    performLoad: performLoad
+                )
+            }
+            return
+        }
+
+        cancelPendingMainFrameNavigation()
+        let token = UUID()
+        pendingMainFrameNavigationToken = token
+        pendingMainFrameNavigationTask = Task { @MainActor [weak self, weak webView] in
+            await controller.awaitContentBlockingAssetsInstalled()
+            guard let self,
+                  let webView,
+                  self.pendingMainFrameNavigationToken == token
+            else { return }
+
+            performLoad(webView)
+            self.pendingMainFrameNavigationTask = nil
+            self.pendingMainFrameNavigationToken = nil
         }
     }
 
