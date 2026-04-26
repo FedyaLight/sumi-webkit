@@ -57,9 +57,9 @@ struct SumiScriptsPopupView: View {
             Text("SumiScripts")
                 .font(.headline)
             Spacer()
-            Toggle("", isOn: $manager.isEnabled)
-                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
-                .labelsHidden()
+            Text("Enabled")
+                .font(.caption)
+                .foregroundColor(.secondary)
         }
         .padding()
         .background(FloatingChromeSurfaceFill(.elevated))

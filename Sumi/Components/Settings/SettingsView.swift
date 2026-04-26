@@ -127,7 +127,9 @@ struct SumiExtensionsSettingsPane: View {
                 }
             case .userScripts:
                 SumiSettingsModuleToggleGate(descriptor: .userScripts) {
-                    SumiScriptsManagerView(manager: browserManager.sumiScriptsManager)
+                    if let manager = browserManager.userscriptsModule.managerIfEnabled() {
+                        SumiScriptsManagerView(manager: manager)
+                    }
                 }
             }
         }

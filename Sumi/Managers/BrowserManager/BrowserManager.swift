@@ -165,7 +165,7 @@ class BrowserManager: ObservableObject {
     let moduleRegistry: SumiModuleRegistry
     let trackingProtectionModule: SumiTrackingProtectionModule
     let extensionManager: ExtensionManager
-    let sumiScriptsManager: SumiScriptsManager
+    let userscriptsModule: SumiUserscriptsModule
     let extensionSurfaceStore: BrowserExtensionSurfaceStore
     var tabManager: TabManager
     var profileManager: ProfileManager
@@ -268,7 +268,8 @@ class BrowserManager: ObservableObject {
 
     init(
         moduleRegistry: SumiModuleRegistry = .shared,
-        trackingProtectionModule: SumiTrackingProtectionModule? = nil
+        trackingProtectionModule: SumiTrackingProtectionModule? = nil,
+        userscriptsModule: SumiUserscriptsModule? = nil
     ) {
         // Phase 1: initialize all stored properties
         let startupModelContext = SumiStartupPersistence.shared.container.mainContext
@@ -276,6 +277,11 @@ class BrowserManager: ObservableObject {
         self.moduleRegistry = moduleRegistry
         self.trackingProtectionModule = trackingProtectionModule
             ?? SumiTrackingProtectionModule(moduleRegistry: moduleRegistry)
+        self.userscriptsModule = userscriptsModule
+            ?? SumiUserscriptsModule(
+                moduleRegistry: moduleRegistry,
+                context: startupModelContext
+            )
         self.startupWorkspaceTheme = StartupWorkspaceThemeResolver.resolve(
             lastWindowSessionKey: Self.lastWindowSessionKey,
             modelContext: startupModelContext
@@ -289,7 +295,6 @@ class BrowserManager: ObservableObject {
             context: startupModelContext,
             initialProfile: initialProfile
         )
-        self.sumiScriptsManager = SumiScriptsManager(context: startupModelContext)
         self.extensionSurfaceStore = BrowserExtensionSurfaceStore(
             extensionManager: extensionManager
         )
@@ -325,7 +330,7 @@ class BrowserManager: ObservableObject {
         self.tabManager.reattachBrowserManager(self)
         self.downloadManager.browserManager = self
         self.extensionManager.attach(browserManager: self)
-        self.sumiScriptsManager.attach(browserManager: self)
+        self.userscriptsModule.attach(browserManager: self)
         bindTabManagerStructuralUpdates()
         self.externalMiniWindowManager.attach(browserManager: self)
         self.peekManager.attach(browserManager: self)

@@ -126,7 +126,7 @@ extension Tab {
 
         if let targetURL {
             scripts.append(
-                contentsOf: browserManager?.sumiScriptsManager.normalTabUserScripts(
+                contentsOf: browserManager?.userscriptsModule.normalTabUserScripts(
                     for: targetURL,
                     webViewId: id,
                     profileId: resolveProfile()?.id ?? profileId,

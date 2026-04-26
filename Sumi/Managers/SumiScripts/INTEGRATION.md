@@ -4,7 +4,7 @@ This document describes how the native Sumi userscript runtime is wired into the
 
 ## Overview
 
-The runtime is owned by `BrowserManager.sumiScriptsManager`. It is dormant while disabled: no store watcher, no active installed-script adapters, no pending install/update work, and no new BSK `UserScript` adapters returned for future normal-tab navigations.
+The runtime is owned by `SumiUserscriptsModule`, which is attached to `BrowserManager` but does not construct `SumiScriptsManager` until `SumiModuleRegistry.isEnabled(.userScripts)` is true and a userscript feature actually needs the manager. While disabled there is no manager, store watcher, installed-script adapter, pending install/update work, GM bridge, or BSK `UserScript` contribution for future normal-tab navigations.
 
 Normal tabs do not mutate `WKUserContentController` directly. They build one `SumiNormalTabUserScripts` provider and install it through the Prompt 03 BrowserServicesKit `UserContentController`.
 
@@ -17,14 +17,15 @@ Tab setup / normal-tab navigation
       -> DDG favicon UserScripts
       -> Tab core UserScripts
       -> ExtensionManager externally-connectable UserScript
-      -> SumiScriptsManager installed UserScript adapters
+      -> SumiUserscriptsModule enabled-only installed UserScript adapters
+          -> SumiScriptsManager
           -> UserScriptInjector.makeUserScripts(...)
           -> SumiInstalledUserScriptAdapter / SumiInstalledUserStyleAdapter
           -> UserScriptGMBridge behind a BSK UserScriptMessageBroker
   -> BSK UserContentController installs WKUserScripts and weak broker handlers
 ```
 
-Remote `.user.js` navigation is still intercepted by `SumiScriptsRemoteInstall` through the navigation responder chain.
+Remote `.user.js` navigation is intercepted through `SumiUserscriptsModule`; disabled module state returns no interception and constructs no userscript runtime.
 
 ## SwiftData Note
 

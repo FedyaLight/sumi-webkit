@@ -230,6 +230,8 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
             "ExtensionManager(",
             "NativeMessagingHandler(",
             "SumiScriptsManager(",
+            "SumiUserscriptsModule",
+            "userscriptsModule",
             "UserScriptStore(",
         ] {
             XCTAssertFalse(source.contains(forbiddenConstructor))

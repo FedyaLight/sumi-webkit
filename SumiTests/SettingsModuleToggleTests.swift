@@ -147,6 +147,24 @@ final class SettingsModuleToggleTests: XCTestCase {
         }
     }
 
+    func testUserscriptsSettingsRuntimeAccessStaysBehindModuleGate() throws {
+        let settingsSource = try Self.source(named: "Sumi/Components/Settings/SettingsView.swift")
+        let toggleSource = try Self.source(named: "Sumi/Components/Settings/SumiSettingsModuleToggles.swift")
+
+        XCTAssertTrue(settingsSource.contains("SumiSettingsModuleToggleGate(descriptor: .userScripts)"))
+        XCTAssertTrue(settingsSource.contains("browserManager.userscriptsModule.managerIfEnabled()"))
+        XCTAssertTrue(toggleSource.contains("userscriptsModule.setEnabled(isEnabled)"))
+
+        for forbiddenPattern in [
+            "browserManager.sumiScriptsManager",
+            "SumiScriptsManager(",
+            "UserScriptStore(",
+            "UserScriptInjector(",
+        ] {
+            XCTAssertFalse(settingsSource.contains(forbiddenPattern), forbiddenPattern)
+        }
+    }
+
     func testOpeningSettingsWhileDisabledDoesNotReferenceEnabledRuleListPipeline() throws {
         let source = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
 

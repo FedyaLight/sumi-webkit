@@ -47,7 +47,7 @@ struct SidebarHeader: View {
             let enabledExtensions = extensionSurfaceStore.enabledExtensions
             let totalActions = browserManager.extensionManager.orderedPinnedToolbarSlots(
                 enabledExtensions: enabledExtensions.filter { $0.isEnabled },
-                sumiScriptsManagerEnabled: browserManager.sumiScriptsManager.isEnabled
+                sumiScriptsManagerEnabled: browserManager.userscriptsModule.isEnabled
             ).count
 
             if totalActions > 0 {
