@@ -9,16 +9,48 @@ import AppKit
 import SwiftUI
 import WebKit
 
-enum BrowserConfigurationAuxiliarySurface: String {
+enum BrowserConfigurationAuxiliarySurface: String, CaseIterable {
+    case faviconDownload
     case peek
     case miniWindow
     case extensionOptions
+
+    var allowsJavaScript: Bool {
+        switch self {
+        case .faviconDownload:
+            return false
+        case .peek, .miniWindow, .extensionOptions:
+            return true
+        }
+    }
+
+    var javaScriptCanOpenWindowsAutomatically: Bool {
+        switch self {
+        case .faviconDownload:
+            return false
+        case .peek, .miniWindow, .extensionOptions:
+            return true
+        }
+    }
 }
 
 class BrowserConfiguration {
     static let shared = BrowserConfiguration()
 
     private let sharedProcessPool = WKProcessPool()
+    private static let auxiliaryFilteredUserScriptMarkers = [
+        "__sumiDDGFaviconTransportInstalled",
+        "__sumiTabSuspension",
+        "SUMI_USER_SCRIPT_RUNTIME",
+        "SUMI_EC_PAGE_BRIDGE:",
+        "data-sumi-userscript",
+        "sumiExternallyConnectableRuntime",
+        "sumiFavicons",
+        "sumiGM_",
+        "sumiIdentity_",
+        "sumiLinkInteraction_",
+        "sumiTabSuspension_",
+    ]
 
     init() {}
 
@@ -101,8 +133,9 @@ class BrowserConfiguration {
     // MARK: - Auxiliary Surface Configuration
 
     /// Auxiliary WebViews are intentionally separate from primary normal tabs:
-    /// popup WebViews come from WebKit, Peek/MiniWindow use lightweight wrappers,
-    /// and extension option pages may start from WebKit extension context config.
+    /// popup WebViews come from WebKit, Peek/MiniWindow/Favicon use lightweight
+    /// wrappers, and extension option pages may start from WebKit extension
+    /// context config.
     @MainActor
     func auxiliaryWebViewConfiguration(
         from source: WKWebViewConfiguration? = nil,
@@ -114,25 +147,41 @@ class BrowserConfiguration {
         config.websiteDataStore =
             profile?.dataStore
             ?? source?.websiteDataStore
-            ?? webViewConfiguration.websiteDataStore
-        config.userContentController = SumiNormalTabUserContentControllerFactory
-            .makeController(
-                scriptsProvider: SumiNormalTabUserScripts(),
-                profileId: profile?.id
-            )
-        additionalUserScripts.forEach(config.userContentController.addUserScript)
+            ?? WKWebsiteDataStore.nonPersistent()
+        config.userContentController = makeAuxiliaryUserContentController(
+            additionalUserScripts: additionalUserScripts
+        )
+        config.defaultWebpagePreferences.allowsContentJavaScript =
+            surface.allowsJavaScript
+        config.preferences.javaScriptCanOpenWindowsAutomatically =
+            surface.javaScriptCanOpenWindowsAutomatically
 
-        if let source {
+        if surface == .extensionOptions, let source {
             config.webExtensionController = source.webExtensionController
-        }
-
-        switch surface {
-        case .peek, .miniWindow, .extensionOptions:
-            break
         }
 
         applyMediaSessionPolicy(to: config, profile: profile)
         return config
+    }
+
+    private func makeAuxiliaryUserContentController(
+        additionalUserScripts: [WKUserScript]
+    ) -> WKUserContentController {
+        let controller = WKUserContentController()
+        for userScript in filteredAuxiliaryUserScripts(additionalUserScripts) {
+            controller.addUserScript(userScript)
+        }
+        return controller
+    }
+
+    private func filteredAuxiliaryUserScripts(
+        _ userScripts: [WKUserScript]
+    ) -> [WKUserScript] {
+        userScripts.filter { userScript in
+            Self.auxiliaryFilteredUserScriptMarkers.contains { marker in
+                userScript.source.contains(marker)
+            } == false
+        }
     }
 
     // MARK: - Cache-Optimized Configuration

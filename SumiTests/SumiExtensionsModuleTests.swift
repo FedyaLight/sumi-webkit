@@ -272,6 +272,11 @@ final class SumiExtensionsModuleTests: XCTestCase {
             reason: "SumiExtensionsModuleTests.disabled.options"
         )
         XCTAssertNil(optionsConfiguration.webExtensionController)
+        XCTAssertFalse(
+            optionsConfiguration.userContentController
+                .sumiUsesNormalTabBrowserServicesKitUserContentController
+        )
+        XCTAssertNil(optionsConfiguration.userContentController.sumiNormalTabUserScriptsProvider)
         XCTAssertEqual(probe.managerCount, 0)
 
         module.setEnabled(true)

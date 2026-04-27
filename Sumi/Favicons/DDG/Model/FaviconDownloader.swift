@@ -82,8 +82,9 @@ final class FaviconDownloader: NSObject {
     }
 
     private func createTemporaryWebView() -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
+        let configuration = BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
+            surface: .faviconDownload
+        )
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = self
         return webView
