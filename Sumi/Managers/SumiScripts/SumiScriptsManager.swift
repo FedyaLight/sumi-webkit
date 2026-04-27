@@ -45,8 +45,8 @@ final class SumiScriptsManager: ObservableObject {
     /// Recent userscript runtime errors (Chrome-style extension error log).
     @Published private(set) var runtimeErrors: [UserScriptRuntimeErrorEntry] = []
 
-    /// Whether the userscript manager is enabled.
-    /// When false, the entire subsystem is dormant — zero impact.
+    /// Whether the loaded userscript runtime is active.
+    /// This is module-owned in-memory state, not a persisted master switch.
     @Published var isEnabled: Bool = false {
         didSet {
             guard oldValue != isEnabled else { return }
@@ -146,8 +146,6 @@ final class SumiScriptsManager: ObservableObject {
             }
         }
 
-        UserDefaults.standard.set(true, forKey: "SumiScripts.enabled")
-
         RuntimeDiagnostics.debug(
             "Activated with \(totalScriptCount) script(s) loaded",
             category: "SumiScripts"
@@ -181,8 +179,6 @@ final class SumiScriptsManager: ObservableObject {
         configuredWebViews.removeAllObjects()
         totalScriptCount = 0
         activeScriptCount = 0
-
-        UserDefaults.standard.set(false, forKey: "SumiScripts.enabled")
 
         RuntimeDiagnostics.debug(
             "Deactivated with zero resource impact",

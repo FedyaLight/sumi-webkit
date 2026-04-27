@@ -271,6 +271,7 @@ class BrowserManager: ObservableObject {
 
     init(
         moduleRegistry: SumiModuleRegistry = .shared,
+        // Explicit injection seams keep module-boundary tests focused without constructing optional runtimes at startup.
         trackingProtectionModule: SumiTrackingProtectionModule? = nil,
         adBlockingModule: SumiAdBlockingModule? = nil,
         extensionsModule: SumiExtensionsModule? = nil,

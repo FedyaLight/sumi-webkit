@@ -219,7 +219,6 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .peek),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .miniWindow),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .extensionOptions),
-            browserConfiguration.cacheOptimizedWebViewConfiguration(),
         ]
 
         for configuration in configurations {

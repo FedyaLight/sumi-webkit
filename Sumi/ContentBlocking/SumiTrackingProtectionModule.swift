@@ -44,10 +44,12 @@ final class SumiTrackingProtectionModule {
         moduleRegistry: SumiModuleRegistry = .shared,
         settingsFactory: @escaping @MainActor () -> SumiTrackingProtectionSettings = { .shared },
         dataStoreFactory: @escaping @MainActor () -> SumiTrackingProtectionDataStore = { .shared },
+        // Explicit injection seam for focused tests; production uses the module-owned default assets.
         contentBlockingAssetsFactory: (@MainActor (
             SumiTrackingProtectionSettings,
             SumiTrackingProtectionDataStore
         ) -> SumiTrackingContentBlockingAssets)? = nil,
+        // Compatibility/test seam for service-level assertions without restoring a shared runtime.
         contentBlockingServiceFactory: (@MainActor (
             SumiTrackingProtectionSettings,
             SumiTrackingProtectionDataStore

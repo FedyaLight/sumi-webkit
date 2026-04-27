@@ -12,7 +12,9 @@ extension ExtensionManagerTests {
         let manager = makeExtensionManager(in: harness)
         let webView = WKWebView(
             frame: .zero,
-            configuration: harness.browserConfiguration.cacheOptimizedWebViewConfiguration()
+            configuration: harness.browserConfiguration.auxiliaryWebViewConfiguration(
+                surface: .miniWindow
+            )
         )
         let webViewID = ObjectIdentifier(webView)
         let pageURL = try XCTUnwrap(

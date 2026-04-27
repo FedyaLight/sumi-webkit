@@ -17,6 +17,7 @@ final class SumiUserscriptsModule {
     init(
         moduleRegistry: SumiModuleRegistry = .shared,
         context: ModelContext? = nil,
+        // Explicit injection seam for focused tests; production constructs lazily only when enabled.
         managerFactory: @escaping @MainActor (ModelContext?) -> SumiScriptsManager = {
             SumiScriptsManager(context: $0)
         }

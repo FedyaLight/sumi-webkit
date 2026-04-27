@@ -224,6 +224,14 @@ final class SumiUserscriptsModuleTests: XCTestCase {
         }
     }
 
+    func testUserscriptsManagerDoesNotPersistLegacyMasterSwitch() throws {
+        let source = try Self.source(
+            named: "Sumi/Managers/SumiScripts/SumiScriptsManager.swift"
+        )
+
+        XCTAssertFalse(source.contains("SumiScripts.enabled"))
+    }
+
     private func makeModule(
         registry: SumiModuleRegistry,
         probe: UserscriptsRuntimeProbe,

@@ -28,6 +28,7 @@ final class SumiExtensionsModule {
         context: ModelContext? = nil,
         browserConfiguration: BrowserConfiguration = .shared,
         initialProfileProvider: @escaping @MainActor () -> Profile? = { nil },
+        // Explicit injection seam for focused tests; production constructs lazily only when enabled.
         managerFactory: @escaping @MainActor (
             ModelContext,
             Profile?,
