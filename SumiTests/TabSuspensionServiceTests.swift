@@ -149,11 +149,13 @@ final class TabSuspensionServiceTests: XCTestCase {
         XCTAssertTrue(newest.isSuspended)
     }
 
-    func testPinnedHiddenTabsRemainDeferredOutsideLightweight() {
+    func testMemoryPressureCanSuspendPinnedHiddenRuntimeWithoutRemovingLauncherIdentity() {
         let harness = makeHarness()
         let selected = makeTab("https://example.com/current", harness: harness)
         let pinned = makeTab("https://example.com/pinned", harness: harness)
         let eligible = makeTab("https://example.com/eligible", harness: harness)
+        let originalID = pinned.id
+        let originalURL = pinned.url
 
         setCurrentTab(selected, in: harness.windowState)
         attachWebView(to: selected, harness: harness)
@@ -165,9 +167,13 @@ final class TabSuspensionServiceTests: XCTestCase {
 
         let result = harness.service.handleMemoryPressure(.critical)
 
-        XCTAssertEqual(result.candidateCount, 1)
-        XCTAssertEqual(result.suspendedTabIDs, [eligible.id])
-        XCTAssertFalse(pinned.isSuspended)
+        XCTAssertEqual(result.candidateCount, 2)
+        XCTAssertEqual(result.suspendedTabIDs, [pinned.id, eligible.id])
+        XCTAssertTrue(pinned.isSuspended)
+        XCTAssertTrue(pinned.isPinned)
+        XCTAssertEqual(pinned.id, originalID)
+        XCTAssertEqual(pinned.url, originalURL)
+        XCTAssertTrue(harness.browserManager.tabManager.tab(for: pinned.id) === pinned)
     }
 
     func testNonHTTPHiddenTabsAreNeverSuspended() {
@@ -241,6 +247,16 @@ final class TabSuspensionServiceTests: XCTestCase {
         XCTAssertEqual(
             harness.service.suspensionEligibility(for: hidden),
             .ineligible(reason: .playingAudio)
+        )
+    }
+
+    func testRecentlyAudibleTabEligibilityIsRejectedWithReason() {
+        let (harness, hidden) = makeEligibilitySubject()
+        hidden.lastMediaActivityAt = now.addingTimeInterval(-30)
+
+        XCTAssertEqual(
+            harness.service.suspensionEligibility(for: hidden),
+            .ineligible(reason: .recentlyAudible)
         )
     }
 
@@ -342,10 +358,7 @@ final class TabSuspensionServiceTests: XCTestCase {
         let (harness, pinned) = makeEligibilitySubject(hiddenURL: "https://example.com/pinned")
         pinned.isPinned = true
 
-        XCTAssertEqual(
-            harness.service.suspensionEligibility(for: pinned),
-            .ineligible(reason: .launcherRuntimeSuspensionDeferred)
-        )
+        XCTAssertEqual(harness.service.suspensionEligibility(for: pinned), .eligible)
         XCTAssertNotNil(harness.browserManager.tabManager.tab(for: pinned.id))
         XCTAssertFalse(pinned.isSuspended)
     }
@@ -355,10 +368,7 @@ final class TabSuspensionServiceTests: XCTestCase {
         essential.isShortcutLiveInstance = true
         essential.shortcutPinRole = .essential
 
-        XCTAssertEqual(
-            harness.service.suspensionEligibility(for: essential),
-            .ineligible(reason: .launcherRuntimeSuspensionDeferred)
-        )
+        XCTAssertEqual(harness.service.suspensionEligibility(for: essential), .eligible)
         XCTAssertNotNil(harness.browserManager.tabManager.tab(for: essential.id))
         XCTAssertFalse(essential.isSuspended)
     }
@@ -477,442 +487,251 @@ final class TabSuspensionServiceTests: XCTestCase {
         XCTAssertEqual(received, ["warning", "critical"])
     }
 
-    func testMemoryModePoliciesRankAggression() {
-        let lightweight = TabSuspensionPolicy(memoryMode: .lightweight)
+    func testMemorySaverPolicyValuesMatchChromeLikePrompt22Modes() {
+        let moderate = TabSuspensionPolicy(memoryMode: .moderate)
         let balanced = TabSuspensionPolicy(memoryMode: .balanced)
-        let performance = TabSuspensionPolicy(memoryMode: .performance)
+        let maximum = TabSuspensionPolicy(memoryMode: .maximum)
+        let custom = TabSuspensionPolicy(memoryMode: .custom, customDeactivationDelay: 45 * 60)
 
-        XCTAssertEqual(lightweight.idleThreshold, 10 * 60)
-        XCTAssertEqual(balanced.idleThreshold, 30 * 60)
-        XCTAssertEqual(performance.idleThreshold, 90 * 60)
-        XCTAssertLessThan(lightweight.idleThreshold, balanced.idleThreshold)
-        XCTAssertLessThan(balanced.idleThreshold, performance.idleThreshold)
-
-        XCTAssertEqual(lightweight.maximumWarmHiddenWebViewCount, 0)
-        XCTAssertEqual(balanced.maximumWarmHiddenWebViewCount, 2)
-        XCTAssertEqual(performance.maximumWarmHiddenWebViewCount, 5)
-        XCTAssertLessThan(lightweight.maximumWarmHiddenWebViewCount, balanced.maximumWarmHiddenWebViewCount)
-        XCTAssertLessThan(balanced.maximumWarmHiddenWebViewCount, performance.maximumWarmHiddenWebViewCount)
-
-        XCTAssertEqual(lightweight.evaluationInterval, 60)
-        XCTAssertEqual(balanced.evaluationInterval, 120)
-        XCTAssertEqual(performance.evaluationInterval, 300)
-        XCTAssertLessThan(lightweight.evaluationInterval, balanced.evaluationInterval)
-        XCTAssertLessThan(balanced.evaluationInterval, performance.evaluationInterval)
-
-        XCTAssertTrue(lightweight.allowsLauncherRuntimeSuspension)
-        XCTAssertFalse(balanced.allowsLauncherRuntimeSuspension)
-        XCTAssertFalse(performance.allowsLauncherRuntimeSuspension)
+        XCTAssertEqual(moderate.proactiveDeactivationDelay, 6 * 60 * 60)
+        XCTAssertEqual(moderate.revisitProtectionLimit, 5)
+        XCTAssertEqual(balanced.proactiveDeactivationDelay, 4 * 60 * 60)
+        XCTAssertEqual(balanced.revisitProtectionLimit, 15)
+        XCTAssertEqual(maximum.proactiveDeactivationDelay, 2 * 60 * 60)
+        XCTAssertEqual(maximum.revisitProtectionLimit, 15)
+        XCTAssertEqual(custom.proactiveDeactivationDelay, 45 * 60)
+        XCTAssertEqual(custom.revisitProtectionLimit, 15)
+        XCTAssertGreaterThan(moderate.proactiveDeactivationDelay, balanced.proactiveDeactivationDelay)
+        XCTAssertGreaterThan(balanced.proactiveDeactivationDelay, maximum.proactiveDeactivationDelay)
     }
 
-    func testIdleSuspensionPolicyDefaultsToBalancedMemoryMode() {
-        let harness = makeHarness()
-
-        XCTAssertEqual(
-            harness.service.idleSuspensionPolicyForTesting(),
-            TabSuspensionPolicy(memoryMode: .balanced)
-        )
-    }
-
-    func testIdleSuspensionReadsCurrentMemoryModeLazily() {
+    func testProactivePolicyDefaultsToBalancedAndReadsSettingsLazily() {
         let harness = makeHarness(memoryMode: .balanced)
 
         XCTAssertEqual(
-            harness.service.idleSuspensionPolicyForTesting(),
+            harness.service.proactiveSuspensionPolicyForTesting(),
             TabSuspensionPolicy(memoryMode: .balanced)
         )
 
-        harness.settings.memoryMode = .performance
-
+        harness.settings.memoryMode = .maximum
         XCTAssertEqual(
-            harness.service.idleSuspensionPolicyForTesting(),
-            TabSuspensionPolicy(memoryMode: .performance)
+            harness.service.proactiveSuspensionPolicyForTesting(),
+            TabSuspensionPolicy(memoryMode: .maximum)
+        )
+
+        harness.settings.memoryMode = .custom
+        harness.settings.memorySaverCustomDeactivationDelay = 90 * 60
+        XCTAssertEqual(
+            harness.service.proactiveSuspensionPolicyForTesting(),
+            TabSuspensionPolicy(memoryMode: .custom, customDeactivationDelay: 90 * 60)
         )
     }
 
-    func testBalancedIdleEvaluationSuspendsEligibleHiddenTabsOutsideWarmSet() {
+    func testHiddenTabStartsProactiveTimerAndVisibleTabCancelsIt() {
         let harness = makeHarness(memoryMode: .balanced)
         let selected = makeTab("https://example.com/current", harness: harness)
-        let oldest = makeTab("https://example.com/oldest", harness: harness)
-        let middle = makeTab("https://example.com/middle", harness: harness)
-        let warmOlder = makeTab("https://example.com/warm-older", harness: harness)
-        let warmNewest = makeTab("https://example.com/warm-newest", harness: harness)
-
-        setCurrentTab(selected, in: harness.windowState)
-        attachWebView(to: selected, harness: harness)
-        attachWebView(to: oldest, harness: harness)
-        attachWebView(to: middle, harness: harness)
-        attachWebView(to: warmOlder, harness: harness)
-        attachWebView(to: warmNewest, harness: harness)
-        oldest.lastSelectedAt = now.addingTimeInterval(-7200)
-        middle.lastSelectedAt = now.addingTimeInterval(-6600)
-        warmOlder.lastSelectedAt = now.addingTimeInterval(-5400)
-        warmNewest.lastSelectedAt = now.addingTimeInterval(-4800)
-
-        let result = harness.service.evaluateIdleSuspension()
-
-        XCTAssertEqual(result.memoryMode, .balanced)
-        XCTAssertEqual(result.candidateCount, 4)
-        XCTAssertEqual(result.warmTabCount, 2)
-        XCTAssertEqual(result.warmWebViewCount, 2)
-        XCTAssertEqual(result.suspendedTabIDs, [oldest.id, middle.id])
-        XCTAssertTrue(oldest.isSuspended)
-        XCTAssertTrue(middle.isSuspended)
-        XCTAssertFalse(warmOlder.isSuspended)
-        XCTAssertFalse(warmNewest.isSuspended)
-    }
-
-    func testLightweightIdleEvaluationUsesShortestThresholdAndNoWarmSet() {
-        let harness = makeHarness(memoryMode: .lightweight)
-        let selected = makeTab("https://example.com/current", harness: harness)
-        let old = makeTab("https://example.com/old", harness: harness)
-        let recent = makeTab("https://example.com/recent", harness: harness)
-
-        setCurrentTab(selected, in: harness.windowState)
-        attachWebView(to: selected, harness: harness)
-        attachWebView(to: old, harness: harness)
-        attachWebView(to: recent, harness: harness)
-        old.lastSelectedAt = now.addingTimeInterval(-601)
-        recent.lastSelectedAt = now.addingTimeInterval(-599)
-
-        let result = harness.service.evaluateIdleSuspension()
-
-        XCTAssertEqual(result.memoryMode, .lightweight)
-        XCTAssertEqual(result.candidateCount, 2)
-        XCTAssertEqual(result.warmTabCount, 0)
-        XCTAssertEqual(result.suspendedTabIDs, [old.id])
-        XCTAssertTrue(old.isSuspended)
-        XCTAssertFalse(recent.isSuspended)
-    }
-
-    func testIdleEvaluationPreservesSelectedAndVisibleTabs() {
-        let harness = makeHarness(memoryMode: .lightweight)
-        let left = makeTab("https://example.com/left", harness: harness)
-        let right = makeTab("https://example.com/right", harness: harness)
         let hidden = makeTab("https://example.com/hidden", harness: harness)
 
-        setCurrentTab(left, in: harness.windowState)
-        var splitState = harness.browserManager.splitManager.getSplitState(for: harness.windowState.id)
-        splitState.isSplit = true
-        splitState.leftTabId = left.id
-        splitState.rightTabId = right.id
-        harness.browserManager.splitManager.setSplitState(splitState, for: harness.windowState.id)
-
-        attachWebView(to: left, harness: harness)
-        attachWebView(to: right, harness: harness)
+        setCurrentTab(selected, in: harness.windowState)
+        attachWebView(to: selected, harness: harness)
         attachWebView(to: hidden, harness: harness)
-        left.lastSelectedAt = now.addingTimeInterval(-7200)
-        right.lastSelectedAt = now.addingTimeInterval(-7200)
-        hidden.lastSelectedAt = now.addingTimeInterval(-7200)
+        harness.service.reconcileProactiveTimers(reason: "test-hidden")
 
-        let result = harness.service.evaluateIdleSuspension()
+        XCTAssertTrue(harness.service.proactiveTimerTabIDsForTesting.contains(hidden.id))
+        XCTAssertEqual(
+            harness.service.proactiveTimerStateForTesting(tabID: hidden.id)?.requestedDelay,
+            4 * 60 * 60
+        )
 
-        XCTAssertEqual(result.suspendedTabIDs, [hidden.id])
-        XCTAssertFalse(left.isSuspended)
-        XCTAssertFalse(right.isSuspended)
+        setCurrentTab(hidden, in: harness.windowState)
+        harness.service.reconcileProactiveTimers(reason: "test-visible")
+
+        XCTAssertFalse(harness.service.proactiveTimerTabIDsForTesting.contains(hidden.id))
+        XCTAssertEqual(harness.service.revisitCountForTesting(tabID: hidden.id), 1)
+    }
+
+    func testModeAndCustomDelayChangesRebuildHiddenTabTimers() {
+        let harness = makeHarness(memoryMode: .balanced)
+        let selected = makeTab("https://example.com/current", harness: harness)
+        let hidden = makeTab("https://example.com/hidden", harness: harness)
+
+        setCurrentTab(selected, in: harness.windowState)
+        attachWebView(to: selected, harness: harness)
+        attachWebView(to: hidden, harness: harness)
+        harness.service.reconcileProactiveTimers(reason: "initial")
+        let initialStarts = harness.service.proactiveTimerStartCountForTesting
+
+        harness.settings.memoryMode = .maximum
+        harness.service.rebuildProactiveTimers(reason: "mode-change")
+        XCTAssertEqual(
+            harness.service.proactiveTimerStateForTesting(tabID: hidden.id)?.requestedDelay,
+            2 * 60 * 60
+        )
+        XCTAssertGreaterThan(harness.service.proactiveTimerStartCountForTesting, initialStarts)
+
+        harness.settings.memoryMode = .custom
+        harness.settings.memorySaverCustomDeactivationDelay = 30 * 60
+        harness.service.rebuildProactiveTimers(reason: "custom-delay-change")
+        XCTAssertEqual(
+            harness.service.proactiveTimerStateForTesting(tabID: hidden.id)?.requestedDelay,
+            30 * 60
+        )
+        XCTAssertFalse(selected.isSuspended)
+        XCTAssertFalse(hidden.isSuspended)
+    }
+
+    func testProactiveTimerRearmsWhenLiveUptimeHasNotReachedDelay() {
+        let harness = makeHarness(memoryMode: .balanced)
+        let selected = makeTab("https://example.com/current", harness: harness)
+        let hidden = makeTab("https://example.com/sleep-aware", harness: harness)
+
+        harness.clock.liveUptime = 100
+        setCurrentTab(selected, in: harness.windowState)
+        attachWebView(to: selected, harness: harness)
+        attachWebView(to: hidden, harness: harness)
+        harness.service.reconcileProactiveTimers(reason: "initial")
+
+        harness.clock.liveUptime = 160
+        harness.service.fireProactiveTimerForTesting(tabID: hidden.id)
+
+        XCTAssertFalse(hidden.isSuspended)
+        XCTAssertTrue(harness.service.proactiveTimerTabIDsForTesting.contains(hidden.id))
+        XCTAssertEqual(
+            harness.service.proactiveTimerStateForTesting(tabID: hidden.id)?.hiddenStartedAtLiveUptime,
+            100
+        )
+
+        harness.clock.liveUptime = 100 + 4 * 60 * 60
+        harness.service.fireProactiveTimerForTesting(tabID: hidden.id)
+
         XCTAssertTrue(hidden.isSuspended)
+        XCTAssertFalse(harness.service.proactiveTimerTabIDsForTesting.contains(hidden.id))
     }
 
-    func testIdleEvaluationRespectsPrompt05EligibilityVetoes() {
-        let harness = makeHarness(memoryMode: .lightweight)
+    func testProactiveTimerFiringRechecksEligibility() {
+        let harness = makeHarness(memoryMode: .maximum)
         let selected = makeTab("https://example.com/current", harness: harness)
-        let eligible = makeTab("https://example.com/eligible", harness: harness)
-        var vetoedTabs: [Tab] = []
-        var stateOverrides: [UUID: [TabSuspensionWebViewState]] = [:]
-        var alreadySuspended: Tab?
+        let hidden = makeTab("https://example.com/page-veto", harness: harness)
 
         setCurrentTab(selected, in: harness.windowState)
         attachWebView(to: selected, harness: harness)
-        attachWebView(to: eligible, harness: harness)
-        eligible.lastSelectedAt = now.addingTimeInterval(-7200)
+        attachWebView(to: hidden, harness: harness)
+        harness.service.reconcileProactiveTimers(reason: "initial")
+        hidden.pageSuspensionVeto = .pageReportedUnableToSuspend
 
-        @discardableResult
-        func addVetoedTab(
-            _ url: String? = nil,
-            attach: Bool = true,
-            configure: (Tab) -> Void
-        ) -> Tab {
-            let tab = makeTab(
-                url ?? "https://example.com/veto-\(vetoedTabs.count)",
-                harness: harness
-            )
-            if attach {
-                attachWebView(to: tab, harness: harness)
-            }
-            tab.lastSelectedAt = now.addingTimeInterval(-7200)
-            configure(tab)
-            vetoedTabs.append(tab)
-            return tab
+        harness.clock.liveUptime = 2 * 60 * 60
+        harness.service.fireProactiveTimerForTesting(tabID: hidden.id)
+
+        XCTAssertFalse(hidden.isSuspended)
+        XCTAssertFalse(harness.service.proactiveTimerTabIDsForTesting.contains(hidden.id))
+    }
+
+    func testAlreadySuspendedHiddenTabIsNotRepeatedlyProcessedByProactiveTimer() {
+        let harness = makeHarness(memoryMode: .maximum)
+        let selected = makeTab("https://example.com/current", harness: harness)
+        let hidden = makeTab("https://example.com/already-suspended", harness: harness)
+
+        setCurrentTab(selected, in: harness.windowState)
+        attachWebView(to: selected, harness: harness)
+        attachWebView(to: hidden, harness: harness)
+        harness.service.reconcileProactiveTimers(reason: "initial")
+        hidden.isSuspended = true
+
+        harness.clock.liveUptime = 2 * 60 * 60
+        harness.service.fireProactiveTimerForTesting(tabID: hidden.id)
+
+        XCTAssertTrue(hidden.isSuspended)
+        XCTAssertFalse(harness.service.proactiveTimerTabIDsForTesting.contains(hidden.id))
+    }
+
+    func testRevisitProtectionPreventsProactiveTimerAndResetsOnNavigation() {
+        let harness = makeHarness(memoryMode: .moderate)
+        let selected = makeTab("https://example.com/current", harness: harness)
+        let revisited = makeTab("https://example.com/revisited", harness: harness)
+
+        setCurrentTab(selected, in: harness.windowState)
+        attachWebView(to: selected, harness: harness)
+        attachWebView(to: revisited, harness: harness)
+
+        for _ in 0...TabSuspensionPolicy.moderateRevisitProtectionLimit {
+            setCurrentTab(selected, in: harness.windowState)
+            harness.service.reconcileProactiveTimers(reason: "hidden")
+            setCurrentTab(revisited, in: harness.windowState)
+            harness.service.reconcileProactiveTimers(reason: "visible")
         }
 
-        addVetoedTab { $0.loadingState = .didCommit }
-        addVetoedTab { $0.applyAudioState(.unmuted(isPlayingAudio: true)) }
-        addVetoedTab { $0.hasPictureInPictureVideo = true }
-        addVetoedTab { $0.isDisplayingPDFDocument = true }
-        addVetoedTab { $0.pageSuspensionVeto = .pageReportedUnableToSuspend }
-        addVetoedTab("file:///tmp/idle-suspension.html") { _ in }
-        alreadySuspended = addVetoedTab { $0.isSuspended = true }
-        addVetoedTab { $0.isPopupHost = true }
-        addVetoedTab(SumiSurface.emptyTabURL.absoluteString) { _ in }
-        let camera = addVetoedTab { _ in }
-        stateOverrides[camera.id] = [.init(isCapturingCamera: true)]
-        let microphone = addVetoedTab { _ in }
-        stateOverrides[microphone.id] = [.init(isCapturingMicrophone: true)]
-        let fullscreen = addVetoedTab { _ in }
-        stateOverrides[fullscreen.id] = [.init(isFullscreen: true)]
-        let protected = addVetoedTab { _ in }
-        stateOverrides[protected.id] = [.init(isProtectedFromCompositorMutation: true)]
-
-        let result = harness.service.evaluateIdleSuspensionForTesting(
-            webViewStatesByTabID: stateOverrides
+        setCurrentTab(selected, in: harness.windowState)
+        harness.service.reconcileProactiveTimers(reason: "hidden-after-limit")
+        XCTAssertFalse(harness.service.proactiveTimerTabIDsForTesting.contains(revisited.id))
+        XCTAssertGreaterThan(
+            harness.service.revisitCountForTesting(tabID: revisited.id),
+            TabSuspensionPolicy.moderateRevisitProtectionLimit
         )
 
-        XCTAssertEqual(result.candidateCount, 1)
-        XCTAssertEqual(result.suspendedTabIDs, [eligible.id])
-        for tab in vetoedTabs where tab !== alreadySuspended {
-            XCTAssertFalse(tab.isSuspended, "Vetoed tab \(tab.url.absoluteString) should remain live")
+        harness.service.resetRevisitProtection(for: revisited)
+        XCTAssertTrue(harness.service.proactiveTimerTabIDsForTesting.contains(revisited.id))
+        XCTAssertEqual(harness.service.revisitCountForTesting(tabID: revisited.id), 0)
+    }
+
+    func testMemoryPressureIgnoresRevisitProtection() {
+        let harness = makeHarness(memoryMode: .moderate)
+        let selected = makeTab("https://example.com/current", harness: harness)
+        let revisited = makeTab("https://example.com/revisited-pressure", harness: harness)
+
+        setCurrentTab(selected, in: harness.windowState)
+        attachWebView(to: selected, harness: harness)
+        attachWebView(to: revisited, harness: harness)
+        revisited.lastSelectedAt = now.addingTimeInterval(-3600)
+
+        for _ in 0...TabSuspensionPolicy.moderateRevisitProtectionLimit {
+            setCurrentTab(selected, in: harness.windowState)
+            harness.service.reconcileProactiveTimers(reason: "hidden")
+            setCurrentTab(revisited, in: harness.windowState)
+            harness.service.reconcileProactiveTimers(reason: "visible")
         }
-        XCTAssertTrue(alreadySuspended?.isSuspended == true)
-    }
-
-    func testLightweightIdleEvaluationSuspendsLegacyPinnedRuntimeOnly() throws {
-        let harness = makeHarness(memoryMode: .lightweight)
-        let selected = makeTab("https://example.com/current", harness: harness)
-        let pinned = makeTab("https://example.com/pinned", harness: harness)
-        let originalID = pinned.id
-        let originalURL = pinned.url
-        let originalTitle = pinned.name
-
         setCurrentTab(selected, in: harness.windowState)
-        attachWebView(to: selected, harness: harness)
-        attachWebView(to: pinned, harness: harness)
-        pinned.isPinned = true
-        pinned.lastSelectedAt = now.addingTimeInterval(-7200)
+        harness.service.reconcileProactiveTimers(reason: "hidden-after-limit")
 
-        let result = harness.service.evaluateIdleSuspension()
+        let result = harness.service.handleMemoryPressure(.critical)
 
-        XCTAssertEqual(result.suspendedTabIDs, [pinned.id])
-        XCTAssertTrue(pinned.isSuspended)
-        XCTAssertNil(pinned.existingWebView)
-        XCTAssertNil(pinned.primaryWindowId)
-        XCTAssertTrue(pinned.isPinned)
-        XCTAssertEqual(pinned.id, originalID)
-        XCTAssertEqual(pinned.url, originalURL)
-        XCTAssertEqual(pinned.name, originalTitle)
-        XCTAssertTrue(harness.browserManager.tabManager.tab(for: pinned.id) === pinned)
-
-        harness.browserManager.selectTab(
-            pinned,
-            in: harness.windowState,
-            loadPolicy: .immediate
-        )
-        _ = harness.coordinator.prepareVisibleWebViews(
-            for: harness.windowState,
-            browserManager: harness.browserManager
-        )
-
-        XCTAssertFalse(pinned.isSuspended)
-        XCTAssertEqual(harness.coordinator.liveWebViews(for: pinned).count, 1)
-        XCTAssertTrue(
-            harness.coordinator.getWebView(for: pinned.id, in: harness.windowState.id) === pinned.existingWebView
-        )
+        XCTAssertEqual(result.suspendedTabIDs, [revisited.id])
+        XCTAssertTrue(revisited.isSuspended)
     }
 
-    func testLightweightIdleEvaluationSuspendsEssentialLauncherRuntimeOnly() throws {
-        let harness = makeHarness(memoryMode: .lightweight)
-        let selected = makeTab("https://example.com/current", harness: harness)
-        let profileId = try XCTUnwrap(harness.browserManager.currentProfile?.id)
-        let pin = makeShortcutPin(
-            role: .essential,
-            profileId: profileId,
-            spaceId: nil,
-            index: 0,
-            launchURL: URL(string: "https://example.com/essential")!,
-            title: "Essential",
-            iconAsset: "star.fill"
-        )
-
-        harness.browserManager.tabManager.setPinnedTabs([pin], for: profileId)
-        let liveTab = harness.browserManager.tabManager.activateShortcutPin(
-            pin,
-            in: harness.windowState.id,
-            currentSpaceId: harness.windowState.currentSpaceId
-        )
-
-        setCurrentTab(selected, in: harness.windowState)
-        attachWebView(to: selected, harness: harness)
-        attachWebView(to: liveTab, harness: harness)
-        liveTab.lastSelectedAt = now.addingTimeInterval(-7200)
-
-        let result = harness.service.evaluateIdleSuspension()
-
-        XCTAssertEqual(result.suspendedTabIDs, [liveTab.id])
-        XCTAssertTrue(liveTab.isSuspended)
-        XCTAssertNil(liveTab.existingWebView)
-        XCTAssertNil(liveTab.primaryWindowId)
-        assertShortcutPin(
-            try XCTUnwrap(harness.browserManager.tabManager.essentialPins(for: profileId).first),
-            matches: pin
-        )
-        XCTAssertTrue(
-            harness.browserManager.tabManager.shortcutLiveTab(
-                for: pin.id,
-                in: harness.windowState.id
-            ) === liveTab
-        )
-        XCTAssertEqual(liveTab.shortcutPinId, pin.id)
-        XCTAssertEqual(liveTab.shortcutPinRole, .essential)
-
-        let reactivated = harness.browserManager.tabManager.activateShortcutPin(
-            pin,
-            in: harness.windowState.id,
-            currentSpaceId: harness.windowState.currentSpaceId
-        )
-        XCTAssertTrue(reactivated === liveTab)
-        harness.browserManager.selectTab(
-            reactivated,
-            in: harness.windowState,
-            loadPolicy: .immediate
-        )
-        _ = harness.coordinator.prepareVisibleWebViews(
-            for: harness.windowState,
-            browserManager: harness.browserManager
-        )
-
-        XCTAssertEqual(harness.windowState.currentShortcutPinId, pin.id)
-        XCTAssertEqual(harness.windowState.currentShortcutPinRole, .essential)
-        XCTAssertFalse(liveTab.isSuspended)
-        XCTAssertEqual(harness.coordinator.liveWebViews(for: liveTab).count, 1)
-        XCTAssertTrue(
-            harness.coordinator.getWebView(for: liveTab.id, in: harness.windowState.id) === liveTab.existingWebView
-        )
-        assertShortcutPin(
-            try XCTUnwrap(harness.browserManager.tabManager.essentialPins(for: profileId).first),
-            matches: pin
-        )
-    }
-
-    func testLightweightIdleEvaluationSuspendsSpacePinnedLauncherRuntimeOnly() throws {
-        let harness = makeHarness(memoryMode: .lightweight)
-        let selected = makeTab("https://example.com/current", harness: harness)
-        let spaceId = try XCTUnwrap(harness.windowState.currentSpaceId)
-        let pin = makeShortcutPin(
-            role: .spacePinned,
-            profileId: nil,
-            spaceId: spaceId,
-            index: 0,
-            launchURL: URL(string: "https://example.com/space-pinned")!,
-            title: "Space Pinned",
-            iconAsset: nil
-        )
-
-        harness.browserManager.tabManager.setSpacePinnedShortcuts([pin], for: spaceId)
-        let liveTab = harness.browserManager.tabManager.activateShortcutPin(
-            pin,
-            in: harness.windowState.id,
-            currentSpaceId: spaceId
-        )
-
-        setCurrentTab(selected, in: harness.windowState)
-        attachWebView(to: selected, harness: harness)
-        attachWebView(to: liveTab, harness: harness)
-        liveTab.lastSelectedAt = now.addingTimeInterval(-7200)
-
-        let result = harness.service.evaluateIdleSuspension()
-
-        XCTAssertEqual(result.suspendedTabIDs, [liveTab.id])
-        XCTAssertTrue(liveTab.isSuspended)
-        XCTAssertNil(liveTab.existingWebView)
-        XCTAssertNil(liveTab.primaryWindowId)
-        assertShortcutPin(
-            try XCTUnwrap(harness.browserManager.tabManager.spacePinnedPins(for: spaceId).first),
-            matches: pin
-        )
-        XCTAssertTrue(
-            harness.browserManager.tabManager.shortcutLiveTab(
-                for: pin.id,
-                in: harness.windowState.id
-            ) === liveTab
-        )
-        XCTAssertEqual(liveTab.shortcutPinId, pin.id)
-        XCTAssertEqual(liveTab.shortcutPinRole, .spacePinned)
-
-        let reactivated = harness.browserManager.tabManager.activateShortcutPin(
-            pin,
-            in: harness.windowState.id,
-            currentSpaceId: spaceId
-        )
-        XCTAssertTrue(reactivated === liveTab)
-        harness.browserManager.selectTab(
-            reactivated,
-            in: harness.windowState,
-            loadPolicy: .immediate
-        )
-        _ = harness.coordinator.prepareVisibleWebViews(
-            for: harness.windowState,
-            browserManager: harness.browserManager
-        )
-
-        XCTAssertEqual(harness.windowState.currentShortcutPinId, pin.id)
-        XCTAssertEqual(harness.windowState.currentShortcutPinRole, .spacePinned)
-        XCTAssertFalse(liveTab.isSuspended)
-        XCTAssertEqual(harness.coordinator.liveWebViews(for: liveTab).count, 1)
-        XCTAssertTrue(
-            harness.coordinator.getWebView(for: liveTab.id, in: harness.windowState.id) === liveTab.existingWebView
-        )
-        assertShortcutPin(
-            try XCTUnwrap(harness.browserManager.tabManager.spacePinnedPins(for: spaceId).first),
-            matches: pin
-        )
-    }
-
-    func testBalancedAndPerformanceKeepLauncherRuntimeDeferred() {
-        for mode in [SumiMemoryMode.balanced, .performance] {
-            let harness = makeHarness(memoryMode: mode)
+    func testProactiveMemorySaverSuspendsPinnedRuntimeInAllModesWithoutDeletingLauncherIdentity() {
+        for mode in SumiMemoryMode.allCases {
+            let harness = makeHarness(memoryMode: mode, customDelay: 30 * 60)
             let selected = makeTab("https://example.com/current-\(mode.rawValue)", harness: harness)
             let pinned = makeTab("https://example.com/pinned-\(mode.rawValue)", harness: harness)
-            let essential = makeTab("https://example.com/essential-\(mode.rawValue)", harness: harness)
-            let eligible = makeTab("https://example.com/eligible-\(mode.rawValue)", harness: harness)
+            let originalID = pinned.id
+            let originalURL = pinned.url
+            let originalTitle = pinned.name
 
             setCurrentTab(selected, in: harness.windowState)
             attachWebView(to: selected, harness: harness)
             attachWebView(to: pinned, harness: harness)
-            attachWebView(to: essential, harness: harness)
-            attachWebView(to: eligible, harness: harness)
             pinned.isPinned = true
-            essential.isShortcutLiveInstance = true
-            essential.shortcutPinRole = .essential
-            pinned.lastSelectedAt = now.addingTimeInterval(-7200)
-            essential.lastSelectedAt = now.addingTimeInterval(-7200)
-            eligible.lastSelectedAt = now.addingTimeInterval(-7200)
+            harness.service.reconcileProactiveTimers(reason: "hidden-\(mode.rawValue)")
 
-            let result = harness.service.handleMemoryPressure(.critical)
+            let delay = harness.service.proactiveSuspensionPolicyForTesting().proactiveDeactivationDelay
+            harness.clock.liveUptime = delay
+            harness.service.fireProactiveTimerForTesting(tabID: pinned.id)
 
-            XCTAssertEqual(result.suspendedTabIDs, [eligible.id], "mode=\(mode.rawValue)")
-            XCTAssertFalse(pinned.isSuspended, "mode=\(mode.rawValue)")
-            XCTAssertFalse(essential.isSuspended, "mode=\(mode.rawValue)")
-            XCTAssertNotNil(harness.browserManager.tabManager.tab(for: pinned.id))
-            XCTAssertNotNil(harness.browserManager.tabManager.tab(for: essential.id))
-            XCTAssertEqual(
-                harness.service.suspensionEligibility(for: pinned),
-                .ineligible(reason: .launcherRuntimeSuspensionDeferred),
-                "mode=\(mode.rawValue)"
-            )
-            XCTAssertEqual(
-                harness.service.suspensionEligibility(for: essential),
-                .ineligible(reason: .launcherRuntimeSuspensionDeferred),
-                "mode=\(mode.rawValue)"
-            )
+            XCTAssertTrue(pinned.isSuspended, "mode=\(mode.rawValue)")
+            XCTAssertTrue(pinned.isPinned, "mode=\(mode.rawValue)")
+            XCTAssertEqual(pinned.id, originalID, "mode=\(mode.rawValue)")
+            XCTAssertEqual(pinned.url, originalURL, "mode=\(mode.rawValue)")
+            XCTAssertEqual(pinned.name, originalTitle, "mode=\(mode.rawValue)")
+            XCTAssertTrue(harness.browserManager.tabManager.tab(for: pinned.id) === pinned)
         }
     }
 
-    func testBalancedAndPerformanceKeepShortcutLauncherPinsAndOrderDeferred() throws {
-        for mode in [SumiMemoryMode.balanced, .performance] {
-            let harness = makeHarness(memoryMode: mode)
+    func testProactiveMemorySaverSuspendsEssentialRuntimeInAllModesAndRestoreUsesExistingTabPath() throws {
+        for mode in SumiMemoryMode.allCases {
+            let harness = makeHarness(memoryMode: mode, customDelay: 30 * 60)
             let selected = makeTab("https://example.com/current-\(mode.rawValue)", harness: harness)
             let profileId = try XCTUnwrap(harness.browserManager.currentProfile?.id)
-            let spaceId = try XCTUnwrap(harness.windowState.currentSpaceId)
-            let essential = makeShortcutPin(
+            let pin = makeShortcutPin(
                 role: .essential,
                 profileId: profileId,
                 spaceId: nil,
@@ -921,119 +740,87 @@ final class TabSuspensionServiceTests: XCTestCase {
                 title: "Essential \(mode.rawValue)",
                 iconAsset: "star.fill"
             )
-            let spacePinned = makeShortcutPin(
-                role: .spacePinned,
-                profileId: nil,
-                spaceId: spaceId,
-                index: 1,
-                launchURL: URL(string: "https://example.com/space-\(mode.rawValue)")!,
-                title: "Space \(mode.rawValue)",
-                iconAsset: nil
-            )
 
-            harness.browserManager.tabManager.setPinnedTabs([essential], for: profileId)
-            harness.browserManager.tabManager.setSpacePinnedShortcuts([spacePinned], for: spaceId)
-            let essentialLiveTab = harness.browserManager.tabManager.activateShortcutPin(
-                essential,
+            harness.browserManager.tabManager.setPinnedTabs([pin], for: profileId)
+            let liveTab = harness.browserManager.tabManager.activateShortcutPin(
+                pin,
                 in: harness.windowState.id,
-                currentSpaceId: spaceId
-            )
-            let spacePinnedLiveTab = harness.browserManager.tabManager.activateShortcutPin(
-                spacePinned,
-                in: harness.windowState.id,
-                currentSpaceId: spaceId
+                currentSpaceId: harness.windowState.currentSpaceId
             )
 
             setCurrentTab(selected, in: harness.windowState)
             attachWebView(to: selected, harness: harness)
-            attachWebView(to: essentialLiveTab, harness: harness)
-            attachWebView(to: spacePinnedLiveTab, harness: harness)
-            essentialLiveTab.lastSelectedAt = now.addingTimeInterval(-7200)
-            spacePinnedLiveTab.lastSelectedAt = now.addingTimeInterval(-7200)
+            attachWebView(to: liveTab, harness: harness)
+            harness.service.reconcileProactiveTimers(reason: "hidden-\(mode.rawValue)")
 
-            let result = harness.service.evaluateIdleSuspension()
+            let delay = harness.service.proactiveSuspensionPolicyForTesting().proactiveDeactivationDelay
+            harness.clock.liveUptime = delay
+            harness.service.fireProactiveTimerForTesting(tabID: liveTab.id)
 
-            XCTAssertTrue(result.suspendedTabIDs.isEmpty, "mode=\(mode.rawValue)")
-            XCTAssertFalse(essentialLiveTab.isSuspended, "mode=\(mode.rawValue)")
-            XCTAssertFalse(spacePinnedLiveTab.isSuspended, "mode=\(mode.rawValue)")
+            XCTAssertTrue(liveTab.isSuspended, "mode=\(mode.rawValue)")
+            XCTAssertNil(liveTab.existingWebView, "mode=\(mode.rawValue)")
             assertShortcutPin(
                 try XCTUnwrap(harness.browserManager.tabManager.essentialPins(for: profileId).first),
-                matches: essential
+                matches: pin
             )
+            XCTAssertTrue(
+                harness.browserManager.tabManager.shortcutLiveTab(
+                    for: pin.id,
+                    in: harness.windowState.id
+                ) === liveTab
+            )
+
+            let reactivated = harness.browserManager.tabManager.activateShortcutPin(
+                pin,
+                in: harness.windowState.id,
+                currentSpaceId: harness.windowState.currentSpaceId
+            )
+            XCTAssertTrue(reactivated === liveTab)
+            harness.browserManager.selectTab(
+                reactivated,
+                in: harness.windowState,
+                loadPolicy: .immediate
+            )
+            _ = harness.coordinator.prepareVisibleWebViews(
+                for: harness.windowState,
+                browserManager: harness.browserManager
+            )
+
+            XCTAssertFalse(liveTab.isSuspended, "mode=\(mode.rawValue)")
+            XCTAssertEqual(harness.coordinator.liveWebViews(for: liveTab).count, 1, "mode=\(mode.rawValue)")
             assertShortcutPin(
-                try XCTUnwrap(harness.browserManager.tabManager.spacePinnedPins(for: spaceId).first),
-                matches: spacePinned
+                try XCTUnwrap(harness.browserManager.tabManager.essentialPins(for: profileId).first),
+                matches: pin
             )
         }
     }
 
-    func testLightweightIdleEvaluationSuspendsSimpleShortcutLiveInstanceRuntimeOnly() {
-        let harness = makeHarness(memoryMode: .lightweight)
-        let selected = makeTab("https://example.com/current", harness: harness)
-        let essential = makeTab("https://example.com/essential", harness: harness)
-        let eligible = makeTab("https://example.com/eligible", harness: harness)
-
-        setCurrentTab(selected, in: harness.windowState)
-        attachWebView(to: selected, harness: harness)
-        attachWebView(to: essential, harness: harness)
-        attachWebView(to: eligible, harness: harness)
-        essential.isShortcutLiveInstance = true
-        essential.shortcutPinRole = .essential
-        essential.lastSelectedAt = now.addingTimeInterval(-7200)
-        eligible.lastSelectedAt = now.addingTimeInterval(-7200)
-
-        let result = harness.service.evaluateIdleSuspension()
-
-        XCTAssertEqual(Set(result.suspendedTabIDs), Set([essential.id, eligible.id]))
-        XCTAssertTrue(essential.isSuspended)
-        XCTAssertTrue(eligible.isSuspended)
-        XCTAssertNotNil(harness.browserManager.tabManager.tab(for: essential.id))
-    }
-
-    func testIdleSchedulerStartAndStopAreIdempotent() {
-        let service = TabSuspensionService(
-            memoryMonitor: nil,
-            startsIdleSchedulerOnAttach: false
-        )
-
-        XCTAssertFalse(service.isIdleSuspensionSchedulerRunningForTesting)
-
-        service.startIdleSuspensionScheduler()
-        service.startIdleSuspensionScheduler()
-
-        XCTAssertTrue(service.isIdleSuspensionSchedulerRunningForTesting)
-        XCTAssertEqual(service.idleSchedulerStartCountForTesting, 1)
-
-        service.stopIdleSuspensionScheduler()
-        service.stopIdleSuspensionScheduler()
-
-        XCTAssertFalse(service.isIdleSuspensionSchedulerRunningForTesting)
-        XCTAssertEqual(service.idleSchedulerStartCountForTesting, 1)
-    }
-
-    func testPrompt065DDGAuditDocumentationRecordsAlignmentAndSumiPolicy() throws {
+    func testPrompt22DocumentationRecordsChromeLikeMemorySaverAndDDGSafeguards() throws {
         let source = try Self.source(named: "docs/sumi-performance-modular-execution-state.md")
 
         for requiredText in [
-            "Prompt 06.5",
-            "DDG uses a default minimum inactive interval of about 10 minutes",
-            "memory-pressure driven",
-            "not a user-facing three-mode idle policy",
-            "page-level canBeSuspended veto",
-            "Sumi-specific product policy",
-            "Lightweight",
+            "Prompt 22",
+            "Moderate",
             "Balanced",
-            "Performance",
-            "page-level veto bridge status: implemented",
+            "Maximum",
+            "Custom Deactivation Delay",
+            "6 hours",
+            "4 hours",
+            "2 hours",
+            "per-tab one-shot",
+            "sleep-aware",
+            "revisit protection",
+            "page-level canBeSuspended veto",
+            "launcher identity",
         ] {
             XCTAssertTrue(
                 source.contains(requiredText),
-                "Missing Prompt 06.5 audit text: \(requiredText)"
+                "Missing Prompt 22 memory saver documentation text: \(requiredText)"
             )
         }
     }
 
-    func testPrompt06WiresMemoryModeIdleSuspensionWithoutEvictionOrOptionalModuleRuntimes() throws {
+    func testPrompt22WiresProactiveTimersWithoutEvictionOrOptionalModuleRuntimes() throws {
         let suspensionSource = try Self.source(named: "Sumi/Managers/TabSuspensionService.swift")
         let coordinatorSource = try Self.source(named: "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift")
         let changedSources = [
@@ -1046,12 +833,17 @@ final class TabSuspensionServiceTests: XCTestCase {
         XCTAssertTrue(suspensionSource.contains("TabSuspensionPolicy"))
         XCTAssertTrue(suspensionSource.contains("SumiMemoryMode"))
         XCTAssertTrue(suspensionSource.contains("memoryMode"))
-        XCTAssertTrue(suspensionSource.contains("evaluateIdleSuspension"))
-        XCTAssertTrue(suspensionSource.contains("startIdleSuspensionScheduler"))
+        XCTAssertTrue(suspensionSource.contains("proactiveTimers"))
+        XCTAssertTrue(suspensionSource.contains("armProactiveTimer"))
+        XCTAssertTrue(suspensionSource.contains("SumiSuspensionClock"))
+        XCTAssertTrue(suspensionSource.contains("revisitCounts"))
+        XCTAssertFalse(suspensionSource.contains("evaluateIdleSuspension"))
+        XCTAssertFalse(suspensionSource.contains("startIdleSuspensionScheduler"))
         XCTAssertFalse(suspensionSource.contains("tabUnloadTimeoutChanged"))
         XCTAssertFalse(suspensionSource.contains("canEvictHiddenWebView"))
         XCTAssertFalse(suspensionSource.contains("createWebViewInternal"))
-        XCTAssertTrue(coordinatorSource.contains("suspensionEligibility"))
+        XCTAssertFalse(coordinatorSource.contains("suspensionEligibility("))
+        XCTAssertTrue(coordinatorSource.contains("hiddenCloneCleanup"))
         XCTAssertFalse(coordinatorSource.contains("NormalTabWebViewFactory"))
 
         for forbiddenConstructor in [
@@ -1102,15 +894,24 @@ final class TabSuspensionServiceTests: XCTestCase {
         let windowState: BrowserWindowState
         let settings: SumiSettingsService
         let service: TabSuspensionService
+        let clock: TestSuspensionClock
     }
 
-    private func makeHarness(memoryMode: SumiMemoryMode = .balanced) -> Harness {
+    private final class TestSuspensionClock: SumiSuspensionClock {
+        var liveUptime: TimeInterval = 0
+    }
+
+    private func makeHarness(
+        memoryMode: SumiMemoryMode = .balanced,
+        customDelay: TimeInterval = SumiMemorySaverCustomDelay.defaultDelay
+    ) -> Harness {
         let browserManager = BrowserManager()
         let coordinator = WebViewCoordinator()
         let windowRegistry = WindowRegistry()
         let defaultsHarness = TestDefaultsHarness()
         let settings = SumiSettingsService(userDefaults: defaultsHarness.defaults)
         settings.memoryMode = memoryMode
+        settings.memorySaverCustomDeactivationDelay = customDelay
         browserManager.sumiSettings = settings
         browserManager.tabManager.sumiSettings = settings
         browserManager.webViewCoordinator = coordinator
@@ -1126,10 +927,14 @@ final class TabSuspensionServiceTests: XCTestCase {
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
+        let clock = TestSuspensionClock()
         let service = TabSuspensionService(
             memoryMonitor: nil,
             dateProvider: { [unowned self] in self.now },
-            startsIdleSchedulerOnAttach: false
+            suspensionClock: clock,
+            timerSleep: { _ in
+                try await Task.sleep(nanoseconds: UInt64.max)
+            }
         )
         service.attach(browserManager: browserManager)
 
@@ -1139,7 +944,8 @@ final class TabSuspensionServiceTests: XCTestCase {
             windowRegistry: windowRegistry,
             windowState: windowState,
             settings: settings,
-            service: service
+            service: service,
+            clock: clock
         )
     }
 

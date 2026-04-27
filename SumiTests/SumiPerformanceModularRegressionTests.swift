@@ -17,6 +17,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let settings = SumiSettingsService(userDefaults: harness.defaults)
 
         XCTAssertEqual(settings.memoryMode, .balanced)
+        XCTAssertEqual(settings.memorySaverCustomDeactivationDelay, 4 * 60 * 60)
         for moduleID in SumiModuleID.allCases {
             XCTAssertFalse(registry.isEnabled(moduleID), "\(moduleID.rawValue) should default to disabled")
             XCTAssertNil(harness.defaults.object(forKey: store.key(for: moduleID)))
@@ -44,6 +45,55 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
                 XCTAssertFalse(scopedRegistry.isEnabled(moduleID))
             }
         }
+    }
+
+    func testPrompt22MemorySaverRegressionGates() throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        harness.defaults.set("lightweight", forKey: "settings.memoryMode")
+        XCTAssertEqual(SumiSettingsService(userDefaults: harness.defaults).memoryMode, .maximum)
+        harness.defaults.set("performance", forKey: "settings.memoryMode")
+        XCTAssertEqual(SumiSettingsService(userDefaults: harness.defaults).memoryMode, .moderate)
+        harness.defaults.set("unknown", forKey: "settings.memoryMode")
+        XCTAssertEqual(SumiSettingsService(userDefaults: harness.defaults).memoryMode, .balanced)
+
+        XCTAssertEqual(TabSuspensionPolicy(memoryMode: .moderate).proactiveDeactivationDelay, 6 * 60 * 60)
+        XCTAssertEqual(TabSuspensionPolicy(memoryMode: .balanced).proactiveDeactivationDelay, 4 * 60 * 60)
+        XCTAssertEqual(TabSuspensionPolicy(memoryMode: .maximum).proactiveDeactivationDelay, 2 * 60 * 60)
+        XCTAssertEqual(
+            TabSuspensionPolicy(memoryMode: .custom, customDeactivationDelay: 20 * 60).proactiveDeactivationDelay,
+            20 * 60
+        )
+        XCTAssertEqual(SumiMemorySaverCustomDelay.clamped(5 * 60), 15 * 60)
+        XCTAssertEqual(SumiMemorySaverCustomDelay.clamped(48 * 60 * 60), 24 * 60 * 60)
+
+        let settingsSource = try Self.source(named: "Sumi/Components/Settings/Tabs/Performance.swift")
+        XCTAssertTrue(settingsSource.contains("Section(\"Memory Saver\")"))
+        XCTAssertTrue(settingsSource.contains("Custom Deactivation Delay"))
+        XCTAssertFalse(settingsSource.contains("Lightweight"))
+        XCTAssertFalse(settingsSource.contains("title: \"Performance\""))
+
+        let suspensionSource = try Self.source(named: "Sumi/Managers/TabSuspensionService.swift")
+        XCTAssertTrue(suspensionSource.contains("proactiveTimers"))
+        XCTAssertTrue(suspensionSource.contains("armProactiveTimer"))
+        XCTAssertTrue(suspensionSource.contains("SumiSuspensionClock"))
+        XCTAssertTrue(suspensionSource.contains("revisitCounts"))
+        XCTAssertTrue(suspensionSource.contains("defaultMinimumInactiveInterval"))
+        XCTAssertFalse(suspensionSource.contains("30 * 60"))
+        XCTAssertFalse(suspensionSource.contains("90 * 60"))
+        XCTAssertFalse(suspensionSource.contains("launcherRuntimeSuspensionDeferred"))
+        XCTAssertFalse(suspensionSource.contains("maximumWarmHiddenWebViewCount"))
+
+        let coordinatorSource = try Self.source(named: "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift")
+        XCTAssertTrue(coordinatorSource.contains("hiddenCloneCleanup"))
+        XCTAssertFalse(coordinatorSource.contains("suspensionEligibility("))
+
+        let tabScriptSource = try Self.source(named: "Sumi/Models/Tab/Tab+ScriptMessageHandler.swift")
+        XCTAssertTrue(tabScriptSource.contains("SumiTabSuspensionUserScript"))
+        XCTAssertTrue(tabScriptSource.contains("forMainFrameOnly = true"))
+        XCTAssertTrue(tabScriptSource.contains("tabSuspension"))
+        XCTAssertTrue(tabScriptSource.contains("canBeSuspended"))
     }
 
     func testBrowserManagerStartupAndSettingsSurfacesDoNotConstructDisabledRuntimes() throws {

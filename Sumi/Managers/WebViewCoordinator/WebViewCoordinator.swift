@@ -384,12 +384,6 @@ class WebViewCoordinator {
     @ObservationIgnored
     private var weakWebViewsByIdentifier: [ObjectIdentifier: WeakWKWebView] = [:]
 
-    private struct HiddenWebViewEvictionCandidate {
-        let tab: Tab
-        let entries: [(owner: TrackedWebViewOwner, webView: WKWebView)]
-        let liveWebViewCount: Int
-    }
-
     // MARK: - Compositor Container Management
 
     func setCompositorContainerView(_ view: NSView?, for windowId: UUID) {
@@ -536,6 +530,7 @@ class WebViewCoordinator {
             visibleTabIDs: Set(visibleTabIDs),
             tabManager: browserManager.tabManager
         )
+        browserManager.tabSuspensionService.reconcileProactiveTimers(reason: "visible-webviews-prepared")
 
         return didCreateWebView
     }
@@ -1899,103 +1894,38 @@ class WebViewCoordinator {
         guard hiddenEntries.isEmpty == false else { return }
 
         guard let browserManager = tabManager.browserManager else { return }
-        let suspensionService = browserManager.tabSuspensionService
-        let context = suspensionService.suspensionEvaluationContext()
-        var candidates: [HiddenWebViewEvictionCandidate] = []
+        let globallyVisibleTabIDs = browserManager.tabSuspensionService
+            .suspensionEvaluationContext()
+            .visibleTabIDs
 
-        let groupedEntries = Dictionary(grouping: hiddenEntries) { entry in
-            entry.0.tabID
-        }
+        for (owner, webView) in hiddenEntries.sorted(by: {
+            if $0.0.tabID != $1.0.tabID {
+                return $0.0.tabID.uuidString < $1.0.tabID.uuidString
+            }
+            return $0.0.windowID.uuidString < $1.0.windowID.uuidString
+        }) {
+            guard globallyVisibleTabIDs.contains(owner.tabID) else { continue }
+            guard let tab = resolvedTab(with: owner.tabID) else { continue }
+            guard liveWebViews(for: tab).count > 1 else { continue }
 
-        for tabId in groupedEntries.keys.sorted(by: { $0.uuidString < $1.uuidString }) {
-            guard let entries = groupedEntries[tabId] else { continue }
-            let protectedWebViews = entries.map { $0.1 }.filter(isWebViewProtectedFromCompositorMutation)
-            if protectedWebViews.isEmpty == false {
-                for protectedWebView in protectedWebViews {
-                    _ = enqueueDeferredProtectedCommand(
-                        .evictHiddenWebViews(windowID: windowId),
-                        for: protectedWebView,
-                        reason: "evictHiddenWebViews"
-                    )
-                }
+            if isWebViewProtectedFromCompositorMutation(webView) {
+                _ = enqueueDeferredProtectedCommand(
+                    .evictHiddenWebViews(windowID: windowId),
+                    for: webView,
+                    reason: "hiddenCloneCleanup"
+                )
                 continue
             }
 
-            guard let tab = resolvedTab(with: tabId) else { continue }
-            let liveWebViews = liveWebViews(for: tab)
-            guard suspensionService.suspensionEligibility(
-                for: tab,
-                liveWebViews: liveWebViews,
-                context: context
-            ).isEligible else { continue }
-
-            candidates.append(
-                HiddenWebViewEvictionCandidate(
-                    tab: tab,
-                    entries: entries.map { (owner: $0.0, webView: $0.1) },
-                    liveWebViewCount: liveWebViews.count
-                )
-            )
-        }
-
-        guard candidates.isEmpty == false else { return }
-
-        let warmTabIDs = warmHiddenEvictionTabIDs(
-            from: candidates,
-            maximumWarmHiddenWebViewCount: context.policy.maximumWarmHiddenWebViewCount
-        )
-
-        for candidate in candidates.sorted(by: hiddenEvictionCandidateSort) {
-            guard !warmTabIDs.contains(candidate.tab.id) else { continue }
-            guard suspensionService.suspend(
-                candidate.tab,
-                reason: "hidden-eviction",
-                context: context
-            ) else { continue }
+            removeWebViewFromContainers(webView)
+            _ = unregisterTrackedWebViewSlot(owner: owner, expectedWebView: webView)
+            tab.cleanupCloneWebView(webView)
+            refreshPrimaryTrackedWebView(for: tab, browserManager: browserManager)
 
             RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
-                "Evicted hidden WebView runtime for tab=\(candidate.tab.id.uuidString.prefix(8)) entries=\(candidate.entries.count)."
+                "Cleaned hidden clone for visible tab=\(owner.tabID.uuidString.prefix(8)) window=\(windowId.uuidString.prefix(8))."
             }
         }
-    }
-
-    private func warmHiddenEvictionTabIDs(
-        from candidates: [HiddenWebViewEvictionCandidate],
-        maximumWarmHiddenWebViewCount: Int
-    ) -> Set<UUID> {
-        guard maximumWarmHiddenWebViewCount > 0 else { return [] }
-
-        var warmTabIDs = Set<UUID>()
-        var warmWebViewCount = 0
-        let mostRecentFirst = candidates.sorted { lhs, rhs in
-            let leftDate = lhs.tab.lastSelectedAt ?? .distantPast
-            let rightDate = rhs.tab.lastSelectedAt ?? .distantPast
-            if leftDate != rightDate {
-                return leftDate > rightDate
-            }
-            return lhs.tab.id.uuidString < rhs.tab.id.uuidString
-        }
-
-        for candidate in mostRecentFirst {
-            let webViewCount = max(candidate.liveWebViewCount, candidate.entries.count)
-            guard warmWebViewCount + webViewCount <= maximumWarmHiddenWebViewCount else { continue }
-            warmTabIDs.insert(candidate.tab.id)
-            warmWebViewCount += webViewCount
-        }
-
-        return warmTabIDs
-    }
-
-    private func hiddenEvictionCandidateSort(
-        _ lhs: HiddenWebViewEvictionCandidate,
-        _ rhs: HiddenWebViewEvictionCandidate
-    ) -> Bool {
-        let leftDate = lhs.tab.lastSelectedAt ?? .distantPast
-        let rightDate = rhs.tab.lastSelectedAt ?? .distantPast
-        if leftDate != rightDate {
-            return leftDate < rightDate
-        }
-        return lhs.tab.id.uuidString < rhs.tab.id.uuidString
     }
 
     private func assertTrackingConsistency(_ context: StaticString) {

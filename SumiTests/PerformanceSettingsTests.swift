@@ -11,6 +11,7 @@ final class PerformanceSettingsTests: XCTestCase {
         let settings = SumiSettingsService(userDefaults: harness.defaults)
 
         XCTAssertEqual(settings.memoryMode, .balanced)
+        XCTAssertEqual(settings.memorySaverCustomDeactivationDelay, 4 * 60 * 60)
     }
 
     func testEachMemoryModePersistsAcrossSettingsRecreation() {
@@ -28,10 +29,59 @@ final class PerformanceSettingsTests: XCTestCase {
         }
     }
 
+    func testOldMemoryModeValuesMigrateToPrompt22Modes() {
+        let cases: [(stored: String, expected: SumiMemoryMode)] = [
+            ("lightweight", .maximum),
+            ("performance", .moderate),
+            ("balanced", .balanced),
+            ("unknown", .balanced),
+        ]
+
+        for testCase in cases {
+            let harness = TestDefaultsHarness()
+            defer { harness.reset() }
+            harness.defaults.set(testCase.stored, forKey: "settings.memoryMode")
+
+            let settings = SumiSettingsService(userDefaults: harness.defaults)
+
+            XCTAssertEqual(settings.memoryMode, testCase.expected, "stored=\(testCase.stored)")
+            XCTAssertEqual(harness.defaults.string(forKey: "settings.memoryMode"), testCase.expected.rawValue)
+        }
+    }
+
+    func testCustomDeactivationDelayPersistsAndClamps() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        settings.memorySaverCustomDeactivationDelay = 30 * 60
+        XCTAssertEqual(settings.memorySaverCustomDeactivationDelay, 30 * 60)
+
+        settings.memorySaverCustomDeactivationDelay = 5 * 60
+        XCTAssertEqual(settings.memorySaverCustomDeactivationDelay, 15 * 60)
+
+        settings.memorySaverCustomDeactivationDelay = 48 * 60 * 60
+        XCTAssertEqual(settings.memorySaverCustomDeactivationDelay, 24 * 60 * 60)
+
+        let recreatedSettings = SumiSettingsService(userDefaults: harness.defaults)
+        XCTAssertEqual(recreatedSettings.memorySaverCustomDeactivationDelay, 24 * 60 * 60)
+    }
+
+    func testInvalidPersistedCustomDeactivationDelayFallsBackToDefault() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        harness.defaults.set(-1.0, forKey: "settings.memorySaver.customDeactivationDelay")
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+
+        XCTAssertEqual(settings.memorySaverCustomDeactivationDelay, 4 * 60 * 60)
+        XCTAssertEqual(harness.defaults.double(forKey: "settings.memorySaver.customDeactivationDelay"), 4 * 60 * 60)
+    }
+
     func testPerformanceSettingsExposeAllMemoryModes() throws {
         XCTAssertEqual(
             SumiMemoryModeSettingsDescriptor.all.map(\.mode),
-            [.lightweight, .balanced, .performance]
+            [.moderate, .balanced, .maximum, .custom]
         )
         XCTAssertEqual(
             Set(SumiMemoryModeSettingsDescriptor.all.map(\.mode)),
@@ -39,27 +89,26 @@ final class PerformanceSettingsTests: XCTestCase {
         )
         XCTAssertEqual(
             SumiMemoryModeSettingsDescriptor.all.map(\.title),
-            ["Lightweight", "Balanced", "Performance"]
+            ["Moderate", "Balanced", "Maximum", "Custom Deactivation Delay"]
         )
 
         let source = try Self.source(named: "Sumi/Components/Settings/Tabs/Performance.swift")
-        XCTAssertTrue(source.contains("Picker(\"Memory Mode\""))
+        XCTAssertTrue(source.contains("Picker(\"Memory Saver\""))
         XCTAssertTrue(source.contains("ForEach(SumiMemoryModeSettingsDescriptor.all)"))
+        XCTAssertTrue(source.contains("settings.memoryMode == .custom"))
+        XCTAssertTrue(source.contains("Deactivate inactive tabs after:"))
     }
 
     func testPerformanceSettingsCopyMatchesMemoryModeContract() {
         let copy = Self.performanceCopy
 
-        XCTAssertTrue(copy.contains("hidden eligible WebView instances"))
-        XCTAssertTrue(copy.contains("reduce memory usage"))
-        XCTAssertTrue(copy.contains("Recommended default"))
-        XCTAssertTrue(copy.contains("suspend hidden inactive tabs after a timeout"))
-        XCTAssertTrue(copy.contains("Keeps more tabs warm"))
-        XCTAssertTrue(copy.contains("may use more memory"))
-        XCTAssertTrue(copy.contains("Suspended tabs remain visible"))
+        XCTAssertTrue(copy.contains("Deactivates inactive tabs after a longer period"))
+        XCTAssertTrue(copy.contains("Recommended. Balances memory savings and convenience"))
+        XCTAssertTrue(copy.contains("Deactivates inactive tabs sooner"))
+        XCTAssertTrue(copy.contains("Choose when inactive tabs are deactivated"))
+        XCTAssertTrue(copy.contains("Deactivated tabs remain visible"))
         XCTAssertTrue(copy.contains("Pinned tabs and Essentials remain launchers"))
-        XCTAssertTrue(copy.contains("does not remove Essentials"))
-        XCTAssertTrue(copy.contains("convert them into normal tabs"))
+        XCTAssertTrue(copy.contains("can deactivate their hidden live runtime"))
     }
 
     func testSettingsNavigationReferencesPerformanceTab() throws {
@@ -87,7 +136,6 @@ final class PerformanceSettingsTests: XCTestCase {
         ] {
             let source = try Self.source(named: sourcePath)
             XCTAssertFalse(source.contains("SumiMemoryMode"), "\(sourcePath) should not consume memory modes")
-            XCTAssertFalse(source.contains("memoryMode"), "\(sourcePath) should not consume memory modes")
         }
     }
 

@@ -38,6 +38,7 @@ class SumiSettingsService {
     private let tabLayoutKey = "settings.tabLayout"
     private let customSearchEnginesKey = "settings.customSearchEngines"
     private let memoryModeKey = "settings.memoryMode"
+    private let memorySaverCustomDeactivationDelayKey = "settings.memorySaver.customDeactivationDelay"
 
     var currentSettingsTab: SettingsTabs = .general
 
@@ -215,6 +216,19 @@ class SumiSettingsService {
     var memoryMode: SumiMemoryMode {
         didSet {
             userDefaults.set(memoryMode.rawValue, forKey: memoryModeKey)
+            NotificationCenter.default.post(name: .sumiMemorySaverPolicyChanged, object: nil)
+        }
+    }
+
+    var memorySaverCustomDeactivationDelay: TimeInterval {
+        didSet {
+            let clamped = SumiMemorySaverCustomDelay.clamped(memorySaverCustomDeactivationDelay)
+            if clamped != memorySaverCustomDeactivationDelay {
+                memorySaverCustomDeactivationDelay = clamped
+                return
+            }
+            userDefaults.set(memorySaverCustomDeactivationDelay, forKey: memorySaverCustomDeactivationDelayKey)
+            NotificationCenter.default.post(name: .sumiMemorySaverPolicyChanged, object: nil)
         }
     }
 
@@ -248,6 +262,7 @@ class SumiSettingsService {
             didFinishOnboardingKey: true,
             tabLayoutKey: TabLayout.sidebar.rawValue,
             memoryModeKey: SumiMemoryMode.balanced.rawValue,
+            memorySaverCustomDeactivationDelayKey: SumiMemorySaverCustomDelay.defaultDelay,
         ])
 
         // Initialize properties from UserDefaults
@@ -305,9 +320,22 @@ class SumiSettingsService {
         self.pinnedTabsLook = PinnedTabsConfiguration(rawValue: userDefaults.string(forKey: pinnedTabsLookKey) ?? "large") ?? .large
         self.tabLayout = TabLayout(rawValue: userDefaults.string(forKey: tabLayoutKey) ?? TabLayout.sidebar.rawValue) ?? .sidebar
         self.didFinishOnboarding = userDefaults.bool(forKey: didFinishOnboardingKey)
-        self.memoryMode = SumiMemoryMode(
-            rawValue: userDefaults.string(forKey: memoryModeKey) ?? SumiMemoryMode.balanced.rawValue
-        ) ?? .balanced
+        let storedMemoryMode = userDefaults.string(forKey: memoryModeKey)
+        let resolvedMemoryMode = SumiMemoryMode.persistedValue(storedMemoryMode)
+        self.memoryMode = resolvedMemoryMode
+        if storedMemoryMode != resolvedMemoryMode.rawValue {
+            userDefaults.set(resolvedMemoryMode.rawValue, forKey: memoryModeKey)
+        }
+        let storedCustomDelay: TimeInterval? = userDefaults.object(forKey: memorySaverCustomDeactivationDelayKey) == nil
+            ? nil
+            : userDefaults.double(forKey: memorySaverCustomDeactivationDelayKey)
+        let resolvedCustomDelay = SumiMemorySaverCustomDelay.validatedOrDefault(
+            storedCustomDelay
+        )
+        self.memorySaverCustomDeactivationDelay = resolvedCustomDelay
+        if storedCustomDelay != resolvedCustomDelay {
+            userDefaults.set(resolvedCustomDelay, forKey: memorySaverCustomDeactivationDelayKey)
+        }
 
         if let data = userDefaults.data(forKey: siteSearchEntriesKey),
            let decoded = try? JSONDecoder().decode([SiteSearchEntry].self, from: data) {
@@ -368,18 +396,55 @@ class SumiSettingsService {
 }
 
 enum SumiMemoryMode: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
-    case lightweight
+    case moderate
     case balanced
-    case performance
+    case maximum
+    case custom
 
     var id: String { rawValue }
 
+    static func persistedValue(_ rawValue: String?) -> SumiMemoryMode {
+        switch rawValue {
+        case Self.moderate.rawValue:
+            return .moderate
+        case Self.balanced.rawValue:
+            return .balanced
+        case Self.maximum.rawValue:
+            return .maximum
+        case Self.custom.rawValue:
+            return .custom
+        case "lightweight":
+            return .maximum
+        case "performance":
+            return .moderate
+        default:
+            return .balanced
+        }
+    }
+
     var displayName: String {
         switch self {
-        case .lightweight: return "Lightweight"
+        case .moderate: return "Moderate"
         case .balanced: return "Balanced"
-        case .performance: return "Performance"
+        case .maximum: return "Maximum"
+        case .custom: return "Custom Deactivation Delay"
         }
+    }
+}
+
+enum SumiMemorySaverCustomDelay {
+    static let minimum: TimeInterval = 15 * 60
+    static let maximum: TimeInterval = 24 * 60 * 60
+    static let defaultDelay: TimeInterval = 4 * 60 * 60
+
+    static func clamped(_ delay: TimeInterval) -> TimeInterval {
+        guard delay.isFinite, delay > 0 else { return defaultDelay }
+        return min(max(delay, minimum), maximum)
+    }
+
+    static func validatedOrDefault(_ delay: TimeInterval?) -> TimeInterval {
+        guard let delay, delay.isFinite, delay > 0 else { return defaultDelay }
+        return clamped(delay)
     }
 }
 
@@ -450,6 +515,7 @@ enum DarkThemeStyle: String, CaseIterable, Identifiable {
 // MARK: - Notification Names
 extension Notification.Name {
     static let tabUnloadTimeoutChanged = Notification.Name("tabUnloadTimeoutChanged")
+    static let sumiMemorySaverPolicyChanged = Notification.Name("SumiMemorySaverPolicyChanged")
 }
 
 // MARK: - Environment Key
