@@ -164,6 +164,7 @@ class BrowserManager: ObservableObject {
     let startupWorkspaceTheme: WorkspaceTheme?
     let moduleRegistry: SumiModuleRegistry
     let trackingProtectionModule: SumiTrackingProtectionModule
+    let adBlockingModule: SumiAdBlockingModule
     let extensionsModule: SumiExtensionsModule
     let userscriptsModule: SumiUserscriptsModule
     var extensionSurfaceStore: BrowserExtensionSurfaceStore {
@@ -271,6 +272,7 @@ class BrowserManager: ObservableObject {
     init(
         moduleRegistry: SumiModuleRegistry = .shared,
         trackingProtectionModule: SumiTrackingProtectionModule? = nil,
+        adBlockingModule: SumiAdBlockingModule? = nil,
         extensionsModule: SumiExtensionsModule? = nil,
         userscriptsModule: SumiUserscriptsModule? = nil
     ) {
@@ -280,6 +282,8 @@ class BrowserManager: ObservableObject {
         self.moduleRegistry = moduleRegistry
         self.trackingProtectionModule = trackingProtectionModule
             ?? SumiTrackingProtectionModule(moduleRegistry: moduleRegistry)
+        self.adBlockingModule = adBlockingModule
+            ?? SumiAdBlockingModule(moduleRegistry: moduleRegistry)
         self.userscriptsModule = userscriptsModule
             ?? SumiUserscriptsModule(
                 moduleRegistry: moduleRegistry,

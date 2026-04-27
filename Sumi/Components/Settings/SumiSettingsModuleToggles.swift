@@ -60,7 +60,7 @@ struct SumiSettingsModuleToggleDescriptor: Identifiable, Equatable {
         title: "Ad Blocking",
         subtitle: "Off by default, separate from Tracking Protection",
         toggleTitle: "Enable Ad Blocking",
-        detail: "Ad Blocking is separate from Tracking Protection. The ad-blocking engine is planned for later; while off, Sumi does not load ad-block filter lists."
+        detail: "Ad Blocking is separate from Tracking Protection. The ad-blocking engine is not implemented yet; while off, Sumi does not load ad-block filter lists."
     )
 
     static let extensions = SumiSettingsModuleToggleDescriptor(
