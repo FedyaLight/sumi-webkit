@@ -16,8 +16,8 @@ struct MiniWindowWebView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> WKWebView {
-        // MiniWindow is an OAuth/auth auxiliary surface. Primary normal tabs use
-        // BrowserConfiguration.normalTabWebViewConfiguration(for:url:).
+        // MiniWindow is an OAuth/auth auxiliary surface. Primary normal tabs
+        // use the normal-tab BrowserConfiguration path.
         let configuration: WKWebViewConfiguration
         if let profile = session.profile {
             configuration = BrowserConfiguration.shared.auxiliaryWebViewConfiguration(

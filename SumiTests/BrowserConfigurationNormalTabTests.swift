@@ -581,29 +581,95 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
     func testAuxiliaryConfigurationsDoNotInstallTabSuspensionBridge() {
         let browserConfiguration = BrowserConfiguration()
-        let peekConfiguration = browserConfiguration.auxiliaryWebViewConfiguration(surface: .peek)
-        let miniWindowConfiguration = browserConfiguration.auxiliaryWebViewConfiguration(surface: .miniWindow)
+        let configurations = [
+            browserConfiguration.auxiliaryWebViewConfiguration(surface: .faviconDownload),
+            browserConfiguration.auxiliaryWebViewConfiguration(surface: .peek),
+            browserConfiguration.auxiliaryWebViewConfiguration(surface: .miniWindow),
+            browserConfiguration.auxiliaryWebViewConfiguration(surface: .extensionOptions),
+            browserConfiguration.cacheOptimizedWebViewConfiguration(),
+        ]
 
-        assertNoTabSuspensionBridge(in: peekConfiguration)
-        assertNoTabSuspensionBridge(in: miniWindowConfiguration)
+        configurations.forEach { configuration in
+            assertNoTabSuspensionBridge(in: configuration)
+        }
     }
 
-    func testAuxiliaryExtensionOptionsConfigurationInstallsNoTrackingRuleLists() async throws {
+    func testAuxiliaryConfigurationsUsePlainLightweightControllers() {
+        let browserConfiguration = BrowserConfiguration()
+        let configurations = [
+            browserConfiguration.auxiliaryWebViewConfiguration(surface: .faviconDownload),
+            browserConfiguration.auxiliaryWebViewConfiguration(surface: .peek),
+            browserConfiguration.auxiliaryWebViewConfiguration(surface: .miniWindow),
+            browserConfiguration.auxiliaryWebViewConfiguration(surface: .extensionOptions),
+            browserConfiguration.cacheOptimizedWebViewConfiguration(),
+        ]
+
+        for configuration in configurations {
+            XCTAssertFalse(configuration.userContentController is UserContentController)
+            XCTAssertFalse(
+                configuration.userContentController
+                    .sumiUsesNormalTabBrowserServicesKitUserContentController
+            )
+            XCTAssertNil(configuration.userContentController.sumiNormalTabUserScriptsProvider)
+            XCTAssertTrue(configuration.userContentController.userScripts.isEmpty)
+            XCTAssertNil(configuration.webExtensionController)
+        }
+    }
+
+    func testFaviconDownloadAuxiliaryConfigurationIsEphemeralAndJavaScriptDisabled() {
+        let browserConfiguration = BrowserConfiguration()
+        let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
+            surface: .faviconDownload
+        )
+
+        XCTAssertFalse(configuration.websiteDataStore.isPersistent)
+        XCTAssertFalse(configuration.defaultWebpagePreferences.allowsContentJavaScript)
+        XCTAssertFalse(configuration.preferences.javaScriptCanOpenWindowsAutomatically)
+        XCTAssertTrue(configuration.userContentController.userScripts.isEmpty)
+    }
+
+    func testProfileAwareAuxiliaryConfigurationsPreserveProfileDataStore() {
+        let browserConfiguration = BrowserConfiguration()
+        let profile = Profile(name: "Auxiliary Profile")
+        let configurations = [
+            browserConfiguration.auxiliaryWebViewConfiguration(
+                for: profile,
+                surface: .peek
+            ),
+            browserConfiguration.auxiliaryWebViewConfiguration(
+                for: profile,
+                surface: .miniWindow
+            ),
+            browserConfiguration.auxiliaryWebViewConfiguration(
+                for: profile,
+                surface: .extensionOptions
+            ),
+        ]
+
+        for configuration in configurations {
+            XCTAssertTrue(configuration.websiteDataStore === profile.dataStore)
+        }
+    }
+
+    func testAuxiliaryExtensionOptionsConfigurationUsesNoContentBlockingInfrastructure() {
         let browserConfiguration = BrowserConfiguration()
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
         )
 
-        let controller = try XCTUnwrap(configuration.userContentController as? UserContentController)
-        await controller.awaitContentBlockingAssetsInstalled()
-
-        XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
-        XCTAssertFalse(controller.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking))
+        XCTAssertFalse(configuration.userContentController is UserContentController)
+        XCTAssertFalse(
+            configuration.userContentController
+                .sumiUsesNormalTabBrowserServicesKitUserContentController
+        )
+        XCTAssertNil(configuration.userContentController.sumiNormalTabUserScriptsProvider)
+        XCTAssertTrue(configuration.userContentController.userScripts.isEmpty)
     }
 
     func testAuxiliaryConfigurationsInstallNoUserscriptRuntimeContributions() {
         let browserConfiguration = BrowserConfiguration()
         let configurations = [
+            browserConfiguration.auxiliaryWebViewConfiguration(surface: .faviconDownload),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .peek),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .miniWindow),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .extensionOptions),
@@ -615,8 +681,73 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
                 .map(\.source)
                 .joined(separator: "\n")
             XCTAssertFalse(sources.contains(UserScriptInjector.userScriptMarker))
+            XCTAssertFalse(sources.contains("SUMI_USER_SCRIPT_RUNTIME"))
             XCTAssertFalse(sources.contains("sumiGM_"))
             XCTAssertFalse(sources.contains("data-sumi-userscript"))
+            XCTAssertFalse(sources.contains("sumiLinkInteraction_"))
+            XCTAssertFalse(sources.contains("sumiIdentity_"))
+            XCTAssertFalse(sources.contains("SUMI_EC_PAGE_BRIDGE:"))
+            XCTAssertFalse(sources.contains("sumiExternallyConnectableRuntime"))
+        }
+    }
+
+    func testAuxiliaryConfigurationFiltersNormalTabAndOptionalRuntimeScripts() {
+        let browserConfiguration = BrowserConfiguration()
+        let sourceConfiguration = WKWebViewConfiguration()
+        let allowedScript = WKUserScript(
+            source: "window.__sumiExtensionOptionsAllowedScript = true;",
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        )
+        let blockedScripts = [
+            "__sumiDDGFaviconTransportInstalled",
+            "__sumiTabSuspension",
+            "SUMI_USER_SCRIPT_RUNTIME",
+            "SUMI_EC_PAGE_BRIDGE:",
+            UserScriptInjector.userScriptMarker,
+            "sumiExternallyConnectableRuntime",
+            "sumiFavicons",
+            "sumiGM_",
+            "sumiIdentity_",
+            "sumiLinkInteraction_",
+            "sumiTabSuspension_",
+        ].map { marker in
+            WKUserScript(
+                source: "/* \(marker) */",
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            )
+        }
+
+        ([allowedScript] + blockedScripts).forEach {
+            sourceConfiguration.userContentController.addUserScript($0)
+        }
+
+        let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
+            from: sourceConfiguration,
+            surface: .extensionOptions,
+            additionalUserScripts: sourceConfiguration.userContentController.userScripts
+        )
+        let sources = configuration.userContentController.userScripts
+            .map(\.source)
+            .joined(separator: "\n")
+
+        XCTAssertTrue(sources.contains("__sumiExtensionOptionsAllowedScript"))
+        XCTAssertEqual(configuration.userContentController.userScripts.count, 1)
+        for blockedMarker in [
+            "__sumiDDGFaviconTransportInstalled",
+            "__sumiTabSuspension",
+            "SUMI_USER_SCRIPT_RUNTIME",
+            "SUMI_EC_PAGE_BRIDGE:",
+            UserScriptInjector.userScriptMarker,
+            "sumiExternallyConnectableRuntime",
+            "sumiFavicons",
+            "sumiGM_",
+            "sumiIdentity_",
+            "sumiLinkInteraction_",
+            "sumiTabSuspension_",
+        ] {
+            XCTAssertFalse(sources.contains(blockedMarker), blockedMarker)
         }
     }
 
@@ -672,11 +803,31 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(tabRuntimeSource.contains("NativeMessagingHandler("))
     }
 
+    func testAuxiliarySurfacesDoNotUseNormalTabConfiguration() throws {
+        let faviconSource = try Self.source(named: "Sumi/Favicons/DDG/Model/FaviconDownloader.swift")
+        XCTAssertTrue(faviconSource.contains("auxiliaryWebViewConfiguration"))
+        XCTAssertTrue(faviconSource.contains("surface: .faviconDownload"))
+        XCTAssertFalse(faviconSource.contains("WKWebViewConfiguration()"))
+        XCTAssertFalse(faviconSource.contains("normalTabWebViewConfiguration("))
+
+        for relativePath in [
+            "Sumi/Managers/PeekManager/PeekWebView.swift",
+            "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
+            "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift",
+        ] {
+            let source = try Self.source(named: relativePath)
+            XCTAssertTrue(source.contains("auxiliaryWebViewConfiguration"), relativePath)
+            XCTAssertFalse(source.contains("normalTabWebViewConfiguration("), relativePath)
+        }
+    }
+
     func testCacheOptimizedConfigurationIsAuxiliaryOnly() {
         let browserConfiguration = BrowserConfiguration()
         let configuration = browserConfiguration.cacheOptimizedWebViewConfiguration()
 
         assertNoTabSuspensionBridge(in: configuration)
+        XCTAssertFalse(configuration.userContentController is UserContentController)
+        XCTAssertFalse(configuration.websiteDataStore.isPersistent)
     }
 
     func testNormalTabConfigurationInstallsCoreScriptProvider() throws {

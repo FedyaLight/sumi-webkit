@@ -20,8 +20,8 @@ struct PeekWebView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> WKWebView {
-        // Peek is an auxiliary preview surface. Primary normal tabs use
-        // BrowserConfiguration.normalTabWebViewConfiguration(for:url:).
+        // Peek is an auxiliary preview surface. Primary normal tabs use the
+        // normal-tab BrowserConfiguration path.
         let configuration: WKWebViewConfiguration
         if let profileId = session.sourceProfileId,
            let profile = peekManager?.browserManager?.profileManager.profiles.first(where: { $0.id == profileId }) {

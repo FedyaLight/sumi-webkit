@@ -1,3 +1,4 @@
+import BrowserServicesKit
 import Foundation
 import SwiftData
 import WebKit
@@ -951,9 +952,10 @@ final class ExtensionManagerTests: XCTestCase {
     func testAuxiliaryWebViewConfigurationCreatesFreshUserContentController() {
         let browserConfiguration = BrowserConfiguration()
         let template = browserConfiguration.webViewConfiguration
+        let marker = "window.__sumiTemplateScript = true;"
         template.userContentController.addUserScript(
             WKUserScript(
-                source: "window.__sumiTemplateScript = true;",
+                source: marker,
                 injectionTime: .atDocumentStart,
                 forMainFrameOnly: true
             )
@@ -966,9 +968,15 @@ final class ExtensionManagerTests: XCTestCase {
         )
 
         XCTAssertFalse(isolated.userContentController === template.userContentController)
-        XCTAssertTrue(
+        XCTAssertFalse(
             isolated.userContentController
                 .sumiUsesNormalTabBrowserServicesKitUserContentController
+        )
+        XCTAssertFalse(isolated.userContentController is UserContentController)
+        XCTAssertTrue(
+            isolated.userContentController.userScripts.contains {
+                $0.source.contains(marker)
+            }
         )
     }
 }
