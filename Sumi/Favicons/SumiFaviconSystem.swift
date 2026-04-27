@@ -497,6 +497,20 @@ final class SumiFaviconSystem {
         )
     }
 
+    func burnDomains(
+        _ domains: Set<String>,
+        remainingHistoryHosts: Set<String>,
+        savedLogins: Set<String>
+    ) async {
+        _ = await manager.burnDomains(
+            domains,
+            exceptBookmarks: bookmarkMirror,
+            exceptSavedLogins: savedLogins,
+            exceptExistingHistoryHosts: remainingHistoryHosts,
+            tld: TLD()
+        )
+    }
+
     private static func makeDatabase(
         name: String,
         directory: URL,

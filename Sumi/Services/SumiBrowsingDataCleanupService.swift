@@ -137,11 +137,9 @@ final class SumiBrowsingDataCleanupService {
         historyManager: HistoryManager,
         dataStore: WKWebsiteDataStore
     ) async -> SumiBrowsingDataSummary {
-        await historyManager.refresh()
-
         let query = range.historyQuery(referenceDate: referenceDateProvider())
-        let records = historyManager.visitRecords(matching: query)
-        let visitedDomains = visitDomains(from: records)
+        let historyVisitCount = await historyManager.countVisits(matching: query)
+        let visitedDomains = normalizeDomains(await historyManager.visitDomains(matching: query))
 
         if range == .allTime {
             let siteDataDomains = await websiteDataDomains(
@@ -156,14 +154,14 @@ final class SumiBrowsingDataCleanupService {
             )
 
             return SumiBrowsingDataSummary(
-                historyVisitCount: records.count,
+                historyVisitCount: historyVisitCount,
                 siteDataSiteCount: siteDataDomains.count,
                 cacheSiteCount: cacheDomains.count
             )
         }
 
         return SumiBrowsingDataSummary(
-            historyVisitCount: records.count,
+            historyVisitCount: historyVisitCount,
             siteDataSiteCount: visitedDomains.count,
             cacheSiteCount: visitedDomains.count
         )
@@ -176,16 +174,15 @@ final class SumiBrowsingDataCleanupService {
         dataStore: WKWebsiteDataStore
     ) async {
         guard !categories.isEmpty else { return }
-        await historyManager.refresh()
 
         let query = range.historyQuery(referenceDate: referenceDateProvider())
-        let records = historyManager.visitRecords(matching: query)
-        let domains = visitDomains(from: records)
+        let historyVisitCount = await historyManager.countVisits(matching: query)
+        let domains = normalizeDomains(await historyManager.visitDomains(matching: query))
 
         if categories.contains(.history) {
             if range == .allTime {
                 await historyManager.clearAll()
-            } else if !records.isEmpty {
+            } else if historyVisitCount > 0 {
                 await historyManager.delete(query: query)
             }
         }
@@ -217,14 +214,11 @@ final class SumiBrowsingDataCleanupService {
                 )
             }
         }
-
-        await historyManager.refresh()
     }
 
-    private func visitDomains(from records: [HistoryVisitRecord]) -> Set<String> {
+    private func normalizeDomains(_ domains: Set<String>) -> Set<String> {
         Set(
-            records
-                .map { $0.siteDomain ?? $0.domain }
+            domains
                 .map(\.normalizedBrowsingDataDomain)
                 .filter { !$0.isEmpty }
         )

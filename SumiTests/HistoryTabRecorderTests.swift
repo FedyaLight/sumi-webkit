@@ -30,7 +30,7 @@ final class HistoryTabRecorderTests: XCTestCase {
         )
         try await settleHistoryTasks()
 
-        let visits = try await harness.store.visits(profileId: harness.profile.id)
+        let visits = try await visits(in: harness.store, profileId: harness.profile.id)
         XCTAssertEqual(visits.count, 1)
         XCTAssertEqual(visits.first?.url, firstURL)
     }
@@ -76,7 +76,7 @@ final class HistoryTabRecorderTests: XCTestCase {
         )
         try await settleHistoryTasks()
 
-        let visits = try await harness.store.visits(profileId: harness.profile.id)
+        let visits = try await visits(in: harness.store, profileId: harness.profile.id)
         XCTAssertEqual(visits.map(\.url), [pushURL, anchorURL, baseURL])
     }
 
@@ -94,7 +94,7 @@ final class HistoryTabRecorderTests: XCTestCase {
         harness.tab.historyRecorder.updateTitle("Resolved Title", tab: harness.tab)
         try await waitForTitle("Resolved Title", harness: harness)
 
-        let visits = try await harness.store.visits(profileId: harness.profile.id)
+        let visits = try await visits(in: harness.store, profileId: harness.profile.id)
         XCTAssertEqual(visits.count, 1)
         XCTAssertEqual(visits.first?.title, "Resolved Title")
     }
@@ -143,8 +143,8 @@ final class HistoryTabRecorderTests: XCTestCase {
         )
         try await settleHistoryTasks()
 
-        let regularVisits = try await harness.store.visits(profileId: harness.profile.id)
-        let ephemeralVisits = try await harness.store.visits(profileId: ephemeralProfile.id)
+        let regularVisits = try await visits(in: harness.store, profileId: harness.profile.id)
+        let ephemeralVisits = try await visits(in: harness.store, profileId: ephemeralProfile.id)
         XCTAssertTrue(regularVisits.isEmpty)
         XCTAssertTrue(ephemeralVisits.isEmpty)
     }
@@ -189,7 +189,7 @@ final class HistoryTabRecorderTests: XCTestCase {
         line: UInt = #line
     ) async throws {
         try await waitUntil(file: file, line: line) {
-            let visits = try await harness.store.visits(profileId: harness.profile.id)
+            let visits = try await visits(in: harness.store, profileId: harness.profile.id)
             return visits.count == count
         }
     }
@@ -207,9 +207,21 @@ final class HistoryTabRecorderTests: XCTestCase {
         line: UInt = #line
     ) async throws {
         try await waitUntil(file: file, line: line) {
-            let visits = try await harness.store.visits(profileId: harness.profile.id)
+            let visits = try await visits(in: harness.store, profileId: harness.profile.id)
             return visits.first?.title == title
         }
+    }
+
+    private func visits(
+        in store: HistoryStore,
+        profileId: UUID
+    ) async throws -> [HistoryVisitRecord] {
+        try await store.fetchVisitRecordsForExplicitAction(
+            matching: .rangeFilter(.all),
+            profileId: profileId,
+            referenceDate: Date(),
+            calendar: .autoupdatingCurrent
+        )
     }
 
     private func waitUntil(

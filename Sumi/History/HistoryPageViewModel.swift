@@ -22,6 +22,7 @@ final class HistoryPageViewModel: ObservableObject {
     @Published private(set) var ranges: [HistoryRangeCount] = []
     @Published private(set) var sections: [HistorySection] = []
     @Published private(set) var isRefreshing = false
+    @Published private(set) var isLoadingNextPage = false
     @Published private(set) var domainFilter: String?
     @Published private(set) var selectedItemIDs: Set<String> = []
 
@@ -35,6 +36,10 @@ final class HistoryPageViewModel: ObservableObject {
     private var snapshotTask: Task<Void, Never>?
     private var snapshotGeneration: UInt64 = 0
     private var hasAppeared = false
+    private var loadedItems: [HistoryListItem] = []
+    private var nextPageOffset = 0
+    private var hasMorePages = false
+    private let pageSize = HistoryStore.defaultHistoryPageLimit
 
     init(
         browserManager: BrowserManager,
@@ -115,9 +120,6 @@ final class HistoryPageViewModel: ObservableObject {
         }
         hasAppeared = true
         scheduleSnapshotRebuild()
-        Task { [weak self] in
-            await self?.refreshFromStore()
-        }
     }
 
     func selectRange(_ range: HistoryRange) {
@@ -226,12 +228,6 @@ final class HistoryPageViewModel: ObservableObject {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func refreshFromStore() async {
-        isRefreshing = true
-        await historyManager.refresh()
-        isRefreshing = false
-    }
-
     private func scheduleSnapshotRebuild() {
         snapshotGeneration &+= 1
         let generation = snapshotGeneration
@@ -242,32 +238,92 @@ final class HistoryPageViewModel: ObservableObject {
                   Task.isCancelled == false,
                   generation == self.snapshotGeneration
             else { return }
-            self.rebuildSnapshot()
+            await self.reloadSnapshot(generation: generation)
         }
     }
 
-    private func rebuildSnapshot() {
+    func loadNextPageIfNeeded(after item: HistoryListItem) {
+        guard visibleItems.last?.id == item.id else { return }
+        Task { [weak self] in
+            await self?.loadNextPage()
+        }
+    }
+
+    private func reloadSnapshot(generation: UInt64) async {
+        isRefreshing = true
+        isLoadingNextPage = false
+        loadedItems = []
+        nextPageOffset = 0
+        hasMorePages = false
         ranges = historyManager.ranges()
 
-        let baseQuery: HistoryQuery
+        let page = await historyManager.historyPage(
+            query: currentQuery(),
+            searchTerm: currentSearchTerm(),
+            limit: pageSize,
+            offset: 0
+        )
+
+        guard generation == snapshotGeneration,
+              Task.isCancelled == false
+        else {
+            isRefreshing = false
+            return
+        }
+
+        loadedItems = page.items
+        nextPageOffset = page.nextOffset
+        hasMorePages = page.hasMore
+        pruneSelection(toVisibleItems: loadedItems)
+        sections = makeSections(from: loadedItems)
+        isRefreshing = false
+    }
+
+    private func loadNextPage() async {
+        guard hasMorePages,
+              isRefreshing == false,
+              isLoadingNextPage == false
+        else { return }
+
+        isLoadingNextPage = true
+        let generation = snapshotGeneration
+        let page = await historyManager.historyPage(
+            query: currentQuery(),
+            searchTerm: currentSearchTerm(),
+            limit: pageSize,
+            offset: nextPageOffset
+        )
+
+        guard generation == snapshotGeneration,
+              Task.isCancelled == false
+        else {
+            isLoadingNextPage = false
+            return
+        }
+
+        loadedItems.append(contentsOf: page.items)
+        nextPageOffset = page.nextOffset
+        hasMorePages = page.hasMore
+        pruneSelection(toVisibleItems: loadedItems)
+        sections = makeSections(from: loadedItems)
+        isLoadingNextPage = false
+    }
+
+    private func currentQuery() -> HistoryQuery {
         if let domainFilter {
-            baseQuery = .domainFilter([domainFilter])
-        } else if selectedRange == .allSites {
-            baseQuery = .rangeFilter(.allSites)
-        } else {
-            baseQuery = .rangeFilter(.all)
+            return .domainFilter([domainFilter])
         }
-
-        let baseItems = historyManager.dataProvider.items(for: baseQuery)
-        let visibleItems: [HistoryListItem]
-        if trimmedSearchText.isEmpty {
-            visibleItems = baseItems
-        } else {
-            visibleItems = baseItems.filter { $0.matches(trimmedSearchText) }
+        if selectedRange == .allSites {
+            return .rangeFilter(.allSites)
         }
+        if selectedRange != .all {
+            return .rangeFilter(selectedRange)
+        }
+        return .rangeFilter(.all)
+    }
 
-        pruneSelection(toVisibleItems: visibleItems)
-        sections = makeSections(from: visibleItems)
+    private func currentSearchTerm() -> String? {
+        trimmedSearchText.isEmpty ? nil : trimmedSearchText
     }
 
     private func makeSections(from items: [HistoryListItem]) -> [HistorySection] {
@@ -425,7 +481,7 @@ final class HistoryPageViewModel: ObservableObject {
     }
 
     private var visibleItems: [HistoryListItem] {
-        sections.flatMap(\.items)
+        loadedItems
     }
 
     private func pruneSelection(toVisibleItems items: [HistoryListItem]) {

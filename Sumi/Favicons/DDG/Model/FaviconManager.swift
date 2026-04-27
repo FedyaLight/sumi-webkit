@@ -415,7 +415,20 @@ final class FaviconManager: FaviconManagement {
                      exceptExistingHistory history: BrowsingHistory,
                      tld: TLD) async -> Result<Void, Error> {
         let existingHistoryDomains = Set(history.compactMap { $0.url.host })
+        return await burnDomains(
+            baseDomains,
+            exceptBookmarks: bookmarkManager,
+            exceptSavedLogins: exceptSavedLogins,
+            exceptExistingHistoryHosts: existingHistoryDomains,
+            tld: tld
+        )
+    }
 
+    func burnDomains(_ baseDomains: Set<String>,
+                     exceptBookmarks bookmarkManager: BookmarkManager,
+                     exceptSavedLogins: Set<String> = [],
+                     exceptExistingHistoryHosts existingHistoryDomains: Set<String>,
+                     tld: TLD) async -> Result<Void, Error> {
         await referenceCache.burnDomains(baseDomains, exceptBookmarks: bookmarkManager,
                                          exceptSavedLogins: exceptSavedLogins,
                                          exceptHistoryDomains: existingHistoryDomains,

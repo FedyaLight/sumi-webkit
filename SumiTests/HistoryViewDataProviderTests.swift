@@ -37,9 +37,9 @@ final class HistoryViewDataProviderTests: XCTestCase {
 
         await harness.provider.refreshData()
 
-        let allItems = harness.provider.items(for: .rangeFilter(.all))
-        let todayItems = harness.provider.items(for: .rangeFilter(.today))
-        let yesterdayItems = harness.provider.items(for: .rangeFilter(.yesterday))
+        let allItems = await harness.provider.items(for: .rangeFilter(.all), limit: 10)
+        let todayItems = await harness.provider.items(for: .rangeFilter(.today), limit: 10)
+        let yesterdayItems = await harness.provider.items(for: .rangeFilter(.yesterday), limit: 10)
 
         XCTAssertEqual(allItems.count, 3)
         XCTAssertEqual(todayItems.count, 2)
@@ -67,7 +67,7 @@ final class HistoryViewDataProviderTests: XCTestCase {
 
         await harness.provider.refreshData()
 
-        let recent = harness.provider.recentVisitedItems(maxCount: 10)
+        let recent = await harness.provider.recentVisitedItems(maxCount: 10)
 
         XCTAssertEqual(recent.count, 1)
         XCTAssertEqual(recent.first?.displayTitle, "Today")
@@ -98,7 +98,7 @@ final class HistoryViewDataProviderTests: XCTestCase {
         await harness.provider.refreshData()
         await harness.provider.deleteVisits(matching: .domainFilter(["example.com"]))
 
-        let remaining = harness.provider.items(for: .rangeFilter(.all))
+        let remaining = await harness.provider.items(for: .rangeFilter(.all), limit: 10)
 
         XCTAssertEqual(remaining.count, 1)
         XCTAssertEqual(remaining.first?.domain, "other.com")
@@ -126,11 +126,12 @@ final class HistoryViewDataProviderTests: XCTestCase {
             start: date("2026-04-23T11:00:00Z"),
             end: date("2026-04-23T12:00:00Z")
         )
-        XCTAssertEqual(harness.provider.items(for: query).map(\.domain), ["recent.example"])
+        let queryItems = await harness.provider.items(for: query, limit: 10)
+        XCTAssertEqual(queryItems.map(\.domain), ["recent.example"])
 
         await harness.provider.deleteVisits(matching: query)
 
-        let remaining = harness.provider.items(for: .rangeFilter(.all))
+        let remaining = await harness.provider.items(for: .rangeFilter(.all), limit: 10)
         XCTAssertEqual(remaining.map(\.domain), ["old.example"])
     }
 
@@ -158,7 +159,7 @@ final class HistoryViewDataProviderTests: XCTestCase {
 
         await harness.provider.refreshData()
 
-        let sites = harness.provider.items(for: .rangeFilter(.allSites))
+        let sites = await harness.provider.items(for: .rangeFilter(.allSites), limit: 10)
 
         XCTAssertEqual(sites.map(\.domain), ["a.example", "z.example"])
         XCTAssertEqual(sites.first?.visitCount, 2)

@@ -16,6 +16,7 @@ class SearchManager {
     
     private let session = URLSession.shared
     private var searchTask: URLSessionDataTask?
+    private var historySuggestionTask: Task<Void, Never>?
     private weak var tabManager: TabManager?
     private weak var historyManager: HistoryManager?
     private var currentProfileId: UUID?
@@ -74,8 +75,10 @@ class SearchManager {
     @MainActor func searchSuggestions(for query: String) {
         // Cancel previous request
         searchTask?.cancel()
+        historySuggestionTask?.cancel()
         webSuggestionRequestGeneration &+= 1
         activeWebSuggestionGeneration = webSuggestionRequestGeneration
+        let generation = activeWebSuggestionGeneration
 
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         
@@ -92,49 +95,50 @@ class SearchManager {
         
         // Search tabs first
         let tabSuggestions = searchTabs(for: normalizedQuery)
-        
-        // Search history
-        let historySuggestions = searchHistory(for: normalizedQuery)
-        
-        // Combine suggestions: tabs first, then history, then web suggestions
-        var allSuggestions: [SearchSuggestion] = []
-        
-        // Add tab suggestions (limit to 2 to leave room for history)
-        let maxTabSuggestions = 2
-        let limitedTabSuggestions = Array(tabSuggestions.prefix(maxTabSuggestions))
-        allSuggestions.append(contentsOf: limitedTabSuggestions)
-        
-        // Add history suggestions (limit to leave room for web suggestions)
-        let maxHistorySuggestions = 2
-        let limitedHistorySuggestions = Array(historySuggestions.prefix(maxHistorySuggestions))
-        allSuggestions.append(contentsOf: limitedHistorySuggestions)
-        
-        // Add URL suggestion if query looks like a URL
-        if isLikelyURL(normalizedQuery) {
-            allSuggestions.append(SearchSuggestion(text: normalizedQuery, type: .url))
-        }
-        
-        // Update suggestions immediately with what we have
-        if !allSuggestions.isEmpty {
-            updateSuggestionsIfNeeded(allSuggestions)
+
+        let immediateSuggestions = makeLocalSuggestions(
+            tabSuggestions: tabSuggestions,
+            historySuggestions: [],
+            query: normalizedQuery
+        )
+
+        if !immediateSuggestions.isEmpty {
+            updateSuggestionsIfNeeded(immediateSuggestions)
         }
 
-        if let cachedSuggestions = cachedWebSuggestions[normalizedQuery] {
-            let combinedSuggestions = combineSuggestions(
-                allSuggestions,
-                withWebSuggestionTexts: cachedSuggestions
+        historySuggestionTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let historySuggestions = await self.searchHistory(for: normalizedQuery)
+            guard !Task.isCancelled,
+                  generation == self.activeWebSuggestionGeneration
+            else { return }
+
+            let allSuggestions = self.makeLocalSuggestions(
+                tabSuggestions: tabSuggestions,
+                historySuggestions: historySuggestions,
+                query: normalizedQuery
             )
-            updateSuggestionsIfNeeded(combinedSuggestions)
-            isLoading = false
-            return
+
+            if !allSuggestions.isEmpty {
+                self.updateSuggestionsIfNeeded(allSuggestions)
+            }
+
+            if let cachedSuggestions = self.cachedWebSuggestions[normalizedQuery] {
+                let combinedSuggestions = self.combineSuggestions(
+                    allSuggestions,
+                    withWebSuggestionTexts: cachedSuggestions
+                )
+                self.updateSuggestionsIfNeeded(combinedSuggestions)
+                self.isLoading = false
+                return
+            }
+
+            self.fetchWebSuggestions(
+                for: normalizedQuery,
+                prependTabSuggestions: allSuggestions,
+                generation: generation
+            )
         }
-        
-        // Fetch web suggestions and combine them, but limit total to 5
-        fetchWebSuggestions(
-            for: normalizedQuery,
-            prependTabSuggestions: allSuggestions,
-            generation: activeWebSuggestionGeneration
-        )
     }
     
     @MainActor private func searchTabs(for query: String) -> [SearchSuggestion] {
@@ -179,11 +183,11 @@ class SearchManager {
         return Array(sortedTabs.prefix(3)) // Limit to 3 tab suggestions
     }
     
-    @MainActor private func searchHistory(for query: String) -> [SearchSuggestion] {
+    @MainActor private func searchHistory(for query: String) async -> [SearchSuggestion] {
         guard let historyManager = historyManager else { return [] }
         
         let lowercaseQuery = query.lowercased()
-        let historyEntries = historyManager.searchSuggestions(matching: query, limit: 20)
+        let historyEntries = await historyManager.searchSuggestions(matching: query, limit: 20)
         
         var matchingHistory: [SearchSuggestion] = []
         
@@ -220,6 +224,26 @@ class SearchManager {
         }
         
         return sortedHistory
+    }
+
+    private func makeLocalSuggestions(
+        tabSuggestions: [SearchSuggestion],
+        historySuggestions: [SearchSuggestion],
+        query: String
+    ) -> [SearchSuggestion] {
+        var allSuggestions: [SearchSuggestion] = []
+
+        let maxTabSuggestions = 2
+        allSuggestions.append(contentsOf: tabSuggestions.prefix(maxTabSuggestions))
+
+        let maxHistorySuggestions = 2
+        allSuggestions.append(contentsOf: historySuggestions.prefix(maxHistorySuggestions))
+
+        if isLikelyURL(query) {
+            allSuggestions.append(SearchSuggestion(text: query, type: .url))
+        }
+
+        return Array(allSuggestions.prefix(5))
     }
     
     private func fetchWebSuggestions(
@@ -364,6 +388,7 @@ class SearchManager {
     
     func clearSuggestions() {
         searchTask?.cancel()
+        historySuggestionTask?.cancel()
         webSuggestionRequestGeneration &+= 1
         activeWebSuggestionGeneration = webSuggestionRequestGeneration
         if !suggestions.isEmpty {

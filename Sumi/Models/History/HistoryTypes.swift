@@ -58,6 +58,26 @@ struct HistoryVisitRecord: Identifiable, Equatable, Hashable {
     let siteDomain: String?
 }
 
+struct HistoryVisitPage: Equatable {
+    let records: [HistoryVisitRecord]
+    let nextOffset: Int
+    let hasMore: Bool
+}
+
+struct HistorySiteRecord: Identifiable, Equatable, Hashable {
+    let id: String
+    let domain: String
+    let url: URL
+    let title: String
+    let visitCount: Int
+}
+
+struct HistorySitePage: Equatable {
+    let sites: [HistorySiteRecord]
+    let nextOffset: Int
+    let hasMore: Bool
+}
+
 struct HistoryListItem: Identifiable, Equatable, Hashable {
     let id: String
     let visitID: VisitIdentifier?
@@ -302,6 +322,12 @@ enum HistoryQuery: Equatable, Hashable {
     case dateFilter(Date)
     case timeRange(start: Date, end: Date)
     case visits([VisitIdentifier])
+}
+
+struct HistoryListPage: Equatable {
+    let items: [HistoryListItem]
+    let nextOffset: Int
+    let hasMore: Bool
 }
 
 struct HistorySection: Identifiable, Equatable {
