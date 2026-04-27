@@ -184,22 +184,6 @@ class BrowserConfiguration {
         }
     }
 
-    // MARK: - Cache-Optimized Configuration
-    // Auxiliary compatibility path for non-primary surfaces that still request a
-    // generic browser-like WebView configuration. This is not a normal-tab
-    // creation API and intentionally uses the mini-window auxiliary surface.
-    func cacheOptimizedWebViewConfiguration() -> WKWebViewConfiguration {
-        MainActor.assumeIsolated {
-            auxiliaryWebViewConfiguration(surface: .miniWindow)
-        }
-    }
-
-    // MARK: - Profile-Aware Configurations
-    @MainActor
-    func webViewConfiguration(for profile: Profile) -> WKWebViewConfiguration {
-        normalTabWebViewConfiguration(for: profile, url: nil)
-    }
-
     @MainActor
     func applyMediaSessionPolicy(
         to configuration: WKWebViewConfiguration,

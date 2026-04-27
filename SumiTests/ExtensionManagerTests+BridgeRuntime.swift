@@ -1171,7 +1171,9 @@ extension ExtensionManagerTests {
         let manager = makeExtensionManager(in: harness)
         let webView = WKWebView(
             frame: .zero,
-            configuration: harness.browserConfiguration.cacheOptimizedWebViewConfiguration()
+            configuration: harness.browserConfiguration.auxiliaryWebViewConfiguration(
+                surface: .miniWindow
+            )
         )
         let pageURL = try XCTUnwrap(URL(string: "https://accounts.example.com/index.html"))
         let requestID = UUID()
@@ -1611,7 +1613,9 @@ extension ExtensionManagerTests {
 
         let webView = WKWebView(
             frame: .zero,
-            configuration: harness.browserConfiguration.cacheOptimizedWebViewConfiguration()
+            configuration: harness.browserConfiguration.auxiliaryWebViewConfiguration(
+                surface: .miniWindow
+            )
         )
         let blockedURL = try XCTUnwrap(URL(string: "https://www.youtube.com/watch?v=123"))
         manager.updateExternallyConnectableNavigationLifecycle(
@@ -1668,7 +1672,9 @@ extension ExtensionManagerTests {
 
         let webView = WKWebView(
             frame: .zero,
-            configuration: harness.browserConfiguration.cacheOptimizedWebViewConfiguration()
+            configuration: harness.browserConfiguration.auxiliaryWebViewConfiguration(
+                surface: .miniWindow
+            )
         )
         let blockedURL = try XCTUnwrap(URL(string: "https://www.youtube.com/watch?v=123"))
         manager.updateExternallyConnectableNavigationLifecycle(
@@ -1715,7 +1721,9 @@ extension ExtensionManagerTests {
         )
         let webView = WKWebView(
             frame: .zero,
-            configuration: harness.browserConfiguration.cacheOptimizedWebViewConfiguration()
+            configuration: harness.browserConfiguration.auxiliaryWebViewConfiguration(
+                surface: .miniWindow
+            )
         )
         manager.updateExternallyConnectableNavigationLifecycle(
             for: webView,
@@ -1767,7 +1775,9 @@ extension ExtensionManagerTests {
         let manager = makeExtensionManager(in: harness)
         let webView = WKWebView(
             frame: .zero,
-            configuration: harness.browserConfiguration.cacheOptimizedWebViewConfiguration()
+            configuration: harness.browserConfiguration.auxiliaryWebViewConfiguration(
+                surface: .miniWindow
+            )
         )
         let originalURL = try XCTUnwrap(
             URL(string: "https://accounts.example.com/original")

@@ -586,7 +586,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .peek),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .miniWindow),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .extensionOptions),
-            browserConfiguration.cacheOptimizedWebViewConfiguration(),
         ]
 
         configurations.forEach { configuration in
@@ -601,7 +600,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .peek),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .miniWindow),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .extensionOptions),
-            browserConfiguration.cacheOptimizedWebViewConfiguration(),
         ]
 
         for configuration in configurations {
@@ -673,7 +671,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .peek),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .miniWindow),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .extensionOptions),
-            browserConfiguration.cacheOptimizedWebViewConfiguration(),
         ]
 
         for configuration in configurations {
@@ -821,15 +818,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         }
     }
 
-    func testCacheOptimizedConfigurationIsAuxiliaryOnly() {
-        let browserConfiguration = BrowserConfiguration()
-        let configuration = browserConfiguration.cacheOptimizedWebViewConfiguration()
-
-        assertNoTabSuspensionBridge(in: configuration)
-        XCTAssertFalse(configuration.userContentController is UserContentController)
-        XCTAssertFalse(configuration.websiteDataStore.isPersistent)
-    }
-
     func testNormalTabConfigurationInstallsCoreScriptProvider() throws {
         let browserConfiguration = BrowserConfiguration()
         let profile = Profile(name: "Default")
@@ -898,6 +886,13 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(source.contains("FocusableWKWebView(frame: .zero"))
         XCTAssertTrue(source.contains("tab.ensureWebView()"))
         XCTAssertTrue(source.contains("tab.makeNormalTabWebView"))
+    }
+
+    func testBrowserConfigurationDoesNotExposeLegacyCompatibilityAliases() throws {
+        let source = try Self.source(named: "Sumi/Models/BrowserConfig/BrowserConfig.swift")
+
+        XCTAssertFalse(source.contains("cacheOptimizedWebViewConfiguration"))
+        XCTAssertFalse(source.contains("webViewConfiguration(for:"))
     }
 
     func testBrowserManagerDoesNotConstructSumiScriptsManagerAtStartup() throws {

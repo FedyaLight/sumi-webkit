@@ -7,7 +7,10 @@ final class BrowserConfigurationMediaSessionTests: XCTestCase {
         let browserConfiguration = BrowserConfiguration()
         let profile = Profile(name: "Default")
 
-        let configuration = browserConfiguration.webViewConfiguration(for: profile)
+        let configuration = browserConfiguration.normalTabWebViewConfiguration(
+            for: profile,
+            url: nil
+        )
 
         XCTAssertEqual(
             configuration.preferences.value(forKey: "mediaSessionEnabled") as? Bool,
@@ -19,7 +22,10 @@ final class BrowserConfigurationMediaSessionTests: XCTestCase {
         let browserConfiguration = BrowserConfiguration()
         let profile = Profile.createEphemeral()
 
-        let configuration = browserConfiguration.webViewConfiguration(for: profile)
+        let configuration = browserConfiguration.normalTabWebViewConfiguration(
+            for: profile,
+            url: nil
+        )
 
         XCTAssertEqual(
             configuration.preferences.value(forKey: "mediaSessionEnabled") as? Bool,
