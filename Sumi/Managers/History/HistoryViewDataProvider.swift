@@ -9,10 +9,6 @@ final class HistoryViewDataProvider {
     private let relativeDayFormatter: DateFormatter
     private let timeFormatter: DateFormatter
 
-    private(set) var rawVisits: [HistoryVisitRecord] = []
-    private var allItems: [HistoryListItem] = []
-    private var dayItemsByRange: [HistoryRange: [HistoryListItem]] = [:]
-    private var itemsByDomain: [String: [HistoryVisitRecord]] = [:]
     private var refreshGeneration: UInt64 = 0
     private var rangesCache: [HistoryRangeCount] = [
         .init(id: .all, count: 0),
@@ -47,41 +43,121 @@ final class HistoryViewDataProvider {
         rangesCache
     }
 
-    var canClearHistory: Bool {
-        !rawVisits.isEmpty
-    }
-
     func refreshData() async {
         refreshGeneration &+= 1
         let generation = refreshGeneration
-        let loadedVisits: [HistoryVisitRecord]
+        let profileId = currentProfileIdProvider()
+
         do {
-            loadedVisits = try await store.visits(profileId: currentProfileIdProvider())
+            let hasHistory = try await store.hasVisits(profileId: profileId)
+            let loadedRanges = [
+                HistoryRangeCount(id: .all, count: hasHistory ? 1 : 0),
+                HistoryRangeCount(id: .allSites, count: 0),
+            ]
+            guard generation == refreshGeneration else { return }
+            rangesCache = loadedRanges
         } catch {
-            RuntimeDiagnostics.emit("Error loading history visits: \(error)")
-            loadedVisits = []
+            RuntimeDiagnostics.emit("Error loading bounded history summary: \(error)")
+            guard generation == refreshGeneration else { return }
+            rangesCache = [
+                .init(id: .all, count: 0),
+                .init(id: .allSites, count: 0),
+            ]
         }
-        guard generation == refreshGeneration else { return }
-        rawVisits = loadedVisits
-        rebuildCaches(referenceDate: referenceDateProvider())
     }
 
-    func items(for query: HistoryQuery) -> [HistoryListItem] {
-        items(matching: query)
+    func hasHistory() async -> Bool {
+        do {
+            return try await store.hasVisits(profileId: currentProfileIdProvider())
+        } catch {
+            RuntimeDiagnostics.emit("Error checking history availability: \(error)")
+            return false
+        }
     }
 
-    func visitRecords(for query: HistoryQuery) -> [HistoryVisitRecord] {
-        matchingVisits(for: query)
+    func page(
+        for query: HistoryQuery,
+        searchTerm: String? = nil,
+        limit: Int,
+        offset: Int
+    ) async -> HistoryListPage {
+        let trimmedSearch = searchTerm?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        if case .rangeFilter(.allSites) = query {
+            return await sitePage(searchTerm: trimmedSearch, limit: limit, offset: offset)
+        }
+
+        if !trimmedSearch.isEmpty, query != .rangeFilter(.all) {
+            return await filteredPage(
+                for: query,
+                searchTerm: trimmedSearch,
+                limit: limit,
+                offset: offset
+            )
+        }
+
+        let effectiveQuery: HistoryQuery = trimmedSearch.isEmpty
+            ? query
+            : .searchTerm(trimmedSearch)
+        return await historyPage(for: effectiveQuery, limit: limit, offset: offset)
     }
 
-    func visitDomains(for query: HistoryQuery) -> Set<String> {
-        Set(matchingVisits(for: query).map { $0.siteDomain ?? $0.domain })
+    func items(
+        for query: HistoryQuery,
+        limit: Int = HistoryStore.defaultHistoryPageLimit,
+        offset: Int = 0
+    ) async -> [HistoryListItem] {
+        await page(for: query, limit: limit, offset: offset).items
+    }
+
+    func visitRecords(for query: HistoryQuery) async -> [HistoryVisitRecord] {
+        do {
+            return try await store.fetchVisitRecordsForExplicitAction(
+                matching: query,
+                profileId: currentProfileIdProvider(),
+                referenceDate: referenceDateProvider(),
+                calendar: calendar
+            )
+        } catch {
+            RuntimeDiagnostics.emit("Error loading explicit history visits: \(error)")
+            return []
+        }
+    }
+
+    func visitDomains(for query: HistoryQuery) async -> Set<String> {
+        do {
+            return try await store.domains(
+                matching: query,
+                profileId: currentProfileIdProvider(),
+                referenceDate: referenceDateProvider(),
+                calendar: calendar
+            )
+        } catch {
+            RuntimeDiagnostics.emit("Error loading history domains: \(error)")
+            return []
+        }
+    }
+
+    func remainingHistoryHosts(forSiteDomains domains: Set<String>) async -> Set<String> {
+        do {
+            return try await store.remainingHistoryHosts(
+                forSiteDomains: domains,
+                profileId: currentProfileIdProvider()
+            )
+        } catch {
+            RuntimeDiagnostics.emit("Error loading remaining history hosts: \(error)")
+            return []
+        }
     }
 
     func deleteVisits(matching query: HistoryQuery) async {
         do {
-            let ids = matchingRecordIDs(for: query)
-            _ = try await store.deleteVisits(withIDs: ids, profileId: currentProfileIdProvider())
+            _ = try await store.deleteVisits(
+                matching: query,
+                profileId: currentProfileIdProvider(),
+                referenceDate: referenceDateProvider(),
+                calendar: calendar
+            )
         } catch {
             RuntimeDiagnostics.emit("Error deleting history visits: \(error)")
         }
@@ -93,18 +169,22 @@ final class HistoryViewDataProvider {
         domains: Set<String>
     ) async {
         do {
-            var ids = Set<UUID>()
             if !visitIDs.isEmpty {
-                ids.formUnion(matchingRecordIDs(for: .visits(visitIDs)))
+                _ = try await store.deleteVisits(
+                    matching: .visits(visitIDs),
+                    profileId: currentProfileIdProvider(),
+                    referenceDate: referenceDateProvider(),
+                    calendar: calendar
+                )
             }
             if !domains.isEmpty {
-                ids.formUnion(matchingRecordIDs(for: .domainFilter(domains)))
+                _ = try await store.deleteVisits(
+                    matching: .domainFilter(domains),
+                    profileId: currentProfileIdProvider(),
+                    referenceDate: referenceDateProvider(),
+                    calendar: calendar
+                )
             }
-            guard !ids.isEmpty else {
-                await refreshData()
-                return
-            }
-            _ = try await store.deleteVisits(withIDs: ids, profileId: currentProfileIdProvider())
         } catch {
             RuntimeDiagnostics.emit("Error deleting selected history visits: \(error)")
         }
@@ -113,176 +193,142 @@ final class HistoryViewDataProvider {
 
     func clearAll() async {
         do {
-            _ = try await store.clearAll(profileId: currentProfileIdProvider())
+            _ = try await store.clearAllExplicit(profileId: currentProfileIdProvider())
         } catch {
             RuntimeDiagnostics.emit("Error clearing history visits: \(error)")
         }
         await refreshData()
     }
 
-    func preferredURL(forSiteDomain domain: String) -> URL? {
-        bestRecord(for: itemsByDomain[domain] ?? [])?.url
-            ?? bestRecord(for: rawVisits.filter { ($0.siteDomain ?? $0.domain) == domain })?.url
+    func recentVisitedItems(maxCount: Int) async -> [HistoryListItem] {
+        do {
+            let records = try await store.fetchRecentHistory(
+                profileId: currentProfileIdProvider(),
+                limit: maxCount,
+                referenceDate: referenceDateProvider(),
+                calendar: calendar
+            )
+            let referenceDate = referenceDateProvider()
+            return records.map { makeHistoryItem(from: $0, referenceDate: referenceDate) }
+        } catch {
+            RuntimeDiagnostics.emit("Error loading recent history menu items: \(error)")
+            return []
+        }
     }
 
-    func recentVisitedItems(maxCount: Int) -> [HistoryListItem] {
-        let referenceDate = referenceDateProvider()
-        return Array(
-            allItems
-                .filter { item in
-                    guard let visitedAt = item.visitedAt else { return false }
-                    return calendar.isDate(visitedAt, inSameDayAs: referenceDate)
-                }
-                .prefix(maxCount)
-        )
-    }
-
-    func searchSuggestions(matching query: String, limit: Int) -> [HistoryListItem] {
+    func searchSuggestions(matching query: String, limit: Int) async -> [HistoryListItem] {
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return []
         }
-        return Array(
-            allItems
-                .filter { $0.matches(query) }
-                .sorted { ($0.visitedAt ?? .distantPast) > ($1.visitedAt ?? .distantPast) }
-                .prefix(limit)
-        )
-    }
 
-    private func rebuildCaches(referenceDate: Date) {
-        let visibleVisits = deduplicatedVisibleVisits(from: rawVisits)
-        allItems = []
-        dayItemsByRange = [:]
-        itemsByDomain = Dictionary(grouping: rawVisits) { $0.siteDomain ?? $0.domain }
-
-        let groupedByDay = Dictionary(grouping: visibleVisits) {
-            calendar.startOfDay(for: $0.visitedAt)
-        }
-
-        for day in groupedByDay.keys.sorted(by: >) {
-            guard let range = HistoryRange(
-                date: day,
-                referenceDate: referenceDate,
+        do {
+            let records = try await store.searchHistory(
+                query: query,
+                profileId: currentProfileIdProvider(),
+                limit: limit,
+                referenceDate: referenceDateProvider(),
                 calendar: calendar
-            ) else {
-                continue
-            }
-
-            let records = (groupedByDay[day] ?? []).sorted { $0.visitedAt > $1.visitedAt }
-            let items = records.map { makeHistoryItem(from: $0, referenceDate: referenceDate) }
-            dayItemsByRange[range, default: []].append(contentsOf: items)
-            allItems.append(contentsOf: items)
-        }
-
-        let sitesItems = makeSitesItems()
-        dayItemsByRange[.allSites] = sitesItems
-
-        let displayedRanges = HistoryRange.displayedRanges(
-            for: referenceDate,
-            calendar: calendar
-        )
-        let trimmedRanges = Array(
-            displayedRanges.reversed()
-                .drop(while: { dayItemsByRange[$0]?.isEmpty != false })
-                .reversed()
-        )
-
-        var computedRanges = trimmedRanges.map {
-            HistoryRangeCount(id: $0, count: dayItemsByRange[$0]?.count ?? 0)
-        }
-        computedRanges.insert(.init(id: .all, count: allItems.count), at: 0)
-        computedRanges.append(.init(id: .allSites, count: sitesItems.count))
-        rangesCache = computedRanges
-    }
-
-    private func items(matching query: HistoryQuery) -> [HistoryListItem] {
-        switch query {
-        case .rangeFilter(.all):
-            return allItems
-        case .rangeFilter(let range):
-            return dayItemsByRange[range] ?? []
-        case .dateFilter(let date):
-            let start = calendar.startOfDay(for: date)
-            guard let end = calendar.date(byAdding: .day, value: 1, to: start) else {
-                return []
-            }
-            return allItems.filter {
-                guard let visitedAt = $0.visitedAt else { return false }
-                return start..<end ~= visitedAt
-            }
-        case .timeRange(let start, let end):
-            return allItems.filter {
-                guard let visitedAt = $0.visitedAt else { return false }
-                return start..<end ~= visitedAt
-            }
-        case .searchTerm(let term):
-            guard !term.isEmpty else { return allItems }
-            return allItems.filter { $0.matches(term) }
-        case .domainFilter(let domains):
-            guard !domains.isEmpty else { return allItems }
-            return allItems.filter { $0.matchesDomains(domains) }
-        case .visits(let identifiers):
-            guard !identifiers.isEmpty else { return [] }
-            let identifierSet = Set(identifiers)
-            return allItems.filter { item in
-                guard let visitID = item.visitID else { return false }
-                return identifierSet.contains(visitID)
-            }
+            )
+            let referenceDate = referenceDateProvider()
+            return records.map { makeHistoryItem(from: $0, referenceDate: referenceDate) }
+        } catch {
+            RuntimeDiagnostics.emit("Error loading history suggestions: \(error)")
+            return []
         }
     }
 
-    private func matchingVisits(for query: HistoryQuery) -> [HistoryVisitRecord] {
-        switch query {
-        case .rangeFilter(.all):
-            return rawVisits
-        case .rangeFilter(.allSites):
-            return rawVisits
-        case .rangeFilter(let range):
-            guard let dateRange = range.dateRange(for: referenceDateProvider(), calendar: calendar) else {
-                return rawVisits
+    private func historyPage(
+        for query: HistoryQuery,
+        limit: Int,
+        offset: Int
+    ) async -> HistoryListPage {
+        do {
+            let page = try await store.fetchHistoryPage(
+                query: query,
+                profileId: currentProfileIdProvider(),
+                limit: limit,
+                offset: offset,
+                referenceDate: referenceDateProvider(),
+                calendar: calendar
+            )
+            let referenceDate = referenceDateProvider()
+            return HistoryListPage(
+                items: page.records.map { makeHistoryItem(from: $0, referenceDate: referenceDate) },
+                nextOffset: page.nextOffset,
+                hasMore: page.hasMore
+            )
+        } catch {
+            RuntimeDiagnostics.emit("Error loading history page: \(error)")
+            return HistoryListPage(items: [], nextOffset: offset, hasMore: false)
+        }
+    }
+
+    private func filteredPage(
+        for query: HistoryQuery,
+        searchTerm: String,
+        limit: Int,
+        offset: Int
+    ) async -> HistoryListPage {
+        var baseOffset = 0
+        var matchedOffset = 0
+        var items: [HistoryListItem] = []
+        let startOffset = max(0, offset)
+
+        while true {
+            let page = await historyPage(
+                for: query,
+                limit: max(limit, HistoryStore.defaultHistoryPageLimit),
+                offset: baseOffset
+            )
+            for item in page.items where item.matches(searchTerm) {
+                guard matchedOffset >= startOffset else {
+                    matchedOffset += 1
+                    continue
+                }
+                if items.count < limit {
+                    items.append(item)
+                    matchedOffset += 1
+                } else {
+                    return HistoryListPage(
+                        items: items,
+                        nextOffset: startOffset + items.count,
+                        hasMore: true
+                    )
+                }
             }
-            return rawVisits.filter { dateRange.contains($0.visitedAt) }
-        case .dateFilter(let date):
-            let start = calendar.startOfDay(for: date)
-            guard let end = calendar.date(byAdding: .day, value: 1, to: start) else {
-                return []
-            }
-            return rawVisits.filter { start..<end ~= $0.visitedAt }
-        case .timeRange(let start, let end):
-            return rawVisits.filter { start..<end ~= $0.visitedAt }
-        case .searchTerm(let term):
-            guard !term.isEmpty else { return rawVisits }
-            return rawVisits.filter { visitMatchesSearchTerm($0, term: term) }
-        case .domainFilter(let domains):
-            guard !domains.isEmpty else { return rawVisits }
-            return rawVisits.filter { domains.contains($0.siteDomain ?? $0.domain) }
-        case .visits(let identifiers):
-            let identifierSet = Set(identifiers)
-            return rawVisits.filter { visit in
-                identifierSet.contains(
-                    VisitIdentifier(uuid: visit.id.uuidString, url: visit.url, date: visit.visitedAt)
+
+            guard page.hasMore else {
+                return HistoryListPage(
+                    items: items,
+                    nextOffset: startOffset + items.count,
+                    hasMore: false
                 )
             }
+            baseOffset = page.nextOffset
         }
     }
 
-    private func matchingRecordIDs(for query: HistoryQuery) -> Set<UUID> {
-        Set(matchingVisits(for: query).map(\.id))
-    }
-
-    private func deduplicatedVisibleVisits(from visits: [HistoryVisitRecord]) -> [HistoryVisitRecord] {
-        var seenKeys = Set<String>()
-        var results: [HistoryVisitRecord] = []
-
-        for visit in visits.sorted(by: { $0.visitedAt > $1.visitedAt }) {
-            let dayKey = calendar.startOfDay(for: visit.visitedAt).timeIntervalSince1970
-            let key = "\(dayKey)|\(visit.url.absoluteString)"
-            if seenKeys.insert(key).inserted {
-                results.append(visit)
-            }
+    private func sitePage(
+        searchTerm: String,
+        limit: Int,
+        offset: Int
+    ) async -> HistoryListPage {
+        do {
+            let page = try await store.fetchSitePage(
+                profileId: currentProfileIdProvider(),
+                searchTerm: searchTerm,
+                limit: limit,
+                offset: offset
+            )
+            return HistoryListPage(
+                items: page.sites.map(makeSiteItem),
+                nextOffset: page.nextOffset,
+                hasMore: page.hasMore
+            )
+        } catch {
+            RuntimeDiagnostics.emit("Error loading history sites page: \(error)")
+            return HistoryListPage(items: [], nextOffset: offset, hasMore: false)
         }
-
-        return results
     }
 
     private func makeHistoryItem(
@@ -310,85 +356,20 @@ final class HistoryViewDataProvider {
         )
     }
 
-    private func makeSitesItems() -> [HistoryListItem] {
-        itemsByDomain.keys.sorted().compactMap { domain in
-            guard let url = preferredURL(forSiteDomain: domain) else {
-                return nil
-            }
-            let title = bestTitle(for: itemsByDomain[domain] ?? [], domain: domain)
-            return HistoryListItem(
-                id: "site:\(domain)",
-                visitID: nil,
-                url: url,
-                title: title,
-                domain: domain,
-                siteDomain: domain,
-                visitedAt: nil,
-                relativeDay: "",
-                timeText: "",
-                visitCount: itemsByDomain[domain]?.count ?? 0,
-                isSiteAggregate: true
-            )
-        }
-    }
-
-    private func bestTitle(for records: [HistoryVisitRecord], domain: String) -> String {
-        if let bestRecord = bestRecord(for: records) {
-            return bestRecord.title.isEmpty ? bestRecord.url.absoluteString : bestRecord.title
-        }
-        return domain
-    }
-
-    private func bestRecord(for records: [HistoryVisitRecord]) -> HistoryVisitRecord? {
-        records
-            .sorted(by: comparePreferredRecords)
-            .first
-    }
-
-    private func comparePreferredRecords(
-        _ lhs: HistoryVisitRecord,
-        _ rhs: HistoryVisitRecord
-    ) -> Bool {
-        let lhsHasTitle = lhs.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-        let rhsHasTitle = rhs.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-        if lhsHasTitle != rhsHasTitle {
-            return lhsHasTitle && !rhsHasTitle
-        }
-
-        let lhsHTTPS = lhs.url.scheme?.lowercased() == "https"
-        let rhsHTTPS = rhs.url.scheme?.lowercased() == "https"
-        if lhsHTTPS != rhsHTTPS {
-            return lhsHTTPS && !rhsHTTPS
-        }
-
-        let lhsRoot = (lhs.url.path.isEmpty || lhs.url.path == "/")
-        let rhsRoot = (rhs.url.path.isEmpty || rhs.url.path == "/")
-        if lhsRoot != rhsRoot {
-            return lhsRoot && !rhsRoot
-        }
-
-        let lhsHost = lhs.url.host?.lowercased().trimmingPrefix("www.") ?? ""
-        let rhsHost = rhs.url.host?.lowercased().trimmingPrefix("www.") ?? ""
-        if let domain = lhs.siteDomain ?? rhs.siteDomain {
-            let lhsMatchesDomain = lhsHost == domain
-            let rhsMatchesDomain = rhsHost == domain
-            if lhsMatchesDomain != rhsMatchesDomain {
-                return lhsMatchesDomain && !rhsMatchesDomain
-            }
-        }
-
-        return lhs.visitedAt > rhs.visitedAt
-    }
-
-    private func visitMatchesSearchTerm(
-        _ visit: HistoryVisitRecord,
-        term: String
-    ) -> Bool {
-        let needle = term.lowercased()
-        return visit.title.lowercased().contains(needle)
-            || visit.url.absoluteString.lowercased().contains(needle)
-            || visit.domain.lowercased().contains(needle)
-            || (visit.siteDomain?.lowercased().contains(needle) ?? false)
+    private func makeSiteItem(from site: HistorySiteRecord) -> HistoryListItem {
+        HistoryListItem(
+            id: "site:\(site.domain)",
+            visitID: nil,
+            url: site.url,
+            title: site.title,
+            domain: site.domain,
+            siteDomain: site.domain,
+            visitedAt: nil,
+            relativeDay: "",
+            timeText: "",
+            visitCount: site.visitCount,
+            isSiteAggregate: true
+        )
     }
 
     private func relativeDayString(
@@ -411,11 +392,5 @@ final class HistoryViewDataProvider {
             return range.title
         }
         return relativeDayFormatter.string(from: date)
-    }
-}
-
-private extension String {
-    func trimmingPrefix(_ prefix: String) -> String {
-        hasPrefix(prefix) ? String(dropFirst(prefix.count)) : self
     }
 }

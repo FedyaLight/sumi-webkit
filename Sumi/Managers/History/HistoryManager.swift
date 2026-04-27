@@ -4,17 +4,18 @@
 //
 
 import Foundation
-import History
 import SwiftData
 
 @MainActor
 final class HistoryManager: ObservableObject {
     @Published private(set) var revision: UInt = 0
+    @Published private(set) var canClearHistory = false
 
     private static let cleanupDefaultsKey =
         "\(SumiAppIdentity.runtimeBundleIdentifier).history.lastCleanupAt"
     private static let cleanupInterval: TimeInterval = 24 * 60 * 60
     private static let deferredCleanupDelayNanoseconds: UInt64 = 10_000_000_000
+    private static let recentMenuLimit = HistoryStore.defaultRecentMenuLimit
 
     let store: HistoryStore
     lazy var dataProvider = HistoryViewDataProvider(
@@ -28,6 +29,7 @@ final class HistoryManager: ObservableObject {
     private var cleanupTask: Task<Void, Never>?
     private var changeTask: Task<Void, Never>?
     private var scheduledRefreshTask: Task<Void, Never>?
+    private var recentVisitedCache: [HistoryListItem] = []
     private static let changeRefreshDebounceNanoseconds: UInt64 = 120_000_000
 
     var currentProfileId: UUID?
@@ -37,7 +39,7 @@ final class HistoryManager: ObservableObject {
         self.currentProfileId = profileId
         scheduleDeferredHistoryCleanupIfNeeded()
         Task { [weak self] in
-            await self?.refresh()
+            await self?.refreshSummary(incrementRevision: false)
         }
     }
 
@@ -50,8 +52,10 @@ final class HistoryManager: ObservableObject {
     func switchProfile(_ profileId: UUID?) {
         currentProfileId = profileId
         scheduledRefreshTask?.cancel()
+        recentVisitedCache = []
+        canClearHistory = false
         Task { [weak self] in
-            await self?.refresh()
+            await self?.refreshSummary(incrementRevision: true)
         }
     }
 
@@ -114,25 +118,33 @@ final class HistoryManager: ObservableObject {
             guard let self else { return }
             do {
                 try await operation(store)
-                scheduleCoalescedRefresh()
+                scheduleCoalescedSummaryRefresh()
             } catch {
                 RuntimeDiagnostics.emit("Error updating history: \(error)")
             }
         }
     }
 
-    private func scheduleCoalescedRefresh() {
+    private func scheduleCoalescedSummaryRefresh() {
         scheduledRefreshTask?.cancel()
         scheduledRefreshTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: Self.changeRefreshDebounceNanoseconds)
             guard !Task.isCancelled else { return }
-            await self?.refresh()
+            await self?.refreshSummary(incrementRevision: true)
         }
     }
 
     func refresh() async {
+        await refreshSummary(incrementRevision: true)
+    }
+
+    private func refreshSummary(incrementRevision: Bool) async {
         await dataProvider.refreshData()
-        revision &+= 1
+        canClearHistory = await dataProvider.hasHistory()
+        recentVisitedCache = await dataProvider.recentVisitedItems(maxCount: Self.recentMenuLimit)
+        if incrementRevision {
+            revision &+= 1
+        }
     }
 
     func ranges() -> [HistoryRangeCount] {
@@ -140,38 +152,60 @@ final class HistoryManager: ObservableObject {
     }
 
     func recentVisitedItems(maxCount: Int = 12) -> [HistoryListItem] {
-        dataProvider.recentVisitedItems(maxCount: maxCount)
+        Array(recentVisitedCache.prefix(maxCount))
     }
 
     func searchSuggestions(
         matching query: String,
-        limit: Int = 20
-    ) -> [HistoryListItem] {
-        dataProvider.searchSuggestions(matching: query, limit: limit)
+        limit: Int = HistoryStore.defaultSuggestionLimit
+    ) async -> [HistoryListItem] {
+        await dataProvider.searchSuggestions(matching: query, limit: limit)
     }
 
-    var canClearHistory: Bool {
-        dataProvider.canClearHistory
+    func historyPage(
+        query: HistoryQuery,
+        searchTerm: String? = nil,
+        limit: Int = HistoryStore.defaultHistoryPageLimit,
+        offset: Int = 0
+    ) async -> HistoryListPage {
+        await dataProvider.page(
+            for: query,
+            searchTerm: searchTerm,
+            limit: limit,
+            offset: offset
+        )
     }
 
-    func visitRecords(matching query: HistoryQuery) -> [HistoryVisitRecord] {
-        dataProvider.visitRecords(for: query)
+    func countVisits(matching query: HistoryQuery) async -> Int {
+        do {
+            return try await store.countVisits(
+                matching: query,
+                profileId: currentProfileId,
+                referenceDate: Date(),
+                calendar: .autoupdatingCurrent
+            )
+        } catch {
+            RuntimeDiagnostics.emit("Error counting history visits: \(error)")
+            return 0
+        }
     }
 
-    func visitDomains(matching query: HistoryQuery) -> Set<String> {
-        dataProvider.visitDomains(for: query)
+    func visitDomains(matching query: HistoryQuery) async -> Set<String> {
+        await dataProvider.visitDomains(for: query)
     }
 
     func delete(query: HistoryQuery) async {
-        let faviconDomains = faviconBurnDomains(for: query)
+        let faviconDomains = await faviconBurnDomains(for: query)
         await dataProvider.deleteVisits(matching: query)
         if !faviconDomains.isEmpty {
+            let remainingHosts = await dataProvider.remainingHistoryHosts(forSiteDomains: faviconDomains)
             await SumiFaviconSystem.shared.burnDomains(
                 faviconDomains,
-                remainingHistory: currentBrowsingHistory(),
+                remainingHistoryHosts: remainingHosts,
                 savedLogins: BasicAuthCredentialStore().allCredentialHosts()
             )
         }
+        await refreshSummary(incrementRevision: false)
         revision &+= 1
     }
 
@@ -181,12 +215,14 @@ final class HistoryManager: ObservableObject {
     ) async {
         await dataProvider.deleteSelection(visitIDs: visitIDs, domains: domains)
         if !domains.isEmpty {
+            let remainingHosts = await dataProvider.remainingHistoryHosts(forSiteDomains: domains)
             await SumiFaviconSystem.shared.burnDomains(
                 domains,
-                remainingHistory: currentBrowsingHistory(),
+                remainingHistoryHosts: remainingHosts,
                 savedLogins: BasicAuthCredentialStore().allCredentialHosts()
             )
         }
+        await refreshSummary(incrementRevision: false)
         revision &+= 1
     }
 
@@ -195,37 +231,20 @@ final class HistoryManager: ObservableObject {
         await SumiFaviconSystem.shared.burnAfterHistoryClear(
             savedLogins: BasicAuthCredentialStore().allCredentialHosts()
         )
+        await refreshSummary(incrementRevision: false)
         revision &+= 1
     }
 
-    private func faviconBurnDomains(for query: HistoryQuery) -> Set<String> {
+    private func faviconBurnDomains(for query: HistoryQuery) async -> Set<String> {
         switch query {
         case .domainFilter(let domains):
             return domains
         case .dateFilter(_), .timeRange(_, _):
-            return dataProvider.visitDomains(for: query)
+            return await dataProvider.visitDomains(for: query)
         case .rangeFilter(let range) where range != .all && range != .allSites:
-            return dataProvider.visitDomains(for: query)
+            return await dataProvider.visitDomains(for: query)
         case .searchTerm, .rangeFilter, .visits:
             return []
-        }
-    }
-
-    private func currentBrowsingHistory() -> BrowsingHistory {
-        let visits = dataProvider.rawVisits
-        return visits.map { visit in
-            HistoryEntry(
-                identifier: visit.id,
-                url: visit.url,
-                title: visit.title,
-                failedToLoad: false,
-                numberOfTotalVisits: 1,
-                lastVisit: visit.visitedAt,
-                visits: [],
-                numberOfTrackersBlocked: 0,
-                blockedTrackingEntities: [],
-                trackersFound: false
-            )
         }
     }
 
@@ -252,17 +271,22 @@ final class HistoryManager: ObservableObject {
 
     private func runDeferredHistoryCleanupIfNeeded() async {
         guard shouldRunHistoryCleanup() else { return }
-        let visits = (try? await store.visits(profileId: currentProfileId)) ?? []
         let cutoffDate = Calendar.autoupdatingCurrent.date(
             byAdding: .day,
             value: -maxHistoryDays,
             to: Date()
         ) ?? .distantPast
-        let ids = Set(visits.filter { $0.visitedAt < cutoffDate }.map(\.id))
 
         do {
-            _ = try await store.deleteVisits(withIDs: ids, profileId: currentProfileId)
-            await refresh()
+            let deletedCount = try await store.deleteVisits(
+                matching: .timeRange(start: .distantPast, end: cutoffDate),
+                profileId: currentProfileId,
+                referenceDate: Date(),
+                calendar: .autoupdatingCurrent
+            )
+            if deletedCount > 0 {
+                await refreshSummary(incrementRevision: true)
+            }
             UserDefaults.standard.set(Date(), forKey: Self.cleanupDefaultsKey)
         } catch {
             RuntimeDiagnostics.emit("Error during deferred history cleanup: \(error)")

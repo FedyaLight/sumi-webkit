@@ -459,7 +459,10 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             dataStore: .nonPersistent()
         )
 
-        let remaining = harness.historyManager.visitRecords(matching: .rangeFilter(.all))
+        let remaining = await harness.historyManager.historyPage(
+            query: .rangeFilter(.all),
+            limit: 10
+        ).items
         XCTAssertEqual(remaining.map(\.domain), ["old.example"])
         XCTAssertEqual(cleanupService.removedDomainSets.count, 1)
         XCTAssertEqual(cleanupService.removedDomainSets[0].domains, ["reddit.com"])
@@ -500,8 +503,16 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             dataStore: .nonPersistent()
         )
 
-        let currentProfileRemaining = harness.historyManager.visitRecords(matching: .rangeFilter(.all))
-        let otherProfileVisits = try await harness.historyManager.store.visits(profileId: otherProfileID)
+        let currentProfileRemaining = await harness.historyManager.historyPage(
+            query: .rangeFilter(.all),
+            limit: 10
+        ).items
+        let otherProfileVisits = try await harness.historyManager.store.fetchVisitRecordsForExplicitAction(
+            matching: .rangeFilter(.all),
+            profileId: otherProfileID,
+            referenceDate: historyTestDate("2026-04-23T12:00:00Z"),
+            calendar: .autoupdatingCurrent
+        )
         XCTAssertTrue(currentProfileRemaining.isEmpty)
         XCTAssertEqual(otherProfileVisits.map(\.domain), ["other.example"])
         XCTAssertEqual(cleanupService.clearedProfileStores, 1)

@@ -183,7 +183,10 @@ final class HistoryPageViewModelTests: XCTestCase {
         viewModel.toggleSelection(selectedItem)
         await viewModel.deleteSelectedItemsNow()
 
-        let remainingVisits = harness.browserManager.historyManager.dataProvider.items(for: .rangeFilter(.all))
+        let remainingVisits = await harness.browserManager.historyManager.historyPage(
+            query: .rangeFilter(.all),
+            limit: 10
+        ).items
         XCTAssertEqual(remainingVisits.map(\.url), [remainingURL])
         XCTAssertEqual(viewModel.selectionCount, 0)
     }
@@ -219,7 +222,10 @@ final class HistoryPageViewModelTests: XCTestCase {
         viewModel.toggleSelection(siteItem)
         await viewModel.deleteSelectedItemsNow()
 
-        let remainingVisits = harness.browserManager.historyManager.dataProvider.items(for: .rangeFilter(.all))
+        let remainingVisits = await harness.browserManager.historyManager.historyPage(
+            query: .rangeFilter(.all),
+            limit: 10
+        ).items
         XCTAssertEqual(remainingVisits.map(\.domain), ["other.com"])
         XCTAssertEqual(viewModel.selectionCount, 0)
     }

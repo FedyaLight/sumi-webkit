@@ -239,6 +239,9 @@ struct SumiHistoryTabRootView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         ForEach(section.items) { item in
                             HistoryRow(item: item, viewModel: viewModel)
+                                .onAppear {
+                                    viewModel.loadNextPageIfNeeded(after: item)
+                                }
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -249,6 +252,13 @@ struct SumiHistoryTabRootView: View {
                 if section.id != viewModel.sections.last?.id {
                     Divider()
                 }
+            }
+
+            if viewModel.isLoadingNextPage {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 18)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
