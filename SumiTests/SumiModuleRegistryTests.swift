@@ -49,6 +49,17 @@ final class SumiModuleRegistryTests: XCTestCase {
         XCTAssertNil(harness.defaults.object(forKey: store.key(for: .userScripts)))
     }
 
+    func testCleanInstallDefaultsAdBlockingDisabled() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let store = SumiModuleSettingsStore(userDefaults: harness.defaults)
+        let registry = SumiModuleRegistry(settingsStore: store)
+
+        XCTAssertFalse(registry.isEnabled(.adBlocking))
+        XCTAssertNil(harness.defaults.object(forKey: store.key(for: .adBlocking)))
+    }
+
     func testEnablingModulesPersistsAcrossRegistryRecreation() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -153,6 +164,24 @@ final class SumiModuleRegistryTests: XCTestCase {
         registry.disable(.userScripts)
         XCTAssertFalse(
             SumiModuleRegistry(settingsStore: store).isEnabled(.userScripts)
+        )
+    }
+
+    func testAdBlockingEnableDisablePersists() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let store = SumiModuleSettingsStore(userDefaults: harness.defaults)
+        let registry = SumiModuleRegistry(settingsStore: store)
+
+        registry.enable(.adBlocking)
+        XCTAssertTrue(
+            SumiModuleRegistry(settingsStore: store).isEnabled(.adBlocking)
+        )
+
+        registry.disable(.adBlocking)
+        XCTAssertFalse(
+            SumiModuleRegistry(settingsStore: store).isEnabled(.adBlocking)
         )
     }
 
