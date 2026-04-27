@@ -187,7 +187,11 @@ class BrowserManager: ObservableObject {
     var workspaceThemeCoordinator: WorkspaceThemeCoordinator
     var findManager: FindManager
     var zoomManager = ZoomManager()
-    weak var sumiSettings: SumiSettingsService?
+    weak var sumiSettings: SumiSettingsService? {
+        didSet {
+            tabSuspensionService.rebuildProactiveTimers(reason: "settings-attached")
+        }
+    }
     let sumiProfileRouter = SumiProfileRouter()
     let profileMaintenanceService = SumiProfileMaintenanceService()
     let windowShellService = BrowserWindowShellService()
@@ -363,6 +367,7 @@ class BrowserManager: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.tabStructuralRevision &+= 1
+                self?.tabSuspensionService.reconcileProactiveTimers(reason: "tab-structure-changed")
             }
     }
 
@@ -1215,6 +1220,7 @@ class BrowserManager: ObservableObject {
             tabManager.tab(for: previousId)
         }
         extensionsModule.notifyTabActivatedIfLoaded(newTab: tab, previous: previousTab)
+        tabSuspensionService.reconcileProactiveTimers(reason: "tab-selection-changed")
 
         // Update global tab state for the active window
         if windowRegistry?.activeWindow?.id == windowState.id {

@@ -8,70 +8,60 @@ struct TabSuspensionResult: Equatable {
     let suspendedTabIDs: [UUID]
 }
 
-struct TabIdleSuspensionResult: Equatable {
-    let memoryMode: SumiMemoryMode
-    let policy: TabSuspensionPolicy
-    let candidateCount: Int
-    let warmTabCount: Int
-    let warmWebViewCount: Int
-    let suspendedCount: Int
-    let suspendedTabIDs: [UUID]
-}
-
 struct TabSuspensionPolicy: Equatable {
-    static let lightweightIdleThreshold: TimeInterval = 10 * 60
-    static let balancedIdleThreshold: TimeInterval = 30 * 60
-    static let performanceIdleThreshold: TimeInterval = 90 * 60
+    static let moderateProactiveDeactivationDelay: TimeInterval = 6 * 60 * 60
+    static let balancedProactiveDeactivationDelay: TimeInterval = 4 * 60 * 60
+    static let maximumProactiveDeactivationDelay: TimeInterval = 2 * 60 * 60
+    static let moderateRevisitProtectionLimit = 5
+    static let balancedRevisitProtectionLimit = 15
+    static let maximumRevisitProtectionLimit = 15
+    static let customRevisitProtectionLimit = 15
+    static let recentlyAudibleProtectionInterval: TimeInterval = 60
 
-    static let lightweightMaximumWarmHiddenWebViewCount = 0
-    static let balancedMaximumWarmHiddenWebViewCount = 2
-    static let performanceMaximumWarmHiddenWebViewCount = 5
+    let memoryMode: SumiMemoryMode
+    let proactiveDeactivationDelay: TimeInterval
+    let revisitProtectionLimit: Int
 
-    static let lightweightEvaluationInterval: TimeInterval = 60
-    static let balancedEvaluationInterval: TimeInterval = 120
-    static let performanceEvaluationInterval: TimeInterval = 300
-
-    let idleThreshold: TimeInterval
-    let maximumWarmHiddenWebViewCount: Int
-    let allowsLauncherRuntimeSuspension: Bool
-    let evaluationInterval: TimeInterval
-
-    init(memoryMode: SumiMemoryMode) {
+    init(
+        memoryMode: SumiMemoryMode,
+        customDeactivationDelay: TimeInterval = SumiMemorySaverCustomDelay.defaultDelay
+    ) {
         switch memoryMode {
-        case .lightweight:
+        case .moderate:
             self.init(
-                idleThreshold: Self.lightweightIdleThreshold,
-                maximumWarmHiddenWebViewCount: Self.lightweightMaximumWarmHiddenWebViewCount,
-                allowsLauncherRuntimeSuspension: true,
-                evaluationInterval: Self.lightweightEvaluationInterval
+                memoryMode: memoryMode,
+                proactiveDeactivationDelay: Self.moderateProactiveDeactivationDelay,
+                revisitProtectionLimit: Self.moderateRevisitProtectionLimit
             )
         case .balanced:
             self.init(
-                idleThreshold: Self.balancedIdleThreshold,
-                maximumWarmHiddenWebViewCount: Self.balancedMaximumWarmHiddenWebViewCount,
-                allowsLauncherRuntimeSuspension: false,
-                evaluationInterval: Self.balancedEvaluationInterval
+                memoryMode: memoryMode,
+                proactiveDeactivationDelay: Self.balancedProactiveDeactivationDelay,
+                revisitProtectionLimit: Self.balancedRevisitProtectionLimit
             )
-        case .performance:
+        case .maximum:
             self.init(
-                idleThreshold: Self.performanceIdleThreshold,
-                maximumWarmHiddenWebViewCount: Self.performanceMaximumWarmHiddenWebViewCount,
-                allowsLauncherRuntimeSuspension: false,
-                evaluationInterval: Self.performanceEvaluationInterval
+                memoryMode: memoryMode,
+                proactiveDeactivationDelay: Self.maximumProactiveDeactivationDelay,
+                revisitProtectionLimit: Self.maximumRevisitProtectionLimit
+            )
+        case .custom:
+            self.init(
+                memoryMode: memoryMode,
+                proactiveDeactivationDelay: SumiMemorySaverCustomDelay.clamped(customDeactivationDelay),
+                revisitProtectionLimit: Self.customRevisitProtectionLimit
             )
         }
     }
 
     private init(
-        idleThreshold: TimeInterval,
-        maximumWarmHiddenWebViewCount: Int,
-        allowsLauncherRuntimeSuspension: Bool,
-        evaluationInterval: TimeInterval
+        memoryMode: SumiMemoryMode,
+        proactiveDeactivationDelay: TimeInterval,
+        revisitProtectionLimit: Int
     ) {
-        self.idleThreshold = idleThreshold
-        self.maximumWarmHiddenWebViewCount = maximumWarmHiddenWebViewCount
-        self.allowsLauncherRuntimeSuspension = allowsLauncherRuntimeSuspension
-        self.evaluationInterval = evaluationInterval
+        self.memoryMode = memoryMode
+        self.proactiveDeactivationDelay = proactiveDeactivationDelay
+        self.revisitProtectionLimit = revisitProtectionLimit
     }
 }
 
@@ -90,6 +80,7 @@ enum TabSuspensionEligibility: Equatable {
         case visible
         case loading
         case playingAudio
+        case recentlyAudible
         case cameraCapture
         case microphoneCapture
         case fullscreen
@@ -102,11 +93,20 @@ enum TabSuspensionEligibility: Equatable {
         case popupHost
         case noPrimaryWebView
         case compositorProtected
-        case launcherRuntimeSuspensionDeferred
     }
 
     var isEligible: Bool {
         self == .eligible
+    }
+}
+
+protocol SumiSuspensionClock {
+    var liveUptime: TimeInterval { get }
+}
+
+struct SumiSystemSuspensionClock: SumiSuspensionClock {
+    var liveUptime: TimeInterval {
+        ProcessInfo.processInfo.systemUptime
     }
 }
 
@@ -164,30 +164,60 @@ final class TabSuspensionService {
         let webViews: [WKWebView]
     }
 
+    private struct HiddenTabState {
+        let hiddenStartedAtLiveUptime: TimeInterval
+    }
+
+    private struct ProactiveTimerState {
+        let hiddenStartedAtLiveUptime: TimeInterval
+        let requestedDelay: TimeInterval
+        let task: Task<Void, Never>
+    }
+
     private weak var browserManager: BrowserManager?
     private let memoryMonitor: SumiMemoryPressureMonitoring?
     private let dateProvider: () -> Date
-    private let startsIdleSchedulerOnAttach: Bool
-    private var idleSuspensionTask: Task<Void, Never>?
+    private let suspensionClock: SumiSuspensionClock
+    private let timerSleep: (TimeInterval) async throws -> Void
+    private var memorySaverPolicyObserver: NSObjectProtocol?
+    private var hiddenTabStates: [UUID: HiddenTabState] = [:]
+    private var proactiveTimers: [UUID: ProactiveTimerState] = [:]
+    private var revisitCounts: [UUID: Int] = [:]
 
-    private(set) var idleSchedulerStartCountForTesting = 0
+    private(set) var proactiveTimerStartCountForTesting = 0
 
     init(
         memoryMonitor: SumiMemoryPressureMonitoring?,
         dateProvider: @escaping () -> Date = Date.init,
-        startsIdleSchedulerOnAttach: Bool = true
+        suspensionClock: SumiSuspensionClock = SumiSystemSuspensionClock(),
+        timerSleep: @escaping (TimeInterval) async throws -> Void = { interval in
+            try await Task.sleep(nanoseconds: TabSuspensionService.nanoseconds(for: interval))
+        }
     ) {
         self.memoryMonitor = memoryMonitor
         self.dateProvider = dateProvider
-        self.startsIdleSchedulerOnAttach = startsIdleSchedulerOnAttach
+        self.suspensionClock = suspensionClock
+        self.timerSleep = timerSleep
         self.memoryMonitor?.eventHandler = { [weak self] level in
             self?.handleMemoryPressure(level)
+        }
+        self.memorySaverPolicyObserver = NotificationCenter.default.addObserver(
+            forName: .sumiMemorySaverPolicyChanged,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.rebuildProactiveTimers(reason: "memory-saver-policy-changed")
+            }
         }
     }
 
     deinit {
         MainActor.assumeIsolated {
-            stopIdleSuspensionScheduler()
+            cancelAllProactiveTimers()
+            if let memorySaverPolicyObserver {
+                NotificationCenter.default.removeObserver(memorySaverPolicyObserver)
+            }
             memoryMonitor?.eventHandler = nil
             memoryMonitor?.stop()
         }
@@ -196,38 +226,10 @@ final class TabSuspensionService {
     func attach(browserManager: BrowserManager) {
         self.browserManager = browserManager
         memoryMonitor?.start()
-        if startsIdleSchedulerOnAttach {
-            startIdleSuspensionScheduler()
-        }
+        reconcileProactiveTimers(reason: "attach")
     }
 
-    func startIdleSuspensionScheduler() {
-        guard idleSuspensionTask == nil else { return }
-        idleSchedulerStartCountForTesting += 1
-        idleSuspensionTask = Task { @MainActor [weak self] in
-            while !Task.isCancelled {
-                guard let evaluationInterval = self?.currentSuspensionPolicy.evaluationInterval else { return }
-                do {
-                    try await Task.sleep(nanoseconds: Self.nanoseconds(for: evaluationInterval))
-                } catch {
-                    return
-                }
-                guard !Task.isCancelled else { return }
-                self?.evaluateIdleSuspension()
-            }
-        }
-    }
-
-    func stopIdleSuspensionScheduler() {
-        idleSuspensionTask?.cancel()
-        idleSuspensionTask = nil
-    }
-
-    var isIdleSuspensionSchedulerRunningForTesting: Bool {
-        idleSuspensionTask != nil
-    }
-
-    func idleSuspensionPolicyForTesting() -> TabSuspensionPolicy {
+    func proactiveSuspensionPolicyForTesting() -> TabSuspensionPolicy {
         currentSuspensionPolicy
     }
 
@@ -274,20 +276,6 @@ final class TabSuspensionService {
     }
 
     @discardableResult
-    func evaluateIdleSuspension() -> TabIdleSuspensionResult {
-        evaluateIdleSuspension(webViewStatesByTabID: [:])
-    }
-
-#if DEBUG
-    @discardableResult
-    func evaluateIdleSuspensionForTesting(
-        webViewStatesByTabID: [UUID: [TabSuspensionWebViewState]]
-    ) -> TabIdleSuspensionResult {
-        evaluateIdleSuspension(webViewStatesByTabID: webViewStatesByTabID)
-    }
-#endif
-
-    @discardableResult
     func suspend(_ tab: Tab, reason: String) -> Bool {
         suspend(tab, reason: reason, context: suspensionEvaluationContext())
     }
@@ -315,6 +303,8 @@ final class TabSuspensionService {
             return false
         }
 
+        cancelProactiveTimer(for: tab.id)
+        hiddenTabStates.removeValue(forKey: tab.id)
         tab.markSuspended(at: dateProvider())
         RuntimeDiagnostics.debug(category: "TabSuspension") {
             "suspended tab=\(tab.id.uuidString.prefix(8)) reason=\(reason)"
@@ -370,48 +360,210 @@ final class TabSuspensionService {
     }
 
     private var currentSuspensionPolicy: TabSuspensionPolicy {
-        TabSuspensionPolicy(memoryMode: currentMemoryMode)
+        TabSuspensionPolicy(
+            memoryMode: currentMemoryMode,
+            customDeactivationDelay: browserManager?.sumiSettings?.memorySaverCustomDeactivationDelay
+                ?? SumiMemorySaverCustomDelay.defaultDelay
+        )
     }
 
-    private func evaluateIdleSuspension(
-        webViewStatesByTabID: [UUID: [TabSuspensionWebViewState]]
-    ) -> TabIdleSuspensionResult {
-        let memoryMode = currentMemoryMode
-        let policy = TabSuspensionPolicy(memoryMode: memoryMode)
-        let context = suspensionEvaluationContext(policy: policy)
-        let candidates = suspensionCandidates(
-            webViewStatesByTabID: webViewStatesByTabID,
-            context: context
-        )
-        let warmSet = warmCandidateTabIDs(
-            from: candidates,
-            maximumWarmHiddenWebViewCount: policy.maximumWarmHiddenWebViewCount
-        )
-        let cutoffDate = dateProvider().addingTimeInterval(-policy.idleThreshold)
+    func reconcileProactiveTimers(reason: String) {
+        let tabs = allKnownTabs()
+        let knownTabIDs = Set(tabs.map(\.id))
+        for tabID in proactiveTimers.keys where !knownTabIDs.contains(tabID) {
+            cancelProactiveTimer(for: tabID)
+        }
+        hiddenTabStates = hiddenTabStates.filter { knownTabIDs.contains($0.key) }
+        revisitCounts = revisitCounts.filter { knownTabIDs.contains($0.key) }
 
-        var suspendedTabIDs: [UUID] = []
-        for candidate in candidates {
-            guard !warmSet.tabIDs.contains(candidate.tab.id) else { continue }
-            if let lastSelectedAt = candidate.tab.lastSelectedAt,
-               lastSelectedAt >= cutoffDate {
-                continue
+        let context = suspensionEvaluationContext()
+        for tab in tabs {
+            if context.selectedTabIDs.contains(tab.id) || context.visibleTabIDs.contains(tab.id) {
+                noteTabBecameVisible(tab)
+            } else {
+                noteTabBecameHidden(tab, context: context)
             }
-            guard suspend(candidate.tab, reason: "idle-\(memoryMode.rawValue)", context: context) else {
-                continue
-            }
-            suspendedTabIDs.append(candidate.tab.id)
         }
 
-        return TabIdleSuspensionResult(
-            memoryMode: memoryMode,
-            policy: policy,
-            candidateCount: candidates.count,
-            warmTabCount: warmSet.tabIDs.count,
-            warmWebViewCount: warmSet.webViewCount,
-            suspendedCount: suspendedTabIDs.count,
-            suspendedTabIDs: suspendedTabIDs
+        RuntimeDiagnostics.debug(category: "TabSuspension") {
+            "reconciled proactive timers reason=\(reason) active=\(proactiveTimers.count)"
+        }
+    }
+
+    func rebuildProactiveTimers(reason: String) {
+        cancelAllProactiveTimers()
+
+        let now = suspensionClock.liveUptime
+        let context = suspensionEvaluationContext()
+        for tab in allKnownTabs() {
+            guard !context.selectedTabIDs.contains(tab.id),
+                  !context.visibleTabIDs.contains(tab.id)
+            else { continue }
+            hiddenTabStates[tab.id] = HiddenTabState(hiddenStartedAtLiveUptime: now)
+            noteTabBecameHidden(tab, context: context)
+        }
+
+        RuntimeDiagnostics.debug(category: "TabSuspension") {
+            "rebuilt proactive timers reason=\(reason) active=\(proactiveTimers.count)"
+        }
+    }
+
+    func resetRevisitProtection(for tab: Tab) {
+        revisitCounts[tab.id] = 0
+        cancelProactiveTimer(for: tab.id)
+
+        let context = suspensionEvaluationContext()
+        if !context.selectedTabIDs.contains(tab.id),
+           !context.visibleTabIDs.contains(tab.id) {
+            hiddenTabStates[tab.id] = HiddenTabState(hiddenStartedAtLiveUptime: suspensionClock.liveUptime)
+            noteTabBecameHidden(tab, context: context)
+        }
+    }
+
+    private func noteTabBecameVisible(_ tab: Tab) {
+        cancelProactiveTimer(for: tab.id)
+        guard hiddenTabStates.removeValue(forKey: tab.id) != nil else { return }
+        revisitCounts[tab.id, default: 0] += 1
+    }
+
+    private func noteTabBecameHidden(
+        _ tab: Tab,
+        context: TabSuspensionEvaluationContext
+    ) {
+        let hiddenState = hiddenTabStates[tab.id] ?? HiddenTabState(
+            hiddenStartedAtLiveUptime: suspensionClock.liveUptime
+        )
+        hiddenTabStates[tab.id] = hiddenState
+
+        guard proactiveTimers[tab.id] == nil else { return }
+        guard shouldStartProactiveTimer(for: tab, context: context) else { return }
+
+        armProactiveTimer(
+            for: tab.id,
+            hiddenStartedAtLiveUptime: hiddenState.hiddenStartedAtLiveUptime,
+            requestedDelay: context.policy.proactiveDeactivationDelay,
+            sleepDelay: context.policy.proactiveDeactivationDelay
         )
     }
+
+    private func shouldStartProactiveTimer(
+        for tab: Tab,
+        context: TabSuspensionEvaluationContext
+    ) -> Bool {
+        guard revisitCounts[tab.id, default: 0] <= context.policy.revisitProtectionLimit else {
+            return false
+        }
+        guard let coordinator = browserManager?.webViewCoordinator else { return false }
+        return suspensionEligibility(
+            for: tab,
+            liveWebViews: coordinator.liveWebViews(for: tab),
+            context: context
+        ).isEligible
+    }
+
+    private func armProactiveTimer(
+        for tabID: UUID,
+        hiddenStartedAtLiveUptime: TimeInterval,
+        requestedDelay: TimeInterval,
+        sleepDelay: TimeInterval
+    ) {
+        cancelProactiveTimer(for: tabID)
+        proactiveTimerStartCountForTesting += 1
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await self.timerSleep(sleepDelay)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            self.handleProactiveTimerFired(
+                tabID: tabID,
+                hiddenStartedAtLiveUptime: hiddenStartedAtLiveUptime,
+                requestedDelay: requestedDelay
+            )
+        }
+        proactiveTimers[tabID] = ProactiveTimerState(
+            hiddenStartedAtLiveUptime: hiddenStartedAtLiveUptime,
+            requestedDelay: requestedDelay,
+            task: task
+        )
+    }
+
+    private func handleProactiveTimerFired(
+        tabID: UUID,
+        hiddenStartedAtLiveUptime: TimeInterval,
+        requestedDelay: TimeInterval
+    ) {
+        proactiveTimers.removeValue(forKey: tabID)
+
+        let elapsed = max(0, suspensionClock.liveUptime - hiddenStartedAtLiveUptime)
+        if elapsed + 0.001 < requestedDelay {
+            armProactiveTimer(
+                for: tabID,
+                hiddenStartedAtLiveUptime: hiddenStartedAtLiveUptime,
+                requestedDelay: requestedDelay,
+                sleepDelay: requestedDelay - elapsed
+            )
+            return
+        }
+
+        guard let tab = allKnownTabs().first(where: { $0.id == tabID }) else { return }
+        let context = suspensionEvaluationContext()
+        guard !context.selectedTabIDs.contains(tab.id),
+              !context.visibleTabIDs.contains(tab.id)
+        else {
+            noteTabBecameVisible(tab)
+            return
+        }
+
+        guard let coordinator = browserManager?.webViewCoordinator,
+              suspensionEligibility(
+                  for: tab,
+                  liveWebViews: coordinator.liveWebViews(for: tab),
+                  context: context
+              ).isEligible
+        else {
+            return
+        }
+
+        _ = suspend(tab, reason: "proactive-\(context.policy.memoryMode.rawValue)", context: context)
+    }
+
+    private func cancelProactiveTimer(for tabID: UUID) {
+        proactiveTimers.removeValue(forKey: tabID)?.task.cancel()
+    }
+
+    private func cancelAllProactiveTimers() {
+        for timer in proactiveTimers.values {
+            timer.task.cancel()
+        }
+        proactiveTimers.removeAll()
+    }
+
+#if DEBUG
+    var proactiveTimerTabIDsForTesting: Set<UUID> {
+        Set(proactiveTimers.keys)
+    }
+
+    func proactiveTimerStateForTesting(tabID: UUID) -> (hiddenStartedAtLiveUptime: TimeInterval, requestedDelay: TimeInterval)? {
+        guard let state = proactiveTimers[tabID] else { return nil }
+        return (state.hiddenStartedAtLiveUptime, state.requestedDelay)
+    }
+
+    func revisitCountForTesting(tabID: UUID) -> Int {
+        revisitCounts[tabID, default: 0]
+    }
+
+    func fireProactiveTimerForTesting(tabID: UUID) {
+        guard let state = proactiveTimers[tabID] else { return }
+        handleProactiveTimerFired(
+            tabID: tabID,
+            hiddenStartedAtLiveUptime: state.hiddenStartedAtLiveUptime,
+            requestedDelay: state.requestedDelay
+        )
+    }
+#endif
 
     private func suspensionCandidates(
         inactiveBefore cutoffDate: Date? = nil,
@@ -460,36 +612,6 @@ final class TabSuspensionService {
             }
     }
 
-    private func warmCandidateTabIDs(
-        from candidates: [Candidate],
-        maximumWarmHiddenWebViewCount: Int
-    ) -> (tabIDs: Set<UUID>, webViewCount: Int) {
-        guard maximumWarmHiddenWebViewCount > 0 else {
-            return ([], 0)
-        }
-
-        var warmTabIDs = Set<UUID>()
-        var warmWebViewCount = 0
-        let mostRecentFirst = candidates.sorted { lhs, rhs in
-            let leftDate = lhs.tab.lastSelectedAt ?? .distantPast
-            let rightDate = rhs.tab.lastSelectedAt ?? .distantPast
-            if leftDate != rightDate {
-                return leftDate > rightDate
-            }
-            return lhs.tab.id.uuidString < rhs.tab.id.uuidString
-        }
-
-        for candidate in mostRecentFirst {
-            let webViewCount = candidate.webViews.count
-            guard webViewCount > 0 else { continue }
-            guard warmWebViewCount + webViewCount <= maximumWarmHiddenWebViewCount else { continue }
-            warmTabIDs.insert(candidate.tab.id)
-            warmWebViewCount += webViewCount
-        }
-
-        return (warmTabIDs, warmWebViewCount)
-    }
-
     func suspensionEligibility(
         for tab: Tab,
         liveWebViews: [WKWebView],
@@ -519,17 +641,12 @@ final class TabSuspensionService {
         guard tab.requiresPrimaryWebView else { return .ineligible(reason: .noPrimaryWebView) }
         guard isSuspensibleContentURL(tab.url) else { return .ineligible(reason: .unsupportedURLScheme) }
 
-        // Pinned tabs and Essentials are launchers; only Lightweight may release their
-        // live WebView runtime while preserving the launcher tab/pin identity.
-        if isPinned(tab), !context.policy.allowsLauncherRuntimeSuspension {
-            return .ineligible(reason: .launcherRuntimeSuspensionDeferred)
-        }
-
         guard !tab.isPopupHost else { return .ineligible(reason: .popupHost) }
         guard !tab.isSuspended else { return .ineligible(reason: .alreadySuspended) }
         guard !webViewStates.isEmpty else { return .ineligible(reason: .noLiveWebView) }
         guard !tab.isLoading else { return .ineligible(reason: .loading) }
         guard !tab.audioState.isPlayingAudio else { return .ineligible(reason: .playingAudio) }
+        guard !isRecentlyAudible(tab) else { return .ineligible(reason: .recentlyAudible) }
         guard tab.pageSuspensionVeto == .none else { return .ineligible(reason: .pageVeto) }
         guard !tab.hasPictureInPictureVideo else { return .ineligible(reason: .pictureInPicture) }
         guard !tab.isDisplayingPDFDocument else { return .ineligible(reason: .pdfDocument) }
@@ -552,13 +669,10 @@ final class TabSuspensionService {
         return scheme == "http" || scheme == "https"
     }
 
-    private func isPinned(_ tab: Tab) -> Bool {
-        if tab.isPinned || tab.isSpacePinned || tab.isShortcutLiveInstance {
-            return true
-        }
-
-        guard let tabManager = browserManager?.tabManager else { return false }
-        return tabManager.isGlobalPinned(tab) || tabManager.isSpacePinned(tab)
+    private func isRecentlyAudible(_ tab: Tab) -> Bool {
+        guard tab.lastMediaActivityAt != .distantPast else { return false }
+        return dateProvider().timeIntervalSince(tab.lastMediaActivityAt)
+            < TabSuspensionPolicy.recentlyAudibleProtectionInterval
     }
 
     private func allKnownTabs() -> [Tab] {

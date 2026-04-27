@@ -22,6 +22,7 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
             tab.markRegularMainFrameNavigation(on: webView)
         }
         tab.resetPageSuspensionRuntimeState()
+        tab.browserManager?.tabSuspensionService.resetRevisitProtection(for: tab)
 
         if let url = navigation.request.url {
             tab.browserManager?.extensionsModule.prepareWebViewForExtensionRuntime(
