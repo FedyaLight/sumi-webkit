@@ -53,6 +53,10 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
     }
 
     func currentRuntimeState(for webView: WKWebView) -> SumiRuntimePermissionState {
+        currentRuntimeState(for: webView, pageId: nil)
+    }
+
+    func currentRuntimeState(for webView: WKWebView, pageId: String?) -> SumiRuntimePermissionState {
         currentRuntimeStateCallCount += 1
         return SumiRuntimePermissionState(
             camera: cameraRuntimeState,
@@ -136,6 +140,33 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
         let cameraResult = await stopCamera(for: webView)
         let microphoneResult = await stopMicrophone(for: webView)
         return aggregate([cameraResult, microphoneResult])
+    }
+
+    func pauseGeolocation(
+        pageId: String?,
+        for webView: WKWebView
+    ) async -> SumiRuntimePermissionOperationResult {
+        await geolocationOperation(.pause(.geolocation), pageId: pageId) {
+            geolocationRuntimeState = .paused
+        }
+    }
+
+    func resumeGeolocation(
+        pageId: String?,
+        for webView: WKWebView
+    ) async -> SumiRuntimePermissionOperationResult {
+        await geolocationOperation(.resume(.geolocation), pageId: pageId) {
+            geolocationRuntimeState = .active
+        }
+    }
+
+    func stopGeolocation(
+        pageId: String?,
+        for webView: WKWebView
+    ) async -> SumiRuntimePermissionOperationResult {
+        await geolocationOperation(.revoke(.geolocation), pageId: pageId) {
+            geolocationRuntimeState = .none
+        }
     }
 
     func applyRuntimeDecision(
@@ -295,9 +326,17 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
         for webView: WKWebView,
         handler: @escaping @MainActor (SumiRuntimePermissionState) -> Void
     ) -> SumiRuntimePermissionObservation {
+        observeRuntimeState(for: webView, pageId: nil, handler: handler)
+    }
+
+    func observeRuntimeState(
+        for webView: WKWebView,
+        pageId: String?,
+        handler: @escaping @MainActor (SumiRuntimePermissionState) -> Void
+    ) -> SumiRuntimePermissionObservation {
         let id = UUID()
         observers[id] = handler
-        handler(currentRuntimeState(for: webView))
+        handler(currentRuntimeState(for: webView, pageId: pageId))
 
         return SumiRuntimePermissionObservation { [weak self] in
             self?.observers[id] = nil
@@ -317,6 +356,25 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
             return .unsupported(reason: "fake-operation-unsupported")
         }
         return nil
+    }
+
+    private func geolocationOperation(
+        _ operation: SumiRuntimePermissionOperation,
+        pageId: String?,
+        mutation: () -> Void
+    ) async -> SumiRuntimePermissionOperationResult {
+        if let override = configuredResult(for: operation) {
+            return override
+        }
+        guard geolocationRuntimeState != .unsupportedProvider else {
+            return .unsupported(reason: "geolocation-runtime-provider-unsupported")
+        }
+        guard geolocationRuntimeState != .unavailable else {
+            return .unsupported(reason: "geolocation-runtime-provider-unavailable")
+        }
+        let oldState = geolocationRuntimeState
+        mutation()
+        return oldState == geolocationRuntimeState ? .noOp : .applied
     }
 
     private func applyMediaMutation(
@@ -388,6 +446,7 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
         let state = SumiRuntimePermissionState(
             camera: cameraRuntimeState,
             microphone: microphoneRuntimeState,
+            screenCapture: screenCaptureRuntimeState,
             geolocation: geolocationRuntimeState,
             autoplay: autoplayRuntimeState
         )

@@ -9,6 +9,7 @@ protocol SumiGeolocationProviding: AnyObject {
     var isAvailable: Bool { get }
 
     func registerAllowedRequest(pageId: String, tabId: String?)
+    func containsAllowedRequest(pageId: String) -> Bool
     func cancelAllowedRequest(pageId: String)
     func cancelAllowedRequests(tabId: String)
 
@@ -115,6 +116,12 @@ final class SumiGeolocationProvider: NSObject, SumiGeolocationProviding {
         if case .failed = currentState {
             currentState = .inactive
         }
+    }
+
+    func containsAllowedRequest(pageId: String) -> Bool {
+        let normalizedPageId = Self.normalizedId(pageId)
+        guard !normalizedPageId.isEmpty else { return false }
+        return allowedPageIds.contains(normalizedPageId)
     }
 
     func cancelAllowedRequest(pageId: String) {

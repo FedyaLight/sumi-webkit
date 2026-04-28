@@ -40,6 +40,20 @@ struct SumiPermissionIndicatorState: Equatable, Sendable {
         category != .hidden
     }
 
+    var prefersRuntimeControlsSurface: Bool {
+        switch primaryCategory {
+        case .activeRuntime, .reloadRequired:
+            return true
+        case .hidden,
+             .pendingRequest,
+             .blockedEvent,
+             .systemBlocked,
+             .storedException,
+             .mixed:
+            return false
+        }
+    }
+
     static let hidden = SumiPermissionIndicatorState(
         category: .hidden,
         primaryCategory: .hidden,

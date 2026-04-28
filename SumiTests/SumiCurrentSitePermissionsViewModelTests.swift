@@ -1,4 +1,5 @@
 import Foundation
+import WebKit
 import XCTest
 
 @testable import Sumi
@@ -158,6 +159,27 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
         XCTAssertEqual(authorizationCallCount, 0)
     }
 
+    func testRuntimeStatusUsesCurrentPageRuntimeStateWithoutChangingStoredDecision() async throws {
+        let coordinator = CurrentSiteFakePermissionCoordinator()
+        let runtime = FakeSumiRuntimePermissionController(cameraRuntimeState: .active)
+        let viewModel = SumiCurrentSitePermissionsViewModel()
+        let context = context()
+        let deps = dependencies(coordinator: coordinator, runtimeController: runtime)
+
+        await viewModel.load(
+            context: context,
+            webView: WKWebView(),
+            profile: nil,
+            reloadRequired: false,
+            dependencies: deps
+        )
+
+        let camera = try XCTUnwrap(viewModel.rows.first { $0.id == "camera" })
+        let storedCameraRecord = await coordinator.record(for: context.key(for: .camera))
+        XCTAssertEqual(camera.runtimeStatus, "Active")
+        XCTAssertNil(storedCameraRecord)
+    }
+
     func testResetClearsCurrentSitePermissionDecisionsAndPageEventsOnly() async throws {
         let coordinator = CurrentSiteFakePermissionCoordinator()
         let blockedPopupStore = SumiBlockedPopupStore()
@@ -220,6 +242,7 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
     private func dependencies(
         coordinator: CurrentSiteFakePermissionCoordinator? = nil,
         system: (any SumiSystemPermissionService)? = nil,
+        runtimeController: (any SumiRuntimePermissionControlling)? = nil,
         autoplayStore: CurrentSiteFakeAutoplayStore? = nil,
         blockedPopupStore: SumiBlockedPopupStore? = nil,
         externalSchemeSessionStore: SumiExternalSchemeSessionStore? = nil,
@@ -234,7 +257,7 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
                 .notifications: .authorized,
                 .screenCapture: .authorized,
             ]),
-            runtimeController: nil,
+            runtimeController: runtimeController,
             autoplayStore: autoplayStore ?? CurrentSiteFakeAutoplayStore(),
             blockedPopupStore: blockedPopupStore ?? SumiBlockedPopupStore(),
             externalSchemeSessionStore: externalSchemeSessionStore ?? SumiExternalSchemeSessionStore(),

@@ -39,6 +39,13 @@ final class FakeSumiGeolocationProvider: SumiGeolocationProviding {
         }
     }
 
+    func containsAllowedRequest(pageId: String) -> Bool {
+        let normalizedPageId = pageId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return registeredRequests.contains {
+            $0.pageId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalizedPageId
+        }
+    }
+
     func cancelAllowedRequest(pageId: String) {
         cancelledPageIds.append(pageId)
         if registeredRequests.contains(where: { $0.pageId == pageId }) {

@@ -36,6 +36,11 @@ enum URLBarPresentationMode {
     }
 }
 
+private enum URLBarHubInitialMode {
+    case controls
+    case permissions
+}
+
 struct URLBarView: View {
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
@@ -47,6 +52,8 @@ struct URLBarView: View {
     @State private var isHovering = false
     @State private var showCheckmark = false
     @State private var isHubPresented = false
+    @State private var hubInitialMode: URLBarHubInitialMode = .controls
+    @State private var hubModeRequestNonce = 0
     @State private var isZoomPopoverPresented = false
     @State private var zoomPopoverSource: ZoomPopoverSource = .toolbar
     @State private var zoomPopoverSize = CGSize(width: 252, height: 48)
@@ -126,11 +133,18 @@ struct URLBarView: View {
         .onChange(of: currentTab?.id) { _, _ in
             DispatchQueue.main.async {
                 closeZoomPopover()
+                isHubPresented = false
                 permissionPromptPresenter.closeForCurrentTabChange()
+            }
+        }
+        .onChange(of: permissionPromptPresenter.isPresented) { _, isPresented in
+            if isPresented {
+                isHubPresented = false
             }
         }
         .onDisappear {
             invalidateZoomPopoverHideTimer()
+            isHubPresented = false
             permissionPromptPresenter.clear()
         }
     }
@@ -221,12 +235,7 @@ struct URLBarView: View {
 
     private func permissionIndicatorButton(for currentTab: Tab) -> some View {
         SumiPermissionIndicatorButton(viewModel: permissionIndicatorViewModel) {
-            closeZoomPopover()
-            if permissionPromptPresenter.presentFromIndicatorClick() {
-                isHubPresented = false
-            } else {
-                isHubPresented = true
-            }
+            handlePermissionIndicatorClick()
         }
         .task(id: permissionIndicatorTaskKey(for: currentTab)) {
             refreshPermissionIndicator(for: currentTab)
@@ -286,6 +295,8 @@ struct URLBarView: View {
 
     private var hubButton: some View {
         Button {
+            hubInitialMode = .controls
+            hubModeRequestNonce += 1
             isHubPresented.toggle()
         } label: {
             Group {
@@ -310,6 +321,8 @@ struct URLBarView: View {
                 currentTab: currentTab,
                 profile: effectiveProfile,
                 profileId: effectiveProfileId,
+                initialMode: hubInitialMode,
+                modeRequestNonce: hubModeRequestNonce,
                 onClose: { isHubPresented = false }
             )
             .environmentObject(browserManager)
@@ -420,6 +433,22 @@ struct URLBarView: View {
             windowState: windowState,
             browserManager: browserManager
         )
+    }
+
+    private func handlePermissionIndicatorClick() {
+        closeZoomPopover()
+        if permissionPromptPresenter.presentFromIndicatorClick() {
+            isHubPresented = false
+            return
+        }
+
+        if permissionIndicatorViewModel.state.prefersRuntimeControlsSurface {
+            hubInitialMode = .permissions
+        } else {
+            hubInitialMode = .controls
+        }
+        hubModeRequestNonce += 1
+        isHubPresented = true
     }
 
     private func permissionIndicatorTaskKey(for tab: Tab) -> String {
@@ -1114,6 +1143,8 @@ private struct URLBarHubPopover: View {
     let currentTab: Tab?
     let profile: Profile?
     let profileId: UUID?
+    let initialMode: URLBarHubInitialMode
+    let modeRequestNonce: Int
     let onClose: () -> Void
 
     private enum Mode: Equatable {
@@ -1195,11 +1226,14 @@ private struct URLBarHubPopover: View {
         .clipped()
         .animation(.spring(response: 0.26, dampingFraction: 0.9), value: containerWidth)
         .onAppear {
-            containerWidth = mode.preferredWidth
+            applyInitialMode(animated: false)
             handleBookmarkPresentationRequest(bookmarkPresentationRequest)
         }
         .onChange(of: bookmarkPresentationRequest) { _, request in
             handleBookmarkPresentationRequest(request)
+        }
+        .onChange(of: modeRequestNonce) { _, _ in
+            applyInitialMode(animated: true)
         }
         .onChange(of: currentTab?.id) { _, _ in
             resetToControls()
@@ -1359,6 +1393,23 @@ private struct URLBarHubPopover: View {
         navigationDirection = .backward
         mode = .controls
         containerWidth = Mode.controls.preferredWidth
+    }
+
+    private func applyInitialMode(animated: Bool) {
+        let requestedMode: Mode = initialMode == .permissions ? .permissions : .controls
+        guard requestedMode != mode else {
+            containerWidth = requestedMode.preferredWidth
+            return
+        }
+
+        let direction: NavigationDirection = requestedMode == .permissions ? .forward : .backward
+        if animated {
+            setMode(requestedMode, direction: direction)
+        } else {
+            navigationDirection = direction
+            mode = requestedMode
+            containerWidth = requestedMode.preferredWidth
+        }
     }
 
     private var activeProfile: Profile? {

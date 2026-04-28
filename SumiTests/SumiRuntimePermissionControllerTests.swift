@@ -63,6 +63,22 @@ final class SumiRuntimePermissionControllerTests: XCTestCase {
         XCTAssertEqual(controller.currentRuntimeState(for: webView).geolocation, .unavailable)
     }
 
+    func testProviderBackedGeolocationRuntimeStateCanBeScopedToCurrentPage() {
+        let provider = FakeSumiGeolocationProvider(currentState: .active)
+        provider.registerAllowedRequest(pageId: "tab-a:1", tabId: "tab-a")
+        let controller = SumiRuntimePermissionController(geolocationProvider: provider)
+        let webView = makeWebView()
+
+        XCTAssertEqual(
+            controller.currentRuntimeState(for: webView, pageId: "tab-a:1").geolocation,
+            .active
+        )
+        XCTAssertEqual(
+            controller.currentRuntimeState(for: webView, pageId: "tab-a:2").geolocation,
+            .none
+        )
+    }
+
     func testProviderBackedGeolocationPauseResumeRevokeOperations() async {
         let provider = FakeSumiGeolocationProvider(currentState: .active)
         let controller = SumiRuntimePermissionController(geolocationProvider: provider)
@@ -79,6 +95,36 @@ final class SumiRuntimePermissionControllerTests: XCTestCase {
         XCTAssertEqual(provider.resumeCallCount, 1)
         XCTAssertEqual(provider.revokeCallCount, 1)
         XCTAssertEqual(provider.currentState, .revoked)
+    }
+
+    func testPageScopedGeolocationStopClearsVisitWithoutGlobalRevoke() async {
+        let provider = FakeSumiGeolocationProvider(currentState: .active)
+        provider.registerAllowedRequest(pageId: "tab-a:1", tabId: "tab-a")
+        provider.registerAllowedRequest(pageId: "tab-b:1", tabId: "tab-b")
+        let controller = SumiRuntimePermissionController(geolocationProvider: provider)
+        let webView = makeWebView()
+
+        let stop = await controller.stopGeolocation(pageId: "tab-a:1", for: webView)
+
+        XCTAssertEqual(stop, .applied)
+        XCTAssertEqual(provider.stopCallCount, 1)
+        XCTAssertEqual(provider.revokeCallCount, 0)
+        XCTAssertFalse(provider.containsAllowedRequest(pageId: "tab-a:1"))
+        XCTAssertTrue(provider.containsAllowedRequest(pageId: "tab-b:1"))
+        XCTAssertEqual(provider.currentState, .active)
+    }
+
+    func testPageScopedGeolocationPauseFailsWhenPageIsNotActive() async {
+        let provider = FakeSumiGeolocationProvider(currentState: .active)
+        provider.registerAllowedRequest(pageId: "tab-a:1", tabId: "tab-a")
+        let controller = SumiRuntimePermissionController(geolocationProvider: provider)
+        let webView = makeWebView()
+
+        let pause = await controller.pauseGeolocation(pageId: "tab-a:2", for: webView)
+
+        XCTAssertEqual(pause, .deniedByRuntime(reason: "geolocation-runtime-page-not-active"))
+        XCTAssertEqual(provider.pauseCallCount, 0)
+        XCTAssertEqual(provider.currentState, .active)
     }
 
     func testMissingGeolocationProviderReturnsUnsupportedProvider() async {

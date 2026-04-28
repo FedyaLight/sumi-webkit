@@ -87,7 +87,7 @@ struct SumiCurrentSitePermissionSummary: Equatable, Sendable {
         var items: [String] = []
         if let webView = tab.existingWebView,
            let runtimeController {
-            let runtime = runtimeController.currentRuntimeState(for: webView)
+            let runtime = runtimeController.currentRuntimeState(for: webView, pageId: pageId)
             appendRuntimeSummary(runtime, to: &items)
         }
 
