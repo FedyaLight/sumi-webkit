@@ -101,6 +101,60 @@ actor SumiPermissionCoordinator {
         )
     }
 
+    func queryPermissionState(
+        _ context: SumiPermissionSecurityContext
+    ) async -> SumiPermissionCoordinatorDecision {
+        guard let concreteTypes = concretePermissionTypes(from: context.request.permissionTypes) else {
+            let result = await policyResolver.evaluate(context)
+            let decision = SumiPermissionCoordinatorDecision.fromPolicyResult(result, context: context)
+            emitPolicyEventIfNeeded(decision)
+            return decision
+        }
+
+        var evaluations: [PolicyEvaluation] = []
+        evaluations.reserveCapacity(concreteTypes.count)
+        for permissionType in concreteTypes {
+            let concreteContext = context.replacingPermissionTypes([permissionType])
+            let result = await policyResolver.evaluate(concreteContext)
+            let key = permissionKey(for: permissionType, context: concreteContext)
+            guard result.isAllowedToProceed else {
+                let decision = SumiPermissionCoordinatorDecision.fromPolicyResult(
+                    result,
+                    context: concreteContext,
+                    permissionTypes: [permissionType]
+                )
+                emitPolicyEventIfNeeded(decision)
+                return decision
+            }
+            evaluations.append(
+                PolicyEvaluation(
+                    permissionType: permissionType,
+                    context: concreteContext,
+                    result: result,
+                    key: key
+                )
+            )
+        }
+
+        let lookup = await storedDecisionLookup(for: evaluations)
+        if let deniedDecision = lookup.deniedDecision {
+            return deniedDecision
+        }
+        if lookup.promptEvaluations.isEmpty {
+            return aggregateGrantedDecision(
+                lookup.grantedRecords,
+                evaluations: evaluations,
+                context: context
+            )
+        }
+
+        return promptRequiredDecision(
+            originalContext: context,
+            promptEvaluations: lookup.promptEvaluations,
+            reason: "permission-state-query-prompt-required"
+        )
+    }
+
     func stateSnapshot() -> SumiPermissionCoordinatorState {
         state
     }
@@ -366,6 +420,9 @@ actor SumiPermissionCoordinator {
         context: SumiPermissionSecurityContext
     ) -> SumiPermissionCoordinatorDecision {
         let firstDecision = records.first?.decision
+        let currentSystemSnapshot = evaluations
+            .compactMap(\.result.systemAuthorizationSnapshot)
+            .first
         return SumiPermissionCoordinatorDecision(
             outcome: .granted,
             state: .allow,
@@ -374,7 +431,7 @@ actor SumiPermissionCoordinator {
             reason: "stored-allow",
             permissionTypes: evaluations.map(\.permissionType),
             keys: evaluations.map(\.key),
-            systemAuthorizationSnapshot: firstDecision.flatMap {
+            systemAuthorizationSnapshot: currentSystemSnapshot ?? firstDecision.flatMap {
                 SumiPermissionCoordinatorDecision.decodedSnapshot($0.systemAuthorizationSnapshot)
             },
             shouldPersist: false,
@@ -415,6 +472,29 @@ actor SumiPermissionCoordinator {
                 await self.cancel(requestId: promptRequest.id, reason: "task-cancelled")
             }
         }
+    }
+
+    private func promptRequiredDecision(
+        originalContext: SumiPermissionSecurityContext,
+        promptEvaluations: [PolicyEvaluation],
+        reason: String
+    ) -> SumiPermissionCoordinatorDecision {
+        let policyResults = promptEvaluations.map(\.result)
+        return SumiPermissionCoordinatorDecision(
+            outcome: .promptRequired,
+            state: .ask,
+            persistence: nil,
+            source: policyResults.first?.source ?? .defaultSetting,
+            reason: reason,
+            permissionTypes: promptEvaluations.map(\.permissionType),
+            keys: promptEvaluations.map(\.key),
+            queryId: nil,
+            systemAuthorizationSnapshot: policyResults.compactMap(\.systemAuthorizationSnapshot).first,
+            shouldPersist: false,
+            shouldOfferSystemSettings: policyResults.contains(where: \.mayOpenSystemSettings),
+            disablesPersistentAllow: originalContext.isEphemeralProfile
+                || !allowedPersistences(for: policyResults).contains(.persistent)
+        )
     }
 
     private func register(

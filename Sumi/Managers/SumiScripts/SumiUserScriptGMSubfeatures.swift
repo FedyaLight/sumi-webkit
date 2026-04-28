@@ -17,7 +17,8 @@ enum UserScriptGMDispatch {
         method: String,
         args: [String: Any],
         callbackId: String,
-        webView: WKWebView?
+        webView: WKWebView?,
+        original: WKScriptMessage?
     ) {
         if GMValueSubfeature.route(bridge: bridge, method: method, args: args, callbackId: callbackId, webView: webView) {
             return
@@ -28,7 +29,14 @@ enum UserScriptGMDispatch {
         if GMNetworkSubfeature.route(bridge: bridge, method: method, args: args, callbackId: callbackId, webView: webView) {
             return
         }
-        if GMUISubfeature.route(bridge: bridge, method: method, args: args, callbackId: callbackId, webView: webView) {
+        if GMUISubfeature.route(
+            bridge: bridge,
+            method: method,
+            args: args,
+            callbackId: callbackId,
+            webView: webView,
+            original: original
+        ) {
             return
         }
     }
@@ -139,14 +147,20 @@ enum GMUISubfeature {
         method: String,
         args: [String: Any],
         callbackId: String,
-        webView: WKWebView?
+        webView: WKWebView?,
+        original: WKScriptMessage?
     ) -> Bool {
         switch method {
         case "GM_addStyle":
             bridge.performAddStyle(callbackId: callbackId, webView: webView)
             return true
         case "GM_notification":
-            bridge.performNotification(args: args)
+            bridge.performNotification(
+                args: args,
+                callbackId: callbackId,
+                webView: webView,
+                frame: original?.frameInfo
+            )
             return true
         case "GM_registerMenuCommand":
             bridge.performRegisterMenuCommand(args: args)

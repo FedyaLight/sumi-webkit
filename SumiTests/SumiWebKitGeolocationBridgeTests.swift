@@ -397,6 +397,28 @@ private actor FakeGeolocationPermissionCoordinator: SumiPermissionCoordinating {
         }
     }
 
+    func queryPermissionState(
+        _ context: SumiPermissionSecurityContext
+    ) async -> SumiPermissionCoordinatorDecision {
+        contexts.append(context)
+        switch mode {
+        case .immediate(let decision):
+            return decision
+        case .pending, .neverCompletesWithoutQuery:
+            return SumiPermissionCoordinatorDecision(
+                outcome: .promptRequired,
+                state: .ask,
+                persistence: nil,
+                source: .runtime,
+                reason: "fake-query-prompt-required",
+                permissionTypes: context.request.permissionTypes,
+                keys: context.request.permissionTypes.map { context.request.key(for: $0) },
+                shouldPersist: false,
+                disablesPersistentAllow: context.isEphemeralProfile
+            )
+        }
+    }
+
     func activeQuery(forPageId pageId: String) -> SumiPermissionAuthorizationQuery? {
         activeQueries[pageId]
     }

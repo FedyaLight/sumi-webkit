@@ -50,6 +50,7 @@ class BrowserConfiguration {
         "sumiIdentity_",
         "sumiLinkInteraction_",
         "sumiTabSuspension_",
+        "sumiWebNotifications_",
     ]
 
     init() {}

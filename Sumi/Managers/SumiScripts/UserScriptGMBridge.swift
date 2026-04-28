@@ -11,7 +11,6 @@
 
 import AppKit
 import Foundation
-import UserNotifications
 import WebKit
 
 @MainActor
@@ -20,7 +19,9 @@ final class UserScriptGMBridge: NSObject {
     let script: SumiInstalledUserScript
     private let contentWorld: WKContentWorld
     private weak var tabOpenHandler: SumiScriptsTabHandler?
+    private weak var notificationPermissionBridge: SumiNotificationPermissionBridge?
     weak var downloadManager: DownloadManager?
+    private let notificationTabContextProvider: (@MainActor (WKWebView?) -> SumiWebNotificationTabContext?)?
 
     // Per-script persistent storage using UserDefaults suite
     private let storage: UserDefaults?
@@ -38,12 +39,16 @@ final class UserScriptGMBridge: NSObject {
         profileId: UUID?,
         contentWorld: WKContentWorld,
         tabOpenHandler: SumiScriptsTabHandler?,
-        downloadManager: DownloadManager?
+        downloadManager: DownloadManager?,
+        notificationPermissionBridge: SumiNotificationPermissionBridge? = nil,
+        notificationTabContextProvider: (@MainActor (WKWebView?) -> SumiWebNotificationTabContext?)? = nil
     ) {
         self.script = script
         self.contentWorld = contentWorld
         self.tabOpenHandler = tabOpenHandler
         self.downloadManager = downloadManager
+        self.notificationPermissionBridge = notificationPermissionBridge
+        self.notificationTabContextProvider = notificationTabContextProvider
 
         if let profileId {
             let suiteName = "group.sumi.userscripts.\(profileId.uuidString).\(UserScriptStore.sanitizeFilename(script.filename))"
@@ -287,39 +292,75 @@ final class UserScriptGMBridge: NSObject {
 
     // MARK: - GM_notification
 
-    func performNotification(args: [String: Any]) {
-        let title = args["title"] as? String ?? "Sumi UserScript"
-        let text = args["text"] as? String ?? args["details"] as? String ?? ""
-
-        let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
-            if let error {
-                RuntimeDiagnostics.debug(
-                    "GM_notification authorization failed: \(error.localizedDescription)",
-                    category: "SumiScripts"
-                )
-            }
-            guard granted else { return }
-
-            let content = UNMutableNotificationContent()
-            content.title = title
-            content.body = text
-            content.sound = .default
-
-            let request = UNNotificationRequest(
-                identifier: "sumi-userscript-\(UUID().uuidString)",
-                content: content,
-                trigger: nil
+    func performNotification(
+        args: [String: Any],
+        callbackId: String,
+        webView: WKWebView?,
+        frame: WKFrameInfo?
+    ) {
+        guard let notificationPermissionBridge,
+              let frame,
+              let tabContext = notificationTabContextProvider?(webView)
+        else {
+            rejectCallback(
+                callbackId,
+                error: "GM_notification context unavailable",
+                webView: webView
             )
-            center.add(request) { error in
-                if let error {
-                    RuntimeDiagnostics.debug(
-                        "GM_notification delivery failed: \(error.localizedDescription)",
-                        category: "SumiScripts"
-                    )
+            return
+        }
+
+        let request = SumiWebNotificationRequest(
+            id: callbackId.isEmpty ? UUID().uuidString : callbackId,
+            frame: frame
+        )
+        let title = (args["title"] as? String)?.nonEmpty ?? "Sumi UserScript"
+        let text = (args["text"] as? String)
+            ?? (args["details"] as? String)
+            ?? (args["body"] as? String)
+            ?? ""
+        let iconURL = Self.url(from: args["icon"] as? String)
+            ?? Self.url(from: args["image"] as? String)
+        let imageURL = Self.url(from: args["image"] as? String)
+        let tag = (args["tag"] as? String)?.nonEmpty
+        let isSilent = args["silent"] as? Bool ?? false
+        let pageId = tabContext.pageId
+
+        Task { @MainActor [weak self, weak webView] in
+            guard let self else { return }
+            let result = await notificationPermissionBridge.postUserscriptNotification(
+                request: request,
+                tabContext: tabContext,
+                scriptId: self.script.id.uuidString,
+                title: title,
+                body: text,
+                iconURL: iconURL,
+                imageURL: imageURL,
+                tag: tag,
+                isSilent: isSilent,
+                webView: webView,
+                pageValidator: { [weak self, weak webView] in
+                    self?.notificationTabContextProvider?(webView)?.pageId == pageId
                 }
+            )
+
+            let payload: [String: Any] = [
+                "delivered": result.delivered,
+                "permission": result.permission.rawValue,
+                "reason": result.reason,
+                "identifier": result.identifier?.rawValue ?? ""
+            ]
+            if result.delivered {
+                self.resolveCallback(callbackId, result: payload, webView: webView)
+            } else {
+                self.rejectCallback(callbackId, error: result.reason, webView: webView)
             }
         }
+    }
+
+    private static func url(from value: String?) -> URL? {
+        guard let value = value?.nonEmpty else { return nil }
+        return URL(string: value)
     }
 
     // MARK: - JS Callbacks

@@ -188,9 +188,11 @@ class BrowserManager: ObservableObject {
     var findManager: FindManager
     let permissionCoordinator: any SumiPermissionCoordinating
     let geolocationProvider: (any SumiGeolocationProviding)?
+    let notificationService: any SumiNotificationServicing
     let runtimePermissionController: any SumiRuntimePermissionControlling
     let webKitPermissionBridge: SumiWebKitPermissionBridge
     let webKitGeolocationBridge: SumiWebKitGeolocationBridge
+    let notificationPermissionBridge: SumiNotificationPermissionBridge
     var zoomManager = ZoomManager()
     weak var sumiSettings: SumiSettingsService? {
         didSet {
@@ -287,9 +289,11 @@ class BrowserManager: ObservableObject {
         userscriptsModule: SumiUserscriptsModule? = nil,
         permissionCoordinator: (any SumiPermissionCoordinating)? = nil,
         geolocationProvider: (any SumiGeolocationProviding)? = nil,
+        notificationService: (any SumiNotificationServicing)? = nil,
         runtimePermissionController: (any SumiRuntimePermissionControlling)? = nil,
         webKitPermissionBridge: SumiWebKitPermissionBridge? = nil,
-        webKitGeolocationBridge: SumiWebKitGeolocationBridge? = nil
+        webKitGeolocationBridge: SumiWebKitGeolocationBridge? = nil,
+        notificationPermissionBridge: SumiNotificationPermissionBridge? = nil
     ) {
         // Phase 1: initialize all stored properties
         let startupModelContext = SumiStartupPersistence.shared.container.mainContext
@@ -305,6 +309,7 @@ class BrowserManager: ObservableObject {
             ?? SumiGeolocationProvider(
                 processPool: BrowserConfiguration.shared.normalTabProcessPool
             )
+        let notificationService = notificationService ?? SumiNotificationService()
         let runtimePermissionController = runtimePermissionController
             ?? SumiRuntimePermissionController(geolocationProvider: geolocationProvider)
         self.modelContext = startupModelContext
@@ -356,6 +361,7 @@ class BrowserManager: ObservableObject {
         self.findManager = FindManager()
         self.permissionCoordinator = permissionCoordinator
         self.geolocationProvider = geolocationProvider
+        self.notificationService = notificationService
         self.runtimePermissionController = runtimePermissionController
         self.webKitPermissionBridge = webKitPermissionBridge
             ?? SumiWebKitPermissionBridge(
@@ -366,6 +372,11 @@ class BrowserManager: ObservableObject {
             ?? SumiWebKitGeolocationBridge(
                 coordinator: permissionCoordinator,
                 geolocationProvider: geolocationProvider
+            )
+        self.notificationPermissionBridge = notificationPermissionBridge
+            ?? SumiNotificationPermissionBridge(
+                coordinator: permissionCoordinator,
+                notificationService: notificationService
             )
 
         // Phase 2: wire dependencies and perform side effects (safe to use self)

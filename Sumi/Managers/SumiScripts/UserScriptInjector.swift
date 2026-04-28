@@ -28,18 +28,26 @@ final class UserScriptInjector {
     func makeUserScripts(
         scripts: [SumiInstalledUserScript],
         webViewId: UUID,
-        profileId: UUID?
+        profileId: UUID?,
+        isEphemeral: Bool
     ) -> [UserScript] {
         activeBridges[webViewId] = [:]
 
         return scripts.map { script in
             switch script.fileType {
             case .javascript:
+                let notificationContextProvider: @MainActor (WKWebView?) -> SumiWebNotificationTabContext? = { [weak browserManager] webView in
+                    browserManager?.tabManager.tab(for: webViewId)?
+                        .webNotificationTabContext(for: webView)
+                }
                 let adapter = SumiInstalledUserScriptAdapter(
                     script: script,
                     profileId: profileId,
+                    isEphemeral: isEphemeral,
                     tabHandler: tabHandler,
-                    downloadManager: browserManager?.downloadManager
+                    downloadManager: browserManager?.downloadManager,
+                    notificationPermissionBridge: browserManager?.notificationPermissionBridge,
+                    notificationTabContextProvider: notificationContextProvider
                 )
                 if let bridge = adapter.bridge {
                     activeBridges[webViewId]?[script.id] = bridge

@@ -6,6 +6,10 @@ protocol SumiPermissionCoordinating: Sendable {
         _ context: SumiPermissionSecurityContext
     ) async -> SumiPermissionCoordinatorDecision
 
+    func queryPermissionState(
+        _ context: SumiPermissionSecurityContext
+    ) async -> SumiPermissionCoordinatorDecision
+
     func activeQuery(forPageId pageId: String) async -> SumiPermissionAuthorizationQuery?
 
     @discardableResult

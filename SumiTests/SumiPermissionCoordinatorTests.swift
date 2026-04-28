@@ -4,6 +4,22 @@ import XCTest
 @testable import Sumi
 
 final class SumiPermissionCoordinatorTests: XCTestCase {
+    func testQueryPermissionStateDoesNotCreateAuthorizationQuery() async {
+        let coordinator = SumiPermissionCoordinator(
+            policyResolver: RecordingPolicyResolver(),
+            persistentStore: RecordingPermissionStore(),
+            now: fixedNow
+        )
+
+        let decision = await coordinator.queryPermissionState(context(.notifications, id: "state-only"))
+
+        XCTAssertEqual(decision.outcome, .promptRequired)
+        XCTAssertEqual(decision.state, .ask)
+        XCTAssertNil(decision.queryId)
+        let activeQuery = await coordinator.activeQuery(forPageId: "page-a")
+        XCTAssertNil(activeQuery)
+    }
+
     func testHardDenyFromResolverReturnsImmediateDeniedWithoutStoreLookup() async {
         let store = RecordingPermissionStore()
         let resolver = RecordingPolicyResolver(
