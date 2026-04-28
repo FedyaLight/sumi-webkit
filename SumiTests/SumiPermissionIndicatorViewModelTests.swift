@@ -249,8 +249,9 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
 
         XCTAssertEqual(source.components(separatedBy: "SumiPermissionIndicatorButton(").count - 1, 1)
         XCTAssertTrue(source.contains("urlbar-permission-indicator"))
+        XCTAssertTrue(source.contains("permissionPromptPresenter.presentFromIndicatorClick()"))
         XCTAssertTrue(source.contains("isHubPresented = true"))
-        XCTAssertFalse(source.contains("SumiPermissionPromptView"))
+        XCTAssertTrue(source.contains("SumiPermissionPromptView"))
         XCTAssertFalse(source.contains("approveOnce("))
         XCTAssertFalse(source.contains("denyOnce("))
     }

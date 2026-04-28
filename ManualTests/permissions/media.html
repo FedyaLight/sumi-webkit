@@ -39,7 +39,7 @@
 </head>
 <body>
   <h1>Media Permission Manual Test</h1>
-  <p>Until Sumi prompt UI exists, first-time ask/no-decision requests are expected to fail closed.</p>
+  <p>Expected: first-time camera, microphone, or combined requests open the URL-bar anchored Sumi permission prompt. Allow this time should grant only the current page/request lifetime, allow while visiting should persist for a normal profile, don't allow should persist for a normal profile, and dismiss should not persist.</p>
 
   <div>
     <button id="camera">Request camera</button>

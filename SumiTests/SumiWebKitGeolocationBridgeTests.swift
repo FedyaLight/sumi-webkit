@@ -244,12 +244,14 @@ final class SumiWebKitGeolocationBridgeTests: XCTestCase {
     private func makeBridge(
         coordinator: any SumiPermissionCoordinating,
         provider: FakeSumiGeolocationProvider?,
+        pendingStrategy: SumiWebKitGeolocationPendingStrategy = .denyUntilPromptUIExists,
         pendingPollIntervalNanoseconds: UInt64 = 1_000_000,
         coordinatorTimeoutNanoseconds: UInt64 = 100_000_000
     ) -> SumiWebKitGeolocationBridge {
         SumiWebKitGeolocationBridge(
             coordinator: coordinator,
             geolocationProvider: provider,
+            pendingStrategy: pendingStrategy,
             pendingPollIntervalNanoseconds: pendingPollIntervalNanoseconds,
             coordinatorTimeoutNanoseconds: coordinatorTimeoutNanoseconds,
             now: { self.fixedDate }
@@ -260,6 +262,7 @@ final class SumiWebKitGeolocationBridgeTests: XCTestCase {
         systemService: FakeSumiSystemPermissionService,
         store: GeolocationBridgePermissionStore,
         provider: FakeSumiGeolocationProvider,
+        pendingStrategy: SumiWebKitGeolocationPendingStrategy = .denyUntilPromptUIExists,
         pendingPollIntervalNanoseconds: UInt64 = 1_000_000,
         coordinatorTimeoutNanoseconds: UInt64 = 100_000_000
     ) -> SumiWebKitGeolocationBridge {
@@ -273,6 +276,7 @@ final class SumiWebKitGeolocationBridgeTests: XCTestCase {
         return makeBridge(
             coordinator: coordinator,
             provider: provider,
+            pendingStrategy: pendingStrategy,
             pendingPollIntervalNanoseconds: pendingPollIntervalNanoseconds,
             coordinatorTimeoutNanoseconds: coordinatorTimeoutNanoseconds
         )

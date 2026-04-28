@@ -26,7 +26,7 @@ final class SumiExternalSchemePermissionBridge {
         coordinator: any SumiPermissionCoordinating,
         appResolver: (any SumiExternalAppResolving)? = nil,
         sessionStore: SumiExternalSchemeSessionStore? = nil,
-        pendingStrategy: SumiExternalSchemePendingStrategy = .blockUntilPromptUIExists,
+        pendingStrategy: SumiExternalSchemePendingStrategy = .waitForPromptUI,
         now: @escaping @Sendable () -> Date = { Date() },
         eventSink: EventSink? = nil
     ) {
@@ -132,6 +132,52 @@ final class SumiExternalSchemePermissionBridge {
             )
 
         case .blockedPendingUI:
+            if pendingStrategy.waitsForPromptUI,
+               request.isUserActivated,
+               tabContext.isActiveTab,
+               tabContext.isVisibleTab {
+                let promptContext = securityContext(
+                    for: request,
+                    tabContext: tabContext,
+                    bypassActivationGateForStoreLookup: false
+                )
+                let settlementDecision = await coordinator.requestPermission(promptContext)
+                let settlementResult = SumiExternalSchemeDecisionMapper.resultKind(
+                    for: settlementDecision,
+                    request: request
+                )
+                if settlementResult == .opened {
+                    willOpen()
+                    guard appResolver.open(targetURL) else {
+                        return finish(
+                            request,
+                            tabContext: tabContext,
+                            appInfo: appInfo,
+                            coordinatorDecision: settlementDecision,
+                            result: .openFailed,
+                            reason: "external-scheme-open-failed"
+                        )
+                    }
+                    return finish(
+                        request,
+                        tabContext: tabContext,
+                        appInfo: appInfo,
+                        coordinatorDecision: settlementDecision,
+                        result: .opened,
+                        reason: settlementDecision.reason
+                    )
+                }
+
+                return finish(
+                    request,
+                    tabContext: tabContext,
+                    appInfo: appInfo,
+                    coordinatorDecision: settlementDecision,
+                    result: settlementResult,
+                    reason: settlementDecision.reason
+                )
+            }
+
             let temporaryDecision = SumiExternalSchemeDecisionMapper.defaultBlockDecision(
                 for: context,
                 scheme: request.normalizedScheme,

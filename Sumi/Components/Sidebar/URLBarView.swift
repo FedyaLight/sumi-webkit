@@ -54,7 +54,9 @@ struct URLBarView: View {
     @State private var isZoomPopoverHovering = false
     @State private var zoomPopoverHideTimer: Timer?
     @State private var didConfigurePermissionIndicator = false
+    @State private var didConfigurePermissionPrompt = false
     @StateObject private var permissionIndicatorViewModel = SumiPermissionIndicatorViewModel()
+    @StateObject private var permissionPromptPresenter = SumiPermissionPromptPresenter()
 
     init(
         presentationMode: URLBarPresentationMode = .sidebar
@@ -124,10 +126,12 @@ struct URLBarView: View {
         .onChange(of: currentTab?.id) { _, _ in
             DispatchQueue.main.async {
                 closeZoomPopover()
+                permissionPromptPresenter.closeForCurrentTabChange()
             }
         }
         .onDisappear {
             invalidateZoomPopoverHideTimer()
+            permissionPromptPresenter.clear()
         }
     }
 
@@ -218,16 +222,31 @@ struct URLBarView: View {
     private func permissionIndicatorButton(for currentTab: Tab) -> some View {
         SumiPermissionIndicatorButton(viewModel: permissionIndicatorViewModel) {
             closeZoomPopover()
-            isHubPresented = true
+            if permissionPromptPresenter.presentFromIndicatorClick() {
+                isHubPresented = false
+            } else {
+                isHubPresented = true
+            }
         }
         .task(id: permissionIndicatorTaskKey(for: currentTab)) {
             refreshPermissionIndicator(for: currentTab)
+            refreshPermissionPrompt(for: currentTab)
         }
         .onReceive(NotificationCenter.default.publisher(for: .sumiTabNavigationStateDidChange)) { notification in
             guard let tab = notification.object as? Tab,
                   tab.id == currentTab.id
             else { return }
             refreshPermissionIndicator(for: tab)
+            refreshPermissionPrompt(for: tab)
+        }
+        .popover(isPresented: $permissionPromptPresenter.isPresented, arrowEdge: .bottom) {
+            if let viewModel = permissionPromptPresenter.viewModel {
+                SumiPermissionPromptView(viewModel: viewModel)
+                    .environmentObject(browserManager)
+                    .environment(windowState)
+            } else {
+                EmptyView()
+            }
         }
     }
 
@@ -375,11 +394,30 @@ struct URLBarView: View {
         didConfigurePermissionIndicator = true
     }
 
+    private func configurePermissionPromptIfNeeded() {
+        guard !didConfigurePermissionPrompt else { return }
+        permissionPromptPresenter.configure(
+            coordinator: browserManager.permissionCoordinator,
+            systemPermissionService: browserManager.systemPermissionService,
+            externalAppResolver: browserManager.externalAppResolver
+        )
+        didConfigurePermissionPrompt = true
+    }
+
     private func refreshPermissionIndicator(for tab: Tab) {
         configurePermissionIndicatorIfNeeded()
         permissionIndicatorViewModel.update(
             tab: tab,
             windowId: windowState.id,
+            browserManager: browserManager
+        )
+    }
+
+    private func refreshPermissionPrompt(for tab: Tab) {
+        configurePermissionPromptIfNeeded()
+        permissionPromptPresenter.update(
+            tab: tab,
+            windowState: windowState,
             browserManager: browserManager
         )
     }

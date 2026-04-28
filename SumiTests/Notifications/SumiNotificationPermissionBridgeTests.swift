@@ -58,7 +58,7 @@ final class SumiNotificationPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(postedCount, 0)
     }
 
-    func testPromptRequiredUsesTemporaryFailClosedStrategy() async {
+    func testPromptRequiredUsesTemporaryFailClosedStrategyWithDefaultPermissionState() async {
         let service = FakeSumiNotificationService()
         let coordinator = FakeNotificationPermissionCoordinator(mode: .pending)
         let bridge = makeBridge(
@@ -82,7 +82,7 @@ final class SumiNotificationPermissionBridgeTests: XCTestCase {
         )
 
         XCTAssertFalse(result.delivered)
-        XCTAssertEqual(result.permission, .denied)
+        XCTAssertEqual(result.permission, .default)
         let postedCount = await service.postedCount()
         let cancelledReasons = await coordinator.cancelledReasons()
         XCTAssertEqual(postedCount, 0)
@@ -115,7 +115,7 @@ final class SumiNotificationPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(state, .default)
     }
 
-    func testWebsitePermissionRequestMapsPromptToDeniedWhilePromptUIIsAbsent() async {
+    func testWebsitePermissionRequestMapsPromptDismissalToDefault() async {
         let bridge = makeBridge(
             coordinator: FakeNotificationPermissionCoordinator(mode: .pending),
             service: FakeSumiNotificationService(),
@@ -128,7 +128,7 @@ final class SumiNotificationPermissionBridgeTests: XCTestCase {
             tabContext: tabContext()
         )
 
-        XCTAssertEqual(state, .denied)
+        XCTAssertEqual(state, .default)
     }
 
     func testNotificationPayloadSanitizesTextAndIdentifiersAreDeterministic() {
@@ -221,12 +221,14 @@ final class SumiNotificationPermissionBridgeTests: XCTestCase {
     private func makeBridge(
         coordinator: any SumiPermissionCoordinating,
         service: any SumiNotificationServicing,
+        pendingStrategy: SumiNotificationPendingStrategy = .denyUntilPromptUIExists,
         pendingPollIntervalNanoseconds: UInt64 = 25_000_000,
         coordinatorTimeoutNanoseconds: UInt64 = 500_000_000
     ) -> SumiNotificationPermissionBridge {
         SumiNotificationPermissionBridge(
             coordinator: coordinator,
             notificationService: service,
+            pendingStrategy: pendingStrategy,
             pendingPollIntervalNanoseconds: pendingPollIntervalNanoseconds,
             coordinatorTimeoutNanoseconds: coordinatorTimeoutNanoseconds
         )

@@ -57,7 +57,7 @@ final class SumiNotificationPermissionBridge {
     init(
         coordinator: any SumiPermissionCoordinating,
         notificationService: any SumiNotificationServicing,
-        pendingStrategy: SumiNotificationPendingStrategy = .denyUntilPromptUIExists,
+        pendingStrategy: SumiNotificationPendingStrategy = .waitForPromptUI,
         pendingPollIntervalNanoseconds: UInt64 = 25_000_000,
         coordinatorTimeoutNanoseconds: UInt64 = 500_000_000,
         now: @escaping @Sendable () -> Date = { Date() },
@@ -99,7 +99,9 @@ final class SumiNotificationPermissionBridge {
         recordNotificationIndicatorEvent(for: decision, context: context)
         return SumiWebNotificationDecisionMapper.permissionState(
             for: decision,
-            promptRequiredState: .denied
+            promptRequiredState: .default,
+            dismissedState: .default,
+            cancelledState: .default
         )
     }
 
@@ -212,7 +214,9 @@ final class SumiNotificationPermissionBridge {
             return .blocked(
                 permission: SumiWebNotificationDecisionMapper.permissionState(
                     for: decision,
-                    promptRequiredState: .denied
+                    promptRequiredState: .default,
+                    dismissedState: .default,
+                    cancelledState: .default
                 ),
                 reason: decision.reason
             )
@@ -315,6 +319,13 @@ final class SumiNotificationPermissionBridge {
         for context: SumiPermissionSecurityContext,
         source: SumiNotificationBridgeSource
     ) async -> SumiPermissionCoordinatorDecision {
+        if pendingStrategy.waitsForPromptUI,
+           context.surface == .normalTab,
+           context.isActiveTab,
+           context.isVisibleTab {
+            return await coordinator.requestPermission(context)
+        }
+
         let coordinator = coordinator
         let pendingStrategy = pendingStrategy
         let pollInterval = pendingPollIntervalNanoseconds

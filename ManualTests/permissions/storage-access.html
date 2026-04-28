@@ -74,7 +74,7 @@
 <body>
   <main>
     <h1>Storage Access Manual Test</h1>
-    <p>Expected while prompt UI is absent: first-time <code>requestStorageAccess()</code> fails closed. Stored allow/deny can be tested once fixtures or UI can create storage-access decisions. Proper third-party testing usually needs this page and the iframe served from two different local origins or ports.</p>
+    <p>Expected: first-time third-party <code>requestStorageAccess()</code> opens the URL-bar anchored Sumi permission prompt. Allow persists for a normal profile, don't allow persists deny for a normal profile, and dismiss denies/cancels without persistence. Proper third-party testing usually needs this page and the iframe served from two different local origins or ports.</p>
 
     <div class="controls">
       <button id="has-access">document.hasStorageAccess()</button>

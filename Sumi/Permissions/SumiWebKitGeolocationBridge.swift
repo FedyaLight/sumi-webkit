@@ -2,13 +2,20 @@ import Foundation
 import WebKit
 
 enum SumiWebKitGeolocationPendingStrategy: Equatable, Sendable {
+    case waitForPromptUI
     case denyUntilPromptUIExists
 
     var reason: String {
         switch self {
+        case .waitForPromptUI:
+            return "webkit-geolocation-prompt-ui-wait"
         case .denyUntilPromptUIExists:
             return "webkit-geolocation-prompt-ui-unavailable-deny"
         }
+    }
+
+    var waitsForPromptUI: Bool {
+        self == .waitForPromptUI
     }
 }
 
@@ -91,7 +98,7 @@ final class SumiWebKitGeolocationBridge {
     init(
         coordinator: any SumiPermissionCoordinating,
         geolocationProvider: (any SumiGeolocationProviding)?,
-        pendingStrategy: SumiWebKitGeolocationPendingStrategy = .denyUntilPromptUIExists,
+        pendingStrategy: SumiWebKitGeolocationPendingStrategy = .waitForPromptUI,
         pendingPollIntervalNanoseconds: UInt64 = 25_000_000,
         coordinatorTimeoutNanoseconds: UInt64 = 500_000_000,
         now: @escaping @Sendable () -> Date = { Date() }
@@ -208,6 +215,13 @@ final class SumiWebKitGeolocationBridge {
     private func coordinatorDecision(
         for context: SumiPermissionSecurityContext
     ) async -> SumiPermissionCoordinatorDecision {
+        if pendingStrategy.waitsForPromptUI,
+           context.surface == .normalTab,
+           context.isActiveTab,
+           context.isVisibleTab {
+            return await coordinator.requestPermission(context)
+        }
+
         let coordinator = coordinator
         let pendingStrategy = pendingStrategy
         let pollInterval = pendingPollIntervalNanoseconds
