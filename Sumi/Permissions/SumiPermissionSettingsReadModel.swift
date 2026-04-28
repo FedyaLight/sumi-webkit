@@ -356,12 +356,16 @@ struct SumiSiteSettingsRecentActivityItem: Identifiable, Equatable, Sendable {
     let timestamp: Date
     let systemImage: String
     let count: Int
+    var customTitle: String? = nil
+    var customSubtitle: String? = nil
 
     var title: String {
-        "\(displayDomain) - \(permissionTitle) \(actionTitle)"
+        if let customTitle { return customTitle }
+        return "\(displayDomain) - \(permissionTitle) \(actionTitle)"
     }
 
     var subtitle: String {
+        if let customSubtitle { return customSubtitle }
         var parts = [originSummary]
         if let profileName, !profileName.isEmpty {
             parts.append(profileName)
@@ -371,8 +375,4 @@ struct SumiSiteSettingsRecentActivityItem: Identifiable, Equatable, Sendable {
         }
         return parts.joined(separator: " | ")
     }
-}
-
-struct SumiPermissionCleanupSettings: Equatable, Sendable {
-    var isAutomaticCleanupEnabled: Bool
 }

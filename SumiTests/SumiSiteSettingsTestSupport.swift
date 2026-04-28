@@ -261,6 +261,8 @@ struct SiteSettingsRepositoryHarness {
     let autoplayStore: SumiAutoplayPolicyStoreAdapter
     let repository: SumiPermissionSettingsRepository
     let modelContainer: ModelContainer
+    let permissionStore: SwiftDataPermissionStore
+    let permissionCleanupService: SumiPermissionCleanupService
     let userDefaults: UserDefaults
 
     init(
@@ -288,10 +290,19 @@ struct SiteSettingsRepositoryHarness {
         )
         self.modelContainer = container
         let store = SwiftDataPermissionStore(container: container)
+        self.permissionStore = store
         self.autoplayStore = SumiAutoplayPolicyStoreAdapter(
             modelContainer: container,
             persistentStore: store
         )
+        let cleanupService = SumiPermissionCleanupService(
+            store: store,
+            recentActivityStore: recentStore,
+            antiAbuseStore: SumiPermissionAntiAbuseStore.memoryOnly(),
+            userDefaults: userDefaults,
+            now: { Date(timeIntervalSince1970: 1_800_000_000) }
+        )
+        self.permissionCleanupService = cleanupService
         self.repository = SumiPermissionSettingsRepository(
             coordinator: coordinator,
             systemPermissionService: system,
@@ -301,6 +312,7 @@ struct SiteSettingsRepositoryHarness {
             externalSchemeSessionStore: externalSchemeStore,
             indicatorEventStore: indicatorStore,
             websiteDataCleanupService: websiteDataService,
+            permissionCleanupService: cleanupService,
             userDefaults: userDefaults,
             now: { Date(timeIntervalSince1970: 1_800_000_000) }
         )

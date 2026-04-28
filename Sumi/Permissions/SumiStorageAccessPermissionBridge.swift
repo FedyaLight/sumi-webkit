@@ -206,7 +206,8 @@ final class SumiStorageAccessPermissionBridge {
         context: SumiPermissionSecurityContext
     ) {
         guard decision.outcome != .granted,
-              decision.outcome != .ignored
+              decision.outcome != .ignored,
+              decision.outcome != .suppressed
         else { return }
 
         let category: SumiPermissionIndicatorCategory
@@ -221,7 +222,7 @@ final class SumiStorageAccessPermissionBridge {
             category = .systemBlocked
             visualStyle = .systemWarning
             priority = .systemBlockedSensitive
-        case .denied, .unsupported, .requiresUserActivation, .cancelled, .dismissed, .expired:
+        case .denied, .unsupported, .requiresUserActivation, .cancelled, .dismissed, .suppressed, .expired:
             category = .blockedEvent
             visualStyle = .blocked
             priority = .storageAccessBlockedOrPending

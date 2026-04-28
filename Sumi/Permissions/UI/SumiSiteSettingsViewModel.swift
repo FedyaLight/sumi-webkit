@@ -7,6 +7,8 @@ final class SumiSiteSettingsViewModel: ObservableObject {
     @Published private(set) var categoryRows: [SumiSiteSettingsCategoryRow] = []
     @Published private(set) var siteRows: [SumiSiteSettingsSiteRow] = []
     @Published private(set) var isLoading = false
+    @Published private(set) var cleanupSettings = SumiPermissionCleanupSettings()
+    @Published private(set) var cleanupStatusText: String?
     @Published var searchText = ""
     @Published var statusMessage: String?
     @Published var errorMessage: String?
@@ -23,6 +25,8 @@ final class SumiSiteSettingsViewModel: ObservableObject {
             recentActivity = []
             categoryRows = []
             siteRows = []
+            cleanupSettings = SumiPermissionCleanupSettings()
+            cleanupStatusText = nil
             profileContext = nil
             return
         }
@@ -36,6 +40,8 @@ final class SumiSiteSettingsViewModel: ObservableObject {
             recentActivity = repository.recentActivity(profile: context, limit: 6)
             categoryRows = try await repository.categoryRows(profile: context)
             siteRows = try await repository.siteRows(profile: context, searchText: searchText)
+            cleanupSettings = repository.cleanupSettings(profile: context)
+            cleanupStatusText = Self.cleanupStatusText(cleanupSettings)
             errorMessage = nil
         } catch {
             recentActivity = []
@@ -58,6 +64,26 @@ final class SumiSiteSettingsViewModel: ObservableObject {
     }
 
     func cleanupSettingsBinding() -> SumiPermissionCleanupSettings {
-        repository.cleanupSettings
+        cleanupSettings
+    }
+
+    func setAutomaticCleanupEnabled(_ isEnabled: Bool, profile: Profile?) async {
+        guard let profile else { return }
+        let context = SumiPermissionSettingsProfileContext(profile: profile)
+        repository.setAutomaticCleanupEnabled(isEnabled, profile: context)
+        cleanupSettings = repository.cleanupSettings(profile: context)
+        cleanupStatusText = Self.cleanupStatusText(cleanupSettings)
+        errorMessage = nil
+    }
+
+    private static func cleanupStatusText(
+        _ settings: SumiPermissionCleanupSettings
+    ) -> String? {
+        guard let lastRunAt = settings.lastRunAt else { return nil }
+        var parts = ["Last checked \(lastRunAt.formatted(date: .abbreviated, time: .shortened))"]
+        if let lastRemovedCount = settings.lastRemovedCount {
+            parts.append("\(lastRemovedCount) permission\(lastRemovedCount == 1 ? "" : "s") removed")
+        }
+        return parts.joined(separator: " | ")
     }
 }

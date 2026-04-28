@@ -121,19 +121,37 @@ struct SumiSiteSettingsView: View {
             title: SumiSiteSettingsStrings.automaticCleanup,
             subtitle: SumiSiteSettingsStrings.automaticCleanupCopy
         ) {
-            SettingsRow(
-                title: "Automatic cleanup",
-                subtitle: SumiSiteSettingsStrings.automaticCleanupDeferred,
-                systemImage: "clock.arrow.circlepath"
-            ) {
-                Toggle(
-                    "",
-                    isOn: .constant(viewModel.cleanupSettingsBinding().isAutomaticCleanupEnabled)
-                )
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .disabled(true)
-                .accessibilityLabel("Automatic permission cleanup, coming in a later update")
+            VStack(alignment: .leading, spacing: 10) {
+                SettingsRow(
+                    title: "Automatic cleanup",
+                    subtitle: "Removes saved allow permissions for sites not used in the last \(viewModel.cleanupSettings.thresholdDays) days.",
+                    systemImage: "clock.arrow.circlepath"
+                ) {
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { viewModel.cleanupSettingsBinding().isAutomaticCleanupEnabled },
+                            set: { isEnabled in
+                                Task {
+                                    await viewModel.setAutomaticCleanupEnabled(
+                                        isEnabled,
+                                        profile: profile
+                                    )
+                                }
+                            }
+                        )
+                    )
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .accessibilityLabel("Automatic permission cleanup")
+                }
+
+                if let cleanupStatusText = viewModel.cleanupStatusText {
+                    Text(cleanupStatusText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 30)
+                }
             }
         }
     }

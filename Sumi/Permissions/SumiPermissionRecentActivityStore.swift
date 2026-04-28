@@ -12,6 +12,7 @@ struct SumiPermissionRecentActivityRecord: Identifiable, Equatable, Sendable {
         case openedExternalApp
         case blockedPopup
         case reloadRequired
+        case autoRevoked
 
         var displayLabel: String {
             switch self {
@@ -33,6 +34,8 @@ struct SumiPermissionRecentActivityRecord: Identifiable, Equatable, Sendable {
                 return "blocked popup"
             case .reloadRequired:
                 return "reload required"
+            case .autoRevoked:
+                return "removed automatically"
             }
         }
     }
@@ -120,7 +123,7 @@ final class SumiPermissionRecentActivityStore: ObservableObject {
             record(decision: decision, fallbackAction: action(for: decision), now: now)
         case .profileCancelled:
             break
-        case .queryQueued, .queryCoalesced:
+        case .queryQueued, .queryCoalesced, .promptSuppressed:
             break
         }
     }
@@ -154,6 +157,23 @@ final class SumiPermissionRecentActivityStore: ObservableObject {
                 action: action,
                 detail: detail,
                 createdAt: now
+            )
+        )
+    }
+
+    func recordAutoRevoked(_ event: SumiPermissionAutoRevokedEvent) {
+        record(
+            SumiPermissionRecentActivityRecord(
+                id: event.id,
+                displayDomain: event.displayDomain,
+                requestingOrigin: event.key.requestingOrigin,
+                topOrigin: event.key.topOrigin,
+                profilePartitionId: event.key.profilePartitionId,
+                isEphemeralProfile: event.key.isEphemeralProfile,
+                permissionType: event.key.permissionType,
+                action: .autoRevoked,
+                detail: event.reason,
+                createdAt: event.revokedAt
             )
         )
     }
@@ -207,6 +227,8 @@ final class SumiPermissionRecentActivityStore: ObservableObject {
             return .asked
         case .systemBlocked:
             return .systemBlocked
+        case .suppressed:
+            return .blocked
         case .unsupported, .requiresUserActivation, .cancelled, .dismissed, .expired:
             return .blocked
         case .ignored:

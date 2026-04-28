@@ -51,6 +51,11 @@ enum SumiWebNotificationDecisionMapper {
             return cancelledState
         case .dismissed:
             return dismissedState
+        case .suppressed:
+            if decision.promptSuppression?.shouldResolveNotificationsAsDefault == true {
+                return .default
+            }
+            return .denied
         case .promptRequired:
             return promptRequiredState
         }

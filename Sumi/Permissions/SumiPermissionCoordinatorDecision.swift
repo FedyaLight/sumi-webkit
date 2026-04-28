@@ -9,6 +9,7 @@ enum SumiPermissionCoordinatorOutcome: String, Codable, CaseIterable, Hashable, 
     case requiresUserActivation
     case cancelled
     case dismissed
+    case suppressed
     case ignored
     case expired
 }
@@ -26,6 +27,7 @@ struct SumiPermissionCoordinatorDecision: Equatable, Sendable {
     let shouldPersist: Bool
     let shouldOfferSystemSettings: Bool
     let disablesPersistentAllow: Bool
+    let promptSuppression: SumiPermissionPromptSuppression?
 
     init(
         outcome: SumiPermissionCoordinatorOutcome,
@@ -39,7 +41,8 @@ struct SumiPermissionCoordinatorDecision: Equatable, Sendable {
         systemAuthorizationSnapshot: SumiSystemPermissionSnapshot? = nil,
         shouldPersist: Bool = false,
         shouldOfferSystemSettings: Bool = false,
-        disablesPersistentAllow: Bool = false
+        disablesPersistentAllow: Bool = false,
+        promptSuppression: SumiPermissionPromptSuppression? = nil
     ) {
         self.outcome = outcome
         self.state = state
@@ -53,6 +56,7 @@ struct SumiPermissionCoordinatorDecision: Equatable, Sendable {
         self.shouldPersist = shouldPersist
         self.shouldOfferSystemSettings = shouldOfferSystemSettings
         self.disablesPersistentAllow = disablesPersistentAllow
+        self.promptSuppression = promptSuppression
     }
 
     static func fromPolicyResult(

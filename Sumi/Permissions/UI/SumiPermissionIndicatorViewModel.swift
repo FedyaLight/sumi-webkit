@@ -440,7 +440,7 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
                 pageId: pageId,
                 displayDomain: displayDomain
             )
-        case .queryCoalesced:
+        case .queryCoalesced, .promptSuppressed:
             return nil
         }
     }
@@ -464,7 +464,7 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
         case .systemBlocked:
             category = .systemBlocked
             style = .systemWarning
-        case .denied, .unsupported, .requiresUserActivation, .cancelled, .dismissed, .expired:
+        case .denied, .unsupported, .requiresUserActivation, .cancelled, .dismissed, .suppressed, .expired:
             category = .blockedEvent
             style = .blocked
         case .granted, .ignored:
@@ -587,6 +587,8 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
         switch decision.outcome {
         case .promptRequired, .systemBlocked, .denied, .unsupported, .requiresUserActivation, .dismissed, .expired:
             return true
+        case .suppressed:
+            return false
         case .cancelled:
             return decision.reason.contains("prompt-ui")
                 || decision.reason.contains("coordinator-timeout")
