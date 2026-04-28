@@ -25,13 +25,19 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
             return unsupported(context, permissionType: permissionType, reason: unsupportedReason)
         }
 
-        if isSensitiveWebPermission(permissionType) {
+        if requiresKeyableWebOrigin(permissionType) {
             if let result = sensitiveOriginGate(context, permissionType: permissionType) {
                 return result
             }
+        }
+
+        if requiresSecureContext(permissionType) {
             if let result = secureContextGate(context, permissionType: permissionType) {
                 return result
             }
+        }
+
+        if requiresCommittedVisibleOriginConsistency(permissionType) {
             if shouldDenyForVirtualURLMismatch(context) {
                 return deny(
                     .hardDeny,
@@ -41,6 +47,10 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
                     reason: SumiPermissionPolicyReason.virtualURLMismatch
                 )
             }
+        }
+
+        if let result = storageAccessThirdPartyGate(context, permissionType: permissionType) {
+            return result
         }
 
         if let result = surfaceGate(context, permissionType: permissionType) {
@@ -147,8 +157,6 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
         switch permissionType {
         case .cameraAndMicrophone:
             return SumiPermissionPolicyReason.cameraAndMicrophoneRequiresCoordinatorExpansion
-        case .storageAccess:
-            return SumiPermissionPolicyReason.storageAccessUnsupported
         case .externalScheme(let scheme) where SumiPermissionType.normalizedExternalScheme(scheme).isEmpty:
             return SumiPermissionPolicyReason.emptyExternalSchemeUnsupported
         case .camera,
@@ -158,7 +166,8 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
              .popups,
              .externalScheme,
              .autoplay,
-             .filePicker:
+             .filePicker,
+             .storageAccess:
             return nil
         }
     }
@@ -275,7 +284,7 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
         case .normalTab:
             return nil
         case .miniWindow:
-            guard isSensitiveWebPermission(permissionType) else { return nil }
+            guard requiresNormalTabSurface(permissionType) else { return nil }
             return deny(
                 .hardDeny,
                 context: context,
@@ -284,7 +293,7 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
                 reason: SumiPermissionPolicyReason.miniWindowSensitiveDenied
             )
         case .peek:
-            guard isSensitiveWebPermission(permissionType) else { return nil }
+            guard requiresNormalTabSurface(permissionType) else { return nil }
             return deny(
                 .hardDeny,
                 context: context,
@@ -309,7 +318,7 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
                 reason: SumiPermissionPolicyReason.internalPage
             )
         case .unknown:
-            guard isSensitiveWebPermission(permissionType) else { return nil }
+            guard requiresNormalTabSurface(permissionType) else { return nil }
             return deny(
                 .hardDeny,
                 context: context,
@@ -318,6 +327,25 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
                 reason: SumiPermissionPolicyReason.unknownSurfaceSensitiveDenied
             )
         }
+    }
+
+    private func storageAccessThirdPartyGate(
+        _ context: SumiPermissionSecurityContext,
+        permissionType: SumiPermissionType
+    ) -> SumiPermissionPolicyResult? {
+        guard permissionType == .storageAccess else { return nil }
+        let sameIdentity = context.requestingOrigin.identity == context.topOrigin.identity
+        let sameHost = context.requestingOrigin.host != nil
+            && context.requestingOrigin.host == context.topOrigin.host
+        guard sameIdentity || sameHost else { return nil }
+
+        return deny(
+            .hardDeny,
+            context: context,
+            permissionType: permissionType,
+            source: .defaultSetting,
+            reason: SumiPermissionPolicyReason.storageAccessSameOrigin
+        )
     }
 
     private func shouldDenyForVirtualURLMismatch(
@@ -466,7 +494,24 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
         return String(data: data, encoding: .utf8)
     }
 
-    private func isSensitiveWebPermission(_ permissionType: SumiPermissionType) -> Bool {
+    private func requiresKeyableWebOrigin(_ permissionType: SumiPermissionType) -> Bool {
+        switch permissionType {
+        case .camera,
+             .microphone,
+             .geolocation,
+             .notifications,
+             .filePicker,
+             .storageAccess:
+            return true
+        case .cameraAndMicrophone,
+             .popups,
+             .externalScheme,
+             .autoplay:
+            return false
+        }
+    }
+
+    private func requiresSecureContext(_ permissionType: SumiPermissionType) -> Bool {
         switch permissionType {
         case .camera, .microphone, .geolocation, .notifications, .storageAccess:
             return true
@@ -475,6 +520,42 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
              .externalScheme,
              .autoplay,
              .filePicker:
+            return false
+        }
+    }
+
+    private func requiresCommittedVisibleOriginConsistency(
+        _ permissionType: SumiPermissionType
+    ) -> Bool {
+        switch permissionType {
+        case .camera,
+             .microphone,
+             .geolocation,
+             .notifications,
+             .filePicker,
+             .storageAccess:
+            return true
+        case .cameraAndMicrophone,
+             .popups,
+             .externalScheme,
+             .autoplay:
+            return false
+        }
+    }
+
+    private func requiresNormalTabSurface(_ permissionType: SumiPermissionType) -> Bool {
+        switch permissionType {
+        case .camera,
+             .microphone,
+             .geolocation,
+             .notifications,
+             .filePicker,
+             .storageAccess:
+            return true
+        case .cameraAndMicrophone,
+             .popups,
+             .externalScheme,
+             .autoplay:
             return false
         }
     }

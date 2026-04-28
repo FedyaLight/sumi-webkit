@@ -430,6 +430,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         let coordinator = browserManager?.permissionCoordinator
         browserManager?.blockedPopupStore.clear(pageId: pageId)
         browserManager?.externalSchemeSessionStore.clear(pageId: pageId)
+        browserManager?.filePickerPermissionBridge.cancel(
+            pageId: pageId,
+            reason: "normal-tab-main-frame-navigation"
+        )
         Task {
             await coordinator?.cancelNavigation(
                 pageId: pageId,
@@ -454,6 +458,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         browserManager?.blockedPopupStore.clear(tabId: tabId)
         browserManager?.externalSchemeSessionStore.clear(pageId: pageId)
         browserManager?.externalSchemeSessionStore.clear(tabId: tabId)
+        browserManager?.filePickerPermissionBridge.cancel(pageId: pageId, reason: reason)
+        browserManager?.filePickerPermissionBridge.cancel(tabId: tabId, reason: reason)
         browserManager?.geolocationProvider?.stop(pageId: pageId)
         browserManager?.geolocationProvider?.cancelAllowedRequests(tabId: tabId)
 

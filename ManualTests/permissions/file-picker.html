@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sumi File Picker Permission Manual Test</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.45;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+    }
+
+    main {
+      max-width: 880px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 24px;
+      margin: 0 0 16px;
+    }
+
+    section {
+      margin: 18px 0;
+      padding: 14px;
+      border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
+      border-radius: 6px;
+    }
+
+    label,
+    button {
+      display: inline-flex;
+      align-items: center;
+      min-height: 38px;
+      box-sizing: border-box;
+      margin: 0 8px 8px 0;
+      padding: 8px 12px;
+      border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+      border-radius: 6px;
+      background: Canvas;
+      color: CanvasText;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    input[type="file"] {
+      position: absolute;
+      inline-size: 1px;
+      block-size: 1px;
+      opacity: 0.001;
+    }
+
+    pre {
+      min-height: 220px;
+      margin: 16px 0 0;
+      padding: 12px;
+      overflow: auto;
+      border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
+      border-radius: 6px;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>File Picker Permission Manual Test</h1>
+    <p>Expected: user clicks can open the native picker. Script/background attempts should not open it. Cancelling should return no files. File names and counts are shown here, not full paths.</p>
+
+    <section>
+      <h2>Picker Controls</h2>
+      <label for="single-file">Single file</label>
+      <input id="single-file" type="file">
+
+      <label for="multiple-files">Multiple files</label>
+      <input id="multiple-files" type="file" multiple>
+
+      <label for="directory">Directory</label>
+      <input id="directory" type="file" webkitdirectory directory multiple>
+
+      <label for="accept-filter">Images or text</label>
+      <input id="accept-filter" type="file" accept="image/png,image/jpeg,text/plain,.md">
+    </section>
+
+    <section>
+      <h2>Activation And Lifecycle</h2>
+      <button id="click-single">Open single input by click</button>
+      <button id="script-attempt">Script/background attempt</button>
+      <button id="delayed-attempt">Delayed attempt after click</button>
+      <button id="navigate-during-picker">Navigate after opening picker</button>
+      <button id="clear-log">Clear log</button>
+    </section>
+
+    <pre id="log">Idle</pre>
+  </main>
+
+  <script>
+    const logNode = document.querySelector('#log');
+    const single = document.querySelector('#single-file');
+    const multiple = document.querySelector('#multiple-files');
+    const directory = document.querySelector('#directory');
+    const acceptFilter = document.querySelector('#accept-filter');
+
+    function log(message, value) {
+      const stamp = new Date().toISOString();
+      const suffix = value === undefined ? '' : ` ${JSON.stringify(value)}`;
+      logNode.textContent = `${stamp} ${message}${suffix}\n${logNode.textContent}`;
+    }
+
+    function describeFiles(fileList) {
+      const files = Array.from(fileList || []);
+      return {
+        count: files.length,
+        names: files.map((file) => file.name)
+      };
+    }
+
+    function attach(input, label) {
+      input.addEventListener('change', () => {
+        log(`${label}: change`, describeFiles(input.files));
+      });
+      input.addEventListener('cancel', () => {
+        log(`${label}: cancel event`);
+      });
+    }
+
+    attach(single, 'single file');
+    attach(multiple, 'multiple files');
+    attach(directory, 'directory');
+    attach(acceptFilter, 'accept filter');
+
+    document.querySelector('#click-single').addEventListener('click', () => {
+      log('click-triggered single input');
+      single.click();
+    });
+
+    document.querySelector('#script-attempt').addEventListener('click', () => {
+      setTimeout(() => {
+        log('script/background click() attempt');
+        single.click();
+      }, 0);
+    });
+
+    document.querySelector('#delayed-attempt').addEventListener('click', () => {
+      log('delayed click() scheduled');
+      setTimeout(() => {
+        log('delayed click() attempt');
+        multiple.click();
+      }, 1500);
+    });
+
+    document.querySelector('#navigate-during-picker').addEventListener('click', () => {
+      log('opening picker, then changing page hash after 500 ms');
+      single.click();
+      setTimeout(() => {
+        location.hash = `navigation-${Date.now()}`;
+        log('hash navigation completed');
+      }, 500);
+    });
+
+    document.querySelector('#clear-log').addEventListener('click', () => {
+      logNode.textContent = '';
+    });
+
+    window.addEventListener('load', () => {
+      log('load-time script click() attempt');
+      single.click();
+    });
+  </script>
+</body>
+</html>

@@ -20,11 +20,6 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
             combined.reason,
             SumiPermissionPolicyReason.cameraAndMicrophoneRequiresCoordinatorExpansion
         )
-
-        let storage = await evaluate(.storageAccess)
-        XCTAssertFalse(storage.isAllowedToProceed)
-        XCTAssertEqual(storage.source, .unsupported)
-        XCTAssertEqual(storage.reason, SumiPermissionPolicyReason.storageAccessUnsupported)
     }
 
     func testZeroOrMultiplePermissionTypesAreUnsupported() async {
