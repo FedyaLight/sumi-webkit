@@ -369,6 +369,49 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         extensionRuntimeCommittedMainDocumentURL = url
     }
 
+    func currentPermissionPageId() -> String {
+        "\(id.uuidString.lowercased()):\(extensionRuntimeDocumentSequence)"
+    }
+
+    func handleNormalTabPermissionNavigation(to targetURL: URL?) {
+        let pageId = currentPermissionPageId()
+        let coordinator = browserManager?.permissionCoordinator
+        Task {
+            await coordinator?.cancelNavigation(
+                pageId: pageId,
+                reason: "normal-tab-main-frame-navigation"
+            )
+        }
+
+        guard let targetURL else { return }
+        let previousOrigin = SumiPermissionOrigin(
+            url: extensionRuntimeCommittedMainDocumentURL ?? url
+        )
+        let nextOrigin = SumiPermissionOrigin(url: targetURL)
+        if previousOrigin.identity != nextOrigin.identity {
+            browserManager?.geolocationProvider?.stop(pageId: pageId)
+        }
+    }
+
+    func cleanupNormalTabPermissionRuntime(reason: String) {
+        let pageId = currentPermissionPageId()
+        let tabId = id.uuidString.lowercased()
+        browserManager?.geolocationProvider?.stop(pageId: pageId)
+        browserManager?.geolocationProvider?.cancelAllowedRequests(tabId: tabId)
+
+        let coordinator = browserManager?.permissionCoordinator
+        Task {
+            await coordinator?.cancel(
+                pageId: pageId,
+                reason: reason
+            )
+            await coordinator?.cancelTab(
+                tabId: tabId,
+                reason: reason
+            )
+        }
+    }
+
     var isCurrentTab: Bool {
         guard let browserManager else { return false }
         if let windowState = browserManager.windowState(containing: self) {
@@ -890,6 +933,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             browserManager: browserManager
         ) { [weak self, weak webView] in
             guard let self, let webView else { return }
+            self.cleanupNormalTabPermissionRuntime(reason: "normal-tab-webview-cleanup")
             self.unbindAudioState(from: webView)
             self.removeNavigationStateObservers(from: webView)
             self.removeNavigationDelegateBundle(for: webView)

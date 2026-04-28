@@ -187,8 +187,10 @@ class BrowserManager: ObservableObject {
     var workspaceThemeCoordinator: WorkspaceThemeCoordinator
     var findManager: FindManager
     let permissionCoordinator: any SumiPermissionCoordinating
+    let geolocationProvider: (any SumiGeolocationProviding)?
     let runtimePermissionController: any SumiRuntimePermissionControlling
     let webKitPermissionBridge: SumiWebKitPermissionBridge
+    let webKitGeolocationBridge: SumiWebKitGeolocationBridge
     var zoomManager = ZoomManager()
     weak var sumiSettings: SumiSettingsService? {
         didSet {
@@ -284,8 +286,10 @@ class BrowserManager: ObservableObject {
         extensionsModule: SumiExtensionsModule? = nil,
         userscriptsModule: SumiUserscriptsModule? = nil,
         permissionCoordinator: (any SumiPermissionCoordinating)? = nil,
+        geolocationProvider: (any SumiGeolocationProviding)? = nil,
         runtimePermissionController: (any SumiRuntimePermissionControlling)? = nil,
-        webKitPermissionBridge: SumiWebKitPermissionBridge? = nil
+        webKitPermissionBridge: SumiWebKitPermissionBridge? = nil,
+        webKitGeolocationBridge: SumiWebKitGeolocationBridge? = nil
     ) {
         // Phase 1: initialize all stored properties
         let startupModelContext = SumiStartupPersistence.shared.container.mainContext
@@ -297,8 +301,12 @@ class BrowserManager: ObservableObject {
                 ),
                 sessionOwnerId: "browser"
             )
+        let geolocationProvider = geolocationProvider
+            ?? SumiGeolocationProvider(
+                processPool: BrowserConfiguration.shared.normalTabProcessPool
+            )
         let runtimePermissionController = runtimePermissionController
-            ?? SumiRuntimePermissionController()
+            ?? SumiRuntimePermissionController(geolocationProvider: geolocationProvider)
         self.modelContext = startupModelContext
         self.moduleRegistry = moduleRegistry
         self.trackingProtectionModule = trackingProtectionModule
@@ -347,11 +355,17 @@ class BrowserManager: ObservableObject {
         self.workspaceThemeCoordinator = WorkspaceThemeCoordinator()
         self.findManager = FindManager()
         self.permissionCoordinator = permissionCoordinator
+        self.geolocationProvider = geolocationProvider
         self.runtimePermissionController = runtimePermissionController
         self.webKitPermissionBridge = webKitPermissionBridge
             ?? SumiWebKitPermissionBridge(
                 coordinator: permissionCoordinator,
                 runtimeController: runtimePermissionController
+            )
+        self.webKitGeolocationBridge = webKitGeolocationBridge
+            ?? SumiWebKitGeolocationBridge(
+                coordinator: permissionCoordinator,
+                geolocationProvider: geolocationProvider
             )
 
         // Phase 2: wire dependencies and perform side effects (safe to use self)

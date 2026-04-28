@@ -19,6 +19,7 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
         if navigation.navigationAction.navigationType.isBackForward {
             tab.beginBackForwardNavigationTracking(on: webView)
         } else {
+            tab.handleNormalTabPermissionNavigation(to: navigation.request.url)
             tab.markRegularMainFrameNavigation(on: webView)
         }
         tab.resetPageSuspensionRuntimeState()
@@ -75,6 +76,9 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
 
         if let newURL = webView.url {
             tab.url = newURL
+            if tab.pendingMainFrameNavigationKind == .backForward {
+                tab.handleNormalTabPermissionNavigation(to: newURL)
+            }
             tab.noteCommittedMainDocumentNavigation(to: newURL)
             tab.clearTrackingProtectionReloadRequirementIfResolved(for: newURL)
             tab.historyRecorder.didCommitMainFrameNavigation(
