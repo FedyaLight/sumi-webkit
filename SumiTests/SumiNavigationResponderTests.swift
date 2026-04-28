@@ -376,6 +376,16 @@ private actor NavigationExternalSchemeFakeCoordinator: SumiPermissionCoordinatin
         nil
     }
 
+    func stateSnapshot() -> SumiPermissionCoordinatorState {
+        SumiPermissionCoordinatorState()
+    }
+
+    func events() -> AsyncStream<SumiPermissionCoordinatorEvent> {
+        AsyncStream { continuation in
+            continuation.finish()
+        }
+    }
+
     @discardableResult
     func cancel(requestId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
         navigationExternalCoordinatorDecision(.cancelled, reason: reason)

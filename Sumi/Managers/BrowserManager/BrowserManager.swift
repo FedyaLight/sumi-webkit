@@ -196,6 +196,7 @@ class BrowserManager: ObservableObject {
     let filePickerPanelPresenter: any SumiFilePickerPanelPresenting
     let filePickerPermissionBridge: SumiFilePickerPermissionBridge
     let storageAccessPermissionBridge: SumiStorageAccessPermissionBridge
+    let permissionIndicatorEventStore: SumiPermissionIndicatorEventStore
     let blockedPopupStore: SumiBlockedPopupStore
     let popupPermissionBridge: SumiPopupPermissionBridge
     let externalAppResolver: any SumiExternalAppResolving
@@ -305,6 +306,7 @@ class BrowserManager: ObservableObject {
         filePickerPanelPresenter: (any SumiFilePickerPanelPresenting)? = nil,
         filePickerPermissionBridge: SumiFilePickerPermissionBridge? = nil,
         storageAccessPermissionBridge: SumiStorageAccessPermissionBridge? = nil,
+        permissionIndicatorEventStore: SumiPermissionIndicatorEventStore? = nil,
         blockedPopupStore: SumiBlockedPopupStore? = nil,
         popupPermissionBridge: SumiPopupPermissionBridge? = nil,
         externalAppResolver: (any SumiExternalAppResolving)? = nil,
@@ -329,6 +331,7 @@ class BrowserManager: ObservableObject {
         let runtimePermissionController = runtimePermissionController
             ?? SumiRuntimePermissionController(geolocationProvider: geolocationProvider)
         let filePickerPanelPresenter = filePickerPanelPresenter ?? SumiFilePickerPanelPresenter()
+        let permissionIndicatorEventStore = permissionIndicatorEventStore ?? SumiPermissionIndicatorEventStore()
         let blockedPopupStore = blockedPopupStore ?? SumiBlockedPopupStore()
         let externalAppResolver = externalAppResolver ?? SumiNSWorkspaceExternalAppResolver.shared
         let externalSchemeSessionStore = externalSchemeSessionStore ?? SumiExternalSchemeSessionStore()
@@ -396,18 +399,22 @@ class BrowserManager: ObservableObject {
         self.notificationPermissionBridge = notificationPermissionBridge
             ?? SumiNotificationPermissionBridge(
                 coordinator: permissionCoordinator,
-                notificationService: notificationService
+                notificationService: notificationService,
+                indicatorEventStore: permissionIndicatorEventStore
             )
         self.filePickerPanelPresenter = filePickerPanelPresenter
         self.filePickerPermissionBridge = filePickerPermissionBridge
             ?? SumiFilePickerPermissionBridge(
                 coordinator: permissionCoordinator,
-                panelPresenter: filePickerPanelPresenter
+                panelPresenter: filePickerPanelPresenter,
+                indicatorEventStore: permissionIndicatorEventStore
             )
         self.storageAccessPermissionBridge = storageAccessPermissionBridge
             ?? SumiStorageAccessPermissionBridge(
-                coordinator: permissionCoordinator
+                coordinator: permissionCoordinator,
+                indicatorEventStore: permissionIndicatorEventStore
             )
+        self.permissionIndicatorEventStore = permissionIndicatorEventStore
         self.blockedPopupStore = blockedPopupStore
         self.popupPermissionBridge = popupPermissionBridge
             ?? SumiPopupPermissionBridge(

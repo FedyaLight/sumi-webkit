@@ -29,19 +29,22 @@ final class SumiStorageAccessPermissionBridge {
     private let pendingPollIntervalNanoseconds: UInt64
     private let coordinatorTimeoutNanoseconds: UInt64
     private let now: @Sendable () -> Date
+    private let indicatorEventStore: SumiPermissionIndicatorEventStore?
 
     init(
         coordinator: any SumiPermissionCoordinating,
         pendingStrategy: SumiStorageAccessPendingStrategy = .denyUntilPromptUIExists,
         pendingPollIntervalNanoseconds: UInt64 = 25_000_000,
         coordinatorTimeoutNanoseconds: UInt64 = 500_000_000,
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        indicatorEventStore: SumiPermissionIndicatorEventStore? = nil
     ) {
         self.coordinator = coordinator
         self.pendingStrategy = pendingStrategy
         self.pendingPollIntervalNanoseconds = pendingPollIntervalNanoseconds
         self.coordinatorTimeoutNanoseconds = coordinatorTimeoutNanoseconds
         self.now = now
+        self.indicatorEventStore = indicatorEventStore
     }
 
     func handleStorageAccessRequest(
@@ -64,6 +67,7 @@ final class SumiStorageAccessPermissionBridge {
             }
 
             let decision = await self.coordinatorDecision(for: context)
+            self.recordStorageIndicatorEvent(for: decision, context: context)
             guard webView != nil else {
                 once.resolve(false)
                 return
@@ -183,5 +187,49 @@ final class SumiStorageAccessPermissionBridge {
                 return decision
             }
         }
+    }
+
+    private func recordStorageIndicatorEvent(
+        for decision: SumiPermissionCoordinatorDecision,
+        context: SumiPermissionSecurityContext
+    ) {
+        guard decision.outcome != .granted,
+              decision.outcome != .ignored
+        else { return }
+
+        let category: SumiPermissionIndicatorCategory
+        let visualStyle: SumiPermissionIndicatorVisualStyle
+        let priority: SumiPermissionIndicatorPriority
+        switch decision.outcome {
+        case .promptRequired:
+            category = .pendingRequest
+            visualStyle = .attention
+            priority = .storageAccessBlockedOrPending
+        case .systemBlocked:
+            category = .systemBlocked
+            visualStyle = .systemWarning
+            priority = .systemBlockedSensitive
+        case .denied, .unsupported, .requiresUserActivation, .cancelled, .dismissed, .expired:
+            category = .blockedEvent
+            visualStyle = .blocked
+            priority = .storageAccessBlockedOrPending
+        case .granted, .ignored:
+            return
+        }
+
+        indicatorEventStore?.record(
+            SumiPermissionIndicatorEventRecord(
+                id: "storage-access-\(context.request.id)-\(decision.outcome.rawValue)",
+                tabId: context.request.tabId ?? context.request.pageBucketId,
+                pageId: context.request.pageBucketId,
+                displayDomain: context.request.displayDomain,
+                permissionTypes: [.storageAccess],
+                category: category,
+                visualStyle: visualStyle,
+                priority: priority,
+                reason: decision.reason,
+                createdAt: now()
+            )
+        )
     }
 }

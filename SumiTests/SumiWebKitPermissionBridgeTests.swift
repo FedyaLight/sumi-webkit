@@ -692,6 +692,16 @@ private actor FakePermissionCoordinator: SumiPermissionCoordinating {
         activeQueries[pageId]
     }
 
+    func stateSnapshot() -> SumiPermissionCoordinatorState {
+        SumiPermissionCoordinatorState(activeQueriesByPageId: activeQueries)
+    }
+
+    func events() -> AsyncStream<SumiPermissionCoordinatorEvent> {
+        AsyncStream { continuation in
+            continuation.finish()
+        }
+    }
+
     @discardableResult
     func cancel(
         requestId: String,
