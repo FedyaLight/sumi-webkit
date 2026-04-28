@@ -105,6 +105,18 @@ enum SumiZenFolderIconCatalog {
         "share",
         "reader-mode",
         "camera",
+        "camera-fill",
+        "microphone",
+        "microphone-fill",
+        "location",
+        "location-solid",
+        "desktop-notification",
+        "desktop-notification-blocked",
+        "screen",
+        "screen-blocked",
+        "popup",
+        "popup-fill",
+        "open",
         "bookmark",
         "bookmark-chrome",
         "bookmark-hollow",
@@ -402,6 +414,29 @@ struct SumiZenBundledIconView: View {
                 .scaledToFit()
                 .frame(width: size, height: size)
                 .foregroundStyle(tint ?? .primary)
+        }
+    }
+}
+
+struct SumiZenChromeIcon: View {
+    let iconName: String?
+    let fallbackSystemName: String
+    let size: CGFloat
+    var tint: Color
+
+    var body: some View {
+        if let iconName,
+           let image = SumiZenFolderIconCatalog.chromeImage(named: iconName) {
+            SumiZenBundledIconView(
+                image: image,
+                size: size,
+                tint: tint
+            )
+        } else {
+            Image(systemName: fallbackSystemName)
+                .font(.system(size: size, weight: .medium))
+                .foregroundStyle(tint)
+                .frame(width: size, height: size)
         }
     }
 }

@@ -23,22 +23,26 @@ final class SumiFilePickerPermissionBridge {
         let tabId: String
         let pageId: String
         let navigationOrPageGeneration: String?
+        let indicatorEventId: String?
         let completionHandler: SumiFilePickerCompletionHandler
     }
 
     private let coordinator: any SumiPermissionCoordinating
     private let panelPresenter: any SumiFilePickerPanelPresenting
     private let now: @Sendable () -> Date
+    private let indicatorEventStore: SumiPermissionIndicatorEventStore?
     private var pendingByRequestId: [String: PendingFilePicker] = [:]
 
     init(
         coordinator: any SumiPermissionCoordinating,
         panelPresenter: any SumiFilePickerPanelPresenting,
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        indicatorEventStore: SumiPermissionIndicatorEventStore? = nil
     ) {
         self.coordinator = coordinator
         self.panelPresenter = panelPresenter
         self.now = now
+        self.indicatorEventStore = indicatorEventStore
     }
 
     func handleOpenPanel(
@@ -148,11 +152,28 @@ final class SumiFilePickerPermissionBridge {
         currentPageId: @escaping @MainActor () -> String?,
         completionHandler: SumiFilePickerCompletionHandler
     ) {
+        let indicatorEventId = "file-picker-\(request.id)"
+        indicatorEventStore?.record(
+            SumiPermissionIndicatorEventRecord(
+                id: indicatorEventId,
+                tabId: tabContext.tabId,
+                pageId: tabContext.pageId,
+                displayDomain: request.requestingOrigin.displayDomain,
+                permissionTypes: [.filePicker],
+                category: .pendingRequest,
+                visualStyle: .attention,
+                priority: .filePickerCurrentEvent,
+                reason: "file-picker-current-event",
+                createdAt: now()
+            )
+        )
+
         pendingByRequestId[request.id] = PendingFilePicker(
             requestId: request.id,
             tabId: tabContext.tabId,
             pageId: tabContext.pageId,
             navigationOrPageGeneration: tabContext.navigationOrPageGeneration,
+            indicatorEventId: indicatorEventId,
             completionHandler: completionHandler
         )
 
@@ -185,6 +206,9 @@ final class SumiFilePickerPermissionBridge {
         for requestId in requestIds {
             guard let pending = pendingByRequestId.removeValue(forKey: requestId) else {
                 continue
+            }
+            if let indicatorEventId = pending.indicatorEventId {
+                indicatorEventStore?.clear(eventId: indicatorEventId, pageId: pending.pageId)
             }
             pending.completionHandler.resolve(result.webKitURLs)
         }

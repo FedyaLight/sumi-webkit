@@ -52,6 +52,7 @@ final class SumiNotificationPermissionBridge {
     private let coordinatorTimeoutNanoseconds: UInt64
     private let now: @Sendable () -> Date
     private let eventSink: EventSink?
+    private let indicatorEventStore: SumiPermissionIndicatorEventStore?
 
     init(
         coordinator: any SumiPermissionCoordinating,
@@ -60,7 +61,8 @@ final class SumiNotificationPermissionBridge {
         pendingPollIntervalNanoseconds: UInt64 = 25_000_000,
         coordinatorTimeoutNanoseconds: UInt64 = 500_000_000,
         now: @escaping @Sendable () -> Date = { Date() },
-        eventSink: EventSink? = nil
+        eventSink: EventSink? = nil,
+        indicatorEventStore: SumiPermissionIndicatorEventStore? = nil
     ) {
         self.coordinator = coordinator
         self.notificationService = notificationService
@@ -69,6 +71,7 @@ final class SumiNotificationPermissionBridge {
         self.coordinatorTimeoutNanoseconds = coordinatorTimeoutNanoseconds
         self.now = now
         self.eventSink = eventSink
+        self.indicatorEventStore = indicatorEventStore
     }
 
     func currentWebsitePermissionState(
@@ -93,6 +96,7 @@ final class SumiNotificationPermissionBridge {
         emit(.permissionRequested(source: .website, requestId: request.id))
         let context = securityContext(for: request, tabContext: tabContext)
         let decision = await coordinatorDecision(for: context, source: .website)
+        recordNotificationIndicatorEvent(for: decision, context: context)
         return SumiWebNotificationDecisionMapper.permissionState(
             for: decision,
             promptRequiredState: .denied
@@ -121,6 +125,7 @@ final class SumiNotificationPermissionBridge {
         let context = securityContext(for: request, tabContext: tabContext)
         let decision = await coordinator.queryPermissionState(context)
         guard SumiWebNotificationDecisionMapper.canDeliver(decision) else {
+            recordNotificationIndicatorEvent(for: decision, context: context)
             emitBlockedEvent(source: .website, requestId: request.id, decision: decision)
             return .blocked(
                 permission: SumiWebNotificationDecisionMapper.permissionState(for: decision),
@@ -202,6 +207,7 @@ final class SumiNotificationPermissionBridge {
         let context = securityContext(for: request, tabContext: tabContext)
         let decision = await coordinatorDecision(for: context, source: .userscript)
         guard SumiWebNotificationDecisionMapper.canDeliver(decision) else {
+            recordNotificationIndicatorEvent(for: decision, context: context)
             emitBlockedEvent(source: .userscript, requestId: request.id, decision: decision)
             return .blocked(
                 permission: SumiWebNotificationDecisionMapper.permissionState(
@@ -397,6 +403,43 @@ final class SumiNotificationPermissionBridge {
         default:
             emit(.blockedBySite(source: source, requestId: requestId, reason: decision.reason))
         }
+    }
+
+    private func recordNotificationIndicatorEvent(
+        for decision: SumiPermissionCoordinatorDecision,
+        context: SumiPermissionSecurityContext
+    ) {
+        guard decision.outcome != .granted,
+              decision.outcome != .ignored
+        else { return }
+
+        let category: SumiPermissionIndicatorCategory
+        let visualStyle: SumiPermissionIndicatorVisualStyle
+        let priority: SumiPermissionIndicatorPriority
+        if decision.outcome == .systemBlocked {
+            category = .systemBlocked
+            visualStyle = .systemWarning
+            priority = .systemBlockedSensitive
+        } else {
+            category = .blockedEvent
+            visualStyle = .blocked
+            priority = .blockedNotification
+        }
+
+        indicatorEventStore?.record(
+            SumiPermissionIndicatorEventRecord(
+                id: "notification-\(context.request.id)-\(decision.outcome.rawValue)",
+                tabId: context.request.tabId ?? context.request.pageBucketId,
+                pageId: context.request.pageBucketId,
+                displayDomain: context.request.displayDomain,
+                permissionTypes: [.notifications],
+                category: category,
+                visualStyle: visualStyle,
+                priority: priority,
+                reason: decision.reason,
+                createdAt: now()
+            )
+        )
     }
 
     private func emit(_ event: SumiNotificationPermissionEvent) {

@@ -53,6 +53,8 @@ struct URLBarView: View {
     @State private var isZoomButtonHovering = false
     @State private var isZoomPopoverHovering = false
     @State private var zoomPopoverHideTimer: Timer?
+    @State private var didConfigurePermissionIndicator = false
+    @StateObject private var permissionIndicatorViewModel = SumiPermissionIndicatorViewModel()
 
     init(
         presentationMode: URLBarPresentationMode = .sidebar
@@ -186,6 +188,7 @@ struct URLBarView: View {
         let showsZoomButton = shouldShowZoomButton(for: currentTab)
         HStack(spacing: 6) {
             copyLinkButton(for: currentTab)
+            permissionIndicatorButton(for: currentTab)
             hubButton
             if showsZoomButton {
                 zoomButton(for: currentTab)
@@ -210,6 +213,22 @@ struct URLBarView: View {
         .help("Copy Link")
         .contentTransition(.symbolEffect(.replace))
         .disabled(!isCopyLinkAvailable(for: currentTab))
+    }
+
+    private func permissionIndicatorButton(for currentTab: Tab) -> some View {
+        SumiPermissionIndicatorButton(viewModel: permissionIndicatorViewModel) {
+            closeZoomPopover()
+            isHubPresented = true
+        }
+        .task(id: permissionIndicatorTaskKey(for: currentTab)) {
+            refreshPermissionIndicator(for: currentTab)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .sumiTabNavigationStateDidChange)) { notification in
+            guard let tab = notification.object as? Tab,
+                  tab.id == currentTab.id
+            else { return }
+            refreshPermissionIndicator(for: tab)
+        }
     }
 
     private func zoomButton(for currentTab: Tab) -> some View {
@@ -342,6 +361,36 @@ struct URLBarView: View {
 
         closeZoomPopover()
         isHubPresented = true
+    }
+
+    private func configurePermissionIndicatorIfNeeded() {
+        guard !didConfigurePermissionIndicator else { return }
+        permissionIndicatorViewModel.configure(
+            coordinator: browserManager.permissionCoordinator,
+            runtimeController: browserManager.runtimePermissionController,
+            popupStore: browserManager.blockedPopupStore,
+            externalSchemeStore: browserManager.externalSchemeSessionStore,
+            indicatorEventStore: browserManager.permissionIndicatorEventStore
+        )
+        didConfigurePermissionIndicator = true
+    }
+
+    private func refreshPermissionIndicator(for tab: Tab) {
+        configurePermissionIndicatorIfNeeded()
+        permissionIndicatorViewModel.update(
+            tab: tab,
+            windowId: windowState.id,
+            browserManager: browserManager
+        )
+    }
+
+    private func permissionIndicatorTaskKey(for tab: Tab) -> String {
+        [
+            tab.id.uuidString.lowercased(),
+            tab.currentPermissionPageId(),
+            tab.url.absoluteString,
+            tab.isAutoplayReloadRequired.description,
+        ].joined(separator: "|")
     }
 
     private func updateZoomPopoverAutoCloseTimer() {
@@ -509,6 +558,183 @@ struct URLBarTrackingProtectionPresenter: Equatable {
             strings.append(rowSubtitle)
         }
         return strings
+    }
+}
+
+private struct SumiPermissionIndicatorButton: View {
+    @ObservedObject var viewModel: SumiPermissionIndicatorViewModel
+    let action: () -> Void
+
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
+
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
+    }
+
+    private var state: SumiPermissionIndicatorState {
+        viewModel.state
+    }
+
+    var body: some View {
+        Button(action: action) {
+            ZStack(alignment: .topTrailing) {
+                SumiZenChromeIcon(
+                    iconName: state.icon.chromeIconName,
+                    fallbackSystemName: state.icon.fallbackSystemName,
+                    size: 15,
+                    tint: iconTint
+                )
+                .frame(width: 15, height: 15)
+
+                if state.visualStyle == .systemWarning {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(Color.orange.opacity(0.9))
+                        .offset(x: 5, y: -5)
+                        .accessibilityHidden(true)
+                } else if let badgeCount = state.badgeCount, badgeCount > 1 {
+                    Text(min(badgeCount, 99).description)
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(badgeTextColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .frame(minWidth: 10, minHeight: 10)
+                        .padding(.horizontal, 2)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(badgeFill)
+                        )
+                        .offset(x: 7, y: -7)
+                        .accessibilityHidden(true)
+                }
+            }
+            .frame(width: 15, height: 15)
+        }
+        .buttonStyle(
+            URLBarPermissionIndicatorButtonStyle(
+                visualStyle: state.visualStyle,
+                isVisible: state.isVisible
+            )
+        )
+        .frame(width: 28, height: 28)
+        .opacity(state.isVisible ? 1 : 0)
+        .allowsHitTesting(state.isVisible)
+        .disabled(!state.isVisible)
+        .help(state.title)
+        .accessibilityIdentifier("urlbar-permission-indicator")
+        .accessibilityLabel(Text(state.accessibilityLabel))
+        .accessibilityHidden(!state.isVisible)
+    }
+
+    private var iconTint: Color {
+        switch state.visualStyle {
+        case .active, .reloadRequired:
+            return tokens.accent
+        case .attention:
+            return tokens.primaryText
+        case .blocked:
+            return tokens.secondaryText
+        case .systemWarning:
+            return Color.orange.opacity(0.95)
+        case .neutral:
+            return tokens.primaryText
+        }
+    }
+
+    private var badgeFill: Color {
+        switch state.visualStyle {
+        case .active, .reloadRequired:
+            return tokens.accent
+        case .systemWarning:
+            return Color.orange.opacity(0.95)
+        case .attention, .blocked, .neutral:
+            return tokens.secondaryText.opacity(0.82)
+        }
+    }
+
+    private var badgeTextColor: Color {
+        switch state.visualStyle {
+        case .active, .reloadRequired:
+            return tokens.buttonPrimaryText
+        case .attention, .blocked, .systemWarning, .neutral:
+            return tokens.fieldBackground
+        }
+    }
+}
+
+private struct URLBarPermissionIndicatorButtonStyle: ButtonStyle {
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovering = false
+
+    let visualStyle: SumiPermissionIndicatorVisualStyle
+    let isVisible: Bool
+
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
+    }
+
+    func makeBody(configuration: Configuration) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(backgroundColor(isPressed: configuration.isPressed))
+                .frame(width: 28, height: 28)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(borderColor, lineWidth: 0.75)
+                }
+
+            configuration.label
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .scaleEffect(configuration.isPressed && isEnabled ? 0.95 : 1.0)
+        .animation(.easeInOut(duration: 0.12), value: configuration.isPressed)
+        .animation(.easeInOut(duration: 0.15), value: isHovering)
+        .onHover { hovering in
+            isHovering = hovering
+        }
+    }
+
+    private func backgroundColor(isPressed: Bool) -> Color {
+        guard isVisible, isEnabled else { return .clear }
+        if isPressed {
+            return tokens.fieldBackgroundHover.opacity(0.96)
+        }
+        if isHovering {
+            return tokens.fieldBackgroundHover.opacity(0.88)
+        }
+        switch visualStyle {
+        case .active:
+            return tokens.accent.opacity(0.18)
+        case .attention:
+            return tokens.fieldBackgroundHover.opacity(0.74)
+        case .blocked:
+            return tokens.secondaryText.opacity(0.10)
+        case .systemWarning:
+            return Color.orange.opacity(0.16)
+        case .reloadRequired:
+            return tokens.accent.opacity(0.12)
+        case .neutral:
+            return .clear
+        }
+    }
+
+    private var borderColor: Color {
+        guard isVisible, isEnabled else { return .clear }
+        switch visualStyle {
+        case .active:
+            return tokens.accent.opacity(0.36)
+        case .systemWarning:
+            return Color.orange.opacity(0.42)
+        case .reloadRequired:
+            return tokens.accent.opacity(0.26)
+        case .blocked:
+            return tokens.secondaryText.opacity(0.20)
+        case .attention, .neutral:
+            return .clear
+        }
     }
 }
 
@@ -2052,29 +2278,6 @@ private struct HubSectionHeader: View {
                 .opacity(isHovering ? 0.92 : 0.55)
         }
         .onHover { isHovering = $0 }
-    }
-}
-
-private struct SumiZenChromeIcon: View {
-    let iconName: String?
-    let fallbackSystemName: String
-    let size: CGFloat
-    var tint: Color
-
-    var body: some View {
-        if let iconName,
-           let image = SumiZenFolderIconCatalog.chromeImage(named: iconName) {
-            SumiZenBundledIconView(
-                image: image,
-                size: size,
-                tint: tint
-            )
-        } else {
-            Image(systemName: fallbackSystemName)
-                .font(.system(size: size, weight: .medium))
-                .foregroundStyle(tint)
-                .frame(width: size, height: size)
-        }
     }
 }
 
