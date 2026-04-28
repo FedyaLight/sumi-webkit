@@ -68,11 +68,16 @@ final class SumiStorageAccessPermissionBridge {
 
             let decision = await self.coordinatorDecision(for: context)
             self.recordStorageIndicatorEvent(for: decision, context: context)
-            guard webView != nil else {
+            let webKitDecision = SumiStorageAccessDecisionMapper.webKitDecision(for: decision)
+            guard !webKitDecision || (webView != nil && tabContext.isCurrentPage?() != false) else {
+                await self.coordinator.cancel(
+                    requestId: context.request.id,
+                    reason: "webkit-storage-access-stale-page"
+                )
                 once.resolve(false)
                 return
             }
-            once.resolve(SumiStorageAccessDecisionMapper.webKitDecision(for: decision))
+            once.resolve(webKitDecision)
         }
     }
 

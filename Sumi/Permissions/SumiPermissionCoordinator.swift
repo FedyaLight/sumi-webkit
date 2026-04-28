@@ -173,12 +173,25 @@ actor SumiPermissionCoordinator {
     ) async throws -> [SumiPermissionStoreRecord] {
         let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         if isEphemeralProfile {
-            return try await memoryStore.listDecisions(profilePartitionId: profileId)
+            return try await memoryStore.listDecisions(
+                profilePartitionId: profileId,
+                includingPersistences: [.session]
+            )
         }
         guard let persistentStore else {
             return []
         }
         return try await persistentStore.listDecisions(profilePartitionId: profileId)
+    }
+
+    func transientDecisionRecords(
+        profilePartitionId: String,
+        pageId: String
+    ) async throws -> [SumiPermissionStoreRecord] {
+        try await memoryStore.listOneTimeDecisions(
+            profilePartitionId: profilePartitionId,
+            pageId: pageId
+        )
     }
 
     func setSiteDecision(
@@ -233,6 +246,23 @@ actor SumiPermissionCoordinator {
         }
     }
 
+    @discardableResult
+    func resetTransientDecisions(
+        profilePartitionId: String,
+        pageId: String?,
+        requestingOrigin: SumiPermissionOrigin,
+        topOrigin: SumiPermissionOrigin,
+        reason: String = "transient-decisions-reset"
+    ) async -> Int {
+        _ = reason
+        return await memoryStore.clearTransientDecisions(
+            profilePartitionId: profilePartitionId,
+            pageId: pageId,
+            requestingOrigin: requestingOrigin,
+            topOrigin: topOrigin
+        )
+    }
+
     func events() -> AsyncStream<SumiPermissionCoordinatorEvent> {
         let pair = AsyncStream<SumiPermissionCoordinatorEvent>.makeStream(
             of: SumiPermissionCoordinatorEvent.self,
@@ -246,6 +276,11 @@ actor SumiPermissionCoordinator {
             }
         }
         return pair.stream
+    }
+
+    @discardableResult
+    func approveCurrentAttempt(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
+        await settle(queryId: queryId, with: .approveCurrentAttempt)
     }
 
     @discardableResult
@@ -349,6 +384,9 @@ actor SumiPermissionCoordinator {
     @discardableResult
     func cancelTab(tabId: String, reason: String = "tab-cancelled") async -> SumiPermissionCoordinatorDecision {
         let normalizedTabId = Self.normalizedOptionalId(tabId)
+        if let normalizedTabId {
+            await memoryStore.clearOneTimeDecisions(forTabId: normalizedTabId)
+        }
         let matchingPrimaryIds = queryById.values
             .filter { $0.tabId == normalizedTabId }
             .map(\.primaryRequestId)
@@ -681,6 +719,12 @@ actor SumiPermissionCoordinator {
         let shouldPersist: Bool
 
         switch userDecision {
+        case .approveCurrentAttempt:
+            outcome = .granted
+            state = .allow
+            source = .user
+            reason = "approved-current-attempt"
+            shouldPersist = false
         case .approveOnce:
             outcome = .granted
             state = .allow
@@ -803,6 +847,9 @@ actor SumiPermissionCoordinator {
 
         switch persistence {
         case .oneTime, .session:
+            guard persistence != .oneTime || pending.keys.allSatisfy({ supportsReusableOneTimeGrant($0.permissionType) }) else {
+                return
+            }
             for key in pending.keys {
                 try? await memoryStore.setDecision(
                     for: key,
@@ -822,11 +869,28 @@ actor SumiPermissionCoordinator {
         _ = userDecision
     }
 
+    private func supportsReusableOneTimeGrant(_ permissionType: SumiPermissionType) -> Bool {
+        switch permissionType {
+        case .camera, .microphone, .geolocation, .screenCapture:
+            return true
+        case .cameraAndMicrophone,
+             .notifications,
+             .popups,
+             .externalScheme,
+             .autoplay,
+             .filePicker,
+             .storageAccess:
+            return false
+        }
+    }
+
     private func effectivePersistence(
         for userDecision: SumiPermissionUserDecision,
         query: SumiPermissionAuthorizationQuery
     ) -> SumiPermissionPersistence? {
         switch userDecision {
+        case .approveCurrentAttempt:
+            return nil
         case .approveOnce, .denyOnce:
             return .oneTime
         case .approveForSession, .denyForSession:

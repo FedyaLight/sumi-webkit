@@ -81,6 +81,7 @@ final class SumiPermissionSettingsRepository {
             isEphemeralProfile: profile.isEphemeralProfile
         )
         return Self.deduplicated(records: coordinatorRecords + autoplayRecords)
+            .filter { $0.decision.persistence == .persistent }
     }
 
     func categoryRows(

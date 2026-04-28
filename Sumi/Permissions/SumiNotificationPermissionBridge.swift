@@ -97,6 +97,13 @@ final class SumiNotificationPermissionBridge {
         let context = securityContext(for: request, tabContext: tabContext)
         let decision = await coordinatorDecision(for: context, source: .website)
         recordNotificationIndicatorEvent(for: decision, context: context)
+        guard decision.outcome != .granted || tabContext.isCurrentPage?() != false else {
+            await coordinator.cancel(
+                requestId: context.request.id,
+                reason: "website-notification-permission-stale-page"
+            )
+            return .default
+        }
         return SumiWebNotificationDecisionMapper.permissionState(
             for: decision,
             promptRequiredState: .default,

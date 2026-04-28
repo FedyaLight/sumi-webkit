@@ -100,6 +100,7 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
     @Published private(set) var errorMessage: String?
 
     private(set) var storedRecords: [SumiPermissionStoreRecord] = []
+    private(set) var transientRecords: [SumiPermissionStoreRecord] = []
 
     func load(
         tab: Tab?,
@@ -129,6 +130,7 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
         guard let context, context.isSupportedWebOrigin else {
             rows = []
             storedRecords = []
+            transientRecords = []
             summary = .default
             return
         }
@@ -141,6 +143,14 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
                 profilePartitionId: context.profilePartitionId,
                 isEphemeralProfile: context.isEphemeralProfile
             )
+            if let pageId = context.pageId {
+                transientRecords = try await dependencies.coordinator.transientDecisionRecords(
+                    profilePartitionId: context.profilePartitionId,
+                    pageId: pageId
+                )
+            } else {
+                transientRecords = []
+            }
             let runtimeState = webView.map {
                 dependencies.runtimeController?.currentRuntimeState(for: $0, pageId: context.pageId)
             } ?? nil
@@ -158,6 +168,7 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
             )
         } catch {
             rows = []
+            transientRecords = []
             summary = .default
             errorMessage = error.localizedDescription
         }
@@ -236,6 +247,13 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
                 dependencies.externalSchemeSessionStore.clear(pageId: pageId)
                 dependencies.indicatorEventStore.clear(pageId: pageId)
             }
+            await dependencies.coordinator.resetTransientDecisions(
+                profilePartitionId: context.profilePartitionId,
+                pageId: context.pageId,
+                requestingOrigin: context.origin,
+                topOrigin: context.origin,
+                reason: "url-hub-reset-current-site"
+            )
             statusMessage = SumiCurrentSitePermissionsStrings.resetComplete
             errorMessage = nil
         } catch {
@@ -385,6 +403,7 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
         let descriptor = SumiPermissionIconCatalog.icon(for: permissionType)
         let key = context.key(for: permissionType)
         let option = option(for: record(for: key), defaultOption: .ask)
+        let oneTimeRecord = activeOneTimeRecord(for: key, context: context)
         let system = systemStatus(from: systemSnapshot)
         let disabledReason = context.origin.supportsSensitiveWebPermission(permissionType)
             ? nil
@@ -394,7 +413,8 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
             ?? subtitle(
                 option: option,
                 recentEventCount: recentEventCount,
-                isEphemeralProfile: context.isEphemeralProfile
+                isEphemeralProfile: context.isEphemeralProfile,
+                hasActiveOneTimeGrant: oneTimeRecord != nil
             )
 
         return SumiCurrentSitePermissionRow(
@@ -644,6 +664,20 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
         storedRecords.first {
             $0.key.persistentIdentity == key.persistentIdentity
                 && $0.key.isEphemeralProfile == key.isEphemeralProfile
+                && $0.decision.persistence != .oneTime
+        }
+    }
+
+    private func activeOneTimeRecord(
+        for key: SumiPermissionKey,
+        context: Context
+    ) -> SumiPermissionStoreRecord? {
+        transientRecords.first {
+            $0.key.persistentIdentity == key.persistentIdentity
+                && $0.key.isEphemeralProfile == key.isEphemeralProfile
+                && $0.key.transientPageId == context.pageId
+                && $0.decision.persistence == .oneTime
+                && $0.decision.state == .allow
         }
     }
 
@@ -688,8 +722,12 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
     private func subtitle(
         option: SumiCurrentSitePermissionOption,
         recentEventCount: Int,
-        isEphemeralProfile: Bool
+        isEphemeralProfile: Bool,
+        hasActiveOneTimeGrant: Bool = false
     ) -> String {
+        if hasActiveOneTimeGrant {
+            return "Allowed this time"
+        }
         if recentEventCount > 0 {
             return "\(recentEventCount) recent event\(recentEventCount == 1 ? "" : "s")"
         }

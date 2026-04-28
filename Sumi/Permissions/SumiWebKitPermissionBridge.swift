@@ -32,6 +32,11 @@ protocol SumiPermissionCoordinating: Sendable {
         isEphemeralProfile: Bool
     ) async throws -> [SumiPermissionStoreRecord]
 
+    func transientDecisionRecords(
+        profilePartitionId: String,
+        pageId: String
+    ) async throws -> [SumiPermissionStoreRecord]
+
     func setSiteDecision(
         for key: SumiPermissionKey,
         state: SumiPermissionState,
@@ -47,6 +52,15 @@ protocol SumiPermissionCoordinating: Sendable {
         for keys: [SumiPermissionKey]
     ) async throws
 
+    @discardableResult
+    func resetTransientDecisions(
+        profilePartitionId: String,
+        pageId: String?,
+        requestingOrigin: SumiPermissionOrigin,
+        topOrigin: SumiPermissionOrigin,
+        reason: String
+    ) async -> Int
+
     func activeQuery(forPageId pageId: String) async -> SumiPermissionAuthorizationQuery?
 
     func query(id queryId: String) async -> SumiPermissionAuthorizationQuery?
@@ -54,6 +68,9 @@ protocol SumiPermissionCoordinating: Sendable {
     func stateSnapshot() async -> SumiPermissionCoordinatorState
 
     func events() async -> AsyncStream<SumiPermissionCoordinatorEvent>
+
+    @discardableResult
+    func approveCurrentAttempt(_ queryId: String) async -> SumiPermissionCoordinatorDecision
 
     @discardableResult
     func approveOnce(_ queryId: String) async -> SumiPermissionCoordinatorDecision
@@ -105,6 +122,18 @@ protocol SumiPermissionCoordinating: Sendable {
         tabId: String,
         reason: String
     ) async -> SumiPermissionCoordinatorDecision
+
+    @discardableResult
+    func cancelProfile(
+        profilePartitionId: String,
+        reason: String
+    ) async -> SumiPermissionCoordinatorDecision
+
+    @discardableResult
+    func cancelSession(
+        ownerId: String,
+        reason: String
+    ) async -> SumiPermissionCoordinatorDecision
 }
 
 extension SumiPermissionCoordinator: SumiPermissionCoordinating {}
@@ -117,6 +146,15 @@ extension SumiPermissionCoordinating {
         _ = profilePartitionId
         _ = isEphemeralProfile
         throw SumiPermissionSiteDecisionError.unavailable
+    }
+
+    func transientDecisionRecords(
+        profilePartitionId: String,
+        pageId: String
+    ) async throws -> [SumiPermissionStoreRecord] {
+        _ = profilePartitionId
+        _ = pageId
+        return []
     }
 
     func setSiteDecision(
@@ -147,8 +185,29 @@ extension SumiPermissionCoordinating {
         }
     }
 
+    @discardableResult
+    func resetTransientDecisions(
+        profilePartitionId: String,
+        pageId: String?,
+        requestingOrigin: SumiPermissionOrigin,
+        topOrigin: SumiPermissionOrigin,
+        reason: String
+    ) async -> Int {
+        _ = profilePartitionId
+        _ = pageId
+        _ = requestingOrigin
+        _ = topOrigin
+        _ = reason
+        return 0
+    }
+
     func query(id queryId: String) async -> SumiPermissionAuthorizationQuery? {
         nil
+    }
+
+    @discardableResult
+    func approveCurrentAttempt(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
+        ignoredSettlementDecision(reason: "approve-current-attempt-unavailable")
     }
 
     @discardableResult
@@ -189,6 +248,54 @@ extension SumiPermissionCoordinating {
     @discardableResult
     func cancel(
         queryId: String,
+        reason: String
+    ) async -> SumiPermissionCoordinatorDecision {
+        ignoredSettlementDecision(reason: reason)
+    }
+
+    @discardableResult
+    func cancel(
+        requestId: String,
+        reason: String
+    ) async -> SumiPermissionCoordinatorDecision {
+        ignoredSettlementDecision(reason: reason)
+    }
+
+    @discardableResult
+    func cancel(
+        pageId: String,
+        reason: String
+    ) async -> SumiPermissionCoordinatorDecision {
+        ignoredSettlementDecision(reason: reason)
+    }
+
+    @discardableResult
+    func cancelNavigation(
+        pageId: String,
+        reason: String
+    ) async -> SumiPermissionCoordinatorDecision {
+        ignoredSettlementDecision(reason: reason)
+    }
+
+    @discardableResult
+    func cancelTab(
+        tabId: String,
+        reason: String
+    ) async -> SumiPermissionCoordinatorDecision {
+        ignoredSettlementDecision(reason: reason)
+    }
+
+    @discardableResult
+    func cancelProfile(
+        profilePartitionId: String,
+        reason: String
+    ) async -> SumiPermissionCoordinatorDecision {
+        ignoredSettlementDecision(reason: reason)
+    }
+
+    @discardableResult
+    func cancelSession(
+        ownerId: String,
         reason: String
     ) async -> SumiPermissionCoordinatorDecision {
         ignoredSettlementDecision(reason: reason)
@@ -316,7 +423,11 @@ final class SumiWebKitPermissionBridge {
             let webKitDecision = SumiWebKitMediaCaptureDecisionMapper.webKitDecision(
                 for: coordinatorDecision
             )
-            guard webKitDecision != .grant || webView != nil else {
+            guard webKitDecision != .grant || (webView != nil && tabContext.isCurrentPage?() != false) else {
+                await self.coordinator.cancel(
+                    requestId: context.request.id,
+                    reason: "webkit-media-permission-stale-page"
+                )
                 once.resolve(.deny)
                 return
             }
@@ -357,7 +468,11 @@ final class SumiWebKitPermissionBridge {
             let webKitDecision = SumiWebKitDisplayCaptureDecisionMapper.legacyBoolDecision(
                 for: coordinatorDecision
             )
-            guard webKitDecision == false || webView != nil else {
+            guard webKitDecision == false || (webView != nil && tabContext.isCurrentPage?() != false) else {
+                await self.coordinator.cancel(
+                    requestId: context.request.id,
+                    reason: "webkit-media-permission-stale-page"
+                )
                 once.resolve(false)
                 return
             }
@@ -398,7 +513,11 @@ final class SumiWebKitPermissionBridge {
             let webKitDecision = SumiWebKitDisplayCaptureDecisionMapper.webKitDecision(
                 for: coordinatorDecision
             )
-            guard webKitDecision != .screenPrompt || webView != nil else {
+            guard webKitDecision != .screenPrompt || (webView != nil && tabContext.isCurrentPage?() != false) else {
+                await self.coordinator.cancel(
+                    requestId: context.request.id,
+                    reason: "webkit-screen-capture-permission-stale-page"
+                )
                 once.resolve(.deny)
                 return
             }

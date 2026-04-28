@@ -204,6 +204,7 @@ class BrowserManager: ObservableObject {
     let externalAppResolver: any SumiExternalAppResolving
     let externalSchemeSessionStore: SumiExternalSchemeSessionStore
     let externalSchemePermissionBridge: SumiExternalSchemePermissionBridge
+    let permissionLifecycleController: SumiPermissionGrantLifecycleController
     private var permissionRecentActivityTask: Task<Void, Never>?
     var zoomManager = ZoomManager()
     weak var sumiSettings: SumiSettingsService? {
@@ -412,13 +413,14 @@ class BrowserManager: ObservableObject {
                 notificationService: notificationService,
                 indicatorEventStore: permissionIndicatorEventStore
             )
-        self.filePickerPanelPresenter = filePickerPanelPresenter
-        self.filePickerPermissionBridge = filePickerPermissionBridge
+        let resolvedFilePickerPermissionBridge = filePickerPermissionBridge
             ?? SumiFilePickerPermissionBridge(
                 coordinator: permissionCoordinator,
                 panelPresenter: filePickerPanelPresenter,
                 indicatorEventStore: permissionIndicatorEventStore
             )
+        self.filePickerPanelPresenter = filePickerPanelPresenter
+        self.filePickerPermissionBridge = resolvedFilePickerPermissionBridge
         self.storageAccessPermissionBridge = storageAccessPermissionBridge
             ?? SumiStorageAccessPermissionBridge(
                 coordinator: permissionCoordinator,
@@ -440,6 +442,14 @@ class BrowserManager: ObservableObject {
                 appResolver: externalAppResolver,
                 sessionStore: externalSchemeSessionStore
             )
+        self.permissionLifecycleController = SumiPermissionGrantLifecycleController(
+            coordinator: permissionCoordinator,
+            geolocationProvider: geolocationProvider,
+            filePickerBridge: resolvedFilePickerPermissionBridge,
+            indicatorEventStore: permissionIndicatorEventStore,
+            blockedPopupStore: blockedPopupStore,
+            externalSchemeSessionStore: externalSchemeSessionStore
+        )
         self.permissionRecentActivityTask = Task { @MainActor [permissionCoordinator, permissionRecentActivityStore] in
             let events = await permissionCoordinator.events()
             for await event in events {

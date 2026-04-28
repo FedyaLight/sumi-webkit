@@ -59,6 +59,7 @@ struct SumiExternalSchemePermissionTabContext: Sendable {
     let isVisibleTab: Bool
     let navigationOrPageGeneration: String?
     let displayDomain: String?
+    let isCurrentPage: (@MainActor @Sendable () -> Bool)?
 
     init(
         tabId: String,
@@ -71,7 +72,8 @@ struct SumiExternalSchemePermissionTabContext: Sendable {
         isActiveTab: Bool,
         isVisibleTab: Bool,
         navigationOrPageGeneration: String?,
-        displayDomain: String? = nil
+        displayDomain: String? = nil,
+        isCurrentPage: (@MainActor @Sendable () -> Bool)? = nil
     ) {
         self.tabId = tabId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         self.pageId = pageId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -85,6 +87,7 @@ struct SumiExternalSchemePermissionTabContext: Sendable {
         self.navigationOrPageGeneration = navigationOrPageGeneration?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         self.displayDomain = displayDomain?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.isCurrentPage = isCurrentPage
     }
 }
 

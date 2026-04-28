@@ -410,10 +410,11 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
         let tabId = id.uuidString.lowercased()
         let pageGeneration = String(extensionRuntimeDocumentSequence)
+        let pageId = "\(tabId):\(pageGeneration)"
         let committedURL = extensionRuntimeCommittedMainDocumentURL
         return SumiExternalSchemePermissionTabContext(
             tabId: tabId,
-            pageId: "\(tabId):\(pageGeneration)",
+            pageId: pageId,
             profilePartitionId: profile.id.uuidString.lowercased(),
             isEphemeralProfile: profile.isEphemeral,
             committedURL: committedURL,
@@ -421,62 +422,54 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             mainFrameURL: committedURL ?? webView.url ?? url,
             isActiveTab: isCurrentTab,
             isVisibleTab: primaryWindowId != nil,
-            navigationOrPageGeneration: pageGeneration
+            navigationOrPageGeneration: pageGeneration,
+            isCurrentPage: { [weak self] in
+                guard let self else { return false }
+                return self.currentPermissionPageId() == pageId
+                    && String(self.extensionRuntimeDocumentSequence) == pageGeneration
+            }
         )
     }
 
     func handleNormalTabPermissionNavigation(to targetURL: URL?) {
         let pageId = currentPermissionPageId()
-        let coordinator = browserManager?.permissionCoordinator
-        browserManager?.blockedPopupStore.clear(pageId: pageId)
-        browserManager?.externalSchemeSessionStore.clear(pageId: pageId)
-        browserManager?.permissionIndicatorEventStore.clear(pageId: pageId)
-        browserManager?.filePickerPermissionBridge.cancel(
-            pageId: pageId,
-            reason: "normal-tab-main-frame-navigation"
-        )
-        Task {
-            await coordinator?.cancelNavigation(
+        let tabId = id.uuidString.lowercased()
+        browserManager?.permissionLifecycleController.handle(
+            .mainFrameNavigation(
                 pageId: pageId,
+                tabId: tabId,
+                profilePartitionId: resolveProfile()?.id.uuidString,
+                targetURL: targetURL,
                 reason: "normal-tab-main-frame-navigation"
             )
-        }
-
-        guard let targetURL else { return }
-        let previousOrigin = SumiPermissionOrigin(
-            url: extensionRuntimeCommittedMainDocumentURL ?? url
         )
-        let nextOrigin = SumiPermissionOrigin(url: targetURL)
-        if previousOrigin.identity != nextOrigin.identity {
-            browserManager?.geolocationProvider?.stop(pageId: pageId)
-        }
     }
 
     func cleanupNormalTabPermissionRuntime(reason: String) {
         let pageId = currentPermissionPageId()
         let tabId = id.uuidString.lowercased()
-        browserManager?.blockedPopupStore.clear(pageId: pageId)
-        browserManager?.blockedPopupStore.clear(tabId: tabId)
-        browserManager?.externalSchemeSessionStore.clear(pageId: pageId)
-        browserManager?.externalSchemeSessionStore.clear(tabId: tabId)
-        browserManager?.permissionIndicatorEventStore.clear(pageId: pageId)
-        browserManager?.permissionIndicatorEventStore.clear(tabId: tabId)
-        browserManager?.filePickerPermissionBridge.cancel(pageId: pageId, reason: reason)
-        browserManager?.filePickerPermissionBridge.cancel(tabId: tabId, reason: reason)
-        browserManager?.geolocationProvider?.stop(pageId: pageId)
-        browserManager?.geolocationProvider?.cancelAllowedRequests(tabId: tabId)
-
-        let coordinator = browserManager?.permissionCoordinator
-        Task {
-            await coordinator?.cancel(
+        browserManager?.permissionLifecycleController.handle(
+            .tabClosed(
                 pageId: pageId,
-                reason: reason
-            )
-            await coordinator?.cancelTab(
                 tabId: tabId,
+                profilePartitionId: resolveProfile()?.id.uuidString,
                 reason: reason
             )
-        }
+        )
+    }
+
+    func invalidateCurrentPermissionPageForWebViewReplacement(reason: String) {
+        let pageId = currentPermissionPageId()
+        let tabId = id.uuidString.lowercased()
+        browserManager?.permissionLifecycleController.handle(
+            .webViewReplaced(
+                pageId: pageId,
+                tabId: tabId,
+                profilePartitionId: resolveProfile()?.id.uuidString,
+                reason: reason
+            )
+        )
+        extensionRuntimeDocumentSequence &+= 1
     }
 
     var isCurrentTab: Bool {
@@ -571,6 +564,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     // MARK: - Tab Actions
     func closeTab() {
         RuntimeDiagnostics.emit("Closing tab: \(self.name)")
+
+        cleanupNormalTabPermissionRuntime(reason: "normal-tab-close")
 
         // MEMORY LEAK FIX: Use comprehensive cleanup instead of scattered cleanup
         performComprehensiveWebViewCleanup()
@@ -719,6 +714,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func unloadWebView() {
+        invalidateCurrentPermissionPageForWebViewReplacement(reason: "normal-tab-webview-unload")
+
         let removedTrackedWebViews = browserManager?.webViewCoordinator?.removeAllWebViews(for: self) ?? false
 
         guard removedTrackedWebViews || _webView != nil else {
@@ -903,6 +900,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             return false
         }
 
+        invalidateCurrentPermissionPageForWebViewReplacement(reason: reason)
+
         let removedTrackedWebViews = coordinator?.removeAllWebViews(for: self) ?? false
         if hadTrackedWebViews && !removedTrackedWebViews {
             trackingProtectionAppliedAttachmentState = previousAppliedState
@@ -945,6 +944,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         guard let replacementWebView = makeNormalTabWebView(reason: reason) else {
             return false
         }
+
+        invalidateCurrentPermissionPageForWebViewReplacement(reason: reason)
 
         let removedTrackedWebViews = coordinator?.removeAllWebViews(for: self) ?? false
         if hadTrackedWebViews && !removedTrackedWebViews {
@@ -1116,6 +1117,17 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     /// MEMORY LEAK FIX: Comprehensive WebView cleanup to prevent memory leaks
     func cleanupCloneWebView(_ webView: WKWebView) {
+        let pageId = currentPermissionPageId()
+        let tabId = id.uuidString.lowercased()
+        browserManager?.permissionLifecycleController.handle(
+            .webViewDeallocated(
+                pageId: pageId,
+                tabId: tabId,
+                profilePartitionId: resolveProfile()?.id.uuidString,
+                reason: "normal-tab-webview-cleanup"
+            )
+        )
+
         if browserManager?.webViewCoordinator?.deferProtectedWebViewCleanup(
             webView,
             tabID: id,
@@ -1130,7 +1142,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             browserManager: browserManager
         ) { [weak self, weak webView] in
             guard let self, let webView else { return }
-            self.cleanupNormalTabPermissionRuntime(reason: "normal-tab-webview-cleanup")
             self.unbindAudioState(from: webView)
             self.removeNavigationStateObservers(from: webView)
             self.removeNavigationDelegateBundle(for: webView)

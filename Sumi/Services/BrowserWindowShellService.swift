@@ -9,6 +9,7 @@ final class BrowserWindowShellService {
     struct Context {
         let windowRegistry: WindowRegistry?
         let webViewCoordinator: WebViewCoordinator?
+        let permissionLifecycleController: SumiPermissionGrantLifecycleController?
         let profileManager: ProfileManager
         let tabManager: TabManager
         let makeContentView: ContentViewFactory
@@ -105,10 +106,19 @@ final class BrowserWindowShellService {
 
         let ephemeralTabs = windowState.ephemeralTabs
         let ephemeralSpaces = windowState.ephemeralSpaces
+        let ephemeralProfileId = windowState.ephemeralProfile?.id.uuidString
         windowState.ephemeralTabs.removeAll()
         windowState.ephemeralSpaces.removeAll()
         windowState.currentTabId = nil
 
+        if let ephemeralProfileId {
+            context.permissionLifecycleController?.handle(
+                .profileClosed(
+                    profilePartitionId: ephemeralProfileId,
+                    reason: "incognito-profile-close"
+                )
+            )
+        }
         await context.profileManager.removeEphemeralProfile(for: windowState.id)
 
         windowState.ephemeralProfile = nil

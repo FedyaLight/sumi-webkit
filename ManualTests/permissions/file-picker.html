@@ -70,7 +70,7 @@
 <body>
   <main>
     <h1>File Picker Permission Manual Test</h1>
-    <p>Expected: user clicks can open the native picker. Script/background attempts should not open it. Cancelling should return no files. File names and counts are shown here, not full paths.</p>
+    <p>Expected: user clicks can open the native picker. Script/background attempts should not open it. Cancelling should return no files. File picker remains user-mediated and one-time by design; it must not write permission decisions. If the page reloads, navigates cross-document, or the tab closes while the panel is open, selected files must not be delivered to the stale page. File names and counts are shown here, not full paths.</p>
     <p>URL hub check: open Site Controls from the URL bar, open Permissions, and confirm File Chooser is read-only with Always asks wording. It may show current-visit use or block status, but it must not offer persistent Allow or Block options.</p>
 
     <section>
@@ -93,7 +93,8 @@
       <button id="click-single">Open single input by click</button>
       <button id="script-attempt">Script/background attempt</button>
       <button id="delayed-attempt">Delayed attempt after click</button>
-      <button id="navigate-during-picker">Navigate after opening picker</button>
+      <button id="navigate-during-picker">Hash change after opening picker</button>
+      <button id="reload-during-picker">Reload after opening picker</button>
       <button id="clear-log">Clear log</button>
     </section>
 
@@ -161,6 +162,14 @@
       setTimeout(() => {
         location.hash = `navigation-${Date.now()}`;
         log('hash navigation completed');
+      }, 500);
+    });
+
+    document.querySelector('#reload-during-picker').addEventListener('click', () => {
+      log('opening picker, then reloading after 500 ms');
+      single.click();
+      setTimeout(() => {
+        location.href = `${location.pathname}?picker-reload=${Date.now()}${location.hash}`;
       }, 500);
     });
 

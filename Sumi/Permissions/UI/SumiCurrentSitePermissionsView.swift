@@ -333,6 +333,15 @@ struct SumiCurrentSitePermissionsView: View {
                     context.securityContext(for: .geolocation)
                 )
                 return decision.outcome == .granted || decision.state == .allow
+            },
+            clearGeolocationGrantForVisit: {
+                await permissionCoordinator.resetTransientDecisions(
+                    profilePartitionId: context.profilePartitionId,
+                    pageId: context.pageId,
+                    requestingOrigin: context.origin,
+                    topOrigin: context.origin,
+                    reason: "runtime-stop-geolocation-this-visit"
+                )
             }
         )
     }

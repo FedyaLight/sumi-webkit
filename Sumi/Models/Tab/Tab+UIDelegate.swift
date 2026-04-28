@@ -435,10 +435,11 @@ extension Tab: WKUIDelegate {
 
         let tabId = id.uuidString.lowercased()
         let pageGeneration = String(extensionRuntimeDocumentSequence)
+        let pageId = "\(tabId):\(pageGeneration)"
         let committedURL = extensionRuntimeCommittedMainDocumentURL
         return SumiWebKitGeolocationTabContext(
             tabId: tabId,
-            pageId: "\(tabId):\(pageGeneration)",
+            pageId: pageId,
             profilePartitionId: profile.id.uuidString.lowercased(),
             isEphemeralProfile: profile.isEphemeral,
             committedURL: committedURL,
@@ -446,7 +447,12 @@ extension Tab: WKUIDelegate {
             mainFrameURL: committedURL ?? webView.url ?? url,
             isActiveTab: isCurrentTab,
             isVisibleTab: primaryWindowId != nil,
-            navigationOrPageGeneration: pageGeneration
+            navigationOrPageGeneration: pageGeneration,
+            isCurrentPage: { [weak self] in
+                guard let self else { return false }
+                return self.currentPermissionPageId() == pageId
+                    && String(self.extensionRuntimeDocumentSequence) == pageGeneration
+            }
         )
     }
 
@@ -458,10 +464,11 @@ extension Tab: WKUIDelegate {
 
         let tabId = id.uuidString.lowercased()
         let pageGeneration = String(extensionRuntimeDocumentSequence)
+        let pageId = "\(tabId):\(pageGeneration)"
         let committedURL = extensionRuntimeCommittedMainDocumentURL
         return SumiWebKitMediaCaptureTabContext(
             tabId: tabId,
-            pageId: "\(tabId):\(pageGeneration)",
+            pageId: pageId,
             profilePartitionId: profile.id.uuidString.lowercased(),
             isEphemeralProfile: profile.isEphemeral,
             committedURL: committedURL,
@@ -469,7 +476,12 @@ extension Tab: WKUIDelegate {
             mainFrameURL: committedURL ?? fallbackMainFrameURL ?? webView.url ?? url,
             isActiveTab: isCurrentTab,
             isVisibleTab: primaryWindowId != nil,
-            navigationOrPageGeneration: pageGeneration
+            navigationOrPageGeneration: pageGeneration,
+            isCurrentPage: { [weak self] in
+                guard let self else { return false }
+                return self.currentPermissionPageId() == pageId
+                    && String(self.extensionRuntimeDocumentSequence) == pageGeneration
+            }
         )
     }
 
@@ -502,10 +514,11 @@ extension Tab: WKUIDelegate {
 
         let tabId = id.uuidString.lowercased()
         let pageGeneration = String(extensionRuntimeDocumentSequence)
+        let pageId = "\(tabId):\(pageGeneration)"
         let committedURL = extensionRuntimeCommittedMainDocumentURL
         return SumiStorageAccessTabContext(
             tabId: tabId,
-            pageId: "\(tabId):\(pageGeneration)",
+            pageId: pageId,
             profilePartitionId: profile.id.uuidString.lowercased(),
             isEphemeralProfile: profile.isEphemeral,
             committedURL: committedURL,
@@ -513,7 +526,12 @@ extension Tab: WKUIDelegate {
             mainFrameURL: committedURL ?? webView.url ?? url,
             isActiveTab: isCurrentTab,
             isVisibleTab: primaryWindowId != nil,
-            navigationOrPageGeneration: pageGeneration
+            navigationOrPageGeneration: pageGeneration,
+            isCurrentPage: { [weak self] in
+                guard let self else { return false }
+                return self.currentPermissionPageId() == pageId
+                    && String(self.extensionRuntimeDocumentSequence) == pageGeneration
+            }
         )
     }
 }

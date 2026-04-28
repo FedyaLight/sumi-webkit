@@ -180,6 +180,28 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
         XCTAssertNil(storedCameraRecord)
     }
 
+    func testOneTimeGrantShowsTemporaryStatusWithoutPersistentAllowSelection() async throws {
+        let coordinator = CurrentSiteFakePermissionCoordinator()
+        let viewModel = SumiCurrentSitePermissionsViewModel()
+        let context = context()
+        await coordinator.seedTransient(
+            key: context.key(for: .camera),
+            state: .allow
+        )
+
+        await viewModel.load(
+            context: context,
+            webView: nil,
+            profile: nil,
+            reloadRequired: false,
+            dependencies: dependencies(coordinator: coordinator)
+        )
+
+        let camera = try XCTUnwrap(viewModel.rows.first { $0.id == "camera" })
+        XCTAssertEqual(camera.currentOption, .ask)
+        XCTAssertEqual(camera.subtitle, "Allowed this time")
+    }
+
     func testResetClearsCurrentSitePermissionDecisionsAndPageEventsOnly() async throws {
         let coordinator = CurrentSiteFakePermissionCoordinator()
         let blockedPopupStore = SumiBlockedPopupStore()
@@ -304,6 +326,7 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
 
 private actor CurrentSiteFakePermissionCoordinator: SumiPermissionCoordinating {
     private var recordsByIdentity: [String: SumiPermissionStoreRecord] = [:]
+    private var transientRecordsByIdentity: [String: SumiPermissionStoreRecord] = [:]
 
     func requestPermission(
         _ context: SumiPermissionSecurityContext
@@ -351,6 +374,19 @@ private actor CurrentSiteFakePermissionCoordinator: SumiPermissionCoordinating {
             .sorted { $0.key.permissionType.identity < $1.key.permissionType.identity }
     }
 
+    func transientDecisionRecords(
+        profilePartitionId: String,
+        pageId: String
+    ) async throws -> [SumiPermissionStoreRecord] {
+        transientRecordsByIdentity.values
+            .filter {
+                $0.key.profilePartitionId == SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
+                    && $0.key.transientPageId == pageId
+                    && $0.decision.persistence == .oneTime
+            }
+            .sorted { $0.key.permissionType.identity < $1.key.permissionType.identity }
+    }
+
     func setSiteDecision(
         for key: SumiPermissionKey,
         state: SumiPermissionState,
@@ -383,6 +419,25 @@ private actor CurrentSiteFakePermissionCoordinator: SumiPermissionCoordinating {
         }
     }
 
+    @discardableResult
+    func resetTransientDecisions(
+        profilePartitionId: String,
+        pageId: String?,
+        requestingOrigin: SumiPermissionOrigin,
+        topOrigin: SumiPermissionOrigin,
+        reason: String
+    ) async -> Int {
+        let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
+        let beforeCount = transientRecordsByIdentity.count
+        transientRecordsByIdentity = transientRecordsByIdentity.filter { _, record in
+            record.key.profilePartitionId != profileId
+                || record.key.transientPageId != pageId
+                || record.key.requestingOrigin.identity != requestingOrigin.identity
+                || record.key.topOrigin.identity != topOrigin.identity
+        }
+        return beforeCount - transientRecordsByIdentity.count
+    }
+
     func seed(
         key: SumiPermissionKey,
         state: SumiPermissionState
@@ -393,6 +448,21 @@ private actor CurrentSiteFakePermissionCoordinator: SumiPermissionCoordinating {
             source: .user
         )
         recordsByIdentity[key.persistentIdentity] = SumiPermissionStoreRecord(
+            key: key,
+            decision: decision
+        )
+    }
+
+    func seedTransient(
+        key: SumiPermissionKey,
+        state: SumiPermissionState
+    ) {
+        let decision = SumiPermissionDecision(
+            state: state,
+            persistence: .oneTime,
+            source: .user
+        )
+        transientRecordsByIdentity[key.persistentIdentity] = SumiPermissionStoreRecord(
             key: key,
             decision: decision
         )

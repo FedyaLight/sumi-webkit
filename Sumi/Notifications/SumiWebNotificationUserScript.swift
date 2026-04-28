@@ -412,10 +412,11 @@ extension Tab {
 
         let tabId = id.uuidString.lowercased()
         let pageGeneration = String(extensionRuntimeDocumentSequence)
+        let pageId = "\(tabId):\(pageGeneration)"
         let committedURL = extensionRuntimeCommittedMainDocumentURL
         return SumiWebNotificationTabContext(
             tabId: tabId,
-            pageId: "\(tabId):\(pageGeneration)",
+            pageId: pageId,
             profilePartitionId: profile.id.uuidString.lowercased(),
             isEphemeralProfile: profile.isEphemeral,
             committedURL: committedURL,
@@ -423,7 +424,12 @@ extension Tab {
             mainFrameURL: committedURL ?? webView?.url ?? url,
             isActiveTab: isCurrentTab,
             isVisibleTab: primaryWindowId != nil,
-            navigationOrPageGeneration: pageGeneration
+            navigationOrPageGeneration: pageGeneration,
+            isCurrentPage: { [weak self] in
+                guard let self else { return false }
+                return self.currentPermissionPageId() == pageId
+                    && String(self.extensionRuntimeDocumentSequence) == pageGeneration
+            }
         )
     }
 }

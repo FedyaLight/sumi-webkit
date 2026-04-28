@@ -39,7 +39,7 @@
 </head>
 <body>
   <h1>Media Permission Manual Test</h1>
-  <p>Expected: first-time camera, microphone, or combined requests open the URL-bar anchored Sumi permission prompt. Allow this time should grant only the current page/request lifetime, allow while visiting should persist for a normal profile, don't allow should persist for a normal profile, and dismiss should not persist.</p>
+  <p>Expected: first-time camera, microphone, or combined requests open the URL-bar anchored Sumi permission prompt. Allow this time should grant again only within the same current page visit, for the same exact site/profile/type/page id. Requesting the same device again on this page should reuse the one-time grant; reload, cross-document navigation, tab close, or WebView replacement should ask again. Allow while visiting should persist for a normal profile, don't allow should persist for a normal profile, and dismiss should not persist.</p>
   <p>URL hub check: open Site Controls from the URL bar, open Permissions, and confirm Camera and Microphone show the current site decisions plus active or muted status after a stream starts. Changing Ask, Allow, or Block should affect future requests only, and Reset permissions should not clear cookies, site data, or tracking-protection overrides.</p>
   <p>Runtime controls check: after allowing microphone or camera, the URL-bar active icon should remain visible while capture is active. Clicking the active icon should open Permissions and show an Active now section. Mute and Unmute should change WebKit capture state where supported; Stop should end capture where supported or show a clear unsupported/no-op result. Stored Ask, Allow, or Block settings should not change.</p>
 

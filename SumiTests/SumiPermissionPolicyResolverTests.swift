@@ -321,6 +321,21 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
         XCTAssertFalse(result.allowedPersistences.contains(.persistent))
     }
 
+    func testNotificationAndStorageAccessDoNotOfferOneTimePersistence() async {
+        let notifications = await evaluate(.notifications, isEphemeralProfile: true)
+        let storageAccess = await evaluate(
+            .storageAccess,
+            requestingOrigin: SumiPermissionOrigin(string: "https://idp.example"),
+            topOrigin: SumiPermissionOrigin(string: "https://rp.example"),
+            committedURL: URL(string: "https://rp.example"),
+            visibleURL: URL(string: "https://rp.example"),
+            isEphemeralProfile: true
+        )
+
+        XCTAssertEqual(notifications.allowedPersistences, [.session])
+        XCTAssertEqual(storageAccess.allowedPersistences, [.session])
+    }
+
     func testFilePickerRemainsOneTimeOnlyInEphemeralProfile() async {
         let result = await evaluate(.filePicker, hasUserGesture: true, isEphemeralProfile: true)
 

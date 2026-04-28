@@ -87,6 +87,19 @@ final class SumiPermissionPromptViewModelTests: XCTestCase {
         XCTAssertTrue(finished)
     }
 
+    func testOpenThisTimeUsesCurrentAttemptSettlement() async {
+        let coordinator = PromptFakeCoordinator()
+        let viewModel = makeViewModel(
+            query: promptQuery(permissionTypes: [.externalScheme("zoommtg")]),
+            coordinator: coordinator
+        )
+
+        await viewModel.performAction(.openThisTime)
+
+        let settlementActions = await coordinator.settlementActions()
+        XCTAssertEqual(settlementActions, [.approveCurrentAttempt("query-a")])
+    }
+
     func testDenyUsesSessionSettlementForEphemeralProfile() async {
         let coordinator = PromptFakeCoordinator()
         let viewModel = makeViewModel(
@@ -157,6 +170,7 @@ final class SumiPermissionPromptViewModelTests: XCTestCase {
 
 private actor PromptFakeCoordinator: SumiPermissionCoordinating {
     enum SettlementAction: Equatable {
+        case approveCurrentAttempt(String)
         case approveOnce(String)
         case approveForSession(String)
         case approvePersistently(String)
@@ -193,6 +207,12 @@ private actor PromptFakeCoordinator: SumiPermissionCoordinating {
 
     func events() -> AsyncStream<SumiPermissionCoordinatorEvent> {
         AsyncStream { continuation in continuation.finish() }
+    }
+
+    @discardableResult
+    func approveCurrentAttempt(_ queryId: String) -> SumiPermissionCoordinatorDecision {
+        actions.append(.approveCurrentAttempt(queryId))
+        return decision(.granted, queryId: queryId)
     }
 
     @discardableResult
