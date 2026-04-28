@@ -186,6 +186,9 @@ class BrowserManager: ObservableObject {
     var splitManager: SplitViewManager
     var workspaceThemeCoordinator: WorkspaceThemeCoordinator
     var findManager: FindManager
+    let permissionCoordinator: any SumiPermissionCoordinating
+    let runtimePermissionController: any SumiRuntimePermissionControlling
+    let webKitPermissionBridge: SumiWebKitPermissionBridge
     var zoomManager = ZoomManager()
     weak var sumiSettings: SumiSettingsService? {
         didSet {
@@ -279,10 +282,23 @@ class BrowserManager: ObservableObject {
         trackingProtectionModule: SumiTrackingProtectionModule? = nil,
         adBlockingModule: SumiAdBlockingModule? = nil,
         extensionsModule: SumiExtensionsModule? = nil,
-        userscriptsModule: SumiUserscriptsModule? = nil
+        userscriptsModule: SumiUserscriptsModule? = nil,
+        permissionCoordinator: (any SumiPermissionCoordinating)? = nil,
+        runtimePermissionController: (any SumiRuntimePermissionControlling)? = nil,
+        webKitPermissionBridge: SumiWebKitPermissionBridge? = nil
     ) {
         // Phase 1: initialize all stored properties
         let startupModelContext = SumiStartupPersistence.shared.container.mainContext
+        let permissionCoordinator = permissionCoordinator
+            ?? SumiPermissionCoordinator(
+                policyResolver: DefaultSumiPermissionPolicyResolver(),
+                persistentStore: SwiftDataPermissionStore(
+                    container: SumiStartupPersistence.shared.container
+                ),
+                sessionOwnerId: "browser"
+            )
+        let runtimePermissionController = runtimePermissionController
+            ?? SumiRuntimePermissionController()
         self.modelContext = startupModelContext
         self.moduleRegistry = moduleRegistry
         self.trackingProtectionModule = trackingProtectionModule
@@ -330,6 +346,13 @@ class BrowserManager: ObservableObject {
         self.splitManager = SplitViewManager()
         self.workspaceThemeCoordinator = WorkspaceThemeCoordinator()
         self.findManager = FindManager()
+        self.permissionCoordinator = permissionCoordinator
+        self.runtimePermissionController = runtimePermissionController
+        self.webKitPermissionBridge = webKitPermissionBridge
+            ?? SumiWebKitPermissionBridge(
+                coordinator: permissionCoordinator,
+                runtimeController: runtimePermissionController
+            )
 
         // Phase 2: wire dependencies and perform side effects (safe to use self)
         self.compositorManager.browserManager = self

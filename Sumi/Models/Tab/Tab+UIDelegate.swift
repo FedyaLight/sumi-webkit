@@ -212,6 +212,43 @@ extension Tab: WKUIDelegate {
         RuntimeDiagnostics.emit(
             "🔐 [Tab] Media capture authorization requested for type: \(type.rawValue) from origin: \(origin)"
         )
-        decisionHandler(.grant)
+        guard let browserManager,
+              let profile = resolveProfile()
+        else {
+            RuntimeDiagnostics.emit(
+                "🔐 [Tab] Denying media capture because browser/profile context is unavailable."
+            )
+            decisionHandler(.deny)
+            return
+        }
+
+        let tabId = id.uuidString.lowercased()
+        let pageGeneration = String(extensionRuntimeDocumentSequence)
+        let committedURL = extensionRuntimeCommittedMainDocumentURL
+        let visibleURL = webView.url ?? url
+        let mediaRequest = SumiWebKitMediaCaptureRequest(
+            mediaType: type,
+            origin: origin,
+            frame: frame
+        )
+        let tabContext = SumiWebKitMediaCaptureTabContext(
+            tabId: tabId,
+            pageId: "\(tabId):\(pageGeneration)",
+            profilePartitionId: profile.id.uuidString.lowercased(),
+            isEphemeralProfile: profile.isEphemeral,
+            committedURL: committedURL,
+            visibleURL: visibleURL,
+            mainFrameURL: committedURL ?? webView.url ?? url,
+            isActiveTab: isCurrentTab,
+            isVisibleTab: primaryWindowId != nil,
+            navigationOrPageGeneration: pageGeneration
+        )
+
+        browserManager.webKitPermissionBridge.handleMediaCaptureAuthorization(
+            mediaRequest,
+            tabContext: tabContext,
+            webView: webView,
+            decisionHandler: decisionHandler
+        )
     }
 }
