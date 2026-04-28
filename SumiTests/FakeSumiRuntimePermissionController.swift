@@ -21,6 +21,10 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
     var failedOperations: [SumiRuntimePermissionOperation: String] = [:]
     var deniedOperations: [SumiRuntimePermissionOperation: String] = [:]
     var autoplayChangesRequireReload = true
+    private(set) var currentRuntimeStateCallCount = 0
+    private(set) var revokeRuntimePermissionsCallCount = 0
+    private(set) var pauseRuntimePermissionsCallCount = 0
+    private(set) var resumeRuntimePermissionsCallCount = 0
 
     private var observers: [UUID: @MainActor (SumiRuntimePermissionState) -> Void] = [:]
 
@@ -44,7 +48,8 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
     }
 
     func currentRuntimeState(for webView: WKWebView) -> SumiRuntimePermissionState {
-        SumiRuntimePermissionState(
+        currentRuntimeStateCallCount += 1
+        return SumiRuntimePermissionState(
             camera: cameraRuntimeState,
             microphone: microphoneRuntimeState,
             geolocation: geolocationRuntimeState,
@@ -143,7 +148,8 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
         _ permissionTypes: [SumiPermissionType],
         for webView: WKWebView
     ) async -> SumiRuntimePermissionBatchResult {
-        await applyBatch(permissionTypes, webView: webView) { permissionType in
+        revokeRuntimePermissionsCallCount += 1
+        return await applyBatch(permissionTypes, webView: webView) { permissionType in
             let operation = SumiRuntimePermissionOperation.revoke(permissionType)
             if let override = configuredResult(for: operation) {
                 return override
@@ -173,7 +179,8 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
         _ permissionTypes: [SumiPermissionType],
         for webView: WKWebView
     ) async -> SumiRuntimePermissionBatchResult {
-        await applyBatch(permissionTypes, webView: webView) { permissionType in
+        pauseRuntimePermissionsCallCount += 1
+        return await applyBatch(permissionTypes, webView: webView) { permissionType in
             let operation = SumiRuntimePermissionOperation.pause(permissionType)
             if let override = configuredResult(for: operation) {
                 return override
@@ -203,7 +210,8 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
         _ permissionTypes: [SumiPermissionType],
         for webView: WKWebView
     ) async -> SumiRuntimePermissionBatchResult {
-        await applyBatch(permissionTypes, webView: webView) { permissionType in
+        resumeRuntimePermissionsCallCount += 1
+        return await applyBatch(permissionTypes, webView: webView) { permissionType in
             let operation = SumiRuntimePermissionOperation.resume(permissionType)
             if let override = configuredResult(for: operation) {
                 return override
