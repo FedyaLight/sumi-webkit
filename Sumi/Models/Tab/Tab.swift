@@ -251,6 +251,13 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     var isTrackingProtectionReloadRequired: Bool {
         trackingProtectionReloadRequirement != nil
     }
+    var autoplayReloadRequirement: SumiAutoplayReloadRequirement? {
+        get { webViewRuntime.autoplayReloadRequirement }
+        set { webViewRuntime.autoplayReloadRequirement = newValue }
+    }
+    var isAutoplayReloadRequired: Bool {
+        autoplayReloadRequirement != nil
+    }
     var didNotifyOpenToExtensions: Bool {
         get { webViewRuntime.extensionRuntimeState.didReportOpenForGeneration != 0 }
         set {
@@ -606,6 +613,11 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             targetURL: newURL,
             reason: "Tab.loadURL.trackingProtectionPolicy"
         )
+        let rebuiltForConfigurationPolicy = rebuiltWebView
+            || rebuildNormalWebViewForAutoplayIfNeeded(
+                targetURL: newURL,
+                reason: "Tab.loadURL.autoplayPolicy"
+            )
         resetPlaybackActivity()
         // The muted part of audioState is preserved to maintain the user's mute preference.
 
@@ -615,7 +627,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             if let webView = _webView {
                 performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
                     on: webView,
-                    waitForContentBlockingAssets: rebuiltWebView
+                    waitForContentBlockingAssets: rebuiltForConfigurationPolicy
                 ) { resolvedWebView in
                     resolvedWebView.loadFileURL(
                         newURL,
@@ -637,7 +649,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             if let webView = _webView {
                 performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
                     on: webView,
-                    waitForContentBlockingAssets: rebuiltWebView
+                    waitForContentBlockingAssets: rebuiltForConfigurationPolicy
                 ) { resolvedWebView in
                     resolvedWebView.load(request)
                 }
@@ -797,6 +809,45 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         }
     }
 
+    func markAutoplayReloadRequiredIfNeeded(afterChangingPolicyFor changedURL: URL?) {
+        let changedOrigin = SumiPermissionOrigin(url: changedURL)
+        let currentOrigin = SumiPermissionOrigin(url: url)
+        guard changedOrigin.isWebOrigin,
+              changedOrigin.identity == currentOrigin.identity
+        else { return }
+
+        updateAutoplayReloadRequirementForCurrentSite()
+    }
+
+    func updateAutoplayReloadRequirementForCurrentSite() {
+        guard let webView = existingWebView else {
+            clearAutoplayReloadRequirement()
+            return
+        }
+
+        let desiredPolicy = desiredAutoplayPolicy(for: url)
+        let result = browserManager?.runtimePermissionController
+            .evaluateAutoplayPolicyChange(desiredPolicy.runtimeState, for: webView)
+            ?? SumiRuntimePermissionOperationResult.noOp
+
+        guard case .requiresReload(let requirement) = result else {
+            clearAutoplayReloadRequirement()
+            return
+        }
+
+        setAutoplayReloadRequirement(
+            SumiAutoplayReloadRequirement(
+                desiredPolicy: desiredPolicy,
+                runtimeRequirement: requirement
+            )
+        )
+    }
+
+    func clearAutoplayReloadRequirementIfResolved(for committedURL: URL) {
+        _ = committedURL
+        updateAutoplayReloadRequirementForCurrentSite()
+    }
+
     func trackingProtectionAttachmentRequiresNormalWebViewRebuild(
         for targetURL: URL?
     ) -> Bool {
@@ -810,6 +861,19 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             return desiredState.isEnabled
         }
         return appliedState.isEnabled != desiredState.isEnabled
+    }
+
+    func autoplayPolicyRequiresNormalWebViewRebuild(for targetURL: URL?) -> Bool {
+        guard let webView = existingWebView,
+              webViewConfigurationOverride == nil,
+              !isPopupHost
+        else { return false }
+
+        let desiredPolicy = desiredAutoplayPolicy(for: targetURL)
+        let currentState = SumiRuntimePermissionController.autoplayState(
+            from: webView.configuration.mediaTypesRequiringUserActionForPlayback
+        )
+        return currentState != desiredPolicy.runtimeState
     }
 
     @discardableResult
@@ -852,7 +916,57 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             _webView = replacementWebView
         }
 
+        updateAutoplayReloadRequirementForCurrentSite()
         return true
+    }
+
+    @discardableResult
+    func rebuildNormalWebViewForAutoplayIfNeeded(
+        targetURL: URL?,
+        reason: String
+    ) -> Bool {
+        guard autoplayPolicyRequiresNormalWebViewRebuild(for: targetURL),
+              let previousWebView = existingWebView
+        else { return false }
+
+        let coordinator = browserManager?.webViewCoordinator
+        let previousWindowId = primaryWindowId ?? coordinator?.windowID(containing: previousWebView)
+        let hadTrackedWebViews = coordinator?.windowIDs(for: id).isEmpty == false
+
+        guard let replacementWebView = makeNormalTabWebView(reason: reason) else {
+            return false
+        }
+
+        let removedTrackedWebViews = coordinator?.removeAllWebViews(for: self) ?? false
+        if hadTrackedWebViews && !removedTrackedWebViews {
+            return false
+        }
+
+        if !removedTrackedWebViews {
+            cleanupCloneWebView(previousWebView)
+            _webView = nil
+            primaryWindowId = nil
+        }
+
+        if let previousWindowId {
+            coordinator?.setWebView(replacementWebView, for: id, in: previousWindowId)
+            assignWebViewToWindow(replacementWebView, windowId: previousWindowId)
+            if let windowState = browserManager?.windowRegistry?.windows[previousWindowId] {
+                browserManager?.refreshCompositor(for: windowState)
+            }
+        } else {
+            _webView = replacementWebView
+        }
+
+        updateAutoplayReloadRequirementForCurrentSite()
+        return true
+    }
+
+    private func desiredAutoplayPolicy(for targetURL: URL?) -> SumiAutoplayPolicy {
+        SumiAutoplayPolicyStoreAdapter.shared.effectivePolicy(
+            for: targetURL,
+            profile: resolveProfile()
+        )
     }
 
     private func setTrackingProtectionReloadRequirement(
@@ -870,6 +984,29 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     private func notifyTrackingProtectionReloadRequirementChanged() {
+        objectWillChange.send()
+        NotificationCenter.default.post(
+            name: .sumiTabNavigationStateDidChange,
+            object: self,
+            userInfo: ["tabId": id]
+        )
+    }
+
+    private func setAutoplayReloadRequirement(
+        _ requirement: SumiAutoplayReloadRequirement
+    ) {
+        guard autoplayReloadRequirement != requirement else { return }
+        autoplayReloadRequirement = requirement
+        notifyAutoplayReloadRequirementChanged()
+    }
+
+    private func clearAutoplayReloadRequirement() {
+        guard autoplayReloadRequirement != nil else { return }
+        autoplayReloadRequirement = nil
+        notifyAutoplayReloadRequirementChanged()
+    }
+
+    private func notifyAutoplayReloadRequirementChanged() {
         objectWillChange.send()
         NotificationCenter.default.post(
             name: .sumiTabNavigationStateDidChange,

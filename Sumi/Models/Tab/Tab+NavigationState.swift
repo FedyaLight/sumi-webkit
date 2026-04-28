@@ -22,9 +22,14 @@ extension Tab {
             targetURL: targetURL,
             reason: "Tab.refresh.trackingProtectionPolicy"
         )
+        let rebuiltForConfigurationPolicy = rebuiltWebView
+            || rebuildNormalWebViewForAutoplayIfNeeded(
+                targetURL: targetURL,
+                reason: "Tab.refresh.autoplayPolicy"
+            )
         if let webView = _webView
         {
-            if rebuiltWebView {
+            if rebuiltForConfigurationPolicy {
                 performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
                     on: webView,
                     waitForContentBlockingAssets: true
@@ -54,7 +59,7 @@ extension Tab {
                 }
             }
         }
-        if !rebuiltWebView {
+        if !rebuiltForConfigurationPolicy {
             browserManager?.reloadTabAcrossWindows(id)
         }
     }

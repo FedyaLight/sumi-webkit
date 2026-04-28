@@ -195,7 +195,7 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
                 geolocationRuntimeState = .paused
                 return .applied
             case .autoplay:
-                return evaluateAutoplayPolicyChange(.muteAudio, for: webView)
+                return evaluateAutoplayPolicyChange(.blockAudible, for: webView)
             case .notifications, .popups, .externalScheme, .filePicker:
                 return .noOp
             case .storageAccess:
@@ -245,7 +245,7 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
         if let override = configuredResult(for: operation) {
             return override
         }
-        guard requestedState == .allowAll || requestedState == .muteAudio || requestedState == .blockAll else {
+        guard requestedState == .allowAll || requestedState == .blockAudible || requestedState == .blockAll else {
             return .unsupported(reason: "autoplay-policy-state-not-applicable")
         }
         guard autoplayRuntimeState != requestedState else {

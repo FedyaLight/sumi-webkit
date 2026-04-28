@@ -214,11 +214,6 @@ extension Tab {
         }
 
         if let auxiliaryOverrideConfiguration {
-            BrowserConfiguration.shared.applySitePermissionOverrides(
-                to: auxiliaryOverrideConfiguration,
-                url: url,
-                profileId: profile.id
-            )
             BrowserConfiguration.shared.applyMediaSessionPolicy(
                 to: auxiliaryOverrideConfiguration,
                 profile: profile
@@ -368,13 +363,12 @@ extension Tab {
         let configuration = BrowserConfiguration.shared.normalTabWebViewConfiguration(
             for: profile,
             url: url,
+            autoplayPolicy: BrowserConfiguration.shared.resolvedAutoplayPolicy(
+                for: url,
+                profile: profile
+            ),
             userScriptsProvider: normalTabUserScriptsProvider(for: url),
             contentBlockingService: trackingProtectionDecision?.contentBlockingService
-        )
-        BrowserConfiguration.shared.applySitePermissionOverrides(
-            to: configuration,
-            url: url,
-            profileId: profile.id
         )
         BrowserConfiguration.shared.applyMediaSessionPolicy(
             to: configuration,

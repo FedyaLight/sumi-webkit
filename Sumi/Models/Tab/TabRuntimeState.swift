@@ -26,6 +26,11 @@ struct SumiTrackingProtectionReloadRequirement: Equatable {
     let desiredAttachmentState: SumiTrackingProtectionAttachmentState
 }
 
+struct SumiAutoplayReloadRequirement: Equatable {
+    let desiredPolicy: SumiAutoplayPolicy
+    let runtimeRequirement: SumiRuntimePermissionReloadRequirement
+}
+
 enum BackForwardNavigationSettleDecision {
     static func shouldApplyDeferredActions(
         originURL: URL?,
@@ -133,6 +138,7 @@ final class TabWebViewRuntime {
     var profileAwaitCancellable: AnyCancellable?
     var trackingProtectionAppliedAttachmentState: SumiTrackingProtectionAttachmentState?
     var trackingProtectionReloadRequirement: SumiTrackingProtectionReloadRequirement?
+    var autoplayReloadRequirement: SumiAutoplayReloadRequirement?
     var resolvedFaviconCacheKey: String?
     var faviconsTabExtension: FaviconsTabExtension?
     var faviconCancellables: Set<AnyCancellable> = []

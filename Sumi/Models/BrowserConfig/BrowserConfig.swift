@@ -38,6 +38,7 @@ class BrowserConfiguration {
     static let shared = BrowserConfiguration()
 
     private let sharedProcessPool = WKProcessPool()
+    private let autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter?
     private static let auxiliaryFilteredUserScriptMarkers = [
         "__sumiDDGFaviconTransportInstalled",
         "__sumiTabSuspension",
@@ -53,7 +54,9 @@ class BrowserConfiguration {
         "sumiWebNotifications_",
     ]
 
-    init() {}
+    init(autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter? = nil) {
+        self.autoplayPolicyStore = autoplayPolicyStore
+    }
 
     private func makeBaseWebViewConfiguration() -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
@@ -115,6 +118,7 @@ class BrowserConfiguration {
     func normalTabWebViewConfiguration(
         for profile: Profile,
         url: URL?,
+        autoplayPolicy: SumiAutoplayPolicy? = nil,
         userScriptsProvider: SumiNormalTabUserScripts? = nil,
         contentBlockingService: SumiContentBlockingService? = nil
     ) -> WKWebViewConfiguration {
@@ -127,7 +131,10 @@ class BrowserConfiguration {
                 profileId: profile.id
             )
         applyMediaSessionPolicy(to: config, profile: profile)
-        applySitePermissionOverrides(to: config, url: url, profileId: profile.id)
+        applyAutoplayPolicy(
+            autoplayPolicy ?? resolvedAutoplayPolicy(for: url, profile: profile),
+            to: config
+        )
         return config
     }
 
@@ -197,130 +204,21 @@ class BrowserConfiguration {
         )
     }
 
-    func applySitePermissionOverrides(
-        to configuration: WKWebViewConfiguration,
-        url: URL?,
-        profileId: UUID?
+    @MainActor
+    func applyAutoplayPolicy(
+        _ policy: SumiAutoplayPolicy,
+        to configuration: WKWebViewConfiguration
     ) {
-        let autoplayState = SitePermissionOverridesStore.shared.autoplayState(
-            for: url,
-            profileId: profileId
-        )
         configuration.mediaTypesRequiringUserActionForPlayback =
-            autoplayState == .block ? .all : []
-    }
-}
-
-enum AutoplayOverrideState: String, Codable, Equatable {
-    case allow
-    case block
-
-    var subtitle: String {
-        switch self {
-        case .allow:
-            return "Allow"
-        case .block:
-            return "Block"
-        }
+            policy.mediaTypesRequiringUserActionForPlayback
     }
 
-    var chromeIconName: String {
-        // Zen uses the filled permission glyph for the settings row.
-        "autoplay-media-fill"
-    }
-}
-
-final class SitePermissionOverridesStore {
-    static let shared = SitePermissionOverridesStore()
-
-    private let userDefaults = UserDefaults.standard
-    private let autoplayOverridesKey = "settings.sitePermissionOverrides.autoplay"
-    private var autoplayOverrides: [String: [String: AutoplayOverrideState]]
-
-    private init() {
-        autoplayOverrides = Self.loadOverrides(
-            key: autoplayOverridesKey,
-            userDefaults: userDefaults
-        )
-    }
-
-    func autoplayState(for url: URL?, profileId: UUID?) -> AutoplayOverrideState {
-        guard
-            let profileKey = normalizedProfileKey(profileId),
-            let host = normalizedHost(for: url)
-        else {
-            return .allow
-        }
-
-        return autoplayOverrides[profileKey]?[host] ?? .allow
-    }
-
-    func hasAutoplayOverride(for url: URL?, profileId: UUID?) -> Bool {
-        guard
-            let profileKey = normalizedProfileKey(profileId),
-            let host = normalizedHost(for: url)
-        else {
-            return false
-        }
-
-        return autoplayOverrides[profileKey]?[host] != nil
-    }
-
-    func toggleAutoplay(for url: URL?, profileId: UUID?) -> AutoplayOverrideState {
-        let nextState: AutoplayOverrideState = autoplayState(
-            for: url,
-            profileId: profileId
-        ) == .allow ? .block : .allow
-        setAutoplayState(nextState, for: url, profileId: profileId)
-        return nextState
-    }
-
-    func setAutoplayState(
-        _ state: AutoplayOverrideState,
+    @MainActor
+    func resolvedAutoplayPolicy(
         for url: URL?,
-        profileId: UUID?
-    ) {
-        guard
-            let profileKey = normalizedProfileKey(profileId),
-            let host = normalizedHost(for: url)
-        else {
-            return
-        }
-
-        var profileOverrides = autoplayOverrides[profileKey] ?? [:]
-        profileOverrides[host] = state
-        autoplayOverrides[profileKey] = profileOverrides
-        persistAutoplayOverrides()
-    }
-
-    private func persistAutoplayOverrides() {
-        guard let data = try? JSONEncoder().encode(autoplayOverrides) else {
-            return
-        }
-        userDefaults.set(data, forKey: autoplayOverridesKey)
-    }
-
-    private func normalizedProfileKey(_ profileId: UUID?) -> String? {
-        profileId?.uuidString.lowercased()
-    }
-
-    private func normalizedHost(for url: URL?) -> String? {
-        url?.host?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
-
-    private static func loadOverrides(
-        key: String,
-        userDefaults: UserDefaults
-    ) -> [String: [String: AutoplayOverrideState]] {
-        guard
-            let data = userDefaults.data(forKey: key),
-            let decoded = try? JSONDecoder().decode(
-                [String: [String: AutoplayOverrideState]].self,
-                from: data
-            )
-        else {
-            return [:]
-        }
-        return decoded
+        profile: Profile
+    ) -> SumiAutoplayPolicy {
+        (autoplayPolicyStore ?? SumiAutoplayPolicyStoreAdapter.shared)
+            .effectivePolicy(for: url, profile: profile)
     }
 }
