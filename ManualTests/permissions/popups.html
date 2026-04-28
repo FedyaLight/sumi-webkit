@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sumi Popup Permission Manual Test</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      line-height: 1.45;
+    }
+
+    main {
+      max-width: 880px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 24px;
+      margin: 0 0 16px;
+    }
+
+    .controls {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      margin: 16px 0;
+    }
+
+    button,
+    a.test-link {
+      min-height: 38px;
+      box-sizing: border-box;
+      font: inherit;
+      padding: 8px 12px;
+      border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+      border-radius: 6px;
+      background: Canvas;
+      color: CanvasText;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+    }
+
+    button:hover,
+    a.test-link:hover {
+      background: color-mix(in srgb, CanvasText 8%, Canvas);
+    }
+
+    pre {
+      min-height: 260px;
+      padding: 12px;
+      overflow: auto;
+      border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
+      border-radius: 6px;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Popup Permission Manual Test</h1>
+    <div class="controls">
+      <button id="click-open">User click window.open()</button>
+      <button id="delayed-open">Delayed window.open() after click</button>
+      <button id="automatic-open">Automatic style window.open()</button>
+      <button id="repeated-open">Repeated automatic popups</button>
+      <a class="test-link" id="target-blank" href="https://example.com/?case=target-blank" target="_blank">Target blank link</a>
+      <button id="named-open">Named window popup</button>
+      <button id="blank-open">about:blank popup</button>
+      <button id="later-location">about:blank then later location</button>
+      <button id="stop-repeated">Stop repeated popups</button>
+      <button id="clear-log">Clear log</button>
+    </div>
+    <pre id="log"></pre>
+  </main>
+
+  <script>
+    const logNode = document.querySelector('#log');
+    let repeatedTimer = null;
+    let repeatedCount = 0;
+
+    function log(message, value) {
+      const stamp = new Date().toISOString();
+      const suffix = value === undefined ? '' : ` ${JSON.stringify(value)}`;
+      logNode.textContent = `${stamp} ${message}${suffix}\n${logNode.textContent}`;
+    }
+
+    function describeWindow(openedWindow) {
+      return {
+        opened: Boolean(openedWindow),
+        closed: openedWindow ? openedWindow.closed : null
+      };
+    }
+
+    function openAndLog(label, url, target, features) {
+      let openedWindow = null;
+      try {
+        openedWindow = window.open(url, target, features);
+      } catch (error) {
+        log(`${label}: threw`, { message: String(error) });
+        return null;
+      }
+      log(`${label}: ${openedWindow ? 'opened' : 'blocked'}`, describeWindow(openedWindow));
+      return openedWindow;
+    }
+
+    document.querySelector('#click-open').addEventListener('click', () => {
+      openAndLog('user click window.open', 'https://example.com/?case=user-click', '_blank', 'popup,width=520,height=420');
+    });
+
+    document.querySelector('#delayed-open').addEventListener('click', () => {
+      log('delayed window.open scheduled');
+      setTimeout(() => {
+        openAndLog('delayed click window.open', 'https://example.com/?case=delayed-click', '_blank', 'popup,width=520,height=420');
+      }, 1500);
+    });
+
+    document.querySelector('#automatic-open').addEventListener('click', () => {
+      setTimeout(() => {
+        openAndLog('automatic style window.open', 'https://example.com/?case=automatic-button-timer', '_blank', 'popup,width=520,height=420');
+      }, 0);
+    });
+
+    document.querySelector('#repeated-open').addEventListener('click', () => {
+      if (repeatedTimer !== null) {
+        log('repeated automatic popups already running');
+        return;
+      }
+      repeatedCount = 0;
+      repeatedTimer = setTimeout(() => {
+        repeatedTimer = setInterval(() => {
+          repeatedCount += 1;
+          openAndLog(`repeated automatic popup ${repeatedCount}`, `https://example.com/?case=repeated-${repeatedCount}`, '_blank', 'popup,width=460,height=360');
+          if (repeatedCount >= 5) {
+            clearInterval(repeatedTimer);
+            repeatedTimer = null;
+            log('repeated automatic popups stopped after 5 attempts');
+          }
+        }, 700);
+      }, 7000);
+      log('repeated automatic popups scheduled after activation grace window');
+    });
+
+    document.querySelector('#target-blank').addEventListener('click', () => {
+      log('target blank link clicked');
+    });
+
+    document.querySelector('#named-open').addEventListener('click', () => {
+      openAndLog('named window popup', 'https://example.com/?case=named-window', 'sumi_popup_named_window', 'popup,width=520,height=420');
+    });
+
+    document.querySelector('#blank-open').addEventListener('click', () => {
+      openAndLog('about blank popup', 'about:blank', '_blank', 'popup,width=420,height=320');
+    });
+
+    document.querySelector('#later-location').addEventListener('click', () => {
+      const openedWindow = openAndLog('about blank later location popup', 'about:blank', '_blank', 'popup,width=520,height=420');
+      setTimeout(() => {
+        if (!openedWindow) {
+          log('later location assignment skipped because popup was blocked');
+          return;
+        }
+        try {
+          openedWindow.location.href = 'https://example.com/?case=later-location';
+          log('later location assigned');
+        } catch (error) {
+          log('later location assignment threw', { message: String(error) });
+        }
+      }, 1200);
+    });
+
+    document.querySelector('#stop-repeated').addEventListener('click', () => {
+      if (repeatedTimer !== null) {
+        clearTimeout(repeatedTimer);
+        clearInterval(repeatedTimer);
+        repeatedTimer = null;
+      }
+      log('repeated automatic popups stopped');
+    });
+
+    document.querySelector('#clear-log').addEventListener('click', () => {
+      logNode.textContent = '';
+    });
+
+    window.addEventListener('load', () => {
+      log('page loaded, attempting load-time automatic popup');
+      openAndLog('load-time automatic window.open', 'https://example.com/?case=load-time-automatic', '_blank', 'popup,width=460,height=360');
+    });
+  </script>
+</body>
+</html>

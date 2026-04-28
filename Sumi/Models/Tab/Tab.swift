@@ -82,6 +82,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     var clickModifierFlags: NSEvent.ModifierFlags = []
     private let navigationRuntime = TabNavigationRuntime()
     let mediaRuntime = TabMediaRuntime()
+    let popupUserActivationTracker = SumiPopupUserActivationTracker()
     private let webViewRuntime = TabWebViewRuntime()
 
     // MARK: - Pin State
@@ -373,9 +374,34 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         "\(id.uuidString.lowercased()):\(extensionRuntimeDocumentSequence)"
     }
 
+    func recordPopupUserActivation(_ event: NSEvent, kind: String) {
+        popupUserActivationTracker.record(event: event, kind: kind)
+    }
+
+    func popupPermissionTabContext(for webView: WKWebView) -> SumiPopupPermissionTabContext? {
+        guard let profile = resolveProfile() else { return nil }
+
+        let tabId = id.uuidString.lowercased()
+        let pageGeneration = String(extensionRuntimeDocumentSequence)
+        let committedURL = extensionRuntimeCommittedMainDocumentURL
+        return SumiPopupPermissionTabContext(
+            tabId: tabId,
+            pageId: "\(tabId):\(pageGeneration)",
+            profilePartitionId: profile.id.uuidString.lowercased(),
+            isEphemeralProfile: profile.isEphemeral,
+            committedURL: committedURL,
+            visibleURL: webView.url ?? url,
+            mainFrameURL: committedURL ?? webView.url ?? url,
+            isActiveTab: isCurrentTab,
+            isVisibleTab: primaryWindowId != nil,
+            navigationOrPageGeneration: pageGeneration
+        )
+    }
+
     func handleNormalTabPermissionNavigation(to targetURL: URL?) {
         let pageId = currentPermissionPageId()
         let coordinator = browserManager?.permissionCoordinator
+        browserManager?.blockedPopupStore.clear(pageId: pageId)
         Task {
             await coordinator?.cancelNavigation(
                 pageId: pageId,
@@ -396,6 +422,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     func cleanupNormalTabPermissionRuntime(reason: String) {
         let pageId = currentPermissionPageId()
         let tabId = id.uuidString.lowercased()
+        browserManager?.blockedPopupStore.clear(pageId: pageId)
+        browserManager?.blockedPopupStore.clear(tabId: tabId)
         browserManager?.geolocationProvider?.stop(pageId: pageId)
         browserManager?.geolocationProvider?.cancelAllowedRequests(tabId: tabId)
 

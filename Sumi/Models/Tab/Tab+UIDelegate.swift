@@ -62,14 +62,15 @@ extension Tab: WKUIDelegate {
                 completionHandler(nil)
                 return
             }
-            completionHandler(
-                self.navigationDelegateBundle(for: webView)?.popupHandling.createWebView(
+            Task { @MainActor in
+                let popupWebView = await self.navigationDelegateBundle(for: webView)?.popupHandling.createWebViewAsync(
                     from: webView,
                     with: configuration,
                     for: navigationAction,
                     windowFeatures: windowFeatures
                 )
-            )
+                completionHandler(popupWebView)
+            }
         }
     }
 
