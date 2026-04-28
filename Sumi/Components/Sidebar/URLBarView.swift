@@ -206,8 +206,16 @@ struct URLBarView: View {
         let showsZoomButton = shouldShowZoomButton(for: currentTab)
         HStack(spacing: 6) {
             copyLinkButton(for: currentTab)
-            permissionIndicatorButton(for: currentTab)
             hubButton
+            if permissionIndicatorViewModel.state.isVisible {
+                permissionIndicatorButton(for: currentTab)
+                    .transition(
+                        .asymmetric(
+                            insertion: .scale(scale: 0.82).combined(with: .opacity),
+                            removal: .scale(scale: 0.92).combined(with: .opacity)
+                        )
+                    )
+            }
             if showsZoomButton {
                 zoomButton(for: currentTab)
                     .transition(
@@ -218,7 +226,19 @@ struct URLBarView: View {
                     )
             }
         }
+        .task(id: permissionIndicatorTaskKey(for: currentTab)) {
+            refreshPermissionIndicator(for: currentTab)
+            refreshPermissionPrompt(for: currentTab)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .sumiTabNavigationStateDidChange)) { notification in
+            guard let tab = notification.object as? Tab,
+                  tab.id == currentTab.id
+            else { return }
+            refreshPermissionIndicator(for: tab)
+            refreshPermissionPrompt(for: tab)
+        }
         .animation(.smooth(duration: 0.18), value: showsZoomButton)
+        .animation(.smooth(duration: 0.18), value: permissionIndicatorViewModel.state.isVisible)
     }
 
     private func copyLinkButton(for currentTab: Tab) -> some View {
@@ -236,17 +256,6 @@ struct URLBarView: View {
     private func permissionIndicatorButton(for currentTab: Tab) -> some View {
         SumiPermissionIndicatorButton(viewModel: permissionIndicatorViewModel) {
             handlePermissionIndicatorClick()
-        }
-        .task(id: permissionIndicatorTaskKey(for: currentTab)) {
-            refreshPermissionIndicator(for: currentTab)
-            refreshPermissionPrompt(for: currentTab)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .sumiTabNavigationStateDidChange)) { notification in
-            guard let tab = notification.object as? Tab,
-                  tab.id == currentTab.id
-            else { return }
-            refreshPermissionIndicator(for: tab)
-            refreshPermissionPrompt(for: tab)
         }
         .popover(isPresented: $permissionPromptPresenter.isPresented, arrowEdge: .bottom) {
             if let viewModel = permissionPromptPresenter.viewModel {
@@ -657,7 +666,7 @@ private struct SumiPermissionIndicatorButton: View {
                 if state.visualStyle == .systemWarning {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 7, weight: .bold))
-                        .foregroundStyle(Color.orange.opacity(0.9))
+                        .foregroundStyle(tokens.secondaryText)
                         .offset(x: 5, y: -5)
                         .accessibilityHidden(true)
                 } else if let badgeCount = state.badgeCount, badgeCount > 1 {
@@ -680,30 +689,25 @@ private struct SumiPermissionIndicatorButton: View {
         }
         .buttonStyle(
             URLBarPermissionIndicatorButtonStyle(
-                visualStyle: state.visualStyle,
-                isVisible: state.isVisible
+                visualStyle: state.visualStyle
             )
         )
         .frame(width: 28, height: 28)
-        .opacity(state.isVisible ? 1 : 0)
-        .allowsHitTesting(state.isVisible)
-        .disabled(!state.isVisible)
         .help(state.title)
         .accessibilityIdentifier("urlbar-permission-indicator")
         .accessibilityLabel(Text(state.accessibilityLabel))
-        .accessibilityHidden(!state.isVisible)
     }
 
     private var iconTint: Color {
         switch state.visualStyle {
         case .active, .reloadRequired:
-            return tokens.accent
+            return tokens.primaryText
         case .attention:
             return tokens.primaryText
         case .blocked:
             return tokens.secondaryText
         case .systemWarning:
-            return Color.orange.opacity(0.95)
+            return tokens.primaryText
         case .neutral:
             return tokens.primaryText
         }
@@ -711,20 +715,24 @@ private struct SumiPermissionIndicatorButton: View {
 
     private var badgeFill: Color {
         switch state.visualStyle {
-        case .active, .reloadRequired:
-            return tokens.accent
-        case .systemWarning:
-            return Color.orange.opacity(0.95)
-        case .attention, .blocked, .neutral:
+        case .active,
+             .attention,
+             .blocked,
+             .systemWarning,
+             .reloadRequired,
+             .neutral:
             return tokens.secondaryText.opacity(0.82)
         }
     }
 
     private var badgeTextColor: Color {
         switch state.visualStyle {
-        case .active, .reloadRequired:
-            return tokens.buttonPrimaryText
-        case .attention, .blocked, .systemWarning, .neutral:
+        case .active,
+             .attention,
+             .blocked,
+             .systemWarning,
+             .reloadRequired,
+             .neutral:
             return tokens.fieldBackground
         }
     }
@@ -737,7 +745,6 @@ private struct URLBarPermissionIndicatorButtonStyle: ButtonStyle {
     @State private var isHovering = false
 
     let visualStyle: SumiPermissionIndicatorVisualStyle
-    let isVisible: Bool
 
     private var tokens: ChromeThemeTokens {
         themeContext.tokens(settings: sumiSettings)
@@ -765,7 +772,7 @@ private struct URLBarPermissionIndicatorButtonStyle: ButtonStyle {
     }
 
     private func backgroundColor(isPressed: Bool) -> Color {
-        guard isVisible, isEnabled else { return .clear }
+        guard isEnabled else { return .clear }
         if isPressed {
             return tokens.fieldBackgroundHover.opacity(0.96)
         }
@@ -773,31 +780,19 @@ private struct URLBarPermissionIndicatorButtonStyle: ButtonStyle {
             return tokens.fieldBackgroundHover.opacity(0.88)
         }
         switch visualStyle {
-        case .active:
-            return tokens.accent.opacity(0.18)
-        case .attention:
+        case .active, .attention, .systemWarning, .reloadRequired:
             return tokens.fieldBackgroundHover.opacity(0.74)
         case .blocked:
             return tokens.secondaryText.opacity(0.10)
-        case .systemWarning:
-            return Color.orange.opacity(0.16)
-        case .reloadRequired:
-            return tokens.accent.opacity(0.12)
         case .neutral:
             return .clear
         }
     }
 
     private var borderColor: Color {
-        guard isVisible, isEnabled else { return .clear }
+        guard isEnabled else { return .clear }
         switch visualStyle {
-        case .active:
-            return tokens.accent.opacity(0.36)
-        case .systemWarning:
-            return Color.orange.opacity(0.42)
-        case .reloadRequired:
-            return tokens.accent.opacity(0.26)
-        case .blocked:
+        case .active, .blocked, .systemWarning, .reloadRequired:
             return tokens.secondaryText.opacity(0.20)
         case .attention, .neutral:
             return .clear

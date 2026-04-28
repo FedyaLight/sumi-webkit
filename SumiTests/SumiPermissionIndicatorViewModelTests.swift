@@ -272,16 +272,52 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
 
     func testURLBarContainsExactlyOneDynamicPermissionIndicatorAnchor() throws {
         let source = try sourceFile("Sumi/Components/Sidebar/URLBarView.swift")
+        let trailingActions = try sourceSection(
+            source,
+            from: "private func trailingActions(for currentTab: Tab) -> some View",
+            to: "private func copyLinkButton(for currentTab: Tab) -> some View"
+        )
 
         XCTAssertEqual(source.components(separatedBy: "SumiPermissionIndicatorButton(").count - 1, 1)
         XCTAssertTrue(source.contains("urlbar-permission-indicator"))
+        XCTAssertTrue(trailingActions.contains("if permissionIndicatorViewModel.state.isVisible {"))
         XCTAssertTrue(source.contains("permissionPromptPresenter.presentFromIndicatorClick()"))
         XCTAssertTrue(source.contains("prefersRuntimeControlsSurface"))
         XCTAssertTrue(source.contains("hubInitialMode = .permissions"))
         XCTAssertTrue(source.contains("isHubPresented = true"))
         XCTAssertTrue(source.contains("SumiPermissionPromptView"))
+        XCTAssertFalse(source.contains(".opacity(state.isVisible ?"))
+        XCTAssertFalse(source.contains(".allowsHitTesting(state.isVisible)"))
+        XCTAssertFalse(source.contains(".disabled(!state.isVisible)"))
+        XCTAssertFalse(source.contains("isVisible: state.isVisible"))
         XCTAssertFalse(source.contains("approveOnce("))
         XCTAssertFalse(source.contains("denyOnce("))
+
+        let copyRange = try XCTUnwrap(trailingActions.range(of: "copyLinkButton(for: currentTab)"))
+        let hubRange = try XCTUnwrap(trailingActions.range(of: "hubButton"))
+        let permissionRange = try XCTUnwrap(trailingActions.range(of: "permissionIndicatorButton(for: currentTab)"))
+        let zoomRange = try XCTUnwrap(trailingActions.range(of: "if showsZoomButton"))
+        XCTAssertLessThan(copyRange.lowerBound, hubRange.lowerBound)
+        XCTAssertLessThan(hubRange.lowerBound, permissionRange.lowerBound)
+        XCTAssertLessThan(permissionRange.lowerBound, zoomRange.lowerBound)
+    }
+
+    func testPermissionChromeUsesNeutralNonAccentColors() throws {
+        let urlBarSource = try sourceFile("Sumi/Components/Sidebar/URLBarView.swift")
+        let permissionIndicatorSource = try sourceSection(
+            urlBarSource,
+            from: "private struct SumiPermissionIndicatorButton: View",
+            to: "private struct URLBarZoomPopoverView: View"
+        )
+        let promptSource = try sourceFile("Sumi/Permissions/UI/SumiPermissionPromptView.swift")
+        let systemStateSource = try sourceFile("Sumi/Permissions/UI/SumiPermissionPromptSystemStateView.swift")
+
+        XCTAssertFalse(permissionIndicatorSource.contains("tokens.accent"))
+        XCTAssertFalse(permissionIndicatorSource.contains("Color.orange"))
+        XCTAssertFalse(promptSource.contains("tokens.accent"))
+        XCTAssertFalse(promptSource.contains("Color.orange"))
+        XCTAssertFalse(promptSource.contains("tokens.buttonPrimaryText"))
+        XCTAssertFalse(systemStateSource.contains("Color.orange"))
     }
 
     private func indicatorState(
@@ -426,6 +462,17 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
             .deletingLastPathComponent()
         let url = repoRoot.appendingPathComponent(relativePath)
         return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    private func sourceSection(
+        _ source: String,
+        from startMarker: String,
+        to endMarker: String
+    ) throws -> Substring {
+        let start = try XCTUnwrap(source.range(of: startMarker))
+        let searchRange = start.upperBound..<source.endIndex
+        let end = try XCTUnwrap(source.range(of: endMarker, range: searchRange))
+        return source[start.lowerBound..<end.lowerBound]
     }
 }
 
