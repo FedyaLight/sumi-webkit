@@ -96,7 +96,7 @@ struct SumiCurrentSitePermissionSummary: Equatable, Sendable {
         let externalCount = externalSchemeSessionStore.records(forPageId: pageId)
             .filter { $0.result != .opened }
             .reduce(0) { $0 + $1.attemptCount }
-        let indicatorCount = indicatorEventStore.records(forPageId: pageId)
+        let indicatorCount = indicatorEventStore.recordsSnapshot(forPageId: pageId)
             .filter { $0.category == .blockedEvent || $0.category == .pendingRequest }
             .reduce(0) { $0 + $1.attemptCount }
         let blockedCount = popupCount + externalCount + indicatorCount

@@ -96,6 +96,13 @@ protocol SumiPermissionCoordinating: Sendable {
     func denyPersistently(_ queryId: String) async -> SumiPermissionCoordinatorDecision
 
     @discardableResult
+    func systemBlock(
+        queryId: String,
+        snapshots: [SumiSystemPermissionSnapshot],
+        reason: String
+    ) async -> SumiPermissionCoordinatorDecision
+
+    @discardableResult
     func cancel(
         queryId: String,
         reason: String
@@ -249,6 +256,17 @@ extension SumiPermissionCoordinating {
     @discardableResult
     func denyPersistently(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
         ignoredSettlementDecision(reason: "deny-persistently-unavailable")
+    }
+
+    @discardableResult
+    func systemBlock(
+        queryId: String,
+        snapshots: [SumiSystemPermissionSnapshot],
+        reason: String
+    ) async -> SumiPermissionCoordinatorDecision {
+        _ = queryId
+        _ = snapshots
+        return ignoredSettlementDecision(reason: reason)
     }
 
     @discardableResult

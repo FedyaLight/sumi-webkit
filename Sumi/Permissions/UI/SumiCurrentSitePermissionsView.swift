@@ -19,6 +19,7 @@ struct SumiCurrentSitePermissionsView: View {
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @StateObject private var runtimeControlsModel = SumiPermissionRuntimeControlsViewModel()
+    @State private var scheduledReloadTask: Task<Void, Never>?
 
     private var tokens: ChromeThemeTokens {
         themeContext.tokens(settings: sumiSettings)
@@ -72,24 +73,26 @@ struct SumiCurrentSitePermissionsView: View {
         }
         .accessibilityIdentifier("urlhub-permissions-submenu")
         .task(id: loadKey) {
-            await reload()
+            await reloadImmediately()
         }
         .onReceive(NotificationCenter.default.publisher(for: .sumiTabNavigationStateDidChange)) { notification in
             guard let tab = notification.object as? Tab,
                   tab.id == currentTab?.id
             else { return }
-            Task { await reload() }
+            scheduleReloadAfterStoreChange()
         }
         .onReceive(blockedPopupStore.objectWillChange) { _ in
-            Task { await reloadAfterStoreChange() }
+            scheduleReloadAfterStoreChange()
         }
         .onReceive(externalSchemeSessionStore.objectWillChange) { _ in
-            Task { await reloadAfterStoreChange() }
+            scheduleReloadAfterStoreChange()
         }
         .onReceive(permissionIndicatorEventStore.objectWillChange) { _ in
-            Task { await reloadAfterStoreChange() }
+            scheduleReloadAfterStoreChange()
         }
         .onDisappear {
+            scheduledReloadTask?.cancel()
+            scheduledReloadTask = nil
             runtimeControlsModel.clear()
         }
     }
@@ -225,7 +228,7 @@ struct SumiCurrentSitePermissionsView: View {
                         profile: profile,
                         dependencies: dependencies
                     )
-                    await reload()
+                    await reloadImmediately()
                     onDidMutate()
                 }
             } label: {
@@ -264,13 +267,25 @@ struct SumiCurrentSitePermissionsView: View {
                 currentTab?.updateAutoplayReloadRequirementForCurrentSite()
             }
         )
-        await reload()
+        await reloadImmediately()
         onDidMutate()
     }
 
-    private func reloadAfterStoreChange() async {
-        await Task.yield()
+    private func reloadImmediately() async {
+        scheduledReloadTask?.cancel()
+        scheduledReloadTask = nil
         await reload()
+    }
+
+    private func scheduleReloadAfterStoreChange() {
+        scheduledReloadTask?.cancel()
+        scheduledReloadTask = Task { @MainActor in
+            await Task.yield()
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            guard !Task.isCancelled else { return }
+            await reload()
+            scheduledReloadTask = nil
+        }
     }
 
     private func reload() async {
@@ -289,7 +304,7 @@ struct SumiCurrentSitePermissionsView: View {
             runtimeController: runtimePermissionController,
             reloadRequired: currentTab?.isAutoplayReloadRequired == true,
             onRuntimeStateChanged: {
-                Task { await reloadAfterStoreChange() }
+                scheduleReloadAfterStoreChange()
             }
         )
     }
@@ -298,7 +313,7 @@ struct SumiCurrentSitePermissionsView: View {
         _ actionKind: SumiPermissionRuntimeControl.Action.Kind
     ) async {
         _ = await runtimeControlsModel.perform(actionKind)
-        await reload()
+        await reloadImmediately()
         onDidMutate()
     }
 

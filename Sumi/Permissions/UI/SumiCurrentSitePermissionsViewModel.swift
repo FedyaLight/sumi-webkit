@@ -822,7 +822,7 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
         dependencies: LoadDependencies
     ) -> Int {
         guard let pageId = context.pageId else { return 0 }
-        return dependencies.indicatorEventStore.records(forPageId: pageId)
+        return dependencies.indicatorEventStore.recordsSnapshot(forPageId: pageId)
             .filter { record in
                 record.permissionTypes.contains { $0.identity == permissionType.identity }
             }

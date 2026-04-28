@@ -344,6 +344,58 @@ actor SumiPermissionCoordinator {
     }
 
     @discardableResult
+    func systemBlock(
+        queryId: String,
+        snapshots: [SumiSystemPermissionSnapshot],
+        reason: String
+    ) async -> SumiPermissionCoordinatorDecision {
+        guard let pending = queryById[queryId] else {
+            return ignoredDecision(reason: "query-not-found", permissionTypes: [])
+        }
+        guard state.activeQueriesByPageId[pending.query.pageId]?.id == queryId else {
+            return ignoredDecision(
+                reason: "query-not-active",
+                permissionTypes: pending.query.permissionTypes
+            )
+        }
+
+        let snapshot = snapshots.first ?? pending.query.systemAuthorizationSnapshots.first
+        let decision = SumiPermissionCoordinatorDecision(
+            outcome: .systemBlocked,
+            state: .deny,
+            persistence: nil,
+            source: .system,
+            reason: reason,
+            permissionTypes: pending.query.permissionTypes,
+            keys: pending.keys,
+            queryId: pending.query.id,
+            systemAuthorizationSnapshot: snapshot,
+            shouldPersist: false,
+            shouldOfferSystemSettings: snapshots.contains { $0.shouldOpenSystemSettings }
+                || pending.query.shouldOfferSystemSettings,
+            disablesPersistentAllow: pending.query.disablesPersistentAllow
+        )
+
+        await recordAntiAbuseEvents(
+            type: .systemBlocked,
+            keys: pending.keys,
+            reason: reason
+        )
+        let continuations = takeContinuations(for: pending.requestIds)
+        removePendingQuery(pending)
+        let advance = await queue.finishActiveRequest(pageId: pending.query.pageId)
+        await refreshState(forPageId: pending.query.pageId)
+        if let promoted = advance.nextActive,
+           let promotedQuery = queryById[queryIdByRequestId[promoted.request.id] ?? ""]?.query
+        {
+            emit(.queryPromoted(promotedQuery))
+        }
+        emit(.systemBlocked(decision))
+        resume(continuations, with: decision)
+        return decision
+    }
+
+    @discardableResult
     func setAskPersistently(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
         await settle(queryId: queryId, with: .setAskPersistently)
     }
@@ -933,11 +985,62 @@ actor SumiPermissionCoordinator {
             for key in pending.keys
                 where !key.isEphemeralProfile && key.permissionType.canBePersisted
             {
-                try? await persistentStore.setDecision(for: key, decision: storedDecision)
+                do {
+                    try await persistentStore.setDecision(for: key, decision: storedDecision)
+                } catch {
+                    RuntimeDiagnostics.emit(
+                        "[Permissions] Failed to persist permission decision for \(key.permissionType.identity): \(error.localizedDescription)"
+                    )
+                    await writeFallbackSessionDecisionIfAllowed(
+                        storedDecision,
+                        key: key,
+                        query: pending.query
+                    )
+                }
             }
         }
 
         _ = userDecision
+    }
+
+    private func writeFallbackSessionDecisionIfAllowed(
+        _ decision: SumiPermissionDecision,
+        key: SumiPermissionKey,
+        query: SumiPermissionAuthorizationQuery
+    ) async {
+        guard decision.state == .allow else { return }
+
+        let fallbackPersistence: SumiPermissionPersistence
+        if query.availablePersistences.contains(.session) {
+            fallbackPersistence = .session
+        } else if query.availablePersistences.contains(.oneTime),
+                  supportsReusableOneTimeGrant(key.permissionType) {
+            fallbackPersistence = .oneTime
+        } else {
+            return
+        }
+
+        let fallbackDecision = SumiPermissionDecision(
+            state: decision.state,
+            persistence: fallbackPersistence,
+            source: decision.source,
+            reason: "\(decision.reason ?? "permission-decision")-fallback-\(fallbackPersistence.rawValue)",
+            createdAt: decision.createdAt,
+            updatedAt: decision.updatedAt,
+            expiresAt: decision.expiresAt,
+            systemAuthorizationSnapshot: decision.systemAuthorizationSnapshot
+        )
+        do {
+            try await memoryStore.setDecision(
+                for: key,
+                decision: fallbackDecision,
+                sessionOwnerId: sessionOwnerId
+            )
+        } catch {
+            RuntimeDiagnostics.emit(
+                "[Permissions] Failed to store fallback permission decision for \(key.permissionType.identity): \(error.localizedDescription)"
+            )
+        }
     }
 
     private func recordManualSiteDecisionAntiAbuse(
