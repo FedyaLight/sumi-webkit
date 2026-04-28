@@ -395,7 +395,8 @@ final class SumiScriptsManager: ObservableObject {
         let userScripts = injector.makeUserScripts(
             scripts: matchingScripts,
             webViewId: webViewId,
-            profileId: isEphemeral ? nil : profileId
+            profileId: profileId,
+            isEphemeral: isEphemeral
         )
         activeScriptCount = matchingScripts.count
 

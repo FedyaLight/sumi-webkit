@@ -34,8 +34,11 @@ final class SumiInstalledUserScriptAdapter: NSObject, UserScript, UserScriptMess
     init(
         script: SumiInstalledUserScript,
         profileId: UUID?,
+        isEphemeral: Bool,
         tabHandler: SumiScriptsTabHandler?,
-        downloadManager: DownloadManager?
+        downloadManager: DownloadManager?,
+        notificationPermissionBridge: SumiNotificationPermissionBridge?,
+        notificationTabContextProvider: (@MainActor (WKWebView?) -> SumiWebNotificationTabContext?)?
     ) {
         self.script = script
 
@@ -48,10 +51,12 @@ final class SumiInstalledUserScriptAdapter: NSObject, UserScript, UserScriptMess
         if script.requiresContentWorldIsolation || !script.metadata.grants.isEmpty {
             bridge = UserScriptGMBridge(
                 script: script,
-                profileId: profileId,
+                profileId: isEphemeral ? nil : profileId,
                 contentWorld: contentWorld,
                 tabOpenHandler: tabHandler,
-                downloadManager: downloadManager
+                downloadManager: downloadManager,
+                notificationPermissionBridge: notificationPermissionBridge,
+                notificationTabContextProvider: notificationTabContextProvider
             )
         } else {
             bridge = nil
@@ -212,7 +217,8 @@ private final class SumiGMSubfeature: NSObject, Subfeature {
             method: method,
             args: payload.args,
             callbackId: payload.callbackId,
-            webView: original.webView
+            webView: original.webView,
+            original: original
         )
         return SumiJSONValue.object(["accepted": .bool(true)])
     }

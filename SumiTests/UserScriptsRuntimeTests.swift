@@ -109,6 +109,30 @@ final class UserScriptsRuntimeTests: XCTestCase {
         XCTAssertTrue(shim.contains("exclude:"))
     }
 
+    func testGMNotificationShimUsesPromiseBackedNativeCallback() throws {
+        let metadata = try XCTUnwrap(UserScriptMetadataParser.parse("""
+        // ==UserScript==
+        // @name GM Notification Test
+        // @grant GM_notification
+        // ==/UserScript==
+        console.log('ok');
+        """))
+        let script = SumiInstalledUserScript(filename: "gm-notification.user.js", metadata: metadata)
+        let bridge = UserScriptGMBridge(
+            script: script,
+            profileId: nil,
+            contentWorld: .page,
+            tabOpenHandler: nil,
+            downloadManager: nil
+        )
+
+        let shim = bridge.generateJSShim()
+        XCTAssertTrue(shim.contains("notification: function(details)"))
+        XCTAssertTrue(shim.contains("__sendMessage('GM_notification', details || {}, resolve, reject)"))
+        XCTAssertTrue(shim.contains("function GM_notification(details, ondone)"))
+        XCTAssertTrue(shim.contains("typeof ondone === 'function'"))
+    }
+
     func testGMShimRunsBeforeRequireDependencies() throws {
         let metadata = try XCTUnwrap(UserScriptMetadataParser.parse("""
         // ==UserScript==

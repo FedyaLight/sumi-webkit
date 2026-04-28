@@ -9,6 +9,7 @@ extension Tab {
             SumiLinkInteractionUserScript(tab: self),
             SumiIdentityUserScript(tab: self),
             SumiTabSuspensionUserScript(tab: self),
+            SumiWebNotificationUserScript(tab: self),
         ]
     }
 

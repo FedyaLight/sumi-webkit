@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sumi Notification Permission Manual Test</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 24px;
+      color: #111827;
+      background: #f8fafc;
+    }
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 24px;
+      margin: 0 0 16px;
+    }
+    .controls {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      margin: 18px 0;
+    }
+    button, input {
+      font: inherit;
+    }
+    button {
+      min-height: 36px;
+      border: 1px solid #9ca3af;
+      border-radius: 6px;
+      background: #ffffff;
+      cursor: pointer;
+    }
+    label {
+      display: grid;
+      gap: 4px;
+      margin: 10px 0;
+    }
+    input {
+      min-height: 34px;
+      border: 1px solid #9ca3af;
+      border-radius: 6px;
+      padding: 0 8px;
+    }
+    pre {
+      min-height: 180px;
+      padding: 12px;
+      overflow: auto;
+      white-space: pre-wrap;
+      background: #111827;
+      color: #f9fafb;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Notification Permission Manual Test</h1>
+    <label>
+      Title
+      <input id="title" value="Sumi notification test">
+    </label>
+    <label>
+      Body
+      <input id="body" value="Posted through the browser-owned notification service.">
+    </label>
+    <label>
+      Tag
+      <input id="tag" value="manual-notification-test">
+    </label>
+
+    <div class="controls">
+      <button id="check">Check Notification.permission</button>
+      <button id="request">Request Permission</button>
+      <button id="show">Create Notification</button>
+      <button id="permissions">navigator.permissions.query</button>
+      <button id="serviceWorker">ServiceWorker showNotification</button>
+    </div>
+
+    <pre id="log"></pre>
+  </main>
+
+  <script>
+    const logNode = document.getElementById('log');
+    function log(message, value) {
+      const suffix = value === undefined ? '' : ' ' + JSON.stringify(value);
+      logNode.textContent += `[${new Date().toLocaleTimeString()}] ${message}${suffix}\n`;
+    }
+
+    document.getElementById('check').onclick = () => {
+      log('Notification.permission =', window.Notification ? Notification.permission : 'Notification missing');
+    };
+
+    document.getElementById('request').onclick = async () => {
+      if (!window.Notification) {
+        log('Notification API unavailable');
+        return;
+      }
+      const result = await Notification.requestPermission();
+      log('Notification.requestPermission() resolved', result);
+    };
+
+    document.getElementById('show').onclick = () => {
+      if (!window.Notification) {
+        log('Notification API unavailable');
+        return;
+      }
+      const notification = new Notification(document.getElementById('title').value, {
+        body: document.getElementById('body').value,
+        tag: document.getElementById('tag').value
+      });
+      notification.onshow = () => log('notification onshow');
+      notification.onerror = () => log('notification onerror');
+      notification.onclose = () => log('notification onclose');
+      notification.onclick = () => log('notification onclick');
+      log('new Notification(...) constructed');
+    };
+
+    document.getElementById('permissions').onclick = async () => {
+      if (!navigator.permissions || !navigator.permissions.query) {
+        log('navigator.permissions.query unavailable');
+        return;
+      }
+      try {
+        const status = await navigator.permissions.query({ name: 'notifications' });
+        log('navigator.permissions.query state', status.state);
+      } catch (error) {
+        log('navigator.permissions.query failed', String(error));
+      }
+    };
+
+    document.getElementById('serviceWorker').onclick = async () => {
+      if (!('serviceWorker' in navigator)) {
+        log('Service workers unavailable in this context');
+        return;
+      }
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        if (!registration.showNotification) {
+          log('ServiceWorkerRegistration.showNotification unavailable');
+          return;
+        }
+        await registration.showNotification('Sumi service worker notification', {
+          body: 'This only works if WebKit exposes service-worker notification delivery.'
+        });
+        log('ServiceWorkerRegistration.showNotification resolved');
+      } catch (error) {
+        log('ServiceWorkerRegistration.showNotification failed', String(error));
+      }
+    };
+
+    log('Loaded. Initial Notification.permission =', window.Notification ? Notification.permission : 'missing');
+  </script>
+</body>
+</html>

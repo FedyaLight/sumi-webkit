@@ -152,6 +152,19 @@ extension UserScriptGMBridge {
                 try { return JSON.stringify(data); } catch (_) { return String(data); }
             }
 
+            function __normalizeNotificationDetails(details) {
+                if (typeof details === 'string') {
+                    return { text: details };
+                }
+                details = details || {};
+                const result = {};
+                ['title', 'text', 'details', 'body', 'image', 'icon', 'tag'].forEach(key => {
+                    if (details[key] != null) result[key] = String(details[key]);
+                });
+                if (details.silent != null) result.silent = !!details.silent;
+                return result;
+            }
+
             // XHR callback handler
             window.__sumiGM_xhrCallback = function(id, event, response) {
                 const cb = __callbacks[id];
@@ -387,10 +400,10 @@ extension UserScriptGMBridge {
                     });
                 },
                 notification: function(details) {
-                    if (typeof details === 'string') {
-                        details = { text: details };
-                    }
-                    __sendMessage('GM_notification', details);
+                    details = __normalizeNotificationDetails(details);
+                    return new Promise((resolve, reject) => {
+                        __sendMessage('GM_notification', details || {}, resolve, reject);
+                    });
                 }
             };
 
@@ -434,10 +447,26 @@ extension UserScriptGMBridge {
             }
             function GM_notification(details, ondone) {
                 if (typeof details === 'string') {
-                    __sendMessage('GM_notification', { text: details, title: ondone || '' });
-                } else {
-                    __sendMessage('GM_notification', details);
+                    details = {
+                        text: details,
+                        title: typeof ondone === 'string' ? ondone : ''
+                    };
                 }
+                const promise = GM.notification(__normalizeNotificationDetails(details));
+                if (typeof ondone === 'function') {
+                    promise.then(function(result) {
+                        ondone(result);
+                    }, function(error) {
+                        ondone(error);
+                    });
+                } else if (details && typeof details.ondone === 'function') {
+                    promise.then(function(result) {
+                        details.ondone(result);
+                    }, function(error) {
+                        details.ondone(error);
+                    });
+                }
+                return promise;
             }
             function GM_setClipboard(data, type) {
                 __sendMessage('GM.setClipboard', { data, type: type || 'text/plain' });

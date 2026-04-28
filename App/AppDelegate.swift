@@ -7,6 +7,7 @@
 
 import AppKit
 import OSLog
+import UserNotifications
 
 /// Handles application-level lifecycle events and coordinates app termination
 ///
@@ -18,7 +19,7 @@ import OSLog
 /// Quit path: `applicationShouldTerminate` confirms with AppKit when needed, then schedules persistence +
 /// WKWebView cleanup on the next main turn.
 @MainActor
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private static let log = Logger.sumi(category: "AppTermination")
 
     weak var commandRouter: (any BrowserCommandRouting)?
@@ -52,6 +53,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Application Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        UNUserNotificationCenter.current().delegate = self
         setupURLEventHandling()
         setupMouseButtonHandling()
         setupHistoryMenuMonitoring()
@@ -65,6 +67,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidBecomeActive(_ notification: Notification) {
         scheduleCloseMenuConfiguration()
         scheduleHistoryMenuConfiguration()
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        [.banner, .sound]
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        RuntimeDiagnostics.debug(
+            "Notification response received: \(response.notification.request.identifier)",
+            category: "Notifications"
+        )
     }
 
     func applicationDidUpdate(_ notification: Notification) {
