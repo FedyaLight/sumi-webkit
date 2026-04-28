@@ -189,7 +189,7 @@ final class SumiStorageAccessPermissionBridgeTests: XCTestCase {
 
     private func makeBridge(
         store: StorageAccessBridgePermissionStore,
-        pendingStrategy: SumiStorageAccessPendingStrategy = .denyUntilPromptUIExists
+        pendingStrategy: SumiStorageAccessPendingStrategy = .promptPresenterUnavailableDeny
     ) -> SumiStorageAccessPermissionBridge {
         let coordinator = SumiPermissionCoordinator(
             policyResolver: DefaultSumiPermissionPolicyResolver(

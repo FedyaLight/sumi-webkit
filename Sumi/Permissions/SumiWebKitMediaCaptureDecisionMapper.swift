@@ -3,14 +3,14 @@ import WebKit
 
 enum SumiWebKitPermissionBridgePendingStrategy: Equatable, Sendable {
     case waitForPromptUI
-    case denyUntilPromptUIExists
+    case promptPresenterUnavailableDeny
 
     var reason: String {
         switch self {
         case .waitForPromptUI:
             return "webkit-media-prompt-ui-wait"
-        case .denyUntilPromptUIExists:
-            return "webkit-media-prompt-ui-unavailable-deny"
+        case .promptPresenterUnavailableDeny:
+            return "webkit-media-prompt-presenter-unavailable-deny"
         }
     }
 
@@ -21,14 +21,14 @@ enum SumiWebKitPermissionBridgePendingStrategy: Equatable, Sendable {
 
 enum SumiWebKitScreenCapturePendingStrategy: Equatable, Sendable {
     case waitForPromptUI
-    case denyUntilPromptUIExists
+    case promptPresenterUnavailableDeny
 
     var reason: String {
         switch self {
         case .waitForPromptUI:
             return "webkit-screen-capture-prompt-ui-wait"
-        case .denyUntilPromptUIExists:
-            return "webkit-screen-capture-prompt-ui-unavailable-deny"
+        case .promptPresenterUnavailableDeny:
+            return "webkit-screen-capture-prompt-presenter-unavailable-deny"
         }
     }
 

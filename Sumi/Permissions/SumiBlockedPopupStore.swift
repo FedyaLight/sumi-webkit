@@ -8,7 +8,7 @@ struct SumiBlockedPopupRecord: Identifiable, Equatable, Sendable {
         case blockedByPolicy
         case blockedByInvalidOrigin
         case blockedByUnsupportedSurface
-        case blockedByPromptUIUnavailable
+        case blockedByBackgroundPromptUnavailable
     }
 
     let id: String

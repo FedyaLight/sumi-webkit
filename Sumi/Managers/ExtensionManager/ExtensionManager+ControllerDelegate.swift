@@ -334,6 +334,8 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Set<WKWebExtension.Permission>, Date?) -> Void
     ) {
+        // Extension permissions remain outside the normal-tab website permission
+        // architecture. Bridging them into site UI is deferred.
         let manifest = extensionID(for: extensionContext)
             .flatMap { loadedExtensionManifests[$0] } ?? [:]
         let policyDeniedPermissions = permissions
@@ -362,6 +364,8 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Set<WKWebExtension.MatchPattern>, Date?) -> Void
     ) {
+        // Extension match-pattern prompts are handled by WebExtension policy only;
+        // they are not normal-tab website permission decisions.
         let grantedMatches = matchPatterns.filter {
             isGrantedPermissionStatus(extensionContext.permissionStatus(for: $0))
         }
@@ -379,6 +383,8 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Set<URL>, Date?) -> Void
     ) {
+        // Extension URL access prompts are deliberately separate from normal-tab
+        // site permission storage and UI.
         var autoGranted = Set<URL>()
         var denied = Set<URL>()
 

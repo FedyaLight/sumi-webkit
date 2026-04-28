@@ -12,7 +12,6 @@ enum SumiSiteSettingsStrings {
     static let unsupportedContentCopy = "JavaScript, images, automatic downloads, ads, background sync, and sound controls are not available in Sumi yet."
     static let automaticCleanup = "Automatic permission cleanup"
     static let automaticCleanupCopy = "Sumi can remove saved permissions for sites you have not used in a long time."
-    static let automaticCleanupDeferred = "Coming in a later update. Cleanup will be applied after the cleanup service is enabled."
     static let siteListTitle = "All sites"
     static let siteListEmpty = "No stored site permissions for this profile."
     static let categoryExceptionsEmpty = "No site exceptions for this permission."

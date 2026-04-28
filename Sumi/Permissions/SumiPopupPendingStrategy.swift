@@ -1,13 +1,12 @@
 import Foundation
 
 enum SumiPopupPendingStrategy: Equatable, Sendable {
-    case blockUntilPromptUIExists
+    case backgroundPromptUnavailableBlock
 
     var reason: String {
         switch self {
-        case .blockUntilPromptUIExists:
-            return "popup-prompt-ui-unavailable-block"
+        case .backgroundPromptUnavailableBlock:
+            return "popup-background-prompt-unavailable-block"
         }
     }
 }
-

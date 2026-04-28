@@ -93,6 +93,27 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
         XCTAssertFalse(sources.contains("AutoplayOverrideState"))
     }
 
+    func testPromptPresenterUnavailableFallbacksAreNotNormalTabPromptDefaults() throws {
+        let mediaBridge = try sourceFile("Sumi/Permissions/SumiWebKitPermissionBridge.swift")
+        let geolocationBridge = try sourceFile("Sumi/Permissions/SumiWebKitGeolocationBridge.swift")
+        let notificationBridge = try sourceFile("Sumi/Permissions/SumiNotificationPermissionBridge.swift")
+        let storageBridge = try sourceFile("Sumi/Permissions/SumiStorageAccessPermissionBridge.swift")
+        let externalBridge = try sourceFile("Sumi/Permissions/SumiExternalSchemePermissionBridge.swift")
+        let browserManager = try sourceFile("Sumi/Managers/BrowserManager/BrowserManager.swift")
+
+        XCTAssertTrue(mediaBridge.contains("pendingStrategy: SumiWebKitPermissionBridgePendingStrategy = .waitForPromptUI"))
+        XCTAssertTrue(mediaBridge.contains("screenCapturePendingStrategy: SumiWebKitScreenCapturePendingStrategy = .waitForPromptUI"))
+        XCTAssertTrue(geolocationBridge.contains("pendingStrategy: SumiWebKitGeolocationPendingStrategy = .waitForPromptUI"))
+        XCTAssertTrue(notificationBridge.contains("pendingStrategy: SumiNotificationPendingStrategy = .waitForPromptUI"))
+        XCTAssertTrue(storageBridge.contains("pendingStrategy: SumiStorageAccessPendingStrategy = .waitForPromptUI"))
+        XCTAssertTrue(externalBridge.contains("pendingStrategy: SumiExternalSchemePendingStrategy = .waitForPromptUI"))
+
+        XCTAssertFalse(browserManager.contains("promptPresenterUnavailableDeny"))
+        XCTAssertFalse(browserManager.contains("promptPresenterUnavailableBlock"))
+        XCTAssertFalse(browserManager.contains("prompt-presenter-unavailable-deny"))
+        XCTAssertFalse(browserManager.contains("prompt-presenter-unavailable-block"))
+    }
+
     func testSettingsAndRuntimeControlsDoNotWriteSwiftDataOrStoredDecisionsDirectly() throws {
         let settingsSources = try [
             "Sumi/Permissions/UI/SumiSiteSettingsView.swift",
@@ -109,12 +130,25 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
 
         XCTAssertFalse(settingsSources.contains("import SwiftData"))
         XCTAssertFalse(settingsSources.contains("ModelContext("))
+        XCTAssertFalse(settingsSources.contains("requestAuthorization("))
+        XCTAssertFalse(settingsSources.contains("UNUserNotificationCenter"))
+        XCTAssertFalse(settingsSources.contains("AVCaptureDevice"))
+        XCTAssertFalse(settingsSources.contains("CLLocationManager"))
+        XCTAssertFalse(settingsSources.contains("CGRequestScreenCaptureAccess"))
         XCTAssertTrue(settingsSources.contains("setSiteDecision("))
         XCTAssertTrue(settingsSources.contains("resetSiteDecision"))
         XCTAssertFalse(runtimeSources.contains("setSiteDecision("))
         XCTAssertFalse(runtimeSources.contains("resetSiteDecision"))
         XCTAssertFalse(runtimeSources.contains("SwiftData"))
         XCTAssertFalse(runtimeSources.contains("SumiPermissionStore"))
+
+        let repository = try sourceFile("Sumi/Permissions/SumiPermissionSettingsRepository.swift")
+        let resetSitePermissions = try repository.slice(
+            from: "func resetSitePermissions(",
+            to: "func deleteSiteData("
+        )
+        XCTAssertFalse(resetSitePermissions.contains("removeWebsiteData"))
+        XCTAssertFalse(resetSitePermissions.contains("deleteSiteData"))
     }
 
     func testAntiAbuseSuppressionAndCleanupDoNotPersistUnsafeSideEffects() throws {

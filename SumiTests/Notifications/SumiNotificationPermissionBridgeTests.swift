@@ -86,7 +86,7 @@ final class SumiNotificationPermissionBridgeTests: XCTestCase {
         let postedCount = await service.postedCount()
         let cancelledReasons = await coordinator.cancelledReasons()
         XCTAssertEqual(postedCount, 0)
-        XCTAssertEqual(cancelledReasons, ["notification-prompt-ui-unavailable-deny"])
+        XCTAssertEqual(cancelledReasons, ["notification-prompt-presenter-unavailable-deny"])
     }
 
     func testWebsitePermissionStateMapsPromptToDefault() async {
@@ -221,7 +221,7 @@ final class SumiNotificationPermissionBridgeTests: XCTestCase {
     private func makeBridge(
         coordinator: any SumiPermissionCoordinating,
         service: any SumiNotificationServicing,
-        pendingStrategy: SumiNotificationPendingStrategy = .denyUntilPromptUIExists,
+        pendingStrategy: SumiNotificationPendingStrategy = .promptPresenterUnavailableDeny,
         pendingPollIntervalNanoseconds: UInt64 = 25_000_000,
         coordinatorTimeoutNanoseconds: UInt64 = 500_000_000
     ) -> SumiNotificationPermissionBridge {

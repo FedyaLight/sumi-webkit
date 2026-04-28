@@ -65,7 +65,7 @@ enum SumiPopupDecisionMapper {
         case .unsupported:
             return .blockedByUnsupportedSurface
         case .promptRequired:
-            return .blockedByPromptUIUnavailable
+            return .blockedByBackgroundPromptUnavailable
         case .systemBlocked, .cancelled, .dismissed, .suppressed, .ignored, .expired:
             return .blockedByPolicy
         case .granted:

@@ -21,8 +21,8 @@ final class SumiExternalSchemeSessionStoreTests: XCTestCase {
         XCTAssertEqual(records.first?.redactedTargetURLString, "mailto:test@example.com")
         XCTAssertEqual(records.first?.appDisplayName, "Mail")
         XCTAssertEqual(records.first?.userActivation, .navigationAction)
-        XCTAssertEqual(records.first?.result, .blockedPendingUI)
-        XCTAssertEqual(records.first?.reason, SumiExternalSchemePendingStrategy.blockUntilPromptUIExists.reason)
+        XCTAssertEqual(records.first?.result, .blockedPromptPresenterUnavailable)
+        XCTAssertEqual(records.first?.reason, SumiExternalSchemePendingStrategy.promptPresenterUnavailableBlock.reason)
         XCTAssertEqual(records.first?.attemptCount, 1)
     }
 
@@ -87,8 +87,8 @@ private func externalSessionRecord(
         createdAt: externalSessionDate,
         lastAttemptAt: lastAttemptAt,
         userActivation: .navigationAction,
-        result: .blockedPendingUI,
-        reason: SumiExternalSchemePendingStrategy.blockUntilPromptUIExists.reason,
+        result: .blockedPromptPresenterUnavailable,
+        reason: SumiExternalSchemePendingStrategy.promptPresenterUnavailableBlock.reason,
         navigationActionMetadata: ["path": "navigationResponder"],
         attemptCount: 1
     )

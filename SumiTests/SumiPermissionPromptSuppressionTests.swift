@@ -79,7 +79,7 @@ final class SumiPermissionPromptSuppressionTests: XCTestCase {
 
         XCTAssertEqual(
             SumiExternalSchemeDecisionMapper.resultKind(for: decision, request: request),
-            .blockedPendingUI
+            .blockedPromptPresenterUnavailable
         )
     }
 }

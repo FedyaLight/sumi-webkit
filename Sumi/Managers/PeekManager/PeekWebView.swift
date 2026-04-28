@@ -190,6 +190,8 @@ struct PeekWebView: NSViewRepresentable {
         }
 
         // MARK: - File Upload Support
+        // Peek file picking is an auxiliary-surface path. Normal tabs must route
+        // file picker requests through SumiFilePickerPermissionBridge.
         func webView(
             _ webView: WKWebView,
             runOpenPanelWith parameters: WKOpenPanelParameters,
