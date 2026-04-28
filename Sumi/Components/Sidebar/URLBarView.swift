@@ -1055,8 +1055,8 @@ private struct SiteControlsSnapshot: Equatable {
         let settingsRows: [SiteControlsSettingRowModel]
         let permissionsRow = SiteControlsSettingRowModel(
             id: "permissions",
-            chromeIconName: "permissions",
-            fallbackSystemName: "line.3.horizontal.decrease.circle",
+            chromeIconName: nil,
+            fallbackSystemName: "hand.raised",
             title: SumiCurrentSitePermissionsStrings.rowTitle,
             subtitle: permissionsSummary ?? SumiCurrentSitePermissionsStrings.defaultSummary,
             kind: .permissions
@@ -1166,6 +1166,12 @@ private struct URLBarHubPopover: View {
         case backward
     }
 
+    private static let modeAnimation = Animation.spring(
+        response: 0.3,
+        dampingFraction: 0.88,
+        blendDuration: 0.08
+    )
+
     @State private var refreshNonce = 0
     @State private var mode: Mode = .controls
     @State private var navigationDirection: NavigationDirection = .forward
@@ -1215,12 +1221,13 @@ private struct URLBarHubPopover: View {
         ZStack(alignment: .topLeading) {
             modeContent
                 .id(modeIdentity)
+                .frame(width: mode.preferredWidth, alignment: .topLeading)
                 .transition(modeTransition)
         }
         .frame(width: containerWidth)
         .background(tokens.commandPaletteBackground)
         .clipped()
-        .animation(.spring(response: 0.26, dampingFraction: 0.9), value: containerWidth)
+        .animation(Self.modeAnimation, value: containerWidth)
         .onAppear {
             applyInitialMode(animated: false)
             handleBookmarkPresentationRequest(bookmarkPresentationRequest)
@@ -1338,13 +1345,15 @@ private struct URLBarHubPopover: View {
                     .padding(.bottom, 8)
             }
 
-            Divider()
-                .padding(.horizontal, 8)
+            if snapshot.securityState.showsFooterButton {
+                Divider()
+                    .padding(.horizontal, 8)
 
-            footerRow
-                .padding(.top, 8)
-                .padding(.horizontal, 8)
-                .padding(.bottom, 8)
+                footerRow
+                    .padding(.top, 8)
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 8)
+            }
         }
     }
 
@@ -1365,21 +1374,45 @@ private struct URLBarHubPopover: View {
         switch navigationDirection {
         case .forward:
             return .asymmetric(
-                insertion: .offset(x: 28, y: 0).combined(with: .opacity),
-                removal: .offset(x: -18, y: 0).combined(with: .opacity)
+                insertion: Self.submenuInsertionTransition,
+                removal: Self.rootRemovalTransition
             )
         case .backward:
             return .asymmetric(
-                insertion: .move(edge: .leading).combined(with: .opacity),
-                removal: .move(edge: .trailing).combined(with: .opacity)
+                insertion: Self.rootInsertionTransition,
+                removal: Self.submenuRemovalTransition
             )
         }
+    }
+
+    private static var submenuInsertionTransition: AnyTransition {
+        .offset(x: 24, y: 0)
+            .combined(with: .opacity)
+            .combined(with: .scale(scale: 0.985, anchor: .trailing))
+    }
+
+    private static var rootRemovalTransition: AnyTransition {
+        .offset(x: -14, y: 0)
+            .combined(with: .opacity)
+            .combined(with: .scale(scale: 0.995, anchor: .leading))
+    }
+
+    private static var rootInsertionTransition: AnyTransition {
+        .offset(x: -18, y: 0)
+            .combined(with: .opacity)
+            .combined(with: .scale(scale: 0.99, anchor: .leading))
+    }
+
+    private static var submenuRemovalTransition: AnyTransition {
+        .offset(x: 24, y: 0)
+            .combined(with: .opacity)
+            .combined(with: .scale(scale: 0.985, anchor: .trailing))
     }
 
     private func setMode(_ newMode: Mode, direction: NavigationDirection) {
         navigationDirection = direction
         containerWidth = mode.preferredWidth
-        withAnimation(.spring(response: 0.26, dampingFraction: 0.9)) {
+        withAnimation(Self.modeAnimation) {
             mode = newMode
             containerWidth = newMode.preferredWidth
         }
@@ -1516,36 +1549,9 @@ private struct URLBarHubPopover: View {
     }
 
     private var footerRow: some View {
-        HStack(spacing: 8) {
-            if snapshot.securityState.showsFooterButton {
-                SumiFooterSecurityStatus(
-                    securityState: snapshot.securityState
-                )
-            }
-
-            Menu {
-                Button("Site Settings") {
-                    browserManager.openSiteSettingsTab(
-                        focusing: currentTab,
-                        profile: activeProfile,
-                        in: windowState
-                    )
-                    onClose()
-                }
-            } label: {
-                SumiZenChromeIcon(
-                    iconName: "menu",
-                    fallbackSystemName: "ellipsis",
-                    size: 14,
-                    tint: tokens.primaryText
-                )
-                .frame(width: 36, height: 36)
-                .background(tokens.fieldBackground)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-        }
+        SumiFooterSecurityStatus(
+            securityState: snapshot.securityState
+        )
     }
 
     private func handleSettingAction(_ row: SiteControlsSettingRowModel) {

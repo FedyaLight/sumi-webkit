@@ -142,12 +142,29 @@ final class SumiPermissionIndicatorEventStore: ObservableObject {
 
     func records(forPageId pageId: String, now: Date = Date()) -> [SumiPermissionIndicatorEventRecord] {
         pruneExpired(now: now)
-        return recordsByPageId[normalizedId(pageId)] ?? []
+        return recordsSnapshot(forPageId: pageId, now: now)
+    }
+
+    func recordsSnapshot(forPageId pageId: String, now: Date = Date()) -> [SumiPermissionIndicatorEventRecord] {
+        (recordsByPageId[normalizedId(pageId)] ?? []).filter { record in
+            guard let expiresAt = record.expiresAt else { return true }
+            return expiresAt > now
+        }
     }
 
     func allRecords(now: Date = Date()) -> [SumiPermissionIndicatorEventRecord] {
         pruneExpired(now: now)
-        return recordsByPageId.values.flatMap { $0 }
+        return recordsByPageId.values.flatMap { $0 }.filter { record in
+            guard let expiresAt = record.expiresAt else { return true }
+            return expiresAt > now
+        }
+    }
+
+    func allRecordsSnapshot(now: Date = Date()) -> [SumiPermissionIndicatorEventRecord] {
+        recordsByPageId.values.flatMap { $0 }.filter { record in
+            guard let expiresAt = record.expiresAt else { return true }
+            return expiresAt > now
+        }
     }
 
     @discardableResult

@@ -9,8 +9,8 @@ struct SumiPermissionIconDescriptor: Equatable, Sendable {
 enum SumiPermissionIconCatalog {
     static let generic = SumiPermissionIconDescriptor(
         id: "permissions",
-        chromeIconName: "permissions",
-        fallbackSystemName: "line.3.horizontal.decrease.circle"
+        chromeIconName: nil,
+        fallbackSystemName: "hand.raised"
     )
 
     static func icon(

@@ -262,7 +262,6 @@ final class SumiPermissionPromptViewModel: ObservableObject {
         }
 
         guard await ensureSystemAuthorizationIfNeeded(for: query) else {
-            onFinished()
             return
         }
 
@@ -359,8 +358,9 @@ final class SumiPermissionPromptViewModel: ObservableObject {
 
         guard blockedSnapshots.isEmpty else {
             systemBlockedSnapshots = blockedSnapshots
-            await coordinator.cancel(
+            await coordinator.systemBlock(
                 queryId: query.id,
+                snapshots: blockedSnapshots,
                 reason: "permission-prompt-system-authorization-denied"
             )
             return false

@@ -239,7 +239,7 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
             runtimeState: currentRuntimeState,
             popupRecords: popupStore?.records(forPageId: pageId) ?? [],
             externalSchemeRecords: externalSchemeStore?.records(forPageId: pageId) ?? [],
-            indicatorEvents: indicatorEventStore?.records(forPageId: pageId, now: now()) ?? [],
+            indicatorEvents: indicatorEventStore?.recordsSnapshot(forPageId: pageId, now: now()) ?? [],
             autoplayReloadRequired: currentContext.autoplayReloadRequired,
             displayDomain: currentContext.displayDomain,
             tabId: currentContext.tabId,

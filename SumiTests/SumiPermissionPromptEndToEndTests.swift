@@ -158,6 +158,80 @@ final class SumiPermissionPromptEndToEndTests: XCTestCase {
         XCTAssertEqual(systemRequestCountAfterPrompt, 1)
     }
 
+    func testNotificationAllowWhenMacOSDeniesKeepsSystemBlockedPromptAndDoesNotPersistSiteDeny() async {
+        let harness = makeHarness(
+            systemStates: [.notifications: .notDetermined],
+            requestResults: [.notifications: .denied]
+        )
+        let bridge = makeNotificationBridge(coordinator: harness.coordinator)
+
+        let permissionTask = Task {
+            await bridge.requestWebsitePermission(
+                request: notificationRequest(id: "notification-system-denied-after-allow"),
+                tabContext: notificationTabContext()
+            )
+        }
+        let query = await sumiPermissionIntegrationWaitForActiveQuery(harness.coordinator)
+        let prompt = SumiPermissionPromptViewModel(
+            query: query,
+            coordinator: harness.coordinator,
+            systemPermissionService: harness.systemService
+        )
+
+        await prompt.performAction(.allow)
+
+        let permissionResult = await permissionTask.value
+        let storedState = await harness.store.state(for: sumiPermissionIntegrationKey(.notifications))
+        let activeQuery = await harness.coordinator.activeQuery(forPageId: "tab-a:1")
+        let systemRequestCount = await harness.systemService.requestAuthorizationCallCount(for: .notifications)
+        XCTAssertEqual(permissionResult, .denied)
+        XCTAssertTrue(prompt.isSystemBlocked)
+        XCTAssertTrue(prompt.canOpenSystemSettings)
+        XCTAssertEqual(prompt.options.map(\.action), [.openSystemSettings, .dismiss])
+        XCTAssertNil(storedState)
+        XCTAssertNil(activeQuery)
+        XCTAssertEqual(systemRequestCount, 1)
+    }
+
+    func testNotificationPersistentAllowWriteFailureFallsBackToSessionGrant() async {
+        let store = FailingSetPermissionStore()
+        let systemService = FakeSumiSystemPermissionService(
+            states: sumiPermissionIntegrationAuthorizedSystemStates()
+        )
+        let coordinator = SumiPermissionCoordinator(
+            policyResolver: DefaultSumiPermissionPolicyResolver(systemPermissionService: systemService),
+            memoryStore: InMemoryPermissionStore(),
+            persistentStore: store,
+            sessionOwnerId: "window-a",
+            now: sumiPermissionIntegrationDate
+        )
+        let bridge = makeNotificationBridge(coordinator: coordinator)
+
+        let permissionTask = Task {
+            await bridge.requestWebsitePermission(
+                request: notificationRequest(id: "notification-allow-persistence-fails"),
+                tabContext: notificationTabContext()
+            )
+        }
+        let query = await sumiPermissionIntegrationWaitForActiveQuery(coordinator)
+        let prompt = SumiPermissionPromptViewModel(
+            query: query,
+            coordinator: coordinator,
+            systemPermissionService: systemService
+        )
+        await prompt.performAction(.allow)
+
+        let permissionResult = await permissionTask.value
+        let futureState = await bridge.currentWebsitePermissionState(
+            request: notificationRequest(id: "notification-state-after-fallback"),
+            tabContext: notificationTabContext()
+        )
+        let setCount = await store.setDecisionCallCount()
+        XCTAssertEqual(permissionResult, .granted)
+        XCTAssertEqual(futureState, .granted)
+        XCTAssertEqual(setCount, 1)
+    }
+
     private func makeHarness(
         systemStates: [SumiSystemPermissionKind: SumiSystemPermissionAuthorizationState],
         requestResults: [SumiSystemPermissionKind: SumiSystemPermissionAuthorizationState] = [:]
@@ -264,5 +338,78 @@ final class SumiPermissionPromptEndToEndTests: XCTestCase {
             isMainFrame: true,
             withSystemAudio: false
         )
+    }
+}
+
+private actor FailingSetPermissionStore: SumiPermissionStore {
+    enum StoreError: Error {
+        case setFailed
+    }
+
+    private var setCount = 0
+
+    func getDecision(for key: SumiPermissionKey) async throws -> SumiPermissionStoreRecord? {
+        _ = key
+        return nil
+    }
+
+    func setDecision(for key: SumiPermissionKey, decision: SumiPermissionDecision) async throws {
+        _ = key
+        _ = decision
+        setCount += 1
+        throw StoreError.setFailed
+    }
+
+    func resetDecision(for key: SumiPermissionKey) async throws {
+        _ = key
+    }
+
+    func listDecisions(profilePartitionId: String) async throws -> [SumiPermissionStoreRecord] {
+        _ = profilePartitionId
+        return []
+    }
+
+    func listDecisions(
+        forDisplayDomain displayDomain: String,
+        profilePartitionId: String
+    ) async throws -> [SumiPermissionStoreRecord] {
+        _ = displayDomain
+        _ = profilePartitionId
+        return []
+    }
+
+    func clearAll(profilePartitionId: String) async throws {
+        _ = profilePartitionId
+    }
+
+    func clearForDisplayDomains(
+        _ displayDomains: Set<String>,
+        profilePartitionId: String
+    ) async throws {
+        _ = displayDomains
+        _ = profilePartitionId
+    }
+
+    func clearForOrigins(
+        _ origins: Set<SumiPermissionOrigin>,
+        profilePartitionId: String
+    ) async throws {
+        _ = origins
+        _ = profilePartitionId
+    }
+
+    @discardableResult
+    func expireDecisions(now: Date) async throws -> Int {
+        _ = now
+        return 0
+    }
+
+    func recordLastUsed(for key: SumiPermissionKey, at date: Date) async throws {
+        _ = key
+        _ = date
+    }
+
+    func setDecisionCallCount() -> Int {
+        setCount
     }
 }
