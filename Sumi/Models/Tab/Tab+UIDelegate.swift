@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import Navigation
 import WebKit
 
 // MARK: - WKUIDelegate
@@ -379,7 +380,7 @@ extension Tab: WKUIDelegate {
         decisionHandler: @escaping (Bool) -> Void
     ) {
         RuntimeDiagnostics.emit(
-            "🔐 [Tab] Legacy geolocation authorization requested from frame: \(String(describing: frame.request.url))"
+            "🔐 [Tab] Legacy geolocation authorization requested from frame: \(String(describing: frame.safeRequest?.url))"
         )
         guard let browserManager,
               let tabContext = geolocationTabContext(for: webView)

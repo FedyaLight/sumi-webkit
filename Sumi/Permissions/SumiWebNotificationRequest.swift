@@ -1,4 +1,5 @@
 import Foundation
+import Navigation
 import WebKit
 
 struct SumiWebNotificationRequest: Sendable {
@@ -15,7 +16,7 @@ struct SumiWebNotificationRequest: Sendable {
         self.init(
             id: id,
             requestingOrigin: Self.permissionOrigin(from: frame.securityOrigin),
-            frameURL: frame.request.url,
+            frameURL: frame.safeRequest?.url,
             isMainFrame: frame.isMainFrame
         )
     }

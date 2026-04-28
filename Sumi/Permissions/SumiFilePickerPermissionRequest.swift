@@ -1,4 +1,5 @@
 import Foundation
+import Navigation
 import WebKit
 
 struct SumiFilePickerPermissionRequest: Sendable {
@@ -22,7 +23,7 @@ struct SumiFilePickerPermissionRequest: Sendable {
         self.init(
             id: id,
             requestingOrigin: Self.permissionOrigin(from: frame.securityOrigin),
-            frameURL: frame.request.url,
+            frameURL: frame.safeRequest?.url,
             isMainFrame: frame.isMainFrame,
             allowsMultipleSelection: parameters.allowsMultipleSelection,
             allowsDirectories: parameters.allowsDirectories,
