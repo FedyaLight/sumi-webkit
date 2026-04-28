@@ -134,8 +134,8 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
             currentWebView = webView
 
             if let webView, let runtimeController {
-                currentRuntimeState = runtimeController.currentRuntimeState(for: webView)
-                runtimeObservation = runtimeController.observeRuntimeState(for: webView) { [weak self] runtimeState in
+                currentRuntimeState = runtimeController.currentRuntimeState(for: webView, pageId: pageId)
+                runtimeObservation = runtimeController.observeRuntimeState(for: webView, pageId: pageId) { [weak self] runtimeState in
                     self?.currentRuntimeState = runtimeState
                     self?.refresh()
                 }

@@ -98,6 +98,7 @@
         <li>Muted video autoplay follows WebKit's normal muted-media behavior.</li>
         <li>The URL hub Permissions submenu Autoplay row should write to the canonical permission store, not old UserDefaults values.</li>
         <li>The top-level Site Controls popover should route through Permissions for autoplay and show reload or rebuild required when the active page needs it.</li>
+        <li>When an active-page autoplay change requires reload or rebuild, Permissions should show Reload to apply autoplay setting. Clicking it should use the existing tab reload/rebuild path, clear only after reload or matching policy state, and never show an autoplay prompt.</li>
       </ul>
       <button id="retry">Retry autoplay attempts</button>
       <button id="gesture">Play all with user gesture</button>

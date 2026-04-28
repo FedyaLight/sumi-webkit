@@ -18,6 +18,7 @@ struct SumiCurrentSitePermissionsView: View {
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @StateObject private var runtimeControlsModel = SumiPermissionRuntimeControlsViewModel()
 
     private var tokens: ChromeThemeTokens {
         themeContext.tokens(settings: sumiSettings)
@@ -87,6 +88,9 @@ struct SumiCurrentSitePermissionsView: View {
         .onReceive(permissionIndicatorEventStore.objectWillChange) { _ in
             Task { await reloadAfterStoreChange() }
         }
+        .onDisappear {
+            runtimeControlsModel.clear()
+        }
     }
 
     private var header: some View {
@@ -143,6 +147,23 @@ struct SumiCurrentSitePermissionsView: View {
                         }
                         .frame(maxWidth: .infinity, minHeight: 72)
                     } else {
+                        if runtimeControlsModel.hasVisibleContent {
+                            VStack(alignment: .leading, spacing: 7) {
+                                Text(SumiPermissionRuntimeControlsStrings.sectionTitle)
+                                    .font(.system(size: 11.5, weight: .semibold))
+                                    .foregroundStyle(tokens.secondaryText)
+                                    .textCase(.uppercase)
+                                    .tracking(0.4)
+
+                                SumiPermissionRuntimeControlsView(
+                                    model: runtimeControlsModel,
+                                    onAction: { actionKind in
+                                        await performRuntimeAction(actionKind)
+                                    }
+                                )
+                            }
+                        }
+
                         VStack(spacing: 6) {
                             ForEach(model.rows) { row in
                                 SumiCurrentSitePermissionRowView(
@@ -256,6 +277,63 @@ struct SumiCurrentSitePermissionsView: View {
             tab: currentTab,
             profile: profile,
             dependencies: dependencies
+        )
+        configureRuntimeControls()
+    }
+
+    private func configureRuntimeControls() {
+        runtimeControlsModel.load(
+            pageContext: runtimeControlsPageContext(),
+            runtimeController: runtimePermissionController,
+            reloadRequired: currentTab?.isAutoplayReloadRequired == true,
+            onRuntimeStateChanged: {
+                Task { await reloadAfterStoreChange() }
+            }
+        )
+    }
+
+    private func performRuntimeAction(
+        _ actionKind: SumiPermissionRuntimeControl.Action.Kind
+    ) async {
+        _ = await runtimeControlsModel.perform(actionKind)
+        await reload()
+        onDidMutate()
+    }
+
+    private func runtimeControlsPageContext() -> SumiPermissionRuntimeControlsViewModel.PageContext? {
+        guard let context = model.context,
+              context.isSupportedWebOrigin
+        else { return nil }
+
+        let tab = currentTab
+        return SumiPermissionRuntimeControlsViewModel.PageContext(
+            tabId: context.tabId,
+            pageId: context.pageId,
+            navigationOrPageGeneration: context.navigationOrPageGeneration,
+            displayDomain: context.displayDomain,
+            currentWebView: { [weak tab] in
+                tab?.existingWebView
+            },
+            isCurrentPage: { [weak tab] tabId, pageId, navigationOrPageGeneration in
+                guard let tab else { return false }
+                return tab.id.uuidString.lowercased() == tabId
+                    && tab.currentPermissionPageId() == pageId
+                    && String(tab.extensionRuntimeDocumentSequence) == navigationOrPageGeneration
+            },
+            reloadPage: { [weak tab] in
+                guard let tab,
+                      tab.existingWebView != nil
+                else { return false }
+                tab.refresh()
+                tab.updateAutoplayReloadRequirementForCurrentSite()
+                return true
+            },
+            isGeolocationStillAllowed: {
+                let decision = await permissionCoordinator.queryPermissionState(
+                    context.securityContext(for: .geolocation)
+                )
+                return decision.outcome == .granted || decision.state == .allow
+            }
         )
     }
 }

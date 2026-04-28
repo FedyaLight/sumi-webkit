@@ -142,7 +142,7 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
                 isEphemeralProfile: context.isEphemeralProfile
             )
             let runtimeState = webView.map {
-                dependencies.runtimeController?.currentRuntimeState(for: $0)
+                dependencies.runtimeController?.currentRuntimeState(for: $0, pageId: context.pageId)
             } ?? nil
             let builtRows = await makeRows(
                 context: context,

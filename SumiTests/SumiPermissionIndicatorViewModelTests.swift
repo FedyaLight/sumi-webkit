@@ -182,6 +182,32 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
         XCTAssertEqual(state.visualStyle, .reloadRequired)
     }
 
+    func testOnlyActiveRuntimeAndReloadRequiredPreferRuntimeControlsSurface() {
+        let activeRuntime = indicatorState(
+            runtimeState: SumiRuntimePermissionState(camera: .none, microphone: .active)
+        )
+        let reloadRequired = SumiPermissionIndicatorViewModel.state(
+            from: .init(
+                autoplayReloadRequired: true,
+                displayDomain: "video.example",
+                tabId: "tab-a",
+                pageId: "tab-a:1"
+            )
+        )
+        let blockedPopup = SumiPermissionIndicatorViewModel.state(
+            from: .init(
+                popupRecords: [blockedPopup()],
+                displayDomain: "example.com",
+                tabId: "tab-a",
+                pageId: "tab-a:1"
+            )
+        )
+
+        XCTAssertTrue(activeRuntime.prefersRuntimeControlsSurface)
+        XCTAssertTrue(reloadRequired.prefersRuntimeControlsSurface)
+        XCTAssertFalse(blockedPopup.prefersRuntimeControlsSurface)
+    }
+
     func testMultipleSourcesChoosePriorityDeterministically() {
         let state = SumiPermissionIndicatorViewModel.state(
             from: .init(
@@ -250,6 +276,8 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
         XCTAssertEqual(source.components(separatedBy: "SumiPermissionIndicatorButton(").count - 1, 1)
         XCTAssertTrue(source.contains("urlbar-permission-indicator"))
         XCTAssertTrue(source.contains("permissionPromptPresenter.presentFromIndicatorClick()"))
+        XCTAssertTrue(source.contains("prefersRuntimeControlsSurface"))
+        XCTAssertTrue(source.contains("hubInitialMode = .permissions"))
         XCTAssertTrue(source.contains("isHubPresented = true"))
         XCTAssertTrue(source.contains("SumiPermissionPromptView"))
         XCTAssertFalse(source.contains("approveOnce("))
