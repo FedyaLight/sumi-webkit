@@ -6,4 +6,5 @@
 //
 
 #import "SumiWebKitPrivateBridge.h"
+#import "SumiWebKitGeolocationProviderABI.h"
 #import "NSException+Catch.h"

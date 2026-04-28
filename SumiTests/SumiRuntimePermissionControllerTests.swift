@@ -43,6 +43,78 @@ final class SumiRuntimePermissionControllerTests: XCTestCase {
         XCTAssertEqual(state.state(for: .storageAccess), .nonDevice(.unsupported))
     }
 
+    func testProviderBackedGeolocationRuntimeStateMapsFromProviderState() {
+        let provider = FakeSumiGeolocationProvider(currentState: .active)
+        let controller = SumiRuntimePermissionController(geolocationProvider: provider)
+        let webView = makeWebView()
+
+        XCTAssertEqual(controller.currentRuntimeState(for: webView).geolocation, .active)
+
+        provider.currentState = .paused
+        XCTAssertEqual(controller.currentRuntimeState(for: webView).geolocation, .paused)
+
+        provider.currentState = .revoked
+        XCTAssertEqual(controller.currentRuntimeState(for: webView).geolocation, .revoked)
+
+        provider.currentState = .unavailable
+        XCTAssertEqual(controller.currentRuntimeState(for: webView).geolocation, .unavailable)
+    }
+
+    func testProviderBackedGeolocationPauseResumeRevokeOperations() async {
+        let provider = FakeSumiGeolocationProvider(currentState: .active)
+        let controller = SumiRuntimePermissionController(geolocationProvider: provider)
+        let webView = makeWebView()
+
+        let pause = await controller.pauseRuntimePermissions([.geolocation], for: webView)
+        let resume = await controller.resumeRuntimePermissions([.geolocation], for: webView)
+        let revoke = await controller.revokeRuntimePermissions([.geolocation], for: webView)
+
+        XCTAssertEqual(pause[.geolocation], .applied)
+        XCTAssertEqual(resume[.geolocation], .applied)
+        XCTAssertEqual(revoke[.geolocation], .applied)
+        XCTAssertEqual(provider.pauseCallCount, 1)
+        XCTAssertEqual(provider.resumeCallCount, 1)
+        XCTAssertEqual(provider.revokeCallCount, 1)
+        XCTAssertEqual(provider.currentState, .revoked)
+    }
+
+    func testMissingGeolocationProviderReturnsUnsupportedProvider() async {
+        let controller = SumiRuntimePermissionController()
+        let webView = makeWebView()
+
+        let pause = await controller.pauseRuntimePermissions([.geolocation], for: webView)
+        let resume = await controller.resumeRuntimePermissions([.geolocation], for: webView)
+        let revoke = await controller.revokeRuntimePermissions([.geolocation], for: webView)
+
+        XCTAssertEqual(controller.currentRuntimeState(for: webView).geolocation, .unsupportedProvider)
+        XCTAssertEqual(
+            pause[.geolocation],
+            .unsupported(reason: "geolocation-runtime-provider-unsupported")
+        )
+        XCTAssertEqual(
+            resume[.geolocation],
+            .unsupported(reason: "geolocation-runtime-provider-unsupported")
+        )
+        XCTAssertEqual(
+            revoke[.geolocation],
+            .unsupported(reason: "geolocation-runtime-provider-unsupported")
+        )
+    }
+
+    func testUnavailableGeolocationProviderReturnsUnsupportedOperationResult() async {
+        let provider = FakeSumiGeolocationProvider(currentState: .unavailable)
+        let controller = SumiRuntimePermissionController(geolocationProvider: provider)
+        let webView = makeWebView()
+
+        let pause = await controller.pauseRuntimePermissions([.geolocation], for: webView)
+
+        XCTAssertEqual(controller.currentRuntimeState(for: webView).geolocation, .unavailable)
+        XCTAssertEqual(
+            pause[.geolocation],
+            .unsupported(reason: "geolocation-runtime-provider-unavailable")
+        )
+    }
+
     func testFakeMuteCameraChangesActiveToMuted() async {
         let fake = FakeSumiRuntimePermissionController(cameraRuntimeState: .active)
         let webView = makeWebView()

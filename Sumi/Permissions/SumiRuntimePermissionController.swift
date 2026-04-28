@@ -39,10 +39,17 @@ protocol SumiRuntimePermissionControlling: AnyObject {
 
 @MainActor
 final class SumiRuntimePermissionController: SumiRuntimePermissionControlling {
+    private let geolocationProvider: (any SumiGeolocationProviding)?
+
+    init(geolocationProvider: (any SumiGeolocationProviding)? = nil) {
+        self.geolocationProvider = geolocationProvider
+    }
+
     func currentRuntimeState(for webView: WKWebView) -> SumiRuntimePermissionState {
         SumiRuntimePermissionState(
             camera: cameraState(for: webView),
             microphone: microphoneState(for: webView),
+            geolocation: geolocationState(),
             autoplay: autoplayState(for: webView)
         )
     }
@@ -142,7 +149,9 @@ final class SumiRuntimePermissionController: SumiRuntimePermissionControlling {
             case .microphone:
                 return await stopMicrophone(for: webView)
             case .geolocation:
-                return .unsupported(reason: "geolocation-runtime-provider-unsupported")
+                return applyGeolocationRuntimeOperation { provider in
+                    provider.revoke()
+                }
             case .autoplay:
                 return evaluateAutoplayPolicyChange(.blockAll, for: webView)
             case .notifications, .popups, .externalScheme, .filePicker:
@@ -166,7 +175,9 @@ final class SumiRuntimePermissionController: SumiRuntimePermissionControlling {
             case .microphone:
                 return await setMicrophoneMuted(true, for: webView)
             case .geolocation:
-                return .unsupported(reason: "geolocation-runtime-provider-unsupported")
+                return applyGeolocationRuntimeOperation { provider in
+                    provider.pause()
+                }
             case .autoplay:
                 return evaluateAutoplayPolicyChange(.muteAudio, for: webView)
             case .notifications, .popups, .externalScheme, .filePicker:
@@ -190,7 +201,9 @@ final class SumiRuntimePermissionController: SumiRuntimePermissionControlling {
             case .microphone:
                 return await setMicrophoneMuted(false, for: webView)
             case .geolocation:
-                return .unsupported(reason: "geolocation-runtime-provider-unsupported")
+                return applyGeolocationRuntimeOperation { provider in
+                    provider.resume()
+                }
             case .autoplay:
                 return evaluateAutoplayPolicyChange(.allowAll, for: webView)
             case .notifications, .popups, .externalScheme, .filePicker:
@@ -245,10 +258,58 @@ final class SumiRuntimePermissionController: SumiRuntimePermissionControlling {
                 handler(self.currentRuntimeState(for: webView))
             }
         }
+        let geolocationObservation = geolocationProvider?.observeState { [weak self, weak webView] _ in
+            guard let self, let webView else { return }
+            handler(self.currentRuntimeState(for: webView))
+        }
 
         return SumiRuntimePermissionObservation {
             cameraObservation.invalidate()
             microphoneObservation.invalidate()
+            geolocationObservation?.cancel()
+        }
+    }
+
+    private func geolocationState() -> SumiGeolocationRuntimeState {
+        guard let geolocationProvider else {
+            return .unsupportedProvider
+        }
+        switch geolocationProvider.currentState {
+        case .inactive:
+            return .none
+        case .active:
+            return .active
+        case .paused:
+            return .paused
+        case .revoked:
+            return .revoked
+        case .unavailable, .failed:
+            return .unavailable
+        }
+    }
+
+    private func applyGeolocationRuntimeOperation(
+        _ operation: (any SumiGeolocationProviding) -> SumiGeolocationProviderState
+    ) -> SumiRuntimePermissionOperationResult {
+        guard let geolocationProvider else {
+            return .unsupported(reason: "geolocation-runtime-provider-unsupported")
+        }
+        guard geolocationProvider.currentState != .unavailable else {
+            return .unsupported(reason: "geolocation-runtime-provider-unavailable")
+        }
+
+        let previousState = geolocationProvider.currentState
+        let nextState = operation(geolocationProvider)
+        if nextState == previousState {
+            return .noOp
+        }
+        switch nextState {
+        case .failed(let reason):
+            return .failed(reason: reason)
+        case .unavailable:
+            return .unsupported(reason: "geolocation-runtime-provider-unavailable")
+        case .inactive, .active, .paused, .revoked:
+            return .applied
         }
     }
 

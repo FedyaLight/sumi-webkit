@@ -1,59 +1,80 @@
 import Foundation
 import WebKit
 
-protocol SumiPermissionCoordinating: Sendable {
-    func requestPermission(
-        _ context: SumiPermissionSecurityContext
-    ) async -> SumiPermissionCoordinatorDecision
+enum SumiWebKitGeolocationPendingStrategy: Equatable, Sendable {
+    case denyUntilPromptUIExists
 
-    func activeQuery(forPageId pageId: String) async -> SumiPermissionAuthorizationQuery?
-
-    @discardableResult
-    func cancel(
-        requestId: String,
-        reason: String
-    ) async -> SumiPermissionCoordinatorDecision
-
-    @discardableResult
-    func cancel(
-        pageId: String,
-        reason: String
-    ) async -> SumiPermissionCoordinatorDecision
-
-    @discardableResult
-    func cancelNavigation(
-        pageId: String,
-        reason: String
-    ) async -> SumiPermissionCoordinatorDecision
-
-    @discardableResult
-    func cancelTab(
-        tabId: String,
-        reason: String
-    ) async -> SumiPermissionCoordinatorDecision
+    var reason: String {
+        switch self {
+        case .denyUntilPromptUIExists:
+            return "webkit-geolocation-prompt-ui-unavailable-deny"
+        }
+    }
 }
 
-extension SumiPermissionCoordinator: SumiPermissionCoordinating {}
+enum SumiWebKitGeolocationDecisionMapper {
+    @available(macOS 12.0, *)
+    static func webKitDecision(
+        for decision: SumiPermissionCoordinatorDecision
+    ) -> WKPermissionDecision {
+        decision.outcome == .granted ? .grant : .deny
+    }
 
-@available(macOS 13.0, *)
+    static func temporaryPendingDecision(
+        for context: SumiPermissionSecurityContext,
+        reason: String
+    ) -> SumiPermissionCoordinatorDecision {
+        SumiPermissionCoordinatorDecision(
+            outcome: .promptRequired,
+            state: .ask,
+            persistence: nil,
+            source: .runtime,
+            reason: reason,
+            permissionTypes: [.geolocation],
+            keys: [context.request.key(for: .geolocation)],
+            shouldPersist: false,
+            shouldOfferSystemSettings: false,
+            disablesPersistentAllow: context.isEphemeralProfile
+        )
+    }
+
+    static func failClosedDecision(
+        for context: SumiPermissionSecurityContext?,
+        reason: String
+    ) -> SumiPermissionCoordinatorDecision {
+        SumiPermissionCoordinatorDecision(
+            outcome: .cancelled,
+            state: nil,
+            persistence: nil,
+            source: .runtime,
+            reason: reason,
+            permissionTypes: [.geolocation],
+            keys: context.map { [$0.request.key(for: .geolocation)] } ?? [],
+            shouldPersist: false,
+            shouldOfferSystemSettings: false,
+            disablesPersistentAllow: context?.isEphemeralProfile ?? false
+        )
+    }
+}
+
 @MainActor
-final class SumiWebKitPermissionDecisionHandler {
-    private var decisionHandler: ((WKPermissionDecision) -> Void)?
+final class SumiWebKitGeolocationOnce<Decision> {
+    private var decisionHandler: ((Decision) -> Void)?
 
-    init(_ decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+    init(_ decisionHandler: @escaping (Decision) -> Void) {
         self.decisionHandler = decisionHandler
     }
 
-    func resolve(_ decision: WKPermissionDecision) {
+    func resolve(_ decision: Decision) {
         guard let handler = decisionHandler else { return }
         decisionHandler = nil
         handler(decision)
     }
 }
 
-@available(macOS 13.0, *)
+@available(macOS 12.0, *)
 @MainActor
-final class SumiWebKitPermissionBridge {
+final class SumiWebKitGeolocationBridge {
     private enum CoordinatorRaceResult: Sendable {
         case coordinator(SumiPermissionCoordinatorDecision)
         case pendingStrategy(SumiPermissionCoordinatorDecision)
@@ -61,42 +82,41 @@ final class SumiWebKitPermissionBridge {
     }
 
     private let coordinator: any SumiPermissionCoordinating
-    private let runtimeController: any SumiRuntimePermissionControlling
-    private let pendingStrategy: SumiWebKitPermissionBridgePendingStrategy
+    private weak var geolocationProvider: (any SumiGeolocationProviding)?
+    private let pendingStrategy: SumiWebKitGeolocationPendingStrategy
     private let pendingPollIntervalNanoseconds: UInt64
     private let coordinatorTimeoutNanoseconds: UInt64
     private let now: @Sendable () -> Date
 
     init(
         coordinator: any SumiPermissionCoordinating,
-        runtimeController: any SumiRuntimePermissionControlling,
-        pendingStrategy: SumiWebKitPermissionBridgePendingStrategy = .denyUntilPromptUIExists,
+        geolocationProvider: (any SumiGeolocationProviding)?,
+        pendingStrategy: SumiWebKitGeolocationPendingStrategy = .denyUntilPromptUIExists,
         pendingPollIntervalNanoseconds: UInt64 = 25_000_000,
         coordinatorTimeoutNanoseconds: UInt64 = 500_000_000,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.coordinator = coordinator
-        self.runtimeController = runtimeController
+        self.geolocationProvider = geolocationProvider
         self.pendingStrategy = pendingStrategy
         self.pendingPollIntervalNanoseconds = pendingPollIntervalNanoseconds
         self.coordinatorTimeoutNanoseconds = coordinatorTimeoutNanoseconds
         self.now = now
     }
 
-    func handleMediaCaptureAuthorization(
-        _ request: SumiWebKitMediaCaptureRequest,
-        tabContext: SumiWebKitMediaCaptureTabContext,
+    func handleGeolocationAuthorization(
+        _ request: SumiWebKitGeolocationRequest,
+        tabContext: SumiWebKitGeolocationTabContext,
         webView: WKWebView?,
         decisionHandler: @escaping (WKPermissionDecision) -> Void
     ) {
-        let once = SumiWebKitPermissionDecisionHandler(decisionHandler)
+        let once = SumiWebKitGeolocationOnce(decisionHandler)
         guard webView != nil else {
             once.resolve(.deny)
             return
         }
 
         let context = securityContext(for: request, tabContext: tabContext)
-
         Task { @MainActor [weak self, weak webView] in
             guard let self else {
                 once.resolve(.deny)
@@ -104,24 +124,48 @@ final class SumiWebKitPermissionBridge {
             }
 
             let coordinatorDecision = await self.coordinatorDecision(for: context)
-            let webKitDecision = SumiWebKitMediaCaptureDecisionMapper.webKitDecision(
+            var webKitDecision = SumiWebKitGeolocationDecisionMapper.webKitDecision(
                 for: coordinatorDecision
             )
-            guard webKitDecision != .grant || webView != nil else {
-                once.resolve(.deny)
-                return
-            }
-            once.resolve(webKitDecision)
 
-            if coordinatorDecision.outcome == .granted, let webView {
-                _ = self.runtimeController.currentRuntimeState(for: webView)
+            if webKitDecision == .grant {
+                guard let provider = self.geolocationProvider,
+                      provider.isAvailable,
+                      webView != nil
+                else {
+                    webKitDecision = .deny
+                    once.resolve(webKitDecision)
+                    return
+                }
+                provider.registerAllowedRequest(
+                    pageId: tabContext.pageId,
+                    tabId: tabContext.tabId
+                )
             }
+
+            once.resolve(webKitDecision)
+        }
+    }
+
+    func handleLegacyGeolocationAuthorization(
+        _ request: SumiWebKitGeolocationRequest,
+        tabContext: SumiWebKitGeolocationTabContext,
+        webView: WKWebView?,
+        decisionHandler: @escaping (Bool) -> Void
+    ) {
+        let once = SumiWebKitGeolocationOnce(decisionHandler)
+        handleGeolocationAuthorization(
+            request,
+            tabContext: tabContext,
+            webView: webView
+        ) { decision in
+            once.resolve(decision == .grant)
         }
     }
 
     func securityContext(
-        for request: SumiWebKitMediaCaptureRequest,
-        tabContext: SumiWebKitMediaCaptureTabContext
+        for request: SumiWebKitGeolocationRequest,
+        tabContext: SumiWebKitGeolocationTabContext
     ) -> SumiPermissionSecurityContext {
         let topOrigin = SumiPermissionOrigin(
             url: tabContext.committedURL ?? tabContext.mainFrameURL ?? tabContext.visibleURL
@@ -134,7 +178,7 @@ final class SumiWebKitPermissionBridge {
             requestingOrigin: request.requestingOrigin,
             topOrigin: topOrigin,
             displayDomain: request.requestingOrigin.displayDomain,
-            permissionTypes: request.permissionTypes,
+            permissionTypes: [.geolocation],
             hasUserGesture: false,
             requestedAt: now(),
             isEphemeralProfile: tabContext.isEphemeralProfile,
@@ -182,9 +226,9 @@ final class SumiWebKitPermissionBridge {
                     try? await Task.sleep(nanoseconds: sleepNanoseconds)
                     if Task.isCancelled {
                         return .timeout(
-                            SumiWebKitMediaCaptureDecisionMapper.failClosedDecision(
+                            SumiWebKitGeolocationDecisionMapper.failClosedDecision(
                                 for: context,
-                                reason: "webkit-media-permission-task-cancelled"
+                                reason: "webkit-geolocation-permission-task-cancelled"
                             )
                         )
                     }
@@ -195,7 +239,7 @@ final class SumiWebKitPermissionBridge {
                             reason: pendingStrategy.reason
                         )
                         return .pendingStrategy(
-                            SumiWebKitMediaCaptureDecisionMapper.temporaryPendingDecision(
+                            SumiWebKitGeolocationDecisionMapper.temporaryPendingDecision(
                                 for: context,
                                 reason: pendingStrategy.reason
                             )
@@ -205,20 +249,20 @@ final class SumiWebKitPermissionBridge {
 
                 await coordinator.cancel(
                     requestId: requestId,
-                    reason: "webkit-media-permission-coordinator-timeout"
+                    reason: "webkit-geolocation-permission-coordinator-timeout"
                 )
                 return .timeout(
-                    SumiWebKitMediaCaptureDecisionMapper.failClosedDecision(
+                    SumiWebKitGeolocationDecisionMapper.failClosedDecision(
                         for: context,
-                        reason: "webkit-media-permission-coordinator-timeout"
+                        reason: "webkit-geolocation-permission-coordinator-timeout"
                     )
                 )
             }
 
             guard let result = await group.next() else {
-                return SumiWebKitMediaCaptureDecisionMapper.failClosedDecision(
+                return SumiWebKitGeolocationDecisionMapper.failClosedDecision(
                     for: context,
-                    reason: "webkit-media-permission-no-coordinator-result"
+                    reason: "webkit-geolocation-permission-no-coordinator-result"
                 )
             }
             group.cancelAll()

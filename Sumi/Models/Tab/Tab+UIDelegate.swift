@@ -251,4 +251,82 @@ extension Tab: WKUIDelegate {
             decisionHandler: decisionHandler
         )
     }
+
+    @objc(_webView:requestGeolocationPermissionForFrame:decisionHandler:)
+    func webView(
+        _ webView: WKWebView,
+        requestGeolocationPermissionFor frame: WKFrameInfo,
+        decisionHandler: @escaping (Bool) -> Void
+    ) {
+        RuntimeDiagnostics.emit(
+            "🔐 [Tab] Legacy geolocation authorization requested from frame: \(String(describing: frame.request.url))"
+        )
+        guard let browserManager,
+              let tabContext = geolocationTabContext(for: webView)
+        else {
+            RuntimeDiagnostics.emit(
+                "🔐 [Tab] Denying geolocation because browser/profile context is unavailable."
+            )
+            decisionHandler(false)
+            return
+        }
+
+        browserManager.webKitGeolocationBridge.handleLegacyGeolocationAuthorization(
+            SumiWebKitGeolocationRequest(frame: frame),
+            tabContext: tabContext,
+            webView: webView,
+            decisionHandler: decisionHandler
+        )
+    }
+
+    @available(macOS 12.0, *)
+    @objc(_webView:requestGeolocationPermissionForOrigin:initiatedByFrame:decisionHandler:)
+    func webView(
+        _ webView: WKWebView,
+        requestGeolocationPermissionFor origin: WKSecurityOrigin,
+        initiatedBy frame: WKFrameInfo,
+        decisionHandler: @escaping (WKPermissionDecision) -> Void
+    ) {
+        RuntimeDiagnostics.emit(
+            "🔐 [Tab] Geolocation authorization requested from origin: \(origin)"
+        )
+        guard let browserManager,
+              let tabContext = geolocationTabContext(for: webView)
+        else {
+            RuntimeDiagnostics.emit(
+                "🔐 [Tab] Denying geolocation because browser/profile context is unavailable."
+            )
+            decisionHandler(.deny)
+            return
+        }
+
+        browserManager.webKitGeolocationBridge.handleGeolocationAuthorization(
+            SumiWebKitGeolocationRequest(origin: origin, frame: frame),
+            tabContext: tabContext,
+            webView: webView,
+            decisionHandler: decisionHandler
+        )
+    }
+
+    private func geolocationTabContext(
+        for webView: WKWebView
+    ) -> SumiWebKitGeolocationTabContext? {
+        guard let profile = resolveProfile() else { return nil }
+
+        let tabId = id.uuidString.lowercased()
+        let pageGeneration = String(extensionRuntimeDocumentSequence)
+        let committedURL = extensionRuntimeCommittedMainDocumentURL
+        return SumiWebKitGeolocationTabContext(
+            tabId: tabId,
+            pageId: "\(tabId):\(pageGeneration)",
+            profilePartitionId: profile.id.uuidString.lowercased(),
+            isEphemeralProfile: profile.isEphemeral,
+            committedURL: committedURL,
+            visibleURL: webView.url ?? url,
+            mainFrameURL: committedURL ?? webView.url ?? url,
+            isActiveTab: isCurrentTab,
+            isVisibleTab: primaryWindowId != nil,
+            navigationOrPageGeneration: pageGeneration
+        )
+    }
 }

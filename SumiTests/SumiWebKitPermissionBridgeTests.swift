@@ -483,6 +483,39 @@ private actor FakePermissionCoordinator: SumiPermissionCoordinating {
         return decision
     }
 
+    @discardableResult
+    func cancel(
+        pageId: String,
+        reason: String
+    ) -> SumiPermissionCoordinatorDecision {
+        cancelReasons.append(reason)
+        activeQueries[pageId] = nil
+        return SumiWebKitMediaCaptureDecisionMapper.failClosedDecision(
+            for: nil,
+            reason: reason
+        )
+    }
+
+    @discardableResult
+    func cancelNavigation(
+        pageId: String,
+        reason: String
+    ) -> SumiPermissionCoordinatorDecision {
+        cancel(pageId: pageId, reason: reason)
+    }
+
+    @discardableResult
+    func cancelTab(
+        tabId: String,
+        reason: String
+    ) -> SumiPermissionCoordinatorDecision {
+        cancelReasons.append(reason)
+        return SumiWebKitMediaCaptureDecisionMapper.failClosedDecision(
+            for: nil,
+            reason: reason
+        )
+    }
+
     func cancelledReasons() -> [String] {
         cancelReasons
     }
