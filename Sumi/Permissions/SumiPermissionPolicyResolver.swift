@@ -480,6 +480,9 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
         if permissionType.isOneTimeOnly {
             return [.oneTime]
         }
+        if permissionType == .notifications || permissionType == .storageAccess {
+            return isEphemeralProfile ? [.session] : [.session, .persistent]
+        }
         if isEphemeralProfile {
             return [.oneTime, .session]
         }

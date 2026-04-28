@@ -17,7 +17,7 @@ final class SumiStorageAccessPolicyTests: XCTestCase {
         let result = await evaluateStorageAccess(isEphemeralProfile: true)
 
         XCTAssertTrue(result.isAllowedToProceed)
-        XCTAssertEqual(result.allowedPersistences, [.oneTime, .session])
+        XCTAssertEqual(result.allowedPersistences, [.session])
         XCTAssertFalse(result.allowedPersistences.contains(.persistent))
     }
 

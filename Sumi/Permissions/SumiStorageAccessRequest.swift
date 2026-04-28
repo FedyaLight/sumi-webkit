@@ -57,6 +57,7 @@ struct SumiStorageAccessTabContext: Sendable {
     let isActiveTab: Bool
     let isVisibleTab: Bool
     let navigationOrPageGeneration: String?
+    let isCurrentPage: (@MainActor @Sendable () -> Bool)?
 
     init(
         tabId: String,
@@ -68,7 +69,8 @@ struct SumiStorageAccessTabContext: Sendable {
         mainFrameURL: URL?,
         isActiveTab: Bool,
         isVisibleTab: Bool,
-        navigationOrPageGeneration: String?
+        navigationOrPageGeneration: String?,
+        isCurrentPage: (@MainActor @Sendable () -> Bool)? = nil
     ) {
         self.tabId = tabId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         self.pageId = pageId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -81,5 +83,6 @@ struct SumiStorageAccessTabContext: Sendable {
         self.isVisibleTab = isVisibleTab
         self.navigationOrPageGeneration = navigationOrPageGeneration?
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        self.isCurrentPage = isCurrentPage
     }
 }

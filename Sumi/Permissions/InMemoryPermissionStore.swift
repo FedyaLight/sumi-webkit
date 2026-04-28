@@ -87,6 +87,36 @@ actor InMemoryPermissionStore: SumiPermissionStore {
     }
 
     func listDecisions(
+        profilePartitionId: String,
+        includingPersistences persistences: Set<SumiPermissionPersistence>
+    ) async throws -> [SumiPermissionStoreRecord] {
+        let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
+        return records.values
+            .filter {
+                $0.key.profilePartitionId == profileId
+                    && persistences.contains($0.decision.persistence)
+            }
+            .sorted(by: recordSort)
+    }
+
+    func listOneTimeDecisions(
+        profilePartitionId: String,
+        pageId: String
+    ) async throws -> [SumiPermissionStoreRecord] {
+        let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
+        let ownerId = normalizedOwnerId(pageId)
+        return records
+            .filter { memoryKey, record in
+                memoryKey.ownerKind == .page
+                    && memoryKey.ownerId == ownerId
+                    && record.key.profilePartitionId == profileId
+                    && record.decision.persistence == .oneTime
+            }
+            .map(\.value)
+            .sorted(by: recordSort)
+    }
+
+    func listDecisions(
         forDisplayDomain displayDomain: String,
         profilePartitionId: String
     ) async throws -> [SumiPermissionStoreRecord] {
@@ -176,6 +206,22 @@ actor InMemoryPermissionStore: SumiPermissionStore {
     }
 
     @discardableResult
+    func clearOneTimeDecisions(forPageId pageId: String) async -> Int {
+        await clearForPageId(pageId)
+    }
+
+    @discardableResult
+    func clearOneTimeDecisions(forTabId tabId: String) async -> Int {
+        let ownerId = normalizedOwnerId(tabId)
+        guard !ownerId.isEmpty else { return 0 }
+        return removeRecords { memoryKey, record in
+            memoryKey.ownerKind == .page
+                && record.decision.persistence == .oneTime
+                && (memoryKey.ownerId == ownerId || memoryKey.ownerId.hasPrefix("\(ownerId):"))
+        }
+    }
+
+    @discardableResult
     func clearForNavigation(pageId: String) async -> Int {
         await clearForPageId(pageId)
     }
@@ -193,6 +239,50 @@ actor InMemoryPermissionStore: SumiPermissionStore {
         let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         return removeRecords { _, record in
             record.key.profilePartitionId == profileId
+        }
+    }
+
+    @discardableResult
+    func clearSessionDecisions(profilePartitionId: String) async -> Int {
+        let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
+        return removeRecords { memoryKey, record in
+            memoryKey.ownerKind == .session
+                && record.key.profilePartitionId == profileId
+                && record.decision.persistence == .session
+        }
+    }
+
+    @discardableResult
+    func clearTransientDecisions(profilePartitionId: String) async -> Int {
+        await clearForProfile(profilePartitionId: profilePartitionId)
+    }
+
+    @discardableResult
+    func clearTransientDecisions(
+        profilePartitionId: String,
+        pageId: String?,
+        requestingOrigin: SumiPermissionOrigin,
+        topOrigin: SumiPermissionOrigin
+    ) async -> Int {
+        let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
+        let ownerId = pageId.map(normalizedOwnerId)
+        return removeRecords { memoryKey, record in
+            guard record.key.profilePartitionId == profileId,
+                  record.key.requestingOrigin.identity == requestingOrigin.identity,
+                  record.key.topOrigin.identity == topOrigin.identity
+            else {
+                return false
+            }
+
+            switch record.decision.persistence {
+            case .oneTime:
+                guard let ownerId else { return false }
+                return memoryKey.ownerKind == .page && memoryKey.ownerId == ownerId
+            case .session:
+                return memoryKey.ownerKind == .session
+            case .persistent:
+                return false
+            }
         }
     }
 

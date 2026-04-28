@@ -61,7 +61,7 @@
 <body>
   <main>
     <h1>Notification Permission Manual Test</h1>
-    <p>Expected: <code>Notification.requestPermission()</code> opens the URL-bar anchored Sumi prompt. Allow persists site notification permission for a normal profile, don't allow persists deny, and dismiss resolves the request to <code>default</code> without persistence. If macOS notifications are blocked, the prompt should show a system-blocked explanation and System Settings action.</p>
+    <p>Expected: <code>Notification.requestPermission()</code> opens the URL-bar anchored Sumi prompt. Notifications do not support Allow this time and must not create reusable one-time grants. Allow persists site notification permission for a normal profile, don't allow persists deny, and dismiss resolves the request to <code>default</code> without persistence. If macOS notifications are blocked, the prompt should show a system-blocked explanation and System Settings action.</p>
     <p>URL hub check: open Site Controls from the URL bar, open Permissions, and confirm Notifications shows the current site decision and macOS notification-blocked state separately. Changing Ask, Allow, or Block should affect future notification requests without calling system authorization.</p>
     <label>
       Title

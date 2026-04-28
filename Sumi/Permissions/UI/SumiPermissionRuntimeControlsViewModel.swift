@@ -13,6 +13,7 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
         let isCurrentPage: @MainActor (_ tabId: String?, _ pageId: String?, _ navigationOrPageGeneration: String?) -> Bool
         let reloadPage: @MainActor () -> Bool
         let isGeolocationStillAllowed: @MainActor () async -> Bool
+        var clearGeolocationGrantForVisit: @MainActor () async -> Void = {}
     }
 
     @Published private(set) var controls: [SumiPermissionRuntimeControl] = []
@@ -167,6 +168,9 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
                 webView: webView,
                 pageId: pageContext.pageId
             )
+            if actionKind == .stopGeolocationForVisit {
+                await pageContext.clearGeolocationGrantForVisit()
+            }
             result = SumiPermissionRuntimeControlResult.from(
                 operationResult,
                 actionKind: actionKind

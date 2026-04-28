@@ -267,8 +267,14 @@ final class SumiPermissionPromptViewModel: ObservableObject {
         }
 
         switch action {
-        case .allowThisTime, .openThisTime:
+        case .allowThisTime:
             await coordinator.approveOnce(query.id)
+        case .openThisTime:
+            if case .externalScheme = permissionType {
+                await coordinator.approveCurrentAttempt(query.id)
+            } else {
+                await coordinator.approveOnce(query.id)
+            }
         case .allowWhileVisiting, .allow:
             if canUsePersistentSiteDecision {
                 await coordinator.approvePersistently(query.id)

@@ -111,6 +111,16 @@ final class SumiExternalSchemePermissionBridge {
 
         switch result {
         case .opened:
+            guard tabContext.isCurrentPage?() != false else {
+                return finish(
+                    request,
+                    tabContext: tabContext,
+                    appInfo: appInfo,
+                    coordinatorDecision: coordinatorDecision,
+                    result: .blockedPendingUI,
+                    reason: "external-scheme-stale-page"
+                )
+            }
             willOpen()
             guard appResolver.open(targetURL) else {
                 return finish(
@@ -147,6 +157,20 @@ final class SumiExternalSchemePermissionBridge {
                     request: request
                 )
                 if settlementResult == .opened {
+                    guard tabContext.isCurrentPage?() != false else {
+                        await coordinator.cancel(
+                            requestId: promptContext.request.id,
+                            reason: "external-scheme-stale-page"
+                        )
+                        return finish(
+                            request,
+                            tabContext: tabContext,
+                            appInfo: appInfo,
+                            coordinatorDecision: settlementDecision,
+                            result: .blockedPendingUI,
+                            reason: "external-scheme-stale-page"
+                        )
+                    }
                     willOpen()
                     guard appResolver.open(targetURL) else {
                         return finish(

@@ -1,6 +1,7 @@
 import Foundation
 
 enum SumiPermissionUserDecision: Equatable, Sendable {
+    case approveCurrentAttempt
     case approveOnce
     case approveForSession
     case approvePersistently

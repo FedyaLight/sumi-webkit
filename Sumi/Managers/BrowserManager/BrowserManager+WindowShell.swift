@@ -48,6 +48,7 @@ extension BrowserManager {
         BrowserWindowShellService.Context(
             windowRegistry: windowRegistry,
             webViewCoordinator: webViewCoordinator,
+            permissionLifecycleController: permissionLifecycleController,
             profileManager: profileManager,
             tabManager: tabManager,
             makeContentView: { [weak self] windowRegistry, webViewCoordinator, windowState in

@@ -76,6 +76,7 @@ struct SumiWebKitMediaCaptureTabContext: Sendable {
     let isActiveTab: Bool
     let isVisibleTab: Bool
     let navigationOrPageGeneration: String?
+    let isCurrentPage: (@MainActor @Sendable () -> Bool)?
 
     init(
         tabId: String,
@@ -87,7 +88,8 @@ struct SumiWebKitMediaCaptureTabContext: Sendable {
         mainFrameURL: URL?,
         isActiveTab: Bool,
         isVisibleTab: Bool,
-        navigationOrPageGeneration: String?
+        navigationOrPageGeneration: String?,
+        isCurrentPage: (@MainActor @Sendable () -> Bool)? = nil
     ) {
         self.tabId = tabId.trimmingCharacters(in: .whitespacesAndNewlines)
         self.pageId = pageId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -100,5 +102,6 @@ struct SumiWebKitMediaCaptureTabContext: Sendable {
         self.isVisibleTab = isVisibleTab
         self.navigationOrPageGeneration = navigationOrPageGeneration?
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        self.isCurrentPage = isCurrentPage
     }
 }

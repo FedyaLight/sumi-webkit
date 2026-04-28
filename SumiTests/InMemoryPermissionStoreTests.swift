@@ -61,6 +61,49 @@ final class InMemoryPermissionStoreTests: XCTestCase {
         XCTAssertNil(record)
     }
 
+    func testOneTimeDecisionRequiresPageIdAndDoesNotMatchOtherPageId() async throws {
+        let store = InMemoryPermissionStore()
+        let pageAKey = key(.camera, pageId: "tab-a:1")
+        let pageBKey = key(.camera, pageId: "tab-a:2")
+
+        await XCTAssertThrowsErrorAsync {
+            try await store.setDecision(
+                for: key(.camera),
+                decision: decision(.allow, persistence: .oneTime)
+            )
+        }
+
+        try await store.setDecision(
+            for: pageAKey,
+            decision: decision(.allow, persistence: .oneTime)
+        )
+
+        let pageARecord = try await store.getDecision(for: pageAKey)
+        let pageBRecord = try await store.getDecision(for: pageBKey)
+        XCTAssertNotNil(pageARecord)
+        XCTAssertNil(pageBRecord)
+    }
+
+    func testClearOneTimeDecisionsForTabIdClearsAllPageGenerations() async throws {
+        let store = InMemoryPermissionStore()
+        let pageAKey = key(.camera, pageId: "tab-a:1")
+        let pageBKey = key(.microphone, pageId: "tab-a:2")
+        let otherTabKey = key(.camera, pageId: "tab-b:1")
+        try await store.setDecision(for: pageAKey, decision: decision(.allow, persistence: .oneTime))
+        try await store.setDecision(for: pageBKey, decision: decision(.allow, persistence: .oneTime))
+        try await store.setDecision(for: otherTabKey, decision: decision(.allow, persistence: .oneTime))
+
+        let cleared = await store.clearOneTimeDecisions(forTabId: "tab-a")
+        let pageARecord = try await store.getDecision(for: pageAKey)
+        let pageBRecord = try await store.getDecision(for: pageBKey)
+        let otherTabRecord = try await store.getDecision(for: otherTabKey)
+
+        XCTAssertEqual(cleared, 2)
+        XCTAssertNil(pageARecord)
+        XCTAssertNil(pageBRecord)
+        XCTAssertNotNil(otherTabRecord)
+    }
+
     func testClearByProfileAndSession() async throws {
         let store = InMemoryPermissionStore()
         let sessionKey = key(.camera, profile: "profile-a")
@@ -120,5 +163,18 @@ final class InMemoryPermissionStoreTests: XCTestCase {
 
     private func date(_ value: String) -> Date {
         ISO8601DateFormatter().date(from: value)!
+    }
+}
+
+private func XCTAssertThrowsErrorAsync(
+    _ expression: () async throws -> Void,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) async {
+    do {
+        try await expression()
+        XCTFail("Expected error to be thrown", file: file, line: line)
+    } catch {
+        return
     }
 }

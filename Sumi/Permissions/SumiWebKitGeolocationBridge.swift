@@ -138,8 +138,14 @@ final class SumiWebKitGeolocationBridge {
             if webKitDecision == .grant {
                 guard let provider = self.geolocationProvider,
                       provider.isAvailable,
-                      webView != nil
+                      webView != nil,
+                      tabContext.isCurrentPage?() != false
                 else {
+                    await self.coordinator.cancel(
+                        requestId: context.request.id,
+                        reason: "webkit-geolocation-permission-stale-page"
+                    )
+                    self.geolocationProvider?.cancelAllowedRequest(pageId: tabContext.pageId)
                     webKitDecision = .deny
                     once.resolve(webKitDecision)
                     return
