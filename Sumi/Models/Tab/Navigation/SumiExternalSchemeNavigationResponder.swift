@@ -4,33 +4,22 @@ import Navigation
 import WebKit
 
 @MainActor
-protocol SumiWorkspaceOpening: AnyObject {
-    func urlForApplication(toOpen url: URL) -> URL?
-    func open(_ url: URL)
-}
-
-@MainActor
-final class SumiNSWorkspaceOpening: SumiWorkspaceOpening {
-    static let shared = SumiNSWorkspaceOpening()
-
-    func urlForApplication(toOpen url: URL) -> URL? {
-        NSWorkspace.shared.urlForApplication(toOpen: url)
-    }
-
-    func open(_ url: URL) {
-        NSWorkspace.shared.open(url)
-    }
-}
-
-@MainActor
 final class SumiExternalSchemeNavigationResponder: NavigationResponder {
+    typealias TabContextProvider = @MainActor (WKWebView) -> SumiExternalSchemePermissionTabContext?
+
     private weak var tab: Tab?
-    private let workspace: SumiWorkspaceOpening
+    private let permissionBridge: SumiExternalSchemePermissionBridge?
+    private let tabContextProvider: TabContextProvider?
     private var shouldCloseTabOnExternalAppOpen = true
 
-    init(tab: Tab, workspace: SumiWorkspaceOpening? = nil) {
+    init(
+        tab: Tab,
+        permissionBridge: SumiExternalSchemePermissionBridge? = nil,
+        tabContextProvider: TabContextProvider? = nil
+    ) {
         self.tab = tab
-        self.workspace = workspace ?? SumiNSWorkspaceOpening.shared
+        self.permissionBridge = permissionBridge
+        self.tabContextProvider = tabContextProvider
     }
 
     func decidePolicy(
@@ -43,7 +32,9 @@ final class SumiExternalSchemeNavigationResponder: NavigationResponder {
         }
 
         let externalURL = navigationAction.url
-        guard externalURL.sumiIsExternalSchemeLink, externalURL.scheme != nil else {
+        guard externalURL.sumiIsExternalSchemeLink,
+              SumiExternalSchemePermissionRequest.isValidExternalSchemeURL(externalURL)
+        else {
             if navigationAction.isForMainFrame,
                navigationAction.redirectHistory?.isEmpty == false {
                 shouldCloseTabOnExternalAppOpen = false
@@ -69,15 +60,25 @@ final class SumiExternalSchemeNavigationResponder: NavigationResponder {
             return .cancel
         }
 
-        guard workspace.urlForApplication(toOpen: externalURL) != nil else {
+        guard let tab,
+              let bridge = permissionBridge ?? tab.browserManager?.externalSchemePermissionBridge,
+              let webView = navigationAction.targetFrame?.webView ?? navigationAction.sourceFrame.webView,
+              let tabContext = tabContextProvider?(webView) ?? tab.externalSchemePermissionTabContext(for: webView)
+        else {
             return .cancel
         }
 
-        navigationAction.targetFrame?.webView?.window?.makeFirstResponder(nil)
-        workspace.open(externalURL)
+        let request = SumiExternalSchemePermissionRequest.fromNavigationAction(navigationAction)
+        let result = await bridge.evaluate(
+            request,
+            tabContext: tabContext,
+            willOpen: {
+                webView.window?.makeFirstResponder(nil)
+            }
+        )
 
-        if shouldCloseTabOnExternalAppOpen,
-           let webView = navigationAction.targetFrame?.webView {
+        if result.didOpen,
+           shouldCloseTabOnExternalAppOpen {
             webView.sumiCloseWindow()
         }
 

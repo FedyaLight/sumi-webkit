@@ -195,6 +195,9 @@ class BrowserManager: ObservableObject {
     let notificationPermissionBridge: SumiNotificationPermissionBridge
     let blockedPopupStore: SumiBlockedPopupStore
     let popupPermissionBridge: SumiPopupPermissionBridge
+    let externalAppResolver: any SumiExternalAppResolving
+    let externalSchemeSessionStore: SumiExternalSchemeSessionStore
+    let externalSchemePermissionBridge: SumiExternalSchemePermissionBridge
     var zoomManager = ZoomManager()
     weak var sumiSettings: SumiSettingsService? {
         didSet {
@@ -297,7 +300,10 @@ class BrowserManager: ObservableObject {
         webKitGeolocationBridge: SumiWebKitGeolocationBridge? = nil,
         notificationPermissionBridge: SumiNotificationPermissionBridge? = nil,
         blockedPopupStore: SumiBlockedPopupStore? = nil,
-        popupPermissionBridge: SumiPopupPermissionBridge? = nil
+        popupPermissionBridge: SumiPopupPermissionBridge? = nil,
+        externalAppResolver: (any SumiExternalAppResolving)? = nil,
+        externalSchemeSessionStore: SumiExternalSchemeSessionStore? = nil,
+        externalSchemePermissionBridge: SumiExternalSchemePermissionBridge? = nil
     ) {
         // Phase 1: initialize all stored properties
         let startupModelContext = SumiStartupPersistence.shared.container.mainContext
@@ -317,6 +323,8 @@ class BrowserManager: ObservableObject {
         let runtimePermissionController = runtimePermissionController
             ?? SumiRuntimePermissionController(geolocationProvider: geolocationProvider)
         let blockedPopupStore = blockedPopupStore ?? SumiBlockedPopupStore()
+        let externalAppResolver = externalAppResolver ?? SumiNSWorkspaceExternalAppResolver.shared
+        let externalSchemeSessionStore = externalSchemeSessionStore ?? SumiExternalSchemeSessionStore()
         self.modelContext = startupModelContext
         self.moduleRegistry = moduleRegistry
         self.trackingProtectionModule = trackingProtectionModule
@@ -388,6 +396,14 @@ class BrowserManager: ObservableObject {
             ?? SumiPopupPermissionBridge(
                 coordinator: permissionCoordinator,
                 blockedPopupStore: blockedPopupStore
+            )
+        self.externalAppResolver = externalAppResolver
+        self.externalSchemeSessionStore = externalSchemeSessionStore
+        self.externalSchemePermissionBridge = externalSchemePermissionBridge
+            ?? SumiExternalSchemePermissionBridge(
+                coordinator: permissionCoordinator,
+                appResolver: externalAppResolver,
+                sessionStore: externalSchemeSessionStore
             )
 
         // Phase 2: wire dependencies and perform side effects (safe to use self)

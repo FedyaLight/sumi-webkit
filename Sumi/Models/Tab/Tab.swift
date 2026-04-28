@@ -398,10 +398,31 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         )
     }
 
+    func externalSchemePermissionTabContext(for webView: WKWebView) -> SumiExternalSchemePermissionTabContext? {
+        guard let profile = resolveProfile() else { return nil }
+
+        let tabId = id.uuidString.lowercased()
+        let pageGeneration = String(extensionRuntimeDocumentSequence)
+        let committedURL = extensionRuntimeCommittedMainDocumentURL
+        return SumiExternalSchemePermissionTabContext(
+            tabId: tabId,
+            pageId: "\(tabId):\(pageGeneration)",
+            profilePartitionId: profile.id.uuidString.lowercased(),
+            isEphemeralProfile: profile.isEphemeral,
+            committedURL: committedURL,
+            visibleURL: webView.url ?? url,
+            mainFrameURL: committedURL ?? webView.url ?? url,
+            isActiveTab: isCurrentTab,
+            isVisibleTab: primaryWindowId != nil,
+            navigationOrPageGeneration: pageGeneration
+        )
+    }
+
     func handleNormalTabPermissionNavigation(to targetURL: URL?) {
         let pageId = currentPermissionPageId()
         let coordinator = browserManager?.permissionCoordinator
         browserManager?.blockedPopupStore.clear(pageId: pageId)
+        browserManager?.externalSchemeSessionStore.clear(pageId: pageId)
         Task {
             await coordinator?.cancelNavigation(
                 pageId: pageId,
@@ -424,6 +445,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         let tabId = id.uuidString.lowercased()
         browserManager?.blockedPopupStore.clear(pageId: pageId)
         browserManager?.blockedPopupStore.clear(tabId: tabId)
+        browserManager?.externalSchemeSessionStore.clear(pageId: pageId)
+        browserManager?.externalSchemeSessionStore.clear(tabId: tabId)
         browserManager?.geolocationProvider?.stop(pageId: pageId)
         browserManager?.geolocationProvider?.cancelAllowedRequests(tabId: tabId)
 
