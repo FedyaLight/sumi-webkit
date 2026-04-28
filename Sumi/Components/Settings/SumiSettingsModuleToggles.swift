@@ -177,20 +177,42 @@ private struct SumiSettingsModuleToggleCard: View {
     let descriptor: SumiSettingsModuleToggleDescriptor
     @Binding var isEnabled: Bool
 
-    var body: some View {
-        SettingsSectionCard(
-            title: descriptor.title,
-            subtitle: descriptor.subtitle
-        ) {
-            VStack(alignment: .leading, spacing: 10) {
-                Toggle(descriptor.toggleTitle, isOn: $isEnabled)
-                    .toggleStyle(.switch)
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
 
-                Text(descriptor.detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Text(descriptor.title)
+                    .font(.headline)
+                    .foregroundStyle(tokens.primaryText)
+
+                Spacer(minLength: 16)
+
+                Toggle("", isOn: $isEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .accessibilityLabel(descriptor.toggleTitle)
             }
+
+            Text(descriptor.detail)
+                .font(.caption)
+                .foregroundStyle(tokens.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(tokens.fieldBackground.opacity(0.78))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(tokens.separator.opacity(0.62), lineWidth: 1)
+        )
     }
 }

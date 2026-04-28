@@ -27,29 +27,73 @@ struct SumiProfilesSettingsPane: View {
             ProfilesSettingsView()
 
             SettingsSectionCard(
-                title: "Sumi Sidebar",
-                subtitle: "Single-window Sumi behavior for spaces, launchers, and glance"
+                title: "Sidebar & Glance",
+                subtitle: "Single-window Sumi behavior for spaces, launchers, and link previews."
             ) {
                 @Bindable var settings = sumiSettings
 
-                VStack(alignment: .leading, spacing: 16) {
-                    Toggle("Enable compact spaces", isOn: $settings.sidebarCompactSpaces)
-                    Toggle("Enable glance", isOn: $settings.glanceEnabled)
-                    Toggle("Show essentials unload indicator", isOn: $settings.showEssentialsUnloadIndicator)
-
-                    Picker("Glance trigger", selection: $settings.glanceActivationMethod) {
-                        ForEach(GlanceActivationMethod.allCases) { method in
-                            Text(method.displayName).tag(method)
-                        }
+                VStack(alignment: .leading, spacing: 12) {
+                    SettingsRow(
+                        title: "Compact spaces",
+                        subtitle: "Use denser space presentation in the sidebar."
+                    ) {
+                        Toggle("", isOn: $settings.sidebarCompactSpaces)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
                     }
 
-                    Picker("Pinned launcher style", selection: $settings.pinnedTabsLook) {
-                        ForEach(PinnedTabsConfiguration.allCases) { configuration in
-                            Text(configuration.name).tag(configuration)
-                        }
+                    SettingsRow(
+                        title: "Glance",
+                        subtitle: "Preview links without fully opening a tab."
+                    ) {
+                        Toggle("", isOn: $settings.glanceEnabled)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
                     }
 
-                    Button("Edit Current Space Theme…") {
+                    SettingsRow(
+                        title: "Essentials unload indicator",
+                        subtitle: "Show when an Essential's hidden runtime has been deactivated."
+                    ) {
+                        Toggle("", isOn: $settings.showEssentialsUnloadIndicator)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                    }
+
+                    SettingsDivider()
+
+                    SettingsRow(
+                        title: "Glance trigger",
+                        subtitle: "Modifier used to open link previews."
+                    ) {
+                        Picker("", selection: $settings.glanceActivationMethod) {
+                            ForEach(GlanceActivationMethod.allCases) { method in
+                                Text(method.displayName).tag(method)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 170)
+                    }
+
+                    SettingsRow(
+                        title: "Pinned launcher style",
+                        subtitle: "Controls the visual density of pinned launchers."
+                    ) {
+                        Picker("", selection: $settings.pinnedTabsLook) {
+                            ForEach(PinnedTabsConfiguration.allCases) { configuration in
+                                Text(configuration.name).tag(configuration)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 170)
+                    }
+
+                    SettingsActionRow(
+                        title: "Current space theme",
+                        subtitle: "Open the theme editor for the active space.",
+                        systemImage: "paintpalette",
+                        buttonTitle: "Edit Theme..."
+                    ) {
                         browserManager.showGradientEditor()
                     }
                     .disabled(browserManager.tabManager.currentSpace == nil)
@@ -67,7 +111,12 @@ struct SumiDataRecoverySettingsPane: View {
                 subtitle: "Sumi keeps local SwiftData snapshots and backup directories for recovery"
             ) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Button("Reveal Sumi Data Folder") {
+                    SettingsActionRow(
+                        title: "Sumi data folder",
+                        subtitle: "Open the app-support directory that contains runtime stores and backups.",
+                        systemImage: "folder",
+                        buttonTitle: "Reveal"
+                    ) {
                         guard let support = FileManager.default.urls(
                             for: .applicationSupportDirectory,
                             in: .userDomainMask
@@ -77,9 +126,9 @@ struct SumiDataRecoverySettingsPane: View {
                         try? FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
                         NSWorkspace.shared.activateFileViewerSelecting([target])
                     }
-                    .buttonStyle(.bordered)
 
                     Text("Direct profile export is still limited, but Sumi’s runtime store and backups now live in their own app-support path.")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -95,6 +144,7 @@ struct SumiExtensionsSettingsPane: View {
     @State private var isDiscoveringSafariExtensions = false
     @State private var busyExtensionIDs: Set<String> = []
     @State private var statusMessage: String?
+    @State private var extensionPendingRemoval: InstalledExtension?
     @State private var discoveryTask: Task<Void, Never>?
     @State private var extensionOperationTasks: [String: Task<Void, Never>] = [:]
 
@@ -144,6 +194,31 @@ struct SumiExtensionsSettingsPane: View {
                 cancelExtensionPaneTasks()
             }
         }
+        .confirmationDialog(
+            "Remove Extension?",
+            isPresented: extensionRemovalBinding
+        ) {
+            Button("Remove", role: .destructive) {
+                if let extensionPendingRemoval {
+                    uninstallExtension(extensionPendingRemoval)
+                }
+                extensionPendingRemoval = nil
+            }
+            Button("Cancel", role: .cancel) {
+                extensionPendingRemoval = nil
+            }
+        } message: {
+            Text(extensionPendingRemoval?.name ?? "")
+        }
+    }
+
+    private var extensionRemovalBinding: Binding<Bool> {
+        Binding(
+            get: { extensionPendingRemoval != nil },
+            set: { isPresented in
+                if !isPresented { extensionPendingRemoval = nil }
+            }
+        )
     }
 
     @ViewBuilder
@@ -177,9 +252,9 @@ struct SumiExtensionsSettingsPane: View {
                     }
 
                     Text(extensionManager.isExtensionSupportAvailable
-                        ? "Safari extensions can be installed from `.app`, `.appex`, or unpacked directories with a `manifest.json`. Chromium and Mozilla direct runtimes remain intentionally disabled."
-                        : "Safari Web Extensions require macOS 15.5 or newer in this Sumi build."
-                    )
+                         ? "Safari extensions can be installed from `.app`, `.appex`, or unpacked directories with a `manifest.json`. Chromium and Mozilla direct runtimes remain intentionally disabled."
+                         : "Safari Web Extensions require macOS 15.5 or newer in this Sumi build.")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
 
                     if let statusMessage {
@@ -210,12 +285,12 @@ struct SumiExtensionsSettingsPane: View {
                                     toggleExtension(ext)
                                 },
                                 onUninstall: {
-                                    uninstallExtension(ext)
+                                    extensionPendingRemoval = ext
                                 }
-            )
-        }
-    }
-}
+                            )
+                        }
+                    }
+                }
             }
 
             if discoveredSafariExtensions.isEmpty == false {
@@ -376,6 +451,20 @@ private struct ExtensionCatalogRow: View {
             Spacer()
 
             HStack(spacing: 8) {
+                if isBusy {
+                    ProgressView()
+                        .scaleEffect(0.75)
+                }
+
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(extensionRecord.sourceBundlePath, forType: .string)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                }
+                .buttonStyle(.bordered)
+                .help("Copy source path")
+
                 Button(extensionRecord.isEnabled ? "Disable" : "Enable") {
                     onToggleEnabled()
                 }
@@ -421,15 +510,26 @@ private struct SafariDiscoveryRow: View {
 
             Spacer()
 
-            if isInstalled {
-                Text("Installed")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                Button("Install") {
-                    onInstall()
+            HStack(spacing: 8) {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(info.appexPath.path, forType: .string)
+                } label: {
+                    Image(systemName: "doc.on.doc")
                 }
                 .buttonStyle(.bordered)
+                .help("Copy extension path")
+
+                if isInstalled {
+                    Text("Installed")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Button("Install") {
+                        onInstall()
+                    }
+                    .buttonStyle(.bordered)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -569,9 +669,7 @@ struct ProfilesSettingsView: View {
                 }
             }
 
-            Spacer()
         }
-        .padding()
     }
 
     // MARK: - Helpers
@@ -878,56 +976,49 @@ struct ShortcutsSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Header with search and reset
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Keyboard Shortcuts")
-                        .font(.title)
-                        .fontWeight(.bold)
-                    Text("Customize keyboard shortcuts for faster navigation")
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button("Reset to Defaults") {
-                    keyboardShortcutManager.resetToDefaults()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
+            SettingsSection(
+                title: "Shortcut Filters",
+                subtitle: "Search and narrow commands before editing their key combinations."
+            ) {
+                HStack(spacing: 12) {
+                    TextField("Search shortcuts...", text: $searchText)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 240)
 
-            Divider().opacity(0.4)
-
-            // Search and filter controls
-            HStack(spacing: 12) {
-                TextField("Search shortcuts...", text: $searchText)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 240)
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        CategoryFilterChip(
-                            title: "All",
-                            icon: nil,
-                            isSelected: selectedCategory == nil,
-                            onTap: { selectedCategory = nil }
-                        )
-                        ForEach(ShortcutCategory.allCases, id: \.self) { category in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
                             CategoryFilterChip(
-                                title: category.displayName,
-                                icon: category.icon,
-                                isSelected: selectedCategory == category,
-                                onTap: { selectedCategory = category }
+                                title: "All",
+                                icon: nil,
+                                isSelected: selectedCategory == nil,
+                                onTap: { selectedCategory = nil }
                             )
+                            ForEach(ShortcutCategory.allCases, id: \.self) { category in
+                                CategoryFilterChip(
+                                    title: category.displayName,
+                                    icon: category.icon,
+                                    isSelected: selectedCategory == category,
+                                    onTap: { selectedCategory = category }
+                                )
+                            }
                         }
+                        .padding(.horizontal, 4)
                     }
-                    .padding(.horizontal, 4)
+
+                    Spacer(minLength: 0)
+
+                    Button("Reset to Defaults") {
+                        keyboardShortcutManager.resetToDefaults()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
             }
 
-            Divider().opacity(0.4)
-
-            // Shortcuts list
-            ScrollView {
+            SettingsSection(
+                title: "Shortcuts",
+                subtitle: "Customizable shortcuts can be disabled or recorded again."
+            ) {
                 LazyVStack(spacing: 12) {
                     ForEach(ShortcutCategory.allCases, id: \.self) { category in
                         if let categoryShortcuts = shortcutsByCategory[category], !categoryShortcuts.isEmpty {
@@ -938,10 +1029,8 @@ struct ShortcutsSettingsView: View {
                         }
                     }
                 }
-                .padding(.vertical, 8)
             }
         }
-        .padding()
     }
 }
 
@@ -1084,25 +1173,9 @@ struct SettingsSectionCard<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.headline)
-                if let subtitle {
-                    Text(subtitle).font(.caption).foregroundStyle(.secondary)
-                }
-            }
+        SettingsSection(title: title, subtitle: subtitle) {
             content
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.thinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .strokeBorder(Color.primary.opacity(0.08))
-                )
-                .shadow(color: Color.black.opacity(0.08), radius: 12, y: 6)
-        )
     }
 }
 
@@ -1128,6 +1201,12 @@ struct SiteSearchEntryEditor: View {
                 TextField("Domain (e.g. youtube.com)", text: $domain)
                 TextField("Search URL (use {query})", text: $searchURLTemplate)
                 TextField("Color Hex (e.g. #E62617)", text: $colorHex)
+
+                if let validationMessage {
+                    Text(validationMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
             }
             .formStyle(.grouped)
 
@@ -1138,16 +1217,16 @@ struct SiteSearchEntryEditor: View {
                 Button("Save") {
                     let saved = SiteSearchEntry(
                         id: entry?.id ?? UUID(),
-                        name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-                        domain: domain.trimmingCharacters(in: .whitespacesAndNewlines),
-                        searchURLTemplate: searchURLTemplate.trimmingCharacters(in: .whitespacesAndNewlines),
-                        colorHex: colorHex.trimmingCharacters(in: .whitespacesAndNewlines)
+                        name: trimmedName,
+                        domain: trimmedDomain,
+                        searchURLTemplate: trimmedSearchURLTemplate,
+                        colorHex: normalizedColorHex
                     )
                     onSave(saved)
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(name.isEmpty || domain.isEmpty || searchURLTemplate.isEmpty)
+                .disabled(validationMessage != nil)
             }
         }
         .padding(20)
@@ -1160,5 +1239,56 @@ struct SiteSearchEntryEditor: View {
                 colorHex = entry.colorHex
             }
         }
+    }
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var trimmedDomain: String {
+        domain.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var trimmedSearchURLTemplate: String {
+        searchURLTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var normalizedColorHex: String {
+        let trimmed = colorHex.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.hasPrefix("#") ? trimmed : "#\(trimmed)"
+    }
+
+    private var validationMessage: String? {
+        guard !trimmedName.isEmpty else { return "Name is required." }
+        guard !trimmedDomain.isEmpty else { return "Domain is required." }
+        guard trimmedSearchURLTemplate.contains("{query}") else {
+            return "Search URL must contain {query} where the query should go."
+        }
+        let sampleTemplate = normalizedURLTemplate(trimmedSearchURLTemplate)
+        let sample = sampleTemplate.replacingOccurrences(of: "{query}", with: "sumi")
+        guard let url = URL(string: sample),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              url.host?.isEmpty == false
+        else {
+            return "Enter a valid http or https search URL."
+        }
+        guard isValidHexColor(normalizedColorHex) else {
+            return "Color must be a 3, 6, or 8 digit hex value."
+        }
+        return nil
+    }
+
+    private func normalizedURLTemplate(_ template: String) -> String {
+        if template.hasPrefix("http://") || template.hasPrefix("https://") {
+            return template
+        }
+        return "https://\(template)"
+    }
+
+    private func isValidHexColor(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        guard [3, 6, 8].contains(trimmed.count) else { return false }
+        return trimmed.allSatisfy(\.isHexDigit)
     }
 }
