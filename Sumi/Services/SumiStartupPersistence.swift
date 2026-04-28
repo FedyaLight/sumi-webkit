@@ -33,6 +33,7 @@ final class SumiStartupPersistence {
         ExtensionEntity.self,
         UserScriptEntity.self,
         UserScriptResourceEntity.self,
+        PermissionDecisionEntity.self,
     ])
 
     // MARK: - URLs
