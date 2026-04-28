@@ -4,94 +4,131 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumi Media Permission Manual Test</title>
-  <style>
-    :root {
-      color-scheme: light dark;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      line-height: 1.4;
-    }
-
-    body {
-      margin: 24px;
-      max-width: 760px;
-    }
-
-    button {
-      margin: 0 8px 8px 0;
-      padding: 8px 12px;
-    }
-
-    video {
-      display: block;
-      width: min(100%, 560px);
-      min-height: 240px;
-      margin-top: 12px;
-      background: #111;
-    }
-
-    pre {
-      white-space: pre-wrap;
-      padding: 12px;
-      background: color-mix(in srgb, CanvasText 8%, Canvas);
-      border: 1px solid color-mix(in srgb, CanvasText 20%, Canvas);
-    }
-  </style>
+  <link rel="stylesheet" href="shared/permissions-test.css">
+  <script src="shared/permissions-test.js" defer></script>
 </head>
 <body>
-  <h1>Media Permission Manual Test</h1>
-  <p>Expected: first-time camera, microphone, or combined requests open the URL-bar anchored Sumi permission prompt. Allow this time should grant again only within the same current page visit, for the same exact site/profile/type/page id. Requesting the same device again on this page should reuse the one-time grant; reload, cross-document navigation, tab close, or WebView replacement should ask again. Allow while visiting should persist for a normal profile, don't allow should persist for a normal profile, and dismiss should not persist.</p>
-  <p>URL hub check: open Site Controls from the URL bar, open Permissions, and confirm Camera and Microphone show the current site decisions plus active or muted status after a stream starts. Changing Ask, Allow, or Block should affect future requests only, and Reset permissions should not clear cookies, site data, or tracking-protection overrides.</p>
-  <p>Runtime controls check: after allowing microphone or camera, the URL-bar active icon should remain visible while capture is active. Clicking the active icon should open Permissions and show an Active now section. Mute and Unmute should change WebKit capture state where supported; Stop should end capture where supported or show a clear unsupported/no-op result. Stored Ask, Allow, or Block settings should not change.</p>
-  <p>Anti-abuse check: dismiss the same camera or microphone prompt repeatedly. Immediate re-prompts should pause for the same site/profile/device key, but Site Controls and Site Settings should not show a stored Block. Manually setting Allow or resetting the exact permission should clear that pause.</p>
-  <p>Automatic cleanup check: with cleanup enabled in Privacy Settings, stale saved Allow decisions may be removed when the cleanup service runs. Active capture should not be interrupted; the next request or navigation should observe the removed saved Allow.</p>
+  <main class="page-shell">
+    <header class="page-header">
+      <a class="back-link" href="index.html">Back to index</a>
+      <h1>Camera And Microphone</h1>
+      <div data-runtime-info></div>
+    </header>
 
-  <div>
-    <button id="camera">Request camera</button>
-    <button id="microphone">Request microphone</button>
-    <button id="both">Request camera + microphone</button>
-    <button id="stop">Stop tracks</button>
-  </div>
+    <section class="section">
+      <h2>Browser UI Expectations</h2>
+      <ul>
+        <li>First camera, microphone, or combined request shows the URL-bar authorization prompt.</li>
+        <li>Allowed capture keeps the URL-bar active permission indicator visible while tracks are active or muted.</li>
+        <li>URL hub -> Permissions shows Camera and Microphone rows plus Active now runtime controls.</li>
+        <li>Privacy -> Site Settings lists saved Camera and Microphone decisions only when a saved site decision exists.</li>
+        <li>macOS camera or microphone denial shows system-blocked UI and must not store a site Block.</li>
+      </ul>
+    </section>
 
-  <video id="preview" autoplay muted playsinline></video>
-  <pre id="result">Idle</pre>
+    <section class="section">
+      <h2>Controls</h2>
+      <div class="controls">
+        <button id="camera">Request camera</button>
+        <button id="microphone">Request microphone</button>
+        <button id="both">Request camera + microphone</button>
+        <button id="permissions">Query camera/microphone permissions</button>
+        <button id="devices">Enumerate devices</button>
+        <button id="stop">Stop all local tracks</button>
+      </div>
+      <video id="preview" autoplay muted playsinline></video>
+    </section>
+
+    <section class="section">
+      <h2>Results</h2>
+      <div class="status status-line" data-status>Idle.</div>
+      <h3>Active Tracks</h3>
+      <pre id="tracks">No active tracks.</pre>
+      <div class="controls">
+        <button data-clear-log>Clear log</button>
+      </div>
+      <pre data-log></pre>
+    </section>
+
+    <section class="section">
+      <h2>Manual Checklist</h2>
+      <ol>
+        <li>Request camera, microphone, and combined capture from a fresh site decision.</li>
+        <li>Use Allow this time, then repeat the same request on this page; the current-page grant may be reused.</li>
+        <li>Reload, navigate away/back, and close the tab; each should clear the one-time grant and prompt again.</li>
+        <li>Use Allow while visiting this site and Don't allow, then verify URL hub and Privacy Site Settings reflect saved decisions.</li>
+        <li>Dismiss the prompt repeatedly; cooldown should suppress prompts without a stored Block.</li>
+        <li>Block Camera or Microphone in macOS settings and verify Sumi reports system-blocked, not a saved site Block.</li>
+        <li>Reset through URL hub -> Permissions -> Reset permissions for this site and through Privacy Site Settings -> Site detail -> Reset permissions.</li>
+      </ol>
+    </section>
+
+    <section class="section">
+      <h2>Notes</h2>
+      <ul>
+        <li>No capture request runs on page load; every sensitive request is behind a user-click button.</li>
+        <li>Runtime mute/unmute/stop should affect WebKit track state where WebKit exposes support. Stored Ask/Allow/Block rows must not change.</li>
+        <li>Device labels may stay blank until a device permission is granted.</li>
+      </ul>
+    </section>
+  </main>
 
   <script>
-    const preview = document.getElementById("preview");
-    const result = document.getElementById("result");
     let stream = null;
+    const preview = document.getElementById("preview");
 
-    function describeStream(nextStream) {
-      return nextStream.getTracks()
-        .map((track) => `${track.kind}: ${track.label || "(no label)"} [${track.readyState}]`)
-        .join("\n");
+    function stopTracks() {
+      if (!stream) {
+        SumiPermissionsTest.setStatus("No active local tracks.", "warn");
+        return;
+      }
+      stream.getTracks().forEach((track) => track.stop());
+      stream = null;
+      preview.srcObject = null;
+      SumiPermissionsTest.renderTracks(null, "#tracks");
+      SumiPermissionsTest.setStatus("Stopped all local tracks.", "ok");
+      SumiPermissionsTest.appendLog("Stopped all local tracks");
     }
 
-    async function requestMedia(constraints) {
+    async function requestMedia(label, constraints) {
       stopTracks();
-      result.textContent = `Requesting ${JSON.stringify(constraints)}`;
+      if (!navigator.mediaDevices?.getUserMedia) {
+        SumiPermissionsTest.setStatus("navigator.mediaDevices.getUserMedia is unavailable.", "error");
+        SumiPermissionsTest.appendLog("getUserMedia unavailable");
+        return;
+      }
+      SumiPermissionsTest.setStatus(`Requesting ${label}...`, "warn");
+      SumiPermissionsTest.appendLog(`Requesting ${label}`, constraints);
       try {
         stream = await navigator.mediaDevices.getUserMedia(constraints);
         preview.srcObject = stream;
-        result.textContent = `Success\n${describeStream(stream)}`;
+        SumiPermissionsTest.attachTrackLogging(stream, label);
+        SumiPermissionsTest.renderTracks(stream, "#tracks");
+        SumiPermissionsTest.setStatus(`${label} granted.`, "ok");
       } catch (error) {
-        result.textContent = `Error: ${error.name}\n${error.message}`;
+        SumiPermissionsTest.setStatus(`${label} failed: ${SumiPermissionsTest.formatError(error).message}`, "error");
+        SumiPermissionsTest.appendLog(`${label} failed`, SumiPermissionsTest.formatError(error));
       }
     }
 
-    function stopTracks() {
-      if (!stream) return;
-      for (const track of stream.getTracks()) {
-        track.stop();
+    SumiPermissionsTest.safeClick("#camera", () => requestMedia("camera", { video: true }));
+    SumiPermissionsTest.safeClick("#microphone", () => requestMedia("microphone", { audio: true }));
+    SumiPermissionsTest.safeClick("#both", () => requestMedia("camera and microphone", { video: true, audio: true }));
+    SumiPermissionsTest.safeClick("#permissions", () => SumiPermissionsTest.queryPermissions(["camera", "microphone"]));
+    SumiPermissionsTest.safeClick("#devices", async () => {
+      if (!navigator.mediaDevices?.enumerateDevices) {
+        SumiPermissionsTest.appendLog("enumerateDevices unavailable");
+        return;
       }
-      stream = null;
-      preview.srcObject = null;
-      result.textContent = "Stopped";
-    }
-
-    document.getElementById("camera").addEventListener("click", () => requestMedia({ video: true }));
-    document.getElementById("microphone").addEventListener("click", () => requestMedia({ audio: true }));
-    document.getElementById("both").addEventListener("click", () => requestMedia({ video: true, audio: true }));
-    document.getElementById("stop").addEventListener("click", stopTracks);
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      SumiPermissionsTest.appendLog("enumerateDevices result", devices.map((device) => ({
+        kind: device.kind,
+        label: device.label || "(no label)",
+        deviceId: device.deviceId ? "(present)" : "(empty)",
+        groupId: device.groupId ? "(present)" : "(empty)",
+      })));
+    });
+    SumiPermissionsTest.safeClick("#stop", stopTracks);
   </script>
 </body>
 </html>

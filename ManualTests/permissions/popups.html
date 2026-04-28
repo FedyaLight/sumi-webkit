@@ -4,99 +4,85 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumi Popup Permission Manual Test</title>
-  <style>
-    :root {
-      color-scheme: light dark;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-
-    body {
-      margin: 0;
-      padding: 24px;
-      line-height: 1.45;
-    }
-
-    main {
-      max-width: 880px;
-      margin: 0 auto;
-    }
-
-    h1 {
-      font-size: 24px;
-      margin: 0 0 16px;
-    }
-
-    .controls {
-      display: grid;
-      gap: 8px;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      margin: 16px 0;
-    }
-
-    button,
-    a.test-link {
-      min-height: 38px;
-      box-sizing: border-box;
-      font: inherit;
-      padding: 8px 12px;
-      border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
-      border-radius: 6px;
-      background: Canvas;
-      color: CanvasText;
-      cursor: pointer;
-      text-align: center;
-      text-decoration: none;
-    }
-
-    button:hover,
-    a.test-link:hover {
-      background: color-mix(in srgb, CanvasText 8%, Canvas);
-    }
-
-    pre {
-      min-height: 260px;
-      padding: 12px;
-      overflow: auto;
-      border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
-      border-radius: 6px;
-      white-space: pre-wrap;
-    }
-  </style>
+  <link rel="stylesheet" href="shared/permissions-test.css">
+  <script src="shared/permissions-test.js" defer></script>
 </head>
 <body>
-  <main>
-    <h1>Popup Permission Manual Test</h1>
-    <p>URL hub check: open Site Controls from the URL bar, open Permissions, and confirm Pop-ups and Redirects shows Default, Allow, and Block plus the current-page blocked popup count after automatic attempts. Default should keep user-activated popups allowed and background popups blocked.</p>
-    <div class="controls">
-      <button id="click-open">User click window.open()</button>
-      <button id="delayed-open">Delayed window.open() after click</button>
-      <button id="automatic-open">Automatic style window.open()</button>
-      <button id="repeated-open">Repeated automatic popups</button>
-      <a class="test-link" id="target-blank" href="https://example.com/?case=target-blank" target="_blank">Target blank link</a>
-      <button id="named-open">Named window popup</button>
-      <button id="blank-open">about:blank popup</button>
-      <button id="later-location">about:blank then later location</button>
-      <button id="stop-repeated">Stop repeated popups</button>
-      <button id="clear-log">Clear log</button>
-    </div>
-    <pre id="log"></pre>
+  <main class="page-shell">
+    <header class="page-header">
+      <a class="back-link" href="index.html">Back to index</a>
+      <h1>Pop-ups And Redirects</h1>
+      <div data-runtime-info></div>
+    </header>
+
+    <section class="section">
+      <h2>Browser UI Expectations</h2>
+      <ul>
+        <li>User-activated popups open by default unless the site is blocked.</li>
+        <li>Background/script popups block by default unless the site is allowed.</li>
+        <li>Blocked state appears in the URL-bar indicator and URL hub -> Permissions current-page status.</li>
+        <li>URL hub -> Permissions can set Pop-ups and redirects to Default, Allow, or Block.</li>
+        <li>Automatic popup blocks are session events, not saved site denies.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>Controls</h2>
+      <div class="controls">
+        <button id="click-open">User-click window.open</button>
+        <a class="button-link" id="target-blank" href="index.html?popup=target-blank" target="_blank">User-click target blank link</a>
+        <button id="delayed-open">Delayed popup after click</button>
+        <button id="automatic-open">Automatic-style popup</button>
+        <button id="repeated-open">Repeated automatic popups</button>
+        <button id="named-open">Named window popup</button>
+        <button id="blank-open">about:blank popup</button>
+        <button id="later-location">about:blank then later location</button>
+        <button id="stop-repeated">Stop repeated popups</button>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Results</h2>
+      <div class="status status-line" data-status>This page intentionally attempts one automatic popup on load.</div>
+      <div class="controls">
+        <button data-clear-log>Clear log</button>
+      </div>
+      <pre data-log></pre>
+    </section>
+
+    <section class="section">
+      <h2>Manual Checklist</h2>
+      <ol>
+        <li>Click user-activated controls. They should open unless Pop-ups and redirects is set to Block.</li>
+        <li>Reload this page and verify the load-time automatic popup is blocked by default without a saved site Block.</li>
+        <li>Run repeated automatic popups and confirm the blocked count increments without duplicate noisy UI.</li>
+        <li>Set Pop-ups and redirects to Allow in URL hub -> Permissions, then repeat background attempts.</li>
+        <li>Set it to Block and verify user-activated popups are blocked.</li>
+        <li>Reset permissions for this site and verify Default behavior returns.</li>
+      </ol>
+    </section>
+
+    <section class="section">
+      <h2>Notes</h2>
+      <ul>
+        <li>JavaScript can only infer blocking from <code>window.open</code> returning <code>null</code> or an inaccessible window.</li>
+        <li>Targets use local same-origin pages or <code>about:blank</code>; there are no external network dependencies.</li>
+      </ul>
+    </section>
   </main>
 
   <script>
-    const logNode = document.querySelector('#log');
     let repeatedTimer = null;
     let repeatedCount = 0;
 
-    function log(message, value) {
-      const stamp = new Date().toISOString();
-      const suffix = value === undefined ? '' : ` ${JSON.stringify(value)}`;
-      logNode.textContent = `${stamp} ${message}${suffix}\n${logNode.textContent}`;
+    function localPopupURL(caseName) {
+      return `index.html?popup=${encodeURIComponent(caseName)}#manual-popup`;
     }
 
     function describeWindow(openedWindow) {
       return {
         opened: Boolean(openedWindow),
-        closed: openedWindow ? openedWindow.closed : null
+        closed: openedWindow ? openedWindow.closed : null,
       };
     }
 
@@ -105,94 +91,93 @@
       try {
         openedWindow = window.open(url, target, features);
       } catch (error) {
-        log(`${label}: threw`, { message: String(error) });
+        SumiPermissionsTest.setStatus(`${label} threw.`, "error");
+        SumiPermissionsTest.appendLog(`${label} threw`, SumiPermissionsTest.formatError(error));
         return null;
       }
-      log(`${label}: ${openedWindow ? 'opened' : 'blocked'}`, describeWindow(openedWindow));
+      const blocked = !openedWindow;
+      SumiPermissionsTest.setStatus(`${label}: ${blocked ? "blocked or suppressed" : "opened"}.`, blocked ? "warn" : "ok");
+      SumiPermissionsTest.appendLog(`${label}: ${blocked ? "blocked" : "opened"}`, describeWindow(openedWindow));
       return openedWindow;
     }
 
-    document.querySelector('#click-open').addEventListener('click', () => {
-      openAndLog('user click window.open', 'https://example.com/?case=user-click', '_blank', 'popup,width=520,height=420');
+    SumiPermissionsTest.safeClick("#click-open", () => {
+      openAndLog("user-click window.open", localPopupURL("user-click"), "_blank", "popup,width=520,height=420");
     });
 
-    document.querySelector('#delayed-open').addEventListener('click', () => {
-      log('delayed window.open scheduled');
+    SumiPermissionsTest.safeClick("#delayed-open", () => {
+      SumiPermissionsTest.appendLog("delayed popup scheduled");
       setTimeout(() => {
-        openAndLog('delayed click window.open', 'https://example.com/?case=delayed-click', '_blank', 'popup,width=520,height=420');
+        openAndLog("delayed popup after click", localPopupURL("delayed-click"), "_blank", "popup,width=520,height=420");
       }, 1500);
     });
 
-    document.querySelector('#automatic-open').addEventListener('click', () => {
+    SumiPermissionsTest.safeClick("#automatic-open", () => {
       setTimeout(() => {
-        openAndLog('automatic style window.open', 'https://example.com/?case=automatic-button-timer', '_blank', 'popup,width=520,height=420');
+        openAndLog("automatic-style popup", localPopupURL("automatic-button-timer"), "_blank", "popup,width=520,height=420");
       }, 0);
     });
 
-    document.querySelector('#repeated-open').addEventListener('click', () => {
+    SumiPermissionsTest.safeClick("#repeated-open", () => {
       if (repeatedTimer !== null) {
-        log('repeated automatic popups already running');
+        SumiPermissionsTest.appendLog("repeated automatic popups already running");
         return;
       }
       repeatedCount = 0;
+      SumiPermissionsTest.appendLog("repeated automatic popups scheduled after activation grace window");
       repeatedTimer = setTimeout(() => {
         repeatedTimer = setInterval(() => {
           repeatedCount += 1;
-          openAndLog(`repeated automatic popup ${repeatedCount}`, `https://example.com/?case=repeated-${repeatedCount}`, '_blank', 'popup,width=460,height=360');
+          openAndLog(`repeated automatic popup ${repeatedCount}`, localPopupURL(`repeated-${repeatedCount}`), "_blank", "popup,width=460,height=360");
           if (repeatedCount >= 5) {
             clearInterval(repeatedTimer);
             repeatedTimer = null;
-            log('repeated automatic popups stopped after 5 attempts');
+            SumiPermissionsTest.appendLog("repeated automatic popups stopped after 5 attempts");
           }
         }, 700);
       }, 7000);
-      log('repeated automatic popups scheduled after activation grace window');
     });
 
-    document.querySelector('#target-blank').addEventListener('click', () => {
-      log('target blank link clicked');
+    SumiPermissionsTest.safeClick("#named-open", () => {
+      openAndLog("named window popup", localPopupURL("named-window"), "sumi_popup_named_window", "popup,width=520,height=420");
     });
 
-    document.querySelector('#named-open').addEventListener('click', () => {
-      openAndLog('named window popup', 'https://example.com/?case=named-window', 'sumi_popup_named_window', 'popup,width=520,height=420');
+    SumiPermissionsTest.safeClick("#blank-open", () => {
+      openAndLog("about:blank popup", "about:blank", "_blank", "popup,width=420,height=320");
     });
 
-    document.querySelector('#blank-open').addEventListener('click', () => {
-      openAndLog('about blank popup', 'about:blank', '_blank', 'popup,width=420,height=320');
-    });
-
-    document.querySelector('#later-location').addEventListener('click', () => {
-      const openedWindow = openAndLog('about blank later location popup', 'about:blank', '_blank', 'popup,width=520,height=420');
+    SumiPermissionsTest.safeClick("#later-location", () => {
+      const openedWindow = openAndLog("about:blank later location popup", "about:blank", "_blank", "popup,width=520,height=420");
       setTimeout(() => {
         if (!openedWindow) {
-          log('later location assignment skipped because popup was blocked');
+          SumiPermissionsTest.appendLog("later location assignment skipped because popup was blocked");
           return;
         }
         try {
-          openedWindow.location.href = 'https://example.com/?case=later-location';
-          log('later location assigned');
+          openedWindow.location.href = localPopupURL("later-location");
+          SumiPermissionsTest.appendLog("later location assigned");
         } catch (error) {
-          log('later location assignment threw', { message: String(error) });
+          SumiPermissionsTest.appendLog("later location assignment threw", SumiPermissionsTest.formatError(error));
         }
       }, 1200);
     });
 
-    document.querySelector('#stop-repeated').addEventListener('click', () => {
+    SumiPermissionsTest.safeClick("#stop-repeated", () => {
       if (repeatedTimer !== null) {
         clearTimeout(repeatedTimer);
         clearInterval(repeatedTimer);
         repeatedTimer = null;
       }
-      log('repeated automatic popups stopped');
+      SumiPermissionsTest.appendLog("repeated automatic popups stopped");
     });
 
-    document.querySelector('#clear-log').addEventListener('click', () => {
-      logNode.textContent = '';
+    document.getElementById("target-blank").addEventListener("click", () => {
+      SumiPermissionsTest.appendLog("target blank link clicked");
     });
 
-    window.addEventListener('load', () => {
-      log('page loaded, attempting load-time automatic popup');
-      openAndLog('load-time automatic window.open', 'https://example.com/?case=load-time-automatic', '_blank', 'popup,width=460,height=360');
+    window.addEventListener("load", () => {
+      SumiPermissionsTest.appendLog("page loaded, attempting load-time automatic popup");
+      openAndLog("load-time automatic popup", localPopupURL("load-time-automatic"), "_blank", "popup,width=460,height=360");
     });
   </script>
 </body>

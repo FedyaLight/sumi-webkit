@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sumi Site Settings Manual Checklist</title>
+  <link rel="stylesheet" href="shared/permissions-test.css">
+  <script src="shared/permissions-test.js" defer></script>
+</head>
+<body>
+  <main class="page-shell">
+    <header class="page-header">
+      <a class="back-link" href="index.html">Back to index</a>
+      <h1>Site Settings Checklist</h1>
+      <div data-runtime-info></div>
+    </header>
+
+    <section class="section">
+      <h2>Browser UI Expectations</h2>
+      <ul>
+        <li>URL hub -> Permissions is current-site scoped and keeps runtime controls separate from saved decisions.</li>
+        <li>Privacy -> Site Settings is profile scoped and lists saved decisions, recent activity, category pages, and site details.</li>
+        <li>Reset permissions clears only permission decisions for the exact scope; cookies and website data remain separate.</li>
+        <li>Unsupported content settings are explanatory only, not fake controls.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>Controls</h2>
+      <p>This checklist has no scripted permission requests. Use it while moving through Sumi UI after exercising the per-permission pages.</p>
+    </section>
+
+    <section class="section">
+      <h2>Results</h2>
+      <div class="status status-line" data-status>Manual checklist only.</div>
+      <div class="controls">
+        <button data-clear-log>Clear log</button>
+      </div>
+      <pre data-log></pre>
+    </section>
+
+    <section class="section">
+      <h2>Manual Checklist</h2>
+      <ol>
+        <li>Open URL hub -> Permissions from a normal web page and verify Camera, Microphone, Screen Sharing, Location, Notifications, Pop-ups and redirects, External app links, Autoplay, Storage Access, and File chooser rows.</li>
+        <li>Verify File chooser is read-only and Autoplay uses Default/Allow all/Block audible/Block all options where supported.</li>
+        <li>Trigger camera, microphone, geolocation, and autoplay reload-required states and verify Active now appears only for current-page runtime state.</li>
+        <li>Use Reset permissions for this site and verify current-page transient state and saved site decisions clear for the current site only.</li>
+        <li>Open Privacy Settings -> Site Settings main page and verify Recent activity, site list entry, Permissions categories, More content settings, and Automatic permission cleanup.</li>
+        <li>Open the site list, search by origin/domain, and open a site detail page.</li>
+        <li>Change site detail rows and verify exact requesting/top-origin scope is preserved.</li>
+        <li>Open each category page, remove an exception, and verify the site detail remains consistent.</li>
+        <li>Confirm unsupported JavaScript, images, automatic downloads, ads, background sync, and sound settings are shown only as unavailable text.</li>
+        <li>Verify auto-revoked recent activity appears after cleanup test paths remove stale saved Allows.</li>
+      </ol>
+    </section>
+
+    <section class="section">
+      <h2>Notes</h2>
+      <ul>
+        <li>Privacy Site Settings is not an active runtime control surface; it may not have a current WebView/page context.</li>
+        <li>Embedded storage access decisions should preserve both requesting origin and top origin.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

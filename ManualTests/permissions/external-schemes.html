@@ -4,228 +4,167 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumi External Scheme Permission Manual Test</title>
-  <style>
-    :root {
-      color-scheme: light dark;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-
-    body {
-      margin: 0;
-      padding: 24px;
-      line-height: 1.45;
-    }
-
-    main {
-      max-width: 960px;
-      margin: 0 auto;
-    }
-
-    h1 {
-      font-size: 24px;
-      margin: 0 0 16px;
-    }
-
-    .controls {
-      display: grid;
-      gap: 8px;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      margin: 16px 0;
-    }
-
-    .custom-launch {
-      display: grid;
-      gap: 8px;
-      grid-template-columns: minmax(240px, 1fr) auto;
-      margin: 16px 0;
-    }
-
-    button,
-    a.test-link,
-    input {
-      min-height: 38px;
-      box-sizing: border-box;
-      font: inherit;
-      padding: 8px 12px;
-      border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
-      border-radius: 6px;
-      background: Canvas;
-      color: CanvasText;
-    }
-
-    button,
-    a.test-link {
-      cursor: pointer;
-      text-align: center;
-      text-decoration: none;
-    }
-
-    button:hover,
-    a.test-link:hover {
-      background: color-mix(in srgb, CanvasText 8%, Canvas);
-    }
-
-    pre {
-      min-height: 300px;
-      padding: 12px;
-      overflow: auto;
-      border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
-      border-radius: 6px;
-      white-space: pre-wrap;
-    }
-
-    iframe {
-      width: 1px;
-      height: 1px;
-      border: 0;
-      opacity: 0;
-      position: absolute;
-      pointer-events: none;
-    }
-  </style>
+  <link rel="stylesheet" href="shared/permissions-test.css">
+  <script src="shared/permissions-test.js" defer></script>
 </head>
 <body>
-  <main>
-    <h1>External Scheme Permission Manual Test</h1>
-    <p>Expected: user-click external app launches open the URL-bar anchored Sumi prompt and open the app only after Open this time or a persistent allow. Open this time authorizes only the current attempt for the current page and scheme; a second attempt, a different scheme, a background/script attempt, or an attempt after navigation should prompt or block again. Always allow is available only for persistent profiles. Don't allow persists deny for normal profiles, dismiss does not persist, and background/script launches remain blocked without prompt.</p>
-    <p>URL hub check: open Site Controls from the URL bar, open Permissions, and confirm External App Links shows a generic Ask row plus scheme-specific rows after recent or stored attempts. Changing a scheme row should affect only that site and scheme, for example <code>mailto</code> should not change <code>zoommtg</code>.</p>
-    <p>Anti-abuse check: repeatedly dismiss the same user-click prompt or trigger repeated background attempts. Suppressed attempts should not open the external app and should not create a stored Block. URLs shown in UI/state should stay redacted without query or fragment.</p>
-    <p>Automatic cleanup check: stale saved Allows are exact site+scheme decisions. Cleanup may remove an old <code>zoommtg</code> Allow without removing a fresh <code>mailto</code> Allow for the same site.</p>
+  <main class="page-shell">
+    <header class="page-header">
+      <a class="back-link" href="index.html">Back to index</a>
+      <h1>External App Links</h1>
+      <div data-runtime-info></div>
+    </header>
 
-    <div class="controls">
-      <a class="test-link" id="mailto-link" href="mailto:manual@example.com?subject=sumi-manual-secret#fragment">User click mailto:</a>
-      <a class="test-link" id="tel-link" href="tel:+15555550123">User click tel:</a>
-      <a class="test-link" id="facetime-link" href="facetime:manual@example.com">User click facetime:</a>
-      <button id="delayed-click">Delayed external scheme after click</button>
-      <button id="script-location">Script window.location mailto:</button>
-      <button id="iframe-launch">Hidden iframe external scheme</button>
-      <button id="unsupported-launch">Unsupported scheme</button>
-      <button id="repeated-background">Repeated background attempts</button>
-      <button id="stop-repeated">Stop repeated attempts</button>
-      <button id="clear-log">Clear log</button>
-    </div>
+    <section class="section">
+      <h2>Browser UI Expectations</h2>
+      <ul>
+        <li>First-time user-click external app links show the URL-bar authorization prompt.</li>
+        <li>Open this time opens only the current attempt. Always allow is site and scheme specific.</li>
+        <li>Background/script attempts block by default unless an allow exists.</li>
+        <li>No external app should open before the user settles a prompt or a stored allow is found.</li>
+        <li>URL query and fragment are redacted in stored attempt state.</li>
+      </ul>
+    </section>
 
-    <div class="custom-launch">
-      <input id="custom-url" value="zoommtg://join/123?token=manual-secret#fragment" aria-label="Custom scheme URL">
-      <button id="custom-launch">Launch custom scheme</button>
-    </div>
+    <section class="section">
+      <h2>Controls</h2>
+      <div class="controls">
+        <a class="button-link" id="mailto-link" href="mailto:manual@example.com?subject=sumi-secret#fragment">User-click mailto:</a>
+        <a class="button-link" id="tel-link" href="tel:+15555550123">User-click tel:</a>
+        <a class="button-link" id="facetime-link" href="facetime:manual@example.com">User-click facetime:</a>
+        <button id="delayed-click">Delayed external scheme after click</button>
+        <button id="script-location">Script window.location mailto:</button>
+        <button id="iframe-launch">Hidden iframe external scheme</button>
+        <button id="unsupported-launch">Unsupported scheme</button>
+        <button id="repeated-background">Repeated background attempts</button>
+        <button id="stop-repeated">Stop repeated attempts</button>
+      </div>
+      <div class="form-grid">
+        <label>Custom scheme URL <input id="custom-url" value="zoommtg://join/123?token=manual-secret#fragment"></label>
+        <button id="custom-launch">Launch custom scheme</button>
+      </div>
+      <iframe id="scheme-frame" class="inline-frame" title="External scheme attempt frame"></iframe>
+    </section>
 
-    <iframe id="scheme-frame" title="External scheme attempt frame"></iframe>
-    <pre id="log"></pre>
+    <section class="section">
+      <h2>Results</h2>
+      <div class="status status-line" data-status>This page intentionally schedules one automatic external-scheme attempt on load.</div>
+      <div class="controls">
+        <button data-clear-log>Clear log</button>
+      </div>
+      <pre data-log></pre>
+    </section>
+
+    <section class="section">
+      <h2>Manual Checklist</h2>
+      <ol>
+        <li>Click <code>mailto:</code>, <code>facetime:</code>, <code>tel:</code>, and a custom scheme. No app should open before Sumi allows it.</li>
+        <li>Choose Open this time and repeat the same link; only the original attempt should be covered.</li>
+        <li>Choose Always allow this site to open this app, then verify only that scheme is allowed for this site.</li>
+        <li>Choose Don't allow and verify a saved Block appears only for the site and scheme.</li>
+        <li>Dismiss repeatedly; cooldown should suppress prompts without creating a saved Block.</li>
+        <li>Run load-time, iframe, delayed, and repeated background attempts. They should block by default and keep URLs redacted.</li>
+        <li>Reset from URL hub -> Permissions and Privacy Site Settings.</li>
+      </ol>
+    </section>
+
+    <section class="section">
+      <h2>Notes</h2>
+      <ul>
+        <li>Unsupported or no-handler schemes should cancel without calling the app opener.</li>
+        <li>Stored allow cleanup is exact-key scoped, so cleanup can remove one stale scheme without affecting another.</li>
+      </ul>
+    </section>
   </main>
 
   <script>
-    const logNode = document.querySelector('#log');
-    const frame = document.querySelector('#scheme-frame');
-    const customURL = document.querySelector('#custom-url');
+    const frame = document.getElementById("scheme-frame");
+    const customURL = document.getElementById("custom-url");
     let repeatedTimer = null;
     let repeatedCount = 0;
 
-    function log(message, value) {
-      const stamp = new Date().toISOString();
-      const suffix = value === undefined ? '' : ` ${JSON.stringify(value)}`;
-      logNode.textContent = `${stamp} ${message}${suffix}\n${logNode.textContent}`;
-    }
-
     function assignTopLocation(label, url) {
-      log(`${label}: assigning window.location`, { url });
+      SumiPermissionsTest.appendLog(`${label}: assigning window.location`, { url });
       try {
         window.location.href = url;
       } catch (error) {
-        log(`${label}: threw`, { message: String(error) });
+        SumiPermissionsTest.appendLog(`${label}: threw`, SumiPermissionsTest.formatError(error));
       }
     }
 
     function assignFrame(label, url) {
-      log(`${label}: assigning hidden iframe`, { url });
+      SumiPermissionsTest.appendLog(`${label}: assigning hidden iframe`, { url });
       try {
-        frame.src = 'about:blank';
+        frame.src = "about:blank";
         setTimeout(() => {
           frame.src = url;
         }, 0);
       } catch (error) {
-        log(`${label}: threw`, { message: String(error) });
+        SumiPermissionsTest.appendLog(`${label}: threw`, SumiPermissionsTest.formatError(error));
       }
     }
 
-    document.querySelector('#mailto-link').addEventListener('click', () => {
-      log('mailto link clicked');
+    ["mailto-link", "tel-link", "facetime-link"].forEach((id) => {
+      document.getElementById(id).addEventListener("click", () => {
+        SumiPermissionsTest.appendLog(`${id} clicked`);
+      });
     });
 
-    document.querySelector('#tel-link').addEventListener('click', () => {
-      log('tel link clicked');
+    SumiPermissionsTest.safeClick("#custom-launch", () => {
+      assignTopLocation("custom scheme button", customURL.value.trim());
     });
 
-    document.querySelector('#facetime-link').addEventListener('click', () => {
-      log('facetime link clicked');
-    });
-
-    document.querySelector('#custom-launch').addEventListener('click', () => {
-      assignTopLocation('custom scheme button', customURL.value.trim());
-    });
-
-    document.querySelector('#delayed-click').addEventListener('click', () => {
+    SumiPermissionsTest.safeClick("#delayed-click", () => {
       const url = customURL.value.trim();
-      log('delayed external scheme scheduled', { url });
-      setTimeout(() => {
-        assignTopLocation('delayed external scheme', url);
-      }, 1500);
+      SumiPermissionsTest.appendLog("delayed external scheme scheduled", { url });
+      setTimeout(() => assignTopLocation("delayed external scheme", url), 1500);
     });
 
-    document.querySelector('#script-location').addEventListener('click', () => {
-      setTimeout(() => {
-        assignTopLocation('script window.location', 'mailto:script@example.com?subject=script-secret#fragment');
-      }, 0);
+    SumiPermissionsTest.safeClick("#script-location", () => {
+      setTimeout(() => assignTopLocation("script window.location", "mailto:script@example.com?subject=script-secret#fragment"), 0);
     });
 
-    document.querySelector('#iframe-launch').addEventListener('click', () => {
-      assignFrame('iframe external scheme', 'mailto:iframe@example.com?subject=iframe-secret#fragment');
+    SumiPermissionsTest.safeClick("#iframe-launch", () => {
+      assignFrame("iframe external scheme", "mailto:iframe@example.com?subject=iframe-secret#fragment");
     });
 
-    document.querySelector('#unsupported-launch').addEventListener('click', () => {
-      assignTopLocation('unsupported external scheme', 'sumi-unsupported-scheme://payload?token=manual-secret#fragment');
+    SumiPermissionsTest.safeClick("#unsupported-launch", () => {
+      assignTopLocation("unsupported external scheme", "sumi-unsupported-scheme://payload?token=manual-secret#fragment");
     });
 
-    document.querySelector('#repeated-background').addEventListener('click', () => {
+    SumiPermissionsTest.safeClick("#repeated-background", () => {
       if (repeatedTimer !== null) {
-        log('repeated background attempts already running');
+        SumiPermissionsTest.appendLog("repeated background attempts already running");
         return;
       }
       repeatedCount = 0;
-      log('repeated background attempts scheduled after activation grace window');
+      SumiPermissionsTest.appendLog("repeated background attempts scheduled after activation grace window");
       repeatedTimer = setTimeout(() => {
         repeatedTimer = setInterval(() => {
           repeatedCount += 1;
-          assignFrame(
-            `repeated background attempt ${repeatedCount}`,
-            `mailto:repeat-${repeatedCount}@example.com?token=repeat-secret-${repeatedCount}#fragment`
-          );
+          assignFrame(`repeated background attempt ${repeatedCount}`, `mailto:repeat-${repeatedCount}@example.com?token=repeat-secret-${repeatedCount}#fragment`);
           if (repeatedCount >= 5) {
             clearInterval(repeatedTimer);
             repeatedTimer = null;
-            log('repeated background attempts stopped after 5 attempts');
+            SumiPermissionsTest.appendLog("repeated background attempts stopped after 5 attempts");
           }
         }, 700);
       }, 7000);
     });
 
-    document.querySelector('#stop-repeated').addEventListener('click', () => {
+    SumiPermissionsTest.safeClick("#stop-repeated", () => {
       if (repeatedTimer !== null) {
         clearTimeout(repeatedTimer);
         clearInterval(repeatedTimer);
         repeatedTimer = null;
       }
-      log('repeated background attempts stopped');
+      SumiPermissionsTest.appendLog("repeated background attempts stopped");
     });
 
-    document.querySelector('#clear-log').addEventListener('click', () => {
-      logNode.textContent = '';
-    });
-
-    window.addEventListener('load', () => {
-      log('page loaded, scheduling load-time automatic external scheme');
+    window.addEventListener("load", () => {
+      SumiPermissionsTest.appendLog("page loaded, scheduling load-time automatic external scheme");
       setTimeout(() => {
-        assignFrame('load-time automatic external scheme', 'mailto:load@example.com?subject=load-secret#fragment');
+        assignFrame("load-time automatic external scheme", "mailto:load@example.com?subject=load-secret#fragment");
       }, 500);
     });
   </script>

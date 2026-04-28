@@ -49,9 +49,13 @@ final class SumiScreenCapturePermissionTests: XCTestCase {
 
         XCTAssertTrue(source.contains("getDisplayMedia({ video: true })"))
         XCTAssertTrue(source.contains("getDisplayMedia({ video: true, audio: true })"))
-        XCTAssertTrue(source.contains("navigator.permissions.query({ name: \"display-capture\" })"))
-        XCTAssertTrue(source.contains("track.addEventListener(\"ended\""))
-        XCTAssertTrue(source.contains("track.addEventListener(\"mute\""))
-        XCTAssertTrue(source.contains("track.addEventListener(\"unmute\""))
+        XCTAssertTrue(source.contains("Query display-capture permission"))
+        let shared = try String(
+            contentsOf: repoRoot.appendingPathComponent("ManualTests/permissions/shared/permissions-test.js"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(shared.contains("track.addEventListener(\"ended\""))
+        XCTAssertTrue(shared.contains("track.addEventListener(\"mute\""))
+        XCTAssertTrue(shared.contains("track.addEventListener(\"unmute\""))
     }
 }

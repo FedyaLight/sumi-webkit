@@ -3,142 +3,115 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sumi Screen Capture Permission Manual Test</title>
-  <style>
-    :root {
-      color-scheme: light dark;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-
-    body {
-      margin: 24px;
-      max-width: 920px;
-      line-height: 1.45;
-    }
-
-    button {
-      margin: 0 8px 8px 0;
-      padding: 8px 12px;
-    }
-
-    video {
-      display: block;
-      width: min(100%, 720px);
-      margin: 16px 0;
-      background: #111;
-      aspect-ratio: 16 / 9;
-    }
-
-    pre {
-      min-height: 180px;
-      padding: 12px;
-      overflow: auto;
-      background: color-mix(in srgb, CanvasText 10%, Canvas);
-      border: 1px solid color-mix(in srgb, CanvasText 22%, Canvas);
-    }
-  </style>
+  <title>Sumi Screen Capture Manual Test</title>
+  <link rel="stylesheet" href="shared/permissions-test.css">
+  <script src="shared/permissions-test.js" defer></script>
 </head>
 <body>
-  <h1>Screen Capture Permission</h1>
-  <p>Expected: first-time display capture requests intercepted by Sumi open the URL-bar anchored site permission prompt before WebKit or macOS picker behavior. Allow this time should grant again only within the same current page visit, for the same exact site/profile/type/page id. Repeating display capture on this page may reuse the one-time grant; reload, cross-document navigation, tab close, or WebView replacement should ask again. Allow while visiting should persist for a normal profile, don't allow should persist for a normal profile, and dismiss should not persist. If macOS Screen Recording blocks access, the prompt should show a system-blocked explanation and System Settings action.</p>
-  <p>URL hub check: open Site Controls from the URL bar, open Permissions, and confirm Screen Sharing shows the current site decision and macOS Screen Recording blocked state separately. The submenu should not expose fake stop, revoke, or runtime screen-sharing controls. If Sumi can prove an active-like screen sharing state, it may show the disabled explanation Screen sharing is controlled by the site/WebKit picker; stopping remains owned by the site, WebKit picker, or system UI unless a real runtime API is wired.</p>
+  <main class="page-shell">
+    <header class="page-header">
+      <a class="back-link" href="index.html">Back to index</a>
+      <h1>Screen Sharing</h1>
+      <div data-runtime-info></div>
+    </header>
 
-  <div>
-    <button id="video">getDisplayMedia video</button>
-    <button id="video-audio">getDisplayMedia video + audio</button>
-    <button id="permissions">query display-capture permission</button>
-    <button id="stop">stop tracks</button>
-    <button id="clear">clear log</button>
-  </div>
+    <section class="section">
+      <h2>Browser UI Expectations</h2>
+      <ul>
+        <li>Sumi's site prompt appears before WebKit or macOS screen picker behavior where the WebKit callback is available.</li>
+        <li>macOS Screen Recording blocked state shows system-blocked UI and must not store a site Block.</li>
+        <li>URL hub -> Permissions and Privacy -> Site Settings show Screen Sharing saved decisions.</li>
+        <li>Screen capture runtime stop controls are unsupported unless a real WebKit runtime API exists; confirm no fake stop control appears.</li>
+      </ul>
+    </section>
 
-  <video id="preview" autoplay playsinline muted></video>
-  <pre id="log" aria-live="polite"></pre>
+    <section class="section">
+      <h2>Controls</h2>
+      <div class="controls">
+        <button id="video">getDisplayMedia({ video: true })</button>
+        <button id="video-audio">getDisplayMedia({ video: true, audio: true })</button>
+        <button id="query">Query display-capture permission</button>
+        <button id="stop">Stop local display tracks</button>
+      </div>
+      <video id="preview" autoplay playsinline muted></video>
+    </section>
+
+    <section class="section">
+      <h2>Results</h2>
+      <div class="status status-line" data-status>Idle.</div>
+      <h3>Active Tracks</h3>
+      <pre id="tracks">No active tracks.</pre>
+      <div class="controls">
+        <button data-clear-log>Clear log</button>
+      </div>
+      <pre data-log></pre>
+    </section>
+
+    <section class="section">
+      <h2>Manual Checklist</h2>
+      <ol>
+        <li>Request video-only display capture and video+audio display capture where WebKit supports audio.</li>
+        <li>Use Allow this time, repeat on the same page, then reload and verify Sumi prompts again.</li>
+        <li>Navigate away/back and close the tab; one-time grants should clear.</li>
+        <li>Use Allow while visiting and Don't allow; verify saved Screen Sharing decisions in URL hub and Site Settings.</li>
+        <li>Block Screen Recording in macOS settings and verify system-blocked UI without a saved site Block.</li>
+        <li>Open URL hub -> Permissions while capture is active and verify no fake runtime stop/revoke control appears.</li>
+        <li>Reset permissions for this site.</li>
+      </ol>
+    </section>
+
+    <section class="section">
+      <h2>Notes</h2>
+      <ul>
+        <li>No screen capture request runs on page load.</li>
+        <li>A granted Sumi decision lets WebKit continue to its own picker; Sumi does not select a display or window directly.</li>
+        <li>The local Stop button stops tracks visible to this page; it is not a Sumi runtime control.</li>
+      </ul>
+    </section>
+  </main>
 
   <script>
-    const preview = document.getElementById("preview");
-    const log = document.getElementById("log");
     let stream = null;
-
-    function write(message, detail) {
-      const timestamp = new Date().toISOString();
-      const suffix = detail ? ` ${detail}` : "";
-      log.textContent += `[${timestamp}] ${message}${suffix}\n`;
-      log.scrollTop = log.scrollHeight;
-    }
-
-    function attachTrackLogging(nextStream) {
-      for (const track of nextStream.getTracks()) {
-        write("track added", `${track.kind}:${track.label || "(no label)"}`);
-        track.addEventListener("ended", () => write("track ended", track.kind));
-        track.addEventListener("mute", () => write("track muted", track.kind));
-        track.addEventListener("unmute", () => write("track unmuted", track.kind));
-      }
-    }
-
-    async function startCapture(label, captureFactory) {
-      if (!navigator.mediaDevices?.getDisplayMedia) {
-        write("getDisplayMedia unavailable");
-        return;
-      }
-
-      stopCapture();
-      try {
-        write("requesting display capture", label);
-        stream = await captureFactory();
-        preview.srcObject = stream;
-        attachTrackLogging(stream);
-        write("display capture started");
-      } catch (error) {
-        write("display capture failed", `${error.name}: ${error.message}`);
-      }
-    }
+    const preview = document.getElementById("preview");
 
     function stopCapture() {
       if (!stream) {
+        SumiPermissionsTest.setStatus("No active display tracks.", "warn");
         return;
       }
-      for (const track of stream.getTracks()) {
-        track.stop();
-      }
-      preview.srcObject = null;
+      stream.getTracks().forEach((track) => track.stop());
       stream = null;
-      write("stopped all tracks");
+      preview.srcObject = null;
+      SumiPermissionsTest.renderTracks(null, "#tracks");
+      SumiPermissionsTest.setStatus("Stopped local display tracks.", "ok");
+      SumiPermissionsTest.appendLog("Stopped local display tracks");
     }
 
-    async function queryDisplayCapturePermission() {
-      if (!navigator.permissions?.query) {
-        write("Permissions API query unavailable");
+    async function startCapture(label, constraints) {
+      if (!navigator.mediaDevices?.getDisplayMedia) {
+        SumiPermissionsTest.setStatus("navigator.mediaDevices.getDisplayMedia is unavailable.", "error");
+        SumiPermissionsTest.appendLog("getDisplayMedia unavailable");
         return;
       }
-
+      stopCapture();
+      SumiPermissionsTest.setStatus(`Requesting ${label}...`, "warn");
+      SumiPermissionsTest.appendLog(`Requesting ${label}`, constraints);
       try {
-        const status = await navigator.permissions.query({ name: "display-capture" });
-        write("display-capture permission state", status.state);
-        status.onchange = () => write("display-capture permission changed", status.state);
+        stream = await navigator.mediaDevices.getDisplayMedia(constraints);
+        preview.srcObject = stream;
+        SumiPermissionsTest.attachTrackLogging(stream, label);
+        SumiPermissionsTest.renderTracks(stream, "#tracks");
+        SumiPermissionsTest.setStatus(`${label} started.`, "ok");
       } catch (error) {
-        write("display-capture permission query failed", `${error.name}: ${error.message}`);
+        SumiPermissionsTest.setStatus(`${label} failed: ${SumiPermissionsTest.formatError(error).message}`, "error");
+        SumiPermissionsTest.appendLog(`${label} failed`, SumiPermissionsTest.formatError(error));
       }
     }
 
-    document.getElementById("video").addEventListener("click", () => {
-      startCapture(
-        "{ video: true }",
-        () => navigator.mediaDevices.getDisplayMedia({ video: true })
-      );
-    });
-    document.getElementById("video-audio").addEventListener("click", () => {
-      startCapture(
-        "{ video: true, audio: true }",
-        () => navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
-      );
-    });
-    document.getElementById("permissions").addEventListener("click", queryDisplayCapturePermission);
-    document.getElementById("stop").addEventListener("click", stopCapture);
-    document.getElementById("clear").addEventListener("click", () => {
-      log.textContent = "";
-    });
-
-    write("page ready");
+    SumiPermissionsTest.safeClick("#video", () => startCapture("display capture video", { video: true }));
+    SumiPermissionsTest.safeClick("#video-audio", () => startCapture("display capture video and audio", { video: true, audio: true }));
+    SumiPermissionsTest.safeClick("#query", () => SumiPermissionsTest.queryPermission("display-capture"));
+    SumiPermissionsTest.safeClick("#stop", stopCapture);
   </script>
 </body>
 </html>
