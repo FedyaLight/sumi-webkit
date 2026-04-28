@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sumi Permission Manual Tests</title>
+  <link rel="stylesheet" href="shared/permissions-test.css">
+  <script src="shared/permissions-test.js" defer></script>
+</head>
+<body>
+  <main class="page-shell">
+    <header class="page-header">
+      <h1>Sumi Permission Manual Tests</h1>
+      <p class="warning">Serve this directory from <code>http://localhost</code> or <code>https://localhost</code>. Do not run these pages from <code>file://</code>; secure-context and origin checks are part of the validation.</p>
+      <section class="section">
+        <h2>Browser Runtime</h2>
+        <div data-runtime-info></div>
+      </section>
+    </header>
+
+    <section class="section">
+      <h2>Expected Sumi UI Surfaces</h2>
+      <ul>
+        <li>URL-bar permission indicator: one current-page icon for pending, active, blocked, system-blocked, or reload-required states.</li>
+        <li>Authorization prompt: URL-bar anchored prompt for camera, microphone, location, notifications, screen sharing, storage access, and user-click external app links.</li>
+        <li>URL hub Permissions submenu: current-site rows, Reset permissions for this site, active runtime controls, and Site settings link.</li>
+        <li>Privacy -> Site Settings: profile-scoped stored decisions, site detail, category pages, reset, cleanup toggle, and recent activity.</li>
+        <li>Runtime controls: camera/microphone mute or stop, geolocation pause/resume/stop-this-visit, and autoplay Reload to apply.</li>
+        <li>Anti-abuse and cleanup: repeated dismissals suppress prompts without stored deny; stale saved Allow cleanup is opt-in and exact-key scoped.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>Permission Pages</h2>
+      <div class="grid">
+        <a class="button-link" href="media.html">Camera and Microphone</a>
+        <a class="button-link" href="geolocation.html">Location</a>
+        <a class="button-link" href="notifications.html">Notifications</a>
+        <a class="button-link" href="screen-capture.html">Screen Sharing</a>
+        <a class="button-link" href="popups.html">Pop-ups and Redirects</a>
+        <a class="button-link" href="external-schemes.html">External App Links</a>
+        <a class="button-link" href="autoplay.html">Autoplay</a>
+        <a class="button-link" href="file-picker.html">File Picker</a>
+        <a class="button-link" href="storage-access.html">Storage Access Overview</a>
+        <a class="button-link" href="storage-access-embedder.html">Storage Access Embedder</a>
+        <a class="button-link" href="storage-access-frame.html">Storage Access Frame</a>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Settings And Lifecycle Checklists</h2>
+      <div class="grid">
+        <a class="button-link" href="site-settings-checklist.html">Site Settings Checklist</a>
+        <a class="button-link" href="anti-abuse-cleanup-checklist.html">Anti-Abuse And Cleanup Checklist</a>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Local Server Commands</h2>
+      <pre>cd ManualTests/permissions
+python3 -m http.server 8000
+
+# Storage Access API two-origin run:
+python3 -m http.server 8001</pre>
+    </section>
+  </main>
+</body>
+</html>

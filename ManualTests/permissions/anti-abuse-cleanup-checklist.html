@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sumi Anti-Abuse And Cleanup Manual Checklist</title>
+  <link rel="stylesheet" href="shared/permissions-test.css">
+  <script src="shared/permissions-test.js" defer></script>
+</head>
+<body>
+  <main class="page-shell">
+    <header class="page-header">
+      <a class="back-link" href="index.html">Back to index</a>
+      <h1>Anti-Abuse And Cleanup Checklist</h1>
+      <div data-runtime-info></div>
+    </header>
+
+    <section class="section">
+      <h2>Browser UI Expectations</h2>
+      <ul>
+        <li>Repeated prompt dismissals enter local cooldown or embargo without writing a saved site Block.</li>
+        <li>Manual Allow, Allow while visiting, or Reset for the exact key bypasses or clears prompt suppression.</li>
+        <li>System-blocked repeated requests are throttled as system UI spam but remain system-blocked, not site-denied.</li>
+        <li>Automatic cleanup is opt-in, removes only stale saved Allow decisions, and records auto-revoked recent activity.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>Controls</h2>
+      <p>This checklist coordinates manual steps across the permission pages. Cleanup timing is validated mostly through tests because waiting 90 days manually is not practical.</p>
+    </section>
+
+    <section class="section">
+      <h2>Results</h2>
+      <div class="status status-line" data-status>Manual checklist only.</div>
+      <div class="controls">
+        <button data-clear-log>Clear log</button>
+      </div>
+      <pre data-log></pre>
+    </section>
+
+    <section class="section">
+      <h2>Manual Checklist</h2>
+      <ol>
+        <li>On <code>media.html</code>, dismiss the same camera or microphone prompt repeatedly and verify prompt cooldown without a saved Block.</li>
+        <li>On <code>geolocation.html</code>, repeat dismissal and verify Location Services blocked state remains separate from site Block.</li>
+        <li>On <code>notifications.html</code>, dismiss <code>Notification.requestPermission()</code> and verify current and suppressed requests resolve <code>default</code>.</li>
+        <li>On <code>external-schemes.html</code>, trigger repeated background attempts and verify no app opens and no stored deny is written.</li>
+        <li>Set a manual Allow and verify the next request bypasses suppression.</li>
+        <li>Use URL hub or Privacy Site Settings Reset and verify suppression clears for the exact site/profile/key.</li>
+        <li>Toggle Privacy Settings -> Site Settings -> Automatic permission cleanup on and off.</li>
+        <li>Use injected-clock or unit-test paths to create stale saved Allow decisions and run cleanup; do not wait 90 days manually.</li>
+        <li>Verify cleanup removes stale saved Allows only and preserves Deny, Ask, one-time/session decisions, file picker, cookies, site data, tracking settings, zoom, HTTP auth, and extension permissions.</li>
+        <li>Verify Recent activity lists auto-revoked entries with removed-automatically language.</li>
+      </ol>
+    </section>
+
+    <section class="section">
+      <h2>Notes</h2>
+      <ul>
+        <li>Prompt suppression is local and profile scoped; it is not telemetry and is not a site decision.</li>
+        <li>Cleanup uses exact canonical permission keys, including profile, requesting origin, top origin, and external scheme where applicable.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

@@ -3,183 +3,133 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sumi File Picker Permission Manual Test</title>
-  <style>
-    :root {
-      color-scheme: light dark;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      line-height: 1.45;
-    }
-
-    body {
-      margin: 0;
-      padding: 24px;
-    }
-
-    main {
-      max-width: 880px;
-      margin: 0 auto;
-    }
-
-    h1 {
-      font-size: 24px;
-      margin: 0 0 16px;
-    }
-
-    section {
-      margin: 18px 0;
-      padding: 14px;
-      border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
-      border-radius: 6px;
-    }
-
-    label,
-    button {
-      display: inline-flex;
-      align-items: center;
-      min-height: 38px;
-      box-sizing: border-box;
-      margin: 0 8px 8px 0;
-      padding: 8px 12px;
-      border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
-      border-radius: 6px;
-      background: Canvas;
-      color: CanvasText;
-      font: inherit;
-      cursor: pointer;
-    }
-
-    input[type="file"] {
-      position: absolute;
-      inline-size: 1px;
-      block-size: 1px;
-      opacity: 0.001;
-    }
-
-    pre {
-      min-height: 220px;
-      margin: 16px 0 0;
-      padding: 12px;
-      overflow: auto;
-      border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
-      border-radius: 6px;
-      white-space: pre-wrap;
-    }
-  </style>
+  <title>Sumi File Picker Manual Test</title>
+  <link rel="stylesheet" href="shared/permissions-test.css">
+  <script src="shared/permissions-test.js" defer></script>
 </head>
 <body>
-  <main>
-    <h1>File Picker Permission Manual Test</h1>
-    <p>Expected: user clicks can open the native picker. Script/background attempts should not open it. Cancelling should return no files. File picker remains user-mediated and one-time by design; it must not write permission decisions. If the page reloads, navigates cross-document, or the tab closes while the panel is open, selected files must not be delivered to the stale page. File names and counts are shown here, not full paths.</p>
-    <p>URL hub check: open Site Controls from the URL bar, open Permissions, and confirm File Chooser is read-only with Always asks wording. It may show current-visit use or block status, but it must not offer persistent Allow or Block options.</p>
+  <main class="page-shell">
+    <header class="page-header">
+      <a class="back-link" href="index.html">Back to index</a>
+      <h1>File Picker</h1>
+      <div data-runtime-info></div>
+    </header>
 
-    <section>
-      <h2>Picker Controls</h2>
-      <label for="single-file">Single file</label>
-      <input id="single-file" type="file">
-
-      <label for="multiple-files">Multiple files</label>
-      <input id="multiple-files" type="file" multiple>
-
-      <label for="directory">Directory</label>
-      <input id="directory" type="file" webkitdirectory directory multiple>
-
-      <label for="accept-filter">Images or text</label>
-      <input id="accept-filter" type="file" accept="image/png,image/jpeg,text/plain,.md">
+    <section class="section">
+      <h2>Browser UI Expectations</h2>
+      <ul>
+        <li>File picker is one-time and native picker mediated.</li>
+        <li>No saved Allow/Block option is offered for file picker.</li>
+        <li>No stored site permission is written when a picker opens, returns files, or is cancelled.</li>
+        <li>Privacy Site Settings does not list file picker as a saved exception; it may show explanatory recent activity only.</li>
+        <li>Selected file names and counts can be shown; full local paths must never be exposed.</li>
+      </ul>
     </section>
 
-    <section>
-      <h2>Activation And Lifecycle</h2>
-      <button id="click-single">Open single input by click</button>
-      <button id="script-attempt">Script/background attempt</button>
-      <button id="delayed-attempt">Delayed attempt after click</button>
-      <button id="navigate-during-picker">Hash change after opening picker</button>
-      <button id="reload-during-picker">Reload after opening picker</button>
-      <button id="clear-log">Clear log</button>
+    <section class="section">
+      <h2>Controls</h2>
+      <div class="grid">
+        <label>Single file <input id="single-file" type="file"></label>
+        <label>Multiple files <input id="multiple-files" type="file" multiple></label>
+        <label>Images only <input id="accept-filter" type="file" accept="image/*"></label>
+        <label>Directory if supported <input id="directory" type="file" webkitdirectory directory multiple></label>
+      </div>
+      <div class="controls">
+        <button id="click-single">Open single input by click</button>
+        <button id="script-attempt">Script/background click attempt</button>
+        <button id="delayed-attempt">Delayed click attempt</button>
+        <button id="hash-during-picker">Hash change while picker is open</button>
+        <button id="reload-during-picker">Reload while picker is open</button>
+      </div>
     </section>
 
-    <pre id="log">Idle</pre>
+    <section class="section">
+      <h2>Results</h2>
+      <div class="status status-line" data-status>Idle.</div>
+      <div class="controls">
+        <button data-clear-log>Clear log</button>
+      </div>
+      <pre data-log></pre>
+    </section>
+
+    <section class="section">
+      <h2>Manual Checklist</h2>
+      <ol>
+        <li>Open single, multiple, image-filtered, and directory pickers. Directory selection is expected only where WebKit/macOS supports the attributes.</li>
+        <li>Select files and verify the page shows safe names/counts only, not full paths.</li>
+        <li>Cancel the native picker and verify no files are reported and no saved decision appears.</li>
+        <li>Run script/background and delayed attempts. The native picker should only open when browser-side activation gates allow it.</li>
+        <li>Open a picker, then navigate or reload while it is open; late selections must not be delivered to the stale page.</li>
+        <li>Check URL hub -> Permissions: File chooser should be read-only with Always asks style wording.</li>
+      </ol>
+    </section>
+
+    <section class="section">
+      <h2>Notes</h2>
+      <ul>
+        <li>The native picker remains the user-mediated choice after Sumi's browser-side activation and origin gates pass.</li>
+        <li>MiniWindow and Peek picker integration is intentionally out of scope for this manual suite.</li>
+      </ul>
+    </section>
   </main>
 
   <script>
-    const logNode = document.querySelector('#log');
-    const single = document.querySelector('#single-file');
-    const multiple = document.querySelector('#multiple-files');
-    const directory = document.querySelector('#directory');
-    const acceptFilter = document.querySelector('#accept-filter');
-
-    function log(message, value) {
-      const stamp = new Date().toISOString();
-      const suffix = value === undefined ? '' : ` ${JSON.stringify(value)}`;
-      logNode.textContent = `${stamp} ${message}${suffix}\n${logNode.textContent}`;
-    }
-
-    function describeFiles(fileList) {
-      const files = Array.from(fileList || []);
-      return {
-        count: files.length,
-        names: files.map((file) => file.name)
-      };
-    }
+    const single = document.getElementById("single-file");
+    const multiple = document.getElementById("multiple-files");
+    const acceptFilter = document.getElementById("accept-filter");
+    const directory = document.getElementById("directory");
 
     function attach(input, label) {
-      input.addEventListener('change', () => {
-        log(`${label}: change`, describeFiles(input.files));
+      input.addEventListener("change", () => {
+        SumiPermissionsTest.setStatus(`${label}: ${input.files.length} selected.`, input.files.length ? "ok" : "warn");
+        SumiPermissionsTest.appendLog(`${label}: change`, SumiPermissionsTest.fileSummary(input.files));
       });
-      input.addEventListener('cancel', () => {
-        log(`${label}: cancel event`);
+      input.addEventListener("cancel", () => {
+        SumiPermissionsTest.setStatus(`${label}: picker cancelled.`, "warn");
+        SumiPermissionsTest.appendLog(`${label}: cancel`);
       });
     }
 
-    attach(single, 'single file');
-    attach(multiple, 'multiple files');
-    attach(directory, 'directory');
-    attach(acceptFilter, 'accept filter');
+    attach(single, "single file");
+    attach(multiple, "multiple files");
+    attach(acceptFilter, "accept filter");
+    attach(directory, "directory");
 
-    document.querySelector('#click-single').addEventListener('click', () => {
-      log('click-triggered single input');
+    SumiPermissionsTest.safeClick("#click-single", () => {
+      SumiPermissionsTest.appendLog("click-triggered single input");
       single.click();
     });
 
-    document.querySelector('#script-attempt').addEventListener('click', () => {
+    SumiPermissionsTest.safeClick("#script-attempt", () => {
       setTimeout(() => {
-        log('script/background click() attempt');
+        SumiPermissionsTest.appendLog("script/background click() attempt");
         single.click();
       }, 0);
     });
 
-    document.querySelector('#delayed-attempt').addEventListener('click', () => {
-      log('delayed click() scheduled');
+    SumiPermissionsTest.safeClick("#delayed-attempt", () => {
+      SumiPermissionsTest.appendLog("delayed click() scheduled");
       setTimeout(() => {
-        log('delayed click() attempt');
+        SumiPermissionsTest.appendLog("delayed click() attempt");
         multiple.click();
       }, 1500);
     });
 
-    document.querySelector('#navigate-during-picker').addEventListener('click', () => {
-      log('opening picker, then changing page hash after 500 ms');
+    SumiPermissionsTest.safeClick("#hash-during-picker", () => {
+      SumiPermissionsTest.appendLog("opening picker, then changing hash after 500 ms");
       single.click();
       setTimeout(() => {
-        location.hash = `navigation-${Date.now()}`;
-        log('hash navigation completed');
+        location.hash = `picker-hash-${Date.now()}`;
+        SumiPermissionsTest.appendLog("hash change completed");
       }, 500);
     });
 
-    document.querySelector('#reload-during-picker').addEventListener('click', () => {
-      log('opening picker, then reloading after 500 ms');
+    SumiPermissionsTest.safeClick("#reload-during-picker", () => {
+      SumiPermissionsTest.appendLog("opening picker, then reloading after 500 ms");
       single.click();
       setTimeout(() => {
         location.href = `${location.pathname}?picker-reload=${Date.now()}${location.hash}`;
       }, 500);
-    });
-
-    document.querySelector('#clear-log').addEventListener('click', () => {
-      logNode.textContent = '';
-    });
-
-    window.addEventListener('load', () => {
-      log('load-time script click() attempt');
-      single.click();
     });
   </script>
 </body>

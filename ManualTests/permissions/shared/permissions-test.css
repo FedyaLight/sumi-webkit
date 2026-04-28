@@ -1,0 +1,237 @@
+:root {
+  color-scheme: light dark;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  line-height: 1.5;
+  background: Canvas;
+  color: CanvasText;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 24px;
+}
+
+main,
+.page-shell {
+  width: min(1040px, 100%);
+  margin: 0 auto;
+}
+
+.page-header {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.back-link {
+  width: fit-content;
+  color: LinkText;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.back-link:hover {
+  text-decoration: underline;
+}
+
+h1 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+h2 {
+  margin: 0 0 10px;
+  font-size: 18px;
+}
+
+h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+p {
+  margin: 0 0 10px;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.94em;
+}
+
+.note,
+.warning,
+.status {
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, CanvasText 18%, Canvas);
+  border-radius: 8px;
+  background: color-mix(in srgb, CanvasText 5%, Canvas);
+}
+
+.warning {
+  border-color: color-mix(in srgb, #b7791f 45%, Canvas);
+  background: color-mix(in srgb, #b7791f 12%, Canvas);
+}
+
+.section,
+.card {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, CanvasText 16%, Canvas);
+  border-radius: 8px;
+  background: color-mix(in srgb, CanvasText 3%, Canvas);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.runtime-info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 8px;
+}
+
+.runtime-info div {
+  overflow-wrap: anywhere;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.form-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+}
+
+label {
+  display: grid;
+  gap: 4px;
+}
+
+button,
+input,
+select,
+a.button-link {
+  min-height: 38px;
+  border: 1px solid color-mix(in srgb, CanvasText 28%, Canvas);
+  border-radius: 6px;
+  background: Canvas;
+  color: CanvasText;
+  font: inherit;
+  padding: 8px 12px;
+}
+
+button,
+a.button-link {
+  cursor: pointer;
+  text-align: center;
+  text-decoration: none;
+}
+
+button:hover,
+a.button-link:hover {
+  background: color-mix(in srgb, CanvasText 7%, Canvas);
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+input[type="file"] {
+  min-height: auto;
+}
+
+pre,
+.log {
+  min-height: 220px;
+  max-height: 420px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, CanvasText 20%, Canvas);
+  border-radius: 8px;
+  background: color-mix(in srgb, CanvasText 7%, Canvas);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+video,
+audio,
+iframe {
+  width: 100%;
+  border: 1px solid color-mix(in srgb, CanvasText 20%, Canvas);
+  border-radius: 8px;
+  background: #111;
+}
+
+video {
+  aspect-ratio: 16 / 9;
+}
+
+iframe {
+  min-height: 280px;
+  background: Canvas;
+}
+
+.inline-frame {
+  width: 1px;
+  height: 1px;
+  min-height: 1px;
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.status-line {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  overflow-wrap: anywhere;
+}
+
+.result-ok {
+  border-color: color-mix(in srgb, #15803d 45%, Canvas);
+  background: color-mix(in srgb, #15803d 12%, Canvas);
+}
+
+.result-warn {
+  border-color: color-mix(in srgb, #b7791f 45%, Canvas);
+  background: color-mix(in srgb, #b7791f 12%, Canvas);
+}
+
+.result-error {
+  border-color: color-mix(in srgb, #b91c1c 45%, Canvas);
+  background: color-mix(in srgb, #b91c1c 12%, Canvas);
+}
+
+ul,
+ol {
+  margin: 0;
+  padding-left: 22px;
+}
+
+li + li {
+  margin-top: 5px;
+}
+
+.visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

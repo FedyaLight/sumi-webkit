@@ -4,147 +4,130 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sumi Geolocation Manual Test</title>
-  <style>
-    :root {
-      color-scheme: light dark;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-
-    body {
-      margin: 0;
-      padding: 24px;
-      line-height: 1.45;
-    }
-
-    main {
-      max-width: 820px;
-      margin: 0 auto;
-    }
-
-    h1 {
-      font-size: 24px;
-      margin: 0 0 16px;
-    }
-
-    .toolbar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-bottom: 16px;
-    }
-
-    button {
-      font: inherit;
-      padding: 8px 12px;
-    }
-
-    pre {
-      min-height: 220px;
-      padding: 12px;
-      overflow: auto;
-      border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
-      border-radius: 6px;
-      white-space: pre-wrap;
-    }
-  </style>
+  <link rel="stylesheet" href="shared/permissions-test.css">
+  <script src="shared/permissions-test.js" defer></script>
 </head>
 <body>
-  <main>
-    <h1>Geolocation</h1>
-    <p>Expected: first-time location requests open the URL-bar anchored Sumi permission prompt. Allow this time grants again only within the same current page visit, for the same exact site/profile/type/page id. Repeating getCurrentPosition or restarting a watch on this page should reuse the one-time grant; reload, cross-document navigation, tab close, or WebView replacement should stop delivery and ask again. Allow while visiting persists for a normal profile, don't allow persists for a normal profile, and dismiss does not persist. If macOS Location Services blocks access, the prompt should show a system-blocked explanation and System Settings action.</p>
-    <p>URL hub check: open Site Controls from the URL bar, open Permissions, and confirm Location shows the current site decision, active status during a watch, and macOS Location Services blocked state separately from site Block. Changing Ask, Allow, or Block should affect future requests only.</p>
-    <p>Runtime controls check: during an active provider session or watch, the URL-bar active icon should open Permissions and show Active now controls. Pause location sharing should stop new coordinate delivery without changing the stored site decision. Resume location sharing should work only while the page session is still valid and the site permission remains allowed. Stop sharing location this visit should stop delivery for this page visit without persisting a site deny.</p>
-    <p>Anti-abuse check: repeatedly dismiss the same location prompt. Re-prompts should be paused for the same site/profile/location key without creating a stored Block. macOS Location Services denial should remain a system-blocked state, not a site deny.</p>
-    <p>Automatic cleanup check: with cleanup enabled in Privacy Settings, stale saved Location Allow decisions may be auto-removed and listed in Recent activity. Cleanup must not clear cookies, site data, or tracking-protection settings.</p>
-    <div class="toolbar">
-      <button id="permission">Read Permission</button>
-      <button id="current">getCurrentPosition</button>
-      <button id="watch">watchPosition</button>
-      <button id="clear">clearWatch</button>
-    </div>
-    <pre id="output"></pre>
+  <main class="page-shell">
+    <header class="page-header">
+      <a class="back-link" href="index.html">Back to index</a>
+      <h1>Geolocation</h1>
+      <div data-runtime-info></div>
+    </header>
+
+    <section class="section">
+      <h2>Browser UI Expectations</h2>
+      <ul>
+        <li>First <code>getCurrentPosition</code> or <code>watchPosition</code> request shows the URL-bar authorization prompt.</li>
+        <li>URL hub -> Permissions shows Location, saved Ask/Allow/Block state, macOS system status, and Active now controls during provider delivery.</li>
+        <li>Runtime controls support Pause location sharing, Resume location sharing, and Stop sharing location this visit when the provider is active.</li>
+        <li>Location Services disabled or app-denied macOS Location should show system-blocked UI and must not store a site Block.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>Controls</h2>
+      <div class="controls">
+        <button id="query">Query geolocation permission</button>
+        <button id="current">getCurrentPosition</button>
+        <button id="watch">watchPosition</button>
+        <button id="clear-watch">clearWatch</button>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Results</h2>
+      <div class="status status-line" data-status>Idle.</div>
+      <div class="controls">
+        <button data-clear-log>Clear log</button>
+      </div>
+      <pre data-log></pre>
+    </section>
+
+    <section class="section">
+      <h2>Manual Checklist</h2>
+      <ol>
+        <li>Call <code>getCurrentPosition</code> and <code>watchPosition</code> from a fresh site decision.</li>
+        <li>Use Allow this time, then restart a watch on this same page visit; delivery may continue without a second prompt.</li>
+        <li>Reload, navigate, and close the tab; provider state should clear and the next request should prompt again.</li>
+        <li>Use Pause, Resume, and Stop sharing location this visit from URL hub -> Permissions -> Active now. Stored site decisions must not change.</li>
+        <li>Dismiss repeatedly; cooldown should suppress prompts without creating a saved Block.</li>
+        <li>Turn off Location Services or deny Sumi in macOS settings and verify system-blocked state without a site deny.</li>
+        <li>Reset from the URL hub and Privacy Site Settings site detail.</li>
+      </ol>
+    </section>
+
+    <section class="section">
+      <h2>Notes</h2>
+      <ul>
+        <li>No geolocation call runs on page load.</li>
+        <li>Coordinates are rounded to six decimal places for readable manual validation.</li>
+        <li>Sumi's geolocation provider uses private WebKit hooks where available; unavailable provider paths should fail closed and report unsupported/provider errors.</li>
+      </ul>
+    </section>
   </main>
 
   <script>
-    const output = document.querySelector('#output');
     let watchId = null;
 
-    function log(message, value) {
-      const stamp = new Date().toISOString();
-      const suffix = value === undefined ? '' : `\n${JSON.stringify(value, null, 2)}`;
-      output.textContent = `${stamp} ${message}${suffix}\n\n${output.textContent}`;
+    function geolocationUnavailable() {
+      SumiPermissionsTest.setStatus("navigator.geolocation is unavailable.", "error");
+      SumiPermissionsTest.appendLog("navigator.geolocation unavailable");
     }
 
-    function positionPayload(position) {
-      return {
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-        accuracy: position.coords.accuracy,
-        altitude: position.coords.altitude,
-        altitudeAccuracy: position.coords.altitudeAccuracy,
-        heading: position.coords.heading,
-        speed: position.coords.speed,
-        timestamp: position.timestamp
-      };
-    }
+    SumiPermissionsTest.safeClick("#query", () => SumiPermissionsTest.queryPermission("geolocation"));
 
-    function errorPayload(error) {
-      return {
-        code: error.code,
-        message: error.message
-      };
-    }
-
-    document.querySelector('#permission').addEventListener('click', async () => {
-      if (!navigator.permissions || !navigator.permissions.query) {
-        log('navigator.permissions.query unavailable');
-        return;
-      }
-      try {
-        const result = await navigator.permissions.query({ name: 'geolocation' });
-        log('permission state', { state: result.state });
-      } catch (error) {
-        log('permission query error', { message: String(error) });
-      }
-    });
-
-    document.querySelector('#current').addEventListener('click', () => {
+    SumiPermissionsTest.safeClick("#current", () => {
       if (!navigator.geolocation) {
-        log('navigator.geolocation unavailable');
+        geolocationUnavailable();
         return;
       }
+      SumiPermissionsTest.setStatus("Requesting current position...", "warn");
       navigator.geolocation.getCurrentPosition(
-        position => log('getCurrentPosition success', positionPayload(position)),
-        error => log('getCurrentPosition error', errorPayload(error)),
+        (position) => {
+          SumiPermissionsTest.setStatus("getCurrentPosition succeeded.", "ok");
+          SumiPermissionsTest.appendLog("getCurrentPosition success", SumiPermissionsTest.positionSummary(position));
+        },
+        (error) => {
+          SumiPermissionsTest.setStatus(`getCurrentPosition failed: ${error.message}`, "error");
+          SumiPermissionsTest.appendLog("getCurrentPosition error", { code: error.code, message: error.message });
+        },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     });
 
-    document.querySelector('#watch').addEventListener('click', () => {
+    SumiPermissionsTest.safeClick("#watch", () => {
       if (!navigator.geolocation) {
-        log('navigator.geolocation unavailable');
+        geolocationUnavailable();
         return;
       }
       if (watchId !== null) {
-        log('watch already active', { watchId });
+        SumiPermissionsTest.appendLog("watchPosition already active", { watchId });
         return;
       }
       watchId = navigator.geolocation.watchPosition(
-        position => log('watchPosition success', positionPayload(position)),
-        error => log('watchPosition error', errorPayload(error)),
+        (position) => {
+          SumiPermissionsTest.setStatus(`watchPosition active: ${watchId}`, "ok");
+          SumiPermissionsTest.appendLog("watchPosition success", SumiPermissionsTest.positionSummary(position));
+        },
+        (error) => {
+          SumiPermissionsTest.setStatus(`watchPosition error: ${error.message}`, "error");
+          SumiPermissionsTest.appendLog("watchPosition error", { code: error.code, message: error.message });
+        },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
-      log('watchPosition started', { watchId });
+      SumiPermissionsTest.appendLog("watchPosition started", { watchId });
     });
 
-    document.querySelector('#clear').addEventListener('click', () => {
+    SumiPermissionsTest.safeClick("#clear-watch", () => {
       if (watchId === null) {
-        log('no active watch');
+        SumiPermissionsTest.setStatus("No active watch.", "warn");
         return;
       }
       navigator.geolocation.clearWatch(watchId);
-      log('watchPosition cleared', { watchId });
+      SumiPermissionsTest.appendLog("watchPosition cleared", { watchId });
       watchId = null;
+      SumiPermissionsTest.setStatus("Watch cleared.", "ok");
     });
   </script>
 </body>
