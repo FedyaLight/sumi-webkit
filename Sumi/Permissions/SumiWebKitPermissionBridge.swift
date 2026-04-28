@@ -1,6 +1,23 @@
 import Foundation
 import WebKit
 
+enum SumiPermissionSiteDecisionError: Error, Equatable, LocalizedError {
+    case unavailable
+    case unsupportedPermission(String)
+    case persistentStoreUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .unavailable:
+            return "Site permission decisions are unavailable."
+        case .unsupportedPermission(let permissionIdentity):
+            return "Site permission decisions are unsupported for \(permissionIdentity)."
+        case .persistentStoreUnavailable:
+            return "Persistent site permission storage is unavailable."
+        }
+    }
+}
+
 protocol SumiPermissionCoordinating: Sendable {
     func requestPermission(
         _ context: SumiPermissionSecurityContext
@@ -9,6 +26,26 @@ protocol SumiPermissionCoordinating: Sendable {
     func queryPermissionState(
         _ context: SumiPermissionSecurityContext
     ) async -> SumiPermissionCoordinatorDecision
+
+    func siteDecisionRecords(
+        profilePartitionId: String,
+        isEphemeralProfile: Bool
+    ) async throws -> [SumiPermissionStoreRecord]
+
+    func setSiteDecision(
+        for key: SumiPermissionKey,
+        state: SumiPermissionState,
+        source: SumiPermissionDecisionSource,
+        reason: String?
+    ) async throws
+
+    func resetSiteDecision(
+        for key: SumiPermissionKey
+    ) async throws
+
+    func resetSiteDecisions(
+        for keys: [SumiPermissionKey]
+    ) async throws
 
     func activeQuery(forPageId pageId: String) async -> SumiPermissionAuthorizationQuery?
 
@@ -73,6 +110,43 @@ protocol SumiPermissionCoordinating: Sendable {
 extension SumiPermissionCoordinator: SumiPermissionCoordinating {}
 
 extension SumiPermissionCoordinating {
+    func siteDecisionRecords(
+        profilePartitionId: String,
+        isEphemeralProfile: Bool
+    ) async throws -> [SumiPermissionStoreRecord] {
+        _ = profilePartitionId
+        _ = isEphemeralProfile
+        throw SumiPermissionSiteDecisionError.unavailable
+    }
+
+    func setSiteDecision(
+        for key: SumiPermissionKey,
+        state: SumiPermissionState,
+        source: SumiPermissionDecisionSource,
+        reason: String?
+    ) async throws {
+        _ = key
+        _ = state
+        _ = source
+        _ = reason
+        throw SumiPermissionSiteDecisionError.unavailable
+    }
+
+    func resetSiteDecision(
+        for key: SumiPermissionKey
+    ) async throws {
+        _ = key
+        throw SumiPermissionSiteDecisionError.unavailable
+    }
+
+    func resetSiteDecisions(
+        for keys: [SumiPermissionKey]
+    ) async throws {
+        for key in keys {
+            try await resetSiteDecision(for: key)
+        }
+    }
+
     func query(id queryId: String) async -> SumiPermissionAuthorizationQuery? {
         nil
     }
