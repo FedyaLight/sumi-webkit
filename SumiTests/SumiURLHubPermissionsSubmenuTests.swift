@@ -25,6 +25,17 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
         XCTAssertTrue(source.contains("setMode(.permissions, direction: .forward)"))
     }
 
+    func testURLHubPermissionsSubmenuUsesNonLiveSystemSnapshotModeAndIdentifiers() throws {
+        let urlBar = try sourceFile("Sumi/Components/Sidebar/URLBarView.swift")
+        let permissionsView = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionsView.swift")
+
+        XCTAssertTrue(urlBar.contains(".accessibilityIdentifier(\"urlbar-site-controls-button\")"))
+        XCTAssertTrue(urlBar.contains(".accessibilityIdentifier(\"urlhub-setting-row-\\(model.id)\")"))
+        XCTAssertTrue(permissionsView.contains("systemSnapshotMode: .none"))
+        XCTAssertTrue(permissionsView.contains(".accessibilityIdentifier(\"urlhub-permissions-submenu\")"))
+        XCTAssertTrue(permissionsView.contains(".accessibilityIdentifier(\"urlhub-permission-row-\\(row.id)\")"))
+    }
+
     func testTopLevelAutoplayControlWasMovedOutOfSiteControlsRows() throws {
         let source = try sourceFile("Sumi/Components/Sidebar/URLBarView.swift")
 

@@ -53,6 +53,28 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
         XCTAssertFalse(ids.contains("sound"))
     }
 
+    func testDefaultURLHubLoadDoesNotRequestSystemSnapshots() async throws {
+        let system = FakeSumiSystemPermissionService(states: [.camera: .denied])
+        let viewModel = SumiCurrentSitePermissionsViewModel()
+        let context = context()
+
+        await viewModel.load(
+            context: context,
+            webView: nil,
+            profile: nil,
+            reloadRequired: false,
+            dependencies: dependencies(system: system)
+        )
+
+        let camera = try XCTUnwrap(viewModel.rows.first { $0.id == "camera" })
+        XCTAssertNil(camera.systemStatus)
+        XCTAssertFalse(camera.showsSystemSettingsAction)
+        let snapshotCallCount = await system.authorizationSnapshotCallCount()
+        let stateCallCount = await system.authorizationStateCallCount()
+        XCTAssertEqual(snapshotCallCount, 0)
+        XCTAssertEqual(stateCallCount, 0)
+    }
+
     func testCameraWriteSemanticsResetAllowAndBlock() async throws {
         let coordinator = CurrentSiteFakePermissionCoordinator()
         let viewModel = SumiCurrentSitePermissionsViewModel()
@@ -146,7 +168,8 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
             webView: nil,
             profile: nil,
             reloadRequired: false,
-            dependencies: dependencies(coordinator: coordinator, system: system)
+            dependencies: dependencies(coordinator: coordinator, system: system),
+            systemSnapshotMode: .live
         )
 
         let camera = try XCTUnwrap(viewModel.rows.first { $0.id == "camera" })
@@ -157,6 +180,8 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
         let authorizationCallCount = await system.requestAuthorizationCallCount()
         XCTAssertNil(cameraRecord)
         XCTAssertEqual(authorizationCallCount, 0)
+        let cameraSnapshotCallCount = await system.authorizationSnapshotCallCount(for: .camera)
+        XCTAssertEqual(cameraSnapshotCallCount, 1)
     }
 
     func testRuntimeStatusUsesCurrentPageRuntimeStateWithoutChangingStoredDecision() async throws {

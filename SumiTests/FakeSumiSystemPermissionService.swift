@@ -7,6 +7,8 @@ actor FakeSumiSystemPermissionService: SumiSystemPermissionService {
     private var requestResults: [SumiSystemPermissionKind: SumiSystemPermissionAuthorizationState]
     private let allowsRequestingResolvedStates: Bool
     private var settingsOpenRequests: [SumiSystemPermissionKind] = []
+    private var authorizationStateCounts: [SumiSystemPermissionKind: Int] = [:]
+    private var authorizationSnapshotCounts: [SumiSystemPermissionKind: Int] = [:]
     private var requestAuthorizationCounts: [SumiSystemPermissionKind: Int] = [:]
 
     init(
@@ -22,7 +24,13 @@ actor FakeSumiSystemPermissionService: SumiSystemPermissionService {
     func authorizationState(
         for kind: SumiSystemPermissionKind
     ) async -> SumiSystemPermissionAuthorizationState {
-        states[kind] ?? .notDetermined
+        authorizationStateCounts[kind, default: 0] += 1
+        return state(for: kind)
+    }
+
+    func authorizationSnapshot(for kind: SumiSystemPermissionKind) async -> SumiSystemPermissionSnapshot {
+        authorizationSnapshotCounts[kind, default: 0] += 1
+        return SumiSystemPermissionSnapshot(kind: kind, state: state(for: kind))
     }
 
     func requestAuthorization(
@@ -61,5 +69,23 @@ actor FakeSumiSystemPermissionService: SumiSystemPermissionService {
             return requestAuthorizationCounts.values.reduce(0, +)
         }
         return requestAuthorizationCounts[kind] ?? 0
+    }
+
+    func authorizationStateCallCount(for kind: SumiSystemPermissionKind? = nil) -> Int {
+        guard let kind else {
+            return authorizationStateCounts.values.reduce(0, +)
+        }
+        return authorizationStateCounts[kind] ?? 0
+    }
+
+    func authorizationSnapshotCallCount(for kind: SumiSystemPermissionKind? = nil) -> Int {
+        guard let kind else {
+            return authorizationSnapshotCounts.values.reduce(0, +)
+        }
+        return authorizationSnapshotCounts[kind] ?? 0
+    }
+
+    private func state(for kind: SumiSystemPermissionKind) -> SumiSystemPermissionAuthorizationState {
+        states[kind] ?? .notDetermined
     }
 }
