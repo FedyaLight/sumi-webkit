@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sumi Screen Capture Permission Manual Test</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      margin: 24px;
+      max-width: 920px;
+      line-height: 1.45;
+    }
+
+    button {
+      margin: 0 8px 8px 0;
+      padding: 8px 12px;
+    }
+
+    video {
+      display: block;
+      width: min(100%, 720px);
+      margin: 16px 0;
+      background: #111;
+      aspect-ratio: 16 / 9;
+    }
+
+    pre {
+      min-height: 180px;
+      padding: 12px;
+      overflow: auto;
+      background: color-mix(in srgb, CanvasText 10%, Canvas);
+      border: 1px solid color-mix(in srgb, CanvasText 22%, Canvas);
+    }
+  </style>
+</head>
+<body>
+  <h1>Screen Capture Permission</h1>
+  <p>Until Sumi prompt UI exists, first-time display capture requests intercepted by Sumi are expected to fail closed.</p>
+
+  <div>
+    <button id="video">getDisplayMedia video</button>
+    <button id="video-audio">getDisplayMedia video + audio</button>
+    <button id="permissions">query display-capture permission</button>
+    <button id="stop">stop tracks</button>
+    <button id="clear">clear log</button>
+  </div>
+
+  <video id="preview" autoplay playsinline muted></video>
+  <pre id="log" aria-live="polite"></pre>
+
+  <script>
+    const preview = document.getElementById("preview");
+    const log = document.getElementById("log");
+    let stream = null;
+
+    function write(message, detail) {
+      const timestamp = new Date().toISOString();
+      const suffix = detail ? ` ${detail}` : "";
+      log.textContent += `[${timestamp}] ${message}${suffix}\n`;
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function attachTrackLogging(nextStream) {
+      for (const track of nextStream.getTracks()) {
+        write("track added", `${track.kind}:${track.label || "(no label)"}`);
+        track.addEventListener("ended", () => write("track ended", track.kind));
+        track.addEventListener("mute", () => write("track muted", track.kind));
+        track.addEventListener("unmute", () => write("track unmuted", track.kind));
+      }
+    }
+
+    async function startCapture(label, captureFactory) {
+      if (!navigator.mediaDevices?.getDisplayMedia) {
+        write("getDisplayMedia unavailable");
+        return;
+      }
+
+      stopCapture();
+      try {
+        write("requesting display capture", label);
+        stream = await captureFactory();
+        preview.srcObject = stream;
+        attachTrackLogging(stream);
+        write("display capture started");
+      } catch (error) {
+        write("display capture failed", `${error.name}: ${error.message}`);
+      }
+    }
+
+    function stopCapture() {
+      if (!stream) {
+        return;
+      }
+      for (const track of stream.getTracks()) {
+        track.stop();
+      }
+      preview.srcObject = null;
+      stream = null;
+      write("stopped all tracks");
+    }
+
+    async function queryDisplayCapturePermission() {
+      if (!navigator.permissions?.query) {
+        write("Permissions API query unavailable");
+        return;
+      }
+
+      try {
+        const status = await navigator.permissions.query({ name: "display-capture" });
+        write("display-capture permission state", status.state);
+        status.onchange = () => write("display-capture permission changed", status.state);
+      } catch (error) {
+        write("display-capture permission query failed", `${error.name}: ${error.message}`);
+      }
+    }
+
+    document.getElementById("video").addEventListener("click", () => {
+      startCapture(
+        "{ video: true }",
+        () => navigator.mediaDevices.getDisplayMedia({ video: true })
+      );
+    });
+    document.getElementById("video-audio").addEventListener("click", () => {
+      startCapture(
+        "{ video: true, audio: true }",
+        () => navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
+      );
+    });
+    document.getElementById("permissions").addEventListener("click", queryDisplayCapturePermission);
+    document.getElementById("stop").addEventListener("click", stopCapture);
+    document.getElementById("clear").addEventListener("click", () => {
+      log.textContent = "";
+    });
+
+    write("page ready");
+  </script>
+</body>
+</html>

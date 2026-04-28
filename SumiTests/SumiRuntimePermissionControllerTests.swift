@@ -16,6 +16,7 @@ final class SumiRuntimePermissionControllerTests: XCTestCase {
         )
         XCTAssertEqual(explicitState.camera, .unavailable)
         XCTAssertEqual(explicitState.microphone, .unsupported)
+        XCTAssertEqual(explicitState.screenCapture, .unsupported)
     }
 
     func testCombinedCameraAndMicrophoneStateReflectsConcreteStates() {
@@ -39,7 +40,9 @@ final class SumiRuntimePermissionControllerTests: XCTestCase {
         XCTAssertEqual(state.externalScheme, .noActiveRuntimeState)
         XCTAssertEqual(state.filePicker, .noActiveRuntimeState)
         XCTAssertEqual(state.storageAccess, .unsupported)
+        XCTAssertEqual(state.screenCapture, .unsupported)
         XCTAssertEqual(state.state(for: .notifications), .nonDevice(.noActiveRuntimeState))
+        XCTAssertEqual(state.state(for: .screenCapture), .media(.unsupported))
         XCTAssertEqual(state.state(for: .storageAccess), .nonDevice(.unsupported))
     }
 
@@ -255,6 +258,39 @@ final class SumiRuntimePermissionControllerTests: XCTestCase {
         )
     }
 
+    func testFakeScreenCaptureRuntimeStateAndStopAreExplicit() async {
+        let fake = FakeSumiRuntimePermissionController(screenCaptureRuntimeState: .active)
+        let webView = makeWebView()
+
+        XCTAssertEqual(fake.currentRuntimeState(for: webView).screenCapture, .active)
+        XCTAssertEqual(fake.screenCaptureState(for: webView), .active)
+
+        let stop = await fake.stopScreenCapture(for: webView)
+        let duplicateStop = await fake.stopScreenCapture(for: webView)
+
+        XCTAssertEqual(stop, .applied)
+        XCTAssertEqual(duplicateStop, .noOp)
+        XCTAssertEqual(fake.screenCaptureRuntimeState, .none)
+    }
+
+    func testFakeScreenCapturePauseResumeAreUnsupportedWithoutObservableWebKitState() async {
+        let fake = FakeSumiRuntimePermissionController(screenCaptureRuntimeState: .active)
+        let webView = makeWebView()
+
+        let pause = await fake.pauseRuntimePermissions([.screenCapture], for: webView)
+        let resume = await fake.resumeRuntimePermissions([.screenCapture], for: webView)
+
+        XCTAssertEqual(
+            pause[.screenCapture],
+            .unsupported(reason: "screen-capture-runtime-state-unsupported")
+        )
+        XCTAssertEqual(
+            resume[.screenCapture],
+            .unsupported(reason: "screen-capture-runtime-state-unsupported")
+        )
+        XCTAssertEqual(fake.screenCaptureRuntimeState, .active)
+    }
+
     func testApplyDeniedRuntimeDecisionRevokesConcreteMediaTypes() async {
         let fake = FakeSumiRuntimePermissionController.bothActive()
         let webView = makeWebView()
@@ -283,8 +319,10 @@ final class SumiRuntimePermissionControllerTests: XCTestCase {
 
         XCTAssertEqual(state.camera, .none)
         XCTAssertEqual(state.microphone, .none)
+        XCTAssertEqual(state.screenCapture, .unsupported)
         XCTAssertEqual(controller.cameraState(for: webView), .none)
         XCTAssertEqual(controller.microphoneState(for: webView), .none)
+        XCTAssertEqual(controller.screenCaptureState(for: webView), .unsupported)
     }
 
     func testWKWebViewBackedNoActiveMediaOperationsAreNoOpAndDoNotCrash() async {
@@ -294,11 +332,16 @@ final class SumiRuntimePermissionControllerTests: XCTestCase {
         let muteCamera = await controller.setCameraMuted(true, for: webView)
         let resumeMicrophone = await controller.setMicrophoneMuted(false, for: webView)
         let stopCamera = await controller.stopCamera(for: webView)
+        let stopScreenCapture = await controller.stopScreenCapture(for: webView)
         let stopAll = await controller.stopAllMediaCapture(for: webView)
 
         XCTAssertEqual(muteCamera, .noOp)
         XCTAssertEqual(resumeMicrophone, .noOp)
         XCTAssertEqual(stopCamera, .noOp)
+        XCTAssertEqual(
+            stopScreenCapture,
+            .unsupported(reason: "screen-capture-runtime-state-unsupported")
+        )
         XCTAssertEqual(stopAll, .noOp)
     }
 
@@ -315,6 +358,7 @@ final class SumiRuntimePermissionControllerTests: XCTestCase {
         XCTAssertEqual(observedStates.count, 1)
         XCTAssertEqual(observedStates.first?.camera, Optional(SumiMediaCaptureRuntimeState.none))
         XCTAssertEqual(observedStates.first?.microphone, Optional(SumiMediaCaptureRuntimeState.none))
+        XCTAssertEqual(observedStates.first?.screenCapture, Optional(SumiMediaCaptureRuntimeState.unsupported))
     }
 
     func testAutoplayPolicyChangeRequiresReloadForCurrentArchitecture() {
@@ -362,6 +406,7 @@ final class SumiRuntimePermissionControllerTests: XCTestCase {
         fake.cameraRuntimeState = .muted
 
         XCTAssertEqual(observedStates.map(\.camera), [.none, .active])
+        XCTAssertEqual(observedStates.map(\.screenCapture), [.unsupported, .unsupported])
     }
 
     func testFakeObservationCancelReleasesHandlerCaptures() {

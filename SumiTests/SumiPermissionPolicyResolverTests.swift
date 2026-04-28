@@ -72,7 +72,7 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
             SumiPermissionOrigin(url: URL(fileURLWithPath: "/tmp/permission-test.html")),
         ] {
             let result = await evaluate(
-                .geolocation,
+                .screenCapture,
                 requestingOrigin: origin,
                 topOrigin: origin,
                 committedURL: nil,
@@ -162,6 +162,45 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
         XCTAssertEqual(result.systemAuthorizationSnapshot?.state, .authorized)
     }
 
+    func testNormalTabHTTPSScreenCaptureProceedsWhenSystemAuthorized() async {
+        let result = await evaluate(.screenCapture, surface: .normalTab)
+
+        XCTAssertTrue(result.isAllowedToProceed)
+        XCTAssertEqual(result.systemAuthorizationSnapshot?.kind, .screenCapture)
+        XCTAssertEqual(result.systemAuthorizationSnapshot?.state, .authorized)
+        XCTAssertEqual(result.allowedPersistences, [.oneTime, .session, .persistent])
+    }
+
+    func testHTTPNonLocalhostScreenCaptureRequestIsDeniedWithInsecureOrigin() async {
+        let result = await evaluate(
+            .screenCapture,
+            requestingOrigin: SumiPermissionOrigin(string: "http://example.com"),
+            topOrigin: SumiPermissionOrigin(string: "http://example.com")
+        )
+
+        XCTAssertFalse(result.isAllowedToProceed)
+        XCTAssertEqual(result.source, .insecureOrigin)
+        XCTAssertEqual(result.reason, SumiPermissionPolicyReason.insecureRequestingOrigin)
+    }
+
+    func testLocalDevelopmentScreenCaptureOriginsProceed() async {
+        for origin in [
+            "http://localhost",
+            "http://127.0.0.1",
+            "http://[::1]",
+        ] {
+            let result = await evaluate(
+                .screenCapture,
+                requestingOrigin: SumiPermissionOrigin(string: origin),
+                topOrigin: SumiPermissionOrigin(string: origin),
+                committedURL: URL(string: origin),
+                visibleURL: URL(string: origin)
+            )
+
+            XCTAssertTrue(result.isAllowedToProceed, origin)
+        }
+    }
+
     func testAuxiliaryAndUnsafeSurfacesDenySensitivePermissions() async {
         let miniWindow = await evaluate(.camera, surface: .miniWindow)
         XCTAssertFalse(miniWindow.isAllowedToProceed)
@@ -189,6 +228,27 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
         XCTAssertFalse(extensionPage.isAllowedToProceed)
         XCTAssertEqual(extensionPage.source, .unsupported)
         XCTAssertEqual(extensionPage.reason, SumiPermissionPolicyReason.extensionPageUnsupported)
+    }
+
+    func testScreenCaptureDeniedOnUnsafeSurfacesAndMissingTopOrigin() async {
+        let missingTop = await evaluate(
+            .screenCapture,
+            requestingOrigin: SumiPermissionOrigin(string: "https://example.com"),
+            topOrigin: SumiPermissionOrigin.invalid(reason: "missing-top-origin")
+        )
+        XCTAssertFalse(missingTop.isAllowedToProceed)
+        XCTAssertEqual(missingTop.reason, SumiPermissionPolicyReason.invalidTopOrigin)
+
+        for surface in [
+            SumiPermissionSecurityContext.Surface.miniWindow,
+            .peek,
+            .extensionPage,
+            .internalPage,
+            .unknown,
+        ] {
+            let result = await evaluate(.screenCapture, surface: surface)
+            XCTAssertFalse(result.isAllowedToProceed, surface.rawValue)
+        }
     }
 
     func testSumiInternalURLsAreDeniedAsInternalPages() async {
@@ -253,6 +313,14 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
         XCTAssertFalse(result.allowedPersistences.contains(.persistent))
     }
 
+    func testEphemeralScreenCaptureProceedResultExcludesPersistentChoices() async {
+        let result = await evaluate(.screenCapture, isEphemeralProfile: true)
+
+        XCTAssertTrue(result.isAllowedToProceed)
+        XCTAssertEqual(result.allowedPersistences, [.oneTime, .session])
+        XCTAssertFalse(result.allowedPersistences.contains(.persistent))
+    }
+
     func testFilePickerRemainsOneTimeOnlyInEphemeralProfile() async {
         let result = await evaluate(.filePicker, hasUserGesture: true, isEphemeralProfile: true)
 
@@ -280,12 +348,29 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
         XCTAssertEqual(requestAuthorizationCallCount, 0)
     }
 
+    func testScreenCaptureSystemNotDeterminedProceedsWithSystemPromptHintAndDoesNotRequestAuthorization() async {
+        let service = FakeSumiSystemPermissionService(states: [.screenCapture: .notDetermined])
+        let result = await evaluate(.screenCapture, systemPermissionService: service)
+
+        XCTAssertTrue(result.isAllowedToProceed)
+        XCTAssertEqual(result.source, .system)
+        XCTAssertTrue(result.requiresSystemAuthorizationPrompt)
+        XCTAssertEqual(result.systemAuthorizationSnapshot?.kind, .screenCapture)
+        XCTAssertEqual(result.systemAuthorizationSnapshot?.state, .notDetermined)
+        let requestAuthorizationCallCount = await service.requestAuthorizationCallCount()
+        XCTAssertEqual(requestAuthorizationCallCount, 0)
+    }
+
     func testSystemBlockedStatesDoNotProceedOrAskOrdinarySiteUI() async throws {
         let cases: [(SumiPermissionType, SumiSystemPermissionKind, SumiSystemPermissionAuthorizationState)] = [
             (.camera, .camera, .denied),
             (.microphone, .microphone, .restricted),
             (.geolocation, .geolocation, .systemDisabled),
             (.notifications, .notifications, .denied),
+            (.screenCapture, .screenCapture, .denied),
+            (.screenCapture, .screenCapture, .restricted),
+            (.screenCapture, .screenCapture, .unavailable),
+            (.screenCapture, .screenCapture, .missingEntitlement),
             (.camera, .camera, .missingUsageDescription),
             (.microphone, .microphone, .missingEntitlement),
             (.geolocation, .geolocation, .unavailable),
@@ -404,7 +489,7 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
         usesUnknownUserGesture: Bool = false,
         isEphemeralProfile: Bool = false,
         policyProvider: any SumiPermissionPolicyProvider = NoOpSumiPermissionPolicyProvider(),
-        systemStates: [SumiSystemPermissionKind: SumiSystemPermissionAuthorizationState] = [.camera: .authorized, .microphone: .authorized, .geolocation: .authorized, .notifications: .authorized],
+        systemStates: [SumiSystemPermissionKind: SumiSystemPermissionAuthorizationState] = [.camera: .authorized, .microphone: .authorized, .geolocation: .authorized, .notifications: .authorized, .screenCapture: .authorized],
         systemPermissionService: (any SumiSystemPermissionService)? = nil
     ) async -> SumiPermissionPolicyResult {
         await evaluate(
@@ -438,7 +523,7 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
         usesUnknownUserGesture: Bool = false,
         isEphemeralProfile: Bool = false,
         policyProvider: any SumiPermissionPolicyProvider = NoOpSumiPermissionPolicyProvider(),
-        systemStates: [SumiSystemPermissionKind: SumiSystemPermissionAuthorizationState] = [.camera: .authorized, .microphone: .authorized, .geolocation: .authorized, .notifications: .authorized],
+        systemStates: [SumiSystemPermissionKind: SumiSystemPermissionAuthorizationState] = [.camera: .authorized, .microphone: .authorized, .geolocation: .authorized, .notifications: .authorized, .screenCapture: .authorized],
         systemPermissionService: (any SumiSystemPermissionService)? = nil
     ) async -> SumiPermissionPolicyResult {
         let resolvedTopOrigin = topOrigin ?? requestingOrigin

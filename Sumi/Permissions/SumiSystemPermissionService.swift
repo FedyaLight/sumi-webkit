@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreGraphics
 import CoreLocation
 import Foundation
 import Security
@@ -43,9 +44,21 @@ extension SumiSystemPermissionService {
 
 struct MacSumiSystemPermissionService: SumiSystemPermissionService {
     private let entitlementReader: SumiSystemPermissionEntitlementReader
+    private let screenCapturePreflightAccess: @Sendable () -> Bool
+    private let requestScreenCaptureAccess: @Sendable () -> Bool
 
-    init(entitlementReader: SumiSystemPermissionEntitlementReader = .currentProcess) {
+    init(
+        entitlementReader: SumiSystemPermissionEntitlementReader = .currentProcess,
+        screenCapturePreflightAccess: @escaping @Sendable () -> Bool = {
+            CGPreflightScreenCaptureAccess()
+        },
+        requestScreenCaptureAccess: @escaping @Sendable () -> Bool = {
+            CGRequestScreenCaptureAccess()
+        }
+    ) {
         self.entitlementReader = entitlementReader
+        self.screenCapturePreflightAccess = screenCapturePreflightAccess
+        self.requestScreenCaptureAccess = requestScreenCaptureAccess
     }
 
     func authorizationState(
@@ -75,7 +88,23 @@ struct MacSumiSystemPermissionService: SumiSystemPermissionService {
             return SumiSystemPermissionAuthorizationMapper.notifications(
                 await notificationAuthorizationStatus()
             )
+        case .screenCapture:
+            return SumiSystemPermissionAuthorizationMapper.screenCapturePreflight(
+                isAuthorized: screenCapturePreflightAccess()
+            )
         }
+    }
+
+    func authorizationSnapshot(for kind: SumiSystemPermissionKind) async -> SumiSystemPermissionSnapshot {
+        let state = await authorizationState(for: kind)
+        if kind == .screenCapture, state == .notDetermined {
+            return SumiSystemPermissionSnapshot(
+                kind: kind,
+                state: state,
+                reason: "Screen Recording access is not currently authorized; CoreGraphics preflight cannot distinguish not-determined from denied without requesting."
+            )
+        }
+        return SumiSystemPermissionSnapshot(kind: kind, state: state)
     }
 
     func requestAuthorization(
@@ -101,6 +130,10 @@ struct MacSumiSystemPermissionService: SumiSystemPermissionService {
             )
         case .notifications:
             return await requestNotificationAuthorization()
+        case .screenCapture:
+            return SumiSystemPermissionAuthorizationMapper.screenCaptureRequest(
+                granted: requestScreenCaptureAccess()
+            )
         }
     }
 
@@ -239,6 +272,18 @@ enum SumiSystemPermissionAuthorizationMapper {
             return .unavailable
         }
     }
+
+    static func screenCapturePreflight(
+        isAuthorized: Bool
+    ) -> SumiSystemPermissionAuthorizationState {
+        isAuthorized ? .authorized : .notDetermined
+    }
+
+    static func screenCaptureRequest(
+        granted: Bool
+    ) -> SumiSystemPermissionAuthorizationState {
+        granted ? .authorized : .denied
+    }
 }
 
 struct SumiSystemPermissionEntitlementReader: Sendable {
@@ -274,6 +319,8 @@ private extension SumiSystemPermissionKind {
             return ["NSLocationUsageDescription", "NSLocationWhenInUseUsageDescription"]
         case .notifications:
             return []
+        case .screenCapture:
+            return []
         }
     }
 
@@ -286,6 +333,8 @@ private extension SumiSystemPermissionKind {
         case .geolocation:
             return "com.apple.security.personal-information.location"
         case .notifications:
+            return nil
+        case .screenCapture:
             return nil
         }
     }

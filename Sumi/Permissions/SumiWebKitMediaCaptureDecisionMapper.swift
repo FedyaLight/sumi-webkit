@@ -12,6 +12,23 @@ enum SumiWebKitPermissionBridgePendingStrategy: Equatable, Sendable {
     }
 }
 
+enum SumiWebKitScreenCapturePendingStrategy: Equatable, Sendable {
+    case denyUntilPromptUIExists
+
+    var reason: String {
+        switch self {
+        case .denyUntilPromptUIExists:
+            return "webkit-screen-capture-prompt-ui-unavailable-deny"
+        }
+    }
+}
+
+enum SumiWebKitDisplayCapturePermissionDecision: Int, Equatable, Sendable {
+    case deny = 0
+    case screenPrompt = 1
+    case windowPrompt = 2
+}
+
 enum SumiWebKitMediaCaptureDecisionMapper {
     @available(macOS 13.0, *)
     static func permissionTypes(for mediaType: WKMediaCaptureType) -> [SumiPermissionType] {
@@ -68,5 +85,35 @@ enum SumiWebKitMediaCaptureDecisionMapper {
             shouldOfferSystemSettings: false,
             disablesPersistentAllow: context?.isEphemeralProfile ?? false
         )
+    }
+}
+
+enum SumiWebKitDisplayCaptureDecisionMapper {
+    static func permissionTypes(
+        forLegacyCaptureDevices devices: SumiWebKitLegacyCaptureDevices
+    ) -> [SumiPermissionType] {
+        var permissionTypes: [SumiPermissionType] = []
+        if devices.contains(.display) {
+            permissionTypes.append(.screenCapture)
+        }
+        if devices.contains(.microphone) {
+            permissionTypes.append(.microphone)
+        }
+        if devices.contains(.camera) {
+            permissionTypes.append(.camera)
+        }
+        return permissionTypes
+    }
+
+    static func webKitDecision(
+        for decision: SumiPermissionCoordinatorDecision
+    ) -> SumiWebKitDisplayCapturePermissionDecision {
+        decision.outcome == .granted ? .screenPrompt : .deny
+    }
+
+    static func legacyBoolDecision(
+        for decision: SumiPermissionCoordinatorDecision
+    ) -> Bool {
+        decision.outcome == .granted
     }
 }

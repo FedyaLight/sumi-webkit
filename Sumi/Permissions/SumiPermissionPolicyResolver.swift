@@ -163,6 +163,7 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
              .microphone,
              .geolocation,
              .notifications,
+             .screenCapture,
              .popups,
              .externalScheme,
              .autoplay,
@@ -500,6 +501,7 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
              .microphone,
              .geolocation,
              .notifications,
+             .screenCapture,
              .filePicker,
              .storageAccess:
             return true
@@ -513,7 +515,7 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
 
     private func requiresSecureContext(_ permissionType: SumiPermissionType) -> Bool {
         switch permissionType {
-        case .camera, .microphone, .geolocation, .notifications, .storageAccess:
+        case .camera, .microphone, .geolocation, .notifications, .screenCapture, .storageAccess:
             return true
         case .cameraAndMicrophone,
              .popups,
@@ -532,6 +534,7 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
              .microphone,
              .geolocation,
              .notifications,
+             .screenCapture,
              .filePicker,
              .storageAccess:
             return true
@@ -549,6 +552,7 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
              .microphone,
              .geolocation,
              .notifications,
+             .screenCapture,
              .filePicker,
              .storageAccess:
             return true
@@ -569,6 +573,7 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
              .cameraAndMicrophone,
              .geolocation,
              .notifications,
+             .screenCapture,
              .autoplay,
              .storageAccess:
             return false
@@ -587,6 +592,8 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
             return .geolocation
         case .notifications:
             return .notifications
+        case .screenCapture:
+            return .screenCapture
         case .cameraAndMicrophone,
              .popups,
              .externalScheme,

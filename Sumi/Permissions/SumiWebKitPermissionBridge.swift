@@ -55,6 +55,36 @@ final class SumiWebKitPermissionDecisionHandler {
     }
 }
 
+@MainActor
+final class SumiWebKitBoolDecisionHandler {
+    private var decisionHandler: ((Bool) -> Void)?
+
+    init(_ decisionHandler: @escaping (Bool) -> Void) {
+        self.decisionHandler = decisionHandler
+    }
+
+    func resolve(_ decision: Bool) {
+        guard let handler = decisionHandler else { return }
+        decisionHandler = nil
+        handler(decision)
+    }
+}
+
+@MainActor
+final class SumiWebKitDisplayCaptureDecisionHandler {
+    private var decisionHandler: ((Int) -> Void)?
+
+    init(_ decisionHandler: @escaping (Int) -> Void) {
+        self.decisionHandler = decisionHandler
+    }
+
+    func resolve(_ decision: SumiWebKitDisplayCapturePermissionDecision) {
+        guard let handler = decisionHandler else { return }
+        decisionHandler = nil
+        handler(decision.rawValue)
+    }
+}
+
 @available(macOS 13.0, *)
 @MainActor
 final class SumiWebKitPermissionBridge {
@@ -67,6 +97,7 @@ final class SumiWebKitPermissionBridge {
     private let coordinator: any SumiPermissionCoordinating
     private let runtimeController: any SumiRuntimePermissionControlling
     private let pendingStrategy: SumiWebKitPermissionBridgePendingStrategy
+    private let screenCapturePendingStrategy: SumiWebKitScreenCapturePendingStrategy
     private let pendingPollIntervalNanoseconds: UInt64
     private let coordinatorTimeoutNanoseconds: UInt64
     private let now: @Sendable () -> Date
@@ -75,6 +106,7 @@ final class SumiWebKitPermissionBridge {
         coordinator: any SumiPermissionCoordinating,
         runtimeController: any SumiRuntimePermissionControlling,
         pendingStrategy: SumiWebKitPermissionBridgePendingStrategy = .denyUntilPromptUIExists,
+        screenCapturePendingStrategy: SumiWebKitScreenCapturePendingStrategy = .denyUntilPromptUIExists,
         pendingPollIntervalNanoseconds: UInt64 = 25_000_000,
         coordinatorTimeoutNanoseconds: UInt64 = 500_000_000,
         now: @escaping @Sendable () -> Date = { Date() }
@@ -82,6 +114,7 @@ final class SumiWebKitPermissionBridge {
         self.coordinator = coordinator
         self.runtimeController = runtimeController
         self.pendingStrategy = pendingStrategy
+        self.screenCapturePendingStrategy = screenCapturePendingStrategy
         self.pendingPollIntervalNanoseconds = pendingPollIntervalNanoseconds
         self.coordinatorTimeoutNanoseconds = coordinatorTimeoutNanoseconds
         self.now = now
@@ -107,7 +140,11 @@ final class SumiWebKitPermissionBridge {
                 return
             }
 
-            let coordinatorDecision = await self.coordinatorDecision(for: context)
+            let coordinatorDecision = await self.coordinatorDecision(
+                for: context,
+                pendingReason: self.pendingStrategy.reason,
+                timeoutReason: "webkit-media-permission-coordinator-timeout"
+            )
             let webKitDecision = SumiWebKitMediaCaptureDecisionMapper.webKitDecision(
                 for: coordinatorDecision
             )
@@ -123,22 +160,131 @@ final class SumiWebKitPermissionBridge {
         }
     }
 
+    func handleLegacyMediaCaptureAuthorization(
+        _ request: SumiWebKitMediaCaptureRequest,
+        tabContext: SumiWebKitMediaCaptureTabContext,
+        webView: WKWebView?,
+        decisionHandler: @escaping (Bool) -> Void
+    ) {
+        let once = SumiWebKitBoolDecisionHandler(decisionHandler)
+        guard webView != nil else {
+            once.resolve(false)
+            return
+        }
+
+        let context = securityContext(for: request, tabContext: tabContext)
+
+        Task { @MainActor [weak self, weak webView] in
+            guard let self else {
+                once.resolve(false)
+                return
+            }
+
+            let coordinatorDecision = await self.coordinatorDecision(
+                for: context,
+                pendingReason: self.pendingStrategy.reason,
+                timeoutReason: "webkit-media-permission-coordinator-timeout"
+            )
+            let webKitDecision = SumiWebKitDisplayCaptureDecisionMapper.legacyBoolDecision(
+                for: coordinatorDecision
+            )
+            guard webKitDecision == false || webView != nil else {
+                once.resolve(false)
+                return
+            }
+            once.resolve(webKitDecision)
+
+            if coordinatorDecision.outcome == .granted, let webView {
+                _ = self.runtimeController.currentRuntimeState(for: webView)
+            }
+        }
+    }
+
+    func handleDisplayCaptureAuthorization(
+        _ request: SumiWebKitDisplayCaptureRequest,
+        tabContext: SumiWebKitMediaCaptureTabContext,
+        webView: WKWebView?,
+        decisionHandler: @escaping (Int) -> Void
+    ) {
+        let once = SumiWebKitDisplayCaptureDecisionHandler(decisionHandler)
+        guard webView != nil else {
+            once.resolve(.deny)
+            return
+        }
+
+        let context = securityContext(for: request, tabContext: tabContext)
+
+        Task { @MainActor [weak self, weak webView] in
+            guard let self else {
+                once.resolve(.deny)
+                return
+            }
+
+            let coordinatorDecision = await self.coordinatorDecision(
+                for: context,
+                pendingReason: self.screenCapturePendingStrategy.reason,
+                timeoutReason: "webkit-screen-capture-permission-coordinator-timeout"
+            )
+            let webKitDecision = SumiWebKitDisplayCaptureDecisionMapper.webKitDecision(
+                for: coordinatorDecision
+            )
+            guard webKitDecision != .screenPrompt || webView != nil else {
+                once.resolve(.deny)
+                return
+            }
+            once.resolve(webKitDecision)
+
+            if coordinatorDecision.outcome == .granted, let webView {
+                _ = self.runtimeController.currentRuntimeState(for: webView)
+            }
+        }
+    }
+
     func securityContext(
         for request: SumiWebKitMediaCaptureRequest,
+        tabContext: SumiWebKitMediaCaptureTabContext
+    ) -> SumiPermissionSecurityContext {
+        securityContext(
+            requestId: request.id,
+            requestingOrigin: request.requestingOrigin,
+            permissionTypes: request.permissionTypes,
+            isMainFrame: request.isMainFrame,
+            tabContext: tabContext
+        )
+    }
+
+    func securityContext(
+        for request: SumiWebKitDisplayCaptureRequest,
+        tabContext: SumiWebKitMediaCaptureTabContext
+    ) -> SumiPermissionSecurityContext {
+        securityContext(
+            requestId: request.id,
+            requestingOrigin: request.requestingOrigin,
+            permissionTypes: request.permissionTypes,
+            isMainFrame: request.isMainFrame,
+            tabContext: tabContext
+        )
+    }
+
+    private func securityContext(
+        requestId: String,
+        requestingOrigin: SumiPermissionOrigin,
+        permissionTypes: [SumiPermissionType],
+        isMainFrame: Bool,
         tabContext: SumiWebKitMediaCaptureTabContext
     ) -> SumiPermissionSecurityContext {
         let topOrigin = SumiPermissionOrigin(
             url: tabContext.committedURL ?? tabContext.mainFrameURL ?? tabContext.visibleURL
         )
         let permissionRequest = SumiPermissionRequest(
-            id: request.id,
+            id: requestId,
             tabId: tabContext.tabId,
             pageId: tabContext.pageId,
             frameId: nil,
-            requestingOrigin: request.requestingOrigin,
+            requestingOrigin: requestingOrigin,
             topOrigin: topOrigin,
-            displayDomain: request.requestingOrigin.displayDomain,
-            permissionTypes: request.permissionTypes,
+            displayDomain: requestingOrigin.displayDomain,
+            permissionTypes: permissionTypes,
             hasUserGesture: false,
             requestedAt: now(),
             isEphemeralProfile: tabContext.isEphemeralProfile,
@@ -147,12 +293,12 @@ final class SumiWebKitPermissionBridge {
 
         return SumiPermissionSecurityContext(
             request: permissionRequest,
-            requestingOrigin: request.requestingOrigin,
+            requestingOrigin: requestingOrigin,
             topOrigin: topOrigin,
             committedURL: tabContext.committedURL,
             visibleURL: tabContext.visibleURL,
             mainFrameURL: tabContext.mainFrameURL,
-            isMainFrame: request.isMainFrame,
+            isMainFrame: isMainFrame,
             isActiveTab: tabContext.isActiveTab,
             isVisibleTab: tabContext.isVisibleTab,
             hasUserGesture: nil,
@@ -166,10 +312,11 @@ final class SumiWebKitPermissionBridge {
     }
 
     private func coordinatorDecision(
-        for context: SumiPermissionSecurityContext
+        for context: SumiPermissionSecurityContext,
+        pendingReason: String,
+        timeoutReason: String
     ) async -> SumiPermissionCoordinatorDecision {
         let coordinator = coordinator
-        let pendingStrategy = pendingStrategy
         let pollInterval = pendingPollIntervalNanoseconds
         let timeout = coordinatorTimeoutNanoseconds
         let pageId = context.request.pageBucketId
@@ -196,12 +343,12 @@ final class SumiWebKitPermissionBridge {
                     if await coordinator.activeQuery(forPageId: pageId) != nil {
                         await coordinator.cancel(
                             requestId: requestId,
-                            reason: pendingStrategy.reason
+                            reason: pendingReason
                         )
                         return .pendingStrategy(
                             SumiWebKitMediaCaptureDecisionMapper.temporaryPendingDecision(
                                 for: context,
-                                reason: pendingStrategy.reason
+                                reason: pendingReason
                             )
                         )
                     }
@@ -209,12 +356,12 @@ final class SumiWebKitPermissionBridge {
 
                 await coordinator.cancel(
                     requestId: requestId,
-                    reason: "webkit-media-permission-coordinator-timeout"
+                    reason: timeoutReason
                 )
                 return .timeout(
                     SumiWebKitMediaCaptureDecisionMapper.failClosedDecision(
                         for: context,
-                        reason: "webkit-media-permission-coordinator-timeout"
+                        reason: timeoutReason
                     )
                 )
             }

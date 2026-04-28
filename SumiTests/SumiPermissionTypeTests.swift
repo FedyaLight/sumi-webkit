@@ -16,6 +16,14 @@ final class SumiPermissionTypeTests: XCTestCase {
         XCTAssertFalse(SumiPermissionType.filePicker.canBePersisted)
     }
 
+    func testScreenCaptureMetadataIsStable() {
+        XCTAssertEqual(SumiPermissionType.screenCapture.identity, "screen-capture")
+        XCTAssertEqual(SumiPermissionType.screenCapture.displayLabel, "Screen Sharing")
+        XCTAssertTrue(SumiPermissionType.screenCapture.isSensitivePowerful)
+        XCTAssertTrue(SumiPermissionType.screenCapture.canBePersisted)
+        XCTAssertFalse(SumiPermissionType.screenCapture.isOneTimeOnly)
+    }
+
     func testExternalSchemeIdentityAndDisplayLabelAreStable() {
         let upper = SumiPermissionType.externalScheme(" MailTo: ")
         let lower = SumiPermissionType.externalScheme("mailto")

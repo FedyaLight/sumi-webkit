@@ -6,6 +6,7 @@ enum SumiPermissionType: Codable, Hashable, Sendable {
     case cameraAndMicrophone
     case geolocation
     case notifications
+    case screenCapture
     case popups
     case externalScheme(String)
     case autoplay
@@ -23,6 +24,7 @@ enum SumiPermissionType: Codable, Hashable, Sendable {
         case cameraAndMicrophone
         case geolocation
         case notifications
+        case screenCapture
         case popups
         case externalScheme
         case autoplay
@@ -44,6 +46,8 @@ enum SumiPermissionType: Codable, Hashable, Sendable {
             self = .geolocation
         case .notifications:
             self = .notifications
+        case .screenCapture:
+            self = .screenCapture
         case .popups:
             self = .popups
         case .externalScheme:
@@ -71,6 +75,8 @@ enum SumiPermissionType: Codable, Hashable, Sendable {
             try container.encode(Kind.geolocation, forKey: .type)
         case .notifications:
             try container.encode(Kind.notifications, forKey: .type)
+        case .screenCapture:
+            try container.encode(Kind.screenCapture, forKey: .type)
         case .popups:
             try container.encode(Kind.popups, forKey: .type)
         case .externalScheme(let scheme):
@@ -105,6 +111,8 @@ enum SumiPermissionType: Codable, Hashable, Sendable {
             return "geolocation"
         case .notifications:
             return "notifications"
+        case .screenCapture:
+            return "screen-capture"
         case .popups:
             return "popups"
         case .externalScheme(let scheme):
@@ -130,6 +138,8 @@ enum SumiPermissionType: Codable, Hashable, Sendable {
             self = .geolocation
         case "notifications":
             self = .notifications
+        case "screen-capture":
+            self = .screenCapture
         case "popups":
             self = .popups
         case "autoplay":
@@ -158,6 +168,8 @@ enum SumiPermissionType: Codable, Hashable, Sendable {
             return "Location"
         case .notifications:
             return "Notifications"
+        case .screenCapture:
+            return "Screen Sharing"
         case .popups:
             return "Pop-ups"
         case .externalScheme(let scheme):
@@ -182,6 +194,24 @@ enum SumiPermissionType: Codable, Hashable, Sendable {
 
     var isOneTimeOnly: Bool {
         self == .filePicker
+    }
+
+    var isSensitivePowerful: Bool {
+        switch self {
+        case .camera,
+             .microphone,
+             .cameraAndMicrophone,
+             .geolocation,
+             .notifications,
+             .screenCapture,
+             .filePicker,
+             .storageAccess:
+            return true
+        case .popups,
+             .externalScheme,
+             .autoplay:
+            return false
+        }
     }
 
     var canBePersisted: Bool {

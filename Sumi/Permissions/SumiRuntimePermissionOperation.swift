@@ -5,6 +5,7 @@ enum SumiRuntimePermissionOperation: Hashable, Sendable {
     case setMicrophoneMuted(Bool)
     case stopCamera
     case stopMicrophone
+    case stopScreenCapture
     case stopAllMediaCapture
     case revoke(SumiPermissionType)
     case pause(SumiPermissionType)

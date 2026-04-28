@@ -199,7 +199,7 @@ extension Tab: WKUIDelegate {
             "🔐 [Tab] Media capture authorization requested for type: \(type.rawValue) from origin: \(origin)"
         )
         guard let browserManager,
-              let profile = resolveProfile()
+              let tabContext = mediaCaptureTabContext(for: webView)
         else {
             RuntimeDiagnostics.emit(
                 "🔐 [Tab] Denying media capture because browser/profile context is unavailable."
@@ -208,29 +208,107 @@ extension Tab: WKUIDelegate {
             return
         }
 
-        let tabId = id.uuidString.lowercased()
-        let pageGeneration = String(extensionRuntimeDocumentSequence)
-        let committedURL = extensionRuntimeCommittedMainDocumentURL
-        let visibleURL = webView.url ?? url
         let mediaRequest = SumiWebKitMediaCaptureRequest(
             mediaType: type,
             origin: origin,
             frame: frame
         )
-        let tabContext = SumiWebKitMediaCaptureTabContext(
-            tabId: tabId,
-            pageId: "\(tabId):\(pageGeneration)",
-            profilePartitionId: profile.id.uuidString.lowercased(),
-            isEphemeralProfile: profile.isEphemeral,
-            committedURL: committedURL,
-            visibleURL: visibleURL,
-            mainFrameURL: committedURL ?? webView.url ?? url,
-            isActiveTab: isCurrentTab,
-            isVisibleTab: primaryWindowId != nil,
-            navigationOrPageGeneration: pageGeneration
-        )
 
         browserManager.webKitPermissionBridge.handleMediaCaptureAuthorization(
+            mediaRequest,
+            tabContext: tabContext,
+            webView: webView,
+            decisionHandler: decisionHandler
+        )
+    }
+
+    @objc(_webView:requestDisplayCapturePermissionForOrigin:initiatedByFrame:withSystemAudio:decisionHandler:)
+    func webView(
+        _ webView: WKWebView,
+        requestDisplayCapturePermissionForOrigin origin: WKSecurityOrigin,
+        initiatedByFrame frame: WKFrameInfo,
+        withSystemAudio: Bool,
+        decisionHandler: @escaping (Int) -> Void
+    ) {
+        RuntimeDiagnostics.emit(
+            "🔐 [Tab] Display capture authorization requested from origin: \(origin)"
+        )
+        guard let browserManager,
+              let tabContext = mediaCaptureTabContext(for: webView)
+        else {
+            RuntimeDiagnostics.emit(
+                "🔐 [Tab] Denying display capture because browser/profile context is unavailable."
+            )
+            decisionHandler(SumiWebKitDisplayCapturePermissionDecision.deny.rawValue)
+            return
+        }
+
+        let displayRequest = SumiWebKitDisplayCaptureRequest(
+            origin: origin,
+            frame: frame,
+            withSystemAudio: withSystemAudio
+        )
+
+        browserManager.webKitPermissionBridge.handleDisplayCaptureAuthorization(
+            displayRequest,
+            tabContext: tabContext,
+            webView: webView,
+            decisionHandler: decisionHandler
+        )
+    }
+
+    @objc(_webView:requestUserMediaAuthorizationForDevices:url:mainFrameURL:decisionHandler:)
+    func webView(
+        _ webView: WKWebView,
+        requestUserMediaAuthorizationForDevices devicesRawValue: UInt,
+        url requestURL: URL,
+        mainFrameURL: URL,
+        decisionHandler: @escaping (Bool) -> Void
+    ) {
+        let devices = SumiWebKitLegacyCaptureDevices(rawValue: devicesRawValue)
+        let permissionTypes = SumiWebKitDisplayCaptureDecisionMapper.permissionTypes(
+            forLegacyCaptureDevices: devices
+        )
+        guard !permissionTypes.isEmpty,
+              let browserManager,
+              let tabContext = mediaCaptureTabContext(for: webView, fallbackMainFrameURL: mainFrameURL)
+        else {
+            RuntimeDiagnostics.emit(
+                "🔐 [Tab] Denying legacy media capture because browser/profile context is unavailable or devices are unsupported."
+            )
+            decisionHandler(false)
+            return
+        }
+
+        let requestingOrigin = SumiPermissionOrigin(url: requestURL)
+        let isMainFrame = requestURL.absoluteString == mainFrameURL.absoluteString
+        if devices.contains(.display) {
+            let displayRequest = SumiWebKitDisplayCaptureRequest(
+                webKitDisplayCaptureTypeRawValue: Int(devices.rawValue),
+                permissionTypes: permissionTypes,
+                requestingOrigin: requestingOrigin,
+                frameURL: requestURL,
+                isMainFrame: isMainFrame,
+                withSystemAudio: false
+            )
+            browserManager.webKitPermissionBridge.handleDisplayCaptureAuthorization(
+                displayRequest,
+                tabContext: tabContext,
+                webView: webView
+            ) { decision in
+                decisionHandler(decision != SumiWebKitDisplayCapturePermissionDecision.deny.rawValue)
+            }
+            return
+        }
+
+        let mediaRequest = SumiWebKitMediaCaptureRequest(
+            webKitMediaTypeRawValue: Int(devices.rawValue),
+            permissionTypes: permissionTypes,
+            requestingOrigin: requestingOrigin,
+            frameURL: requestURL,
+            isMainFrame: isMainFrame
+        )
+        browserManager.webKitPermissionBridge.handleLegacyMediaCaptureAuthorization(
             mediaRequest,
             tabContext: tabContext,
             webView: webView,
@@ -366,6 +444,29 @@ extension Tab: WKUIDelegate {
             committedURL: committedURL,
             visibleURL: webView.url ?? url,
             mainFrameURL: committedURL ?? webView.url ?? url,
+            isActiveTab: isCurrentTab,
+            isVisibleTab: primaryWindowId != nil,
+            navigationOrPageGeneration: pageGeneration
+        )
+    }
+
+    private func mediaCaptureTabContext(
+        for webView: WKWebView,
+        fallbackMainFrameURL: URL? = nil
+    ) -> SumiWebKitMediaCaptureTabContext? {
+        guard let profile = resolveProfile() else { return nil }
+
+        let tabId = id.uuidString.lowercased()
+        let pageGeneration = String(extensionRuntimeDocumentSequence)
+        let committedURL = extensionRuntimeCommittedMainDocumentURL
+        return SumiWebKitMediaCaptureTabContext(
+            tabId: tabId,
+            pageId: "\(tabId):\(pageGeneration)",
+            profilePartitionId: profile.id.uuidString.lowercased(),
+            isEphemeralProfile: profile.isEphemeral,
+            committedURL: committedURL,
+            visibleURL: webView.url ?? url,
+            mainFrameURL: committedURL ?? fallbackMainFrameURL ?? webView.url ?? url,
             isActiveTab: isCurrentTab,
             isVisibleTab: primaryWindowId != nil,
             navigationOrPageGeneration: pageGeneration

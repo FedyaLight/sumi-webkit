@@ -13,6 +13,8 @@ enum SumiSystemPermissionSettingsLink {
             value = "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices"
         case .notifications:
             value = "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+        case .screenCapture:
+            value = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
         }
         return URL(string: value)
     }

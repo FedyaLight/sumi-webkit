@@ -984,6 +984,9 @@ actor SumiPermissionCoordinator {
         if Set(permissionTypes) == Set([.camera, .microphone]), permissionTypes.count == 2 {
             return [.camera, .microphone]
         }
+        if Set(permissionTypes) == Set([.screenCapture, .microphone]), permissionTypes.count == 2 {
+            return [.screenCapture, .microphone]
+        }
         guard permissionTypes.count == 1,
               permissionTypes.first != .cameraAndMicrophone
         else {
