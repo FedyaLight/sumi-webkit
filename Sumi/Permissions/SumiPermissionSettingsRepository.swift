@@ -5,7 +5,6 @@ import WebKit
 final class SumiPermissionSettingsRepository {
     private enum Constants {
         static let cleanupPreferenceKey = "permissions.cleanup.automatic.enabled"
-        static let legacyCleanupPreferenceKey = "permissions.cleanup.automatic.enabled.future"
     }
 
     private let coordinator: any SumiPermissionCoordinating
@@ -880,9 +879,6 @@ final class SumiPermissionSettingsRepository {
     }
 
     private func isAutomaticCleanupEnabled() -> Bool {
-        if userDefaults.object(forKey: Constants.cleanupPreferenceKey) != nil {
-            return userDefaults.bool(forKey: Constants.cleanupPreferenceKey)
-        }
-        return userDefaults.bool(forKey: Constants.legacyCleanupPreferenceKey)
+        userDefaults.bool(forKey: Constants.cleanupPreferenceKey)
     }
 }

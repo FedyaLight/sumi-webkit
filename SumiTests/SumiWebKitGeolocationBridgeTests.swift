@@ -82,7 +82,7 @@ final class SumiWebKitGeolocationBridgeTests: XCTestCase {
         XCTAssertTrue(provider.registeredRequests.isEmpty)
     }
 
-    func testPendingPromptRequiredUsesTemporaryDenyStrategy() async {
+    func testPendingPromptRequiredUsesPromptPresenterUnavailableDenyStrategy() async {
         let coordinator = FakeGeolocationPermissionCoordinator(mode: .pending)
         let bridge = makeBridge(
             coordinator: coordinator,
@@ -95,7 +95,7 @@ final class SumiWebKitGeolocationBridgeTests: XCTestCase {
         let cancelledReasons = await coordinator.cancelledReasons()
 
         XCTAssertEqual(decisions, [.deny])
-        XCTAssertEqual(cancelledReasons, ["webkit-geolocation-prompt-ui-unavailable-deny"])
+        XCTAssertEqual(cancelledReasons, ["webkit-geolocation-prompt-presenter-unavailable-deny"])
     }
 
     func testSystemStatesMapWithoutRequestingAuthorizationOrPersistingSiteDeny() async {
@@ -244,7 +244,7 @@ final class SumiWebKitGeolocationBridgeTests: XCTestCase {
     private func makeBridge(
         coordinator: any SumiPermissionCoordinating,
         provider: FakeSumiGeolocationProvider?,
-        pendingStrategy: SumiWebKitGeolocationPendingStrategy = .denyUntilPromptUIExists,
+        pendingStrategy: SumiWebKitGeolocationPendingStrategy = .promptPresenterUnavailableDeny,
         pendingPollIntervalNanoseconds: UInt64 = 1_000_000,
         coordinatorTimeoutNanoseconds: UInt64 = 100_000_000
     ) -> SumiWebKitGeolocationBridge {
@@ -262,7 +262,7 @@ final class SumiWebKitGeolocationBridgeTests: XCTestCase {
         systemService: FakeSumiSystemPermissionService,
         store: GeolocationBridgePermissionStore,
         provider: FakeSumiGeolocationProvider,
-        pendingStrategy: SumiWebKitGeolocationPendingStrategy = .denyUntilPromptUIExists,
+        pendingStrategy: SumiWebKitGeolocationPendingStrategy = .promptPresenterUnavailableDeny,
         pendingPollIntervalNanoseconds: UInt64 = 1_000_000,
         coordinatorTimeoutNanoseconds: UInt64 = 100_000_000
     ) -> SumiWebKitGeolocationBridge {

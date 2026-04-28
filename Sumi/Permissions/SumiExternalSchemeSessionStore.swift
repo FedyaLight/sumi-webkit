@@ -5,7 +5,7 @@ enum SumiExternalSchemeAttemptResult: String, Codable, Equatable, Sendable {
     case opened
     case blockedByDefault
     case blockedByStoredDeny
-    case blockedPendingUI
+    case blockedPromptPresenterUnavailable
     case unsupportedScheme
     case openFailed
 }

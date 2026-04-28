@@ -212,7 +212,7 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
         XCTAssertTrue(observedDecision?.shouldOfferSystemSettings == true)
     }
 
-    func testPendingPromptRequiredUsesTemporaryDenyStrategy() async {
+    func testPendingPromptRequiredUsesPromptPresenterUnavailableDenyStrategy() async {
         let coordinator = FakePermissionCoordinator(mode: .pending)
         let bridge = makeBridge(
             coordinator: coordinator,
@@ -224,10 +224,10 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
 
         XCTAssertEqual(decisions, [.deny])
         let cancelledReasons = await coordinator.cancelledReasons()
-        XCTAssertEqual(cancelledReasons, ["webkit-media-prompt-ui-unavailable-deny"])
+        XCTAssertEqual(cancelledReasons, ["webkit-media-prompt-presenter-unavailable-deny"])
     }
 
-    func testDisplayCapturePendingPromptRequiredUsesTemporaryDenyStrategy() async {
+    func testDisplayCapturePendingPromptRequiredUsesPromptPresenterUnavailableDenyStrategy() async {
         let coordinator = FakePermissionCoordinator(mode: .pending)
         let bridge = makeBridge(
             coordinator: coordinator,
@@ -242,7 +242,7 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
 
         XCTAssertEqual(decisions, [SumiWebKitDisplayCapturePermissionDecision.deny.rawValue])
         let cancelledReasons = await coordinator.cancelledReasons()
-        XCTAssertEqual(cancelledReasons, ["webkit-screen-capture-prompt-ui-unavailable-deny"])
+        XCTAssertEqual(cancelledReasons, ["webkit-screen-capture-prompt-presenter-unavailable-deny"])
     }
 
     func testExactlyOnceCallbackForImmediateGrantDenySystemBlockedAndTimeout() async {
@@ -473,8 +473,8 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
     private func makeBridge(
         coordinator: any SumiPermissionCoordinating,
         runtimeController: FakeSumiRuntimePermissionController? = nil,
-        pendingStrategy: SumiWebKitPermissionBridgePendingStrategy = .denyUntilPromptUIExists,
-        screenCapturePendingStrategy: SumiWebKitScreenCapturePendingStrategy = .denyUntilPromptUIExists,
+        pendingStrategy: SumiWebKitPermissionBridgePendingStrategy = .promptPresenterUnavailableDeny,
+        screenCapturePendingStrategy: SumiWebKitScreenCapturePendingStrategy = .promptPresenterUnavailableDeny,
         pendingPollIntervalNanoseconds: UInt64 = 1_000_000,
         coordinatorTimeoutNanoseconds: UInt64 = 100_000_000
     ) -> SumiWebKitPermissionBridge {
@@ -492,8 +492,8 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
     private func realCoordinatorBridge(
         policyResult: SumiPermissionPolicyResult,
         store: BridgePermissionStore,
-        pendingStrategy: SumiWebKitPermissionBridgePendingStrategy = .denyUntilPromptUIExists,
-        screenCapturePendingStrategy: SumiWebKitScreenCapturePendingStrategy = .denyUntilPromptUIExists,
+        pendingStrategy: SumiWebKitPermissionBridgePendingStrategy = .promptPresenterUnavailableDeny,
+        screenCapturePendingStrategy: SumiWebKitScreenCapturePendingStrategy = .promptPresenterUnavailableDeny,
         pendingPollIntervalNanoseconds: UInt64 = 1_000_000,
         coordinatorTimeoutNanoseconds: UInt64 = 100_000_000
     ) -> SumiWebKitPermissionBridge {

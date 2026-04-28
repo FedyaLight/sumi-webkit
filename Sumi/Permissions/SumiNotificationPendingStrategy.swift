@@ -2,14 +2,14 @@ import Foundation
 
 enum SumiNotificationPendingStrategy: Equatable, Sendable {
     case waitForPromptUI
-    case denyUntilPromptUIExists
+    case promptPresenterUnavailableDeny
 
     var reason: String {
         switch self {
         case .waitForPromptUI:
             return "notification-prompt-ui-wait"
-        case .denyUntilPromptUIExists:
-            return "notification-prompt-ui-unavailable-deny"
+        case .promptPresenterUnavailableDeny:
+            return "notification-prompt-presenter-unavailable-deny"
         }
     }
 

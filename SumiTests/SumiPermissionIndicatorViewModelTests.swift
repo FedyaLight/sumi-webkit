@@ -102,7 +102,7 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
         )
         let external = SumiPermissionIndicatorViewModel.state(
             from: .init(
-                externalSchemeRecords: [externalSchemeRecord(result: .blockedPendingUI)],
+                externalSchemeRecords: [externalSchemeRecord(result: .blockedPromptPresenterUnavailable)],
                 displayDomain: "example.com",
                 tabId: "tab-a",
                 pageId: "tab-a:1"

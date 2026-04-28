@@ -114,7 +114,7 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         XCTAssertTrue(resolver.openedURLs.isEmpty)
     }
 
-    func testUserActivatedNoDecisionBlocksPendingUIWithoutPersistingDeny() async {
+    func testUserActivatedNoDecisionBlocksPromptPresenterUnavailableWithoutPersistingDeny() async {
         let store = ExternalSchemeBridgePermissionStore()
         let resolver = ExternalSchemeFakeResolver(handlerSchemes: ["mailto"])
         let bridge = realExternalBridge(store: store, resolver: resolver)
@@ -125,8 +125,8 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         )
 
         XCTAssertFalse(result.didOpen)
-        XCTAssertEqual(result.record?.result, .blockedPendingUI)
-        XCTAssertEqual(result.reason, SumiExternalSchemePendingStrategy.blockUntilPromptUIExists.reason)
+        XCTAssertEqual(result.record?.result, .blockedPromptPresenterUnavailable)
+        XCTAssertEqual(result.reason, SumiExternalSchemePendingStrategy.promptPresenterUnavailableBlock.reason)
         XCTAssertEqual(result.coordinatorDecision?.shouldPersist, false)
         XCTAssertTrue(resolver.openedURLs.isEmpty)
         let setCount = await store.setDecisionCallCount()
@@ -195,8 +195,8 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         )
 
         XCTAssertTrue(allowedMail.didOpen)
-        XCTAssertEqual(otherScheme.record?.result, .blockedPendingUI)
-        XCTAssertEqual(otherSite.record?.result, .blockedPendingUI)
+        XCTAssertEqual(otherScheme.record?.result, .blockedPromptPresenterUnavailable)
+        XCTAssertEqual(otherSite.record?.result, .blockedPromptPresenterUnavailable)
         XCTAssertEqual(resolver.openedURLs, [mailURL])
     }
 
@@ -214,8 +214,8 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
             tabContext: externalTabContext()
         )
 
-        XCTAssertEqual(result.record?.result, .blockedPendingUI)
-        XCTAssertEqual(result.reason, SumiExternalSchemePendingStrategy.blockUntilPromptUIExists.reason)
+        XCTAssertEqual(result.record?.result, .blockedPromptPresenterUnavailable)
+        XCTAssertEqual(result.reason, SumiExternalSchemePendingStrategy.promptPresenterUnavailableBlock.reason)
         let setCount = await store.setDecisionCallCount()
         XCTAssertEqual(setCount, 0)
     }
@@ -409,7 +409,7 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         return SumiExternalSchemePermissionBridge(
             coordinator: coordinator,
             appResolver: resolver,
-            pendingStrategy: .blockUntilPromptUIExists,
+            pendingStrategy: .promptPresenterUnavailableBlock,
             now: { externalFixedDate },
             eventSink: eventSink
         )

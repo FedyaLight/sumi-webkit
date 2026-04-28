@@ -26,7 +26,7 @@ final class SumiPopupPermissionBridge {
     init(
         coordinator: any SumiPermissionCoordinating,
         blockedPopupStore: SumiBlockedPopupStore? = nil,
-        pendingStrategy: SumiPopupPendingStrategy = .blockUntilPromptUIExists,
+        pendingStrategy: SumiPopupPendingStrategy = .backgroundPromptUnavailableBlock,
         now: @escaping @Sendable () -> Date = { Date() },
         eventSink: EventSink? = nil
     ) {
@@ -141,7 +141,7 @@ final class SumiPopupPermissionBridge {
                 tabContext: tabContext,
                 decision: decision,
                 reason: decision.reason,
-                blockedReason: .blockedByPromptUIUnavailable
+                blockedReason: .blockedByBackgroundPromptUnavailable
             )
 
         case .requiresUserActivation:
@@ -229,7 +229,7 @@ final class SumiPopupPermissionBridge {
             tabContext: tabContext,
             decision: nil,
             reason: pendingStrategy.reason,
-            blockedReason: .blockedByPromptUIUnavailable
+            blockedReason: .blockedByBackgroundPromptUnavailable
         )
     }
 

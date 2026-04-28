@@ -84,16 +84,16 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
 
         XCTAssertFalse(result.isAllowed)
         XCTAssertEqual(result.coordinatorDecision?.outcome, .denied)
-        XCTAssertEqual(result.reason, SumiPopupPendingStrategy.blockUntilPromptUIExists.reason)
+        XCTAssertEqual(result.reason, SumiPopupPendingStrategy.backgroundPromptUnavailableBlock.reason)
         XCTAssertEqual(blockedStore.records(forPageId: "tab-a:1").count, 1)
-        XCTAssertEqual(blockedStore.records(forPageId: "tab-a:1").first?.reason, .blockedByPromptUIUnavailable)
+        XCTAssertEqual(blockedStore.records(forPageId: "tab-a:1").first?.reason, .blockedByBackgroundPromptUnavailable)
         let setCount = await store.setDecisionCallCount()
         XCTAssertEqual(setCount, 0)
         XCTAssertTrue(events.contains(.attempted(requestId: "popup-a", pageId: "tab-a:1", classification: .scriptOrBackground)))
         XCTAssertTrue(events.contains(.blockedByDefault(
             requestId: "popup-a",
             pageId: "tab-a:1",
-            reason: SumiPopupPendingStrategy.blockUntilPromptUIExists.reason
+            reason: SumiPopupPendingStrategy.backgroundPromptUnavailableBlock.reason
         )))
     }
 
@@ -206,8 +206,8 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
         )
 
         XCTAssertFalse(background.isAllowed)
-        XCTAssertEqual(background.reason, SumiPopupPendingStrategy.blockUntilPromptUIExists.reason)
-        XCTAssertEqual(backgroundBridge.blockedPopups(forPageId: "tab-a:1").first?.reason, .blockedByPromptUIUnavailable)
+        XCTAssertEqual(background.reason, SumiPopupPendingStrategy.backgroundPromptUnavailableBlock.reason)
+        XCTAssertEqual(backgroundBridge.blockedPopups(forPageId: "tab-a:1").first?.reason, .blockedByBackgroundPromptUnavailable)
     }
 
     func testSecurityContextUsesTrustedOriginsProfileAndNormalTabSurface() {

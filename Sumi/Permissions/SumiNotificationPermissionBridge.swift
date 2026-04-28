@@ -8,7 +8,7 @@ enum SumiNotificationBridgeSource: String, Codable, Equatable, Sendable {
 
 enum SumiNotificationPermissionEvent: Equatable, Sendable {
     case permissionRequested(source: SumiNotificationBridgeSource, requestId: String)
-    case promptNeededNoUI(source: SumiNotificationBridgeSource, requestId: String)
+    case promptPresenterUnavailable(source: SumiNotificationBridgeSource, requestId: String)
     case blockedBySystem(source: SumiNotificationBridgeSource, requestId: String, reason: String)
     case blockedBySite(source: SumiNotificationBridgeSource, requestId: String, reason: String)
     case delivered(source: SumiNotificationBridgeSource, requestId: String, identifier: String)
@@ -395,11 +395,11 @@ final class SumiNotificationPermissionBridge {
             switch result {
             case .coordinator(let decision):
                 if decision.outcome == .promptRequired {
-                    emit(.promptNeededNoUI(source: source, requestId: requestId))
+                    emit(.promptPresenterUnavailable(source: source, requestId: requestId))
                 }
                 return decision
             case .pendingStrategy(let decision):
-                emit(.promptNeededNoUI(source: source, requestId: requestId))
+                emit(.promptPresenterUnavailable(source: source, requestId: requestId))
                 return decision
             case .timeout(let decision):
                 emit(.failed(source: source, requestId: requestId, reason: decision.reason))
@@ -417,7 +417,7 @@ final class SumiNotificationPermissionBridge {
         case .systemBlocked:
             emit(.blockedBySystem(source: source, requestId: requestId, reason: decision.reason))
         case .promptRequired:
-            emit(.promptNeededNoUI(source: source, requestId: requestId))
+            emit(.promptPresenterUnavailable(source: source, requestId: requestId))
         default:
             emit(.blockedBySite(source: source, requestId: requestId, reason: decision.reason))
         }

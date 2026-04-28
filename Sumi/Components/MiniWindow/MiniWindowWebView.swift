@@ -294,6 +294,8 @@ extension MiniWindowWebView.Coordinator: WKUIDelegate {
 
     /// Handle requests for media capture authorization (camera/microphone).
     /// This is used for OAuth providers that may require getUserMedia during auth flows.
+    /// MiniWindow permission integration is intentionally separate from the normal-tab
+    /// website permission architecture and remains deferred.
     @available(macOS 13.0, *)
     func webView(
         _ webView: WKWebView,
@@ -313,6 +315,8 @@ extension MiniWindowWebView.Coordinator: WKUIDelegate {
     }
 
     // MARK: - File Upload Support
+    // MiniWindow file picking is an auxiliary-surface path. Normal tabs must route
+    // file picker requests through SumiFilePickerPermissionBridge.
     func webView(
         _ webView: WKWebView,
         runOpenPanelWith parameters: WKOpenPanelParameters,

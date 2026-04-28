@@ -5,7 +5,7 @@ enum SumiExternalSchemePermissionEvent: Equatable, Sendable {
     case opened(requestId: String, pageId: String, scheme: String)
     case blockedByDefault(requestId: String, pageId: String, reason: String)
     case blockedByStoredDeny(requestId: String, pageId: String, reason: String)
-    case blockedPendingUI(requestId: String, pageId: String, reason: String)
+    case blockedPromptPresenterUnavailable(requestId: String, pageId: String, reason: String)
     case unsupportedScheme(requestId: String, pageId: String, reason: String)
     case openFailed(requestId: String, pageId: String, reason: String)
     case possibleAbuse(requestId: String, pageId: String, attemptCount: Int)
@@ -117,7 +117,7 @@ final class SumiExternalSchemePermissionBridge {
                     tabContext: tabContext,
                     appInfo: appInfo,
                     coordinatorDecision: coordinatorDecision,
-                    result: .blockedPendingUI,
+                    result: .blockedPromptPresenterUnavailable,
                     reason: "external-scheme-stale-page"
                 )
             }
@@ -141,7 +141,7 @@ final class SumiExternalSchemePermissionBridge {
                 reason: coordinatorDecision.reason
             )
 
-        case .blockedPendingUI:
+        case .blockedPromptPresenterUnavailable:
             if pendingStrategy.waitsForPromptUI,
                request.isUserActivated,
                tabContext.isActiveTab,
@@ -167,7 +167,7 @@ final class SumiExternalSchemePermissionBridge {
                             tabContext: tabContext,
                             appInfo: appInfo,
                             coordinatorDecision: settlementDecision,
-                            result: .blockedPendingUI,
+                            result: .blockedPromptPresenterUnavailable,
                             reason: "external-scheme-stale-page"
                         )
                     }
@@ -205,7 +205,7 @@ final class SumiExternalSchemePermissionBridge {
             let temporaryDecision = SumiExternalSchemeDecisionMapper.defaultBlockDecision(
                 for: context,
                 scheme: request.normalizedScheme,
-                result: .blockedPendingUI,
+                result: .blockedPromptPresenterUnavailable,
                 reason: pendingStrategy.reason
             )
             return finish(
@@ -213,7 +213,7 @@ final class SumiExternalSchemePermissionBridge {
                 tabContext: tabContext,
                 appInfo: appInfo,
                 coordinatorDecision: temporaryDecision,
-                result: .blockedPendingUI,
+                result: .blockedPromptPresenterUnavailable,
                 reason: pendingStrategy.reason
             )
 
@@ -340,7 +340,7 @@ final class SumiExternalSchemePermissionBridge {
                 coordinatorDecision: coordinatorDecision,
                 reason: reason
             )
-        case .blockedByDefault, .blockedByStoredDeny, .blockedPendingUI:
+        case .blockedByDefault, .blockedByStoredDeny, .blockedPromptPresenterUnavailable:
             return SumiExternalSchemePermissionResult(
                 action: .blocked(record),
                 coordinatorDecision: coordinatorDecision,
@@ -373,8 +373,8 @@ final class SumiExternalSchemePermissionBridge {
             emit(.blockedByDefault(requestId: record.id, pageId: record.pageId, reason: record.reason))
         case .blockedByStoredDeny:
             emit(.blockedByStoredDeny(requestId: record.id, pageId: record.pageId, reason: record.reason))
-        case .blockedPendingUI:
-            emit(.blockedPendingUI(requestId: record.id, pageId: record.pageId, reason: record.reason))
+        case .blockedPromptPresenterUnavailable:
+            emit(.blockedPromptPresenterUnavailable(requestId: record.id, pageId: record.pageId, reason: record.reason))
         case .unsupportedScheme:
             emit(.unsupportedScheme(requestId: record.id, pageId: record.pageId, reason: record.reason))
         case .openFailed:

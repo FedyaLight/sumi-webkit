@@ -3,14 +3,14 @@ import WebKit
 
 enum SumiWebKitGeolocationPendingStrategy: Equatable, Sendable {
     case waitForPromptUI
-    case denyUntilPromptUIExists
+    case promptPresenterUnavailableDeny
 
     var reason: String {
         switch self {
         case .waitForPromptUI:
             return "webkit-geolocation-prompt-ui-wait"
-        case .denyUntilPromptUIExists:
-            return "webkit-geolocation-prompt-ui-unavailable-deny"
+        case .promptPresenterUnavailableDeny:
+            return "webkit-geolocation-prompt-presenter-unavailable-deny"
         }
     }
 

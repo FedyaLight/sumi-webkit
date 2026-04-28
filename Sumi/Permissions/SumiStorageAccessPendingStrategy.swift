@@ -2,14 +2,14 @@ import Foundation
 
 enum SumiStorageAccessPendingStrategy: Equatable, Sendable {
     case waitForPromptUI
-    case denyUntilPromptUIExists
+    case promptPresenterUnavailableDeny
 
     var reason: String {
         switch self {
         case .waitForPromptUI:
             return "webkit-storage-access-prompt-ui-wait"
-        case .denyUntilPromptUIExists:
-            return "webkit-storage-access-prompt-ui-unavailable-deny"
+        case .promptPresenterUnavailableDeny:
+            return "webkit-storage-access-prompt-presenter-unavailable-deny"
         }
     }
 

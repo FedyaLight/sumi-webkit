@@ -2,14 +2,14 @@ import Foundation
 
 enum SumiExternalSchemePendingStrategy: Equatable, Sendable {
     case waitForPromptUI
-    case blockUntilPromptUIExists
+    case promptPresenterUnavailableBlock
 
     var reason: String {
         switch self {
         case .waitForPromptUI:
             return "external-scheme-prompt-ui-wait"
-        case .blockUntilPromptUIExists:
-            return "external-scheme-prompt-ui-unavailable-block"
+        case .promptPresenterUnavailableBlock:
+            return "external-scheme-prompt-presenter-unavailable-block"
         }
     }
 

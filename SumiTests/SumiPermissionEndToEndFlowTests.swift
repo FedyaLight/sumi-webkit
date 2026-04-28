@@ -401,7 +401,7 @@ final class SumiPermissionEndToEndFlowTests: XCTestCase {
         let blockedRecords = blockedPopupStore.records(forPageId: "tab-a:1")
         XCTAssertEqual(blockedRecords.count, 1)
         XCTAssertEqual(blockedRecords.first?.id, "popup-background")
-        XCTAssertEqual(blockedRecords.first?.reason, .blockedByPromptUIUnavailable)
+        XCTAssertEqual(blockedRecords.first?.reason, .blockedByBackgroundPromptUnavailable)
 
         await harness.store.seed(
             sumiPermissionIntegrationKey(.popups),
