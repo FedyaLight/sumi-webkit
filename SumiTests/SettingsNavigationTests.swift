@@ -50,6 +50,39 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(settings.currentSettingsTab, .about)
     }
 
+    func testPrivacySiteSettingsRouteRoundTripsThroughSettingsSurfaceURL() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        settings.currentSettingsTab = .privacy
+        settings.privacySettingsRoute = .siteSettings(
+            SumiSettingsSiteSettingsFilter(
+                requestingOriginIdentity: "https://example.com",
+                topOriginIdentity: "https://example.com",
+                displayDomain: "example.com"
+            )
+        )
+
+        let url = settings.settingsSurfaceURLForCurrentNavigation()
+        XCTAssertEqual(url.scheme, "sumi")
+        XCTAssertEqual(url.host, "settings")
+        let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(queryItems.first { $0.name == "section" }?.value, "siteSettings")
+        XCTAssertEqual(queryItems.first { $0.name == "origin" }?.value, "https://example.com")
+
+        settings.currentSettingsTab = .general
+        settings.privacySettingsRoute = .overview
+        settings.applyNavigationFromSettingsSurfaceURL(url)
+
+        XCTAssertEqual(settings.currentSettingsTab, .privacy)
+        XCTAssertTrue(settings.privacySettingsRoute.isSiteSettings)
+        XCTAssertEqual(
+            settings.privacySettingsRoute.siteSettingsFilter?.requestingOriginIdentity,
+            "https://example.com"
+        )
+    }
+
     func testSettingsSurfaceRemainsNativeNonWebSurface() {
         let tab = Tab(url: SettingsTabs.about.settingsSurfaceURL)
 

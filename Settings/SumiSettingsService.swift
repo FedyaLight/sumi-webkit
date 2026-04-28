@@ -42,6 +42,8 @@ class SumiSettingsService {
 
     var currentSettingsTab: SettingsTabs = .general
 
+    var privacySettingsRoute: SumiPrivacySettingsRoute = .overview
+
     /// Safari extensions vs SumiScripts, when `currentSettingsTab == .extensions`.
     var extensionsSettingsSubPane: SumiExtensionsSettingsSubPane = .safariExtensions
 
@@ -362,6 +364,9 @@ class SumiSettingsService {
         default:
             if let tab = SettingsTabs(paneQueryValue: raw) {
                 currentSettingsTab = tab
+                if tab == .privacy {
+                    privacySettingsRoute = Self.privacyRoute(from: url)
+                }
             }
         }
     }
@@ -376,7 +381,50 @@ class SumiSettingsService {
                 return SumiSurface.settingsSurfaceURL(paneQuery: SettingsTabs.extensions.paneQueryValue)
             }
         }
+        if currentSettingsTab == .privacy {
+            switch privacySettingsRoute {
+            case .overview:
+                return currentSettingsTab.settingsSurfaceURL
+            case .siteSettings(let filter):
+                return SumiSurface.settingsSurfaceURL(
+                    paneQuery: SettingsTabs.privacy.paneQueryValue,
+                    extraQueryItems: Self.privacySiteSettingsQueryItems(filter: filter)
+                )
+            }
+        }
         return currentSettingsTab.settingsSurfaceURL
+    }
+
+    private static func privacyRoute(from url: URL) -> SumiPrivacySettingsRoute {
+        let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let section = queryItems.first(where: { $0.name == "section" })?.value?.lowercased()
+        guard section == "sitesettings" || section == "site-settings" else {
+            return .overview
+        }
+        let filter = SumiSettingsSiteSettingsFilter(
+            requestingOriginIdentity: queryItems.first(where: { $0.name == "origin" })?.value,
+            topOriginIdentity: queryItems.first(where: { $0.name == "topOrigin" })?.value,
+            displayDomain: queryItems.first(where: { $0.name == "site" })?.value
+        )
+        return .siteSettings(filter)
+    }
+
+    private static func privacySiteSettingsQueryItems(
+        filter: SumiSettingsSiteSettingsFilter?
+    ) -> [URLQueryItem] {
+        var items = [URLQueryItem(name: "section", value: "siteSettings")]
+        if let filter {
+            if let origin = filter.requestingOriginIdentity, !origin.isEmpty {
+                items.append(URLQueryItem(name: "origin", value: origin))
+            }
+            if let topOrigin = filter.topOriginIdentity, !topOrigin.isEmpty {
+                items.append(URLQueryItem(name: "topOrigin", value: topOrigin))
+            }
+            if let site = filter.displayDomain, !site.isEmpty {
+                items.append(URLQueryItem(name: "site", value: site))
+            }
+        }
+        return items
     }
 
     private func enforceSumiChromeDefaults() {

@@ -69,12 +69,15 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
             return SettingsPaneDescriptor(
                 tab: tab,
                 title: "Privacy & Security",
-                subtitle: "Tracking protection, ad blocking, and site-level overrides.",
+                subtitle: "Tracking protection, ad blocking, permissions, and site settings.",
                 icon: tab.icon,
                 group: .privacy,
                 keywords: [
                     "tracking", "protection", "ad blocking", "tracker data",
-                    "site overrides", "rules", "privacy", "security"
+                    "site overrides", "rules", "privacy", "security",
+                    "site settings", "permissions", "camera", "microphone",
+                    "location", "notifications", "popups", "pop-ups",
+                    "autoplay", "storage access", "screen sharing"
                 ]
             )
         case .profiles:
@@ -163,6 +166,49 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
             .joined(separator: " ")
             .lowercased()
         return terms.allSatisfy { searchableText.contains($0) }
+    }
+}
+
+struct SumiSettingsSiteSettingsFilter: Equatable, Hashable {
+    let requestingOriginIdentity: String?
+    let topOriginIdentity: String?
+    let displayDomain: String?
+
+    init(
+        requestingOriginIdentity: String?,
+        topOriginIdentity: String?,
+        displayDomain: String?
+    ) {
+        self.requestingOriginIdentity = requestingOriginIdentity?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.topOriginIdentity = topOriginIdentity?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.displayDomain = displayDomain?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    init(
+        requestingOrigin: SumiPermissionOrigin,
+        topOrigin: SumiPermissionOrigin,
+        displayDomain: String?
+    ) {
+        self.init(
+            requestingOriginIdentity: requestingOrigin.identity,
+            topOriginIdentity: topOrigin.identity,
+            displayDomain: displayDomain
+        )
+    }
+}
+
+enum SumiPrivacySettingsRoute: Equatable, Hashable {
+    case overview
+    case siteSettings(SumiSettingsSiteSettingsFilter?)
+
+    var isSiteSettings: Bool {
+        if case .siteSettings = self { return true }
+        return false
+    }
+
+    var siteSettingsFilter: SumiSettingsSiteSettingsFilter? {
+        if case .siteSettings(let filter) = self { return filter }
+        return nil
     }
 }
 

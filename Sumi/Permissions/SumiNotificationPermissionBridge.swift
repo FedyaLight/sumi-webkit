@@ -448,6 +448,10 @@ final class SumiNotificationPermissionBridge {
                 visualStyle: visualStyle,
                 priority: priority,
                 reason: decision.reason,
+                requestingOrigin: context.requestingOrigin,
+                topOrigin: context.topOrigin,
+                profilePartitionId: context.profilePartitionId,
+                isEphemeralProfile: context.isEphemeralProfile,
                 createdAt: now()
             )
         )

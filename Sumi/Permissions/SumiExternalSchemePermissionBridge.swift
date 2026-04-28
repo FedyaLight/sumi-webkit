@@ -302,6 +302,8 @@ final class SumiExternalSchemePermissionBridge {
                 result: result,
                 reason: reason,
                 navigationActionMetadata: request.navigationActionMetadata,
+                profilePartitionId: tabContext.profilePartitionId,
+                isEphemeralProfile: tabContext.isEphemeralProfile,
                 attemptCount: 1
             )
         )

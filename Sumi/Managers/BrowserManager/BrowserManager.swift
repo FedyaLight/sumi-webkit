@@ -198,11 +198,13 @@ class BrowserManager: ObservableObject {
     let filePickerPermissionBridge: SumiFilePickerPermissionBridge
     let storageAccessPermissionBridge: SumiStorageAccessPermissionBridge
     let permissionIndicatorEventStore: SumiPermissionIndicatorEventStore
+    let permissionRecentActivityStore: SumiPermissionRecentActivityStore
     let blockedPopupStore: SumiBlockedPopupStore
     let popupPermissionBridge: SumiPopupPermissionBridge
     let externalAppResolver: any SumiExternalAppResolving
     let externalSchemeSessionStore: SumiExternalSchemeSessionStore
     let externalSchemePermissionBridge: SumiExternalSchemePermissionBridge
+    private var permissionRecentActivityTask: Task<Void, Never>?
     var zoomManager = ZoomManager()
     weak var sumiSettings: SumiSettingsService? {
         didSet {
@@ -309,6 +311,7 @@ class BrowserManager: ObservableObject {
         filePickerPermissionBridge: SumiFilePickerPermissionBridge? = nil,
         storageAccessPermissionBridge: SumiStorageAccessPermissionBridge? = nil,
         permissionIndicatorEventStore: SumiPermissionIndicatorEventStore? = nil,
+        permissionRecentActivityStore: SumiPermissionRecentActivityStore? = nil,
         blockedPopupStore: SumiBlockedPopupStore? = nil,
         popupPermissionBridge: SumiPopupPermissionBridge? = nil,
         externalAppResolver: (any SumiExternalAppResolving)? = nil,
@@ -337,6 +340,7 @@ class BrowserManager: ObservableObject {
             ?? SumiRuntimePermissionController(geolocationProvider: geolocationProvider)
         let filePickerPanelPresenter = filePickerPanelPresenter ?? SumiFilePickerPanelPresenter()
         let permissionIndicatorEventStore = permissionIndicatorEventStore ?? SumiPermissionIndicatorEventStore()
+        let permissionRecentActivityStore = permissionRecentActivityStore ?? SumiPermissionRecentActivityStore()
         let blockedPopupStore = blockedPopupStore ?? SumiBlockedPopupStore()
         let externalAppResolver = externalAppResolver ?? SumiNSWorkspaceExternalAppResolver.shared
         let externalSchemeSessionStore = externalSchemeSessionStore ?? SumiExternalSchemeSessionStore()
@@ -421,6 +425,7 @@ class BrowserManager: ObservableObject {
                 indicatorEventStore: permissionIndicatorEventStore
             )
         self.permissionIndicatorEventStore = permissionIndicatorEventStore
+        self.permissionRecentActivityStore = permissionRecentActivityStore
         self.blockedPopupStore = blockedPopupStore
         self.popupPermissionBridge = popupPermissionBridge
             ?? SumiPopupPermissionBridge(
@@ -435,6 +440,12 @@ class BrowserManager: ObservableObject {
                 appResolver: externalAppResolver,
                 sessionStore: externalSchemeSessionStore
             )
+        self.permissionRecentActivityTask = Task { @MainActor [permissionCoordinator, permissionRecentActivityStore] in
+            let events = await permissionCoordinator.events()
+            for await event in events {
+                permissionRecentActivityStore.record(event)
+            }
+        }
 
         // Phase 2: wire dependencies and perform side effects (safe to use self)
         self.compositorManager.browserManager = self
@@ -923,9 +934,49 @@ class BrowserManager: ObservableObject {
             targetURL = pane.settingsSurfaceURL
         default:
             sumiSettings?.currentSettingsTab = pane
+            if pane == .privacy {
+                sumiSettings?.privacySettingsRoute = .overview
+            }
             targetURL = pane.settingsSurfaceURL
         }
 
+        openSettingsSurface(targetURL: targetURL, in: windowState)
+    }
+
+    func openSiteSettingsTab(
+        focusing tab: Tab? = nil,
+        profile: Profile? = nil,
+        in windowState: BrowserWindowState? = nil
+    ) {
+        guard let windowState = windowState ?? windowRegistry?.activeWindow else { return }
+        let targetTab = tab ?? currentTab(for: windowState)
+        let mainURL = targetTab?.extensionRuntimeCommittedMainDocumentURL
+            ?? targetTab?.existingWebView?.url
+            ?? targetTab?.url
+        let origin = SumiPermissionOrigin(url: mainURL)
+        let displayDomain = SumiCurrentSitePermissionsViewModel.displayDomain(
+            for: origin,
+            fallbackURL: mainURL
+        )
+        let filter = origin.isWebOrigin
+            ? SumiSettingsSiteSettingsFilter(
+                requestingOrigin: origin,
+                topOrigin: origin,
+                displayDomain: displayDomain
+            )
+            : nil
+
+        sumiSettings?.currentSettingsTab = .privacy
+        sumiSettings?.privacySettingsRoute = .siteSettings(filter)
+        let targetURL = sumiSettings?.settingsSurfaceURLForCurrentNavigation()
+            ?? SumiSurface.settingsSurfaceURL(
+                paneQuery: SettingsTabs.privacy.paneQueryValue,
+                extraQueryItems: [URLQueryItem(name: "section", value: "siteSettings")]
+            )
+        openSettingsSurface(targetURL: targetURL, in: windowState)
+    }
+
+    private func openSettingsSurface(targetURL: URL, in windowState: BrowserWindowState) {
         if windowState.isIncognito, let profile = windowState.ephemeralProfile {
             if let existing = windowState.ephemeralTabs.first(where: { $0.representsSumiSettingsSurface }) {
                 existing.url = targetURL
@@ -1065,6 +1116,7 @@ class BrowserManager: ObservableObject {
         }
     }
     deinit {
+        permissionRecentActivityTask?.cancel()
         pendingWindowSessionPersistTasks.values.forEach { $0.cancel() }
         pendingWindowSessionPersistTasks.removeAll()
         pendingWindowSessionPersistStates.removeAll()

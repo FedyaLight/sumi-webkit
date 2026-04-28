@@ -24,11 +24,51 @@ struct SumiBlockedPopupRecord: Identifiable, Equatable, Sendable {
     let reason: Reason
     let canOpenLater: Bool
     let navigationActionMetadata: [String: String]
+    let profilePartitionId: String
+    let isEphemeralProfile: Bool
     var attemptCount: Int
+
+    init(
+        id: String,
+        tabId: String,
+        pageId: String,
+        requestingOrigin: SumiPermissionOrigin,
+        topOrigin: SumiPermissionOrigin,
+        targetURL: URL?,
+        sourceURL: URL?,
+        createdAt: Date,
+        lastBlockedAt: Date,
+        userActivation: SumiPopupUserActivationState,
+        reason: Reason,
+        canOpenLater: Bool,
+        navigationActionMetadata: [String: String],
+        profilePartitionId: String = "",
+        isEphemeralProfile: Bool = false,
+        attemptCount: Int
+    ) {
+        self.id = id
+        self.tabId = tabId
+        self.pageId = pageId
+        self.requestingOrigin = requestingOrigin
+        self.topOrigin = topOrigin
+        self.targetURL = targetURL
+        self.sourceURL = sourceURL
+        self.createdAt = createdAt
+        self.lastBlockedAt = lastBlockedAt
+        self.userActivation = userActivation
+        self.reason = reason
+        self.canOpenLater = canOpenLater
+        self.navigationActionMetadata = navigationActionMetadata
+        self.profilePartitionId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
+        self.isEphemeralProfile = isEphemeralProfile
+        self.attemptCount = max(1, attemptCount)
+    }
 
     var duplicateIdentity: String {
         [
             pageId,
+            profilePartitionId,
+            isEphemeralProfile ? "ephemeral" : "persistent",
             requestingOrigin.identity,
             topOrigin.identity,
             targetURL?.absoluteString ?? "<nil>",
@@ -71,6 +111,10 @@ final class SumiBlockedPopupStore: ObservableObject {
         recordsByPageId[normalizedId(pageId)] ?? []
     }
 
+    func allRecords() -> [SumiBlockedPopupRecord] {
+        recordsByPageId.values.flatMap { $0 }
+    }
+
     func record(id: String, pageId: String) -> SumiBlockedPopupRecord? {
         records(forPageId: pageId).first { $0.id == id }
     }
@@ -110,4 +154,3 @@ final class SumiBlockedPopupStore: ObservableObject {
         value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 }
-

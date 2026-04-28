@@ -25,11 +25,53 @@ struct SumiExternalSchemeAttemptRecord: Identifiable, Equatable, Sendable {
     let result: SumiExternalSchemeAttemptResult
     let reason: String
     let navigationActionMetadata: [String: String]
+    let profilePartitionId: String
+    let isEphemeralProfile: Bool
     var attemptCount: Int
+
+    init(
+        id: String,
+        tabId: String,
+        pageId: String,
+        requestingOrigin: SumiPermissionOrigin,
+        topOrigin: SumiPermissionOrigin,
+        scheme: String,
+        redactedTargetURLString: String?,
+        appDisplayName: String?,
+        createdAt: Date,
+        lastAttemptAt: Date,
+        userActivation: SumiExternalSchemeUserActivationState,
+        result: SumiExternalSchemeAttemptResult,
+        reason: String,
+        navigationActionMetadata: [String: String],
+        profilePartitionId: String = "",
+        isEphemeralProfile: Bool = false,
+        attemptCount: Int
+    ) {
+        self.id = id
+        self.tabId = tabId
+        self.pageId = pageId
+        self.requestingOrigin = requestingOrigin
+        self.topOrigin = topOrigin
+        self.scheme = SumiPermissionType.normalizedExternalScheme(scheme)
+        self.redactedTargetURLString = redactedTargetURLString
+        self.appDisplayName = appDisplayName
+        self.createdAt = createdAt
+        self.lastAttemptAt = lastAttemptAt
+        self.userActivation = userActivation
+        self.result = result
+        self.reason = reason
+        self.navigationActionMetadata = navigationActionMetadata
+        self.profilePartitionId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
+        self.isEphemeralProfile = isEphemeralProfile
+        self.attemptCount = max(1, attemptCount)
+    }
 
     var duplicateIdentity: String {
         [
             pageId,
+            profilePartitionId,
+            isEphemeralProfile ? "ephemeral" : "persistent",
             requestingOrigin.identity,
             topOrigin.identity,
             scheme,
@@ -71,6 +113,10 @@ final class SumiExternalSchemeSessionStore: ObservableObject {
 
     func records(forPageId pageId: String) -> [SumiExternalSchemeAttemptRecord] {
         recordsByPageId[normalizedId(pageId)] ?? []
+    }
+
+    func allRecords() -> [SumiExternalSchemeAttemptRecord] {
+        recordsByPageId.values.flatMap { $0 }
     }
 
     @discardableResult
