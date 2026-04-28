@@ -1,4 +1,5 @@
 import Foundation
+import Navigation
 import WebKit
 
 struct SumiWebKitMediaCaptureRequest: Sendable {
@@ -22,7 +23,7 @@ struct SumiWebKitMediaCaptureRequest: Sendable {
             webKitMediaTypeRawValue: mediaType.rawValue,
             permissionTypes: SumiWebKitMediaCaptureDecisionMapper.permissionTypes(for: mediaType),
             requestingOrigin: SumiWebKitMediaCaptureRequest.permissionOrigin(from: origin),
-            frameURL: frame.request.url,
+            frameURL: frame.safeRequest?.url,
             isMainFrame: frame.isMainFrame
         )
     }

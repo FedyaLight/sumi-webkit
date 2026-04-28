@@ -1,4 +1,5 @@
 import Foundation
+import Navigation
 import WebKit
 
 struct SumiWebKitDisplayCaptureRequest: Sendable {
@@ -22,7 +23,7 @@ struct SumiWebKitDisplayCaptureRequest: Sendable {
             webKitDisplayCaptureTypeRawValue: SumiWebKitDisplayCapturePermissionDecision.screenPrompt.rawValue,
             permissionTypes: [.screenCapture],
             requestingOrigin: SumiWebKitDisplayCaptureRequest.permissionOrigin(from: origin),
-            frameURL: frame.request.url,
+            frameURL: frame.safeRequest?.url,
             isMainFrame: frame.isMainFrame,
             withSystemAudio: withSystemAudio
         )
