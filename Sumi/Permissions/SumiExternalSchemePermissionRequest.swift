@@ -1,0 +1,293 @@
+import Foundation
+import Common
+import Navigation
+
+enum SumiExternalSchemePermissionPath: String, Codable, Equatable, Sendable {
+    case navigationResponder
+}
+
+enum SumiExternalSchemeClassification: String, Codable, Equatable, Sendable {
+    case directUserActivated
+    case scriptOrBackground
+    case redirectChainUserActivated
+    case redirectChainBackground
+    case unknownOrUnsupported
+    case internalOrBrowserOwned
+}
+
+enum SumiExternalSchemeUserActivationState: Equatable, Sendable {
+    case navigationAction
+    case userEntered
+    case redirectChain
+    case none
+    case unknown
+
+    var isUserActivated: Bool {
+        switch self {
+        case .navigationAction, .userEntered, .redirectChain:
+            return true
+        case .none, .unknown:
+            return false
+        }
+    }
+
+    var metadataValue: String {
+        switch self {
+        case .navigationAction:
+            return "navigation-action"
+        case .userEntered:
+            return "user-entered"
+        case .redirectChain:
+            return "redirect-chain"
+        case .none:
+            return "none"
+        case .unknown:
+            return "unknown"
+        }
+    }
+}
+
+struct SumiExternalSchemePermissionTabContext: Sendable {
+    let tabId: String
+    let pageId: String
+    let profilePartitionId: String
+    let isEphemeralProfile: Bool
+    let committedURL: URL?
+    let visibleURL: URL?
+    let mainFrameURL: URL?
+    let isActiveTab: Bool
+    let isVisibleTab: Bool
+    let navigationOrPageGeneration: String?
+    let displayDomain: String?
+
+    init(
+        tabId: String,
+        pageId: String,
+        profilePartitionId: String,
+        isEphemeralProfile: Bool,
+        committedURL: URL?,
+        visibleURL: URL?,
+        mainFrameURL: URL?,
+        isActiveTab: Bool,
+        isVisibleTab: Bool,
+        navigationOrPageGeneration: String?,
+        displayDomain: String? = nil
+    ) {
+        self.tabId = tabId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        self.pageId = pageId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        self.profilePartitionId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
+        self.isEphemeralProfile = isEphemeralProfile
+        self.committedURL = committedURL
+        self.visibleURL = visibleURL
+        self.mainFrameURL = mainFrameURL
+        self.isActiveTab = isActiveTab
+        self.isVisibleTab = isVisibleTab
+        self.navigationOrPageGeneration = navigationOrPageGeneration?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        self.displayDomain = displayDomain?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+struct SumiExternalSchemePermissionRequest: Sendable {
+    let id: String
+    let path: SumiExternalSchemePermissionPath
+    let targetURL: URL?
+    let sourceURL: URL?
+    let requestingOrigin: SumiPermissionOrigin
+    let normalizedScheme: String
+    let redactedTargetURLString: String?
+    let userActivation: SumiExternalSchemeUserActivationState
+    let classification: SumiExternalSchemeClassification
+    let isMainFrame: Bool
+    let isRedirectChain: Bool
+    let navigationActionMetadata: [String: String]
+
+    init(
+        id: String = UUID().uuidString,
+        path: SumiExternalSchemePermissionPath,
+        targetURL: URL?,
+        sourceURL: URL?,
+        requestingOrigin: SumiPermissionOrigin,
+        userActivation: SumiExternalSchemeUserActivationState,
+        classification: SumiExternalSchemeClassification? = nil,
+        isMainFrame: Bool,
+        isRedirectChain: Bool,
+        navigationActionMetadata: [String: String] = [:]
+    ) {
+        self.id = id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? UUID().uuidString : id
+        self.path = path
+        self.targetURL = targetURL
+        self.sourceURL = sourceURL
+        self.requestingOrigin = requestingOrigin
+        self.normalizedScheme = Self.normalizedScheme(for: targetURL)
+        self.redactedTargetURLString = Self.redactedDisplayString(for: targetURL)
+        self.userActivation = userActivation
+        self.classification = classification ?? Self.classify(
+            targetURL: targetURL,
+            userActivation: userActivation,
+            isRedirectChain: isRedirectChain
+        )
+        self.isMainFrame = isMainFrame
+        self.isRedirectChain = isRedirectChain
+        self.navigationActionMetadata = navigationActionMetadata
+    }
+
+    var isUserActivated: Bool {
+        userActivation.isUserActivated
+    }
+
+    static func classify(
+        targetURL: URL?,
+        userActivation: SumiExternalSchemeUserActivationState,
+        isRedirectChain: Bool
+    ) -> SumiExternalSchemeClassification {
+        guard let targetURL,
+              isValidExternalSchemeURL(targetURL)
+        else {
+            if targetURL.map(isInternalOrBrowserSchemeURL) == true {
+                return .internalOrBrowserOwned
+            }
+            return .unknownOrUnsupported
+        }
+
+        if isInternalOrBrowserSchemeURL(targetURL) {
+            return .internalOrBrowserOwned
+        }
+        if isRedirectChain {
+            return userActivation.isUserActivated ? .redirectChainUserActivated : .redirectChainBackground
+        }
+        return userActivation.isUserActivated ? .directUserActivated : .scriptOrBackground
+    }
+
+    @MainActor
+    static func fromNavigationAction(
+        _ navigationAction: NavigationAction,
+        userActivation: SumiExternalSchemeUserActivationState? = nil
+    ) -> SumiExternalSchemePermissionRequest {
+        let targetURL = navigationAction.url
+        let sourceURL = navigationAction.sourceFrame.url
+        let isRedirectChain = navigationAction.redirectHistory?.isEmpty == false
+            || navigationAction.mainFrameNavigation?.navigationAction.redirectHistory?.isEmpty == false
+            || navigationAction.navigationType.isRedirect
+        let resolvedActivation = userActivation ?? userActivationState(from: navigationAction)
+        var metadata: [String: String] = [
+            "path": SumiExternalSchemePermissionPath.navigationResponder.rawValue,
+            "navigationType": navigationAction.navigationType.debugDescription,
+            "activation": resolvedActivation.metadataValue,
+            "isForMainFrame": String(navigationAction.isForMainFrame),
+            "isRedirectChain": String(isRedirectChain),
+            "sourceFrameIsMainFrame": String(navigationAction.sourceFrame.isMainFrame),
+            "targetFrameIsMainFrame": navigationAction.targetFrame.map { String($0.isMainFrame) } ?? "nil",
+            "targetURLScheme": targetURL.scheme?.lowercased() ?? "",
+        ]
+        metadata["modifierFlags"] = "\(navigationAction.modifierFlags.rawValue)"
+
+        return SumiExternalSchemePermissionRequest(
+            path: .navigationResponder,
+            targetURL: targetURL,
+            sourceURL: sourceURL,
+            requestingOrigin: permissionOrigin(from: navigationAction.sourceFrame.securityOrigin),
+            userActivation: resolvedActivation,
+            isMainFrame: navigationAction.sourceFrame.isMainFrame,
+            isRedirectChain: isRedirectChain,
+            navigationActionMetadata: metadata
+        )
+    }
+
+    @MainActor
+    static func userActivationState(
+        from navigationAction: NavigationAction
+    ) -> SumiExternalSchemeUserActivationState {
+        if navigationAction.sumiIsUserEnteredURL {
+            return .userEntered
+        }
+        if navigationAction.isUserInitiated || navigationAction.navigationType.isLinkActivated {
+            return .navigationAction
+        }
+        if let initialRedirectAction = initialRedirectAction(for: navigationAction),
+           initialRedirectAction.isUserInitiated
+                || initialRedirectAction.navigationType.isLinkActivated
+                || initialRedirectAction.sumiIsUserEnteredURL {
+            return .redirectChain
+        }
+        return .none
+    }
+
+    static func normalizedScheme(for url: URL?) -> String {
+        SumiPermissionType.normalizedExternalScheme(url?.scheme ?? "")
+    }
+
+    static func isValidExternalSchemeURL(_ url: URL) -> Bool {
+        let scheme = normalizedScheme(for: url)
+        guard isValidSchemeName(scheme), !isInternalOrBrowserScheme(scheme) else {
+            return false
+        }
+        return !url.absoluteString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    static func isInternalOrBrowserSchemeURL(_ url: URL) -> Bool {
+        isInternalOrBrowserScheme(normalizedScheme(for: url))
+    }
+
+    static func isInternalOrBrowserScheme(_ scheme: String) -> Bool {
+        [
+            "http",
+            "https",
+            "about",
+            "file",
+            "blob",
+            "data",
+            "ftp",
+            "javascript",
+            "duck",
+            "sumi",
+            "sumi-internal",
+            "webkit-extension",
+            "safari-web-extension",
+        ].contains(SumiPermissionType.normalizedExternalScheme(scheme))
+    }
+
+    static func redactedDisplayString(for url: URL?) -> String? {
+        guard let url else { return nil }
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url.scheme.map { "\(SumiPermissionType.normalizedExternalScheme($0)):<redacted>" }
+        }
+        components.query = nil
+        components.fragment = nil
+        return components.url?.absoluteString ?? url.scheme.map { "\(SumiPermissionType.normalizedExternalScheme($0)):<redacted>" }
+    }
+
+    private static func isValidSchemeName(_ scheme: String) -> Bool {
+        guard let first = scheme.unicodeScalars.first,
+              CharacterSet.lowercaseLetters.contains(first)
+        else {
+            return false
+        }
+        let allowed = CharacterSet.lowercaseLetters
+            .union(.decimalDigits)
+            .union(CharacterSet(charactersIn: "+.-"))
+        return scheme.unicodeScalars.allSatisfy { allowed.contains($0) }
+    }
+
+    private static func permissionOrigin(from origin: SecurityOrigin) -> SumiPermissionOrigin {
+        let scheme = origin.`protocol`.trimmingCharacters(in: .whitespacesAndNewlines)
+        let host = origin.host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !scheme.isEmpty, !host.isEmpty else {
+            return .invalid(reason: "missing-navigation-external-scheme-security-origin")
+        }
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = host
+        if origin.port > 0 {
+            components.port = origin.port
+        }
+        return SumiPermissionOrigin(url: components.url)
+    }
+
+    @MainActor
+    private static func initialRedirectAction(for navigationAction: NavigationAction) -> NavigationAction? {
+        navigationAction.redirectHistory?.first
+            ?? navigationAction.mainFrameNavigation?.navigationAction.redirectHistory?.first
+            ?? navigationAction.mainFrameNavigation?.navigationAction
+    }
+}

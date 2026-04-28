@@ -17,7 +17,10 @@ final class SumiTabNavigationDelegateBundle {
         self.distributedNavigationDelegate = DistributedNavigationDelegate()
         self.installNavigation = SumiInstallNavigationResponder(tab: tab)
         self.popupHandling = SumiPopupHandlingNavigationResponder(tab: tab)
-        self.externalScheme = SumiExternalSchemeNavigationResponder(tab: tab)
+        self.externalScheme = SumiExternalSchemeNavigationResponder(
+            tab: tab,
+            permissionBridge: tab.browserManager?.externalSchemePermissionBridge
+        )
         self.downloads = SumiDownloadsNavigationResponder(tab: tab, downloadManager: tab.browserManager?.downloadManager)
         self.scriptAttachment = SumiTabScriptAttachmentNavigationResponder(tab: tab)
         self.lifecycle = SumiTabLifecycleNavigationResponder(tab: tab)

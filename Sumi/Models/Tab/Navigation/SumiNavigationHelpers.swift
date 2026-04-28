@@ -35,7 +35,17 @@ extension URL.NavigationalScheme {
 
 extension URL {
     var sumiIsExternalSchemeLink: Bool {
-        ![
+        guard let scheme = scheme?.lowercased(),
+              ![
+                "sumi",
+                "sumi-internal",
+                "safari-web-extension",
+            ].contains(scheme)
+        else {
+            return false
+        }
+
+        return ![
             .https,
             .http,
             .about,

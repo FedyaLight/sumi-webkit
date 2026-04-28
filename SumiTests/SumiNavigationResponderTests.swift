@@ -92,38 +92,90 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertFalse(popupResponderSource.contains("load(URLRequest(url: requestURL"))
     }
 
-    func testExternalSchemeResponderCancelsAndRoutesToWorkspace() async {
+    func testExternalSchemeResponderCancelsAndRoutesThroughPermissionBridge() async {
         let tab = Tab(url: URL(string: "https://example.com")!)
-        let workspace = RecordingWorkspace(applicationURL: URL(fileURLWithPath: "/Applications/Mail.app"))
-        let responder = SumiExternalSchemeNavigationResponder(tab: tab, workspace: workspace)
-        let mailURL = URL(string: "mailto:test@example.com")!
-        var preferences = NavigationPreferences.default
-
-        let policy = await responder.decidePolicy(
-            for: navigationAction(url: mailURL, navigationType: .linkActivated(isMiddleClick: false)),
-            preferences: &preferences
+        let resolver = NavigationExternalSchemeFakeResolver(handlerSchemes: ["mailto"])
+        let bridge = SumiExternalSchemePermissionBridge(
+            coordinator: NavigationExternalSchemeFakeCoordinator(
+                decision: navigationExternalCoordinatorDecision(.granted, reason: "stored-allow")
+            ),
+            appResolver: resolver,
+            now: { Date(timeIntervalSince1970: 1_800_000_000) }
         )
-
-        XCTAssertTrue(policy?.isCancel == true)
-        XCTAssertEqual(workspace.openedURLs, [mailURL])
-    }
-
-    func testExternalSchemeResponderCancelsUnknownExternalSchemeWithoutOpening() async {
-        let tab = Tab(url: URL(string: "https://example.com")!)
-        let workspace = RecordingWorkspace(applicationURL: nil)
-        let responder = SumiExternalSchemeNavigationResponder(tab: tab, workspace: workspace)
+        let responder = SumiExternalSchemeNavigationResponder(
+            tab: tab,
+            permissionBridge: bridge,
+            tabContextProvider: { _ in navigationExternalTabContext() }
+        )
+        let mailURL = URL(string: "mailto:test@example.com")!
+        let webView = WKWebView(frame: .zero)
         var preferences = NavigationPreferences.default
 
         let policy = await responder.decidePolicy(
             for: navigationAction(
-                url: URL(string: "unknown-scheme://payload")!,
-                navigationType: .linkActivated(isMiddleClick: false)
+                url: mailURL,
+                navigationType: .linkActivated(isMiddleClick: false),
+                webView: webView,
+                sourceURL: URL(string: "https://request.example/page")!,
+                sourceSecurityOrigin: SecurityOrigin(protocol: "https", host: "request.example", port: 0)
             ),
             preferences: &preferences
         )
 
         XCTAssertTrue(policy?.isCancel == true)
-        XCTAssertTrue(workspace.openedURLs.isEmpty)
+        XCTAssertEqual(resolver.openedURLs, [mailURL])
+    }
+
+    func testExternalSchemeResponderCancelsUnknownExternalSchemeWithoutOpening() async {
+        let tab = Tab(url: URL(string: "https://example.com")!)
+        let resolver = NavigationExternalSchemeFakeResolver(handlerSchemes: [])
+        let bridge = SumiExternalSchemePermissionBridge(
+            coordinator: NavigationExternalSchemeFakeCoordinator(
+                decision: navigationExternalCoordinatorDecision(.granted, reason: "unused")
+            ),
+            appResolver: resolver,
+            now: { Date(timeIntervalSince1970: 1_800_000_000) }
+        )
+        let responder = SumiExternalSchemeNavigationResponder(
+            tab: tab,
+            permissionBridge: bridge,
+            tabContextProvider: { _ in navigationExternalTabContext() }
+        )
+        let webView = WKWebView(frame: .zero)
+        var preferences = NavigationPreferences.default
+
+        let policy = await responder.decidePolicy(
+            for: navigationAction(
+                url: URL(string: "unknown-scheme://payload")!,
+                navigationType: .linkActivated(isMiddleClick: false),
+                webView: webView,
+                sourceURL: URL(string: "https://request.example/page")!,
+                sourceSecurityOrigin: SecurityOrigin(protocol: "https", host: "request.example", port: 0)
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertTrue(policy?.isCancel == true)
+        XCTAssertTrue(resolver.openedURLs.isEmpty)
+        XCTAssertEqual(bridge.attempts(forPageId: "tab-a:1").first?.result, .unsupportedScheme)
+    }
+
+    func testExternalSchemeResponderSourceRoutesThroughBridgeBeforeAppOpen() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let responderSource = try String(
+            contentsOf: repoRoot.appendingPathComponent(
+                "Sumi/Models/Tab/Navigation/SumiExternalSchemeNavigationResponder.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(responderSource.contains("SumiExternalSchemePermissionRequest.fromNavigationAction"))
+        XCTAssertTrue(responderSource.contains("bridge.evaluate("))
+        XCTAssertTrue(responderSource.contains("return .cancel"))
+        XCTAssertFalse(responderSource.contains("NSWorkspace.shared.open"))
+        XCTAssertFalse(responderSource.contains("workspace.open"))
     }
 
     func testDownloadResponderRequestsDownloadForDownloadNavigationAction() async {
@@ -168,16 +220,32 @@ final class SumiNavigationResponderTests: XCTestCase {
     private func navigationAction(
         url: URL,
         navigationType: NavigationType,
-        shouldDownload: Bool = false
+        shouldDownload: Bool = false,
+        webView: WKWebView? = nil,
+        sourceURL: URL? = nil,
+        sourceSecurityOrigin: SecurityOrigin? = nil,
+        isUserInitiated: Bool = true
     ) -> NavigationAction {
-        let webView = WKWebView(frame: .zero)
-        let frame = FrameInfo.mainFrame(for: webView)
+        let webView = webView ?? WKWebView(frame: .zero)
+        let frameURL = sourceURL ?? url
+        let securityOrigin = sourceSecurityOrigin ?? SecurityOrigin(
+            protocol: frameURL.scheme ?? "",
+            host: frameURL.host ?? "",
+            port: frameURL.port ?? 0
+        )
+        let frame = FrameInfo(
+            webView: webView,
+            handle: FrameHandle(rawValue: UInt64(1))!,
+            isMainFrame: true,
+            url: frameURL,
+            securityOrigin: securityOrigin
+        )
         return NavigationAction(
             request: URLRequest(url: url),
             navigationType: navigationType,
             currentHistoryItemIdentity: nil,
             redirectHistory: nil,
-            isUserInitiated: true,
+            isUserInitiated: isUserInitiated,
             sourceFrame: frame,
             targetFrame: frame,
             shouldDownload: shouldDownload,
@@ -265,19 +333,117 @@ private final class FailingSchemeHandler: NSObject, WKURLSchemeHandler {
 }
 
 @MainActor
-private final class RecordingWorkspace: SumiWorkspaceOpening {
-    private let applicationURL: URL?
+private final class NavigationExternalSchemeFakeResolver: SumiExternalAppResolving {
+    private let handlerSchemes: Set<String>
     private(set) var openedURLs: [URL] = []
 
-    init(applicationURL: URL?) {
-        self.applicationURL = applicationURL
+    init(handlerSchemes: Set<String>) {
+        self.handlerSchemes = Set(handlerSchemes.map(SumiPermissionType.normalizedExternalScheme))
     }
 
-    func urlForApplication(toOpen url: URL) -> URL? {
-        applicationURL
+    func appInfo(for url: URL) -> SumiExternalAppInfo? {
+        let scheme = SumiExternalSchemePermissionRequest.normalizedScheme(for: url)
+        guard handlerSchemes.contains(scheme) else { return nil }
+        return SumiExternalAppInfo(
+            normalizedScheme: scheme,
+            appURL: URL(fileURLWithPath: "/Applications/\(scheme).app"),
+            appDisplayName: "External App"
+        )
     }
 
-    func open(_ url: URL) {
+    func open(_ url: URL) -> Bool {
         openedURLs.append(url)
+        return true
     }
+}
+
+private actor NavigationExternalSchemeFakeCoordinator: SumiPermissionCoordinating {
+    private let decision: SumiPermissionCoordinatorDecision
+
+    init(decision: SumiPermissionCoordinatorDecision) {
+        self.decision = decision
+    }
+
+    func requestPermission(_: SumiPermissionSecurityContext) async -> SumiPermissionCoordinatorDecision {
+        decision
+    }
+
+    func queryPermissionState(_: SumiPermissionSecurityContext) async -> SumiPermissionCoordinatorDecision {
+        decision
+    }
+
+    func activeQuery(forPageId _: String) -> SumiPermissionAuthorizationQuery? {
+        nil
+    }
+
+    @discardableResult
+    func cancel(requestId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
+        navigationExternalCoordinatorDecision(.cancelled, reason: reason)
+    }
+
+    @discardableResult
+    func cancel(pageId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
+        navigationExternalCoordinatorDecision(.cancelled, reason: reason)
+    }
+
+    @discardableResult
+    func cancelNavigation(pageId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
+        navigationExternalCoordinatorDecision(.cancelled, reason: reason)
+    }
+
+    @discardableResult
+    func cancelTab(tabId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
+        navigationExternalCoordinatorDecision(.cancelled, reason: reason)
+    }
+}
+
+private func navigationExternalTabContext() -> SumiExternalSchemePermissionTabContext {
+    SumiExternalSchemePermissionTabContext(
+        tabId: "tab-a",
+        pageId: "tab-a:1",
+        profilePartitionId: "profile-a",
+        isEphemeralProfile: false,
+        committedURL: URL(string: "https://top.example"),
+        visibleURL: URL(string: "https://top.example/path"),
+        mainFrameURL: URL(string: "https://top.example"),
+        isActiveTab: true,
+        isVisibleTab: true,
+        navigationOrPageGeneration: "1"
+    )
+}
+
+private func navigationExternalCoordinatorDecision(
+    _ outcome: SumiPermissionCoordinatorOutcome,
+    reason: String
+) -> SumiPermissionCoordinatorDecision {
+    let state: SumiPermissionState? = {
+        switch outcome {
+        case .granted:
+            return .allow
+        case .denied:
+            return .deny
+        case .promptRequired:
+            return .ask
+        default:
+            return nil
+        }
+    }()
+    return SumiPermissionCoordinatorDecision(
+        outcome: outcome,
+        state: state,
+        persistence: outcome == .granted || outcome == .denied ? .persistent : nil,
+        source: outcome == .granted || outcome == .denied ? .user : .defaultSetting,
+        reason: reason,
+        permissionTypes: [.externalScheme("mailto")],
+        keys: [
+            SumiPermissionKey(
+                requestingOrigin: SumiPermissionOrigin(string: "https://request.example"),
+                topOrigin: SumiPermissionOrigin(string: "https://top.example"),
+                permissionType: .externalScheme("mailto"),
+                profilePartitionId: "profile-a",
+                transientPageId: "tab-a:1"
+            ),
+        ],
+        shouldPersist: false
+    )
 }
