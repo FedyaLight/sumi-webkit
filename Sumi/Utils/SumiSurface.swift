@@ -40,11 +40,14 @@ enum SumiSurface {
     }
 
     /// Stable `pane` query value for `sumi://settings?pane=…`.
-    static func settingsSurfaceURL(paneQuery: String) -> URL {
+    static func settingsSurfaceURL(
+        paneQuery: String,
+        extraQueryItems: [URLQueryItem] = []
+    ) -> URL {
         var components = URLComponents()
         components.scheme = "sumi"
         components.host = Self.settingsURLHost
-        components.queryItems = [URLQueryItem(name: "pane", value: paneQuery)]
+        components.queryItems = [URLQueryItem(name: "pane", value: paneQuery)] + extraQueryItems
         return components.url ?? URL(string: "sumi://settings?pane=general")!
     }
 

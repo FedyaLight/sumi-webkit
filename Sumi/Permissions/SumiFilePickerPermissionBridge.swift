@@ -164,6 +164,10 @@ final class SumiFilePickerPermissionBridge {
                 visualStyle: .attention,
                 priority: .filePickerCurrentEvent,
                 reason: "file-picker-current-event",
+                requestingOrigin: request.requestingOrigin,
+                topOrigin: SumiPermissionOrigin(url: tabContext.mainFrameURL ?? tabContext.visibleURL ?? tabContext.committedURL),
+                profilePartitionId: tabContext.profilePartitionId,
+                isEphemeralProfile: tabContext.isEphemeralProfile,
                 createdAt: now()
             )
         )

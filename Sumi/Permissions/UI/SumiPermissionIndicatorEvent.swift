@@ -11,6 +11,10 @@ struct SumiPermissionIndicatorEventRecord: Identifiable, Equatable, Sendable {
     let visualStyle: SumiPermissionIndicatorVisualStyle
     let priority: SumiPermissionIndicatorPriority
     let reason: String?
+    let requestingOrigin: SumiPermissionOrigin?
+    let topOrigin: SumiPermissionOrigin?
+    let profilePartitionId: String
+    let isEphemeralProfile: Bool
     let createdAt: Date
     let expiresAt: Date?
     var attemptCount: Int
@@ -22,6 +26,10 @@ struct SumiPermissionIndicatorEventRecord: Identifiable, Equatable, Sendable {
     var duplicateIdentity: String {
         [
             pageId,
+            profilePartitionId,
+            isEphemeralProfile ? "ephemeral" : "persistent",
+            requestingOrigin?.identity ?? "",
+            topOrigin?.identity ?? "",
             permissionTypes.map(\.identity).sorted().joined(separator: ","),
             category.rawValue,
             visualStyle.rawValue,
@@ -40,6 +48,10 @@ struct SumiPermissionIndicatorEventRecord: Identifiable, Equatable, Sendable {
         visualStyle: SumiPermissionIndicatorVisualStyle,
         priority: SumiPermissionIndicatorPriority,
         reason: String? = nil,
+        requestingOrigin: SumiPermissionOrigin? = nil,
+        topOrigin: SumiPermissionOrigin? = nil,
+        profilePartitionId: String = "",
+        isEphemeralProfile: Bool = false,
         createdAt: Date = Date(),
         expiresAt: Date? = nil,
         attemptCount: Int = 1
@@ -53,6 +65,10 @@ struct SumiPermissionIndicatorEventRecord: Identifiable, Equatable, Sendable {
         self.visualStyle = visualStyle
         self.priority = priority
         self.reason = reason
+        self.requestingOrigin = requestingOrigin
+        self.topOrigin = topOrigin
+        self.profilePartitionId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
+        self.isEphemeralProfile = isEphemeralProfile
         self.createdAt = createdAt
         self.expiresAt = expiresAt
         self.attemptCount = max(1, attemptCount)
@@ -127,6 +143,11 @@ final class SumiPermissionIndicatorEventStore: ObservableObject {
     func records(forPageId pageId: String, now: Date = Date()) -> [SumiPermissionIndicatorEventRecord] {
         pruneExpired(now: now)
         return recordsByPageId[normalizedId(pageId)] ?? []
+    }
+
+    func allRecords(now: Date = Date()) -> [SumiPermissionIndicatorEventRecord] {
+        pruneExpired(now: now)
+        return recordsByPageId.values.flatMap { $0 }
     }
 
     @discardableResult

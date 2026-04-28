@@ -1247,7 +1247,11 @@ private struct URLBarHubPopover: View {
                 },
                 onClose: onClose,
                 onOpenSiteSettings: {
-                    browserManager.openSettingsTab(selecting: .privacy, in: windowState)
+                    browserManager.openSiteSettingsTab(
+                        focusing: currentTab,
+                        profile: activeProfile,
+                        in: windowState
+                    )
                     onClose()
                 },
                 onDidMutate: {
@@ -1474,7 +1478,11 @@ private struct URLBarHubPopover: View {
 
             Menu {
                 Button("Site Settings") {
-                    browserManager.openSettingsTab(selecting: .privacy, in: windowState)
+                    browserManager.openSiteSettingsTab(
+                        focusing: currentTab,
+                        profile: activeProfile,
+                        in: windowState
+                    )
                     onClose()
                 }
             } label: {

@@ -1,0 +1,26 @@
+import Foundation
+
+enum SumiSiteSettingsStrings {
+    static let title = "Site Settings"
+    static let subtitle = "Control what sites can use, such as camera, microphone, location, notifications, pop-ups, and autoplay."
+    static let recentActivity = "Recent activity"
+    static let recentActivityEmpty = "No recent permission activity for this profile."
+    static let viewSitesTitle = "View permissions and data stored across sites"
+    static let viewSitesSubtitle = "Review saved permissions by site and profile."
+    static let permissions = "Permissions"
+    static let moreContentSettings = "More content settings"
+    static let unsupportedContentCopy = "JavaScript, images, automatic downloads, ads, background sync, and sound controls are not available in Sumi yet."
+    static let automaticCleanup = "Automatic permission cleanup"
+    static let automaticCleanupCopy = "Sumi can remove saved permissions for sites you have not used in a long time."
+    static let automaticCleanupDeferred = "Coming in a later update. Cleanup will be applied after the cleanup service is enabled."
+    static let siteListTitle = "All sites"
+    static let siteListEmpty = "No stored site permissions for this profile."
+    static let categoryExceptionsEmpty = "No site exceptions for this permission."
+    static let resetPermissions = "Reset permissions"
+    static let resetPermissionsSubtitle = "Clears saved permission decisions for this site only. Cookies and site data are not cleared."
+    static let deleteData = "Delete data"
+    static let dataDeferred = "Website data usage appears when Sumi can read it safely for this profile."
+    static let changesSaved = "Changes saved."
+    static let resetComplete = "Permissions reset."
+    static let dataDeleted = "Site data deleted."
+}

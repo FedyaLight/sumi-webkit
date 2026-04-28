@@ -62,6 +62,11 @@ struct SumiSettingsTabRootView: View {
                 syncSettingsURLToActiveTab(sumiSettings: sumiSettings)
             }
         }
+        .onChange(of: sumiSettings.privacySettingsRoute) { _, _ in
+            if sumiSettings.currentSettingsTab == .privacy {
+                syncSettingsURLToActiveTab(sumiSettings: sumiSettings)
+            }
+        }
         .onAppear {
             syncSettingsURLToActiveTab(sumiSettings: sumiSettings)
         }
@@ -212,6 +217,9 @@ struct SumiSettingsTabRootView: View {
         let selected = sumiSettings.currentSettingsTab == descriptor.tab
         return Button {
             sumiSettings.currentSettingsTab = descriptor.tab
+            if descriptor.tab == .privacy {
+                sumiSettings.privacySettingsRoute = .overview
+            }
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: descriptor.icon)
@@ -243,6 +251,9 @@ struct SumiSettingsTabRootView: View {
         let selected = sumiSettings.currentSettingsTab == descriptor.tab
         return Button {
             sumiSettings.currentSettingsTab = descriptor.tab
+            if descriptor.tab == .privacy {
+                sumiSettings.privacySettingsRoute = .overview
+            }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: descriptor.icon)
@@ -322,7 +333,7 @@ struct SumiSettingsTabRootView: View {
         case .performance:
             SettingsPerformanceTab()
         case .privacy:
-            PrivacySettingsView()
+            PrivacySettingsView(browserManager: browserManager, windowState: windowState)
         case .profiles:
             SumiProfilesSettingsPane()
         case .shortcuts:

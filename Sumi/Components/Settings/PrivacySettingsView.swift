@@ -8,25 +8,71 @@
 import SwiftUI
 
 struct PrivacySettingsView: View {
+    @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.sumiTrackingProtectionModule) private var trackingProtectionModule
+    @ObservedObject var browserManager: BrowserManager
+    var windowState: BrowserWindowState?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            SumiSettingsModuleToggleGate(descriptor: .trackingProtection) {
-                if let settings = trackingProtectionModule.settingsIfEnabled(),
-                   let dataStore = trackingProtectionModule.dataStoreIfEnabled() {
-                    LegacyTrackingProtectionRuntimeSettingsView(
-                        trackingProtectionModule: trackingProtectionModule,
-                        trackingProtectionSettings: settings,
-                        trackingProtectionDataStore: dataStore
-                    )
+        Group {
+            if sumiSettings.privacySettingsRoute.isSiteSettings {
+                SumiSiteSettingsView(
+                    repository: SumiPermissionSettingsRepository(browserManager: browserManager),
+                    profile: activeProfile,
+                    initialFilter: sumiSettings.privacySettingsRoute.siteSettingsFilter
+                ) {
+                    sumiSettings.privacySettingsRoute = .overview
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 16) {
+                    SettingsSection(
+                        title: SumiSiteSettingsStrings.title,
+                        subtitle: SumiSiteSettingsStrings.subtitle
+                    ) {
+                        SumiSiteSettingsNavigationRow(
+                            title: SumiSiteSettingsStrings.title,
+                            subtitle: SumiSiteSettingsStrings.subtitle,
+                            systemImage: "hand.raised"
+                        ) {
+                            sumiSettings.privacySettingsRoute = .siteSettings(nil)
+                        }
+                    }
+
+                    SumiSettingsModuleToggleGate(descriptor: .trackingProtection) {
+                        if let settings = trackingProtectionModule.settingsIfEnabled(),
+                           let dataStore = trackingProtectionModule.dataStoreIfEnabled() {
+                            LegacyTrackingProtectionRuntimeSettingsView(
+                                trackingProtectionModule: trackingProtectionModule,
+                                trackingProtectionSettings: settings,
+                                trackingProtectionDataStore: dataStore
+                            )
+                        }
+                    }
+
+                    SumiSettingsModuleToggleGate(descriptor: .adBlocking)
+
+                    Spacer()
                 }
             }
-
-            SumiSettingsModuleToggleGate(descriptor: .adBlocking)
-
-            Spacer()
         }
+    }
+
+    private var activeProfile: Profile? {
+        if let windowState {
+            if windowState.isIncognito {
+                return windowState.ephemeralProfile
+            }
+            if let currentProfileId = windowState.currentProfileId,
+               let profile = browserManager.profileManager.profiles.first(where: { $0.id == currentProfileId }) {
+                return profile
+            }
+            if let currentTab = browserManager.currentTab(for: windowState),
+               let profileId = currentTab.profileId,
+               let profile = browserManager.profileManager.profiles.first(where: { $0.id == profileId }) {
+                return profile
+            }
+        }
+        return browserManager.currentProfile
     }
 }
 
@@ -204,5 +250,5 @@ private struct LegacyTrackingProtectionRuntimeSettingsView: View {
 }
 
 #Preview {
-    PrivacySettingsView()
+    PrivacySettingsView(browserManager: BrowserManager(), windowState: nil)
 }

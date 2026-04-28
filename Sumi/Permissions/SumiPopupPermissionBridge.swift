@@ -317,6 +317,8 @@ final class SumiPopupPermissionBridge {
                 reason: blockedReason,
                 canOpenLater: request.canOpenLater,
                 navigationActionMetadata: request.navigationActionMetadata,
+                profilePartitionId: tabContext.profilePartitionId,
+                isEphemeralProfile: tabContext.isEphemeralProfile,
                 attemptCount: 1
             )
         )
