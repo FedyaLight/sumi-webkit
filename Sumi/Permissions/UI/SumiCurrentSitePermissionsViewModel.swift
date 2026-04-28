@@ -18,6 +18,11 @@ protocol SumiCurrentSiteAutoplayPolicyManaging: AnyObject {
 
 extension SumiAutoplayPolicyStoreAdapter: SumiCurrentSiteAutoplayPolicyManaging {}
 
+enum SumiCurrentSiteSystemSnapshotMode: Equatable, Sendable {
+    case none
+    case live
+}
+
 @MainActor
 final class SumiCurrentSitePermissionsViewModel: ObservableObject {
     struct Context: Equatable, Sendable {
@@ -105,14 +110,16 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
     func load(
         tab: Tab?,
         profile: Profile?,
-        dependencies: LoadDependencies
+        dependencies: LoadDependencies,
+        systemSnapshotMode: SumiCurrentSiteSystemSnapshotMode = .none
     ) async {
         await load(
             context: Self.context(tab: tab, profile: profile),
             webView: tab?.existingWebView,
             profile: profile,
             reloadRequired: tab?.isAutoplayReloadRequired == true,
-            dependencies: dependencies
+            dependencies: dependencies,
+            systemSnapshotMode: systemSnapshotMode
         )
     }
 
@@ -121,7 +128,8 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
         webView: WKWebView?,
         profile: Profile?,
         reloadRequired: Bool,
-        dependencies: LoadDependencies
+        dependencies: LoadDependencies,
+        systemSnapshotMode: SumiCurrentSiteSystemSnapshotMode = .none
     ) async {
         self.context = context
         statusMessage = nil
@@ -154,11 +162,16 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
             let runtimeState = webView.map {
                 dependencies.runtimeController?.currentRuntimeState(for: $0, pageId: context.pageId)
             } ?? nil
-            let builtRows = await makeRows(
+            let systemSnapshots = await systemSnapshots(
+                using: dependencies.systemPermissionService,
+                mode: systemSnapshotMode
+            )
+            let builtRows = makeRows(
                 context: context,
                 profile: profile,
                 reloadRequired: reloadRequired,
                 runtimeState: runtimeState,
+                systemSnapshots: systemSnapshots,
                 dependencies: dependencies
             )
             rows = builtRows
@@ -309,13 +322,10 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
         profile: Profile?,
         reloadRequired: Bool,
         runtimeState: SumiRuntimePermissionState?,
+        systemSnapshots: [SumiSystemPermissionKind: SumiSystemPermissionSnapshot],
         dependencies: LoadDependencies
-    ) async -> [SumiCurrentSitePermissionRow] {
+    ) -> [SumiCurrentSitePermissionRow] {
         var result: [SumiCurrentSitePermissionRow] = []
-
-        let systemSnapshots = await systemSnapshots(
-            using: dependencies.systemPermissionService
-        )
 
         result.append(
             sitePermissionRow(
@@ -382,8 +392,11 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
     }
 
     private func systemSnapshots(
-        using service: any SumiSystemPermissionService
+        using service: any SumiSystemPermissionService,
+        mode: SumiCurrentSiteSystemSnapshotMode
     ) async -> [SumiSystemPermissionKind: SumiSystemPermissionSnapshot] {
+        guard mode == .live else { return [:] }
+
         var snapshots: [SumiSystemPermissionKind: SumiSystemPermissionSnapshot] = [:]
         for kind in SumiSystemPermissionKind.allCases {
             snapshots[kind] = await service.authorizationSnapshot(for: kind)

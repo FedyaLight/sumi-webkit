@@ -70,6 +70,7 @@ struct SumiCurrentSitePermissionsView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
         }
+        .accessibilityIdentifier("urlhub-permissions-submenu")
         .task(id: loadKey) {
             await reload()
         }
@@ -276,7 +277,8 @@ struct SumiCurrentSitePermissionsView: View {
         await model.load(
             tab: currentTab,
             profile: profile,
-            dependencies: dependencies
+            dependencies: dependencies,
+            systemSnapshotMode: .none
         )
         configureRuntimeControls()
     }
@@ -406,6 +408,7 @@ private struct SumiCurrentSitePermissionRowView: View {
             }
         }
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("urlhub-permission-row-\(row.id)")
         .accessibilityLabel(row.accessibilityLabel)
     }
 

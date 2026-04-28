@@ -323,6 +323,7 @@ struct URLBarView: View {
         }
         .buttonStyle(URLBarButtonStyle())
         .help("Site Controls")
+        .accessibilityIdentifier("urlbar-site-controls-button")
         .popover(isPresented: $isHubPresented, arrowEdge: .bottom) {
             URLBarHubPopover(
                 bookmarkManager: browserManager.bookmarkManager,
@@ -2599,6 +2600,7 @@ private struct HubSettingRow: View {
                 isHovered = hovering
             }
         }
+        .accessibilityIdentifier("urlhub-setting-row-\(model.id)")
     }
 
     private func trackingRowContent(
