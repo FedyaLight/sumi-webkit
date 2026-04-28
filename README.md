@@ -20,9 +20,7 @@ This tree is primarily a **development and testbed** checkout: debugging is ongo
 
 Design goals stay **simple, fast, and deliberately anti-bloat**—fewer nested surfaces than mainstream browsers, with keyboard-first shortcuts and a lightweight chrome footprint where we can keep it.
 
-Release packaging targets **GitHub Releases** as a notarized DMG. Maintainer-facing steps and CI secrets are in [docs/release.md](docs/release.md).
-
-Performance regression checks and the Instruments profiling workflow are in [docs/performance-profiling.md](docs/performance-profiling.md).
+Release packaging targets **GitHub Releases** as a notarized DMG. Maintainer-facing material (release steps, CI notes, performance profiling workflow) lives under `docs/` in a full maintainer checkout; that directory is **gitignored** here and is not part of the public GitHub tree.
 
 ## Acknowledgments
 
@@ -56,7 +54,7 @@ Paths below are relative to the repository root.
 ├── SumiUITests/             # UI tests
 ├── README.md                # This file
 ├── assets/                  # Logo and marketing assets for GitHub / docs
-├── docs/                    # Release notes, architecture notes, …
+├── docs/                    # Maintainer docs (local / gitignored; not on GitHub)
 └── scripts/                 # Development scripts
 ```
 
