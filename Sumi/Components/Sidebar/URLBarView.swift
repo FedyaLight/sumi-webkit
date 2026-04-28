@@ -143,12 +143,23 @@ struct URLBarView: View {
         windowState.currentProfileId ?? browserManager.currentProfile?.id
     }
 
+    private var effectiveProfile: Profile? {
+        if let profile = currentTab?.resolveProfile() {
+            return profile
+        }
+        if let profileId = effectiveProfileId,
+           let profile = browserManager.profileManager.profiles.first(where: { $0.id == profileId }) {
+            return profile
+        }
+        return browserManager.currentProfile
+    }
+
     private var siteControlsSnapshot: SiteControlsSnapshot {
-            SiteControlsSnapshot.resolve(
-                url: currentTab?.url,
-                profileId: effectiveProfileId,
-                showsAutoplayPermission: currentTab?.audioState.isPlayingAudio == true
-            )
+        SiteControlsSnapshot.resolve(
+            url: currentTab?.url,
+            profile: effectiveProfile,
+            showsAutoplayPermission: currentTab?.audioState.isPlayingAudio == true
+        )
     }
 
     @ViewBuilder
@@ -259,6 +270,7 @@ struct URLBarView: View {
                 bookmarkManager: browserManager.bookmarkManager,
                 bookmarkPresentationRequest: browserManager.bookmarkEditorPresentationRequest,
                 currentTab: currentTab,
+                profile: effectiveProfile,
                 profileId: effectiveProfileId,
                 onClose: { isHubPresented = false }
             )
@@ -607,7 +619,11 @@ private struct URLBarZoomPopoverButtonStyle: ButtonStyle {
 
 private struct SiteControlsSettingRowModel: Equatable, Identifiable {
     enum Kind: Equatable {
-        case autoplay(AutoplayOverrideState)
+        case autoplay(
+            policy: SumiAutoplayPolicy,
+            hasExplicitDecision: Bool,
+            reloadRequired: Bool
+        )
         case tracking(
             policy: SumiTrackingProtectionEffectivePolicy,
             siteOverride: SumiTrackingProtectionSiteOverride,
@@ -626,7 +642,7 @@ private struct SiteControlsSettingRowModel: Equatable, Identifiable {
 
     var isDisabled: Bool {
         switch kind {
-        case .autoplay,
+        case .autoplay(_, _, _),
              .tracking(_, _, _),
              .cookies,
              .localPage:
@@ -636,7 +652,7 @@ private struct SiteControlsSettingRowModel: Equatable, Identifiable {
 
     var isInteractive: Bool {
         switch kind {
-        case .autoplay,
+        case .autoplay(_, _, _),
              .tracking(_, _, _),
              .cookies:
             return true
@@ -715,8 +731,9 @@ private struct SiteControlsSnapshot: Equatable {
     @MainActor
     static func resolve(
         url: URL?,
-        profileId: UUID?,
+        profile: Profile?,
         showsAutoplayPermission: Bool = false,
+        autoplayReloadRequired: Bool = false,
         trackingProtectionModule: SumiTrackingProtectionModule? = nil,
         trackingProtectionReloadRequired: Bool = false
     ) -> SiteControlsSnapshot {
@@ -750,25 +767,32 @@ private struct SiteControlsSnapshot: Equatable {
         let settingsRows: [SiteControlsSettingRowModel]
         switch securityState {
         case .secure, .notSecure:
-            let hasAutoplayOverride = SitePermissionOverridesStore.shared
-                .hasAutoplayOverride(for: url, profileId: profileId)
+            let autoplayPolicyStore = SumiAutoplayPolicyStoreAdapter.shared
+            let hasAutoplayPolicy = autoplayPolicyStore.hasExplicitPolicy(
+                for: url,
+                profile: profile
+            )
+            let autoplayPolicy = autoplayPolicyStore.effectivePolicy(
+                for: url,
+                profile: profile
+            )
 
             var rows: [SiteControlsSettingRowModel] = []
-            if showsAutoplayPermission || hasAutoplayOverride {
-                let autoplayState = SitePermissionOverridesStore.shared.autoplayState(
-                    for: url,
-                    profileId: profileId
-                )
+            if showsAutoplayPermission || hasAutoplayPolicy {
                 rows.append(
                     .init(
                         id: "autoplay",
-                        chromeIconName: autoplayState.chromeIconName,
-                        fallbackSystemName: autoplayState == .allow
-                            ? "play.rectangle"
-                            : "play.rectangle.fill",
+                        chromeIconName: autoplayPolicy.chromeIconName,
+                        fallbackSystemName: autoplayPolicy.fallbackSystemName,
                         title: "Autoplay",
-                        subtitle: autoplayState.subtitle,
-                        kind: .autoplay(autoplayState)
+                        subtitle: autoplayReloadRequired
+                            ? "Reload required"
+                            : autoplayPolicy.siteControlsSubtitle,
+                        kind: .autoplay(
+                            policy: autoplayPolicy,
+                            hasExplicitDecision: hasAutoplayPolicy,
+                            reloadRequired: autoplayReloadRequired
+                        )
                     )
                 )
             }
@@ -840,6 +864,7 @@ private struct URLBarHubPopover: View {
 
     let bookmarkPresentationRequest: SumiBookmarkEditorPresentationRequest?
     let currentTab: Tab?
+    let profile: Profile?
     let profileId: UUID?
     let onClose: () -> Void
 
@@ -875,8 +900,9 @@ private struct URLBarHubPopover: View {
         _ = refreshNonce
         return SiteControlsSnapshot.resolve(
             url: currentTab?.url,
-            profileId: profileId,
+            profile: activeProfile,
             showsAutoplayPermission: currentTab?.audioState.isPlayingAudio == true,
+            autoplayReloadRequired: currentTab?.isAutoplayReloadRequired == true,
             trackingProtectionModule: browserManager.trackingProtectionModule,
             trackingProtectionReloadRequired: currentTab?.isTrackingProtectionReloadRequired == true
         )
@@ -1044,6 +1070,9 @@ private struct URLBarHubPopover: View {
     }
 
     private var activeProfile: Profile? {
+        if let profile {
+            return profile
+        }
         if let profile = currentTab?.resolveProfile() {
             return profile
         }
@@ -1137,7 +1166,8 @@ private struct URLBarHubPopover: View {
                 ForEach(snapshot.settingsRows) { row in
                     HubSettingRow(
                         model: row,
-                        trackingPresenter: trackingPresenter(for: row)
+                        trackingPresenter: trackingPresenter(for: row),
+                        resetAction: resetAction(for: row)
                     ) {
                         handleSettingAction(row)
                     }
@@ -1179,13 +1209,8 @@ private struct URLBarHubPopover: View {
         guard let currentTab else { return }
 
         switch row.kind {
-        case .autoplay:
-            _ = SitePermissionOverridesStore.shared.toggleAutoplay(
-                for: currentTab.url,
-                profileId: profileId
-            )
-            rebuildCurrentTabAfterPermissionChange(currentTab)
-            refreshNonce += 1
+        case .autoplay(let policy, _, _):
+            setAutoplayPolicy(policy.nextURLBarTogglePolicy, for: currentTab)
         case .tracking(let policy, _, _):
             setTrackingProtectionOverride(
                 URLBarTrackingProtectionPresenter.siteOverrideAfterToggle(for: policy)
@@ -1194,6 +1219,48 @@ private struct URLBarHubPopover: View {
             setMode(.siteDataDetails, direction: .forward)
         case .localPage:
             break
+        }
+    }
+
+    private func setAutoplayPolicy(_ policy: SumiAutoplayPolicy, for tab: Tab) {
+        guard let profile = activeProfile else { return }
+        Task { @MainActor in
+            do {
+                try await SumiAutoplayPolicyStoreAdapter.shared.setPolicy(
+                    policy,
+                    for: tab.url,
+                    profile: profile,
+                    source: .user
+                )
+                tab.markAutoplayReloadRequiredIfNeeded(afterChangingPolicyFor: tab.url)
+                rebuildCurrentTabAfterPermissionChange(tab)
+                tab.updateAutoplayReloadRequirementForCurrentSite()
+                refreshNonce += 1
+            } catch {
+                RuntimeDiagnostics.emit(
+                    "[URLBar] Failed to update autoplay policy: \(error.localizedDescription)"
+                )
+            }
+        }
+    }
+
+    private func resetAutoplayPolicy(for tab: Tab) {
+        guard let profile = activeProfile else { return }
+        Task { @MainActor in
+            do {
+                try await SumiAutoplayPolicyStoreAdapter.shared.resetPolicy(
+                    for: tab.url,
+                    profile: profile
+                )
+                tab.markAutoplayReloadRequiredIfNeeded(afterChangingPolicyFor: tab.url)
+                rebuildCurrentTabAfterPermissionChange(tab)
+                tab.updateAutoplayReloadRequirementForCurrentSite()
+                refreshNonce += 1
+            } catch {
+                RuntimeDiagnostics.emit(
+                    "[URLBar] Failed to reset autoplay policy: \(error.localizedDescription)"
+                )
+            }
         }
     }
 
@@ -1209,6 +1276,17 @@ private struct URLBarHubPopover: View {
             siteOverride: siteOverride,
             isReloadRequired: reloadRequired
         )
+    }
+
+    private func resetAction(
+        for row: SiteControlsSettingRowModel
+    ) -> (() -> Void)? {
+        guard case .autoplay(_, let hasExplicitDecision, _) = row.kind,
+              hasExplicitDecision,
+              let currentTab
+        else { return nil }
+
+        return { resetAutoplayPolicy(for: currentTab) }
     }
 
     private func setTrackingProtectionOverride(
@@ -2152,6 +2230,7 @@ private struct SumiTrackingProtectionShieldIcon: View {
 private struct HubSettingRow: View {
     let model: SiteControlsSettingRowModel
     let trackingPresenter: URLBarTrackingProtectionPresenter?
+    let resetAction: (() -> Void)?
     let action: () -> Void
 
     @Environment(\.sumiSettings) private var sumiSettings
@@ -2165,10 +2244,12 @@ private struct HubSettingRow: View {
     init(
         model: SiteControlsSettingRowModel,
         trackingPresenter: URLBarTrackingProtectionPresenter? = nil,
+        resetAction: (() -> Void)? = nil,
         action: @escaping () -> Void
     ) {
         self.model = model
         self.trackingPresenter = trackingPresenter
+        self.resetAction = resetAction
         self.action = action
     }
 
@@ -2191,6 +2272,11 @@ private struct HubSettingRow: View {
             }
         }
         .opacity(model.isDisabled ? 0.55 : 1)
+        .contextMenu {
+            if let resetAction {
+                Button("Use Default", action: resetAction)
+            }
+        }
         .onHover { hovering in
             guard model.isInteractive && !model.isDisabled else {
                 isHovered = false

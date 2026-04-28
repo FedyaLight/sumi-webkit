@@ -30,7 +30,7 @@ enum SumiGeolocationRuntimeState: String, Codable, CaseIterable, Hashable, Senda
 
 enum SumiRuntimeAutoplayState: String, Codable, CaseIterable, Hashable, Sendable {
     case allowAll
-    case muteAudio
+    case blockAudible
     case blockAll
     case reloadRequired
     case unsupported

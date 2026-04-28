@@ -81,6 +81,7 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
             }
             tab.noteCommittedMainDocumentNavigation(to: newURL)
             tab.clearTrackingProtectionReloadRequirementIfResolved(for: newURL)
+            tab.clearAutoplayReloadRequirementIfResolved(for: newURL)
             tab.historyRecorder.didCommitMainFrameNavigation(
                 to: newURL,
                 kind: tab.pendingMainFrameNavigationKind == .backForward ? .backForward : .regular,

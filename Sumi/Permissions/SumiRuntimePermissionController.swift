@@ -179,7 +179,7 @@ final class SumiRuntimePermissionController: SumiRuntimePermissionControlling {
                     provider.pause()
                 }
             case .autoplay:
-                return evaluateAutoplayPolicyChange(.muteAudio, for: webView)
+                return evaluateAutoplayPolicyChange(.blockAudible, for: webView)
             case .notifications, .popups, .externalScheme, .filePicker:
                 return .noOp
             case .storageAccess:
@@ -417,7 +417,7 @@ final class SumiRuntimePermissionController: SumiRuntimePermissionControlling {
             return .allowAll
         }
         if mediaTypes == .audio {
-            return .muteAudio
+            return .blockAudible
         }
         if mediaTypes == .all || mediaTypes.contains(.audio) || mediaTypes.contains(.video) {
             return .blockAll
@@ -447,7 +447,7 @@ final class SumiRuntimePermissionObservation {
 private extension SumiRuntimeAutoplayState {
     var isConcreteAutoplayPolicy: Bool {
         switch self {
-        case .allowAll, .muteAudio, .blockAll:
+        case .allowAll, .blockAudible, .blockAll:
             return true
         case .reloadRequired, .unsupported:
             return false

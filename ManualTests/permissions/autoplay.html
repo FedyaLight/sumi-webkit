@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sumi Autoplay Permission Test</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f6f7f9;
+      color: #1d2430;
+    }
+
+    main {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    section {
+      background: #fff;
+      border: 1px solid #d9dee7;
+      border-radius: 8px;
+      padding: 18px;
+      margin-bottom: 16px;
+    }
+
+    h1 {
+      font-size: 24px;
+      margin: 0 0 12px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin: 0 0 10px;
+    }
+
+    p, li {
+      line-height: 1.45;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid #9aa6b8;
+      border-radius: 6px;
+      background: #ffffff;
+      color: #1d2430;
+      font: inherit;
+      padding: 8px 12px;
+      margin-right: 8px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #eef2f7;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }
+
+    .result {
+      min-height: 46px;
+      border: 1px solid #d9dee7;
+      border-radius: 6px;
+      padding: 10px;
+      background: #fbfcfe;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    video {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #111827;
+      border-radius: 6px;
+      margin-top: 10px;
+    }
+
+    audio {
+      width: 100%;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Sumi Autoplay Permission Test</h1>
+    <section>
+      <h2>Manual expectations</h2>
+      <ul>
+        <li>Default should match current Sumi behavior.</li>
+        <li>Allow should permit configured autoplay after reload or rebuild if required.</li>
+        <li>Block should prevent audible autoplay after reload or rebuild if required.</li>
+        <li>Muted video autoplay follows WebKit's normal muted-media behavior.</li>
+        <li>The URL bar autoplay row should write to the canonical permission store, not old UserDefaults values.</li>
+      </ul>
+      <button id="retry">Retry autoplay attempts</button>
+      <button id="gesture">Play all with user gesture</button>
+      <button id="stop">Stop all media</button>
+    </section>
+
+    <section class="grid">
+      <article>
+        <h2>Audible video autoplay</h2>
+        <div id="audible-video-result" class="result">Not attempted.</div>
+        <video id="audible-video" autoplay playsinline controls></video>
+      </article>
+      <article>
+        <h2>Muted video autoplay</h2>
+        <div id="muted-video-result" class="result">Not attempted.</div>
+        <video id="muted-video" autoplay muted playsinline controls></video>
+      </article>
+      <article>
+        <h2>Audio element autoplay</h2>
+        <div id="audio-result" class="result">Not attempted.</div>
+        <audio id="audio" autoplay controls></audio>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const contexts = [];
+    let streams = [];
+
+    function report(id, message) {
+      const target = document.getElementById(id);
+      target.textContent = `${new Date().toLocaleTimeString()}\n${message}`;
+    }
+
+    function makeCanvasStream(label) {
+      const canvas = document.createElement("canvas");
+      canvas.width = 640;
+      canvas.height = 360;
+      const ctx = canvas.getContext("2d");
+      let frame = 0;
+      const draw = () => {
+        ctx.fillStyle = frame % 2 === 0 ? "#17324d" : "#245c4c";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "28px -apple-system, BlinkMacSystemFont, sans-serif";
+        ctx.fillText(label, 32, 64);
+        ctx.fillText(`frame ${frame}`, 32, 110);
+        frame += 1;
+      };
+      draw();
+      setInterval(draw, 500);
+      return canvas.captureStream(12);
+    }
+
+    function makeToneStream(frequency) {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      const audioContext = new AudioContextClass();
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      const destination = audioContext.createMediaStreamDestination();
+      oscillator.frequency.value = frequency;
+      gain.gain.value = 0.12;
+      oscillator.connect(gain);
+      gain.connect(destination);
+      oscillator.start();
+      contexts.push(audioContext);
+      return destination.stream;
+    }
+
+    function makeAudibleVideoStream() {
+      const stream = makeCanvasStream("audible video stream");
+      const tone = makeToneStream(330);
+      tone.getAudioTracks().forEach((track) => stream.addTrack(track));
+      return stream;
+    }
+
+    async function attemptMedia(element, stream, resultId, label) {
+      element.srcObject = stream;
+      streams.push(stream);
+      try {
+        await element.play();
+        report(resultId, `${label}: play() resolved\npaused=${element.paused}`);
+      } catch (error) {
+        report(resultId, `${label}: play() rejected\n${error.name}: ${error.message}`);
+      }
+    }
+
+    async function runAutoplayAttempts() {
+      stopAll();
+      await attemptMedia(
+        document.getElementById("audible-video"),
+        makeAudibleVideoStream(),
+        "audible-video-result",
+        "audible video autoplay"
+      );
+      await attemptMedia(
+        document.getElementById("muted-video"),
+        makeCanvasStream("muted video stream"),
+        "muted-video-result",
+        "muted video autoplay"
+      );
+      await attemptMedia(
+        document.getElementById("audio"),
+        makeToneStream(440),
+        "audio-result",
+        "audio element autoplay"
+      );
+    }
+
+    async function playAllWithGesture() {
+      for (const id of ["audible-video", "muted-video", "audio"]) {
+        const element = document.getElementById(id);
+        try {
+          await element.play();
+        } catch (error) {
+          console.warn("User gesture play failed", id, error);
+        }
+      }
+    }
+
+    function stopAll() {
+      for (const id of ["audible-video", "muted-video", "audio"]) {
+        const element = document.getElementById(id);
+        element.pause();
+        element.removeAttribute("src");
+        element.srcObject = null;
+      }
+      streams.forEach((stream) => {
+        stream.getTracks().forEach((track) => track.stop());
+      });
+      streams = [];
+      contexts.splice(0).forEach((context) => context.close());
+    }
+
+    document.getElementById("retry").addEventListener("click", runAutoplayAttempts);
+    document.getElementById("gesture").addEventListener("click", playAllWithGesture);
+    document.getElementById("stop").addEventListener("click", stopAll);
+    window.addEventListener("load", runAutoplayAttempts);
+  </script>
+</body>
+</html>
