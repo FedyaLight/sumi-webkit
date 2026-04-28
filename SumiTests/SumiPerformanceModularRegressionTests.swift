@@ -387,9 +387,9 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let dataSource = try Self.source(named: "Sumi/ContentBlocking/SumiTrackingProtection.swift")
         let settingsSource = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
 
-        XCTAssertTrue(settingsSource.contains("Button(\"Update tracker data\")"))
+        XCTAssertTrue(settingsSource.contains(".accessibilityLabel(\"Update tracker data\")"))
         XCTAssertTrue(settingsSource.contains("await trackingProtectionModule.updateTrackerDataManually()"))
-        XCTAssertTrue(settingsSource.contains("Button(\"Reset to bundled tracker data\")"))
+        XCTAssertTrue(settingsSource.contains(".accessibilityLabel(\"Reset to bundled tracker data\")"))
         XCTAssertFalse(settingsSource.contains(".task"))
         XCTAssertFalse(settingsSource.contains(".onAppear"))
         XCTAssertFalse(settingsSource.localizedCaseInsensitiveContains("stale"))

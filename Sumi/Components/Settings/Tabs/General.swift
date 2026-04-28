@@ -2,124 +2,157 @@
 //  General.swift
 //  Sumi
 //
-//  Created by Maciek Bagiński on 07/12/2025.
-//
 
 import SwiftUI
 
 struct SettingsGeneralTab: View {
     @Environment(\.sumiSettings) var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
     @State private var showingAddSite = false
     @State private var showingAddEngine = false
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
+    @State private var sitePendingRemoval: SiteSearchEntry?
+    @State private var customEnginePendingRemoval: CustomSearchEngine?
 
     var body: some View {
         @Bindable var settings = sumiSettings
-        Form {
-            Section("Sumi Window") {
-                Toggle("Warn before quitting the browser", isOn: $settings.askBeforeQuit)
-                Toggle("Preview link URL on hover", isOn: $settings.showLinkStatusBar)
-                Toggle("Show Sidebar toggle button", isOn: $settings.showSidebarToggleButton)
-                Toggle("Show New Tab button in tab list", isOn: $settings.showNewTabButtonInTabList)
 
-                Picker(
-                    "New Tab button position",
-                    selection: $settings.tabListNewTabButtonPosition
+        VStack(alignment: .leading, spacing: 16) {
+            SettingsSection(
+                title: "Window",
+                subtitle: "Core browser-window behavior."
+            ) {
+                SettingsRow(
+                    title: "Warn before quitting",
+                    subtitle: "Ask for confirmation before closing Sumi."
                 ) {
-                    ForEach(TabListNewTabButtonPosition.allCases) { position in
-                        Text(position.displayName).tag(position)
-                    }
+                    Toggle("", isOn: $settings.askBeforeQuit)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
                 }
-                .disabled(!settings.showNewTabButtonInTabList)
+
+                SettingsRow(
+                    title: "Preview link URL",
+                    subtitle: "Show the hovered link target in the status area."
+                ) {
+                    Toggle("", isOn: $settings.showLinkStatusBar)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+
+                SettingsRow(
+                    title: "Sidebar toggle button",
+                    subtitle: "Expose the sidebar visibility control in browser chrome."
+                ) {
+                    Toggle("", isOn: $settings.showSidebarToggleButton)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+
+                SettingsDivider()
+
+                SettingsRow(
+                    title: "New Tab button",
+                    subtitle: "Show a New Tab control in the tab list."
+                ) {
+                    Toggle("", isOn: $settings.showNewTabButtonInTabList)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+
+                SettingsRow(
+                    title: "New Tab button position",
+                    subtitle: "Choose where the tab-list button appears."
+                ) {
+                    Picker("", selection: $settings.tabListNewTabButtonPosition) {
+                        ForEach(TabListNewTabButtonPosition.allCases) { position in
+                            Text(position.displayName).tag(position)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 150)
+                    .disabled(!settings.showNewTabButtonInTabList)
+                }
             }
 
-            Section(header: Text("Search")) {
-                Text("Sumi keeps one canonical URL bar in the sidebar header and routes search actions through it.")
-                    .foregroundStyle(.secondary)
-
-                HStack {
-                    Picker(
-                        "Default search engine",
-                        selection: $settings.searchEngineId
-                    ) {
-                        ForEach(SearchProvider.allCases) { provider in
-                            Text(provider.displayName).tag(provider.rawValue)
+            SettingsSection(
+                title: "Search",
+                subtitle: "Sumi routes searches through the canonical URL bar in the sidebar header."
+            ) {
+                SettingsRow(
+                    title: "Default search engine",
+                    subtitle: "Used for plain text typed into the URL bar."
+                ) {
+                    HStack(spacing: 8) {
+                        Picker("", selection: $settings.searchEngineId) {
+                            ForEach(SearchProvider.allCases) { provider in
+                                Text(provider.displayName).tag(provider.rawValue)
+                            }
+                            ForEach(sumiSettings.customSearchEngines) { engine in
+                                Text(engine.name).tag(engine.id.uuidString)
+                            }
                         }
-                        ForEach(sumiSettings.customSearchEngines) { engine in
-                            Text(engine.name).tag(engine.id.uuidString)
+                        .labelsHidden()
+                        .frame(width: 210)
+
+                        Button {
+                            showingAddEngine = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .help("Add custom search engine")
+                    }
+                }
+
+                if let selected = selectedCustomSearchEngine {
+                    SettingsDivider()
+
+                    SettingsActionRow(
+                        title: selected.name,
+                        systemImage: "magnifyingglass",
+                        buttonTitle: "Remove",
+                        role: .destructive
+                    ) {
+                        customEnginePendingRemoval = selected
+                    }
+                }
+            }
+
+            SettingsSection(
+                title: "Site Search",
+                subtitle: "Type a site prefix in the command palette, then press Tab to search that site."
+            ) {
+                if sumiSettings.siteSearchEntries.isEmpty {
+                    SettingsEmptyState(
+                        systemImage: "globe.badge.chevron.backward",
+                        title: "No Site Searches",
+                        detail: "Add a site search to jump directly into a website search field."
+                    )
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(sumiSettings.siteSearchEntries) { entry in
+                            siteSearchRow(entry)
                         }
                     }
+                }
 
+                SettingsDivider()
+
+                HStack(spacing: 8) {
                     Button {
-                        showingAddEngine = true
+                        showingAddSite = true
                     } label: {
-                        Image(systemName: "plus")
+                        Label("Add Site", systemImage: "plus")
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button("Reset to Defaults") {
+                        sumiSettings.siteSearchEntries = SiteSearchEntry.defaultSites
                     }
                     .buttonStyle(.bordered)
-                    .controlSize(.small)
                 }
-
-                if let selected = sumiSettings.customSearchEngines.first(where: { $0.id.uuidString == sumiSettings.searchEngineId }) {
-                    HStack {
-                        Text(selected.name)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Remove") {
-                            sumiSettings.customSearchEngines.removeAll { $0.id == selected.id }
-                            sumiSettings.searchEngineId = SearchProvider.google.rawValue
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-
-            Section {
-                ForEach(sumiSettings.siteSearchEntries) { entry in
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(entry.color)
-                            .frame(width: 10, height: 10)
-                        Text(entry.name)
-                        Spacer()
-                        Text(entry.domain)
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
-                        Button {
-                            sumiSettings.siteSearchEntries.removeAll { $0.id == entry.id }
-                        } label: {
-                            Image(systemName: "minus.circle.fill")
-                                .foregroundStyle(.red)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-
-                Button {
-                    showingAddSite = true
-                } label: {
-                    Label("Add Site", systemImage: "plus")
-                }
-
-                Button("Reset to Defaults") {
-                    sumiSettings.siteSearchEntries = SiteSearchEntry.defaultSites
-                }
-            } header: {
-                Text("Site Search")
-            } footer: {
-                Text("Type a prefix in the command palette and press Tab to search a site directly.")
             }
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tokens.windowBackground)
         .sheet(isPresented: $showingAddSite) {
             SiteSearchEntryEditor(entry: nil) { newEntry in
                 sumiSettings.siteSearchEntries.append(newEntry)
@@ -130,17 +163,106 @@ struct SettingsGeneralTab: View {
                 sumiSettings.customSearchEngines.append(newEngine)
             }
         }
+        .confirmationDialog(
+            "Remove Custom Search Engine?",
+            isPresented: customEngineRemovalBinding
+        ) {
+            Button("Remove", role: .destructive) {
+                removePendingCustomEngine()
+            }
+            Button("Cancel", role: .cancel) {
+                customEnginePendingRemoval = nil
+            }
+        } message: {
+            Text(customEnginePendingRemoval?.name ?? "")
+        }
+        .confirmationDialog(
+            "Remove Site Search?",
+            isPresented: siteRemovalBinding
+        ) {
+            Button("Remove", role: .destructive) {
+                removePendingSiteSearch()
+            }
+            Button("Cancel", role: .cancel) {
+                sitePendingRemoval = nil
+            }
+        } message: {
+            Text(sitePendingRemoval?.name ?? "")
+        }
+    }
+
+    private var selectedCustomSearchEngine: CustomSearchEngine? {
+        sumiSettings.customSearchEngines.first {
+            $0.id.uuidString == sumiSettings.searchEngineId
+        }
+    }
+
+    private var customEngineRemovalBinding: Binding<Bool> {
+        Binding(
+            get: { customEnginePendingRemoval != nil },
+            set: { isPresented in
+                if !isPresented { customEnginePendingRemoval = nil }
+            }
+        )
+    }
+
+    private var siteRemovalBinding: Binding<Bool> {
+        Binding(
+            get: { sitePendingRemoval != nil },
+            set: { isPresented in
+                if !isPresented { sitePendingRemoval = nil }
+            }
+        )
+    }
+
+    private func siteSearchRow(_ entry: SiteSearchEntry) -> some View {
+        SettingsRow(
+            title: entry.name,
+            systemImage: nil
+        ) {
+            HStack(spacing: 8) {
+                Text(entry.domain)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                Circle()
+                    .fill(entry.color)
+                    .frame(width: 10, height: 10)
+
+                Button(role: .destructive) {
+                    sitePendingRemoval = entry
+                } label: {
+                    Image(systemName: "minus.circle")
+                }
+                .buttonStyle(.plain)
+                .help("Remove site search")
+            }
+        }
+    }
+
+    private func removePendingCustomEngine() {
+        guard let selected = customEnginePendingRemoval else { return }
+        sumiSettings.customSearchEngines.removeAll { $0.id == selected.id }
+        if sumiSettings.searchEngineId == selected.id.uuidString {
+            sumiSettings.searchEngineId = SearchProvider.google.rawValue
+        }
+        customEnginePendingRemoval = nil
+    }
+
+    private func removePendingSiteSearch() {
+        guard let entry = sitePendingRemoval else { return }
+        sumiSettings.siteSearchEntries.removeAll { $0.id == entry.id }
+        sitePendingRemoval = nil
     }
 }
-
-// MARK: - Custom Search Engine Editor
 
 struct CustomSearchEngineEditor: View {
     let onSave: (CustomSearchEngine) -> Void
     @Environment(\.dismiss) private var dismiss
 
-    @State private var name: String = ""
-    @State private var urlTemplate: String = ""
+    @State private var name = ""
+    @State private var urlTemplate = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -150,6 +272,12 @@ struct CustomSearchEngineEditor: View {
             Form {
                 TextField("Name (e.g. Startpage)", text: $name)
                 TextField("URL Template (use %@ for query)", text: $urlTemplate)
+
+                if let validationMessage {
+                    Text(validationMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
             }
             .formStyle(.grouped)
 
@@ -158,18 +286,43 @@ struct CustomSearchEngineEditor: View {
                 Button("Cancel") { dismiss() }
                     .buttonStyle(.bordered)
                 Button("Save") {
-                    let engine = CustomSearchEngine(
-                        name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-                        urlTemplate: urlTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
+                    onSave(
+                        CustomSearchEngine(
+                            name: trimmedName,
+                            urlTemplate: trimmedURLTemplate
+                        )
                     )
-                    onSave(engine)
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(name.isEmpty || urlTemplate.isEmpty)
+                .disabled(validationMessage != nil)
             }
         }
         .padding(20)
         .frame(width: 450)
+    }
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var trimmedURLTemplate: String {
+        urlTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var validationMessage: String? {
+        guard !trimmedName.isEmpty else { return "Name is required." }
+        guard trimmedURLTemplate.contains("%@") else {
+            return "URL template must contain %@ where the query should go."
+        }
+        let sample = trimmedURLTemplate.replacingOccurrences(of: "%@", with: "sumi")
+        guard let url = URL(string: sample),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              url.host?.isEmpty == false
+        else {
+            return "Enter a valid http or https URL template."
+        }
+        return nil
     }
 }

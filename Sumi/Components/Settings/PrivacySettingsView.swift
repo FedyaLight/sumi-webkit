@@ -11,7 +11,7 @@ struct PrivacySettingsView: View {
     @Environment(\.sumiTrackingProtectionModule) private var trackingProtectionModule
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 16) {
             SumiSettingsModuleToggleGate(descriptor: .trackingProtection) {
                 if let settings = trackingProtectionModule.settingsIfEnabled(),
                    let dataStore = trackingProtectionModule.dataStoreIfEnabled() {
@@ -27,8 +27,6 @@ struct PrivacySettingsView: View {
 
             Spacer()
         }
-        .padding()
-        .frame(minWidth: 520, minHeight: 360)
     }
 }
 
@@ -39,82 +37,85 @@ private struct LegacyTrackingProtectionRuntimeSettingsView: View {
     @State private var trackingOverrideHostInput = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Toggle(
-                "Current protection mode",
-                isOn: Binding(
-                    get: { trackingProtectionSettings.globalMode == .enabled },
-                    set: { isEnabled in
-                        trackingProtectionSettings.setGlobalMode(isEnabled ? .enabled : .disabled)
-                    }
+        SettingsSection(
+            title: "Tracking Protection Runtime",
+            subtitle: "Controls the existing WebKit-native tracking rules while the module is enabled."
+        ) {
+            SettingsRow(
+                title: "Protection mode",
+                subtitle: trackingProtectionSettings.globalMode == .enabled
+                    ? "Tracking Protection is enabled globally."
+                    : "Tracking Protection is disabled globally."
+            ) {
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { trackingProtectionSettings.globalMode == .enabled },
+                        set: { isEnabled in
+                            trackingProtectionSettings.setGlobalMode(isEnabled ? .enabled : .disabled)
+                        }
+                    )
                 )
-            )
+                .labelsHidden()
+                .toggleStyle(.switch)
+            }
 
-            Text("Controls the existing WebKit-native tracking rules while the Tracking Protection module is enabled.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
+            SettingsDivider()
             trackingDataControls
-
-            Divider()
-
+            SettingsDivider()
             trackingSiteOverrides
         }
-        .padding()
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(8)
     }
 
     private var trackingDataControls: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Button("Update tracker data") {
-                    Task {
-                        await trackingProtectionModule.updateTrackerDataManually()
+        VStack(alignment: .leading, spacing: 10) {
+            SettingsRow(title: "Last update", systemImage: "clock") {
+                HStack(spacing: 8) {
+                    Text(lastTrackerUpdateValue)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    if trackingProtectionDataStore.isUpdating {
+                        ProgressView()
+                            .controlSize(.small)
+                            .scaleEffect(0.8)
                     }
-                }
-                .buttonStyle(.bordered)
-                .disabled(
-                    trackingProtectionDataStore.isUpdating
-                        || !trackingProtectionModule.isEnabled
-                )
 
-                if trackingProtectionDataStore.isUpdating {
-                    ProgressView()
-                        .scaleEffect(0.8)
-                }
-
-                if trackingProtectionDataStore.metadata.currentSource == .downloaded {
-                    Button("Reset to bundled tracker data") {
+                    Button {
                         Task {
-                            await trackingProtectionModule.resetTrackerDataToBundledManually()
+                            await trackingProtectionModule.updateTrackerDataManually()
                         }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
                     }
                     .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .accessibilityLabel("Update tracker data")
+                    .help("Update tracker data")
                     .disabled(
                         trackingProtectionDataStore.isUpdating
                             || !trackingProtectionModule.isEnabled
                     )
+
+                    if trackingProtectionDataStore.metadata.currentSource == .downloaded {
+                        Button {
+                            Task {
+                                await trackingProtectionModule.resetTrackerDataToBundledManually()
+                            }
+                        } label: {
+                            Image(systemName: "arrow.uturn.backward")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .accessibilityLabel("Reset to bundled tracker data")
+                        .help("Reset to bundled tracker data")
+                        .disabled(
+                            trackingProtectionDataStore.isUpdating
+                                || !trackingProtectionModule.isEnabled
+                        )
+                    }
                 }
-            }
-
-            HStack(spacing: 6) {
-                Text("Current source:")
-                    .foregroundColor(.secondary)
-                Text(trackingProtectionDataStore.metadata.currentSource.rawValue)
-                    .fontWeight(.medium)
-            }
-            .font(.caption)
-
-            if let lastUpdateDate = trackingProtectionDataStore.metadata.lastSuccessfulUpdateDate {
-                Text("Last successful update: \(formatTrackingUpdateDate(lastUpdateDate))")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            } else {
-                Text("Last successful update: Never")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
             }
 
             if let lastUpdateError = trackingProtectionDataStore.metadata.lastUpdateError,
@@ -125,6 +126,13 @@ private struct LegacyTrackingProtectionRuntimeSettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    private var lastTrackerUpdateValue: String {
+        guard let lastUpdateDate = trackingProtectionDataStore.metadata.lastSuccessfulUpdateDate else {
+            return "Never"
+        }
+        return formatTrackingUpdateDate(lastUpdateDate)
     }
 
     private var trackingSiteOverrides: some View {
@@ -140,10 +148,7 @@ private struct LegacyTrackingProtectionRuntimeSettingsView: View {
             } else {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(trackingProtectionSettings.sortedSiteOverrides, id: \.host) { item in
-                        HStack {
-                            Text(item.host)
-                                .lineLimit(1)
-                            Spacer()
+                        SettingsRow(title: item.host) {
                             Menu(item.override.displayTitle) {
                                 Button("Use Global Setting") {
                                     trackingProtectionSettings.removeSiteOverride(forNormalizedHost: item.host)
@@ -158,7 +163,6 @@ private struct LegacyTrackingProtectionRuntimeSettingsView: View {
                             .menuStyle(.button)
                             .fixedSize()
                         }
-                        .font(.caption)
                     }
                 }
             }

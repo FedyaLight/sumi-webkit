@@ -93,10 +93,11 @@ final class PerformanceSettingsTests: XCTestCase {
         )
 
         let source = try Self.source(named: "Sumi/Components/Settings/Tabs/Performance.swift")
-        XCTAssertTrue(source.contains("Picker(\"Memory Saver\""))
+        XCTAssertFalse(source.contains("Picker(\"Memory Saver\""))
         XCTAssertTrue(source.contains("ForEach(SumiMemoryModeSettingsDescriptor.all)"))
         XCTAssertTrue(source.contains("settings.memoryMode == .custom"))
         XCTAssertTrue(source.contains("Deactivate inactive tabs after:"))
+        XCTAssertTrue(source.contains(".contentShape(RoundedRectangle"))
     }
 
     func testPerformanceSettingsCopyMatchesMemoryModeContract() {

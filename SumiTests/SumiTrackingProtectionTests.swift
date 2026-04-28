@@ -1013,7 +1013,7 @@ final class SumiTrackingProtectionTests: XCTestCase {
         }
 
         let settingsSource = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
-        XCTAssertTrue(settingsSource.contains("Button(\"Update tracker data\")"))
+        XCTAssertTrue(settingsSource.contains(".accessibilityLabel(\"Update tracker data\")"))
         XCTAssertTrue(settingsSource.contains("await trackingProtectionModule.updateTrackerDataManually()"))
         XCTAssertFalse(settingsSource.contains(".task"))
         XCTAssertFalse(settingsSource.contains(".onAppear"))

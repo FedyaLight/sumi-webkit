@@ -12,23 +12,26 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertFalse(SettingsTabs.ordered.contains(.userScripts))
     }
 
-    func testPerformancePaneQueryRoundTripsThroughSettingsSurfaceURL() {
+    func testAllVisiblePaneQueriesRoundTripThroughSettingsSurfaceURL() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
 
         let settings = SumiSettingsService(userDefaults: harness.defaults)
-        settings.currentSettingsTab = .performance
 
-        XCTAssertEqual(SettingsTabs(paneQueryValue: "performance"), .performance)
-        XCTAssertEqual(
-            settings.settingsSurfaceURLForCurrentNavigation(),
-            SettingsTabs.performance.settingsSurfaceURL
-        )
+        for pane in SettingsTabs.ordered {
+            settings.currentSettingsTab = pane
 
-        settings.currentSettingsTab = .general
-        settings.applyNavigationFromSettingsSurfaceURL(SettingsTabs.performance.settingsSurfaceURL)
+            XCTAssertEqual(SettingsTabs(paneQueryValue: pane.paneQueryValue), pane)
+            XCTAssertEqual(
+                settings.settingsSurfaceURLForCurrentNavigation(),
+                pane.settingsSurfaceURL
+            )
 
-        XCTAssertEqual(settings.currentSettingsTab, .performance)
+            settings.currentSettingsTab = .general
+            settings.applyNavigationFromSettingsSurfaceURL(pane.settingsSurfaceURL)
+
+            XCTAssertEqual(settings.currentSettingsTab, pane)
+        }
     }
 
     func testAboutPaneQueryRoundTripsThroughSettingsSurfaceURL() {
@@ -54,6 +57,43 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertTrue(tab.representsSumiInternalSurface)
         XCTAssertTrue(tab.representsSumiNativeSurface)
         XCTAssertTrue(tab.usesChromeThemedTemplateFavicon)
+    }
+
+    func testSettingsPaneDescriptorsCoverVisiblePanes() {
+        XCTAssertEqual(
+            SettingsPaneDescriptor.all.map(\.tab),
+            SettingsTabs.ordered
+        )
+        XCTAssertEqual(
+            Set(SettingsPaneDescriptor.all.map(\.id)),
+            Set(SettingsTabs.ordered)
+        )
+        XCTAssertEqual(
+            SettingsPaneDescriptor.descriptor(for: .privacy).title,
+            "Privacy & Security"
+        )
+        XCTAssertEqual(
+            SettingsPaneDescriptor.descriptor(for: .profiles).title,
+            "Profiles & Spaces"
+        )
+    }
+
+    func testSettingsPaneSearchMatchesTitlesSubtitlesAndKeywords() {
+        XCTAssertEqual(
+            SettingsPaneDescriptor.filtered(by: "tracker").map(\.tab),
+            [.privacy]
+        )
+        XCTAssertEqual(
+            SettingsPaneDescriptor.filtered(by: "custom delay").map(\.tab),
+            [.performance]
+        )
+        XCTAssertTrue(
+            SettingsPaneDescriptor.filtered(by: "safari extension").map(\.tab).contains(.extensions)
+        )
+        XCTAssertEqual(
+            SettingsPaneDescriptor.filtered(by: "no matching settings").count,
+            0
+        )
     }
 
     func testOpenSettingsTabSelectsAboutSurface() {

@@ -55,6 +55,8 @@ struct ProfilePickerView: View {
                             Spacer()
                             if selectedProfileId == p.id { Image(systemName: "checkmark").foregroundStyle(.secondary) }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
@@ -88,9 +90,11 @@ struct ProfilePickerView: View {
                             Spacer()
                             if selectedProfileId == p.id { Image(systemName: "checkmark").foregroundStyle(.secondary) }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 2)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .padding(.vertical, 2)
                 }
             }
         }

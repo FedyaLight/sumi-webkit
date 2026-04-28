@@ -6,6 +6,166 @@
 //
 import Foundation
 
+enum SettingsPaneGroup: String, CaseIterable, Hashable {
+    case browser = "Browser"
+    case browsing = "Browsing"
+    case privacy = "Privacy"
+    case system = "System"
+    case support = "Support"
+}
+
+struct SettingsPaneDescriptor: Identifiable, Hashable {
+    let tab: SettingsTabs
+    let title: String
+    let subtitle: String
+    let icon: String
+    let group: SettingsPaneGroup
+    let keywords: [String]
+    var badge: String? = nil
+
+    var id: SettingsTabs { tab }
+
+    static let all: [SettingsPaneDescriptor] = SettingsTabs.ordered.map(Self.descriptor)
+
+    static func descriptor(for tab: SettingsTabs) -> SettingsPaneDescriptor {
+        switch tab {
+        case .general:
+            return SettingsPaneDescriptor(
+                tab: tab,
+                title: "General",
+                subtitle: "Window behavior, URL bar, search engines, and site search.",
+                icon: tab.icon,
+                group: .browser,
+                keywords: [
+                    "quit", "url", "hover", "sidebar", "new tab", "search",
+                    "engine", "site search", "command palette"
+                ]
+            )
+        case .appearance:
+            return SettingsPaneDescriptor(
+                tab: tab,
+                title: "Appearance",
+                subtitle: "Window scheme, theme styling, radius, and workspace color.",
+                icon: tab.icon,
+                group: .browser,
+                keywords: [
+                    "theme", "dark", "light", "auto", "system colors",
+                    "border radius", "status panel", "workspace", "space theme"
+                ]
+            )
+        case .performance:
+            return SettingsPaneDescriptor(
+                tab: tab,
+                title: "Performance",
+                subtitle: "Memory Saver and inactive tab deactivation behavior.",
+                icon: tab.icon,
+                group: .browsing,
+                keywords: [
+                    "memory", "saver", "inactive", "deactivate", "tabs",
+                    "reload", "custom delay", "essentials"
+                ]
+            )
+        case .privacy:
+            return SettingsPaneDescriptor(
+                tab: tab,
+                title: "Privacy & Security",
+                subtitle: "Tracking protection, ad blocking, and site-level overrides.",
+                icon: tab.icon,
+                group: .privacy,
+                keywords: [
+                    "tracking", "protection", "ad blocking", "tracker data",
+                    "site overrides", "rules", "privacy", "security"
+                ]
+            )
+        case .profiles:
+            return SettingsPaneDescriptor(
+                tab: tab,
+                title: "Profiles & Spaces",
+                subtitle: "Profiles, space assignments, sidebar behavior, and glance.",
+                icon: tab.icon,
+                group: .browsing,
+                keywords: [
+                    "profiles", "spaces", "personas", "sidebar", "glance",
+                    "launcher", "essentials", "compact spaces"
+                ]
+            )
+        case .shortcuts:
+            return SettingsPaneDescriptor(
+                tab: tab,
+                title: "Keyboard",
+                subtitle: "Search, customize, enable, and reset keyboard shortcuts.",
+                icon: tab.icon,
+                group: .system,
+                keywords: [
+                    "keyboard", "shortcuts", "hotkeys", "commands", "reset",
+                    "customize", "navigation"
+                ]
+            )
+        case .userScripts:
+            return SettingsPaneDescriptor(
+                tab: tab,
+                title: "Userscripts",
+                subtitle: "Manage Sumi userscripts from the Extensions settings pane.",
+                icon: tab.icon,
+                group: .system,
+                keywords: ["userscripts", "scripts", "greasemonkey", "tampermonkey"]
+            )
+        case .extensions:
+            return SettingsPaneDescriptor(
+                tab: tab,
+                title: "Extensions",
+                subtitle: "Safari extensions and userscripts for Sumi.",
+                icon: tab.icon,
+                group: .system,
+                keywords: [
+                    "extensions", "safari", "webextension", "appex",
+                    "manifest", "userscripts", "install", "uninstall"
+                ]
+            )
+        case .advanced:
+            return SettingsPaneDescriptor(
+                tab: tab,
+                title: "Data & Recovery",
+                subtitle: "Local runtime data folders, snapshots, and recovery tools.",
+                icon: tab.icon,
+                group: .support,
+                keywords: [
+                    "data", "recovery", "backup", "export", "folder",
+                    "application support", "swiftdata"
+                ]
+            )
+        case .about:
+            return SettingsPaneDescriptor(
+                tab: tab,
+                title: "About Sumi",
+                subtitle: "Version and build information.",
+                icon: tab.icon,
+                group: .support,
+                keywords: ["about", "version", "build", "sumi"]
+            )
+        }
+    }
+
+    static func filtered(by query: String) -> [SettingsPaneDescriptor] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return all }
+        return all.filter { $0.matches(trimmed) }
+    }
+
+    func matches(_ query: String) -> Bool {
+        let terms = query
+            .lowercased()
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+        guard !terms.isEmpty else { return true }
+
+        let searchableText = ([title, subtitle, group.rawValue] + keywords)
+            .joined(separator: " ")
+            .lowercased()
+        return terms.allSatisfy { searchableText.contains($0) }
+    }
+}
+
 /// Which detail is shown inside Settings → Extensions (segmented control).
 enum SumiExtensionsSettingsSubPane: String, CaseIterable, Hashable {
     case safariExtensions
@@ -70,10 +230,10 @@ enum SettingsTabs: Hashable, CaseIterable {
     var name: String {
         switch self {
         case .general: return "General"
-        case .appearance: return "Theme"
+        case .appearance: return "Appearance"
         case .performance: return "Performance"
-        case .privacy: return "Privacy"
-        case .profiles: return "Spaces & Essentials"
+        case .privacy: return "Privacy & Security"
+        case .profiles: return "Profiles & Spaces"
         case .shortcuts: return "Keyboard"
         case .userScripts: return "Userscripts"
         case .extensions: return "Extensions"
