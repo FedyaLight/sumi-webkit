@@ -81,9 +81,13 @@ final class SumiNavigationResponderTests: XCTestCase {
             encoding: .utf8
         )
 
-        XCTAssertTrue(uiDelegateSource.contains("navigationDelegateBundle(for: webView)?.popupHandling.createWebView("))
+        XCTAssertTrue(uiDelegateSource.contains("popupHandling.createWebViewAsync("))
+        XCTAssertTrue(uiDelegateSource.contains("completionHandler(popupWebView)"))
         XCTAssertTrue(popupResponderSource.contains("FocusableWKWebView(frame: .zero, configuration: configuration)"))
         XCTAssertTrue(popupResponderSource.contains("webViewConfigurationOverride: configuration"))
+        XCTAssertTrue(popupResponderSource.contains("popupPermissionBridge.evaluate("))
+        XCTAssertTrue(popupResponderSource.contains("evaluateSynchronouslyForWebKitFallback("))
+        XCTAssertTrue(popupResponderSource.contains("guard permissionResult.isAllowed else { return nil }"))
         XCTAssertFalse(popupResponderSource.contains("loadURL(requestURL"))
         XCTAssertFalse(popupResponderSource.contains("load(URLRequest(url: requestURL"))
     }

@@ -124,6 +124,7 @@ final class FocusableWKWebView: WKWebView {
 
     override func mouseDown(with event: NSEvent) {
         owningTab?.setClickModifierFlags(event.modifierFlags)
+        owningTab?.recordPopupUserActivation(event, kind: "mouseDown")
 
         if owningTab?.isFreezingNavigationStateDuringBackForwardGesture != true {
             owningTab?.activate()
@@ -134,6 +135,17 @@ final class FocusableWKWebView: WKWebView {
             window?.makeFirstResponder(self)
         }
         super.mouseDown(with: event)
+    }
+
+    override func otherMouseDown(with event: NSEvent) {
+        owningTab?.setClickModifierFlags(event.modifierFlags)
+        owningTab?.recordPopupUserActivation(event, kind: "middleMouseDown")
+        super.otherMouseDown(with: event)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        owningTab?.recordPopupUserActivation(event, kind: "keyDown")
+        super.keyDown(with: event)
     }
 
     override func rightMouseDown(with event: NSEvent) {

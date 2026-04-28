@@ -193,6 +193,8 @@ class BrowserManager: ObservableObject {
     let webKitPermissionBridge: SumiWebKitPermissionBridge
     let webKitGeolocationBridge: SumiWebKitGeolocationBridge
     let notificationPermissionBridge: SumiNotificationPermissionBridge
+    let blockedPopupStore: SumiBlockedPopupStore
+    let popupPermissionBridge: SumiPopupPermissionBridge
     var zoomManager = ZoomManager()
     weak var sumiSettings: SumiSettingsService? {
         didSet {
@@ -293,7 +295,9 @@ class BrowserManager: ObservableObject {
         runtimePermissionController: (any SumiRuntimePermissionControlling)? = nil,
         webKitPermissionBridge: SumiWebKitPermissionBridge? = nil,
         webKitGeolocationBridge: SumiWebKitGeolocationBridge? = nil,
-        notificationPermissionBridge: SumiNotificationPermissionBridge? = nil
+        notificationPermissionBridge: SumiNotificationPermissionBridge? = nil,
+        blockedPopupStore: SumiBlockedPopupStore? = nil,
+        popupPermissionBridge: SumiPopupPermissionBridge? = nil
     ) {
         // Phase 1: initialize all stored properties
         let startupModelContext = SumiStartupPersistence.shared.container.mainContext
@@ -312,6 +316,7 @@ class BrowserManager: ObservableObject {
         let notificationService = notificationService ?? SumiNotificationService()
         let runtimePermissionController = runtimePermissionController
             ?? SumiRuntimePermissionController(geolocationProvider: geolocationProvider)
+        let blockedPopupStore = blockedPopupStore ?? SumiBlockedPopupStore()
         self.modelContext = startupModelContext
         self.moduleRegistry = moduleRegistry
         self.trackingProtectionModule = trackingProtectionModule
@@ -377,6 +382,12 @@ class BrowserManager: ObservableObject {
             ?? SumiNotificationPermissionBridge(
                 coordinator: permissionCoordinator,
                 notificationService: notificationService
+            )
+        self.blockedPopupStore = blockedPopupStore
+        self.popupPermissionBridge = popupPermissionBridge
+            ?? SumiPopupPermissionBridge(
+                coordinator: permissionCoordinator,
+                blockedPopupStore: blockedPopupStore
             )
 
         // Phase 2: wire dependencies and perform side effects (safe to use self)
