@@ -204,18 +204,14 @@ final class SumiNotificationPermissionBridgeTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let handoff = try String(
-            contentsOf: root.appendingPathComponent("docs/permissions/IMPLEMENTATION_HANDOFF.md"),
-            encoding: .utf8
-        )
         let licenseNotes = try String(
             contentsOf: root.appendingPathComponent("docs/permissions/LICENSE_NOTES.md"),
             encoding: .utf8
         )
 
-        XCTAssertTrue(handoff.contains("WebNotificationsHandler.swift"))
-        XCTAssertTrue(handoff.contains("WebNotificationsTabExtension.swift"))
-        XCTAssertTrue(licenseNotes.contains("No DuckDuckGo implementation source was copied"))
+        XCTAssertTrue(licenseNotes.contains("WebNotificationsHandler.swift"))
+        XCTAssertTrue(licenseNotes.contains("WebNotificationsTabExtension.swift"))
+        XCTAssertTrue(licenseNotes.contains("No DDG notification implementation source copied"))
     }
 
     private func makeBridge(

@@ -122,19 +122,21 @@ final class SumiPermissionFinalCleanupTests: XCTestCase {
     }
 
     func testDocsLicenseAndManualPagesDescribeFinalCleanupState() throws {
-        let handoff = try sourceFile("docs/permissions/IMPLEMENTATION_HANDOFF.md")
+        let readme = try sourceFile("docs/permissions/README.md")
         let architecture = try sourceFile("docs/permissions/ARCHITECTURE.md")
         let testPlan = try sourceFile("docs/permissions/TEST_PLAN.md")
         let license = try sourceFile("docs/permissions/LICENSE_NOTES.md")
 
-        XCTAssertTrue(handoff.contains("current completed: `22 - final cleanup: remove old logic, license audit, hardening`"))
-        XCTAssertTrue(handoff.contains("next prompt: `none - active normal-tab permissions sequence complete`"))
-        XCTAssertTrue(architecture.contains("Implemented Normal-Tab Architecture"))
-        XCTAssertTrue(architecture.contains("Deferred Architecture"))
-        XCTAssertTrue(architecture.contains("Known WebKit And Private API Limitations"))
+        XCTAssertTrue(readme.contains("ARCHITECTURE.md"))
+        XCTAssertTrue(readme.contains("TEST_PLAN.md"))
+        XCTAssertTrue(readme.contains("LICENSE_NOTES.md"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: repoRoot.appendingPathComponent("docs/permissions/IMPLEMENTATION_HANDOFF.md").path))
+        XCTAssertTrue(architecture.contains("Implemented Normal-Tab Permission Scope"))
+        XCTAssertTrue(architecture.contains("Deferred Work"))
+        XCTAssertTrue(architecture.contains("Private WebKit API Boundaries And Known Limitations"))
         XCTAssertFalse(architecture.contains("Target Architecture"))
         XCTAssertTrue(testPlan.contains("SumiPermissionFinalCleanupTests"))
-        XCTAssertTrue(testPlan.contains("final cleanup/source regression/license audit coverage"))
+        XCTAssertTrue(testPlan.contains("Source-Level Regression Guards"))
 
         for area in [
             "Geolocation",
