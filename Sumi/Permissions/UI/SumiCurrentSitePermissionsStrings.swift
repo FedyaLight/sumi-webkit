@@ -1,0 +1,27 @@
+import Foundation
+
+enum SumiCurrentSitePermissionsStrings {
+    static let rowTitle = "Permissions"
+    static let headerTitlePrefix = "Permissions for"
+    static let unavailableTitle = "Permissions are unavailable for this page."
+    static let unavailableSubtitle = "Sumi can manage site permissions for normal web pages."
+    static let resetTitle = "Reset permissions for this site"
+    static let siteSettingsTitle = "Site settings..."
+    static let sessionOnly = "Session only"
+    static let defaultSummary = "Default"
+    static let ask = "Ask"
+    static let allow = "Allow"
+    static let block = "Block"
+    static let defaultOption = "Default"
+    static let allowAllAutoplay = "Allow all autoplay"
+    static let blockAudibleAutoplay = "Block audible autoplay"
+    static let blockAllAutoplay = "Block all autoplay"
+    static let permissionsChanged = "Permissions updated"
+    static let resetComplete = "Permissions reset"
+    static let fileChooserTitle = "File chooser"
+    static let fileChooserAlwaysAsks = "Always asks"
+    static let fileChooserExplanation = "File selection is only shared after you choose files."
+    static let externalAppsTitle = "External app links"
+    static let externalAppsDefault = "Ask before opening external apps"
+    static let storageAccessTitle = "Embedded content access"
+}

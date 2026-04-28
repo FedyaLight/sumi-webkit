@@ -40,6 +40,7 @@
 <body>
   <h1>Media Permission Manual Test</h1>
   <p>Expected: first-time camera, microphone, or combined requests open the URL-bar anchored Sumi permission prompt. Allow this time should grant only the current page/request lifetime, allow while visiting should persist for a normal profile, don't allow should persist for a normal profile, and dismiss should not persist.</p>
+  <p>URL hub check: open Site Controls from the URL bar, open Permissions, and confirm Camera and Microphone show the current site decisions plus active or muted status after a stream starts. Changing Ask, Allow, or Block should affect future requests only, and Reset permissions should not clear cookies, site data, or tracking-protection overrides.</p>
 
   <div>
     <button id="camera">Request camera</button>

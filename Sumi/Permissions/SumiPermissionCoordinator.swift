@@ -167,6 +167,72 @@ actor SumiPermissionCoordinator {
         queryById[queryId]?.query
     }
 
+    func siteDecisionRecords(
+        profilePartitionId: String,
+        isEphemeralProfile: Bool
+    ) async throws -> [SumiPermissionStoreRecord] {
+        let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
+        if isEphemeralProfile {
+            return try await memoryStore.listDecisions(profilePartitionId: profileId)
+        }
+        guard let persistentStore else {
+            return []
+        }
+        return try await persistentStore.listDecisions(profilePartitionId: profileId)
+    }
+
+    func setSiteDecision(
+        for key: SumiPermissionKey,
+        state: SumiPermissionState,
+        source: SumiPermissionDecisionSource = .user,
+        reason: String? = nil
+    ) async throws {
+        guard key.permissionType.canBePersisted else {
+            throw SumiPermissionSiteDecisionError.unsupportedPermission(key.permissionType.identity)
+        }
+
+        let now = nowProvider()
+        let persistence: SumiPermissionPersistence = key.isEphemeralProfile ? .session : .persistent
+        let decision = SumiPermissionDecision(
+            state: state,
+            persistence: persistence,
+            source: source,
+            reason: reason,
+            createdAt: now,
+            updatedAt: now
+        )
+
+        if key.isEphemeralProfile {
+            try await memoryStore.setDecision(
+                for: key,
+                decision: decision,
+                sessionOwnerId: sessionOwnerId
+            )
+            return
+        }
+
+        guard let persistentStore else {
+            throw SumiPermissionSiteDecisionError.persistentStoreUnavailable
+        }
+        try await persistentStore.setDecision(for: key, decision: decision)
+    }
+
+    func resetSiteDecision(
+        for key: SumiPermissionKey
+    ) async throws {
+        try await memoryStore.resetDecision(for: key, sessionOwnerId: sessionOwnerId)
+        guard !key.isEphemeralProfile else { return }
+        try await persistentStore?.resetDecision(for: key)
+    }
+
+    func resetSiteDecisions(
+        for keys: [SumiPermissionKey]
+    ) async throws {
+        for key in keys {
+            try await resetSiteDecision(for: key)
+        }
+    }
+
     func events() -> AsyncStream<SumiPermissionCoordinatorEvent> {
         let pair = AsyncStream<SumiPermissionCoordinatorEvent>.makeStream(
             of: SumiPermissionCoordinatorEvent.self,

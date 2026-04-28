@@ -835,7 +835,7 @@ private struct URLBarZoomPopoverView: View {
     }
 }
 
-private struct URLBarZoomPopoverButtonStyle: ButtonStyle {
+struct URLBarZoomPopoverButtonStyle: ButtonStyle {
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.isEnabled) private var isEnabled
@@ -883,17 +883,13 @@ private struct URLBarZoomPopoverButtonStyle: ButtonStyle {
 
 private struct SiteControlsSettingRowModel: Equatable, Identifiable {
     enum Kind: Equatable {
-        case autoplay(
-            policy: SumiAutoplayPolicy,
-            hasExplicitDecision: Bool,
-            reloadRequired: Bool
-        )
         case tracking(
             policy: SumiTrackingProtectionEffectivePolicy,
             siteOverride: SumiTrackingProtectionSiteOverride,
             reloadRequired: Bool
         )
         case cookies
+        case permissions
         case localPage
     }
 
@@ -906,9 +902,9 @@ private struct SiteControlsSettingRowModel: Equatable, Identifiable {
 
     var isDisabled: Bool {
         switch kind {
-        case .autoplay(_, _, _),
-             .tracking(_, _, _),
+        case .tracking(_, _, _),
              .cookies,
+             .permissions,
              .localPage:
             return false
         }
@@ -916,9 +912,9 @@ private struct SiteControlsSettingRowModel: Equatable, Identifiable {
 
     var isInteractive: Bool {
         switch kind {
-        case .autoplay(_, _, _),
-             .tracking(_, _, _),
-             .cookies:
+        case .tracking(_, _, _),
+             .cookies,
+             .permissions:
             return true
         default:
             return false
@@ -926,10 +922,12 @@ private struct SiteControlsSettingRowModel: Equatable, Identifiable {
     }
 
     var showsDisclosure: Bool {
-        if case .cookies = kind {
+        switch kind {
+        case .cookies, .permissions:
             return true
+        default:
+            return false
         }
-        return false
     }
 
 }
@@ -998,6 +996,7 @@ private struct SiteControlsSnapshot: Equatable {
         profile: Profile?,
         showsAutoplayPermission: Bool = false,
         autoplayReloadRequired: Bool = false,
+        permissionsSummary: String? = nil,
         trackingProtectionModule: SumiTrackingProtectionModule? = nil,
         trackingProtectionReloadRequired: Bool = false
     ) -> SiteControlsSnapshot {
@@ -1029,37 +1028,20 @@ private struct SiteControlsSnapshot: Equatable {
         }
 
         let settingsRows: [SiteControlsSettingRowModel]
+        let permissionsRow = SiteControlsSettingRowModel(
+            id: "permissions",
+            chromeIconName: "permissions",
+            fallbackSystemName: "line.3.horizontal.decrease.circle",
+            title: SumiCurrentSitePermissionsStrings.rowTitle,
+            subtitle: permissionsSummary ?? SumiCurrentSitePermissionsStrings.defaultSummary,
+            kind: .permissions
+        )
         switch securityState {
         case .secure, .notSecure:
-            let autoplayPolicyStore = SumiAutoplayPolicyStoreAdapter.shared
-            let hasAutoplayPolicy = autoplayPolicyStore.hasExplicitPolicy(
-                for: url,
-                profile: profile
-            )
-            let autoplayPolicy = autoplayPolicyStore.effectivePolicy(
-                for: url,
-                profile: profile
-            )
-
             var rows: [SiteControlsSettingRowModel] = []
-            if showsAutoplayPermission || hasAutoplayPolicy {
-                rows.append(
-                    .init(
-                        id: "autoplay",
-                        chromeIconName: autoplayPolicy.chromeIconName,
-                        fallbackSystemName: autoplayPolicy.fallbackSystemName,
-                        title: "Autoplay",
-                        subtitle: autoplayReloadRequired
-                            ? "Reload required"
-                            : autoplayPolicy.siteControlsSubtitle,
-                        kind: .autoplay(
-                            policy: autoplayPolicy,
-                            hasExplicitDecision: hasAutoplayPolicy,
-                            reloadRequired: autoplayReloadRequired
-                        )
-                    )
-                )
-            }
+            _ = showsAutoplayPermission
+            _ = autoplayReloadRequired
+            _ = profile
 
             if let trackingPolicy = trackingProtectionModule?.effectivePolicyIfEnabled(for: url) {
                 let siteOverride = trackingProtectionModule?.siteOverrideIfEnabled(for: url) ?? .inherit
@@ -1092,6 +1074,7 @@ private struct SiteControlsSnapshot: Equatable {
                     kind: .cookies
                 )
             )
+            rows.append(permissionsRow)
             settingsRows = rows
         case .localPage:
             settingsRows = [
@@ -1103,9 +1086,10 @@ private struct SiteControlsSnapshot: Equatable {
                     subtitle: "Local file or bundled resource",
                     kind: .localPage
                 ),
+                permissionsRow,
             ]
         case .internalPage:
-            settingsRows = []
+            settingsRows = [permissionsRow]
         }
 
         return SiteControlsSnapshot(
@@ -1135,6 +1119,7 @@ private struct URLBarHubPopover: View {
     private enum Mode: Equatable {
         case controls
         case siteDataDetails
+        case permissions
         case bookmark(SumiBookmarkEditorState)
 
         var preferredWidth: CGFloat {
@@ -1142,6 +1127,7 @@ private struct URLBarHubPopover: View {
             case .controls:
                 return 234
             case .siteDataDetails,
+                 .permissions,
                  .bookmark:
                 return 392
             }
@@ -1159,6 +1145,7 @@ private struct URLBarHubPopover: View {
     @State private var containerWidth: CGFloat = Mode.controls.preferredWidth
     @State private var bookmarkErrorMessage: String?
     @StateObject private var siteDataDetailsModel = URLBarSiteDataDetailsViewModel()
+    @StateObject private var currentSitePermissionsModel = SumiCurrentSitePermissionsViewModel()
 
     private var snapshot: SiteControlsSnapshot {
         _ = refreshNonce
@@ -1167,8 +1154,20 @@ private struct URLBarHubPopover: View {
             profile: activeProfile,
             showsAutoplayPermission: currentTab?.audioState.isPlayingAudio == true,
             autoplayReloadRequired: currentTab?.isAutoplayReloadRequired == true,
+            permissionsSummary: permissionsTopLevelSummary,
             trackingProtectionModule: browserManager.trackingProtectionModule,
             trackingProtectionReloadRequired: currentTab?.isTrackingProtectionReloadRequired == true
+        )
+    }
+
+    private var permissionsTopLevelSummary: String {
+        SumiCurrentSitePermissionSummary.topLevelSubtitle(
+            tab: currentTab,
+            profile: activeProfile,
+            runtimeController: browserManager.runtimePermissionController,
+            blockedPopupStore: browserManager.blockedPopupStore,
+            externalSchemeSessionStore: browserManager.externalSchemeSessionStore,
+            indicatorEventStore: browserManager.permissionIndicatorEventStore
         )
     }
 
@@ -1228,6 +1227,29 @@ private struct URLBarHubPopover: View {
                     setMode(.controls, direction: .backward)
                 },
                 onClose: onClose,
+                onDidMutate: {
+                    refreshNonce += 1
+                }
+            )
+        case .permissions:
+            SumiCurrentSitePermissionsView(
+                model: currentSitePermissionsModel,
+                currentTab: currentTab,
+                profile: activeProfile,
+                permissionCoordinator: browserManager.permissionCoordinator,
+                runtimePermissionController: browserManager.runtimePermissionController,
+                systemPermissionService: browserManager.systemPermissionService,
+                blockedPopupStore: browserManager.blockedPopupStore,
+                externalSchemeSessionStore: browserManager.externalSchemeSessionStore,
+                permissionIndicatorEventStore: browserManager.permissionIndicatorEventStore,
+                onBack: {
+                    setMode(.controls, direction: .backward)
+                },
+                onClose: onClose,
+                onOpenSiteSettings: {
+                    browserManager.openSettingsTab(selecting: .privacy, in: windowState)
+                    onClose()
+                },
                 onDidMutate: {
                     refreshNonce += 1
                 }
@@ -1298,6 +1320,8 @@ private struct URLBarHubPopover: View {
             return "controls"
         case .siteDataDetails:
             return "site-data-details"
+        case .permissions:
+            return "permissions"
         case .bookmark(let state):
             return "bookmark-\(state.id)"
         }
@@ -1470,17 +1494,15 @@ private struct URLBarHubPopover: View {
     }
 
     private func handleSettingAction(_ row: SiteControlsSettingRowModel) {
-        guard let currentTab else { return }
-
         switch row.kind {
-        case .autoplay(let policy, _, _):
-            setAutoplayPolicy(policy.nextURLBarTogglePolicy, for: currentTab)
         case .tracking(let policy, _, _):
             setTrackingProtectionOverride(
                 URLBarTrackingProtectionPresenter.siteOverrideAfterToggle(for: policy)
             )
         case .cookies:
             setMode(.siteDataDetails, direction: .forward)
+        case .permissions:
+            setMode(.permissions, direction: .forward)
         case .localPage:
             break
         }
@@ -1545,12 +1567,8 @@ private struct URLBarHubPopover: View {
     private func resetAction(
         for row: SiteControlsSettingRowModel
     ) -> (() -> Void)? {
-        guard case .autoplay(_, let hasExplicitDecision, _) = row.kind,
-              hasExplicitDecision,
-              let currentTab
-        else { return nil }
-
-        return { resetAutoplayPolicy(for: currentTab) }
+        _ = row
+        return nil
     }
 
     private func setTrackingProtectionOverride(
