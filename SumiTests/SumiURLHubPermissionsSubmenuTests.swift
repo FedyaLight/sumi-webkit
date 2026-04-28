@@ -46,9 +46,13 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
 
     func testDocumentationRecordsNoDDGImplementationCopy() throws {
         let licenseNotes = try sourceFile("docs/permissions/LICENSE_NOTES.md")
+        let lowercasedNotes = licenseNotes.lowercased()
 
         XCTAssertTrue(licenseNotes.contains("DDG Permission Center"))
-        XCTAssertTrue(licenseNotes.localizedCaseInsensitiveContains("no implementation source was copied"))
+        XCTAssertTrue(
+            lowercasedNotes.contains("no implementation source was copied")
+                || lowercasedNotes.contains("no duckduckgo swiftui/appkit view source, implementation source")
+        )
     }
 
     private func sourceFile(_ relativePath: String) throws -> String {

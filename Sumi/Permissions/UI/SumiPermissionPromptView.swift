@@ -101,11 +101,13 @@ struct SumiPermissionPromptView: View {
     }
 
     private var iconTint: Color {
-        viewModel.isSystemBlocked ? Color.orange.opacity(0.95) : tokens.accent
+        viewModel.isSystemBlocked ? tokens.secondaryText : tokens.primaryText
     }
 
     private var iconBackground: Color {
-        viewModel.isSystemBlocked ? Color.orange.opacity(0.14) : tokens.accent.opacity(0.14)
+        viewModel.isSystemBlocked
+            ? tokens.fieldBackgroundHover.opacity(0.74)
+            : tokens.fieldBackground
     }
 }
 
@@ -145,19 +147,20 @@ struct SumiPermissionPromptButtonStyle: ButtonStyle {
 
     private var foregroundColor: Color {
         switch role {
-        case .primary:
-            return tokens.buttonPrimaryText
+        case .primary, .normal, .cancel:
+            return tokens.primaryText
         case .destructive:
             return Color.red.opacity(isEnabled ? 0.95 : 0.55)
-        case .normal, .cancel:
-            return tokens.primaryText
         }
     }
 
     private func backgroundColor(isPressed: Bool) -> Color {
         switch role {
         case .primary:
-            return tokens.accent.opacity(isPressed ? 0.82 : 0.94)
+            if isPressed {
+                return tokens.fieldBackgroundHover.opacity(0.96)
+            }
+            return isHovering ? tokens.fieldBackgroundHover.opacity(0.94) : tokens.fieldBackgroundHover.opacity(0.82)
         case .destructive:
             if isPressed {
                 return Color.red.opacity(0.18)

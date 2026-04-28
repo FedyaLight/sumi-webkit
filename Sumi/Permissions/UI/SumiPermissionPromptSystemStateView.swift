@@ -20,7 +20,7 @@ struct SumiPermissionPromptSystemStateView: View {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(Color.orange.opacity(0.95))
+                    .foregroundStyle(tokens.secondaryText)
                     .frame(width: 22, height: 22)
 
                 VStack(alignment: .leading, spacing: 4) {
