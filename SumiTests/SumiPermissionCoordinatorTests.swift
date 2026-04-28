@@ -70,7 +70,7 @@ final class SumiPermissionCoordinatorTests: XCTestCase {
             now: fixedNow
         )
 
-        let decision = await coordinator.requestPermission(context(.storageAccess))
+        let decision = await coordinator.requestPermission(context(.cameraAndMicrophone))
 
         XCTAssertEqual(decision.outcome, .unsupported)
         XCTAssertEqual(decision.source, .unsupported)

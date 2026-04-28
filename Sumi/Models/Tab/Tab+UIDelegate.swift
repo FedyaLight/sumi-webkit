@@ -146,43 +146,28 @@ extension Tab: WKUIDelegate {
         initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping ([URL]?) -> Void
     ) {
-        let openPanel = NSOpenPanel()
-        openPanel.allowsMultipleSelection = parameters.allowsMultipleSelection
-        openPanel.canChooseDirectories = parameters.allowsDirectories
-        openPanel.canChooseFiles = true
-        openPanel.resolvesAliases = true
-        openPanel.title = "Choose File"
-        openPanel.prompt = "Choose"
-
-        DispatchQueue.main.async {
-            if let window = webView.window {
-                openPanel.beginSheetModal(for: window) { response in
-                    RuntimeDiagnostics.emit("📁 [Tab] Open panel sheet completed with response: \(response)")
-                    if response == .OK {
-                        RuntimeDiagnostics.emit(
-                            "📁 [Tab] User selected files: \(openPanel.urls.map { $0.lastPathComponent })"
-                        )
-                        completionHandler(openPanel.urls)
-                    } else {
-                        RuntimeDiagnostics.emit("📁 [Tab] User cancelled file selection")
-                        completionHandler(nil)
-                    }
-                }
-            } else {
-                openPanel.begin { response in
-                    RuntimeDiagnostics.emit("📁 [Tab] Open panel modal completed with response: \(response)")
-                    if response == .OK {
-                        RuntimeDiagnostics.emit(
-                            "📁 [Tab] User selected files: \(openPanel.urls.map { $0.lastPathComponent })"
-                        )
-                        completionHandler(openPanel.urls)
-                    } else {
-                        RuntimeDiagnostics.emit("📁 [Tab] User cancelled file selection")
-                        completionHandler(nil)
-                    }
-                }
-            }
+        guard let browserManager,
+              let tabContext = filePickerTabContext(for: webView)
+        else {
+            RuntimeDiagnostics.emit("📁 [Tab] Denying file picker because browser/profile context is unavailable.")
+            completionHandler(nil)
+            return
         }
+
+        let activationState = popupUserActivationTracker.activationState(webKitUserInitiated: nil)
+        let request = SumiFilePickerPermissionRequest(
+            parameters: parameters,
+            frame: frame,
+            userActivation: activationState
+        )
+        browserManager.filePickerPermissionBridge.handleOpenPanel(
+            request,
+            tabContext: tabContext,
+            webView: webView,
+            currentPageId: { [weak self] in self?.currentPermissionPageId() },
+            completionHandler: completionHandler
+        )
+        popupUserActivationTracker.consumeIfUserActivated(activationState)
     }
 
     /// WebKit private save-data hook used by "Save Page As..." style paths when available.
@@ -253,6 +238,62 @@ extension Tab: WKUIDelegate {
         )
     }
 
+    @available(macOS 10.14, *)
+    @objc(_webView:requestStorageAccessPanelForDomain:underCurrentDomain:completionHandler:)
+    func webView(
+        _ webView: WKWebView,
+        requestStorageAccessPanelForDomain requestingDomain: String,
+        underCurrentDomain currentDomain: String,
+        completionHandler: @escaping (Bool) -> Void
+    ) {
+        guard let browserManager,
+              let tabContext = storageAccessTabContext(for: webView)
+        else {
+            RuntimeDiagnostics.emit("🍪 [Tab] Denying storage access because browser/profile context is unavailable.")
+            completionHandler(false)
+            return
+        }
+
+        browserManager.storageAccessPermissionBridge.handleStorageAccessRequest(
+            SumiStorageAccessRequest(
+                requestingDomain: requestingDomain,
+                currentDomain: currentDomain
+            ),
+            tabContext: tabContext,
+            webView: webView,
+            completionHandler: completionHandler
+        )
+    }
+
+    @available(macOS 15.0, *)
+    @objc(_webView:requestStorageAccessPanelForDomain:underCurrentDomain:forQuirkDomains:completionHandler:)
+    func webView(
+        _ webView: WKWebView,
+        requestStorageAccessPanelForDomain requestingDomain: String,
+        underCurrentDomain currentDomain: String,
+        forQuirkDomains quirkDomains: [String: [String]],
+        completionHandler: @escaping (Bool) -> Void
+    ) {
+        guard let browserManager,
+              let tabContext = storageAccessTabContext(for: webView)
+        else {
+            RuntimeDiagnostics.emit("🍪 [Tab] Denying quirk-domain storage access because browser/profile context is unavailable.")
+            completionHandler(false)
+            return
+        }
+
+        browserManager.storageAccessPermissionBridge.handleStorageAccessRequest(
+            SumiStorageAccessRequest(
+                requestingDomain: requestingDomain,
+                currentDomain: currentDomain,
+                quirkDomains: Array(quirkDomains.keys).sorted()
+            ),
+            tabContext: tabContext,
+            webView: webView,
+            completionHandler: completionHandler
+        )
+    }
+
     @objc(_webView:requestGeolocationPermissionForFrame:decisionHandler:)
     func webView(
         _ webView: WKWebView,
@@ -318,6 +359,50 @@ extension Tab: WKUIDelegate {
         let pageGeneration = String(extensionRuntimeDocumentSequence)
         let committedURL = extensionRuntimeCommittedMainDocumentURL
         return SumiWebKitGeolocationTabContext(
+            tabId: tabId,
+            pageId: "\(tabId):\(pageGeneration)",
+            profilePartitionId: profile.id.uuidString.lowercased(),
+            isEphemeralProfile: profile.isEphemeral,
+            committedURL: committedURL,
+            visibleURL: webView.url ?? url,
+            mainFrameURL: committedURL ?? webView.url ?? url,
+            isActiveTab: isCurrentTab,
+            isVisibleTab: primaryWindowId != nil,
+            navigationOrPageGeneration: pageGeneration
+        )
+    }
+
+    private func filePickerTabContext(
+        for webView: WKWebView
+    ) -> SumiFilePickerPermissionTabContext? {
+        guard let profile = resolveProfile() else { return nil }
+
+        let tabId = id.uuidString.lowercased()
+        let pageGeneration = String(extensionRuntimeDocumentSequence)
+        let committedURL = extensionRuntimeCommittedMainDocumentURL
+        return SumiFilePickerPermissionTabContext(
+            tabId: tabId,
+            pageId: "\(tabId):\(pageGeneration)",
+            profilePartitionId: profile.id.uuidString.lowercased(),
+            isEphemeralProfile: profile.isEphemeral,
+            committedURL: committedURL,
+            visibleURL: webView.url ?? url,
+            mainFrameURL: committedURL ?? webView.url ?? url,
+            isActiveTab: isCurrentTab,
+            isVisibleTab: primaryWindowId != nil,
+            navigationOrPageGeneration: pageGeneration
+        )
+    }
+
+    private func storageAccessTabContext(
+        for webView: WKWebView
+    ) -> SumiStorageAccessTabContext? {
+        guard let profile = resolveProfile() else { return nil }
+
+        let tabId = id.uuidString.lowercased()
+        let pageGeneration = String(extensionRuntimeDocumentSequence)
+        let committedURL = extensionRuntimeCommittedMainDocumentURL
+        return SumiStorageAccessTabContext(
             tabId: tabId,
             pageId: "\(tabId):\(pageGeneration)",
             profilePartitionId: profile.id.uuidString.lowercased(),

@@ -193,6 +193,9 @@ class BrowserManager: ObservableObject {
     let webKitPermissionBridge: SumiWebKitPermissionBridge
     let webKitGeolocationBridge: SumiWebKitGeolocationBridge
     let notificationPermissionBridge: SumiNotificationPermissionBridge
+    let filePickerPanelPresenter: any SumiFilePickerPanelPresenting
+    let filePickerPermissionBridge: SumiFilePickerPermissionBridge
+    let storageAccessPermissionBridge: SumiStorageAccessPermissionBridge
     let blockedPopupStore: SumiBlockedPopupStore
     let popupPermissionBridge: SumiPopupPermissionBridge
     let externalAppResolver: any SumiExternalAppResolving
@@ -299,6 +302,9 @@ class BrowserManager: ObservableObject {
         webKitPermissionBridge: SumiWebKitPermissionBridge? = nil,
         webKitGeolocationBridge: SumiWebKitGeolocationBridge? = nil,
         notificationPermissionBridge: SumiNotificationPermissionBridge? = nil,
+        filePickerPanelPresenter: (any SumiFilePickerPanelPresenting)? = nil,
+        filePickerPermissionBridge: SumiFilePickerPermissionBridge? = nil,
+        storageAccessPermissionBridge: SumiStorageAccessPermissionBridge? = nil,
         blockedPopupStore: SumiBlockedPopupStore? = nil,
         popupPermissionBridge: SumiPopupPermissionBridge? = nil,
         externalAppResolver: (any SumiExternalAppResolving)? = nil,
@@ -322,6 +328,7 @@ class BrowserManager: ObservableObject {
         let notificationService = notificationService ?? SumiNotificationService()
         let runtimePermissionController = runtimePermissionController
             ?? SumiRuntimePermissionController(geolocationProvider: geolocationProvider)
+        let filePickerPanelPresenter = filePickerPanelPresenter ?? SumiFilePickerPanelPresenter()
         let blockedPopupStore = blockedPopupStore ?? SumiBlockedPopupStore()
         let externalAppResolver = externalAppResolver ?? SumiNSWorkspaceExternalAppResolver.shared
         let externalSchemeSessionStore = externalSchemeSessionStore ?? SumiExternalSchemeSessionStore()
@@ -390,6 +397,16 @@ class BrowserManager: ObservableObject {
             ?? SumiNotificationPermissionBridge(
                 coordinator: permissionCoordinator,
                 notificationService: notificationService
+            )
+        self.filePickerPanelPresenter = filePickerPanelPresenter
+        self.filePickerPermissionBridge = filePickerPermissionBridge
+            ?? SumiFilePickerPermissionBridge(
+                coordinator: permissionCoordinator,
+                panelPresenter: filePickerPanelPresenter
+            )
+        self.storageAccessPermissionBridge = storageAccessPermissionBridge
+            ?? SumiStorageAccessPermissionBridge(
+                coordinator: permissionCoordinator
             )
         self.blockedPopupStore = blockedPopupStore
         self.popupPermissionBridge = popupPermissionBridge

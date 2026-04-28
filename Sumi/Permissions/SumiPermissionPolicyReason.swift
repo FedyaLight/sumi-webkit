@@ -5,7 +5,7 @@ enum SumiPermissionPolicyReason {
     static let requiresSinglePermissionType = "permission-policy-requires-single-permission-type"
     static let cameraAndMicrophoneRequiresCoordinatorExpansion =
         "camera-and-microphone-must-be-expanded-by-coordinator"
-    static let storageAccessUnsupported = "storage-access-webkit-integration-not-implemented"
+    static let storageAccessSameOrigin = "storage-access-requires-distinct-requesting-and-top-origins"
     static let emptyExternalSchemeUnsupported = "external-scheme-missing-scheme"
     static let invalidRequestingOrigin = "requesting-origin-invalid-or-opaque"
     static let invalidTopOrigin = "top-origin-invalid-or-opaque"
