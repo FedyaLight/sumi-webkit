@@ -27,6 +27,19 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
             SumiWebKitMediaCaptureDecisionMapper.permissionTypes(for: unknown),
             []
         )
+
+        XCTAssertEqual(
+            SumiWebKitDisplayCaptureDecisionMapper.permissionTypes(
+                forLegacyCaptureDevices: [.display]
+            ),
+            [.screenCapture]
+        )
+        XCTAssertEqual(
+            SumiWebKitDisplayCaptureDecisionMapper.permissionTypes(
+                forLegacyCaptureDevices: [.display, .microphone]
+            ),
+            [.screenCapture, .microphone]
+        )
     }
 
     func testSecurityContextConstructionUsesTrustedBrowserData() {
@@ -55,6 +68,37 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(context.visibleURL?.host(), "visible.example")
         XCTAssertEqual(context.transientPageId, "tab-a:1")
         XCTAssertEqual(context.request.displayDomain, "camera.example")
+    }
+
+    func testDisplayCaptureSecurityContextConstructionUsesTrustedBrowserData() {
+        let coordinator = FakePermissionCoordinator(
+            mode: .immediate(decision(.denied, reason: "test-deny", permissionTypes: [.screenCapture]))
+        )
+        let bridge = makeBridge(coordinator: coordinator)
+        let request = displayRequest(
+            permissionTypes: [.screenCapture],
+            requestingOrigin: SumiPermissionOrigin(string: "https://share.example")
+        )
+        let context = bridge.securityContext(
+            for: request,
+            tabContext: tabContext(
+                profilePartitionId: "Profile-A",
+                isEphemeralProfile: true,
+                committedURL: URL(string: "https://top.example/path")!,
+                visibleURL: URL(string: "https://visible.example/path")!
+            )
+        )
+
+        XCTAssertEqual(context.surface, .normalTab)
+        XCTAssertEqual(context.requestingOrigin.identity, "https://share.example")
+        XCTAssertEqual(context.topOrigin.identity, "https://top.example")
+        XCTAssertEqual(context.profilePartitionId, "profile-a")
+        XCTAssertTrue(context.isEphemeralProfile)
+        XCTAssertEqual(context.committedURL?.host(), "top.example")
+        XCTAssertEqual(context.visibleURL?.host(), "visible.example")
+        XCTAssertEqual(context.transientPageId, "tab-a:1")
+        XCTAssertEqual(context.request.displayDomain, "share.example")
+        XCTAssertEqual(context.request.permissionTypes, [.screenCapture])
     }
 
     func testMissingTrustedTopOriginDeniesThroughCoordinator() async {
@@ -111,6 +155,40 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
         }
     }
 
+    func testDisplayCaptureCoordinatorDecisionMapping() async {
+        let outcomes: [(SumiPermissionCoordinatorOutcome, SumiWebKitDisplayCapturePermissionDecision)] = [
+            (.granted, .screenPrompt),
+            (.denied, .deny),
+            (.systemBlocked, .deny),
+            (.unsupported, .deny),
+            (.requiresUserActivation, .deny),
+            (.cancelled, .deny),
+            (.dismissed, .deny),
+            (.ignored, .deny),
+            (.expired, .deny),
+            (.promptRequired, .deny),
+        ]
+
+        for (outcome, expectedWebKitDecision) in outcomes {
+            let coordinator = FakePermissionCoordinator(
+                mode: .immediate(
+                    decision(
+                        outcome,
+                        reason: "decision-\(outcome.rawValue)",
+                        permissionTypes: [.screenCapture]
+                    )
+                )
+            )
+            let bridge = makeBridge(coordinator: coordinator)
+            let decisions = await resolveDisplay(
+                bridge: bridge,
+                request: displayRequest(permissionTypes: [.screenCapture])
+            )
+
+            XCTAssertEqual(decisions, [expectedWebKitDecision.rawValue], "outcome \(outcome)")
+        }
+    }
+
     func testSystemBlockedDecisionPreservesCoordinatorMetadata() async {
         let snapshot = SumiSystemPermissionSnapshot(kind: .camera, state: .denied)
         let coordinatorDecision = SumiPermissionCoordinatorDecision(
@@ -147,6 +225,24 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(decisions, [.deny])
         let cancelledReasons = await coordinator.cancelledReasons()
         XCTAssertEqual(cancelledReasons, ["webkit-media-prompt-ui-unavailable-deny"])
+    }
+
+    func testDisplayCapturePendingPromptRequiredUsesTemporaryDenyStrategy() async {
+        let coordinator = FakePermissionCoordinator(mode: .pending)
+        let bridge = makeBridge(
+            coordinator: coordinator,
+            pendingPollIntervalNanoseconds: 1_000_000,
+            coordinatorTimeoutNanoseconds: 50_000_000
+        )
+
+        let decisions = await resolveDisplay(
+            bridge: bridge,
+            request: displayRequest(permissionTypes: [.screenCapture])
+        )
+
+        XCTAssertEqual(decisions, [SumiWebKitDisplayCapturePermissionDecision.deny.rawValue])
+        let cancelledReasons = await coordinator.cancelledReasons()
+        XCTAssertEqual(cancelledReasons, ["webkit-screen-capture-prompt-ui-unavailable-deny"])
     }
 
     func testExactlyOnceCallbackForImmediateGrantDenySystemBlockedAndTimeout() async {
@@ -189,6 +285,18 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(decisions, [.grant])
     }
 
+    func testDisplayCaptureExactlyOnceWrapperIgnoresDuplicateResolutions() {
+        var decisions: [Int] = []
+        let once = SumiWebKitDisplayCaptureDecisionHandler {
+            decisions.append($0)
+        }
+
+        once.resolve(.screenPrompt)
+        once.resolve(.deny)
+
+        XCTAssertEqual(decisions, [SumiWebKitDisplayCapturePermissionDecision.screenPrompt.rawValue])
+    }
+
     func testUnavailableWebViewDeniesOnceWithoutHanging() async {
         let bridge = makeBridge(
             coordinator: FakePermissionCoordinator(mode: .immediate(decision(.granted, reason: "stored-allow")))
@@ -207,6 +315,28 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
 
         await fulfillment(of: [expectation], timeout: 1)
         XCTAssertEqual(decisions, [.deny])
+    }
+
+    func testUnavailableWebViewDeniesDisplayCaptureOnceWithoutHanging() async {
+        let bridge = makeBridge(
+            coordinator: FakePermissionCoordinator(
+                mode: .immediate(decision(.granted, reason: "stored-allow", permissionTypes: [.screenCapture]))
+            )
+        )
+        let expectation = XCTestExpectation(description: "Unavailable WebView display deny")
+        var decisions: [Int] = []
+
+        bridge.handleDisplayCaptureAuthorization(
+            displayRequest(permissionTypes: [.screenCapture]),
+            tabContext: tabContext(),
+            webView: nil
+        ) { decision in
+            decisions.append(decision)
+            expectation.fulfill()
+        }
+
+        await fulfillment(of: [expectation], timeout: 1)
+        XCTAssertEqual(decisions, [SumiWebKitDisplayCapturePermissionDecision.deny.rawValue])
     }
 
     func testStoreWriteBehaviorForBlocksPendingAndStoredDecisions() async {
@@ -294,6 +424,26 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(denyRuntime.cameraRuntimeState, .active)
     }
 
+    func testDisplayCaptureGrantObservesRuntimeButDoesNotUseRuntimeAsDecisionSource() async {
+        let runtime = FakeSumiRuntimePermissionController(screenCaptureRuntimeState: .unsupported)
+        let bridge = makeBridge(
+            coordinator: FakePermissionCoordinator(
+                mode: .immediate(decision(.granted, reason: "stored-allow", permissionTypes: [.screenCapture]))
+            ),
+            runtimeController: runtime
+        )
+
+        let decisions = await resolveDisplay(
+            bridge: bridge,
+            request: displayRequest(permissionTypes: [.screenCapture])
+        )
+
+        XCTAssertEqual(decisions, [SumiWebKitDisplayCapturePermissionDecision.screenPrompt.rawValue])
+        XCTAssertEqual(runtime.currentRuntimeStateCallCount, 1)
+        XCTAssertEqual(runtime.resumeRuntimePermissionsCallCount, 0)
+        XCTAssertEqual(runtime.revokeRuntimePermissionsCallCount, 0)
+    }
+
     func testNormalTabUIDelegateRoutesMediaThroughBridge() throws {
         let source = try sourceFile("Sumi/Models/Tab/Tab+UIDelegate.swift")
         let mediaMethodStart = source.range(of: "requestMediaCaptureAuthorization type: WKMediaCaptureType")!
@@ -301,6 +451,23 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
 
         XCTAssertTrue(methodSource.contains("webKitPermissionBridge.handleMediaCaptureAuthorization("))
         XCTAssertFalse(methodSource.contains("decisionHandler(.grant)"))
+    }
+
+    func testNormalTabUIDelegateRoutesDisplayCaptureThroughBridge() throws {
+        let source = try sourceFile("Sumi/Models/Tab/Tab+UIDelegate.swift")
+        let displayMethodStart = source.range(
+            of: "_webView:requestDisplayCapturePermissionForOrigin:initiatedByFrame:withSystemAudio:decisionHandler:"
+        )!
+        let methodSource = String(source[displayMethodStart.lowerBound...])
+
+        XCTAssertTrue(methodSource.contains("webKitPermissionBridge.handleDisplayCaptureAuthorization("))
+        XCTAssertFalse(methodSource.contains("CGRequestScreenCaptureAccess"))
+    }
+
+    func testWebKitPermissionBridgeDoesNotRequestSystemScreenCaptureAuthorization() throws {
+        let source = try sourceFile("Sumi/Permissions/SumiWebKitPermissionBridge.swift")
+
+        XCTAssertFalse(source.contains("CGRequestScreenCaptureAccess"))
     }
 
     private func makeBridge(
@@ -357,6 +524,27 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
         return decisions
     }
 
+    private func resolveDisplay(
+        bridge: SumiWebKitPermissionBridge,
+        request: SumiWebKitDisplayCaptureRequest,
+        tabContext: SumiWebKitMediaCaptureTabContext? = nil
+    ) async -> [Int] {
+        let expectation = XCTestExpectation(description: "WebKit display capture decision")
+        let webView = WKWebView()
+        var decisions: [Int] = []
+        bridge.handleDisplayCaptureAuthorization(
+            request,
+            tabContext: tabContext ?? self.tabContext(),
+            webView: webView
+        ) { decision in
+            decisions.append(decision)
+            expectation.fulfill()
+        }
+        await fulfillment(of: [expectation], timeout: 2)
+        withExtendedLifetime(webView) {}
+        return decisions
+    }
+
     private func mediaRequest(
         permissionTypes: [SumiPermissionType],
         requestingOrigin: SumiPermissionOrigin = SumiPermissionOrigin(string: "https://example.com"),
@@ -369,6 +557,23 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
             requestingOrigin: requestingOrigin,
             frameURL: URL(string: "https://example.com/frame"),
             isMainFrame: isMainFrame
+        )
+    }
+
+    private func displayRequest(
+        permissionTypes: [SumiPermissionType],
+        requestingOrigin: SumiPermissionOrigin = SumiPermissionOrigin(string: "https://example.com"),
+        isMainFrame: Bool = true,
+        withSystemAudio: Bool = false
+    ) -> SumiWebKitDisplayCaptureRequest {
+        SumiWebKitDisplayCaptureRequest(
+            id: "display-request-a",
+            webKitDisplayCaptureTypeRawValue: SumiWebKitDisplayCapturePermissionDecision.screenPrompt.rawValue,
+            permissionTypes: permissionTypes,
+            requestingOrigin: requestingOrigin,
+            frameURL: URL(string: "https://example.com/frame"),
+            isMainFrame: isMainFrame,
+            withSystemAudio: withSystemAudio
         )
     }
 
@@ -659,7 +864,8 @@ private actor BridgePermissionStore: SumiPermissionStore {
 
 private func decision(
     _ outcome: SumiPermissionCoordinatorOutcome,
-    reason: String
+    reason: String,
+    permissionTypes: [SumiPermissionType] = [.camera]
 ) -> SumiPermissionCoordinatorDecision {
     SumiPermissionCoordinatorDecision(
         outcome: outcome,
@@ -667,7 +873,7 @@ private func decision(
         persistence: outcome == .granted || outcome == .denied ? .persistent : nil,
         source: outcome == .systemBlocked ? .system : .user,
         reason: reason,
-        permissionTypes: [.camera],
+        permissionTypes: permissionTypes,
         keys: [],
         shouldPersist: false
     )

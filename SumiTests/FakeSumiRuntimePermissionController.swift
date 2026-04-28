@@ -10,6 +10,9 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
     var microphoneRuntimeState: SumiMediaCaptureRuntimeState {
         didSet { emitStateChange() }
     }
+    var screenCaptureRuntimeState: SumiMediaCaptureRuntimeState {
+        didSet { emitStateChange() }
+    }
     var geolocationRuntimeState: SumiGeolocationRuntimeState {
         didSet { emitStateChange() }
     }
@@ -31,11 +34,13 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
     init(
         cameraRuntimeState: SumiMediaCaptureRuntimeState = .none,
         microphoneRuntimeState: SumiMediaCaptureRuntimeState = .none,
+        screenCaptureRuntimeState: SumiMediaCaptureRuntimeState = .unsupported,
         geolocationRuntimeState: SumiGeolocationRuntimeState = .unsupportedProvider,
         autoplayRuntimeState: SumiRuntimeAutoplayState = .allowAll
     ) {
         self.cameraRuntimeState = cameraRuntimeState
         self.microphoneRuntimeState = microphoneRuntimeState
+        self.screenCaptureRuntimeState = screenCaptureRuntimeState
         self.geolocationRuntimeState = geolocationRuntimeState
         self.autoplayRuntimeState = autoplayRuntimeState
     }
@@ -52,6 +57,7 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
         return SumiRuntimePermissionState(
             camera: cameraRuntimeState,
             microphone: microphoneRuntimeState,
+            screenCapture: screenCaptureRuntimeState,
             geolocation: geolocationRuntimeState,
             autoplay: autoplayRuntimeState
         )
@@ -63,6 +69,10 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
 
     func microphoneState(for webView: WKWebView) -> SumiMediaCaptureRuntimeState {
         microphoneRuntimeState
+    }
+
+    func screenCaptureState(for webView: WKWebView) -> SumiMediaCaptureRuntimeState {
+        screenCaptureRuntimeState
     }
 
     func setCameraMuted(
@@ -107,6 +117,14 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
             return override
         }
         return applyMediaMutation(currentState: &microphoneRuntimeState, requestedState: .none)
+    }
+
+    func stopScreenCapture(for webView: WKWebView) async -> SumiRuntimePermissionOperationResult {
+        let operation = SumiRuntimePermissionOperation.stopScreenCapture
+        if let override = configuredResult(for: operation) {
+            return override
+        }
+        return applyMediaMutation(currentState: &screenCaptureRuntimeState, requestedState: .none)
     }
 
     func stopAllMediaCapture(for webView: WKWebView) async -> SumiRuntimePermissionOperationResult {
@@ -163,6 +181,8 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
             case .geolocation:
                 geolocationRuntimeState = .revoked
                 return .applied
+            case .screenCapture:
+                return await stopScreenCapture(for: webView)
             case .autoplay:
                 return evaluateAutoplayPolicyChange(.blockAll, for: webView)
             case .notifications, .popups, .externalScheme, .filePicker:
@@ -194,6 +214,8 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
             case .geolocation:
                 geolocationRuntimeState = .paused
                 return .applied
+            case .screenCapture:
+                return .unsupported(reason: "screen-capture-runtime-state-unsupported")
             case .autoplay:
                 return evaluateAutoplayPolicyChange(.blockAudible, for: webView)
             case .notifications, .popups, .externalScheme, .filePicker:
@@ -225,6 +247,8 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
             case .geolocation:
                 geolocationRuntimeState = .active
                 return .applied
+            case .screenCapture:
+                return .unsupported(reason: "screen-capture-runtime-state-unsupported")
             case .autoplay:
                 return evaluateAutoplayPolicyChange(.allowAll, for: webView)
             case .notifications, .popups, .externalScheme, .filePicker:

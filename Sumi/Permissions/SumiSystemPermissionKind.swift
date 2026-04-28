@@ -5,6 +5,7 @@ enum SumiSystemPermissionKind: String, Codable, CaseIterable, Hashable, Sendable
     case microphone
     case geolocation
     case notifications
+    case screenCapture
 
     var displayLabel: String {
         switch self {
@@ -16,6 +17,8 @@ enum SumiSystemPermissionKind: String, Codable, CaseIterable, Hashable, Sendable
             return "Location"
         case .notifications:
             return "Notifications"
+        case .screenCapture:
+            return "Screen Recording"
         }
     }
 }

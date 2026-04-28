@@ -122,4 +122,23 @@ final class SumiSystemPermissionMappingTests: XCTestCase {
             .unavailable
         )
     }
+
+    func testScreenCaptureAuthorizationMappingUsesCoreGraphicsPreflightSemantics() {
+        XCTAssertEqual(
+            SumiSystemPermissionAuthorizationMapper.screenCapturePreflight(isAuthorized: true),
+            .authorized
+        )
+        XCTAssertEqual(
+            SumiSystemPermissionAuthorizationMapper.screenCapturePreflight(isAuthorized: false),
+            .notDetermined
+        )
+        XCTAssertEqual(
+            SumiSystemPermissionAuthorizationMapper.screenCaptureRequest(granted: true),
+            .authorized
+        )
+        XCTAssertEqual(
+            SumiSystemPermissionAuthorizationMapper.screenCaptureRequest(granted: false),
+            .denied
+        )
+    }
 }

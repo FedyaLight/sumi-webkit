@@ -191,7 +191,13 @@ struct SumiPermissionOrigin: Codable, Equatable, Hashable, Sendable {
 
     func supportsSensitiveWebPermission(_ permissionType: SumiPermissionType) -> Bool {
         switch permissionType {
-        case .camera, .microphone, .cameraAndMicrophone, .geolocation, .notifications, .storageAccess:
+        case .camera,
+             .microphone,
+             .cameraAndMicrophone,
+             .geolocation,
+             .notifications,
+             .screenCapture,
+             .storageAccess:
             return isPotentiallyTrustworthy
         case .popups, .externalScheme, .autoplay, .filePicker:
             return isWebOrigin

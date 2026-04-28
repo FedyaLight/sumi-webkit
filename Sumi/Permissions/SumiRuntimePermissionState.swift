@@ -53,6 +53,7 @@ struct SumiCameraAndMicrophoneRuntimeState: Codable, Equatable, Hashable, Sendab
 struct SumiRuntimePermissionState: Codable, Equatable, Hashable, Sendable {
     var camera: SumiMediaCaptureRuntimeState
     var microphone: SumiMediaCaptureRuntimeState
+    var screenCapture: SumiMediaCaptureRuntimeState
     var cameraAndMicrophone: SumiCameraAndMicrophoneRuntimeState
     var geolocation: SumiGeolocationRuntimeState
     var notifications: SumiNonDeviceRuntimeState
@@ -65,6 +66,7 @@ struct SumiRuntimePermissionState: Codable, Equatable, Hashable, Sendable {
     init(
         camera: SumiMediaCaptureRuntimeState,
         microphone: SumiMediaCaptureRuntimeState,
+        screenCapture: SumiMediaCaptureRuntimeState = .unsupported,
         geolocation: SumiGeolocationRuntimeState = .unsupportedProvider,
         notifications: SumiNonDeviceRuntimeState = .noActiveRuntimeState,
         popups: SumiNonDeviceRuntimeState = .noActiveRuntimeState,
@@ -75,6 +77,7 @@ struct SumiRuntimePermissionState: Codable, Equatable, Hashable, Sendable {
     ) {
         self.camera = camera
         self.microphone = microphone
+        self.screenCapture = screenCapture
         self.cameraAndMicrophone = SumiCameraAndMicrophoneRuntimeState(
             camera: camera,
             microphone: microphone
@@ -96,6 +99,8 @@ struct SumiRuntimePermissionState: Codable, Equatable, Hashable, Sendable {
             return .media(microphone)
         case .cameraAndMicrophone:
             return .cameraAndMicrophone(cameraAndMicrophone)
+        case .screenCapture:
+            return .media(screenCapture)
         case .geolocation:
             return .geolocation(geolocation)
         case .notifications:

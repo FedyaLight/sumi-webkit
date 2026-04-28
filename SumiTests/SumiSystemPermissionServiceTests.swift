@@ -63,6 +63,20 @@ final class SumiSystemPermissionServiceTests: XCTestCase {
         )
     }
 
+    func testFakeScreenCaptureStates() async {
+        await assertFakeStates(
+            kind: .screenCapture,
+            states: [
+                .authorized,
+                .denied,
+                .restricted,
+                .notDetermined,
+                .unavailable,
+                .missingEntitlement,
+            ]
+        )
+    }
+
     func testFakeRequestAuthorizationTransitionsFromNotDeterminedToConfiguredResult() async {
         let service = FakeSumiSystemPermissionService(
             states: [.camera: .notDetermined],

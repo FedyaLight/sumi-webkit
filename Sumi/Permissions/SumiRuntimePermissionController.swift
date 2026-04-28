@@ -6,10 +6,12 @@ protocol SumiRuntimePermissionControlling: AnyObject {
     func currentRuntimeState(for webView: WKWebView) -> SumiRuntimePermissionState
     func cameraState(for webView: WKWebView) -> SumiMediaCaptureRuntimeState
     func microphoneState(for webView: WKWebView) -> SumiMediaCaptureRuntimeState
+    func screenCaptureState(for webView: WKWebView) -> SumiMediaCaptureRuntimeState
     func setCameraMuted(_ muted: Bool, for webView: WKWebView) async -> SumiRuntimePermissionOperationResult
     func setMicrophoneMuted(_ muted: Bool, for webView: WKWebView) async -> SumiRuntimePermissionOperationResult
     func stopCamera(for webView: WKWebView) async -> SumiRuntimePermissionOperationResult
     func stopMicrophone(for webView: WKWebView) async -> SumiRuntimePermissionOperationResult
+    func stopScreenCapture(for webView: WKWebView) async -> SumiRuntimePermissionOperationResult
     func stopAllMediaCapture(for webView: WKWebView) async -> SumiRuntimePermissionOperationResult
     func applyRuntimeDecision(
         _ decision: SumiPermissionCoordinatorDecision,
@@ -49,6 +51,7 @@ final class SumiRuntimePermissionController: SumiRuntimePermissionControlling {
         SumiRuntimePermissionState(
             camera: cameraState(for: webView),
             microphone: microphoneState(for: webView),
+            screenCapture: screenCaptureState(for: webView),
             geolocation: geolocationState(),
             autoplay: autoplayState(for: webView)
         )
@@ -60,6 +63,10 @@ final class SumiRuntimePermissionController: SumiRuntimePermissionControlling {
 
     func microphoneState(for webView: WKWebView) -> SumiMediaCaptureRuntimeState {
         Self.mediaCaptureState(from: webView.microphoneCaptureState)
+    }
+
+    func screenCaptureState(for webView: WKWebView) -> SumiMediaCaptureRuntimeState {
+        .unsupported
     }
 
     func setCameraMuted(
@@ -108,6 +115,10 @@ final class SumiRuntimePermissionController: SumiRuntimePermissionControlling {
         )
     }
 
+    func stopScreenCapture(for webView: WKWebView) async -> SumiRuntimePermissionOperationResult {
+        .unsupported(reason: "screen-capture-runtime-state-unsupported")
+    }
+
     func stopAllMediaCapture(for webView: WKWebView) async -> SumiRuntimePermissionOperationResult {
         let cameraResult = await stopCamera(for: webView)
         let microphoneResult = await stopMicrophone(for: webView)
@@ -152,6 +163,8 @@ final class SumiRuntimePermissionController: SumiRuntimePermissionControlling {
                 return applyGeolocationRuntimeOperation { provider in
                     provider.revoke()
                 }
+            case .screenCapture:
+                return await stopScreenCapture(for: webView)
             case .autoplay:
                 return evaluateAutoplayPolicyChange(.blockAll, for: webView)
             case .notifications, .popups, .externalScheme, .filePicker:
@@ -178,6 +191,8 @@ final class SumiRuntimePermissionController: SumiRuntimePermissionControlling {
                 return applyGeolocationRuntimeOperation { provider in
                     provider.pause()
                 }
+            case .screenCapture:
+                return .unsupported(reason: "screen-capture-runtime-state-unsupported")
             case .autoplay:
                 return evaluateAutoplayPolicyChange(.blockAudible, for: webView)
             case .notifications, .popups, .externalScheme, .filePicker:
@@ -204,6 +219,8 @@ final class SumiRuntimePermissionController: SumiRuntimePermissionControlling {
                 return applyGeolocationRuntimeOperation { provider in
                     provider.resume()
                 }
+            case .screenCapture:
+                return .unsupported(reason: "screen-capture-runtime-state-unsupported")
             case .autoplay:
                 return evaluateAutoplayPolicyChange(.allowAll, for: webView)
             case .notifications, .popups, .externalScheme, .filePicker:
@@ -382,7 +399,7 @@ final class SumiRuntimePermissionController: SumiRuntimePermissionControlling {
         for permissionType: SumiPermissionType
     ) -> SumiRuntimePermissionOperationResult {
         switch permissionType {
-        case .camera, .microphone, .geolocation, .storageAccess:
+        case .camera, .microphone, .geolocation, .screenCapture, .storageAccess:
             return .unsupported(reason: "runtime-operation-unsupported")
         case .cameraAndMicrophone:
             return .unsupported(reason: "grouped-permission-should-have-expanded")
