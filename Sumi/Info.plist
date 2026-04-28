@@ -35,8 +35,16 @@
 	</array>
 	<key>LSHandlerRank</key>
 	<string>Owner</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Sumi needs camera access only when a website you allow requests it.</string>
 	<key>NSDownloadsFolderUsageDescription</key>
 	<string>Sumi saves files you download from the web into your Downloads folder.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>Sumi needs location access only when a website you allow requests it.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Sumi needs location access only when a website you allow requests it.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Sumi needs microphone access only when a website you allow requests it.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoadsInWebContent</key>
