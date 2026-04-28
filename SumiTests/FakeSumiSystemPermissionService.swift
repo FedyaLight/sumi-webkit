@@ -7,6 +7,7 @@ actor FakeSumiSystemPermissionService: SumiSystemPermissionService {
     private var requestResults: [SumiSystemPermissionKind: SumiSystemPermissionAuthorizationState]
     private let allowsRequestingResolvedStates: Bool
     private var settingsOpenRequests: [SumiSystemPermissionKind] = []
+    private var requestAuthorizationCounts: [SumiSystemPermissionKind: Int] = [:]
 
     init(
         states: [SumiSystemPermissionKind: SumiSystemPermissionAuthorizationState] = [:],
@@ -27,6 +28,7 @@ actor FakeSumiSystemPermissionService: SumiSystemPermissionService {
     func requestAuthorization(
         for kind: SumiSystemPermissionKind
     ) async -> SumiSystemPermissionAuthorizationState {
+        requestAuthorizationCounts[kind, default: 0] += 1
         let currentState = states[kind] ?? .notDetermined
         guard currentState == .notDetermined || allowsRequestingResolvedStates else {
             return currentState
@@ -52,5 +54,12 @@ actor FakeSumiSystemPermissionService: SumiSystemPermissionService {
 
     func openedSettingsKinds() -> [SumiSystemPermissionKind] {
         settingsOpenRequests
+    }
+
+    func requestAuthorizationCallCount(for kind: SumiSystemPermissionKind? = nil) -> Int {
+        guard let kind else {
+            return requestAuthorizationCounts.values.reduce(0, +)
+        }
+        return requestAuthorizationCounts[kind] ?? 0
     }
 }
