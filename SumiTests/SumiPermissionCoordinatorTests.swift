@@ -190,6 +190,74 @@ final class SumiPermissionCoordinatorTests: XCTestCase {
         XCTAssertEqual(missingResult.outcome, .cancelled)
     }
 
+    func testDismissCooldownSuppressesPromptWithoutPersistentDeny() async {
+        var currentNow = fixedNow()
+        let store = RecordingPermissionStore()
+        let antiAbuseStore = SumiPermissionAntiAbuseStore.memoryOnly()
+        let coordinator = SumiPermissionCoordinator(
+            policyResolver: RecordingPolicyResolver(),
+            persistentStore: store,
+            antiAbuseStore: antiAbuseStore,
+            now: { currentNow }
+        )
+
+        let firstTask = Task {
+            await coordinator.requestPermission(context(.notifications, id: "first"))
+        }
+        let query = await waitForActiveQuery(coordinator)
+        await coordinator.recordPromptShown(queryId: query.id)
+        await coordinator.dismiss(query.id)
+        _ = await firstTask.value
+
+        currentNow = fixedNow().addingTimeInterval(60)
+        let suppressed = await coordinator.requestPermission(
+            context(.notifications, id: "second")
+        )
+
+        XCTAssertEqual(suppressed.outcome, .suppressed)
+        XCTAssertEqual(suppressed.source, .cooldown)
+        XCTAssertEqual(suppressed.promptSuppression?.trigger, .dismissal)
+        let setCount = await store.setDecisionCallCount()
+        XCTAssertEqual(setCount, 0)
+        let activeQuery = await coordinator.activeQuery(forPageId: "page-a")
+        XCTAssertNil(activeQuery)
+    }
+
+    func testStoredAllowAndDenyBypassAntiAbuseSuppression() async {
+        let store = RecordingPermissionStore()
+        let antiAbuseStore = SumiPermissionAntiAbuseStore.memoryOnly()
+        let cameraKey = key(.camera)
+        let microphoneKey = key(.microphone)
+        await store.seed(cameraKey, decision: decision(.allow, persistence: .persistent))
+        await store.seed(microphoneKey, decision: decision(.deny, persistence: .persistent))
+        await antiAbuseStore.record(
+            SumiPermissionAntiAbuseEvent(
+                type: .userDismissed,
+                key: cameraKey,
+                createdAt: fixedNow()
+            )
+        )
+        await antiAbuseStore.record(
+            SumiPermissionAntiAbuseEvent(
+                type: .userDismissed,
+                key: microphoneKey,
+                createdAt: fixedNow()
+            )
+        )
+        let coordinator = SumiPermissionCoordinator(
+            policyResolver: RecordingPolicyResolver(),
+            persistentStore: store,
+            antiAbuseStore: antiAbuseStore,
+            now: fixedNow
+        )
+
+        let allow = await coordinator.requestPermission(context(.camera))
+        let deny = await coordinator.requestPermission(context(.microphone))
+
+        XCTAssertEqual(allow.outcome, .granted)
+        XCTAssertEqual(deny.outcome, .denied)
+    }
+
     func testEphemeralProfileDoesNotOfferPersistentAndApprovePersistentDowngrades() async throws {
         let store = RecordingPermissionStore()
         let coordinator = SumiPermissionCoordinator(

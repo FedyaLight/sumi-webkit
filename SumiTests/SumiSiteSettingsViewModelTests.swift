@@ -56,4 +56,17 @@ final class SumiSiteSettingsViewModelTests: XCTestCase {
         XCTAssertFalse(categoryIds.contains("background-sync"))
         XCTAssertFalse(categoryIds.contains("sound"))
     }
+
+    func testAutomaticCleanupTogglePersistsThroughViewModel() async throws {
+        let harness = try SiteSettingsRepositoryHarness()
+        let viewModel = SumiSiteSettingsViewModel(repository: harness.repository)
+
+        await viewModel.load(profile: harness.profile)
+        XCTAssertFalse(viewModel.cleanupSettings.isAutomaticCleanupEnabled)
+
+        await viewModel.setAutomaticCleanupEnabled(true, profile: harness.profile)
+
+        XCTAssertTrue(viewModel.cleanupSettings.isAutomaticCleanupEnabled)
+        XCTAssertTrue(harness.repository.cleanupSettings.isAutomaticCleanupEnabled)
+    }
 }

@@ -4,7 +4,8 @@ import WebKit
 @MainActor
 final class SumiPermissionSettingsRepository {
     private enum Constants {
-        static let cleanupPreferenceKey = "permissions.cleanup.automatic.enabled.future"
+        static let cleanupPreferenceKey = "permissions.cleanup.automatic.enabled"
+        static let legacyCleanupPreferenceKey = "permissions.cleanup.automatic.enabled.future"
     }
 
     private let coordinator: any SumiPermissionCoordinating
@@ -15,6 +16,7 @@ final class SumiPermissionSettingsRepository {
     private let externalSchemeSessionStore: SumiExternalSchemeSessionStore
     private let indicatorEventStore: SumiPermissionIndicatorEventStore
     private let websiteDataCleanupService: (any SumiWebsiteDataCleanupServicing)?
+    private let permissionCleanupService: SumiPermissionCleanupService?
     private let userDefaults: UserDefaults
     private let now: () -> Date
 
@@ -27,6 +29,7 @@ final class SumiPermissionSettingsRepository {
         externalSchemeSessionStore: SumiExternalSchemeSessionStore,
         indicatorEventStore: SumiPermissionIndicatorEventStore,
         websiteDataCleanupService: (any SumiWebsiteDataCleanupServicing)? = nil,
+        permissionCleanupService: SumiPermissionCleanupService? = nil,
         userDefaults: UserDefaults = .standard,
         now: @escaping () -> Date = Date.init
     ) {
@@ -38,6 +41,7 @@ final class SumiPermissionSettingsRepository {
         self.externalSchemeSessionStore = externalSchemeSessionStore
         self.indicatorEventStore = indicatorEventStore
         self.websiteDataCleanupService = websiteDataCleanupService ?? SumiWebsiteDataCleanupService.shared
+        self.permissionCleanupService = permissionCleanupService
         self.userDefaults = userDefaults
         self.now = now
     }
@@ -51,14 +55,15 @@ final class SumiPermissionSettingsRepository {
             blockedPopupStore: browserManager.blockedPopupStore,
             externalSchemeSessionStore: browserManager.externalSchemeSessionStore,
             indicatorEventStore: browserManager.permissionIndicatorEventStore,
-            websiteDataCleanupService: SumiWebsiteDataCleanupService.shared
+            websiteDataCleanupService: SumiWebsiteDataCleanupService.shared,
+            permissionCleanupService: browserManager.permissionCleanupService
         )
     }
 
     var cleanupSettings: SumiPermissionCleanupSettings {
         get {
             SumiPermissionCleanupSettings(
-                isAutomaticCleanupEnabled: userDefaults.bool(forKey: Constants.cleanupPreferenceKey)
+                isAutomaticCleanupEnabled: isAutomaticCleanupEnabled()
             )
         }
         set {
@@ -67,6 +72,54 @@ final class SumiPermissionSettingsRepository {
                 forKey: Constants.cleanupPreferenceKey
             )
         }
+    }
+
+    func cleanupSettings(profile: SumiPermissionSettingsProfileContext) -> SumiPermissionCleanupSettings {
+        let enabled = isAutomaticCleanupEnabled()
+        guard let permissionCleanupService else {
+            return SumiPermissionCleanupSettings(isAutomaticCleanupEnabled: enabled)
+        }
+        return permissionCleanupService.settings(
+            isAutomaticCleanupEnabled: enabled,
+            profilePartitionId: profile.profilePartitionId
+        )
+    }
+
+    func setAutomaticCleanupEnabled(
+        _ isEnabled: Bool,
+        profile: SumiPermissionSettingsProfileContext
+    ) {
+        userDefaults.set(isEnabled, forKey: Constants.cleanupPreferenceKey)
+        cleanupSettings = SumiPermissionCleanupSettings(isAutomaticCleanupEnabled: isEnabled)
+        _ = profile
+    }
+
+    @discardableResult
+    func runAutomaticCleanupIfNeeded(
+        profile: SumiPermissionSettingsProfileContext
+    ) async -> SumiPermissionCleanupResult {
+        guard let permissionCleanupService else {
+            return .disabled(profilePartitionId: profile.profilePartitionId, now: now())
+        }
+        return await permissionCleanupService.runIfNeeded(
+            profile: profile,
+            settings: cleanupSettings(profile: profile)
+        )
+    }
+
+    @discardableResult
+    func runCleanup(
+        profile: SumiPermissionSettingsProfileContext,
+        force: Bool = false
+    ) async -> SumiPermissionCleanupResult {
+        guard let permissionCleanupService else {
+            return .disabled(profilePartitionId: profile.profilePartitionId, now: now())
+        }
+        return await permissionCleanupService.run(
+            profile: profile,
+            settings: cleanupSettings(profile: profile),
+            force: force
+        )
     }
 
     func permissionRecords(
@@ -659,7 +712,7 @@ final class SumiPermissionSettingsRepository {
         let originSummary = record.requestingOrigin.identity == record.topOrigin.identity
             ? record.requestingOrigin.identity
             : "\(record.requestingOrigin.displayDomain) embedded on \(record.topOrigin.displayDomain)"
-        return SumiSiteSettingsRecentActivityItem(
+        var item = SumiSiteSettingsRecentActivityItem(
             id: record.id,
             displayDomain: record.displayDomain,
             originSummary: originSummary,
@@ -670,6 +723,12 @@ final class SumiPermissionSettingsRepository {
             systemImage: category?.systemImage ?? "globe",
             count: record.count
         )
+        if record.action == .autoRevoked {
+            let permissionTitle = category?.title ?? record.permissionType.displayLabel
+            item.customTitle = "\(permissionTitle) permission removed for \(record.displayDomain)"
+            item.customSubtitle = "Because the site has not used it recently"
+        }
+        return item
     }
 
     private func recentRecords(
@@ -818,5 +877,12 @@ final class SumiPermissionSettingsRepository {
             byIdentity[record.key.persistentIdentity] = record
         }
         return Array(byIdentity.values)
+    }
+
+    private func isAutomaticCleanupEnabled() -> Bool {
+        if userDefaults.object(forKey: Constants.cleanupPreferenceKey) != nil {
+            return userDefaults.bool(forKey: Constants.cleanupPreferenceKey)
+        }
+        return userDefaults.bool(forKey: Constants.legacyCleanupPreferenceKey)
     }
 }

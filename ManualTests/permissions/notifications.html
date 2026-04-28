@@ -63,6 +63,8 @@
     <h1>Notification Permission Manual Test</h1>
     <p>Expected: <code>Notification.requestPermission()</code> opens the URL-bar anchored Sumi prompt. Notifications do not support Allow this time and must not create reusable one-time grants. Allow persists site notification permission for a normal profile, don't allow persists deny, and dismiss resolves the request to <code>default</code> without persistence. If macOS notifications are blocked, the prompt should show a system-blocked explanation and System Settings action.</p>
     <p>URL hub check: open Site Controls from the URL bar, open Permissions, and confirm Notifications shows the current site decision and macOS notification-blocked state separately. Changing Ask, Allow, or Block should affect future notification requests without calling system authorization.</p>
+    <p>Anti-abuse check: dismiss <code>Notification.requestPermission()</code> repeatedly. A suppressed request during dismissal cooldown should resolve <code>default</code>, not store or report persistent <code>denied</code>. Explicit Block should remain the only stored site deny.</p>
+    <p>Automatic cleanup check: when cleanup is enabled in Privacy Settings, stale saved notification Allows may be removed and shown in Recent activity as removed automatically. Cleanup must not request macOS notification authorization.</p>
     <label>
       Title
       <input id="title" value="Sumi notification test">

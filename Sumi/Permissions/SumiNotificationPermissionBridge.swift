@@ -428,7 +428,8 @@ final class SumiNotificationPermissionBridge {
         context: SumiPermissionSecurityContext
     ) {
         guard decision.outcome != .granted,
-              decision.outcome != .ignored
+              decision.outcome != .ignored,
+              decision.outcome != .suppressed
         else { return }
 
         let category: SumiPermissionIndicatorCategory

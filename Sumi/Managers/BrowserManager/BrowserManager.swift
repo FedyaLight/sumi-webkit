@@ -199,6 +199,7 @@ class BrowserManager: ObservableObject {
     let storageAccessPermissionBridge: SumiStorageAccessPermissionBridge
     let permissionIndicatorEventStore: SumiPermissionIndicatorEventStore
     let permissionRecentActivityStore: SumiPermissionRecentActivityStore
+    let permissionCleanupService: SumiPermissionCleanupService
     let blockedPopupStore: SumiBlockedPopupStore
     let popupPermissionBridge: SumiPopupPermissionBridge
     let externalAppResolver: any SumiExternalAppResolving
@@ -313,6 +314,7 @@ class BrowserManager: ObservableObject {
         storageAccessPermissionBridge: SumiStorageAccessPermissionBridge? = nil,
         permissionIndicatorEventStore: SumiPermissionIndicatorEventStore? = nil,
         permissionRecentActivityStore: SumiPermissionRecentActivityStore? = nil,
+        permissionCleanupService: SumiPermissionCleanupService? = nil,
         blockedPopupStore: SumiBlockedPopupStore? = nil,
         popupPermissionBridge: SumiPopupPermissionBridge? = nil,
         externalAppResolver: (any SumiExternalAppResolving)? = nil,
@@ -322,14 +324,17 @@ class BrowserManager: ObservableObject {
         // Phase 1: initialize all stored properties
         let startupModelContext = SumiStartupPersistence.shared.container.mainContext
         let systemPermissionService = systemPermissionService ?? MacSumiSystemPermissionService()
+        let persistentPermissionStore = SwiftDataPermissionStore(
+            container: SumiStartupPersistence.shared.container
+        )
+        let antiAbuseStore = SumiPermissionAntiAbuseStore()
         let permissionCoordinator = permissionCoordinator
             ?? SumiPermissionCoordinator(
                 policyResolver: DefaultSumiPermissionPolicyResolver(
                     systemPermissionService: systemPermissionService
                 ),
-                persistentStore: SwiftDataPermissionStore(
-                    container: SumiStartupPersistence.shared.container
-                ),
+                persistentStore: persistentPermissionStore,
+                antiAbuseStore: antiAbuseStore,
                 sessionOwnerId: "browser"
             )
         let geolocationProvider = geolocationProvider
@@ -342,6 +347,12 @@ class BrowserManager: ObservableObject {
         let filePickerPanelPresenter = filePickerPanelPresenter ?? SumiFilePickerPanelPresenter()
         let permissionIndicatorEventStore = permissionIndicatorEventStore ?? SumiPermissionIndicatorEventStore()
         let permissionRecentActivityStore = permissionRecentActivityStore ?? SumiPermissionRecentActivityStore()
+        let permissionCleanupService = permissionCleanupService
+            ?? SumiPermissionCleanupService(
+                store: persistentPermissionStore,
+                recentActivityStore: permissionRecentActivityStore,
+                antiAbuseStore: antiAbuseStore
+            )
         let blockedPopupStore = blockedPopupStore ?? SumiBlockedPopupStore()
         let externalAppResolver = externalAppResolver ?? SumiNSWorkspaceExternalAppResolver.shared
         let externalSchemeSessionStore = externalSchemeSessionStore ?? SumiExternalSchemeSessionStore()
@@ -428,6 +439,7 @@ class BrowserManager: ObservableObject {
             )
         self.permissionIndicatorEventStore = permissionIndicatorEventStore
         self.permissionRecentActivityStore = permissionRecentActivityStore
+        self.permissionCleanupService = permissionCleanupService
         self.blockedPopupStore = blockedPopupStore
         self.popupPermissionBridge = popupPermissionBridge
             ?? SumiPopupPermissionBridge(
@@ -589,7 +601,20 @@ class BrowserManager: ObservableObject {
                     self?.isTransitioningProfile = false
                 }
             }
+
+            await self.runAutomaticPermissionCleanupIfNeeded(for: profile)
         }
+    }
+
+    @discardableResult
+    func runAutomaticPermissionCleanupIfNeeded(
+        for profile: Profile?
+    ) async -> SumiPermissionCleanupResult? {
+        guard let profile else { return nil }
+        let repository = SumiPermissionSettingsRepository(browserManager: self)
+        return await repository.runAutomaticCleanupIfNeeded(
+            profile: SumiPermissionSettingsProfileContext(profile: profile)
+        )
     }
 
     func updateSidebarWidth(

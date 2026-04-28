@@ -11,4 +11,5 @@ enum SumiPermissionCoordinatorEvent: Equatable, Sendable {
     case profileCancelled(profilePartitionId: String, decision: SumiPermissionCoordinatorDecision)
     case sessionCancelled(sessionOwnerId: String, decision: SumiPermissionCoordinatorDecision)
     case systemBlocked(SumiPermissionCoordinatorDecision)
+    case promptSuppressed(SumiPermissionPromptSuppression, decision: SumiPermissionCoordinatorDecision)
 }

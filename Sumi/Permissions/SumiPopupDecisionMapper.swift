@@ -66,11 +66,10 @@ enum SumiPopupDecisionMapper {
             return .blockedByUnsupportedSurface
         case .promptRequired:
             return .blockedByPromptUIUnavailable
-        case .systemBlocked, .cancelled, .dismissed, .ignored, .expired:
+        case .systemBlocked, .cancelled, .dismissed, .suppressed, .ignored, .expired:
             return .blockedByPolicy
         case .granted:
             return .blockedByDefault
         }
     }
 }
-

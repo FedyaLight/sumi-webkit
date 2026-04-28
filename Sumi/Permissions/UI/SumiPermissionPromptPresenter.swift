@@ -65,6 +65,7 @@ final class SumiPermissionPromptPresenter: ObservableObject {
     private var currentContext: SourceSnapshot?
     private var currentSourceId: String?
     private var suppressedSourceIds = Set<String>()
+    private var shownQuerySourceIds = Set<String>()
     private var eventTask: Task<Void, Never>?
 
     deinit {
@@ -127,6 +128,9 @@ final class SumiPermissionPromptPresenter: ObservableObject {
     func presentFromIndicatorClick() -> Bool {
         guard viewModel != nil else { return false }
         isPresented = true
+        Task { @MainActor [weak self] in
+            await self?.recordCurrentPromptShownIfNeeded()
+        }
         return true
     }
 
@@ -171,6 +175,7 @@ final class SumiPermissionPromptPresenter: ObservableObject {
 
         if autoPresent, snapshot.windowIsActive {
             isPresented = true
+            await recordPromptShownIfNeeded(candidate: candidate, coordinator: coordinator)
         }
     }
 
@@ -238,6 +243,33 @@ final class SumiPermissionPromptPresenter: ObservableObject {
                 onFinished: finish
             )
         }
+    }
+
+    private func recordCurrentPromptShownIfNeeded() async {
+        guard let coordinator,
+              let sourceId = currentSourceId,
+              let viewModel,
+              let queryId = viewModel.queryId,
+              !shownQuerySourceIds.contains(sourceId)
+        else {
+            return
+        }
+        shownQuerySourceIds.insert(sourceId)
+        await coordinator.recordPromptShown(queryId: queryId)
+    }
+
+    private func recordPromptShownIfNeeded(
+        candidate: Candidate,
+        coordinator: any SumiPermissionCoordinating
+    ) async {
+        guard case .query(let query) = candidate,
+              let sourceId = currentSourceId,
+              !shownQuerySourceIds.contains(sourceId)
+        else {
+            return
+        }
+        shownQuerySourceIds.insert(sourceId)
+        await coordinator.recordPromptShown(queryId: query.id)
     }
 
     private static func activeQuery(

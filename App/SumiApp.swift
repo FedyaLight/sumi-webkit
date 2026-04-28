@@ -145,5 +145,11 @@ struct SumiApp: App {
                 await browserManager?.performSiteDataPolicyAllWindowsClosedCleanup()
             }
         }
+
+        Task { @MainActor [browserManager] in
+            await browserManager.runAutomaticPermissionCleanupIfNeeded(
+                for: browserManager.currentProfile
+            )
+        }
     }
 }

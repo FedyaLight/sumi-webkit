@@ -7,6 +7,7 @@ enum SumiPermissionDecisionSource: String, Codable, CaseIterable, Hashable, Send
     case insecureOrigin
     case permissionsPolicy
     case virtualURLMismatch
+    case cooldown
     case embargo
     case defaultSetting
     case runtime

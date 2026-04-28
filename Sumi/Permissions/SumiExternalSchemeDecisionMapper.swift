@@ -52,6 +52,8 @@ enum SumiExternalSchemeDecisionMapper {
             return .blockedByStoredDeny
         case .promptRequired:
             return request.isUserActivated ? .blockedPendingUI : .blockedByDefault
+        case .suppressed:
+            return .blockedPendingUI
         case .unsupported:
             return .unsupportedScheme
         case .requiresUserActivation,

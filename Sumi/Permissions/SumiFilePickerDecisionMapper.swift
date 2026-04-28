@@ -18,6 +18,7 @@ enum SumiFilePickerDecisionMapper {
              .requiresUserActivation,
              .cancelled,
              .dismissed,
+             .suppressed,
              .ignored,
              .expired:
             return .deny(reason: decision.reason)

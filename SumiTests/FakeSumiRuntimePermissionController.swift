@@ -176,7 +176,7 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
         switch decision.outcome {
         case .granted:
             return await resumeRuntimePermissions(decision.permissionTypes, for: webView)
-        case .denied, .systemBlocked, .cancelled, .dismissed, .expired:
+        case .denied, .systemBlocked, .cancelled, .dismissed, .suppressed, .expired:
             return await revokeRuntimePermissions(decision.permissionTypes, for: webView)
         case .unsupported:
             var results: [SumiPermissionType: SumiRuntimePermissionOperationResult] = [:]

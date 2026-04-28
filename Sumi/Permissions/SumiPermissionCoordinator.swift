@@ -22,6 +22,8 @@ actor SumiPermissionCoordinator {
     private let policyResolver: any SumiPermissionPolicyResolver
     private let memoryStore: InMemoryPermissionStore
     private let persistentStore: (any SumiPermissionStore)?
+    private let antiAbuseStore: (any SumiPermissionAntiAbuseStoring)?
+    private let antiAbusePolicy: SumiPermissionAntiAbusePolicy
     private let queue: SumiPermissionQueue
     private let sessionOwnerId: String?
     private let nowProvider: NowProvider
@@ -36,13 +38,17 @@ actor SumiPermissionCoordinator {
         policyResolver: any SumiPermissionPolicyResolver,
         memoryStore: InMemoryPermissionStore = InMemoryPermissionStore(),
         persistentStore: (any SumiPermissionStore)?,
+        antiAbuseStore: (any SumiPermissionAntiAbuseStoring)? = nil,
+        antiAbusePolicy: SumiPermissionAntiAbusePolicy = SumiPermissionAntiAbusePolicy(),
         queue: SumiPermissionQueue = SumiPermissionQueue(),
         sessionOwnerId: String? = nil,
-        now: @escaping NowProvider = Date.init
+        now: @escaping NowProvider = { Date() }
     ) {
         self.policyResolver = policyResolver
         self.memoryStore = memoryStore
         self.persistentStore = persistentStore
+        self.antiAbuseStore = antiAbuseStore
+        self.antiAbusePolicy = antiAbusePolicy
         self.queue = queue
         self.sessionOwnerId = Self.normalizedOptionalId(sessionOwnerId)
         self.nowProvider = now
@@ -54,7 +60,7 @@ actor SumiPermissionCoordinator {
         guard let concreteTypes = concretePermissionTypes(from: context.request.permissionTypes) else {
             let result = await policyResolver.evaluate(context)
             let decision = SumiPermissionCoordinatorDecision.fromPolicyResult(result, context: context)
-            emitPolicyEventIfNeeded(decision)
+            await emitPolicyEventIfNeeded(decision)
             return decision
         }
 
@@ -70,7 +76,7 @@ actor SumiPermissionCoordinator {
                     context: concreteContext,
                     permissionTypes: [permissionType]
                 )
-                emitPolicyEventIfNeeded(decision)
+                await emitPolicyEventIfNeeded(decision)
                 return decision
             }
             evaluations.append(
@@ -95,6 +101,13 @@ actor SumiPermissionCoordinator {
             )
         }
 
+        if let suppressedDecision = await promptSuppressedDecision(
+            originalContext: context,
+            promptEvaluations: lookup.promptEvaluations
+        ) {
+            return suppressedDecision
+        }
+
         return await enqueueAuthorizationQuery(
             originalContext: context,
             promptEvaluations: lookup.promptEvaluations
@@ -107,7 +120,7 @@ actor SumiPermissionCoordinator {
         guard let concreteTypes = concretePermissionTypes(from: context.request.permissionTypes) else {
             let result = await policyResolver.evaluate(context)
             let decision = SumiPermissionCoordinatorDecision.fromPolicyResult(result, context: context)
-            emitPolicyEventIfNeeded(decision)
+            await emitPolicyEventIfNeeded(decision)
             return decision
         }
 
@@ -123,7 +136,7 @@ actor SumiPermissionCoordinator {
                     context: concreteContext,
                     permissionTypes: [permissionType]
                 )
-                emitPolicyEventIfNeeded(decision)
+                await emitPolicyEventIfNeeded(decision)
                 return decision
             }
             evaluations.append(
@@ -165,6 +178,15 @@ actor SumiPermissionCoordinator {
 
     func query(id queryId: String) -> SumiPermissionAuthorizationQuery? {
         queryById[queryId]?.query
+    }
+
+    func recordPromptShown(queryId: String) async {
+        guard let pending = queryById[queryId] else { return }
+        await recordAntiAbuseEvents(
+            type: .promptShown,
+            keys: pending.keys,
+            reason: "prompt-shown"
+        )
     }
 
     func siteDecisionRecords(
@@ -221,6 +243,7 @@ actor SumiPermissionCoordinator {
                 decision: decision,
                 sessionOwnerId: sessionOwnerId
             )
+            await recordManualSiteDecisionAntiAbuse(state: state, key: key, reason: reason)
             return
         }
 
@@ -228,12 +251,14 @@ actor SumiPermissionCoordinator {
             throw SumiPermissionSiteDecisionError.persistentStoreUnavailable
         }
         try await persistentStore.setDecision(for: key, decision: decision)
+        await recordManualSiteDecisionAntiAbuse(state: state, key: key, reason: reason)
     }
 
     func resetSiteDecision(
         for key: SumiPermissionKey
     ) async throws {
         try await memoryStore.resetDecision(for: key, sessionOwnerId: sessionOwnerId)
+        await antiAbuseStore?.clearSuppressionState(for: key, now: nowProvider())
         guard !key.isEphemeralProfile else { return }
         try await persistentStore?.resetDecision(for: key)
     }
@@ -343,6 +368,7 @@ actor SumiPermissionCoordinator {
             requestIds: cancellation.cancelledRequestIds
         )
         let affectedPageIds = pageIds(forRequestIds: cancellation.cancelledRequestIds)
+        await recordAntiAbuseCancellation(decision)
         await resolveCancelledRequestIds(cancellation.cancelledRequestIds, decision: decision)
         await refreshState(afterPromotion: cancellation.promotedActive, affectedPageIds: affectedPageIds)
         emit(.requestCancelled(requestIds: cancellation.cancelledRequestIds, decision: decision))
@@ -359,6 +385,7 @@ actor SumiPermissionCoordinator {
             reason: reason,
             requestIds: cancellation.cancelledRequestIds
         )
+        await recordAntiAbuseCancellation(decision)
         await resolveCancelledRequestIds(cancellation.cancelledRequestIds, decision: decision)
         await refreshState(forPageId: pageId)
         emit(.pageCancelled(pageId: Self.normalizedPageId(pageId), decision: decision))
@@ -375,6 +402,7 @@ actor SumiPermissionCoordinator {
             reason: reason,
             requestIds: cancellation.cancelledRequestIds
         )
+        await recordAntiAbuseCancellation(decision)
         await resolveCancelledRequestIds(cancellation.cancelledRequestIds, decision: decision)
         await refreshState(forPageId: pageId)
         emit(.pageCancelled(pageId: Self.normalizedPageId(pageId), decision: decision))
@@ -549,6 +577,48 @@ actor SumiPermissionCoordinator {
         )
     }
 
+    private func promptSuppressedDecision(
+        originalContext: SumiPermissionSecurityContext,
+        promptEvaluations: [PolicyEvaluation]
+    ) async -> SumiPermissionCoordinatorDecision? {
+        guard let antiAbuseStore else { return nil }
+        let now = nowProvider()
+        for evaluation in promptEvaluations {
+            let events = await antiAbuseStore.events(for: evaluation.key, now: now)
+            guard let suppression = antiAbusePolicy.suppression(
+                for: evaluation.key,
+                events: events,
+                now: now
+            ) else {
+                continue
+            }
+            let decision = SumiPermissionCoordinatorDecision(
+                outcome: .suppressed,
+                state: .ask,
+                persistence: nil,
+                source: suppression.decisionSource,
+                reason: suppression.reason,
+                permissionTypes: promptEvaluations.map(\.permissionType),
+                keys: promptEvaluations.map(\.key),
+                systemAuthorizationSnapshot: promptEvaluations
+                    .compactMap(\.result.systemAuthorizationSnapshot)
+                    .first,
+                shouldPersist: false,
+                shouldOfferSystemSettings: false,
+                disablesPersistentAllow: originalContext.isEphemeralProfile,
+                promptSuppression: suppression
+            )
+            await recordAntiAbuseEvents(
+                type: suppression.eventType,
+                keys: promptEvaluations.map(\.key),
+                reason: suppression.reason
+            )
+            emit(.promptSuppressed(suppression, decision: decision))
+            return decision
+        }
+        return nil
+    }
+
     private func enqueueAuthorizationQuery(
         originalContext: SumiPermissionSecurityContext,
         promptEvaluations: [PolicyEvaluation]
@@ -692,6 +762,7 @@ actor SumiPermissionCoordinator {
         }
 
         let decision = coordinatorDecision(for: userDecision, pending: pending)
+        await recordAntiAbuseSettlement(userDecision, pending: pending, decision: decision)
         await writeUserDecisionIfNeeded(userDecision, pending: pending, decision: decision)
         let continuations = takeContinuations(for: pending.requestIds)
         removePendingQuery(pending)
@@ -869,6 +940,105 @@ actor SumiPermissionCoordinator {
         _ = userDecision
     }
 
+    private func recordManualSiteDecisionAntiAbuse(
+        state: SumiPermissionState,
+        key: SumiPermissionKey,
+        reason: String?
+    ) async {
+        switch state {
+        case .allow, .ask:
+            await antiAbuseStore?.clearSuppressionState(for: key, now: nowProvider())
+            if state == .allow {
+                await recordAntiAbuseEvents(
+                    type: .userAllowed,
+                    keys: [key],
+                    reason: reason ?? "manual-site-decision"
+                )
+            }
+        case .deny:
+            await recordAntiAbuseEvents(
+                type: .userDenied,
+                keys: [key],
+                reason: reason ?? "manual-site-decision"
+            )
+        }
+    }
+
+    private func recordAntiAbuseSettlement(
+        _ userDecision: SumiPermissionUserDecision,
+        pending: PendingQuery,
+        decision: SumiPermissionCoordinatorDecision
+    ) async {
+        guard decision.outcome != .ignored else { return }
+        switch userDecision {
+        case .approveCurrentAttempt,
+             .approveOnce,
+             .approveForSession,
+             .approvePersistently:
+            for key in pending.keys {
+                await antiAbuseStore?.clearSuppressionState(for: key, now: nowProvider())
+            }
+            await recordAntiAbuseEvents(
+                type: .userAllowed,
+                keys: pending.keys,
+                reason: decision.reason
+            )
+        case .denyOnce,
+             .denyForSession,
+             .denyPersistently:
+            await recordAntiAbuseEvents(
+                type: .userDenied,
+                keys: pending.keys,
+                reason: decision.reason
+            )
+        case .dismiss:
+            await recordAntiAbuseEvents(
+                type: .userDismissed,
+                keys: pending.keys,
+                reason: decision.reason
+            )
+        case .cancel:
+            await recordAntiAbuseEvents(
+                type: .requestCancelledByNavigation,
+                keys: pending.keys,
+                reason: decision.reason
+            )
+        case .expire,
+             .setAskPersistently:
+            break
+        }
+    }
+
+    private func recordAntiAbuseCancellation(
+        _ decision: SumiPermissionCoordinatorDecision
+    ) async {
+        guard decision.outcome == .cancelled, !decision.keys.isEmpty else { return }
+        await recordAntiAbuseEvents(
+            type: .requestCancelledByNavigation,
+            keys: decision.keys,
+            reason: decision.reason
+        )
+    }
+
+    private func recordAntiAbuseEvents(
+        type: SumiPermissionAntiAbuseEvent.EventType,
+        keys: [SumiPermissionKey],
+        reason: String?
+    ) async {
+        guard let antiAbuseStore else { return }
+        let now = nowProvider()
+        for key in keys {
+            await antiAbuseStore.record(
+                SumiPermissionAntiAbuseEvent(
+                    type: type,
+                    key: key,
+                    createdAt: now,
+                    reason: reason
+                )
+            )
+        }
+    }
+
     private func supportsReusableOneTimeGrant(_ permissionType: SumiPermissionType) -> Bool {
         switch permissionType {
         case .camera, .microphone, .geolocation, .screenCapture:
@@ -934,6 +1104,7 @@ actor SumiPermissionCoordinator {
             reason: reason,
             requestIds: cancelledIds
         )
+        await recordAntiAbuseCancellation(decision)
         await resolveCancelledRequestIds(cancelledIds, decision: decision)
         for pageId in affectedPageIds {
             await refreshState(forPageId: pageId)
@@ -1215,9 +1386,56 @@ actor SumiPermissionCoordinator {
         )
     }
 
-    private func emitPolicyEventIfNeeded(_ decision: SumiPermissionCoordinatorDecision) {
+    private func emitPolicyEventIfNeeded(_ decision: SumiPermissionCoordinatorDecision) async {
         guard decision.outcome == .systemBlocked else { return }
+        if let suppression = await systemBlockedSuppression(for: decision) {
+            let suppressedDecision = SumiPermissionCoordinatorDecision(
+                outcome: .systemBlocked,
+                state: decision.state,
+                persistence: decision.persistence,
+                source: decision.source,
+                reason: suppression.reason,
+                permissionTypes: decision.permissionTypes,
+                keys: decision.keys,
+                queryId: decision.queryId,
+                systemAuthorizationSnapshot: decision.systemAuthorizationSnapshot,
+                shouldPersist: false,
+                shouldOfferSystemSettings: decision.shouldOfferSystemSettings,
+                disablesPersistentAllow: decision.disablesPersistentAllow,
+                promptSuppression: suppression
+            )
+            await recordAntiAbuseEvents(
+                type: suppression.eventType,
+                keys: decision.keys,
+                reason: suppression.reason
+            )
+            emit(.promptSuppressed(suppression, decision: suppressedDecision))
+            return
+        }
+        await recordAntiAbuseEvents(
+            type: .systemBlocked,
+            keys: decision.keys,
+            reason: decision.reason
+        )
         emit(.systemBlocked(decision))
+    }
+
+    private func systemBlockedSuppression(
+        for decision: SumiPermissionCoordinatorDecision
+    ) async -> SumiPermissionPromptSuppression? {
+        guard let antiAbuseStore else { return nil }
+        let now = nowProvider()
+        for key in decision.keys {
+            let events = await antiAbuseStore.events(for: key, now: now)
+            if let suppression = antiAbusePolicy.systemBlockedSuppression(
+                for: key,
+                events: events,
+                now: now
+            ) {
+                return suppression
+            }
+        }
+        return nil
     }
 
     private func emit(_ event: SumiPermissionCoordinatorEvent) {

@@ -65,6 +65,8 @@ protocol SumiPermissionCoordinating: Sendable {
 
     func query(id queryId: String) async -> SumiPermissionAuthorizationQuery?
 
+    func recordPromptShown(queryId: String) async
+
     func stateSnapshot() async -> SumiPermissionCoordinatorState
 
     func events() async -> AsyncStream<SumiPermissionCoordinatorEvent>
@@ -203,6 +205,10 @@ extension SumiPermissionCoordinating {
 
     func query(id queryId: String) async -> SumiPermissionAuthorizationQuery? {
         nil
+    }
+
+    func recordPromptShown(queryId: String) async {
+        _ = queryId
     }
 
     @discardableResult

@@ -139,6 +139,39 @@ final class SumiPermissionSettingsRepositoryTests: XCTestCase {
         XCTAssertTrue(harness.websiteDataService.exactHostRemovals.isEmpty)
     }
 
+    func testCleanupEnabledAllowsRepositoryToRunService() async throws {
+        let harness = try SiteSettingsRepositoryHarness()
+        let key = harness.key(.camera)
+        try await harness.permissionStore.setDecision(
+            for: key,
+            decision: SumiPermissionDecision(
+                state: .allow,
+                persistence: .persistent,
+                source: .user,
+                reason: "test",
+                createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+                updatedAt: Date(timeIntervalSince1970: 1_700_000_000)
+            )
+        )
+        harness.repository.setAutomaticCleanupEnabled(true, profile: harness.profileContext)
+
+        let result = await harness.repository.runCleanup(
+            profile: harness.profileContext,
+            force: true
+        )
+
+        XCTAssertEqual(result.removedCount, 1)
+        let storedRecord = try await harness.permissionStore.getDecision(for: key)
+        XCTAssertNil(storedRecord)
+        XCTAssertEqual(
+            harness.recentStore.records(
+                profilePartitionId: harness.profileContext.profilePartitionId,
+                isEphemeralProfile: false
+            ).first?.action,
+            .autoRevoked
+        )
+    }
+
     func testSourceLevelSettingsViewsAvoidForbiddenPermissionAPIs() throws {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

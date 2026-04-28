@@ -153,7 +153,7 @@ final class SumiPopupPermissionBridge {
                 blockedReason: .blockedByDefault
             )
 
-        case .systemBlocked, .unsupported, .cancelled, .dismissed, .ignored, .expired:
+        case .systemBlocked, .unsupported, .cancelled, .dismissed, .suppressed, .ignored, .expired:
             return block(
                 request,
                 tabContext: tabContext,
