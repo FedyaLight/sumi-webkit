@@ -40,7 +40,7 @@
 </head>
 <body>
   <h1>Screen Capture Permission</h1>
-  <p>Until Sumi prompt UI exists, first-time display capture requests intercepted by Sumi are expected to fail closed.</p>
+  <p>Expected: first-time display capture requests intercepted by Sumi open the URL-bar anchored site permission prompt before WebKit or macOS picker behavior. Allow this time should grant only the current page/request lifetime, allow while visiting should persist for a normal profile, don't allow should persist for a normal profile, and dismiss should not persist. If macOS Screen Recording blocks access, the prompt should show a system-blocked explanation and System Settings action.</p>
 
   <div>
     <button id="video">getDisplayMedia video</button>

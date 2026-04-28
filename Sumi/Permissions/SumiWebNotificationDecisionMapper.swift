@@ -20,7 +20,9 @@ enum SumiWebNotificationPermissionState: String, Codable, Equatable, Sendable {
 enum SumiWebNotificationDecisionMapper {
     static func permissionState(
         for decision: SumiPermissionCoordinatorDecision,
-        promptRequiredState: SumiWebNotificationPermissionState = .default
+        promptRequiredState: SumiWebNotificationPermissionState = .default,
+        dismissedState: SumiWebNotificationPermissionState = .default,
+        cancelledState: SumiWebNotificationPermissionState = .denied
     ) -> SumiWebNotificationPermissionState {
         switch decision.outcome {
         case .granted:
@@ -28,7 +30,7 @@ enum SumiWebNotificationDecisionMapper {
             case .authorized:
                 return .granted
             case .notDetermined:
-                return promptRequiredState
+                return .granted
             case .denied,
                  .restricted,
                  .systemDisabled,
@@ -42,18 +44,20 @@ enum SumiWebNotificationDecisionMapper {
              .systemBlocked,
              .unsupported,
              .requiresUserActivation,
-             .cancelled,
-             .dismissed,
              .ignored,
              .expired:
             return .denied
+        case .cancelled:
+            return cancelledState
+        case .dismissed:
+            return dismissedState
         case .promptRequired:
             return promptRequiredState
         }
     }
 
     static func canDeliver(_ decision: SumiPermissionCoordinatorDecision) -> Bool {
-        decision.outcome == .granted && isSystemAuthorized(decision)
+        decision.outcome == .granted && isNotSystemBlocked(decision)
     }
 
     static func temporaryPendingDecision(
@@ -92,7 +96,17 @@ enum SumiWebNotificationDecisionMapper {
         )
     }
 
-    private static func isSystemAuthorized(_ decision: SumiPermissionCoordinatorDecision) -> Bool {
-        decision.systemAuthorizationSnapshot?.state == .authorized
+    private static func isNotSystemBlocked(_ decision: SumiPermissionCoordinatorDecision) -> Bool {
+        switch decision.systemAuthorizationSnapshot?.state {
+        case .denied,
+             .restricted,
+             .systemDisabled,
+             .unavailable,
+             .missingUsageDescription,
+             .missingEntitlement:
+            return false
+        case .authorized, .notDetermined, .none:
+            return true
+        }
     }
 }

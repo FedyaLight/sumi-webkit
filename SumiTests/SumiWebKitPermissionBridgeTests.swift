@@ -473,12 +473,16 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
     private func makeBridge(
         coordinator: any SumiPermissionCoordinating,
         runtimeController: FakeSumiRuntimePermissionController? = nil,
+        pendingStrategy: SumiWebKitPermissionBridgePendingStrategy = .denyUntilPromptUIExists,
+        screenCapturePendingStrategy: SumiWebKitScreenCapturePendingStrategy = .denyUntilPromptUIExists,
         pendingPollIntervalNanoseconds: UInt64 = 1_000_000,
         coordinatorTimeoutNanoseconds: UInt64 = 100_000_000
     ) -> SumiWebKitPermissionBridge {
         SumiWebKitPermissionBridge(
             coordinator: coordinator,
             runtimeController: runtimeController ?? FakeSumiRuntimePermissionController(),
+            pendingStrategy: pendingStrategy,
+            screenCapturePendingStrategy: screenCapturePendingStrategy,
             pendingPollIntervalNanoseconds: pendingPollIntervalNanoseconds,
             coordinatorTimeoutNanoseconds: coordinatorTimeoutNanoseconds,
             now: { self.fixedDate }
@@ -488,6 +492,8 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
     private func realCoordinatorBridge(
         policyResult: SumiPermissionPolicyResult,
         store: BridgePermissionStore,
+        pendingStrategy: SumiWebKitPermissionBridgePendingStrategy = .denyUntilPromptUIExists,
+        screenCapturePendingStrategy: SumiWebKitScreenCapturePendingStrategy = .denyUntilPromptUIExists,
         pendingPollIntervalNanoseconds: UInt64 = 1_000_000,
         coordinatorTimeoutNanoseconds: UInt64 = 100_000_000
     ) -> SumiWebKitPermissionBridge {
@@ -498,6 +504,8 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
         )
         return makeBridge(
             coordinator: coordinator,
+            pendingStrategy: pendingStrategy,
+            screenCapturePendingStrategy: screenCapturePendingStrategy,
             pendingPollIntervalNanoseconds: pendingPollIntervalNanoseconds,
             coordinatorTimeoutNanoseconds: coordinatorTimeoutNanoseconds
         )

@@ -2,24 +2,38 @@ import Foundation
 import WebKit
 
 enum SumiWebKitPermissionBridgePendingStrategy: Equatable, Sendable {
+    case waitForPromptUI
     case denyUntilPromptUIExists
 
     var reason: String {
         switch self {
+        case .waitForPromptUI:
+            return "webkit-media-prompt-ui-wait"
         case .denyUntilPromptUIExists:
             return "webkit-media-prompt-ui-unavailable-deny"
         }
     }
+
+    var waitsForPromptUI: Bool {
+        self == .waitForPromptUI
+    }
 }
 
 enum SumiWebKitScreenCapturePendingStrategy: Equatable, Sendable {
+    case waitForPromptUI
     case denyUntilPromptUIExists
 
     var reason: String {
         switch self {
+        case .waitForPromptUI:
+            return "webkit-screen-capture-prompt-ui-wait"
         case .denyUntilPromptUIExists:
             return "webkit-screen-capture-prompt-ui-unavailable-deny"
         }
+    }
+
+    var waitsForPromptUI: Bool {
+        self == .waitForPromptUI
     }
 }
 

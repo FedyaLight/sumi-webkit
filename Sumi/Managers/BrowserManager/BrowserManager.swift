@@ -186,6 +186,7 @@ class BrowserManager: ObservableObject {
     var splitManager: SplitViewManager
     var workspaceThemeCoordinator: WorkspaceThemeCoordinator
     var findManager: FindManager
+    let systemPermissionService: any SumiSystemPermissionService
     let permissionCoordinator: any SumiPermissionCoordinating
     let geolocationProvider: (any SumiGeolocationProviding)?
     let notificationService: any SumiNotificationServicing
@@ -296,6 +297,7 @@ class BrowserManager: ObservableObject {
         adBlockingModule: SumiAdBlockingModule? = nil,
         extensionsModule: SumiExtensionsModule? = nil,
         userscriptsModule: SumiUserscriptsModule? = nil,
+        systemPermissionService: (any SumiSystemPermissionService)? = nil,
         permissionCoordinator: (any SumiPermissionCoordinating)? = nil,
         geolocationProvider: (any SumiGeolocationProviding)? = nil,
         notificationService: (any SumiNotificationServicing)? = nil,
@@ -315,9 +317,12 @@ class BrowserManager: ObservableObject {
     ) {
         // Phase 1: initialize all stored properties
         let startupModelContext = SumiStartupPersistence.shared.container.mainContext
+        let systemPermissionService = systemPermissionService ?? MacSumiSystemPermissionService()
         let permissionCoordinator = permissionCoordinator
             ?? SumiPermissionCoordinator(
-                policyResolver: DefaultSumiPermissionPolicyResolver(),
+                policyResolver: DefaultSumiPermissionPolicyResolver(
+                    systemPermissionService: systemPermissionService
+                ),
                 persistentStore: SwiftDataPermissionStore(
                     container: SumiStartupPersistence.shared.container
                 ),
@@ -382,6 +387,7 @@ class BrowserManager: ObservableObject {
         self.splitManager = SplitViewManager()
         self.workspaceThemeCoordinator = WorkspaceThemeCoordinator()
         self.findManager = FindManager()
+        self.systemPermissionService = systemPermissionService
         self.permissionCoordinator = permissionCoordinator
         self.geolocationProvider = geolocationProvider
         self.notificationService = notificationService

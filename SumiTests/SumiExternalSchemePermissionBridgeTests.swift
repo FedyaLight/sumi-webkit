@@ -409,6 +409,7 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         return SumiExternalSchemePermissionBridge(
             coordinator: coordinator,
             appResolver: resolver,
+            pendingStrategy: .blockUntilPromptUIExists,
             now: { externalFixedDate },
             eventSink: eventSink
         )

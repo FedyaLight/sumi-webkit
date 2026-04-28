@@ -12,9 +12,38 @@ protocol SumiPermissionCoordinating: Sendable {
 
     func activeQuery(forPageId pageId: String) async -> SumiPermissionAuthorizationQuery?
 
+    func query(id queryId: String) async -> SumiPermissionAuthorizationQuery?
+
     func stateSnapshot() async -> SumiPermissionCoordinatorState
 
     func events() async -> AsyncStream<SumiPermissionCoordinatorEvent>
+
+    @discardableResult
+    func approveOnce(_ queryId: String) async -> SumiPermissionCoordinatorDecision
+
+    @discardableResult
+    func approveForSession(_ queryId: String) async -> SumiPermissionCoordinatorDecision
+
+    @discardableResult
+    func approvePersistently(_ queryId: String) async -> SumiPermissionCoordinatorDecision
+
+    @discardableResult
+    func denyOnce(_ queryId: String) async -> SumiPermissionCoordinatorDecision
+
+    @discardableResult
+    func denyForSession(_ queryId: String) async -> SumiPermissionCoordinatorDecision
+
+    @discardableResult
+    func dismiss(_ queryId: String) async -> SumiPermissionCoordinatorDecision
+
+    @discardableResult
+    func denyPersistently(_ queryId: String) async -> SumiPermissionCoordinatorDecision
+
+    @discardableResult
+    func cancel(
+        queryId: String,
+        reason: String
+    ) async -> SumiPermissionCoordinatorDecision
 
     @discardableResult
     func cancel(
@@ -42,6 +71,66 @@ protocol SumiPermissionCoordinating: Sendable {
 }
 
 extension SumiPermissionCoordinator: SumiPermissionCoordinating {}
+
+extension SumiPermissionCoordinating {
+    func query(id queryId: String) async -> SumiPermissionAuthorizationQuery? {
+        nil
+    }
+
+    @discardableResult
+    func approveOnce(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
+        ignoredSettlementDecision(reason: "approve-once-unavailable")
+    }
+
+    @discardableResult
+    func approveForSession(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
+        ignoredSettlementDecision(reason: "approve-for-session-unavailable")
+    }
+
+    @discardableResult
+    func approvePersistently(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
+        ignoredSettlementDecision(reason: "approve-persistently-unavailable")
+    }
+
+    @discardableResult
+    func denyOnce(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
+        ignoredSettlementDecision(reason: "deny-once-unavailable")
+    }
+
+    @discardableResult
+    func denyForSession(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
+        ignoredSettlementDecision(reason: "deny-for-session-unavailable")
+    }
+
+    @discardableResult
+    func dismiss(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
+        ignoredSettlementDecision(reason: "dismiss-unavailable")
+    }
+
+    @discardableResult
+    func denyPersistently(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
+        ignoredSettlementDecision(reason: "deny-persistently-unavailable")
+    }
+
+    @discardableResult
+    func cancel(
+        queryId: String,
+        reason: String
+    ) async -> SumiPermissionCoordinatorDecision {
+        ignoredSettlementDecision(reason: reason)
+    }
+
+    private func ignoredSettlementDecision(reason: String) -> SumiPermissionCoordinatorDecision {
+        SumiPermissionCoordinatorDecision(
+            outcome: .ignored,
+            state: nil,
+            persistence: nil,
+            source: .runtime,
+            reason: reason,
+            permissionTypes: []
+        )
+    }
+}
 
 @available(macOS 13.0, *)
 @MainActor
@@ -109,8 +198,8 @@ final class SumiWebKitPermissionBridge {
     init(
         coordinator: any SumiPermissionCoordinating,
         runtimeController: any SumiRuntimePermissionControlling,
-        pendingStrategy: SumiWebKitPermissionBridgePendingStrategy = .denyUntilPromptUIExists,
-        screenCapturePendingStrategy: SumiWebKitScreenCapturePendingStrategy = .denyUntilPromptUIExists,
+        pendingStrategy: SumiWebKitPermissionBridgePendingStrategy = .waitForPromptUI,
+        screenCapturePendingStrategy: SumiWebKitScreenCapturePendingStrategy = .waitForPromptUI,
         pendingPollIntervalNanoseconds: UInt64 = 25_000_000,
         coordinatorTimeoutNanoseconds: UInt64 = 500_000_000,
         now: @escaping @Sendable () -> Date = { Date() }
@@ -146,6 +235,7 @@ final class SumiWebKitPermissionBridge {
 
             let coordinatorDecision = await self.coordinatorDecision(
                 for: context,
+                shouldWaitForPromptUI: self.pendingStrategy.waitsForPromptUI,
                 pendingReason: self.pendingStrategy.reason,
                 timeoutReason: "webkit-media-permission-coordinator-timeout"
             )
@@ -186,6 +276,7 @@ final class SumiWebKitPermissionBridge {
 
             let coordinatorDecision = await self.coordinatorDecision(
                 for: context,
+                shouldWaitForPromptUI: self.pendingStrategy.waitsForPromptUI,
                 pendingReason: self.pendingStrategy.reason,
                 timeoutReason: "webkit-media-permission-coordinator-timeout"
             )
@@ -226,6 +317,7 @@ final class SumiWebKitPermissionBridge {
 
             let coordinatorDecision = await self.coordinatorDecision(
                 for: context,
+                shouldWaitForPromptUI: self.screenCapturePendingStrategy.waitsForPromptUI,
                 pendingReason: self.screenCapturePendingStrategy.reason,
                 timeoutReason: "webkit-screen-capture-permission-coordinator-timeout"
             )
@@ -317,9 +409,17 @@ final class SumiWebKitPermissionBridge {
 
     private func coordinatorDecision(
         for context: SumiPermissionSecurityContext,
+        shouldWaitForPromptUI: Bool,
         pendingReason: String,
         timeoutReason: String
     ) async -> SumiPermissionCoordinatorDecision {
+        if shouldWaitForPromptUI,
+           context.surface == .normalTab,
+           context.isActiveTab,
+           context.isVisibleTab {
+            return await coordinator.requestPermission(context)
+        }
+
         let coordinator = coordinator
         let pollInterval = pendingPollIntervalNanoseconds
         let timeout = coordinatorTimeoutNanoseconds

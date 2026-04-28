@@ -5,6 +5,7 @@ enum SumiPermissionUserDecision: Equatable, Sendable {
     case approveForSession
     case approvePersistently
     case denyOnce
+    case denyForSession
     case dismiss
     case denyPersistently
     case setAskPersistently

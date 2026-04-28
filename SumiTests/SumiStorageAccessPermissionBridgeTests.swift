@@ -188,7 +188,8 @@ final class SumiStorageAccessPermissionBridgeTests: XCTestCase {
     }
 
     private func makeBridge(
-        store: StorageAccessBridgePermissionStore
+        store: StorageAccessBridgePermissionStore,
+        pendingStrategy: SumiStorageAccessPendingStrategy = .denyUntilPromptUIExists
     ) -> SumiStorageAccessPermissionBridge {
         let coordinator = SumiPermissionCoordinator(
             policyResolver: DefaultSumiPermissionPolicyResolver(
@@ -199,6 +200,7 @@ final class SumiStorageAccessPermissionBridgeTests: XCTestCase {
         )
         return SumiStorageAccessPermissionBridge(
             coordinator: coordinator,
+            pendingStrategy: pendingStrategy,
             pendingPollIntervalNanoseconds: 1_000_000,
             coordinatorTimeoutNanoseconds: 100_000_000,
             now: { self.fixedDate }

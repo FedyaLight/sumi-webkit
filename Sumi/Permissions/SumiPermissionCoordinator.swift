@@ -203,6 +203,11 @@ actor SumiPermissionCoordinator {
     }
 
     @discardableResult
+    func denyForSession(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
+        await settle(queryId: queryId, with: .denyForSession)
+    }
+
+    @discardableResult
     func dismiss(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
         await settle(queryId: queryId, with: .dismiss)
     }
@@ -634,6 +639,12 @@ actor SumiPermissionCoordinator {
             source = .user
             reason = "denied-once"
             shouldPersist = false
+        case .denyForSession:
+            outcome = .denied
+            state = .deny
+            source = .user
+            reason = persistence == .session ? "denied-for-session" : "denied-for-session-downgraded"
+            shouldPersist = false
         case .dismiss:
             outcome = .dismissed
             state = .ask
@@ -752,7 +763,7 @@ actor SumiPermissionCoordinator {
         switch userDecision {
         case .approveOnce, .denyOnce:
             return .oneTime
-        case .approveForSession:
+        case .approveForSession, .denyForSession:
             return query.availablePersistences.contains(.session) ? .session : .oneTime
         case .approvePersistently:
             if query.availablePersistences.contains(.persistent), !query.isEphemeralProfile {
