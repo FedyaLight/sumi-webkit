@@ -235,6 +235,53 @@ final class SidebarThemeResolutionTests: XCTestCase {
         XCTAssertFalse(source.contains("tokens(settings: sumiSettings).windowBackground"))
     }
 
+    func testWindowViewRendersDockedSidebarAsRealLayoutColumn() throws {
+        let source = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "App/Window/WindowView.swift"
+            ),
+            encoding: .utf8
+        )
+        let layoutStart = try XCTUnwrap(source.range(of: "private func SidebarWebViewStack()"))
+            .lowerBound
+        let layoutEnd = try XCTUnwrap(source.range(of: "private func WebContent()"))
+            .lowerBound
+        let layoutSource = String(source[layoutStart..<layoutEnd])
+
+        XCTAssertFalse(source.contains("SidebarDockedSpacer"))
+        XCTAssertTrue(layoutSource.contains("if sidebarVisible"))
+        XCTAssertTrue(layoutSource.contains("SidebarDockedColumn()"))
+        XCTAssertTrue(layoutSource.contains("WebContent()"))
+        XCTAssertLessThan(
+            try XCTUnwrap(layoutSource.range(of: "SidebarDockedColumn()")).lowerBound,
+            try XCTUnwrap(layoutSource.range(of: "WebContent()")).lowerBound
+        )
+        XCTAssertTrue(layoutSource.contains("SidebarPresentationContext.docked("))
+        XCTAssertTrue(layoutSource.contains("SidebarColumnRepresentable("))
+        XCTAssertTrue(layoutSource.contains(".frame(width: presentationContext.sidebarWidth)"))
+        XCTAssertFalse(layoutSource.contains("Color.clear"))
+    }
+
+    func testWindowViewKeepsTrafficLightsWindowLevelAndOverlayCollapsedOnly() throws {
+        let source = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "App/Window/WindowView.swift"
+            ),
+            encoding: .utf8
+        )
+        let dockedStart = try XCTUnwrap(source.range(of: "private func SidebarDockedColumn()"))
+            .lowerBound
+        let dockedEnd = try XCTUnwrap(source.range(of: "private func WebContent()"))
+            .lowerBound
+        let dockedSource = String(source[dockedStart..<dockedEnd])
+
+        XCTAssertTrue(source.contains("if !windowState.isSidebarVisible"))
+        XCTAssertTrue(source.contains("SidebarHoverOverlayView()"))
+        XCTAssertTrue(source.contains("BrowserWindowTrafficLights()"))
+        XCTAssertFalse(dockedSource.contains("BrowserWindowTrafficLights"))
+        XCTAssertFalse(dockedSource.contains("SidebarHoverOverlayView"))
+    }
+
     func testBrowserChromeGeometryUsesZenContentRadiusFormula() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -288,6 +335,28 @@ final class SidebarThemeResolutionTests: XCTestCase {
         XCTAssertTrue(source.contains("SpaceGradientBackgroundView(surface: .toolbarChrome)"))
         XCTAssertTrue(source.contains(".opacity(drawsCollapsedSidebarChromeBackground ? 1 : 0)"))
         XCTAssertFalse(source.contains("drawsSidebarChromeBackground"))
+    }
+
+    func testSidebarHoverOverlayOnlyChoosesCollapsedPresentationContexts() throws {
+        let source = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "Sumi/Components/Sidebar/SidebarHoverOverlayView.swift"
+            ),
+            encoding: .utf8
+        )
+        let contextStart = try XCTUnwrap(source.range(of: "private var presentationContext"))
+            .lowerBound
+        let contextEnd = try XCTUnwrap(source.range(of: "private var hiddenOffset"))
+            .lowerBound
+        let contextSource = String(source[contextStart..<contextEnd])
+
+        XCTAssertFalse(contextSource.contains(".docked("))
+        XCTAssertTrue(contextSource.contains(".collapsedVisible(sidebarWidth: overlayBaseSidebarWidth)"))
+        XCTAssertTrue(contextSource.contains(".collapsedHidden(sidebarWidth: overlayBaseSidebarWidth)"))
+        XCTAssertTrue(source.contains("Color.clear"))
+        XCTAssertTrue(source.contains(".frame(width: hoverManager.triggerWidth)"))
+        XCTAssertTrue(source.contains("presentationContext.mode == .collapsedVisible"))
+        XCTAssertTrue(source.contains("presentationContext.mode == .collapsedHidden"))
     }
 
     func testBrowserWindowShellDoesNotUseDynamicAppKitBackgroundForChromeFallback() throws {

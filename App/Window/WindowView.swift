@@ -26,6 +26,7 @@ struct WindowView: View {
     @EnvironmentObject private var peekManager: PeekManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
+    @Environment(CommandPalette.self) private var commandPalette
     @Environment(\.sumiSettings) var sumiSettings
     @StateObject private var hoverSidebarManager = HoverSidebarManager()
     /// Bumps when system/window effective appearance changes so `globalColorScheme` refreshes while in auto mode.
@@ -56,11 +57,13 @@ struct WindowView: View {
 
             SidebarWebViewStack()
 
-            // Hover-reveal Sidebar overlay (slides in over web content)
-            chromeThemeScope {
-                SidebarHoverOverlayView()
-                    .environmentObject(hoverSidebarManager)
-                    .environment(windowState)
+            // Collapsed hover-reveal sidebar overlay. Docked sidebar is a real layout column.
+            if !windowState.isSidebarVisible {
+                chromeThemeScope {
+                    SidebarHoverOverlayView()
+                        .environmentObject(hoverSidebarManager)
+                        .environment(windowState)
+                }
             }
 
             chromeThemeScope {
@@ -201,7 +204,10 @@ struct WindowView: View {
         let elementSeparation = BrowserChromeGeometry.elementSeparation
         
         HStack(spacing: 0) {
-            SidebarDockedSpacer()
+            if sidebarVisible {
+                SidebarDockedColumn()
+            }
+
             WebContent()
         }
         .padding(.trailing, elementSeparation)
@@ -209,10 +215,27 @@ struct WindowView: View {
     }
 
     @ViewBuilder
-    private func SidebarDockedSpacer() -> some View {
-        Color.clear
-            .frame(width: windowState.isSidebarVisible ? windowState.sidebarWidth : 0)
-            .accessibilityHidden(true)
+    private func SidebarDockedColumn() -> some View {
+        let presentationContext = SidebarPresentationContext.docked(
+            sidebarWidth: windowState.sidebarWidth
+        )
+
+        SidebarColumnRepresentable(
+            browserManager: browserManager,
+            windowState: windowState,
+            windowRegistry: windowRegistry,
+            commandPalette: commandPalette,
+            sumiSettings: sumiSettings,
+            resolvedThemeContext: resolvedThemeContext,
+            presentationContext: presentationContext
+        )
+        .id("docked-sidebar-column")
+        .transaction { transaction in
+            transaction.disablesAnimations = true
+        }
+        .frame(width: presentationContext.sidebarWidth)
+        .frame(maxHeight: .infinity)
+        .alwaysArrowCursor()
     }
 
     @ViewBuilder
