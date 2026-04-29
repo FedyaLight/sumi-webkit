@@ -111,6 +111,71 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         XCTAssertEqual(storedExistingTab.index, 1)
     }
 
+    func testReorderSpaceUpdatesPersistedIndicesAndPreservesCurrentSpace() async throws {
+        let container = try makeInMemoryContainer()
+        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let profileId = UUID()
+        let first = tabManager.createSpace(name: "First", profileId: profileId)
+        let second = tabManager.createSpace(name: "Second", profileId: profileId)
+        let third = tabManager.createSpace(name: "Third", profileId: profileId)
+        tabManager.setActiveSpace(second)
+
+        XCTAssertTrue(tabManager.reorderSpace(spaceId: first.id, to: 2))
+        XCTAssertEqual(tabManager.spaces.map(\.id), [second.id, third.id, first.id])
+        XCTAssertEqual(tabManager.currentSpace?.id, second.id)
+
+        try await waitForStore(in: container) { context in
+            let storedSpaces = try fetchSpacesSortedByIndex(in: context)
+            return storedSpaces.map(\.id) == [second.id, third.id, first.id]
+                && storedSpaces.map(\.index) == [0, 1, 2]
+        }
+
+        let storedSpaces = try fetchSpacesSortedByIndex(in: ModelContext(container))
+        XCTAssertEqual(storedSpaces.map(\.id), [second.id, third.id, first.id])
+        XCTAssertEqual(storedSpaces.map(\.index), [0, 1, 2])
+        XCTAssertEqual(tabManager.currentSpace?.id, second.id)
+    }
+
+    func testReorderSpacePersistsThroughRestore() async throws {
+        let container = try makeInMemoryContainer()
+        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let profileId = UUID()
+        let first = tabManager.createSpace(name: "First", profileId: profileId)
+        let second = tabManager.createSpace(name: "Second", profileId: profileId)
+        let third = tabManager.createSpace(name: "Third", profileId: profileId)
+        tabManager.setActiveSpace(second)
+
+        XCTAssertTrue(tabManager.reorderSpace(spaceId: first.id, to: 2))
+
+        try await waitForStore(in: container) { context in
+            try fetchSpacesSortedByIndex(in: context).map(\.id) == [second.id, third.id, first.id]
+        }
+
+        let restoredManager = TabManager(context: ModelContext(container), loadPersistedState: false)
+        let didLoad = await restoredManager.loadFromStoreAwaitingResult()
+
+        XCTAssertTrue(didLoad)
+        XCTAssertEqual(restoredManager.spaces.map(\.id), [second.id, third.id, first.id])
+        XCTAssertEqual(restoredManager.currentSpace?.id, second.id)
+        XCTAssertTrue(restoredManager.structuralDirtySet.isEmpty)
+        XCTAssertNil(restoredManager.scheduledStructuralPersistTask)
+    }
+
+    func testReorderSpaceClampsInvalidTargetIndices() throws {
+        let container = try makeInMemoryContainer()
+        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let profileId = UUID()
+        let first = tabManager.createSpace(name: "First", profileId: profileId)
+        let second = tabManager.createSpace(name: "Second", profileId: profileId)
+        let third = tabManager.createSpace(name: "Third", profileId: profileId)
+
+        XCTAssertTrue(tabManager.reorderSpace(spaceId: third.id, to: -100))
+        XCTAssertEqual(tabManager.spaces.map(\.id), [third.id, first.id, second.id])
+        XCTAssertTrue(tabManager.reorderSpace(spaceId: third.id, to: 100))
+        XCTAssertEqual(tabManager.spaces.map(\.id), [first.id, second.id, third.id])
+        XCTAssertFalse(tabManager.reorderSpace(spaceId: UUID(), to: 0))
+    }
+
     func testSelectionOnlyPersistenceCreatesAndUpdatesState() async throws {
         let container = try makeInMemoryContainer()
         let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
@@ -658,6 +723,13 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let spaceId = id
         let predicate = #Predicate<SpaceEntity> { $0.id == spaceId }
         return try context.fetch(FetchDescriptor<SpaceEntity>(predicate: predicate)).first
+    }
+
+    private func fetchSpacesSortedByIndex(in context: ModelContext) throws -> [SpaceEntity] {
+        try context.fetch(FetchDescriptor<SpaceEntity>()).sorted { lhs, rhs in
+            if lhs.index != rhs.index { return lhs.index < rhs.index }
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
     }
 
     private func assertStoreShape(

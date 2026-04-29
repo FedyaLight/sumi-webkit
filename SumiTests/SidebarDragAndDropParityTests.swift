@@ -4614,12 +4614,44 @@ final class SidebarDragOperationParityTests: XCTestCase {
         XCTAssertEqual(reordered.map(\.index), [0, 1, 2])
     }
 
+    func testSpaceReorderSourcesDoNotUseSidebarDragAndDropPipeline() throws {
+        let scannedPaths = [
+            "Navigation/Sidebar/SpacesList/SpacesList.swift",
+            "Navigation/Sidebar/SpacesList/SpacesListItem.swift",
+            "Navigation/Sidebar/SpacesList/SpaceReorderDragState.swift",
+            "Navigation/Sidebar/SidebarBottomBar.swift",
+            "Sumi/Managers/TabManager/TabManager+SpaceLifecycle.swift"
+        ]
+        let forbiddenTokens = [
+            "SidebarDragState",
+            "SidebarGlobalDragOverlay",
+            "SumiDragItem"
+        ]
+
+        for path in scannedPaths {
+            let source = try String(
+                contentsOf: Self.repoRoot.appendingPathComponent(path),
+                encoding: .utf8
+            )
+            for token in forbiddenTokens {
+                XCTAssertFalse(source.contains(token), "\(path) must not reference \(token)")
+            }
+        }
+    }
+
     private func makeInMemoryTabManager() throws -> TabManager {
         let container = try ModelContainer(
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
         return TabManager(context: container.mainContext, loadPersistedState: false)
+    }
+
+    private static var repoRoot: URL {
+        var url = URL(fileURLWithPath: #filePath)
+        url.deleteLastPathComponent()
+        url.deleteLastPathComponent()
+        return url
     }
 
     private func makeMouseEvent(
