@@ -249,14 +249,29 @@ final class SidebarThemeResolutionTests: XCTestCase {
         let layoutSource = String(source[layoutStart..<layoutEnd])
 
         XCTAssertFalse(source.contains("SidebarDockedSpacer"))
-        XCTAssertTrue(layoutSource.contains("if sidebarVisible"))
-        XCTAssertTrue(layoutSource.contains("SidebarDockedColumn()"))
+        XCTAssertTrue(layoutSource.contains("let sidebarPosition = sumiSettings.sidebarPosition"))
+        XCTAssertTrue(layoutSource.contains("let shellEdge = sidebarPosition.shellEdge"))
+        XCTAssertTrue(layoutSource.contains("if sidebarVisible && shellEdge.isLeft"))
+        XCTAssertTrue(layoutSource.contains("if sidebarVisible && shellEdge.isRight"))
+        XCTAssertTrue(layoutSource.contains("SidebarDockedColumn(sidebarPosition: sidebarPosition)"))
         XCTAssertTrue(layoutSource.contains("WebContent()"))
+        let leftSidebarRange = try XCTUnwrap(
+            layoutSource.range(of: "if sidebarVisible && shellEdge.isLeft")
+        )
+        let webContentRange = try XCTUnwrap(layoutSource.range(of: "WebContent()"))
+        let rightSidebarRange = try XCTUnwrap(
+            layoutSource.range(of: "if sidebarVisible && shellEdge.isRight")
+        )
         XCTAssertLessThan(
-            try XCTUnwrap(layoutSource.range(of: "SidebarDockedColumn()")).lowerBound,
-            try XCTUnwrap(layoutSource.range(of: "WebContent()")).lowerBound
+            leftSidebarRange.lowerBound,
+            webContentRange.lowerBound
+        )
+        XCTAssertLessThan(
+            webContentRange.lowerBound,
+            rightSidebarRange.lowerBound
         )
         XCTAssertTrue(layoutSource.contains("SidebarPresentationContext.docked("))
+        XCTAssertTrue(layoutSource.contains("sidebarPosition: sidebarPosition"))
         XCTAssertTrue(layoutSource.contains("SidebarColumnRepresentable("))
         XCTAssertTrue(layoutSource.contains(".frame(width: presentationContext.sidebarWidth)"))
         XCTAssertFalse(layoutSource.contains("Color.clear"))
@@ -269,7 +284,7 @@ final class SidebarThemeResolutionTests: XCTestCase {
             ),
             encoding: .utf8
         )
-        let dockedStart = try XCTUnwrap(source.range(of: "private func SidebarDockedColumn()"))
+        let dockedStart = try XCTUnwrap(source.range(of: "private func SidebarDockedColumn(sidebarPosition: SidebarPosition)"))
             .lowerBound
         let dockedEnd = try XCTUnwrap(source.range(of: "private func WebContent()"))
             .lowerBound
@@ -351,12 +366,15 @@ final class SidebarThemeResolutionTests: XCTestCase {
         let contextSource = String(source[contextStart..<contextEnd])
 
         XCTAssertFalse(contextSource.contains(".docked("))
-        XCTAssertTrue(contextSource.contains(".collapsedVisible(sidebarWidth: overlayBaseSidebarWidth)"))
-        XCTAssertTrue(contextSource.contains(".collapsedHidden(sidebarWidth: overlayBaseSidebarWidth)"))
+        XCTAssertTrue(contextSource.contains(".collapsedVisible("))
+        XCTAssertTrue(contextSource.contains(".collapsedHidden("))
+        XCTAssertTrue(contextSource.contains("sidebarPosition: sumiSettings.sidebarPosition"))
         XCTAssertTrue(source.contains("Color.clear"))
         XCTAssertTrue(source.contains(".frame(width: hoverManager.triggerWidth)"))
         XCTAssertTrue(source.contains("presentationContext.mode == .collapsedVisible"))
         XCTAssertTrue(source.contains("presentationContext.mode == .collapsedHidden"))
+        XCTAssertTrue(source.contains("presentationContext.shellEdge.overlayAlignment"))
+        XCTAssertTrue(source.contains("presentationContext.shellEdge.hiddenOffset"))
     }
 
     func testBrowserWindowShellDoesNotUseDynamicAppKitBackgroundForChromeFallback() throws {

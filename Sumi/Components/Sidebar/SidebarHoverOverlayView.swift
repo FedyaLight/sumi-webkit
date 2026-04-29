@@ -85,15 +85,23 @@ struct SidebarHoverOverlayView: View {
 
     private var presentationContext: SidebarPresentationContext {
         if overlaySidebarRevealed {
-            return .collapsedVisible(sidebarWidth: overlayBaseSidebarWidth)
+            return .collapsedVisible(
+                sidebarWidth: overlayBaseSidebarWidth,
+                sidebarPosition: sumiSettings.sidebarPosition
+            )
         }
 
-        return .collapsedHidden(sidebarWidth: overlayBaseSidebarWidth)
+        return .collapsedHidden(
+            sidebarWidth: overlayBaseSidebarWidth,
+            sidebarPosition: sumiSettings.sidebarPosition
+        )
     }
 
     private var hiddenOffset: CGFloat {
-        let distance = presentationContext.sidebarWidth + SidebarHoverOverlayMetrics.hiddenPadding
-        return -distance
+        presentationContext.shellEdge.hiddenOffset(
+            sidebarWidth: presentationContext.sidebarWidth,
+            hiddenPadding: SidebarHoverOverlayMetrics.hiddenPadding
+        )
     }
 
     private var usesCollapsedChrome: Bool {
@@ -119,7 +127,7 @@ struct SidebarHoverOverlayView: View {
     var body: some View {
         Group {
             if isCollapsedSidebar {
-                ZStack(alignment: .leading) {
+                ZStack(alignment: presentationContext.shellEdge.overlayAlignment) {
                     // Full-window layout without hit-testing so points outside the edge strip and sidebar host
                     // are not absorbed by an implicit full-screen hit target.
                     Color.clear
@@ -140,7 +148,11 @@ struct SidebarHoverOverlayView: View {
 
                     sidebarHost
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .frame(
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: presentationContext.shellEdge.frameAlignment
+                )
             }
         }
         .onChange(of: presentationContext) { _, _ in

@@ -43,6 +43,19 @@ struct SumiProfilesSettingsPane: View {
                     }
 
                     SettingsRow(
+                        title: "Sidebar side",
+                        subtitle: "Place the browser sidebar on the left or right edge."
+                    ) {
+                        Picker("", selection: $settings.sidebarPosition) {
+                            ForEach(SidebarPosition.allCases) { position in
+                                Text(position.displayName).tag(position)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 120)
+                    }
+
+                    SettingsRow(
                         title: "Glance",
                         subtitle: "Preview links without fully opening a tab."
                     ) {
