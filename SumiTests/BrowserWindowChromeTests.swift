@@ -39,6 +39,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         assertMinimumWindowConstraints(window)
         XCTAssertFalse(window.isReleasedWhenClosed)
         XCTAssertTrue(window.isMovable)
+        XCTAssertTrue(window.collectionBehavior.contains(.fullScreenPrimary))
         assertNativeBrowserControlsHidden(window)
     }
 
@@ -65,6 +66,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         assertMinimumWindowConstraints(window)
         XCTAssertFalse(window.isReleasedWhenClosed)
         XCTAssertTrue(window.isMovable)
+        XCTAssertTrue(window.collectionBehavior.contains(.fullScreenPrimary))
         XCTAssertEqual(window.contentRect(forFrameRect: window.frame).size, SumiBrowserWindowShellConfiguration.defaultContentSize)
         assertNativeBrowserControlsHidden(window)
     }
@@ -109,6 +111,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertEqual(window.backgroundColor, SumiBrowserWindowShellConfiguration.backgroundColor)
         XCTAssertFalse(window.isOpaque)
         assertMinimumWindowConstraints(window)
+        XCTAssertTrue(window.collectionBehavior.contains(.fullScreenPrimary))
         assertNativeBrowserControlsHidden(window)
     }
 

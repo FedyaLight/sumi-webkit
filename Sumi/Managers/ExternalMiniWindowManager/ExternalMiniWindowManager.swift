@@ -195,6 +195,7 @@ final class MiniBrowserWindowController: NSWindowController, NSWindowDelegate {
         window.titlebarSeparatorStyle = .none
         window.isMovableByWindowBackground = false
         window.isReleasedWhenClosed = false
+        window.collectionBehavior.insert(.fullScreenPrimary)
         window.hideStandardWindowButtonsForCustomChrome()
         window.identifier = NSUserInterfaceItemIdentifier(
             BrowserWindowControlsAccessibilityIdentifiers.miniBrowserWindow
