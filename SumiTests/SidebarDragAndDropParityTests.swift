@@ -1208,8 +1208,6 @@ final class SidebarCurrentDragResolverTests: XCTestCase {
         )
 
         XCTAssertEqual(resolution.slot, .essentials(slot: 2))
-        XCTAssertEqual(resolution.targetSpaceId, secondarySpaceId)
-        XCTAssertEqual(resolution.targetProfileId, secondaryProfileId)
     }
 
     func testInteractiveHoveredPageScopesSpacePinnedResolutionToSecondarySpace() {
@@ -1242,7 +1240,134 @@ final class SidebarCurrentDragResolverTests: XCTestCase {
         )
 
         XCTAssertEqual(resolution.slot, .spacePinned(spaceId: secondarySpaceId, slot: 1))
-        XCTAssertEqual(resolution.targetSpaceId, secondarySpaceId)
+    }
+
+    func testCurrentDragScopeRejectsCrossSpaceDropTarget() {
+        let currentSpaceId = UUID()
+        let otherSpaceId = UUID()
+        let draggedTab = SumiDragItem(tabId: UUID(), title: "Dragged")
+        let scope = SidebarDragScope(
+            spaceId: currentSpaceId,
+            sourceContainer: .spaceRegular(currentSpaceId),
+            sourceItemId: draggedTab.tabId,
+            sourceItemKind: .tab
+        )
+
+        state.updatePageGeometry(
+            spaceId: otherSpaceId,
+            profileId: nil,
+            frame: CGRect(x: 0, y: 0, width: 260, height: 320),
+            renderMode: .interactive
+        )
+        state.updateSectionFrame(
+            spaceId: otherSpaceId,
+            section: .spacePinned,
+            frame: CGRect(x: 0, y: 100, width: 260, height: 120)
+        )
+
+        let resolution = SidebarDropResolver.resolve(
+            location: CGPoint(x: 90, y: 140),
+            state: state,
+            draggedItem: draggedTab,
+            scope: scope
+        )
+
+        XCTAssertEqual(resolution.slot, .empty)
+    }
+
+    func testCurrentDragScopeRejectsCrossProfileDropTarget() {
+        let spaceId = UUID()
+        let currentProfileId = UUID()
+        let otherProfileId = UUID()
+        let draggedTab = SumiDragItem(tabId: UUID(), title: "Dragged")
+        let scope = SidebarDragScope(
+            spaceId: spaceId,
+            profileId: currentProfileId,
+            sourceContainer: .spaceRegular(spaceId),
+            sourceItemId: draggedTab.tabId,
+            sourceItemKind: .tab
+        )
+
+        state.updatePageGeometry(
+            spaceId: spaceId,
+            profileId: otherProfileId,
+            frame: CGRect(x: 0, y: 0, width: 260, height: 320),
+            renderMode: .interactive
+        )
+        state.updateSectionFrame(
+            spaceId: spaceId,
+            section: .essentials,
+            frame: CGRect(x: 0, y: 0, width: 260, height: 72)
+        )
+        state.updateEssentialsLayoutMetrics(
+            spaceId: spaceId,
+            profileId: otherProfileId,
+            frame: CGRect(x: 0, y: 0, width: 260, height: 72),
+            dropFrame: CGRect(x: 0, y: 0, width: 260, height: 72),
+            itemCount: 2,
+            columnCount: 2,
+            rowCount: 1,
+            itemSize: CGSize(width: 110, height: 32),
+            gridSpacing: 8,
+            canAcceptDrop: true
+        )
+
+        let resolution = SidebarDropResolver.resolve(
+            location: CGPoint(x: 90, y: 20),
+            state: state,
+            draggedItem: draggedTab,
+            scope: scope
+        )
+
+        XCTAssertEqual(resolution.slot, .empty)
+    }
+
+    func testTransitionSnapshotPageIsNotAcceptedAsScopedDropTarget() {
+        let spaceId = UUID()
+        let draggedTab = SumiDragItem(tabId: UUID(), title: "Dragged")
+        let scope = SidebarDragScope(
+            spaceId: spaceId,
+            sourceContainer: .spaceRegular(spaceId),
+            sourceItemId: draggedTab.tabId,
+            sourceItemKind: .tab
+        )
+
+        state.applyPageGeometry(
+            spaceId: spaceId,
+            profileId: nil,
+            frame: CGRect(x: 0, y: 0, width: 260, height: 320),
+            renderMode: .transitionSnapshot,
+            generation: state.activeGeometryGeneration
+        )
+        state.updateSectionFrame(
+            spaceId: spaceId,
+            section: .spacePinned,
+            frame: CGRect(x: 0, y: 100, width: 260, height: 120)
+        )
+
+        let resolution = SidebarDropResolver.resolve(
+            location: CGPoint(x: 90, y: 140),
+            state: state,
+            draggedItem: draggedTab,
+            scope: scope
+        )
+
+        XCTAssertEqual(resolution.slot, .empty)
+    }
+
+    func testDragScopeRejectsDifferentWindowId() {
+        let sourceWindowId = UUID()
+        let targetWindowId = UUID()
+        let scope = SidebarDragScope(
+            windowId: sourceWindowId,
+            spaceId: UUID(),
+            sourceContainer: .spaceRegular(UUID()),
+            sourceItemId: UUID(),
+            sourceItemKind: .tab
+        )
+
+        XCTAssertTrue(scope.matches(windowId: sourceWindowId))
+        XCTAssertFalse(scope.matches(windowId: targetWindowId))
     }
 
     func testDropBelowExpandedFolderBlockResolvesRegularSectionInsteadOfFolder() {
@@ -1843,8 +1968,6 @@ final class SidebarDragStateTests: XCTestCase {
             secondaryResolution.slot,
             .spacePinned(spaceId: secondarySpaceId, slot: 1)
         )
-        XCTAssertEqual(secondaryResolution.targetSpaceId, secondarySpaceId)
-        XCTAssertEqual(secondaryResolution.targetProfileId, secondaryProfileId)
     }
 
     func testSnapshotPageGeometryDoesNotPromotePendingRuntimeStore() {
@@ -4096,6 +4219,71 @@ private final class SidebarContextMenuRecoverySpy: SidebarHostRecoveryHandling {
     }
 }
 
+private extension DragOperation {
+    @MainActor
+    init(
+        payload: DragOperation.Payload,
+        fromContainer: TabDragManager.DragContainer,
+        toContainer: TabDragManager.DragContainer,
+        toIndex: Int
+    ) {
+        let sourceItemId: UUID
+        let sourceItemKind: SumiDragItemKind
+        let sourceProfileId: UUID?
+        let payloadSpaceId: UUID?
+
+        switch payload {
+        case .tab(let tab):
+            sourceItemId = tab.shortcutPinId ?? tab.id
+            sourceItemKind = .tab
+            sourceProfileId = tab.profileId
+            payloadSpaceId = tab.spaceId
+        case .pin(let pin):
+            sourceItemId = pin.id
+            sourceItemKind = .tab
+            sourceProfileId = pin.profileId
+            payloadSpaceId = pin.spaceId
+        case .folder(let folder):
+            sourceItemId = folder.id
+            sourceItemKind = .folder
+            sourceProfileId = nil
+            payloadSpaceId = folder.spaceId
+        }
+
+        let scopedSpaceId = fromContainer.spaceIdForSidebarTestScope
+            ?? toContainer.spaceIdForSidebarTestScope
+            ?? payloadSpaceId
+            ?? UUID()
+        self.init(
+            payload: payload,
+            scope: SidebarDragScope(
+                spaceId: scopedSpaceId,
+                profileId: sourceProfileId,
+                sourceContainer: fromContainer,
+                sourceItemId: sourceItemId,
+                sourceItemKind: sourceItemKind
+            ),
+            fromContainer: fromContainer,
+            toContainer: toContainer,
+            toIndex: toIndex
+        )
+    }
+}
+
+private extension TabDragManager.DragContainer {
+    var spaceIdForSidebarTestScope: UUID? {
+        switch self {
+        case .spacePinned(let spaceId),
+             .spaceRegular(let spaceId):
+            return spaceId
+        case .essentials,
+             .folder,
+             .none:
+            return nil
+        }
+    }
+}
+
 @MainActor
 final class SidebarDragOperationParityTests: XCTestCase {
     func testRegularToFolderCreatesFolderChildLauncherAndKeepsClosedFolderClosed() throws {
@@ -4110,8 +4298,7 @@ final class SidebarDragOperationParityTests: XCTestCase {
                 payload: .tab(tab),
                 fromContainer: .spaceRegular(space.id),
                 toContainer: .folder(folder.id),
-                toIndex: 0,
-                toSpaceId: nil
+                toIndex: 0
             )
         )
 
@@ -4142,8 +4329,7 @@ final class SidebarDragOperationParityTests: XCTestCase {
                 payload: .tab(tabManager.dragProxyTab(for: pin)),
                 fromContainer: .spacePinned(space.id),
                 toContainer: .folder(folder.id),
-                toIndex: 0,
-                toSpaceId: nil
+                toIndex: 0
             )
         )
 
@@ -4177,8 +4363,7 @@ final class SidebarDragOperationParityTests: XCTestCase {
                 payload: .tab(tabManager.dragProxyTab(for: pin)),
                 fromContainer: .spacePinned(space.id),
                 toContainer: .folder(folder.id),
-                toIndex: 0,
-                toSpaceId: nil
+                toIndex: 0
             )
         )
 
@@ -4200,8 +4385,7 @@ final class SidebarDragOperationParityTests: XCTestCase {
                 payload: .tab(tab),
                 fromContainer: .spaceRegular(space.id),
                 toContainer: .folder(folder.id),
-                toIndex: 0,
-                toSpaceId: nil
+                toIndex: 0
             )
         )
 
@@ -4215,8 +4399,7 @@ final class SidebarDragOperationParityTests: XCTestCase {
                 payload: .tab(tabManager.dragProxyTab(for: folderPin)),
                 fromContainer: .folder(folder.id),
                 toContainer: .spacePinned(space.id),
-                toIndex: 0,
-                toSpaceId: space.id
+                toIndex: 0
             )
         )
 
@@ -4236,8 +4419,7 @@ final class SidebarDragOperationParityTests: XCTestCase {
                 payload: .tab(firstRegular),
                 fromContainer: .spaceRegular(space.id),
                 toContainer: .spacePinned(space.id),
-                toIndex: 0,
-                toSpaceId: space.id
+                toIndex: 0
             )
         )
 
@@ -4250,8 +4432,7 @@ final class SidebarDragOperationParityTests: XCTestCase {
                 payload: .tab(tabManager.dragProxyTab(for: pinned)),
                 fromContainer: .spacePinned(space.id),
                 toContainer: .spaceRegular(space.id),
-                toIndex: 1,
-                toSpaceId: space.id
+                toIndex: 1
             )
         )
 
@@ -4288,8 +4469,7 @@ final class SidebarDragOperationParityTests: XCTestCase {
                 payload: .tab(tabManager.dragProxyTab(for: pin)),
                 fromContainer: .essentials,
                 toContainer: .spaceRegular(space.id),
-                toIndex: 0,
-                toSpaceId: space.id
+                toIndex: 0
             )
         )
 
@@ -4344,8 +4524,7 @@ final class SidebarDragOperationParityTests: XCTestCase {
                 payload: .folder(first),
                 fromContainer: .spacePinned(space.id),
                 toContainer: .spacePinned(space.id),
-                toIndex: 2,
-                toSpaceId: space.id
+                toIndex: 2
             )
         )
 
@@ -4389,8 +4568,7 @@ final class SidebarDragOperationParityTests: XCTestCase {
                 payload: .folder(folder),
                 fromContainer: .spacePinned(space.id),
                 toContainer: .spacePinned(space.id),
-                toIndex: 3,
-                toSpaceId: space.id
+                toIndex: 3
             )
         )
 
@@ -4409,16 +4587,16 @@ final class SidebarDragOperationParityTests: XCTestCase {
         let first = tabManager.createFolder(for: space.id, name: "First")
         let second = tabManager.createFolder(for: space.id, name: "Second")
 
-        tabManager.performSidebarDragOperation(
+        let accepted = tabManager.performSidebarDragOperation(
             DragOperation(
                 payload: .folder(first),
                 fromContainer: .spacePinned(space.id),
                 toContainer: .folder(second.id),
-                toIndex: 0,
-                toSpaceId: nil
+                toIndex: 0
             )
         )
 
+        XCTAssertFalse(accepted)
         let unchanged = tabManager.topLevelSpacePinnedItems(for: space.id)
         XCTAssertEqual(unchanged.map(\.id), [first.id, second.id])
         XCTAssertTrue(tabManager.folderPinnedPins(for: second.id, in: space.id).isEmpty)
@@ -4450,8 +4628,7 @@ final class SidebarDragOperationParityTests: XCTestCase {
                 payload: .tab(tabManager.dragProxyTab(for: first)),
                 fromContainer: .spacePinned(space.id),
                 toContainer: .spacePinned(space.id),
-                toIndex: 1,
-                toSpaceId: space.id
+                toIndex: 1
             )
         )
 
@@ -4486,8 +4663,7 @@ final class SidebarDragOperationParityTests: XCTestCase {
                 payload: .tab(tabManager.dragProxyTab(for: first)),
                 fromContainer: .essentials,
                 toContainer: .essentials,
-                toIndex: 1,
-                toSpaceId: nil
+                toIndex: 1
             )
         )
 
@@ -4515,8 +4691,7 @@ final class SidebarDragOperationParityTests: XCTestCase {
                 payload: .tab(tabManager.dragProxyTab(for: pin)),
                 fromContainer: .essentials,
                 toContainer: .spacePinned(targetSpace.id),
-                toIndex: 0,
-                toSpaceId: targetSpace.id
+                toIndex: 0
             )
         )
 
@@ -4543,8 +4718,7 @@ final class SidebarDragOperationParityTests: XCTestCase {
                 payload: .tab(tabManager.dragProxyTab(for: pin)),
                 fromContainer: .essentials,
                 toContainer: .spaceRegular(targetSpace.id),
-                toIndex: 0,
-                toSpaceId: targetSpace.id
+                toIndex: 0
             )
         )
 
@@ -4581,8 +4755,7 @@ final class SidebarDragOperationParityTests: XCTestCase {
                 payload: .tab(tabManager.dragProxyTab(for: first)),
                 fromContainer: .folder(folder.id),
                 toContainer: .folder(folder.id),
-                toIndex: 1,
-                toSpaceId: nil
+                toIndex: 1
             )
         )
 
@@ -4604,14 +4777,62 @@ final class SidebarDragOperationParityTests: XCTestCase {
                 payload: .tab(first),
                 fromContainer: .spaceRegular(space.id),
                 toContainer: .spaceRegular(space.id),
-                toIndex: 3,
-                toSpaceId: space.id
+                toIndex: 3
             )
         )
 
         let reordered = tabManager.tabsBySpace[space.id] ?? []
         XCTAssertEqual(reordered.map(\.id), [second.id, third.id, first.id])
         XCTAssertEqual(reordered.map(\.index), [0, 1, 2])
+    }
+
+    func testCrossSpaceSidebarOperationIsRejectedWithoutMutation() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let sourceSpace = tabManager.createSpace(name: "Source")
+        let targetSpace = tabManager.createSpace(name: "Target")
+        let tab = tabManager.createNewTab(url: "https://example.com/cross-space", in: sourceSpace)
+
+        let accepted = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .tab(tab),
+                fromContainer: .spaceRegular(sourceSpace.id),
+                toContainer: .spaceRegular(targetSpace.id),
+                toIndex: 0
+            )
+        )
+
+        XCTAssertFalse(accepted)
+        XCTAssertEqual(tabManager.tabsBySpace[sourceSpace.id]?.map(\.id), [tab.id])
+        XCTAssertTrue(tabManager.tabsBySpace[targetSpace.id]?.isEmpty ?? true)
+    }
+
+    func testCrossProfileSidebarOperationIsRejectedWithoutMutation() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let sourceProfileId = UUID()
+        let otherProfileId = UUID()
+        let sourceSpace = tabManager.createSpace(name: "Source", profileId: sourceProfileId)
+        let tab = tabManager.createNewTab(url: "https://example.com/cross-profile", in: sourceSpace)
+
+        let accepted = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .tab(tab),
+                scope: SidebarDragScope(
+                    spaceId: sourceSpace.id,
+                    profileId: otherProfileId,
+                    sourceContainer: .spaceRegular(sourceSpace.id),
+                    sourceItemId: tab.id,
+                    sourceItemKind: .tab
+                ),
+                fromContainer: .spaceRegular(sourceSpace.id),
+                toContainer: .essentials,
+                toIndex: 0
+            )
+        )
+
+        XCTAssertFalse(accepted)
+        XCTAssertEqual(tabManager.tabsBySpace[sourceSpace.id]?.map(\.id), [tab.id])
+        XCTAssertTrue(tabManager.essentialPins(for: sourceProfileId).isEmpty)
+        XCTAssertTrue(tabManager.essentialPins(for: otherProfileId).isEmpty)
     }
 
     func testSpaceReorderSourcesDoNotUseSidebarDragAndDropPipeline() throws {

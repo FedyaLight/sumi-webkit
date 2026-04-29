@@ -17,6 +17,81 @@ enum DropZoneID: Hashable {
     case spacePinned(UUID)
     case spaceRegular(UUID)
     case folder(UUID)
+
+    var asDragContainer: TabDragManager.DragContainer {
+        switch self {
+        case .essentials:
+            return .essentials
+        case .spacePinned(let spaceId):
+            return .spacePinned(spaceId)
+        case .spaceRegular(let spaceId):
+            return .spaceRegular(spaceId)
+        case .folder(let folderId):
+            return .folder(folderId)
+        }
+    }
+}
+
+struct SidebarDragScope: Equatable {
+    let windowId: UUID?
+    let spaceId: UUID
+    let profileId: UUID?
+    let presentationMode: SidebarPresentationMode
+    let sourceContainer: TabDragManager.DragContainer
+    let sourceItemId: UUID
+    let sourceItemKind: SumiDragItemKind
+
+    @MainActor
+    init?(
+        windowState: BrowserWindowState?,
+        presentationMode: SidebarPresentationMode,
+        sourceZone: DropZoneID,
+        item: SumiDragItem
+    ) {
+        guard let spaceId = windowState?.currentSpaceId else {
+            return nil
+        }
+
+        self.windowId = windowState?.id
+        self.spaceId = spaceId
+        self.profileId = windowState?.currentProfileId
+        self.presentationMode = presentationMode
+        self.sourceContainer = sourceZone.asDragContainer
+        self.sourceItemId = item.tabId
+        self.sourceItemKind = item.kind
+    }
+
+    init(
+        windowId: UUID? = nil,
+        spaceId: UUID,
+        profileId: UUID? = nil,
+        presentationMode: SidebarPresentationMode = .docked,
+        sourceContainer: TabDragManager.DragContainer,
+        sourceItemId: UUID,
+        sourceItemKind: SumiDragItemKind
+    ) {
+        self.windowId = windowId
+        self.spaceId = spaceId
+        self.profileId = profileId
+        self.presentationMode = presentationMode
+        self.sourceContainer = sourceContainer
+        self.sourceItemId = sourceItemId
+        self.sourceItemKind = sourceItemKind
+    }
+
+    func matches(windowId targetWindowId: UUID?) -> Bool {
+        guard let windowId, let targetWindowId else {
+            return true
+        }
+        return windowId == targetWindowId
+    }
+
+    func matches(profileId targetProfileId: UUID?) -> Bool {
+        guard let profileId, let targetProfileId else {
+            return true
+        }
+        return profileId == targetProfileId
+    }
 }
 
 // MARK: - Drag Item

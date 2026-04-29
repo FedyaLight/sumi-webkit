@@ -196,33 +196,39 @@ extension TabManager {
         removeShortcutPin(pin)
     }
 
-    func reorderEssential(_ pin: ShortcutPin, to index: Int) {
+    @discardableResult
+    func reorderEssential(_ pin: ShortcutPin, to index: Int) -> Bool {
         withStructuralUpdateTransaction {
-            guard let pid = pin.profileId else { return }
+            guard let pid = pin.profileId else { return false }
             var arr = pinnedByProfile[pid] ?? []
-            guard let currentIndex = arr.firstIndex(where: { $0.id == pin.id }) else { return }
+            guard let currentIndex = arr.firstIndex(where: { $0.id == pin.id }) else { return false }
             if currentIndex < arr.count { arr.remove(at: currentIndex) }
-            let adjustedIndex = currentIndex < index ? index - 1 : index
-            arr.insert(pin, at: max(0, min(adjustedIndex, arr.count)))
+            arr.insert(pin, at: max(0, min(index, arr.count)))
             setPinnedTabs(reindexed(arr), for: pid)
             scheduleStructuralPersistence()
+            return true
         }
     }
 
-    func reorderSpacePinned(_ pin: ShortcutPin, in spaceId: UUID, to index: Int) {
+    @discardableResult
+    func reorderSpacePinned(_ pin: ShortcutPin, in spaceId: UUID, to index: Int) -> Bool {
         withStructuralUpdateTransaction {
+            var didReorder = false
             if pin.folderId == nil {
-                _ = reorderTopLevelSpacePinnedShortcut(pin, in: spaceId, to: index)
+                didReorder = reorderTopLevelSpacePinnedShortcut(pin, in: spaceId, to: index) != nil
             } else {
                 withSpacePinnedShortcutGroup(for: spaceId, folderId: pin.folderId) { arr in
                     guard let currentIndex = arr.firstIndex(where: { $0.id == pin.id }) else { return }
                     guard index != currentIndex else { return }
                     if currentIndex < arr.count { arr.remove(at: currentIndex) }
-                    let adjustedIndex = currentIndex < index ? index - 1 : index
-                    arr.insert(pin, at: max(0, min(adjustedIndex, arr.count)))
+                    arr.insert(pin, at: max(0, min(index, arr.count)))
+                    didReorder = true
                 }
             }
-            scheduleStructuralPersistence()
+            if didReorder {
+                scheduleStructuralPersistence()
+            }
+            return didReorder
         }
     }
 

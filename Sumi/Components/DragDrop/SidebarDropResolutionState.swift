@@ -38,8 +38,6 @@ enum FolderDropIntent: Equatable {
 
 struct SidebarDropResolution: Equatable {
     let slot: DropZoneSlot
-    let targetSpaceId: UUID?
-    let targetProfileId: UUID?
     let folderIntent: FolderDropIntent
     let activeHoveredFolderId: UUID?
 }
@@ -52,9 +50,14 @@ enum SidebarDropResolver {
     static func resolve(
         location: CGPoint,
         state: SidebarDragState,
-        draggedItem: SumiDragItem?
+        draggedItem: SumiDragItem?,
+        scope: SidebarDragScope? = nil
     ) -> SidebarDropResolution {
-        let hoveredPage = state.hoveredInteractivePage(at: location)
+        let activeScope = scope ?? state.activeDragScope
+        let hoveredPage = state.hoveredInteractivePage(
+            at: location,
+            matching: activeScope
+        )
         if hoveredPage == nil {
             state.requestGeometryRefresh()
         }
@@ -62,7 +65,8 @@ enum SidebarDropResolver {
             location: location,
             state: state,
             draggedItem: draggedItem,
-            hoveredPage: hoveredPage
+            hoveredPage: hoveredPage,
+            scope: activeScope
         )
     }
 
@@ -70,13 +74,15 @@ enum SidebarDropResolver {
         location: CGPoint,
         state: SidebarDragState,
         draggedItem: SumiDragItem?,
-        hoveredPage: SidebarPageGeometryMetrics?
+        hoveredPage: SidebarPageGeometryMetrics?,
+        scope: SidebarDragScope?
     ) -> SidebarDropResolution {
         if let essentialsResolution = resolveEssentials(
             location: location,
             state: state,
             draggedItem: draggedItem,
-            hoveredPage: hoveredPage
+            hoveredPage: hoveredPage,
+            scope: scope
         ) {
             return essentialsResolution
         }
@@ -109,8 +115,6 @@ enum SidebarDropResolver {
 
         return SidebarDropResolution(
             slot: .empty,
-            targetSpaceId: nil,
-            targetProfileId: nil,
             folderIntent: .none,
             activeHoveredFolderId: nil
         )
@@ -121,7 +125,8 @@ enum SidebarDropResolver {
         location: CGPoint,
         previewLocation: CGPoint? = nil,
         state: SidebarDragState,
-        draggedItem: SumiDragItem?
+        draggedItem: SumiDragItem?,
+        scope: SidebarDragScope? = nil
     ) -> SidebarDropResolution {
         state.updateDragLocation(
             location,
@@ -130,7 +135,8 @@ enum SidebarDropResolver {
         let resolution = resolve(
             location: location,
             state: state,
-            draggedItem: draggedItem
+            draggedItem: draggedItem,
+            scope: scope
         )
         state.hoveredSlot = resolution.slot
         state.folderDropIntent = resolution.folderIntent
@@ -173,8 +179,6 @@ enum SidebarDropResolver {
 
             return SidebarDropResolution(
                 slot: .spacePinned(spaceId: hoveredPage.spaceId, slot: slot),
-                targetSpaceId: hoveredPage.spaceId,
-                targetProfileId: hoveredPage.profileId,
                 folderIntent: .none,
                 activeHoveredFolderId: nil
             )
@@ -191,8 +195,6 @@ enum SidebarDropResolver {
                 spaceId: hoveredPage.spaceId,
                 slot: midpointSlotIndex(localY: localY)
             ),
-            targetSpaceId: hoveredPage.spaceId,
-            targetProfileId: hoveredPage.profileId,
             folderIntent: .none,
             activeHoveredFolderId: nil
         )
@@ -424,8 +426,6 @@ enum SidebarDropResolver {
     ) -> SidebarDropResolution {
         SidebarDropResolution(
             slot: .folder(folderId: target.folderId, slot: target.childCount),
-            targetSpaceId: target.spaceId,
-            targetProfileId: nil,
             folderIntent: .contain(folderId: target.folderId),
             activeHoveredFolderId: target.folderId
         )
@@ -438,8 +438,6 @@ enum SidebarDropResolver {
         let safeIndex = max(0, min(index, target.childCount))
         return SidebarDropResolution(
             slot: .folder(folderId: target.folderId, slot: safeIndex),
-            targetSpaceId: target.spaceId,
-            targetProfileId: nil,
             folderIntent: .insertIntoFolder(folderId: target.folderId, index: safeIndex),
             activeHoveredFolderId: target.folderId
         )
@@ -451,8 +449,6 @@ enum SidebarDropResolver {
     ) -> SidebarDropResolution {
         SidebarDropResolution(
             slot: .spacePinned(spaceId: target.spaceId, slot: max(0, slot)),
-            targetSpaceId: target.spaceId,
-            targetProfileId: nil,
             folderIntent: .none,
             activeHoveredFolderId: nil
         )
@@ -477,8 +473,6 @@ enum SidebarDropResolver {
     private static var emptyResolution: SidebarDropResolution {
         SidebarDropResolution(
             slot: .empty,
-            targetSpaceId: nil,
-            targetProfileId: nil,
             folderIntent: .none,
             activeHoveredFolderId: nil
         )
@@ -503,8 +497,6 @@ enum SidebarDropResolver {
         if foundSlot != .empty {
             return SidebarDropResolution(
                 slot: foundSlot,
-                targetSpaceId: spaceId,
-                targetProfileId: hoveredPage.profileId,
                 folderIntent: .none,
                 activeHoveredFolderId: nil
             )
@@ -516,8 +508,6 @@ enum SidebarDropResolver {
            location.y >= regularFrame.maxY {
             return SidebarDropResolution(
                 slot: .spaceRegular(spaceId: spaceId, slot: 9999),
-                targetSpaceId: spaceId,
-                targetProfileId: hoveredPage.profileId,
                 folderIntent: .none,
                 activeHoveredFolderId: nil
             )
@@ -568,10 +558,12 @@ enum SidebarDropResolver {
         location: CGPoint,
         state: SidebarDragState,
         draggedItem: SumiDragItem?,
-        hoveredPage: SidebarPageGeometryMetrics?
+        hoveredPage: SidebarPageGeometryMetrics?,
+        scope: SidebarDragScope?
     ) -> SidebarDropResolution? {
         guard let hoveredPage,
               let metrics = state.essentialsLayoutMetricsBySpace[hoveredPage.spaceId],
+              scope?.matches(profileId: metrics.profileId) != false,
               metrics.dropFrame.contains(location) else {
             _ = draggedItem
             return nil
@@ -580,26 +572,19 @@ enum SidebarDropResolver {
             return nil
         }
 
-        let targetProfileId = hoveredPage.profileId ?? metrics.profileId
         return resolveEssentials(
             location: location,
-            metrics: metrics,
-            targetSpaceId: hoveredPage.spaceId,
-            targetProfileId: targetProfileId
+            metrics: metrics
         )
     }
 
     private static func resolveEssentials(
         location: CGPoint,
-        metrics: SidebarEssentialsLayoutMetrics,
-        targetSpaceId: UUID,
-        targetProfileId: UUID?
+        metrics: SidebarEssentialsLayoutMetrics
     ) -> SidebarDropResolution {
         guard metrics.visibleItemCount > 0 else {
             return SidebarDropResolution(
                 slot: .essentials(slot: 0),
-                targetSpaceId: targetSpaceId,
-                targetProfileId: targetProfileId,
                 folderIntent: .none,
                 activeHoveredFolderId: nil
             )
@@ -609,8 +594,6 @@ enum SidebarDropResolver {
 
         return SidebarDropResolution(
             slot: .essentials(slot: slot),
-            targetSpaceId: targetSpaceId,
-            targetProfileId: targetProfileId,
             folderIntent: .none,
             activeHoveredFolderId: nil
         )

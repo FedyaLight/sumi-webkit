@@ -39,6 +39,10 @@ class SidebarDragNSView: NSView {
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         let state = SidebarDragState.shared
         if let item = SumiDragItem.fromPasteboard(sender.draggingPasteboard) {
+            guard validatedScope(for: item) != nil else {
+                state.clearHoverState()
+                return []
+            }
             if state.isInternalDragSession {
                 state.activeDragItemId = item.tabId
             } else {
@@ -47,13 +51,11 @@ class SidebarDragNSView: NSView {
         } else if !state.isInternalDragSession {
             state.beginExternalDragSession(itemId: nil)
         }
-        updateDragSlot(sender: sender)
-        return .move
+        return updateDragSlot(sender: sender) ? .move : []
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        updateDragSlot(sender: sender)
-        return .move
+        updateDragSlot(sender: sender) ? .move : []
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
@@ -80,23 +82,22 @@ class SidebarDragNSView: NSView {
         
         // Sumi Drag Resolution
         if let draggedItem {
+            guard let scope = validatedScope(for: draggedItem) else { return false }
             guard let payload = browserManager.tabManager.resolveSidebarDragPayload(for: draggedItem) else { return false }
-            
-            let sourceContainer = resolveSourceContainer(for: draggedItem)
             
             let operation = DragOperation(
                 payload: payload,
-                fromContainer: sourceContainer,
+                scope: scope,
+                fromContainer: scope.sourceContainer,
                 toContainer: resolution.slot.asDragContainer,
-                toIndex: resolution.slot.visualIndex,
-                toSpaceId: resolution.targetSpaceId,
-                toProfileId: resolution.targetProfileId
+                toIndex: resolution.slot.visualIndex
             )
             
+            var accepted = false
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                browserManager.tabManager.performSidebarDragOperation(operation)
+                accepted = browserManager.tabManager.performSidebarDragOperation(operation)
             }
-            return true
+            return accepted
         }
 
         // Add additional drag payload extraction for raw URLs dropped into sidebar here
@@ -104,9 +105,12 @@ class SidebarDragNSView: NSView {
         return false
     }
 
-    private func updateDragSlot(sender: NSDraggingInfo) {
+    private func updateDragSlot(sender: NSDraggingInfo) -> Bool {
         let draggedItem = SumiDragItem.fromPasteboard(sender.draggingPasteboard)
-        _ = resolveDropResolution(sender: sender, draggedItem: draggedItem)
+        guard let resolution = resolveDropResolution(sender: sender, draggedItem: draggedItem) else {
+            return false
+        }
+        return resolution.slot != .empty
     }
 
     @discardableResult
@@ -117,11 +121,17 @@ class SidebarDragNSView: NSView {
         guard let swiftUILocation = resolvedSwiftUILocation(for: sender) else { return nil }
         let previewLocation = resolvedSwiftUIPreviewLocation(for: sender)
         let state = SidebarDragState.shared
+        let scope = draggedItem.flatMap { validatedScope(for: $0) }
+        if draggedItem != nil, scope == nil {
+            state.clearHoverState()
+            return nil
+        }
         return SidebarDropResolver.updateState(
             location: swiftUILocation,
             previewLocation: previewLocation,
             state: state,
-            draggedItem: draggedItem
+            draggedItem: draggedItem,
+            scope: scope
         )
     }
 
@@ -138,40 +148,18 @@ class SidebarDragNSView: NSView {
             in: self
         )
     }
-    
-    // Dynamic Resolution Helpers
-    private func resolveSourceContainer(for item: SumiDragItem) -> TabDragManager.DragContainer {
-        guard let tabManager = browserManager?.tabManager else { return .none }
-        if item.kind == .folder {
-            guard let folder = tabManager.folder(by: item.tabId) else { return .none }
-            // Sumi folders in sidebar exist in spacePinned natively
-            return .spacePinned(folder.spaceId)
-        } else {
-            if let pin = tabManager.shortcutPin(by: item.tabId) {
-                if pin.role == .essential { return .essentials }
-                if pin.role == .spacePinned {
-                    if let folderId = pin.folderId { return .folder(folderId) }
-                    if let sid = pin.spaceId { return .spacePinned(sid) }
-                }
-            }
-            
-            guard let tab = tabManager.resolveDragTab(for: item.tabId) else { return .none }
-            
-            if tab.isPinned {
-                return .essentials
-            }
-            if tab.isSpacePinned, let sid = tab.spaceId {
-                if let folderId = tab.folderId {
-                    return .folder(folderId)
-                } else {
-                    return .spacePinned(sid)
-                }
-            }
-            if let sid = tab.spaceId {
-                return .spaceRegular(sid)
-            }
+
+    private func validatedScope(for item: SumiDragItem) -> SidebarDragScope? {
+        let state = SidebarDragState.shared
+        guard let scope = state.activeDragScope,
+              scope.sourceItemId == item.tabId,
+              scope.sourceItemKind == item.kind,
+              scope.matches(windowId: windowState?.id),
+              scope.spaceId == windowState?.currentSpaceId,
+              scope.matches(profileId: windowState?.currentProfileId)
+        else {
+            return nil
         }
-        return .none
+        return scope
     }
-    
 }
