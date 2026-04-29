@@ -6,7 +6,6 @@
 //  Refactored by Aether on 15/11/2025.
 //
 
-import AppKit
 import SwiftUI
 
 enum SidebarPageRenderMode: Equatable {
@@ -218,19 +217,6 @@ struct SpacesSideBarView: View {
             .padding(.bottom, 8)
         }
         .environment(sidebarInteractionState)
-        .background(
-            ZStack {
-                GeometryReader { geo in
-                    Color.clear
-                        .onAppear {
-                            updateSidebarScreenFrame(geo)
-                        }
-                        .onChange(of: geo.frame(in: .global)) { _, _ in
-                            updateSidebarScreenFrame(geo)
-                        }
-                }
-            }
-        )
         .sidebarAppKitBackgroundContextMenu(
             controller: windowState.sidebarContextMenuController,
             entries: { sidebarContextMenuEntries() },
@@ -241,16 +227,6 @@ struct SpacesSideBarView: View {
                 sidebarInteractionState.syncSidebarItemDrag(isDragging)
             }
         }
-    }
-
-    private func updateSidebarScreenFrame(_ geo: GeometryProxy) {
-        let frame = geo.frame(in: .global)
-        guard let window = windowState.window ?? NSApp.windows.first(where: { $0.isVisible }),
-              let contentView = window.contentView else { return }
-        let appKitY = contentView.bounds.height - frame.maxY
-        let bottomLeft = NSPoint(x: frame.origin.x, y: appKitY)
-        _ = window.convertPoint(toScreen: bottomLeft)
-        // SidebarGlobalDragOverlay will use this layout implicitly or explicitly.
     }
 
     // MARK: - Spaces Page View
