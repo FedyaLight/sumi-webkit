@@ -1,0 +1,147 @@
+//
+//  SidebarContextMenuModifiers.swift
+//  Sumi
+//
+
+import SwiftUI
+
+private struct SidebarAppKitItemModifier: ViewModifier {
+    @Environment(BrowserWindowState.self) private var windowState
+    @Environment(\.sidebarPresentationContext) private var presentationContext
+
+    let menu: SidebarContextMenuLeafConfiguration
+    let dragSource: SidebarDragSourceConfiguration?
+    let primaryAction: (() -> Void)?
+    let onMiddleClick: (() -> Void)?
+    let sourceID: String?
+    let isInteractionEnabled: Bool
+
+    func body(content: Content) -> some View {
+        SidebarAppKitItemBridge(
+            content: content,
+            controller: windowState.sidebarContextMenuController,
+            configuration: SidebarAppKitItemConfiguration(
+                isInteractionEnabled: isInteractionEnabled,
+                menu: menu,
+                dragSource: dragSource,
+                primaryAction: primaryAction,
+                onMiddleClick: onMiddleClick,
+                sourceID: sourceID,
+                presentationMode: presentationContext.mode
+            )
+        )
+    }
+}
+
+private struct SidebarAppKitPrimaryActionModifier: ViewModifier {
+    @Environment(BrowserWindowState.self) private var windowState
+
+    let isEnabled: Bool
+    let isInteractionEnabled: Bool
+    let action: () -> Void
+
+    func body(content: Content) -> some View {
+        let primaryAction: (() -> Void)? = isEnabled ? action : nil
+        return SidebarAppKitItemBridge(
+            content: content,
+            controller: windowState.sidebarContextMenuController,
+            configuration: SidebarAppKitItemConfiguration(
+                isInteractionEnabled: isInteractionEnabled,
+                primaryAction: primaryAction
+            )
+        )
+    }
+}
+private struct SumiAppKitContextMenuModifier: ViewModifier {
+    @Environment(BrowserWindowState.self) private var windowState
+
+    let isEnabled: Bool
+    let entries: () -> [SidebarContextMenuEntry]
+    let onMenuVisibilityChanged: (Bool) -> Void
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            SumiAppKitContextMenuBridge(
+                controller: windowState.sidebarContextMenuController,
+                isEnabled: isEnabled,
+                entries: entries,
+                onMenuVisibilityChanged: onMenuVisibilityChanged
+            )
+        }
+    }
+}
+
+extension View {
+    func sidebarAppKitContextMenu(
+        isEnabled: Bool = true,
+        isInteractionEnabled: Bool = true,
+        surfaceKind: SidebarContextMenuSurfaceKind = .row,
+        triggers: SidebarContextMenuTriggers = [.rightClick],
+        dragSource: SidebarDragSourceConfiguration? = nil,
+        primaryAction: (() -> Void)? = nil,
+        onMiddleClick: (() -> Void)? = nil,
+        sourceID: String? = nil,
+        entries: @escaping () -> [SidebarContextMenuEntry],
+        onMenuVisibilityChanged: @escaping (Bool) -> Void = { _ in }
+    ) -> some View {
+        modifier(
+            SidebarAppKitItemModifier(
+                menu: SidebarContextMenuLeafConfiguration(
+                    isEnabled: isEnabled,
+                    surfaceKind: surfaceKind,
+                    triggers: triggers,
+                    entries: entries,
+                    onMenuVisibilityChanged: onMenuVisibilityChanged
+                ),
+                dragSource: dragSource,
+                primaryAction: primaryAction,
+                onMiddleClick: onMiddleClick,
+                sourceID: sourceID,
+                isInteractionEnabled: isInteractionEnabled
+            )
+        )
+    }
+
+    func sidebarAppKitPrimaryAction(
+        isEnabled: Bool = true,
+        isInteractionEnabled: Bool = true,
+        action: @escaping () -> Void
+    ) -> some View {
+        modifier(
+            SidebarAppKitPrimaryActionModifier(
+                isEnabled: isEnabled,
+                isInteractionEnabled: isInteractionEnabled,
+                action: action
+            )
+        )
+    }
+
+    func sidebarAppKitBackgroundContextMenu(
+        controller: SidebarContextMenuController,
+        entries: @escaping () -> [SidebarContextMenuEntry],
+        onMenuVisibilityChanged: @escaping (Bool) -> Void = { _ in }
+    ) -> some View {
+        background(
+            SidebarBackgroundMenuConfigurationBridge(
+                controller: controller,
+                entries: entries,
+                onMenuVisibilityChanged: onMenuVisibilityChanged
+            )
+            .frame(width: 0, height: 0)
+        )
+    }
+
+    func sumiAppKitContextMenu(
+        isEnabled: Bool = true,
+        entries: @escaping () -> [SidebarContextMenuEntry],
+        onMenuVisibilityChanged: @escaping (Bool) -> Void = { _ in }
+    ) -> some View {
+        modifier(
+            SumiAppKitContextMenuModifier(
+                isEnabled: isEnabled,
+                entries: entries,
+                onMenuVisibilityChanged: onMenuVisibilityChanged
+            )
+        )
+    }
+}
