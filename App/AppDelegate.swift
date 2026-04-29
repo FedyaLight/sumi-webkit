@@ -445,7 +445,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// Confirms user-initiated quits when enabled, then schedules best-effort persistence.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard shouldAskBeforeQuit else {
-            sender.prepareNativeWindowControlsForBrowserChromeTermination()
             scheduleTerminationPersistenceBestEffortAfterReturningFromDelegate(
                 shouldTerminate: true
             )
@@ -467,7 +466,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let alert = makeQuitConfirmationAlert()
         let shouldTerminate = handleQuitConfirmationResponse(alert.runModal(), alert: alert)
         if shouldTerminate {
-            sender.prepareNativeWindowControlsForBrowserChromeTermination()
             scheduleTerminationPersistenceBestEffortAfterReturningFromDelegate(
                 shouldTerminate: true
             )
@@ -507,26 +505,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     private func presentQuitConfirmationSheet(for application: NSApplication, window: NSWindow) {
         let alert = makeQuitConfirmationAlert()
-        window.reassertHostedNativeWindowControlsForBrowserChrome()
-        window.beginHostedNativeWindowControlsVisualShieldForBrowserChrome()
-        alert.beginSheetModal(for: window) { [weak self, weak window, alert, application] response in
+        alert.beginSheetModal(for: window) { [weak self, alert, application] response in
             MainActor.assumeIsolated {
                 guard let self else {
-                    window?.endHostedNativeWindowControlsVisualShieldForBrowserChromeAfterAppKitPass()
                     application.reply(toApplicationShouldTerminate: false)
                     return
                 }
 
                 self.quitConfirmationInProgress = false
-                window?.reassertHostedNativeWindowControlsForBrowserChrome()
                 let shouldTerminate = self.handleQuitConfirmationResponse(response, alert: alert)
                 if shouldTerminate {
-                    application.prepareNativeWindowControlsForBrowserChromeTermination()
                     self.scheduleTerminationPersistenceBestEffortAfterReturningFromDelegate(
                         shouldTerminate: true
                     )
-                } else {
-                    window?.endHostedNativeWindowControlsVisualShieldForBrowserChromeAfterAppKitPass()
                 }
 
                 application.reply(toApplicationShouldTerminate: shouldTerminate)
@@ -621,7 +612,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        NSApp.prepareNativeWindowControlsForBrowserChromeTermination()
         AppDelegate.log.info("applicationWillTerminate called")
     }
 

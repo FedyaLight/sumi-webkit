@@ -18,7 +18,6 @@ enum WindowChromeTestSupport {
             defer: false
         )
         window.isReleasedWhenClosed = false
-        window.prepareNativeWindowControlsForBrowserChrome(buttonTypes: standardButtonTypes)
         return window
     }
 
