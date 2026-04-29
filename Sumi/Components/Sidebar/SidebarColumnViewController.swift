@@ -319,6 +319,11 @@ enum SidebarPresentationMode: Equatable {
     case collapsedVisible
 }
 
+enum SidebarInputMode: Equatable {
+    case dockedLayout
+    case collapsedOverlay
+}
+
 struct SidebarPresentationContext: Equatable {
     let mode: SidebarPresentationMode
     let sidebarWidth: CGFloat
@@ -330,6 +335,10 @@ struct SidebarPresentationContext: Equatable {
 
     var isCollapsedOverlay: Bool {
         mode != .docked
+    }
+
+    var inputMode: SidebarInputMode {
+        isCollapsedOverlay ? .collapsedOverlay : .dockedLayout
     }
 
     var showsResizeHandle: Bool {
