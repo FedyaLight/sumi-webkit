@@ -12,7 +12,6 @@ struct SidebarHeader: View {
     @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject private var extensionSurfaceStore: BrowserExtensionSurfaceStore
     @Environment(BrowserWindowState.self) private var windowState
-    @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
     @Environment(\.sumiSettings) var sumiSettings
 
     var body: some View {
@@ -27,7 +26,6 @@ struct SidebarHeader: View {
             SidebarWindowControlsView()
                 .environmentObject(browserManager)
                 .environment(windowState)
-                .environment(\.sidebarPresentationContext, sidebarPresentationContext)
 
             NavButtonsView()
                 .environmentObject(browserManager)
@@ -83,16 +81,16 @@ struct SidebarHeader: View {
 struct SidebarWindowControlsView: View {
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
-    @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
     @Environment(\.sumiSettings) private var sumiSettings
 
     var body: some View {
         HStack(spacing: SidebarChromeMetrics.controlSpacing) {
-            SidebarSystemWindowControlsHost(
-                presentationMode: sidebarPresentationContext.mode,
-                window: windowState.window
-            )
-            .fixedSize(horizontal: true, vertical: false)
+            Color.clear
+                .frame(
+                    width: BrowserWindowTrafficLightMetrics.sidebarReservedWidth,
+                    height: SidebarChromeMetrics.controlStripHeight
+                )
+                .accessibilityHidden(true)
 
             if sumiSettings.showSidebarToggleButton {
                 Button("Toggle Sidebar", systemImage: "sidebar.left") {

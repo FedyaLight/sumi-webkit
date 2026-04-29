@@ -27,7 +27,6 @@ final class BrowserWindowChromeTests: XCTestCase {
 
     func testSumiBrowserWindowInitAppliesBrowserChromeConfiguration() {
         let window = WindowChromeTestSupport.makeBrowserWindow()
-        let metrics = window.nativeWindowControlsMetrics()
 
         XCTAssertTrue(window.styleMask.contains(.fullSizeContentView))
         XCTAssertEqual(window.titleVisibility, .hidden)
@@ -40,26 +39,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertFalse(window.isReleasedWhenClosed)
         XCTAssertTrue(window.isMovable)
         XCTAssertNotNil(window.titlebarView)
-        XCTAssertNotNil(metrics)
-        XCTAssertGreaterThan(metrics?.buttonGroupWidth ?? 0, 0)
-        XCTAssertGreaterThan(metrics?.buttonGroupRect.minX ?? 0, 0)
-        XCTAssertEqual(metrics?.normalizedButtonFrames[.closeButton]?.minX, 0)
-
-        for type in WindowChromeTestSupport.standardButtonTypes {
-            guard let button = window.standardWindowButton(type) else {
-                XCTFail("Expected standard window button for \(type).")
-                return
-            }
-
-            XCTAssertFalse(button.isHidden)
-            XCTAssertEqual(button.alphaValue, 1)
-            XCTAssertTrue(button.isEnabled)
-            XCTAssertEqual(
-                button.accessibilityIdentifier(),
-                BrowserWindowControlsAccessibilityIdentifiers.identifier(for: type)
-            )
-            XCTAssertEqual(metrics?.buttonFrames[type], button.frame)
-        }
+        assertNativeBrowserControlsHidden(window)
     }
 
     func testBrowserWindowBridgeViewAttachPromotesWindowSynchronouslyOnAttach() {
@@ -85,14 +65,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertFalse(window.isReleasedWhenClosed)
         XCTAssertTrue(window.isMovable)
         XCTAssertEqual(window.contentRect(forFrameRect: window.frame).size, SumiBrowserWindowShellConfiguration.defaultContentSize)
-        XCTAssertNotNil(window.nativeWindowControlsMetrics())
-
-        for type in WindowChromeTestSupport.standardButtonTypes {
-            XCTAssertEqual(
-                window.standardWindowButton(type)?.accessibilityIdentifier(),
-                BrowserWindowControlsAccessibilityIdentifiers.identifier(for: type)
-            )
-        }
+        assertNativeBrowserControlsHidden(window)
     }
 
     func testBrowserWindowBridgeCoordinatorDetachClearsWindowState() {
@@ -135,35 +108,11 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertFalse(window.isOpaque)
         assertMinimumWindowConstraints(window)
         XCTAssertNotNil(window.titlebarView)
-        XCTAssertNotNil(window.nativeWindowControlsMetrics())
-
-        for type in WindowChromeTestSupport.standardButtonTypes {
-            guard let button = window.standardWindowButton(type) else {
-                XCTFail("Expected standard window button for \(type).")
-                return
-            }
-
-            XCTAssertFalse(button.isHidden)
-            XCTAssertEqual(button.alphaValue, 1)
-            XCTAssertTrue(button.isEnabled)
-            XCTAssertEqual(
-                button.accessibilityIdentifier(),
-                BrowserWindowControlsAccessibilityIdentifiers.identifier(for: type)
-            )
-        }
-    }
-
-    func testSumiBrowserWindowCloseMarksNativeWindowControlsTeardown() {
-        let window = WindowChromeTestSupport.makeBrowserWindow()
-        WindowChromeTestSupport.retain(window)
-
-        XCTAssertFalse(window.isBrowserChromeNativeWindowControlsTeardownInProgress)
-        window.close()
-        XCTAssertTrue(window.isBrowserChromeNativeWindowControlsTeardownInProgress)
+        assertNativeBrowserControlsHidden(window)
     }
 
     func testNativeWindowControlsMetricsRefreshLiveButtonFrames() throws {
-        let window = WindowChromeTestSupport.makeBrowserWindow()
+        let window = WindowChromeTestSupport.makePlainWindow()
         let initialMetrics = try XCTUnwrap(window.nativeWindowControlsMetrics())
 
         for type in WindowChromeTestSupport.standardButtonTypes {
@@ -221,5 +170,23 @@ final class BrowserWindowChromeTests: XCTestCase {
 
         XCTAssertNotNil(window.captureNativeWindowControlsMetricsIfButtonsInTitlebar())
         XCTAssertTrue(window.titlebarView === nativeTitlebarView)
+    }
+
+    private func assertNativeBrowserControlsHidden(
+        _ window: NSWindow,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        for type in WindowChromeTestSupport.standardButtonTypes {
+            guard let button = window.standardWindowButton(type) else {
+                XCTFail("Expected standard window button for \(type).", file: file, line: line)
+                return
+            }
+
+            XCTAssertTrue(button.isHidden, file: file, line: line)
+            XCTAssertEqual(button.alphaValue, 0, file: file, line: line)
+            XCTAssertFalse(button.isEnabled, file: file, line: line)
+            XCTAssertFalse(button.isAccessibilityElement(), file: file, line: line)
+        }
     }
 }

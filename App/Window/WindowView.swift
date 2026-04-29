@@ -64,6 +64,14 @@ struct WindowView: View {
             }
 
             chromeThemeScope {
+                BrowserWindowTrafficLights()
+                    .environment(windowState)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .allowsHitTesting(true)
+            .zIndex(8_000)
+
+            chromeThemeScope {
                 CommandPaletteView()
                     .zIndex(WindowTransientChromeZIndex.commandPalette)
             }
@@ -173,8 +181,8 @@ struct WindowView: View {
                 effectiveAppearanceRevision &+= 1
             }
         }
-        // Keep Sumi's theme override inside SwiftUI. `preferredColorScheme` propagates upward into the
-        // AppKit window presentation, which lets AppKit relayout native titlebar-owned traffic lights.
+        // Keep Sumi's theme override inside SwiftUI so AppKit chrome stays stable while custom
+        // browser traffic lights resolve their appearance from SwiftUI state.
         .environment(\.colorScheme, globalColorScheme)
     }
 

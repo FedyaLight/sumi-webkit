@@ -2651,7 +2651,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
         ] {
             XCTAssertTrue(
                 waitForElementToBecomeHittable(element, timeout: 3),
-                "Native traffic light \(identifier) was not hittable. Window frame: \(window.frame)",
+                "Browser traffic light \(identifier) was not hittable. Window frame: \(window.frame)",
                 file: file,
                 line: line
             )
