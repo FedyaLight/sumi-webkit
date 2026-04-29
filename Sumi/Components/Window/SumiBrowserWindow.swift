@@ -74,6 +74,7 @@ extension NSWindow {
     func applyBrowserWindowShellConfiguration(shouldApplyInitialSize: Bool) {
         backgroundColor = SumiBrowserWindowShellConfiguration.backgroundColor
         isOpaque = SumiBrowserWindowShellConfiguration.isOpaque
+        collectionBehavior.insert(.fullScreenPrimary)
         contentView?.wantsLayer = true
         contentView?.layer?.backgroundColor = NSColor.clear.cgColor
         contentView?.layer?.isOpaque = false

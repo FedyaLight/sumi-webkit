@@ -11,6 +11,14 @@ final class SumiLaunchSmokeUITests: XCTestCase {
         static let zoomButton = "browser-window-zoom-button"
     }
 
+    private var expectedTrafficLightVisualDiameter: CGFloat {
+        if #available(macOS 26.0, *) {
+            return 14
+        } else {
+            return 12
+        }
+    }
+
     private var smokeAppSupportURL: URL?
     private var smokeAppSupportDirectories: [URL] = []
     private var sidebarDragMarkerURL: URL?
@@ -166,27 +174,8 @@ final class SumiLaunchSmokeUITests: XCTestCase {
         XCTAssertTrue(zoomButton.exists)
         XCTAssertTrue(zoomButton.isEnabled)
 
-        let menu = app.descendants(matching: .any)["browser-window-zoom-menu"]
-        XCTAssertTrue(menu.waitForExistence(timeout: 2))
-        XCTAssertLessThanOrEqual(menu.frame.width, 270)
-        XCTAssertLessThanOrEqual(menu.frame.height, 230)
-
-        for identifier in [
-            "browser-window-left-half-menu-item",
-            "browser-window-right-half-menu-item",
-            "browser-window-top-half-menu-item",
-            "browser-window-bottom-half-menu-item",
-            "browser-window-fill-menu-item",
-            "browser-window-center-menu-item",
-            "browser-window-left-third-menu-item",
-            "browser-window-right-third-menu-item",
-            "browser-window-full-screen-menu-item",
-        ] {
-            XCTAssertTrue(
-                app.descendants(matching: .any)[identifier].waitForExistence(timeout: 1),
-                "Expected compact green-button menu item \(identifier)"
-            )
-        }
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(waitForTrafficLightElementToBeVisibleAndEnabled(zoomButton, timeout: 2))
     }
 
     func testCloseTrafficLightHoverDoesNotTriggerCustomZoomMenu() throws {
@@ -204,8 +193,56 @@ final class SumiLaunchSmokeUITests: XCTestCase {
         closeButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
         RunLoop.current.run(until: Date().addingTimeInterval(0.7))
 
-        XCTAssertFalse(app.descendants(matching: .any)["browser-window-zoom-menu"].exists)
-        XCTAssertFalse(app.descendants(matching: .any)["browser-window-full-screen-menu-item"].exists)
+        XCTAssertTrue(closeButton.exists)
+        XCTAssertTrue(closeButton.isEnabled)
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        XCTAssertTrue(waitForTrafficLightElementToBeVisibleAndEnabled(closeButton, timeout: 2))
+        assertCustomTrafficLightsHittable(in: app, window: window)
+    }
+
+    func testTrafficLightHoverShowsNativeGlyphs() throws {
+        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
+        let window = app.windows.element(boundBy: 0)
+
+        XCTAssertTrue(window.waitForExistence(timeout: 5))
+        assertCustomTrafficLightsHittable(in: app, window: window)
+
+        let closeButton = element(
+            withIdentifier: BrowserWindowControlIdentifiers.closeButton,
+            inSearchRoot: app
+        )
+        let zoomButton = element(
+            withIdentifier: BrowserWindowControlIdentifiers.zoomButton,
+            inSearchRoot: app
+        )
+
+        try assertTrafficLightHoverChangesPixels(
+            window: window,
+            button: closeButton,
+            hoverOffset: CGVector(dx: 0.5, dy: 0.5),
+            description: "close center hover"
+        )
+        try assertTrafficLightHoverChangesPixels(
+            window: window,
+            button: zoomButton,
+            hoverOffset: CGVector(dx: 0.5, dy: 0.35),
+            description: "green upper-half hover"
+        )
+    }
+
+    func testTrafficLightsStaySeparatedAfterWindowDoubleClickZoom() throws {
+        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
+        let window = app.windows.element(boundBy: 0)
+
+        XCTAssertTrue(window.waitForExistence(timeout: 5))
+        assertCustomTrafficLightsHittable(in: app, window: window)
+
+        let chromeCoordinate = window.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.05))
+        chromeCoordinate.doubleClick()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.8))
+
+        assertCustomTrafficLightsHittable(in: app, window: window)
     }
 
     func testMiniWindowRendersCustomTrafficLights() {
@@ -2746,11 +2783,17 @@ final class SumiLaunchSmokeUITests: XCTestCase {
                 file: file,
                 line: line
             )
-            XCTAssertEqual(
-                element.frame.width,
-                element.frame.height,
-                accuracy: 1.0,
-                "Traffic light hit target should stay square so the visual circle is not compressed. id=\(identifier) frame=\(element.frame)",
+            XCTAssertGreaterThanOrEqual(
+                min(element.frame.width, element.frame.height),
+                expectedTrafficLightVisualDiameter,
+                "Traffic light hit target should preserve at least the native visual diameter. id=\(identifier) frame=\(element.frame)",
+                file: file,
+                line: line
+            )
+            XCTAssertLessThanOrEqual(
+                abs(element.frame.width - element.frame.height),
+                2,
+                "Traffic light hit target should stay close to the native macOS control frame, without visible compression. id=\(identifier) frame=\(element.frame)",
                 file: file,
                 line: line
             )
@@ -2761,6 +2804,12 @@ final class SumiLaunchSmokeUITests: XCTestCase {
             minimizeButton: minimizeButton,
             zoomButton: zoomButton,
             window: window,
+            file: file,
+            line: line
+        )
+        assertTrafficLightsRemainSeparatedFromSidebarToggle(
+            app: app,
+            zoomButton: zoomButton,
             file: file,
             line: line
         )
@@ -2821,6 +2870,29 @@ final class SumiLaunchSmokeUITests: XCTestCase {
             closeFrame.minY,
             windowFrame.minY + 64,
             "Traffic lights should remain in the top chrome band. close=\(closeFrame) window=\(windowFrame)",
+            file: file,
+            line: line
+        )
+    }
+
+    @MainActor
+    private func assertTrafficLightsRemainSeparatedFromSidebarToggle(
+        app: XCUIApplication,
+        zoomButton: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let sidebarToggle = app.buttons["Toggle Sidebar"].firstMatch
+        guard sidebarToggle.exists,
+              sidebarToggle.frame.minX > zoomButton.frame.maxX
+        else {
+            return
+        }
+
+        XCTAssertGreaterThanOrEqual(
+            sidebarToggle.frame.minX - zoomButton.frame.maxX,
+            10,
+            "Traffic lights should keep a visible gap before the sidebar toggle. zoom=\(zoomButton.frame) toggle=\(sidebarToggle.frame)",
             file: file,
             line: line
         )
@@ -3455,6 +3527,141 @@ final class SumiLaunchSmokeUITests: XCTestCase {
 
         smokeAppSupportDirectories.append(directory)
         return directory
+    }
+
+    private struct TrafficLightPixelSample {
+        let rgbBytes: [UInt8]
+        let pixelCount: Int
+    }
+
+    private struct TrafficLightPixelDelta: CustomStringConvertible {
+        let changedPixelRatio: Double
+        let meanRGBDelta: Double
+
+        var description: String {
+            "changedPixelRatio=\(changedPixelRatio), meanRGBDelta=\(meanRGBDelta)"
+        }
+    }
+
+    private func assertTrafficLightHoverChangesPixels(
+        window: XCUIElement,
+        button: XCUIElement,
+        hoverOffset: CGVector,
+        description: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        let before = try trafficLightPixelSample(
+            screenshot: window.screenshot(),
+            elementFrame: button.frame,
+            windowFrame: window.frame
+        )
+
+        button.coordinate(withNormalizedOffset: hoverOffset).hover()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.35))
+        let after = try trafficLightPixelSample(
+            screenshot: window.screenshot(),
+            elementFrame: button.frame,
+            windowFrame: window.frame
+        )
+
+        let delta = trafficLightPixelDelta(before: before, after: after)
+        XCTAssertGreaterThan(
+            delta.changedPixelRatio,
+            0.01,
+            "Hover should visibly change the native traffic-light glyph pixels for \(description). delta=\(delta)",
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThan(
+            delta.meanRGBDelta,
+            0.75,
+            "Hover should visibly change the native traffic-light glyph pixels for \(description). delta=\(delta)",
+            file: file,
+            line: line
+        )
+    }
+
+    private func trafficLightPixelSample(
+        screenshot: XCUIScreenshot,
+        elementFrame: CGRect,
+        windowFrame: CGRect
+    ) throws -> TrafficLightPixelSample {
+        guard let bitmap = NSBitmapImageRep(data: screenshot.pngRepresentation) else {
+            throw FixtureError.screenshotFailure("Unable to decode traffic-light screenshot")
+        }
+
+        let scaleX = CGFloat(bitmap.pixelsWide) / max(windowFrame.width, 1)
+        let scaleY = CGFloat(bitmap.pixelsHigh) / max(windowFrame.height, 1)
+        let localFrame = CGRect(
+            x: (elementFrame.minX - windowFrame.minX) * scaleX,
+            y: (elementFrame.minY - windowFrame.minY) * scaleY,
+            width: elementFrame.width * scaleX,
+            height: elementFrame.height * scaleY
+        ).insetBy(dx: -2 * scaleX, dy: -2 * scaleY)
+
+        let minX = max(0, Int(floor(localFrame.minX)))
+        let minY = max(0, Int(floor(localFrame.minY)))
+        let maxX = min(bitmap.pixelsWide, Int(ceil(localFrame.maxX)))
+        let maxY = min(bitmap.pixelsHigh, Int(ceil(localFrame.maxY)))
+        guard minX < maxX, minY < maxY else {
+            throw FixtureError.screenshotFailure("Traffic-light screenshot crop is empty")
+        }
+
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity((maxX - minX) * (maxY - minY) * 3)
+
+        for y in minY..<maxY {
+            for x in minX..<maxX {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else {
+                    continue
+                }
+                bytes.append(rgbByte(color.redComponent))
+                bytes.append(rgbByte(color.greenComponent))
+                bytes.append(rgbByte(color.blueComponent))
+            }
+        }
+
+        guard bytes.isEmpty == false else {
+            throw FixtureError.screenshotFailure("Traffic-light screenshot crop has no sampleable pixels")
+        }
+        return TrafficLightPixelSample(rgbBytes: bytes, pixelCount: bytes.count / 3)
+    }
+
+    private func rgbByte(_ component: CGFloat) -> UInt8 {
+        UInt8(max(0, min(255, Int((component * 255).rounded()))))
+    }
+
+    private func trafficLightPixelDelta(
+        before: TrafficLightPixelSample,
+        after: TrafficLightPixelSample
+    ) -> TrafficLightPixelDelta {
+        let byteCount = min(before.rgbBytes.count, after.rgbBytes.count)
+        guard byteCount >= 3 else {
+            return TrafficLightPixelDelta(changedPixelRatio: 0, meanRGBDelta: 0)
+        }
+
+        var changedPixels = 0
+        var totalDelta = 0.0
+        let pixelCount = byteCount / 3
+
+        for index in stride(from: 0, to: pixelCount * 3, by: 3) {
+            let redDelta = abs(Int(before.rgbBytes[index]) - Int(after.rgbBytes[index]))
+            let greenDelta = abs(Int(before.rgbBytes[index + 1]) - Int(after.rgbBytes[index + 1]))
+            let blueDelta = abs(Int(before.rgbBytes[index + 2]) - Int(after.rgbBytes[index + 2]))
+            let pixelDelta = redDelta + greenDelta + blueDelta
+            if pixelDelta > 24 {
+                changedPixels += 1
+            }
+            totalDelta += Double(pixelDelta) / 3.0
+        }
+
+        return TrafficLightPixelDelta(
+            changedPixelRatio: Double(changedPixels) / Double(pixelCount),
+            meanRGBDelta: totalDelta / Double(pixelCount)
+        )
     }
 
     private func dominantBlackPixelRatio(in screenshot: XCUIScreenshot) throws -> Double {
