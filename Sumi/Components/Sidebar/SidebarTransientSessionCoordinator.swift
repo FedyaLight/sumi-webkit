@@ -107,7 +107,10 @@ enum SidebarTransientUIKind: String, CaseIterable {
     }
 
     var pinsCollapsedSidebar: Bool {
-        self != .drag
+        switch self {
+        case .contextMenu, .dialog, .themePicker, .emojiPopover, .sharingPicker, .downloadsPopover, .drag:
+            return true
+        }
     }
 }
 

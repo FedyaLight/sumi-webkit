@@ -7,6 +7,7 @@ private final class SidebarColumnContainerView: NSView {
     var onWindowChanged: ((NSWindow?) -> Void)?
     weak var hostedSidebarView: NSView?
     weak var contextMenuController: SidebarContextMenuController?
+    var capturesPanelBackgroundPointerEvents = false
 
     override var isOpaque: Bool {
         false
@@ -28,7 +29,8 @@ private final class SidebarColumnContainerView: NSView {
             originalHit: hit,
             hostedSidebarView: hostedSidebarView,
             contextMenuController: contextMenuController,
-            eventType: window?.currentEvent?.type
+            eventType: window?.currentEvent?.type,
+            capturesPanelBackgroundPointerEvents: capturesPanelBackgroundPointerEvents
         )
     }
 
@@ -103,7 +105,8 @@ enum SidebarColumnHitTestRouting {
         originalHit: NSView?,
         hostedSidebarView: NSView?,
         contextMenuController: SidebarContextMenuController?,
-        eventType: NSEvent.EventType?
+        eventType: NSEvent.EventType?,
+        capturesPanelBackgroundPointerEvents: Bool = false
     ) -> NSView? {
         if eventType == .leftMouseDragged || eventType == .leftMouseUp,
            let owner = contextMenuController?.primaryMouseTrackingOwner(in: containerView.window)
@@ -120,10 +123,12 @@ enum SidebarColumnHitTestRouting {
             return owner
         }
 
-        guard containerView.bounds.contains(point),
-              eventType == .leftMouseDown || eventType == .rightMouseDown
-        else {
+        guard containerView.bounds.contains(point) else {
             return originalHit
+        }
+
+        guard eventType == .leftMouseDown || eventType == .rightMouseDown else {
+            return capturesPanelBackgroundPointerEvents ? (originalHit ?? containerView) : originalHit
         }
 
         let windowPoint = containerView.convert(point, to: nil)
@@ -244,6 +249,10 @@ enum SidebarColumnHitTestRouting {
             return containerView
         }
 
+        if capturesPanelBackgroundPointerEvents {
+            return originalHit ?? containerView
+        }
+
         return originalHit
     }
 
@@ -320,6 +329,10 @@ struct SidebarPresentationContext: Equatable {
 
     var showsResizeHandle: Bool {
         mode == .docked
+    }
+
+    var capturesPanelBackgroundPointerEvents: Bool {
+        mode == .collapsedVisible
     }
 
     static func collapsedSidebarWidth(
@@ -412,10 +425,14 @@ final class SidebarColumnViewController: NSViewController {
     func updateHostedSidebar<Content: View>(
         root: Content,
         width: CGFloat,
-        contextMenuController: SidebarContextMenuController? = nil
+        contextMenuController: SidebarContextMenuController? = nil,
+        capturesPanelBackgroundPointerEvents: Bool = false
     ) {
         let previousHostedSidebarView = hostingController?.view
-        (view as? SidebarColumnContainerView)?.contextMenuController = contextMenuController
+        if let containerView = view as? SidebarColumnContainerView {
+            containerView.contextMenuController = contextMenuController
+            containerView.capturesPanelBackgroundPointerEvents = capturesPanelBackgroundPointerEvents
+        }
 
         if let hostingController = hostingController as? SidebarHostingController<Content> {
             hostingController.rootView = root
@@ -457,8 +474,11 @@ final class SidebarColumnViewController: NSViewController {
 
     func teardownSidebarHosting() {
         unregisterRecoveryAnchor()
-        (view as? SidebarColumnContainerView)?.hostedSidebarView = nil
-        (view as? SidebarColumnContainerView)?.contextMenuController = nil
+        if let containerView = view as? SidebarColumnContainerView {
+            containerView.hostedSidebarView = nil
+            containerView.contextMenuController = nil
+            containerView.capturesPanelBackgroundPointerEvents = false
+        }
         widthConstraint?.isActive = false
         widthConstraint = nil
         removeHostingControllerIfNeeded()
@@ -568,7 +588,8 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
         controller.updateHostedSidebar(
             root: root,
             width: presentationContext.sidebarWidth,
-            contextMenuController: windowState.sidebarContextMenuController
+            contextMenuController: windowState.sidebarContextMenuController,
+            capturesPanelBackgroundPointerEvents: presentationContext.capturesPanelBackgroundPointerEvents
         )
     }
 
