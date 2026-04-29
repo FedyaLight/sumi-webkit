@@ -123,10 +123,6 @@ class SumiSettingsService {
     
     var sidebarPosition: SidebarPosition {
         didSet {
-            if sidebarPosition != .left {
-                sidebarPosition = .left
-                return
-            }
             userDefaults.set(sidebarPosition.rawValue, forKey: sidebarPositionKey)
         }
     }
@@ -428,9 +424,6 @@ class SumiSettingsService {
     }
 
     private func enforceSumiChromeDefaults() {
-        if sidebarPosition != .left {
-            sidebarPosition = .left
-        }
         if topBarAddressView {
             topBarAddressView = false
         }

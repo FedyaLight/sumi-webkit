@@ -12,18 +12,43 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
 
         XCTAssertEqual(docked.mode, .docked)
         XCTAssertEqual(docked.sidebarWidth, 280)
+        XCTAssertEqual(docked.sidebarPosition, .left)
         XCTAssertTrue(docked.showsResizeHandle)
         XCTAssertFalse(docked.isCollapsedOverlay)
 
         XCTAssertEqual(hidden.mode, .collapsedHidden)
         XCTAssertEqual(hidden.sidebarWidth, 280)
+        XCTAssertEqual(hidden.sidebarPosition, .left)
         XCTAssertFalse(hidden.showsResizeHandle)
         XCTAssertTrue(hidden.isCollapsedOverlay)
 
         XCTAssertEqual(visible.mode, .collapsedVisible)
         XCTAssertEqual(visible.sidebarWidth, 280)
+        XCTAssertEqual(visible.sidebarPosition, .left)
         XCTAssertFalse(visible.showsResizeHandle)
         XCTAssertTrue(visible.isCollapsedOverlay)
+    }
+
+    func testSidebarPresentationContextCarriesRightSidebarPosition() {
+        let docked = SidebarPresentationContext.docked(
+            sidebarWidth: 280,
+            sidebarPosition: .right
+        )
+        let hidden = SidebarPresentationContext.collapsedHidden(
+            sidebarWidth: 280,
+            sidebarPosition: .right
+        )
+        let visible = SidebarPresentationContext.collapsedVisible(
+            sidebarWidth: 280,
+            sidebarPosition: .right
+        )
+
+        XCTAssertEqual(docked.sidebarPosition, .right)
+        XCTAssertEqual(hidden.sidebarPosition, .right)
+        XCTAssertEqual(visible.sidebarPosition, .right)
+        XCTAssertTrue(docked.shellEdge.isRight)
+        XCTAssertTrue(hidden.shellEdge.isRight)
+        XCTAssertTrue(visible.shellEdge.isRight)
     }
 
     func testCollapsedSidebarWidthUsesSharedWidthSelection() {
@@ -77,8 +102,11 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
     func testBrowserWindowTrafficLightsUseWindowLevelTopLeftMetricsAcrossSidebarModes() {
         let contexts = [
             SidebarPresentationContext.docked(sidebarWidth: 250),
+            SidebarPresentationContext.docked(sidebarWidth: 250, sidebarPosition: .right),
             SidebarPresentationContext.collapsedHidden(sidebarWidth: 250),
+            SidebarPresentationContext.collapsedHidden(sidebarWidth: 250, sidebarPosition: .right),
             SidebarPresentationContext.collapsedVisible(sidebarWidth: 250),
+            SidebarPresentationContext.collapsedVisible(sidebarWidth: 250, sidebarPosition: .right),
         ]
 
         let leadingInsets = contexts.map { _ in BrowserWindowTrafficLightMetrics.windowLeadingInset }
@@ -201,6 +229,8 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertFalse(sidebarHeaderSource.contains("standardWindowButton"))
         XCTAssertFalse(sidebarHeaderSource.contains("NativeWindowControls"))
         XCTAssertTrue(sidebarHeaderSource.contains("BrowserWindowTrafficLightMetrics.sidebarReservedWidth"))
+        XCTAssertTrue(sidebarHeaderSource.contains("sumiSettings.sidebarPosition == .left"))
+        XCTAssertTrue(sidebarHeaderSource.contains("sumiSettings.sidebarPosition.shellEdge.toggleSidebarSymbolName"))
     }
 
     private static func source(named relativePath: String) throws -> String {

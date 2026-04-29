@@ -77,7 +77,8 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
 
         guard let resolvedAnchor = resolvedPresentationAnchor(
             for: session,
-            in: windowState
+            in: windowState,
+            sidebarPosition: browserManager.sumiSettings?.sidebarPosition ?? .left
         ) else {
             finishWithoutPopover(
                 session,
@@ -122,7 +123,7 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         popover.show(
             relativeTo: resolvedAnchor.rect,
             of: resolvedAnchor.view,
-            preferredEdge: .maxX
+            preferredEdge: resolvedAnchor.preferredEdge
         )
     }
 
@@ -157,7 +158,8 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         in bounds: NSRect,
         isSidebarVisible: Bool,
         sidebarWidth: CGFloat,
-        savedSidebarWidth: CGFloat
+        savedSidebarWidth: CGFloat,
+        sidebarPosition: SidebarPosition = .left
     ) -> NSRect {
         let rawSidebarWidth = isSidebarVisible
             ? sidebarWidth
@@ -165,9 +167,10 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
                 sidebarWidth: sidebarWidth,
                 savedSidebarWidth: savedSidebarWidth
             )
-        let minX = bounds.minX + 1
-        let maxX = max(minX, bounds.maxX - 1)
-        let x = min(max(rawSidebarWidth, minX), maxX)
+        let x = sidebarPosition.shellEdge.sidebarBoundaryAnchorX(
+            in: bounds,
+            presentationWidth: rawSidebarWidth
+        )
         let minY = bounds.minY + 1
         let maxY = max(minY, bounds.maxY - 1)
         let y = min(max(bounds.midY, minY), maxY)
@@ -178,7 +181,8 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         in bounds: NSRect,
         isSidebarVisible: Bool,
         sidebarWidth: CGFloat,
-        savedSidebarWidth: CGFloat
+        savedSidebarWidth: CGFloat,
+        sidebarPosition: SidebarPosition = .left
     ) -> NSRect {
         let width = isSidebarVisible
             ? sidebarWidth
@@ -186,12 +190,9 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
                 sidebarWidth: sidebarWidth,
                 savedSidebarWidth: savedSidebarWidth
             )
-        let clampedWidth = min(max(width, 0), bounds.width)
-        return NSRect(
-            x: bounds.minX,
-            y: bounds.minY,
-            width: clampedWidth,
-            height: bounds.height
+        return sidebarPosition.shellEdge.sidebarDismissRect(
+            in: bounds,
+            presentationWidth: width
         )
     }
 
@@ -223,15 +224,18 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
 
     private func resolvedPresentationAnchor(
         for session: WorkspaceThemePickerSession,
-        in windowState: BrowserWindowState
-    ) -> (view: NSView, rect: NSRect)? {
+        in windowState: BrowserWindowState,
+        sidebarPosition: SidebarPosition
+    ) -> (view: NSView, rect: NSRect, preferredEdge: NSRectEdge)? {
+        let preferredEdge = Self.preferredPopoverEdge(for: sidebarPosition)
+
         if let ownerView = session.presentationSource?.originOwnerView,
            ownerView.window != nil,
            ownerView.superview != nil,
            !ownerView.isHiddenOrHasHiddenAncestor,
            ownerView.alphaValue > 0
         {
-            return (ownerView, ownerView.bounds)
+            return (ownerView, ownerView.bounds, preferredEdge)
         }
 
         guard let contentView = windowState.window?.contentView
@@ -244,9 +248,15 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
                 in: contentView.bounds,
                 isSidebarVisible: windowState.isSidebarVisible,
                 sidebarWidth: windowState.sidebarWidth,
-                savedSidebarWidth: windowState.savedSidebarWidth
-            )
+                savedSidebarWidth: windowState.savedSidebarWidth,
+                sidebarPosition: sidebarPosition
+            ),
+            preferredEdge
         )
+    }
+
+    private nonisolated static func preferredPopoverEdge(for sidebarPosition: SidebarPosition) -> NSRectEdge {
+        sidebarPosition == .left ? .maxX : .minX
     }
 
     private func closeActiveSession(_ activeSession: ActiveSession) {
@@ -417,7 +427,8 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
             in: contentView.bounds,
             isSidebarVisible: windowState.isSidebarVisible,
             sidebarWidth: windowState.sidebarWidth,
-            savedSidebarWidth: windowState.savedSidebarWidth
+            savedSidebarWidth: windowState.savedSidebarWidth,
+            sidebarPosition: activeSession.browserManager?.sumiSettings?.sidebarPosition ?? .left
         )
 
         guard sidebarRect.contains(pointInContentView) else { return }

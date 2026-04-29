@@ -322,6 +322,11 @@ enum SidebarPresentationMode: Equatable {
 struct SidebarPresentationContext: Equatable {
     let mode: SidebarPresentationMode
     let sidebarWidth: CGFloat
+    let sidebarPosition: SidebarPosition
+
+    var shellEdge: SidebarShellEdge {
+        sidebarPosition.shellEdge
+    }
 
     var isCollapsedOverlay: Bool {
         mode != .docked
@@ -344,31 +349,39 @@ struct SidebarPresentationContext: Equatable {
         )
     }
 
-    static func docked(sidebarWidth: CGFloat) -> SidebarPresentationContext {
+    static func docked(
+        sidebarWidth: CGFloat,
+        sidebarPosition: SidebarPosition = .left
+    ) -> SidebarPresentationContext {
         let clampedWidth = BrowserWindowState.clampedSidebarWidth(sidebarWidth)
         return SidebarPresentationContext(
             mode: .docked,
-            sidebarWidth: clampedWidth
+            sidebarWidth: clampedWidth,
+            sidebarPosition: sidebarPosition
         )
     }
 
     static func collapsedHidden(
-        sidebarWidth: CGFloat
+        sidebarWidth: CGFloat,
+        sidebarPosition: SidebarPosition = .left
     ) -> SidebarPresentationContext {
         let clampedWidth = BrowserWindowState.clampedSidebarWidth(sidebarWidth)
         return SidebarPresentationContext(
             mode: .collapsedHidden,
-            sidebarWidth: clampedWidth
+            sidebarWidth: clampedWidth,
+            sidebarPosition: sidebarPosition
         )
     }
 
     static func collapsedVisible(
-        sidebarWidth: CGFloat
+        sidebarWidth: CGFloat,
+        sidebarPosition: SidebarPosition = .left
     ) -> SidebarPresentationContext {
         let clampedWidth = BrowserWindowState.clampedSidebarWidth(sidebarWidth)
         return SidebarPresentationContext(
             mode: .collapsedVisible,
-            sidebarWidth: clampedWidth
+            sidebarWidth: clampedWidth,
+            sidebarPosition: sidebarPosition
         )
     }
 }
@@ -522,9 +535,9 @@ struct SidebarColumnHostedRootView: View {
         SpacesSideBarView()
             .frame(width: presentationContext.sidebarWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(alignment: .trailing) {
+            .overlay(alignment: presentationContext.shellEdge.resizeHandleAlignment) {
                 if presentationContext.showsResizeHandle {
-                    SidebarResizeView()
+                    SidebarResizeView(sidebarPosition: presentationContext.sidebarPosition)
                         .frame(maxHeight: .infinity)
                         .zIndex(2000)
                 }

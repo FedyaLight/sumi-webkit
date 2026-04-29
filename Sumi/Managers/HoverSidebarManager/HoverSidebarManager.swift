@@ -39,6 +39,7 @@ enum HoverSidebarVisibilityPolicy {
         overlayWidth: CGFloat,
         isOverlayVisible: Bool,
         contextMenuPresented: Bool,
+        sidebarPosition: SidebarPosition = .left,
         triggerWidth: CGFloat,
         overshootSlack: CGFloat,
         keepOpenHysteresis: CGFloat,
@@ -54,12 +55,24 @@ enum HoverSidebarVisibilityPolicy {
             return false
         }
 
-        let inTriggerZone = (mouse.x >= windowFrame.minX - overshootSlack)
-            && (mouse.x <= windowFrame.minX + triggerWidth)
-        let inKeepOpenZone = (mouse.x >= windowFrame.minX)
-            && (mouse.x <= windowFrame.minX + overlayWidth + keepOpenHysteresis)
-        let inSidebarContentZone = (mouse.x >= windowFrame.minX)
-            && (mouse.x <= windowFrame.minX + overlayWidth)
+        let shellEdge = sidebarPosition.shellEdge
+        let inTriggerZone = shellEdge.containsTriggerZone(
+            mouseX: mouse.x,
+            windowFrame: windowFrame,
+            triggerWidth: triggerWidth,
+            overshootSlack: overshootSlack
+        )
+        let inKeepOpenZone = shellEdge.containsKeepOpenZone(
+            mouseX: mouse.x,
+            windowFrame: windowFrame,
+            overlayWidth: overlayWidth,
+            keepOpenHysteresis: keepOpenHysteresis
+        )
+        let inSidebarContentZone = shellEdge.containsSidebarContentZone(
+            mouseX: mouse.x,
+            windowFrame: windowFrame,
+            overlayWidth: overlayWidth
+        )
 
         return inTriggerZone || (isOverlayVisible && (inKeepOpenZone || inSidebarContentZone))
     }
@@ -67,7 +80,7 @@ enum HoverSidebarVisibilityPolicy {
 
 /// Manages reveal/hide of the overlay sidebar when the real sidebar is collapsed.
 /// Uses a local monitor for in-app drag responsiveness plus a minimal global mouse-move
-/// monitor to catch slight overshoot beyond the window's left boundary.
+/// monitor to catch slight overshoot beyond the selected window boundary.
 final class HoverSidebarManager: ObservableObject {
     // MARK: - Published State
     @Published var isOverlayVisible: Bool = false
@@ -75,12 +88,13 @@ final class HoverSidebarManager: ObservableObject {
     // MARK: - Configuration
     /// Width inside the window that triggers reveal when hovered.
     var triggerWidth: CGFloat = 6
-    /// Horizontal slack to the left of the window to catch slight overshoot.
+    /// Horizontal slack beyond the selected window edge to catch slight overshoot.
     var overshootSlack: CGFloat = 12
     /// Extra horizontal margin past the overlay to keep it open while interacting.
     var keepOpenHysteresis: CGFloat = 52
     /// Vertical slack to allow small overshoot above/below the window frame.
     var verticalSlack: CGFloat = 24
+    var sidebarPosition: SidebarPosition = .left
 
     // MARK: - Dependencies
     weak var browserManager: BrowserManager?
@@ -255,6 +269,7 @@ final class HoverSidebarManager: ObservableObject {
             overlayWidth: overlayWidth,
             isOverlayVisible: isOverlayVisible,
             contextMenuPresented: false,
+            sidebarPosition: sidebarPosition,
             triggerWidth: triggerWidth,
             overshootSlack: overshootSlack,
             keepOpenHysteresis: keepOpenHysteresis,

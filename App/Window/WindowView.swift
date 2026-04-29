@@ -139,6 +139,7 @@ struct WindowView: View {
         }
         // Lifecycle management
         .onAppear {
+            hoverSidebarManager.sidebarPosition = sumiSettings.sidebarPosition
             hoverSidebarManager.attach(browserManager: browserManager, windowState: windowState)
             hoverSidebarManager.windowRegistry = windowRegistry
             hoverSidebarManager.start()
@@ -150,6 +151,12 @@ struct WindowView: View {
         }
         .onChange(of: windowRegistry.activeWindowId) { _, _ in
             Task { @MainActor in
+                hoverSidebarManager.refreshMonitoring()
+            }
+        }
+        .onChange(of: sumiSettings.sidebarPosition) { _, newPosition in
+            Task { @MainActor in
+                hoverSidebarManager.sidebarPosition = newPosition
                 hoverSidebarManager.refreshMonitoring()
             }
         }
@@ -202,22 +209,29 @@ struct WindowView: View {
     private func SidebarWebViewStack() -> some View {
         let sidebarVisible = windowState.isSidebarVisible
         let elementSeparation = BrowserChromeGeometry.elementSeparation
+        let sidebarPosition = sumiSettings.sidebarPosition
+        let shellEdge = sidebarPosition.shellEdge
         
         HStack(spacing: 0) {
-            if sidebarVisible {
-                SidebarDockedColumn()
+            if sidebarVisible && shellEdge.isLeft {
+                SidebarDockedColumn(sidebarPosition: sidebarPosition)
             }
 
             WebContent()
+
+            if sidebarVisible && shellEdge.isRight {
+                SidebarDockedColumn(sidebarPosition: sidebarPosition)
+            }
         }
-        .padding(.trailing, elementSeparation)
-        .padding(.leading, sidebarVisible ? 0 : elementSeparation)
+        .padding(.leading, sidebarVisible && shellEdge.isLeft ? 0 : elementSeparation)
+        .padding(.trailing, sidebarVisible && shellEdge.isRight ? 0 : elementSeparation)
     }
 
     @ViewBuilder
-    private func SidebarDockedColumn() -> some View {
+    private func SidebarDockedColumn(sidebarPosition: SidebarPosition) -> some View {
         let presentationContext = SidebarPresentationContext.docked(
-            sidebarWidth: windowState.sidebarWidth
+            sidebarWidth: windowState.sidebarWidth,
+            sidebarPosition: sidebarPosition
         )
 
         SidebarColumnRepresentable(

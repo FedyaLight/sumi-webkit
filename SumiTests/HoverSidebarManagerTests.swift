@@ -5,6 +5,88 @@ import XCTest
 
 @MainActor
 final class HoverSidebarManagerTests: XCTestCase {
+    func testVisibilityPolicyUsesLeftSidebarTriggerAndKeepOpenZones() {
+        let frame = CGRect(x: 100, y: 100, width: 800, height: 600)
+
+        XCTAssertTrue(HoverSidebarVisibilityPolicy.shouldShowOverlay(
+            mouse: CGPoint(x: 95, y: 300),
+            windowFrame: frame,
+            overlayWidth: 250,
+            isOverlayVisible: false,
+            contextMenuPresented: false,
+            sidebarPosition: .left,
+            triggerWidth: 6,
+            overshootSlack: 12,
+            keepOpenHysteresis: 52,
+            verticalSlack: 24
+        ))
+        XCTAssertFalse(HoverSidebarVisibilityPolicy.shouldShowOverlay(
+            mouse: CGPoint(x: 895, y: 300),
+            windowFrame: frame,
+            overlayWidth: 250,
+            isOverlayVisible: false,
+            contextMenuPresented: false,
+            sidebarPosition: .left,
+            triggerWidth: 6,
+            overshootSlack: 12,
+            keepOpenHysteresis: 52,
+            verticalSlack: 24
+        ))
+        XCTAssertTrue(HoverSidebarVisibilityPolicy.shouldShowOverlay(
+            mouse: CGPoint(x: 390, y: 300),
+            windowFrame: frame,
+            overlayWidth: 250,
+            isOverlayVisible: true,
+            contextMenuPresented: false,
+            sidebarPosition: .left,
+            triggerWidth: 6,
+            overshootSlack: 12,
+            keepOpenHysteresis: 52,
+            verticalSlack: 24
+        ))
+    }
+
+    func testVisibilityPolicyUsesRightSidebarTriggerAndKeepOpenZones() {
+        let frame = CGRect(x: 100, y: 100, width: 800, height: 600)
+
+        XCTAssertTrue(HoverSidebarVisibilityPolicy.shouldShowOverlay(
+            mouse: CGPoint(x: 905, y: 300),
+            windowFrame: frame,
+            overlayWidth: 250,
+            isOverlayVisible: false,
+            contextMenuPresented: false,
+            sidebarPosition: .right,
+            triggerWidth: 6,
+            overshootSlack: 12,
+            keepOpenHysteresis: 52,
+            verticalSlack: 24
+        ))
+        XCTAssertFalse(HoverSidebarVisibilityPolicy.shouldShowOverlay(
+            mouse: CGPoint(x: 105, y: 300),
+            windowFrame: frame,
+            overlayWidth: 250,
+            isOverlayVisible: false,
+            contextMenuPresented: false,
+            sidebarPosition: .right,
+            triggerWidth: 6,
+            overshootSlack: 12,
+            keepOpenHysteresis: 52,
+            verticalSlack: 24
+        ))
+        XCTAssertTrue(HoverSidebarVisibilityPolicy.shouldShowOverlay(
+            mouse: CGPoint(x: 610, y: 300),
+            windowFrame: frame,
+            overlayWidth: 250,
+            isOverlayVisible: true,
+            contextMenuPresented: false,
+            sidebarPosition: .right,
+            triggerWidth: 6,
+            overshootSlack: 12,
+            keepOpenHysteresis: 52,
+            verticalSlack: 24
+        ))
+    }
+
     func testRefreshMonitoringInstallsAndRemovesMonitorsForActiveCollapsedWindow() async {
         let recorder = EventMonitorRecorder()
         let manager = HoverSidebarManager(

@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct SidebarResizeView: View {
+    let sidebarPosition: SidebarPosition
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) var sumiSettings
@@ -20,16 +21,20 @@ struct SidebarResizeView: View {
     private let minWidth: CGFloat = BrowserWindowState.sidebarMinimumWidth
     private let maxWidth: CGFloat = BrowserWindowState.sidebarMaximumWidth
 
-    private var sitsOnRight: Bool {
-        false
+    init(sidebarPosition: SidebarPosition = .left) {
+        self.sidebarPosition = sidebarPosition
+    }
+
+    private var shellEdge: SidebarShellEdge {
+        sidebarPosition.shellEdge
     }
 
     private var indicatorOffset: CGFloat {
-        sitsOnRight ? 3 : -3
+        shellEdge.resizeIndicatorOffset
     }
 
     private var hitAreaOffset: CGFloat {
-        sitsOnRight ? 5 : -5
+        shellEdge.resizeHitAreaOffset
     }
 
     private var tokens: ChromeThemeTokens {
@@ -93,7 +98,10 @@ struct SidebarResizeView: View {
                             }
 
                             let currentMouseX = value.location.x
-                            let mouseMovement = sitsOnRight ? (startingMouseX - currentMouseX) : (currentMouseX - startingMouseX)
+                            let mouseMovement = shellEdge.resizeDelta(
+                                startingMouseX: startingMouseX,
+                                currentMouseX: currentMouseX
+                            )
                             let newWidth = startingWidth + mouseMovement
                             let clampedWidth = max(minWidth, min(maxWidth, newWidth))
 
