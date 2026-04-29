@@ -564,6 +564,39 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         )
     }
 
+    func testSidebarPresentationContextInputModeSeparatesDockedLayoutFromCollapsedOverlay() {
+        XCTAssertEqual(
+            SidebarPresentationContext.docked(sidebarWidth: 280).inputMode,
+            .dockedLayout
+        )
+        XCTAssertEqual(
+            SidebarPresentationContext.collapsedHidden(sidebarWidth: 280).inputMode,
+            .collapsedOverlay
+        )
+        XCTAssertEqual(
+            SidebarPresentationContext.collapsedVisible(sidebarWidth: 280).inputMode,
+            .collapsedOverlay
+        )
+    }
+
+    func testSimplePrimaryActionsUseNativeDockedInputAndCollapsedAppKitOwnerRouting() {
+        XCTAssertFalse(
+            SidebarPrimaryActionInputRouting.usesAppKitOwner(
+                in: SidebarPresentationContext.docked(sidebarWidth: 280)
+            )
+        )
+        XCTAssertTrue(
+            SidebarPrimaryActionInputRouting.usesAppKitOwner(
+                in: SidebarPresentationContext.collapsedHidden(sidebarWidth: 280)
+            )
+        )
+        XCTAssertTrue(
+            SidebarPrimaryActionInputRouting.usesAppKitOwner(
+                in: SidebarPresentationContext.collapsedVisible(sidebarWidth: 280)
+            )
+        )
+    }
+
     func testSidebarColumnRoutingShieldsCollapsedVisiblePanelBackgroundFromWebContent() {
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 120))
 

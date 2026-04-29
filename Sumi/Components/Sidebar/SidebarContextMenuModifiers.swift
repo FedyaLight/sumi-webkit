@@ -35,23 +35,37 @@ private struct SidebarAppKitItemModifier: ViewModifier {
 
 private struct SidebarAppKitPrimaryActionModifier: ViewModifier {
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(\.sidebarPresentationContext) private var presentationContext
 
     let isEnabled: Bool
     let isInteractionEnabled: Bool
     let action: () -> Void
 
+    @ViewBuilder
     func body(content: Content) -> some View {
-        let primaryAction: (() -> Void)? = isEnabled ? action : nil
-        return SidebarAppKitItemBridge(
-            content: content,
-            controller: windowState.sidebarContextMenuController,
-            configuration: SidebarAppKitItemConfiguration(
-                isInteractionEnabled: isInteractionEnabled,
-                primaryAction: primaryAction
+        if SidebarPrimaryActionInputRouting.usesAppKitOwner(in: presentationContext) {
+            let primaryAction: (() -> Void)? = isEnabled ? action : nil
+            SidebarAppKitItemBridge(
+                content: content,
+                controller: windowState.sidebarContextMenuController,
+                configuration: SidebarAppKitItemConfiguration(
+                    isInteractionEnabled: isInteractionEnabled,
+                    primaryAction: primaryAction,
+                    presentationMode: presentationContext.mode
+                )
             )
-        )
+        } else {
+            content
+        }
     }
 }
+
+enum SidebarPrimaryActionInputRouting {
+    static func usesAppKitOwner(in presentationContext: SidebarPresentationContext) -> Bool {
+        presentationContext.inputMode == .collapsedOverlay
+    }
+}
+
 private struct SumiAppKitContextMenuModifier: ViewModifier {
     @Environment(BrowserWindowState.self) private var windowState
 

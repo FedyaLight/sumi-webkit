@@ -271,6 +271,7 @@ private struct SidebarDDGHoverModifier: ViewModifier {
     let isEnabled: Bool
 
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(\.sidebarPresentationContext) private var presentationContext
     @ObservedObject private var dragState = SidebarDragState.shared
 
     private var effectiveIsEnabled: Bool {
@@ -279,24 +280,70 @@ private struct SidebarDDGHoverModifier: ViewModifier {
             && !windowState.sidebarInteractionState.freezesSidebarHoverState
     }
 
+    @ViewBuilder
     func body(content: Content) -> some View {
-        content
-            .overlay {
-                SidebarDDGHoverBridge(
-                    isHovered: $isHovered,
-                    isEnabled: effectiveIsEnabled
-                )
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-            }
-            .onChange(of: effectiveIsEnabled) { _, enabled in
-                if !enabled {
+        if SidebarHoverInputRouting.usesSwiftUIHover(in: presentationContext) {
+            content
+                .onHover { hovering in
+                    setHoverState(effectiveIsEnabled ? hovering : false)
+                }
+                .onChange(of: effectiveIsEnabled) { _, enabled in
+                    if !enabled {
+                        isHovered = false
+                    }
+                }
+                .onDisappear {
                     isHovered = false
                 }
-            }
-            .onDisappear {
-                isHovered = false
-            }
+        } else {
+            content
+                .overlay {
+                    SidebarDDGHoverBridge(
+                        isHovered: $isHovered,
+                        isEnabled: effectiveIsEnabled
+                    )
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
+                .onChange(of: effectiveIsEnabled) { _, enabled in
+                    if !enabled {
+                        isHovered = false
+                    }
+                }
+                .onDisappear {
+                    isHovered = false
+                }
+        }
+    }
+
+    private func setHoverState(_ hovering: Bool) {
+        if isHovered != hovering {
+            isHovered = hovering
+        }
+    }
+}
+
+enum SidebarHoverInputRouting {
+    static func usesSwiftUIHover(in presentationContext: SidebarPresentationContext) -> Bool {
+        presentationContext.inputMode == .dockedLayout
+    }
+
+    static func usesAppKitHoverBridge(in presentationContext: SidebarPresentationContext) -> Bool {
+        presentationContext.inputMode == .collapsedOverlay
+    }
+}
+
+extension View {
+    func sidebarDDGHover(
+        _ isHovered: Binding<Bool>,
+        isEnabled: Bool = true
+    ) -> some View {
+        modifier(
+            SidebarDDGHoverModifier(
+                isHovered: isHovered,
+                isEnabled: isEnabled
+            )
+        )
     }
 }
 
@@ -331,19 +378,5 @@ enum SidebarHoverChrome {
 
     static var trailingActionFadePadding: CGFloat {
         SidebarRowLayout.trailingActionFadePadding
-    }
-}
-
-extension View {
-    func sidebarDDGHover(
-        _ isHovered: Binding<Bool>,
-        isEnabled: Bool = true
-    ) -> some View {
-        modifier(
-            SidebarDDGHoverModifier(
-                isHovered: isHovered,
-                isEnabled: isEnabled
-            )
-        )
     }
 }
