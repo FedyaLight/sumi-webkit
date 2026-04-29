@@ -3360,11 +3360,14 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
     func testSidebarInteractionStateDragStartDoesNotBlockDragHitTesting() {
         let state = SidebarInteractionState()
 
+        XCTAssertTrue(SidebarTransientUIKind.drag.pinsCollapsedSidebar)
+        XCTAssertFalse(SidebarTransientUIKind.drag.blocksSidebarDragSources)
+
         state.syncSidebarItemDrag(true)
 
         XCTAssertEqual(state.activeKindsDescription, "drag")
         XCTAssertTrue(state.allowsSidebarDragSourceHitTesting)
-        XCTAssertFalse(state.freezesSidebarHoverState)
+        XCTAssertTrue(state.freezesSidebarHoverState)
 
         state.syncSidebarItemDrag(false)
     }

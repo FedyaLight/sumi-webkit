@@ -19,6 +19,21 @@ enum SidebarHoverOverlayTransientPinningPolicy {
     }
 }
 
+enum SidebarHoverOverlayDragPinningPolicy {
+    static func shouldPinHoverSidebar(
+        activeWindowID: UUID?,
+        currentWindowID: UUID,
+        isSidebarVisible: Bool,
+        isDragging: Bool,
+        isInternalDragSession: Bool
+    ) -> Bool {
+        activeWindowID == currentWindowID
+            && !isSidebarVisible
+            && isDragging
+            && isInternalDragSession
+    }
+}
+
 enum SidebarHoverOverlayMetrics {
     static let cornerRadius: CGFloat = 12
     static let hiddenPadding: CGFloat = 18
@@ -27,6 +42,7 @@ enum SidebarHoverOverlayMetrics {
 struct SidebarHoverOverlayView: View {
     @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject var hoverManager: HoverSidebarManager
+    @ObservedObject private var dragState = SidebarDragState.shared
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(CommandPalette.self) private var commandPalette
@@ -42,8 +58,18 @@ struct SidebarHoverOverlayView: View {
         )
     }
 
+    private var sidebarDragPinsHoverSidebar: Bool {
+        SidebarHoverOverlayDragPinningPolicy.shouldPinHoverSidebar(
+            activeWindowID: windowRegistry.activeWindowId,
+            currentWindowID: windowState.id,
+            isSidebarVisible: windowState.isSidebarVisible,
+            isDragging: dragState.isDragging,
+            isInternalDragSession: dragState.isInternalDragSession
+        )
+    }
+
     private var overlaySidebarRevealed: Bool {
-        hoverManager.isOverlayVisible || transientUIPinsHoverSidebar
+        hoverManager.isOverlayVisible || transientUIPinsHoverSidebar || sidebarDragPinsHoverSidebar
     }
 
     private var isCollapsedSidebar: Bool {

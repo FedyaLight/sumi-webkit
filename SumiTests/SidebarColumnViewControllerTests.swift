@@ -489,7 +489,8 @@ final class SidebarColumnViewControllerTests: XCTestCase {
             originalHit: visibleOwner,
             hostedSidebarView: hostedView,
             contextMenuController: controller,
-            eventType: .leftMouseDown
+            eventType: .leftMouseDown,
+            capturesPanelBackgroundPointerEvents: true
         )
 
         XCTAssertTrue(routed === visibleOwner)
@@ -549,6 +550,88 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         )
 
         XCTAssertTrue(routed === currentOwner)
+    }
+
+    func testSidebarPresentationContextCapturesPanelBackgroundOnlyWhenCollapsedVisible() {
+        XCTAssertFalse(
+            SidebarPresentationContext.docked(sidebarWidth: 280).capturesPanelBackgroundPointerEvents
+        )
+        XCTAssertFalse(
+            SidebarPresentationContext.collapsedHidden(sidebarWidth: 280).capturesPanelBackgroundPointerEvents
+        )
+        XCTAssertTrue(
+            SidebarPresentationContext.collapsedVisible(sidebarWidth: 280).capturesPanelBackgroundPointerEvents
+        )
+    }
+
+    func testSidebarColumnRoutingShieldsCollapsedVisiblePanelBackgroundFromWebContent() {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 120))
+
+        let routed = SidebarColumnHitTestRouting.routedHit(
+            point: NSPoint(x: 30, y: 30),
+            in: container,
+            originalHit: nil,
+            hostedSidebarView: nil,
+            contextMenuController: nil,
+            eventType: .mouseMoved,
+            capturesPanelBackgroundPointerEvents: true
+        )
+
+        XCTAssertTrue(routed === container)
+    }
+
+    func testSidebarColumnRoutingLeavesCollapsedHiddenPanelBackgroundPassThrough() {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 120))
+
+        let routed = SidebarColumnHitTestRouting.routedHit(
+            point: NSPoint(x: 30, y: 30),
+            in: container,
+            originalHit: nil,
+            hostedSidebarView: nil,
+            contextMenuController: nil,
+            eventType: .mouseMoved,
+            capturesPanelBackgroundPointerEvents: false
+        )
+
+        XCTAssertNil(routed)
+    }
+
+    func testSidebarColumnRoutingDoesNotShieldOutsidePanelBounds() {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 120))
+        let webContentHit = NSView(frame: .zero)
+
+        let routed = SidebarColumnHitTestRouting.routedHit(
+            point: NSPoint(x: 220, y: 30),
+            in: container,
+            originalHit: webContentHit,
+            hostedSidebarView: nil,
+            contextMenuController: nil,
+            eventType: .mouseMoved,
+            capturesPanelBackgroundPointerEvents: true
+        )
+
+        XCTAssertTrue(routed === webContentHit)
+    }
+
+    func testSidebarColumnRoutingRegisteredOwnerWinsOverCollapsedPanelBackgroundShield() {
+        let controller = makeSidebarContextMenuController(interactionState: SidebarInteractionState())
+        let (_, container, hostedView, owner) = makeRegisteredSidebarOwner(controller: controller)
+        owner.update(
+            rootView: AnyView(Color.clear.frame(width: 80, height: 36)),
+            configuration: SidebarAppKitItemConfiguration(primaryAction: {})
+        )
+
+        let routed = SidebarColumnHitTestRouting.routedHit(
+            point: NSPoint(x: 30, y: 30),
+            in: container,
+            originalHit: hostedView,
+            hostedSidebarView: hostedView,
+            contextMenuController: controller,
+            eventType: .leftMouseDown,
+            capturesPanelBackgroundPointerEvents: true
+        )
+
+        XCTAssertTrue(routed === owner)
     }
 
     func testSidebarColumnRoutingRestoresLiveDragOwnerOnlyAfterMenuEndTracking() {
@@ -703,6 +786,56 @@ final class SidebarColumnViewControllerTests: XCTestCase {
                 transientWindowID: UUID(),
                 currentWindowID: windowID,
                 isSidebarVisible: false
+            )
+        )
+    }
+
+    func testSidebarHoverOverlayDragPinningPolicyPinsOnlyActiveCollapsedInternalDrag() {
+        let windowID = UUID()
+
+        XCTAssertTrue(
+            SidebarHoverOverlayDragPinningPolicy.shouldPinHoverSidebar(
+                activeWindowID: windowID,
+                currentWindowID: windowID,
+                isSidebarVisible: false,
+                isDragging: true,
+                isInternalDragSession: true
+            )
+        )
+        XCTAssertFalse(
+            SidebarHoverOverlayDragPinningPolicy.shouldPinHoverSidebar(
+                activeWindowID: windowID,
+                currentWindowID: windowID,
+                isSidebarVisible: false,
+                isDragging: true,
+                isInternalDragSession: false
+            )
+        )
+        XCTAssertFalse(
+            SidebarHoverOverlayDragPinningPolicy.shouldPinHoverSidebar(
+                activeWindowID: windowID,
+                currentWindowID: windowID,
+                isSidebarVisible: true,
+                isDragging: true,
+                isInternalDragSession: true
+            )
+        )
+        XCTAssertFalse(
+            SidebarHoverOverlayDragPinningPolicy.shouldPinHoverSidebar(
+                activeWindowID: UUID(),
+                currentWindowID: windowID,
+                isSidebarVisible: false,
+                isDragging: true,
+                isInternalDragSession: true
+            )
+        )
+        XCTAssertFalse(
+            SidebarHoverOverlayDragPinningPolicy.shouldPinHoverSidebar(
+                activeWindowID: windowID,
+                currentWindowID: windowID,
+                isSidebarVisible: false,
+                isDragging: false,
+                isInternalDragSession: true
             )
         )
     }
