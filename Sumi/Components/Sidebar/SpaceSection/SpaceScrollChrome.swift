@@ -14,130 +14,75 @@ private struct SpaceContentHeightPreferenceKey: PreferenceKey {
 }
 
 extension SpaceView {
+    private var hasScrollableOverflow: Bool {
+        totalContentHeight > viewportHeight + 1
+    }
+
     private var showsScrollIndicator: Bool {
-        isInteractive && totalContentHeight > viewportHeight + 1
+        isInteractive && isScrollIndicatorActive && hasScrollableOverflow
     }
 
     var mainContentContainer: some View {
-        ScrollViewReader { proxy in
-            GeometryReader { geometry in
-                ZStack {
-                    ScrollView(.vertical, showsIndicators: false) {
+        GeometryReader { _ in
+            ZStack {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 8) {
+                        pinnedTabsSection
+
                         VStack(spacing: 8) {
-                            pinnedTabsSection
-
-                            VStack(spacing: 8) {
-                                regularTabsSection
-                            }
-                        }
-                        .frame(minWidth: 0, maxWidth: innerWidth, alignment: .leading)
-                        .background {
-                            GeometryReader { geometry in
-                                Color.clear.preference(
-                                    key: SpaceContentHeightPreferenceKey.self,
-                                    value: geometry.size.height
-                                )
-                            }
-                        }
-                        .coordinateSpace(name: "ScrollSpace")
-                    }
-                    .accessibilityIdentifier("space-view-scroll-\(space.id.uuidString)")
-                    .scrollIndicators(.hidden)
-                    .contentShape(Rectangle())
-                    .onScrollGeometryChange(for: CGRect.self) { geometry in
-                        geometry.bounds
-                    } action: { oldBounds, newBounds in
-                        guard isInteractive else { return }
-                        deferredScrollStateMutation.schedule(newBounds) { bounds in
-                            guard isInteractive else { return }
-                            updateScrollState(bounds: bounds)
+                            regularTabsSection
                         }
                     }
-                    .overlay(alignment: .trailing) {
-                        if showsScrollIndicator {
-                            sidebarScrollIndicator
-                                .padding(.trailing, 1)
-                        }
-                    }
-                    VStack {
-                        if showTopArrow {
-                            HStack {
-                                Rectangle()
-                                    .fill(Color.gray.opacity(0.3))
-                                    .frame(height: 1)
-                                Spacer()
-                                Button {
-                                    scrollToTop(proxy: proxy)
-                                } label: {
-                                    Image(systemName: "chevron.up")
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundColor(.gray)
-                                        .frame(width: 24, height: 24)
-                                        .background(Color.white.opacity(0.9))
-                                        .clipShape(Circle())
-                                        .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                                .transition(.move(edge: .top).combined(with: .opacity))
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.top, 4)
-                        }
-                        Spacer()
-                    }
-                    .zIndex(10)
-
-                    VStack {
-                        Spacer()
-                        if showBottomArrow {
-                            HStack {
-                                Rectangle()
-                                    .fill(Color.gray.opacity(0.3))
-                                    .frame(height: 1)
-                                Spacer()
-                                Button {
-                                    scrollToActiveTab(proxy: proxy)
-                                } label: {
-                                    Image(systemName: "chevron.down")
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundColor(.gray)
-                                        .frame(width: 24, height: 24)
-                                        .background(Color.white.opacity(0.9))
-                                        .clipShape(Circle())
-                                        .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.bottom, 4)
+                    .frame(minWidth: 0, maxWidth: innerWidth, alignment: .leading)
+                    .background {
+                        GeometryReader { geometry in
+                            Color.clear.preference(
+                                key: SpaceContentHeightPreferenceKey.self,
+                                value: geometry.size.height
+                            )
                         }
                     }
                 }
-                .onPreferenceChange(TabPositionPreferenceKey.self) { positions in
+                .accessibilityIdentifier("space-view-scroll-\(space.id.uuidString)")
+                .scrollIndicators(.hidden)
+                .contentShape(Rectangle())
+                .onScrollGeometryChange(for: CGRect.self) { geometry in
+                    geometry.bounds
+                } action: { _, newBounds in
                     guard isInteractive else { return }
-                    guard preferenceUpdateCoalescer.shouldApplyTabPositionUpdate() else { return }
-
-                    let snapshot = positions
-                    Task { @MainActor in
-                        if tabPositions != snapshot {
-                            tabPositions = snapshot
-                        }
-                        updateActiveTabPosition()
+                    deferredScrollStateMutation.schedule(newBounds) { bounds in
+                        guard isInteractive else { return }
+                        updateScrollState(bounds: bounds)
                     }
                 }
-                .onPreferenceChange(SpaceContentHeightPreferenceKey.self) { contentHeight in
-                    guard isInteractive else { return }
-                    deferredContentHeightMutation.schedule(contentHeight) { resolvedContentHeight in
-                        guard isInteractive else { return }
-                        guard abs(totalContentHeight - resolvedContentHeight) > 0.5 else { return }
-                        totalContentHeight = resolvedContentHeight
-                        updateArrowIndicators()
+                .onScrollPhaseChange { _, newPhase in
+                    updateScrollIndicatorActivity(isScrolling: newPhase.isScrolling)
+                }
+                .overlay(alignment: .trailing) {
+                    if showsScrollIndicator {
+                        sidebarScrollIndicator
+                            .padding(.trailing, 1)
+                            .transition(.opacity)
                     }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .onPreferenceChange(SpaceContentHeightPreferenceKey.self) { contentHeight in
+                guard isInteractive else { return }
+                deferredContentHeightMutation.schedule(contentHeight) { resolvedContentHeight in
+                    guard isInteractive else { return }
+                    guard abs(totalContentHeight - resolvedContentHeight) > 0.5 else { return }
+                    totalContentHeight = resolvedContentHeight
+                    if !hasScrollableOverflow {
+                        updateScrollIndicatorActivity(isScrolling: false)
+                    }
+                }
+            }
+            .onDisappear {
+                cancelScrollIndicatorHideTask()
+                isScrollIndicatorActive = false
+            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private var sidebarScrollIndicator: some View {
@@ -178,115 +123,51 @@ extension SpaceView {
         if abs(scrollOffset - newScrollOffset) > 0.5 {
             scrollOffset = newScrollOffset
         }
-        if abs(lastScrollOffset - newScrollOffset) > 0.5 {
-            lastScrollOffset = newScrollOffset
-        }
-
-        let newCanScrollUp = minY < 0
-        if canScrollUp != newCanScrollUp {
-            canScrollUp = newCanScrollUp
-        }
-
-        let newCanScrollDown = totalContentHeight > viewportHeight && (-minY + viewportHeight) < totalContentHeight
-        if canScrollDown != newCanScrollDown {
-            canScrollDown = newCanScrollDown
-        }
-
-        let newIsAtTop = minY >= 0
-        if isAtTop != newIsAtTop {
-            isAtTop = newIsAtTop
-        }
 
         updateContentHeight()
-        updateArrowIndicators()
+        if !hasScrollableOverflow {
+            updateScrollIndicatorActivity(isScrolling: false)
+        }
     }
 
     private func updateContentHeight() {
         totalContentHeight = max(totalContentHeight, 0)
     }
 
-    private func updateActiveTabPosition() {
-        guard isInteractive else {
-            activeTabPosition = .zero
-            showTopArrow = false
-            showBottomArrow = false
-            return
-        }
-        guard let activeTab = browserManager.currentTab(for: windowState),
-              activeTab.spaceId == space.id else {
-            activeTabPosition = .zero
-            showTopArrow = false
-            showBottomArrow = false
-            return
-        }
-
-        if let tabFrame = tabPositions[activeTab.id] {
-            activeTabPosition = tabFrame
-        }
-
-        DispatchQueue.main.async {
-            self.updateArrowIndicators()
-        }
-    }
-
-    private func updateArrowIndicators() {
-        guard isInteractive else {
-            showTopArrow = false
-            showBottomArrow = false
-            return
-        }
-        guard let activeTab = browserManager.currentTab(for: windowState),
-              activeTab.spaceId == space.id else {
-            // No active tab in this space, don't show arrows
-            showTopArrow = false
-            showBottomArrow = false
-            return
-        }
-
-        guard !selectionScrollGuard.isLocked else {
-            showTopArrow = false
-            showBottomArrow = false
-            return
-        }
-
-        let activeTabTop = activeTabPosition.minY
-        let activeTabBottom = activeTabPosition.maxY
-
-        let activeTabIsAbove = activeTabBottom < scrollOffset
-        let activeTabIsBelow = activeTabTop > scrollOffset + viewportHeight
-        showTopArrow = activeTabIsAbove && canScrollUp
-        showBottomArrow = activeTabIsBelow && canScrollDown
-    }
-
-    private func scrollToActiveTab(proxy: ScrollViewProxy) {
-        guard let activeTab = browserManager.currentTab(for: windowState),
-              activeTab.spaceId == space.id else { return }
-
-        guard !selectionScrollGuard.isLocked else { return }
-
-        updateContentHeight()
-        updateActiveTabPosition()
-
-        let activeTabTop = activeTabPosition.minY
-        if activeTabTop > scrollOffset + viewportHeight {
-            withAnimation(.easeInOut(duration: 0.3)) {
-                proxy.scrollTo(activeTab.id, anchor: .bottom)
+    private func updateScrollIndicatorActivity(isScrolling: Bool) {
+        guard isInteractive && hasScrollableOverflow else {
+            cancelScrollIndicatorHideTask()
+            if isScrollIndicatorActive {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    isScrollIndicatorActive = false
+                }
             }
             return
         }
 
-        let activeTabBottom = activeTabPosition.maxY
-        if activeTabBottom < scrollOffset {
-            withAnimation(.easeInOut(duration: 0.3)) {
-                proxy.scrollTo(activeTab.id, anchor: .top)
+        cancelScrollIndicatorHideTask()
+
+        if isScrolling {
+            if !isScrollIndicatorActive {
+                withAnimation(.easeInOut(duration: 0.12)) {
+                    isScrollIndicatorActive = true
+                }
             }
             return
         }
+
+        scrollIndicatorHideTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 650_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.18)) {
+                isScrollIndicatorActive = false
+            }
+            scrollIndicatorHideTask = nil
+        }
     }
 
-    private func scrollToTop(proxy: ScrollViewProxy) {
-        withAnimation(.easeInOut(duration: 0.3)) {
-            proxy.scrollTo("space-separator-top", anchor: .top)
-        }
+    private func cancelScrollIndicatorHideTask() {
+        scrollIndicatorHideTask?.cancel()
+        scrollIndicatorHideTask = nil
     }
 }

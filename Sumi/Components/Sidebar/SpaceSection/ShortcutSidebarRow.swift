@@ -8,7 +8,6 @@ import SwiftUI
 struct ShortcutSidebarRow: View {
     @ObservedObject var pin: ShortcutPin
     var liveTab: Tab? = nil
-    var scrollTargetID: UUID? = nil
     var accessibilityID: String? = nil
     var contextMenuEntries: (@escaping () -> Void) -> [SidebarContextMenuEntry] = { _ in [] }
     let action: () -> Void
@@ -27,7 +26,6 @@ struct ShortcutSidebarRow: View {
                 ShortcutSidebarLiveRowContent(
                     pin: pin,
                     liveTab: liveTab,
-                    scrollTargetID: scrollTargetID,
                     accessibilityID: accessibilityID,
                     contextMenuEntries: contextMenuEntries,
                     action: action,
@@ -43,7 +41,6 @@ struct ShortcutSidebarRow: View {
             } else {
                 ShortcutSidebarStoredRowContent(
                     pin: pin,
-                    scrollTargetID: scrollTargetID,
                     accessibilityID: accessibilityID,
                     contextMenuEntries: contextMenuEntries,
                     action: action,
@@ -64,7 +61,6 @@ struct ShortcutSidebarRow: View {
 private struct ShortcutSidebarLiveRowContent: View {
     @ObservedObject var pin: ShortcutPin
     @ObservedObject var liveTab: Tab
-    var scrollTargetID: UUID?
     var accessibilityID: String?
     var contextMenuEntries: (@escaping () -> Void) -> [SidebarContextMenuEntry]
     let action: () -> Void
@@ -94,7 +90,6 @@ private struct ShortcutSidebarLiveRowContent: View {
             ),
             showsSplitBadge: splitSide != nil,
             splitBadgeIsSelected: splitManager.activeSide(for: windowState.id) == splitSide,
-            scrollTargetID: scrollTargetID,
             accessibilityID: accessibilityID,
             contextMenuEntries: contextMenuEntries,
             action: action,
@@ -112,7 +107,6 @@ private struct ShortcutSidebarLiveRowContent: View {
 
 private struct ShortcutSidebarStoredRowContent: View {
     @ObservedObject var pin: ShortcutPin
-    var scrollTargetID: UUID?
     var accessibilityID: String?
     var contextMenuEntries: (@escaping () -> Void) -> [SidebarContextMenuEntry]
     let action: () -> Void
@@ -139,7 +133,6 @@ private struct ShortcutSidebarStoredRowContent: View {
             ),
             showsSplitBadge: false,
             splitBadgeIsSelected: false,
-            scrollTargetID: scrollTargetID,
             accessibilityID: accessibilityID,
             contextMenuEntries: contextMenuEntries,
             action: action,
@@ -162,7 +155,6 @@ private struct ShortcutSidebarRowChrome: View {
     let runtimeAffordance: SumiLauncherRuntimeAffordanceState
     let showsSplitBadge: Bool
     let splitBadgeIsSelected: Bool
-    var scrollTargetID: UUID? = nil
     var accessibilityID: String? = nil
     var contextMenuEntries: (@escaping () -> Void) -> [SidebarContextMenuEntry] = { _ in [] }
     let action: () -> Void
@@ -274,15 +266,6 @@ private struct ShortcutSidebarRowChrome: View {
         }
         .onChange(of: runtimeAffordance.isSelected) { _, _ in
             recordShortcutSidebarMarker("shortcutRowSelectionChange")
-        }
-        .background {
-            if let scrollTargetID {
-                Color.clear
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .id(scrollTargetID)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
         }
         .sidebarAppKitContextMenu(
             isInteractionEnabled: dragIsEnabled,
