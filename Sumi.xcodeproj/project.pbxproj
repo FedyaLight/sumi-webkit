@@ -69,6 +69,7 @@
 				Sidebar/SidebarHeader.swift,
 				Sidebar/SidebarSwipeCaptureSurface.swift,
 				Sidebar/SpaceSidebarTransitionState.swift,
+				Sidebar/SpacesList/SpaceReorderDragState.swift,
 				Sidebar/SpacesList/SpacesList.swift,
 				Sidebar/SpacesList/SpacesListItem.swift,
 				Sidebar/SpacesSideBarView.swift,

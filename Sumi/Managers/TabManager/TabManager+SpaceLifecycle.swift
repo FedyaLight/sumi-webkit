@@ -94,6 +94,36 @@ extension TabManager {
         }
     }
 
+    @discardableResult
+    func reorderSpace(spaceId: UUID, to targetIndex: Int) -> Bool {
+        withStructuralUpdateTransaction {
+            guard spaces.count > 1,
+                  let sourceIndex = spaces.firstIndex(where: { $0.id == spaceId })
+            else {
+                return false
+            }
+
+            let currentSpaceId = currentSpace?.id
+            let movingSpace = spaces[sourceIndex]
+            var reorderedSpaces = spaces
+            reorderedSpaces.remove(at: sourceIndex)
+            let insertionIndex = min(max(targetIndex, 0), reorderedSpaces.count)
+            reorderedSpaces.insert(movingSpace, at: insertionIndex)
+
+            guard reorderedSpaces.map(\.id) != spaces.map(\.id) else {
+                return false
+            }
+
+            spaces = reorderedSpaces
+            if let currentSpaceId {
+                currentSpace = spaces.first { $0.id == currentSpaceId }
+            }
+            markAllSpacesStructurallyDirty()
+            scheduleStructuralPersistence()
+            return true
+        }
+    }
+
     func setActiveSpace(_ space: Space, preferredTab: Tab? = nil) {
         guard spaces.contains(where: { $0.id == space.id }) else { return }
 
