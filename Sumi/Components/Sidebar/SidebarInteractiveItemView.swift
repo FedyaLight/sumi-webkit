@@ -223,6 +223,11 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
             mouseDownCanStartDrag = capturesDrag
             didStartDrag = false
             isTrackingDragGesture = true
+            if capturesDrag {
+                SidebarDragState.shared.armInternalDragGeometry(
+                    scope: itemConfiguration.dragScope
+                )
+            }
             contextMenuController?.beginPrimaryMouseTracking(self)
             trackPrimaryMouseEventsIfNeeded(after: event)
             return
@@ -523,6 +528,7 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
             previewModel: previewSession.previewModel,
             scope: itemConfiguration.dragScope
         )
+        SidebarDragState.shared.flushDeferredGeometryForDragStart()
         RuntimeDiagnostics.emit(
             "🧭 Sidebar drag started owner=\(recoveryDebugDescription) item=\(configuration.item.tabId.uuidString) source=\(sidebarDropZoneDebugDescription(configuration.sourceZone)) isDragging=\(SidebarDragState.shared.isDragging)"
         )
@@ -586,11 +592,15 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
             || mouseDownCanStartDrag
             || didStartDrag
             || isTrackingDragGesture
+        let shouldCancelArmedGeometry = !didStartDrag
         mouseDownEvent = nil
         mouseDownPoint = nil
         mouseDownCanStartDrag = false
         didStartDrag = false
         isTrackingDragGesture = false
+        if shouldCancelArmedGeometry {
+            SidebarDragState.shared.cancelArmedDragGeometry()
+        }
         contextMenuController?.endPrimaryMouseTracking(self)
         if hadMouseState {
             SidebarUITestDragMarker.recordEvent(

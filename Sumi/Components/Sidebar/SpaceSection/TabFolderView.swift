@@ -525,6 +525,7 @@ struct TabFolderView: View {
                         if reportsGeometry {
                             folderShortcutView(pin)
                                 .sidebarFolderChildDropGeometry(
+                                    spaceId: space.id,
                                     folderId: folder.id,
                                     childId: pin.id,
                                     index: index,

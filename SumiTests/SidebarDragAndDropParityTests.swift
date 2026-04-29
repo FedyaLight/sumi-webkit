@@ -1575,6 +1575,56 @@ final class SidebarDragStateTests: XCTestCase {
         XCTAssertNotNil(state.previewAssets[.row])
     }
 
+    func testDetailedGeometryCollectionIsIdleUntilArmedOrDragging() {
+        let spaceId = UUID()
+        let profileId = UUID()
+        let otherSpaceId = UUID()
+        let otherProfileId = UUID()
+        let itemId = UUID()
+        let scope = SidebarDragScope(
+            spaceId: spaceId,
+            profileId: profileId,
+            sourceContainer: .spaceRegular(spaceId),
+            sourceItemId: itemId,
+            sourceItemKind: .tab
+        )
+
+        XCTAssertFalse(
+            state.shouldCollectDetailedGeometry(spaceId: spaceId, profileId: profileId)
+        )
+
+        state.armInternalDragGeometry(scope: scope)
+
+        XCTAssertTrue(
+            state.shouldCollectDetailedGeometry(spaceId: spaceId, profileId: profileId)
+        )
+        XCTAssertFalse(
+            state.shouldCollectDetailedGeometry(spaceId: otherSpaceId, profileId: profileId)
+        )
+        XCTAssertFalse(
+            state.shouldCollectDetailedGeometry(spaceId: spaceId, profileId: otherProfileId)
+        )
+
+        state.beginInternalDragSession(
+            itemId: itemId,
+            location: CGPoint(x: 10, y: 20),
+            previewKind: .row,
+            previewAssets: [.row: makePreviewAsset()]
+        )
+
+        XCTAssertFalse(state.isInternalDragGeometryArmed)
+        XCTAssertEqual(state.activeDragScope, scope)
+        XCTAssertTrue(
+            state.shouldCollectDetailedGeometry(spaceId: spaceId, profileId: profileId)
+        )
+
+        state.resetInteractionState()
+
+        XCTAssertFalse(
+            state.shouldCollectDetailedGeometry(spaceId: spaceId, profileId: profileId)
+        )
+    }
+
     func testDropResolverUpdatesLogicalAndPreviewLocationsSeparately() {
         let itemId = UUID()
         state.beginInternalDragSession(
@@ -1631,7 +1681,7 @@ final class SidebarDragStateTests: XCTestCase {
         XCTAssertNil(state.previewKind)
         XCTAssertTrue(state.previewAssets.isEmpty)
         XCTAssertFalse(state.isInternalDragSession)
-        XCTAssertFalse(state.essentialsLayoutMetricsBySpace.isEmpty)
+        XCTAssertTrue(state.essentialsLayoutMetricsBySpace.isEmpty)
         XCTAssertFalse(state.pageGeometryByKey.isEmpty)
     }
 
@@ -1689,8 +1739,134 @@ final class SidebarDragStateTests: XCTestCase {
         )
     }
 
-    func testResetInteractionStatePreservesGeometryCaches() {
+    func testDeferredGeometryMutationsCoalesceAndPublishLatestSnapshot() {
         let spaceId = UUID()
+
+        state.resetGeometryInstrumentationForTesting()
+        state.schedulePageGeometry(
+            spaceId: spaceId,
+            profileId: nil,
+            frame: CGRect(x: 0, y: 0, width: 200, height: 300),
+            renderMode: .interactive,
+            generation: state.activeGeometryGeneration
+        )
+        state.schedulePageGeometry(
+            spaceId: spaceId,
+            profileId: nil,
+            frame: CGRect(x: 0, y: 0, width: 220, height: 320),
+            renderMode: .interactive,
+            generation: state.activeGeometryGeneration
+        )
+        state.scheduleSectionFrame(
+            spaceId: spaceId,
+            section: .spaceRegular,
+            frame: CGRect(x: 0, y: 220, width: 220, height: 80),
+            generation: state.activeGeometryGeneration
+        )
+
+        XCTAssertTrue(state.geometrySnapshot.pageGeometryByKey.isEmpty)
+
+        state.publishGeometrySnapshotForTesting()
+
+        XCTAssertEqual(
+            state.geometrySnapshot.pageGeometryByKey[SidebarPageGeometryKey(spaceId: spaceId, profileId: nil)]?.frame,
+            CGRect(x: 0, y: 0, width: 220, height: 320)
+        )
+        XCTAssertEqual(
+            state.geometrySnapshot.sectionFramesBySpace[SidebarSectionGeometryKey(spaceId: spaceId, section: .spaceRegular)],
+            CGRect(x: 0, y: 220, width: 220, height: 80)
+        )
+
+        let instrumentation = state.geometryInstrumentationSnapshotForTesting()
+        XCTAssertEqual(instrumentation.reporterUpdateCount, 3)
+        XCTAssertEqual(instrumentation.deferredMutationScheduleCount, 3)
+        XCTAssertEqual(instrumentation.coalescedFlushCount, 1)
+        XCTAssertEqual(instrumentation.publishedGeometrySnapshotRevisionCount, 1)
+        XCTAssertEqual(instrumentation.activeReporterCountBySection["page"], 1)
+        XCTAssertEqual(instrumentation.activeReporterCountBySection["section"], 1)
+    }
+
+    func testUnchangedGeometrySnapshotDoesNotPublishNewRevision() {
+        let spaceId = UUID()
+
+        state.updatePageGeometry(
+            spaceId: spaceId,
+            profileId: nil,
+            frame: CGRect(x: 0, y: 0, width: 200, height: 300),
+            renderMode: .interactive
+        )
+        state.resetGeometryInstrumentationForTesting()
+
+        state.applyPageGeometry(
+            spaceId: spaceId,
+            profileId: nil,
+            frame: CGRect(x: 0, y: 0, width: 200, height: 300),
+            renderMode: .interactive,
+            generation: state.activeGeometryGeneration
+        )
+        state.publishGeometrySnapshotForTesting()
+
+        let instrumentation = state.geometryInstrumentationSnapshotForTesting()
+        XCTAssertEqual(instrumentation.publishedGeometrySnapshotRevisionCount, 0)
+        XCTAssertEqual(instrumentation.unchangedGeometrySnapshotPublishSkipCount, 1)
+    }
+
+    func testDragStartFlushesArmedDetailedGeometrySnapshot() {
+        let spaceId = UUID()
+        let itemId = UUID()
+        let scope = SidebarDragScope(
+            spaceId: spaceId,
+            profileId: nil,
+            sourceContainer: .spaceRegular(spaceId),
+            sourceItemId: itemId,
+            sourceItemKind: .tab
+        )
+
+        state.armInternalDragGeometry(scope: scope)
+        state.schedulePageGeometry(
+            spaceId: spaceId,
+            profileId: nil,
+            frame: CGRect(x: 0, y: 0, width: 240, height: 360),
+            renderMode: .interactive,
+            generation: state.activeGeometryGeneration
+        )
+        state.scheduleSectionFrame(
+            spaceId: spaceId,
+            section: .spaceRegular,
+            frame: CGRect(x: 0, y: 220, width: 240, height: 120),
+            generation: state.activeGeometryGeneration
+        )
+        state.scheduleRegularListHitTarget(
+            spaceId: spaceId,
+            frame: CGRect(x: 0, y: 220, width: 240, height: SidebarRowLayout.rowHeight * 2),
+            itemCount: 2,
+            generation: state.activeGeometryGeneration
+        )
+
+        XCTAssertNil(state.regularListHitTargets[spaceId])
+
+        state.beginInternalDragSession(
+            itemId: itemId,
+            location: CGPoint(x: 80, y: 228),
+            previewKind: .row,
+            previewAssets: [.row: makePreviewAsset()]
+        )
+
+        XCTAssertNotNil(state.regularListHitTargets[spaceId])
+        let resolution = SidebarDropResolver.resolve(
+            location: CGPoint(x: 80, y: 228),
+            state: state,
+            draggedItem: SumiDragItem(tabId: itemId, title: "Dragged"),
+            scope: scope
+        )
+        XCTAssertEqual(resolution.slot, .spaceRegular(spaceId: spaceId, slot: 0))
+    }
+
+    func testResetInteractionStatePreservesStableGeometryAndClearsDetailedTargets() {
+        let spaceId = UUID()
+        let folderId = UUID()
+        let childId = UUID()
+        let itemId = UUID()
 
         state.updatePageGeometry(
             spaceId: spaceId,
@@ -1718,6 +1894,33 @@ final class SidebarDragStateTests: XCTestCase {
             visibleRowCount: 1,
             maxDropRowCount: 2
         )
+        state.updateTopLevelPinnedItemTarget(
+            itemId: itemId,
+            kind: .shortcut(itemId),
+            spaceId: spaceId,
+            topLevelIndex: 0,
+            frame: CGRect(x: 0, y: 80, width: 240, height: SidebarRowLayout.rowHeight)
+        )
+        state.updateFolderDropTarget(
+            folderId: folderId,
+            spaceId: spaceId,
+            topLevelIndex: 1,
+            childCount: 1,
+            isOpen: true,
+            region: .body,
+            frame: CGRect(x: 0, y: 120, width: 240, height: SidebarRowLayout.rowHeight)
+        )
+        state.updateFolderChildDropTarget(
+            folderId: folderId,
+            childId: childId,
+            index: 0,
+            frame: CGRect(x: 0, y: 120, width: 240, height: SidebarRowLayout.rowHeight)
+        )
+        state.updateRegularListHitTarget(
+            spaceId: spaceId,
+            frame: CGRect(x: 0, y: 220, width: 240, height: SidebarRowLayout.rowHeight),
+            itemCount: 1
+        )
         state.beginInternalDragSession(
             itemId: UUID(),
             location: CGPoint(x: 32, y: 44),
@@ -1731,7 +1934,11 @@ final class SidebarDragStateTests: XCTestCase {
         XCTAssertEqual(state.sidebarGeometryGeneration, 0)
         XCTAssertEqual(state.pageGeometryByKey.count, 1)
         XCTAssertNotNil(state.sectionFrame(for: .spacePinned, in: spaceId))
-        XCTAssertNotNil(state.essentialsLayoutMetricsBySpace[spaceId])
+        XCTAssertTrue(state.topLevelPinnedItemTargets.isEmpty)
+        XCTAssertTrue(state.folderDropTargets.isEmpty)
+        XCTAssertTrue(state.folderChildDropTargets.isEmpty)
+        XCTAssertTrue(state.regularListHitTargets.isEmpty)
+        XCTAssertNil(state.essentialsLayoutMetricsBySpace[spaceId])
     }
 
     private func drainMainQueue() async {

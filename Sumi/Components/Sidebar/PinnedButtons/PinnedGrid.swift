@@ -340,6 +340,11 @@ struct PinnedGrid: View {
             dragState: dragState
         )
         let rawPreviewState = dragState.essentialsPreviewState(for: geometrySpaceId)
+        let reportsDetailedGeometry = reportsGeometry
+            && dragState.shouldCollectDetailedGeometry(
+                spaceId: geometrySpaceId,
+                profileId: effectiveProfileId
+            )
         let shouldAnimate = animateLayout
             && (windowRegistry.activeWindow?.id == windowState.id)
             && !browserManager.isTransitioningProfile
@@ -471,7 +476,7 @@ struct PinnedGrid: View {
             gridSpacing: pinnedTabsConfiguration.gridSpacing,
             canAcceptDrop: projectedLayout.canAcceptDrop,
             generation: dragState.sidebarGeometryGeneration,
-            isEnabled: reportsGeometry
+            isEnabled: reportsDetailedGeometry
         )
         .allowsHitTesting(!browserManager.isTransitioningProfile)
     }
