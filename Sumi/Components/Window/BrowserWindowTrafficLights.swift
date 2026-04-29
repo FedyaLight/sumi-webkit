@@ -1,12 +1,46 @@
 import AppKit
 import SwiftUI
 
-enum BrowserWindowTrafficLightKind: CaseIterable, Identifiable, Equatable {
+enum BrowserWindowControlsAccessibilityIdentifiers {
+    static let closeButton = "browser-window-close-button"
+    static let minimizeButton = "browser-window-minimize-button"
+    static let zoomButton = "browser-window-zoom-button"
+    static let miniBrowserWindow = "mini-browser-window"
+    static let zoomMenu = "browser-window-zoom-menu"
+    static let leftHalfMenuItem = "browser-window-left-half-menu-item"
+    static let rightHalfMenuItem = "browser-window-right-half-menu-item"
+    static let topHalfMenuItem = "browser-window-top-half-menu-item"
+    static let bottomHalfMenuItem = "browser-window-bottom-half-menu-item"
+    static let fillMenuItem = "browser-window-fill-menu-item"
+    static let centerMenuItem = "browser-window-center-menu-item"
+    static let leftThirdMenuItem = "browser-window-left-third-menu-item"
+    static let rightThirdMenuItem = "browser-window-right-third-menu-item"
+    static let fullScreenMenuItem = "browser-window-full-screen-menu-item"
+
+    static let allButtonIdentifiers: Set<String> = [
+        closeButton,
+        minimizeButton,
+        zoomButton,
+    ]
+}
+
+enum BrowserWindowTrafficLightKind: CaseIterable, Identifiable, Hashable {
     case close
     case minimize
     case zoom
 
     var id: Self { self }
+
+    var buttonType: NSWindow.ButtonType {
+        switch self {
+        case .close:
+            return .closeButton
+        case .minimize:
+            return .miniaturizeButton
+        case .zoom:
+            return .zoomButton
+        }
+    }
 
     var accessibilityIdentifier: String {
         switch self {
@@ -26,103 +60,36 @@ enum BrowserWindowTrafficLightKind: CaseIterable, Identifiable, Equatable {
         case .minimize:
             return "Minimize window"
         case .zoom:
-            return "Zoom window"
+            return "Full Screen"
         }
     }
 
-    var symbolName: String {
+    var helpText: String {
         switch self {
-        case .close:
-            return "xmark"
-        case .minimize:
-            return "minus"
+        case .close, .minimize:
+            return accessibilityLabel
         case .zoom:
-            return "plus"
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .close:
-            return Color(red: 1.0, green: 0.373, blue: 0.341)
-        case .minimize:
-            return Color(red: 1.0, green: 0.741, blue: 0.180)
-        case .zoom:
-            return Color(red: 0.173, green: 0.784, blue: 0.251)
-        }
-    }
-}
-
-enum BrowserWindowTrafficLightInteractionState: Equatable {
-    case idle
-    case hovered
-    case pressed
-}
-
-struct BrowserWindowTrafficLightAppearance: Equatable {
-    let fillOpacity: Double
-    let symbolOpacity: Double
-    let strokeOpacity: Double
-    let overlayOpacity: Double
-    let scale: CGFloat
-}
-
-enum BrowserWindowTrafficLightAppearanceResolver {
-    static func appearance(
-        isEnabled: Bool,
-        isWindowActive: Bool,
-        interactionState: BrowserWindowTrafficLightInteractionState
-    ) -> BrowserWindowTrafficLightAppearance {
-        guard isEnabled else {
-            return BrowserWindowTrafficLightAppearance(
-                fillOpacity: 0.22,
-                symbolOpacity: 0,
-                strokeOpacity: 0.16,
-                overlayOpacity: 0,
-                scale: 1
-            )
-        }
-
-        let activeFillOpacity = isWindowActive ? 1.0 : 0.36
-        switch interactionState {
-        case .idle:
-            return BrowserWindowTrafficLightAppearance(
-                fillOpacity: activeFillOpacity,
-                symbolOpacity: 0,
-                strokeOpacity: isWindowActive ? 0.16 : 0.12,
-                overlayOpacity: 0,
-                scale: 1
-            )
-        case .hovered:
-            return BrowserWindowTrafficLightAppearance(
-                fillOpacity: isWindowActive ? 1.0 : 0.62,
-                symbolOpacity: isWindowActive ? 0.72 : 0.38,
-                strokeOpacity: 0.18,
-                overlayOpacity: 0,
-                scale: 1
-            )
-        case .pressed:
-            return BrowserWindowTrafficLightAppearance(
-                fillOpacity: isWindowActive ? 0.94 : 0.54,
-                symbolOpacity: isWindowActive ? 0.78 : 0.42,
-                strokeOpacity: 0.22,
-                overlayOpacity: 0.18,
-                scale: 0.92
-            )
+            return "Enter Full Screen. Option-click to zoom."
         }
     }
 }
 
 enum BrowserWindowTrafficLightMetrics {
-    static let buttonDiameter: CGFloat = 12
-    static let buttonSpacing: CGFloat = 8
-    static let sidebarReservedWidth: CGFloat = 60
-    static let windowLeadingInset: CGFloat = SidebarChromeMetrics.horizontalPadding
-        + SidebarChromeMetrics.windowControlsLeadingInset
-    static let windowTopInset: CGFloat = floor(
-        (SidebarChromeMetrics.controlStripHeight - buttonDiameter) / 2
-    )
-    static let hitTargetSize: CGFloat = 20
+    static var buttonDiameter: CGFloat {
+        if #available(macOS 26.0, *) {
+            return 14
+        } else {
+            return 12
+        }
+    }
+
+    static let buttonSpacing: CGFloat = 9
+    static let clusterHeight: CGFloat = 30
+    static let clusterTrailingInset: CGFloat = 8
+
+    static var sidebarReservedWidth: CGFloat {
+        clusterWidth + clusterTrailingInset
+    }
 
     static var clusterWidth: CGFloat {
         buttonDiameter * CGFloat(BrowserWindowTrafficLightKind.allCases.count)
@@ -165,160 +132,785 @@ enum BrowserWindowTrafficLightAvailability {
     }
 }
 
-@MainActor
-enum BrowserWindowTrafficLightActionRouter {
-    static func perform(
-        _ kind: BrowserWindowTrafficLightKind,
-        window: NSWindow?
-    ) {
-        guard let window,
-              BrowserWindowTrafficLightAvailability.isEnabled(kind: kind, window: window)
-        else {
-            return
-        }
-
-        switch kind {
-        case .close:
-            window.performClose(nil)
-        case .minimize:
-            window.miniaturize(nil)
-        case .zoom:
-            window.performZoom(nil)
-        }
-    }
-}
-
 struct BrowserWindowTrafficLights: View {
-    @Environment(BrowserWindowState.self) private var windowState
+    let window: NSWindow?
+    var isVisible: Bool = true
+
+    @StateObject private var windowObserver = BrowserWindowTrafficLightWindowObserver()
+    @StateObject private var zoomMenuPresenter = BrowserWindowZoomPopoverPresenter()
     @State private var isClusterHovered = false
-    @State private var notificationRevision: UInt = 0
-
-    private var window: NSWindow? {
-        windowState.window
-    }
-
-    private var isWindowActive: Bool {
-        guard let window else { return false }
-        return NSApp.isActive && (window.isKeyWindow || window.isMainWindow)
-    }
+    @State private var hoveredKinds: Set<BrowserWindowTrafficLightKind> = []
 
     var body: some View {
-        let _ = notificationRevision
+        let _ = windowObserver.revision
+        let isFullScreen = window?.styleMask.contains(.fullScreen) ?? false
+        let shouldShow = isVisible && isFullScreen == false
+        let showsHoverGlyphs = isClusterHovered || hoveredKinds.isEmpty == false
 
         HStack(spacing: BrowserWindowTrafficLightMetrics.buttonSpacing) {
             ForEach(BrowserWindowTrafficLightKind.allCases) { kind in
-                Button {
-                    BrowserWindowTrafficLightActionRouter.perform(kind, window: window)
-                } label: {
-                    EmptyView()
-                }
-                .buttonStyle(
-                    BrowserWindowTrafficLightButtonStyle(
-                        kind: kind,
-                        isClusterHovered: isClusterHovered,
-                        isWindowActive: isWindowActive
-                    )
-                )
-                .disabled(
-                    BrowserWindowTrafficLightAvailability.isEnabled(
+                BrowserWindowTrafficLightButton(
+                    kind: kind,
+                    isClusterHovered: showsHoverGlyphs,
+                    isWindowActive: windowObserver.isWindowActive,
+                    isEnabled: BrowserWindowTrafficLightAvailability.isEnabled(
                         kind: kind,
                         window: window
-                    ) == false
+                    ),
+                    action: {
+                        guard let window else { return }
+                        BrowserWindowTrafficLightActionRouter.perform(kind, window: window, sender: nil)
+                        windowObserver.refresh()
+                    },
+                    hoverChanged: { hovering, anchorView in
+                        handleHover(kind: kind, hovering: hovering, anchorView: anchorView)
+                    }
                 )
-                .accessibilityIdentifier(kind.accessibilityIdentifier)
-                .accessibilityLabel(kind.accessibilityLabel)
-                .help(kind.accessibilityLabel)
             }
         }
         .frame(
             width: BrowserWindowTrafficLightMetrics.clusterWidth,
-            height: BrowserWindowTrafficLightMetrics.hitTargetSize
+            height: BrowserWindowTrafficLightMetrics.clusterHeight,
+            alignment: .center
         )
-        .padding(.leading, BrowserWindowTrafficLightMetrics.windowLeadingInset)
-        .padding(.top, BrowserWindowTrafficLightMetrics.windowTopInset)
-        .onHover { isClusterHovered = $0 }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            notificationRevision &+= 1
+        .padding(.trailing, BrowserWindowTrafficLightMetrics.clusterTrailingInset)
+        .frame(
+            width: BrowserWindowTrafficLightMetrics.sidebarReservedWidth,
+            height: BrowserWindowTrafficLightMetrics.clusterHeight,
+            alignment: .leading
+        )
+        .opacity(shouldShow ? 1 : 0)
+        .allowsHitTesting(shouldShow)
+        .accessibilityHidden(!shouldShow)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.1)) {
+                isClusterHovered = hovering
+            }
+            if hovering == false {
+                hoveredKinds.removeAll()
+                zoomMenuPresenter.cancelPendingShow()
+            }
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
-            notificationRevision &+= 1
+        .onAppear {
+            windowObserver.attach(to: window)
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
-            updateRevisionIfNeeded(notification)
+        .onChange(of: window.map(ObjectIdentifier.init)) { _, _ in
+            windowObserver.attach(to: window)
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { notification in
-            updateRevisionIfNeeded(notification)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { notification in
-            updateRevisionIfNeeded(notification)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { notification in
-            updateRevisionIfNeeded(notification)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willBeginSheetNotification)) { notification in
-            updateRevisionIfNeeded(notification)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEndSheetNotification)) { notification in
-            updateRevisionIfNeeded(notification)
+        .onDisappear {
+            zoomMenuPresenter.close()
         }
     }
 
-    private func updateRevisionIfNeeded(_ notification: Notification) {
-        guard let notificationWindow = notification.object as? NSWindow,
-              notificationWindow === window
-        else {
-            return
+    @MainActor
+    private func handleHover(
+        kind: BrowserWindowTrafficLightKind,
+        hovering: Bool,
+        anchorView: NSView
+    ) {
+        withAnimation(.easeInOut(duration: 0.1)) {
+            if hovering {
+                hoveredKinds.insert(kind)
+            } else {
+                hoveredKinds.remove(kind)
+            }
         }
 
-        notificationRevision &+= 1
+        guard kind == .zoom else { return }
+
+        if hovering,
+           let window,
+           BrowserWindowTrafficLightAvailability.isEnabled(kind: .zoom, window: window) {
+            zoomMenuPresenter.scheduleShow(window: window, anchorView: anchorView)
+        } else {
+            zoomMenuPresenter.cancelPendingShow()
+        }
     }
 }
 
-private struct BrowserWindowTrafficLightButtonStyle: ButtonStyle {
+@MainActor
+final class BrowserWindowTrafficLightWindowObserver: ObservableObject {
+    @Published private(set) var revision: UInt = 0
+
+    private weak var observedWindow: NSWindow?
+    private var observers: [NSObjectProtocol] = []
+
+    var isWindowActive: Bool {
+        guard let observedWindow else { return false }
+        return NSApp.isActive && (observedWindow.isKeyWindow || observedWindow.isMainWindow)
+    }
+
+    func attach(to window: NSWindow?) {
+        guard observedWindow !== window else {
+            refresh()
+            return
+        }
+
+        resetObservers()
+        observedWindow = window
+        installObservers(for: window)
+        refresh()
+    }
+
+    func refresh() {
+        revision &+= 1
+    }
+
+    deinit {
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    private func installObservers(for window: NSWindow?) {
+        let appNotifications: [Notification.Name] = [
+            NSApplication.didBecomeActiveNotification,
+            NSApplication.didResignActiveNotification,
+        ]
+
+        for name in appNotifications {
+            observers.append(
+                NotificationCenter.default.addObserver(
+                    forName: name,
+                    object: NSApp,
+                    queue: .main
+                ) { [weak self] _ in
+                    Task { @MainActor in
+                        self?.refresh()
+                    }
+                }
+            )
+        }
+
+        guard let window else { return }
+
+        let windowNotifications: [Notification.Name] = [
+            NSWindow.didBecomeKeyNotification,
+            NSWindow.didResignKeyNotification,
+            NSWindow.didEnterFullScreenNotification,
+            NSWindow.didExitFullScreenNotification,
+            NSWindow.willBeginSheetNotification,
+            NSWindow.didEndSheetNotification,
+        ]
+
+        for name in windowNotifications {
+            observers.append(
+                NotificationCenter.default.addObserver(
+                    forName: name,
+                    object: window,
+                    queue: .main
+                ) { [weak self] _ in
+                    Task { @MainActor in
+                        self?.refresh()
+                    }
+                }
+            )
+        }
+    }
+
+    private func resetObservers() {
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        observers.removeAll()
+    }
+}
+
+@MainActor
+enum BrowserWindowTrafficLightActionRouter {
+    static func perform(_ kind: BrowserWindowTrafficLightKind, window: NSWindow, sender: Any?) {
+        switch kind {
+        case .close:
+            window.close()
+        case .minimize:
+            window.performMiniaturize(sender)
+        case .zoom:
+            let flags = NSApp.currentEvent?.modifierFlags.intersection(.deviceIndependentFlagsMask) ?? []
+            if flags.contains(.option) {
+                window.performZoom(sender)
+            } else {
+                window.toggleFullScreen(sender)
+            }
+        }
+    }
+
+    static func performMenuAction(
+        _ action: BrowserWindowTrafficLightMenuAction,
+        window: NSWindow,
+        sender: Any? = nil
+    ) {
+        switch action {
+        case .fullScreen:
+            window.toggleFullScreen(sender)
+        case .leftHalf,
+             .rightHalf,
+             .topHalf,
+             .bottomHalf,
+             .fill,
+             .center,
+             .leftThird,
+             .rightThird:
+            guard let visibleFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame else {
+                return
+            }
+
+            let targetFrame = BrowserWindowTrafficLightFrameCalculator.frame(
+                for: action,
+                visibleFrame: visibleFrame,
+                currentFrame: window.frame
+            )
+            window.setFrame(targetFrame, display: true, animate: true)
+        }
+    }
+}
+
+enum BrowserWindowTrafficLightMenuAction: CaseIterable, Identifiable {
+    case leftHalf
+    case rightHalf
+    case topHalf
+    case bottomHalf
+    case fill
+    case center
+    case leftThird
+    case rightThird
+    case fullScreen
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .leftHalf:
+            return "Left Half"
+        case .rightHalf:
+            return "Right Half"
+        case .topHalf:
+            return "Top Half"
+        case .bottomHalf:
+            return "Bottom Half"
+        case .fill:
+            return "Fill"
+        case .center:
+            return "Center"
+        case .leftThird:
+            return "Left Third"
+        case .rightThird:
+            return "Right Third"
+        case .fullScreen:
+            return "Full Screen"
+        }
+    }
+
+    var accessibilityIdentifier: String {
+        switch self {
+        case .leftHalf:
+            return BrowserWindowControlsAccessibilityIdentifiers.leftHalfMenuItem
+        case .rightHalf:
+            return BrowserWindowControlsAccessibilityIdentifiers.rightHalfMenuItem
+        case .topHalf:
+            return BrowserWindowControlsAccessibilityIdentifiers.topHalfMenuItem
+        case .bottomHalf:
+            return BrowserWindowControlsAccessibilityIdentifiers.bottomHalfMenuItem
+        case .fill:
+            return BrowserWindowControlsAccessibilityIdentifiers.fillMenuItem
+        case .center:
+            return BrowserWindowControlsAccessibilityIdentifiers.centerMenuItem
+        case .leftThird:
+            return BrowserWindowControlsAccessibilityIdentifiers.leftThirdMenuItem
+        case .rightThird:
+            return BrowserWindowControlsAccessibilityIdentifiers.rightThirdMenuItem
+        case .fullScreen:
+            return BrowserWindowControlsAccessibilityIdentifiers.fullScreenMenuItem
+        }
+    }
+}
+
+enum BrowserWindowTrafficLightFrameCalculator {
+    static func frame(
+        for action: BrowserWindowTrafficLightMenuAction,
+        visibleFrame: NSRect,
+        currentFrame: NSRect
+    ) -> NSRect {
+        let frame = visibleFrame.standardized
+
+        switch action {
+        case .leftHalf:
+            return NSRect(
+                x: frame.minX,
+                y: frame.minY,
+                width: frame.width / 2,
+                height: frame.height
+            )
+        case .rightHalf:
+            return NSRect(
+                x: frame.midX,
+                y: frame.minY,
+                width: frame.width / 2,
+                height: frame.height
+            )
+        case .topHalf:
+            return NSRect(
+                x: frame.minX,
+                y: frame.midY,
+                width: frame.width,
+                height: frame.height / 2
+            )
+        case .bottomHalf:
+            return NSRect(
+                x: frame.minX,
+                y: frame.minY,
+                width: frame.width,
+                height: frame.height / 2
+            )
+        case .fill:
+            return frame
+        case .center:
+            let centeredSize = NSSize(
+                width: min(currentFrame.width, frame.width),
+                height: min(currentFrame.height, frame.height)
+            )
+            return NSRect(
+                x: frame.midX - centeredSize.width / 2,
+                y: frame.midY - centeredSize.height / 2,
+                width: centeredSize.width,
+                height: centeredSize.height
+            )
+        case .leftThird:
+            return NSRect(
+                x: frame.minX,
+                y: frame.minY,
+                width: frame.width / 3,
+                height: frame.height
+            )
+        case .rightThird:
+            return NSRect(
+                x: frame.minX + frame.width * 2 / 3,
+                y: frame.minY,
+                width: frame.width / 3,
+                height: frame.height
+            )
+        case .fullScreen:
+            return currentFrame
+        }
+    }
+}
+
+@MainActor
+final class BrowserWindowZoomPopoverPresenter: ObservableObject {
+    static let contentSize = NSSize(width: 254, height: 204)
+
+    private var popover: NSPopover?
+    private var pendingShowTask: Task<Void, Never>?
+
+    func scheduleShow(window: NSWindow, anchorView: NSView) {
+        cancelPendingShow()
+
+        pendingShowTask = Task { @MainActor [weak self, weak window, weak anchorView] in
+            try? await Task.sleep(nanoseconds: 320_000_000)
+
+            guard !Task.isCancelled,
+                  let self,
+                  let window,
+                  let anchorView,
+                  anchorView.window != nil
+            else {
+                return
+            }
+
+            self.show(window: window, anchorView: anchorView)
+        }
+    }
+
+    func cancelPendingShow() {
+        pendingShowTask?.cancel()
+        pendingShowTask = nil
+    }
+
+    func close() {
+        cancelPendingShow()
+        popover?.performClose(nil)
+        popover = nil
+    }
+
+    private func show(window: NSWindow, anchorView: NSView) {
+        if popover?.isShown == true {
+            return
+        }
+
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = true
+        popover.contentSize = Self.contentSize
+        popover.contentViewController = NSHostingController(
+            rootView: BrowserWindowZoomMenuView(
+                isFullScreen: window.styleMask.contains(.fullScreen),
+                onSelect: { [weak self, weak window] action in
+                    guard let window else { return }
+                    BrowserWindowTrafficLightActionRouter.performMenuAction(action, window: window)
+                    self?.close()
+                }
+            )
+        )
+
+        self.popover = popover
+        popover.show(
+            relativeTo: anchorView.bounds,
+            of: anchorView,
+            preferredEdge: .minY
+        )
+    }
+}
+
+struct BrowserWindowTrafficLightButton: View {
     let kind: BrowserWindowTrafficLightKind
     let isClusterHovered: Bool
     let isWindowActive: Bool
-    @Environment(\.isEnabled) private var isEnabled
+    let isEnabled: Bool
+    let action: () -> Void
+    let hoverChanged: (Bool, NSView) -> Void
 
-    func makeBody(configuration: Configuration) -> some View {
-        let interactionState: BrowserWindowTrafficLightInteractionState = configuration.isPressed
-            ? .pressed
-            : (isClusterHovered ? .hovered : .idle)
-        let appearance = BrowserWindowTrafficLightAppearanceResolver.appearance(
-            isEnabled: isEnabled,
-            isWindowActive: isWindowActive,
-            interactionState: interactionState
-        )
+    private var diameter: CGFloat {
+        BrowserWindowTrafficLightMetrics.buttonDiameter
+    }
 
+    var body: some View {
         ZStack {
-            Circle()
-                .fill(kind.color.opacity(appearance.fillOpacity))
-                .overlay {
-                    Circle()
-                        .stroke(Color.black.opacity(appearance.strokeOpacity), lineWidth: 0.5)
-                }
-                .overlay {
-                    Circle()
-                        .fill(Color.black.opacity(appearance.overlayOpacity))
-                }
+            BrowserWindowTrafficLightFace(
+                kind: kind,
+                showsGlyph: isClusterHovered && isWindowActive && isEnabled,
+                isActive: isWindowActive && isEnabled
+            )
+            .frame(width: diameter, height: diameter)
 
-            Image(systemName: kind.symbolName)
-                .font(.system(size: 6.5, weight: .bold))
-                .foregroundStyle(Color.black.opacity(0.68))
-                .opacity(appearance.symbolOpacity)
-                .accessibilityHidden(true)
+            BrowserWindowTrafficLightClickTarget(
+                kind: kind,
+                isEnabled: isEnabled,
+                action: action,
+                hoverChanged: hoverChanged
+            )
+            .frame(width: diameter, height: diameter)
         }
-        .frame(
-            width: BrowserWindowTrafficLightMetrics.buttonDiameter,
-            height: BrowserWindowTrafficLightMetrics.buttonDiameter
+        .frame(width: diameter, height: diameter)
+        .contentShape(Circle())
+        .help(kind.helpText)
+    }
+}
+
+private struct BrowserWindowTrafficLightClickTarget: NSViewRepresentable {
+    let kind: BrowserWindowTrafficLightKind
+    let isEnabled: Bool
+    let action: () -> Void
+    let hoverChanged: (Bool, NSView) -> Void
+
+    func makeNSView(context: Context) -> BrowserWindowTrafficLightClickTargetView {
+        let view = BrowserWindowTrafficLightClickTargetView(kind: kind)
+        view.isTrafficLightEnabled = isEnabled
+        view.action = action
+        view.hoverChanged = hoverChanged
+        return view
+    }
+
+    func updateNSView(_ nsView: BrowserWindowTrafficLightClickTargetView, context: Context) {
+        nsView.isTrafficLightEnabled = isEnabled
+        nsView.action = action
+        nsView.hoverChanged = hoverChanged
+    }
+}
+
+@MainActor
+private final class BrowserWindowTrafficLightClickTargetView: NSView {
+    let kind: BrowserWindowTrafficLightKind
+    var action: (() -> Void)?
+    var hoverChanged: ((Bool, NSView) -> Void)?
+    private var trackingArea: NSTrackingArea?
+    var isTrafficLightEnabled = true {
+        didSet {
+            setAccessibilityEnabled(isTrafficLightEnabled)
+        }
+    }
+
+    init(kind: BrowserWindowTrafficLightKind) {
+        self.kind = kind
+        super.init(frame: .zero)
+        wantsLayer = false
+        setAccessibilityElement(true)
+        setAccessibilityIdentifier(kind.accessibilityIdentifier)
+        setAccessibilityLabel(kind.accessibilityLabel)
+        setAccessibilityHelp(kind.helpText)
+        setAccessibilityRole(.button)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var mouseDownCanMoveWindow: Bool {
+        false
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func updateTrackingAreas() {
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+        }
+
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .mouseEnteredAndExited, .inVisibleRect],
+            owner: self,
+            userInfo: nil
         )
+        addTrackingArea(area)
+        trackingArea = area
+
+        super.updateTrackingAreas()
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard isHidden == false,
+              alphaValue > 0,
+              bounds.contains(point)
+        else {
+            return nil
+        }
+
+        return self
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard isTrafficLightEnabled else { return }
+        action?()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        hoverChanged?(true, self)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hoverChanged?(false, self)
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        guard isTrafficLightEnabled else { return false }
+        action?()
+        return true
+    }
+}
+
+enum BrowserWindowTrafficLightAsset {
+    static func name(
+        for kind: BrowserWindowTrafficLightKind,
+        showsGlyph: Bool,
+        isActive: Bool
+    ) -> String {
+        guard isActive else {
+            return "traffic-light-no-focus"
+        }
+
+        switch (kind, showsGlyph) {
+        case (.close, false):
+            return "traffic-light-close-normal"
+        case (.close, true):
+            return "traffic-light-close-hover"
+        case (.minimize, false):
+            return "traffic-light-minimize-normal"
+        case (.minimize, true):
+            return "traffic-light-minimize-hover"
+        case (.zoom, false):
+            return "traffic-light-zoom-normal"
+        case (.zoom, true):
+            return "traffic-light-zoom-hover"
+        }
+    }
+}
+
+struct BrowserWindowTrafficLightFace: View {
+    let kind: BrowserWindowTrafficLightKind
+    let showsGlyph: Bool
+    let isActive: Bool
+
+    private var diameter: CGFloat {
+        BrowserWindowTrafficLightMetrics.buttonDiameter
+    }
+
+    var body: some View {
+        Image(BrowserWindowTrafficLightAsset.name(
+            for: kind,
+            showsGlyph: showsGlyph,
+            isActive: isActive
+        ))
+        .resizable()
+        .interpolation(.high)
+        .antialiased(true)
+        .frame(width: diameter, height: diameter)
+    }
+}
+
+enum BrowserWindowTrafficLightPalette {
+    static func colors(
+        for kind: BrowserWindowTrafficLightKind,
+        isActive: Bool
+    ) -> (outer: UInt32, inner: UInt32) {
+        guard isActive else {
+            return (0xD1D0D2, 0xC7C7C7)
+        }
+
+        switch kind {
+        case .close:
+            return (0xE24B41, 0xED6A5F)
+        case .minimize:
+            return (0xE1A73E, 0xF6BE50)
+        case .zoom:
+            return (0x2DAC2F, 0x61C555)
+        }
+    }
+}
+
+private struct BrowserWindowZoomMenuView: View {
+    let isFullScreen: Bool
+    let onSelect: (BrowserWindowTrafficLightMenuAction) -> Void
+
+    private let moveActions: [BrowserWindowTrafficLightMenuAction] = [
+        .leftHalf,
+        .rightHalf,
+        .topHalf,
+        .bottomHalf,
+    ]
+
+    private let arrangeActions: [BrowserWindowTrafficLightMenuAction] = [
+        .fill,
+        .center,
+        .leftThird,
+        .rightThird,
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            BrowserWindowZoomMenuSection(
+                title: "Move & Resize",
+                actions: moveActions,
+                onSelect: onSelect
+            )
+
+            Divider()
+                .padding(.vertical, 9)
+
+            BrowserWindowZoomMenuSection(
+                title: "Fill & Arrange",
+                actions: arrangeActions,
+                onSelect: onSelect
+            )
+
+            Divider()
+                .padding(.top, 9)
+                .padding(.bottom, 5)
+
+            Button {
+                onSelect(.fullScreen)
+            } label: {
+                HStack(spacing: 8) {
+                    Text(isFullScreen ? "Exit Full Screen" : "Enter Full Screen")
+                        .font(.system(size: 14, weight: .regular))
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(height: 28)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier(BrowserWindowControlsAccessibilityIdentifiers.fullScreenMenuItem)
+        }
+        .padding(.top, 13)
+        .padding(.horizontal, 14)
+        .padding(.bottom, 8)
         .frame(
-            width: BrowserWindowTrafficLightMetrics.hitTargetSize,
-            height: BrowserWindowTrafficLightMetrics.hitTargetSize
+            width: BrowserWindowZoomPopoverPresenter.contentSize.width,
+            height: BrowserWindowZoomPopoverPresenter.contentSize.height,
+            alignment: .topLeading
         )
-        .scaleEffect(appearance.scale)
-        .contentShape(Rectangle())
-        .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
-        .animation(.easeOut(duration: 0.12), value: isClusterHovered)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(BrowserWindowControlsAccessibilityIdentifiers.zoomMenu)
+    }
+}
+
+private struct BrowserWindowZoomMenuSection: View {
+    let title: String
+    let actions: [BrowserWindowTrafficLightMenuAction]
+    let onSelect: (BrowserWindowTrafficLightMenuAction) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 16) {
+                ForEach(actions) { action in
+                    Button {
+                        onSelect(action)
+                    } label: {
+                        BrowserWindowZoomMenuTileIcon(action: action)
+                            .frame(width: 37, height: 29)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(action.title)
+                    .accessibilityIdentifier(action.accessibilityIdentifier)
+                    .help(action.title)
+                }
+            }
+        }
+    }
+}
+
+private struct BrowserWindowZoomMenuTileIcon: View {
+    let action: BrowserWindowTrafficLightMenuAction
+
+    var body: some View {
+        GeometryReader { proxy in
+            let bounds = CGRect(origin: .zero, size: proxy.size)
+            let outer = bounds.insetBy(dx: 2, dy: 2)
+            let inner = outer.insetBy(dx: 5, dy: 5)
+
+            ZStack {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .stroke(Color.primary.opacity(0.82), lineWidth: 2.4)
+
+                Path { path in
+                    path.addRoundedRect(
+                        in: fillRect(in: inner),
+                        cornerSize: CGSize(width: 1.6, height: 1.6)
+                    )
+                }
+                .fill(Color.primary.opacity(0.82))
+            }
+        }
+    }
+
+    private func fillRect(in rect: CGRect) -> CGRect {
+        switch action {
+        case .leftHalf:
+            return CGRect(x: rect.minX, y: rect.minY, width: rect.width * 0.42, height: rect.height)
+        case .rightHalf:
+            return CGRect(x: rect.maxX - rect.width * 0.42, y: rect.minY, width: rect.width * 0.42, height: rect.height)
+        case .topHalf:
+            return CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height * 0.42)
+        case .bottomHalf:
+            return CGRect(x: rect.minX, y: rect.maxY - rect.height * 0.42, width: rect.width, height: rect.height * 0.42)
+        case .fill:
+            return rect
+        case .center:
+            return rect.insetBy(dx: rect.width * 0.22, dy: rect.height * 0.22)
+        case .leftThird:
+            return CGRect(x: rect.minX, y: rect.minY, width: rect.width / 3, height: rect.height)
+        case .rightThird:
+            return CGRect(x: rect.maxX - rect.width / 3, y: rect.minY, width: rect.width / 3, height: rect.height)
+        case .fullScreen:
+            return .zero
+        }
     }
 }

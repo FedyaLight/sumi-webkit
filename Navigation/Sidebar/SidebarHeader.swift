@@ -85,21 +85,15 @@ struct SidebarWindowControlsView: View {
 
     var body: some View {
         HStack(spacing: SidebarChromeMetrics.controlSpacing) {
-            if sumiSettings.sidebarPosition == .left {
-                Color.clear
-                    .frame(
-                        width: BrowserWindowTrafficLightMetrics.sidebarReservedWidth,
-                        height: SidebarChromeMetrics.controlStripHeight
-                    )
-                    .accessibilityHidden(true)
-            }
+            BrowserWindowTrafficLights(window: windowState.window)
 
             if sumiSettings.showSidebarToggleButton {
                 Button("Toggle Sidebar", systemImage: sumiSettings.sidebarPosition.shellEdge.toggleSidebarSymbolName) {
                     browserManager.toggleSidebar(for: windowState)
                 }
                 .labelStyle(.iconOnly)
-                .buttonStyle(NavButtonStyle())
+                .font(.system(size: SidebarChromeMetrics.navigationIconSize, weight: .medium))
+                .buttonStyle(NavButtonStyle(diameter: SidebarChromeMetrics.navigationButtonSize))
             }
         }
     }

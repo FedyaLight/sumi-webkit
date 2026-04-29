@@ -32,13 +32,13 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertEqual(window.titleVisibility, .hidden)
         XCTAssertTrue(window.titlebarAppearsTransparent)
         XCTAssertEqual(window.toolbar?.identifier, SumiBrowserChromeConfiguration.toolbarIdentifier)
+        XCTAssertEqual(window.toolbar?.isVisible, false)
         XCTAssertEqual(window.toolbarStyle, .unifiedCompact)
         XCTAssertEqual(window.backgroundColor, SumiBrowserWindowShellConfiguration.backgroundColor)
         XCTAssertFalse(window.isOpaque)
         assertMinimumWindowConstraints(window)
         XCTAssertFalse(window.isReleasedWhenClosed)
         XCTAssertTrue(window.isMovable)
-        XCTAssertNotNil(window.titlebarView)
         assertNativeBrowserControlsHidden(window)
     }
 
@@ -59,6 +59,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertTrue(window is SumiBrowserWindow)
         XCTAssertTrue(windowState.window === window)
         XCTAssertEqual(window.toolbar?.identifier, SumiBrowserChromeConfiguration.toolbarIdentifier)
+        XCTAssertEqual(window.toolbar?.isVisible, false)
         XCTAssertEqual(window.backgroundColor, SumiBrowserWindowShellConfiguration.backgroundColor)
         XCTAssertFalse(window.isOpaque)
         assertMinimumWindowConstraints(window)
@@ -103,73 +104,12 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertEqual(window.titleVisibility, .hidden)
         XCTAssertTrue(window.titlebarAppearsTransparent)
         XCTAssertEqual(window.toolbar?.identifier, SumiBrowserChromeConfiguration.toolbarIdentifier)
+        XCTAssertEqual(window.toolbar?.isVisible, false)
         XCTAssertEqual(window.toolbarStyle, .unifiedCompact)
         XCTAssertEqual(window.backgroundColor, SumiBrowserWindowShellConfiguration.backgroundColor)
         XCTAssertFalse(window.isOpaque)
         assertMinimumWindowConstraints(window)
-        XCTAssertNotNil(window.titlebarView)
         assertNativeBrowserControlsHidden(window)
-    }
-
-    func testNativeWindowControlsMetricsRefreshLiveButtonFrames() throws {
-        let window = WindowChromeTestSupport.makePlainWindow()
-        let initialMetrics = try XCTUnwrap(window.nativeWindowControlsMetrics())
-
-        for type in WindowChromeTestSupport.standardButtonTypes {
-            guard let button = window.standardWindowButton(type) else {
-                XCTFail("Expected standard window button for \(type).")
-                return
-            }
-            button.frame = button.frame.offsetBy(dx: 16, dy: 0)
-        }
-
-        let refreshedMetrics = try XCTUnwrap(window.nativeWindowControlsMetrics())
-
-        XCTAssertEqual(
-            refreshedMetrics.buttonGroupRect.minX,
-            initialMetrics.buttonGroupRect.minX + 16
-        )
-        XCTAssertEqual(
-            refreshedMetrics.buttonGroupWidth,
-            initialMetrics.buttonGroupWidth
-        )
-        for type in WindowChromeTestSupport.standardButtonTypes {
-            let initialMinX = initialMetrics.buttonFrames[type]?.minX
-            XCTAssertEqual(
-                refreshedMetrics.buttonFrames[type]?.minX,
-                initialMinX.map { $0 + 16 }
-            )
-            XCTAssertEqual(
-                refreshedMetrics.normalizedButtonFrames[type],
-                initialMetrics.normalizedButtonFrames[type]
-            )
-        }
-    }
-
-    func testNativeWindowControlsMetricsDoNotTreatContentHostAsTitlebar() throws {
-        let window = WindowChromeTestSupport.makePlainWindow()
-        let nativeTitlebarView = try XCTUnwrap(window.standardWindowButton(.closeButton)?.superview)
-        let contentView = try XCTUnwrap(window.contentView)
-        let hostView = NSView(frame: NSRect(x: 0, y: 0, width: 80, height: 28))
-
-        contentView.addSubview(hostView)
-        for type in WindowChromeTestSupport.standardButtonTypes {
-            let button = try XCTUnwrap(window.standardWindowButton(type))
-            button.removeFromSuperview()
-            hostView.addSubview(button)
-        }
-
-        XCTAssertNil(window.captureNativeWindowControlsMetricsIfButtonsInTitlebar())
-        XCTAssertNil(window.titlebarView)
-
-        for type in WindowChromeTestSupport.standardButtonTypes {
-            let button = try XCTUnwrap(window.standardWindowButton(type))
-            button.removeFromSuperview()
-            nativeTitlebarView.addSubview(button)
-        }
-
-        XCTAssertNotNil(window.captureNativeWindowControlsMetricsIfButtonsInTitlebar())
-        XCTAssertTrue(window.titlebarView === nativeTitlebarView)
     }
 
     private func assertNativeBrowserControlsHidden(
