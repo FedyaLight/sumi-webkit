@@ -84,10 +84,6 @@ struct SidebarHoverOverlayView: View {
     }
 
     private var presentationContext: SidebarPresentationContext {
-        if windowState.isSidebarVisible {
-            return .docked(sidebarWidth: windowState.sidebarWidth)
-        }
-
         if overlaySidebarRevealed {
             return .collapsedVisible(sidebarWidth: overlayBaseSidebarWidth)
         }
@@ -121,30 +117,32 @@ struct SidebarHoverOverlayView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            // Full-window layout without hit-testing so points outside the edge strip and sidebar host
-            // are not absorbed by an implicit full-screen hit target.
-            Color.clear
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .allowsHitTesting(false)
-
+        Group {
             if isCollapsedSidebar {
-                Color.clear
-                    .frame(width: hoverManager.triggerWidth)
-                    .contentShape(Rectangle())
-                    .onHover { isIn in
-                        if isIn && isCollapsedSidebar {
-                            withAnimation(.easeInOut(duration: 0.12)) {
-                                hoverManager.isOverlayVisible = true
-                            }
-                        }
-                        NSCursor.arrow.set()
-                    }
-            }
+                ZStack(alignment: .leading) {
+                    // Full-window layout without hit-testing so points outside the edge strip and sidebar host
+                    // are not absorbed by an implicit full-screen hit target.
+                    Color.clear
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .allowsHitTesting(false)
 
-            sidebarHost
+                    Color.clear
+                        .frame(width: hoverManager.triggerWidth)
+                        .contentShape(Rectangle())
+                        .onHover { isIn in
+                            if isIn && isCollapsedSidebar {
+                                withAnimation(.easeInOut(duration: 0.12)) {
+                                    hoverManager.isOverlayVisible = true
+                                }
+                            }
+                            NSCursor.arrow.set()
+                        }
+
+                    sidebarHost
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onChange(of: presentationContext) { _, _ in
             SidebarDragState.shared.requestGeometryRefresh()
         }
