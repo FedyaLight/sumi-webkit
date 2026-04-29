@@ -226,14 +226,6 @@ extension SpaceView {
                 : 1
         )
         .id(tab.id)
-        .background {
-            if windowState.currentTabId == tab.id {
-                GeometryReader { geometry in
-                    Color.clear
-                        .preference(key: TabPositionPreferenceKey.self, value: [tab.id: geometry.frame(in: .named("ScrollSpace"))])
-                }
-            }
-        }
         .transition(.move(edge: .top).combined(with: .opacity))
         .accessibilityIdentifier("space-regular-tab-\(tab.id.uuidString)")
         .accessibilityValue(windowState.currentTabId == tab.id ? "selected" : "not selected")
@@ -334,7 +326,6 @@ extension SpaceView {
     }
 
     private func handleUserTabActivation(_ tab: Tab) {
-        selectionScrollGuard.lock()
         browserManager.requestUserTabActivation(
             tab,
             in: windowState

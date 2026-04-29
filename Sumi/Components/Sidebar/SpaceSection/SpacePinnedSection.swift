@@ -262,11 +262,9 @@ extension SpaceView {
 
     private func pinnedShortcutView(_ pin: ShortcutPin, topLevelPinnedIndex: Int) -> some View {
         let activeTab = activeShortcutTab(for: pin)
-        let rowId = activeTab?.id ?? pin.id
         return ShortcutSidebarRow(
             pin: pin,
             liveTab: activeTab,
-            scrollTargetID: rowId,
             accessibilityID: "space-pinned-shortcut-\(pin.id.uuidString)",
             contextMenuEntries: { toggleEditIcon in
                 pinnedShortcutContextMenuEntries(pin, toggleEditIcon: toggleEditIcon)
@@ -296,14 +294,6 @@ extension SpaceView {
             generation: dragState.sidebarGeometryGeneration,
             isActive: isInteractive
         )
-        .background {
-            if windowState.currentTabId == rowId {
-                GeometryReader { geometry in
-                    Color.clear
-                        .preference(key: TabPositionPreferenceKey.self, value: [rowId: geometry.frame(in: .named("ScrollSpace"))])
-                }
-            }
-        }
         .transition(.move(edge: .top).combined(with: .opacity))
     }
 
@@ -409,7 +399,6 @@ extension SpaceView {
             in: windowState.id,
             currentSpaceId: space.id
         )
-        selectionScrollGuard.lock()
         browserManager.requestUserTabActivation(
             tab,
             in: windowState
