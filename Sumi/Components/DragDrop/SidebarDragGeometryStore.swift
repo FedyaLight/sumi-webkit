@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-enum SidebarFolderDragRegion {
+enum SidebarFolderDragRegion: Hashable {
     case header
     case body
     case after
@@ -116,6 +116,22 @@ struct SidebarRuntimeGeometryStore {
     var folderChildDropTargets: [UUID: SidebarFolderChildDropTargetMetrics] = [:]
     var regularListHitTargets: [UUID: SidebarRegularListHitMetrics] = [:]
     var essentialsLayoutMetricsBySpace: [UUID: SidebarEssentialsLayoutMetrics] = [:]
+
+    var hasDetailedDragGeometry: Bool {
+        !topLevelPinnedItemTargets.isEmpty
+            || !folderDropTargets.isEmpty
+            || !folderChildDropTargets.isEmpty
+            || !regularListHitTargets.isEmpty
+            || !essentialsLayoutMetricsBySpace.isEmpty
+    }
+
+    mutating func removeDetailedDragGeometry() {
+        topLevelPinnedItemTargets = [:]
+        folderDropTargets = [:]
+        folderChildDropTargets = [:]
+        regularListHitTargets = [:]
+        essentialsLayoutMetricsBySpace = [:]
+    }
 }
 
 struct SidebarGeometrySnapshot: Equatable {

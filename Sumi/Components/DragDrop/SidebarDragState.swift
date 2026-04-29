@@ -2,6 +2,32 @@ import AppKit
 import Combine
 import SwiftUI
 
+#if DEBUG
+struct SidebarDragGeometryInstrumentation: Equatable {
+    var reporterUpdateCount: Int = 0
+    var deferredMutationScheduleCount: Int = 0
+    var coalescedFlushCount: Int = 0
+    var publishedGeometrySnapshotRevisionCount: Int = 0
+    var unchangedGeometrySnapshotPublishSkipCount: Int = 0
+    var activeReporterCountBySection: [String: Int] = [:]
+}
+#endif
+
+private enum SidebarDragGeometryMutationKey: Hashable {
+    case page(SidebarPageGeometryKey)
+    case section(SidebarSectionGeometryKey)
+    case folder(UUID, SidebarFolderDragRegion)
+    case topLevelPinnedItem(UUID)
+    case folderChild(UUID)
+    case regularList(UUID)
+    case essentials(UUID)
+}
+
+private struct SidebarDragGeometryMutation {
+    let key: SidebarDragGeometryMutationKey
+    let apply: @MainActor (SidebarDragState) -> Void
+}
+
 @MainActor
 final class SidebarDragState: ObservableObject {
     static let shared = SidebarDragState()
@@ -19,6 +45,8 @@ final class SidebarDragState: ObservableObject {
     @Published var previewModel: SidebarDragPreviewModel? = nil
     @Published var isInternalDragSession: Bool = false
     @Published var activeDragScope: SidebarDragScope? = nil
+    @Published private(set) var isInternalDragGeometryArmed: Bool = false
+    @Published private(set) var armedDragScope: SidebarDragScope? = nil
     
     // For Zen's auto workspace switch
     @Published var isHoveringNearEdge: Bool = false
@@ -37,6 +65,11 @@ final class SidebarDragState: ObservableObject {
     private var pendingGeometryRefreshRequested = false
     private var isGeometryRefreshFlushScheduled = false
     private var isGeometrySnapshotPublishScheduled = false
+    private var deferredGeometryMutations: [SidebarDragGeometryMutationKey: SidebarDragGeometryMutation] = [:]
+    private var isDeferredGeometryMutationFlushScheduled = false
+    #if DEBUG
+    private var geometryInstrumentation = SidebarDragGeometryInstrumentation()
+    #endif
     
     init() {}
 
@@ -65,8 +98,18 @@ final class SidebarDragState: ObservableObject {
     }
 
     private func setGeometrySnapshot(_ snapshot: SidebarGeometrySnapshot) {
-        guard geometrySnapshot != snapshot else { return }
+        guard geometrySnapshot != snapshot else {
+            #if DEBUG
+            geometryInstrumentation.unchangedGeometrySnapshotPublishSkipCount += 1
+            updateGeometryInstrumentationActiveReporterCounts(from: snapshot)
+            #endif
+            return
+        }
         geometrySnapshot = snapshot
+        #if DEBUG
+        geometryInstrumentation.publishedGeometrySnapshotRevisionCount += 1
+        updateGeometryInstrumentationActiveReporterCounts(from: snapshot)
+        #endif
     }
 
     private func scheduleGeometrySnapshotPublish() {
@@ -85,12 +128,280 @@ final class SidebarDragState: ObservableObject {
 
     #if DEBUG
     func publishGeometrySnapshotForTesting() {
+        flushDeferredGeometryMutations()
         flushScheduledGeometrySnapshotPublish()
+    }
+
+    func resetGeometryInstrumentationForTesting() {
+        geometryInstrumentation = SidebarDragGeometryInstrumentation()
+        updateGeometryInstrumentationActiveReporterCounts(from: geometrySnapshot)
+    }
+
+    func geometryInstrumentationSnapshotForTesting() -> SidebarDragGeometryInstrumentation {
+        geometryInstrumentation
     }
     #endif
 
     private func publishActiveGeometryStore() {
         scheduleGeometrySnapshotPublish()
+    }
+
+    private func enqueueDeferredGeometryMutation(
+        key: SidebarDragGeometryMutationKey,
+        reporterSection: String,
+        apply: @escaping @MainActor (SidebarDragState) -> Void
+    ) {
+        #if DEBUG
+        geometryInstrumentation.reporterUpdateCount += 1
+        geometryInstrumentation.deferredMutationScheduleCount += 1
+        geometryInstrumentation.activeReporterCountBySection[reporterSection, default: 0] += 0
+        #else
+        _ = reporterSection
+        #endif
+
+        deferredGeometryMutations[key] = SidebarDragGeometryMutation(
+            key: key,
+            apply: apply
+        )
+
+        guard !isDeferredGeometryMutationFlushScheduled else { return }
+        isDeferredGeometryMutationFlushScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.flushDeferredGeometryMutations()
+        }
+    }
+
+    private func flushDeferredGeometryMutations() {
+        isDeferredGeometryMutationFlushScheduled = false
+        guard !deferredGeometryMutations.isEmpty else { return }
+
+        let mutations = Array(deferredGeometryMutations.values)
+        deferredGeometryMutations = [:]
+
+        #if DEBUG
+        geometryInstrumentation.coalescedFlushCount += 1
+        #endif
+
+        for mutation in mutations {
+            mutation.apply(self)
+        }
+    }
+
+    func flushDeferredGeometryForDragStart() {
+        flushDeferredGeometryMutations()
+        flushScheduledGeometrySnapshotPublish()
+    }
+
+    private func clearDetailedGeometryTargets(publishImmediately: Bool) {
+        var didChange = activeGeometryStore.hasDetailedDragGeometry
+        activeGeometryStore.removeDetailedDragGeometry()
+
+        if pendingGeometryStore?.hasDetailedDragGeometry == true {
+            pendingGeometryStore?.removeDetailedDragGeometry()
+            didChange = true
+        }
+
+        guard didChange else { return }
+        publishActiveGeometryStore()
+        if publishImmediately {
+            flushScheduledGeometrySnapshotPublish()
+        }
+    }
+
+    #if DEBUG
+    private func updateGeometryInstrumentationActiveReporterCounts(
+        from snapshot: SidebarGeometrySnapshot
+    ) {
+        geometryInstrumentation.activeReporterCountBySection = [
+            "page": snapshot.pageGeometryByKey.count,
+            "section": snapshot.sectionFramesBySpace.count,
+            "topLevelPinned": snapshot.topLevelPinnedItemTargets.count,
+            "folder": snapshot.folderDropTargets.count,
+            "folderChild": snapshot.folderChildDropTargets.count,
+            "regular": snapshot.regularListHitTargets.count,
+            "essentials": snapshot.essentialsLayoutMetricsBySpace.count,
+        ]
+    }
+    #endif
+
+    func schedulePageGeometry(
+        spaceId: UUID,
+        profileId: UUID?,
+        frame: CGRect?,
+        renderMode: SidebarPageGeometryRenderMode,
+        generation: Int
+    ) {
+        enqueueDeferredGeometryMutation(
+            key: .page(SidebarPageGeometryKey(spaceId: spaceId, profileId: profileId)),
+            reporterSection: "page"
+        ) { state in
+            state.applyPageGeometry(
+                spaceId: spaceId,
+                profileId: profileId,
+                frame: frame,
+                renderMode: renderMode,
+                generation: generation
+            )
+        }
+    }
+
+    func scheduleSectionFrame(
+        spaceId: UUID,
+        section: SidebarSectionPrefix,
+        frame: CGRect?,
+        generation: Int
+    ) {
+        enqueueDeferredGeometryMutation(
+            key: .section(SidebarSectionGeometryKey(spaceId: spaceId, section: section)),
+            reporterSection: "section"
+        ) { state in
+            state.applySectionFrame(
+                spaceId: spaceId,
+                section: section,
+                frame: frame,
+                generation: generation
+            )
+        }
+    }
+
+    func scheduleFolderDropTarget(
+        folderId: UUID,
+        spaceId: UUID,
+        topLevelIndex: Int,
+        childCount: Int,
+        isOpen: Bool,
+        region: SidebarFolderDragRegion,
+        frame: CGRect?,
+        isActive: Bool,
+        generation: Int
+    ) {
+        enqueueDeferredGeometryMutation(
+            key: .folder(folderId, region),
+            reporterSection: "folder"
+        ) { state in
+            state.applyFolderDropTarget(
+                folderId: folderId,
+                spaceId: spaceId,
+                topLevelIndex: topLevelIndex,
+                childCount: childCount,
+                isOpen: isOpen,
+                region: region,
+                frame: frame,
+                isActive: isActive,
+                generation: generation
+            )
+        }
+    }
+
+    func scheduleTopLevelPinnedItemTarget(
+        itemId: UUID,
+        kind: SidebarTopLevelPinnedItemKind,
+        spaceId: UUID,
+        topLevelIndex: Int,
+        frame: CGRect?,
+        isActive: Bool,
+        generation: Int
+    ) {
+        enqueueDeferredGeometryMutation(
+            key: .topLevelPinnedItem(itemId),
+            reporterSection: "topLevelPinned"
+        ) { state in
+            state.applyTopLevelPinnedItemTarget(
+                itemId: itemId,
+                kind: kind,
+                spaceId: spaceId,
+                topLevelIndex: topLevelIndex,
+                frame: frame,
+                isActive: isActive,
+                generation: generation
+            )
+        }
+    }
+
+    func scheduleFolderChildDropTarget(
+        folderId: UUID,
+        childId: UUID,
+        index: Int,
+        frame: CGRect?,
+        isActive: Bool,
+        generation: Int
+    ) {
+        enqueueDeferredGeometryMutation(
+            key: .folderChild(childId),
+            reporterSection: "folderChild"
+        ) { state in
+            state.applyFolderChildDropTarget(
+                folderId: folderId,
+                childId: childId,
+                index: index,
+                frame: frame,
+                isActive: isActive,
+                generation: generation
+            )
+        }
+    }
+
+    func scheduleRegularListHitTarget(
+        spaceId: UUID,
+        frame: CGRect?,
+        itemCount: Int,
+        generation: Int
+    ) {
+        enqueueDeferredGeometryMutation(
+            key: .regularList(spaceId),
+            reporterSection: "regular"
+        ) { state in
+            state.applyRegularListHitTarget(
+                spaceId: spaceId,
+                frame: frame,
+                itemCount: itemCount,
+                generation: generation
+            )
+        }
+    }
+
+    func scheduleEssentialsLayoutMetrics(
+        spaceId: UUID,
+        profileId: UUID?,
+        frame: CGRect?,
+        dropFrame: CGRect?,
+        dropSlotFrames: [SidebarEssentialsDropSlotMetrics] = [],
+        itemCount: Int,
+        columnCount: Int,
+        firstSyntheticRowSlot: Int? = nil,
+        rowCount: Int,
+        itemSize: CGSize,
+        gridSpacing: CGFloat,
+        canAcceptDrop: Bool,
+        visibleItemCount: Int,
+        visibleRowCount: Int,
+        maxDropRowCount: Int,
+        generation: Int
+    ) {
+        enqueueDeferredGeometryMutation(
+            key: .essentials(spaceId),
+            reporterSection: "essentials"
+        ) { state in
+            state.applyEssentialsLayoutMetrics(
+                spaceId: spaceId,
+                profileId: profileId,
+                frame: frame,
+                dropFrame: dropFrame,
+                dropSlotFrames: dropSlotFrames,
+                itemCount: itemCount,
+                columnCount: columnCount,
+                firstSyntheticRowSlot: firstSyntheticRowSlot,
+                rowCount: rowCount,
+                itemSize: itemSize,
+                gridSpacing: gridSpacing,
+                canAcceptDrop: canAcceptDrop,
+                visibleItemCount: visibleItemCount,
+                visibleRowCount: visibleRowCount,
+                maxDropRowCount: maxDropRowCount,
+                generation: generation
+            )
+        }
     }
 
     private func mutateGeometryStore(
@@ -188,8 +499,11 @@ final class SidebarDragState: ObservableObject {
         previewModel = nil
         isInternalDragSession = false
         activeDragScope = nil
+        isInternalDragGeometryArmed = false
+        armedDragScope = nil
         isHoveringNearEdge = false
         clearEssentialsPreviewState()
+        clearDetailedGeometryTargets(publishImmediately: true)
     }
 
     func beginPendingGeometryEpoch(
@@ -235,6 +549,7 @@ final class SidebarDragState: ObservableObject {
         previewModel: SidebarDragPreviewModel? = nil,
         scope: SidebarDragScope? = nil
     ) {
+        let resolvedScope = scope ?? armedDragScope
         isDragging = true
         activeDragItemId = itemId
         dragLocation = location
@@ -243,9 +558,12 @@ final class SidebarDragState: ObservableObject {
         self.previewAssets = previewAssets
         self.previewModel = previewModel
         isInternalDragSession = true
-        activeDragScope = scope
+        activeDragScope = resolvedScope
+        isInternalDragGeometryArmed = false
+        armedDragScope = nil
         clearEssentialsPreviewState()
         requestGeometryRefresh()
+        flushDeferredGeometryForDragStart()
     }
 
     func beginExternalDragSession(itemId: UUID?) {
@@ -254,8 +572,53 @@ final class SidebarDragState: ObservableObject {
         previewDragLocation = nil
         isInternalDragSession = false
         activeDragScope = nil
+        isInternalDragGeometryArmed = false
+        armedDragScope = nil
         clearEssentialsPreviewState()
         requestGeometryRefresh()
+    }
+
+    func armInternalDragGeometry(scope: SidebarDragScope?) {
+        guard !isDragging else { return }
+        guard !isInternalDragGeometryArmed || armedDragScope != scope else { return }
+
+        isInternalDragGeometryArmed = true
+        armedDragScope = scope
+        requestGeometryRefresh()
+    }
+
+    func cancelArmedDragGeometry() {
+        guard !isDragging,
+              isInternalDragGeometryArmed || armedDragScope != nil else {
+            return
+        }
+
+        isInternalDragGeometryArmed = false
+        armedDragScope = nil
+        clearDetailedGeometryTargets(publishImmediately: true)
+        requestGeometryRefresh()
+    }
+
+    func shouldCollectDetailedGeometry(
+        spaceId: UUID,
+        profileId: UUID?
+    ) -> Bool {
+        if let activeDragScope {
+            return activeDragScope.spaceId == spaceId
+                && activeDragScope.matches(profileId: profileId)
+        }
+
+        if isInternalDragGeometryArmed {
+            guard let armedDragScope else { return true }
+            return armedDragScope.spaceId == spaceId
+                && armedDragScope.matches(profileId: profileId)
+        }
+
+        if isDragging {
+            return !isInternalDragSession
+        }
+
+        return false
     }
 
     func updateDragLocation(

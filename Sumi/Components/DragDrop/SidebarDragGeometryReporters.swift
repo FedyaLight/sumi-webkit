@@ -4,6 +4,7 @@ import SwiftUI
 
 /// Publishes geometry into `SidebarDragState` on the next main run loop turn so SwiftUI does not emit
 /// "Publishing changes from within view updates" during layout/preference application.
+@MainActor
 private enum SidebarDragStateDeferredGeometry {
     static func setPageGeometry(
         spaceId: UUID,
@@ -12,15 +13,13 @@ private enum SidebarDragStateDeferredGeometry {
         generation: Int,
         _ frame: CGRect?
     ) {
-        Task { @MainActor in
-            SidebarDragState.shared.applyPageGeometry(
-                spaceId: spaceId,
-                profileId: profileId,
-                frame: frame,
-                renderMode: renderMode,
-                generation: generation
-            )
-        }
+        SidebarDragState.shared.schedulePageGeometry(
+            spaceId: spaceId,
+            profileId: profileId,
+            frame: frame,
+            renderMode: renderMode,
+            generation: generation
+        )
     }
 
     static func setSectionFrame(
@@ -29,14 +28,12 @@ private enum SidebarDragStateDeferredGeometry {
         generation: Int,
         _ frame: CGRect?
     ) {
-        Task { @MainActor in
-            SidebarDragState.shared.applySectionFrame(
-                spaceId: spaceId,
-                section: section,
-                frame: frame,
-                generation: generation
-            )
-        }
+        SidebarDragState.shared.scheduleSectionFrame(
+            spaceId: spaceId,
+            section: section,
+            frame: frame,
+            generation: generation
+        )
     }
 
     static func updateFolderDropTarget(
@@ -50,35 +47,31 @@ private enum SidebarDragStateDeferredGeometry {
         frame: CGRect,
         generation: Int
     ) {
-        Task { @MainActor in
-            SidebarDragState.shared.applyFolderDropTarget(
-                folderId: folderId,
-                spaceId: spaceId,
-                topLevelIndex: topLevelIndex,
-                childCount: childCount,
-                isOpen: isOpen,
-                region: region,
-                frame: frame,
-                isActive: isActive,
-                generation: generation
-            )
-        }
+        SidebarDragState.shared.scheduleFolderDropTarget(
+            folderId: folderId,
+            spaceId: spaceId,
+            topLevelIndex: topLevelIndex,
+            childCount: childCount,
+            isOpen: isOpen,
+            region: region,
+            frame: frame,
+            isActive: isActive,
+            generation: generation
+        )
     }
 
     static func removeFolderDropTarget(folderId: UUID, region: SidebarFolderDragRegion, generation: Int) {
-        Task { @MainActor in
-            SidebarDragState.shared.applyFolderDropTarget(
-                folderId: folderId,
-                spaceId: UUID(),
-                topLevelIndex: 0,
-                childCount: 0,
-                isOpen: false,
-                region: region,
-                frame: nil,
-                isActive: false,
-                generation: generation
-            )
-        }
+        SidebarDragState.shared.scheduleFolderDropTarget(
+            folderId: folderId,
+            spaceId: UUID(),
+            topLevelIndex: 0,
+            childCount: 0,
+            isOpen: false,
+            region: region,
+            frame: nil,
+            isActive: false,
+            generation: generation
+        )
     }
 
     static func updateTopLevelPinnedItemTarget(
@@ -90,31 +83,27 @@ private enum SidebarDragStateDeferredGeometry {
         frame: CGRect,
         generation: Int
     ) {
-        Task { @MainActor in
-            SidebarDragState.shared.applyTopLevelPinnedItemTarget(
-                itemId: itemId,
-                kind: kind,
-                spaceId: spaceId,
-                topLevelIndex: topLevelIndex,
-                frame: frame,
-                isActive: isActive,
-                generation: generation
-            )
-        }
+        SidebarDragState.shared.scheduleTopLevelPinnedItemTarget(
+            itemId: itemId,
+            kind: kind,
+            spaceId: spaceId,
+            topLevelIndex: topLevelIndex,
+            frame: frame,
+            isActive: isActive,
+            generation: generation
+        )
     }
 
     static func removeTopLevelPinnedItemTarget(itemId: UUID, generation: Int) {
-        Task { @MainActor in
-            SidebarDragState.shared.applyTopLevelPinnedItemTarget(
-                itemId: itemId,
-                kind: .shortcut(itemId),
-                spaceId: UUID(),
-                topLevelIndex: 0,
-                frame: nil,
-                isActive: false,
-                generation: generation
-            )
-        }
+        SidebarDragState.shared.scheduleTopLevelPinnedItemTarget(
+            itemId: itemId,
+            kind: .shortcut(itemId),
+            spaceId: UUID(),
+            topLevelIndex: 0,
+            frame: nil,
+            isActive: false,
+            generation: generation
+        )
     }
 
     static func updateFolderChildDropTarget(
@@ -125,51 +114,43 @@ private enum SidebarDragStateDeferredGeometry {
         frame: CGRect,
         generation: Int
     ) {
-        Task { @MainActor in
-            SidebarDragState.shared.applyFolderChildDropTarget(
-                folderId: folderId,
-                childId: childId,
-                index: index,
-                frame: frame,
-                isActive: isActive,
-                generation: generation
-            )
-        }
+        SidebarDragState.shared.scheduleFolderChildDropTarget(
+            folderId: folderId,
+            childId: childId,
+            index: index,
+            frame: frame,
+            isActive: isActive,
+            generation: generation
+        )
     }
 
     static func removeFolderChildDropTarget(childId: UUID, generation: Int) {
-        Task { @MainActor in
-            SidebarDragState.shared.applyFolderChildDropTarget(
-                folderId: UUID(),
-                childId: childId,
-                index: 0,
-                frame: nil,
-                isActive: false,
-                generation: generation
-            )
-        }
+        SidebarDragState.shared.scheduleFolderChildDropTarget(
+            folderId: UUID(),
+            childId: childId,
+            index: 0,
+            frame: nil,
+            isActive: false,
+            generation: generation
+        )
     }
 
     static func updateRegularListHitTarget(spaceId: UUID, frame: CGRect, itemCount: Int, generation: Int) {
-        Task { @MainActor in
-            SidebarDragState.shared.applyRegularListHitTarget(
-                spaceId: spaceId,
-                frame: frame,
-                itemCount: itemCount,
-                generation: generation
-            )
-        }
+        SidebarDragState.shared.scheduleRegularListHitTarget(
+            spaceId: spaceId,
+            frame: frame,
+            itemCount: itemCount,
+            generation: generation
+        )
     }
 
     static func removeRegularListHitTarget(spaceId: UUID, generation: Int) {
-        Task { @MainActor in
-            SidebarDragState.shared.applyRegularListHitTarget(
-                spaceId: spaceId,
-                frame: nil,
-                itemCount: 0,
-                generation: generation
-            )
-        }
+        SidebarDragState.shared.scheduleRegularListHitTarget(
+            spaceId: spaceId,
+            frame: nil,
+            itemCount: 0,
+            generation: generation
+        )
     }
 
     static func updateEssentialsLayoutMetrics(
@@ -190,47 +171,43 @@ private enum SidebarDragStateDeferredGeometry {
         maxDropRowCount: Int,
         generation: Int
     ) {
-        Task { @MainActor in
-            SidebarDragState.shared.applyEssentialsLayoutMetrics(
-                spaceId: spaceId,
-                profileId: profileId,
-                frame: frame,
-                dropFrame: dropFrame,
-                dropSlotFrames: dropSlotFrames,
-                itemCount: itemCount,
-                columnCount: columnCount,
-                firstSyntheticRowSlot: firstSyntheticRowSlot,
-                rowCount: rowCount,
-                itemSize: itemSize,
-                gridSpacing: gridSpacing,
-                canAcceptDrop: canAcceptDrop,
-                visibleItemCount: visibleItemCount,
-                visibleRowCount: visibleRowCount,
-                maxDropRowCount: maxDropRowCount,
-                generation: generation
-            )
-        }
+        SidebarDragState.shared.scheduleEssentialsLayoutMetrics(
+            spaceId: spaceId,
+            profileId: profileId,
+            frame: frame,
+            dropFrame: dropFrame,
+            dropSlotFrames: dropSlotFrames,
+            itemCount: itemCount,
+            columnCount: columnCount,
+            firstSyntheticRowSlot: firstSyntheticRowSlot,
+            rowCount: rowCount,
+            itemSize: itemSize,
+            gridSpacing: gridSpacing,
+            canAcceptDrop: canAcceptDrop,
+            visibleItemCount: visibleItemCount,
+            visibleRowCount: visibleRowCount,
+            maxDropRowCount: maxDropRowCount,
+            generation: generation
+        )
     }
 
     static func removeEssentialsLayoutMetrics(spaceId: UUID, generation: Int) {
-        Task { @MainActor in
-            SidebarDragState.shared.applyEssentialsLayoutMetrics(
-                spaceId: spaceId,
-                profileId: nil,
-                frame: nil,
-                dropFrame: nil,
-                itemCount: 0,
-                columnCount: 1,
-                rowCount: 1,
-                itemSize: .zero,
-                gridSpacing: 0,
-                canAcceptDrop: false,
-                visibleItemCount: 0,
-                visibleRowCount: 0,
-                maxDropRowCount: 0,
-                generation: generation
-            )
-        }
+        SidebarDragState.shared.scheduleEssentialsLayoutMetrics(
+            spaceId: spaceId,
+            profileId: nil,
+            frame: nil,
+            dropFrame: nil,
+            itemCount: 0,
+            columnCount: 1,
+            rowCount: 1,
+            itemSize: .zero,
+            gridSpacing: 0,
+            canAcceptDrop: false,
+            visibleItemCount: 0,
+            visibleRowCount: 0,
+            maxDropRowCount: 0,
+            generation: generation
+        )
     }
 }
 
@@ -245,73 +222,58 @@ struct SidebarPageGeometryReporter: ViewModifier {
     @ObservedObject private var dragState = SidebarDragState.shared
 
     func body(content: Content) -> some View {
+        let shouldReport = isEnabled && renderMode == .interactive
         content
             .background {
-                GeometryReader { geo in
-                    Color.clear
-                        .onChange(of: geo.frame(in: .global)) { _, newFrame in
-                            SidebarDragStateDeferredGeometry.setPageGeometry(
-                                spaceId: spaceId,
-                                profileId: profileId,
-                                renderMode: renderMode,
-                                generation: generation,
-                                isEnabled ? newFrame : nil
-                            )
-                        }
-                        .onChange(of: renderMode) { _, newRenderMode in
-                            SidebarDragStateDeferredGeometry.setPageGeometry(
-                                spaceId: spaceId,
-                                profileId: profileId,
-                                renderMode: newRenderMode,
-                                generation: generation,
-                                isEnabled ? geo.frame(in: .global) : nil
-                            )
-                        }
-                        .onChange(of: generation) { _, newGeneration in
-                            SidebarDragStateDeferredGeometry.setPageGeometry(
-                                spaceId: spaceId,
-                                profileId: profileId,
-                                renderMode: renderMode,
-                                generation: newGeneration,
-                                isEnabled ? geo.frame(in: .global) : nil
-                            )
-                        }
-                        .onChange(of: isEnabled) { _, enabled in
-                            SidebarDragStateDeferredGeometry.setPageGeometry(
-                                spaceId: spaceId,
-                                profileId: profileId,
-                                renderMode: renderMode,
-                                generation: generation,
-                                enabled ? geo.frame(in: .global) : nil
-                            )
-                        }
-                        .onChange(of: dragState.geometryRevision) { _, _ in
-                            SidebarDragStateDeferredGeometry.setPageGeometry(
-                                spaceId: spaceId,
-                                profileId: profileId,
-                                renderMode: renderMode,
-                                generation: generation,
-                                isEnabled ? geo.frame(in: .global) : nil
-                            )
-                        }
-                        .onAppear {
-                            SidebarDragStateDeferredGeometry.setPageGeometry(
-                                spaceId: spaceId,
-                                profileId: profileId,
-                                renderMode: renderMode,
-                                generation: generation,
-                                isEnabled ? geo.frame(in: .global) : nil
-                            )
-                        }
-                        .onDisappear {
-                            SidebarDragStateDeferredGeometry.setPageGeometry(
-                                spaceId: spaceId,
-                                profileId: profileId,
-                                renderMode: renderMode,
-                                generation: generation,
-                                nil
-                            )
-                        }
+                if shouldReport {
+                    GeometryReader { geo in
+                        Color.clear
+                            .onChange(of: geo.frame(in: .global)) { _, newFrame in
+                                SidebarDragStateDeferredGeometry.setPageGeometry(
+                                    spaceId: spaceId,
+                                    profileId: profileId,
+                                    renderMode: renderMode,
+                                    generation: generation,
+                                    newFrame
+                                )
+                            }
+                            .onChange(of: generation) { _, newGeneration in
+                                SidebarDragStateDeferredGeometry.setPageGeometry(
+                                    spaceId: spaceId,
+                                    profileId: profileId,
+                                    renderMode: renderMode,
+                                    generation: newGeneration,
+                                    geo.frame(in: .global)
+                                )
+                            }
+                            .onChange(of: dragState.geometryRevision) { _, _ in
+                                SidebarDragStateDeferredGeometry.setPageGeometry(
+                                    spaceId: spaceId,
+                                    profileId: profileId,
+                                    renderMode: renderMode,
+                                    generation: generation,
+                                    geo.frame(in: .global)
+                                )
+                            }
+                            .onAppear {
+                                SidebarDragStateDeferredGeometry.setPageGeometry(
+                                    spaceId: spaceId,
+                                    profileId: profileId,
+                                    renderMode: renderMode,
+                                    generation: generation,
+                                    geo.frame(in: .global)
+                                )
+                            }
+                            .onDisappear {
+                                SidebarDragStateDeferredGeometry.setPageGeometry(
+                                    spaceId: spaceId,
+                                    profileId: profileId,
+                                    renderMode: renderMode,
+                                    generation: generation,
+                                    nil
+                                )
+                            }
+                    }
                 }
             }
     }
@@ -327,56 +289,50 @@ struct SidebarSectionGeometryReporter: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background {
-                GeometryReader { geo in
-                    Color.clear
-                        .onChange(of: geo.frame(in: .global)) { _, newFrame in
-                            SidebarDragStateDeferredGeometry.setSectionFrame(
-                                spaceId: spaceId,
-                                section: section,
-                                generation: generation,
-                                isEnabled ? newFrame : nil
-                            )
-                        }
-                        .onChange(of: generation) { _, newGeneration in
-                            SidebarDragStateDeferredGeometry.setSectionFrame(
-                                spaceId: spaceId,
-                                section: section,
-                                generation: newGeneration,
-                                isEnabled ? geo.frame(in: .global) : nil
-                            )
-                        }
-                        .onChange(of: isEnabled) { _, enabled in
-                            SidebarDragStateDeferredGeometry.setSectionFrame(
-                                spaceId: spaceId,
-                                section: section,
-                                generation: generation,
-                                enabled ? geo.frame(in: .global) : nil
-                            )
-                        }
-                        .onChange(of: dragState.geometryRevision) { _, _ in
-                            SidebarDragStateDeferredGeometry.setSectionFrame(
-                                spaceId: spaceId,
-                                section: section,
-                                generation: generation,
-                                isEnabled ? geo.frame(in: .global) : nil
-                            )
-                        }
-                        .onAppear {
-                            SidebarDragStateDeferredGeometry.setSectionFrame(
-                                spaceId: spaceId,
-                                section: section,
-                                generation: generation,
-                                isEnabled ? geo.frame(in: .global) : nil
-                            )
-                        }
-                        .onDisappear {
-                            SidebarDragStateDeferredGeometry.setSectionFrame(
-                                spaceId: spaceId,
-                                section: section,
-                                generation: generation,
-                                nil
-                            )
-                        }
+                if isEnabled {
+                    GeometryReader { geo in
+                        Color.clear
+                            .onChange(of: geo.frame(in: .global)) { _, newFrame in
+                                SidebarDragStateDeferredGeometry.setSectionFrame(
+                                    spaceId: spaceId,
+                                    section: section,
+                                    generation: generation,
+                                    newFrame
+                                )
+                            }
+                            .onChange(of: generation) { _, newGeneration in
+                                SidebarDragStateDeferredGeometry.setSectionFrame(
+                                    spaceId: spaceId,
+                                    section: section,
+                                    generation: newGeneration,
+                                    geo.frame(in: .global)
+                                )
+                            }
+                            .onChange(of: dragState.geometryRevision) { _, _ in
+                                SidebarDragStateDeferredGeometry.setSectionFrame(
+                                    spaceId: spaceId,
+                                    section: section,
+                                    generation: generation,
+                                    geo.frame(in: .global)
+                                )
+                            }
+                            .onAppear {
+                                SidebarDragStateDeferredGeometry.setSectionFrame(
+                                    spaceId: spaceId,
+                                    section: section,
+                                    generation: generation,
+                                    geo.frame(in: .global)
+                                )
+                            }
+                            .onDisappear {
+                                SidebarDragStateDeferredGeometry.setSectionFrame(
+                                    spaceId: spaceId,
+                                    section: section,
+                                    generation: generation,
+                                    nil
+                                )
+                            }
+                    }
                 }
             }
     }
@@ -462,6 +418,7 @@ extension View {
     }
 
     func sidebarFolderChildDropGeometry(
+        spaceId: UUID,
         folderId: UUID,
         childId: UUID,
         index: Int,
@@ -470,6 +427,7 @@ extension View {
     ) -> some View {
         modifier(
             SidebarFolderChildDropGeometryReporter(
+                spaceId: spaceId,
                 folderId: folderId,
                 childId: childId,
                 index: index,
@@ -548,46 +506,47 @@ struct SidebarFolderDropGeometryReporter: ViewModifier {
     @ObservedObject private var dragState = SidebarDragState.shared
 
     func body(content: Content) -> some View {
+        let shouldReport = isActive
+            && dragState.shouldCollectDetailedGeometry(spaceId: spaceId, profileId: nil)
         content
             .background {
-                GeometryReader { geo in
-                    Color.clear
-                        .onChange(of: geo.frame(in: .global)) { _, newFrame in
-                            update(frame: newFrame)
-                        }
-                        .onChange(of: topLevelIndex) { _, _ in
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onChange(of: childCount) { _, _ in
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onChange(of: isOpen) { _, _ in
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onChange(of: isActive) { _, _ in
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onChange(of: generation) { _, _ in
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onChange(of: dragState.isDragging) { _, isDragging in
-                            if isDragging {
+                if shouldReport {
+                    GeometryReader { geo in
+                        Color.clear
+                            .onChange(of: geo.frame(in: .global)) { _, newFrame in
+                                update(frame: newFrame)
+                            }
+                            .onChange(of: topLevelIndex) { _, _ in
                                 update(frame: geo.frame(in: .global))
                             }
-                        }
-                        .onChange(of: dragState.geometryRevision) { _, _ in
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onAppear {
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onDisappear {
-                            SidebarDragStateDeferredGeometry.removeFolderDropTarget(
-                                folderId: folderId,
-                                region: region,
-                                generation: generation
-                            )
-                        }
+                            .onChange(of: childCount) { _, _ in
+                                update(frame: geo.frame(in: .global))
+                            }
+                            .onChange(of: isOpen) { _, _ in
+                                update(frame: geo.frame(in: .global))
+                            }
+                            .onChange(of: generation) { _, _ in
+                                update(frame: geo.frame(in: .global))
+                            }
+                            .onChange(of: dragState.isDragging) { _, isDragging in
+                                if isDragging {
+                                    update(frame: geo.frame(in: .global))
+                                }
+                            }
+                            .onChange(of: dragState.geometryRevision) { _, _ in
+                                update(frame: geo.frame(in: .global))
+                            }
+                            .onAppear {
+                                update(frame: geo.frame(in: .global))
+                            }
+                            .onDisappear {
+                                SidebarDragStateDeferredGeometry.removeFolderDropTarget(
+                                    folderId: folderId,
+                                    region: region,
+                                    generation: generation
+                                )
+                            }
+                    }
                 }
             }
     }
@@ -617,34 +576,35 @@ struct SidebarTopLevelPinnedItemGeometryReporter: ViewModifier {
     @ObservedObject private var dragState = SidebarDragState.shared
 
     func body(content: Content) -> some View {
+        let shouldReport = isActive
+            && dragState.shouldCollectDetailedGeometry(spaceId: spaceId, profileId: nil)
         content
             .background {
-                GeometryReader { geo in
-                    Color.clear
-                        .onChange(of: geo.frame(in: .global)) { _, newFrame in
-                            update(frame: newFrame)
-                        }
-                        .onChange(of: topLevelIndex) { _, _ in
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onChange(of: isActive) { _, _ in
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onChange(of: generation) { _, _ in
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onChange(of: dragState.geometryRevision) { _, _ in
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onAppear {
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onDisappear {
-                            SidebarDragStateDeferredGeometry.removeTopLevelPinnedItemTarget(
-                                itemId: itemId,
-                                generation: generation
-                            )
-                        }
+                if shouldReport {
+                    GeometryReader { geo in
+                        Color.clear
+                            .onChange(of: geo.frame(in: .global)) { _, newFrame in
+                                update(frame: newFrame)
+                            }
+                            .onChange(of: topLevelIndex) { _, _ in
+                                update(frame: geo.frame(in: .global))
+                            }
+                            .onChange(of: generation) { _, _ in
+                                update(frame: geo.frame(in: .global))
+                            }
+                            .onChange(of: dragState.geometryRevision) { _, _ in
+                                update(frame: geo.frame(in: .global))
+                            }
+                            .onAppear {
+                                update(frame: geo.frame(in: .global))
+                            }
+                            .onDisappear {
+                                SidebarDragStateDeferredGeometry.removeTopLevelPinnedItemTarget(
+                                    itemId: itemId,
+                                    generation: generation
+                                )
+                            }
+                    }
                 }
             }
     }
@@ -663,6 +623,7 @@ struct SidebarTopLevelPinnedItemGeometryReporter: ViewModifier {
 }
 
 struct SidebarFolderChildDropGeometryReporter: ViewModifier {
+    let spaceId: UUID
     let folderId: UUID
     let childId: UUID
     let index: Int
@@ -671,34 +632,35 @@ struct SidebarFolderChildDropGeometryReporter: ViewModifier {
     @ObservedObject private var dragState = SidebarDragState.shared
 
     func body(content: Content) -> some View {
+        let shouldReport = isActive
+            && dragState.shouldCollectDetailedGeometry(spaceId: spaceId, profileId: nil)
         content
             .background {
-                GeometryReader { geo in
-                    Color.clear
-                        .onChange(of: geo.frame(in: .global)) { _, newFrame in
-                            update(frame: newFrame)
-                        }
-                        .onChange(of: index) { _, _ in
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onChange(of: isActive) { _, _ in
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onChange(of: generation) { _, _ in
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onChange(of: dragState.geometryRevision) { _, _ in
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onAppear {
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onDisappear {
-                            SidebarDragStateDeferredGeometry.removeFolderChildDropTarget(
-                                childId: childId,
-                                generation: generation
-                            )
-                        }
+                if shouldReport {
+                    GeometryReader { geo in
+                        Color.clear
+                            .onChange(of: geo.frame(in: .global)) { _, newFrame in
+                                update(frame: newFrame)
+                            }
+                            .onChange(of: index) { _, _ in
+                                update(frame: geo.frame(in: .global))
+                            }
+                            .onChange(of: generation) { _, _ in
+                                update(frame: geo.frame(in: .global))
+                            }
+                            .onChange(of: dragState.geometryRevision) { _, _ in
+                                update(frame: geo.frame(in: .global))
+                            }
+                            .onAppear {
+                                update(frame: geo.frame(in: .global))
+                            }
+                            .onDisappear {
+                                SidebarDragStateDeferredGeometry.removeFolderChildDropTarget(
+                                    childId: childId,
+                                    generation: generation
+                                )
+                            }
+                    }
                 }
             }
     }
@@ -723,34 +685,35 @@ struct SidebarRegularListHitGeometryReporter: ViewModifier {
     @ObservedObject private var dragState = SidebarDragState.shared
 
     func body(content: Content) -> some View {
+        let shouldReport = isEnabled
+            && dragState.shouldCollectDetailedGeometry(spaceId: spaceId, profileId: nil)
         content
             .background {
-                GeometryReader { geo in
-                    Color.clear
-                        .onChange(of: geo.frame(in: .global)) { _, newFrame in
-                            update(frame: newFrame)
-                        }
-                        .onChange(of: itemCount) { _, _ in
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onChange(of: isEnabled) { _, _ in
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onChange(of: generation) { _, _ in
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onChange(of: dragState.geometryRevision) { _, _ in
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onAppear {
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onDisappear {
-                            SidebarDragStateDeferredGeometry.removeRegularListHitTarget(
-                                spaceId: spaceId,
-                                generation: generation
-                            )
-                        }
+                if shouldReport {
+                    GeometryReader { geo in
+                        Color.clear
+                            .onChange(of: geo.frame(in: .global)) { _, newFrame in
+                                update(frame: newFrame)
+                            }
+                            .onChange(of: itemCount) { _, _ in
+                                update(frame: geo.frame(in: .global))
+                            }
+                            .onChange(of: generation) { _, _ in
+                                update(frame: geo.frame(in: .global))
+                            }
+                            .onChange(of: dragState.geometryRevision) { _, _ in
+                                update(frame: geo.frame(in: .global))
+                            }
+                            .onAppear {
+                                update(frame: geo.frame(in: .global))
+                            }
+                            .onDisappear {
+                                SidebarDragStateDeferredGeometry.removeRegularListHitTarget(
+                                    spaceId: spaceId,
+                                    generation: generation
+                                )
+                            }
+                    }
                 }
             }
     }
@@ -810,28 +773,32 @@ struct SidebarEssentialsLayoutGeometryReporter: ViewModifier {
 
     func body(content: Content) -> some View {
         let signature = geometrySignature
+        let shouldReport = isEnabled
+            && dragState.shouldCollectDetailedGeometry(spaceId: spaceId, profileId: profileId)
         content
             .background {
-                GeometryReader { geo in
-                    Color.clear
-                        .onChange(of: geo.frame(in: .global)) { _, _ in
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onChange(of: signature) { _, _ in
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onChange(of: dragState.geometryRevision) { _, _ in
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onAppear {
-                            update(frame: geo.frame(in: .global))
-                        }
-                        .onDisappear {
-                            SidebarDragStateDeferredGeometry.removeEssentialsLayoutMetrics(
-                                spaceId: spaceId,
-                                generation: generation
-                            )
-                        }
+                if shouldReport {
+                    GeometryReader { geo in
+                        Color.clear
+                            .onChange(of: geo.frame(in: .global)) { _, _ in
+                                update(frame: geo.frame(in: .global))
+                            }
+                            .onChange(of: signature) { _, _ in
+                                update(frame: geo.frame(in: .global))
+                            }
+                            .onChange(of: dragState.geometryRevision) { _, _ in
+                                update(frame: geo.frame(in: .global))
+                            }
+                            .onAppear {
+                                update(frame: geo.frame(in: .global))
+                            }
+                            .onDisappear {
+                                SidebarDragStateDeferredGeometry.removeEssentialsLayoutMetrics(
+                                    spaceId: spaceId,
+                                    generation: generation
+                                )
+                            }
+                    }
                 }
             }
     }
