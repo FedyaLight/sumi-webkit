@@ -13,6 +13,10 @@ private final class SidebarColumnContainerView: NSView {
         false
     }
 
+    override var mouseDownCanMoveWindow: Bool {
+        false
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         // Paintless AppKit shell. SwiftUI resolved chrome owns sidebar background.
     }
@@ -62,6 +66,10 @@ private enum SidebarColumnPaintlessChrome {
 
 private final class SidebarHostingView<Content: View>: NSHostingView<Content> {
     override var isOpaque: Bool {
+        false
+    }
+
+    override var mouseDownCanMoveWindow: Bool {
         false
     }
 

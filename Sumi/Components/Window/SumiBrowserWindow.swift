@@ -65,9 +65,9 @@ extension NSWindow {
             self.toolbar = toolbar
         }
 
-        toolbar.isVisible = true
+        toolbar.isVisible = false
         toolbarStyle = .unifiedCompact
-        hideNativeWindowControlsForBrowserChrome()
+        hideStandardWindowButtonsForCustomChrome()
     }
 
     @MainActor
@@ -163,19 +163,20 @@ final class SumiBrowserWindow: NSWindow {
 
 @MainActor
 extension NSWindow {
-    func hideNativeWindowControlsForBrowserChrome(
+    func hideStandardWindowButtonsForCustomChrome(
         buttonTypes: [NSWindow.ButtonType] = SumiBrowserChromeConfiguration.buttonTypes
     ) {
-        guard let titlebarView else { return }
-
         for type in buttonTypes {
             guard let button = standardWindowButton(type) else { continue }
+            if let identifier = button.identifier?.rawValue,
+               BrowserWindowControlsAccessibilityIdentifiers.allButtonIdentifiers.contains(identifier) {
+                continue
+            }
             button.isHidden = true
             button.alphaValue = 0
             button.isEnabled = false
             button.setAccessibilityElement(false)
+            button.superview?.needsLayout = true
         }
-
-        titlebarView.needsLayout = true
     }
 }

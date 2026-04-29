@@ -16,9 +16,11 @@ struct NavButtonStyle: ButtonStyle {
     @State private var isHovering: Bool = false
 
     let overrideSize: ControlSize?
+    let diameter: CGFloat?
 
-    init(size: ControlSize? = nil) {
+    init(size: ControlSize? = nil, diameter: CGFloat? = nil) {
         self.overrideSize = size
+        self.diameter = diameter
     }
 
     private var tokens: ChromeThemeTokens {
@@ -47,6 +49,10 @@ struct NavButtonStyle: ButtonStyle {
     }
     
     private var size: CGFloat {
+        if let diameter {
+            return diameter
+        }
+
         let effectiveSize = overrideSize ?? controlSize
         return switch effectiveSize {
         case .mini: 24

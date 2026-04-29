@@ -94,6 +94,10 @@ struct SumiApp: App {
         // Initialize keyboard shortcut manager
         keyboardShortcutManager.setBrowserManager(browserManager)
 
+#if DEBUG
+        presentUITestMiniWindowIfRequested()
+#endif
+
         // Set up window lifecycle callbacks
         windowRegistry.onWindowRegister = { [weak browserManager] windowState in
             if let browserManager {
@@ -152,4 +156,19 @@ struct SumiApp: App {
             )
         }
     }
+
+#if DEBUG
+    private func presentUITestMiniWindowIfRequested() {
+        let processInfo = ProcessInfo.processInfo
+        guard processInfo.arguments.contains("--uitest-smoke"),
+              let urlString = processInfo.environment["SUMI_UITEST_MINI_WINDOW_URL"],
+              let url = URL(string: urlString)
+        else { return }
+
+        let manager = browserManager
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            manager.externalMiniWindowManager.present(url: url)
+        }
+    }
+#endif
 }

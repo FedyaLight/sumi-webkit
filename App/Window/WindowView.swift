@@ -67,14 +67,6 @@ struct WindowView: View {
             }
 
             chromeThemeScope {
-                BrowserWindowTrafficLights()
-                    .environment(windowState)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .allowsHitTesting(true)
-            .zIndex(8_000)
-
-            chromeThemeScope {
                 CommandPaletteView()
                     .zIndex(WindowTransientChromeZIndex.commandPalette)
             }
@@ -192,7 +184,7 @@ struct WindowView: View {
             }
         }
         // Keep Sumi's theme override inside SwiftUI so AppKit chrome stays stable while custom
-        // browser traffic lights resolve their appearance from SwiftUI state.
+        // sidebar chrome resolves its appearance from SwiftUI state.
         .environment(\.colorScheme, globalColorScheme)
     }
 

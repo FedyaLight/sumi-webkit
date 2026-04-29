@@ -4,24 +4,16 @@ import AppKit
 struct MiniBrowserWindowView: View {
     let session: MiniWindowSession
     let adoptAction: () -> Void
-
-    @State private var hostingWindow: NSWindow?
+    let window: NSWindow?
 
     var body: some View {
         VStack(spacing: 0) {
-            MiniWindowToolbar(session: session, adoptAction: adoptAction, window: hostingWindow)
+            MiniWindowToolbar(session: session, adoptAction: adoptAction, window: window)
             webContent
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(FloatingChromeSurfaceFill(.panel))
         .ignoresSafeArea(.container, edges: .top)
-        .background(WindowAccessor { window in
-            guard hostingWindow !== window else { return }
-            hostingWindow = window
-            window?.titlebarAppearsTransparent = true
-            window?.titleVisibility = .hidden
-            window?.titlebarSeparatorStyle = .none
-        })
         .frame(minWidth: 640, minHeight: 480)
     }
 
@@ -54,25 +46,6 @@ struct MiniBrowserWindowView: View {
     }
 }
 
-private struct WindowAccessor: NSViewRepresentable {
-    let callback: (NSWindow?) -> Void
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        DispatchQueue.main.async {
-            callback(view.window)
-        }
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            callback(nsView.window)
-        }
-    }
-}
-
 #if DEBUG
 #Preview {
     // Provide a mock session for preview
@@ -83,6 +56,6 @@ private struct WindowAccessor: NSViewRepresentable {
         targetSpaceResolver: { "Preview Space" },
         adoptHandler: { _ in }
     )
-    MiniBrowserWindowView(session: session, adoptAction: {})
+    MiniBrowserWindowView(session: session, adoptAction: {}, window: nil)
 }
 #endif

@@ -216,6 +216,7 @@ struct SpacesSideBarView: View {
             }
             .padding(.bottom, 8)
         }
+        .padding(.top, SidebarChromeMetrics.topControlInset)
         .environment(sidebarInteractionState)
         .sidebarAppKitBackgroundContextMenu(
             controller: windowState.sidebarContextMenuController,

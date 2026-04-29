@@ -18,6 +18,8 @@ final class SumiLaunchSmokeUITests: XCTestCase {
     private let smokeWindowSessionOverrideEnvironmentKey = "SUMI_WINDOW_SESSION_OVERRIDE_PATH"
     private let smokeShortcutDriftPinEnvironmentKey = "SUMI_SIDEBAR_DRIFT_SHORTCUT_PIN_ID"
     private let smokeShortcutDriftURLEnvironmentKey = "SUMI_SIDEBAR_DRIFT_URL"
+    private let smokeMiniWindowURLEnvironmentKey = "SUMI_UITEST_MINI_WINDOW_URL"
+    private let miniBrowserWindowIdentifier = "mini-browser-window"
 
     private struct PersonalSidebarFixture {
         let personalSpaceID: String
@@ -117,7 +119,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
         if let sidebarDragMarkerURL {
             return sidebarDragMarkerURL
         }
-        let markerDirectory = smokeAppSupportURL ?? FileManager.default.temporaryDirectory
+        let markerDirectory = smokeAppSupportURL ?? URL(fileURLWithPath: "/tmp", isDirectory: true)
         let url = markerDirectory
             .appendingPathComponent("SumiSidebarDrag-\(UUID().uuidString).marker", isDirectory: false)
         sidebarDragMarkerURL = url
@@ -138,16 +140,97 @@ final class SumiLaunchSmokeUITests: XCTestCase {
         XCTAssertTrue(spaceIcons.firstMatch.waitForExistence(timeout: 5))
     }
 
-    func testNativeTrafficLightsAreHittableInNormalWindow() {
-        let app = launchApp()
+    func testCustomTrafficLightsAreHittableInNormalWindow() throws {
+        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
-        assertNativeTrafficLightsHittable(in: app, window: window)
+        assertCustomTrafficLightsHittable(in: app, window: window)
     }
 
-    func testCollapsedHoverSidebarKeepsNativeTrafficLightsHittable() {
-        let app = launchApp()
+    func testGreenTrafficLightHoverOpensCompactMenu() throws {
+        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
+        let window = app.windows.element(boundBy: 0)
+
+        XCTAssertTrue(window.waitForExistence(timeout: 5))
+
+        let zoomButton = element(
+            withIdentifier: BrowserWindowControlIdentifiers.zoomButton,
+            in: app
+        )
+        XCTAssertTrue(waitForTrafficLightElementToBeVisibleAndEnabled(zoomButton, timeout: 3))
+
+        zoomButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.7))
+
+        XCTAssertTrue(zoomButton.exists)
+        XCTAssertTrue(zoomButton.isEnabled)
+
+        let menu = app.descendants(matching: .any)["browser-window-zoom-menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 2))
+        XCTAssertLessThanOrEqual(menu.frame.width, 270)
+        XCTAssertLessThanOrEqual(menu.frame.height, 230)
+
+        for identifier in [
+            "browser-window-left-half-menu-item",
+            "browser-window-right-half-menu-item",
+            "browser-window-top-half-menu-item",
+            "browser-window-bottom-half-menu-item",
+            "browser-window-fill-menu-item",
+            "browser-window-center-menu-item",
+            "browser-window-left-third-menu-item",
+            "browser-window-right-third-menu-item",
+            "browser-window-full-screen-menu-item",
+        ] {
+            XCTAssertTrue(
+                app.descendants(matching: .any)[identifier].waitForExistence(timeout: 1),
+                "Expected compact green-button menu item \(identifier)"
+            )
+        }
+    }
+
+    func testCloseTrafficLightHoverDoesNotTriggerCustomZoomMenu() throws {
+        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
+        let window = app.windows.element(boundBy: 0)
+
+        XCTAssertTrue(window.waitForExistence(timeout: 5))
+
+        let closeButton = element(
+            withIdentifier: BrowserWindowControlIdentifiers.closeButton,
+            in: app
+        )
+        XCTAssertTrue(waitForTrafficLightElementToBeVisibleAndEnabled(closeButton, timeout: 3))
+
+        closeButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.7))
+
+        XCTAssertFalse(app.descendants(matching: .any)["browser-window-zoom-menu"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["browser-window-full-screen-menu-item"].exists)
+    }
+
+    func testMiniWindowRendersCustomTrafficLights() {
+        let app = launchApp(additionalEnvironment: [
+            smokeMiniWindowURLEnvironmentKey: "about:blank",
+        ])
+        let miniWindow = app.windows[miniBrowserWindowIdentifier]
+
+        XCTAssertTrue(miniWindow.waitForExistence(timeout: 5))
+        assertCustomTrafficLightsHittable(
+            in: app,
+            window: miniWindow,
+            searchRoot: miniWindow
+        )
+
+        let closeButton = element(
+            withIdentifier: BrowserWindowControlIdentifiers.closeButton,
+            inSearchRoot: miniWindow
+        )
+        closeButton.click()
+        XCTAssertTrue(waitForNonExistence(miniWindow, timeout: 3))
+    }
+
+    func testCollapsedHoverSidebarKeepsCustomTrafficLightsHittable() throws {
+        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -155,31 +238,31 @@ final class SumiLaunchSmokeUITests: XCTestCase {
         toggleSidebarVisibility(app: app, window: window)
         revealHoverSidebar(in: window)
 
-        assertNativeTrafficLightsHittable(in: app, window: window)
+        assertCustomTrafficLightsHittable(in: app, window: window)
     }
 
-    func testCollapsedHoverSidebarTrafficLightsStayHittableAfterResize() {
-        let app = launchApp()
+    func testCollapsedHoverSidebarTrafficLightsStayHittableAfterResize() throws {
+        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
 
         toggleSidebarVisibility(app: app, window: window)
         revealHoverSidebar(in: window)
-        assertNativeTrafficLightsHittable(in: app, window: window)
+        assertCustomTrafficLightsHittable(in: app, window: window)
 
         let initialWidth = window.frame.width
         resizeWindow(window, horizontalOffset: -220)
         XCTAssertLessThan(window.frame.width, initialWidth - 40)
 
         revealHoverSidebar(in: window)
-        assertNativeTrafficLightsHittable(in: app, window: window)
+        assertCustomTrafficLightsHittable(in: app, window: window)
 
         resizeWindow(window, horizontalOffset: 220)
         XCTAssertGreaterThan(window.frame.width, initialWidth - 120)
 
         revealHoverSidebar(in: window)
-        assertNativeTrafficLightsHittable(in: app, window: window)
+        assertCustomTrafficLightsHittable(in: app, window: window)
     }
 
     func testLaunchWithPersistedBrightThemeDoesNotRenderDominantBlackWindow() throws {
@@ -2404,6 +2487,12 @@ final class SumiLaunchSmokeUITests: XCTestCase {
     }
 
     @MainActor
+    private func element(withIdentifier identifier: String, inSearchRoot root: XCUIElement) -> XCUIElement {
+        let predicate = NSPredicate(format: "identifier == %@", identifier)
+        return root.descendants(matching: .any).matching(predicate).firstMatch
+    }
+
+    @MainActor
     private func openSidebarContextMenu(
         on element: XCUIElement,
         expectedMenuItem: String,
@@ -2625,23 +2714,25 @@ final class SumiLaunchSmokeUITests: XCTestCase {
     }
 
     @MainActor
-    private func assertNativeTrafficLightsHittable(
+    private func assertCustomTrafficLightsHittable(
         in app: XCUIApplication,
         window: XCUIElement,
+        searchRoot: XCUIElement? = nil,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
+        let root: XCUIElement = searchRoot ?? app
         let closeButton = element(
             withIdentifier: BrowserWindowControlIdentifiers.closeButton,
-            in: app
+            inSearchRoot: root
         )
         let minimizeButton = element(
             withIdentifier: BrowserWindowControlIdentifiers.minimizeButton,
-            in: app
+            inSearchRoot: root
         )
         let zoomButton = element(
             withIdentifier: BrowserWindowControlIdentifiers.zoomButton,
-            in: app
+            inSearchRoot: root
         )
 
         for (identifier, element) in [
@@ -2650,12 +2741,89 @@ final class SumiLaunchSmokeUITests: XCTestCase {
             (BrowserWindowControlIdentifiers.zoomButton, zoomButton),
         ] {
             XCTAssertTrue(
-                waitForElementToBecomeHittable(element, timeout: 3),
-                "Browser traffic light \(identifier) was not hittable. Window frame: \(window.frame)",
+                waitForTrafficLightElementToBeVisibleAndEnabled(element, timeout: 3),
+                "Browser traffic light \(identifier) was not visible and enabled. exists=\(element.exists) enabled=\(element.isEnabled) hittable=\(element.isHittable) frame=\(element.frame). Window frame: \(window.frame)",
+                file: file,
+                line: line
+            )
+            XCTAssertEqual(
+                element.frame.width,
+                element.frame.height,
+                accuracy: 1.0,
+                "Traffic light hit target should stay square so the visual circle is not compressed. id=\(identifier) frame=\(element.frame)",
                 file: file,
                 line: line
             )
         }
+
+        assertTrafficLightFramesAreAligned(
+            closeButton: closeButton,
+            minimizeButton: minimizeButton,
+            zoomButton: zoomButton,
+            window: window,
+            file: file,
+            line: line
+        )
+    }
+
+    @MainActor
+    private func assertTrafficLightFramesAreAligned(
+        closeButton: XCUIElement,
+        minimizeButton: XCUIElement,
+        zoomButton: XCUIElement,
+        window: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let closeFrame = closeButton.frame
+        let minimizeFrame = minimizeButton.frame
+        let zoomFrame = zoomButton.frame
+        let windowFrame = window.frame
+
+        XCTAssertEqual(
+            closeFrame.midY,
+            minimizeFrame.midY,
+            accuracy: 1.5,
+            "Traffic lights should share one visual baseline. close=\(closeFrame) minimize=\(minimizeFrame) zoom=\(zoomFrame)",
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            minimizeFrame.midY,
+            zoomFrame.midY,
+            accuracy: 1.5,
+            "Traffic lights should share one visual baseline. close=\(closeFrame) minimize=\(minimizeFrame) zoom=\(zoomFrame)",
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThan(
+            minimizeFrame.minX,
+            closeFrame.maxX,
+            "Minimize button should sit to the right of close button. close=\(closeFrame) minimize=\(minimizeFrame)",
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThan(
+            zoomFrame.minX,
+            minimizeFrame.maxX,
+            "Zoom button should sit to the right of minimize button. minimize=\(minimizeFrame) zoom=\(zoomFrame)",
+            file: file,
+            line: line
+        )
+        XCTAssertLessThanOrEqual(
+            closeFrame.minX,
+            windowFrame.minX + 96,
+            "Traffic lights should remain inside the sidebar chrome, not float over page content. close=\(closeFrame) window=\(windowFrame)",
+            file: file,
+            line: line
+        )
+        XCTAssertLessThanOrEqual(
+            closeFrame.minY,
+            windowFrame.minY + 64,
+            "Traffic lights should remain in the top chrome band. close=\(closeFrame) window=\(windowFrame)",
+            file: file,
+            line: line
+        )
     }
 
     @MainActor
@@ -2680,6 +2848,28 @@ final class SumiLaunchSmokeUITests: XCTestCase {
         }
 
         return element.exists && element.isHittable
+    }
+
+    @MainActor
+    private func waitForTrafficLightElementToBeVisibleAndEnabled(
+        _ element: XCUIElement,
+        timeout: TimeInterval
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if element.exists,
+               element.isEnabled,
+               element.frame.width > 0,
+               element.frame.height > 0 {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+
+        return element.exists
+            && element.isEnabled
+            && element.frame.width > 0
+            && element.frame.height > 0
     }
 
     @MainActor

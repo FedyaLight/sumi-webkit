@@ -168,9 +168,16 @@ final class MiniBrowserWindowController: NSWindowController, NSWindowDelegate {
         self.session = session
         self.onClose = onClose
 
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 720, height: 620),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
         let baseView = MiniBrowserWindowView(
             session: session,
-            adoptAction: adoptAction
+            adoptAction: adoptAction,
+            window: window
         )
         let resolvedSettings = settings ?? SumiSettingsService()
         let neutralThemeContext = MiniBrowserWindowThemeContextResolver.make(
@@ -182,17 +189,19 @@ final class MiniBrowserWindowController: NSWindowController, NSWindowDelegate {
                 .environment(\.resolvedThemeContext, neutralThemeContext)
         )
 
-        let hostingController = NSHostingController(rootView: contentView)
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 720, height: 620),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
+        let hostingController = MiniBrowserHostingController(rootView: contentView)
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        window.isMovableByWindowBackground = true
+        window.titlebarSeparatorStyle = .none
+        window.isMovableByWindowBackground = false
         window.isReleasedWhenClosed = false
+        window.hideStandardWindowButtonsForCustomChrome()
+        window.identifier = NSUserInterfaceItemIdentifier(
+            BrowserWindowControlsAccessibilityIdentifiers.miniBrowserWindow
+        )
+        window.setAccessibilityIdentifier(
+            BrowserWindowControlsAccessibilityIdentifiers.miniBrowserWindow
+        )
         window.center()
         window.contentViewController = hostingController
 
@@ -212,5 +221,38 @@ final class MiniBrowserWindowController: NSWindowController, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         onClose(session)
+    }
+}
+
+private final class MiniBrowserHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override var mouseDownCanMoveWindow: Bool {
+        false
+    }
+}
+
+private final class MiniBrowserHostingController<Content: View>: NSViewController {
+    private let hostingView: MiniBrowserHostingView<Content>
+
+    var rootView: Content {
+        get { hostingView.rootView }
+        set { hostingView.rootView = newValue }
+    }
+
+    init(rootView: Content) {
+        self.hostingView = MiniBrowserHostingView(rootView: rootView)
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func loadView() {
+        view = hostingView
     }
 }

@@ -63,36 +63,37 @@ struct NavButtonsView: View {
     @StateObject private var tabWrapper = ObservableTabWrapper()
 
     var body: some View {
-        HStack(spacing: 2) {
-            HStack(alignment: .center, spacing: 8) {
-                Button("Go Back", systemImage: "arrow.backward", action: goBack)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(NavButtonStyle())
-                    .disabled(!tabWrapper.canGoBack)
-                    .sumiAppKitContextMenu(entries: {
-                        NavigationHistoryContextMenuEntries.make(
-                            historyType: .back,
-                            windowState: windowState,
-                            browserManager: browserManager
-                        )
-                    })
+        HStack(alignment: .center, spacing: SidebarChromeMetrics.controlSpacing) {
+            Button("Go Back", systemImage: "arrow.backward", action: goBack)
+                .labelStyle(.iconOnly)
+                .font(.system(size: SidebarChromeMetrics.navigationIconSize, weight: .medium))
+                .buttonStyle(NavButtonStyle(diameter: SidebarChromeMetrics.navigationButtonSize))
+                .disabled(!tabWrapper.canGoBack)
+                .sumiAppKitContextMenu(entries: {
+                    NavigationHistoryContextMenuEntries.make(
+                        historyType: .back,
+                        windowState: windowState,
+                        browserManager: browserManager
+                    )
+                })
 
-                Button("Go Forward", systemImage: "arrow.forward", action: goForward)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(NavButtonStyle())
-                    .disabled(!tabWrapper.canGoForward)
-                    .sumiAppKitContextMenu(entries: {
-                        NavigationHistoryContextMenuEntries.make(
-                            historyType: .forward,
-                            windowState: windowState,
-                            browserManager: browserManager
-                        )
-                    })
+            Button("Go Forward", systemImage: "arrow.forward", action: goForward)
+                .labelStyle(.iconOnly)
+                .font(.system(size: SidebarChromeMetrics.navigationIconSize, weight: .medium))
+                .buttonStyle(NavButtonStyle(diameter: SidebarChromeMetrics.navigationButtonSize))
+                .disabled(!tabWrapper.canGoForward)
+                .sumiAppKitContextMenu(entries: {
+                    NavigationHistoryContextMenuEntries.make(
+                        historyType: .forward,
+                        windowState: windowState,
+                        browserManager: browserManager
+                    )
+                })
 
-                Button("Reload", systemImage: "arrow.clockwise", action: refreshCurrentTab)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(NavButtonStyle())
-            }
+            Button("Reload", systemImage: "arrow.clockwise", action: refreshCurrentTab)
+                .labelStyle(.iconOnly)
+                .font(.system(size: SidebarChromeMetrics.navigationIconSize, weight: .medium))
+                .buttonStyle(NavButtonStyle(diameter: SidebarChromeMetrics.navigationButtonSize))
         }
         .background(
             DoubleClickView {

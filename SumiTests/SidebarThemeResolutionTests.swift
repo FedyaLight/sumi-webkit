@@ -277,10 +277,16 @@ final class SidebarThemeResolutionTests: XCTestCase {
         XCTAssertFalse(layoutSource.contains("Color.clear"))
     }
 
-    func testWindowViewKeepsTrafficLightsWindowLevelAndOverlayCollapsedOnly() throws {
+    func testWindowViewKeepsHoverOverlayOnlyAndTrafficLightsInSidebarHeader() throws {
         let source = try String(
             contentsOf: Self.repoRoot.appendingPathComponent(
                 "App/Window/WindowView.swift"
+            ),
+            encoding: .utf8
+        )
+        let sidebarHeaderSource = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "Navigation/Sidebar/SidebarHeader.swift"
             ),
             encoding: .utf8
         )
@@ -292,7 +298,8 @@ final class SidebarThemeResolutionTests: XCTestCase {
 
         XCTAssertTrue(source.contains("if !windowState.isSidebarVisible"))
         XCTAssertTrue(source.contains("SidebarHoverOverlayView()"))
-        XCTAssertTrue(source.contains("BrowserWindowTrafficLights()"))
+        XCTAssertFalse(source.contains("BrowserWindowTrafficLights("))
+        XCTAssertTrue(sidebarHeaderSource.contains("BrowserWindowTrafficLights(window: windowState.window)"))
         XCTAssertFalse(dockedSource.contains("BrowserWindowTrafficLights"))
         XCTAssertFalse(dockedSource.contains("SidebarHoverOverlayView"))
     }
