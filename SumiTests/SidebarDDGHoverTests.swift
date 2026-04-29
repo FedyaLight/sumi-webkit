@@ -144,6 +144,7 @@ final class SidebarDDGHoverTests: XCTestCase {
             "Sumi/Components/Sidebar/SpaceSection/SpaceTab.swift",
             "Sumi/Components/Sidebar/SpaceSection/SplitTabRow.swift",
             "Sumi/Components/Sidebar/SpaceSection/SpaceView.swift",
+            "Sumi/Components/Sidebar/SpaceSection/ShortcutSidebarRow.swift",
             "Sumi/Components/Sidebar/SpaceSection/TabFolderView.swift",
             "Sumi/Components/Sidebar/SpaceSection/SpaceTitle.swift",
             "Sumi/Components/Sidebar/PinnedButtons/PinnedTabView.swift",
