@@ -647,6 +647,7 @@ class TabManager: ObservableObject {
         return spacePinnedShortcuts[spaceId]?.first(where: { $0.id == pin.id })
     }
 
+    @discardableResult
     func reorderTopLevelSpacePinnedShortcut(
         _ pin: ShortcutPin,
         in spaceId: UUID,
@@ -659,30 +660,30 @@ class TabManager: ObservableObject {
         }) else { return nil }
         guard currentIndex != targetIndex else { return pin }
         let moving = items.remove(at: currentIndex)
-        let adjustedIndex = currentIndex < targetIndex ? targetIndex - 1 : targetIndex
-        let safeIndex = max(0, min(adjustedIndex, items.count))
+        let safeIndex = max(0, min(targetIndex, items.count))
         items.insert(moving, at: safeIndex)
         applyTopLevelSpacePinnedOrder(items, for: spaceId)
         return spacePinnedShortcuts[spaceId]?.first(where: { $0.id == pin.id })
     }
 
+    @discardableResult
     func reorderFolderInTopLevelPinned(
         _ folder: TabFolder,
         in spaceId: UUID,
         to targetIndex: Int
-    ) {
+    ) -> Bool {
         var items = topLevelSpacePinnedItems(for: spaceId)
         guard let currentIndex = items.firstIndex(where: {
             if case .folder(let existingFolder) = $0 { return existingFolder.id == folder.id }
             return false
-        }) else { return }
-        guard currentIndex != targetIndex else { return }
+        }) else { return false }
+        guard currentIndex != targetIndex else { return false }
         let moving = items.remove(at: currentIndex)
-        let adjustedIndex = currentIndex < targetIndex ? targetIndex - 1 : targetIndex
-        let safeIndex = max(0, min(adjustedIndex, items.count))
+        let safeIndex = max(0, min(targetIndex, items.count))
         items.insert(moving, at: safeIndex)
         applyTopLevelSpacePinnedOrder(items, for: spaceId)
         scheduleStructuralPersistence()
+        return true
     }
 
     func withSpacePinnedShortcutGroup(

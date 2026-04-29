@@ -17,6 +17,15 @@ private struct SidebarAppKitItemModifier: ViewModifier {
     let isInteractionEnabled: Bool
 
     func body(content: Content) -> some View {
+        let dragScope = dragSource.flatMap {
+            SidebarDragScope(
+                windowState: windowState,
+                presentationMode: presentationContext.mode,
+                sourceZone: $0.sourceZone,
+                item: $0.item
+            )
+        }
+
         SidebarAppKitItemBridge(
             content: content,
             controller: windowState.sidebarContextMenuController,
@@ -24,6 +33,7 @@ private struct SidebarAppKitItemModifier: ViewModifier {
                 isInteractionEnabled: isInteractionEnabled,
                 menu: menu,
                 dragSource: dragSource,
+                dragScope: dragScope,
                 primaryAction: primaryAction,
                 onMiddleClick: onMiddleClick,
                 sourceID: sourceID,

@@ -107,9 +107,9 @@ extension TabManager {
     }
 
     func resolvedEssentialsProfileId(for operation: DragOperation) -> UUID? {
-        operation.toProfileId
+        operation.scope.profileId
             ?? resolvedEssentialsProfileId(
-                using: EssentialsTargetContext(spaceId: operation.toSpaceId)
+                using: EssentialsTargetContext(spaceId: operation.scope.spaceId)
             )
     }
 
@@ -191,11 +191,13 @@ extension TabManager {
         }
     }
 
-    func convertShortcutPinToRegularTab(_ pin: ShortcutPin, in targetSpaceId: UUID, at targetIndex: Int? = nil) {
+    @discardableResult
+    func convertShortcutPinToRegularTab(_ pin: ShortcutPin, in targetSpaceId: UUID, at targetIndex: Int? = nil) -> Bool {
         withStructuralUpdateTransaction {
             _ = insertRegularTabFromShortcut(pin, into: targetSpaceId, at: targetIndex)
             removeShortcutPinFromContainers(pin)
             scheduleStructuralPersistence()
+            return true
         }
     }
 
@@ -317,121 +319,94 @@ extension TabManager {
         }
     }
 
-    func handleShortcutDragOperation(_ pin: ShortcutPin, operation: DragOperation) {
+    @discardableResult
+    func handleShortcutDragOperation(_ pin: ShortcutPin, operation: DragOperation) -> Bool {
         withStructuralUpdateTransaction {
             switch (operation.fromContainer, operation.toContainer) {
             case (.essentials, .essentials):
-                reorderEssential(pin, to: operation.toIndex)
+                return reorderEssential(pin, to: operation.toIndex)
 
             case (.essentials, .spacePinned(let targetSpaceId)):
-                _ = moveShortcutPin(
+                return moveShortcutPin(
                     pin,
                     to: .spacePinned,
                     profileId: nil,
                     spaceId: targetSpaceId,
                     folderId: nil,
                     index: operation.toIndex
-                )
+                ) != nil
 
-        case (.essentials, .folder(let targetFolderId)):
-            guard let targetSpaceId = foldersBySpace.first(where: { $0.value.contains(where: { $0.id == targetFolderId }) })?.key else { return }
-            _ = moveShortcutPin(
-                pin,
-                to: .spacePinned,
-                profileId: nil,
-                spaceId: targetSpaceId,
-                folderId: targetFolderId,
-                index: operation.toIndex,
-                openTargetFolder: false
-            )
+            case (.essentials, .folder(let targetFolderId)):
+                guard let targetSpaceId = folderSpaceId(for: targetFolderId) else { return false }
+                return moveShortcutPin(
+                    pin,
+                    to: .spacePinned,
+                    profileId: nil,
+                    spaceId: targetSpaceId,
+                    folderId: targetFolderId,
+                    index: operation.toIndex,
+                    openTargetFolder: false
+                ) != nil
 
-        case (.essentials, .spaceRegular(let targetSpaceId)):
-            convertShortcutPinToRegularTab(pin, in: targetSpaceId, at: operation.toIndex)
+            case (.essentials, .spaceRegular(let targetSpaceId)):
+                return convertShortcutPinToRegularTab(pin, in: targetSpaceId, at: operation.toIndex)
 
-        case (.spacePinned, .essentials):
-            guard let currentProfileId = resolvedEssentialsProfileId(for: operation) else { return }
-            _ = moveShortcutPin(
-                pin,
-                to: .essential,
-                profileId: currentProfileId,
-                spaceId: nil,
-                folderId: nil,
-                index: operation.toIndex
-            )
+            case (.spacePinned, .essentials),
+                 (.folder, .essentials):
+                guard let currentProfileId = resolvedEssentialsProfileId(for: operation) else { return false }
+                return moveShortcutPin(
+                    pin,
+                    to: .essential,
+                    profileId: currentProfileId,
+                    spaceId: nil,
+                    folderId: nil,
+                    index: operation.toIndex
+                ) != nil
 
-        case (.folder(let sourceFolderId), .essentials):
-            guard resolvedEssentialsProfileId(for: operation) != nil,
-                  foldersBySpace.first(where: { $0.value.contains(where: { $0.id == sourceFolderId }) })?.key != nil
-            else { return }
-            guard let currentProfileId = resolvedEssentialsProfileId(for: operation) else { return }
-            _ = moveShortcutPin(
-                pin,
-                to: .essential,
-                profileId: currentProfileId,
-                spaceId: nil,
-                folderId: nil,
-                index: operation.toIndex
-            )
+            case (.spacePinned, .spacePinned(let targetSpaceId)):
+                return moveShortcutPin(
+                    pin,
+                    to: .spacePinned,
+                    profileId: nil,
+                    spaceId: targetSpaceId,
+                    folderId: nil,
+                    index: operation.toIndex
+                ) != nil
 
-        case (.spacePinned, .spacePinned(let targetSpaceId)):
-            _ = moveShortcutPin(
-                pin,
-                to: .spacePinned,
-                profileId: nil,
-                spaceId: targetSpaceId,
-                folderId: nil,
-                index: operation.toIndex
-            )
+            case (.spacePinned, .folder(let targetFolderId)),
+                 (.folder, .folder(let targetFolderId)):
+                guard let targetSpaceId = folderSpaceId(for: targetFolderId) else { return false }
+                return moveShortcutPin(
+                    pin,
+                    to: .spacePinned,
+                    profileId: nil,
+                    spaceId: targetSpaceId,
+                    folderId: targetFolderId,
+                    index: operation.toIndex,
+                    openTargetFolder: false
+                ) != nil
 
-        case (.spacePinned, .folder(let targetFolderId)):
-            guard let targetSpaceId = foldersBySpace.first(where: { $0.value.contains(where: { $0.id == targetFolderId }) })?.key else { return }
-            _ = moveShortcutPin(
-                pin,
-                to: .spacePinned,
-                profileId: nil,
-                spaceId: targetSpaceId,
-                folderId: targetFolderId,
-                index: operation.toIndex,
-                openTargetFolder: false
-            )
+            case (.folder, .spacePinned(let targetSpaceId)):
+                return moveShortcutPin(
+                    pin,
+                    to: .spacePinned,
+                    profileId: nil,
+                    spaceId: targetSpaceId,
+                    folderId: nil,
+                    index: operation.toIndex
+                ) != nil
 
-        case (.folder, .folder(let targetFolderId)):
-            guard let targetSpaceId = foldersBySpace.first(where: { $0.value.contains(where: { $0.id == targetFolderId }) })?.key
-            else { return }
-            _ = moveShortcutPin(
-                pin,
-                to: .spacePinned,
-                profileId: nil,
-                spaceId: targetSpaceId,
-                folderId: targetFolderId,
-                index: operation.toIndex,
-                openTargetFolder: false
-            )
+            case (.spacePinned, .spaceRegular(let targetSpaceId)),
+                 (.folder, .spaceRegular(let targetSpaceId)):
+                removeShortcutPinFromContainers(pin)
+                _ = insertRegularTabFromShortcut(pin, into: targetSpaceId, at: operation.toIndex)
+                scheduleStructuralPersistence()
+                return true
 
-        case (.folder(let sourceFolderId), .spacePinned(let targetSpaceId)):
-            guard foldersBySpace.first(where: { $0.value.contains(where: { $0.id == sourceFolderId }) })?.key != nil else { return }
-            _ = moveShortcutPin(
-                pin,
-                to: .spacePinned,
-                profileId: nil,
-                spaceId: targetSpaceId,
-                folderId: nil,
-                index: operation.toIndex
-            )
-
-        case (.spacePinned, .spaceRegular(let targetSpaceId)),
-             (.folder, .spaceRegular(let targetSpaceId)):
-            removeShortcutPinFromContainers(pin)
-            _ = insertRegularTabFromShortcut(pin, into: targetSpaceId, at: operation.toIndex)
-            scheduleStructuralPersistence()
-
-            case (.spaceRegular, .essentials),
-                 (.spaceRegular, .spacePinned),
-                 (.spaceRegular, .folder),
-                 (.spaceRegular, .spaceRegular),
+            case (.spaceRegular, _),
                  (.none, _),
                  (_, .none):
-                break
+                return false
             }
         }
     }
@@ -478,8 +453,8 @@ private extension TabManager {
             }
         }
 
-        guard let currentIndex else { return proposedIndex }
-        return currentIndex < proposedIndex ? proposedIndex - 1 : proposedIndex
+        guard currentIndex != nil else { return proposedIndex }
+        return proposedIndex
     }
 
     func cloneShortcutPin(

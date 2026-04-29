@@ -171,6 +171,7 @@ struct SidebarAppKitItemConfiguration {
     var isInteractionEnabled: Bool = true
     var menu: SidebarContextMenuLeafConfiguration? = nil
     var dragSource: SidebarDragSourceConfiguration? = nil
+    var dragScope: SidebarDragScope? = nil
     var primaryAction: (() -> Void)? = nil
     var onMiddleClick: (() -> Void)? = nil
     var sourceID: String? = nil
@@ -185,4 +186,3 @@ struct SidebarContextMenuResolvedTarget {
     let entries: [SidebarContextMenuEntry]
     let onMenuVisibilityChanged: (Bool) -> Void
 }
-

@@ -31,26 +31,23 @@ struct DragOperation {
     }
 
     let payload: Payload
+    let scope: SidebarDragScope
     let fromContainer: TabDragManager.DragContainer
     let toContainer: TabDragManager.DragContainer
     let toIndex: Int
-    let toSpaceId: UUID?
-    let toProfileId: UUID?
 
     init(
         payload: Payload,
+        scope: SidebarDragScope,
         fromContainer: TabDragManager.DragContainer,
         toContainer: TabDragManager.DragContainer,
-        toIndex: Int,
-        toSpaceId: UUID?,
-        toProfileId: UUID? = nil
+        toIndex: Int
     ) {
         self.payload = payload
+        self.scope = scope
         self.fromContainer = fromContainer
         self.toContainer = toContainer
         self.toIndex = toIndex
-        self.toSpaceId = toSpaceId
-        self.toProfileId = toProfileId
     }
 
     var tab: Tab? {

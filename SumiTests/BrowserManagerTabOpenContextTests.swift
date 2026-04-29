@@ -210,7 +210,7 @@ final class BrowserManagerTabOpenContextTests: XCTestCase {
         XCTAssertTrue(browserManager.tabManager.essentialPins(for: globalProfile.id).isEmpty)
     }
 
-    func testRegularDropToEssentialsUsesTargetSpaceProfileInsteadOfGlobalCurrentProfile() {
+    func testRegularDropToEssentialsUsesCurrentSidebarProfile() {
         let browserManager = BrowserManager()
 
         let globalProfile = Profile(name: "Global")
@@ -219,8 +219,7 @@ final class BrowserManagerTabOpenContextTests: XCTestCase {
         browserManager.currentProfile = globalProfile
 
         let sourceSpace = Space(name: "Source", profileId: globalProfile.id)
-        let targetSpace = Space(name: "Target", profileId: targetProfile.id)
-        browserManager.tabManager.spaces = [sourceSpace, targetSpace]
+        browserManager.tabManager.spaces = [sourceSpace]
 
         let tab = browserManager.tabManager.createNewTab(
             url: "https://drag.example",
@@ -231,18 +230,24 @@ final class BrowserManagerTabOpenContextTests: XCTestCase {
         browserManager.tabManager.performSidebarDragOperation(
             DragOperation(
                 payload: .tab(tab),
+                scope: SidebarDragScope(
+                    spaceId: sourceSpace.id,
+                    profileId: globalProfile.id,
+                    sourceContainer: .spaceRegular(sourceSpace.id),
+                    sourceItemId: tab.id,
+                    sourceItemKind: .tab
+                ),
                 fromContainer: .spaceRegular(sourceSpace.id),
                 toContainer: .essentials,
-                toIndex: 0,
-                toSpaceId: targetSpace.id
+                toIndex: 0
             )
         )
 
-        XCTAssertEqual(browserManager.tabManager.essentialPins(for: targetProfile.id).count, 1)
-        XCTAssertTrue(browserManager.tabManager.essentialPins(for: globalProfile.id).isEmpty)
+        XCTAssertEqual(browserManager.tabManager.essentialPins(for: globalProfile.id).count, 1)
+        XCTAssertTrue(browserManager.tabManager.essentialPins(for: targetProfile.id).isEmpty)
     }
 
-    func testPinnedDropToEssentialsUsesExplicitTargetProfileForSecondarySpace() {
+    func testPinnedDropToEssentialsRejectsMismatchedScopeProfile() {
         let browserManager = BrowserManager()
 
         let globalProfile = Profile(name: "Global")
@@ -251,8 +256,7 @@ final class BrowserManagerTabOpenContextTests: XCTestCase {
         browserManager.currentProfile = globalProfile
 
         let sourceSpace = Space(name: "Source", profileId: globalProfile.id)
-        let hoveredSpace = Space(name: "Hovered", profileId: targetProfile.id)
-        browserManager.tabManager.spaces = [sourceSpace, hoveredSpace]
+        browserManager.tabManager.spaces = [sourceSpace]
 
         let pin = ShortcutPin(
             id: UUID(),
@@ -264,19 +268,25 @@ final class BrowserManagerTabOpenContextTests: XCTestCase {
         )
         browserManager.tabManager.setSpacePinnedShortcuts([pin], for: sourceSpace.id)
 
-        browserManager.tabManager.performSidebarDragOperation(
+        let accepted = browserManager.tabManager.performSidebarDragOperation(
             DragOperation(
                 payload: .pin(pin),
+                scope: SidebarDragScope(
+                    spaceId: sourceSpace.id,
+                    profileId: targetProfile.id,
+                    sourceContainer: .spacePinned(sourceSpace.id),
+                    sourceItemId: pin.id,
+                    sourceItemKind: .tab
+                ),
                 fromContainer: .spacePinned(sourceSpace.id),
                 toContainer: .essentials,
-                toIndex: 0,
-                toSpaceId: sourceSpace.id,
-                toProfileId: targetProfile.id
+                toIndex: 0
             )
         )
 
-        XCTAssertTrue(browserManager.tabManager.spacePinnedPins(for: sourceSpace.id).isEmpty)
-        XCTAssertEqual(browserManager.tabManager.essentialPins(for: targetProfile.id).count, 1)
+        XCTAssertFalse(accepted)
+        XCTAssertEqual(browserManager.tabManager.spacePinnedPins(for: sourceSpace.id).map(\.id), [pin.id])
+        XCTAssertTrue(browserManager.tabManager.essentialPins(for: targetProfile.id).isEmpty)
         XCTAssertTrue(browserManager.tabManager.essentialPins(for: globalProfile.id).isEmpty)
     }
 

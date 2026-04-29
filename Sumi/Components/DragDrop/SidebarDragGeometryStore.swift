@@ -173,9 +173,22 @@ extension SidebarDragState {
         sectionFramesBySpace[SidebarSectionGeometryKey(spaceId: spaceId, section: section)]
     }
 
-    func hoveredInteractivePage(at location: CGPoint) -> SidebarPageGeometryMetrics? {
+    func hoveredInteractivePage(
+        at location: CGPoint,
+        matching scope: SidebarDragScope? = nil
+    ) -> SidebarPageGeometryMetrics? {
         pageGeometryByKey.values
-            .filter { $0.renderMode == .interactive && $0.frame.contains(location) }
+            .filter { metrics in
+                guard metrics.renderMode == .interactive,
+                      metrics.frame.contains(location) else {
+                    return false
+                }
+                guard let scope else {
+                    return true
+                }
+                return metrics.spaceId == scope.spaceId
+                    && scope.matches(profileId: metrics.profileId)
+            }
             .sorted { lhs, rhs in
                 let leftArea = lhs.frame.width * lhs.frame.height
                 let rightArea = rhs.frame.width * rhs.frame.height

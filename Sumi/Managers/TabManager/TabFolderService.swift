@@ -150,12 +150,13 @@ final class TabFolderService {
         }
     }
 
-    func handleFolderDragOperation(_ folder: TabFolder, operation: DragOperation) {
+    @discardableResult
+    func handleFolderDragOperation(_ folder: TabFolder, operation: DragOperation) -> Bool {
         switch (operation.fromContainer, operation.toContainer) {
         case (.spacePinned(let fromSpaceId), .spacePinned(let toSpaceId)) where fromSpaceId == toSpaceId:
-            tabManager.reorderFolderInTopLevelPinned(folder, in: toSpaceId, to: operation.toIndex)
+            return tabManager.reorderFolderInTopLevelPinned(folder, in: toSpaceId, to: operation.toIndex)
         default:
-            return
+            return false
         }
     }
 

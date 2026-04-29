@@ -18,6 +18,7 @@ final class SidebarDragState: ObservableObject {
     @Published var previewAssets: [SidebarDragPreviewKind: SidebarDragPreviewAsset] = [:]
     @Published var previewModel: SidebarDragPreviewModel? = nil
     @Published var isInternalDragSession: Bool = false
+    @Published var activeDragScope: SidebarDragScope? = nil
     
     // For Zen's auto workspace switch
     @Published var isHoveringNearEdge: Bool = false
@@ -186,6 +187,7 @@ final class SidebarDragState: ObservableObject {
         previewAssets = [:]
         previewModel = nil
         isInternalDragSession = false
+        activeDragScope = nil
         isHoveringNearEdge = false
         clearEssentialsPreviewState()
     }
@@ -230,7 +232,8 @@ final class SidebarDragState: ObservableObject {
         previewLocation: CGPoint? = nil,
         previewKind: SidebarDragPreviewKind,
         previewAssets: [SidebarDragPreviewKind: SidebarDragPreviewAsset],
-        previewModel: SidebarDragPreviewModel? = nil
+        previewModel: SidebarDragPreviewModel? = nil,
+        scope: SidebarDragScope? = nil
     ) {
         isDragging = true
         activeDragItemId = itemId
@@ -240,6 +243,7 @@ final class SidebarDragState: ObservableObject {
         self.previewAssets = previewAssets
         self.previewModel = previewModel
         isInternalDragSession = true
+        activeDragScope = scope
         clearEssentialsPreviewState()
         requestGeometryRefresh()
     }
@@ -249,6 +253,7 @@ final class SidebarDragState: ObservableObject {
         activeDragItemId = itemId
         previewDragLocation = nil
         isInternalDragSession = false
+        activeDragScope = nil
         clearEssentialsPreviewState()
         requestGeometryRefresh()
     }
@@ -277,8 +282,9 @@ final class SidebarDragState: ObservableObject {
     ) {
         guard isDragging,
               previewAssets[.essentialsTile] != nil,
-              let hoveredPage = hoveredInteractivePage(at: location),
+              let hoveredPage = hoveredInteractivePage(at: location, matching: activeDragScope),
               let metrics = essentialsLayoutMetricsBySpace[hoveredPage.spaceId],
+              activeDragScope?.matches(profileId: metrics.profileId) != false,
               metrics.dropFrame.contains(location),
               metrics.canAcceptDrop,
               metrics.maxDropRowCount > metrics.visibleRowCount else {

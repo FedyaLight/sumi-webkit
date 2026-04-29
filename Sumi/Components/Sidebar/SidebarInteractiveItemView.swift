@@ -520,7 +520,8 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
             previewLocation: previewLocation,
             previewKind: configuration.previewKind,
             previewAssets: previewSession.previewAssets,
-            previewModel: previewSession.previewModel
+            previewModel: previewSession.previewModel,
+            scope: itemConfiguration.dragScope
         )
         RuntimeDiagnostics.emit(
             "🧭 Sidebar drag started owner=\(recoveryDebugDescription) item=\(configuration.item.tabId.uuidString) source=\(sidebarDropZoneDebugDescription(configuration.sourceZone)) isDragging=\(SidebarDragState.shared.isDragging)"

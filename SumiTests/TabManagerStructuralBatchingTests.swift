@@ -27,10 +27,15 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         tabManager.performSidebarDragOperation(
             DragOperation(
                 payload: .folder(folder),
+                scope: SidebarDragScope(
+                    spaceId: space.id,
+                    sourceContainer: .spacePinned(space.id),
+                    sourceItemId: folder.id,
+                    sourceItemKind: .folder
+                ),
                 fromContainer: .spacePinned(space.id),
                 toContainer: .spacePinned(space.id),
-                toIndex: 0,
-                toSpaceId: space.id
+                toIndex: 0
             )
         )
 
