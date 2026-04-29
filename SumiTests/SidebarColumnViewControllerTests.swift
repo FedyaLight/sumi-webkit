@@ -259,13 +259,16 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         XCTAssertNil(surface.hitTest(NSPoint(x: 5, y: 5)))
     }
 
-    func testSidebarDragSourceDisarmStopsHitTestingAndResetsPartialMouseState() {
-        let dragView = SidebarDragSourceView(frame: NSRect(x: 0, y: 0, width: 40, height: 40))
+    func testSidebarInteractiveItemDisarmStopsHitTestingAndResetsPartialMouseState() {
+        let dragView = SidebarInteractiveItemView(frame: NSRect(x: 0, y: 0, width: 40, height: 40))
         dragView.update(
-            configuration: SidebarDragSourceConfiguration(
-                item: SumiDragItem(tabId: UUID(), title: "Drag"),
-                sourceZone: .spaceRegular(UUID()),
-                previewKind: .row
+            rootView: AnyView(Color.clear.frame(width: 40, height: 40)),
+            configuration: SidebarAppKitItemConfiguration(
+                dragSource: SidebarDragSourceConfiguration(
+                    item: SumiDragItem(tabId: UUID(), title: "Drag"),
+                    sourceZone: .spaceRegular(UUID()),
+                    previewKind: .row
+                )
             )
         )
 
@@ -300,35 +303,6 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         )
 
         XCTAssertFalse(SidebarDragState.shared.isDragging)
-    }
-
-    func testSidebarDragSourceDismantleDisarmsView() {
-        let dragView = SidebarDragSourceView(frame: NSRect(x: 0, y: 0, width: 40, height: 40))
-        dragView.update(
-            configuration: SidebarDragSourceConfiguration(
-                item: SumiDragItem(tabId: UUID(), title: "Drag"),
-                sourceZone: .spaceRegular(UUID()),
-                previewKind: .row
-            )
-        )
-
-        SidebarDragSourceBridge.dismantleNSView(
-            dragView,
-            coordinator: SidebarDragSourceBridge.Coordinator(
-                configuration: SidebarDragSourceConfiguration(
-                    item: SumiDragItem(tabId: UUID(), title: "Drag"),
-                    sourceZone: .spaceRegular(UUID()),
-                    previewKind: .row
-                )
-            )
-        )
-
-        XCTAssertFalse(
-            dragView.shouldCaptureInteraction(
-                at: NSPoint(x: 5, y: 5),
-                eventType: .leftMouseDown
-            )
-        )
     }
 
     func testSidebarColumnRoutingPrefersRegisteredOwnerForRightClickWhenOriginalHitIsHostedView() {
