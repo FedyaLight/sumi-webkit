@@ -53,6 +53,13 @@ enum BrowserWindowTrafficLightMetrics {
     }
 }
 
+enum BrowserWindowTrafficLightPlaceholderPalette {
+    static let close = Color(hex: "EC6A5E")
+    static let minimize = Color(hex: "F4BF4F")
+    static let zoom = Color(hex: "62C554")
+    static let unfocused = Color(hex: "4E4F52")
+}
+
 @MainActor
 final class BrowserWindowTrafficLightRenderState: ObservableObject {
     @Published var isNativeClusterVisible = false
@@ -82,9 +89,9 @@ struct BrowserWindowTrafficLightPlaceholderCluster: View {
 
     var body: some View {
         HStack(spacing: BrowserWindowTrafficLightMetrics.buttonSpacing) {
-            placeholderCircle(color: Color(nsColor: .systemRed))
-            placeholderCircle(color: Color(nsColor: .systemYellow))
-            placeholderCircle(color: Color(nsColor: .systemGreen))
+            placeholderCircle(color: BrowserWindowTrafficLightPlaceholderPalette.close)
+            placeholderCircle(color: BrowserWindowTrafficLightPlaceholderPalette.minimize)
+            placeholderCircle(color: BrowserWindowTrafficLightPlaceholderPalette.zoom)
         }
         .frame(
             width: isVisible ? BrowserWindowTrafficLightMetrics.sidebarReservedWidth : 0,
