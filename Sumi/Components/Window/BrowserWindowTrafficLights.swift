@@ -170,19 +170,9 @@ struct BrowserWindowNativeTrafficLightVisibilityBridge: NSViewRepresentable {
     final class Coordinator {
         private enum Timing {
             static let resizeStabilizationDelay: TimeInterval = 0.06
-            static let fullScreenExitStabilizationDelay: TimeInterval = 0.28
-            static let fullScreenExitTransitionHideDuration: TimeInterval = 0.48
-            static let hiddenMaintenanceDelays: [TimeInterval] = [
-                0,
-                0.016,
-                0.033,
-                0.066,
-                0.10,
-                0.16,
-                0.24,
-                0.34,
-                0.48,
-            ]
+            static let fullScreenExitStabilizationDelay: TimeInterval = 0.72
+            static let fullScreenExitTransitionHideDuration: TimeInterval = 1.10
+            static let hiddenMaintenanceInterval: TimeInterval = 1.0 / 60.0
         }
 
         private weak var window: NSWindow?
@@ -194,6 +184,7 @@ struct BrowserWindowNativeTrafficLightVisibilityBridge: NSViewRepresentable {
         private var revealDelay: TimeInterval = 0
         private var revealGeneration: UInt = 0
         private var isFinishingFullScreenExit = false
+        private var fullScreenExitClickMonitor: Any?
 
         func attach(to window: NSWindow?) {
             guard self.window !== window else { return }
@@ -201,6 +192,7 @@ struct BrowserWindowNativeTrafficLightVisibilityBridge: NSViewRepresentable {
             detach()
             self.window = window
             installWindowChromeObservers(for: window)
+            installFullScreenExitClickMonitor()
             applyVisibilityPolicy()
         }
 
@@ -233,6 +225,10 @@ struct BrowserWindowNativeTrafficLightVisibilityBridge: NSViewRepresentable {
                 NotificationCenter.default.removeObserver(observer)
             }
             observers.removeAll()
+            if let fullScreenExitClickMonitor {
+                NSEvent.removeMonitor(fullScreenExitClickMonitor)
+            }
+            fullScreenExitClickMonitor = nil
             revealGeneration &+= 1
             isFinishingFullScreenExit = false
             renderState?.isNativeClusterVisible = false
@@ -265,6 +261,45 @@ struct BrowserWindowNativeTrafficLightVisibilityBridge: NSViewRepresentable {
                     }
                 )
             }
+        }
+
+        private func installFullScreenExitClickMonitor() {
+            guard fullScreenExitClickMonitor == nil else { return }
+
+            fullScreenExitClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+                let shouldConsume = MainActor.assumeIsolated {
+                    guard let self else { return false }
+                    return self.shouldConsumeFullScreenExitClick(event)
+                }
+                return shouldConsume ? nil : event
+            }
+        }
+
+        private func shouldConsumeFullScreenExitClick(_ event: NSEvent) -> Bool {
+            guard let window,
+                  isFinishingFullScreenExit == false,
+                  window.styleMask.contains(.fullScreen),
+                  let zoomButton = window.standardWindowButton(.zoomButton),
+                  eventHits(button: zoomButton, event: event)
+            else {
+                return false
+            }
+
+            beginFullScreenExitPlaceholderGate()
+            window.toggleFullScreen(nil)
+            return true
+        }
+
+        private func eventHits(button: NSButton, event: NSEvent) -> Bool {
+            guard let eventWindow = event.window,
+                  let buttonWindow = button.window
+            else { return false }
+
+            let eventRect = NSRect(origin: event.locationInWindow, size: .zero)
+            let screenRect = eventWindow.convertToScreen(eventRect)
+            let buttonWindowPoint = buttonWindow.convertFromScreen(screenRect).origin
+            let buttonPoint = button.convert(buttonWindowPoint, from: nil)
+            return button.bounds.contains(buttonPoint)
         }
 
         private func handleWindowChromeNotification(_ notification: Notification) {
@@ -417,7 +452,10 @@ struct BrowserWindowNativeTrafficLightVisibilityBridge: NSViewRepresentable {
             generation: UInt,
             duration: TimeInterval
         ) {
-            for delay in Timing.hiddenMaintenanceDelays where delay <= duration {
+            let stepCount = max(1, Int(ceil(duration / Timing.hiddenMaintenanceInterval)))
+
+            for step in 0...stepCount {
+                let delay = TimeInterval(step) * Timing.hiddenMaintenanceInterval
                 let deadline = DispatchTime.now() + .nanoseconds(Int(delay * 1_000_000_000))
                 DispatchQueue.main.asyncAfter(deadline: deadline) { [weak self] in
                     self?.keepNativeButtonsHiddenIfTransitionIsCurrent(generation: generation)

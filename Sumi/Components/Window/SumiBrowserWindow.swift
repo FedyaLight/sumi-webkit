@@ -213,6 +213,7 @@ extension NSWindow {
         verticalOffset: CGFloat = 0
     ) {
         guard isVisible else {
+            captureNativeStandardWindowButtonBaseFramesIfNeeded(buttonTypes: buttonTypes)
             for type in buttonTypes {
                 guard let button = standardWindowButton(type) else { continue }
                 applyNativeStandardWindowButtonState(button, isVisible: false)
@@ -233,18 +234,57 @@ extension NSWindow {
     }
 
     private func applyNativeStandardWindowButtonState(_ button: NSButton, isVisible: Bool) {
-        button.alphaValue = isVisible ? 1 : 0
-        button.isHidden = !isVisible
-        button.isEnabled = isVisible
-        button.setAccessibilityElement(isVisible)
+        button.wantsLayer = true
+        button.layer?.removeAllAnimations()
+        button.superview?.layer?.removeAllAnimations()
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            context.allowsImplicitAnimation = false
+            button.layer?.opacity = isVisible ? 1 : 0
+            button.isTransparent = !isVisible
+            if isVisible == false {
+                button.frame = parkedNativeStandardWindowButtonFrame(for: button)
+            }
+            button.alphaValue = isVisible ? 1 : 0
+            button.isHidden = !isVisible
+            button.isEnabled = isVisible
+            button.setAccessibilityElement(isVisible)
+        }
+
         button.updateTrackingAreas()
         button.needsDisplay = true
         if let superview = button.superview {
             superview.updateTrackingAreas()
             superview.needsDisplay = true
-            superview.needsLayout = true
+            if isVisible {
+                superview.needsLayout = true
+            }
             invalidateCursorRects(for: superview)
         }
+    }
+
+    private func captureNativeStandardWindowButtonBaseFramesIfNeeded(
+        buttonTypes: [NSWindow.ButtonType]
+    ) {
+        var baseFrames = nativeStandardButtonBaseFrames
+
+        for type in buttonTypes {
+            let key = Int(type.rawValue)
+            guard baseFrames[key] == nil,
+                  let button = standardWindowButton(type)
+            else { continue }
+
+            baseFrames[key] = button.frame
+        }
+
+        nativeStandardButtonBaseFrames = baseFrames
+    }
+
+    private func parkedNativeStandardWindowButtonFrame(for button: NSButton) -> NSRect {
+        var frame = button.frame
+        frame.origin.x = -10_000 - frame.width
+        return frame
     }
 
     private func alignNativeStandardWindowButtonsForBrowserChrome(
