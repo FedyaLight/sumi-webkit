@@ -679,6 +679,13 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
             contextMenuController: windowState.sidebarContextMenuController,
             capturesPanelBackgroundPointerEvents: presentationContext.capturesPanelBackgroundPointerEvents
         )
+        #if DEBUG
+        SidebarDebugMetrics.recordCollapsedSidebarHost(
+            controller: controller,
+            presentationMode: presentationContext.mode,
+            isMounted: presentationContext.isCollapsedOverlay
+        )
+        #endif
         controller.updatePointerSuppression(
             presentationContext: presentationContext,
             windowState: windowState,
@@ -687,6 +694,12 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
     }
 
     static func dismantleNSViewController(_ nsViewController: SidebarColumnViewController, coordinator: ()) {
+        #if DEBUG
+        SidebarDebugMetrics.recordCollapsedHiddenSidebarHost(
+            controller: nsViewController,
+            isMounted: false
+        )
+        #endif
         nsViewController.teardownSidebarHosting()
     }
 }

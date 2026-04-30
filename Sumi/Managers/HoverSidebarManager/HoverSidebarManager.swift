@@ -84,6 +84,7 @@ enum HoverSidebarVisibilityPolicy {
 final class HoverSidebarManager: ObservableObject {
     // MARK: - Published State
     @Published var isOverlayVisible: Bool = false
+    @Published private(set) var isOverlayHostPrewarmed: Bool = false
 
     // MARK: - Configuration
     /// Width inside the window that triggers reveal when hovered.
@@ -109,6 +110,8 @@ final class HoverSidebarManager: ObservableObject {
     private var isMouseUpdateScheduled: Bool = false
     private var lastScheduledMouseLocation: CGPoint?
     private var lastMouseUpdateScheduledAt: CFTimeInterval = 0
+    private var overlayHostPrewarmGeneration: UInt64 = 0
+    private var overlayVisibilityGeneration: UInt64 = 0
     private let duplicateMouseMovementThreshold: CGFloat = 0.5
     private let mouseUpdateBypassDistance: CGFloat = 8
     private let mouseUpdateMinimumInterval: CFTimeInterval = 1.0 / 60.0
@@ -147,9 +150,7 @@ final class HoverSidebarManager: ObservableObject {
               !activeState.isSidebarVisible
         else {
             uninstallMonitors()
-            if isOverlayVisible {
-                isOverlayVisible = false
-            }
+            resetOverlayVisibilityAndHost()
             return
         }
 
@@ -176,7 +177,9 @@ final class HoverSidebarManager: ObservableObject {
     func stop() {
         isActive = false
         uninstallMonitors()
-        DispatchQueue.main.async { [weak self] in self?.isOverlayVisible = false }
+        DispatchQueue.main.async { [weak self] in
+            self?.resetOverlayVisibilityAndHost()
+        }
     }
 
     deinit { stop() }
@@ -232,25 +235,19 @@ final class HoverSidebarManager: ObservableObject {
 
         // Never show overlay while the real sidebar is visible
         if activeState.isSidebarVisible {
-            if isOverlayVisible {
-                isOverlayVisible = false
-            }
+            resetOverlayVisibilityAndHost()
             return
         }
 
         if activeState.sidebarTransientSessionCoordinator.hasPinnedTransientUI(for: activeState.id) {
             if !isOverlayVisible {
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    isOverlayVisible = true
-                }
+                requestOverlayReveal(animationDuration: 0.15)
             }
             return
         }
 
         guard let window = activeState.window else {
-            if isOverlayVisible {
-                isOverlayVisible = false
-            }
+            resetOverlayVisibilityAndHost()
             return
         }
 
@@ -276,10 +273,76 @@ final class HoverSidebarManager: ObservableObject {
             verticalSlack: verticalSlack
         )
 
-        if shouldShow != isOverlayVisible {
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isOverlayVisible = shouldShow
+        if shouldShow {
+            if !isOverlayVisible {
+                requestOverlayReveal(animationDuration: 0.15)
             }
+        } else if isOverlayVisible || isOverlayHostPrewarmed {
+            hideOverlay(animationDuration: 0.15)
+        }
+    }
+
+    func requestOverlayReveal(animationDuration: TimeInterval) {
+        prewarmOverlayHost()
+        overlayVisibilityGeneration &+= 1
+        let generation = overlayVisibilityGeneration
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  generation == self.overlayVisibilityGeneration
+            else { return }
+
+            withAnimation(.easeInOut(duration: animationDuration)) {
+                self.isOverlayVisible = true
+            }
+        }
+    }
+
+    func setOverlayVisibility(_ isVisible: Bool, animationDuration: TimeInterval) {
+        if isVisible {
+            requestOverlayReveal(animationDuration: animationDuration)
+        } else {
+            hideOverlay(animationDuration: animationDuration)
+        }
+    }
+
+    private func hideOverlay(animationDuration: TimeInterval) {
+        overlayVisibilityGeneration &+= 1
+        withAnimation(.easeInOut(duration: animationDuration)) {
+            isOverlayVisible = false
+        }
+        releaseOverlayHostWhenIdle(after: animationDuration)
+    }
+
+    private func prewarmOverlayHost() {
+        overlayHostPrewarmGeneration &+= 1
+        if !isOverlayHostPrewarmed {
+            isOverlayHostPrewarmed = true
+        }
+    }
+
+    private func releaseOverlayHostWhenIdle(after delay: TimeInterval) {
+        overlayHostPrewarmGeneration &+= 1
+        let generation = overlayHostPrewarmGeneration
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self,
+                  generation == self.overlayHostPrewarmGeneration,
+                  !self.isOverlayVisible
+            else { return }
+
+            self.isOverlayHostPrewarmed = false
+        }
+    }
+
+    private func resetOverlayVisibilityAndHost() {
+        overlayVisibilityGeneration &+= 1
+        overlayHostPrewarmGeneration &+= 1
+        if isOverlayVisible {
+            isOverlayVisible = false
+        }
+        if isOverlayHostPrewarmed {
+            isOverlayHostPrewarmed = false
         }
     }
 

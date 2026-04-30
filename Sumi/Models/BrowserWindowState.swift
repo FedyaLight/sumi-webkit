@@ -228,6 +228,11 @@ class BrowserWindowState {
             let reasons = self.pendingSidebarInputRecoveryReasons
             self.pendingSidebarInputRecoveryReasons.removeAll()
             self.sidebarInputRecoveryGeneration &+= 1
+            #if DEBUG
+            for reason in reasons {
+                SidebarDebugMetrics.recordHardSidebarInputRehydrate(reason: reason)
+            }
+            #endif
 
             RuntimeDiagnostics.emit(
                 "🧭 Sidebar input recovery generation=\(self.sidebarInputRecoveryGeneration) window=\(self.id.uuidString) reason=\(reasons.joined(separator: ","))"

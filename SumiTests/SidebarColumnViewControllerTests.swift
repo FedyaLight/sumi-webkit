@@ -667,6 +667,142 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         XCTAssertTrue(routed === owner)
     }
 
+    func testSidebarHoverOverlayHostMountPolicySkipsHiddenIdleAndDockedStates() {
+        XCTAssertFalse(
+            SidebarHoverOverlayHostMountPolicy.shouldMountCollapsedHost(
+                isSidebarVisible: false,
+                isOverlayVisible: false,
+                isOverlayHostPrewarmed: false,
+                transientUIPinsHoverSidebar: false,
+                sidebarDragPinsHoverSidebar: false
+            )
+        )
+        XCTAssertFalse(
+            SidebarHoverOverlayHostMountPolicy.shouldMountCollapsedHost(
+                isSidebarVisible: true,
+                isOverlayVisible: true,
+                isOverlayHostPrewarmed: true,
+                transientUIPinsHoverSidebar: true,
+                sidebarDragPinsHoverSidebar: true
+            )
+        )
+    }
+
+    func testSidebarHoverOverlayHostMountPolicyMountsForRevealPrewarmTransientAndDragPins() {
+        XCTAssertTrue(
+            SidebarHoverOverlayHostMountPolicy.shouldMountCollapsedHost(
+                isSidebarVisible: false,
+                isOverlayVisible: true,
+                isOverlayHostPrewarmed: false,
+                transientUIPinsHoverSidebar: false,
+                sidebarDragPinsHoverSidebar: false
+            )
+        )
+        XCTAssertTrue(
+            SidebarHoverOverlayHostMountPolicy.shouldMountCollapsedHost(
+                isSidebarVisible: false,
+                isOverlayVisible: false,
+                isOverlayHostPrewarmed: true,
+                transientUIPinsHoverSidebar: false,
+                sidebarDragPinsHoverSidebar: false
+            )
+        )
+        XCTAssertTrue(
+            SidebarHoverOverlayHostMountPolicy.shouldMountCollapsedHost(
+                isSidebarVisible: false,
+                isOverlayVisible: false,
+                isOverlayHostPrewarmed: false,
+                transientUIPinsHoverSidebar: true,
+                sidebarDragPinsHoverSidebar: false
+            )
+        )
+        XCTAssertTrue(
+            SidebarHoverOverlayHostMountPolicy.shouldMountCollapsedHost(
+                isSidebarVisible: false,
+                isOverlayVisible: false,
+                isOverlayHostPrewarmed: false,
+                transientUIPinsHoverSidebar: false,
+                sidebarDragPinsHoverSidebar: true
+            )
+        )
+    }
+
+    func testRightSidebarCollapsedRevealUsesSameHostMountPolicy() {
+        let hidden = SidebarPresentationContext.collapsedHidden(
+            sidebarWidth: 280,
+            sidebarPosition: .right
+        )
+        let visible = SidebarPresentationContext.collapsedVisible(
+            sidebarWidth: 280,
+            sidebarPosition: .right
+        )
+
+        XCTAssertTrue(hidden.shellEdge.isRight)
+        XCTAssertTrue(visible.shellEdge.isRight)
+        XCTAssertFalse(
+            SidebarHoverOverlayHostMountPolicy.shouldMountCollapsedHost(
+                isSidebarVisible: false,
+                isOverlayVisible: false,
+                isOverlayHostPrewarmed: false,
+                transientUIPinsHoverSidebar: false,
+                sidebarDragPinsHoverSidebar: false
+            )
+        )
+        XCTAssertTrue(
+            SidebarHoverOverlayHostMountPolicy.shouldMountCollapsedHost(
+                isSidebarVisible: false,
+                isOverlayVisible: true,
+                isOverlayHostPrewarmed: false,
+                transientUIPinsHoverSidebar: false,
+                sidebarDragPinsHoverSidebar: false
+            )
+        )
+    }
+
+    func testSidebarHoverOverlaySourceMountsFullHostOnlyBehindMountPolicy() throws {
+        let source = try Self.source(named: "Sumi/Components/Sidebar/SidebarHoverOverlayView.swift")
+        let bodyStart = try XCTUnwrap(source.range(of: "var body: some View")).lowerBound
+        let hostStart = try XCTUnwrap(source.range(of: "private var sidebarHost")).lowerBound
+        let bodySource = String(source[bodyStart..<hostStart])
+
+        XCTAssertTrue(source.contains("enum SidebarHoverOverlayHostMountPolicy"))
+        XCTAssertTrue(bodySource.contains("if shouldMountCollapsedSidebarHost"))
+        XCTAssertTrue(bodySource.contains("sidebarHost"))
+        XCTAssertTrue(bodySource.contains(".frame(width: hoverManager.triggerWidth)"))
+        XCTAssertTrue(bodySource.contains("hoverManager.requestOverlayReveal"))
+        XCTAssertTrue(bodySource.contains(".allowsHitTesting(false)"))
+    }
+
+    func testSidebarColumnContainerDoesNotContainObsoleteCursorShieldLayer() throws {
+        let source = try Self.source(named: "Sumi/Components/Sidebar/SidebarColumnViewController.swift")
+        let containerStart = try XCTUnwrap(source.range(of: "private final class SidebarColumnContainerView"))
+        let containerEnd = try XCTUnwrap(source.range(of: "private enum SidebarColumnPaintlessChrome"))
+        let containerSource = String(source[containerStart.lowerBound..<containerEnd.lowerBound])
+
+        XCTAssertTrue(containerSource.contains("CollapsedSidebarPointerSuppressionController") == false)
+        XCTAssertTrue(containerSource.contains("capturesPanelBackgroundPointerEvents"))
+        XCTAssertFalse(containerSource.contains("resetCursorRects"))
+        XCTAssertFalse(containerSource.contains("cursorUpdate(with:"))
+        XCTAssertFalse(containerSource.contains("NSTrackingArea"))
+        XCTAssertFalse(containerSource.contains("trackingArea"))
+        XCTAssertFalse(containerSource.contains("invalidateCursorRects"))
+    }
+
+    func testCollapsedSidebarPointerSuppressionRemainsOnlySidebarCursorLeakSuppressionPath() throws {
+        let columnSource = try Self.source(named: "Sumi/Components/Sidebar/SidebarColumnViewController.swift")
+        let suppressionSource = try Self.source(
+            named: "Sumi/Components/Sidebar/CollapsedSidebarPointerSuppressionController.swift"
+        )
+
+        XCTAssertTrue(columnSource.contains("private let pointerSuppressionController = CollapsedSidebarPointerSuppressionController()"))
+        XCTAssertFalse(columnSource.contains("override func resetCursorRects"))
+        XCTAssertFalse(columnSource.contains("override func cursorUpdate(with"))
+        XCTAssertFalse(columnSource.contains("NSTrackingArea"))
+        XCTAssertTrue(suppressionSource.contains("NSEvent.addLocalMonitorForEvents(matching: mask, handler: handler)"))
+        XCTAssertTrue(suppressionSource.contains("static let monitoredEventTypes: NSEvent.EventTypeMask = [.mouseMoved, .cursorUpdate]"))
+        XCTAssertFalse(suppressionSource.contains("addGlobalMonitorForEvents"))
+    }
+
     func testCollapsedSidebarPointerSuppressionInstallsOnlyForActiveCollapsedVisiblePanel() {
         let recorder = CollapsedSidebarPointerSuppressionRecorder()
         let controller = CollapsedSidebarPointerSuppressionController(
@@ -781,6 +917,31 @@ final class SidebarColumnViewControllerTests: XCTestCase {
 
         XCTAssertFalse(controller.isMonitorInstalledForTesting)
         XCTAssertEqual(recorder.removedMonitorCount, 4)
+    }
+
+    func testCollapsedSidebarPointerSuppressionRemovesMonitorOnDeinit() {
+        let recorder = CollapsedSidebarPointerSuppressionRecorder()
+        do {
+            let controller = CollapsedSidebarPointerSuppressionController(
+                eventMonitors: recorder.client,
+                setArrowCursor: {},
+                requiresKeyWindow: false
+            )
+            let (window, panel) = makePointerSuppressionPanel(frame: NSRect(x: 0, y: 0, width: 120, height: 200))
+
+            controller.update(
+                window: window,
+                panelView: panel,
+                hostedSidebarView: nil,
+                isCollapsedVisible: true,
+                isSidebarCollapsed: true,
+                isBrowserWindowActive: true
+            )
+
+            XCTAssertTrue(controller.isMonitorInstalledForTesting)
+        }
+
+        XCTAssertEqual(recorder.removedMonitorCount, 1)
     }
 
     func testCollapsedSidebarPointerSuppressionSuppressesBackgroundEventAndSetsArrow() throws {
@@ -965,6 +1126,81 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         XCTAssertFalse(source.contains("addGlobalMonitorForEvents"))
         XCTAssertFalse(source.contains("addGlobalMonitor"))
     }
+
+    #if DEBUG
+    func testSidebarDebugMetricsSnapshotAndReset() {
+        SidebarDebugMetrics.resetForTesting()
+
+        var owner: SidebarInteractiveItemView? = SidebarInteractiveItemView(
+            frame: NSRect(x: 0, y: 0, width: 40, height: 40)
+        )
+        let controller = makeSidebarContextMenuController(interactionState: SidebarInteractionState())
+        owner?.contextMenuController = controller
+
+        let columnController = SidebarColumnViewController()
+        SidebarDebugMetrics.recordCollapsedHiddenSidebarHost(
+            controller: columnController,
+            isMounted: true
+        )
+
+        let windowState = BrowserWindowState()
+        windowState.scheduleSidebarInputRehydrate(reason: "debug-test")
+        drainMainRunLoop()
+
+        let dragState = SidebarDragState()
+        let spaceID = UUID()
+        dragState.schedulePageGeometry(
+            spaceId: spaceID,
+            profileId: nil,
+            frame: CGRect(x: 0, y: 0, width: 200, height: 300),
+            renderMode: .interactive,
+            generation: dragState.activeGeometryGeneration
+        )
+        dragState.publishGeometrySnapshotForTesting()
+
+        var snapshot = SidebarDebugMetrics.snapshot(dragState: dragState)
+        XCTAssertEqual(snapshot.liveInteractiveItemViewCount, 1)
+        XCTAssertEqual(snapshot.liveInteractiveOwnerAttachmentCount, 1)
+        XCTAssertEqual(snapshot.interactiveOwnerHostingViewCreatedCount, 1)
+        XCTAssertEqual(snapshot.mountedCollapsedSidebarHostCount, 1)
+        XCTAssertEqual(snapshot.collapsedHiddenMountedSidebarHostCount, 1)
+        XCTAssertEqual(snapshot.hardSidebarInputRehydrateCount, 1)
+        XCTAssertEqual(snapshot.hardSidebarInputRehydrateReasons["debug-test"], 1)
+        XCTAssertEqual(snapshot.dragGeometryReporterCountBySection["page"], 1)
+        XCTAssertEqual(snapshot.totalActiveDragGeometryReporterCount, 1)
+        XCTAssertFalse(snapshot.isDragging)
+        XCTAssertFalse(snapshot.isInternalDragGeometryArmed)
+
+        owner?.contextMenuController = nil
+        SidebarDebugMetrics.recordCollapsedHiddenSidebarHost(
+            controller: columnController,
+            isMounted: false
+        )
+
+        snapshot = SidebarDebugMetrics.snapshot(dragState: dragState)
+        XCTAssertEqual(snapshot.liveInteractiveOwnerAttachmentCount, 0)
+        XCTAssertEqual(snapshot.mountedCollapsedSidebarHostCount, 0)
+        XCTAssertEqual(snapshot.collapsedHiddenMountedSidebarHostCount, 0)
+
+        SidebarDebugMetrics.recordCollapsedSidebarHost(
+            controller: columnController,
+            presentationMode: .collapsedVisible,
+            isMounted: true
+        )
+        snapshot = SidebarDebugMetrics.snapshot(dragState: dragState)
+        XCTAssertEqual(snapshot.mountedCollapsedSidebarHostCount, 1)
+        XCTAssertEqual(snapshot.collapsedHiddenMountedSidebarHostCount, 0)
+
+        owner = nil
+        SidebarDebugMetrics.resetForTesting()
+        snapshot = SidebarDebugMetrics.snapshot(dragState: dragState)
+        XCTAssertEqual(snapshot.liveInteractiveItemViewCount, 0)
+        XCTAssertEqual(snapshot.interactiveOwnerHostingViewCreatedCount, 0)
+        XCTAssertEqual(snapshot.mountedCollapsedSidebarHostCount, 0)
+        XCTAssertEqual(snapshot.collapsedHiddenMountedSidebarHostCount, 0)
+        XCTAssertEqual(snapshot.hardSidebarInputRehydrateCount, 0)
+    }
+    #endif
 
     func testSidebarColumnRoutingRestoresLiveDragOwnerOnlyAfterMenuEndTracking() {
         let interactionState = SidebarInteractionState()
@@ -1876,6 +2112,19 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         service.showGradientEditor(using: context, preferredSource: source)
 
         XCTAssertTrue(shownDialogSource === source)
+    }
+
+    private static var repoRoot: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+    }
+
+    private static func source(named relativePath: String) throws -> String {
+        try String(
+            contentsOf: repoRoot.appendingPathComponent(relativePath),
+            encoding: .utf8
+        )
     }
 
     private func makeWindow() -> NSWindow {
