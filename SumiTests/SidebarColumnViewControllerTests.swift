@@ -1144,7 +1144,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         )
 
         let windowState = BrowserWindowState()
-        windowState.scheduleSidebarInputRehydrate(reason: "debug-test")
+        windowState.scheduleSidebarInputRehydrate(reason: .explicitFallback)
         drainMainRunLoop()
 
         let dragState = SidebarDragState()
@@ -1165,7 +1165,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         XCTAssertEqual(snapshot.mountedCollapsedSidebarHostCount, 1)
         XCTAssertEqual(snapshot.collapsedHiddenMountedSidebarHostCount, 1)
         XCTAssertEqual(snapshot.hardSidebarInputRehydrateCount, 1)
-        XCTAssertEqual(snapshot.hardSidebarInputRehydrateReasons["debug-test"], 1)
+        XCTAssertEqual(snapshot.hardSidebarInputRehydrateReasons[SidebarInputRecoveryReason.explicitFallback.description], 1)
         XCTAssertEqual(snapshot.dragGeometryReporterCountBySection["page"], 1)
         XCTAssertEqual(snapshot.totalActiveDragGeometryReporterCount, 1)
         XCTAssertFalse(snapshot.isDragging)
@@ -1268,6 +1268,21 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         XCTAssertGreaterThan(snapshot.liveSidebarAppKitItemBridgeCount, 0)
         XCTAssertGreaterThan(snapshot.liveInteractiveOwnerAttachmentCount, 0)
         XCTAssertGreaterThan(snapshot.interactiveOwnerHostingViewCreatedCount, 0)
+    }
+
+    func testSidebarDebugMetricsRecordsTypedHardInputRecoveryReasons() {
+        SidebarDebugMetrics.resetForTesting()
+        let windowState = BrowserWindowState()
+
+        windowState.scheduleSidebarInputRehydrate(reason: .explicitFallback)
+        windowState.scheduleSidebarInputRehydrate(reason: .ownerUnresolvedAfterSoftRecovery)
+        drainMainRunLoop()
+
+        let snapshot = SidebarDebugMetrics.snapshot()
+        XCTAssertEqual(snapshot.hardSidebarInputRehydrateCount, 2)
+        XCTAssertEqual(snapshot.hardSidebarInputRehydrateReasons[SidebarInputRecoveryReason.explicitFallback.description], 1)
+        XCTAssertEqual(snapshot.hardSidebarInputRehydrateReasons[SidebarInputRecoveryReason.ownerUnresolvedAfterSoftRecovery.description], 1)
+        SidebarDebugMetrics.resetForTesting()
     }
     #endif
 
@@ -1533,11 +1548,12 @@ final class SidebarColumnViewControllerTests: XCTestCase {
             interactionState: interactionState
         )
         let spy = SidebarHostRecoverySpy()
-        var inputRecoveryReasons: [String] = []
+        var inputRecoveryReasons: [SidebarInputRecoveryReason] = []
         coordinator.sidebarRecoveryCoordinator = spy
         coordinator.scheduleSidebarInputRehydrate = { inputRecoveryReasons.append($0) }
-        coordinator.recoverSidebarInteractiveOwners = { _, _ in
-            SidebarInteractiveOwnerRecoveryResult(
+        coordinator.recoverSidebarInteractiveOwners = { _, source in
+            XCTAssertNotNil(source.interactiveOwnerRecoveryMetadata)
+            return SidebarInteractiveOwnerRecoveryResult(
                 recoveredOwnerCount: 1,
                 sourceOwnerResolved: true,
                 resolvedOwnerDescription: "owner",
@@ -1596,11 +1612,12 @@ final class SidebarColumnViewControllerTests: XCTestCase {
             interactionState: interactionState
         )
         let spy = SidebarHostRecoverySpy()
-        var inputRecoveryReasons: [String] = []
+        var inputRecoveryReasons: [SidebarInputRecoveryReason] = []
         coordinator.sidebarRecoveryCoordinator = spy
         coordinator.scheduleSidebarInputRehydrate = { inputRecoveryReasons.append($0) }
-        coordinator.recoverSidebarInteractiveOwners = { _, _ in
-            SidebarInteractiveOwnerRecoveryResult(
+        coordinator.recoverSidebarInteractiveOwners = { _, source in
+            XCTAssertNotNil(source.interactiveOwnerRecoveryMetadata)
+            return SidebarInteractiveOwnerRecoveryResult(
                 recoveredOwnerCount: 1,
                 sourceOwnerResolved: true,
                 resolvedOwnerDescription: "owner",
@@ -1664,7 +1681,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
             interactionState: interactionState
         )
         let spy = SidebarHostRecoverySpy()
-        var inputRecoveryReasons: [String] = []
+        var inputRecoveryReasons: [SidebarInputRecoveryReason] = []
         coordinator.sidebarRecoveryCoordinator = spy
         coordinator.scheduleSidebarInputRehydrate = { inputRecoveryReasons.append($0) }
         coordinator.recoverSidebarInteractiveOwners = { _, _ in
@@ -1677,7 +1694,18 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         }
 
         let sourceWindow = makeWindow()
-        let ownerView = NSView(frame: .zero)
+        let ownerView = SidebarInteractiveItemView(frame: NSRect(x: 0, y: 0, width: 80, height: 36))
+        ownerView.update(
+            rootView: AnyView(Color.clear.frame(width: 80, height: 36)),
+            configuration: SidebarAppKitItemConfiguration(
+                dragSource: SidebarDragSourceConfiguration(
+                    item: SumiDragItem(tabId: UUID(), title: "Drag"),
+                    sourceZone: .spaceRegular(UUID()),
+                    previewKind: .row,
+                    isEnabled: true
+                )
+            )
+        )
         sourceWindow.contentView?.addSubview(ownerView)
         let source = SidebarTransientPresentationSource(
             windowID: coordinator.windowID,
@@ -1711,7 +1739,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
             interactionState: interactionState
         )
         let spy = SidebarHostRecoverySpy()
-        var inputRecoveryReasons: [String] = []
+        var inputRecoveryReasons: [SidebarInputRecoveryReason] = []
         coordinator.sidebarRecoveryCoordinator = spy
         coordinator.scheduleSidebarInputRehydrate = { inputRecoveryReasons.append($0) }
         coordinator.recoverSidebarInteractiveOwners = { _, _ in
@@ -1724,7 +1752,18 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         }
 
         let sourceWindow = makeWindow()
-        let ownerView = NSView(frame: .zero)
+        let ownerView = SidebarInteractiveItemView(frame: NSRect(x: 0, y: 0, width: 80, height: 36))
+        ownerView.update(
+            rootView: AnyView(Color.clear.frame(width: 80, height: 36)),
+            configuration: SidebarAppKitItemConfiguration(
+                dragSource: SidebarDragSourceConfiguration(
+                    item: SumiDragItem(tabId: UUID(), title: "Drag"),
+                    sourceZone: .spaceRegular(UUID()),
+                    previewKind: .row,
+                    isEnabled: true
+                )
+            )
+        )
         sourceWindow.contentView?.addSubview(ownerView)
 
         coordinator.prepareMenuPresentationSource(ownerView: ownerView)
@@ -1774,7 +1813,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
             interactionState: interactionState
         )
         let spy = SidebarHostRecoverySpy()
-        var inputRecoveryReasons: [String] = []
+        var inputRecoveryReasons: [SidebarInputRecoveryReason] = []
         coordinator.sidebarRecoveryCoordinator = spy
         coordinator.scheduleSidebarInputRehydrate = { inputRecoveryReasons.append($0) }
         var interactiveOwnerRecoveryWindows: [NSWindow?] = []
@@ -1820,18 +1859,19 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         XCTAssertTrue(spy.recoveredWindows.allSatisfy { $0 === sourceWindow })
     }
 
-    func testSidebarTransientSessionCoordinatorStructuralMenuActionTriggersSingleHardRehydrate() {
+    func testSidebarTransientSessionCoordinatorStructuralMenuActionStaysSoftWhenOwnerRecovers() {
         let interactionState = SidebarInteractionState()
         let coordinator = SidebarTransientSessionCoordinator(
             windowID: UUID(),
             interactionState: interactionState
         )
         let spy = SidebarHostRecoverySpy()
-        var inputRecoveryReasons: [String] = []
+        var inputRecoveryReasons: [SidebarInputRecoveryReason] = []
         coordinator.sidebarRecoveryCoordinator = spy
         coordinator.scheduleSidebarInputRehydrate = { inputRecoveryReasons.append($0) }
-        coordinator.recoverSidebarInteractiveOwners = { _, _ in
-            SidebarInteractiveOwnerRecoveryResult(
+        coordinator.recoverSidebarInteractiveOwners = { _, source in
+            XCTAssertNotNil(source.interactiveOwnerRecoveryMetadata)
+            return SidebarInteractiveOwnerRecoveryResult(
                 recoveredOwnerCount: 1,
                 sourceOwnerResolved: true,
                 resolvedOwnerDescription: "owner",
@@ -1840,7 +1880,18 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         }
 
         let sourceWindow = makeWindow()
-        let ownerView = NSView(frame: .zero)
+        let ownerView = SidebarInteractiveItemView(frame: NSRect(x: 0, y: 0, width: 80, height: 36))
+        ownerView.update(
+            rootView: AnyView(Color.clear.frame(width: 80, height: 36)),
+            configuration: SidebarAppKitItemConfiguration(
+                dragSource: SidebarDragSourceConfiguration(
+                    item: SumiDragItem(tabId: UUID(), title: "Drag"),
+                    sourceZone: .spaceRegular(UUID()),
+                    previewKind: .row,
+                    isEnabled: true
+                )
+            )
+        )
         sourceWindow.contentView?.addSubview(ownerView)
         let source = SidebarTransientPresentationSource(
             windowID: coordinator.windowID,
@@ -1866,7 +1917,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         drainMainRunLoop()
 
         XCTAssertEqual(spy.recoveredWindows.count, 2)
-        XCTAssertEqual(inputRecoveryReasons.count, 1)
+        XCTAssertTrue(inputRecoveryReasons.isEmpty)
     }
 
     func testSidebarTransientSessionCoordinatorSoftRecoveryStaysSoftWhenSourceOwnerRemainsResolvable() {
@@ -1876,7 +1927,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
             interactionState: interactionState
         )
         let spy = SidebarHostRecoverySpy()
-        var inputRecoveryReasons: [String] = []
+        var inputRecoveryReasons: [SidebarInputRecoveryReason] = []
         coordinator.sidebarRecoveryCoordinator = spy
         coordinator.scheduleSidebarInputRehydrate = { inputRecoveryReasons.append($0) }
         coordinator.recoverSidebarInteractiveOwners = { _, source in
@@ -1930,7 +1981,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
             interactionState: interactionState
         )
         let spy = SidebarHostRecoverySpy()
-        var inputRecoveryReasons: [String] = []
+        var inputRecoveryReasons: [SidebarInputRecoveryReason] = []
         coordinator.sidebarRecoveryCoordinator = spy
         coordinator.scheduleSidebarInputRehydrate = { inputRecoveryReasons.append($0) }
         coordinator.recoverSidebarInteractiveOwners = { _, source in
@@ -1974,7 +2025,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
 
         XCTAssertEqual(spy.recoveredWindows.count, 2)
         XCTAssertTrue(spy.recoveredWindows.allSatisfy { $0 === sourceWindow })
-        XCTAssertEqual(inputRecoveryReasons.count, 1)
+        XCTAssertEqual(inputRecoveryReasons, [.ownerUnresolvedAfterSoftRecovery])
     }
 
     func testSidebarTransientSessionCoordinatorSoftRecoveryEscalatesWhenOwnerRecoveryFindsNoLiveOwners() {
@@ -1984,7 +2035,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
             interactionState: interactionState
         )
         let spy = SidebarHostRecoverySpy()
-        var inputRecoveryReasons: [String] = []
+        var inputRecoveryReasons: [SidebarInputRecoveryReason] = []
         coordinator.sidebarRecoveryCoordinator = spy
         coordinator.scheduleSidebarInputRehydrate = { inputRecoveryReasons.append($0) }
         coordinator.recoverSidebarInteractiveOwners = { _, _ in
@@ -2026,7 +2077,93 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         drainMainRunLoop()
 
         XCTAssertEqual(spy.recoveredWindows.count, 2)
-        XCTAssertEqual(inputRecoveryReasons.count, 1)
+        XCTAssertEqual(inputRecoveryReasons, [.ownerUnresolvedAfterSoftRecovery])
+    }
+
+    func testWorkspaceThemePickerUncoordinatedDismissRecoveryStaysSoftWhenOwnerResolves() {
+        let windowState = BrowserWindowState()
+        let window = makeWindow()
+        windowState.window = window
+        let ownerView = SidebarInteractiveItemView(frame: NSRect(x: 0, y: 0, width: 80, height: 36))
+        ownerView.update(
+            rootView: AnyView(Color.clear.frame(width: 80, height: 36)),
+            configuration: SidebarAppKitItemConfiguration(
+                dragSource: SidebarDragSourceConfiguration(
+                    item: SumiDragItem(tabId: UUID(), title: "Drag"),
+                    sourceZone: .spaceRegular(UUID()),
+                    previewKind: .row,
+                    isEnabled: true
+                )
+            )
+        )
+        ownerView.contextMenuController = windowState.sidebarContextMenuController
+        window.contentView?.addSubview(ownerView)
+        let source = SidebarTransientPresentationSource(
+            windowID: windowState.id,
+            window: window,
+            originOwnerView: ownerView,
+            coordinator: nil
+        )
+        let spy = SidebarHostRecoverySpy()
+
+        WorkspaceThemePickerPopoverPresenter.performUncoordinatedSidebarDismissRecovery(
+            windowState: windowState,
+            source: source,
+            anchor: ownerView,
+            using: spy
+        )
+        drainMainRunLoop()
+
+        XCTAssertEqual(windowState.sidebarInputRecoveryGeneration, 0)
+        XCTAssertTrue(windowState.sidebarInteractionState.allowsSidebarDragSourceHitTesting)
+        XCTAssertEqual(spy.recoveredWindows.count, 1)
+        XCTAssertEqual(spy.recoveredAnchors.count, 1)
+        XCTAssertTrue(
+            windowState.sidebarContextMenuController.interactiveOwner(
+                at: NSPoint(x: 12, y: 12),
+                in: window,
+                eventType: .leftMouseDown
+            ) === ownerView
+        )
+    }
+
+    func testWorkspaceThemePickerUncoordinatedDismissRecoveryHardRehydratesWhenOwnerUnresolved() {
+        let windowState = BrowserWindowState()
+        let window = makeWindow()
+        windowState.window = window
+        var ownerView: SidebarInteractiveItemView? = SidebarInteractiveItemView(
+            frame: NSRect(x: 0, y: 0, width: 80, height: 36)
+        )
+        ownerView?.update(
+            rootView: AnyView(Color.clear.frame(width: 80, height: 36)),
+            configuration: SidebarAppKitItemConfiguration(
+                dragSource: SidebarDragSourceConfiguration(
+                    item: SumiDragItem(tabId: UUID(), title: "Drag"),
+                    sourceZone: .spaceRegular(UUID()),
+                    previewKind: .row,
+                    isEnabled: true
+                )
+            )
+        )
+        window.contentView?.addSubview(ownerView!)
+        let source = SidebarTransientPresentationSource(
+            windowID: windowState.id,
+            window: window,
+            originOwnerView: ownerView,
+            coordinator: nil
+        )
+        ownerView?.removeFromSuperview()
+        ownerView = nil
+
+        WorkspaceThemePickerPopoverPresenter.performUncoordinatedSidebarDismissRecovery(
+            windowState: windowState,
+            source: source,
+            anchor: source.originOwnerView,
+            using: SidebarHostRecoverySpy()
+        )
+        drainMainRunLoop()
+
+        XCTAssertEqual(windowState.sidebarInputRecoveryGeneration, 1)
     }
 
     func testSidebarDeferredStateMutationAppliesLatestValueAfterCallbackBoundary() {
@@ -2046,8 +2183,8 @@ final class SidebarColumnViewControllerTests: XCTestCase {
     func testBrowserWindowStateCoalescesSidebarInputRehydrateRequestsPerRunLoopTurn() {
         let windowState = BrowserWindowState()
 
-        windowState.scheduleSidebarInputRehydrate(reason: "first")
-        windowState.scheduleSidebarInputRehydrate(reason: "second")
+        windowState.scheduleSidebarInputRehydrate(reason: .menuEnded)
+        windowState.scheduleSidebarInputRehydrate(reason: .popoverDismissed)
 
         XCTAssertEqual(windowState.sidebarInputRecoveryGeneration, 0)
 
@@ -2055,7 +2192,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
 
         XCTAssertEqual(windowState.sidebarInputRecoveryGeneration, 1)
 
-        windowState.scheduleSidebarInputRehydrate(reason: "third")
+        windowState.scheduleSidebarInputRehydrate(reason: .explicitFallback)
         drainMainRunLoop()
 
         XCTAssertEqual(windowState.sidebarInputRecoveryGeneration, 2)

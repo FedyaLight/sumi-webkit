@@ -85,7 +85,7 @@ class BrowserWindowState {
     /// Window-scoped owner for sidebar-originated transient UI sessions.
     let sidebarTransientSessionCoordinator: SidebarTransientSessionCoordinator
 
-    /// Bumped after sidebar-originated transient UI finishes so the AppKit-backed sidebar input graph remounts.
+    /// Fallback-only generation bump for unresolved sidebar AppKit owner/input graph recovery.
     var sidebarInputRecoveryGeneration: UInt64 = 0
 
     /// Window-local sidebar projection state that must not publish through shared models.
@@ -148,7 +148,7 @@ class BrowserWindowState {
 
     @ObservationIgnored private var isCompositorRefreshScheduled: Bool = false
     @ObservationIgnored private var isSidebarInputRecoveryScheduled: Bool = false
-    @ObservationIgnored private var pendingSidebarInputRecoveryReasons: [String] = []
+    @ObservationIgnored private var pendingSidebarInputRecoveryReasons: [SidebarInputRecoveryReason] = []
     @ObservationIgnored private var isSidebarFolderProjectionFlushScheduled: Bool = false
     @ObservationIgnored private var pendingSidebarFolderProjectionUpdates: [UUID: SidebarFolderProjectionState] = [:]
 
@@ -216,7 +216,7 @@ class BrowserWindowState {
         )
     }
 
-    func scheduleSidebarInputRehydrate(reason: String) {
+    func scheduleSidebarInputRehydrate(reason: SidebarInputRecoveryReason) {
         pendingSidebarInputRecoveryReasons.append(reason)
         guard !isSidebarInputRecoveryScheduled else { return }
 
@@ -233,9 +233,10 @@ class BrowserWindowState {
                 SidebarDebugMetrics.recordHardSidebarInputRehydrate(reason: reason)
             }
             #endif
+            let reasonDescriptions = reasons.map(\.description)
 
             RuntimeDiagnostics.emit(
-                "🧭 Sidebar input recovery generation=\(self.sidebarInputRecoveryGeneration) window=\(self.id.uuidString) reason=\(reasons.joined(separator: ","))"
+                "🧭 Sidebar input recovery generation=\(self.sidebarInputRecoveryGeneration) window=\(self.id.uuidString) reason=\(reasonDescriptions.joined(separator: ","))"
             )
         }
     }

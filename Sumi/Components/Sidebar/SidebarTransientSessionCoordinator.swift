@@ -1,6 +1,18 @@
 import AppKit
 import Foundation
 
+enum SidebarInputRecoveryReason: String, CaseIterable, CustomStringConvertible {
+    case menuEnded = "menu-ended"
+    case popoverDismissed = "popover-dismissed"
+    case structuralMenuAction = "structural-menu-action"
+    case ownerUnresolvedAfterSoftRecovery = "owner-unresolved-after-soft-recovery"
+    case dragSessionRecovery = "drag-session-recovery"
+    case explicitFallback = "explicit-fallback"
+    case unknownFallback = "unknown-fallback"
+
+    var description: String { rawValue }
+}
+
 enum SidebarRecoveryTier: Int, Comparable, CustomStringConvertible {
     case soft = 0
     case hardRehydrate = 1
@@ -192,6 +204,7 @@ final class SidebarTransientSessionCoordinator {
         var source: SidebarTransientPresentationSource
         var reasons: [String]
         var tier: SidebarRecoveryTier
+        var hardRehydrateReason: SidebarInputRecoveryReason?
     }
 
     private struct SessionRecord {
@@ -204,7 +217,7 @@ final class SidebarTransientSessionCoordinator {
     let windowID: UUID
     let interactionState: SidebarInteractionState
     var sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator.shared
-    var scheduleSidebarInputRehydrate: ((String) -> Void)?
+    var scheduleSidebarInputRehydrate: ((SidebarInputRecoveryReason) -> Void)?
     var recoverSidebarInteractiveOwners: ((NSWindow?, SidebarTransientPresentationSource) -> SidebarInteractiveOwnerRecoveryResult)?
 
     private var sessions: [UUID: SessionRecord] = [:]
@@ -481,12 +494,15 @@ final class SidebarTransientSessionCoordinator {
             )
             pendingRecovery.reasons.append(reason)
             pendingRecovery.tier = max(pendingRecovery.tier, tier)
+            pendingRecovery.hardRehydrateReason = pendingRecovery.hardRehydrateReason
+                ?? hardRehydrateReason(for: tier)
             pendingRecoveriesByWindowID[source.windowID] = pendingRecovery
         } else {
             pendingRecoveriesByWindowID[source.windowID] = PendingRecovery(
                 source: source,
                 reasons: [reason],
-                tier: tier
+                tier: tier,
+                hardRehydrateReason: hardRehydrateReason(for: tier)
             )
         }
 
@@ -549,6 +565,7 @@ final class SidebarTransientSessionCoordinator {
         sidebarRecoveryCoordinator.recover(in: window)
         sidebarRecoveryCoordinator.recover(anchor: source.originOwnerView)
         var effectiveTier = recovery.tier
+        var hardRehydrateReason = recovery.hardRehydrateReason
         let recoveryResult = recoverSidebarInteractiveOwners?(window, source) ?? .none
         if effectiveTier == .soft,
            source.interactiveOwnerRecoveryMetadata != nil,
@@ -556,6 +573,7 @@ final class SidebarTransientSessionCoordinator {
            !recoveryResult.sourceOwnerResolved
         {
             effectiveTier = .hardRehydrate
+            hardRehydrateReason = .ownerUnresolvedAfterSoftRecovery
             RuntimeDiagnostics.emit {
                 "⚠️ Sidebar transient soft recovery escalated to hard window=\(source.windowID.uuidString) reason=\(reason) source=\(source.interactiveOwnerRecoveryMetadata?.description ?? "none") resolved=\(recoveryResult.resolvedOwnerDescription ?? "nil") recoveredCount=\(recoveryResult.recoveredOwnerCount)"
             }
@@ -566,7 +584,7 @@ final class SidebarTransientSessionCoordinator {
         }
 
         if effectiveTier.requiresSidebarInputRehydrate {
-            scheduleSidebarInputRehydrate?(reason)
+            scheduleSidebarInputRehydrate?(hardRehydrateReason ?? .unknownFallback)
         }
 
         guard let window else { return }
@@ -588,6 +606,11 @@ final class SidebarTransientSessionCoordinator {
         case .dialog, .themePicker, .emojiPopover, .sharingPicker, .downloadsPopover, .drag:
             return .soft
         }
+    }
+
+    private func hardRehydrateReason(for tier: SidebarRecoveryTier) -> SidebarInputRecoveryReason? {
+        guard tier.requiresSidebarInputRehydrate else { return nil }
+        return .explicitFallback
     }
 
     private func restoreResponder(

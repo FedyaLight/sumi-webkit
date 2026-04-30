@@ -41,10 +41,8 @@ enum SidebarContextMenuActionClassification: String {
 
     var recoveryTier: SidebarRecoveryTier {
         switch self {
-        case .presentationOnly, .stateMutationNonStructural:
+        case .presentationOnly, .stateMutationNonStructural, .structuralMutation:
             return .soft
-        case .structuralMutation:
-            return .hardRehydrate
         }
     }
 }

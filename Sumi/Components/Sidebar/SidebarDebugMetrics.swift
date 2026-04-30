@@ -79,9 +79,9 @@ enum SidebarDebugMetrics {
         }
     }
 
-    static func recordHardSidebarInputRehydrate(reason: String) {
+    static func recordHardSidebarInputRehydrate(reason: SidebarInputRecoveryReason) {
         hardSidebarInputRehydrateCount += 1
-        hardSidebarInputRehydrateReasons[reason, default: 0] += 1
+        hardSidebarInputRehydrateReasons[reason.description, default: 0] += 1
     }
 
     static func resetForTesting() {

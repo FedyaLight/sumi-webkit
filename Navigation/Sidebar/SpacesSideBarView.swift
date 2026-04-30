@@ -895,6 +895,7 @@ struct SpacesSideBarView: View {
         includesPinnedGrid: Bool = true
     ) -> some View {
         let pageProfileId = resolvedPageProfileId(for: space)
+        // Fallback-only identity change for unresolved AppKit owner/input graph recovery.
         let inputRecoveryGeneration = pageRenderMode == .interactive
             ? windowState.sidebarInputRecoveryGeneration
             : 0
