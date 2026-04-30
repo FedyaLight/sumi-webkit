@@ -5,6 +5,7 @@ import SwiftUI
 
 private final class SidebarColumnContainerView: NSView {
     var onWindowChanged: ((NSWindow?) -> Void)?
+    var onGeometryChanged: (() -> Void)?
     weak var hostedSidebarView: NSView?
     weak var contextMenuController: SidebarContextMenuController?
     var capturesPanelBackgroundPointerEvents = false
@@ -53,6 +54,12 @@ private final class SidebarColumnContainerView: NSView {
         super.viewDidMoveToWindow()
         SidebarColumnPaintlessChrome.configure(self)
         onWindowChanged?(window)
+        onGeometryChanged?()
+    }
+
+    override func layout() {
+        super.layout()
+        onGeometryChanged?()
     }
 }
 
@@ -441,12 +448,22 @@ final class SidebarColumnViewController: NSViewController {
     private var hostingController: NSViewController?
     private var widthConstraint: NSLayoutConstraint?
     private weak var registeredRecoveryAnchor: NSView?
+    private let pointerSuppressionController = CollapsedSidebarPointerSuppressionController()
+    private var pointerSuppressionPresentationContext: SidebarPresentationContext?
+    private weak var pointerSuppressionWindowState: BrowserWindowState?
+    private weak var pointerSuppressionWindowRegistry: WindowRegistry?
 
     override func loadView() {
         let containerView = SidebarColumnContainerView()
         containerView.onWindowChanged = { [weak self] window in
             Task { @MainActor [weak self] in
                 self?.syncRecoveryAnchor(window: window)
+                self?.syncPointerSuppression()
+            }
+        }
+        containerView.onGeometryChanged = { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.pointerSuppressionController.refreshPanelRect()
             }
         }
         SidebarColumnPaintlessChrome.configure(containerView)
@@ -502,9 +519,25 @@ final class SidebarColumnViewController: NSViewController {
         )
 
         syncRecoveryAnchor(window: view.window)
+        pointerSuppressionController.refreshPanelRect()
+    }
+
+    func updatePointerSuppression(
+        presentationContext: SidebarPresentationContext,
+        windowState: BrowserWindowState,
+        windowRegistry: WindowRegistry
+    ) {
+        pointerSuppressionPresentationContext = presentationContext
+        pointerSuppressionWindowState = windowState
+        pointerSuppressionWindowRegistry = windowRegistry
+        syncPointerSuppression()
     }
 
     func teardownSidebarHosting() {
+        pointerSuppressionController.teardown()
+        pointerSuppressionPresentationContext = nil
+        pointerSuppressionWindowState = nil
+        pointerSuppressionWindowRegistry = nil
         unregisterRecoveryAnchor()
         if let containerView = view as? SidebarColumnContainerView {
             containerView.hostedSidebarView = nil
@@ -536,6 +569,25 @@ final class SidebarColumnViewController: NSViewController {
         guard let registeredRecoveryAnchor else { return }
         sidebarRecoveryCoordinator.unregister(anchor: registeredRecoveryAnchor)
         self.registeredRecoveryAnchor = nil
+    }
+
+    private func syncPointerSuppression() {
+        guard let presentationContext = pointerSuppressionPresentationContext,
+              let windowState = pointerSuppressionWindowState,
+              let windowRegistry = pointerSuppressionWindowRegistry
+        else {
+            pointerSuppressionController.teardown()
+            return
+        }
+
+        pointerSuppressionController.update(
+            window: view.window ?? windowState.window,
+            panelView: view,
+            hostedSidebarView: hostingController?.view,
+            isCollapsedVisible: presentationContext.mode == .collapsedVisible,
+            isSidebarCollapsed: !windowState.isSidebarVisible,
+            isBrowserWindowActive: windowRegistry.activeWindowId == windowState.id
+        )
     }
 
     private func removeHostingControllerIfNeeded() {
@@ -626,6 +678,11 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
             width: presentationContext.sidebarWidth,
             contextMenuController: windowState.sidebarContextMenuController,
             capturesPanelBackgroundPointerEvents: presentationContext.capturesPanelBackgroundPointerEvents
+        )
+        controller.updatePointerSuppression(
+            presentationContext: presentationContext,
+            windowState: windowState,
+            windowRegistry: windowRegistry
         )
     }
 
