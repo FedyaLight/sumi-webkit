@@ -15,6 +15,15 @@ extension Tab {
         _webView?.goForward()
     }
 
+    func stopLoading(on webView: WKWebView? = nil) {
+        let resolvedWebView = webView ?? _webView
+        resolvedWebView?.stopLoading()
+
+        if loadingState.isLoading {
+            loadingState = .idle
+        }
+    }
+
     func refresh() {
         loadingState = .didStartProvisionalNavigation
         let targetURL = _webView?.url ?? url
