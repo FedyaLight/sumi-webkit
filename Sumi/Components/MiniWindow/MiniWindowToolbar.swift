@@ -13,7 +13,6 @@ struct MiniWindowToolbar: View {
     @Environment(\.sumiSettings) private var sumiSettings
     @ObservedObject var session: MiniWindowSession
     let adoptAction: () -> Void
-    let window: NSWindow?
     
     private var cleanedTargetSpaceName: String {
         session.targetSpaceName.replacingOccurrences(of: "space", with: "", options: .caseInsensitive).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -189,12 +188,7 @@ struct MiniWindowToolbar: View {
 
 private extension MiniWindowToolbar {
     var trafficLights: some View {
-        BrowserWindowTrafficLights(window: window)
-            .frame(
-                width: BrowserWindowTrafficLightMetrics.sidebarReservedWidth,
-                height: BrowserWindowTrafficLightMetrics.clusterHeight,
-                alignment: .leading
-            )
+        BrowserWindowNativeTrafficLightSpacer()
     }
 }
 

@@ -29,6 +29,8 @@ struct WindowView: View {
     @Environment(CommandPalette.self) private var commandPalette
     @Environment(\.sumiSettings) var sumiSettings
     @StateObject private var hoverSidebarManager = HoverSidebarManager()
+    @StateObject private var trafficLightRenderState = BrowserWindowTrafficLightRenderState()
+    @ObservedObject private var sidebarDragState = SidebarDragState.shared
     /// Bumps when system/window effective appearance changes so `globalColorScheme` refreshes while in auto mode.
     @State private var effectiveAppearanceRevision: UInt = 0
 
@@ -92,6 +94,18 @@ struct WindowView: View {
                     .allowsHitTesting(false)
             }
 
+        }
+        .background {
+            BrowserWindowNativeTrafficLightVisibilityBridge(
+                window: windowState.window,
+                renderState: trafficLightRenderState,
+                visibleOutsideFullScreen: nativeTrafficLightsVisibleOutsideFullScreen,
+                horizontalOffset: SidebarChromeMetrics.nativeTrafficLightHorizontalOffset,
+                verticalOffset: SidebarChromeMetrics.nativeTrafficLightVerticalOffset,
+                revealDelay: nativeTrafficLightsRevealDelay
+            )
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
         }
         // System notification toasts - top trailing corner
         .overlay(alignment: .topTrailing) {
@@ -158,6 +172,7 @@ struct WindowView: View {
         .environmentObject(browserManager)
         .environmentObject(browserManager.splitManager)
         .environmentObject(hoverSidebarManager)
+        .environmentObject(trafficLightRenderState)
         .environment(\.resolvedThemeContext, resolvedThemeContext)
         .coordinateSpace(name: "WindowSpace")
         .onPreferenceChange(URLBarFramePreferenceKey.self) { frame in
@@ -189,6 +204,40 @@ struct WindowView: View {
     }
 
     // MARK: - Layout Components
+
+    private var nativeTrafficLightsVisibleOutsideFullScreen: Bool {
+        windowState.isSidebarVisible || sidebarHoverOverlayRevealed
+    }
+
+    private var nativeTrafficLightsRevealDelay: TimeInterval {
+        windowState.isSidebarVisible ? 0 : SidebarHoverOverlayMetrics.revealAnimationDuration
+    }
+
+    private var sidebarHoverOverlayRevealed: Bool {
+        SidebarHoverOverlayRevealPolicy.isOverlayRevealed(
+            isOverlayVisible: hoverSidebarManager.isOverlayVisible,
+            transientUIPinsHoverSidebar: transientUIPinsHoverSidebar,
+            sidebarDragPinsHoverSidebar: sidebarDragPinsHoverSidebar
+        )
+    }
+
+    private var transientUIPinsHoverSidebar: Bool {
+        SidebarHoverOverlayTransientPinningPolicy.shouldPinHoverSidebar(
+            transientWindowID: windowState.sidebarTransientSessionCoordinator.currentPresentationWindowID,
+            currentWindowID: windowState.id,
+            isSidebarVisible: windowState.isSidebarVisible
+        )
+    }
+
+    private var sidebarDragPinsHoverSidebar: Bool {
+        SidebarHoverOverlayDragPinningPolicy.shouldPinHoverSidebar(
+            activeWindowID: windowRegistry.activeWindowId,
+            currentWindowID: windowState.id,
+            isSidebarVisible: windowState.isSidebarVisible,
+            isDragging: sidebarDragState.isDragging,
+            isInternalDragSession: sidebarDragState.isInternalDragSession
+        )
+    }
 
     @ViewBuilder
     private func WindowBackground() -> some View {
@@ -233,6 +282,7 @@ struct WindowView: View {
             commandPalette: commandPalette,
             sumiSettings: sumiSettings,
             resolvedThemeContext: resolvedThemeContext,
+            trafficLightRenderState: trafficLightRenderState,
             presentationContext: presentationContext
         )
         .id("docked-sidebar-column")

@@ -45,6 +45,7 @@ struct SumiApp: App {
                     setupApplicationLifecycle()
                 }
         }
+        .windowStyle(.hiddenTitleBar)
         .commands {
             SumiCommands(
                 browserManager: browserManager,

@@ -11,7 +11,6 @@ import AppKit
 import ObjectiveC.runtime
 
 enum SumiBrowserChromeConfiguration {
-    static let toolbarIdentifier = NSToolbar.Identifier("SumiBrowserWindowToolbar")
     static let requiredStyleMask: NSWindow.StyleMask = [
         .titled,
         .closable,
@@ -38,15 +37,16 @@ enum SumiBrowserWindowShellConfiguration {
 
 @MainActor
 func promoteToSumiBrowserWindowIfNeeded(_ window: NSWindow) {
-    if !(window is SumiBrowserWindow) {
-        object_setClass(window, SumiBrowserWindow.self)
-    }
+    // Do not class-swap SwiftUI-created windows. AppKit's titlebar/fullscreen
+    // internals install private KVO before this bridge attaches, and changing
+    // the class afterward can leave fullscreen transition observers corrupted.
     window.applyBrowserChromeConfiguration()
     window.applyBrowserWindowShellConfiguration(shouldApplyInitialSize: false)
 }
 
 private enum SumiBrowserWindowAssociatedKeys {
     static var didApplyInitialShellSize: UInt8 = 0
+    static var nativeStandardButtonBaseFrames: UInt8 = 0
 }
 
 extension NSWindow {
@@ -55,19 +55,9 @@ extension NSWindow {
         styleMask = styleMask.union(SumiBrowserChromeConfiguration.requiredStyleMask)
         titleVisibility = .hidden
         titlebarAppearsTransparent = true
-
-        let toolbar: NSToolbar
-        if let existingToolbar = self.toolbar,
-           existingToolbar.identifier == SumiBrowserChromeConfiguration.toolbarIdentifier {
-            toolbar = existingToolbar
-        } else {
-            toolbar = NSToolbar(identifier: SumiBrowserChromeConfiguration.toolbarIdentifier)
-            self.toolbar = toolbar
-        }
-
-        toolbar.isVisible = false
-        toolbarStyle = .unifiedCompact
-        hideStandardWindowButtonsForCustomChrome()
+        titlebarSeparatorStyle = .none
+        toolbar = nil
+        configureNativeStandardWindowButtonsForBrowserChrome()
     }
 
     @MainActor
@@ -106,6 +96,24 @@ extension NSWindow {
             )
         }
     }
+
+    private var nativeStandardButtonBaseFrames: [Int: NSRect] {
+        get {
+            (objc_getAssociatedObject(
+                self,
+                &SumiBrowserWindowAssociatedKeys.nativeStandardButtonBaseFrames
+            ) as? [Int: NSRect]) ?? [:]
+        }
+        set {
+            objc_setAssociatedObject(
+                self,
+                &SumiBrowserWindowAssociatedKeys.nativeStandardButtonBaseFrames,
+                newValue,
+                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+            )
+        }
+    }
+
 }
 
 final class SumiBrowserWindow: NSWindow {
@@ -127,8 +135,8 @@ final class SumiBrowserWindow: NSWindow {
         applyBrowserWindowShellConfiguration(shouldApplyInitialSize: false)
     }
 
-    /// No Touch Bar for this window. AppKit's `_NSTouchBarFinderObservation` can throw when removing KVO on
-    /// `nextResponder` during shutdown for SwiftUI-hosted windows whose class was replaced via `object_setClass`.
+    /// No Touch Bar for browser windows. This custom chrome path has previously hit
+    /// `_NSTouchBarFinderObservation` KVO faults during panel and window teardown.
     override func makeTouchBar() -> NSTouchBar? {
         nil
     }
@@ -164,20 +172,111 @@ final class SumiBrowserWindow: NSWindow {
 
 @MainActor
 extension NSWindow {
-    func hideStandardWindowButtonsForCustomChrome(
-        buttonTypes: [NSWindow.ButtonType] = SumiBrowserChromeConfiguration.buttonTypes
+    func configureNativeStandardWindowButtonsForBrowserChrome(
+        buttonTypes: [NSWindow.ButtonType] = SumiBrowserChromeConfiguration.buttonTypes,
+        horizontalOffset: CGFloat = 0,
+        verticalOffset: CGFloat = 0
     ) {
         for type in buttonTypes {
             guard let button = standardWindowButton(type) else { continue }
-            if let identifier = button.identifier?.rawValue,
-               BrowserWindowControlsAccessibilityIdentifiers.allButtonIdentifiers.contains(identifier) {
-                continue
+            if let identifier = BrowserWindowControlsAccessibilityIdentifiers.identifier(for: type) {
+                button.identifier = NSUserInterfaceItemIdentifier(identifier)
+                button.setAccessibilityIdentifier(identifier)
             }
-            button.isHidden = true
-            button.alphaValue = 0
-            button.isEnabled = false
-            button.setAccessibilityElement(false)
             button.superview?.needsLayout = true
         }
+        alignNativeStandardWindowButtonsForBrowserChrome(
+            buttonTypes: buttonTypes,
+            horizontalOffset: horizontalOffset,
+            verticalOffset: verticalOffset
+        )
+    }
+
+    func syncNativeStandardWindowButtonsForBrowserChrome(
+        visibleOutsideFullScreen: Bool,
+        buttonTypes: [NSWindow.ButtonType] = SumiBrowserChromeConfiguration.buttonTypes,
+        horizontalOffset: CGFloat = 0,
+        verticalOffset: CGFloat = 0
+    ) {
+        setNativeStandardWindowButtonsForBrowserChromeVisible(
+            styleMask.contains(.fullScreen) || visibleOutsideFullScreen,
+            buttonTypes: buttonTypes,
+            horizontalOffset: horizontalOffset,
+            verticalOffset: verticalOffset
+        )
+    }
+
+    func setNativeStandardWindowButtonsForBrowserChromeVisible(
+        _ isVisible: Bool,
+        buttonTypes: [NSWindow.ButtonType] = SumiBrowserChromeConfiguration.buttonTypes,
+        horizontalOffset: CGFloat = 0,
+        verticalOffset: CGFloat = 0
+    ) {
+        guard isVisible else {
+            for type in buttonTypes {
+                guard let button = standardWindowButton(type) else { continue }
+                applyNativeStandardWindowButtonState(button, isVisible: false)
+            }
+            return
+        }
+
+        configureNativeStandardWindowButtonsForBrowserChrome(
+            buttonTypes: buttonTypes,
+            horizontalOffset: horizontalOffset,
+            verticalOffset: verticalOffset
+        )
+
+        for type in buttonTypes {
+            guard let button = standardWindowButton(type) else { continue }
+            applyNativeStandardWindowButtonState(button, isVisible: true)
+        }
+    }
+
+    private func applyNativeStandardWindowButtonState(_ button: NSButton, isVisible: Bool) {
+        button.alphaValue = isVisible ? 1 : 0
+        button.isHidden = !isVisible
+        button.isEnabled = isVisible
+        button.setAccessibilityElement(isVisible)
+        button.updateTrackingAreas()
+        button.needsDisplay = true
+        if let superview = button.superview {
+            superview.updateTrackingAreas()
+            superview.needsDisplay = true
+            superview.needsLayout = true
+            invalidateCursorRects(for: superview)
+        }
+    }
+
+    private func alignNativeStandardWindowButtonsForBrowserChrome(
+        buttonTypes: [NSWindow.ButtonType],
+        horizontalOffset: CGFloat,
+        verticalOffset: CGFloat
+    ) {
+        var baseFrames = nativeStandardButtonBaseFrames
+
+        for type in buttonTypes {
+            guard let button = standardWindowButton(type) else { continue }
+
+            let key = Int(type.rawValue)
+            let baseFrame = baseFrames[key] ?? button.frame
+            baseFrames[key] = baseFrame
+
+            var alignedFrame = baseFrame
+            alignedFrame.origin.x += horizontalOffset
+            if button.superview?.isFlipped == true {
+                alignedFrame.origin.y += verticalOffset
+            } else {
+                alignedFrame.origin.y -= verticalOffset
+            }
+
+            if button.frame.origin.x != alignedFrame.origin.x
+                || button.frame.origin.y != alignedFrame.origin.y
+                || button.frame.size != alignedFrame.size
+            {
+                button.frame = alignedFrame
+            }
+        }
+
+        nativeStandardButtonBaseFrames = baseFrames
     }
 }

@@ -4,11 +4,10 @@ import AppKit
 struct MiniBrowserWindowView: View {
     let session: MiniWindowSession
     let adoptAction: () -> Void
-    let window: NSWindow?
 
     var body: some View {
         VStack(spacing: 0) {
-            MiniWindowToolbar(session: session, adoptAction: adoptAction, window: window)
+            MiniWindowToolbar(session: session, adoptAction: adoptAction)
             webContent
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -56,6 +55,6 @@ struct MiniBrowserWindowView: View {
         targetSpaceResolver: { "Preview Space" },
         adoptHandler: { _ in }
     )
-    MiniBrowserWindowView(session: session, adoptAction: {}, window: nil)
+    MiniBrowserWindowView(session: session, adoptAction: {})
 }
 #endif
