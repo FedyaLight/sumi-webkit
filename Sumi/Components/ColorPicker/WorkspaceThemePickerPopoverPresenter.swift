@@ -205,6 +205,34 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         coordinator.recover(anchor: anchor)
     }
 
+    static func performUncoordinatedSidebarDismissRecovery(
+        windowState: BrowserWindowState?,
+        source: SidebarTransientPresentationSource?,
+        anchor: NSView?,
+        using coordinator: SidebarHostRecoveryHandling
+    ) {
+        let window = source?.window ?? windowState?.window
+        performDismissRecovery(
+            in: window,
+            anchor: anchor,
+            using: coordinator
+        )
+
+        guard let windowState else { return }
+
+        let recoveryResult = windowState.sidebarContextMenuController.recoverInteractiveOwners(
+            in: window,
+            source: source
+        )
+        if source?.interactiveOwnerRecoveryMetadata != nil,
+           !recoveryResult.sourceOwnerResolved
+        {
+            windowState.scheduleSidebarInputRehydrate(
+                reason: .ownerUnresolvedAfterSoftRecovery
+            )
+        }
+    }
+
     private func rootView(
         session: WorkspaceThemePickerSession,
         windowState: BrowserWindowState,
@@ -311,12 +339,12 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
             )
         } else {
             finalize()
-            Self.performDismissRecovery(
-                in: closedSession.windowState?.window,
+            Self.performUncoordinatedSidebarDismissRecovery(
+                windowState: closedSession.windowState,
+                source: closedSession.session.presentationSource,
                 anchor: closedSession.session.presentationSource?.originOwnerView,
                 using: SidebarHostRecoveryCoordinator.shared
             )
-            closedSession.windowState?.scheduleSidebarInputRehydrate(reason: reason)
         }
     }
 
@@ -343,12 +371,12 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
             )
         } else {
             finalize()
-            Self.performDismissRecovery(
-                in: windowState.window,
+            Self.performUncoordinatedSidebarDismissRecovery(
+                windowState: windowState,
+                source: session.presentationSource,
                 anchor: session.presentationSource?.originOwnerView,
                 using: SidebarHostRecoveryCoordinator.shared
             )
-            windowState.scheduleSidebarInputRehydrate(reason: reason)
         }
     }
 
