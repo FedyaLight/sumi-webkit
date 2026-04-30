@@ -5,7 +5,9 @@
 //  Created by Maciek Bagiński on 30/07/2025.
 //
 import Combine
+import AppKit
 import SwiftUI
+import WebKit
 
 // Narrow wrapper that only publishes navigation state (canGoBack/canGoForward),
 // avoiding full Tab.objectWillChange fan-out for unrelated changes like favicon/audio/title.
@@ -17,6 +19,8 @@ class ObservableTabWrapper: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
     @Published private(set) var canGoBack: Bool = false
     @Published private(set) var canGoForward: Bool = false
+    @Published private(set) var canReload: Bool = false
+    @Published private(set) var isLoading: Bool = false
 
     func updateTab(_ newTab: Tab?) {
         guard tab !== newTab else { return }
@@ -32,6 +36,14 @@ class ObservableTabWrapper: ObservableObject {
                 self?.refreshNavigationState()
             }
             .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .sumiTabLoadingStateDidChange)
+            .filter { [weak newTab] in ($0.object as? Tab) === newTab }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.refreshNavigationState()
+            }
+            .store(in: &cancellables)
     }
 
     func setContext(browserManager: BrowserManager, windowState: BrowserWindowState) {
@@ -39,62 +51,61 @@ class ObservableTabWrapper: ObservableObject {
         self.windowState = windowState
     }
 
+    func activeWebView() -> WKWebView? {
+        guard let tab else { return nil }
+        if let browserManager, let windowState,
+           let webView = browserManager.getWebView(for: tab.id, in: windowState.id) {
+            return webView
+        }
+        return tab.assignedWebView ?? tab.existingWebView
+    }
+
     private func refreshNavigationState() {
+        let webView = activeWebView()
+
         if tab?.isFreezingNavigationStateDuringBackForwardGesture == true {
             canGoBack = tab?.canGoBack ?? false
             canGoForward = tab?.canGoForward ?? false
-            return
-        }
-
-        if let tab, let browserManager, let windowState,
-           let webView = browserManager.getWebView(for: tab.id, in: windowState.id) {
+        } else if let webView {
             canGoBack = webView.canGoBack
             canGoForward = webView.canGoForward
         } else {
             canGoBack = tab?.canGoBack ?? false
             canGoForward = tab?.canGoForward ?? false
         }
+
+        isLoading = (tab?.loadingState.isLoading ?? false) || (webView?.isLoading ?? false)
+        canReload = tab.map { !$0.representsSumiEmptySurface } ?? false
     }
 }
 
 struct NavButtonsView: View {
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.sumiSettings) private var sumiSettings
     @StateObject private var tabWrapper = ObservableTabWrapper()
 
     var body: some View {
-        HStack(alignment: .center, spacing: SidebarChromeMetrics.controlSpacing) {
-            Button("Go Back", systemImage: "arrow.backward", action: goBack)
-                .labelStyle(.iconOnly)
-                .font(.system(size: SidebarChromeMetrics.navigationIconSize, weight: .medium))
-                .buttonStyle(NavButtonStyle(diameter: SidebarChromeMetrics.navigationButtonSize))
-                .disabled(!tabWrapper.canGoBack)
-                .sumiAppKitContextMenu(entries: {
-                    NavigationHistoryContextMenuEntries.make(
-                        historyType: .back,
-                        windowState: windowState,
-                        browserManager: browserManager
-                    )
-                })
-
-            Button("Go Forward", systemImage: "arrow.forward", action: goForward)
-                .labelStyle(.iconOnly)
-                .font(.system(size: SidebarChromeMetrics.navigationIconSize, weight: .medium))
-                .buttonStyle(NavButtonStyle(diameter: SidebarChromeMetrics.navigationButtonSize))
-                .disabled(!tabWrapper.canGoForward)
-                .sumiAppKitContextMenu(entries: {
-                    NavigationHistoryContextMenuEntries.make(
-                        historyType: .forward,
-                        windowState: windowState,
-                        browserManager: browserManager
-                    )
-                })
-
-            Button("Reload", systemImage: "arrow.clockwise", action: refreshCurrentTab)
-                .labelStyle(.iconOnly)
-                .font(.system(size: SidebarChromeMetrics.navigationIconSize, weight: .medium))
-                .buttonStyle(NavButtonStyle(diameter: SidebarChromeMetrics.navigationButtonSize))
-        }
+        SumiNavigationToolbarControls(
+            state: navigationControlState,
+            theme: SumiNavigationToolbarTheme(
+                tokens: themeContext.tokens(settings: sumiSettings),
+                colorScheme: themeContext.chromeColorScheme
+            ),
+            browserManager: browserManager,
+            windowState: windowState,
+            tab: tabWrapper.tab,
+            activeWebView: tabWrapper.activeWebView(),
+            goBack: goBack,
+            goForward: goForward,
+            reloadOrStop: reloadOrStopCurrentTab
+        )
+        .frame(
+            width: SidebarChromeMetrics.navigationButtonSize * 3
+                + SidebarChromeMetrics.controlSpacing * 2,
+            height: SidebarChromeMetrics.navigationButtonSize
+        )
         .background(
             DoubleClickView {
                 if let window = NSApp.keyWindow {
@@ -116,10 +127,33 @@ struct NavButtonsView: View {
     private func updateCurrentTab() {
         tabWrapper.updateTab(browserManager.currentTab(for: windowState))
     }
+
+    private var navigationControlState: SumiNavigationToolbarControlState {
+        SumiNavigationToolbarControlState(
+            canGoBack: tabWrapper.canGoBack,
+            canGoForward: tabWrapper.canGoForward,
+            canReload: tabWrapper.canReload,
+            isLoading: tabWrapper.isLoading
+        )
+    }
+
+    private func activeWebView() -> WKWebView? {
+        tabWrapper.activeWebView()
+    }
     
     private func goBack() {
-        if let tab = tabWrapper.tab,
-           let webView = browserManager.getWebView(for: tab.id, in: windowState.id) {
+        let webView = activeWebView()
+        if SumiNavigationHistoryMenuModel.openURLIfModifiedClick(
+            webView?.backForwardList.backItem?.url,
+            browserManager: browserManager,
+            windowState: windowState,
+            sourceTab: tabWrapper.tab,
+            event: NSApp.currentEvent
+        ) {
+            return
+        }
+
+        if let webView {
             webView.goBack()
         } else {
             tabWrapper.tab?.goBack()
@@ -127,16 +161,32 @@ struct NavButtonsView: View {
     }
     
     private func goForward() {
-        if let tab = tabWrapper.tab,
-           let webView = browserManager.getWebView(for: tab.id, in: windowState.id) {
+        let webView = activeWebView()
+        if SumiNavigationHistoryMenuModel.openURLIfModifiedClick(
+            webView?.backForwardList.forwardItem?.url,
+            browserManager: browserManager,
+            windowState: windowState,
+            sourceTab: tabWrapper.tab,
+            event: NSApp.currentEvent
+        ) {
+            return
+        }
+
+        if let webView {
             webView.goForward()
         } else {
             tabWrapper.tab?.goForward()
         }
     }
     
-    private func refreshCurrentTab() {
-        tabWrapper.tab?.refresh()
+    private func reloadOrStopCurrentTab() {
+        guard let tab = tabWrapper.tab else { return }
+
+        if tabWrapper.isLoading {
+            tab.stopLoading(on: activeWebView())
+        } else {
+            tab.refresh()
+        }
     }
     
 }

@@ -15,6 +15,7 @@ import WebKit
 extension Notification.Name {
     static let sumiTabLifecycleDidChange = Notification.Name("SumiTabLifecycleDidChange")
     static let sumiTabNavigationStateDidChange = Notification.Name("SumiTabNavigationStateDidChange")
+    static let sumiTabLoadingStateDidChange = Notification.Name("SumiTabLoadingStateDidChange")
 }
 
 enum SumiWebViewShutdown {
@@ -153,7 +154,16 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     var loadingState: LoadingState {
         get { navigationRuntime.loadingState }
-        set { navigationRuntime.loadingState = newValue }
+        set {
+            guard navigationRuntime.loadingState != newValue else { return }
+            objectWillChange.send()
+            navigationRuntime.loadingState = newValue
+            NotificationCenter.default.post(
+                name: .sumiTabLoadingStateDidChange,
+                object: self,
+                userInfo: ["tabId": id]
+            )
+        }
     }
 
     @Published var canGoBack: Bool = false
