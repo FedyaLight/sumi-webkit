@@ -176,8 +176,7 @@ final class MiniBrowserWindowController: NSWindowController, NSWindowDelegate {
         )
         let baseView = MiniBrowserWindowView(
             session: session,
-            adoptAction: adoptAction,
-            window: window
+            adoptAction: adoptAction
         )
         let resolvedSettings = settings ?? SumiSettingsService()
         let neutralThemeContext = MiniBrowserWindowThemeContextResolver.make(
@@ -196,7 +195,7 @@ final class MiniBrowserWindowController: NSWindowController, NSWindowDelegate {
         window.isMovableByWindowBackground = false
         window.isReleasedWhenClosed = false
         window.collectionBehavior.insert(.fullScreenPrimary)
-        window.hideStandardWindowButtonsForCustomChrome()
+        window.configureNativeStandardWindowButtonsForBrowserChrome()
         window.identifier = NSUserInterfaceItemIdentifier(
             BrowserWindowControlsAccessibilityIdentifiers.miniBrowserWindow
         )

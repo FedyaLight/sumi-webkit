@@ -34,14 +34,26 @@ enum SidebarHoverOverlayDragPinningPolicy {
     }
 }
 
+enum SidebarHoverOverlayRevealPolicy {
+    static func isOverlayRevealed(
+        isOverlayVisible: Bool,
+        transientUIPinsHoverSidebar: Bool,
+        sidebarDragPinsHoverSidebar: Bool
+    ) -> Bool {
+        isOverlayVisible || transientUIPinsHoverSidebar || sidebarDragPinsHoverSidebar
+    }
+}
+
 enum SidebarHoverOverlayMetrics {
     static let cornerRadius: CGFloat = 12
     static let hiddenPadding: CGFloat = 18
+    static let revealAnimationDuration: TimeInterval = 0.12
 }
 
 struct SidebarHoverOverlayView: View {
     @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject var hoverManager: HoverSidebarManager
+    @EnvironmentObject private var trafficLightRenderState: BrowserWindowTrafficLightRenderState
     @ObservedObject private var dragState = SidebarDragState.shared
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
@@ -69,7 +81,11 @@ struct SidebarHoverOverlayView: View {
     }
 
     private var overlaySidebarRevealed: Bool {
-        hoverManager.isOverlayVisible || transientUIPinsHoverSidebar || sidebarDragPinsHoverSidebar
+        SidebarHoverOverlayRevealPolicy.isOverlayRevealed(
+            isOverlayVisible: hoverManager.isOverlayVisible,
+            transientUIPinsHoverSidebar: transientUIPinsHoverSidebar,
+            sidebarDragPinsHoverSidebar: sidebarDragPinsHoverSidebar
+        )
     }
 
     private var isCollapsedSidebar: Bool {
@@ -139,7 +155,7 @@ struct SidebarHoverOverlayView: View {
                         .contentShape(Rectangle())
                         .onHover { isIn in
                             if isIn && isCollapsedSidebar {
-                                withAnimation(.easeInOut(duration: 0.12)) {
+                                withAnimation(.easeInOut(duration: SidebarHoverOverlayMetrics.revealAnimationDuration)) {
                                     hoverManager.isOverlayVisible = true
                                 }
                             }
@@ -168,6 +184,7 @@ struct SidebarHoverOverlayView: View {
             commandPalette: commandPalette,
             sumiSettings: sumiSettings,
             resolvedThemeContext: themeContext,
+            trafficLightRenderState: trafficLightRenderState,
             presentationContext: presentationContext
         )
         .id("shared-sidebar-column")

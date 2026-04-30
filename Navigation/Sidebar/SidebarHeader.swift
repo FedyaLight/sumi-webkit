@@ -80,12 +80,16 @@ struct SidebarHeader: View {
 // MARK: - Sidebar Window Controls
 struct SidebarWindowControlsView: View {
     @EnvironmentObject var browserManager: BrowserManager
+    @EnvironmentObject private var trafficLightRenderState: BrowserWindowTrafficLightRenderState
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
 
     var body: some View {
         HStack(spacing: SidebarChromeMetrics.controlSpacing) {
-            BrowserWindowTrafficLights(window: windowState.window)
+            BrowserWindowTrafficLightPlaceholderCluster(
+                renderState: trafficLightRenderState,
+                isVisible: sumiSettings.sidebarPosition.shellEdge.isLeft
+            )
 
             if sumiSettings.showSidebarToggleButton {
                 Button("Toggle Sidebar", systemImage: sumiSettings.sidebarPosition.shellEdge.toggleSidebarSymbolName) {

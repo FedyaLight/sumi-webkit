@@ -319,6 +319,7 @@ struct SidebarHostEnvironmentContext {
     let commandPalette: CommandPalette
     let sumiSettings: SumiSettingsService
     let resolvedThemeContext: ResolvedThemeContext
+    let trafficLightRenderState: BrowserWindowTrafficLightRenderState
 }
 
 enum SidebarPresentationMode: Equatable {
@@ -425,6 +426,7 @@ extension View {
             .environment(context.windowState)
             .environment(context.windowRegistry)
             .environment(context.commandPalette)
+            .environmentObject(context.trafficLightRenderState)
             .environment(\.sumiSettings, context.sumiSettings)
             .environment(\.resolvedThemeContext, context.resolvedThemeContext)
     }
@@ -576,6 +578,7 @@ enum SidebarColumnHostedRoot {
         commandPalette: CommandPalette,
         sumiSettings: SumiSettingsService,
         resolvedThemeContext: ResolvedThemeContext,
+        trafficLightRenderState: BrowserWindowTrafficLightRenderState,
         presentationContext: SidebarPresentationContext
     ) -> SidebarColumnHostedRootView {
         SidebarColumnHostedRootView(
@@ -585,7 +588,8 @@ enum SidebarColumnHostedRoot {
                 windowRegistry: windowRegistry,
                 commandPalette: commandPalette,
                 sumiSettings: sumiSettings,
-                resolvedThemeContext: resolvedThemeContext
+                resolvedThemeContext: resolvedThemeContext,
+                trafficLightRenderState: trafficLightRenderState
             ),
             presentationContext: presentationContext
         )
@@ -599,6 +603,7 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
     var commandPalette: CommandPalette
     var sumiSettings: SumiSettingsService
     var resolvedThemeContext: ResolvedThemeContext
+    var trafficLightRenderState: BrowserWindowTrafficLightRenderState
     var presentationContext: SidebarPresentationContext
 
     func makeNSViewController(context: Context) -> SidebarColumnViewController {
@@ -613,6 +618,7 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
             commandPalette: commandPalette,
             sumiSettings: sumiSettings,
             resolvedThemeContext: resolvedThemeContext,
+            trafficLightRenderState: trafficLightRenderState,
             presentationContext: presentationContext
         )
         controller.updateHostedSidebar(

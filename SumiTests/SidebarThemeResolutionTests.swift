@@ -298,8 +298,10 @@ final class SidebarThemeResolutionTests: XCTestCase {
 
         XCTAssertTrue(source.contains("if !windowState.isSidebarVisible"))
         XCTAssertTrue(source.contains("SidebarHoverOverlayView()"))
+        XCTAssertTrue(source.contains("BrowserWindowNativeTrafficLightVisibilityBridge("))
         XCTAssertFalse(source.contains("BrowserWindowTrafficLights("))
-        XCTAssertTrue(sidebarHeaderSource.contains("BrowserWindowTrafficLights(window: windowState.window)"))
+        XCTAssertTrue(sidebarHeaderSource.contains("BrowserWindowTrafficLightPlaceholderCluster("))
+        XCTAssertTrue(sidebarHeaderSource.contains("sumiSettings.sidebarPosition.shellEdge.isLeft"))
         XCTAssertFalse(dockedSource.contains("BrowserWindowTrafficLights"))
         XCTAssertFalse(dockedSource.contains("SidebarHoverOverlayView"))
     }
