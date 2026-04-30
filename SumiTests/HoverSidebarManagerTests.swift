@@ -87,6 +87,47 @@ final class HoverSidebarManagerTests: XCTestCase {
         ))
     }
 
+    func testOverlayRevealPrewarmsHostBeforePublishingVisibleState() async {
+        let manager = HoverSidebarManager()
+
+        manager.requestOverlayReveal(animationDuration: 0)
+
+        XCTAssertTrue(manager.isOverlayHostPrewarmed)
+        XCTAssertFalse(manager.isOverlayVisible)
+
+        await drainMainQueue()
+
+        XCTAssertTrue(manager.isOverlayHostPrewarmed)
+        XCTAssertTrue(manager.isOverlayVisible)
+    }
+
+    func testOverlayHideReleasesPrewarmedHostAfterAnimationDelay() async {
+        let manager = HoverSidebarManager()
+
+        manager.requestOverlayReveal(animationDuration: 0)
+        await drainMainQueue()
+        manager.setOverlayVisibility(false, animationDuration: 0)
+
+        XCTAssertFalse(manager.isOverlayVisible)
+        XCTAssertTrue(manager.isOverlayHostPrewarmed)
+
+        await drainMainQueue()
+
+        XCTAssertFalse(manager.isOverlayHostPrewarmed)
+    }
+
+    func testOverlayHideCancelsPendingRevealBeforeVisibleStatePublishes() async {
+        let manager = HoverSidebarManager()
+
+        manager.requestOverlayReveal(animationDuration: 0)
+        manager.setOverlayVisibility(false, animationDuration: 0)
+
+        await drainMainQueue()
+
+        XCTAssertFalse(manager.isOverlayVisible)
+        XCTAssertFalse(manager.isOverlayHostPrewarmed)
+    }
+
     func testRefreshMonitoringInstallsAndRemovesMonitorsForActiveCollapsedWindow() async {
         let recorder = EventMonitorRecorder()
         let manager = HoverSidebarManager(
@@ -159,6 +200,12 @@ final class HoverSidebarManagerTests: XCTestCase {
         XCTAssertTrue(recorder.globalMasks.isEmpty)
         XCTAssertEqual(recorder.removedMonitorCount, 0)
     }
+}
+
+@MainActor
+private func drainMainQueue() async {
+    await Task.yield()
+    await Task.yield()
 }
 
 @MainActor

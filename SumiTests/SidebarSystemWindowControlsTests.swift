@@ -148,8 +148,11 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertEqual(SidebarChromeMetrics.nativeTrafficLightVerticalOffset, 5)
     }
 
-    func testTrafficLightSourceUsesPlaceholderClusterAndDelayedNativeBridge() throws {
+    func testTrafficLightSourceUsesPlaceholderClusterAndNativeVisibilityBridgeWithoutReparenting() throws {
         let controlsSource = try Self.source(named: "Sumi/Components/Window/BrowserWindowTrafficLights.swift")
+        let windowSource = try Self.source(named: "Sumi/Components/Window/SumiBrowserWindow.swift")
+        let windowViewSource = try Self.source(named: "App/Window/WindowView.swift")
+        let sidebarHeaderSource = try Self.source(named: "Navigation/Sidebar/SidebarHeader.swift")
 
         XCTAssertTrue(controlsSource.contains("final class BrowserWindowTrafficLightRenderState: ObservableObject"))
         XCTAssertTrue(controlsSource.contains("@Published var isNativeClusterVisible"))
@@ -180,6 +183,7 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertTrue(controlsSource.contains("NSEvent.removeMonitor(fullScreenExitClickMonitor)"))
         XCTAssertTrue(controlsSource.contains("scheduleNativeButtonHiddenMaintenance"))
         XCTAssertTrue(controlsSource.contains("keepNativeButtonsHiddenIfTransitionIsCurrent"))
+        XCTAssertTrue(controlsSource.contains("window.standardWindowButton(.zoomButton)"))
         XCTAssertTrue(controlsSource.contains("NSWindow.willEnterFullScreenNotification"))
         XCTAssertTrue(controlsSource.contains("NSWindow.willExitFullScreenNotification"))
         XCTAssertTrue(controlsSource.contains("NSWindow.didExitFullScreenNotification"))
@@ -197,7 +201,6 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertFalse(controlsSource.contains("BrowserWindowTrafficLightActionRouter"))
         XCTAssertFalse(controlsSource.contains("BrowserWindowTrafficLightAvailability"))
         XCTAssertFalse(controlsSource.contains("NSTrackingArea"))
-        XCTAssertFalse(controlsSource.contains("Button("))
         XCTAssertFalse(controlsSource.contains("acceptsFirstMouse"))
         XCTAssertFalse(controlsSource.contains("mouseDownCanMoveWindow"))
         XCTAssertFalse(controlsSource.contains("hoverPollTimer"))
@@ -210,6 +213,18 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertFalse(controlsSource.contains("traffic-light-zoom"))
         XCTAssertFalse(controlsSource.contains("NSPopover"))
         XCTAssertFalse(controlsSource.contains("NSHostingController"))
+
+        XCTAssertTrue(windowSource.contains("guard let button = standardWindowButton(type)"))
+        XCTAssertTrue(windowSource.contains("button.superview?.needsLayout = true"))
+        XCTAssertTrue(windowViewSource.contains("BrowserWindowNativeTrafficLightVisibilityBridge("))
+        XCTAssertTrue(sidebarHeaderSource.contains("BrowserWindowTrafficLightPlaceholderCluster("))
+        XCTAssertFalse(windowSource.contains("SidebarSystemWindowControls"))
+        XCTAssertFalse(windowViewSource.contains("SidebarSystemWindowControls"))
+        XCTAssertFalse(sidebarHeaderSource.contains("SidebarSystemWindowControls"))
+        Self.assertNoNativeTrafficLightReparenting(in: controlsSource, file: "BrowserWindowTrafficLights.swift")
+        Self.assertNoNativeTrafficLightReparenting(in: windowSource, file: "SumiBrowserWindow.swift")
+        Self.assertNoNativeTrafficLightReparenting(in: windowViewSource, file: "WindowView.swift")
+        Self.assertNoNativeTrafficLightReparenting(in: sidebarHeaderSource, file: "SidebarHeader.swift")
     }
 
     func testWindowChromeUsesNativeButtonsWithoutCustomActionBridge() throws {
@@ -328,5 +343,26 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
             contentsOf: repoRoot.appendingPathComponent(relativePath),
             encoding: .utf8
         )
+    }
+
+    private static func assertNoNativeTrafficLightReparenting(
+        in source: String,
+        file: String,
+        line: UInt = #line
+    ) {
+        let forbiddenPatterns = [
+            #"\.addSubview\(\s*(button|closeButton|minimizeButton|miniaturizeButton|zoomButton)"#,
+            #"(button|closeButton|minimizeButton|miniaturizeButton|zoomButton)\.removeFromSuperview\("#,
+            #"standardWindowButton\([^)]+\)\?\.removeFromSuperview\("#,
+            #"standardWindowButton\([^)]+\)\.removeFromSuperview\("#,
+        ]
+
+        for pattern in forbiddenPatterns {
+            XCTAssertNil(
+                source.range(of: pattern, options: .regularExpression),
+                "\(file) must not reparent native traffic-light buttons with pattern: \(pattern)",
+                line: line
+            )
+        }
     }
 }

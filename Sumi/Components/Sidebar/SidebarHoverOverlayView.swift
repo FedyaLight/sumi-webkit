@@ -44,6 +44,24 @@ enum SidebarHoverOverlayRevealPolicy {
     }
 }
 
+enum SidebarHoverOverlayHostMountPolicy {
+    static func shouldMountCollapsedHost(
+        isSidebarVisible: Bool,
+        isOverlayVisible: Bool,
+        isOverlayHostPrewarmed: Bool,
+        transientUIPinsHoverSidebar: Bool,
+        sidebarDragPinsHoverSidebar: Bool
+    ) -> Bool {
+        guard !isSidebarVisible else { return false }
+        return isOverlayHostPrewarmed
+            || SidebarHoverOverlayRevealPolicy.isOverlayRevealed(
+                isOverlayVisible: isOverlayVisible,
+                transientUIPinsHoverSidebar: transientUIPinsHoverSidebar,
+                sidebarDragPinsHoverSidebar: sidebarDragPinsHoverSidebar
+            )
+    }
+}
+
 enum SidebarHoverOverlayMetrics {
     static let cornerRadius: CGFloat = 12
     static let hiddenPadding: CGFloat = 18
@@ -90,6 +108,16 @@ struct SidebarHoverOverlayView: View {
 
     private var isCollapsedSidebar: Bool {
         !windowState.isSidebarVisible
+    }
+
+    private var shouldMountCollapsedSidebarHost: Bool {
+        SidebarHoverOverlayHostMountPolicy.shouldMountCollapsedHost(
+            isSidebarVisible: windowState.isSidebarVisible,
+            isOverlayVisible: hoverManager.isOverlayVisible,
+            isOverlayHostPrewarmed: hoverManager.isOverlayHostPrewarmed,
+            transientUIPinsHoverSidebar: transientUIPinsHoverSidebar,
+            sidebarDragPinsHoverSidebar: sidebarDragPinsHoverSidebar
+        )
     }
 
     private var overlayBaseSidebarWidth: CGFloat {
@@ -155,14 +183,16 @@ struct SidebarHoverOverlayView: View {
                         .contentShape(Rectangle())
                         .onHover { isIn in
                             if isIn && isCollapsedSidebar {
-                                withAnimation(.easeInOut(duration: SidebarHoverOverlayMetrics.revealAnimationDuration)) {
-                                    hoverManager.isOverlayVisible = true
-                                }
+                                hoverManager.requestOverlayReveal(
+                                    animationDuration: SidebarHoverOverlayMetrics.revealAnimationDuration
+                                )
                             }
                             NSCursor.arrow.set()
                         }
 
-                    sidebarHost
+                    if shouldMountCollapsedSidebarHost {
+                        sidebarHost
+                    }
                 }
                 .frame(
                     maxWidth: .infinity,
