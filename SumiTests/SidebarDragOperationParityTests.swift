@@ -2905,6 +2905,19 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
         )
     }
 
+    func testGenericAppKitContextMenuHostKeepsConfiguredEntries() {
+        let host = SumiAppKitContextMenuHostView(frame: NSRect(x: 0, y: 0, width: 80, height: 36))
+        host.entriesProvider = {
+            [
+                .action(SidebarContextMenuAction(title: "Open", action: {})),
+                .separator,
+                .action(SidebarContextMenuAction(title: "Close", action: {})),
+            ]
+        }
+
+        XCTAssertEqual(host.entriesProvider().map(itemTitle), ["Open", "<separator>", "Close"])
+    }
+
     func testFolderHeaderContextMenuWithoutCustomIconUsesExpectedOrder() {
         let builder = makeBuilder(
             entries: makeFolderHeaderContextMenuEntries(
@@ -3301,6 +3314,69 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
         XCTAssertEqual(
             SidebarContextMenuRoutingPolicy.presentationStyle(for: .leftMouseDown),
             .anchoredPopup
+        )
+    }
+
+    func testSidebarItemInputRoutingUsesLeanDockedPathForRightClickOnlyMenu() {
+        XCTAssertEqual(
+            SidebarItemInputRouting.route(
+                in: SidebarPresentationContext.docked(sidebarWidth: 280),
+                menu: makeLeafConfiguration(triggers: .rightClick)
+            ),
+            .leanDockedContextMenu
+        )
+    }
+
+    func testSidebarItemInputRoutingKeepsDragSourcesOnHeavyOwnerPath() {
+        XCTAssertEqual(
+            SidebarItemInputRouting.route(
+                in: SidebarPresentationContext.docked(sidebarWidth: 280),
+                menu: makeLeafConfiguration(triggers: .rightClick),
+                dragSource: makeTestDragSource()
+            ),
+            .appKitOwner(.dragSource)
+        )
+    }
+
+    func testSidebarItemInputRoutingKeepsMiddleClickOnHeavyOwnerPath() {
+        XCTAssertEqual(
+            SidebarItemInputRouting.route(
+                in: SidebarPresentationContext.docked(sidebarWidth: 280),
+                menu: makeLeafConfiguration(triggers: .rightClick),
+                hasMiddleClick: true
+            ),
+            .appKitOwner(.middleClick)
+        )
+    }
+
+    func testSidebarItemInputRoutingKeepsCollapsedOverlayOnHeavyOwnerPath() {
+        XCTAssertEqual(
+            SidebarItemInputRouting.route(
+                in: SidebarPresentationContext.collapsedVisible(sidebarWidth: 280),
+                menu: makeLeafConfiguration(triggers: .rightClick)
+            ),
+            .appKitOwner(.collapsedOverlay)
+        )
+    }
+
+    func testSidebarItemInputRoutingKeepsLeftMouseDownMenusOnHeavyOwnerPath() {
+        XCTAssertEqual(
+            SidebarItemInputRouting.route(
+                in: SidebarPresentationContext.docked(sidebarWidth: 280),
+                menu: makeLeafConfiguration(triggers: [.leftClick, .rightClick])
+            ),
+            .appKitOwner(.leftMouseDownMenu)
+        )
+    }
+
+    func testSidebarItemInputRoutingKeepsAppKitRecoverySourcesOnHeavyOwnerPath() {
+        XCTAssertEqual(
+            SidebarItemInputRouting.route(
+                in: SidebarPresentationContext.docked(sidebarWidth: 280),
+                menu: makeLeafConfiguration(triggers: .rightClick),
+                requiresAppKitRecovery: true
+            ),
+            .appKitOwner(.appKitRecovery)
         )
     }
 
@@ -4322,6 +4398,26 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
 
     private func makeBuilder(entries: [SidebarContextMenuEntry]) -> SidebarContextMenuBuilder {
         SidebarContextMenuBuilder(entries: entries)
+    }
+
+    private func makeLeafConfiguration(
+        triggers: SidebarContextMenuTriggers
+    ) -> SidebarContextMenuLeafConfiguration {
+        SidebarContextMenuLeafConfiguration(
+            isEnabled: true,
+            surfaceKind: .row,
+            triggers: triggers,
+            entries: { [.action(SidebarContextMenuAction(title: "Open", action: {}))] },
+            onMenuVisibilityChanged: { _ in }
+        )
+    }
+
+    private func makeTestDragSource() -> SidebarDragSourceConfiguration {
+        SidebarDragSourceConfiguration(
+            item: SumiDragItem(tabId: UUID(), title: "Drag"),
+            sourceZone: .spaceRegular(UUID()),
+            previewKind: .row
+        )
     }
 
     private func itemTitle(for entry: SidebarContextMenuEntry) -> String {
