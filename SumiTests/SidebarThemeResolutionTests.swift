@@ -331,7 +331,7 @@ final class SidebarThemeResolutionTests: XCTestCase {
     func testSidebarColumnHostIsPaintlessAndDoesNotLeakAppKitWindowBackground() throws {
         let source = try String(
             contentsOf: Self.repoRoot.appendingPathComponent(
-                "Sumi/Components/Sidebar/SidebarColumnViewController.swift"
+                "Sumi/Components/Sidebar/SidebarColumnContainerView.swift"
             ),
             encoding: .utf8
         )
