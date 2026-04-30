@@ -16,30 +16,54 @@ private struct SidebarAppKitItemModifier: ViewModifier {
     let sourceID: String?
     let isInteractionEnabled: Bool
 
+    @ViewBuilder
     func body(content: Content) -> some View {
-        let dragScope = dragSource.flatMap {
-            SidebarDragScope(
-                windowState: windowState,
-                presentationMode: presentationContext.mode,
-                sourceZone: $0.sourceZone,
-                item: $0.item
-            )
-        }
-
-        SidebarAppKitItemBridge(
-            content: content,
-            controller: windowState.sidebarContextMenuController,
-            configuration: SidebarAppKitItemConfiguration(
-                isInteractionEnabled: isInteractionEnabled,
-                menu: menu,
-                dragSource: dragSource,
-                dragScope: dragScope,
-                primaryAction: primaryAction,
-                onMiddleClick: onMiddleClick,
-                sourceID: sourceID,
-                presentationMode: presentationContext.mode
-            )
+        let route = SidebarItemInputRouting.route(
+            in: presentationContext,
+            menu: menu,
+            dragSource: dragSource,
+            hasMiddleClick: onMiddleClick != nil,
+            requiresManualPrimaryMouseTracking: primaryAction != nil,
+            requiresAppKitRecovery: sourceID != nil
         )
+
+        switch route {
+        case .appKitOwner:
+            let dragScope = dragSource.flatMap {
+                SidebarDragScope(
+                    windowState: windowState,
+                    presentationMode: presentationContext.mode,
+                    sourceZone: $0.sourceZone,
+                    item: $0.item
+                )
+            }
+
+            SidebarAppKitItemBridge(
+                content: content,
+                controller: windowState.sidebarContextMenuController,
+                configuration: SidebarAppKitItemConfiguration(
+                    isInteractionEnabled: isInteractionEnabled,
+                    menu: menu,
+                    dragSource: dragSource,
+                    dragScope: dragScope,
+                    primaryAction: primaryAction,
+                    onMiddleClick: onMiddleClick,
+                    sourceID: sourceID,
+                    presentationMode: presentationContext.mode
+                )
+            )
+        case .leanDockedContextMenu:
+            content.overlay {
+                SumiAppKitContextMenuBridge(
+                    controller: windowState.sidebarContextMenuController,
+                    isEnabled: menu.isEnabled,
+                    entries: menu.entries,
+                    onMenuVisibilityChanged: menu.onMenuVisibilityChanged
+                )
+            }
+        case .nativeSwiftUI:
+            content
+        }
     }
 }
 

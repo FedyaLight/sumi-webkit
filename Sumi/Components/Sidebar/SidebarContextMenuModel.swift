@@ -182,6 +182,82 @@ struct SidebarAppKitItemConfiguration {
     }
 }
 
+enum SidebarItemInputRoutingReason: Equatable {
+    case collapsedOverlay
+    case dragSource
+    case middleClick
+    case primaryMouseTracking
+    case leftMouseDownMenu
+    case appKitRecovery
+    case unavailableLeanContextMenu
+}
+
+enum SidebarItemInputRoute: Equatable {
+    case appKitOwner(SidebarItemInputRoutingReason)
+    case leanDockedContextMenu
+    case nativeSwiftUI
+}
+
+enum SidebarItemInputRouting {
+    static func route(
+        in presentationContext: SidebarPresentationContext,
+        menu: SidebarContextMenuLeafConfiguration?,
+        dragSource: SidebarDragSourceConfiguration? = nil,
+        hasMiddleClick: Bool = false,
+        requiresManualPrimaryMouseTracking: Bool = false,
+        requiresAppKitRecovery: Bool = false
+    ) -> SidebarItemInputRoute {
+        if presentationContext.inputMode == .collapsedOverlay {
+            return .appKitOwner(.collapsedOverlay)
+        }
+        if dragSource != nil {
+            return .appKitOwner(.dragSource)
+        }
+        if hasMiddleClick {
+            return .appKitOwner(.middleClick)
+        }
+        if requiresManualPrimaryMouseTracking {
+            return .appKitOwner(.primaryMouseTracking)
+        }
+        if requiresAppKitRecovery {
+            return .appKitOwner(.appKitRecovery)
+        }
+
+        guard let menu else {
+            return .nativeSwiftUI
+        }
+
+        if menu.triggers.contains(.leftClick) {
+            return .appKitOwner(.leftMouseDownMenu)
+        }
+        if menu.triggers == .rightClick {
+            return .leanDockedContextMenu
+        }
+        return .appKitOwner(.unavailableLeanContextMenu)
+    }
+
+    static func usesAppKitOwner(
+        in presentationContext: SidebarPresentationContext,
+        menu: SidebarContextMenuLeafConfiguration?,
+        dragSource: SidebarDragSourceConfiguration? = nil,
+        hasMiddleClick: Bool = false,
+        requiresManualPrimaryMouseTracking: Bool = false,
+        requiresAppKitRecovery: Bool = false
+    ) -> Bool {
+        if case .appKitOwner = route(
+            in: presentationContext,
+            menu: menu,
+            dragSource: dragSource,
+            hasMiddleClick: hasMiddleClick,
+            requiresManualPrimaryMouseTracking: requiresManualPrimaryMouseTracking,
+            requiresAppKitRecovery: requiresAppKitRecovery
+        ) {
+            return true
+        }
+        return false
+    }
+}
+
 struct SidebarContextMenuResolvedTarget {
     let entries: [SidebarContextMenuEntry]
     let onMenuVisibilityChanged: (Bool) -> Void

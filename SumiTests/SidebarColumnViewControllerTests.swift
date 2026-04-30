@@ -1200,6 +1200,75 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         XCTAssertEqual(snapshot.collapsedHiddenMountedSidebarHostCount, 0)
         XCTAssertEqual(snapshot.hardSidebarInputRehydrateCount, 0)
     }
+
+    func testDockedRightClickOnlyContextMenuModifierAvoidsHeavyOwnerMetricsComparedToDragSurface() {
+        SidebarDebugMetrics.resetForTesting()
+        let (leanWindow, leanHost) = mountSidebarInputHost(
+            presentationContext: .docked(sidebarWidth: 280)
+        ) {
+            Color.clear
+                .frame(width: 80, height: 36)
+                .sidebarAppKitContextMenu(entries: {
+                    [.action(SidebarContextMenuAction(title: "Open", action: {}))]
+                })
+        }
+        let leanSnapshot = SidebarDebugMetrics.snapshot()
+        unmountSidebarInputHost(window: leanWindow, host: leanHost)
+
+        SidebarDebugMetrics.resetForTesting()
+        let (heavyWindow, heavyHost) = mountSidebarInputHost(
+            presentationContext: .docked(sidebarWidth: 280)
+        ) {
+            Color.clear
+                .frame(width: 80, height: 36)
+                .sidebarAppKitContextMenu(
+                    dragSource: SidebarDragSourceConfiguration(
+                        item: SumiDragItem(tabId: UUID(), title: "Drag"),
+                        sourceZone: .spaceRegular(UUID()),
+                        previewKind: .row
+                    ),
+                    entries: {
+                        [.action(SidebarContextMenuAction(title: "Open", action: {}))]
+                    }
+                )
+        }
+        let heavySnapshot = SidebarDebugMetrics.snapshot()
+        unmountSidebarInputHost(window: heavyWindow, host: heavyHost)
+        SidebarDebugMetrics.resetForTesting()
+
+        XCTAssertEqual(leanSnapshot.liveInteractiveItemViewCount, 0)
+        XCTAssertEqual(leanSnapshot.liveSidebarAppKitItemBridgeCount, 0)
+        XCTAssertEqual(leanSnapshot.liveInteractiveOwnerAttachmentCount, 0)
+        XCTAssertEqual(leanSnapshot.interactiveOwnerHostingViewCreatedCount, 0)
+        XCTAssertGreaterThan(heavySnapshot.liveInteractiveItemViewCount, 0)
+        XCTAssertGreaterThan(heavySnapshot.liveSidebarAppKitItemBridgeCount, 0)
+        XCTAssertGreaterThan(heavySnapshot.liveInteractiveOwnerAttachmentCount, 0)
+        XCTAssertGreaterThan(
+            heavySnapshot.interactiveOwnerHostingViewCreatedCount,
+            leanSnapshot.interactiveOwnerHostingViewCreatedCount
+        )
+    }
+
+    func testCollapsedOverlayRightClickOnlyContextMenuModifierKeepsHeavyOwnerMetrics() {
+        SidebarDebugMetrics.resetForTesting()
+        let (window, host) = mountSidebarInputHost(
+            presentationContext: .collapsedVisible(sidebarWidth: 280)
+        ) {
+            Color.clear
+                .frame(width: 80, height: 36)
+                .sidebarAppKitContextMenu(entries: {
+                    [.action(SidebarContextMenuAction(title: "Open", action: {}))]
+                })
+        }
+        let snapshot = SidebarDebugMetrics.snapshot()
+        unmountSidebarInputHost(window: window, host: host)
+        SidebarDebugMetrics.resetForTesting()
+
+        XCTAssertGreaterThan(snapshot.liveInteractiveItemViewCount, 0)
+        XCTAssertGreaterThan(snapshot.liveSidebarAppKitItemBridgeCount, 0)
+        XCTAssertGreaterThan(snapshot.liveInteractiveOwnerAttachmentCount, 0)
+        XCTAssertGreaterThan(snapshot.interactiveOwnerHostingViewCreatedCount, 0)
+    }
     #endif
 
     func testSidebarColumnRoutingRestoresLiveDragOwnerOnlyAfterMenuEndTracking() {
@@ -2200,6 +2269,37 @@ final class SidebarColumnViewControllerTests: XCTestCase {
             RunLoop.main.run(until: Date().addingTimeInterval(0.02))
         }
     }
+
+    #if DEBUG
+    private func mountSidebarInputHost<Content: View>(
+        presentationContext: SidebarPresentationContext,
+        @ViewBuilder content: () -> Content
+    ) -> (window: NSWindow, host: NSHostingView<AnyView>) {
+        let windowState = BrowserWindowState()
+        let rootView = AnyView(
+            content()
+                .environment(windowState)
+                .environment(\.sidebarPresentationContext, presentationContext)
+        )
+        let host = NSHostingView(rootView: rootView)
+        host.frame = NSRect(x: 0, y: 0, width: 120, height: 60)
+
+        let window = makeWindow()
+        window.contentView?.addSubview(host)
+        host.layoutSubtreeIfNeeded()
+        drainMainRunLoop()
+        return (window, host)
+    }
+
+    private func unmountSidebarInputHost(
+        window: NSWindow,
+        host: NSHostingView<AnyView>
+    ) {
+        host.removeFromSuperview()
+        window.close()
+        drainMainRunLoop()
+    }
+    #endif
 
 }
 
