@@ -774,9 +774,9 @@ final class SidebarColumnViewControllerTests: XCTestCase {
     }
 
     func testSidebarColumnContainerDoesNotContainObsoleteCursorShieldLayer() throws {
-        let source = try Self.source(named: "Sumi/Components/Sidebar/SidebarColumnViewController.swift")
-        let containerStart = try XCTUnwrap(source.range(of: "private final class SidebarColumnContainerView"))
-        let containerEnd = try XCTUnwrap(source.range(of: "private enum SidebarColumnPaintlessChrome"))
+        let source = try Self.source(named: "Sumi/Components/Sidebar/SidebarColumnContainerView.swift")
+        let containerStart = try XCTUnwrap(source.range(of: "final class SidebarColumnContainerView"))
+        let containerEnd = try XCTUnwrap(source.range(of: "enum SidebarColumnPaintlessChrome"))
         let containerSource = String(source[containerStart.lowerBound..<containerEnd.lowerBound])
 
         XCTAssertTrue(containerSource.contains("CollapsedSidebarPointerSuppressionController") == false)
