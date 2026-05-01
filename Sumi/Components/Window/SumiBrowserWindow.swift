@@ -96,6 +96,25 @@ extension NSWindow {
         }
     }
 
+    @MainActor
+    func miniaturizeFromCustomBrowserChrome() {
+        guard styleMask.contains(.miniaturizable), isMiniaturized == false else {
+            return
+        }
+
+        guard let button = standardWindowButton(.miniaturizeButton) else {
+            miniaturize(nil)
+            return
+        }
+
+        let previousState = NativeStandardWindowButtonState(button)
+        // AppKit's minimize animation refuses to start when the system miniaturize
+        // button is hidden or transparent, even when the window is miniaturizable.
+        prepareNativeStandardWindowButtonForSystemMiniaturize(button)
+        miniaturize(nil)
+        previousState.restore(on: button)
+    }
+
 }
 
 final class SumiBrowserWindow: NSWindow {
@@ -216,5 +235,63 @@ extension NSWindow {
         var frame = button.frame
         frame.origin.x = -10_000 - frame.width
         return frame
+    }
+
+    private func prepareNativeStandardWindowButtonForSystemMiniaturize(_ button: NSButton) {
+        button.wantsLayer = true
+        button.layer?.removeAllAnimations()
+        button.superview?.layer?.removeAllAnimations()
+        button.frame = parkedNativeStandardWindowButtonFrame(for: button)
+        button.alphaValue = 1
+        button.isTransparent = false
+        button.isHidden = false
+        button.isEnabled = true
+        button.setAccessibilityElement(false)
+    }
+}
+
+@MainActor
+private struct NativeStandardWindowButtonState {
+    let frame: NSRect
+    let alphaValue: CGFloat
+    let isTransparent: Bool
+    let isHidden: Bool
+    let isEnabled: Bool
+    let isAccessibilityElement: Bool
+    let identifier: NSUserInterfaceItemIdentifier?
+    let accessibilityIdentifier: String?
+
+    init(_ button: NSButton) {
+        frame = button.frame
+        alphaValue = button.alphaValue
+        isTransparent = button.isTransparent
+        isHidden = button.isHidden
+        isEnabled = button.isEnabled
+        isAccessibilityElement = button.isAccessibilityElement()
+        identifier = button.identifier
+
+        let currentAccessibilityIdentifier = button.accessibilityIdentifier()
+        accessibilityIdentifier = currentAccessibilityIdentifier.isEmpty
+            ? nil
+            : currentAccessibilityIdentifier
+    }
+
+    @MainActor
+    func restore(on button: NSButton) {
+        button.frame = frame
+        button.alphaValue = alphaValue
+        button.isTransparent = isTransparent
+        button.isHidden = isHidden
+        button.isEnabled = isEnabled
+        button.setAccessibilityElement(isAccessibilityElement)
+        button.identifier = identifier
+        button.setAccessibilityIdentifier(accessibilityIdentifier)
+        button.updateTrackingAreas()
+        button.needsDisplay = true
+        if let superview = button.superview {
+            superview.updateTrackingAreas()
+            superview.needsDisplay = true
+            superview.needsLayout = true
+        }
     }
 }

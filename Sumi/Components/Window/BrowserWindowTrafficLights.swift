@@ -125,8 +125,8 @@ struct BrowserWindowTrafficLightActionProvider {
 
     init(
         targetWindow: NSWindow?,
-        close: @escaping @MainActor (NSWindow) -> Void = { $0.performClose(nil) },
-        minimize: @escaping @MainActor (NSWindow) -> Void = { $0.miniaturize(nil) },
+        close: @escaping @MainActor (NSWindow) -> Void = { $0.close() },
+        minimize: @escaping @MainActor (NSWindow) -> Void = { $0.miniaturizeFromCustomBrowserChrome() },
         zoom: @escaping @MainActor (NSWindow) -> Void = { $0.toggleFullScreen(nil) }
     ) {
         self.targetWindow = targetWindow
@@ -168,13 +168,7 @@ struct BrowserWindowTrafficLightActionProvider {
 
     var drawsActivePalette: Bool {
         guard let targetWindow else { return true }
-        if targetWindow.isKeyWindow || targetWindow.isMainWindow {
-            return true
-        }
-
-        return NSApp.isActive
-            && targetWindow.isVisible
-            && targetWindow.isMiniaturized == false
+        return targetWindow.isMiniaturized == false
     }
 }
 
@@ -231,23 +225,11 @@ struct BrowserWindowTrafficLights: View {
     }
 
     private func trafficLightButton(_ action: BrowserWindowTrafficLightAction) -> some View {
-        let isEnabled = actionProvider.isEnabled(action)
-
-        return Button {
-            actionProvider.perform(action)
-        } label: {
-            EmptyView()
-        }
-        .buttonStyle(
-            BrowserWindowTrafficLightButtonStyle(
-                action: action,
-                isEnabled: isEnabled,
-                isClusterHovered: isClusterHovered,
-                drawsActivePalette: actionProvider.drawsActivePalette
-            )
+        BrowserWindowTrafficLightButton(
+            action: action,
+            actionProvider: actionProvider,
+            isClusterHovered: isClusterHovered
         )
-        .disabled(!isEnabled)
-        .accessibilityIdentifier(action.accessibilityIdentifier)
     }
 
     private func handleWindowActivationNotification(_ notification: Notification) {
@@ -270,10 +252,183 @@ struct BrowserWindowTrafficLights: View {
     }
 }
 
+@MainActor
+private struct BrowserWindowTrafficLightButton: View {
+    let action: BrowserWindowTrafficLightAction
+    let actionProvider: BrowserWindowTrafficLightActionProvider
+    let isClusterHovered: Bool
+
+    @State private var isPressedByAppKitHitTarget = false
+
+    var body: some View {
+        let isEnabled = actionProvider.isEnabled(action)
+
+        Button(action: performAction) {
+            EmptyView()
+        }
+        .buttonStyle(
+            BrowserWindowTrafficLightButtonStyle(
+                action: action,
+                isEnabled: isEnabled,
+                isClusterHovered: isClusterHovered,
+                isPressedByAppKitHitTarget: isPressedByAppKitHitTarget,
+                drawsActivePalette: actionProvider.drawsActivePalette
+            )
+        )
+        .disabled(!isEnabled)
+        .accessibilityIdentifier(action.accessibilityIdentifier)
+        .overlay {
+            BrowserWindowTrafficLightActionHitTarget(
+                isEnabled: isEnabled,
+                onPressedChanged: { isPressedByAppKitHitTarget = $0 },
+                action: performAction
+            )
+            .frame(
+                width: BrowserWindowTrafficLightMetrics.buttonDiameter,
+                height: BrowserWindowTrafficLightMetrics.buttonDiameter
+            )
+            .accessibilityHidden(true)
+        }
+    }
+
+    private func performAction() {
+        actionProvider.perform(action)
+    }
+}
+
+private struct BrowserWindowTrafficLightActionHitTarget: NSViewRepresentable {
+    let isEnabled: Bool
+    let onPressedChanged: @MainActor (Bool) -> Void
+    let action: @MainActor () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            onPressedChanged: onPressedChanged,
+            action: action
+        )
+    }
+
+    func makeNSView(context: Context) -> BrowserWindowTrafficLightActionHitTargetView {
+        let view = BrowserWindowTrafficLightActionHitTargetView(frame: .zero)
+        view.coordinator = context.coordinator
+        view.isActionEnabled = isEnabled
+        return view
+    }
+
+    func updateNSView(_ nsView: BrowserWindowTrafficLightActionHitTargetView, context: Context) {
+        context.coordinator.onPressedChanged = onPressedChanged
+        context.coordinator.action = action
+        nsView.coordinator = context.coordinator
+        nsView.isActionEnabled = isEnabled
+    }
+
+    static func dismantleNSView(
+        _ nsView: BrowserWindowTrafficLightActionHitTargetView,
+        coordinator: Coordinator
+    ) {
+        nsView.coordinator = nil
+        nsView.isActionEnabled = false
+    }
+
+    @MainActor
+    final class Coordinator {
+        var onPressedChanged: @MainActor (Bool) -> Void
+        var action: @MainActor () -> Void
+
+        init(
+            onPressedChanged: @escaping @MainActor (Bool) -> Void,
+            action: @escaping @MainActor () -> Void
+        ) {
+            self.onPressedChanged = onPressedChanged
+            self.action = action
+        }
+
+        func setPressed(_ isPressed: Bool) {
+            onPressedChanged(isPressed)
+        }
+
+        func performAction() {
+            action()
+        }
+    }
+}
+
+@MainActor
+private final class BrowserWindowTrafficLightActionHitTargetView: NSView {
+    weak var coordinator: BrowserWindowTrafficLightActionHitTarget.Coordinator?
+
+    var isActionEnabled: Bool = true {
+        didSet {
+            if !isActionEnabled {
+                setPressed(false)
+            }
+        }
+    }
+
+    private var isPressed = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setAccessibilityElement(false)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard isActionEnabled,
+              !isHidden,
+              alphaValue > 0.01,
+              bounds.contains(point)
+        else {
+            return nil
+        }
+
+        return self
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard isActionEnabled else { return }
+
+        setPressed(bounds.contains(convert(event.locationInWindow, from: nil)))
+
+        while let nextEvent = window?.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+            let isInside = bounds.contains(convert(nextEvent.locationInWindow, from: nil))
+            setPressed(isInside)
+
+            if nextEvent.type == .leftMouseUp {
+                let shouldPerformAction = isActionEnabled && isInside
+                setPressed(false)
+                if shouldPerformAction {
+                    DispatchQueue.main.async { [weak coordinator] in
+                        coordinator?.performAction()
+                    }
+                }
+                return
+            }
+        }
+
+        setPressed(false)
+    }
+
+    private func setPressed(_ isPressed: Bool) {
+        guard self.isPressed != isPressed else { return }
+        self.isPressed = isPressed
+        coordinator?.setPressed(isPressed)
+    }
+}
+
 private struct BrowserWindowTrafficLightButtonStyle: ButtonStyle {
     let action: BrowserWindowTrafficLightAction
     let isEnabled: Bool
     let isClusterHovered: Bool
+    let isPressedByAppKitHitTarget: Bool
     let drawsActivePalette: Bool
 
     func makeBody(configuration: Configuration) -> some View {
@@ -281,7 +436,7 @@ private struct BrowserWindowTrafficLightButtonStyle: ButtonStyle {
             action: action,
             isEnabled: isEnabled,
             isClusterHovered: isClusterHovered,
-            isPressed: configuration.isPressed,
+            isPressed: configuration.isPressed || isPressedByAppKitHitTarget,
             drawsActivePalette: drawsActivePalette
         )
     }

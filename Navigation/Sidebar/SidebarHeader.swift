@@ -89,12 +89,15 @@ struct SidebarWindowControlsView: View {
             trafficLightCluster
 
             if sumiSettings.showSidebarToggleButton {
-                Button("Toggle Sidebar", systemImage: sumiSettings.sidebarPosition.shellEdge.toggleSidebarSymbolName) {
-                    browserManager.toggleSidebar(for: windowState)
-                }
+                Button(
+                    "Toggle Sidebar",
+                    systemImage: sumiSettings.sidebarPosition.shellEdge.toggleSidebarSymbolName,
+                    action: toggleSidebar
+                )
                 .labelStyle(.iconOnly)
                 .font(.system(size: SidebarChromeMetrics.navigationIconSize, weight: .medium))
                 .buttonStyle(NavButtonStyle(diameter: SidebarChromeMetrics.navigationButtonSize))
+                .sidebarAppKitPrimaryAction(action: toggleSidebar)
             }
         }
     }
@@ -110,5 +113,9 @@ struct SidebarWindowControlsView: View {
 
     private var shouldRenderTrafficLightsInSidebarHeader: Bool {
         sidebarPresentationContext.mode != .collapsedHidden
+    }
+
+    private func toggleSidebar() {
+        browserManager.toggleSidebar(for: windowState)
     }
 }
