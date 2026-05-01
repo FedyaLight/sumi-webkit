@@ -89,6 +89,7 @@ final class HoverSidebarManager: ObservableObject {
     /// Vertical slack to allow small overshoot above/below the window frame.
     var verticalSlack: CGFloat = 24
     var sidebarPosition: SidebarPosition = .left
+    var hiddenHostRetentionDelay: TimeInterval
 
     // MARK: - Dependencies
     weak var browserManager: BrowserManager?
@@ -112,10 +113,12 @@ final class HoverSidebarManager: ObservableObject {
 
     init(
         eventMonitors: HoverSidebarEventMonitorClient = .live,
-        mouseLocationProvider: @escaping () -> CGPoint = { NSEvent.mouseLocation }
+        mouseLocationProvider: @escaping () -> CGPoint = { NSEvent.mouseLocation },
+        hiddenHostRetentionDelay: TimeInterval = 0.85
     ) {
         self.eventMonitors = eventMonitors
         self.mouseLocationProvider = mouseLocationProvider
+        self.hiddenHostRetentionDelay = hiddenHostRetentionDelay
     }
 
     // MARK: - Lifecycle
@@ -285,6 +288,10 @@ final class HoverSidebarManager: ObservableObject {
         }
     }
 
+    func retainOverlayHostForPinnedInteraction() {
+        prewarmOverlayHost()
+    }
+
     func setOverlayVisibility(_ isVisible: Bool, animationDuration: TimeInterval) {
         if isVisible {
             requestOverlayReveal(animationDuration: animationDuration)
@@ -298,7 +305,7 @@ final class HoverSidebarManager: ObservableObject {
         withAnimation(.easeInOut(duration: animationDuration)) {
             isOverlayVisible = false
         }
-        releaseOverlayHostWhenIdle(after: animationDuration)
+        releaseOverlayHostWhenIdle(after: max(animationDuration, hiddenHostRetentionDelay))
     }
 
     private func prewarmOverlayHost() {

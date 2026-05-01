@@ -8,6 +8,19 @@
 import AppKit
 import SwiftUI
 
+enum CommandPaletteLayoutPolicy {
+    static let idealWidth: CGFloat = 765
+    static let horizontalPadding: CGFloat = 10
+    static let minimumWidth: CGFloat = 200
+
+    static func effectiveWidth(availableWindowWidth: CGFloat) -> CGFloat {
+        min(
+            idealWidth,
+            max(minimumWidth, availableWindowWidth - (horizontalPadding * 2))
+        )
+    }
+}
+
 struct CommandPaletteView: View {
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
@@ -41,29 +54,6 @@ struct CommandPaletteView: View {
         return searchManager.suggestions
     }
 
-    let commandPaletteWidth: CGFloat = 765
-    let commandPaletteHorizontalPadding: CGFloat = 10
-    
-    /// Active window width
-    private var currentWindowWidth: CGFloat {
-        return NSApplication.shared.keyWindow?.frame.width ?? 0
-    }
-    
-    /// Check if the command palette fits in the window
-    private var isWindowTooNarrow: Bool {
-        let requiredWidth = commandPaletteWidth + (commandPaletteHorizontalPadding * 2)
-        return currentWindowWidth <= requiredWidth
-    }
-    
-    /// Caclulate the correct command palette width
-    private var effectiveCommandPaletteWidth: CGFloat {
-        if isWindowTooNarrow {
-            return max(200, currentWindowWidth - (commandPaletteHorizontalPadding * 2))
-        } else {
-            return commandPaletteWidth
-        }
-    }
-
     private var urlBarPlaceholderString: String {
         if let site = activeSiteSearch {
             return "Search \(site.name)..."
@@ -72,12 +62,23 @@ struct CommandPaletteView: View {
     }
 
     var body: some View {
+        GeometryReader { proxy in
+            commandPaletteBody(
+                effectiveCommandPaletteWidth: CommandPaletteLayoutPolicy.effectiveWidth(
+                    availableWindowWidth: availableWindowWidth(from: proxy.size.width)
+                )
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func commandPaletteBody(effectiveCommandPaletteWidth: CGFloat) -> some View {
         let isVisible = commandPalette.isVisible
         let tokens = self.tokens
         let urlBarPlaceholder = urlBarPlaceholderString
         let textFieldFont = Font.system(size: 13, weight: .semibold)
 
-        return ZStack {
+        ZStack {
             Color.clear
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
@@ -354,6 +355,18 @@ struct CommandPaletteView: View {
                 }
             }
         }
+    }
+
+    private func availableWindowWidth(from layoutWidth: CGFloat) -> CGFloat {
+        if layoutWidth > 0 {
+            return layoutWidth
+        }
+        if let contentWidth = windowState.window?.contentView?.bounds.width,
+           contentWidth > 0
+        {
+            return contentWidth
+        }
+        return windowState.window?.frame.width ?? 0
     }
 
     private var tokens: ChromeThemeTokens {

@@ -118,6 +118,10 @@ struct SidebarHoverOverlayView: View {
         )
     }
 
+    private var pinnedInteractionRequestsHostRetention: Bool {
+        transientUIPinsHoverSidebar || sidebarDragPinsHoverSidebar
+    }
+
     private var overlayBaseSidebarWidth: CGFloat {
         SidebarPresentationContext.collapsedSidebarWidth(
             sidebarWidth: windowState.sidebarWidth,
@@ -173,6 +177,14 @@ struct SidebarHoverOverlayView: View {
         .onChange(of: presentationContext) { _, _ in
             SidebarDragState.shared.requestGeometryRefresh()
         }
+        .onAppear {
+            retainOverlayHostIfPinned()
+        }
+        .onChange(of: pinnedInteractionRequestsHostRetention) { _, isPinned in
+            if isPinned {
+                retainOverlayHostIfPinned()
+            }
+        }
     }
 
     private var collapsedPanelHost: some View {
@@ -193,5 +205,11 @@ struct SidebarHoverOverlayView: View {
         .frame(width: 0, height: 0)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    private func retainOverlayHostIfPinned() {
+        if pinnedInteractionRequestsHostRetention {
+            hoverManager.retainOverlayHostForPinnedInteraction()
+        }
     }
 }

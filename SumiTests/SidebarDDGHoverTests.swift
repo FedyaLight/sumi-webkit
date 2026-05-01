@@ -4,6 +4,33 @@ import XCTest
 
 @MainActor
 final class SidebarDDGHoverTests: XCTestCase {
+    func testCommandPaletteLayoutPolicyCapsWideWindowsAndShrinksNarrowWindows() {
+        XCTAssertEqual(
+            CommandPaletteLayoutPolicy.effectiveWidth(availableWindowWidth: 1_200),
+            765
+        )
+        XCTAssertEqual(
+            CommandPaletteLayoutPolicy.effectiveWidth(availableWindowWidth: 785),
+            765
+        )
+        XCTAssertEqual(
+            CommandPaletteLayoutPolicy.effectiveWidth(availableWindowWidth: 600),
+            580
+        )
+        XCTAssertEqual(
+            CommandPaletteLayoutPolicy.effectiveWidth(availableWindowWidth: 120),
+            200
+        )
+    }
+
+    func testCommandPaletteViewDoesNotReadGlobalKeyWindowForLayout() throws {
+        let source = try Self.source(named: "CommandPalette/CommandPaletteView.swift")
+
+        XCTAssertTrue(source.contains("CommandPaletteLayoutPolicy"))
+        XCTAssertTrue(source.contains("GeometryReader"))
+        XCTAssertFalse(source.contains("keyWindow"))
+    }
+
     func testDirectMouseOverMutationDoesNotReportSwiftUIHover() {
         let view = SidebarDDGHoverTrackingView(frame: NSRect(x: 0, y: 0, width: 120, height: 36))
         var reported: [Bool] = []
@@ -26,6 +53,29 @@ final class SidebarDDGHoverTests: XCTestCase {
         XCTAssertEqual(reported, [true, false])
     }
 
+    func testTrackingViewReconcilesHoverWhenMouseIsAlreadyInsideAfterReenable() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 240, height: 120),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        let view = SidebarDDGHoverTrackingView(frame: NSRect(x: 0, y: 0, width: 120, height: 36))
+        window.contentView?.addSubview(view)
+        view.setHoverTrackingEnabled(false)
+
+        var reported: [Bool] = []
+        view.onHoverChanged = { reported.append($0) }
+
+        view.setHoverTrackingEnabled(true)
+        view.reconcileHoverForLifecycle(mouseLocationInWindow: NSPoint(x: 220, y: 100))
+        reported.removeAll()
+        view.reconcileHoverForLifecycle(mouseLocationInWindow: NSPoint(x: 24, y: 18))
+
+        XCTAssertEqual(reported, [true])
+        XCTAssertTrue(view.currentEffectiveHover)
+    }
+
     func testTrackingViewDoesNotPublishWhenDisabledThroughLifecycle() {
         let view = SidebarDDGHoverTrackingView(frame: NSRect(x: 0, y: 0, width: 120, height: 36))
         var reported: [Bool] = []
@@ -38,6 +88,7 @@ final class SidebarDDGHoverTests: XCTestCase {
 
         XCTAssertEqual(reported, [])
         XCTAssertFalse(view.currentEffectiveHover)
+        XCTAssertNil(view.hitTest(NSPoint(x: 12, y: 12)))
     }
 
     func testStaleMouseEnteredAfterNewerExitDoesNotPublishHover() {
@@ -74,6 +125,7 @@ final class SidebarDDGHoverTests: XCTestCase {
         XCTAssertFalse(nsView is NSControl)
         XCTAssertFalse(view.isOpaque)
         XCTAssertNil(view.backgroundLayer(createIfNeeded: true))
+        XCTAssertNil(view.hitTest(NSPoint(x: 12, y: 12)))
     }
 
     func testSelectedStateWinsOverHoverState() {
@@ -112,6 +164,13 @@ final class SidebarDDGHoverTests: XCTestCase {
         XCTAssertTrue(SidebarHoverInputRouting.usesAppKitHoverBridge(in: collapsedHidden))
         XCTAssertFalse(SidebarHoverInputRouting.usesSwiftUIHover(in: collapsedVisible))
         XCTAssertTrue(SidebarHoverInputRouting.usesAppKitHoverBridge(in: collapsedVisible))
+    }
+
+    func testCollapsedSidebarHoverTrackingUsesActiveAppTrackingArea() throws {
+        let source = try Self.source(named: "Sumi/Components/Sidebar/SidebarDDGHover.swift")
+
+        XCTAssertTrue(source.contains(".activeInActiveApp"))
+        XCTAssertFalse(source.contains("HoverTrackingArea.updateTrackingAreas"))
     }
 
     func testMigratedSidebarHoverDoesNotUseGlobalHoverOrDelayedHoverPatterns() throws {
@@ -166,10 +225,14 @@ final class SidebarDDGHoverTests: XCTestCase {
 
         return try Dictionary(
             uniqueKeysWithValues: paths.map { path in
-                let url = repoRoot.appendingPathComponent(path)
-                return (path, try String(contentsOf: url, encoding: .utf8))
+                return (path, try source(named: path))
             }
         )
+    }
+
+    private static func source(named path: String) throws -> String {
+        let url = repoRoot.appendingPathComponent(path)
+        return try String(contentsOf: url, encoding: .utf8)
     }
 
     private static var repoRoot: URL {
