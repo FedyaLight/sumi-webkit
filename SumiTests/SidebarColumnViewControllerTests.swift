@@ -773,13 +773,12 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         XCTAssertTrue(bodySource.contains(".allowsHitTesting(false)"))
     }
 
-    func testSidebarColumnContainerDoesNotContainObsoleteCursorShieldLayer() throws {
+    func testSidebarColumnContainerKeepsSidebarHitRoutingFreeOfCursorLayers() throws {
         let source = try Self.source(named: "Sumi/Components/Sidebar/SidebarColumnContainerView.swift")
         let containerStart = try XCTUnwrap(source.range(of: "final class SidebarColumnContainerView"))
         let containerEnd = try XCTUnwrap(source.range(of: "enum SidebarColumnPaintlessChrome"))
         let containerSource = String(source[containerStart.lowerBound..<containerEnd.lowerBound])
 
-        XCTAssertTrue(containerSource.contains("CollapsedSidebarPointerSuppressionController") == false)
         XCTAssertTrue(containerSource.contains("capturesPanelBackgroundPointerEvents"))
         XCTAssertFalse(containerSource.contains("resetCursorRects"))
         XCTAssertFalse(containerSource.contains("cursorUpdate(with:"))
@@ -788,343 +787,161 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         XCTAssertFalse(containerSource.contains("invalidateCursorRects"))
     }
 
-    func testCollapsedSidebarPointerSuppressionRemainsOnlySidebarCursorLeakSuppressionPath() throws {
-        let columnSource = try Self.source(named: "Sumi/Components/Sidebar/SidebarColumnViewController.swift")
-        let suppressionSource = try Self.source(
-            named: "Sumi/Components/Sidebar/CollapsedSidebarPointerSuppressionController.swift"
+    func testCollapsedSidebarWebContentExclusionUsesFullPanelBounds() {
+        let window = makeWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 600)
+        )
+        let panel = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 600))
+        window.contentView?.addSubview(panel)
+
+        let region = CollapsedSidebarWebContentInputExclusion.region(
+            panelView: panel,
+            presentationContext: .collapsedVisible(sidebarWidth: 280, sidebarPosition: .left),
+            isSidebarCollapsed: true
         )
 
-        XCTAssertTrue(columnSource.contains("private let pointerSuppressionController = CollapsedSidebarPointerSuppressionController()"))
+        XCTAssertEqual(region.rectsInWindowCoordinates, [
+            CGRect(x: 0, y: 0, width: 280, height: 600),
+        ])
+    }
+
+    func testCollapsedSidebarWebContentExclusionSupportsRightPanelBounds() {
+        let window = makeWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 600)
+        )
+        let panel = NSView(frame: NSRect(x: 620, y: 0, width: 280, height: 600))
+        window.contentView?.addSubview(panel)
+
+        let region = CollapsedSidebarWebContentInputExclusion.region(
+            panelView: panel,
+            presentationContext: .collapsedVisible(sidebarWidth: 280, sidebarPosition: .right),
+            isSidebarCollapsed: true
+        )
+
+        XCTAssertEqual(region.rectsInWindowCoordinates, [
+            CGRect(x: 620, y: 0, width: 280, height: 600),
+        ])
+    }
+
+    func testCollapsedSidebarWebContentExclusionClearsForHiddenDockedAndExpandedSidebar() {
+        let window = makeWindow()
+        let panel = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 240))
+        window.contentView?.addSubview(panel)
+
+        XCTAssertTrue(
+            CollapsedSidebarWebContentInputExclusion.region(
+                panelView: panel,
+                presentationContext: .collapsedHidden(sidebarWidth: 240),
+                isSidebarCollapsed: true
+            ).isEmpty
+        )
+        XCTAssertTrue(
+            CollapsedSidebarWebContentInputExclusion.region(
+                panelView: panel,
+                presentationContext: .docked(sidebarWidth: 240),
+                isSidebarCollapsed: false
+            ).isEmpty
+        )
+        XCTAssertTrue(
+            CollapsedSidebarWebContentInputExclusion.region(
+                panelView: panel,
+                presentationContext: .collapsedVisible(sidebarWidth: 240),
+                isSidebarCollapsed: false
+            ).isEmpty
+        )
+    }
+
+    func testSidebarColumnControllerPublishesAndUpdatesCollapsedPanelExclusion() {
+        let window = makeWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 600)
+        )
+        let windowState = BrowserWindowState()
+        windowState.isSidebarVisible = false
+
+        let controller = SidebarColumnViewController()
+        controller.loadView()
+        controller.view.frame = NSRect(x: 0, y: 0, width: 280, height: 600)
+        window.contentView?.addSubview(controller.view)
+
+        controller.updateHostedSidebar(
+            root: AnyView(Color.clear.frame(width: 280, height: 600)),
+            width: 280
+        )
+        controller.updateWebContentInputExclusion(
+            presentationContext: .collapsedVisible(sidebarWidth: 280, sidebarPosition: .left),
+            windowState: windowState
+        )
+
+        XCTAssertEqual(windowState.webContentInputExclusionRegion.rectsInWindowCoordinates, [
+            CGRect(x: 0, y: 0, width: 280, height: 600),
+        ])
+
+        controller.view.frame = NSRect(x: 620, y: 0, width: 280, height: 600)
+        controller.view.layoutSubtreeIfNeeded()
+        drainMainRunLoop()
+
+        XCTAssertEqual(windowState.webContentInputExclusionRegion.rectsInWindowCoordinates, [
+            CGRect(x: 620, y: 0, width: 280, height: 600),
+        ])
+
+        controller.updateWebContentInputExclusion(
+            presentationContext: .collapsedHidden(sidebarWidth: 280, sidebarPosition: .right),
+            windowState: windowState
+        )
+
+        XCTAssertTrue(windowState.webContentInputExclusionRegion.isEmpty)
+    }
+
+    func testSidebarColumnControllerClearsExclusionOnTeardown() {
+        let window = makeWindow()
+        let windowState = BrowserWindowState()
+        windowState.isSidebarVisible = false
+
+        let controller = SidebarColumnViewController()
+        controller.loadView()
+        controller.view.frame = NSRect(x: 0, y: 0, width: 240, height: 240)
+        window.contentView?.addSubview(controller.view)
+        controller.updateHostedSidebar(
+            root: AnyView(Color.clear.frame(width: 240, height: 240)),
+            width: 240
+        )
+        controller.updateWebContentInputExclusion(
+            presentationContext: .collapsedVisible(sidebarWidth: 240),
+            windowState: windowState
+        )
+
+        XCTAssertFalse(windowState.webContentInputExclusionRegion.isEmpty)
+
+        controller.teardownSidebarHosting()
+
+        XCTAssertTrue(windowState.webContentInputExclusionRegion.isEmpty)
+    }
+
+    func testCollapsedSidebarProductionSourceUsesWebContentExclusionWithoutRemovedCursorLayers() throws {
+        let columnSource = try Self.source(named: "Sumi/Components/Sidebar/SidebarColumnViewController.swift")
+        let overlaySource = try Self.source(named: "Sumi/Components/Sidebar/SidebarHoverOverlayView.swift")
+        let webHostSource = try Self.source(named: "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift")
+        let removedSymbols = [
+            "CollapsedSidebar" + "CursorOwner",
+            "CollapsedSidebar" + "Pointer" + "SuppressionController",
+            "CollapsedSidebar" + "Pointer" + "Shield",
+            "CollapsedSidebar" + "HitTest" + "Surface",
+            "schedule" + "PostDispatch" + "Cursor" + "Correction",
+        ]
+
+        XCTAssertTrue(columnSource.contains("updateWebContentInputExclusion"))
+        XCTAssertTrue(columnSource.contains("CollapsedSidebarWebContentInputExclusion.region"))
+        XCTAssertTrue(webHostSource.contains("setInputExclusionRegion"))
+        XCTAssertTrue(webHostSource.contains("override func hitTest"))
+        XCTAssertTrue(webHostSource.contains("override func resetCursorRects"))
+        XCTAssertTrue(webHostSource.contains(".cursorUpdate"))
+        for symbol in removedSymbols {
+            XCTAssertFalse(columnSource.contains(symbol))
+            XCTAssertFalse(overlaySource.contains(symbol))
+        }
         XCTAssertFalse(columnSource.contains("override func resetCursorRects"))
         XCTAssertFalse(columnSource.contains("override func cursorUpdate(with"))
         XCTAssertFalse(columnSource.contains("NSTrackingArea"))
-        XCTAssertTrue(suppressionSource.contains("NSEvent.addLocalMonitorForEvents(matching: mask, handler: handler)"))
-        XCTAssertTrue(suppressionSource.contains("static let monitoredEventTypes: NSEvent.EventTypeMask = [.mouseMoved, .cursorUpdate]"))
-        XCTAssertFalse(suppressionSource.contains("addGlobalMonitorForEvents"))
-    }
-
-    func testCollapsedSidebarPointerSuppressionInstallsOnlyForActiveCollapsedVisiblePanel() {
-        let recorder = CollapsedSidebarPointerSuppressionRecorder()
-        let controller = CollapsedSidebarPointerSuppressionController(
-            eventMonitors: recorder.client,
-            setArrowCursor: {},
-            requiresKeyWindow: false
-        )
-        let (window, panel) = makePointerSuppressionPanel(frame: NSRect(x: 0, y: 0, width: 120, height: 200))
-
-        controller.update(
-            window: window,
-            panelView: panel,
-            hostedSidebarView: nil,
-            isCollapsedVisible: false,
-            isSidebarCollapsed: true,
-            isBrowserWindowActive: true
-        )
-
-        XCTAssertTrue(recorder.localMasks.isEmpty)
-
-        controller.update(
-            window: window,
-            panelView: panel,
-            hostedSidebarView: nil,
-            isCollapsedVisible: true,
-            isSidebarCollapsed: true,
-            isBrowserWindowActive: true
-        )
-
-        XCTAssertEqual(recorder.localMasks, [CollapsedSidebarPointerSuppressionController.monitoredEventTypes])
-        XCTAssertTrue(controller.isMonitorInstalledForTesting)
-    }
-
-    func testCollapsedSidebarPointerSuppressionRemovesForHiddenDockedAndInactiveModes() {
-        let recorder = CollapsedSidebarPointerSuppressionRecorder()
-        let controller = CollapsedSidebarPointerSuppressionController(
-            eventMonitors: recorder.client,
-            setArrowCursor: {},
-            requiresKeyWindow: false
-        )
-        let (window, panel) = makePointerSuppressionPanel(frame: NSRect(x: 0, y: 0, width: 120, height: 200))
-
-        controller.update(
-            window: window,
-            panelView: panel,
-            hostedSidebarView: nil,
-            isCollapsedVisible: true,
-            isSidebarCollapsed: true,
-            isBrowserWindowActive: true
-        )
-        XCTAssertTrue(controller.isMonitorInstalledForTesting)
-
-        controller.update(
-            window: window,
-            panelView: panel,
-            hostedSidebarView: nil,
-            isCollapsedVisible: false,
-            isSidebarCollapsed: true,
-            isBrowserWindowActive: true
-        )
-        XCTAssertFalse(controller.isMonitorInstalledForTesting)
-        XCTAssertEqual(recorder.removedMonitorCount, 1)
-
-        controller.update(
-            window: window,
-            panelView: panel,
-            hostedSidebarView: nil,
-            isCollapsedVisible: true,
-            isSidebarCollapsed: true,
-            isBrowserWindowActive: true
-        )
-        controller.update(
-            window: window,
-            panelView: panel,
-            hostedSidebarView: nil,
-            isCollapsedVisible: true,
-            isSidebarCollapsed: false,
-            isBrowserWindowActive: true
-        )
-        XCTAssertFalse(controller.isMonitorInstalledForTesting)
-        XCTAssertEqual(recorder.removedMonitorCount, 2)
-
-        controller.update(
-            window: window,
-            panelView: panel,
-            hostedSidebarView: nil,
-            isCollapsedVisible: true,
-            isSidebarCollapsed: true,
-            isBrowserWindowActive: true
-        )
-        controller.update(
-            window: window,
-            panelView: panel,
-            hostedSidebarView: nil,
-            isCollapsedVisible: true,
-            isSidebarCollapsed: true,
-            isBrowserWindowActive: false
-        )
-        XCTAssertFalse(controller.isMonitorInstalledForTesting)
-        XCTAssertEqual(recorder.removedMonitorCount, 3)
-
-        controller.update(
-            window: window,
-            panelView: panel,
-            hostedSidebarView: nil,
-            isCollapsedVisible: true,
-            isSidebarCollapsed: true,
-            isBrowserWindowActive: true
-        )
-        NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: window)
-        drainMainRunLoop()
-
-        XCTAssertFalse(controller.isMonitorInstalledForTesting)
-        XCTAssertEqual(recorder.removedMonitorCount, 4)
-    }
-
-    func testCollapsedSidebarPointerSuppressionRemovesMonitorOnDeinit() {
-        let recorder = CollapsedSidebarPointerSuppressionRecorder()
-        do {
-            let controller = CollapsedSidebarPointerSuppressionController(
-                eventMonitors: recorder.client,
-                setArrowCursor: {},
-                requiresKeyWindow: false
-            )
-            let (window, panel) = makePointerSuppressionPanel(frame: NSRect(x: 0, y: 0, width: 120, height: 200))
-
-            controller.update(
-                window: window,
-                panelView: panel,
-                hostedSidebarView: nil,
-                isCollapsedVisible: true,
-                isSidebarCollapsed: true,
-                isBrowserWindowActive: true
-            )
-
-            XCTAssertTrue(controller.isMonitorInstalledForTesting)
-        }
-
-        XCTAssertEqual(recorder.removedMonitorCount, 1)
-    }
-
-    func testCollapsedSidebarPointerSuppressionSuppressesBackgroundEventAndSetsArrow() throws {
-        let recorder = CollapsedSidebarPointerSuppressionRecorder()
-        var arrowSetCount = 0
-        let controller = CollapsedSidebarPointerSuppressionController(
-            eventMonitors: recorder.client,
-            setArrowCursor: { arrowSetCount += 1 },
-            requiresKeyWindow: false
-        )
-        let (window, panel) = makePointerSuppressionPanel(frame: NSRect(x: 0, y: 0, width: 120, height: 200))
-
-        controller.update(
-            window: window,
-            panelView: panel,
-            hostedSidebarView: nil,
-            isCollapsedVisible: true,
-            isSidebarCollapsed: true,
-            isBrowserWindowActive: true
-        )
-
-        let handler = try XCTUnwrap(recorder.localHandlers.last)
-        let result = handler(makeMouseEvent(
-            type: .mouseMoved,
-            location: NSPoint(x: 20, y: 20),
-            windowNumber: window.windowNumber
-        ))
-
-        XCTAssertNil(
-            result,
-            "rect=\(String(describing: controller.currentPanelRectForTesting)) eventWindow=\(String(describing: result?.window)) eventWindowNumber=\(result?.windowNumber ?? -1) targetWindowNumber=\(window.windowNumber)"
-        )
-        XCTAssertEqual(arrowSetCount, 1)
-    }
-
-    func testCollapsedSidebarPointerSuppressionPassesOutsidePanelEventThrough() throws {
-        let recorder = CollapsedSidebarPointerSuppressionRecorder()
-        var arrowSetCount = 0
-        let controller = CollapsedSidebarPointerSuppressionController(
-            eventMonitors: recorder.client,
-            setArrowCursor: { arrowSetCount += 1 },
-            requiresKeyWindow: false
-        )
-        let (window, panel) = makePointerSuppressionPanel(frame: NSRect(x: 0, y: 0, width: 120, height: 200))
-
-        controller.update(
-            window: window,
-            panelView: panel,
-            hostedSidebarView: nil,
-            isCollapsedVisible: true,
-            isSidebarCollapsed: true,
-            isBrowserWindowActive: true
-        )
-
-        let handler = try XCTUnwrap(recorder.localHandlers.last)
-        let event = makeMouseEvent(
-            type: .mouseMoved,
-            location: NSPoint(x: 180, y: 20),
-            windowNumber: window.windowNumber
-        )
-        let result = handler(event)
-
-        XCTAssertTrue(result === event)
-        XCTAssertEqual(arrowSetCount, 0)
-    }
-
-    func testCollapsedSidebarPointerSuppressionUsesRightPanelRectNotFullWindow() throws {
-        let recorder = CollapsedSidebarPointerSuppressionRecorder()
-        let controller = CollapsedSidebarPointerSuppressionController(
-            eventMonitors: recorder.client,
-            setArrowCursor: {},
-            requiresKeyWindow: false
-        )
-        let (window, panel) = makePointerSuppressionPanel(frame: NSRect(x: 200, y: 0, width: 120, height: 200))
-
-        controller.update(
-            window: window,
-            panelView: panel,
-            hostedSidebarView: nil,
-            isCollapsedVisible: true,
-            isSidebarCollapsed: true,
-            isBrowserWindowActive: true
-        )
-
-        XCTAssertEqual(controller.currentPanelRectForTesting, NSRect(x: 200, y: 0, width: 120, height: 200))
-
-        let handler = try XCTUnwrap(recorder.localHandlers.last)
-        let outsideEvent = makeMouseEvent(
-            type: .mouseMoved,
-            location: NSPoint(x: 20, y: 20),
-            windowNumber: window.windowNumber
-        )
-        let insideEvent = makeMouseEvent(
-            type: .mouseMoved,
-            location: NSPoint(x: 240, y: 20),
-            windowNumber: window.windowNumber
-        )
-
-        XCTAssertTrue(handler(outsideEvent) === outsideEvent)
-        XCTAssertNil(
-            handler(insideEvent),
-            "rect=\(String(describing: controller.currentPanelRectForTesting)) insideEventWindow=\(String(describing: insideEvent.window)) insideEventWindowNumber=\(insideEvent.windowNumber) targetWindowNumber=\(window.windowNumber)"
-        )
-    }
-
-    func testCollapsedSidebarPointerSuppressionPassesConcreteSidebarChildEventThrough() throws {
-        let recorder = CollapsedSidebarPointerSuppressionRecorder()
-        var arrowSetCount = 0
-        let controller = CollapsedSidebarPointerSuppressionController(
-            eventMonitors: recorder.client,
-            setArrowCursor: { arrowSetCount += 1 },
-            requiresKeyWindow: false
-        )
-        let (window, panel) = makePointerSuppressionPanel(frame: NSRect(x: 0, y: 0, width: 120, height: 200))
-        let owner = SidebarInteractiveItemView(frame: NSRect(x: 10, y: 10, width: 80, height: 40))
-        panel.addSubview(owner)
-
-        controller.update(
-            window: window,
-            panelView: panel,
-            hostedSidebarView: panel,
-            isCollapsedVisible: true,
-            isSidebarCollapsed: true,
-            isBrowserWindowActive: true
-        )
-
-        let handler = try XCTUnwrap(recorder.localHandlers.last)
-        let event = makeMouseEvent(
-            type: .mouseMoved,
-            location: NSPoint(x: 20, y: 20),
-            windowNumber: window.windowNumber
-        )
-        let result = handler(event)
-
-        XCTAssertTrue(result === event)
-        XCTAssertEqual(arrowSetCount, 0)
-    }
-
-    func testCollapsedSidebarPointerSuppressionMonitorMaskIsMinimalAndDoesNotDuplicate() {
-        let recorder = CollapsedSidebarPointerSuppressionRecorder()
-        let controller = CollapsedSidebarPointerSuppressionController(
-            eventMonitors: recorder.client,
-            setArrowCursor: {},
-            requiresKeyWindow: false
-        )
-        let (window, panel) = makePointerSuppressionPanel(frame: NSRect(x: 0, y: 0, width: 120, height: 200))
-
-        controller.update(
-            window: window,
-            panelView: panel,
-            hostedSidebarView: nil,
-            isCollapsedVisible: true,
-            isSidebarCollapsed: true,
-            isBrowserWindowActive: true
-        )
-        controller.update(
-            window: window,
-            panelView: panel,
-            hostedSidebarView: nil,
-            isCollapsedVisible: true,
-            isSidebarCollapsed: true,
-            isBrowserWindowActive: true
-        )
-
-        XCTAssertEqual(recorder.localMasks.count, 1)
-        XCTAssertEqual(recorder.localMasks.first, [.mouseMoved, .cursorUpdate])
-        XCTAssertFalse(recorder.localMasks.first?.contains(.leftMouseDown) == true)
-        XCTAssertFalse(recorder.localMasks.first?.contains(.scrollWheel) == true)
-        XCTAssertFalse(recorder.localMasks.first?.contains(.keyDown) == true)
-        XCTAssertFalse(recorder.localMasks.first?.contains(.leftMouseDragged) == true)
-        XCTAssertFalse(recorder.localMasks.first?.contains(.rightMouseDown) == true)
-    }
-
-    func testCollapsedSidebarPointerSuppressionSourceDoesNotExposeGlobalMonitorPath() throws {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let sourceURL = repoRoot
-            .appendingPathComponent("Sumi/Components/Sidebar/CollapsedSidebarPointerSuppressionController.swift")
-        let source = try String(contentsOf: sourceURL)
-
-        XCTAssertFalse(source.contains("addGlobalMonitorForEvents"))
-        XCTAssertFalse(source.contains("addGlobalMonitor"))
     }
 
     #if DEBUG
@@ -2333,9 +2150,11 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         )
     }
 
-    private func makeWindow() -> NSWindow {
+    private func makeWindow(
+        contentRect: NSRect = NSRect(x: 0, y: 0, width: 320, height: 240)
+    ) -> NSWindow {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
+            contentRect: contentRect,
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
@@ -2363,14 +2182,6 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         owner.contextMenuController = controller
 
         return (window, container, hostedView, owner)
-    }
-
-    private func makePointerSuppressionPanel(frame: NSRect) -> (window: NSWindow, panel: NSView) {
-        let window = makeWindow()
-        let panel = NSView(frame: frame)
-        panel.wantsLayer = true
-        window.contentView?.addSubview(panel)
-        return (window, panel)
     }
 
     private func anchorIDs(
@@ -2438,26 +2249,6 @@ final class SidebarColumnViewControllerTests: XCTestCase {
     }
     #endif
 
-}
-
-@MainActor
-private final class CollapsedSidebarPointerSuppressionRecorder {
-    private(set) var localMasks: [NSEvent.EventTypeMask] = []
-    private(set) var localHandlers: [(NSEvent) -> NSEvent?] = []
-    private(set) var removedMonitorCount = 0
-
-    var client: CollapsedSidebarPointerSuppressionEventMonitorClient {
-        CollapsedSidebarPointerSuppressionEventMonitorClient(
-            addLocalMonitor: { [weak self] mask, handler in
-                self?.localMasks.append(mask)
-                self?.localHandlers.append(handler)
-                return NSObject()
-            },
-            removeMonitor: { [weak self] _ in
-                self?.removedMonitorCount += 1
-            }
-        )
-    }
 }
 
 @MainActor

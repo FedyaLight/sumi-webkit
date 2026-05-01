@@ -10,22 +10,20 @@ final class SidebarColumnViewController: NSViewController {
     private var hostingController: NSViewController?
     private var widthConstraint: NSLayoutConstraint?
     private weak var registeredRecoveryAnchor: NSView?
-    private let pointerSuppressionController = CollapsedSidebarPointerSuppressionController()
-    private var pointerSuppressionPresentationContext: SidebarPresentationContext?
-    private weak var pointerSuppressionWindowState: BrowserWindowState?
-    private weak var pointerSuppressionWindowRegistry: WindowRegistry?
+    private var webContentExclusionPresentationContext: SidebarPresentationContext?
+    private weak var webContentExclusionWindowState: BrowserWindowState?
 
     override func loadView() {
         let containerView = SidebarColumnContainerView()
         containerView.onWindowChanged = { [weak self] window in
             Task { @MainActor [weak self] in
                 self?.syncRecoveryAnchor(window: window)
-                self?.syncPointerSuppression()
+                self?.syncWebContentInputExclusion()
             }
         }
         containerView.onGeometryChanged = { [weak self] in
             Task { @MainActor [weak self] in
-                self?.pointerSuppressionController.refreshPanelRect()
+                self?.syncWebContentInputExclusion()
             }
         }
         SidebarColumnPaintlessChrome.configure(containerView)
@@ -81,25 +79,22 @@ final class SidebarColumnViewController: NSViewController {
         )
 
         syncRecoveryAnchor(window: view.window)
-        pointerSuppressionController.refreshPanelRect()
+        syncWebContentInputExclusion()
     }
 
-    func updatePointerSuppression(
+    func updateWebContentInputExclusion(
         presentationContext: SidebarPresentationContext,
-        windowState: BrowserWindowState,
-        windowRegistry: WindowRegistry
+        windowState: BrowserWindowState
     ) {
-        pointerSuppressionPresentationContext = presentationContext
-        pointerSuppressionWindowState = windowState
-        pointerSuppressionWindowRegistry = windowRegistry
-        syncPointerSuppression()
+        webContentExclusionPresentationContext = presentationContext
+        webContentExclusionWindowState = windowState
+        syncWebContentInputExclusion()
     }
 
     func teardownSidebarHosting() {
-        pointerSuppressionController.teardown()
-        pointerSuppressionPresentationContext = nil
-        pointerSuppressionWindowState = nil
-        pointerSuppressionWindowRegistry = nil
+        clearWebContentInputExclusion()
+        webContentExclusionPresentationContext = nil
+        webContentExclusionWindowState = nil
         unregisterRecoveryAnchor()
         if let containerView = view as? SidebarColumnContainerView {
             containerView.hostedSidebarView = nil
@@ -133,23 +128,24 @@ final class SidebarColumnViewController: NSViewController {
         self.registeredRecoveryAnchor = nil
     }
 
-    private func syncPointerSuppression() {
-        guard let presentationContext = pointerSuppressionPresentationContext,
-              let windowState = pointerSuppressionWindowState,
-              let windowRegistry = pointerSuppressionWindowRegistry
+    private func syncWebContentInputExclusion() {
+        guard let presentationContext = webContentExclusionPresentationContext,
+              let windowState = webContentExclusionWindowState
         else {
-            pointerSuppressionController.teardown()
+            clearWebContentInputExclusion()
             return
         }
 
-        pointerSuppressionController.update(
-            window: view.window ?? windowState.window,
+        let region = CollapsedSidebarWebContentInputExclusion.region(
             panelView: view,
-            hostedSidebarView: hostingController?.view,
-            isCollapsedVisible: presentationContext.mode == .collapsedVisible,
-            isSidebarCollapsed: !windowState.isSidebarVisible,
-            isBrowserWindowActive: windowRegistry.activeWindowId == windowState.id
+            presentationContext: presentationContext,
+            isSidebarCollapsed: !windowState.isSidebarVisible
         )
+        windowState.updateWebContentInputExclusionRegion(region)
+    }
+
+    private func clearWebContentInputExclusion() {
+        webContentExclusionWindowState?.updateWebContentInputExclusionRegion(.empty)
     }
 
     private func removeHostingControllerIfNeeded() {
