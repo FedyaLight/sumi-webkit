@@ -63,7 +63,12 @@ final class SumiPermissionPromptPresenter: ObservableObject {
     private var systemPermissionService: (any SumiSystemPermissionService)?
     private var externalAppResolver: (any SumiExternalAppResolving)?
     private var currentContext: SourceSnapshot?
+    private weak var currentWindowState: BrowserWindowState?
     private var currentSourceId: String?
+    private var sidebarPinningSourceId: String?
+    private var sidebarPinningWindowID: UUID?
+    private var sidebarPinningSource: SidebarTransientPresentationSource?
+    private var sidebarPinningToken: SidebarTransientSessionToken?
     private var suppressedSourceIds = Set<String>()
     private var shownQuerySourceIds = Set<String>()
     private var eventTask: Task<Void, Never>?
@@ -112,6 +117,7 @@ final class SumiPermissionPromptPresenter: ObservableObject {
             displayDomain: Self.displayDomain(for: tab.url),
             windowIsActive: windowState.window?.isKeyWindow ?? true
         )
+        currentWindowState = windowState
         Task { @MainActor [weak self] in
             await Task.yield()
             await self?.refresh(autoPresent: true)
@@ -121,6 +127,8 @@ final class SumiPermissionPromptPresenter: ObservableObject {
 
     func clear() {
         currentContext = nil
+        currentWindowState = nil
+        finishSidebarPin(reason: "clear")
         currentSourceId = nil
         if viewModel != nil {
             viewModel = nil
@@ -131,6 +139,7 @@ final class SumiPermissionPromptPresenter: ObservableObject {
     }
 
     func closeForCurrentTabChange() {
+        finishSidebarPin(reason: "current-tab-change")
         currentSourceId = nil
         if viewModel != nil {
             viewModel = nil
@@ -182,6 +191,7 @@ final class SumiPermissionPromptPresenter: ObservableObject {
         }
 
         if currentSourceId != candidate.id {
+            finishSidebarPin(reason: "candidate-changed")
             currentSourceId = candidate.id
             viewModel = makeViewModel(
                 for: candidate,
@@ -189,6 +199,7 @@ final class SumiPermissionPromptPresenter: ObservableObject {
                 systemPermissionService: systemPermissionService
             )
         }
+        syncSidebarPin(for: candidate)
 
         if autoPresent, snapshot.windowIsActive {
             if !isPresented {
@@ -238,6 +249,7 @@ final class SumiPermissionPromptPresenter: ObservableObject {
                 self.suppressedSourceIds.insert(sourceId)
             }
             if self.currentSourceId == sourceId {
+                self.finishSidebarPin(reason: "finished")
                 self.viewModel = nil
                 self.currentSourceId = nil
                 self.isPresented = false
@@ -289,6 +301,43 @@ final class SumiPermissionPromptPresenter: ObservableObject {
         }
         shownQuerySourceIds.insert(sourceId)
         await coordinator.recordPromptShown(queryId: query.id)
+    }
+
+    private func syncSidebarPin(for candidate: Candidate) {
+        guard let windowState = currentWindowState else { return }
+        let sourceId = candidate.id
+        if sidebarPinningSourceId == sourceId,
+           sidebarPinningWindowID == windowState.id,
+           sidebarPinningToken != nil
+        {
+            return
+        }
+
+        finishSidebarPin(reason: "sync")
+        let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
+            window: windowState.window
+        )
+        let token = windowState.sidebarTransientSessionCoordinator.beginSession(
+            kind: .permissionPrompt,
+            source: source,
+            path: "SumiPermissionPromptPresenter.\(sourceId)"
+        )
+        sidebarPinningSourceId = sourceId
+        sidebarPinningWindowID = windowState.id
+        sidebarPinningSource = source
+        sidebarPinningToken = token
+    }
+
+    private func finishSidebarPin(reason: String) {
+        guard let token = sidebarPinningToken else { return }
+        sidebarPinningSource?.coordinator?.finishSession(
+            token,
+            reason: "SumiPermissionPromptPresenter.\(reason)"
+        )
+        sidebarPinningSourceId = nil
+        sidebarPinningWindowID = nil
+        sidebarPinningSource = nil
+        sidebarPinningToken = nil
     }
 
     private static func activeQuery(

@@ -98,6 +98,12 @@ private enum CollapsedSidebarPanelAnimation {
     }
 }
 
+private enum CollapsedSidebarPanelFrameSync {
+    // Child NSPanel frame notifications can trail live resize/move event tracking.
+    static let interval: TimeInterval = 1.0 / 120.0
+    static let tolerance: TimeInterval = 1.0 / 240.0
+}
+
 @MainActor
 final class CollapsedSidebarPanelController {
     private var panelWindow: CollapsedSidebarPanelWindow?
@@ -113,6 +119,7 @@ final class CollapsedSidebarPanelController {
     private var currentSidebarPosition: SidebarPosition = .left
     private var isPanelRevealed = false
     private var panelPresentationGeneration: UInt64 = 0
+    private var frameSyncTimer: Timer?
 
     var panelWindowForTesting: CollapsedSidebarPanelWindow? {
         panelWindow
@@ -135,6 +142,10 @@ final class CollapsedSidebarPanelController {
         guard let dragPreviewOverlayWindow,
               let dragPreviewOverlayParentWindow else { return false }
         return dragPreviewOverlayParentWindow.childWindows?.contains(dragPreviewOverlayWindow) == true
+    }
+
+    var isFrameSyncTimerActiveForTesting: Bool {
+        frameSyncTimer != nil
     }
 
     func update<Content: View>(
@@ -218,12 +229,13 @@ final class CollapsedSidebarPanelController {
     }
 
     func syncFrame() {
-        guard let panelWindow,
-              let visibleFrame = currentVisiblePanelFrame()
-        else { return }
+        if let panelWindow,
+           let visibleFrame = currentVisiblePanelFrame()
+        {
+            setFrameIfNeeded(panelWindow, to: visibleFrame, display: panelWindow.isVisible)
+            syncSidebarContentOffsetForCurrentFrameIfNeeded()
+        }
 
-        panelWindow.setFrame(visibleFrame, display: panelWindow.isVisible)
-        setSidebarContentOffset(currentSidebarContentOffset, animated: false)
         syncDragPreviewOverlayFrame()
     }
 
@@ -347,6 +359,63 @@ final class CollapsedSidebarPanelController {
             for: currentVisiblePanelFrame()?.width ?? currentSidebarWidth,
             sidebarPosition: currentSidebarPosition
         )
+    }
+
+    private var isSidebarContentOffsetAnimationActive: Bool {
+        let animatedView = sidebarController.collapsedPanelAnimatedContentView ?? sidebarController.view
+        return animatedView.layer?.animation(
+            forKey: CollapsedSidebarPanelAnimation.contentOffsetAnimationKey
+        ) != nil
+    }
+
+    private var shouldDriveLiveFrameSync: Bool {
+        let panelNeedsSync = panelWindow?.isVisible == true
+            && attachedParentWindow != nil
+        let dragPreviewNeedsSync = dragPreviewOverlayWindow?.isVisible == true
+            && dragPreviewOverlayParentWindow != nil
+        return panelNeedsSync || dragPreviewNeedsSync
+    }
+
+    private func syncSidebarContentOffsetForCurrentFrameIfNeeded() {
+        guard !isPanelRevealed,
+              !isSidebarContentOffsetAnimationActive
+        else { return }
+
+        setSidebarContentOffset(currentSidebarContentOffset, animated: false)
+    }
+
+    private func setFrameIfNeeded(_ window: NSWindow, to frame: NSRect, display: Bool) {
+        guard !NSEqualRects(window.frame, frame) else { return }
+        window.setFrame(frame, display: display)
+    }
+
+    private func updateFrameSyncTimer() {
+        if shouldDriveLiveFrameSync {
+            startFrameSyncTimerIfNeeded()
+        } else {
+            stopFrameSyncTimer()
+        }
+    }
+
+    private func startFrameSyncTimerIfNeeded() {
+        guard frameSyncTimer == nil else { return }
+
+        let timer = Timer(
+            timeInterval: CollapsedSidebarPanelFrameSync.interval,
+            repeats: true
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.syncFrame()
+            }
+        }
+        timer.tolerance = CollapsedSidebarPanelFrameSync.tolerance
+        RunLoop.main.add(timer, forMode: .common)
+        frameSyncTimer = timer
+    }
+
+    private func stopFrameSyncTimer() {
+        frameSyncTimer?.invalidate()
+        frameSyncTimer = nil
     }
 
     private func preparePanelContentClipping(_ panel: CollapsedSidebarPanelWindow) {
@@ -530,6 +599,7 @@ final class CollapsedSidebarPanelController {
 
         attachedParentWindow = parentWindow
         panel.orderFront(nil)
+        updateFrameSyncTimer()
     }
 
     private func attachAndShowDragPreviewOverlay(
@@ -546,6 +616,7 @@ final class CollapsedSidebarPanelController {
 
         dragPreviewOverlayParentWindow = parentWindow
         overlay.orderFront(nil)
+        updateFrameSyncTimer()
     }
 
     private func orderOutAndDetach(
@@ -558,6 +629,7 @@ final class CollapsedSidebarPanelController {
         orderOutAndDetachDragPreviewOverlay(destroyWindow: destroyWindow)
         detachFromParent()
         panelWindow?.orderOut(nil)
+        updateFrameSyncTimer()
 
         if teardownHostedContent {
             sidebarController.teardownSidebarHosting()
@@ -580,6 +652,7 @@ final class CollapsedSidebarPanelController {
         detachDragPreviewOverlayFromParent()
         dragPreviewOverlayWindow?.orderOut(nil)
         dragPreviewOverlayController.rootView = AnyView(EmptyView())
+        updateFrameSyncTimer()
 
         if destroyWindow {
             dragPreviewOverlayWindow?.contentViewController = nil
@@ -599,6 +672,7 @@ final class CollapsedSidebarPanelController {
             attachedParentWindow.removeChildWindow(panelWindow)
         }
         self.attachedParentWindow = nil
+        updateFrameSyncTimer()
     }
 
     private func detachDragPreviewOverlayFromParent() {
@@ -613,6 +687,7 @@ final class CollapsedSidebarPanelController {
             dragPreviewOverlayParentWindow.removeChildWindow(dragPreviewOverlayWindow)
         }
         self.dragPreviewOverlayParentWindow = nil
+        updateFrameSyncTimer()
     }
 
     private func syncDragPreviewOverlayFrame() {
@@ -621,7 +696,7 @@ final class CollapsedSidebarPanelController {
               let frame = CollapsedSidebarDragPreviewOverlayFrameResolver.overlayFrame(in: parentWindow)
         else { return }
 
-        dragPreviewOverlayWindow.setFrame(frame, display: dragPreviewOverlayWindow.isVisible)
+        setFrameIfNeeded(dragPreviewOverlayWindow, to: frame, display: dragPreviewOverlayWindow.isVisible)
     }
 
     private func handleCollapsedSidebarDismissalRequest() {
@@ -653,7 +728,7 @@ final class CollapsedSidebarPanelController {
                 object: parentWindow,
                 queue: .main
             ) { [weak self] _ in
-                Task { @MainActor [weak self] in
+                MainActor.assumeIsolated {
                     self?.syncFrame()
                 }
             }
@@ -692,7 +767,7 @@ final class CollapsedSidebarPanelController {
                     object: contentView,
                     queue: .main
                 ) { [weak self] _ in
-                    Task { @MainActor [weak self] in
+                    MainActor.assumeIsolated {
                         self?.syncFrame()
                     }
                 }
@@ -740,7 +815,7 @@ struct CollapsedSidebarPanelHost: NSViewRepresentable {
     func makeNSView(context: Context) -> CollapsedSidebarPanelAnchorView {
         let view = CollapsedSidebarPanelAnchorView(frame: .zero)
         view.onWindowChanged = { [weak controller = context.coordinator.controller] _ in
-            Task { @MainActor [weak controller] in
+            MainActor.assumeIsolated {
                 controller?.syncFrame()
             }
         }

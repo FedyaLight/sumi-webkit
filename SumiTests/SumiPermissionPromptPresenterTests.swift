@@ -71,6 +71,52 @@ final class SumiPermissionPromptPresenterTests: XCTestCase {
 
         XCTAssertEqual(candidate, .systemBlocked(decision))
     }
+
+    func testPermissionSidebarPinningControllerPinsPromptableActiveQuery() {
+        let controller = SumiPermissionSidebarPinningController()
+        let windowState = BrowserWindowState()
+        windowState.isSidebarVisible = false
+        let query = promptQuery(permissionTypes: [.geolocation])
+
+        controller.reconcile(
+            activeQueries: [query],
+            windowForPageId: { $0 == query.pageId ? windowState : nil },
+            reason: "test"
+        )
+
+        XCTAssertEqual(controller.activeQueryIDsForTesting, [query.id])
+        XCTAssertTrue(
+            windowState.sidebarTransientSessionCoordinator.hasPinnedTransientUI(for: windowState.id)
+        )
+
+        controller.reconcile(
+            activeQueries: [],
+            windowForPageId: { _ in nil },
+            reason: "test-finish"
+        )
+
+        XCTAssertTrue(controller.activeQueryIDsForTesting.isEmpty)
+        XCTAssertFalse(
+            windowState.sidebarTransientSessionCoordinator.hasPinnedTransientUI(for: windowState.id)
+        )
+    }
+
+    func testPermissionSidebarPinningControllerIgnoresUnpromptableQuery() {
+        let controller = SumiPermissionSidebarPinningController()
+        let windowState = BrowserWindowState()
+        let query = promptQuery(permissionTypes: [.filePicker])
+
+        controller.reconcile(
+            activeQueries: [query],
+            windowForPageId: { $0 == query.pageId ? windowState : nil },
+            reason: "test"
+        )
+
+        XCTAssertTrue(controller.activeQueryIDsForTesting.isEmpty)
+        XCTAssertFalse(
+            windowState.sidebarTransientSessionCoordinator.hasPinnedTransientUI(for: windowState.id)
+        )
+    }
 }
 
 private func promptQuery(

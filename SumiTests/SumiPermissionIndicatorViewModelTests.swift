@@ -55,7 +55,7 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
         XCTAssertEqual(geolocation.priority, .activeGeolocation)
     }
 
-    func testScreenCapturePendingAndSystemBlockedMapCorrectly() {
+    func testScreenCapturePendingMapsCorrectlyAndSystemBlockedDecisionHidesInModel() {
         let pending = SumiPermissionIndicatorViewModel.state(
             from: .init(
                 coordinatorState: SumiPermissionCoordinatorState(
@@ -86,12 +86,61 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
 
         XCTAssertEqual(pending.category, .pendingRequest)
         XCTAssertEqual(pending.primaryPermissionType, .screenCapture)
-        XCTAssertEqual(systemBlocked.category, .systemBlocked)
-        XCTAssertEqual(systemBlocked.visualStyle, .systemWarning)
-        XCTAssertEqual(systemBlocked.priority, .systemBlockedSensitive)
+        XCTAssertFalse(systemBlocked.isVisible)
     }
 
-    func testBlockedPopupExternalNotificationStorageAndFileEvents() {
+    func testSettledPermissionDecisionHidesURLBarIndicatorUnlessRuntimeIsActive() {
+        let deniedDecision = coordinatorDecision(
+            outcome: .denied,
+            permissionTypes: [.notifications],
+            reason: "denied-by-user"
+        )
+        let denied = SumiPermissionIndicatorViewModel.state(
+            from: .init(
+                coordinatorState: SumiPermissionCoordinatorState(
+                    latestEvent: .querySettled(queryId: "query-notifications", decision: deniedDecision)
+                ),
+                displayDomain: "example.com",
+                tabId: "tab-a",
+                pageId: "tab-a:1"
+            )
+        )
+
+        let grantedCameraDecision = coordinatorDecision(
+            outcome: .granted,
+            permissionTypes: [.camera],
+            reason: "approved-camera"
+        )
+        let inactiveCamera = SumiPermissionIndicatorViewModel.state(
+            from: .init(
+                coordinatorState: SumiPermissionCoordinatorState(
+                    latestEvent: .querySettled(queryId: "query-camera", decision: grantedCameraDecision)
+                ),
+                runtimeState: .init(camera: .none, microphone: .none),
+                displayDomain: "example.com",
+                tabId: "tab-a",
+                pageId: "tab-a:1"
+            )
+        )
+        let activeCamera = SumiPermissionIndicatorViewModel.state(
+            from: .init(
+                coordinatorState: SumiPermissionCoordinatorState(
+                    latestEvent: .querySettled(queryId: "query-camera", decision: grantedCameraDecision)
+                ),
+                runtimeState: .init(camera: .active, microphone: .none),
+                displayDomain: "example.com",
+                tabId: "tab-a",
+                pageId: "tab-a:1"
+            )
+        )
+
+        XCTAssertFalse(denied.isVisible)
+        XCTAssertFalse(inactiveCamera.isVisible)
+        XCTAssertEqual(activeCamera.category, .activeRuntime)
+        XCTAssertEqual(activeCamera.primaryPermissionType, .camera)
+    }
+
+    func testBlockedPopupExternalAndLiveFilePickerEventsShowButSettledPermissionEventsHide() {
         let popup = SumiPermissionIndicatorViewModel.state(
             from: .init(
                 popupRecords: [blockedPopup()],
@@ -158,10 +207,8 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
         XCTAssertEqual(popup.priority, .blockedPopup)
         XCTAssertEqual(external.primaryPermissionType, .externalScheme("zoommtg"))
         XCTAssertEqual(external.priority, .blockedExternalScheme)
-        XCTAssertEqual(notification.primaryPermissionType, .notifications)
-        XCTAssertEqual(notification.priority, .blockedNotification)
-        XCTAssertEqual(storage.primaryPermissionType, .storageAccess)
-        XCTAssertEqual(storage.priority, .storageAccessBlockedOrPending)
+        XCTAssertFalse(notification.isVisible)
+        XCTAssertFalse(storage.isVisible)
         XCTAssertEqual(filePicker.primaryPermissionType, .filePicker)
         XCTAssertEqual(filePicker.priority, .filePickerCurrentEvent)
     }
@@ -230,7 +277,7 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
         XCTAssertEqual(state.category, .mixed)
         XCTAssertEqual(state.primaryPermissionType, .camera)
         XCTAssertEqual(state.priority, .activeCamera)
-        XCTAssertEqual(Set(state.relatedPermissionTypes.map(\.identity)), Set(["camera", "popups", "notifications"]))
+        XCTAssertEqual(Set(state.relatedPermissionTypes.map(\.identity)), Set(["camera", "popups"]))
     }
 
     func testCoordinatorEventsFromOtherPagesAreIgnored() {
@@ -282,8 +329,11 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
 
         XCTAssertEqual(source.components(separatedBy: "SumiPermissionIndicatorButton(").count - 1, 1)
         XCTAssertTrue(source.contains("urlbar-permission-indicator"))
-        XCTAssertTrue(trailingActions.contains("if permissionIndicatorViewModel.state.isVisible {"))
+        XCTAssertTrue(trailingActions.contains("let permissionIndicatorState = permissionIndicatorDisplayState(for: currentTab)"))
+        XCTAssertTrue(trailingActions.contains("if permissionIndicatorState.isVisible {"))
+        XCTAssertTrue(trailingActions.contains("permissionIndicatorButton(for: currentTab, state: permissionIndicatorState)"))
         XCTAssertTrue(source.contains("permissionPromptPresenter.presentFromIndicatorClick()"))
+        XCTAssertTrue(source.contains("permissionPromptPresenter.viewModel"))
         XCTAssertTrue(source.contains("prefersRuntimeControlsSurface"))
         XCTAssertTrue(source.contains("hubInitialMode = .permissions"))
         XCTAssertTrue(source.contains("isHubPresented = true"))
@@ -297,7 +347,9 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
 
         let copyRange = try XCTUnwrap(trailingActions.range(of: "copyLinkButton(for: currentTab)"))
         let hubRange = try XCTUnwrap(trailingActions.range(of: "hubButton"))
-        let permissionRange = try XCTUnwrap(trailingActions.range(of: "permissionIndicatorButton(for: currentTab)"))
+        let permissionRange = try XCTUnwrap(
+            trailingActions.range(of: "permissionIndicatorButton(for: currentTab, state: permissionIndicatorState)")
+        )
         let zoomRange = try XCTUnwrap(trailingActions.range(of: "if showsZoomButton"))
         XCTAssertLessThan(copyRange.lowerBound, hubRange.lowerBound)
         XCTAssertLessThan(hubRange.lowerBound, permissionRange.lowerBound)

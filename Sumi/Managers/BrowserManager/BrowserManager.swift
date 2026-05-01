@@ -206,7 +206,9 @@ class BrowserManager: ObservableObject {
     let externalSchemeSessionStore: SumiExternalSchemeSessionStore
     let externalSchemePermissionBridge: SumiExternalSchemePermissionBridge
     let permissionLifecycleController: SumiPermissionGrantLifecycleController
+    let permissionSidebarPinningController = SumiPermissionSidebarPinningController()
     private var permissionRecentActivityTask: Task<Void, Never>?
+    private var permissionSidebarPinningTask: Task<Void, Never>?
     var zoomManager = ZoomManager()
     weak var sumiSettings: SumiSettingsService? {
         didSet {
@@ -267,6 +269,9 @@ class BrowserManager: ObservableObject {
             // Update PeekManager's windowRegistry reference when this changes
             peekManager.windowRegistry = windowRegistry
             splitManager.windowRegistry = windowRegistry
+            Task { @MainActor [weak self] in
+                await self?.reconcilePermissionSidebarPins(reason: "window-registry-updated")
+            }
         }
     }
 
@@ -466,6 +471,12 @@ class BrowserManager: ObservableObject {
             let events = await permissionCoordinator.events()
             for await event in events {
                 permissionRecentActivityStore.record(event)
+            }
+        }
+        self.permissionSidebarPinningTask = Task { @MainActor [weak self, permissionCoordinator] in
+            let events = await permissionCoordinator.events()
+            for await _ in events {
+                await self?.reconcilePermissionSidebarPins(reason: "permission-event")
             }
         }
 
@@ -1153,6 +1164,7 @@ class BrowserManager: ObservableObject {
     }
     deinit {
         permissionRecentActivityTask?.cancel()
+        permissionSidebarPinningTask?.cancel()
         pendingWindowSessionPersistTasks.values.forEach { $0.cancel() }
         pendingWindowSessionPersistTasks.removeAll()
         pendingWindowSessionPersistStates.removeAll()
@@ -1201,6 +1213,46 @@ class BrowserManager: ObservableObject {
             for: windowState,
             tabStore: tabManager.runtimeStore
         )
+    }
+
+    @MainActor
+    private func reconcilePermissionSidebarPins(reason: String) async {
+        let state = await permissionCoordinator.stateSnapshot()
+        permissionSidebarPinningController.reconcile(
+            activeQueries: Array(state.activeQueriesByPageId.values),
+            windowForPageId: { [weak self] pageId in
+                self?.windowState(displayingPermissionPageId: pageId)
+            },
+            reason: reason
+        )
+    }
+
+    @MainActor
+    private func windowState(displayingPermissionPageId pageId: String) -> BrowserWindowState? {
+        guard let windowRegistry else { return nil }
+        let normalizedPageId = pageId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        if let activeWindow = windowRegistry.activeWindow,
+           windowState(activeWindow, displaysPermissionPageId: normalizedPageId)
+        {
+            return activeWindow
+        }
+
+        return windowRegistry.allWindows.first {
+            windowState($0, displaysPermissionPageId: normalizedPageId)
+        }
+    }
+
+    @MainActor
+    private func windowState(
+        _ windowState: BrowserWindowState,
+        displaysPermissionPageId pageId: String
+    ) -> Bool {
+        tabsForDisplay(in: windowState).contains { tab in
+            tab.currentPermissionPageId()
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased() == pageId
+        }
     }
 
     func windowState(containing tab: Tab) -> BrowserWindowState? {

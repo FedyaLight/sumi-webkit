@@ -972,6 +972,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
 
         let prewarmedPanel = try XCTUnwrap(controller.panelWindowForTesting)
         XCTAssertFalse(controller.isPanelAttachedForTesting)
+        XCTAssertFalse(controller.isFrameSyncTimerActiveForTesting)
         XCTAssertTrue(parentWindow.childWindows?.isEmpty ?? true)
         let visibleFrame = try XCTUnwrap(CollapsedSidebarPanelFrameResolver.panelFrame(
             in: parentWindow,
@@ -994,6 +995,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
 
         XCTAssertTrue(controller.panelWindowForTesting === prewarmedPanel)
         XCTAssertTrue(controller.isPanelAttachedForTesting)
+        XCTAssertTrue(controller.isFrameSyncTimerActiveForTesting)
         XCTAssertTrue(parentWindow.childWindows?.contains { $0 === prewarmedPanel } == true)
     }
 
@@ -1114,6 +1116,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         XCTAssertNil(controller.panelWindowForTesting)
         XCTAssertTrue(parentWindow.childWindows?.isEmpty ?? true)
         XCTAssertFalse(controller.isPanelAttachedForTesting)
+        XCTAssertFalse(controller.isFrameSyncTimerActiveForTesting)
     }
 
     func testCollapsedSidebarPanelControllerDetachesOnParentClose() {

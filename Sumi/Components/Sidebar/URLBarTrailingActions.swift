@@ -14,11 +14,12 @@ extension URLBarView {
     @ViewBuilder
     func trailingActions(for currentTab: Tab) -> some View {
         let showsZoomButton = shouldShowZoomButton(for: currentTab)
+        let permissionIndicatorState = permissionIndicatorDisplayState(for: currentTab)
         HStack(spacing: 6) {
             copyLinkButton(for: currentTab)
             hubButton
-            if permissionIndicatorViewModel.state.isVisible {
-                permissionIndicatorButton(for: currentTab)
+            if permissionIndicatorState.isVisible {
+                permissionIndicatorButton(for: currentTab, state: permissionIndicatorState)
                     .transition(
                         .asymmetric(
                             insertion: .scale(scale: 0.82).combined(with: .opacity),
@@ -48,7 +49,7 @@ extension URLBarView {
             refreshPermissionPrompt(for: tab)
         }
         .animation(.smooth(duration: 0.18), value: showsZoomButton)
-        .animation(.smooth(duration: 0.18), value: permissionIndicatorViewModel.state.isVisible)
+        .animation(.smooth(duration: 0.18), value: permissionIndicatorState.isVisible)
     }
 
     func copyLinkButton(for currentTab: Tab) -> some View {

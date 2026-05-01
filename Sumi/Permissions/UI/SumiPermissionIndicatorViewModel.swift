@@ -427,71 +427,16 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
                 fallbackTabId: tabId,
                 fallbackDisplayDomain: displayDomain
             )
-        case .systemBlocked(let decision),
-             .querySettled(_, let decision),
-             .requestCancelled(_, let decision),
-             .profileCancelled(_, let decision),
-             .sessionCancelled(_, let decision):
-            guard decisionMatchesPage(decision, pageId: pageId) else { return nil }
-            return decisionState(
-                decision,
-                tabId: tabId,
-                pageId: pageId,
-                displayDomain: displayDomain
-            )
-        case .pageCancelled(let cancelledPageId, let decision):
-            guard normalizedId(cancelledPageId) == pageId,
-                  isUIRelevantDecision(decision)
-            else { return nil }
-            return decisionState(
-                decision,
-                tabId: tabId,
-                pageId: pageId,
-                displayDomain: displayDomain
-            )
-        case .queryCoalesced, .promptSuppressed:
+        case .systemBlocked,
+             .querySettled,
+             .requestCancelled,
+             .pageCancelled,
+             .profileCancelled,
+             .sessionCancelled,
+             .queryCoalesced,
+             .promptSuppressed:
             return nil
         }
-    }
-
-    private static func decisionState(
-        _ decision: SumiPermissionCoordinatorDecision,
-        tabId: String,
-        pageId: String,
-        displayDomain: String
-    ) -> SumiPermissionIndicatorState? {
-        guard isUIRelevantDecision(decision) else { return nil }
-        let primary = primaryPermissionType(from: decision.permissionTypes)
-        let related = relatedPermissionTypes(for: primary, sourceTypes: decision.permissionTypes)
-
-        let category: SumiPermissionIndicatorCategory
-        let style: SumiPermissionIndicatorVisualStyle
-        switch decision.outcome {
-        case .promptRequired:
-            category = .pendingRequest
-            style = .attention
-        case .systemBlocked:
-            category = .systemBlocked
-            style = .systemWarning
-        case .denied, .unsupported, .requiresUserActivation, .cancelled, .dismissed, .suppressed, .expired:
-            category = .blockedEvent
-            style = .blocked
-        case .granted, .ignored:
-            return nil
-        }
-
-        return SumiPermissionIndicatorState.visible(
-            category: category,
-            primaryPermissionType: primary,
-            relatedPermissionTypes: related,
-            displayDomain: decision.keys.first?.displayDomain ?? displayDomain,
-            tabId: tabId,
-            pageId: pageId,
-            priority: priority(for: primary, category: category),
-            visualStyle: style,
-            badgeCount: related.count > 1 ? related.count : nil,
-            latestEventReason: decision.reason
-        )
     }
 
     private static func popupStates(
@@ -565,8 +510,9 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
     private static func indicatorEventStates(
         _ records: [SumiPermissionIndicatorEventRecord]
     ) -> [SumiPermissionIndicatorState] {
-        records.map { record in
-            SumiPermissionIndicatorState.visible(
+        records.compactMap { record in
+            guard shouldDisplayURLBarIndicatorEvent(record) else { return nil }
+            return SumiPermissionIndicatorState.visible(
                 category: record.category,
                 primaryPermissionType: record.primaryPermissionType,
                 relatedPermissionTypes: record.permissionTypes,
@@ -581,28 +527,20 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
         }
     }
 
-    private static func decisionMatchesPage(
-        _ decision: SumiPermissionCoordinatorDecision,
-        pageId: String
+    private static func shouldDisplayURLBarIndicatorEvent(
+        _ record: SumiPermissionIndicatorEventRecord
     ) -> Bool {
-        decision.keys.contains { key in
-            normalizedId(key.transientPageId ?? "") == pageId
-        }
-    }
-
-    private static func isUIRelevantDecision(
-        _ decision: SumiPermissionCoordinatorDecision
-    ) -> Bool {
-        switch decision.outcome {
-        case .promptRequired, .systemBlocked, .denied, .unsupported, .requiresUserActivation, .dismissed, .expired:
+        switch record.category {
+        case .pendingRequest:
+            return record.permissionTypes.contains(.filePicker)
+        case .activeRuntime,
+             .reloadRequired:
             return true
-        case .suppressed:
-            return false
-        case .cancelled:
-            return decision.reason.contains("prompt-ui")
-                || decision.reason.contains("coordinator-timeout")
-                || decision.reason.contains("task-cancelled")
-        case .granted, .ignored:
+        case .hidden,
+             .blockedEvent,
+             .systemBlocked,
+             .storedException,
+             .mixed:
             return false
         }
     }
