@@ -3,12 +3,11 @@ import SwiftUI
 
 // MARK: - Phase 1: AppKit-owned sidebar column
 
-final class SidebarColumnContainerView: NSView {
+class SidebarColumnBaseContainerView: NSView {
     var onWindowChanged: ((NSWindow?) -> Void)?
     var onGeometryChanged: (() -> Void)?
     weak var hostedSidebarView: NSView?
     weak var contextMenuController: SidebarContextMenuController?
-    var capturesPanelBackgroundPointerEvents = false
 
     override var isOpaque: Bool {
         false
@@ -24,19 +23,6 @@ final class SidebarColumnContainerView: NSView {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        let hit = super.hitTest(point)
-        return SidebarColumnHitTestRouting.routedHit(
-            point: point,
-            in: self,
-            originalHit: hit,
-            hostedSidebarView: hostedSidebarView,
-            contextMenuController: contextMenuController,
-            eventType: window?.currentEvent?.type,
-            capturesPanelBackgroundPointerEvents: capturesPanelBackgroundPointerEvents
-        )
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -60,6 +46,55 @@ final class SidebarColumnContainerView: NSView {
     override func layout() {
         super.layout()
         onGeometryChanged?()
+    }
+}
+
+final class SidebarColumnContainerView: SidebarColumnBaseContainerView {
+    var capturesPanelBackgroundPointerEvents = false
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        return SidebarColumnHitTestRouting.routedHit(
+            point: point,
+            in: self,
+            originalHit: hit,
+            hostedSidebarView: hostedSidebarView,
+            contextMenuController: contextMenuController,
+            eventType: window?.currentEvent?.type,
+            capturesPanelBackgroundPointerEvents: capturesPanelBackgroundPointerEvents
+        )
+    }
+}
+
+final class CollapsedSidebarPanelRootView: SidebarColumnBaseContainerView {
+    var isPanelHitTestingEnabled = false {
+        didSet {
+            guard oldValue != isPanelHitTestingEnabled else { return }
+            window?.invalidateCursorRects(for: self)
+        }
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let localPoint = superview.map { convert(point, from: $0) } ?? point
+        guard isPanelHitTestingEnabled,
+              !isHidden,
+              alphaValue > 0.01,
+              bounds.contains(localPoint)
+        else {
+            return nil
+        }
+
+        return super.hitTest(point) ?? self
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        guard isPanelHitTestingEnabled else { return }
+        addCursorRect(bounds, cursor: .arrow)
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        NSCursor.arrow.set()
     }
 }
 

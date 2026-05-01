@@ -10,22 +10,25 @@ final class SidebarColumnViewController: NSViewController {
     private var hostingController: NSViewController?
     private var widthConstraint: NSLayoutConstraint?
     private weak var registeredRecoveryAnchor: NSView?
-    private let pointerSuppressionController = CollapsedSidebarPointerSuppressionController()
-    private var pointerSuppressionPresentationContext: SidebarPresentationContext?
-    private weak var pointerSuppressionWindowState: BrowserWindowState?
-    private weak var pointerSuppressionWindowRegistry: WindowRegistry?
+    private let usesCollapsedPanelRoot: Bool
+
+    init(usesCollapsedPanelRoot: Bool = false) {
+        self.usesCollapsedPanelRoot = usesCollapsedPanelRoot
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 
     override func loadView() {
-        let containerView = SidebarColumnContainerView()
+        let containerView: SidebarColumnBaseContainerView = usesCollapsedPanelRoot
+            ? CollapsedSidebarPanelRootView()
+            : SidebarColumnContainerView()
         containerView.onWindowChanged = { [weak self] window in
             Task { @MainActor [weak self] in
                 self?.syncRecoveryAnchor(window: window)
-                self?.syncPointerSuppression()
-            }
-        }
-        containerView.onGeometryChanged = { [weak self] in
-            Task { @MainActor [weak self] in
-                self?.pointerSuppressionController.refreshPanelRect()
             }
         }
         SidebarColumnPaintlessChrome.configure(containerView)
@@ -37,13 +40,16 @@ final class SidebarColumnViewController: NSViewController {
         root: Content,
         width: CGFloat,
         contextMenuController: SidebarContextMenuController? = nil,
-        capturesPanelBackgroundPointerEvents: Bool = false
+        capturesPanelBackgroundPointerEvents: Bool = false,
+        isCollapsedPanelHitTestingEnabled: Bool = false
     ) {
         let previousHostedSidebarView = hostingController?.view
-        if let containerView = view as? SidebarColumnContainerView {
-            containerView.contextMenuController = contextMenuController
-            containerView.capturesPanelBackgroundPointerEvents = capturesPanelBackgroundPointerEvents
-        }
+        let containerView = view as? SidebarColumnBaseContainerView
+        containerView?.contextMenuController = contextMenuController
+        (view as? SidebarColumnContainerView)?
+            .capturesPanelBackgroundPointerEvents = capturesPanelBackgroundPointerEvents
+        (view as? CollapsedSidebarPanelRootView)?
+            .isPanelHitTestingEnabled = isCollapsedPanelHitTestingEnabled
 
         if let hostingController = hostingController as? SidebarHostingController<Content> {
             hostingController.rootView = root
@@ -71,7 +77,7 @@ final class SidebarColumnViewController: NSViewController {
             nextHostingController.view.layoutSubtreeIfNeeded()
         }
 
-        (view as? SidebarColumnContainerView)?.hostedSidebarView = hostingController?.view
+        containerView?.hostedSidebarView = hostingController?.view
         SidebarUITestDragMarker.recordEvent(
             "hostedSidebarUpdate",
             dragItemID: nil,
@@ -81,31 +87,15 @@ final class SidebarColumnViewController: NSViewController {
         )
 
         syncRecoveryAnchor(window: view.window)
-        pointerSuppressionController.refreshPanelRect()
-    }
-
-    func updatePointerSuppression(
-        presentationContext: SidebarPresentationContext,
-        windowState: BrowserWindowState,
-        windowRegistry: WindowRegistry
-    ) {
-        pointerSuppressionPresentationContext = presentationContext
-        pointerSuppressionWindowState = windowState
-        pointerSuppressionWindowRegistry = windowRegistry
-        syncPointerSuppression()
     }
 
     func teardownSidebarHosting() {
-        pointerSuppressionController.teardown()
-        pointerSuppressionPresentationContext = nil
-        pointerSuppressionWindowState = nil
-        pointerSuppressionWindowRegistry = nil
         unregisterRecoveryAnchor()
-        if let containerView = view as? SidebarColumnContainerView {
-            containerView.hostedSidebarView = nil
-            containerView.contextMenuController = nil
-            containerView.capturesPanelBackgroundPointerEvents = false
-        }
+        let containerView = view as? SidebarColumnBaseContainerView
+        containerView?.hostedSidebarView = nil
+        containerView?.contextMenuController = nil
+        (view as? SidebarColumnContainerView)?.capturesPanelBackgroundPointerEvents = false
+        (view as? CollapsedSidebarPanelRootView)?.isPanelHitTestingEnabled = false
         widthConstraint?.isActive = false
         widthConstraint = nil
         removeHostingControllerIfNeeded()
@@ -131,25 +121,6 @@ final class SidebarColumnViewController: NSViewController {
         guard let registeredRecoveryAnchor else { return }
         sidebarRecoveryCoordinator.unregister(anchor: registeredRecoveryAnchor)
         self.registeredRecoveryAnchor = nil
-    }
-
-    private func syncPointerSuppression() {
-        guard let presentationContext = pointerSuppressionPresentationContext,
-              let windowState = pointerSuppressionWindowState,
-              let windowRegistry = pointerSuppressionWindowRegistry
-        else {
-            pointerSuppressionController.teardown()
-            return
-        }
-
-        pointerSuppressionController.update(
-            window: view.window ?? windowState.window,
-            panelView: view,
-            hostedSidebarView: hostingController?.view,
-            isCollapsedVisible: presentationContext.mode == .collapsedVisible,
-            isSidebarCollapsed: !windowState.isSidebarVisible,
-            isBrowserWindowActive: windowRegistry.activeWindowId == windowState.id
-        )
     }
 
     private func removeHostingControllerIfNeeded() {
