@@ -60,6 +60,73 @@ enum BrowserWindowTrafficLightPlaceholderPalette {
     static let unfocused = Color(hex: "4E4F52")
 }
 
+enum BrowserWindowTrafficLightProxyAction: CaseIterable, Hashable {
+    case close
+    case minimize
+    case zoom
+
+    var accessibilityIdentifier: String {
+        switch self {
+        case .close:
+            return BrowserWindowControlsAccessibilityIdentifiers.closeButton
+        case .minimize:
+            return BrowserWindowControlsAccessibilityIdentifiers.minimizeButton
+        case .zoom:
+            return BrowserWindowControlsAccessibilityIdentifiers.zoomButton
+        }
+    }
+
+    var paletteColor: Color {
+        switch self {
+        case .close:
+            return BrowserWindowTrafficLightPlaceholderPalette.close
+        case .minimize:
+            return BrowserWindowTrafficLightPlaceholderPalette.minimize
+        case .zoom:
+            return BrowserWindowTrafficLightPlaceholderPalette.zoom
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .close:
+            return "xmark"
+        case .minimize:
+            return "minus"
+        case .zoom:
+            return "plus"
+        }
+    }
+
+    func isEnabled(in parentWindow: NSWindow?) -> Bool {
+        guard let parentWindow else { return false }
+
+        switch self {
+        case .close:
+            return parentWindow.styleMask.contains(.closable)
+        case .minimize:
+            return parentWindow.styleMask.contains(.miniaturizable)
+                && parentWindow.isMiniaturized == false
+        case .zoom:
+            return parentWindow.styleMask.contains(.resizable)
+        }
+    }
+
+    @MainActor
+    func perform(on parentWindow: NSWindow?) {
+        guard let parentWindow else { return }
+
+        switch self {
+        case .close:
+            parentWindow.performClose(nil)
+        case .minimize:
+            parentWindow.miniaturize(nil)
+        case .zoom:
+            parentWindow.performZoom(nil)
+        }
+    }
+}
+
 @MainActor
 final class BrowserWindowTrafficLightRenderState: ObservableObject {
     @Published var isNativeClusterVisible = false
@@ -115,6 +182,75 @@ struct BrowserWindowTrafficLightPlaceholderCluster: View {
                 width: BrowserWindowTrafficLightMetrics.buttonDiameter,
                 height: BrowserWindowTrafficLightMetrics.buttonDiameter
             )
+    }
+}
+
+struct BrowserWindowTrafficLightProxyCluster: View {
+    weak var parentWindow: NSWindow?
+    var isVisible: Bool = true
+
+    @State private var isClusterHovered = false
+
+    var body: some View {
+        HStack(spacing: BrowserWindowTrafficLightMetrics.buttonSpacing) {
+            ForEach(BrowserWindowTrafficLightProxyAction.allCases, id: \.self) { action in
+                proxyButton(action)
+            }
+        }
+        .frame(
+            width: isVisible ? BrowserWindowTrafficLightMetrics.sidebarReservedWidth : 0,
+            height: BrowserWindowTrafficLightMetrics.clusterHeight,
+            alignment: .leading
+        )
+        .offset(x: BrowserWindowTrafficLightMetrics.placeholderHorizontalOffset)
+        .opacity(isVisible ? 1 : 0)
+        .onHover { isClusterHovered = $0 }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func proxyButton(_ action: BrowserWindowTrafficLightProxyAction) -> some View {
+        let isEnabled = action.isEnabled(in: parentWindow)
+
+        return Button {
+            action.perform(on: parentWindow)
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(fillColor(for: action, isEnabled: isEnabled))
+                    .overlay {
+                        Circle()
+                            .stroke(Color.black.opacity(0.14), lineWidth: 0.75)
+                    }
+
+                Image(systemName: action.symbolName)
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(Color.black.opacity(isEnabled ? 0.58 : 0.22))
+                    .opacity(isClusterHovered && isEnabled ? 1 : 0)
+            }
+            .frame(
+                width: BrowserWindowTrafficLightMetrics.buttonDiameter,
+                height: BrowserWindowTrafficLightMetrics.buttonDiameter
+            )
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .accessibilityIdentifier(action.accessibilityIdentifier)
+    }
+
+    private func fillColor(
+        for action: BrowserWindowTrafficLightProxyAction,
+        isEnabled: Bool
+    ) -> Color {
+        guard isEnabled else {
+            return BrowserWindowTrafficLightPlaceholderPalette.unfocused
+        }
+
+        guard parentWindow?.isKeyWindow != false else {
+            return BrowserWindowTrafficLightPlaceholderPalette.unfocused
+        }
+
+        return action.paletteColor
     }
 }
 

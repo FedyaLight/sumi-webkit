@@ -161,6 +161,11 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertTrue(controlsSource.contains("F4BF4F"))
         XCTAssertTrue(controlsSource.contains("62C554"))
         XCTAssertTrue(controlsSource.contains("4E4F52"))
+        XCTAssertTrue(controlsSource.contains("enum BrowserWindowTrafficLightProxyAction"))
+        XCTAssertTrue(controlsSource.contains("struct BrowserWindowTrafficLightProxyCluster: View"))
+        XCTAssertTrue(controlsSource.contains("parentWindow.performClose(nil)"))
+        XCTAssertTrue(controlsSource.contains("parentWindow.miniaturize(nil)"))
+        XCTAssertTrue(controlsSource.contains("parentWindow.performZoom(nil)"))
         XCTAssertTrue(controlsSource.contains("struct BrowserWindowTrafficLightPlaceholderCluster: View"))
         XCTAssertTrue(controlsSource.contains("struct BrowserWindowNativeTrafficLightVisibilityBridge: NSViewRepresentable"))
         XCTAssertTrue(controlsSource.contains("BrowserWindowTrafficLightMetrics"))
@@ -217,13 +222,47 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertTrue(windowSource.contains("guard let button = standardWindowButton(type)"))
         XCTAssertTrue(windowSource.contains("button.superview?.needsLayout = true"))
         XCTAssertTrue(windowViewSource.contains("BrowserWindowNativeTrafficLightVisibilityBridge("))
+        XCTAssertTrue(windowViewSource.contains("collapsedLeftSidebarPanelVisible"))
         XCTAssertTrue(sidebarHeaderSource.contains("BrowserWindowTrafficLightPlaceholderCluster("))
+        XCTAssertTrue(sidebarHeaderSource.contains("BrowserWindowTrafficLightProxyCluster("))
+        XCTAssertTrue(sidebarHeaderSource.contains("sidebarPresentationContext.mode == .collapsedVisible"))
         XCTAssertFalse(windowSource.contains("SidebarSystemWindowControls"))
         XCTAssertFalse(windowViewSource.contains("SidebarSystemWindowControls"))
         XCTAssertFalse(sidebarHeaderSource.contains("SidebarSystemWindowControls"))
         Self.assertNoNativeTrafficLightReparenting(in: controlsSource, file: "BrowserWindowTrafficLights.swift")
         Self.assertNoNativeTrafficLightReparenting(in: windowSource, file: "SumiBrowserWindow.swift")
         Self.assertNoNativeTrafficLightReparenting(in: windowViewSource, file: "WindowView.swift")
+        Self.assertNoNativeTrafficLightReparenting(in: sidebarHeaderSource, file: "SidebarHeader.swift")
+    }
+
+    func testPanelTrafficLightProxyActionsRouteToParentBrowserWindow() {
+        let window = TrackingTrafficLightWindow(
+            contentRect: NSRect(origin: .zero, size: NSSize(width: 320, height: 240)),
+            styleMask: SumiBrowserChromeConfiguration.requiredStyleMask,
+            backing: .buffered,
+            defer: false
+        )
+
+        BrowserWindowTrafficLightProxyAction.close.perform(on: window)
+        BrowserWindowTrafficLightProxyAction.minimize.perform(on: window)
+        BrowserWindowTrafficLightProxyAction.zoom.perform(on: window)
+
+        XCTAssertTrue(window.didPerformClose)
+        XCTAssertTrue(window.didMiniaturize)
+        XCTAssertTrue(window.didPerformZoom)
+    }
+
+    func testPanelTrafficLightProxyDoesNotReparentNativeButtonsIntoPanel() throws {
+        let controlsSource = try Self.source(named: "Sumi/Components/Window/BrowserWindowTrafficLights.swift")
+        let panelHostSource = try Self.source(named: "Sumi/Components/Sidebar/CollapsedSidebarPanelHost.swift")
+        let sidebarHeaderSource = try Self.source(named: "Navigation/Sidebar/SidebarHeader.swift")
+
+        XCTAssertTrue(controlsSource.contains("BrowserWindowTrafficLightProxyCluster"))
+        XCTAssertTrue(sidebarHeaderSource.contains("BrowserWindowTrafficLightProxyCluster("))
+        XCTAssertTrue(panelHostSource.contains("CollapsedSidebarPanelWindow"))
+        XCTAssertFalse(panelHostSource.contains("standardWindowButton"))
+        Self.assertNoNativeTrafficLightReparenting(in: controlsSource, file: "BrowserWindowTrafficLights.swift")
+        Self.assertNoNativeTrafficLightReparenting(in: panelHostSource, file: "CollapsedSidebarPanelHost.swift")
         Self.assertNoNativeTrafficLightReparenting(in: sidebarHeaderSource, file: "SidebarHeader.swift")
     }
 
@@ -363,6 +402,24 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
                 "\(file) must not reparent native traffic-light buttons with pattern: \(pattern)",
                 line: line
             )
+        }
+    }
+
+    private final class TrackingTrafficLightWindow: NSWindow {
+        var didPerformClose = false
+        var didMiniaturize = false
+        var didPerformZoom = false
+
+        override func performClose(_ sender: Any?) {
+            didPerformClose = true
+        }
+
+        override func miniaturize(_ sender: Any?) {
+            didMiniaturize = true
+        }
+
+        override func performZoom(_ sender: Any?) {
+            didPerformZoom = true
         }
     }
 }

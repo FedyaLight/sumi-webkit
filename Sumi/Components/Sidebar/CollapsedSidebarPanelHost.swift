@@ -6,6 +6,11 @@ final class CollapsedSidebarPanelWindow: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+final class CollapsedSidebarDragPreviewOverlayWindow: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+}
+
 enum CollapsedSidebarPanelFrameResolver {
     static func panelFrame(
         parentContentScreenFrame: NSRect,
@@ -47,11 +52,20 @@ enum CollapsedSidebarPanelFrameResolver {
     }
 }
 
+enum CollapsedSidebarDragPreviewOverlayFrameResolver {
+    static func overlayFrame(in parentWindow: NSWindow) -> NSRect? {
+        CollapsedSidebarPanelFrameResolver.parentContentScreenFrame(in: parentWindow)
+    }
+}
+
 @MainActor
 final class CollapsedSidebarPanelController {
     private var panelWindow: CollapsedSidebarPanelWindow?
+    private var dragPreviewOverlayWindow: CollapsedSidebarDragPreviewOverlayWindow?
     private let sidebarController = SidebarColumnViewController(usesCollapsedPanelRoot: true)
+    private let dragPreviewOverlayController = NSHostingController(rootView: AnyView(EmptyView()))
     private weak var attachedParentWindow: NSWindow?
+    private weak var dragPreviewOverlayParentWindow: NSWindow?
     private weak var observedParentWindow: NSWindow?
     private weak var observedContentView: NSView?
     private var observers: [NSObjectProtocol] = []
@@ -62,6 +76,10 @@ final class CollapsedSidebarPanelController {
         panelWindow
     }
 
+    var dragPreviewOverlayWindowForTesting: CollapsedSidebarDragPreviewOverlayWindow? {
+        dragPreviewOverlayWindow
+    }
+
     var attachedParentWindowForTesting: NSWindow? {
         attachedParentWindow
     }
@@ -69,6 +87,12 @@ final class CollapsedSidebarPanelController {
     var isPanelAttachedForTesting: Bool {
         guard let panelWindow, let attachedParentWindow else { return false }
         return attachedParentWindow.childWindows?.contains(panelWindow) == true
+    }
+
+    var isDragPreviewOverlayAttachedForTesting: Bool {
+        guard let dragPreviewOverlayWindow,
+              let dragPreviewOverlayParentWindow else { return false }
+        return dragPreviewOverlayParentWindow.childWindows?.contains(dragPreviewOverlayWindow) == true
     }
 
     func update<Content: View>(
@@ -123,6 +147,28 @@ final class CollapsedSidebarPanelController {
         }
     }
 
+    func updateDragPreviewOverlay<Content: View>(
+        parentWindow: NSWindow?,
+        root: Content,
+        isPresented: Bool
+    ) {
+        guard isPresented,
+              let parentWindow
+        else {
+            orderOutAndDetachDragPreviewOverlay(destroyWindow: true)
+            return
+        }
+
+        let overlay = ensureDragPreviewOverlayWindow()
+        configureDragPreviewOverlay(overlay, for: parentWindow)
+        dragPreviewOverlayController.rootView = AnyView(root)
+        if overlay.contentViewController !== dragPreviewOverlayController {
+            overlay.contentViewController = dragPreviewOverlayController
+        }
+        syncDragPreviewOverlayFrame()
+        attachAndShowDragPreviewOverlay(overlay, to: parentWindow)
+    }
+
     func syncFrame() {
         guard let panelWindow,
               let parentWindow = observedParentWindow ?? attachedParentWindow,
@@ -134,9 +180,11 @@ final class CollapsedSidebarPanelController {
         else { return }
 
         panelWindow.setFrame(frame, display: panelWindow.isVisible)
+        syncDragPreviewOverlayFrame()
     }
 
     func teardown() {
+        orderOutAndDetachDragPreviewOverlay(destroyWindow: true)
         orderOutAndDetach(teardownHostedContent: true, destroyWindow: true)
         unbindParentWindow()
     }
@@ -180,6 +228,40 @@ final class CollapsedSidebarPanelController {
         return panel
     }
 
+    private func ensureDragPreviewOverlayWindow() -> CollapsedSidebarDragPreviewOverlayWindow {
+        if let dragPreviewOverlayWindow {
+            return dragPreviewOverlayWindow
+        }
+
+        let overlay = CollapsedSidebarDragPreviewOverlayWindow(
+            contentRect: .zero,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: true
+        )
+        overlay.isReleasedWhenClosed = false
+        overlay.isOpaque = false
+        overlay.backgroundColor = .clear
+        overlay.hasShadow = false
+        overlay.hidesOnDeactivate = false
+        overlay.isFloatingPanel = false
+        overlay.becomesKeyOnlyIfNeeded = false
+        overlay.worksWhenModal = true
+        overlay.animationBehavior = .none
+        overlay.collectionBehavior = [
+            .fullScreenAuxiliary,
+            .moveToActiveSpace,
+            .ignoresCycle,
+        ]
+        overlay.acceptsMouseMovedEvents = false
+        overlay.ignoresMouseEvents = true
+        overlay.contentView?.wantsLayer = true
+        overlay.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
+        overlay.contentView?.layer?.isOpaque = false
+        dragPreviewOverlayWindow = overlay
+        return overlay
+    }
+
     private func configure(
         _ panel: CollapsedSidebarPanelWindow,
         for parentWindow: NSWindow
@@ -188,6 +270,16 @@ final class CollapsedSidebarPanelController {
         panel.appearance = parentWindow.effectiveAppearance
         panel.ignoresMouseEvents = false
         panel.acceptsMouseMovedEvents = true
+    }
+
+    private func configureDragPreviewOverlay(
+        _ overlay: CollapsedSidebarDragPreviewOverlayWindow,
+        for parentWindow: NSWindow
+    ) {
+        overlay.level = parentWindow.level
+        overlay.appearance = parentWindow.effectiveAppearance
+        overlay.ignoresMouseEvents = true
+        overlay.acceptsMouseMovedEvents = false
     }
 
     private func attachAndShow(
@@ -206,10 +298,27 @@ final class CollapsedSidebarPanelController {
         panel.orderFront(nil)
     }
 
+    private func attachAndShowDragPreviewOverlay(
+        _ overlay: CollapsedSidebarDragPreviewOverlayWindow,
+        to parentWindow: NSWindow
+    ) {
+        if dragPreviewOverlayParentWindow !== parentWindow {
+            detachDragPreviewOverlayFromParent()
+        }
+
+        if parentWindow.childWindows?.contains(overlay) != true {
+            parentWindow.addChildWindow(overlay, ordered: .above)
+        }
+
+        dragPreviewOverlayParentWindow = parentWindow
+        overlay.orderFront(nil)
+    }
+
     private func orderOutAndDetach(
         teardownHostedContent: Bool,
         destroyWindow: Bool
     ) {
+        orderOutAndDetachDragPreviewOverlay(destroyWindow: destroyWindow)
         detachFromParent()
         panelWindow?.orderOut(nil)
 
@@ -230,6 +339,17 @@ final class CollapsedSidebarPanelController {
         }
     }
 
+    private func orderOutAndDetachDragPreviewOverlay(destroyWindow: Bool) {
+        detachDragPreviewOverlayFromParent()
+        dragPreviewOverlayWindow?.orderOut(nil)
+        dragPreviewOverlayController.rootView = AnyView(EmptyView())
+
+        if destroyWindow {
+            dragPreviewOverlayWindow?.contentViewController = nil
+            dragPreviewOverlayWindow = nil
+        }
+    }
+
     private func detachFromParent() {
         guard let panelWindow,
               let attachedParentWindow
@@ -242,6 +362,29 @@ final class CollapsedSidebarPanelController {
             attachedParentWindow.removeChildWindow(panelWindow)
         }
         self.attachedParentWindow = nil
+    }
+
+    private func detachDragPreviewOverlayFromParent() {
+        guard let dragPreviewOverlayWindow,
+              let dragPreviewOverlayParentWindow
+        else {
+            self.dragPreviewOverlayParentWindow = nil
+            return
+        }
+
+        if dragPreviewOverlayParentWindow.childWindows?.contains(dragPreviewOverlayWindow) == true {
+            dragPreviewOverlayParentWindow.removeChildWindow(dragPreviewOverlayWindow)
+        }
+        self.dragPreviewOverlayParentWindow = nil
+    }
+
+    private func syncDragPreviewOverlayFrame() {
+        guard let dragPreviewOverlayWindow,
+              let parentWindow = observedParentWindow ?? dragPreviewOverlayParentWindow ?? attachedParentWindow,
+              let frame = CollapsedSidebarDragPreviewOverlayFrameResolver.overlayFrame(in: parentWindow)
+        else { return }
+
+        dragPreviewOverlayWindow.setFrame(frame, display: dragPreviewOverlayWindow.isVisible)
     }
 
     private func bindParentWindow(_ parentWindow: NSWindow) {
@@ -323,6 +466,7 @@ final class CollapsedSidebarPanelAnchorView: NSView {
 
 struct CollapsedSidebarPanelHost: NSViewRepresentable {
     @ObservedObject var browserManager: BrowserManager
+    @ObservedObject private var sidebarDragState = SidebarDragState.shared
     var windowState: BrowserWindowState
     var windowRegistry: WindowRegistry
     var commandPalette: CommandPalette
@@ -356,6 +500,11 @@ struct CollapsedSidebarPanelHost: NSViewRepresentable {
                 contextMenuController: nil,
                 isHostRequested: false
             )
+            context.coordinator.controller.updateDragPreviewOverlay(
+                parentWindow: nsView.window ?? windowState.window,
+                root: EmptyView(),
+                isPresented: false
+            )
             return
         }
 
@@ -377,6 +526,21 @@ struct CollapsedSidebarPanelHost: NSViewRepresentable {
             presentationContext: presentationContext,
             contextMenuController: windowState.sidebarContextMenuController,
             isHostRequested: isHostRequested
+        )
+
+        let dragPreviewRoot = SidebarFloatingDragPreview()
+            .environmentObject(browserManager)
+            .environment(windowState)
+            .environment(\.sumiSettings, sumiSettings)
+            .environment(\.resolvedThemeContext, resolvedThemeContext)
+
+        context.coordinator.controller.updateDragPreviewOverlay(
+            parentWindow: nsView.window ?? windowState.window,
+            root: dragPreviewRoot,
+            isPresented: SidebarDragVisualSurfacePolicy.shouldPresentCollapsedPanelPreviewOverlay(
+                presentationContext: presentationContext,
+                isDragging: sidebarDragState.isDragging
+            )
         )
     }
 
