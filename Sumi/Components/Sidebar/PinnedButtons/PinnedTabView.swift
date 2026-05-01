@@ -7,6 +7,10 @@
 
 import SwiftUI
 
+enum PinnedTileFaviconLayout {
+    static let cornerRadius: CGFloat = 6
+}
+
 struct PinnedTabView: View {
     private enum TileBackgroundState {
         case active
@@ -280,19 +284,43 @@ struct PinnedTileVisual: View {
 
     @ViewBuilder
     private func resolvedFaviconSymbol(height: CGFloat) -> some View {
+        Group {
+            if let systemName = chromeTemplateSystemImageName {
+                Image(systemName: systemName)
+                    .font(.system(size: height * 0.78, weight: .medium))
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(tokens.primaryText)
+            } else {
+                tabIcon
+                    .resizable()
+                    .interpolation(.high)
+                    .antialiased(true)
+                    .scaledToFit()
+            }
+        }
+        .frame(width: height, height: height)
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: PinnedTileFaviconLayout.cornerRadius,
+                style: .continuous
+            )
+        )
+    }
+
+    @ViewBuilder
+    private func strokeFaviconSymbol() -> some View {
         if let systemName = chromeTemplateSystemImageName {
             Image(systemName: systemName)
-                .font(.system(size: height * 0.78, weight: .medium))
+                .resizable()
+                .scaledToFit()
                 .symbolRenderingMode(.monochrome)
                 .foregroundStyle(tokens.primaryText)
-                .frame(height: height)
         } else {
             tabIcon
                 .resizable()
                 .interpolation(.high)
                 .antialiased(true)
                 .scaledToFit()
-                .frame(height: height)
         }
     }
 
@@ -304,23 +332,14 @@ struct PinnedTileVisual: View {
         ringMask: some View
     ) -> some View {
         let dim = min(size.width, size.height) * scale
-        Group {
-            if let systemName = chromeTemplateSystemImageName {
-                Image(systemName: systemName)
-                    .resizable()
-                    .scaledToFit()
-                    .symbolRenderingMode(.monochrome)
-                    .foregroundStyle(tokens.primaryText)
-                    .frame(width: dim, height: dim)
-            } else {
-                tabIcon
-                    .resizable()
-                    .interpolation(.high)
-                    .antialiased(true)
-                    .scaledToFit()
-                    .frame(width: dim, height: dim)
-            }
-        }
+        strokeFaviconSymbol()
+        .frame(width: dim, height: dim)
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: PinnedTileFaviconLayout.cornerRadius * scale,
+                style: .continuous
+            )
+        )
         .blur(radius: blur)
         .frame(width: size.width, height: size.height)
         .mask(ringMask.frame(width: size.width, height: size.height))

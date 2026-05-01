@@ -37,14 +37,18 @@ struct SidebarColumnHostedRootView: View {
     @ViewBuilder
     private var collapsedSidebarChromeBackground: some View {
         if presentationContext.isCollapsedOverlay {
+            let backgroundThemeContext = environmentContext.chromeBackgroundResolvedThemeContext
+
             ZStack {
-                environmentContext.resolvedThemeContext
+                backgroundThemeContext
                     .tokens(settings: environmentContext.sumiSettings)
                     .windowBackground
                     .opacity(presentationContext.mode == .collapsedVisible ? 1 : 0)
                 SpaceGradientBackgroundView(surface: .toolbarChrome)
                     .environmentObject(environmentContext.browserManager)
                     .environment(environmentContext.windowState)
+                    .environment(\.sumiSettings, environmentContext.sumiSettings)
+                    .environment(\.resolvedThemeContext, backgroundThemeContext)
                     .opacity(presentationContext.mode == .collapsedVisible ? 1 : 0)
             }
         }
@@ -60,6 +64,7 @@ enum SidebarColumnHostedRoot {
         commandPalette: CommandPalette,
         sumiSettings: SumiSettingsService,
         resolvedThemeContext: ResolvedThemeContext,
+        chromeBackgroundResolvedThemeContext: ResolvedThemeContext,
         presentationContext: SidebarPresentationContext
     ) -> SidebarColumnHostedRootView {
         SidebarColumnHostedRootView(
@@ -69,7 +74,8 @@ enum SidebarColumnHostedRoot {
                 windowRegistry: windowRegistry,
                 commandPalette: commandPalette,
                 sumiSettings: sumiSettings,
-                resolvedThemeContext: resolvedThemeContext
+                resolvedThemeContext: resolvedThemeContext,
+                chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext
             ),
             presentationContext: presentationContext
         )
@@ -83,6 +89,7 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
     var commandPalette: CommandPalette
     var sumiSettings: SumiSettingsService
     var resolvedThemeContext: ResolvedThemeContext
+    var chromeBackgroundResolvedThemeContext: ResolvedThemeContext
     var presentationContext: SidebarPresentationContext
 
     func makeNSViewController(context: Context) -> SidebarColumnViewController {
@@ -97,6 +104,7 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
             commandPalette: commandPalette,
             sumiSettings: sumiSettings,
             resolvedThemeContext: resolvedThemeContext,
+            chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext,
             presentationContext: presentationContext
         )
         controller.updateHostedSidebar(
