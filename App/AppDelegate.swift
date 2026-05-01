@@ -444,6 +444,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     /// Confirms user-initiated quits when enabled, then schedules best-effort persistence.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        NotificationCenter.default.post(
+            name: .sumiShouldHideCollapsedSidebarOverlay,
+            object: sender
+        )
+
         guard shouldAskBeforeQuit else {
             scheduleTerminationPersistenceBestEffortAfterReturningFromDelegate(
                 shouldTerminate: true

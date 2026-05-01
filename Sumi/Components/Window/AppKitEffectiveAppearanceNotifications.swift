@@ -8,4 +8,8 @@ extension Notification.Name {
     static let sumiWindowDidChangeEffectiveAppearance = Notification.Name(
         rawValue: "NSWindowDidChangeEffectiveAppearanceNotification"
     )
+
+    static let sumiShouldHideCollapsedSidebarOverlay = Notification.Name(
+        rawValue: "SumiShouldHideCollapsedSidebarOverlayNotification"
+    )
 }

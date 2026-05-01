@@ -833,6 +833,16 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         XCTAssertTrue(root.hitTest(NSPoint(x: 4, y: 4)) === root)
     }
 
+    func testCollapsedPanelRootRoutesHostedBackgroundToRootForWindowDrag() {
+        let root = CollapsedSidebarPanelRootView(frame: NSRect(x: 0, y: 0, width: 200, height: 120))
+        let hosted = NSView(frame: root.bounds)
+        root.hostedSidebarView = hosted
+        root.addSubview(hosted)
+        root.isPanelHitTestingEnabled = true
+
+        XCTAssertTrue(root.hitTest(NSPoint(x: 30, y: 30)) === root)
+    }
+
     func testCollapsedPanelRootReturnsSidebarInteractiveOwnerPathBeforeRoot() {
         let root = CollapsedSidebarPanelRootView(frame: NSRect(x: 0, y: 0, width: 200, height: 120))
         let owner = SidebarInteractiveItemView(frame: NSRect(x: 20, y: 20, width: 80, height: 36))
@@ -902,6 +912,20 @@ final class SidebarColumnViewControllerTests: XCTestCase {
             ),
             NSRect(x: 520, y: 200, width: 220, height: 480)
         )
+        XCTAssertEqual(
+            CollapsedSidebarPanelFrameResolver.hiddenContentOffset(
+                for: 220,
+                sidebarPosition: .left
+            ),
+            -220
+        )
+        XCTAssertEqual(
+            CollapsedSidebarPanelFrameResolver.hiddenContentOffset(
+                for: 220,
+                sidebarPosition: .right
+            ),
+            220
+        )
     }
 
     func testCollapsedSidebarDragPreviewOverlayFrameUsesFullParentContent() {
@@ -933,7 +957,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         XCTAssertFalse(controller.isPanelAttachedForTesting)
     }
 
-    func testCollapsedSidebarPanelControllerPrewarmsWithoutAttachingAndVisibleAttaches() {
+    func testCollapsedSidebarPanelControllerPrewarmsWithoutAttachingAndVisibleAttaches() throws {
         let parentWindow = makeWindow()
         let controller = CollapsedSidebarPanelController()
 
@@ -946,10 +970,18 @@ final class SidebarColumnViewControllerTests: XCTestCase {
             isHostRequested: true
         )
 
-        let prewarmedPanel = controller.panelWindowForTesting
-        XCTAssertNotNil(prewarmedPanel)
+        let prewarmedPanel = try XCTUnwrap(controller.panelWindowForTesting)
         XCTAssertFalse(controller.isPanelAttachedForTesting)
         XCTAssertTrue(parentWindow.childWindows?.isEmpty ?? true)
+        let visibleFrame = try XCTUnwrap(CollapsedSidebarPanelFrameResolver.panelFrame(
+            in: parentWindow,
+            sidebarWidth: 220,
+            sidebarPosition: .left
+        ))
+        XCTAssertEqual(
+            prewarmedPanel.frame,
+            visibleFrame
+        )
 
         controller.update(
             parentWindow: parentWindow,
@@ -1135,6 +1167,25 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         parentWindow.removeChildWindow(panel)
     }
 
+    func testCollapsedSidebarPanelAnimatesContentInsideBrowserEdge() throws {
+        let source = try Self.source(named: "Sumi/Components/Sidebar/CollapsedSidebarPanelHost.swift")
+        let controllerSource = try Self.source(named: "Sumi/Components/Sidebar/SidebarColumnViewController.swift")
+
+        XCTAssertTrue(source.contains("setSidebarContentOffset("))
+        XCTAssertTrue(source.contains("CAKeyframeAnimation(keyPath: \"transform\")"))
+        XCTAssertTrue(source.contains("revealDuration: TimeInterval = 0.25"))
+        XCTAssertTrue(source.contains("hideDuration: TimeInterval = 0.15"))
+        XCTAssertTrue(source.contains("CATransform3DMakeTranslation(offset, 0, 0)"))
+        XCTAssertTrue(source.contains("startingOffset.map { CATransform3DMakeTranslation($0, 0, 0) }"))
+        XCTAssertTrue(source.contains("startingOffset: wasAlreadyRevealed ? nil : initialContentOffset"))
+        XCTAssertTrue(source.contains("collapsedPanelAnimatedContentView"))
+        XCTAssertTrue(source.contains("panel.contentView?.layer?.masksToBounds = true"))
+        XCTAssertTrue(controllerSource.contains("var collapsedPanelAnimatedContentView: NSView?"))
+        XCTAssertTrue(source.contains(".sumiShouldHideCollapsedSidebarOverlay"))
+        XCTAssertFalse(source.contains("panel.animator().setFrame"))
+        XCTAssertFalse(source.contains("hiddenPanelFrame"))
+    }
+
     func testCollapsedPanelRootSourceDoesNotUseEventSpecificHitTesting() throws {
         let source = try Self.source(named: "Sumi/Components/Sidebar/SidebarColumnContainerView.swift")
         let rootStart = try XCTUnwrap(source.range(of: "final class CollapsedSidebarPanelRootView"))
@@ -1144,7 +1195,8 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         XCTAssertTrue(rootSource.contains("override func hitTest"))
         XCTAssertFalse(rootSource.contains("window?.currentEvent"))
         XCTAssertFalse(rootSource.contains("SidebarColumnHitTestRouting.routedHit"))
-        XCTAssertTrue(rootSource.contains("return super.hitTest(localPoint) ?? self"))
+        XCTAssertTrue(rootSource.contains("if hit === hostedSidebarView"))
+        XCTAssertTrue(rootSource.contains("parentWindow.performDrag(with: event)"))
     }
 
     func testCollapsedHostedRootContainsFullVisiblePanelChromeInOneSubtree() throws {

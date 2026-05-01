@@ -189,6 +189,12 @@ struct WindowView: View {
                 effectiveAppearanceRevision &+= 1
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .sumiShouldHideCollapsedSidebarOverlay)) { _ in
+            hoverSidebarManager.setOverlayVisibility(
+                false,
+                animationDuration: SidebarHoverOverlayMetrics.revealAnimationDuration
+            )
+        }
         // Keep Sumi's theme override inside SwiftUI so AppKit chrome stays stable while custom
         // sidebar chrome resolves its appearance from SwiftUI state.
         .environment(\.colorScheme, globalColorScheme)

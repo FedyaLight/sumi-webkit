@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import SwiftUI
 
 final class CollapsedSidebarPanelWindow: NSPanel {
@@ -30,6 +31,13 @@ enum CollapsedSidebarPanelFrameResolver {
         )
     }
 
+    static func hiddenContentOffset(
+        for sidebarWidth: CGFloat,
+        sidebarPosition: SidebarPosition
+    ) -> CGFloat {
+        sidebarPosition.shellEdge.isLeft ? -sidebarWidth : sidebarWidth
+    }
+
     static func parentContentScreenFrame(in parentWindow: NSWindow) -> NSRect? {
         guard let contentView = parentWindow.contentView else { return nil }
         let contentWindowFrame = contentView.convert(contentView.bounds, to: nil)
@@ -58,6 +66,38 @@ enum CollapsedSidebarDragPreviewOverlayFrameResolver {
     }
 }
 
+private enum CollapsedSidebarPanelAnimation {
+    static let revealDuration: TimeInterval = 0.25
+    static let hideDuration: TimeInterval = 0.15
+    static let contentOffsetAnimationKey = "sumi.collapsedSidebarPanel.contentOffset"
+    static let hideTimingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1.0)
+    static let revealProgress: [CGFloat] = [
+        0, 0.002748, 0.010544, 0.022757, 0.038804, 0.058151,
+        0.080308, 0.104828, 0.131301, 0.159358, 0.188662,
+        0.21891, 0.249828, 0.281172, 0.312724, 0.344288,
+        0.375693, 0.40679, 0.437447, 0.467549, 0.497,
+        0.525718, 0.553633, 0.580688, 0.60684, 0.632052,
+        0.656298, 0.679562, 0.701831, 0.723104, 0.743381,
+        0.76267, 0.780983, 0.798335, 0.814744, 0.830233,
+        0.844826, 0.858549, 0.87143, 0.883498, 0.894782,
+        0.905314, 0.915125, 0.924247, 0.93271, 0.940547,
+        0.947787, 0.954463, 0.960603, 0.966239, 0.971397,
+        0.976106, 0.980394, 0.984286, 0.987808, 0.990984,
+        0.993837, 0.99639, 0.998664, 1.000679, 1.002456,
+        1.004011, 1.005363, 1.006528, 1.007522, 1.008359,
+        1.009054, 1.009618, 1.010065, 1.010405, 1.010649,
+        1.010808, 1.01089, 1.010904, 1.010857, 1.010757,
+        1.010611, 1.010425, 1.010205, 1.009955, 1.009681,
+        1.009387, 1.009077, 1.008754, 1.008422, 1.008083,
+        1.00774, 1.007396, 1.007052, 1.00671, 1.006372,
+        1.00604, 1.005713, 1.005394, 1.005083, 1.004782,
+        1.004489, 1.004207, 1.003935, 1.003674, 1
+    ]
+    static let revealKeyTimes: [NSNumber] = (0...100).map {
+        NSNumber(value: Double($0) / 100.0)
+    }
+}
+
 @MainActor
 final class CollapsedSidebarPanelController {
     private var panelWindow: CollapsedSidebarPanelWindow?
@@ -71,6 +111,8 @@ final class CollapsedSidebarPanelController {
     private var observers: [NSObjectProtocol] = []
     private var currentSidebarWidth: CGFloat = BrowserWindowState.sidebarDefaultWidth
     private var currentSidebarPosition: SidebarPosition = .left
+    private var isPanelRevealed = false
+    private var panelPresentationGeneration: UInt64 = 0
 
     var panelWindowForTesting: CollapsedSidebarPanelWindow? {
         panelWindow
@@ -101,7 +143,8 @@ final class CollapsedSidebarPanelController {
         width: CGFloat,
         presentationContext: SidebarPresentationContext,
         contextMenuController: SidebarContextMenuController?,
-        isHostRequested: Bool
+        isHostRequested: Bool,
+        onPointerDown: (() -> Void)? = nil
     ) {
         currentSidebarWidth = width
         currentSidebarPosition = presentationContext.sidebarPosition
@@ -122,15 +165,20 @@ final class CollapsedSidebarPanelController {
             panel.contentViewController = sidebarController
         }
 
-        sidebarController.updateHostedSidebar(
-            root: root,
-            width: width,
-            contextMenuController: contextMenuController,
-            capturesPanelBackgroundPointerEvents: presentationContext.capturesPanelBackgroundPointerEvents,
-            isCollapsedPanelHitTestingEnabled: presentationContext.mode == .collapsedVisible
-        )
-
-        syncFrame()
+        let shouldKeepVisibleContentForHideAnimation = presentationContext.mode == .collapsedHidden
+            && (isPanelRevealed || panel.isVisible || isPanelAttachedForTesting)
+        if shouldKeepVisibleContentForHideAnimation {
+            sidebarController.setCollapsedPanelHitTestingEnabled(false)
+        } else {
+            sidebarController.updateHostedSidebar(
+                root: root,
+                width: width,
+                contextMenuController: contextMenuController,
+                capturesPanelBackgroundPointerEvents: presentationContext.capturesPanelBackgroundPointerEvents,
+                isCollapsedPanelHitTestingEnabled: presentationContext.mode == .collapsedVisible,
+                onPointerDown: onPointerDown
+            )
+        }
 
         #if DEBUG
         SidebarDebugMetrics.recordCollapsedSidebarHost(
@@ -141,9 +189,9 @@ final class CollapsedSidebarPanelController {
         #endif
 
         if presentationContext.mode == .collapsedVisible {
-            attachAndShow(panel, to: parentWindow)
+            reveal(panel, in: parentWindow)
         } else {
-            orderOutAndDetach(teardownHostedContent: false, destroyWindow: false)
+            hideAndDetach(panel)
         }
     }
 
@@ -171,15 +219,11 @@ final class CollapsedSidebarPanelController {
 
     func syncFrame() {
         guard let panelWindow,
-              let parentWindow = observedParentWindow ?? attachedParentWindow,
-              let frame = CollapsedSidebarPanelFrameResolver.panelFrame(
-                in: parentWindow,
-                sidebarWidth: currentSidebarWidth,
-                sidebarPosition: currentSidebarPosition
-              )
+              let visibleFrame = currentVisiblePanelFrame()
         else { return }
 
-        panelWindow.setFrame(frame, display: panelWindow.isVisible)
+        panelWindow.setFrame(visibleFrame, display: panelWindow.isVisible)
+        setSidebarContentOffset(currentSidebarContentOffset, animated: false)
         syncDragPreviewOverlayFrame()
     }
 
@@ -224,6 +268,7 @@ final class CollapsedSidebarPanelController {
         panel.ignoresMouseEvents = false
         panel.contentView?.wantsLayer = true
         panel.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
+        panel.contentView?.layer?.masksToBounds = true
         panelWindow = panel
         return panel
     }
@@ -268,8 +313,8 @@ final class CollapsedSidebarPanelController {
     ) {
         panel.level = parentWindow.level
         panel.appearance = parentWindow.effectiveAppearance
-        panel.ignoresMouseEvents = false
         panel.acceptsMouseMovedEvents = true
+        preparePanelContentClipping(panel)
     }
 
     private func configureDragPreviewOverlay(
@@ -280,6 +325,195 @@ final class CollapsedSidebarPanelController {
         overlay.appearance = parentWindow.effectiveAppearance
         overlay.ignoresMouseEvents = true
         overlay.acceptsMouseMovedEvents = false
+    }
+
+    private func currentVisiblePanelFrame() -> NSRect? {
+        guard let parentWindow = observedParentWindow ?? attachedParentWindow else {
+            return nil
+        }
+        return CollapsedSidebarPanelFrameResolver.panelFrame(
+            in: parentWindow,
+            sidebarWidth: currentSidebarWidth,
+            sidebarPosition: currentSidebarPosition
+        )
+    }
+
+    private var currentSidebarContentOffset: CGFloat {
+        isPanelRevealed ? 0 : hiddenSidebarContentOffset
+    }
+
+    private var hiddenSidebarContentOffset: CGFloat {
+        CollapsedSidebarPanelFrameResolver.hiddenContentOffset(
+            for: currentVisiblePanelFrame()?.width ?? currentSidebarWidth,
+            sidebarPosition: currentSidebarPosition
+        )
+    }
+
+    private func preparePanelContentClipping(_ panel: CollapsedSidebarPanelWindow) {
+        panel.contentView?.wantsLayer = true
+        panel.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
+        panel.contentView?.layer?.masksToBounds = true
+        sidebarController.view.wantsLayer = true
+        sidebarController.view.layer?.masksToBounds = true
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        sidebarController.view.layer?.transform = CATransform3DIdentity
+        CATransaction.commit()
+        sidebarController.collapsedPanelAnimatedContentView?.wantsLayer = true
+        sidebarController.collapsedPanelAnimatedContentView?.layer?.masksToBounds = false
+    }
+
+    private func reveal(
+        _ panel: CollapsedSidebarPanelWindow,
+        in parentWindow: NSWindow
+    ) {
+        panelPresentationGeneration &+= 1
+
+        guard let visibleFrame = CollapsedSidebarPanelFrameResolver.panelFrame(
+            in: parentWindow,
+            sidebarWidth: currentSidebarWidth,
+            sidebarPosition: currentSidebarPosition
+        ) else {
+            isPanelRevealed = true
+            attachAndShow(panel, to: parentWindow)
+            return
+        }
+
+        let wasAlreadyRevealed = isPanelRevealed
+            && panel.isVisible
+            && attachedParentWindow === parentWindow
+
+        preparePanelContentClipping(panel)
+        panel.setFrame(visibleFrame, display: false)
+        let initialContentOffset = hiddenSidebarContentOffset
+        if !panel.isVisible || attachedParentWindow !== parentWindow {
+            setSidebarContentOffset(initialContentOffset, animated: false)
+        }
+
+        isPanelRevealed = true
+        panel.ignoresMouseEvents = false
+        attachAndShow(panel, to: parentWindow)
+
+        setSidebarContentOffset(
+            0,
+            animated: !wasAlreadyRevealed,
+            startingOffset: wasAlreadyRevealed ? nil : initialContentOffset
+        )
+    }
+
+    private func hideAndDetach(_ panel: CollapsedSidebarPanelWindow) {
+        panelPresentationGeneration &+= 1
+        let generation = panelPresentationGeneration
+        isPanelRevealed = false
+        orderOutAndDetachDragPreviewOverlay(destroyWindow: false)
+        panel.ignoresMouseEvents = true
+
+        guard let visibleFrame = currentVisiblePanelFrame() else {
+            detachFromParent()
+            panel.orderOut(nil)
+            return
+        }
+
+        preparePanelContentClipping(panel)
+        panel.setFrame(visibleFrame, display: panel.isVisible)
+        guard panel.isVisible,
+              attachedParentWindow != nil
+        else {
+            setSidebarContentOffset(hiddenSidebarContentOffset, animated: false)
+            detachFromParent()
+            panel.orderOut(nil)
+            return
+        }
+
+        setSidebarContentOffset(hiddenSidebarContentOffset, animated: true) { [weak self, weak panel] in
+            guard let self,
+                  self.panelPresentationGeneration == generation,
+                  self.isPanelRevealed == false,
+                  let panel,
+                  self.panelWindow === panel
+            else { return }
+
+            self.detachFromParent()
+            panel.orderOut(nil)
+        }
+    }
+
+    private func setSidebarContentOffset(
+        _ offset: CGFloat,
+        animated: Bool,
+        startingOffset: CGFloat? = nil,
+        completion: (@MainActor () -> Void)? = nil
+    ) {
+        let animatedView = sidebarController.collapsedPanelAnimatedContentView ?? sidebarController.view
+        animatedView.wantsLayer = true
+        animatedView.layoutSubtreeIfNeeded()
+
+        guard let layer = animatedView.layer else {
+            completion?()
+            return
+        }
+
+        let transform = CATransform3DMakeTranslation(offset, 0, 0)
+        let startTransform = startingOffset.map { CATransform3DMakeTranslation($0, 0, 0) }
+            ?? layer.presentation()?.transform
+            ?? layer.transform
+        layer.removeAnimation(forKey: CollapsedSidebarPanelAnimation.contentOffsetAnimationKey)
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.transform = transform
+        CATransaction.commit()
+
+        guard animated,
+              !CATransform3DEqualToTransform(startTransform, transform)
+        else {
+            completion?()
+            return
+        }
+
+        let animation = makeSidebarContentOffsetAnimation(
+            from: startTransform,
+            to: transform,
+            isReveal: offset == 0
+        )
+
+        CATransaction.begin()
+        CATransaction.setCompletionBlock {
+            Task { @MainActor in
+                completion?()
+            }
+        }
+        layer.add(animation, forKey: CollapsedSidebarPanelAnimation.contentOffsetAnimationKey)
+        CATransaction.commit()
+    }
+
+    private func makeSidebarContentOffsetAnimation(
+        from startTransform: CATransform3D,
+        to targetTransform: CATransform3D,
+        isReveal: Bool
+    ) -> CAAnimation {
+        if isReveal {
+            let startX = startTransform.m41
+            let targetX = targetTransform.m41
+            let distance = targetX - startX
+            let animation = CAKeyframeAnimation(keyPath: "transform")
+            animation.values = CollapsedSidebarPanelAnimation.revealProgress.map { progress in
+                NSValue(caTransform3D: CATransform3DMakeTranslation(startX + distance * progress, 0, 0))
+            }
+            animation.keyTimes = CollapsedSidebarPanelAnimation.revealKeyTimes
+            animation.duration = CollapsedSidebarPanelAnimation.revealDuration
+            animation.calculationMode = .linear
+            animation.isRemovedOnCompletion = true
+            return animation
+        }
+
+        let animation = CABasicAnimation(keyPath: "transform")
+        animation.fromValue = NSValue(caTransform3D: startTransform)
+        animation.toValue = NSValue(caTransform3D: targetTransform)
+        animation.duration = CollapsedSidebarPanelAnimation.hideDuration
+        animation.timingFunction = CollapsedSidebarPanelAnimation.hideTimingFunction
+        animation.isRemovedOnCompletion = true
+        return animation
     }
 
     private func attachAndShow(
@@ -318,6 +552,9 @@ final class CollapsedSidebarPanelController {
         teardownHostedContent: Bool,
         destroyWindow: Bool
     ) {
+        panelPresentationGeneration &+= 1
+        isPanelRevealed = false
+        setSidebarContentOffset(hiddenSidebarContentOffset, animated: false)
         orderOutAndDetachDragPreviewOverlay(destroyWindow: destroyWindow)
         detachFromParent()
         panelWindow?.orderOut(nil)
@@ -387,6 +624,15 @@ final class CollapsedSidebarPanelController {
         dragPreviewOverlayWindow.setFrame(frame, display: dragPreviewOverlayWindow.isVisible)
     }
 
+    private func handleCollapsedSidebarDismissalRequest() {
+        guard let panelWindow,
+              panelWindow.isVisible || isPanelAttachedForTesting
+        else { return }
+
+        sidebarController.setCollapsedPanelHitTestingEnabled(false)
+        hideAndDetach(panelWindow)
+    }
+
     private func bindParentWindow(_ parentWindow: NSWindow) {
         guard observedParentWindow !== parentWindow else { return }
         unbindParentWindow()
@@ -421,6 +667,18 @@ final class CollapsedSidebarPanelController {
             ) { [weak self] _ in
                 Task { @MainActor [weak self] in
                     self?.teardown()
+                }
+            }
+        )
+
+        observers.append(
+            center.addObserver(
+                forName: .sumiShouldHideCollapsedSidebarOverlay,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.handleCollapsedSidebarDismissalRequest()
                 }
             }
         )
@@ -523,7 +781,10 @@ struct CollapsedSidebarPanelHost: NSViewRepresentable {
             width: presentationContext.sidebarWidth,
             presentationContext: presentationContext,
             contextMenuController: windowState.sidebarContextMenuController,
-            isHostRequested: isHostRequested
+            isHostRequested: isHostRequested,
+            onPointerDown: { [weak browserManager] in
+                browserManager?.dismissWorkspaceThemePickerIfNeededCommitting()
+            }
         )
 
         let dragPreviewRoot = SidebarFloatingDragPreview()

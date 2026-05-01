@@ -104,7 +104,10 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
             width: presentationContext.sidebarWidth,
             contextMenuController: windowState.sidebarContextMenuController,
             capturesPanelBackgroundPointerEvents: presentationContext.capturesPanelBackgroundPointerEvents,
-            isCollapsedPanelHitTestingEnabled: presentationContext.mode == .collapsedVisible
+            isCollapsedPanelHitTestingEnabled: presentationContext.mode == .collapsedVisible,
+            onPointerDown: { [weak browserManager] in
+                browserManager?.dismissWorkspaceThemePickerIfNeededCommitting()
+            }
         )
         #if DEBUG
         SidebarDebugMetrics.recordCollapsedSidebarHost(

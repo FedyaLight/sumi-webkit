@@ -255,6 +255,7 @@ extension BrowserManager {
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Clear History")
         alert.addButton(withTitle: "Cancel")
+        requestCollapsedSidebarOverlayDismissal()
         if alert.runModal() == .alertFirstButtonReturn {
             Task {
                 await historyManager.clearAll()

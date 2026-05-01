@@ -76,7 +76,15 @@ extension BrowserManager {
 
     // MARK: - Dialog Methods
 
+    func requestCollapsedSidebarOverlayDismissal() {
+        NotificationCenter.default.post(
+            name: .sumiShouldHideCollapsedSidebarOverlay,
+            object: self
+        )
+    }
+
     func showQuitDialog() {
+        requestCollapsedSidebarOverlayDismissal()
         NSApplication.shared.terminate(nil)
     }
 

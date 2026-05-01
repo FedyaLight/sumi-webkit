@@ -25,6 +25,16 @@ struct HoverSidebarEventMonitorClient {
     )
 }
 
+enum HoverSidebarCompactMetrics {
+    static let triggerWidth: CGFloat = 5
+    static let edgeOvershootSlack: CGFloat = 10
+    static let keepOpenHysteresis: CGFloat = 0
+    static let verticalBoundsSlack: CGFloat = 7
+    static let revealAnimationDuration: TimeInterval = 0.25
+    static let hideAnimationDuration: TimeInterval = 0.15
+    static let keepHoverDuration: TimeInterval = 0.15
+}
+
 enum HoverSidebarVisibilityPolicy {
     static func shouldShowOverlay(
         mouse: CGPoint,
@@ -80,14 +90,14 @@ final class HoverSidebarManager: ObservableObject {
     @Published private(set) var isOverlayHostPrewarmed: Bool = false
 
     // MARK: - Configuration
-    /// Width inside the window that triggers reveal when hovered.
-    var triggerWidth: CGFloat = 6
-    /// Horizontal slack beyond the selected window edge to catch slight overshoot.
-    var overshootSlack: CGFloat = 12
-    /// Extra horizontal margin past the overlay to keep it open while interacting.
-    var keepOpenHysteresis: CGFloat = 52
-    /// Vertical slack to allow small overshoot above/below the window frame.
-    var verticalSlack: CGFloat = 24
+    /// Zen compact exposes `content-element-separation / 2 + 1px`, which is 5px by default.
+    var triggerWidth: CGFloat = HoverSidebarCompactMetrics.triggerWidth
+    /// Zen keeps edge crossing active within 10px of the window edge.
+    var overshootSlack: CGFloat = HoverSidebarCompactMetrics.edgeOvershootSlack
+    /// Zen relies on the sidebar's actual bounds, then keeps hover for 150ms after leave.
+    var keepOpenHysteresis: CGFloat = HoverSidebarCompactMetrics.keepOpenHysteresis
+    /// Zen accepts a 7px vertical bounds error for edge-cross hover retention.
+    var verticalSlack: CGFloat = HoverSidebarCompactMetrics.verticalBoundsSlack
     var sidebarPosition: SidebarPosition = .left
     var hiddenHostRetentionDelay: TimeInterval
 
@@ -230,8 +240,9 @@ final class HoverSidebarManager: ObservableObject {
         }
 
         if activeState.sidebarTransientSessionCoordinator.hasPinnedTransientUI(for: activeState.id) {
+            cancelScheduledOverlayHide()
             if !isOverlayVisible {
-                requestOverlayReveal(animationDuration: 0.15)
+                requestOverlayReveal(animationDuration: HoverSidebarCompactMetrics.revealAnimationDuration)
             }
             return
         }
@@ -264,11 +275,12 @@ final class HoverSidebarManager: ObservableObject {
         )
 
         if shouldShow {
+            cancelScheduledOverlayHide()
             if !isOverlayVisible {
-                requestOverlayReveal(animationDuration: 0.15)
+                requestOverlayReveal(animationDuration: HoverSidebarCompactMetrics.revealAnimationDuration)
             }
         } else if isOverlayVisible || isOverlayHostPrewarmed {
-            hideOverlay(animationDuration: 0.15)
+            scheduleOverlayHide(animationDuration: HoverSidebarCompactMetrics.hideAnimationDuration)
         }
     }
 
@@ -306,6 +318,25 @@ final class HoverSidebarManager: ObservableObject {
             isOverlayVisible = false
         }
         releaseOverlayHostWhenIdle(after: max(animationDuration, hiddenHostRetentionDelay))
+    }
+
+    private func scheduleOverlayHide(animationDuration: TimeInterval) {
+        overlayVisibilityGeneration &+= 1
+        let generation = overlayVisibilityGeneration
+
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + HoverSidebarCompactMetrics.keepHoverDuration
+        ) { [weak self] in
+            guard let self,
+                  generation == self.overlayVisibilityGeneration
+            else { return }
+
+            self.hideOverlay(animationDuration: animationDuration)
+        }
+    }
+
+    private func cancelScheduledOverlayHide() {
+        overlayVisibilityGeneration &+= 1
     }
 
     private func prewarmOverlayHost() {

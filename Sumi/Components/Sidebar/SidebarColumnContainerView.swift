@@ -6,6 +6,7 @@ import SwiftUI
 class SidebarColumnBaseContainerView: NSView {
     var onWindowChanged: ((NSWindow?) -> Void)?
     var onGeometryChanged: (() -> Void)?
+    var onPointerDown: (() -> Void)?
     weak var hostedSidebarView: NSView?
     weak var contextMenuController: SidebarContextMenuController?
 
@@ -25,7 +26,13 @@ class SidebarColumnBaseContainerView: NSView {
         true
     }
 
+    override func mouseDown(with event: NSEvent) {
+        onPointerDown?()
+        super.mouseDown(with: event)
+    }
+
     override func rightMouseDown(with event: NSEvent) {
+        onPointerDown?()
         guard contextMenuController?.presentBackgroundMenu(
             trigger: .rightMouseDown,
             event: event,
@@ -34,6 +41,11 @@ class SidebarColumnBaseContainerView: NSView {
             super.rightMouseDown(with: event)
             return
         }
+    }
+
+    override func otherMouseDown(with event: NSEvent) {
+        onPointerDown?()
+        super.otherMouseDown(with: event)
     }
 
     override func viewDidMoveToWindow() {
@@ -87,7 +99,24 @@ final class CollapsedSidebarPanelRootView: SidebarColumnBaseContainerView {
             return nil
         }
 
-        return super.hitTest(localPoint) ?? self
+        let hit = super.hitTest(localPoint)
+        if hit === hostedSidebarView {
+            return self
+        }
+
+        return hit ?? self
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard event.clickCount == 1,
+              let parentWindow = window?.parent
+        else {
+            super.mouseDown(with: event)
+            return
+        }
+
+        onPointerDown?()
+        parentWindow.performDrag(with: event)
     }
 }
 
@@ -100,6 +129,8 @@ enum SidebarColumnPaintlessChrome {
 }
 
 private final class SidebarHostingView<Content: View>: NSHostingView<Content> {
+    var onPointerDown: (() -> Void)?
+
     override var isOpaque: Bool {
         false
     }
@@ -112,12 +143,33 @@ private final class SidebarHostingView<Content: View>: NSHostingView<Content> {
         super.viewDidMoveToWindow()
         SidebarColumnPaintlessChrome.configure(self)
     }
+
+    override func mouseDown(with event: NSEvent) {
+        onPointerDown?()
+        super.mouseDown(with: event)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        onPointerDown?()
+        super.rightMouseDown(with: event)
+    }
+
+    override func otherMouseDown(with event: NSEvent) {
+        onPointerDown?()
+        super.otherMouseDown(with: event)
+    }
 }
 
 final class SidebarHostingController<Content: View>: NSViewController {
     var rootView: Content {
         didSet {
             hostingView.rootView = rootView
+        }
+    }
+
+    var onPointerDown: (() -> Void)? {
+        didSet {
+            hostingView.onPointerDown = onPointerDown
         }
     }
 

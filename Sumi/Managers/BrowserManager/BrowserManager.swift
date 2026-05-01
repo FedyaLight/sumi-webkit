@@ -486,6 +486,7 @@ class BrowserManager: ObservableObject {
         self.authenticationManager.attach(browserManager: self)
 
         self.dialogManager.onWillPresentModal = { [weak self] in
+            self?.requestCollapsedSidebarOverlayDismissal()
             self?.dismissWorkspaceThemePickerIfNeededDiscarding()
         }
 

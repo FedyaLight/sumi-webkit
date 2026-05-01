@@ -168,7 +168,13 @@ struct BrowserWindowTrafficLightActionProvider {
 
     var drawsActivePalette: Bool {
         guard let targetWindow else { return true }
-        return targetWindow.isKeyWindow || targetWindow.isMainWindow
+        if targetWindow.isKeyWindow || targetWindow.isMainWindow {
+            return true
+        }
+
+        return NSApp.isActive
+            && targetWindow.isVisible
+            && targetWindow.isMiniaturized == false
     }
 }
 
@@ -177,6 +183,7 @@ struct BrowserWindowTrafficLights: View {
     var isVisible: Bool = true
 
     @State private var isClusterHovered = false
+    @State private var windowActivationRevision: UInt = 0
 
     init(
         actionProvider: BrowserWindowTrafficLightActionProvider,
@@ -187,6 +194,8 @@ struct BrowserWindowTrafficLights: View {
     }
 
     var body: some View {
+        let _ = windowActivationRevision
+
         HStack(spacing: BrowserWindowTrafficLightMetrics.buttonSpacing) {
             ForEach(BrowserWindowTrafficLightAction.allCases, id: \.self) { action in
                 trafficLightButton(action)
@@ -200,6 +209,24 @@ struct BrowserWindowTrafficLights: View {
         .offset(x: BrowserWindowTrafficLightMetrics.clusterHorizontalOffset)
         .opacity(isVisible ? 1 : 0)
         .onHover { isClusterHovered = $0 }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) {
+            handleWindowActivationNotification($0)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) {
+            handleWindowActivationNotification($0)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeMainNotification)) {
+            handleWindowActivationNotification($0)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignMainNotification)) {
+            handleWindowActivationNotification($0)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshWindowActivationState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            refreshWindowActivationState()
+        }
         .accessibilityElement(children: .contain)
     }
 
@@ -221,6 +248,25 @@ struct BrowserWindowTrafficLights: View {
         )
         .disabled(!isEnabled)
         .accessibilityIdentifier(action.accessibilityIdentifier)
+    }
+
+    private func handleWindowActivationNotification(_ notification: Notification) {
+        guard let notificationWindow = notification.object as? NSWindow else {
+            return
+        }
+
+        guard let targetWindow = actionProvider.targetWindow else {
+            refreshWindowActivationState()
+            return
+        }
+
+        if notificationWindow === targetWindow || notificationWindow.parent === targetWindow {
+            refreshWindowActivationState()
+        }
+    }
+
+    private func refreshWindowActivationState() {
+        windowActivationRevision &+= 1
     }
 }
 
