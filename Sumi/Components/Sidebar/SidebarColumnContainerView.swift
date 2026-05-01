@@ -67,15 +67,18 @@ final class SidebarColumnContainerView: SidebarColumnBaseContainerView {
 }
 
 final class CollapsedSidebarPanelRootView: SidebarColumnBaseContainerView {
-    var isPanelHitTestingEnabled = false {
-        didSet {
-            guard oldValue != isPanelHitTestingEnabled else { return }
-            window?.invalidateCursorRects(for: self)
-        }
-    }
+    var isPanelHitTestingEnabled = false
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        let localPoint = superview.map { convert(point, from: $0) } ?? point
+        let localPoint: NSPoint
+        if bounds.contains(point) {
+            localPoint = point
+        } else if let superview {
+            localPoint = convert(point, from: superview)
+        } else {
+            localPoint = point
+        }
+
         guard isPanelHitTestingEnabled,
               !isHidden,
               alphaValue > 0.01,
@@ -84,17 +87,7 @@ final class CollapsedSidebarPanelRootView: SidebarColumnBaseContainerView {
             return nil
         }
 
-        return super.hitTest(point) ?? self
-    }
-
-    override func resetCursorRects() {
-        super.resetCursorRects()
-        guard isPanelHitTestingEnabled else { return }
-        addCursorRect(bounds, cursor: .arrow)
-    }
-
-    override func cursorUpdate(with event: NSEvent) {
-        NSCursor.arrow.set()
+        return super.hitTest(localPoint) ?? self
     }
 }
 

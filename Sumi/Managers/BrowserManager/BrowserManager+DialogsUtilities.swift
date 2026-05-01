@@ -67,7 +67,11 @@ extension BrowserManager {
     private func dialogPresentationWindow(
         for source: SidebarTransientPresentationSource? = nil
     ) -> NSWindow? {
-        source?.window ?? windowRegistry?.activeWindow?.window ?? NSApp.keyWindow ?? NSApp.mainWindow
+        source?.window?.parent
+            ?? source?.window
+            ?? windowRegistry?.activeWindow?.window
+            ?? NSApp.keyWindow
+            ?? NSApp.mainWindow
     }
 
     // MARK: - Dialog Methods

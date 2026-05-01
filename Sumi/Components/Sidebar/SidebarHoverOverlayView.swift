@@ -64,7 +64,6 @@ enum SidebarHoverOverlayHostMountPolicy {
 
 enum SidebarHoverOverlayMetrics {
     static let cornerRadius: CGFloat = 12
-    static let hiddenPadding: CGFloat = 18
     static let revealAnimationDuration: TimeInterval = 0.12
 }
 
@@ -141,25 +140,6 @@ struct SidebarHoverOverlayView: View {
         )
     }
 
-    private var hiddenOffset: CGFloat {
-        presentationContext.shellEdge.hiddenOffset(
-            sidebarWidth: presentationContext.sidebarWidth,
-            hiddenPadding: SidebarHoverOverlayMetrics.hiddenPadding
-        )
-    }
-
-    private var sidebarPanelOffset: CGFloat {
-        presentationContext.mode == .collapsedHidden ? hiddenOffset : 0
-    }
-
-    private var sidebarPanelOpacity: Double {
-        presentationContext.mode == .collapsedHidden ? 0 : 1
-    }
-
-    private var sidebarPanelAllowsHitTesting: Bool {
-        presentationContext.mode != .collapsedHidden
-    }
-
     var body: some View {
         Group {
             if isCollapsedSidebar {
@@ -182,9 +162,7 @@ struct SidebarHoverOverlayView: View {
                             NSCursor.arrow.set()
                         }
 
-                    if shouldMountCollapsedSidebarHost {
-                        sidebarHost
-                    }
+                    collapsedPanelHost
                 }
                 .frame(
                     maxWidth: .infinity,
@@ -198,8 +176,8 @@ struct SidebarHoverOverlayView: View {
         }
     }
 
-    private var sidebarHost: some View {
-        SidebarColumnRepresentable(
+    private var collapsedPanelHost: some View {
+        CollapsedSidebarPanelHost(
             browserManager: browserManager,
             windowState: windowState,
             windowRegistry: windowRegistry,
@@ -207,18 +185,15 @@ struct SidebarHoverOverlayView: View {
             sumiSettings: sumiSettings,
             resolvedThemeContext: themeContext,
             trafficLightRenderState: trafficLightRenderState,
-            presentationContext: presentationContext
+            presentationContext: presentationContext,
+            isHostRequested: shouldMountCollapsedSidebarHost
         )
-        .id("shared-sidebar-column")
+        .id("collapsed-sidebar-panel-host")
         .transaction { transaction in
             transaction.disablesAnimations = true
         }
-        .frame(width: presentationContext.sidebarWidth)
-        .frame(maxHeight: .infinity)
-        .zIndex(5000)
-        .offset(x: sidebarPanelOffset)
-        .opacity(sidebarPanelOpacity)
-        .allowsHitTesting(sidebarPanelAllowsHitTesting)
-        .accessibilityHidden(presentationContext.mode == .collapsedHidden)
+        .frame(width: 0, height: 0)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }

@@ -49,9 +49,18 @@ enum SidebarDragLocationMapper {
         fromWindowPoint windowPoint: CGPoint,
         in window: NSWindow
     ) -> CGPoint {
-        swiftUITopLeftPoint(
-            windowPoint: windowPoint,
-            topBoundaryY: swiftUIFullContentBoundaryY(in: window)
+        let previewWindow = previewCoordinateWindow(for: window)
+        let previewWindowPoint: CGPoint
+        if previewWindow === window {
+            previewWindowPoint = windowPoint
+        } else {
+            let screenPoint = window.convertPoint(toScreen: windowPoint)
+            previewWindowPoint = previewWindow.convertPoint(fromScreen: screenPoint)
+        }
+
+        return swiftUITopLeftPoint(
+            windowPoint: previewWindowPoint,
+            topBoundaryY: swiftUIFullContentBoundaryY(in: previewWindow)
         )
     }
 
@@ -138,5 +147,9 @@ enum SidebarDragLocationMapper {
 
     private static func swiftUIFullContentBoundaryY(in window: NSWindow) -> CGFloat {
         window.contentView?.bounds.height ?? window.frame.height
+    }
+
+    private static func previewCoordinateWindow(for window: NSWindow) -> NSWindow {
+        window.parent ?? window
     }
 }
