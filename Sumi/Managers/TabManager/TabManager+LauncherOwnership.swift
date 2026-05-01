@@ -202,8 +202,13 @@ extension TabManager {
             guard let pid = pin.profileId else { return false }
             var arr = pinnedByProfile[pid] ?? []
             guard let currentIndex = arr.firstIndex(where: { $0.id == pin.id }) else { return false }
+            let adjustedIndex = adjustedSameContainerInsertionIndex(
+                currentIndex: currentIndex,
+                proposedIndex: index
+            )
+            guard adjustedIndex != currentIndex else { return false }
             if currentIndex < arr.count { arr.remove(at: currentIndex) }
-            arr.insert(pin, at: max(0, min(index, arr.count)))
+            arr.insert(pin, at: max(0, min(adjustedIndex, arr.count)))
             setPinnedTabs(reindexed(arr), for: pid)
             scheduleStructuralPersistence()
             return true
@@ -219,9 +224,13 @@ extension TabManager {
             } else {
                 withSpacePinnedShortcutGroup(for: spaceId, folderId: pin.folderId) { arr in
                     guard let currentIndex = arr.firstIndex(where: { $0.id == pin.id }) else { return }
-                    guard index != currentIndex else { return }
+                    let adjustedIndex = adjustedSameContainerInsertionIndex(
+                        currentIndex: currentIndex,
+                        proposedIndex: index
+                    )
+                    guard adjustedIndex != currentIndex else { return }
                     if currentIndex < arr.count { arr.remove(at: currentIndex) }
-                    arr.insert(pin, at: max(0, min(index, arr.count)))
+                    arr.insert(pin, at: max(0, min(adjustedIndex, arr.count)))
                     didReorder = true
                 }
             }

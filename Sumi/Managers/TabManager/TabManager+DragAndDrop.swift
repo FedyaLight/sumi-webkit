@@ -186,10 +186,14 @@ extension TabManager {
                   let currentIndex = regularTabs.firstIndex(where: { $0.id == tab.id }) else {
                 return false
             }
-            guard index != currentIndex else { return false }
+            let adjustedIndex = adjustedSameContainerInsertionIndex(
+                currentIndex: currentIndex,
+                proposedIndex: index
+            )
+            guard adjustedIndex != currentIndex else { return false }
 
             regularTabs.remove(at: currentIndex)
-            let clampedIndex = min(max(index, 0), regularTabs.count)
+            let clampedIndex = min(max(adjustedIndex, 0), regularTabs.count)
             regularTabs.insert(tab, at: clampedIndex)
 
             for (index, regularTab) in regularTabs.enumerated() {

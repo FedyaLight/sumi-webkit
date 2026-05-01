@@ -647,7 +647,7 @@ final class SidebarDragState: ObservableObject {
               let hoveredPage = hoveredInteractivePage(at: location, matching: activeDragScope),
               let metrics = essentialsLayoutMetricsBySpace[hoveredPage.spaceId],
               activeDragScope?.matches(profileId: metrics.profileId) != false,
-              metrics.dropFrame.contains(location),
+              metrics.containsDropLocation(location),
               metrics.canAcceptDrop,
               metrics.maxDropRowCount > metrics.visibleRowCount else {
             clearEssentialsPreviewState()
