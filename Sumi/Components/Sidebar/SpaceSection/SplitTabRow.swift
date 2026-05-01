@@ -83,7 +83,8 @@ private struct SplitHalfTab: View {
                     textColor: textTab,
                     trailingFadePadding: SidebarHoverChrome.trailingFadePadding(
                         showsTrailingAction: displayIsHovering
-                    )
+                    ),
+                    isLoading: tab.isLoading
                 )
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             }
