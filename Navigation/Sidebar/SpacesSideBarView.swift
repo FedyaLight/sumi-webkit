@@ -94,6 +94,1210 @@ enum SpaceSidebarEssentialsPlacementPolicy {
     }
 }
 
+enum SpaceSidebarSnapshotFolderLayout {
+    static let contentLeadingPadding: CGFloat = 14
+    static let contentVerticalPadding: CGFloat = 4
+
+    static func bodyHeight(childCount: Int) -> CGFloat {
+        CGFloat(max(childCount, 0)) * SidebarRowLayout.rowHeight
+            + contentVerticalPadding * 2
+    }
+}
+
+enum SpaceSidebarSnapshotTitleLayout {
+    static let trailingControlSize: CGFloat = 28
+    static let verticalPadding: CGFloat = 5
+
+    static var minimumHeight: CGFloat {
+        trailingControlSize + verticalPadding * 2
+    }
+}
+
+enum SpaceSidebarSnapshotIcon {
+    case image(Image)
+    case system(String)
+    case emoji(String)
+}
+
+struct SpaceTabRowSnapshot: Identifiable {
+    let id: UUID
+    let title: String
+    let icon: SpaceSidebarSnapshotIcon
+    let isSelected: Bool
+    var isSplitActiveSide: Bool
+    let showsUnloadedIndicator: Bool
+    let showsAudioButton: Bool
+    let isMuted: Bool
+}
+
+struct SpaceShortcutSnapshot: Identifiable {
+    let id: UUID
+    let title: String
+    let icon: SpaceSidebarSnapshotIcon
+    let presentationState: ShortcutPresentationState
+    let showsAudioButton: Bool
+    let isMuted: Bool
+    let showsSplitBadge: Bool
+    let splitBadgeIsSelected: Bool
+}
+
+struct SpaceFolderSnapshot: Identifiable {
+    let id: UUID
+    let title: String
+    let iconValue: String
+    let isOpen: Bool
+    let hasActiveSelection: Bool
+    let children: [SpaceShortcutSnapshot]
+    let bodyChildren: [SpaceShortcutSnapshot]
+}
+
+enum SpacePinnedItemSnapshot: Identifiable {
+    case folder(SpaceFolderSnapshot)
+    case shortcut(SpaceShortcutSnapshot)
+
+    var id: UUID {
+        switch self {
+        case .folder(let folder):
+            return folder.id
+        case .shortcut(let shortcut):
+            return shortcut.id
+        }
+    }
+}
+
+struct EssentialsSnapshot {
+    let profileId: UUID?
+    let items: [SpaceShortcutSnapshot]
+}
+
+struct SpaceSplitRowSnapshot: Identifiable {
+    let id: String
+    let left: SpaceTabRowSnapshot
+    let right: SpaceTabRowSnapshot
+}
+
+enum SpaceRegularItemSnapshot: Identifiable {
+    case tab(SpaceTabRowSnapshot)
+    case split(SpaceSplitRowSnapshot)
+
+    var id: String {
+        switch self {
+        case .tab(let tab):
+            return tab.id.uuidString
+        case .split(let split):
+            return split.id
+        }
+    }
+}
+
+struct SpaceSidebarPageSnapshot {
+    let spaceId: UUID
+    let profileId: UUID?
+    let title: String
+    let iconValue: String
+    let essentials: EssentialsSnapshot?
+    let pinnedItems: [SpacePinnedItemSnapshot]
+    let regularItems: [SpaceRegularItemSnapshot]
+    let regularTabs: [SpaceTabRowSnapshot]
+    let showsNewTabButtonInList: Bool
+    let showsTopNewTabButton: Bool
+    let rowCornerRadius: CGFloat
+    let pinnedTabsConfiguration: PinnedTabsConfiguration
+}
+
+struct SpaceSidebarTransitionSnapshot {
+    let source: SpaceSidebarPageSnapshot
+    let destination: SpaceSidebarPageSnapshot
+    let stationaryEssentials: EssentialsSnapshot?
+
+    var usesSharedEssentials: Bool {
+        stationaryEssentials != nil
+    }
+
+    func page(for spaceId: UUID) -> SpaceSidebarPageSnapshot? {
+        if source.spaceId == spaceId {
+            return source
+        }
+        if destination.spaceId == spaceId {
+            return destination
+        }
+        return nil
+    }
+
+    func matches(sourceSpaceId: UUID, destinationSpaceId: UUID) -> Bool {
+        source.spaceId == sourceSpaceId && destination.spaceId == destinationSpaceId
+    }
+}
+
+@MainActor
+enum SpaceSidebarTransitionSnapshotBuilder {
+    static func make(
+        sourceSpace: Space,
+        destinationSpace: Space,
+        browserManager: BrowserManager,
+        windowState: BrowserWindowState,
+        splitManager: SplitViewManager,
+        settings: SumiSettingsService
+    ) -> SpaceSidebarTransitionSnapshot {
+        let sourceProfileId = resolvedProfileId(
+            for: sourceSpace,
+            browserManager: browserManager,
+            windowState: windowState
+        )
+        let destinationProfileId = resolvedProfileId(
+            for: destinationSpace,
+            browserManager: browserManager,
+            windowState: windowState
+        )
+        let sharedEssentials = SpaceSidebarEssentialsPlacementPolicy.usesSharedPinnedGrid(
+            sourceProfileId: sourceProfileId,
+            destinationProfileId: destinationProfileId
+        )
+
+        let sourcePage = pageSnapshot(
+            for: sourceSpace,
+            profileId: sourceProfileId,
+            browserManager: browserManager,
+            windowState: windowState,
+            splitManager: splitManager,
+            settings: settings
+        )
+        let destinationPage = pageSnapshot(
+            for: destinationSpace,
+            profileId: destinationProfileId,
+            browserManager: browserManager,
+            windowState: windowState,
+            splitManager: splitManager,
+            settings: settings
+        )
+        let stationaryEssentials = sharedEssentials && !windowState.isIncognito
+            ? essentialsSnapshot(
+                profileId: sourceProfileId,
+                browserManager: browserManager,
+                windowState: windowState,
+                splitManager: splitManager
+            )
+            : nil
+
+        return SpaceSidebarTransitionSnapshot(
+            source: sourcePage,
+            destination: destinationPage,
+            stationaryEssentials: stationaryEssentials
+        )
+    }
+
+    private static func pageSnapshot(
+        for space: Space,
+        profileId: UUID?,
+        browserManager: BrowserManager,
+        windowState: BrowserWindowState,
+        splitManager: SplitViewManager,
+        settings: SumiSettingsService
+    ) -> SpaceSidebarPageSnapshot {
+        let projection = windowState.isIncognito
+            ? nil
+            : browserManager.tabManager.launcherProjection(for: space.id, in: windowState.id)
+        let tabs = windowState.isIncognito
+            ? windowState.ephemeralTabs.sorted { $0.index < $1.index }
+            : (projection?.regularTabs ?? browserManager.tabManager.tabs(in: space))
+        let regularTabs = tabs.map { tabSnapshot($0, currentTabId: windowState.currentTabId) }
+
+        return SpaceSidebarPageSnapshot(
+            spaceId: space.id,
+            profileId: profileId,
+            title: space.name,
+            iconValue: space.icon,
+            essentials: windowState.isIncognito
+                ? nil
+                : essentialsSnapshot(
+                    profileId: profileId,
+                    browserManager: browserManager,
+                    windowState: windowState,
+                    splitManager: splitManager
+                ),
+            pinnedItems: pinnedItemsSnapshot(
+                projection: projection,
+                browserManager: browserManager,
+                windowState: windowState,
+                splitManager: splitManager
+            ),
+            regularItems: regularItemsSnapshot(
+                tabs: regularTabs,
+                splitManager: splitManager,
+                windowState: windowState
+            ),
+            regularTabs: regularTabs,
+            showsNewTabButtonInList: settings.showNewTabButtonInTabList,
+            showsTopNewTabButton: settings.tabListNewTabButtonPosition == .top,
+            rowCornerRadius: settings.resolvedCornerRadius(12),
+            pinnedTabsConfiguration: settings.pinnedTabsLook
+        )
+    }
+
+    private static func resolvedProfileId(
+        for space: Space?,
+        browserManager: BrowserManager,
+        windowState: BrowserWindowState
+    ) -> UUID? {
+        space?.profileId ?? windowState.currentProfileId ?? browserManager.currentProfile?.id
+    }
+
+    private static func essentialsSnapshot(
+        profileId: UUID?,
+        browserManager: BrowserManager,
+        windowState: BrowserWindowState,
+        splitManager: SplitViewManager
+    ) -> EssentialsSnapshot {
+        EssentialsSnapshot(
+            profileId: profileId,
+            items: profileId == nil
+                ? []
+                : browserManager.tabManager.essentialPins(for: profileId).map {
+                    shortcutSnapshot(
+                        for: $0,
+                        liveTab: browserManager.tabManager.shortcutLiveTab(for: $0.id, in: windowState.id),
+                        browserManager: browserManager,
+                        windowState: windowState,
+                        splitManager: splitManager
+                    )
+                }
+        )
+    }
+
+    private static func pinnedItemsSnapshot(
+        projection: TabManager.SpaceLauncherProjection?,
+        browserManager: BrowserManager,
+        windowState: BrowserWindowState,
+        splitManager: SplitViewManager
+    ) -> [SpacePinnedItemSnapshot] {
+        guard let projection else { return [] }
+
+        return (
+            projection.topLevelFolders.map { folder in
+                (
+                    folder.index,
+                    SpacePinnedItemSnapshot.folder(
+                        folderSnapshot(
+                            for: folder,
+                            children: projection.folderPins[folder.id] ?? [],
+                            liveTabsByPinId: projection.liveTabsByPinId,
+                            browserManager: browserManager,
+                            windowState: windowState,
+                            splitManager: splitManager
+                        )
+                    )
+                )
+            }
+            + projection.topLevelPins.map { pin in
+                (
+                    pin.index,
+                    SpacePinnedItemSnapshot.shortcut(
+                        shortcutSnapshot(
+                            for: pin,
+                            liveTab: projection.liveTabsByPinId[pin.id],
+                            browserManager: browserManager,
+                            windowState: windowState,
+                            splitManager: splitManager
+                        )
+                    )
+                )
+            }
+        )
+        .sorted { lhs, rhs in
+            if lhs.0 != rhs.0 { return lhs.0 < rhs.0 }
+            switch (lhs.1, rhs.1) {
+            case (.folder(let left), .folder(let right)):
+                return left.id.uuidString < right.id.uuidString
+            case (.shortcut(let left), .shortcut(let right)):
+                return left.id.uuidString < right.id.uuidString
+            case (.folder, .shortcut):
+                return true
+            case (.shortcut, .folder):
+                return false
+            }
+        }
+        .map(\.1)
+    }
+
+    private static func folderSnapshot(
+        for folder: TabFolder,
+        children: [ShortcutPin],
+        liveTabsByPinId: [UUID: Tab],
+        browserManager: BrowserManager,
+        windowState: BrowserWindowState,
+        splitManager: SplitViewManager
+    ) -> SpaceFolderSnapshot {
+        let childSnapshots = children.map {
+            shortcutSnapshot(
+                for: $0,
+                liveTab: liveTabsByPinId[$0.id],
+                browserManager: browserManager,
+                windowState: windowState,
+                splitManager: splitManager
+            )
+        }
+        let childSnapshotsById = Dictionary(uniqueKeysWithValues: childSnapshots.map { ($0.id, $0) })
+        let projectionState = windowState.sidebarFolderProjection(for: folder.id)
+        let collapsedProjectedChildSnapshots = collapsedProjectedShortcutPins(
+            children,
+            liveTabsByPinId: liveTabsByPinId,
+            projectionState: projectionState
+        ).compactMap { childSnapshotsById[$0.id] }
+        let bodyChildren = folder.isOpen ? childSnapshots : collapsedProjectedChildSnapshots
+
+        return SpaceFolderSnapshot(
+            id: folder.id,
+            title: folder.name,
+            iconValue: folder.icon,
+            isOpen: folder.isOpen,
+            hasActiveSelection: projectionState.hasActiveProjection
+                || childSnapshots.contains { $0.presentationState.isSelected }
+                || (!folder.isOpen && !bodyChildren.isEmpty),
+            children: childSnapshots,
+            bodyChildren: bodyChildren
+        )
+    }
+
+    private static func collapsedProjectedShortcutPins(
+        _ children: [ShortcutPin],
+        liveTabsByPinId: [UUID: Tab],
+        projectionState: SidebarFolderProjectionState
+    ) -> [ShortcutPin] {
+        let livePins = children.filter { liveTabsByPinId[$0.id] != nil }
+
+        guard !projectionState.projectedChildIDs.isEmpty else {
+            return livePins
+        }
+
+        let projectedOrder = Dictionary(
+            uniqueKeysWithValues: projectionState.projectedChildIDs.enumerated().map { ($1, $0) }
+        )
+        return livePins.sorted { lhs, rhs in
+            let leftOrder = projectedOrder[lhs.id] ?? lhs.index
+            let rightOrder = projectedOrder[rhs.id] ?? rhs.index
+            if leftOrder != rightOrder { return leftOrder < rightOrder }
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
+    }
+
+    private static func shortcutSnapshot(
+        for pin: ShortcutPin,
+        liveTab: Tab?,
+        browserManager: BrowserManager,
+        windowState: BrowserWindowState,
+        splitManager: SplitViewManager
+    ) -> SpaceShortcutSnapshot {
+        let presentationState = browserManager.tabManager.shortcutPresentationState(
+            for: pin,
+            in: windowState
+        )
+        let splitSide = liveTab.flatMap { splitManager.side(for: $0.id, in: windowState.id) }
+        let essentialRuntimeState = browserManager.tabManager.essentialRuntimeState(
+            for: pin,
+            in: windowState,
+            splitManager: splitManager
+        )
+
+        return SpaceShortcutSnapshot(
+            id: pin.id,
+            title: pin.resolvedDisplayTitle(liveTab: liveTab),
+            icon: shortcutIcon(for: pin),
+            presentationState: presentationState,
+            showsAudioButton: liveTab?.audioState.showsTabAudioButton ?? false,
+            isMuted: liveTab?.audioState.isMuted ?? false,
+            showsSplitBadge: essentialRuntimeState?.showsSplitProxyBadge == true || splitSide != nil,
+            splitBadgeIsSelected: essentialRuntimeState?.isSelected == true
+                || (splitSide != nil && splitManager.activeSide(for: windowState.id) == splitSide)
+        )
+    }
+
+    private static func regularItemsSnapshot(
+        tabs: [SpaceTabRowSnapshot],
+        splitManager: SplitViewManager,
+        windowState: BrowserWindowState
+    ) -> [SpaceRegularItemSnapshot] {
+        guard splitManager.isSplit(for: windowState.id),
+              let leftId = splitManager.leftTabId(for: windowState.id),
+              let rightId = splitManager.rightTabId(for: windowState.id),
+              let leftIndex = tabs.firstIndex(where: { $0.id == leftId }),
+              let rightIndex = tabs.firstIndex(where: { $0.id == rightId }),
+              leftIndex != rightIndex
+        else {
+            return tabs.map(SpaceRegularItemSnapshot.tab)
+        }
+
+        let firstIndex = min(leftIndex, rightIndex)
+        let secondIndex = max(leftIndex, rightIndex)
+        let activeSide = splitManager.activeSide(for: windowState.id)
+
+        return tabs.enumerated().compactMap { index, tab in
+            if index == firstIndex {
+                var left = tabs[leftIndex]
+                var right = tabs[rightIndex]
+                left.isSplitActiveSide = activeSide == .left
+                right.isSplitActiveSide = activeSide == .right
+                return .split(
+                    SpaceSplitRowSnapshot(
+                        id: "split-\(left.id.uuidString)-\(right.id.uuidString)",
+                        left: left,
+                        right: right
+                    )
+                )
+            }
+
+            if index == secondIndex {
+                return nil
+            }
+
+            return .tab(tab)
+        }
+    }
+
+    private static func tabSnapshot(
+        _ tab: Tab,
+        currentTabId: UUID?
+    ) -> SpaceTabRowSnapshot {
+        SpaceTabRowSnapshot(
+            id: tab.id,
+            title: tab.name,
+            icon: tabIcon(for: tab),
+            isSelected: currentTabId == tab.id,
+            isSplitActiveSide: false,
+            showsUnloadedIndicator: tab.showsWebViewUnloadedIndicator,
+            showsAudioButton: tab.audioState.showsTabAudioButton,
+            isMuted: tab.audioState.isMuted
+        )
+    }
+
+    private static func tabIcon(for tab: Tab) -> SpaceSidebarSnapshotIcon {
+        guard tab.usesChromeThemedTemplateFavicon else {
+            return .image(tab.favicon)
+        }
+
+        if tab.representsSumiSettingsSurface {
+            return .system(SumiSurface.settingsTabFaviconSystemImageName)
+        }
+        if tab.representsSumiHistorySurface {
+            return .system(SumiSurface.historyTabFaviconSystemImageName)
+        }
+        if tab.representsSumiBookmarksSurface {
+            return .system(SumiSurface.bookmarksTabFaviconSystemImageName)
+        }
+        return .system("globe")
+    }
+
+    private static func shortcutIcon(for pin: ShortcutPin) -> SpaceSidebarSnapshotIcon {
+        if let iconAsset = pin.iconAsset {
+            if SumiPersistentGlyph.presentsAsEmoji(iconAsset) {
+                return .emoji(iconAsset)
+            }
+            return .system(SumiPersistentGlyph.resolvedLauncherSystemImageName(iconAsset))
+        }
+
+        if let systemName = pin.pinnedChromeTemplateSystemImageName {
+            return .system(systemName)
+        }
+
+        return .image(pin.favicon)
+    }
+}
+
+private struct SpaceTransitionSnapshotPageView: View {
+    let snapshot: SpaceSidebarPageSnapshot
+    let includesEssentials: Bool
+    let width: CGFloat
+    let tokens: ChromeThemeTokens
+    let themeContext: ResolvedThemeContext
+
+    private var innerWidth: CGFloat {
+        max(width - BrowserWindowState.sidebarHorizontalPadding, 0)
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            if includesEssentials, let essentials = snapshot.essentials {
+                EssentialsSnapshotGrid(
+                    snapshot: essentials,
+                    width: innerWidth,
+                    configuration: snapshot.pinnedTabsConfiguration,
+                    tokens: tokens
+                )
+                .padding(.horizontal, 8)
+            }
+
+            VStack(spacing: 4) {
+                SpaceSnapshotTitleView(
+                    title: snapshot.title,
+                    iconValue: snapshot.iconValue,
+                    rowCornerRadius: snapshot.rowCornerRadius,
+                    tokens: tokens
+                )
+
+                SpaceSnapshotContentView(
+                    snapshot: snapshot,
+                    innerWidth: innerWidth,
+                    tokens: tokens,
+                    themeContext: themeContext
+                )
+            }
+            .padding(.horizontal, 8)
+        }
+        .frame(width: width, alignment: .top)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .allowsHitTesting(false)
+        .transaction { transaction in
+            transaction.disablesAnimations = true
+        }
+    }
+}
+
+private struct SpaceSnapshotContentView: View {
+    let snapshot: SpaceSidebarPageSnapshot
+    let innerWidth: CGFloat
+    let tokens: ChromeThemeTokens
+    let themeContext: ResolvedThemeContext
+
+    var body: some View {
+        GeometryReader { _ in
+            ZStack {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 8) {
+                        SpaceSnapshotPinnedSectionView(
+                            items: snapshot.pinnedItems,
+                            rowCornerRadius: snapshot.rowCornerRadius,
+                            tokens: tokens,
+                            themeContext: themeContext
+                        )
+
+                        SpaceSnapshotRegularTabsSectionView(
+                            snapshot: snapshot,
+                            innerWidth: innerWidth,
+                            tokens: tokens
+                        )
+                    }
+                    .frame(minWidth: 0, maxWidth: innerWidth, alignment: .leading)
+                }
+                .scrollIndicators(.hidden)
+                .accessibilityIdentifier("space-transition-snapshot-scroll-\(snapshot.spaceId.uuidString)")
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
+
+private struct SpaceSnapshotTitleView: View {
+    let title: String
+    let iconValue: String
+    let rowCornerRadius: CGFloat
+    let tokens: ChromeThemeTokens
+
+    private var spaceIconFontSize: CGFloat {
+        SidebarRowLayout.faviconSize * 0.78
+    }
+
+    var body: some View {
+        HStack(spacing: SidebarRowLayout.iconTrailingSpacing) {
+            Group {
+                if SumiPersistentGlyph.presentsAsEmoji(iconValue) {
+                    Text(iconValue)
+                        .font(.system(size: spaceIconFontSize))
+                } else {
+                    Image(systemName: SumiPersistentGlyph.resolvedSpaceSystemImageName(iconValue))
+                        .font(.system(size: spaceIconFontSize, weight: .medium))
+                        .foregroundStyle(tokens.primaryText)
+                }
+            }
+            .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
+
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(tokens.primaryText)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 0)
+
+            Image(systemName: "ellipsis")
+                .font(.body.weight(.semibold))
+                .frame(
+                    width: SpaceSidebarSnapshotTitleLayout.trailingControlSize,
+                    height: SpaceSidebarSnapshotTitleLayout.trailingControlSize
+                )
+                .opacity(0)
+                .accessibilityHidden(true)
+        }
+        .padding(.leading, SidebarRowLayout.leadingInset)
+        .padding(.trailing, SidebarRowLayout.trailingInset)
+        .padding(.vertical, SpaceSidebarSnapshotTitleLayout.verticalPadding)
+        .frame(maxWidth: .infinity)
+        .frame(minHeight: SpaceSidebarSnapshotTitleLayout.minimumHeight)
+        .clipShape(RoundedRectangle(cornerRadius: rowCornerRadius, style: .continuous))
+        .accessibilityIdentifier("space-transition-snapshot-title")
+    }
+}
+
+private struct EssentialsSnapshotGrid: View {
+    let snapshot: EssentialsSnapshot
+    let width: CGFloat
+    let configuration: PinnedTabsConfiguration
+    let tokens: ChromeThemeTokens
+
+    private var rows: [EssentialsSnapshotRow] {
+        let columns = capacityColumnCount
+        guard !snapshot.items.isEmpty else { return [] }
+
+        return stride(from: 0, to: snapshot.items.count, by: columns).map { index in
+            let rowItems = Array(snapshot.items[index..<min(index + columns, snapshot.items.count)])
+            let visualColumnCount = max(1, min(rowItems.count, columns))
+            let tileSize = visualTileSize(visualColumnCount: visualColumnCount)
+            return EssentialsSnapshotRow(items: rowItems, tileSize: tileSize)
+        }
+    }
+
+    private var capacityColumnCount: Int {
+        guard width > 0 else { return 1 }
+
+        var columns = SidebarEssentialsProjectionPolicy.maxColumns
+        while columns > 1 {
+            let neededWidth = CGFloat(columns) * configuration.minWidth
+                + CGFloat(columns - 1) * configuration.gridSpacing
+            if neededWidth <= width {
+                break
+            }
+            columns -= 1
+        }
+        return max(1, columns)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: configuration.gridSpacing) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: configuration.gridSpacing) {
+                    ForEach(row.items) { item in
+                        SpaceSnapshotPinnedTileView(
+                            item: item,
+                            tileSize: row.tileSize,
+                            configuration: configuration,
+                            tokens: tokens
+                        )
+                    }
+                }
+            }
+        }
+        .frame(width: width, alignment: .leading)
+        .frame(height: rows.isEmpty ? 6 : nil, alignment: .top)
+    }
+
+    private func visualTileSize(visualColumnCount: Int) -> CGSize {
+        let columns = max(visualColumnCount, 1)
+        let availableWidth = max(width - (CGFloat(columns - 1) * configuration.gridSpacing), 0)
+        let tileWidth = max(availableWidth / CGFloat(columns), configuration.minWidth)
+        return CGSize(width: tileWidth, height: configuration.height)
+    }
+
+    private struct EssentialsSnapshotRow {
+        let items: [SpaceShortcutSnapshot]
+        let tileSize: CGSize
+    }
+}
+
+private struct SpaceSnapshotPinnedTileView: View {
+    let item: SpaceShortcutSnapshot
+    let tileSize: CGSize
+    let configuration: PinnedTabsConfiguration
+    let tokens: ChromeThemeTokens
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: configuration.cornerRadius, style: .continuous)
+                .fill(item.presentationState.isSelected ? tokens.pinnedActiveBackground : tokens.pinnedIdleBackground)
+                .overlay {
+                    if item.presentationState.isSelected {
+                        RoundedRectangle(cornerRadius: configuration.cornerRadius, style: .continuous)
+                            .stroke(tokens.sidebarSelectionShadow.opacity(0.35), lineWidth: configuration.strokeWidth)
+                    }
+                }
+
+            SpaceSnapshotIconView(
+                icon: item.icon,
+                size: configuration.faviconHeight,
+                cornerRadius: 6,
+                foregroundColor: tokens.primaryText
+            )
+            .saturation(item.presentationState.shouldDesaturateIcon ? 0.0 : 1.0)
+            .opacity(item.presentationState.shouldDesaturateIcon ? 0.8 : 1.0)
+
+            if item.showsAudioButton {
+                VStack {
+                    HStack {
+                        Image(systemName: item.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(item.isMuted ? tokens.secondaryText : tokens.primaryText)
+                            .frame(width: 22, height: 22)
+                            .background(tokens.fieldBackground.opacity(0.88), in: RoundedRectangle(cornerRadius: 7))
+                        Spacer(minLength: 0)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(6)
+            }
+
+            if item.showsSplitBadge {
+                VStack {
+                    Spacer(minLength: 0)
+                    HStack {
+                        Spacer(minLength: 0)
+                        Image(systemName: "rectangle.split.2x1")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(item.splitBadgeIsSelected ? Color.accentColor : tokens.secondaryText)
+                            .padding(4)
+                            .background(tokens.fieldBackground, in: Circle())
+                    }
+                }
+                .padding(6)
+            }
+        }
+        .frame(width: tileSize.width, height: tileSize.height, alignment: .center)
+        .shadow(
+            color: item.presentationState.isSelected ? tokens.sidebarSelectionShadow : .clear,
+            radius: item.presentationState.isSelected ? 2 : 0,
+            y: item.presentationState.isSelected ? 1 : 0
+        )
+        .accessibilityIdentifier("essential-shortcut-snapshot-\(item.id.uuidString)")
+    }
+}
+
+private struct SpaceSnapshotPinnedSectionView: View {
+    let items: [SpacePinnedItemSnapshot]
+    let rowCornerRadius: CGFloat
+    let tokens: ChromeThemeTokens
+    let themeContext: ResolvedThemeContext
+
+    var body: some View {
+        Group {
+            if items.isEmpty {
+                Color.clear
+                    .frame(height: 6)
+                    .frame(maxWidth: .infinity)
+            } else {
+                VStack(spacing: 0) {
+                    Color.clear
+                        .frame(height: SidebarInsertionGuide.visualCenterY)
+
+                    ForEach(items) { item in
+                        switch item {
+                        case .folder(let folder):
+                            SpaceSnapshotFolderView(
+                                folder: folder,
+                                rowCornerRadius: rowCornerRadius,
+                                tokens: tokens,
+                                themeContext: themeContext
+                            )
+                        case .shortcut(let shortcut):
+                            SpaceSnapshotShortcutRowView(
+                                shortcut: shortcut,
+                                rowCornerRadius: rowCornerRadius,
+                                tokens: tokens
+                            )
+                        }
+                    }
+                }
+                .padding(.bottom, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+}
+
+private struct SpaceSnapshotFolderView: View {
+    let folder: SpaceFolderSnapshot
+    let rowCornerRadius: CGFloat
+    let tokens: ChromeThemeTokens
+    let themeContext: ResolvedThemeContext
+
+    private var showsBody: Bool {
+        folder.isOpen || !folder.bodyChildren.isEmpty
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                ZStack(alignment: .leading) {
+                    Color.clear
+                        .frame(width: SidebarRowLayout.folderTitleLeading, height: SidebarRowLayout.rowHeight)
+                    SumiFolderGlyphView(
+                        presentation: SumiFolderGlyphPresentationState(
+                            iconValue: folder.iconValue,
+                            isOpen: folder.isOpen,
+                            hasActiveProjection: folder.hasActiveSelection
+                        ),
+                        palette: folderPalette
+                    )
+                    .frame(
+                        width: SidebarRowLayout.folderGlyphSize,
+                        height: SidebarRowLayout.folderGlyphSize,
+                        alignment: .center
+                    )
+                    .offset(x: SidebarRowLayout.folderHeaderGlyphCenteringOffset)
+                }
+                .frame(width: SidebarRowLayout.folderTitleLeading, alignment: .leading)
+
+                Text(folder.title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(tokens.primaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, SidebarRowLayout.leadingInset)
+            .padding(.trailing, SidebarRowLayout.trailingInset)
+            .frame(height: SidebarRowLayout.rowHeight)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipShape(RoundedRectangle(cornerRadius: rowCornerRadius, style: .continuous))
+
+            if showsBody {
+                VStack(spacing: 0) {
+                    ForEach(folder.bodyChildren) { child in
+                        SpaceSnapshotShortcutRowView(
+                            shortcut: child,
+                            rowCornerRadius: rowCornerRadius,
+                            tokens: tokens
+                        )
+                    }
+                }
+                .padding(.leading, SpaceSidebarSnapshotFolderLayout.contentLeadingPadding)
+                .padding(.vertical, SpaceSidebarSnapshotFolderLayout.contentVerticalPadding)
+                .frame(
+                    height: SpaceSidebarSnapshotFolderLayout.bodyHeight(
+                        childCount: folder.bodyChildren.count
+                    ),
+                    alignment: .top
+                )
+                .clipped()
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.clear)
+                )
+            }
+        }
+    }
+
+    private var folderPalette: SumiFolderGlyphPalette {
+        let accent = themeContext.gradient.primaryColor
+
+        let backFill: Color
+        let frontFill: Color
+        let stroke: Color
+
+        switch themeContext.chromeColorScheme {
+        case .light:
+            backFill = accent.mixed(with: .gray, amount: 0.4)
+            frontFill = accent.mixed(with: .white, amount: 0.7)
+            stroke = accent.mixed(with: .black, amount: 0.5)
+        case .dark:
+            backFill = accent.mixed(with: Color(hex: "C1C1C1"), amount: 0.4)
+            frontFill = accent.mixed(with: .black, amount: 0.4)
+            stroke = Color(hex: "EBEBEB").mixed(with: tokens.primaryText, amount: 0.15)
+        @unknown default:
+            backFill = accent.mixed(with: .gray, amount: 0.4)
+            frontFill = accent.mixed(with: .white, amount: 0.7)
+            stroke = accent.mixed(with: .black, amount: 0.5)
+        }
+
+        let iconForeground = stroke.mixed(with: tokens.primaryText, amount: 0.35)
+
+        return SumiFolderGlyphPalette(
+            backFill: backFill,
+            frontFill: frontFill,
+            stroke: stroke,
+            iconForeground: iconForeground,
+            backOverlayTop: Color.white.opacity(0.1),
+            backOverlayBottom: Color.black.opacity(0.1),
+            frontOverlayTop: Color.white.opacity(0.1),
+            frontOverlayBottom: Color.black.opacity(0.1)
+        )
+    }
+}
+
+private struct SpaceSnapshotShortcutRowView: View {
+    let shortcut: SpaceShortcutSnapshot
+    let rowCornerRadius: CGFloat
+    let tokens: ChromeThemeTokens
+
+    var body: some View {
+        HStack(spacing: 0) {
+            SpaceSnapshotIconView(
+                icon: shortcut.icon,
+                size: SidebarRowLayout.faviconSize,
+                cornerRadius: 6,
+                foregroundColor: tokens.primaryText
+            )
+            .padding(.leading, SidebarRowLayout.leadingInset)
+            .padding(.trailing, SidebarRowLayout.iconTrailingSpacing)
+            .saturation(shortcut.presentationState.shouldDesaturateIcon ? 0.0 : 1.0)
+            .opacity(shortcut.presentationState.shouldDesaturateIcon ? 0.8 : 1.0)
+
+            if shortcut.showsAudioButton {
+                Image(systemName: shortcut.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(shortcut.isMuted ? tokens.secondaryText : tokens.primaryText)
+                    .frame(width: 22, height: 22)
+                    .padding(.trailing, SidebarRowLayout.iconTrailingSpacing)
+            }
+
+            Text(shortcut.title)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(tokens.primaryText)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+
+            if shortcut.showsSplitBadge {
+                Image(systemName: "rectangle.split.2x1")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(shortcut.splitBadgeIsSelected ? Color.accentColor : tokens.secondaryText)
+                    .padding(.trailing, SidebarRowLayout.trailingInset)
+            }
+        }
+        .padding(.trailing, SidebarRowLayout.trailingInset)
+        .frame(height: SidebarRowLayout.rowHeight)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(shortcut.presentationState.isSelected ? tokens.sidebarRowActive : .clear)
+        .clipShape(RoundedRectangle(cornerRadius: rowCornerRadius, style: .continuous))
+        .shadow(
+            color: shortcut.presentationState.isSelected ? tokens.sidebarSelectionShadow : .clear,
+            radius: shortcut.presentationState.isSelected ? 2 : 0,
+            y: shortcut.presentationState.isSelected ? 1 : 0
+        )
+    }
+}
+
+private struct SpaceSnapshotRegularTabsSectionView: View {
+    let snapshot: SpaceSidebarPageSnapshot
+    let innerWidth: CGFloat
+    let tokens: ChromeThemeTokens
+
+    private var showsBottomNewTabButton: Bool {
+        snapshot.showsNewTabButtonInList && !snapshot.showsTopNewTabButton
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            RoundedRectangle(cornerRadius: 100)
+                .fill(tokens.separator.opacity(0.82))
+                .frame(height: 1)
+                .padding(.horizontal, 8)
+                .frame(height: 2)
+
+            VStack(spacing: 2) {
+                if snapshot.showsNewTabButtonInList && snapshot.showsTopNewTabButton {
+                    newTabRow
+                        .padding(.top, 4)
+                }
+
+                VStack(spacing: 2) {
+                    ForEach(snapshot.regularItems) { item in
+                        switch item {
+                        case .tab(let tab):
+                            SpaceSnapshotRegularTabRowView(
+                                tab: tab,
+                                rowCornerRadius: snapshot.rowCornerRadius,
+                                tokens: tokens
+                            )
+                        case .split(let split):
+                            SpaceSnapshotSplitRowView(
+                                split: split,
+                                rowCornerRadius: snapshot.rowCornerRadius,
+                                tokens: tokens
+                            )
+                        }
+                    }
+                }
+                .frame(minWidth: 0, maxWidth: innerWidth, alignment: .leading)
+
+                if showsBottomNewTabButton {
+                    newTabRow
+                }
+            }
+            .padding(.top, 8)
+
+            Color.clear
+                .frame(height: snapshot.regularTabs.isEmpty ? 48 : 24)
+        }
+    }
+
+    private var newTabRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "plus")
+            Text("New Tab")
+            Spacer(minLength: 0)
+        }
+        .font(.system(size: 13, weight: .regular))
+        .foregroundStyle(tokens.primaryText)
+        .padding(.horizontal, 10)
+        .frame(height: SidebarRowLayout.rowHeight)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct SpaceSnapshotRegularTabRowView: View {
+    let tab: SpaceTabRowSnapshot
+    let rowCornerRadius: CGFloat
+    let tokens: ChromeThemeTokens
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ZStack {
+                SpaceSnapshotIconView(
+                    icon: tab.icon,
+                    size: SidebarRowLayout.faviconSize,
+                    cornerRadius: 6,
+                    foregroundColor: tokens.primaryText
+                )
+                .opacity(tab.showsUnloadedIndicator ? 0.5 : 1.0)
+
+                if tab.showsUnloadedIndicator {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.system(size: 8))
+                        .foregroundColor(.secondary)
+                        .background(Color.gray)
+                        .clipShape(Circle())
+                        .offset(x: 6, y: -6)
+                }
+            }
+
+            if tab.showsAudioButton {
+                Image(systemName: tab.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(tab.isMuted ? tokens.secondaryText : tokens.primaryText)
+                    .frame(width: 22, height: 22)
+            }
+
+            Text(tab.title)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(tokens.primaryText)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.leading, SidebarRowLayout.leadingInset)
+        .padding(.trailing, SidebarRowLayout.trailingInset)
+        .frame(height: SidebarRowLayout.rowHeight)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tab.isSelected ? tokens.sidebarRowActive : .clear)
+        .clipShape(RoundedRectangle(cornerRadius: rowCornerRadius, style: .continuous))
+        .shadow(
+            color: tab.isSelected ? tokens.sidebarSelectionShadow : .clear,
+            radius: tab.isSelected ? 2 : 0,
+            y: tab.isSelected ? 1.5 : 0
+        )
+    }
+}
+
+private struct SpaceSnapshotSplitRowView: View {
+    let split: SpaceSplitRowSnapshot
+    let rowCornerRadius: CGFloat
+    let tokens: ChromeThemeTokens
+
+    var body: some View {
+        HStack(spacing: 1) {
+            SpaceSnapshotSplitHalfView(
+                tab: split.left,
+                rowCornerRadius: 8,
+                tokens: tokens
+            )
+            Rectangle()
+                .fill(tokens.separator)
+                .frame(width: 1, height: 24)
+                .padding(.vertical, 4)
+            SpaceSnapshotSplitHalfView(
+                tab: split.right,
+                rowCornerRadius: 8,
+                tokens: tokens
+            )
+        }
+        .frame(height: 34)
+        .padding(2)
+        .background(tokens.fieldBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(tokens.separator.opacity(0.75), lineWidth: 0.5)
+        }
+    }
+}
+
+private struct SpaceSnapshotSplitHalfView: View {
+    let tab: SpaceTabRowSnapshot
+    let rowCornerRadius: CGFloat
+    let tokens: ChromeThemeTokens
+
+    private var isHighlighted: Bool {
+        tab.isSelected || tab.isSplitActiveSide
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            SpaceSnapshotIconView(
+                icon: tab.icon,
+                size: SidebarRowLayout.faviconSize,
+                cornerRadius: 4,
+                foregroundColor: tokens.primaryText
+            )
+            Text(tab.title)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(tokens.primaryText)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(isHighlighted ? tokens.sidebarRowActive : .clear)
+        .clipShape(RoundedRectangle(cornerRadius: rowCornerRadius, style: .continuous))
+        .shadow(
+            color: isHighlighted ? tokens.sidebarSelectionShadow : .clear,
+            radius: isHighlighted ? 2 : 0,
+            y: isHighlighted ? 1 : 0
+        )
+    }
+}
+
+private struct SpaceSnapshotIconView: View {
+    let icon: SpaceSidebarSnapshotIcon
+    let size: CGFloat
+    let cornerRadius: CGFloat
+    let foregroundColor: Color
+
+    var body: some View {
+        Group {
+            switch icon {
+            case .image(let image):
+                image
+                    .resizable()
+                    .interpolation(.high)
+                    .antialiased(true)
+                    .scaledToFit()
+            case .system(let systemName):
+                Image(systemName: systemName)
+                    .font(.system(size: size * 0.78, weight: .medium))
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(foregroundColor)
+            case .emoji(let emoji):
+                Text(emoji)
+                    .font(.system(size: size * 0.75))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.45)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    }
+}
+
 private struct SidebarPageInputGraphIdentity: Hashable {
     let spaceId: UUID
     let profileId: UUID?
@@ -118,10 +1322,12 @@ struct SpacesSideBarView: View {
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
     @Environment(\.sumiSettings) var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(CommandPalette.self) var commandPalette
 
     @State private var isSidebarHovered: Bool = false
     @State private var transitionState = SpaceSidebarTransitionState()
+    @State private var transitionSnapshot: SpaceSidebarTransitionSnapshot?
     @State private var transitionTask: Task<Void, Never>?
     @ObservedObject private var dragState = SidebarDragState.shared
 
@@ -381,12 +1587,23 @@ struct SpacesSideBarView: View {
 
         VStack(spacing: 8) {
             if !windowState.isIncognito {
-                makePinnedGrid(
-                    spaceId: sourceSpace.id,
-                    profileId: resolvedPageProfileId(for: sourceSpace),
-                    pageRenderMode: pageRenderMode
-                )
-                .allowsHitTesting(false)
+                if let essentials = transitionSnapshot?.stationaryEssentials {
+                    EssentialsSnapshotGrid(
+                        snapshot: essentials,
+                        width: max(width - BrowserWindowState.sidebarHorizontalPadding, 0),
+                        configuration: transitionSnapshot?.source.pinnedTabsConfiguration ?? sumiSettings.pinnedTabsLook,
+                        tokens: themeContext.tokens(settings: sumiSettings)
+                    )
+                    .padding(.horizontal, 8)
+                    .allowsHitTesting(false)
+                } else {
+                    makePinnedGrid(
+                        spaceId: sourceSpace.id,
+                        profileId: resolvedPageProfileId(for: sourceSpace),
+                        pageRenderMode: pageRenderMode
+                    )
+                    .allowsHitTesting(false)
+                }
             }
 
             ZStack(alignment: .topLeading) {
@@ -428,9 +1645,10 @@ struct SpacesSideBarView: View {
         includesPinnedGrid: Bool,
         isVisuallyActive _: Bool
     ) -> some View {
-        makeSidebarPage(
+        transitionLayerContent(
             for: space,
             pageRenderMode: pageRenderMode,
+            width: width,
             includesPinnedGrid: includesPinnedGrid
         )
             .frame(width: width, alignment: .top)
@@ -439,6 +1657,32 @@ struct SpacesSideBarView: View {
             .opacity(opacity)
             .zIndex(zIndex)
             .allowsHitTesting(false)
+    }
+
+    @ViewBuilder
+    private func transitionLayerContent(
+        for space: Space,
+        pageRenderMode: SidebarPageRenderMode,
+        width: CGFloat,
+        includesPinnedGrid: Bool
+    ) -> some View {
+        if pageRenderMode == .transitionSnapshot,
+           let pageSnapshot = transitionSnapshot?.page(for: space.id)
+        {
+            SpaceTransitionSnapshotPageView(
+                snapshot: pageSnapshot,
+                includesEssentials: includesPinnedGrid,
+                width: width,
+                tokens: themeContext.tokens(settings: sumiSettings),
+                themeContext: themeContext
+            )
+        } else {
+            makeSidebarPage(
+                for: space,
+                pageRenderMode: pageRenderMode,
+                includesPinnedGrid: includesPinnedGrid
+            )
+        }
     }
 
     private func sourceOpacity(for travelProgress: Double) -> Double {
@@ -497,6 +1741,7 @@ struct SpacesSideBarView: View {
         if wasGestureActive && !transitionState.isGestureActive {
             cancelPendingSpaceTransition()
             cancelInteractiveThemeTransitionIfNeeded(hadThemeTransition: hadThemeTransition)
+            clearTransitionSnapshot()
         }
 
         guard let firstSpace = spaces.first else {
@@ -546,13 +1791,10 @@ struct SpacesSideBarView: View {
             }
 
             if transitionState.phase == .idle {
-                let didBegin = transitionState.beginSwipeGesture(
+                _ = transitionState.beginSwipeGesture(
                     from: committedSpaceId(in: spaces),
                     orderedSpaceIds: orderedSpaceIds
                 )
-                if didBegin {
-                    beginSidebarDragGeometryTransition()
-                }
             }
 
             guard transitionState.trigger == .swipe else { return }
@@ -568,6 +1810,7 @@ struct SpacesSideBarView: View {
             guard transitionState.destinationSpaceId != nil else {
                 cancelInteractiveThemeTransitionIfNeeded(hadThemeTransition: hadThemeTransition)
                 transitionState.reset()
+                clearTransitionSnapshot()
                 refreshCommittedSidebarDragGeometry(spaces: spaces)
                 return
             }
@@ -582,6 +1825,7 @@ struct SpacesSideBarView: View {
             guard transitionState.trigger == .swipe else { return }
             if transitionState.destinationSpaceId == nil && transitionState.progress < 0.001 {
                 transitionState.reset()
+                clearTransitionSnapshot()
                 return
             }
             settleInteractiveSpaceTransition(commit: transitionState.shouldCommitSwipeOnEnd)
@@ -591,6 +1835,7 @@ struct SpacesSideBarView: View {
             if transitionState.destinationSpaceId == nil && transitionState.progress < 0.001 {
                 cancelInteractiveThemeTransitionIfNeeded()
                 transitionState.reset()
+                clearTransitionSnapshot()
                 return
             }
             settleInteractiveSpaceTransition(commit: false)
@@ -629,7 +1874,7 @@ struct SpacesSideBarView: View {
         }
 
         cancelPendingSpaceTransition()
-        beginSidebarDragGeometryTransition()
+        captureTransitionSnapshot(sourceSpace: sourceSpace, destinationSpace: destinationSpace)
         startInteractiveThemeTransition(from: sourceSpace, to: destinationSpace)
         updateInteractiveThemeTransitionProgress(0)
 
@@ -677,6 +1922,7 @@ struct SpacesSideBarView: View {
             cancelInteractiveThemeTransitionIfNeeded()
         }
         transitionState.reset()
+        clearTransitionSnapshot()
         refreshCommittedSidebarDragGeometry(spaces: availableSpaces)
     }
 
@@ -732,7 +1978,10 @@ struct SpacesSideBarView: View {
         {
             if previousDestinationSpaceId != destinationSpaceId || !windowState.isInteractiveSpaceTransition {
                 cancelPendingSpaceTransition()
+                captureTransitionSnapshot(sourceSpace: sourceSpace, destinationSpace: destinationSpace)
                 startInteractiveThemeTransition(from: sourceSpace, to: destinationSpace)
+            } else if transitionSnapshot == nil {
+                captureTransitionSnapshot(sourceSpace: sourceSpace, destinationSpace: destinationSpace)
             }
 
             updateInteractiveThemeTransitionProgress(transitionState.progress)
@@ -741,6 +1990,7 @@ struct SpacesSideBarView: View {
 
         if previousDestinationSpaceId != nil || hadThemeTransition {
             cancelInteractiveThemeTransitionIfNeeded(hadThemeTransition: true)
+            clearTransitionSnapshot()
         }
     }
 
@@ -763,17 +2013,9 @@ struct SpacesSideBarView: View {
             cancelInteractiveThemeTransitionIfNeeded(hadThemeTransition: hadThemeTransition)
         }
 
+        clearTransitionSnapshot()
         refreshCommittedSidebarDragGeometry(spaces: availableSpaces)
         transitionTask = nil
-    }
-
-    private func beginSidebarDragGeometryTransition() {
-        guard allowsSidebarInteractiveWork else { return }
-
-        dragState.beginPendingGeometryEpoch(
-            expectedSpaceId: nil,
-            profileId: nil
-        )
     }
 
     private func refreshCommittedSidebarDragGeometryIfInteractive(spaces: [Space]) {
@@ -792,6 +2034,31 @@ struct SpacesSideBarView: View {
             expectedSpaceId: committedSpace.id,
             profileId: resolvedPageProfileId(for: committedSpace)
         )
+    }
+
+    private func captureTransitionSnapshot(
+        sourceSpace: Space,
+        destinationSpace: Space
+    ) {
+        if transitionSnapshot?.matches(
+            sourceSpaceId: sourceSpace.id,
+            destinationSpaceId: destinationSpace.id
+        ) == true {
+            return
+        }
+
+        transitionSnapshot = SpaceSidebarTransitionSnapshotBuilder.make(
+            sourceSpace: sourceSpace,
+            destinationSpace: destinationSpace,
+            browserManager: browserManager,
+            windowState: windowState,
+            splitManager: browserManager.splitManager,
+            settings: sumiSettings
+        )
+    }
+
+    private func clearTransitionSnapshot() {
+        transitionSnapshot = nil
     }
 
     private var emptyStateView: some View {
