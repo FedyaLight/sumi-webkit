@@ -38,13 +38,37 @@ struct ChromeThemeTokens {
     let commandPaletteRowHover: Color
 }
 
+private struct ChromeThemeTokenRecipeKey: Equatable {
+    let context: ResolvedThemeContext
+    let settingsFingerprint: Int
+}
+
+@MainActor
+private enum ChromeThemeTokenMemo {
+    static var lastKey: ChromeThemeTokenRecipeKey?
+    static var lastTokens: ChromeThemeTokens?
+}
+
 @MainActor
 extension ResolvedThemeContext {
     func tokens(settings: SumiSettingsService) -> ChromeThemeTokens {
-        ThemeChromeRecipeBuilder.makeTokens(
+        let key = ChromeThemeTokenRecipeKey(
+            context: self,
+            settingsFingerprint: settings.chromeTokenRecipeFingerprint
+        )
+        if ChromeThemeTokenMemo.lastKey == key,
+           let tokens = ChromeThemeTokenMemo.lastTokens
+        {
+            return tokens
+        }
+
+        let tokens = ThemeChromeRecipeBuilder.makeTokens(
             context: self,
             settings: settings
         )
+        ChromeThemeTokenMemo.lastKey = key
+        ChromeThemeTokenMemo.lastTokens = tokens
+        return tokens
     }
 
     var nativeSurfaceColorScheme: ColorScheme {

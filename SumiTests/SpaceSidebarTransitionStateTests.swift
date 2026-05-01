@@ -167,6 +167,175 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         )
     }
 
+    func testSnapshotBuilderKeepsSingleStationaryEssentialsForSameProfileTransition() throws {
+        let browserManager = BrowserManager()
+        let windowState = BrowserWindowState()
+        let settings = makeIsolatedSettings()
+        let profileId = UUID()
+        let source = Space(name: "Source", profileId: profileId)
+        let destination = Space(name: "Destination", profileId: profileId)
+        let essential = makeEssentialPin(profileId: profileId, title: "Pinned")
+
+        browserManager.tabManager.spaces = [source, destination]
+        browserManager.tabManager.pinnedByProfile[profileId] = [essential]
+        windowState.currentProfileId = profileId
+        windowState.currentSpaceId = source.id
+
+        let snapshot = SpaceSidebarTransitionSnapshotBuilder.make(
+            sourceSpace: source,
+            destinationSpace: destination,
+            browserManager: browserManager,
+            windowState: windowState,
+            splitManager: browserManager.splitManager,
+            settings: settings
+        )
+
+        XCTAssertTrue(snapshot.usesSharedEssentials)
+        XCTAssertEqual(snapshot.stationaryEssentials?.profileId, profileId)
+        XCTAssertEqual(snapshot.stationaryEssentials?.items.map(\.id), [essential.id])
+    }
+
+    func testSnapshotBuilderEmbedsEssentialsForCrossProfileTransition() throws {
+        let browserManager = BrowserManager()
+        let windowState = BrowserWindowState()
+        let settings = makeIsolatedSettings()
+        let sourceProfileId = UUID()
+        let destinationProfileId = UUID()
+        let source = Space(name: "Source", profileId: sourceProfileId)
+        let destination = Space(name: "Destination", profileId: destinationProfileId)
+        let sourceEssential = makeEssentialPin(profileId: sourceProfileId, title: "Source Pin")
+        let destinationEssential = makeEssentialPin(profileId: destinationProfileId, title: "Destination Pin")
+
+        browserManager.tabManager.spaces = [source, destination]
+        browserManager.tabManager.pinnedByProfile[sourceProfileId] = [sourceEssential]
+        browserManager.tabManager.pinnedByProfile[destinationProfileId] = [destinationEssential]
+        windowState.currentProfileId = sourceProfileId
+        windowState.currentSpaceId = source.id
+
+        let snapshot = SpaceSidebarTransitionSnapshotBuilder.make(
+            sourceSpace: source,
+            destinationSpace: destination,
+            browserManager: browserManager,
+            windowState: windowState,
+            splitManager: browserManager.splitManager,
+            settings: settings
+        )
+
+        XCTAssertFalse(snapshot.usesSharedEssentials)
+        XCTAssertNil(snapshot.stationaryEssentials)
+        XCTAssertEqual(snapshot.source.essentials?.items.map(\.id), [sourceEssential.id])
+        XCTAssertEqual(snapshot.destination.essentials?.items.map(\.id), [destinationEssential.id])
+    }
+
+    func testSnapshotBuilderMarksSelectedRegularTabWithoutObservedTabRows() throws {
+        let browserManager = BrowserManager()
+        let windowState = BrowserWindowState()
+        let settings = makeIsolatedSettings()
+        let profileId = UUID()
+        let source = Space(name: "Source", profileId: profileId)
+        let destination = Space(name: "Destination", profileId: profileId)
+        let first = Tab(
+            url: URL(string: "https://example.com/first")!,
+            name: "First",
+            spaceId: source.id,
+            index: 0,
+            browserManager: browserManager
+        )
+        let second = Tab(
+            url: URL(string: "https://example.com/second")!,
+            name: "Second",
+            spaceId: source.id,
+            index: 1,
+            browserManager: browserManager
+        )
+
+        browserManager.tabManager.spaces = [source, destination]
+        browserManager.tabManager.addTab(first)
+        browserManager.tabManager.addTab(second)
+        windowState.currentProfileId = profileId
+        windowState.currentSpaceId = source.id
+        windowState.currentTabId = second.id
+
+        let snapshot = SpaceSidebarTransitionSnapshotBuilder.make(
+            sourceSpace: source,
+            destinationSpace: destination,
+            browserManager: browserManager,
+            windowState: windowState,
+            splitManager: browserManager.splitManager,
+            settings: settings
+        )
+
+        XCTAssertEqual(snapshot.source.regularTabs.map(\.id), [first.id, second.id])
+        XCTAssertEqual(snapshot.source.regularTabs.map(\.isSelected), [false, true])
+    }
+
+    func testSnapshotFolderBodyKeepsLiveFolderLayoutMetrics() {
+        XCTAssertEqual(SpaceSidebarSnapshotFolderLayout.contentLeadingPadding, 14)
+        XCTAssertEqual(SpaceSidebarSnapshotFolderLayout.contentVerticalPadding, 4)
+        XCTAssertEqual(
+            SpaceSidebarSnapshotFolderLayout.bodyHeight(childCount: 2),
+            SidebarRowLayout.rowHeight * 2 + 8,
+            accuracy: 0.0001
+        )
+        XCTAssertEqual(
+            SpaceSidebarSnapshotFolderLayout.bodyHeight(childCount: 0),
+            8,
+            accuracy: 0.0001
+        )
+    }
+
+    func testSnapshotTitleKeepsLiveSpaceTitleControlHeight() {
+        XCTAssertEqual(SpaceSidebarSnapshotTitleLayout.trailingControlSize, 28)
+        XCTAssertEqual(SpaceSidebarSnapshotTitleLayout.verticalPadding, 5)
+        XCTAssertEqual(
+            SpaceSidebarSnapshotTitleLayout.minimumHeight,
+            38,
+            accuracy: 0.0001
+        )
+    }
+
+    func testSnapshotBuilderKeepsClosedFolderProjectionRowsForLiveLaunchers() throws {
+        let browserManager = BrowserManager()
+        let windowState = BrowserWindowState()
+        let settings = makeIsolatedSettings()
+        let profileId = UUID()
+        let source = Space(name: "Source", profileId: profileId)
+        let destination = Space(name: "Destination", profileId: profileId)
+        let folder = TabFolder(name: "Folder", spaceId: source.id)
+        let firstPin = makeSpacePinnedPin(spaceId: source.id, folderId: folder.id, index: 0, title: "First")
+        let secondPin = makeSpacePinnedPin(spaceId: source.id, folderId: folder.id, index: 1, title: "Second")
+
+        browserManager.tabManager.spaces = [source, destination]
+        browserManager.tabManager.setFolders([folder], for: source.id)
+        browserManager.tabManager.setSpacePinnedShortcuts([firstPin, secondPin], for: source.id)
+        windowState.currentProfileId = profileId
+        windowState.currentSpaceId = source.id
+
+        _ = browserManager.tabManager.activateShortcutPin(
+            secondPin,
+            in: windowState.id,
+            currentSpaceId: source.id
+        )
+
+        let snapshot = SpaceSidebarTransitionSnapshotBuilder.make(
+            sourceSpace: source,
+            destinationSpace: destination,
+            browserManager: browserManager,
+            windowState: windowState,
+            splitManager: browserManager.splitManager,
+            settings: settings
+        )
+
+        guard case .folder(let folderSnapshot) = snapshot.source.pinnedItems.first else {
+            return XCTFail("Expected first pinned item to be a folder snapshot")
+        }
+
+        XCTAssertFalse(folderSnapshot.isOpen)
+        XCTAssertEqual(folderSnapshot.children.map(\.id), [firstPin.id, secondPin.id])
+        XCTAssertEqual(folderSnapshot.bodyChildren.map(\.id), [secondPin.id])
+        XCTAssertTrue(folderSnapshot.hasActiveSelection)
+    }
+
     func testSwipeGestureBeginCreatesInteractiveSessionWithoutDestination() {
         let ids = [UUID(), UUID(), UUID()]
         var state = SpaceSidebarTransitionState()
@@ -407,5 +576,39 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertTrue(result.emittedEvents.isEmpty)
         XCTAssertEqual(tracker.axisLock, .unresolved)
         XCTAssertFalse(tracker.didSendBeginEvent)
+    }
+
+    private func makeIsolatedSettings() -> SumiSettingsService {
+        let suiteName = "SpaceSidebarTransitionStateTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        return SumiSettingsService(userDefaults: defaults)
+    }
+
+    private func makeEssentialPin(profileId: UUID, title: String) -> ShortcutPin {
+        ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: profileId,
+            index: 0,
+            launchURL: URL(string: "https://example.com/\(UUID().uuidString)")!,
+            title: title
+        )
+    }
+
+    private func makeSpacePinnedPin(
+        spaceId: UUID,
+        folderId: UUID,
+        index: Int,
+        title: String
+    ) -> ShortcutPin {
+        ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: spaceId,
+            index: index,
+            folderId: folderId,
+            launchURL: URL(string: "https://example.com/\(UUID().uuidString)")!,
+            title: title
+        )
     }
 }

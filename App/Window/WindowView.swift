@@ -64,6 +64,7 @@ struct WindowView: View {
                     SidebarHoverOverlayView()
                         .environmentObject(hoverSidebarManager)
                         .environment(windowState)
+                        .environment(\.resolvedThemeContext, sidebarResolvedThemeContext)
                 }
             }
 
@@ -296,7 +297,7 @@ struct WindowView: View {
             windowRegistry: windowRegistry,
             commandPalette: commandPalette,
             sumiSettings: sumiSettings,
-            resolvedThemeContext: resolvedThemeContext,
+            resolvedThemeContext: sidebarResolvedThemeContext,
             presentationContext: presentationContext
         )
         .id("docked-sidebar-column")
@@ -352,6 +353,25 @@ struct WindowView: View {
             global: globalColorScheme,
             settings: sumiSettings
         )
+    }
+
+    private var sidebarResolvedThemeContext: ResolvedThemeContext {
+        let context = resolvedThemeContext
+        guard windowState.isInteractiveSpaceTransition else {
+            return context
+        }
+
+        let frozenTheme = windowState.previousWorkspaceTheme ?? windowState.displayedWorkspaceTheme
+        var frozen = context
+        frozen.chromeColorScheme = context.sourceChromeColorScheme
+        frozen.sourceChromeColorScheme = context.sourceChromeColorScheme
+        frozen.targetChromeColorScheme = context.sourceChromeColorScheme
+        frozen.workspaceTheme = frozenTheme
+        frozen.sourceWorkspaceTheme = frozenTheme
+        frozen.targetWorkspaceTheme = frozenTheme
+        frozen.isInteractiveTransition = false
+        frozen.transitionProgress = 1.0
+        return frozen
     }
 
     @ViewBuilder
