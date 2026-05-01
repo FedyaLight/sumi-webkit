@@ -62,6 +62,12 @@ enum SidebarHoverOverlayHostMountPolicy {
     }
 }
 
+enum SidebarHoverOverlayCursorOwnerPolicy {
+    static func shouldMountCursorOwner(shouldMountCollapsedHost: Bool) -> Bool {
+        shouldMountCollapsedHost
+    }
+}
+
 enum SidebarHoverOverlayMetrics {
     static let cornerRadius: CGFloat = 12
     static let hiddenPadding: CGFloat = 18
@@ -117,6 +123,12 @@ struct SidebarHoverOverlayView: View {
             isOverlayHostPrewarmed: hoverManager.isOverlayHostPrewarmed,
             transientUIPinsHoverSidebar: transientUIPinsHoverSidebar,
             sidebarDragPinsHoverSidebar: sidebarDragPinsHoverSidebar
+        )
+    }
+
+    private var shouldMountCollapsedCursorOwner: Bool {
+        SidebarHoverOverlayCursorOwnerPolicy.shouldMountCursorOwner(
+            shouldMountCollapsedHost: shouldMountCollapsedSidebarHost
         )
     }
 
@@ -192,6 +204,9 @@ struct SidebarHoverOverlayView: View {
 
                     if shouldMountCollapsedSidebarHost {
                         sidebarHost
+                        if shouldMountCollapsedCursorOwner {
+                            collapsedCursorOwner
+                        }
                     }
                 }
                 .frame(
@@ -204,9 +219,17 @@ struct SidebarHoverOverlayView: View {
         .onChange(of: presentationContext) { _, _ in
             SidebarDragState.shared.requestGeometryRefresh()
         }
-        .onDisappear {
-            windowState.updateWebContentInputExclusionRegion(.empty)
-        }
+    }
+
+    private var collapsedCursorOwner: some View {
+        CollapsedSidebarCursorOwnerRepresentable(isEnabled: sidebarPanelAllowsHitTesting)
+            .frame(width: presentationContext.sidebarWidth)
+            .frame(maxHeight: .infinity)
+            .zIndex(5001)
+            .offset(x: sidebarPanelOffset)
+            .opacity(sidebarPanelOpacity)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 
     private var sidebarHost: some View {

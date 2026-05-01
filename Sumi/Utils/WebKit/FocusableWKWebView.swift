@@ -121,54 +121,8 @@ private final class FocusableWKWebViewContextMenuLifecycleDelegate: NSObject, NS
 @MainActor
 final class FocusableWKWebView: WKWebView {
     weak var owningTab: Tab?
-    private var inputExclusionRegion: WebContentInputExclusionRegion = .empty
-    private var inputExclusionTrackingAreas: [NSTrackingArea] = []
-
-    #if DEBUG
-    var inputExclusionLocalRectsForTesting: [CGRect] {
-        localInputExclusionRects()
-    }
-
-    var inputExclusionTrackingAreaRectsForTesting: [CGRect] {
-        inputExclusionTrackingAreas.map(\.rect)
-    }
-    #endif
-
-    func updateInputExclusionRegion(_ region: WebContentInputExclusionRegion) {
-        guard inputExclusionRegion != region else { return }
-        inputExclusionRegion = region
-        refreshInputExclusionCursorState()
-    }
-
-    func clearPointerStateForInputExclusion(with event: NSEvent) {
-        NSCursor.arrow.set()
-        super.mouseExited(with: event)
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        guard !isPointInInputExclusion(convert(point, to: nil)) else {
-            return nil
-        }
-        return super.hitTest(point)
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        refreshInputExclusionCursorState()
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        installInputExclusionTrackingAreas()
-    }
-
-    override func resetCursorRects() {
-        super.resetCursorRects()
-        installInputExclusionCursorRects()
-    }
 
     override func mouseDown(with event: NSEvent) {
-        guard !isEventInInputExclusion(event) else { return }
         owningTab?.setClickModifierFlags(event.modifierFlags)
         owningTab?.recordPopupUserActivation(event, kind: "mouseDown")
 
@@ -184,7 +138,6 @@ final class FocusableWKWebView: WKWebView {
     }
 
     override func otherMouseDown(with event: NSEvent) {
-        guard !isEventInInputExclusion(event) else { return }
         owningTab?.setClickModifierFlags(event.modifierFlags)
         owningTab?.recordPopupUserActivation(event, kind: "middleMouseDown")
         super.otherMouseDown(with: event)
@@ -196,7 +149,6 @@ final class FocusableWKWebView: WKWebView {
     }
 
     override func rightMouseDown(with event: NSEvent) {
-        guard !isEventInInputExclusion(event) else { return }
         if owningTab?.isFreezingNavigationStateDuringBackForwardGesture != true {
             owningTab?.activate()
         }
@@ -216,77 +168,13 @@ final class FocusableWKWebView: WKWebView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard !isEventInInputExclusion(event) else { return }
         super.mouseUp(with: event)
         let owningTab = owningTab
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             owningTab?.setClickModifierFlags([])
         }
     }
-
-    override func rightMouseUp(with event: NSEvent) {
-        guard !isEventInInputExclusion(event) else { return }
-        super.rightMouseUp(with: event)
-    }
-
-    override func otherMouseUp(with event: NSEvent) {
-        guard !isEventInInputExclusion(event) else { return }
-        super.otherMouseUp(with: event)
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        guard !isEventInInputExclusion(event) else {
-            NSCursor.arrow.set()
-            return
-        }
-        super.mouseMoved(with: event)
-    }
-
-    override func cursorUpdate(with event: NSEvent) {
-        guard !isEventInInputExclusion(event) else {
-            NSCursor.arrow.set()
-            return
-        }
-        super.cursorUpdate(with: event)
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        guard !isEventInInputExclusion(event) else {
-            NSCursor.arrow.set()
-            return
-        }
-        super.mouseEntered(with: event)
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        guard !isEventInInputExclusion(event) else { return }
-        super.mouseExited(with: event)
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        guard !isEventInInputExclusion(event) else { return }
-        super.mouseDragged(with: event)
-    }
-
-    override func rightMouseDragged(with event: NSEvent) {
-        guard !isEventInInputExclusion(event) else { return }
-        super.rightMouseDragged(with: event)
-    }
-
-    override func otherMouseDragged(with event: NSEvent) {
-        guard !isEventInInputExclusion(event) else { return }
-        super.otherMouseDragged(with: event)
-    }
-
-    override func scrollWheel(with event: NSEvent) {
-        guard !isEventInInputExclusion(event) else { return }
-        super.scrollWheel(with: event)
-    }
-
     override func menu(for event: NSEvent) -> NSMenu? {
-        guard !isEventInInputExclusion(event) else {
-            return nil
-        }
         guard let menu = super.menu(for: event) else {
             return nil
         }
@@ -343,65 +231,6 @@ final class FocusableWKWebView: WKWebView {
         guard let owningTab else { return nil }
         return owningTab.browserManager?.windowState(containing: owningTab)
             ?? owningTab.browserManager?.windowRegistry?.activeWindow
-    }
-
-    private func isEventInInputExclusion(_ event: NSEvent) -> Bool {
-        if let eventWindow = event.window,
-           let window,
-           eventWindow !== window,
-           eventWindow.windowNumber != window.windowNumber
-        {
-            return false
-        }
-
-        return isPointInInputExclusion(event.locationInWindow)
-    }
-
-    private func isPointInInputExclusion(_ windowPoint: NSPoint) -> Bool {
-        inputExclusionRegion.contains(windowPoint: windowPoint)
-    }
-
-    private func refreshInputExclusionCursorState() {
-        installInputExclusionTrackingAreas()
-        window?.invalidateCursorRects(for: self)
-        neutralizeCursorIfCurrentlyExcluded()
-    }
-
-    private func installInputExclusionTrackingAreas() {
-        inputExclusionTrackingAreas.forEach(removeTrackingArea)
-        inputExclusionTrackingAreas = localInputExclusionRects().map { rect in
-            NSTrackingArea(
-                rect: rect,
-                options: [
-                    .activeAlways,
-                    .cursorUpdate,
-                    .mouseEnteredAndExited,
-                    .mouseMoved,
-                ],
-                owner: self,
-                userInfo: nil
-            )
-        }
-        inputExclusionTrackingAreas.forEach(addTrackingArea)
-    }
-
-    private func installInputExclusionCursorRects() {
-        localInputExclusionRects().forEach { rect in
-            addCursorRect(rect, cursor: .arrow)
-        }
-    }
-
-    private func localInputExclusionRects() -> [CGRect] {
-        inputExclusionRegion.rects(in: self)
-    }
-
-    private func neutralizeCursorIfCurrentlyExcluded() {
-        guard let window,
-              isPointInInputExclusion(window.mouseLocationOutsideOfEventStream)
-        else {
-            return
-        }
-        NSCursor.arrow.set()
     }
 
 }

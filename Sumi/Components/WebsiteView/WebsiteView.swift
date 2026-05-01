@@ -213,7 +213,6 @@ struct WebsiteView: View {
                             rightId: splitManager.rightTabId(for: windowState.id),
                             isSplitDropCaptureActive: sidebarDragState.isDragging && sidebarDragState.isInternalDragSession,
                             chromeGeometry: chromeGeometry,
-                            inputExclusionRegion: windowState.webContentInputExclusionRegion,
                             windowState: windowState
                         )
                         .coordinateSpace(name: dragCoordinateSpace)
