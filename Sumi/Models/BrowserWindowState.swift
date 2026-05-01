@@ -146,6 +146,9 @@ class BrowserWindowState {
     /// Forces WebsiteView to re-evaluate whether the current tab is native or web-backed.
     var nativeSurfaceRoutingRevision: UInt64 = 0
 
+    /// Window-coordinate regions where WebContent remains visible but must not receive pointer input.
+    var webContentInputExclusionRegion: WebContentInputExclusionRegion = .empty
+
     @ObservationIgnored private var isCompositorRefreshScheduled: Bool = false
     @ObservationIgnored private var isSidebarInputRecoveryScheduled: Bool = false
     @ObservationIgnored private var pendingSidebarInputRecoveryReasons: [SidebarInputRecoveryReason] = []
@@ -214,6 +217,11 @@ class BrowserWindowState {
             window: window,
             ownerView: ownerView
         )
+    }
+
+    func updateWebContentInputExclusionRegion(_ region: WebContentInputExclusionRegion) {
+        guard webContentInputExclusionRegion != region else { return }
+        webContentInputExclusionRegion = region
     }
 
     func scheduleSidebarInputRehydrate(reason: SidebarInputRecoveryReason) {

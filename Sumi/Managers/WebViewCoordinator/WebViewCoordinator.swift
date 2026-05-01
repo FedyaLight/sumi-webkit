@@ -58,16 +58,127 @@ enum HistorySwipeCompositorMutationPolicy {
     }
 }
 
+struct WebContentInputExclusionEventMonitorClient {
+    let addLocalMonitor: (
+        NSEvent.EventTypeMask,
+        @escaping (NSEvent) -> NSEvent?
+    ) -> Any?
+    let removeMonitor: (Any) -> Void
+
+    static let live = WebContentInputExclusionEventMonitorClient(
+        addLocalMonitor: { mask, handler in
+            NSEvent.addLocalMonitorForEvents(matching: mask, handler: handler)
+        },
+        removeMonitor: { monitor in
+            NSEvent.removeMonitor(monitor)
+        }
+    )
+}
+
+enum WebContentInputExclusionEventGate {
+    static let monitoredEventTypes: NSEvent.EventTypeMask = [.mouseMoved, .cursorUpdate]
+
+    static func shouldSuppress(
+        eventType: NSEvent.EventType,
+        isInExclusion: Bool,
+        topHitIsWebContent: Bool,
+        trackingAreaIsWebContent: Bool
+    ) -> Bool {
+        guard isInExclusion else { return false }
+
+        switch eventType {
+        case .cursorUpdate:
+            return topHitIsWebContent || trackingAreaIsWebContent
+        case .mouseMoved:
+            return topHitIsWebContent
+        default:
+            return false
+        }
+    }
+}
+
+@MainActor
+private final class WebContentInputClipView: NSView {
+    override var constraints: [NSLayoutConstraint] { [] }
+    override var isOpaque: Bool { false }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        configureClippingLayer()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        configureClippingLayer()
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        // Transparent clipping boundary only; it must not affect sidebar material.
+    }
+
+    private func configureClippingLayer() {
+        wantsLayer = true
+        layer?.masksToBounds = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.isOpaque = false
+    }
+}
+
+private struct WebContentInputClipLayout: Equatable {
+    let clipFrame: CGRect
+    let contentFrame: CGRect
+}
+
 @MainActor
 final class SumiWebViewContainerView: NSView {
     let tabID: UUID
     let windowID: UUID
     let webView: WKWebView
     var fullscreenStateDidChange: ((SumiWebViewContainerView, WKWebView.FullscreenState) -> Void)?
+    private let inputClipView = WebContentInputClipView(frame: .zero)
     private var fullscreenStateObservation: NSKeyValueObservation?
+    private var inputExclusionRegion: WebContentInputExclusionRegion = .empty
+    private var inputExclusionTrackingAreas: [NSTrackingArea] = []
+    private var didClearPointerStateForCurrentInputExclusion = false
+
+    #if DEBUG
+    private(set) var rejectedInputEventTypesForTesting: [NSEvent.EventType] = []
+    private(set) var inputExclusionPointerExitCountForTesting = 0
+    var inputExclusionLocalRectsForTesting: [CGRect] {
+        localInputExclusionRects()
+    }
+
+    var inputExclusionTrackingAreaRectsForTesting: [CGRect] {
+        inputExclusionTrackingAreas.map(\.rect)
+    }
+
+    var webContentClipViewForTesting: NSView {
+        inputClipView
+    }
+
+    var webContentClipFrameForTesting: CGRect {
+        inputClipView.frame
+    }
+
+    var displayedWebContentFrameForTesting: CGRect? {
+        webView.sumiFullscreenTabContentViewForHost?.frame
+    }
+    #endif
 
     override var constraints: [NSLayoutConstraint] { [] }
     override var isOpaque: Bool { false }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard !isPointInInputExclusion(convert(point, to: nil)) else {
+            return nil
+        }
+        return super.hitTest(point)
+    }
 
     init(tabID: UUID, windowID: UUID, webView: WKWebView) {
         self.tabID = tabID
@@ -77,8 +188,9 @@ final class SumiWebViewContainerView: NSView {
 
         autoresizingMask = [.width, .height]
         configurePaintlessChrome()
+        addSubview(inputClipView)
         webView.translatesAutoresizingMaskIntoConstraints = true
-        webView.autoresizingMask = [.width, .height]
+        webView.autoresizingMask = []
         attachDisplayedWebViewIfNeeded()
         observeFullscreenState()
     }
@@ -91,7 +203,7 @@ final class SumiWebViewContainerView: NSView {
     override func layout() {
         super.layout()
         attachDisplayedWebViewIfNeeded()
-        webView.sumiFullscreenTabContentViewForHost?.frame = bounds
+        applyInputClipLayout()
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -101,6 +213,17 @@ final class SumiWebViewContainerView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         configurePaintlessChrome()
+        refreshInputExclusionCursorState()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        installInputExclusionTrackingAreas()
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        installInputExclusionCursorRects()
     }
 
     override func removeFromSuperview() {
@@ -110,6 +233,7 @@ final class SumiWebViewContainerView: NSView {
 
     override func didAddSubview(_ subview: NSView) {
         super.didAddSubview(subview)
+        guard subview !== inputClipView else { return }
         guard webView.sumiTabContentView !== webView else { return }
         subview.frame = bounds
         subview.autoresizingMask = [.width, .height]
@@ -118,20 +242,120 @@ final class SumiWebViewContainerView: NSView {
     func attachDisplayedWebViewIfNeeded() {
         guard let displayedView = webView.sumiFullscreenTabContentViewForHost else { return }
 
-        if displayedView.superview !== self {
+        if displayedView.superview !== inputClipView {
             displayedView.removeFromSuperview()
-            addSubview(displayedView)
+            inputClipView.addSubview(displayedView)
         }
 
-        displayedView.frame = bounds
-        displayedView.autoresizingMask = [.width, .height]
+        displayedView.autoresizingMask = []
+        applyInputClipLayout()
+        syncFocusableWebViewInputExclusion()
     }
 
     func detachWebViewForCleanup() {
         guard let displayedView = webView.sumiFullscreenTabContentViewForHost else { return }
-        if displayedView.superview === self {
+        if displayedView.superview === inputClipView {
             displayedView.removeFromSuperview()
         }
+    }
+
+    func refreshDisplayedWebContentLayout() {
+        attachDisplayedWebViewIfNeeded()
+        applyInputClipLayout()
+    }
+
+    func updateInputExclusionRegion(_ region: WebContentInputExclusionRegion) {
+        guard inputExclusionRegion != region else { return }
+        inputExclusionRegion = region
+        if region.isEmpty {
+            didClearPointerStateForCurrentInputExclusion = false
+        }
+        syncFocusableWebViewInputExclusion()
+        applyInputClipLayout()
+        refreshInputExclusionCursorState()
+        clearWebContentPointerStateIfCurrentMouseIsExcluded()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard !rejectsInput(event) else { return }
+        super.mouseDown(with: event)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard !rejectsInput(event) else { return }
+        super.rightMouseDown(with: event)
+    }
+
+    override func otherMouseDown(with event: NSEvent) {
+        guard !rejectsInput(event) else { return }
+        super.otherMouseDown(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard !rejectsInput(event) else { return }
+        super.mouseUp(with: event)
+    }
+
+    override func rightMouseUp(with event: NSEvent) {
+        guard !rejectsInput(event) else { return }
+        super.rightMouseUp(with: event)
+    }
+
+    override func otherMouseUp(with event: NSEvent) {
+        guard !rejectsInput(event) else { return }
+        super.otherMouseUp(with: event)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard !rejectsInput(event) else {
+            clearWebContentPointerStateForInputExclusion(with: event)
+            NSCursor.arrow.set()
+            return
+        }
+        markPointerOutsideInputExclusion()
+        super.mouseMoved(with: event)
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        guard !rejectsInput(event) else {
+            clearWebContentPointerStateForInputExclusion(with: event)
+            NSCursor.arrow.set()
+            return
+        }
+        super.cursorUpdate(with: event)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        guard !rejectsInput(event) else {
+            NSCursor.arrow.set()
+            return
+        }
+        super.mouseEntered(with: event)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        guard !rejectsInput(event) else { return }
+        super.mouseExited(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard !rejectsInput(event) else { return }
+        super.mouseDragged(with: event)
+    }
+
+    override func rightMouseDragged(with event: NSEvent) {
+        guard !rejectsInput(event) else { return }
+        super.rightMouseDragged(with: event)
+    }
+
+    override func otherMouseDragged(with event: NSEvent) {
+        guard !rejectsInput(event) else { return }
+        super.otherMouseDragged(with: event)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard !rejectsInput(event) else { return }
+        super.scrollWheel(with: event)
     }
 
     private func configurePaintlessChrome() {
@@ -139,6 +363,102 @@ final class SumiWebViewContainerView: NSView {
         layer?.backgroundColor = NSColor.clear.cgColor
         layer?.isOpaque = false
     }
+
+    private func applyInputClipLayout() {
+        let layout = inputClipLayout()
+        inputClipView.frame = layout.clipFrame
+        inputClipView.autoresizingMask = []
+        webView.sumiFullscreenTabContentViewForHost?.frame = layout.contentFrame
+    }
+
+    private func inputClipLayout() -> WebContentInputClipLayout {
+        let hostBounds = bounds.standardized
+        guard hostBounds.width > 0,
+              hostBounds.height > 0,
+              let edgeStrip = inputExclusionEdgeStrip(in: hostBounds)
+        else {
+            return WebContentInputClipLayout(
+                clipFrame: hostBounds,
+                contentFrame: CGRect(
+                    x: 0,
+                    y: 0,
+                    width: hostBounds.width,
+                    height: hostBounds.height
+                )
+            )
+        }
+
+        let clipFrame: CGRect
+        if edgeStrip.minX <= hostBounds.minX + Self.edgeClipEpsilon {
+            let clippedWidth = min(max(edgeStrip.maxX - hostBounds.minX, 0), hostBounds.width)
+            clipFrame = CGRect(
+                x: hostBounds.minX + clippedWidth,
+                y: hostBounds.minY,
+                width: max(hostBounds.width - clippedWidth, 0),
+                height: hostBounds.height
+            )
+        } else {
+            let clippedWidth = min(max(hostBounds.maxX - edgeStrip.minX, 0), hostBounds.width)
+            clipFrame = CGRect(
+                x: hostBounds.minX,
+                y: hostBounds.minY,
+                width: max(hostBounds.width - clippedWidth, 0),
+                height: hostBounds.height
+            )
+        }
+
+        return WebContentInputClipLayout(
+            clipFrame: clipFrame,
+            contentFrame: CGRect(
+                x: hostBounds.minX - clipFrame.minX,
+                y: hostBounds.minY - clipFrame.minY,
+                width: hostBounds.width,
+                height: hostBounds.height
+            )
+        )
+    }
+
+    private func inputExclusionEdgeStrip(in hostBounds: CGRect) -> CGRect? {
+        let intersection = localInputExclusionRects()
+            .reduce(CGRect.null) { partial, rect in
+                partial.union(rect.intersection(hostBounds))
+            }
+            .standardized
+
+        guard !intersection.isNull,
+              !intersection.isInfinite,
+              intersection.width > 0,
+              intersection.height > 0
+        else {
+            return nil
+        }
+
+        let coversFullHeight = intersection.minY <= hostBounds.minY + Self.edgeClipEpsilon
+            && intersection.maxY >= hostBounds.maxY - Self.edgeClipEpsilon
+        guard coversFullHeight else { return nil }
+
+        if intersection.minX <= hostBounds.minX + Self.edgeClipEpsilon {
+            return CGRect(
+                x: hostBounds.minX,
+                y: hostBounds.minY,
+                width: min(intersection.maxX - hostBounds.minX, hostBounds.width),
+                height: hostBounds.height
+            )
+        }
+
+        if intersection.maxX >= hostBounds.maxX - Self.edgeClipEpsilon {
+            return CGRect(
+                x: max(intersection.minX, hostBounds.minX),
+                y: hostBounds.minY,
+                width: min(hostBounds.maxX - intersection.minX, hostBounds.width),
+                height: hostBounds.height
+            )
+        }
+
+        return nil
+    }
+
+    private static let edgeClipEpsilon: CGFloat = 0.5
 
     private func observeFullscreenState() {
         fullscreenStateObservation = webView.observe(
@@ -154,6 +474,235 @@ final class SumiWebViewContainerView: NSView {
                 self.fullscreenStateDidChange?(self, state)
             }
         }
+    }
+
+    private func syncFocusableWebViewInputExclusion() {
+        (webView as? FocusableWKWebView)?.updateInputExclusionRegion(inputExclusionRegion)
+    }
+
+    private func refreshInputExclusionCursorState() {
+        installInputExclusionTrackingAreas()
+        window?.invalidateCursorRects(for: self)
+        neutralizeCursorIfCurrentlyExcluded()
+    }
+
+    private func installInputExclusionTrackingAreas() {
+        inputExclusionTrackingAreas.forEach(removeTrackingArea)
+        inputExclusionTrackingAreas = localInputExclusionRects().map { rect in
+            NSTrackingArea(
+                rect: rect,
+                options: [
+                    .activeAlways,
+                    .cursorUpdate,
+                    .mouseEnteredAndExited,
+                    .mouseMoved,
+                ],
+                owner: self,
+                userInfo: nil
+            )
+        }
+        inputExclusionTrackingAreas.forEach(addTrackingArea)
+    }
+
+    private func installInputExclusionCursorRects() {
+        localInputExclusionRects().forEach { rect in
+            addCursorRect(rect, cursor: .arrow)
+        }
+    }
+
+    private func rejectsInput(_ event: NSEvent) -> Bool {
+        guard isEventInInputExclusion(event) else { return false }
+        #if DEBUG
+        rejectedInputEventTypesForTesting.append(event.type)
+        #endif
+        return true
+    }
+
+    private func isEventInInputExclusion(_ event: NSEvent) -> Bool {
+        if let eventWindow = eventWindow(for: event),
+           let window,
+           eventWindow !== window,
+           eventWindow.windowNumber != window.windowNumber
+        {
+            return false
+        }
+
+        return isPointInInputExclusion(event.locationInWindow)
+    }
+
+    private func eventWindow(for event: NSEvent) -> NSWindow? {
+        NSApp.window(withWindowNumber: event.windowNumber)
+    }
+
+    private func isPointInInputExclusion(_ windowPoint: NSPoint) -> Bool {
+        inputExclusionRegion.contains(windowPoint: windowPoint)
+    }
+
+    private func localInputExclusionRects() -> [CGRect] {
+        inputExclusionRegion.rects(in: self)
+    }
+
+    private func neutralizeCursorIfCurrentlyExcluded() {
+        guard let window,
+              isPointInInputExclusion(window.mouseLocationOutsideOfEventStream)
+        else {
+            return
+        }
+        NSCursor.arrow.set()
+    }
+
+    func clearWebContentPointerStateForInputExclusion(with event: NSEvent) {
+        guard isEventInInputExclusion(event) else {
+            markPointerOutsideInputExclusion()
+            return
+        }
+        guard !didClearPointerStateForCurrentInputExclusion else {
+            NSCursor.arrow.set()
+            return
+        }
+
+        didClearPointerStateForCurrentInputExclusion = true
+        #if DEBUG
+        inputExclusionPointerExitCountForTesting += 1
+        #endif
+        NSCursor.arrow.set()
+        guard let exitEvent = inputExclusionMouseExitEvent(basedOn: event),
+              let moveEvent = inputExclusionPointerClearMoveEvent(basedOn: event)
+        else { return }
+        if let focusableWebView = webView as? FocusableWKWebView {
+            focusableWebView.clearPointerStateForInputExclusion(
+                exitEvent: exitEvent,
+                moveEvent: moveEvent
+            )
+        } else {
+            webView.mouseExited(with: exitEvent)
+            webView.mouseMoved(with: moveEvent)
+        }
+    }
+
+    func markPointerOutsideInputExclusion() {
+        didClearPointerStateForCurrentInputExclusion = false
+    }
+
+    private func clearWebContentPointerStateIfCurrentMouseIsExcluded() {
+        guard let window,
+              isPointInInputExclusion(window.mouseLocationOutsideOfEventStream),
+              let exitEvent = inputExclusionMouseExitEvent(windowPoint: window.mouseLocationOutsideOfEventStream),
+              let moveEvent = inputExclusionPointerClearMoveEvent(windowPoint: window.mouseLocationOutsideOfEventStream)
+        else {
+            return
+        }
+
+        didClearPointerStateForCurrentInputExclusion = true
+        #if DEBUG
+        inputExclusionPointerExitCountForTesting += 1
+        #endif
+        NSCursor.arrow.set()
+        if let focusableWebView = webView as? FocusableWKWebView {
+            focusableWebView.clearPointerStateForInputExclusion(
+                exitEvent: exitEvent,
+                moveEvent: moveEvent
+            )
+        } else {
+            webView.mouseExited(with: exitEvent)
+            webView.mouseMoved(with: moveEvent)
+        }
+    }
+
+    private func inputExclusionMouseExitEvent(basedOn event: NSEvent) -> NSEvent? {
+        inputExclusionMouseExitEvent(
+            windowPoint: event.locationInWindow,
+            modifierFlags: event.modifierFlags,
+            timestamp: event.timestamp,
+            eventNumber: 0
+        )
+    }
+
+    private func inputExclusionPointerClearMoveEvent(basedOn event: NSEvent) -> NSEvent? {
+        inputExclusionPointerClearMoveEvent(
+            windowPoint: event.locationInWindow,
+            modifierFlags: event.modifierFlags,
+            timestamp: event.timestamp,
+            eventNumber: 0
+        )
+    }
+
+    private func inputExclusionMouseExitEvent(
+        windowPoint: NSPoint,
+        modifierFlags: NSEvent.ModifierFlags = [],
+        timestamp: TimeInterval = ProcessInfo.processInfo.systemUptime,
+        eventNumber: Int = 0
+    ) -> NSEvent? {
+        guard let window else { return nil }
+        let localPoint = convert(windowPoint, from: nil)
+        let exitPoint = inputExclusionExitPoint(near: localPoint)
+        return NSEvent.enterExitEvent(
+            with: .mouseExited,
+            location: convert(exitPoint, to: nil),
+            modifierFlags: modifierFlags,
+            timestamp: timestamp,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: eventNumber,
+            trackingNumber: 0,
+            userData: nil
+        )
+    }
+
+    private func inputExclusionPointerClearMoveEvent(
+        windowPoint: NSPoint,
+        modifierFlags: NSEvent.ModifierFlags = [],
+        timestamp: TimeInterval = ProcessInfo.processInfo.systemUptime,
+        eventNumber: Int = 0
+    ) -> NSEvent? {
+        guard let window else { return nil }
+        let localPoint = convert(windowPoint, from: nil)
+        let clearPoint = inputExclusionPointerClearPoint(near: localPoint)
+        return NSEvent.mouseEvent(
+            with: .mouseMoved,
+            location: convert(clearPoint, to: nil),
+            modifierFlags: modifierFlags,
+            timestamp: timestamp,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: eventNumber,
+            clickCount: 0,
+            pressure: 0
+        )
+    }
+
+    private func inputExclusionExitPoint(near localPoint: NSPoint) -> NSPoint {
+        let clampedY = min(max(localPoint.y, bounds.minY), bounds.maxY)
+        guard let edgeStrip = inputExclusionEdgeStrip(in: bounds.standardized) else {
+            return NSPoint(x: bounds.maxX + 1, y: clampedY)
+        }
+
+        if edgeStrip.minX <= bounds.minX + Self.edgeClipEpsilon {
+            return NSPoint(x: bounds.minX - 1, y: clampedY)
+        }
+
+        return NSPoint(x: bounds.maxX + 1, y: clampedY)
+    }
+
+    private func inputExclusionPointerClearPoint(near localPoint: NSPoint) -> NSPoint {
+        let hostBounds = bounds.standardized
+        let layout = inputClipLayout()
+        guard !layout.clipFrame.isEmpty else {
+            return NSPoint(x: hostBounds.maxX - 1, y: hostBounds.maxY - 1)
+        }
+
+        let safeRect = layout.clipFrame.insetBy(dx: 1, dy: 1)
+        guard safeRect.width > 0, safeRect.height > 0 else {
+            return NSPoint(x: layout.clipFrame.midX, y: layout.clipFrame.midY)
+        }
+
+        let sameSideX: CGFloat
+        if localPoint.x <= hostBounds.midX {
+            sameSideX = safeRect.maxX
+        } else {
+            sameSideX = safeRect.minX
+        }
+        return NSPoint(x: sameSideX, y: safeRect.maxY)
     }
 }
 
@@ -335,11 +884,28 @@ private extension NSView {
         }
         return nil
     }
+
+    var isWebContentInputExclusionBoundary: Bool {
+        var current: NSView? = self
+        while let view = current {
+            if view is SumiWebViewContainerView || view is WKWebView {
+                return true
+            }
+            current = view.superview
+        }
+        return false
+    }
 }
 
 @MainActor
 @Observable
 class WebViewCoordinator {
+    @ObservationIgnored
+    private let inputExclusionEventMonitors: WebContentInputExclusionEventMonitorClient
+
+    @ObservationIgnored
+    private var inputExclusionLocalMonitor: Any?
+
     /// Window-specific web views: tabId -> windowId -> WKWebView
     @ObservationIgnored
     private var webViewsByTabAndWindow: [UUID: [UUID: WKWebView]] = [:]
@@ -347,6 +913,9 @@ class WebViewCoordinator {
     /// Stable AppKit hosts for web views. UI/compositor code attaches these containers, never naked WKWebView instances.
     @ObservationIgnored
     private var webViewHostsByTabAndWindow: [UUID: [UUID: SumiWebViewContainerView]] = [:]
+
+    @ObservationIgnored
+    private var inputExclusionRegionsByWindow: [UUID: WebContentInputExclusionRegion] = [:]
 
     @ObservationIgnored
     private var webViewOwnersByIdentifier: [ObjectIdentifier: TrackedWebViewOwner] = [:]
@@ -378,6 +947,18 @@ class WebViewCoordinator {
     @ObservationIgnored
     private var activeFullscreenVideoSessions: Set<ObjectIdentifier> = []
 
+    init(
+        inputExclusionEventMonitors: WebContentInputExclusionEventMonitorClient = .live
+    ) {
+        self.inputExclusionEventMonitors = inputExclusionEventMonitors
+    }
+
+    deinit {
+        if let inputExclusionLocalMonitor {
+            inputExclusionEventMonitors.removeMonitor(inputExclusionLocalMonitor)
+        }
+    }
+
     @ObservationIgnored
     private var deferredProtectedWebViewCommands: [ObjectIdentifier: DeferredProtectedCommandBuffer] = [:]
 
@@ -405,6 +986,7 @@ class WebViewCoordinator {
     func removeCompositorContainerView(for windowId: UUID) {
         compositorContainerViews.removeValue(forKey: windowId)
         scheduledPrepareWindowIds.remove(windowId)
+        setInputExclusionRegion(.empty, for: windowId)
         recentlyVisibleTabIDsByWindow.removeValue(forKey: windowId)
         pruneInvalidDeferredProtectedCommands(reason: "removeCompositorContainerView")
     }
@@ -439,6 +1021,132 @@ class WebViewCoordinator {
             return nil
         }
         return host
+    }
+
+    func setInputExclusionRegion(
+        _ region: WebContentInputExclusionRegion,
+        for windowId: UUID
+    ) {
+        if region.isEmpty {
+            inputExclusionRegionsByWindow.removeValue(forKey: windowId)
+        } else {
+            inputExclusionRegionsByWindow[windowId] = region
+        }
+
+        for windowHosts in webViewHostsByTabAndWindow.values {
+            windowHosts[windowId]?.updateInputExclusionRegion(region)
+        }
+        syncInputExclusionEventMonitor()
+    }
+
+    func handleInputExclusionEventForTesting(_ event: NSEvent) -> NSEvent? {
+        handleInputExclusionEvent(event)
+    }
+
+    private func syncInputExclusionEventMonitor() {
+        if inputExclusionRegionsByWindow.isEmpty {
+            if let inputExclusionLocalMonitor {
+                inputExclusionEventMonitors.removeMonitor(inputExclusionLocalMonitor)
+                self.inputExclusionLocalMonitor = nil
+            }
+            return
+        }
+
+        guard inputExclusionLocalMonitor == nil else { return }
+        inputExclusionLocalMonitor = inputExclusionEventMonitors.addLocalMonitor(
+            WebContentInputExclusionEventGate.monitoredEventTypes
+        ) { [weak self] event in
+            MainActor.assumeIsolated {
+                self?.handleInputExclusionEvent(event) ?? event
+            }
+        }
+    }
+
+    private func handleInputExclusionEvent(_ event: NSEvent) -> NSEvent? {
+        guard let context = inputExclusionContext(for: event) else {
+            return event
+        }
+
+        guard context.region.contains(windowPoint: event.locationInWindow) else {
+            markPointerOutsideInputExclusion(in: context.windowID)
+            return event
+        }
+
+        clearWebContentPointerStateForInputExclusion(in: context.windowID, event: event)
+
+        let topHitIsWebContent = topHitView(for: event)?.isWebContentInputExclusionBoundary == true
+        let trackingAreaIsWebContent = event.type == .cursorUpdate
+            ? isWebContentTrackingArea(event.trackingArea)
+            : false
+        guard WebContentInputExclusionEventGate.shouldSuppress(
+            eventType: event.type,
+            isInExclusion: true,
+            topHitIsWebContent: topHitIsWebContent,
+            trackingAreaIsWebContent: trackingAreaIsWebContent
+        ) else {
+            return event
+        }
+
+        NSCursor.arrow.set()
+        return nil
+    }
+
+    private func inputExclusionContext(for event: NSEvent) -> (
+        windowID: UUID,
+        region: WebContentInputExclusionRegion
+    )? {
+        inputExclusionRegionsByWindow.first { windowID, _ in
+            guard let eventWindow = eventWindow(for: event),
+                  let rootWindow = compositorContainerViews[windowID]?.view?.window
+            else {
+                return false
+            }
+
+            return eventWindow === rootWindow
+                || eventWindow.windowNumber == rootWindow.windowNumber
+        }
+        .map { (windowID: $0.key, region: $0.value) }
+    }
+
+    private func clearWebContentPointerStateForInputExclusion(in windowID: UUID, event: NSEvent) {
+        for windowHosts in webViewHostsByTabAndWindow.values {
+            windowHosts[windowID]?.clearWebContentPointerStateForInputExclusion(with: event)
+        }
+    }
+
+    private func markPointerOutsideInputExclusion(in windowID: UUID) {
+        for windowHosts in webViewHostsByTabAndWindow.values {
+            windowHosts[windowID]?.markPointerOutsideInputExclusion()
+        }
+    }
+
+    private func topHitView(for event: NSEvent) -> NSView? {
+        guard let window = eventWindow(for: event),
+              let contentView = window.contentView
+        else {
+            return nil
+        }
+
+        let contentPoint = contentView.convert(event.locationInWindow, from: nil)
+        return contentView.hitTest(contentPoint)
+    }
+
+    private func eventWindow(for event: NSEvent) -> NSWindow? {
+        NSApp.window(withWindowNumber: event.windowNumber)
+    }
+
+    private func isWebContentTrackingArea(_ trackingArea: NSTrackingArea?) -> Bool {
+        guard let trackingArea else { return false }
+        if let owner = trackingArea.owner as? NSView,
+           owner.isWebContentInputExclusionBoundary
+        {
+            return true
+        }
+        if let owner = trackingArea.owner {
+            let ownerType = String(describing: type(of: owner))
+            return ownerType.contains("WK") || ownerType.contains("Web")
+        }
+        return false
     }
 
     func getAllWebViews(for tabId: UUID) -> [WKWebView] {
@@ -483,6 +1191,7 @@ class WebViewCoordinator {
             windowID: windowId,
             webView: webView
         )
+        host.updateInputExclusionRegion(inputExclusionRegionsByWindow[windowId] ?? .empty)
         host.fullscreenStateDidChange = { [weak self] host, state in
             self?.handleFullscreenStateChange(for: host, state: state)
         }
@@ -661,10 +1370,11 @@ class WebViewCoordinator {
             container.addSubview(host)
         }
 
+        host.updateInputExclusionRegion(inputExclusionRegionsByWindow[host.windowID] ?? .empty)
         host.attachDisplayedWebViewIfNeeded()
         host.frame = container.bounds
         host.autoresizingMask = [.width, .height]
-        host.webView.sumiFullscreenTabContentViewForHost?.frame = host.bounds
+        host.refreshDisplayedWebContentLayout()
         host.isHidden = false
         host.webView.sumiFullscreenTabContentViewForHost?.isHidden = false
         return true
@@ -1065,6 +1775,7 @@ class WebViewCoordinator {
         }
 
         scheduledPrepareWindowIds.remove(windowId)
+        setInputExclusionRegion(.empty, for: windowId)
         let webViewsToCleanup = trackedWebViews(in: windowId)
 
         RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
@@ -1147,6 +1858,7 @@ class WebViewCoordinator {
         if webViewsByTabAndWindow.isEmpty {
             webViewHostsByTabAndWindow.removeAll()
             webViewOwnersByIdentifier.removeAll()
+            inputExclusionRegionsByWindow.removeAll()
             recentlyVisibleTabIDsByWindow.removeAll()
             compositorContainerViews.removeAll()
             scheduledPrepareWindowIds.removeAll()
