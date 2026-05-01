@@ -34,9 +34,14 @@ private struct BackgroundDraggableModifier<G: Gesture>: ViewModifier {
 struct WindowDragGesture: Gesture {
     var body: some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .global)
-            .onChanged { value in
+            .onChanged { _ in
                 if !SidebarDragState.shared.isDragging {
-                    if let window = NSApp.keyWindow, let event = NSApp.currentEvent {
+                    if let event = NSApp.currentEvent,
+                       let window = event.window ?? NSApp.keyWindow {
+                        if event.clickCount == 2 {
+                            window.performZoom(nil)
+                            return
+                        }
                         window.performDrag(with: event)
                     }
                 }

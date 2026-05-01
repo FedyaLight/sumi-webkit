@@ -28,9 +28,10 @@ enum SidebarDragVisualSurfacePolicy {
 
     static func shouldPresentCollapsedPanelPreviewOverlay(
         presentationContext: SidebarPresentationContext,
-        isDragging: Bool
+        isDragging: Bool,
+        isInternalDragGeometryArmed: Bool = false
     ) -> Bool {
-        isDragging
+        (isDragging || isInternalDragGeometryArmed)
             && floatingPreviewSurface(for: presentationContext) == .collapsedPanelOverlayWindow
     }
 

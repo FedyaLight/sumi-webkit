@@ -1196,7 +1196,18 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         XCTAssertFalse(rootSource.contains("window?.currentEvent"))
         XCTAssertFalse(rootSource.contains("SidebarColumnHitTestRouting.routedHit"))
         XCTAssertTrue(rootSource.contains("if hit === hostedSidebarView"))
+        XCTAssertTrue(rootSource.contains("parentWindow.performZoom(nil)"))
         XCTAssertTrue(rootSource.contains("parentWindow.performDrag(with: event)"))
+    }
+
+    func testCollapsedSidebarFooterActionsUseAppKitRouting() throws {
+        let bottomBarSource = try Self.source(named: "Navigation/Sidebar/SidebarBottomBar.swift")
+        let downloadsSource = try Self.source(named: "Sumi/Components/Downloads/DownloadsToolbarButton.swift")
+
+        XCTAssertTrue(downloadsSource.contains(".sidebarAppKitPrimaryAction(action: action)"))
+        XCTAssertTrue(bottomBarSource.contains("presentationContext.inputMode == .collapsedOverlay"))
+        XCTAssertTrue(bottomBarSource.contains("triggers: [.leftClick, .rightClick]"))
+        XCTAssertTrue(bottomBarSource.contains("newSpaceMenuEntries"))
     }
 
     func testCollapsedHostedRootContainsFullVisiblePanelChromeInOneSubtree() throws {

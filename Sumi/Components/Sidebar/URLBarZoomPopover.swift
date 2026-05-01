@@ -12,9 +12,11 @@ import WebKit
 
 extension URLBarView {
     func zoomButton(for currentTab: Tab) -> some View {
-        Button {
+        let action = {
             toggleZoomPopoverFromToolbar(for: currentTab)
-        } label: {
+        }
+
+        return Button(action: action) {
             Image(zoomButtonImageName(for: currentTab))
                 .renderingMode(.template)
                 .resizable()
@@ -23,6 +25,7 @@ extension URLBarView {
         }
         .buttonStyle(URLBarButtonStyle())
         .help("Zoom")
+        .sidebarAppKitPrimaryAction(action: action)
         .onHover { hovering in
             isZoomButtonHovering = hovering
             updateZoomPopoverAutoCloseTask()

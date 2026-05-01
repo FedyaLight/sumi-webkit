@@ -798,7 +798,8 @@ struct CollapsedSidebarPanelHost: NSViewRepresentable {
             root: dragPreviewRoot,
             isPresented: SidebarDragVisualSurfacePolicy.shouldPresentCollapsedPanelPreviewOverlay(
                 presentationContext: presentationContext,
-                isDragging: sidebarDragState.isDragging
+                isDragging: sidebarDragState.isDragging,
+                isInternalDragGeometryArmed: sidebarDragState.isInternalDragGeometryArmed
             )
         )
     }
