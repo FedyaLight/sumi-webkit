@@ -76,6 +76,23 @@ final class SidebarColumnContainerView: SidebarColumnBaseContainerView {
             capturesPanelBackgroundPointerEvents: capturesPanelBackgroundPointerEvents
         )
     }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2,
+           SidebarColumnBackgroundClickPolicy.shouldHandleWindowZoom(
+            event: event,
+            in: self,
+            hostedSidebarView: hostedSidebarView
+           ),
+           let targetWindow = window
+        {
+            onPointerDown?()
+            targetWindow.performZoom(nil)
+            return
+        }
+
+        super.mouseDown(with: event)
+    }
 }
 
 final class CollapsedSidebarPanelRootView: SidebarColumnBaseContainerView {
@@ -129,11 +146,48 @@ final class CollapsedSidebarPanelRootView: SidebarColumnBaseContainerView {
     }
 }
 
+private enum SidebarColumnBackgroundClickPolicy {
+    static func shouldHandleWindowZoom(
+        event: NSEvent,
+        in containerView: NSView,
+        hostedSidebarView: NSView?
+    ) -> Bool {
+        let localPoint = containerView.convert(event.locationInWindow, from: nil)
+        guard containerView.bounds.contains(localPoint) else { return false }
+
+        guard let hit = containerView.hitTest(localPoint) else {
+            return true
+        }
+
+        guard let hostedSidebarView,
+              hit === hostedSidebarView || hit.isDescendant(of: hostedSidebarView)
+        else {
+            return hit === containerView
+        }
+
+        return hit.nearestAncestor(of: SidebarInteractiveItemView.self) == nil
+            && hit.nearestAncestor(of: NSControl.self) == nil
+    }
+}
+
 enum SidebarColumnPaintlessChrome {
     static func configure(_ view: NSView) {
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.clear.cgColor
         view.layer?.isOpaque = false
+    }
+}
+
+private extension NSView {
+    func nearestAncestor<T: NSView>(of type: T.Type) -> T? {
+        var current: NSView? = self
+        while let view = current {
+            if let match = view as? T {
+                return match
+            }
+            current = view.superview
+        }
+        return nil
     }
 }
 

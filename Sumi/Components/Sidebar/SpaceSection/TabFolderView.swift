@@ -16,7 +16,7 @@ struct TabFolderView: View {
 
     private static let folderContentLeadingPadding: CGFloat = 14
     private static let folderContentVerticalPadding: CGFloat = 4
-    private static let zenFolderContentAnimation = Animation.easeInOut(duration: 0.12)
+    private static let zenFolderContentAnimation = Animation.easeInOut(duration: 0.18)
 
     @ObservedObject var folder: TabFolder
     let space: Space
@@ -29,6 +29,7 @@ struct TabFolderView: View {
     @State private var draftName: String = ""
     @State private var measuredExpandedFolderContentHeight: CGFloat = 0
     @State private var measuredCollapsedFolderContentHeight: CGFloat = 0
+    @State private var displayedCollapsedProjectionIDs: [UUID] = []
     @State private var deferredExpandedHeightMutation = SidebarDeferredStateMutation<CGFloat>()
     @State private var deferredCollapsedHeightMutation = SidebarDeferredStateMutation<CGFloat>()
     @State private var isFolderHeaderHovered = false
@@ -64,9 +65,35 @@ struct TabFolderView: View {
             .map(\.1)
     }
 
-    private var collapsedProjectedShortcutPins: [ShortcutPin] {
+    private var targetCollapsedProjectionPins: [ShortcutPin] {
         guard !folder.isOpen else { return [] }
         return collapsedProjectedShortcutPins(using: folderProjectionState.projectedChildIDs)
+    }
+
+    private var targetCollapsedProjectionIDs: [UUID] {
+        targetCollapsedProjectionPins.map(\.id)
+    }
+
+    private var visibleCollapsedProjectionIDs: [UUID] {
+        displayedCollapsedProjectionIDs.isEmpty
+            ? targetCollapsedProjectionIDs
+            : displayedCollapsedProjectionIDs
+    }
+
+    private var visibleCollapsedProjectionPins: [ShortcutPin] {
+        visibleCollapsedProjectionIDs.compactMap { pinId in
+            shortcutPinsInFolder.first { $0.id == pinId }
+        }
+    }
+
+    private var visibleFolderBodyItems: [FolderListItem] {
+        folder.isOpen
+            ? folderItems
+            : visibleCollapsedProjectionIDs.map(FolderListItem.shortcut)
+    }
+
+    private var hasCollapsedProjectionForLayout: Bool {
+        !displayedCollapsedProjectionIDs.isEmpty || !targetCollapsedProjectionIDs.isEmpty
     }
 
     private func collapsedProjectedShortcutPins(
@@ -104,7 +131,13 @@ struct TabFolderView: View {
     }
 
     private var folderPreviewIsOpen: Bool {
-        folder.isOpen
+        folder.isOpen || isFolderDragOpenPreviewed
+    }
+
+    private var isFolderDragOpenPreviewed: Bool {
+        dragState.isDragging
+            && !folder.isOpen
+            && dragState.activeHoveredFolderId == folder.id
     }
 
     private var resolvedTopLevelPinnedIndex: Int {
@@ -134,8 +167,13 @@ struct TabFolderView: View {
     }
 
     private var collapsedFolderContentFallbackHeight: CGFloat {
-        guard !collapsedProjectedShortcutPins.isEmpty else { return 0 }
-        return (CGFloat(collapsedProjectedShortcutPins.count) * SidebarRowLayout.rowHeight) + 6
+        let projectedCount = max(
+            displayedCollapsedProjectionIDs.count,
+            targetCollapsedProjectionIDs.count
+        )
+        guard projectedCount > 0 else { return 0 }
+        return (CGFloat(projectedCount) * SidebarRowLayout.rowHeight) +
+            (Self.folderContentVerticalPadding * 2)
     }
 
     private var expandedFolderContentHeight: CGFloat {
@@ -143,7 +181,7 @@ struct TabFolderView: View {
     }
 
     private var collapsedFolderContentHeight: CGFloat {
-        guard !collapsedProjectedShortcutPins.isEmpty else { return 0 }
+        guard hasCollapsedProjectionForLayout else { return 0 }
         return max(measuredCollapsedFolderContentHeight, collapsedFolderContentFallbackHeight)
     }
 
@@ -156,7 +194,7 @@ struct TabFolderView: View {
     }
 
     private var folderBodyGeometryIsActive: Bool {
-        isInteractive && (folder.isOpen || !collapsedProjectedShortcutPins.isEmpty)
+        isInteractive && (folder.isOpen || hasCollapsedProjectionForLayout)
     }
 
     private var folderHasActiveSelection: Bool {
@@ -216,21 +254,26 @@ struct TabFolderView: View {
         let _ = browserManager.tabStructuralRevision
 
         folderCompositeContent
-            .onChange(of: collapsedProjectedShortcutPins.map(\.id)) { _, _ in
+            .onChange(of: targetCollapsedProjectionIDs) { _, _ in
+                syncDisplayedCollapsedProjectionIDs(animated: true)
                 scheduleProjectionStateRefresh()
-        }
-        .onChange(of: folder.isOpen) { _, _ in
-            scheduleProjectionStateRefresh()
-        }
-        .onChange(of: windowState.currentTabId) { _, _ in
-            scheduleProjectionStateRefresh()
-        }
-        .onChange(of: windowState.currentShortcutPinId) { _, _ in
-            scheduleProjectionStateRefresh()
-        }
-        .onAppear {
-            scheduleProjectionStateRefresh()
-        }
+            }
+            .onChange(of: folder.isOpen) { _, _ in
+                syncDisplayedCollapsedProjectionIDs(animated: true)
+                scheduleProjectionStateRefresh()
+            }
+            .onChange(of: windowState.currentTabId) { _, _ in
+                syncDisplayedCollapsedProjectionIDs(animated: true)
+                scheduleProjectionStateRefresh()
+            }
+            .onChange(of: windowState.currentShortcutPinId) { _, _ in
+                syncDisplayedCollapsedProjectionIDs(animated: true)
+                scheduleProjectionStateRefresh()
+            }
+            .onAppear {
+                syncDisplayedCollapsedProjectionIDs(animated: false)
+                scheduleProjectionStateRefresh()
+            }
     }
 
     private var folderCompositeContent: some View {
@@ -269,19 +312,25 @@ struct TabFolderView: View {
         .overlay(alignment: .topLeading) {
             folderDropIndicator
         }
+        .animation(isInteractive ? Self.zenFolderContentAnimation : nil, value: folder.isOpen)
+        .animation(isInteractive ? Self.zenFolderContentAnimation : nil, value: folderBodyTargetHeight)
+        .animation(isInteractive ? Self.zenFolderContentAnimation : nil, value: folderBodyTargetOpacity)
+        .animation(isInteractive ? Self.zenFolderContentAnimation : nil, value: folderItems)
+        .animation(isInteractive ? Self.zenFolderContentAnimation : nil, value: displayedCollapsedProjectionIDs)
+        .animation(isInteractive ? Self.zenFolderContentAnimation : nil, value: targetCollapsedProjectionIDs)
     }
 
     private var folderBodyVisibleContent: some View {
-        ZStack(alignment: .topLeading) {
-            folderContent()
-                .opacity(folder.isOpen ? 1 : 0)
-                .allowsHitTesting(folder.isOpen)
-
-            collapsedFolderContent
-                .opacity(!folder.isOpen && !collapsedProjectedShortcutPins.isEmpty ? 1 : 0)
-                .allowsHitTesting(!folder.isOpen && !collapsedProjectedShortcutPins.isEmpty)
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+        folderBodyContent(
+            items: visibleFolderBodyItems,
+            reportsGeometry: true,
+            reportsFolderChildGeometry: folder.isOpen
+        )
+        .allowsHitTesting(folder.isOpen || !visibleCollapsedProjectionIDs.isEmpty)
+        .animation(isInteractive ? Self.zenFolderContentAnimation : nil, value: folder.isOpen)
+        .animation(isInteractive ? Self.zenFolderContentAnimation : nil, value: visibleFolderBodyItems)
+        .animation(isInteractive ? Self.zenFolderContentAnimation : nil, value: displayedCollapsedProjectionIDs)
+        .animation(isInteractive ? Self.zenFolderContentAnimation : nil, value: targetCollapsedProjectionIDs)
     }
 
     private var folderBodyHeightMeasurements: some View {
@@ -397,18 +446,14 @@ struct TabFolderView: View {
                 folderGlyphPresentation: folderGlyphPresentation,
                 folderGlyphPalette: folderShellPalette,
                 onActivate: {
-                    withAnimation(Self.zenFolderContentAnimation) {
-                        folder.isOpen.toggle()
-                    }
+                    toggleFolderOpenState()
                 },
                 isEnabled: !isRenaming
                     && isInteractive
             ),
             primaryAction: {
                 guard !isRenaming else { return }
-                withAnimation(Self.zenFolderContentAnimation) {
-                    folder.isOpen.toggle()
-                }
+                toggleFolderOpenState()
             },
             sourceID: "folder-header-\(folder.id.uuidString)",
             entries: {
@@ -504,37 +549,41 @@ struct TabFolderView: View {
     }
 
     private var collapsedFolderContent: some View {
-        VStack(spacing: 0) {
-            ForEach(collapsedProjectedShortcutPins, id: \.id) { pin in
-                folderShortcutView(pin)
-            }
-        }
-        .padding(.leading, Self.folderContentLeadingPadding)
-        .padding(.top, 2)
-        .padding(.bottom, 4)
+        folderBodyContent(
+            items: visibleCollapsedProjectionIDs.map(FolderListItem.shortcut),
+            reportsGeometry: false,
+            reportsFolderChildGeometry: false
+        )
     }
 
     private func folderContent(reportsGeometry: Bool = true) -> some View {
-        let items = folderItems
-        
+        folderBodyContent(
+            items: folderItems,
+            reportsGeometry: reportsGeometry,
+            reportsFolderChildGeometry: reportsGeometry && folder.isOpen
+        )
+    }
+
+    private func folderBodyContent(
+        items: [FolderListItem],
+        reportsGeometry: Bool,
+        reportsFolderChildGeometry: Bool
+    ) -> some View {
         return VStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.element) { index, item in
                 switch item {
                 case .shortcut(let pinId):
                     if let pin = shortcutPinsInFolder.first(where: { $0.id == pinId }) {
-                        if reportsGeometry {
-                            folderShortcutView(pin)
-                                .sidebarFolderChildDropGeometry(
-                                    spaceId: space.id,
-                                    folderId: folder.id,
-                                    childId: pin.id,
-                                    index: index,
-                                    generation: dragState.sidebarGeometryGeneration,
-                                    isActive: isInteractive && folder.isOpen
-                                )
-                        } else {
-                            folderShortcutView(pin)
-                        }
+                        folderShortcutView(pin)
+                            .sidebarFolderChildDropGeometry(
+                                spaceId: space.id,
+                                folderId: folder.id,
+                                childId: pin.id,
+                                index: index,
+                                generation: dragState.sidebarGeometryGeneration,
+                                isActive: isInteractive && reportsGeometry && reportsFolderChildGeometry
+                            )
+                            .transition(folderContentRowTransition)
                     }
                 }
             }
@@ -545,6 +594,7 @@ struct TabFolderView: View {
             RoundedRectangle(cornerRadius: 10)
                 .fill(Color.clear)
         )
+        .animation(isInteractive ? Self.zenFolderContentAnimation : nil, value: items)
     }
 
     private func folderShortcutView(_ pin: ShortcutPin) -> some View {
@@ -723,8 +773,21 @@ struct TabFolderView: View {
     }
 
     private func alphabetizeTabs() {
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+        withAnimation(Self.zenFolderContentAnimation) {
             browserManager.tabManager.alphabetizeFolderPins(folder.id, in: space.id)
+        }
+    }
+
+    private var folderContentRowTransition: AnyTransition {
+        .asymmetric(
+            insertion: .opacity.combined(with: .move(edge: .top)),
+            removal: .opacity.combined(with: .move(edge: .top))
+        )
+    }
+
+    private func toggleFolderOpenState() {
+        withAnimation(Self.zenFolderContentAnimation) {
+            folder.isOpen.toggle()
         }
     }
 
@@ -758,6 +821,7 @@ struct TabFolderView: View {
         SumiFolderGlyphPresentationState(
             iconValue: folder.icon,
             isOpen: folderPreviewIsOpen,
+            isDragOpenPreviewed: isFolderDragOpenPreviewed,
             hasActiveProjection: folderHasProjectedContent
         )
     }
@@ -767,7 +831,7 @@ struct TabFolderView: View {
     }
 
     private var folderHasProjectedContent: Bool {
-        folderProjectionState.hasActiveProjection || folderHasActiveSelection || !collapsedProjectedShortcutPins.isEmpty
+        folderProjectionState.hasActiveProjection || folderHasActiveSelection || hasCollapsedProjectionForLayout
     }
 
     private func scheduleProjectionStateRefresh() {
@@ -780,6 +844,21 @@ struct TabFolderView: View {
             projectedChildIDs: projectedIDs,
             hasActiveProjection: newHasActiveProjection
         )
+    }
+
+    private func syncDisplayedCollapsedProjectionIDs(animated: Bool) {
+        let targetIDs = targetCollapsedProjectionIDs
+        guard displayedCollapsedProjectionIDs != targetIDs else { return }
+
+        let update = {
+            displayedCollapsedProjectionIDs = targetIDs
+        }
+
+        if animated && isInteractive {
+            withAnimation(Self.zenFolderContentAnimation, update)
+        } else {
+            update()
+        }
     }
 
     private func updateMeasuredExpandedFolderContentHeight(_ height: CGFloat) {
@@ -884,11 +963,27 @@ enum SumiFolderGlyphShellState: Equatable {
 
 struct SumiFolderGlyphPresentationState: Equatable {
     let shellState: SumiFolderGlyphShellState
+    let isDragOpenPreviewed: Bool
     let isActive: Bool
     let bundledIconName: String?
 
     init(iconValue: String?, isOpen: Bool, hasActiveProjection: Bool) {
+        self.init(
+            iconValue: iconValue,
+            isOpen: isOpen,
+            isDragOpenPreviewed: false,
+            hasActiveProjection: hasActiveProjection
+        )
+    }
+
+    init(
+        iconValue: String?,
+        isOpen: Bool,
+        isDragOpenPreviewed: Bool,
+        hasActiveProjection: Bool
+    ) {
         shellState = isOpen ? .open : .closed
+        self.isDragOpenPreviewed = isDragOpenPreviewed
         isActive = !isOpen && hasActiveProjection
 
         switch SumiZenFolderIconCatalog.resolveFolderIcon(iconValue) {
@@ -913,13 +1008,16 @@ struct SumiFolderGlyphPresentationState: Equatable {
 }
 
 struct SumiFolderGlyphView: View {
-    private static let shellAnimation = Animation.timingCurve(0.42, 0, 0, 1, duration: 0.3)
+    private static let shellAnimation = Animation.easeInOut(duration: 0.16)
 
     let presentation: SumiFolderGlyphPresentationState
     let palette: SumiFolderGlyphPalette
 
+    @State private var renderedShellIsOpen: Bool?
+
     var body: some View {
         GeometryReader { geometry in
+            let shellIsOpen = renderedShellIsOpen ?? presentation.isOpen
             let unitScale = min(
                 geometry.size.width / SumiFolderGlyphMetrics.canvasDimension,
                 geometry.size.height / SumiFolderGlyphMetrics.canvasDimension
@@ -932,21 +1030,18 @@ struct SumiFolderGlyphView: View {
                 canvasLayer(scale: unitScale) {
                     backLayer(scale: unitScale)
                 }
-                .modifier(backTransform(scale: unitScale))
-                .animation(Self.shellAnimation, value: presentation.isOpen)
+                .modifier(backTransform(scale: unitScale, isOpen: shellIsOpen))
 
                 canvasLayer(scale: unitScale) {
                     frontLayer(scale: unitScale)
                 }
-                .modifier(frontTransform(scale: unitScale))
-                .animation(Self.shellAnimation, value: presentation.isOpen)
+                .modifier(frontTransform(scale: unitScale, isOpen: shellIsOpen))
 
                 if presentation.showsCustomIcon {
                     canvasLayer(scale: unitScale) {
                         iconLayer(scale: unitScale)
                     }
-                    .modifier(frontTransform(scale: unitScale))
-                    .animation(Self.shellAnimation, value: presentation.isOpen)
+                    .modifier(frontTransform(scale: unitScale, isOpen: shellIsOpen))
                     .transition(.identity)
                 }
 
@@ -954,8 +1049,7 @@ struct SumiFolderGlyphView: View {
                     canvasLayer(scale: unitScale) {
                         dotsLayer(scale: unitScale)
                     }
-                    .modifier(frontTransform(scale: unitScale))
-                    .animation(Self.shellAnimation, value: presentation.isOpen)
+                    .modifier(frontTransform(scale: unitScale, isOpen: shellIsOpen))
                     .transition(.identity)
                 }
             }
@@ -964,6 +1058,12 @@ struct SumiFolderGlyphView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .contrast(1.25)
+        .onAppear {
+            renderedShellIsOpen = presentation.isOpen
+        }
+        .onChange(of: presentation.isOpen) { _, isOpen in
+            updateRenderedShellState(isOpen)
+        }
     }
 
     private func canvasLayer<Content: View>(
@@ -1065,22 +1165,30 @@ struct SumiFolderGlyphView: View {
         .foregroundStyle(palette.iconForeground.opacity(0.94))
     }
 
-    private func backTransform(scale: CGFloat) -> SumiFolderElementTransform {
+    private func backTransform(scale: CGFloat, isOpen: Bool) -> SumiFolderElementTransform {
         elementTransform(
-            xDegrees: presentation.isOpen ? SumiFolderGlyphMetrics.openSkewDegrees : 0,
-            scale: presentation.isOpen ? SumiFolderGlyphMetrics.openScale : 1,
-            offset: presentation.isOpen ? SumiFolderGlyphMetrics.backOpenOffset : .zero,
+            xDegrees: isOpen ? SumiFolderGlyphMetrics.openSkewDegrees : 0,
+            scale: isOpen ? SumiFolderGlyphMetrics.openScale : 1,
+            offset: isOpen ? SumiFolderGlyphMetrics.backOpenOffset : .zero,
             unitScale: scale
         )
     }
 
-    private func frontTransform(scale: CGFloat) -> SumiFolderElementTransform {
+    private func frontTransform(scale: CGFloat, isOpen: Bool) -> SumiFolderElementTransform {
         elementTransform(
-            xDegrees: presentation.isOpen ? -SumiFolderGlyphMetrics.openSkewDegrees : 0,
-            scale: presentation.isOpen ? SumiFolderGlyphMetrics.openScale : 1,
-            offset: presentation.isOpen ? SumiFolderGlyphMetrics.frontOpenOffset : .zero,
+            xDegrees: isOpen ? -SumiFolderGlyphMetrics.openSkewDegrees : 0,
+            scale: isOpen ? SumiFolderGlyphMetrics.openScale : 1,
+            offset: isOpen ? SumiFolderGlyphMetrics.frontOpenOffset : .zero,
             unitScale: scale
         )
+    }
+
+    private func updateRenderedShellState(_ isOpen: Bool) {
+        let update = {
+            renderedShellIsOpen = isOpen
+        }
+
+        withAnimation(Self.shellAnimation, update)
     }
 
     private func elementTransform(

@@ -300,9 +300,6 @@ struct WindowView: View {
             presentationContext: presentationContext
         )
         .id("docked-sidebar-column")
-        .transaction { transaction in
-            transaction.disablesAnimations = true
-        }
         .frame(width: presentationContext.sidebarWidth)
         .frame(maxHeight: .infinity)
         .alwaysArrowCursor()
