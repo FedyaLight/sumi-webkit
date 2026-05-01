@@ -62,12 +62,6 @@ enum SidebarHoverOverlayHostMountPolicy {
     }
 }
 
-enum SidebarHoverOverlayCursorOwnerPolicy {
-    static func shouldMountCursorOwner(shouldMountCollapsedHost: Bool) -> Bool {
-        shouldMountCollapsedHost
-    }
-}
-
 enum SidebarHoverOverlayMetrics {
     static let cornerRadius: CGFloat = 12
     static let hiddenPadding: CGFloat = 18
@@ -126,12 +120,6 @@ struct SidebarHoverOverlayView: View {
         )
     }
 
-    private var shouldMountCollapsedCursorOwner: Bool {
-        SidebarHoverOverlayCursorOwnerPolicy.shouldMountCursorOwner(
-            shouldMountCollapsedHost: shouldMountCollapsedSidebarHost
-        )
-    }
-
     private var overlayBaseSidebarWidth: CGFloat {
         SidebarPresentationContext.collapsedSidebarWidth(
             sidebarWidth: windowState.sidebarWidth,
@@ -158,14 +146,6 @@ struct SidebarHoverOverlayView: View {
             sidebarWidth: presentationContext.sidebarWidth,
             hiddenPadding: SidebarHoverOverlayMetrics.hiddenPadding
         )
-    }
-
-    private var usesCollapsedChrome: Bool {
-        presentationContext.isCollapsedOverlay
-    }
-
-    private var drawsCollapsedSidebarChromeBackground: Bool {
-        presentationContext.mode == .collapsedVisible
     }
 
     private var sidebarPanelOffset: CGFloat {
@@ -204,9 +184,6 @@ struct SidebarHoverOverlayView: View {
 
                     if shouldMountCollapsedSidebarHost {
                         sidebarHost
-                        if shouldMountCollapsedCursorOwner {
-                            collapsedCursorOwner
-                        }
                     }
                 }
                 .frame(
@@ -219,17 +196,6 @@ struct SidebarHoverOverlayView: View {
         .onChange(of: presentationContext) { _, _ in
             SidebarDragState.shared.requestGeometryRefresh()
         }
-    }
-
-    private var collapsedCursorOwner: some View {
-        CollapsedSidebarCursorOwnerRepresentable(isEnabled: sidebarPanelAllowsHitTesting)
-            .frame(width: presentationContext.sidebarWidth)
-            .frame(maxHeight: .infinity)
-            .zIndex(5001)
-            .offset(x: sidebarPanelOffset)
-            .opacity(sidebarPanelOpacity)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
     }
 
     private var sidebarHost: some View {
@@ -249,31 +215,7 @@ struct SidebarHoverOverlayView: View {
         }
         .frame(width: presentationContext.sidebarWidth)
         .frame(maxHeight: .infinity)
-        .background {
-            ZStack {
-                themeContext.tokens(settings: sumiSettings).windowBackground
-                    .opacity(drawsCollapsedSidebarChromeBackground ? 1 : 0)
-                SpaceGradientBackgroundView(surface: .toolbarChrome)
-                    .environmentObject(browserManager)
-                    .environment(windowState)
-                    .opacity(drawsCollapsedSidebarChromeBackground ? 1 : 0)
-            }
-            .clipShape(
-                RoundedRectangle(
-                    cornerRadius: usesCollapsedChrome ? SidebarHoverOverlayMetrics.cornerRadius : 0,
-                    style: .continuous
-                )
-            )
-        }
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: usesCollapsedChrome ? SidebarHoverOverlayMetrics.cornerRadius : 0,
-                style: .continuous
-            )
-        )
-        .compositingGroup()
         .zIndex(5000)
-        .alwaysArrowCursor()
         .offset(x: sidebarPanelOffset)
         .opacity(sidebarPanelOpacity)
         .allowsHitTesting(sidebarPanelAllowsHitTesting)

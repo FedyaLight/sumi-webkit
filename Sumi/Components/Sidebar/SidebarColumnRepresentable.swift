@@ -16,11 +16,38 @@ struct SidebarColumnHostedRootView: View {
                         .zIndex(2000)
                 }
             }
+            .background {
+                collapsedSidebarChromeBackground
+            }
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: presentationContext.isCollapsedOverlay
+                        ? SidebarHoverOverlayMetrics.cornerRadius
+                        : 0,
+                    style: .continuous
+                )
+            )
             .sidebarHostEnvironment(environmentContext)
             .environment(\.sidebarPresentationContext, presentationContext)
             // `NSHostingController` roots do not inherit `ContentView`’s `.ignoresSafeArea`; without this,
             // macOS reserves a title-bar safe area above the sidebar chrome when using `fullSizeContentView`.
             .ignoresSafeArea(.container, edges: .top)
+    }
+
+    @ViewBuilder
+    private var collapsedSidebarChromeBackground: some View {
+        if presentationContext.isCollapsedOverlay {
+            ZStack {
+                environmentContext.resolvedThemeContext
+                    .tokens(settings: environmentContext.sumiSettings)
+                    .windowBackground
+                    .opacity(presentationContext.mode == .collapsedVisible ? 1 : 0)
+                SpaceGradientBackgroundView(surface: .toolbarChrome)
+                    .environmentObject(environmentContext.browserManager)
+                    .environment(environmentContext.windowState)
+                    .opacity(presentationContext.mode == .collapsedVisible ? 1 : 0)
+            }
+        }
     }
 }
 
@@ -62,7 +89,7 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
     var presentationContext: SidebarPresentationContext
 
     func makeNSViewController(context: Context) -> SidebarColumnViewController {
-        SidebarColumnViewController()
+        SidebarColumnViewController(usesCollapsedPanelRoot: presentationContext.isCollapsedOverlay)
     }
 
     func updateNSViewController(_ controller: SidebarColumnViewController, context: Context) {
@@ -80,7 +107,8 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
             root: root,
             width: presentationContext.sidebarWidth,
             contextMenuController: windowState.sidebarContextMenuController,
-            capturesPanelBackgroundPointerEvents: presentationContext.capturesPanelBackgroundPointerEvents
+            capturesPanelBackgroundPointerEvents: presentationContext.capturesPanelBackgroundPointerEvents,
+            isCollapsedPanelHitTestingEnabled: presentationContext.mode == .collapsedVisible
         )
         #if DEBUG
         SidebarDebugMetrics.recordCollapsedSidebarHost(
@@ -89,11 +117,6 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
             isMounted: presentationContext.isCollapsedOverlay
         )
         #endif
-        controller.updatePointerSuppression(
-            presentationContext: presentationContext,
-            windowState: windowState,
-            windowRegistry: windowRegistry
-        )
     }
 
     static func dismantleNSViewController(_ nsViewController: SidebarColumnViewController, coordinator: ()) {
