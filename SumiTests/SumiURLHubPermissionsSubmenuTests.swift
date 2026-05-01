@@ -5,7 +5,7 @@ import XCTest
 
 final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
     func testURLHubDefinesPermissionsRowBelowCookiesAndUsesSubmenuMode() throws {
-        let source = try sourceFile("Sumi/Components/Sidebar/URLBarView.swift")
+        let source = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
 
         XCTAssertTrue(source.contains("case permissions"))
         XCTAssertTrue(source.contains("SumiCurrentSitePermissionsView("))
@@ -18,7 +18,7 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
     }
 
     func testURLHubPermissionsRowKeepsCookiesAndTrackingRows() throws {
-        let source = try sourceFile("Sumi/Components/Sidebar/URLBarView.swift")
+        let source = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
 
         XCTAssertTrue(source.contains("kind: .cookies"))
         XCTAssertTrue(source.contains("kind: .tracking("))
@@ -27,7 +27,10 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
     }
 
     func testURLHubPermissionsSubmenuUsesNonLiveSystemSnapshotModeAndIdentifiers() throws {
-        let urlBar = try sourceFile("Sumi/Components/Sidebar/URLBarView.swift")
+        let urlBar = try [
+            sourceFile("Sumi/Components/Sidebar/URLBarTrailingActions.swift"),
+            sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift"),
+        ].joined(separator: "\n")
         let permissionsView = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionsView.swift")
 
         XCTAssertTrue(urlBar.contains(".accessibilityIdentifier(\"urlbar-site-controls-button\")"))
@@ -38,7 +41,7 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
     }
 
     func testURLHubPermissionsRowUsesHandIcon() throws {
-        let urlBar = try sourceFile("Sumi/Components/Sidebar/URLBarView.swift")
+        let urlBar = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
         let iconCatalog = try sourceFile("Sumi/Permissions/UI/SumiPermissionIconCatalog.swift")
 
         XCTAssertTrue(urlBar.contains("fallbackSystemName: \"hand.raised\""))
@@ -46,7 +49,7 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
     }
 
     func testURLHubFooterDoesNotExposeRedundantSiteSettingsMenu() throws {
-        let source = try sourceFile("Sumi/Components/Sidebar/URLBarView.swift")
+        let source = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
 
         XCTAssertFalse(source.contains("Button(\"Site Settings\")"))
         XCTAssertFalse(source.contains("fallbackSystemName: \"ellipsis\""))
@@ -54,7 +57,7 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
     }
 
     func testTopLevelAutoplayControlWasMovedOutOfSiteControlsRows() throws {
-        let source = try sourceFile("Sumi/Components/Sidebar/URLBarView.swift")
+        let source = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
 
         XCTAssertFalse(source.contains("kind: .autoplay("))
         XCTAssertFalse(source.contains("id: \"autoplay\",\n                        chromeIconName"))

@@ -271,11 +271,13 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
     }
 
     func testURLBarContainsExactlyOneDynamicPermissionIndicatorAnchor() throws {
-        let source = try sourceFile("Sumi/Components/Sidebar/URLBarView.swift")
+        let trailingSource = try sourceFile("Sumi/Components/Sidebar/URLBarTrailingActions.swift")
+        let permissionSource = try sourceFile("Sumi/Components/Sidebar/URLBarPermissionViews.swift")
+        let source = trailingSource + "\n" + permissionSource
         let trailingActions = try sourceSection(
-            source,
-            from: "private func trailingActions(for currentTab: Tab) -> some View",
-            to: "private func copyLinkButton(for currentTab: Tab) -> some View"
+            trailingSource,
+            from: "func trailingActions(for currentTab: Tab) -> some View",
+            to: "func copyLinkButton(for currentTab: Tab) -> some View"
         )
 
         XCTAssertEqual(source.components(separatedBy: "SumiPermissionIndicatorButton(").count - 1, 1)
@@ -303,12 +305,7 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
     }
 
     func testPermissionChromeUsesNeutralNonAccentColors() throws {
-        let urlBarSource = try sourceFile("Sumi/Components/Sidebar/URLBarView.swift")
-        let permissionIndicatorSource = try sourceSection(
-            urlBarSource,
-            from: "private struct SumiPermissionIndicatorButton: View",
-            to: "private struct URLBarZoomPopoverView: View"
-        )
+        let permissionIndicatorSource = try sourceFile("Sumi/Components/Sidebar/URLBarPermissionViews.swift")
         let promptSource = try sourceFile("Sumi/Permissions/UI/SumiPermissionPromptView.swift")
         let systemStateSource = try sourceFile("Sumi/Permissions/UI/SumiPermissionPromptSystemStateView.swift")
 

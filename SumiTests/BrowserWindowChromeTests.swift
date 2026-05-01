@@ -186,13 +186,34 @@ final class BrowserWindowChromeTests: XCTestCase {
         }
     }
 
-    func testBrowserChromeKeepsNativeControlsVisibleInFullscreen() {
+    func testBrowserChromeKeepsNativeControlsVisibleInFullscreen() async {
         let window = WindowChromeTestSupport.makeBrowserWindow()
+        let renderState = BrowserWindowTrafficLightRenderState()
+        let coordinator = BrowserWindowNativeTrafficLightVisibilityBridge.Coordinator()
+        defer {
+            coordinator.detach()
+        }
 
-        window.styleMask = window.styleMask.union(.fullScreen)
-        window.syncNativeStandardWindowButtonsForBrowserChrome(visibleOutsideFullScreen: false)
+        coordinator.attach(to: window)
+        coordinator.update(
+            renderState: renderState,
+            visibleOutsideFullScreen: false,
+            horizontalOffset: 0,
+            verticalOffset: 0,
+            revealDelay: 0
+        )
+        window.setNativeStandardWindowButtonsForBrowserChromeVisible(false)
+
+        NotificationCenter.default.post(name: NSWindow.didEnterFullScreenNotification, object: window)
+        for _ in 0..<10 {
+            if renderState.isNativeClusterVisible {
+                break
+            }
+            await Task.yield()
+        }
 
         assertNativeBrowserControlsVisible(window)
+        XCTAssertTrue(renderState.isNativeClusterVisible)
     }
 
     func testMainWindowSceneUsesHiddenTitlebarStyle() throws {

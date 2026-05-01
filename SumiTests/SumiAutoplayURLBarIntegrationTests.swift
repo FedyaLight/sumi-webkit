@@ -4,7 +4,7 @@ import XCTest
 
 final class SumiAutoplayURLBarIntegrationTests: XCTestCase {
     func testURLBarAutoplayRowUsesCanonicalStoreAdapter() throws {
-        let source = try sourceFile("Sumi/Components/Sidebar/URLBarView.swift")
+        let source = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
 
         XCTAssertTrue(source.contains("SumiAutoplayPolicyStoreAdapter.shared"))
         XCTAssertTrue(source.contains(".setPolicy("))
