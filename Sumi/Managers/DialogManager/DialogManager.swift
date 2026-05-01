@@ -34,7 +34,7 @@ class DialogManager {
     ) {
         onWillPresentModal?()
         endPresentedSessionIfNeeded()
-        let resolvedWindow = source?.window ?? window ?? presentationWindowResolver()
+        let resolvedWindow = source?.window?.parent ?? source?.window ?? window ?? presentationWindowResolver()
         presentedWindow = resolvedWindow
         presentedSource = source
         presentedSessionToken = source.flatMap {
