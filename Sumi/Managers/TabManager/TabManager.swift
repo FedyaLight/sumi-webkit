@@ -647,6 +647,16 @@ class TabManager: ObservableObject {
         return spacePinnedShortcuts[spaceId]?.first(where: { $0.id == pin.id })
     }
 
+    func adjustedSameContainerInsertionIndex(
+        currentIndex: Int,
+        proposedIndex: Int
+    ) -> Int {
+        let safeProposedIndex = max(0, proposedIndex)
+        return currentIndex < safeProposedIndex
+            ? max(0, safeProposedIndex - 1)
+            : safeProposedIndex
+    }
+
     @discardableResult
     func reorderTopLevelSpacePinnedShortcut(
         _ pin: ShortcutPin,
@@ -658,9 +668,13 @@ class TabManager: ObservableObject {
             if case .shortcut(let existingPin) = $0 { return existingPin.id == pin.id }
             return false
         }) else { return nil }
-        guard currentIndex != targetIndex else { return pin }
+        let adjustedIndex = adjustedSameContainerInsertionIndex(
+            currentIndex: currentIndex,
+            proposedIndex: targetIndex
+        )
+        guard currentIndex != adjustedIndex else { return pin }
         let moving = items.remove(at: currentIndex)
-        let safeIndex = max(0, min(targetIndex, items.count))
+        let safeIndex = max(0, min(adjustedIndex, items.count))
         items.insert(moving, at: safeIndex)
         applyTopLevelSpacePinnedOrder(items, for: spaceId)
         return spacePinnedShortcuts[spaceId]?.first(where: { $0.id == pin.id })
@@ -677,9 +691,13 @@ class TabManager: ObservableObject {
             if case .folder(let existingFolder) = $0 { return existingFolder.id == folder.id }
             return false
         }) else { return false }
-        guard currentIndex != targetIndex else { return false }
+        let adjustedIndex = adjustedSameContainerInsertionIndex(
+            currentIndex: currentIndex,
+            proposedIndex: targetIndex
+        )
+        guard currentIndex != adjustedIndex else { return false }
         let moving = items.remove(at: currentIndex)
-        let safeIndex = max(0, min(targetIndex, items.count))
+        let safeIndex = max(0, min(adjustedIndex, items.count))
         items.insert(moving, at: safeIndex)
         applyTopLevelSpacePinnedOrder(items, for: spaceId)
         scheduleStructuralPersistence()

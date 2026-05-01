@@ -96,6 +96,26 @@ struct SidebarEssentialsLayoutMetrics: Equatable {
     var itemSize: CGSize
     var gridSpacing: CGFloat
     var canAcceptDrop: Bool
+
+    var dropHitFrame: CGRect {
+        guard visibleItemCount == 0, canAcceptDrop else {
+            return dropFrame
+        }
+
+        let minimumEmptyFrame = CGRect(
+            x: dropFrame.minX,
+            y: dropFrame.minY,
+            width: max(dropFrame.width, frame.width, itemSize.width),
+            height: max(dropFrame.height, itemSize.height)
+        )
+        return dropSlotFrames.reduce(dropFrame.union(minimumEmptyFrame)) { partial, slot in
+            partial.union(slot.frame)
+        }
+    }
+
+    func containsDropLocation(_ location: CGPoint) -> Bool {
+        dropHitFrame.contains(location)
+    }
 }
 
 struct SidebarEssentialsDropSlotMetrics: Equatable {

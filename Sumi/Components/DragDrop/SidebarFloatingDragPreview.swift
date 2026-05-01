@@ -282,7 +282,7 @@ struct SidebarFloatingDragPreview: View {
     }
 }
 
-private struct SidebarTabRowPreviewVisual: View {
+struct SidebarTabRowPreviewVisual: View {
     let title: String
     let icon: Image
 

@@ -61,7 +61,7 @@ extension SpaceView {
     private var pinnedEmptyDropShowsRowPreview: Bool {
         showsEmptyPinnedDropPlaceholder
             && isHoveringThisSpacePinnedWhileEmpty
-            && inlinePinnedGhostAsset != nil
+            && inlinePinnedGhostPresentation != nil
     }
 
     private var spacePinnedItems: [SpacePinnedListItem] {
@@ -211,13 +211,17 @@ extension SpaceView {
     private var pinnedRevealStrip: some View {
         VStack(spacing: 0) {
             if showsEmptyPinnedDropPlaceholder {
-                if pinnedEmptyDropShowsRowPreview, let asset = inlinePinnedGhostAsset {
-                    Image(nsImage: asset.image)
-                        .resizable()
-                        .interpolation(.high)
-                        .antialiased(true)
-                        .frame(width: asset.size.width, height: asset.size.height)
+                if pinnedEmptyDropShowsRowPreview,
+                   let presentation = inlinePinnedGhostPresentation {
+                    SidebarTabRowPreviewVisual(
+                        title: presentation.title,
+                        icon: presentation.icon
+                    )
+                        .frame(height: SidebarRowLayout.rowHeight)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .opacity(0.82)
+                        .scaleEffect(0.98)
+                        .allowsHitTesting(false)
                 } else {
                     SidebarPinnedEmptyDropDashPlaceholder()
                 }
@@ -233,9 +237,23 @@ extension SpaceView {
         )
     }
 
-    private var inlinePinnedGhostAsset: SidebarDragPreviewAsset? {
-        dragState.previewAssets[.row]
-            ?? dragState.previewKind.flatMap { dragState.previewAssets[$0] }
+    private var inlinePinnedGhostPresentation: (title: String, icon: Image)? {
+        if let model = dragState.previewModel {
+            return (
+                title: model.item.title,
+                icon: model.previewIcon ?? Image(systemName: "globe")
+            )
+        }
+
+        guard let draggedId = dragState.activeDragItemId,
+              let proxyTab = browserManager.tabManager.resolveDragTab(for: draggedId) else {
+            return nil
+        }
+
+        return (
+            title: proxyTab.name,
+            icon: proxyTab.favicon
+        )
     }
 
     private func mixedFolderView(_ folder: TabFolder, topLevelPinnedIndex: Int) -> some View {

@@ -453,8 +453,11 @@ private extension TabManager {
             }
         }
 
-        guard currentIndex != nil else { return proposedIndex }
-        return proposedIndex
+        guard let currentIndex else { return proposedIndex }
+        return adjustedSameContainerInsertionIndex(
+            currentIndex: currentIndex,
+            proposedIndex: proposedIndex
+        )
     }
 
     func cloneShortcutPin(

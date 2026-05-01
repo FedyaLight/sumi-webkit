@@ -564,7 +564,7 @@ enum SidebarDropResolver {
         guard let hoveredPage,
               let metrics = state.essentialsLayoutMetricsBySpace[hoveredPage.spaceId],
               scope?.matches(profileId: metrics.profileId) != false,
-              metrics.dropFrame.contains(location) else {
+              metrics.containsDropLocation(location) else {
             _ = draggedItem
             return nil
         }

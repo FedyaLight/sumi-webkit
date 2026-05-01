@@ -1078,6 +1078,56 @@ final class SidebarCurrentDragResolverTests: XCTestCase {
         XCTAssertEqual(resolution.slot, .empty)
     }
 
+    func testEmptyEssentialsAcceptsHoverWithinFutureTileFrameImmediately() {
+        let spaceId = UUID()
+        let itemId = UUID()
+        let location = CGPoint(x: 24, y: 20)
+        registerSidebarSectionFrame(
+            state,
+            spaceId: spaceId,
+            section: .essentials,
+            frame: CGRect(x: 0, y: 0, width: 240, height: 6)
+        )
+        registerSidebarEssentialsMetrics(
+            state,
+            spaceId: spaceId,
+            frame: CGRect(x: 0, y: 0, width: 240, height: 6),
+            dropFrame: CGRect(x: 0, y: 0, width: 240, height: 6),
+            itemCount: 0,
+            columnCount: 1,
+            rowCount: 1,
+            itemSize: CGSize(width: 96, height: 32),
+            gridSpacing: 8,
+            visibleItemCount: 0,
+            visibleRowCount: 1,
+            maxDropRowCount: 1,
+            dropSlotFrames: [
+                SidebarEssentialsDropSlotMetrics(
+                    slot: 0,
+                    frame: CGRect(x: 0, y: 0, width: 96, height: 32)
+                )
+            ]
+        )
+        state.beginInternalDragSession(
+            itemId: itemId,
+            location: location,
+            previewKind: .row,
+            previewAssets: [
+                .row: makePreviewAsset(),
+                .essentialsTile: makePreviewAsset(),
+            ]
+        )
+
+        let resolution = SidebarDropResolver.updateState(
+            location: location,
+            state: state,
+            draggedItem: SumiDragItem(tabId: itemId, title: "Dragged")
+        )
+
+        XCTAssertEqual(resolution.slot, .essentials(slot: 0))
+        XCTAssertEqual(state.hoveredSlot, .essentials(slot: 0))
+    }
+
     func testEssentialsResolutionUsesExplicitSlotFramesForHoverPreviewAndFinalSlot() {
         let spaceId = UUID()
         let itemId = UUID()
@@ -5049,13 +5099,64 @@ final class SidebarDragOperationParityTests: XCTestCase {
                 payload: .tab(tabManager.dragProxyTab(for: first)),
                 fromContainer: .spacePinned(space.id),
                 toContainer: .spacePinned(space.id),
-                toIndex: 1
+                toIndex: 2
             )
         )
 
         let reordered = tabManager.spacePinnedPins(for: space.id)
         XCTAssertEqual(reordered.map(\.id), [second.id, first.id])
         XCTAssertEqual(reordered.map(\.index), [0, 1])
+    }
+
+    func testPinnedDownwardVisualSlotDropsBetweenLowerItemsInsteadOfTail() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let space = tabManager.createSpace(name: "Workspace")
+        let first = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: space.id,
+            index: 0,
+            launchURL: URL(string: "https://example.com/one")!,
+            title: "One"
+        )
+        let second = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: space.id,
+            index: 1,
+            launchURL: URL(string: "https://example.com/two")!,
+            title: "Two"
+        )
+        let third = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: space.id,
+            index: 2,
+            launchURL: URL(string: "https://example.com/three")!,
+            title: "Three"
+        )
+        let fourth = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: space.id,
+            index: 3,
+            launchURL: URL(string: "https://example.com/four")!,
+            title: "Four"
+        )
+        tabManager.setSpacePinnedShortcuts([first, second, third, fourth], for: space.id)
+
+        tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .pin(first),
+                fromContainer: .spacePinned(space.id),
+                toContainer: .spacePinned(space.id),
+                toIndex: 3
+            )
+        )
+
+        let reordered = tabManager.spacePinnedPins(for: space.id)
+        XCTAssertEqual(reordered.map(\.id), [second.id, third.id, first.id, fourth.id])
+        XCTAssertEqual(reordered.map(\.index), [0, 1, 2, 3])
     }
 
     func testSameContainerReorderForEssentialsUpdatesIndices() throws {
@@ -5084,7 +5185,7 @@ final class SidebarDragOperationParityTests: XCTestCase {
                 payload: .tab(tabManager.dragProxyTab(for: first)),
                 fromContainer: .essentials,
                 toContainer: .essentials,
-                toIndex: 1
+                toIndex: 2
             )
         )
 
@@ -5176,7 +5277,7 @@ final class SidebarDragOperationParityTests: XCTestCase {
                 payload: .tab(tabManager.dragProxyTab(for: first)),
                 fromContainer: .folder(folder.id),
                 toContainer: .folder(folder.id),
-                toIndex: 1
+                toIndex: 2
             )
         )
 
@@ -5204,6 +5305,27 @@ final class SidebarDragOperationParityTests: XCTestCase {
 
         let reordered = tabManager.tabsBySpace[space.id] ?? []
         XCTAssertEqual(reordered.map(\.id), [second.id, third.id, first.id])
+        XCTAssertEqual(reordered.map(\.index), [0, 1, 2])
+    }
+
+    func testRegularDownwardVisualSlotDropsBetweenLowerTabsInsteadOfTail() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let space = tabManager.createSpace(name: "Workspace")
+        let first = tabManager.createNewTab(url: "https://example.com/one", in: space)
+        let second = tabManager.createNewTab(url: "https://example.com/two", in: space)
+        let third = tabManager.createNewTab(url: "https://example.com/three", in: space)
+
+        tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .tab(first),
+                fromContainer: .spaceRegular(space.id),
+                toContainer: .spaceRegular(space.id),
+                toIndex: 2
+            )
+        )
+
+        let reordered = tabManager.tabsBySpace[space.id] ?? []
+        XCTAssertEqual(reordered.map(\.id), [second.id, first.id, third.id])
         XCTAssertEqual(reordered.map(\.index), [0, 1, 2])
     }
 
