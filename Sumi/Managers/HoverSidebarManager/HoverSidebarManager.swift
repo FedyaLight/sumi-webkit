@@ -13,18 +13,11 @@ struct HoverSidebarEventMonitorClient {
         NSEvent.EventTypeMask,
         @escaping (NSEvent) -> NSEvent?
     ) -> Any?
-    let addGlobalMonitor: (
-        NSEvent.EventTypeMask,
-        @escaping (NSEvent) -> Void
-    ) -> Any?
     let removeMonitor: (Any) -> Void
 
     static let live = HoverSidebarEventMonitorClient(
         addLocalMonitor: { mask, handler in
             NSEvent.addLocalMonitorForEvents(matching: mask, handler: handler)
-        },
-        addGlobalMonitor: { mask, handler in
-            NSEvent.addGlobalMonitorForEvents(matching: mask, handler: handler)
         },
         removeMonitor: { monitor in
             NSEvent.removeMonitor(monitor)
@@ -79,8 +72,8 @@ enum HoverSidebarVisibilityPolicy {
 }
 
 /// Manages reveal/hide of the overlay sidebar when the real sidebar is collapsed.
-/// Uses a local monitor for in-app drag responsiveness plus a minimal global mouse-move
-/// monitor to catch slight overshoot beyond the selected window boundary.
+/// Uses a local monitor for in-app hover and drag responsiveness without global
+/// event monitoring.
 final class HoverSidebarManager: ObservableObject {
     // MARK: - Published State
     @Published var isOverlayVisible: Bool = false
@@ -103,7 +96,6 @@ final class HoverSidebarManager: ObservableObject {
     private var hostedWindowId: UUID?
 
     // MARK: - Monitors
-    private var globalMonitor: Any?
     private var localMonitor: Any?
     private var isActive: Bool = false
     private var monitorsInstalled: Bool = false
@@ -166,11 +158,6 @@ final class HoverSidebarManager: ObservableObject {
         ) { [weak self] event in
             self?.scheduleHandleMouseMovement()
             return event
-        }
-
-        // Global monitor to detect near-edge hovers even when cursor overshoots beyond window bounds
-        globalMonitor = eventMonitors.addGlobalMonitor([.mouseMoved]) { [weak self] _ in
-            self?.scheduleHandleMouseMovement()
         }
     }
 
@@ -354,10 +341,6 @@ final class HoverSidebarManager: ObservableObject {
         if let token = localMonitor {
             eventMonitors.removeMonitor(token)
             localMonitor = nil
-        }
-        if let token = globalMonitor {
-            eventMonitors.removeMonitor(token)
-            globalMonitor = nil
         }
     }
 }

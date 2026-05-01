@@ -48,11 +48,7 @@ struct BrowserWindowBridge: NSViewRepresentable {
             guard let window else { return }
 
             promoteToSumiBrowserWindowIfNeeded(window)
-            window.setNativeStandardWindowButtonsForBrowserChromeVisible(
-                false,
-                horizontalOffset: SidebarChromeMetrics.nativeTrafficLightHorizontalOffset,
-                verticalOffset: SidebarChromeMetrics.nativeTrafficLightVerticalOffset
-            )
+            window.hideNativeStandardWindowButtonsForBrowserChrome()
             window.applyBrowserWindowShellConfiguration(shouldApplyInitialSize: true)
 
             keyObserver = NotificationCenter.default.addObserver(

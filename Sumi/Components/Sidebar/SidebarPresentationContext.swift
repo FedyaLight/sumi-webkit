@@ -8,7 +8,6 @@ struct SidebarHostEnvironmentContext {
     let commandPalette: CommandPalette
     let sumiSettings: SumiSettingsService
     let resolvedThemeContext: ResolvedThemeContext
-    let trafficLightRenderState: BrowserWindowTrafficLightRenderState
 }
 
 enum SidebarPresentationMode: Equatable {
@@ -115,7 +114,6 @@ extension View {
             .environment(context.windowState)
             .environment(context.windowRegistry)
             .environment(context.commandPalette)
-            .environmentObject(context.trafficLightRenderState)
             .environment(\.sumiSettings, context.sumiSettings)
             .environment(\.resolvedThemeContext, context.resolvedThemeContext)
     }

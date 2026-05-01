@@ -42,7 +42,7 @@ enum BrowserWindowTrafficLightMetrics {
     }
     static let clusterHeight: CGFloat = 30
     static let clusterTrailingInset: CGFloat = 14
-    static let placeholderHorizontalOffset: CGFloat = -1
+    static let clusterHorizontalOffset: CGFloat = -1
 
     static var clusterWidth: CGFloat {
         buttonDiameter * 3 + buttonSpacing * 2
@@ -53,14 +53,14 @@ enum BrowserWindowTrafficLightMetrics {
     }
 }
 
-enum BrowserWindowTrafficLightPlaceholderPalette {
+enum BrowserWindowTrafficLightPalette {
     static let close = Color(hex: "EC6A5E")
     static let minimize = Color(hex: "F4BF4F")
     static let zoom = Color(hex: "62C554")
-    static let unfocused = Color(hex: "4E4F52")
+    static let inactive = Color(hex: "4E4F52")
 }
 
-enum BrowserWindowTrafficLightProxyAction: CaseIterable, Hashable {
+enum BrowserWindowTrafficLightAction: CaseIterable, Hashable {
     case close
     case minimize
     case zoom
@@ -79,11 +79,11 @@ enum BrowserWindowTrafficLightProxyAction: CaseIterable, Hashable {
     var paletteColor: Color {
         switch self {
         case .close:
-            return BrowserWindowTrafficLightPlaceholderPalette.close
+            return BrowserWindowTrafficLightPalette.close
         case .minimize:
-            return BrowserWindowTrafficLightPlaceholderPalette.minimize
+            return BrowserWindowTrafficLightPalette.minimize
         case .zoom:
-            return BrowserWindowTrafficLightPlaceholderPalette.zoom
+            return BrowserWindowTrafficLightPalette.zoom
         }
     }
 
@@ -97,104 +97,81 @@ enum BrowserWindowTrafficLightProxyAction: CaseIterable, Hashable {
             return "plus"
         }
     }
-
-    func isEnabled(in parentWindow: NSWindow?) -> Bool {
-        guard let parentWindow else { return false }
-
-        switch self {
-        case .close:
-            return parentWindow.styleMask.contains(.closable)
-        case .minimize:
-            return parentWindow.styleMask.contains(.miniaturizable)
-                && parentWindow.isMiniaturized == false
-        case .zoom:
-            return parentWindow.styleMask.contains(.resizable)
-        }
-    }
-
-    @MainActor
-    func perform(on parentWindow: NSWindow?) {
-        guard let parentWindow else { return }
-
-        switch self {
-        case .close:
-            parentWindow.performClose(nil)
-        case .minimize:
-            parentWindow.miniaturize(nil)
-        case .zoom:
-            parentWindow.performZoom(nil)
-        }
-    }
 }
 
 @MainActor
-final class BrowserWindowTrafficLightRenderState: ObservableObject {
-    @Published var isNativeClusterVisible = false
-}
+struct BrowserWindowTrafficLightActionProvider {
+    weak var targetWindow: NSWindow?
+    var close: @MainActor (NSWindow) -> Void
+    var minimize: @MainActor (NSWindow) -> Void
+    var zoom: @MainActor (NSWindow) -> Void
 
-struct BrowserWindowNativeTrafficLightSpacer: View {
-    var isVisible: Bool = true
-
-    var body: some View {
-        Color.clear
-            .frame(
-                width: isVisible ? BrowserWindowTrafficLightMetrics.sidebarReservedWidth : 0,
-                height: BrowserWindowTrafficLightMetrics.clusterHeight
-            )
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-    }
-}
-
-struct BrowserWindowTrafficLightPlaceholderCluster: View {
-    @ObservedObject var renderState: BrowserWindowTrafficLightRenderState
-    var isVisible: Bool = true
-
-    private var shouldDrawPlaceholder: Bool {
-        isVisible && renderState.isNativeClusterVisible == false
+    init(
+        targetWindow: NSWindow?,
+        close: @escaping @MainActor (NSWindow) -> Void = { $0.performClose(nil) },
+        minimize: @escaping @MainActor (NSWindow) -> Void = { $0.miniaturize(nil) },
+        zoom: @escaping @MainActor (NSWindow) -> Void = { $0.performZoom(nil) }
+    ) {
+        self.targetWindow = targetWindow
+        self.close = close
+        self.minimize = minimize
+        self.zoom = zoom
     }
 
-    var body: some View {
-        HStack(spacing: BrowserWindowTrafficLightMetrics.buttonSpacing) {
-            placeholderCircle(color: BrowserWindowTrafficLightPlaceholderPalette.close)
-            placeholderCircle(color: BrowserWindowTrafficLightPlaceholderPalette.minimize)
-            placeholderCircle(color: BrowserWindowTrafficLightPlaceholderPalette.zoom)
+    static func browserWindow(_ window: NSWindow?) -> BrowserWindowTrafficLightActionProvider {
+        BrowserWindowTrafficLightActionProvider(targetWindow: window)
+    }
+
+    func isEnabled(_ action: BrowserWindowTrafficLightAction) -> Bool {
+        guard let targetWindow else { return false }
+
+        switch action {
+        case .close:
+            return targetWindow.styleMask.contains(.closable)
+        case .minimize:
+            return targetWindow.styleMask.contains(.miniaturizable)
+                && targetWindow.isMiniaturized == false
+        case .zoom:
+            return targetWindow.styleMask.contains(.resizable)
         }
-        .frame(
-            width: isVisible ? BrowserWindowTrafficLightMetrics.sidebarReservedWidth : 0,
-            height: BrowserWindowTrafficLightMetrics.clusterHeight,
-            alignment: .leading
-        )
-        .offset(x: BrowserWindowTrafficLightMetrics.placeholderHorizontalOffset)
-        .opacity(shouldDrawPlaceholder ? 1 : 0)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 
-    private func placeholderCircle(color: Color) -> some View {
-        Circle()
-            .fill(color)
-            .overlay {
-                Circle()
-                    .stroke(Color.black.opacity(0.14), lineWidth: 0.75)
-            }
-            .frame(
-                width: BrowserWindowTrafficLightMetrics.buttonDiameter,
-                height: BrowserWindowTrafficLightMetrics.buttonDiameter
-            )
+    func perform(_ action: BrowserWindowTrafficLightAction) {
+        guard let targetWindow else { return }
+
+        switch action {
+        case .close:
+            close(targetWindow)
+        case .minimize:
+            minimize(targetWindow)
+        case .zoom:
+            zoom(targetWindow)
+        }
+    }
+
+    var drawsActivePalette: Bool {
+        targetWindow?.isKeyWindow != false
     }
 }
 
-struct BrowserWindowTrafficLightProxyCluster: View {
-    weak var parentWindow: NSWindow?
+struct BrowserWindowTrafficLights: View {
+    var actionProvider: BrowserWindowTrafficLightActionProvider
     var isVisible: Bool = true
 
     @State private var isClusterHovered = false
 
+    init(
+        actionProvider: BrowserWindowTrafficLightActionProvider,
+        isVisible: Bool = true
+    ) {
+        self.actionProvider = actionProvider
+        self.isVisible = isVisible
+    }
+
     var body: some View {
         HStack(spacing: BrowserWindowTrafficLightMetrics.buttonSpacing) {
-            ForEach(BrowserWindowTrafficLightProxyAction.allCases, id: \.self) { action in
-                proxyButton(action)
+            ForEach(BrowserWindowTrafficLightAction.allCases, id: \.self) { action in
+                trafficLightButton(action)
             }
         }
         .frame(
@@ -202,17 +179,17 @@ struct BrowserWindowTrafficLightProxyCluster: View {
             height: BrowserWindowTrafficLightMetrics.clusterHeight,
             alignment: .leading
         )
-        .offset(x: BrowserWindowTrafficLightMetrics.placeholderHorizontalOffset)
+        .offset(x: BrowserWindowTrafficLightMetrics.clusterHorizontalOffset)
         .opacity(isVisible ? 1 : 0)
         .onHover { isClusterHovered = $0 }
         .accessibilityElement(children: .contain)
     }
 
-    private func proxyButton(_ action: BrowserWindowTrafficLightProxyAction) -> some View {
-        let isEnabled = action.isEnabled(in: parentWindow)
+    private func trafficLightButton(_ action: BrowserWindowTrafficLightAction) -> some View {
+        let isEnabled = actionProvider.isEnabled(action)
 
         return Button {
-            action.perform(on: parentWindow)
+            actionProvider.perform(action)
         } label: {
             ZStack {
                 Circle()
@@ -239,390 +216,29 @@ struct BrowserWindowTrafficLightProxyCluster: View {
     }
 
     private func fillColor(
-        for action: BrowserWindowTrafficLightProxyAction,
+        for action: BrowserWindowTrafficLightAction,
         isEnabled: Bool
     ) -> Color {
-        guard isEnabled else {
-            return BrowserWindowTrafficLightPlaceholderPalette.unfocused
-        }
-
-        guard parentWindow?.isKeyWindow != false else {
-            return BrowserWindowTrafficLightPlaceholderPalette.unfocused
+        guard isEnabled, actionProvider.drawsActivePalette else {
+            return BrowserWindowTrafficLightPalette.inactive
         }
 
         return action.paletteColor
     }
 }
 
-struct BrowserWindowNativeTrafficLightVisibilityBridge: NSViewRepresentable {
-    let window: NSWindow?
-    let renderState: BrowserWindowTrafficLightRenderState
-    let visibleOutsideFullScreen: Bool
-    var horizontalOffset: CGFloat = 0
-    var verticalOffset: CGFloat = 0
-    var revealDelay: TimeInterval = 0
+/// MiniWindow still uses AppKit's native titlebar buttons. This spacer reserves
+/// the same leading width as Sumi's custom browser traffic-light cluster.
+struct BrowserWindowNativeTrafficLightSpacer: View {
+    var isVisible: Bool = true
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
-    func makeNSView(context: Context) -> BrowserWindowNativeTrafficLightVisibilityView {
-        let view = BrowserWindowNativeTrafficLightVisibilityView()
-        view.coordinator = context.coordinator
-        context.coordinator.attach(to: window ?? view.window)
-        context.coordinator.update(
-            renderState: renderState,
-            visibleOutsideFullScreen: visibleOutsideFullScreen,
-            horizontalOffset: horizontalOffset,
-            verticalOffset: verticalOffset,
-            revealDelay: revealDelay
-        )
-        return view
-    }
-
-    func updateNSView(
-        _ nsView: BrowserWindowNativeTrafficLightVisibilityView,
-        context: Context
-    ) {
-        nsView.coordinator = context.coordinator
-        context.coordinator.attach(to: window ?? nsView.window)
-        context.coordinator.update(
-            renderState: renderState,
-            visibleOutsideFullScreen: visibleOutsideFullScreen,
-            horizontalOffset: horizontalOffset,
-            verticalOffset: verticalOffset,
-            revealDelay: revealDelay
-        )
-    }
-
-    static func dismantleNSView(
-        _ nsView: BrowserWindowNativeTrafficLightVisibilityView,
-        coordinator: Coordinator
-    ) {
-        coordinator.detach()
-    }
-
-    @MainActor
-    final class Coordinator {
-        private enum Timing {
-            static let resizeStabilizationDelay: TimeInterval = 0.06
-            static let fullScreenExitStabilizationDelay: TimeInterval = 0.72
-            static let fullScreenExitTransitionHideDuration: TimeInterval = 1.10
-            static let hiddenMaintenanceInterval: TimeInterval = 1.0 / 60.0
-        }
-
-        private weak var window: NSWindow?
-        private weak var renderState: BrowserWindowTrafficLightRenderState?
-        private var observers: [NSObjectProtocol] = []
-        private var visibleOutsideFullScreen = true
-        private var horizontalOffset: CGFloat = 0
-        private var verticalOffset: CGFloat = 0
-        private var revealDelay: TimeInterval = 0
-        private var revealGeneration: UInt = 0
-        private var isFinishingFullScreenExit = false
-        private var fullScreenExitClickMonitor: Any?
-
-        func attach(to window: NSWindow?) {
-            guard self.window !== window else { return }
-
-            detach()
-            self.window = window
-            installWindowChromeObservers(for: window)
-            installFullScreenExitClickMonitor()
-            applyVisibilityPolicy()
-        }
-
-        func update(
-            renderState: BrowserWindowTrafficLightRenderState,
-            visibleOutsideFullScreen: Bool,
-            horizontalOffset: CGFloat,
-            verticalOffset: CGFloat,
-            revealDelay: TimeInterval
-        ) {
-            self.renderState = renderState
-
-            guard self.visibleOutsideFullScreen != visibleOutsideFullScreen
-                    || self.horizontalOffset != horizontalOffset
-                    || self.verticalOffset != verticalOffset
-                    || self.revealDelay != revealDelay
-            else {
-                return
-            }
-
-            self.visibleOutsideFullScreen = visibleOutsideFullScreen
-            self.horizontalOffset = horizontalOffset
-            self.verticalOffset = verticalOffset
-            self.revealDelay = revealDelay
-            applyVisibilityPolicy()
-        }
-
-        func detach() {
-            for observer in observers {
-                NotificationCenter.default.removeObserver(observer)
-            }
-            observers.removeAll()
-            if let fullScreenExitClickMonitor {
-                NSEvent.removeMonitor(fullScreenExitClickMonitor)
-            }
-            fullScreenExitClickMonitor = nil
-            revealGeneration &+= 1
-            isFinishingFullScreenExit = false
-            renderState?.isNativeClusterVisible = false
-            renderState = nil
-            window = nil
-        }
-
-        private func installWindowChromeObservers(for window: NSWindow?) {
-            guard let window else { return }
-
-            let center = NotificationCenter.default
-            for name in [
-                NSWindow.willEnterFullScreenNotification,
-                NSWindow.didEnterFullScreenNotification,
-                NSWindow.willExitFullScreenNotification,
-                NSWindow.didExitFullScreenNotification,
-                NSWindow.willStartLiveResizeNotification,
-                NSWindow.didResizeNotification,
-                NSWindow.didEndLiveResizeNotification,
-            ] {
-                observers.append(
-                    center.addObserver(
-                        forName: name,
-                        object: window,
-                        queue: .main
-                    ) { [weak self] notification in
-                        Task { @MainActor in
-                            self?.handleWindowChromeNotification(notification)
-                        }
-                    }
-                )
-            }
-        }
-
-        private func installFullScreenExitClickMonitor() {
-            guard fullScreenExitClickMonitor == nil else { return }
-
-            fullScreenExitClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-                let shouldConsume = MainActor.assumeIsolated {
-                    guard let self else { return false }
-                    return self.shouldConsumeFullScreenExitClick(event)
-                }
-                return shouldConsume ? nil : event
-            }
-        }
-
-        private func shouldConsumeFullScreenExitClick(_ event: NSEvent) -> Bool {
-            guard let window,
-                  isFinishingFullScreenExit == false,
-                  window.styleMask.contains(.fullScreen),
-                  let zoomButton = window.standardWindowButton(.zoomButton),
-                  eventHits(button: zoomButton, event: event)
-            else {
-                return false
-            }
-
-            beginFullScreenExitPlaceholderGate()
-            window.toggleFullScreen(nil)
-            return true
-        }
-
-        private func eventHits(button: NSButton, event: NSEvent) -> Bool {
-            guard let eventWindow = event.window,
-                  let buttonWindow = button.window
-            else { return false }
-
-            let eventRect = NSRect(origin: event.locationInWindow, size: .zero)
-            let screenRect = eventWindow.convertToScreen(eventRect)
-            let buttonWindowPoint = buttonWindow.convertFromScreen(screenRect).origin
-            let buttonPoint = button.convert(buttonWindowPoint, from: nil)
-            return button.bounds.contains(buttonPoint)
-        }
-
-        private func handleWindowChromeNotification(_ notification: Notification) {
-            let name = notification.name
-
-            switch name {
-            case NSWindow.willEnterFullScreenNotification,
-                NSWindow.didEnterFullScreenNotification:
-                showNativeButtonsImmediatelyForFullScreen()
-            case NSWindow.willExitFullScreenNotification:
-                beginFullScreenExitPlaceholderGate()
-            case NSWindow.didExitFullScreenNotification:
-                beginDelayedNativeReveal(delay: Timing.fullScreenExitStabilizationDelay)
-            case NSWindow.willStartLiveResizeNotification,
-                NSWindow.didResizeNotification,
-                 NSWindow.didEndLiveResizeNotification:
-                beginDelayedNativeReveal(
-                    delay: isFinishingFullScreenExit
-                        ? Timing.fullScreenExitStabilizationDelay
-                        : Timing.resizeStabilizationDelay
-                )
-            default:
-                applyVisibilityPolicy()
-            }
-        }
-
-        private func applyVisibilityPolicy() {
-            guard let window else {
-                renderState?.isNativeClusterVisible = false
-                return
-            }
-
-            if window.styleMask.contains(.fullScreen) && isFinishingFullScreenExit == false {
-                showNativeButtonsImmediatelyForFullScreen()
-                return
-            }
-
-            guard visibleOutsideFullScreen else {
-                hideNativeButtonsAndCancelReveal()
-                return
-            }
-
-            let delay = revealDelay
-            beginDelayedNativeReveal(delay: delay)
-        }
-
-        private func beginDelayedNativeReveal(delay: TimeInterval) {
-            guard let window else {
-                renderState?.isNativeClusterVisible = false
-                return
-            }
-
-            if window.styleMask.contains(.fullScreen) && isFinishingFullScreenExit == false {
-                showNativeButtonsImmediatelyForFullScreen()
-                return
-            }
-
-            guard visibleOutsideFullScreen else {
-                hideNativeButtonsAndCancelReveal()
-                return
-            }
-
-            revealGeneration &+= 1
-            let generation = revealGeneration
-
-            window.setNativeStandardWindowButtonsForBrowserChromeVisible(
-                false,
-                horizontalOffset: horizontalOffset,
-                verticalOffset: verticalOffset
+    var body: some View {
+        Color.clear
+            .frame(
+                width: isVisible ? BrowserWindowTrafficLightMetrics.sidebarReservedWidth : 0,
+                height: BrowserWindowTrafficLightMetrics.clusterHeight
             )
-            renderState?.isNativeClusterVisible = false
-            if isFinishingFullScreenExit {
-                scheduleNativeButtonHiddenMaintenance(
-                    generation: generation,
-                    duration: max(delay, Timing.fullScreenExitStabilizationDelay)
-                )
-            }
-
-            DispatchQueue.main.async { [weak self] in
-                DispatchQueue.main.async { [weak self] in
-                    guard let self else { return }
-                    self.finishDelayedNativeReveal(generation: generation, delay: delay)
-                }
-            }
-        }
-
-        private func finishDelayedNativeReveal(generation: UInt, delay: TimeInterval) {
-            let deadline = DispatchTime.now() + .nanoseconds(Int(max(delay, 0) * 1_000_000_000))
-            DispatchQueue.main.asyncAfter(deadline: deadline) { [weak self] in
-                guard let self else { return }
-                self.showNativeButtonsIfRevealIsCurrent(generation: generation)
-            }
-        }
-
-        private func showNativeButtonsIfRevealIsCurrent(generation: UInt) {
-            guard generation == revealGeneration,
-                  visibleOutsideFullScreen,
-                  let window,
-                  window.styleMask.contains(.fullScreen) == false
-            else { return }
-
-            isFinishingFullScreenExit = false
-            window.setNativeStandardWindowButtonsForBrowserChromeVisible(
-                true,
-                horizontalOffset: horizontalOffset,
-                verticalOffset: verticalOffset
-            )
-            renderState?.isNativeClusterVisible = true
-        }
-
-        private func showNativeButtonsImmediatelyForFullScreen() {
-            isFinishingFullScreenExit = false
-            revealGeneration &+= 1
-            window?.setNativeStandardWindowButtonsForBrowserChromeVisible(
-                true,
-                horizontalOffset: horizontalOffset,
-                verticalOffset: verticalOffset
-            )
-            renderState?.isNativeClusterVisible = true
-        }
-
-        private func beginFullScreenExitPlaceholderGate() {
-            isFinishingFullScreenExit = true
-            revealGeneration &+= 1
-            let generation = revealGeneration
-            window?.setNativeStandardWindowButtonsForBrowserChromeVisible(
-                false,
-                horizontalOffset: horizontalOffset,
-                verticalOffset: verticalOffset
-            )
-            renderState?.isNativeClusterVisible = false
-            scheduleNativeButtonHiddenMaintenance(
-                generation: generation,
-                duration: Timing.fullScreenExitTransitionHideDuration
-            )
-        }
-
-        private func hideNativeButtonsAndCancelReveal() {
-            isFinishingFullScreenExit = false
-            revealGeneration &+= 1
-            window?.setNativeStandardWindowButtonsForBrowserChromeVisible(
-                false,
-                horizontalOffset: horizontalOffset,
-                verticalOffset: verticalOffset
-            )
-            renderState?.isNativeClusterVisible = false
-        }
-
-        private func scheduleNativeButtonHiddenMaintenance(
-            generation: UInt,
-            duration: TimeInterval
-        ) {
-            let stepCount = max(1, Int(ceil(duration / Timing.hiddenMaintenanceInterval)))
-
-            for step in 0...stepCount {
-                let delay = TimeInterval(step) * Timing.hiddenMaintenanceInterval
-                let deadline = DispatchTime.now() + .nanoseconds(Int(delay * 1_000_000_000))
-                DispatchQueue.main.asyncAfter(deadline: deadline) { [weak self] in
-                    self?.keepNativeButtonsHiddenIfTransitionIsCurrent(generation: generation)
-                }
-            }
-        }
-
-        private func keepNativeButtonsHiddenIfTransitionIsCurrent(generation: UInt) {
-            guard generation == revealGeneration,
-                  isFinishingFullScreenExit
-            else { return }
-
-            window?.setNativeStandardWindowButtonsForBrowserChromeVisible(
-                false,
-                horizontalOffset: horizontalOffset,
-                verticalOffset: verticalOffset
-            )
-            renderState?.isNativeClusterVisible = false
-        }
-    }
-}
-
-final class BrowserWindowNativeTrafficLightVisibilityView: NSView {
-    weak var coordinator: BrowserWindowNativeTrafficLightVisibilityBridge.Coordinator?
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        coordinator?.attach(to: window)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }

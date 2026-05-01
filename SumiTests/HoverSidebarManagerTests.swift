@@ -161,12 +161,11 @@ final class HoverSidebarManagerTests: XCTestCase {
             recorder.localMasks,
             [[.mouseMoved, .leftMouseDragged, .rightMouseDragged]]
         )
-        XCTAssertEqual(recorder.globalMasks, [[.mouseMoved]])
 
         windowState.isSidebarVisible = true
         manager.refreshMonitoring()
 
-        XCTAssertEqual(recorder.removedMonitorCount, 2)
+        XCTAssertEqual(recorder.removedMonitorCount, 1)
     }
 
     func testRefreshMonitoringDoesNotInstallMonitorsForInactiveWindow() async {
@@ -197,7 +196,6 @@ final class HoverSidebarManagerTests: XCTestCase {
         await Task.yield()
 
         XCTAssertTrue(recorder.localMasks.isEmpty)
-        XCTAssertTrue(recorder.globalMasks.isEmpty)
         XCTAssertEqual(recorder.removedMonitorCount, 0)
     }
 }
@@ -211,17 +209,12 @@ private func drainMainQueue() async {
 @MainActor
 private final class EventMonitorRecorder {
     private(set) var localMasks: [NSEvent.EventTypeMask] = []
-    private(set) var globalMasks: [NSEvent.EventTypeMask] = []
     private(set) var removedMonitorCount = 0
 
     var client: HoverSidebarEventMonitorClient {
         HoverSidebarEventMonitorClient(
             addLocalMonitor: { [weak self] mask, _ in
                 self?.localMasks.append(mask)
-                return NSObject()
-            },
-            addGlobalMonitor: { [weak self] mask, _ in
-                self?.globalMasks.append(mask)
                 return NSObject()
             },
             removeMonitor: { [weak self] _ in
