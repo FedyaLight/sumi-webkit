@@ -100,6 +100,65 @@ final class SumiTabTitleViewTests: XCTestCase {
         XCTAssertNil(currentLayer.animation(forKey: SumiTabTitleAnimation.alphaKey))
     }
 
+    func testTitleViewStartsLoadingShimmerAnimation() throws {
+        let view = makeView(width: 200)
+
+        view.apply(
+            title: "Loading Title",
+            font: .systemFont(ofSize: 13, weight: .medium),
+            textColor: .labelColor,
+            fadeWidth: 32,
+            trailingFadePadding: 0,
+            animated: false,
+            isLoading: true
+        )
+        view.layoutSubtreeIfNeeded()
+
+        let shimmerField = try XCTUnwrap(loadingShimmerTextField(in: view))
+        let maskLayer = try XCTUnwrap(loadingShimmerMaskLayer(in: view))
+        let animation = try XCTUnwrap(maskLayer.animation(forKey: SumiTabTitleAnimation.loadingShimmerKey))
+
+        XCTAssertFalse(shimmerField.isHidden)
+        XCTAssertEqual(shimmerField.alphaValue, 1, accuracy: 0.001)
+        XCTAssertEqual(
+            maskLayer.bounds.width,
+            144,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(animation.duration, SumiTabTitleAnimation.loadingShimmerCycleDuration, accuracy: 0.001)
+    }
+
+    func testTitleViewStopsLoadingShimmerAnimation() throws {
+        let view = makeView(width: 200)
+
+        view.apply(
+            title: "Loading Title",
+            font: .systemFont(ofSize: 13, weight: .medium),
+            textColor: .labelColor,
+            fadeWidth: 32,
+            trailingFadePadding: 0,
+            animated: false,
+            isLoading: true
+        )
+        view.layoutSubtreeIfNeeded()
+        XCTAssertNotNil(loadingShimmerMaskLayer(in: view)?.animation(forKey: SumiTabTitleAnimation.loadingShimmerKey))
+
+        view.apply(
+            title: "Loading Title",
+            font: .systemFont(ofSize: 13, weight: .medium),
+            textColor: .labelColor,
+            fadeWidth: 32,
+            trailingFadePadding: 0,
+            animated: false,
+            isLoading: false
+        )
+
+        let shimmerField = try XCTUnwrap(loadingShimmerTextField(in: view))
+        XCTAssertTrue(shimmerField.isHidden)
+        XCTAssertEqual(shimmerField.alphaValue, 0, accuracy: 0.001)
+        XCTAssertNil(shimmerField.layer?.mask)
+    }
+
     func testSwiftUIHostedLabelKeepsFullWidthWithOverlaidAction() throws {
         let host = NSHostingView(
             rootView: ZStack(alignment: .trailing) {
@@ -180,12 +239,26 @@ final class SumiTabTitleViewTests: XCTestCase {
     }
 
     private func titleFields(in view: SumiTabTitleView) -> (previous: NSTextField, current: NSTextField) {
-        let fields = view.subviews.compactMap { $0 as? NSTextField }
-        XCTAssertEqual(fields.count, 2)
+        let fields = textFields(in: view)
+        XCTAssertGreaterThanOrEqual(fields.count, 2)
         return (fields[0], fields[1])
+    }
+
+    private func loadingShimmerTextField(in view: SumiTabTitleView) -> NSTextField? {
+        let fields = textFields(in: view)
+        guard fields.count > 2 else { return nil }
+        return fields[2]
+    }
+
+    private func textFields(in view: SumiTabTitleView) -> [NSTextField] {
+        view.subviews.compactMap { $0 as? NSTextField }
     }
 
     private func fadeMaskLayer(in view: SumiTabTitleView) -> CAGradientLayer? {
         view.layer?.mask as? CAGradientLayer
+    }
+
+    private func loadingShimmerMaskLayer(in view: SumiTabTitleView) -> CAGradientLayer? {
+        loadingShimmerTextField(in: view)?.layer?.mask as? CAGradientLayer
     }
 }

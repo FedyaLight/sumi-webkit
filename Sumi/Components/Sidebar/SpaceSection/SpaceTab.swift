@@ -109,7 +109,8 @@ struct SpaceTab: View {
                         textColor: textTab,
                         trailingFadePadding: SidebarHoverChrome.trailingFadePadding(
                             showsTrailingAction: showsCloseButton
-                        )
+                        ),
+                        isLoading: tab.isLoading
                     )
                     .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                     .textSelection(.disabled) // Make text non-selectable

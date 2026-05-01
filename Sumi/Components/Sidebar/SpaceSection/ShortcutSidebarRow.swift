@@ -417,7 +417,8 @@ private struct ShortcutSidebarRowChrome: View {
             trailingFadePadding: SidebarHoverChrome.trailingFadePadding(
                 showsTrailingAction: showsActionButton
             ),
-            animated: liveTab != nil
+            animated: liveTab != nil,
+            isLoading: liveTab?.isLoading ?? false
         )
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
     }
