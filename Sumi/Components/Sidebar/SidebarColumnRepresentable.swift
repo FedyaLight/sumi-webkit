@@ -89,9 +89,10 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
             isMounted: presentationContext.isCollapsedOverlay
         )
         #endif
-        controller.updateWebContentInputExclusion(
+        controller.updatePointerSuppression(
             presentationContext: presentationContext,
-            windowState: windowState
+            windowState: windowState,
+            windowRegistry: windowRegistry
         )
     }
 

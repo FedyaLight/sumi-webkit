@@ -99,16 +99,10 @@ final class WindowWebContentController: NSViewController {
 
     func update(
         displayState: WebsiteDisplayState,
-        inputExclusionRegion: WebContentInputExclusionRegion,
         hoveredLinkHandler: @escaping (String?) -> Void,
         commandHoverHandler: @escaping (Bool) -> Void,
         chromeGeometry: BrowserChromeGeometry
     ) {
-        webViewCoordinator.setInputExclusionRegion(
-            inputExclusionRegion,
-            for: windowState.id
-        )
-
         if self.chromeGeometry != chromeGeometry {
             self.chromeGeometry = chromeGeometry
             containerView.setChromeGeometry(chromeGeometry)
@@ -394,7 +388,6 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
     var rightId: UUID?
     var isSplitDropCaptureActive: Bool
     var chromeGeometry: BrowserChromeGeometry
-    var inputExclusionRegion: WebContentInputExclusionRegion
     let windowState: BrowserWindowState
 
     func makeNSViewController(context: Context) -> WindowWebContentController {
@@ -411,7 +404,6 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
         let commandPressedBinding = $isCommandPressed
         controller.update(
             displayState: makeDisplayState(),
-            inputExclusionRegion: inputExclusionRegion,
             hoveredLinkHandler: { hoveredLinkBinding.wrappedValue = $0 },
             commandHoverHandler: { commandPressedBinding.wrappedValue = $0 },
             chromeGeometry: chromeGeometry

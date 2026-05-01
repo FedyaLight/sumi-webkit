@@ -69,7 +69,6 @@ final class FocusableWKWebViewContextMenuTests: XCTestCase {
         windowRegistry: WindowRegistry,
         windowState: BrowserWindowState,
         window: NSWindow,
-        tab: Sumi.Tab,
         webView: FocusableWKWebView,
         dragView: SidebarInteractiveItemView
     ) {
@@ -116,7 +115,7 @@ final class FocusableWKWebViewContextMenuTests: XCTestCase {
         )
         window.contentView?.addSubview(dragView)
 
-        return (browserManager, windowRegistry, windowState, window, tab, webView, dragView)
+        return (browserManager, windowRegistry, windowState, window, webView, dragView)
     }
 
     private func openWebContextMenu(
@@ -125,7 +124,6 @@ final class FocusableWKWebViewContextMenuTests: XCTestCase {
             windowRegistry: WindowRegistry,
             windowState: BrowserWindowState,
             window: NSWindow,
-            tab: Sumi.Tab,
             webView: FocusableWKWebView,
             dragView: SidebarInteractiveItemView
         ),
