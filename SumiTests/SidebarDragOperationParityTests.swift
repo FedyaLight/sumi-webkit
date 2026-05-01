@@ -2405,6 +2405,107 @@ final class SidebarDragStateTests: XCTestCase {
         )
     }
 
+    func testCollapsedPanelDragPreviewUsesOverlayWindowSurface() {
+        let docked = SidebarPresentationContext.docked(sidebarWidth: 280)
+        let collapsedHidden = SidebarPresentationContext.collapsedHidden(sidebarWidth: 280)
+        let collapsedVisible = SidebarPresentationContext.collapsedVisible(sidebarWidth: 280)
+        let collapsedRightVisible = SidebarPresentationContext.collapsedVisible(
+            sidebarWidth: 280,
+            sidebarPosition: .right
+        )
+
+        XCTAssertEqual(
+            SidebarDragVisualSurfacePolicy.floatingPreviewSurface(for: docked),
+            .parentWindowOverlay
+        )
+        XCTAssertEqual(
+            SidebarDragVisualSurfacePolicy.floatingPreviewSurface(for: collapsedHidden),
+            .parentWindowOverlay
+        )
+        XCTAssertEqual(
+            SidebarDragVisualSurfacePolicy.floatingPreviewSurface(for: collapsedVisible),
+            .collapsedPanelOverlayWindow
+        )
+        XCTAssertEqual(
+            SidebarDragVisualSurfacePolicy.floatingPreviewSurface(for: collapsedRightVisible),
+            .collapsedPanelOverlayWindow
+        )
+        XCTAssertFalse(SidebarDragVisualSurfacePolicy.shouldPresentCollapsedPanelPreviewOverlay(
+            presentationContext: collapsedVisible,
+            isDragging: false
+        ))
+        XCTAssertTrue(SidebarDragVisualSurfacePolicy.shouldPresentCollapsedPanelPreviewOverlay(
+            presentationContext: collapsedVisible,
+            isDragging: true
+        ))
+    }
+
+    func testParentWindowDragPreviewRemainsDockedOnlyWhenCollapsedPanelIsVisible() {
+        XCTAssertTrue(SidebarDragVisualSurfacePolicy.shouldRenderParentWindowFloatingPreview(
+            isSidebarVisible: true,
+            isCollapsedOverlayRevealed: false
+        ))
+        XCTAssertTrue(SidebarDragVisualSurfacePolicy.shouldRenderParentWindowFloatingPreview(
+            isSidebarVisible: true,
+            isCollapsedOverlayRevealed: true
+        ))
+        XCTAssertTrue(SidebarDragVisualSurfacePolicy.shouldRenderParentWindowFloatingPreview(
+            isSidebarVisible: false,
+            isCollapsedOverlayRevealed: false
+        ))
+        XCTAssertFalse(SidebarDragVisualSurfacePolicy.shouldRenderParentWindowFloatingPreview(
+            isSidebarVisible: false,
+            isCollapsedOverlayRevealed: true
+        ))
+    }
+
+    func testCollapsedPanelDropIndicatorsRemainInHostedSidebarLayer() {
+        XCTAssertEqual(
+            SidebarDragVisualSurfacePolicy.dropIndicatorSurface(
+                for: .docked(sidebarWidth: 280)
+            ),
+            .sidebarHostedLayer
+        )
+        XCTAssertEqual(
+            SidebarDragVisualSurfacePolicy.dropIndicatorSurface(
+                for: .collapsedVisible(sidebarWidth: 280)
+            ),
+            .sidebarHostedLayer
+        )
+        XCTAssertEqual(
+            SidebarDragVisualSurfacePolicy.dropIndicatorSurface(
+                for: .collapsedVisible(sidebarWidth: 280, sidebarPosition: .right)
+            ),
+            .sidebarHostedLayer
+        )
+    }
+
+    func testCollapsedPanelDragVisualSourceUsesPanelOverlayInsteadOfParentOverlay() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let windowSource = try String(
+            contentsOf: repoRoot.appendingPathComponent("App/Window/WindowView.swift"),
+            encoding: .utf8
+        )
+        let panelHostSource = try String(
+            contentsOf: repoRoot.appendingPathComponent("Sumi/Components/Sidebar/CollapsedSidebarPanelHost.swift"),
+            encoding: .utf8
+        )
+        let sidebarSource = try String(
+            contentsOf: repoRoot.appendingPathComponent("Navigation/Sidebar/SpacesSideBarView.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(windowSource.contains("SidebarDragVisualSurfacePolicy.shouldRenderParentWindowFloatingPreview"))
+        XCTAssertTrue(panelHostSource.contains("CollapsedSidebarDragPreviewOverlayWindow"))
+        XCTAssertTrue(panelHostSource.contains("updateDragPreviewOverlay"))
+        XCTAssertTrue(panelHostSource.contains("SidebarDragVisualSurfacePolicy.shouldPresentCollapsedPanelPreviewOverlay"))
+        XCTAssertTrue(panelHostSource.contains("parentWindow.addChildWindow(overlay, ordered: .above)"))
+        XCTAssertTrue(panelHostSource.contains("overlay.ignoresMouseEvents = true"))
+        XCTAssertTrue(sidebarSource.contains("SidebarGlobalDragOverlay()"))
+    }
+
     func testPreviewModelAnchorUsesTopLeadingCoordinates() {
         let normalized = SidebarDragPreviewModel.normalizedTopLeadingAnchor(
             fromBottomLeading: CGPoint(x: 25, y: 15),
@@ -4494,6 +4595,13 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
             fatalError("Failed to create mouse event for test.")
         }
         return event
+    }
+
+    private static var repoRoot: URL {
+        var url = URL(fileURLWithPath: #filePath)
+        url.deleteLastPathComponent()
+        url.deleteLastPathComponent()
+        return url
     }
 }
 

@@ -904,6 +904,17 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         )
     }
 
+    func testCollapsedSidebarDragPreviewOverlayFrameUsesFullParentContent() {
+        let parentWindow = makeWindow()
+        parentWindow.setFrame(NSRect(x: 100, y: 120, width: 420, height: 300), display: false)
+
+        let expectedFrame = CollapsedSidebarPanelFrameResolver.parentContentScreenFrame(in: parentWindow)
+        XCTAssertEqual(
+            CollapsedSidebarDragPreviewOverlayFrameResolver.overlayFrame(in: parentWindow),
+            expectedFrame
+        )
+    }
+
     func testCollapsedSidebarPanelControllerHiddenIdleHasNoPanelAndNoChildWindow() {
         let parentWindow = makeWindow()
         let controller = CollapsedSidebarPanelController()
@@ -974,6 +985,75 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         XCTAssertTrue(panel.styleMask.contains(.nonactivatingPanel))
         XCTAssertTrue(panel.contentViewController is SidebarColumnViewController)
         XCTAssertTrue(controller.isPanelAttachedForTesting)
+    }
+
+    func testCollapsedSidebarPanelControllerOrdersDragPreviewOverlayAbovePanel() throws {
+        let parentWindow = makeWindow()
+        let controller = CollapsedSidebarPanelController()
+
+        controller.update(
+            parentWindow: parentWindow,
+            root: AnyView(Color.clear.frame(width: 220, height: 240)),
+            width: 220,
+            presentationContext: .collapsedVisible(sidebarWidth: 220),
+            contextMenuController: nil,
+            isHostRequested: true
+        )
+        controller.updateDragPreviewOverlay(
+            parentWindow: parentWindow,
+            root: AnyView(Color.clear),
+            isPresented: true
+        )
+
+        let panel = try XCTUnwrap(controller.panelWindowForTesting)
+        let overlay = try XCTUnwrap(controller.dragPreviewOverlayWindowForTesting)
+        let childWindows = try XCTUnwrap(parentWindow.childWindows)
+
+        XCTAssertTrue(controller.isPanelAttachedForTesting)
+        XCTAssertTrue(controller.isDragPreviewOverlayAttachedForTesting)
+        XCTAssertTrue(childWindows.contains { $0 === panel })
+        XCTAssertTrue(childWindows.contains { $0 === overlay })
+        XCTAssertTrue(overlay.ignoresMouseEvents)
+        XCTAssertFalse(overlay.canBecomeKey)
+        XCTAssertFalse(overlay.canBecomeMain)
+        XCTAssertTrue(overlay.styleMask.contains(.nonactivatingPanel))
+        XCTAssertEqual(
+            overlay.frame,
+            try XCTUnwrap(CollapsedSidebarDragPreviewOverlayFrameResolver.overlayFrame(in: parentWindow))
+        )
+    }
+
+    func testCollapsedSidebarPanelControllerDetachesDragPreviewOverlayOnHide() {
+        let parentWindow = makeWindow()
+        let controller = CollapsedSidebarPanelController()
+
+        controller.update(
+            parentWindow: parentWindow,
+            root: AnyView(Color.clear.frame(width: 220, height: 240)),
+            width: 220,
+            presentationContext: .collapsedVisible(sidebarWidth: 220),
+            contextMenuController: nil,
+            isHostRequested: true
+        )
+        controller.updateDragPreviewOverlay(
+            parentWindow: parentWindow,
+            root: AnyView(Color.clear),
+            isPresented: true
+        )
+        XCTAssertTrue(controller.isDragPreviewOverlayAttachedForTesting)
+
+        controller.update(
+            parentWindow: parentWindow,
+            root: AnyView(EmptyView()),
+            width: 220,
+            presentationContext: .collapsedHidden(sidebarWidth: 220),
+            contextMenuController: nil,
+            isHostRequested: false
+        )
+
+        XCTAssertNil(controller.dragPreviewOverlayWindowForTesting)
+        XCTAssertFalse(controller.isDragPreviewOverlayAttachedForTesting)
+        XCTAssertTrue(parentWindow.childWindows?.isEmpty ?? true)
     }
 
     func testCollapsedSidebarPanelControllerOrdersOutAndDestroysOnHiddenIdle() {

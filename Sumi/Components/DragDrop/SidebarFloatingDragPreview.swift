@@ -1,6 +1,46 @@
 import AppKit
 import SwiftUI
 
+enum SidebarDragPreviewPresentationSurface: Equatable {
+    case parentWindowOverlay
+    case collapsedPanelOverlayWindow
+}
+
+enum SidebarDropIndicatorPresentationSurface: Equatable {
+    case sidebarHostedLayer
+}
+
+enum SidebarDragVisualSurfacePolicy {
+    static func floatingPreviewSurface(
+        for presentationContext: SidebarPresentationContext
+    ) -> SidebarDragPreviewPresentationSurface {
+        presentationContext.mode == .collapsedVisible
+            ? .collapsedPanelOverlayWindow
+            : .parentWindowOverlay
+    }
+
+    static func shouldRenderParentWindowFloatingPreview(
+        isSidebarVisible: Bool,
+        isCollapsedOverlayRevealed: Bool
+    ) -> Bool {
+        isSidebarVisible || isCollapsedOverlayRevealed == false
+    }
+
+    static func shouldPresentCollapsedPanelPreviewOverlay(
+        presentationContext: SidebarPresentationContext,
+        isDragging: Bool
+    ) -> Bool {
+        isDragging
+            && floatingPreviewSurface(for: presentationContext) == .collapsedPanelOverlayWindow
+    }
+
+    static func dropIndicatorSurface(
+        for presentationContext: SidebarPresentationContext
+    ) -> SidebarDropIndicatorPresentationSurface {
+        .sidebarHostedLayer
+    }
+}
+
 enum SidebarFloatingDragPreviewPolicy {
     static func resolvedPreviewKind(
         baseKind: SidebarDragPreviewKind?,

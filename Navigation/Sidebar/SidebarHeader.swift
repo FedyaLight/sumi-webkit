@@ -82,14 +82,12 @@ struct SidebarWindowControlsView: View {
     @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject private var trafficLightRenderState: BrowserWindowTrafficLightRenderState
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
     @Environment(\.sumiSettings) private var sumiSettings
 
     var body: some View {
         HStack(spacing: SidebarChromeMetrics.controlSpacing) {
-            BrowserWindowTrafficLightPlaceholderCluster(
-                renderState: trafficLightRenderState,
-                isVisible: sumiSettings.sidebarPosition.shellEdge.isLeft
-            )
+            trafficLightCluster
 
             if sumiSettings.showSidebarToggleButton {
                 Button("Toggle Sidebar", systemImage: sumiSettings.sidebarPosition.shellEdge.toggleSidebarSymbolName) {
@@ -99,6 +97,23 @@ struct SidebarWindowControlsView: View {
                 .font(.system(size: SidebarChromeMetrics.navigationIconSize, weight: .medium))
                 .buttonStyle(NavButtonStyle(diameter: SidebarChromeMetrics.navigationButtonSize))
             }
+        }
+    }
+
+    @ViewBuilder
+    private var trafficLightCluster: some View {
+        let isLeftSidebar = sumiSettings.sidebarPosition.shellEdge.isLeft
+
+        if sidebarPresentationContext.mode == .collapsedVisible && isLeftSidebar {
+            BrowserWindowTrafficLightProxyCluster(
+                parentWindow: windowState.window,
+                isVisible: true
+            )
+        } else {
+            BrowserWindowTrafficLightPlaceholderCluster(
+                renderState: trafficLightRenderState,
+                isVisible: isLeftSidebar
+            )
         }
     }
 }

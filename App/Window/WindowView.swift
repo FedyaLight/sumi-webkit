@@ -85,13 +85,18 @@ struct WindowView: View {
                 }
             }
 
-            chromeThemeScope {
-                SidebarFloatingDragPreview()
-                    .environmentObject(browserManager)
-                    .environment(windowState)
-                    .environment(\.sumiSettings, sumiSettings)
-                    .zIndex(WindowTransientChromeZIndex.sidebarDragPreview)
-                    .allowsHitTesting(false)
+            if SidebarDragVisualSurfacePolicy.shouldRenderParentWindowFloatingPreview(
+                isSidebarVisible: windowState.isSidebarVisible,
+                isCollapsedOverlayRevealed: sidebarHoverOverlayRevealed
+            ) {
+                chromeThemeScope {
+                    SidebarFloatingDragPreview()
+                        .environmentObject(browserManager)
+                        .environment(windowState)
+                        .environment(\.sumiSettings, sumiSettings)
+                        .zIndex(WindowTransientChromeZIndex.sidebarDragPreview)
+                        .allowsHitTesting(false)
+                }
             }
 
         }
@@ -206,7 +211,11 @@ struct WindowView: View {
     // MARK: - Layout Components
 
     private var nativeTrafficLightsVisibleOutsideFullScreen: Bool {
-        windowState.isSidebarVisible || sidebarHoverOverlayRevealed
+        if collapsedLeftSidebarPanelVisible {
+            return false
+        }
+
+        return windowState.isSidebarVisible || sidebarHoverOverlayRevealed
     }
 
     private var nativeTrafficLightsRevealDelay: TimeInterval {
@@ -219,6 +228,12 @@ struct WindowView: View {
             transientUIPinsHoverSidebar: transientUIPinsHoverSidebar,
             sidebarDragPinsHoverSidebar: sidebarDragPinsHoverSidebar
         )
+    }
+
+    private var collapsedLeftSidebarPanelVisible: Bool {
+        !windowState.isSidebarVisible
+            && sidebarHoverOverlayRevealed
+            && sumiSettings.sidebarPosition.shellEdge.isLeft
     }
 
     private var transientUIPinsHoverSidebar: Bool {
