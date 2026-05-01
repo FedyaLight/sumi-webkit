@@ -121,7 +121,7 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
     }
 
     func testURLBarSourceKeepsControlsModuleGatedAndManualReloadOnly() throws {
-        let source = try Self.source(named: "Sumi/Components/Sidebar/URLBarView.swift")
+        let source = try Self.source(named: "Sumi/Components/Sidebar/URLBarHubPopover.swift")
 
         XCTAssertTrue(source.contains("effectivePolicyIfEnabled(for: url)"))
         XCTAssertTrue(source.contains("case .tracking(let policy, _, _)"))

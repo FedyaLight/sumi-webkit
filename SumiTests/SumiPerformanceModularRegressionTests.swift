@@ -374,6 +374,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         for relativePath in [
             "Sumi/Components/Settings/PrivacySettingsView.swift",
             "Sumi/Components/Sidebar/URLBarView.swift",
+            "Sumi/Components/Sidebar/URLBarHubPopover.swift",
             "Sumi/Favicons/DDG/SumiDDGFaviconUserContentController.swift",
             "Sumi/Managers/BrowserManager/BrowserManager.swift",
             "Sumi/Models/BrowserConfig/BrowserConfig.swift",

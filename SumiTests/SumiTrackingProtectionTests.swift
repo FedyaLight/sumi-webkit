@@ -986,6 +986,7 @@ final class SumiTrackingProtectionTests: XCTestCase {
         let guardedSources = [
             "Sumi/Components/Settings/PrivacySettingsView.swift",
             "Sumi/Components/Sidebar/URLBarView.swift",
+            "Sumi/Components/Sidebar/URLBarHubPopover.swift",
             "Sumi/Favicons/DDG/SumiDDGFaviconUserContentController.swift",
             "Sumi/Managers/BrowserManager/BrowserManager.swift",
             "Sumi/Models/BrowserConfig/BrowserConfig.swift",

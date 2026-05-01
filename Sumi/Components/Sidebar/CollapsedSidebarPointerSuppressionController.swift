@@ -36,6 +36,7 @@ final class CollapsedSidebarPointerSuppressionController {
     private var isBrowserWindowActive = false
     private var localMonitor: Any?
     private var windowObservers: [NSObjectProtocol] = []
+    private var isCursorCorrectionPending = false
 
     init(
         eventMonitors: CollapsedSidebarPointerSuppressionEventMonitorClient = .live,
@@ -93,6 +94,7 @@ final class CollapsedSidebarPointerSuppressionController {
         isCollapsedVisible = false
         isSidebarCollapsed = false
         isBrowserWindowActive = false
+        isCursorCorrectionPending = false
     }
 
     private func bindWindow(_ nextWindow: NSWindow?) {
@@ -203,12 +205,21 @@ final class CollapsedSidebarPointerSuppressionController {
             return event
         }
 
-        if isConcreteSidebarChild(at: windowPoint) {
+        switch sidebarHitClassification(at: windowPoint) {
+        case .textInput:
             return event
+        case .interactive:
+            guard event.type == .cursorUpdate else {
+                return event
+            }
+            setArrowCursor()
+            schedulePostDispatchCursorCorrection()
+            return nil
+        case .background:
+            setArrowCursor()
+            schedulePostDispatchCursorCorrection()
+            return nil
         }
-
-        setArrowCursor()
-        return nil
     }
 
     private func pointInBrowserWindow(for event: NSEvent, window: NSWindow) -> NSPoint? {
@@ -237,31 +248,75 @@ final class CollapsedSidebarPointerSuppressionController {
         !rect.isEmpty && !rect.isNull && rect.width > 0 && rect.height > 0
     }
 
-    private func isConcreteSidebarChild(at windowPoint: NSPoint) -> Bool {
-        guard let panelView else { return false }
+    private enum SidebarHitClassification {
+        case background
+        case interactive
+        case textInput
+    }
+
+    private func sidebarHitClassification(at windowPoint: NSPoint) -> SidebarHitClassification {
+        guard let panelView else { return .background }
 
         let panelPoint = panelView.convert(windowPoint, from: nil)
-        guard let hitView = panelView.hitTest(panelPoint) else { return false }
+        guard let hitView = panelView.hitTest(panelPoint) else { return .background }
 
         if hitView === panelView || hitView === hostedSidebarView {
-            return false
+            return .background
+        }
+
+        if hitView.nearestPointerSuppressionAncestor(of: NSTextView.self) != nil {
+            return .textInput
+        }
+
+        if let textField = hitView.nearestPointerSuppressionAncestor(of: NSTextField.self),
+           textField.isEditable || textField.isSelectable
+        {
+            return .textInput
         }
 
         if hitView.nearestPointerSuppressionAncestor(of: SidebarInteractiveItemView.self) != nil {
-            return true
+            return .interactive
         }
 
         guard let hostedSidebarView else {
-            return false
+            return .background
         }
 
         if let control = hitView.nearestPointerSuppressionAncestor(of: NSControl.self),
            control.isDescendant(of: hostedSidebarView)
         {
-            return true
+            return .interactive
         }
 
-        return false
+        return .background
+    }
+
+    private func schedulePostDispatchCursorCorrection() {
+        guard !isCursorCorrectionPending else { return }
+        isCursorCorrectionPending = true
+
+        Task { @MainActor [weak self, weak window] in
+            guard let self else { return }
+            self.isCursorCorrectionPending = false
+
+            guard self.shouldInstallMonitor,
+                  let window,
+                  let panelRect = self.currentPanelRect(),
+                  Self.isUsablePanelRect(panelRect)
+            else {
+                return
+            }
+
+            let screenPoint = NSEvent.mouseLocation
+            let windowPoint = window.convertPoint(fromScreen: screenPoint)
+            guard panelRect.contains(windowPoint),
+                  self.sidebarHitClassification(at: windowPoint) != .textInput
+            else {
+                return
+            }
+
+            self.setArrowCursor()
+        }
     }
 }
 

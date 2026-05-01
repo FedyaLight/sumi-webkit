@@ -31,7 +31,11 @@ final class SumiPermissionRuntimeControlIntegrationTests: XCTestCase {
     }
 
     func testURLBarIndicatorRoutesRuntimeStatesToPermissionsSubmenuWithoutOverlappingPrompt() throws {
-        let source = try sourceFile("Sumi/Components/Sidebar/URLBarView.swift")
+        let source = try [
+            sourceFile("Sumi/Components/Sidebar/URLBarView.swift"),
+            sourceFile("Sumi/Components/Sidebar/URLBarTrailingActions.swift"),
+            sourceFile("Sumi/Components/Sidebar/URLBarPermissionViews.swift"),
+        ].joined(separator: "\n")
 
         XCTAssertTrue(source.contains("permissionPromptPresenter.presentFromIndicatorClick()"))
         XCTAssertTrue(source.contains("prefersRuntimeControlsSurface"))

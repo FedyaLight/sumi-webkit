@@ -83,7 +83,7 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
             "Sumi/Models/BrowserConfig/BrowserConfig.swift",
             "Sumi/Models/Tab/Tab+WebViewRuntime.swift",
             "Sumi/Permissions/SumiAutoplayPolicyStoreAdapter.swift",
-            "Sumi/Components/Sidebar/URLBarView.swift",
+            "Sumi/Components/Sidebar/URLBarHubPopover.swift",
         ].map(sourceFile).joined(separator: "\n")
 
         XCTAssertTrue(sources.contains("SumiAutoplayPolicyStoreAdapter"))
