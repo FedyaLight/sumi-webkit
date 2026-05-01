@@ -12,9 +12,10 @@ import WebKit
 
 extension URLBarView {
     func permissionIndicatorButton(for currentTab: Tab) -> some View {
-        SumiPermissionIndicatorButton(viewModel: permissionIndicatorViewModel) {
-            handlePermissionIndicatorClick()
-        }
+        let action = { handlePermissionIndicatorClick() }
+
+        return SumiPermissionIndicatorButton(viewModel: permissionIndicatorViewModel, action: action)
+        .sidebarAppKitPrimaryAction(action: action)
         .popover(isPresented: $permissionPromptPresenter.isPresented, arrowEdge: .bottom) {
             if let viewModel = permissionPromptPresenter.viewModel {
                 SumiPermissionPromptView(viewModel: viewModel)
@@ -255,4 +256,3 @@ private struct URLBarPermissionIndicatorButtonStyle: ButtonStyle {
         }
     }
 }
-

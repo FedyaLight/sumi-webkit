@@ -108,9 +108,18 @@ final class CollapsedSidebarPanelRootView: SidebarColumnBaseContainerView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard event.clickCount == 1,
-              let parentWindow = window?.parent
-        else {
+        guard let parentWindow = window?.parent else {
+            super.mouseDown(with: event)
+            return
+        }
+
+        if event.clickCount == 2 {
+            onPointerDown?()
+            parentWindow.performZoom(nil)
+            return
+        }
+
+        guard event.clickCount == 1 else {
             super.mouseDown(with: event)
             return
         }

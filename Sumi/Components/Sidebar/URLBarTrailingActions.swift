@@ -52,23 +52,29 @@ extension URLBarView {
     }
 
     func copyLinkButton(for currentTab: Tab) -> some View {
-        Button("Copy Link", systemImage: showCheckmark ? "checkmark" : "link") {
+        let action = {
             copyURLToClipboard(currentTab.url.absoluteString)
         }
+        let isAvailable = isCopyLinkAvailable(for: currentTab)
+
+        return Button("Copy Link", systemImage: showCheckmark ? "checkmark" : "link", action: action)
         .labelStyle(.iconOnly)
         .buttonStyle(URLBarButtonStyle())
         .foregroundStyle(tokens.primaryText)
         .help("Copy Link")
         .contentTransition(.symbolEffect(.replace))
-        .disabled(!isCopyLinkAvailable(for: currentTab))
+        .disabled(!isAvailable)
+        .sidebarAppKitPrimaryAction(isEnabled: isAvailable, action: action)
     }
 
     var hubButton: some View {
-        Button {
+        let action = {
             hubInitialMode = .controls
             hubModeRequestNonce += 1
             isHubPresented.toggle()
-        } label: {
+        }
+
+        return Button(action: action) {
             Group {
                 switch siteControlsSnapshot.hubAnchorAppearance {
                 case .zenPermissions:
@@ -85,6 +91,7 @@ extension URLBarView {
         .buttonStyle(URLBarButtonStyle())
         .help("Site Controls")
         .accessibilityIdentifier("urlbar-site-controls-button")
+        .sidebarAppKitPrimaryAction(action: action)
         .popover(isPresented: $isHubPresented, arrowEdge: .bottom) {
             URLBarHubPopover(
                 bookmarkManager: browserManager.bookmarkManager,

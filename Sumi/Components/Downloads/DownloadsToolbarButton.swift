@@ -62,6 +62,7 @@ private struct DownloadsToolbarButtonContent: View {
             )
             .allowsHitTesting(false)
         )
+        .sidebarAppKitPrimaryAction(action: action)
         .animation(.spring(duration: 0.35, bounce: 0.25), value: displayedProgress != nil)
         .onAppear {
             updateDisplayedProgress(from: downloadManager.combinedProgressFraction)

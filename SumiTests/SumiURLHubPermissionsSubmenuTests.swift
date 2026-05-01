@@ -40,6 +40,17 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
         XCTAssertTrue(permissionsView.contains(".accessibilityIdentifier(\"urlhub-permission-row-\\(row.id)\")"))
     }
 
+    func testCollapsedURLBarChromeActionsUseAppKitPrimaryRouting() throws {
+        let trailingActions = try sourceFile("Sumi/Components/Sidebar/URLBarTrailingActions.swift")
+        let permissionActions = try sourceFile("Sumi/Components/Sidebar/URLBarPermissionViews.swift")
+        let zoomActions = try sourceFile("Sumi/Components/Sidebar/URLBarZoomPopover.swift")
+
+        XCTAssertTrue(trailingActions.contains(".sidebarAppKitPrimaryAction(isEnabled: isAvailable, action: action)"))
+        XCTAssertTrue(trailingActions.contains(".sidebarAppKitPrimaryAction(action: action)"))
+        XCTAssertTrue(permissionActions.contains(".sidebarAppKitPrimaryAction(action: action)"))
+        XCTAssertTrue(zoomActions.contains(".sidebarAppKitPrimaryAction(action: action)"))
+    }
+
     func testURLHubPermissionsRowUsesHandIcon() throws {
         let urlBar = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
         let iconCatalog = try sourceFile("Sumi/Permissions/UI/SumiPermissionIconCatalog.swift")

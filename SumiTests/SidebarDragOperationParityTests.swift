@@ -2436,6 +2436,16 @@ final class SidebarDragStateTests: XCTestCase {
         ))
         XCTAssertTrue(SidebarDragVisualSurfacePolicy.shouldPresentCollapsedPanelPreviewOverlay(
             presentationContext: collapsedVisible,
+            isDragging: false,
+            isInternalDragGeometryArmed: true
+        ))
+        XCTAssertFalse(SidebarDragVisualSurfacePolicy.shouldPresentCollapsedPanelPreviewOverlay(
+            presentationContext: docked,
+            isDragging: false,
+            isInternalDragGeometryArmed: true
+        ))
+        XCTAssertTrue(SidebarDragVisualSurfacePolicy.shouldPresentCollapsedPanelPreviewOverlay(
+            presentationContext: collapsedVisible,
             isDragging: true
         ))
     }

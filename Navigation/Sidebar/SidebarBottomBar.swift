@@ -11,6 +11,7 @@ import SwiftUI
 struct SidebarBottomBar: View {
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(\.sidebarPresentationContext) private var presentationContext
     let visualSelectedSpaceId: UUID?
     let onNewSpaceTap: () -> Void
     let onSelectSpace: (Space) -> Void
@@ -41,23 +42,66 @@ struct SidebarBottomBar: View {
     }
 
     private var newSpaceButton: some View {
-        Menu{
-            Button("New Space", systemImage: "square.grid.2x2") {
-                onNewSpaceTap()
-            }
-            
-            Button("New Folder", systemImage: "folder.badge.plus") {
-                if let currentSpace = windowState.currentSpaceId
-                    .flatMap({ id in browserManager.tabManager.spaces.first(where: { $0.id == id }) })
-                    ?? browserManager.tabManager.currentSpace {
-                    _ = browserManager.tabManager.createFolder(for: currentSpace.id)
+        Group {
+            if presentationContext.inputMode == .collapsedOverlay {
+                Button(action: {}) {
+                    newSpaceButtonLabel
                 }
+                .buttonStyle(NavButtonStyle())
+                .sidebarAppKitContextMenu(
+                    surfaceKind: .button,
+                    triggers: [.leftClick, .rightClick],
+                    entries: newSpaceMenuEntries
+                )
+            } else {
+                Menu {
+                    Button("New Space", systemImage: "square.grid.2x2") {
+                        onNewSpaceTap()
+                    }
+
+                    Button("New Folder", systemImage: "folder.badge.plus") {
+                        createFolderInCurrentSpace()
+                    }
+                } label: {
+                    newSpaceButtonLabel
+                }
+                .menuStyle(.button)
+                .buttonStyle(NavButtonStyle())
             }
-        } label:{
-            Label("Actions", systemImage: "plus")
-                .labelStyle(.iconOnly)
         }
-        .menuStyle(.button)
-        .buttonStyle(NavButtonStyle())
+    }
+
+    private var newSpaceButtonLabel: some View {
+        Label("Actions", systemImage: "plus")
+            .labelStyle(.iconOnly)
+    }
+
+    private func newSpaceMenuEntries() -> [SidebarContextMenuEntry] {
+        [
+            .action(
+                .init(
+                    title: "New Space",
+                    systemImage: "square.grid.2x2",
+                    classification: .structuralMutation,
+                    onAction: onNewSpaceTap
+                )
+            ),
+            .action(
+                .init(
+                    title: "New Folder",
+                    systemImage: "folder.badge.plus",
+                    classification: .structuralMutation,
+                    onAction: createFolderInCurrentSpace
+                )
+            ),
+        ]
+    }
+
+    private func createFolderInCurrentSpace() {
+        if let currentSpace = windowState.currentSpaceId
+            .flatMap({ id in browserManager.tabManager.spaces.first(where: { $0.id == id }) })
+            ?? browserManager.tabManager.currentSpace {
+            _ = browserManager.tabManager.createFolder(for: currentSpace.id)
+        }
     }
 }
