@@ -590,6 +590,18 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         )
     }
 
+    func testSidebarPresentationContextOnlySuppressesInteractiveWorkWhileCollapsedHidden() {
+        XCTAssertTrue(
+            SidebarPresentationContext.docked(sidebarWidth: 280).allowsInteractiveWork
+        )
+        XCTAssertFalse(
+            SidebarPresentationContext.collapsedHidden(sidebarWidth: 280).allowsInteractiveWork
+        )
+        XCTAssertTrue(
+            SidebarPresentationContext.collapsedVisible(sidebarWidth: 280).allowsInteractiveWork
+        )
+    }
+
     func testSidebarPresentationContextInputModeSeparatesDockedLayoutFromCollapsedOverlay() {
         XCTAssertEqual(
             SidebarPresentationContext.docked(sidebarWidth: 280).inputMode,
@@ -1683,6 +1695,36 @@ final class SidebarColumnViewControllerTests: XCTestCase {
 
         XCTAssertFalse(interactionState.freezesSidebarHoverState)
         XCTAssertTrue(interactionState.allowsSidebarSwipeCapture)
+        XCTAssertFalse(coordinator.hasPinnedTransientUI(for: coordinator.windowID))
+    }
+
+    func testUrlHubPopoverTransientSessionPinsCollapsedSidebar() {
+        let interactionState = SidebarInteractionState()
+        let coordinator = SidebarTransientSessionCoordinator(
+            windowID: UUID(),
+            interactionState: interactionState
+        )
+        let window = makeWindow()
+        let source = coordinator.preparedPresentationSource(window: window)
+
+        let token = coordinator.beginSession(
+            kind: .urlHubPopover,
+            source: source,
+            path: "test.url-hub"
+        )
+
+        XCTAssertEqual(interactionState.activeKindsDescription, "urlHubPopover")
+        XCTAssertTrue(interactionState.freezesSidebarHoverState)
+        XCTAssertFalse(interactionState.allowsSidebarSwipeCapture)
+        XCTAssertFalse(interactionState.allowsSidebarDragSourceHitTesting)
+        XCTAssertTrue(coordinator.hasPinnedTransientUI(for: coordinator.windowID))
+
+        coordinator.endSession(token)
+
+        XCTAssertEqual(interactionState.activeKindsDescription, "none")
+        XCTAssertFalse(interactionState.freezesSidebarHoverState)
+        XCTAssertTrue(interactionState.allowsSidebarSwipeCapture)
+        XCTAssertTrue(interactionState.allowsSidebarDragSourceHitTesting)
         XCTAssertFalse(coordinator.hasPinnedTransientUI(for: coordinator.windowID))
     }
 

@@ -104,6 +104,7 @@ enum SidebarTransientUIKind: String, CaseIterable {
     case contextMenu
     case dialog
     case themePicker
+    case urlHubPopover
     case emojiPopover
     case sharingPicker
     case downloadsPopover
@@ -112,7 +113,7 @@ enum SidebarTransientUIKind: String, CaseIterable {
 
     var blocksSidebarDragSources: Bool {
         switch self {
-        case .contextMenu, .dialog, .themePicker, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt:
+        case .contextMenu, .dialog, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt:
             return true
         case .drag:
             return false
@@ -121,7 +122,7 @@ enum SidebarTransientUIKind: String, CaseIterable {
 
     var pinsCollapsedSidebar: Bool {
         switch self {
-        case .contextMenu, .dialog, .themePicker, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
+        case .contextMenu, .dialog, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
             return true
         }
     }
@@ -604,7 +605,7 @@ final class SidebarTransientSessionCoordinator {
         switch kind {
         case .contextMenu:
             return pendingMenuActionRecoveryTier
-        case .dialog, .themePicker, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
+        case .dialog, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
             return .soft
         }
     }

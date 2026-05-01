@@ -204,6 +204,9 @@ struct WindowView: View {
                 animationDuration: SidebarHoverOverlayMetrics.revealAnimationDuration
             )
         }
+        .onReceive(NotificationCenter.default.publisher(for: .sumiMemoryPressureReceived)) { _ in
+            hoverSidebarManager.releaseOverlayHostForMemoryPressure()
+        }
         // Keep Sumi's theme override inside SwiftUI so AppKit chrome stays stable while custom
         // sidebar chrome resolves its appearance from SwiftUI state.
         .environment(\.colorScheme, globalColorScheme)

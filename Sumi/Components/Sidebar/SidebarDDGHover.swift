@@ -329,6 +329,7 @@ private struct SidebarDDGHoverModifier: ViewModifier {
 
     private var effectiveIsEnabled: Bool {
         isEnabled
+            && presentationContext.allowsInteractiveWork
             && !dragState.isDragging
             && !windowState.sidebarInteractionState.freezesSidebarHoverState
     }

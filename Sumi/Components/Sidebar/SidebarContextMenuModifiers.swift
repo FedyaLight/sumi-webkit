@@ -18,6 +18,8 @@ private struct SidebarAppKitItemModifier: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
+        let effectiveInteractionEnabled = isInteractionEnabled
+            && presentationContext.allowsInteractiveWork
         let route = SidebarItemInputRouting.route(
             in: presentationContext,
             menu: menu,
@@ -42,7 +44,7 @@ private struct SidebarAppKitItemModifier: ViewModifier {
                 content: content,
                 controller: windowState.sidebarContextMenuController,
                 configuration: SidebarAppKitItemConfiguration(
-                    isInteractionEnabled: isInteractionEnabled,
+                    isInteractionEnabled: effectiveInteractionEnabled,
                     menu: menu,
                     dragSource: dragSource,
                     dragScope: dragScope,
@@ -79,11 +81,13 @@ private struct SidebarAppKitPrimaryActionModifier: ViewModifier {
     func body(content: Content) -> some View {
         if SidebarPrimaryActionInputRouting.usesAppKitOwner(in: presentationContext) {
             let primaryAction: (() -> Void)? = isEnabled ? action : nil
+            let effectiveInteractionEnabled = isInteractionEnabled
+                && presentationContext.allowsInteractiveWork
             SidebarAppKitItemBridge(
                 content: content,
                 controller: windowState.sidebarContextMenuController,
                 configuration: SidebarAppKitItemConfiguration(
-                    isInteractionEnabled: isInteractionEnabled,
+                    isInteractionEnabled: effectiveInteractionEnabled,
                     primaryAction: primaryAction,
                     presentationMode: presentationContext.mode
                 )
@@ -102,6 +106,7 @@ enum SidebarPrimaryActionInputRouting {
 
 private struct SumiAppKitContextMenuModifier: ViewModifier {
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(\.sidebarPresentationContext) private var presentationContext
 
     let isEnabled: Bool
     let entries: () -> [SidebarContextMenuEntry]
@@ -111,7 +116,7 @@ private struct SumiAppKitContextMenuModifier: ViewModifier {
         content.overlay {
             SumiAppKitContextMenuBridge(
                 controller: windowState.sidebarContextMenuController,
-                isEnabled: isEnabled,
+                isEnabled: isEnabled && presentationContext.allowsInteractiveWork,
                 entries: entries,
                 onMenuVisibilityChanged: onMenuVisibilityChanged
             )

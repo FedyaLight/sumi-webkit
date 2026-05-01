@@ -46,6 +46,10 @@ struct SidebarPresentationContext: Equatable {
         mode == .collapsedVisible
     }
 
+    var allowsInteractiveWork: Bool {
+        mode != .collapsedHidden
+    }
+
     static func collapsedSidebarWidth(
         sidebarWidth: CGFloat,
         savedSidebarWidth: CGFloat

@@ -148,7 +148,12 @@ struct SpacesSideBarView: View {
                 cancelLocalSpaceTransitionIfNeeded(cancelTheme: true)
             }
             .onHover { state in
-                isSidebarHovered = state
+                isSidebarHovered = allowsSidebarInteractiveWork ? state : false
+            }
+            .onChange(of: allowsSidebarInteractiveWork) { _, allowsInteractiveWork in
+                if !allowsInteractiveWork {
+                    isSidebarHovered = false
+                }
             }
     }
 
@@ -159,7 +164,7 @@ struct SpacesSideBarView: View {
             .overlay {
                 ZStack {
                     SidebarGlobalDragOverlay()
-                        .allowsHitTesting(true)
+                        .allowsHitTesting(allowsSidebarInteractiveWork)
                 }
             }
     }
@@ -246,7 +251,8 @@ struct SpacesSideBarView: View {
                         )
                         .overlay {
                             SidebarSwipeCaptureSurface(
-                                isEnabled: spaces.count > 1
+                                isEnabled: allowsSidebarInteractiveWork
+                                    && spaces.count > 1
                                     && (transitionState.phase == .idle || transitionState.phase == .interactive)
                                     && sidebarInteractionState.allowsSidebarSwipeCapture
                             ) { event in
@@ -258,14 +264,19 @@ struct SpacesSideBarView: View {
                 .clipped()
                 .onAppear {
                     handleSpacesCollectionChange(spaces)
-                    refreshCommittedSidebarDragGeometry(spaces: spaces)
+                    refreshCommittedSidebarDragGeometryIfInteractive(spaces: spaces)
                 }
                 .onChange(of: spaces.map(\.id)) { _, _ in
                     handleSpacesCollectionChange(spaces)
-                    refreshCommittedSidebarDragGeometry(spaces: spaces)
+                    refreshCommittedSidebarDragGeometryIfInteractive(spaces: spaces)
                 }
                 .onChange(of: committedSpaceId(in: spaces)) { _, _ in
-                    refreshCommittedSidebarDragGeometry(spaces: spaces)
+                    refreshCommittedSidebarDragGeometryIfInteractive(spaces: spaces)
+                }
+                .onChange(of: allowsSidebarInteractiveWork) { _, allowsInteractiveWork in
+                    if allowsInteractiveWork {
+                        refreshCommittedSidebarDragGeometry(spaces: spaces)
+                    }
                 }
             }
         }
@@ -279,6 +290,10 @@ struct SpacesSideBarView: View {
 
     private var sidebarInteractionState: SidebarInteractionState {
         windowState.sidebarInteractionState
+    }
+
+    private var allowsSidebarInteractiveWork: Bool {
+        sidebarPresentationContext.allowsInteractiveWork
     }
 
     @ViewBuilder
@@ -753,13 +768,21 @@ struct SpacesSideBarView: View {
     }
 
     private func beginSidebarDragGeometryTransition() {
+        guard allowsSidebarInteractiveWork else { return }
+
         dragState.beginPendingGeometryEpoch(
             expectedSpaceId: nil,
             profileId: nil
         )
     }
 
+    private func refreshCommittedSidebarDragGeometryIfInteractive(spaces: [Space]) {
+        guard allowsSidebarInteractiveWork else { return }
+        refreshCommittedSidebarDragGeometry(spaces: spaces)
+    }
+
     private func refreshCommittedSidebarDragGeometry(spaces: [Space]) {
+        guard allowsSidebarInteractiveWork else { return }
         guard transitionState.phase == .idle,
               let committedSpace = space(for: committedSpaceId(in: spaces), in: spaces) else {
             return
@@ -857,11 +880,13 @@ struct SpacesSideBarView: View {
     @ViewBuilder
     private func makeSpaceView(
         for space: Space,
-        renderMode: SpaceViewRenderMode
+        renderMode: SpaceViewRenderMode,
+        allowsInteraction: Bool
     ) -> some View {
         SpaceView(
             space: space,
             renderMode: renderMode,
+            allowsInteraction: allowsInteraction,
             isSidebarHovered: $isSidebarHovered,
             onActivateTab: {
                 browserManager.requestUserTabActivation(
@@ -911,7 +936,8 @@ struct SpacesSideBarView: View {
 
             makeSpaceView(
                 for: space,
-                renderMode: pageRenderMode.spaceRenderMode
+                renderMode: pageRenderMode.spaceRenderMode,
+                allowsInteraction: pageRenderMode == .interactive && allowsSidebarInteractiveWork
             )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -920,7 +946,7 @@ struct SpacesSideBarView: View {
             profileId: pageProfileId,
             renderMode: pageRenderMode.geometryRenderMode,
             generation: dragState.sidebarGeometryGeneration,
-            isEnabled: pageRenderMode == .interactive
+            isEnabled: pageRenderMode == .interactive && allowsSidebarInteractiveWork
         )
         .id(
             SidebarPageInputGraphIdentity(
@@ -955,19 +981,20 @@ struct SpacesSideBarView: View {
         profileId: UUID?,
         pageRenderMode: SidebarPageRenderMode
     ) -> some View {
+        let allowsInteractiveWork = pageRenderMode == .interactive && allowsSidebarInteractiveWork
         let shouldAnimate = SpaceSidebarChromePreviewPolicy.shouldAnimateEssentialsLayout(
             isActiveWindow: windowRegistry.activeWindow?.id == windowState.id,
             isTransitioningProfile: browserManager.isTransitioningProfile,
             pageRenderMode: pageRenderMode
-        )
+        ) && allowsInteractiveWork
 
         PinnedGrid(
             width: windowState.sidebarContentWidth,
             spaceId: spaceId,
             profileId: profileId,
             animateLayout: shouldAnimate,
-            reportsGeometry: pageRenderMode == .interactive,
-            isAppKitInteractionEnabled: pageRenderMode == .interactive
+            reportsGeometry: allowsInteractiveWork,
+            isAppKitInteractionEnabled: allowsInteractiveWork
         )
         .environmentObject(browserManager)
         .environment(windowState)
