@@ -58,12 +58,9 @@ final class ShellSelectionService {
         if let shortcutPinId = windowState.currentShortcutPinId,
            let pin = tabStore.shortcutPin(by: shortcutPinId)
         {
+            // Selection reads are used from SwiftUI body; activation must stay in explicit actions/restoration.
             return tabStore.activeShortcutTab(for: windowState.id)
-                ?? tabStore.activateShortcutPin(
-                    pin,
-                    in: windowState.id,
-                    currentSpaceId: windowState.currentSpaceId
-                )
+                ?? tabStore.shortcutLiveTab(for: pin.id, in: windowState.id)
         }
 
         if let currentSpaceId = windowState.currentSpaceId,

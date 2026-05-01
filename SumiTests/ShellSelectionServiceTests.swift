@@ -146,6 +146,69 @@ final class ShellSelectionServiceTests: XCTestCase {
 
         XCTAssertEqual(displayed.map(\.id), [leftTab.id, splitTab.id])
     }
+
+    func testPreferredTabForWindowDoesNotActivateMissingShortcutDuringRead() {
+        let service = ShellSelectionService { _ in (nil, nil) }
+        let fallback = Tab(
+            url: URL(string: "https://fallback.example")!,
+            name: "Fallback",
+            index: 0
+        )
+        let pin = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            index: 0,
+            launchURL: URL(string: "https://shortcut.example")!,
+            title: "Shortcut"
+        )
+        let store = FakeShellSelectionTabStore(
+            spaces: [],
+            allTabs: [fallback],
+            tabsBySpace: [:],
+            shortcutPins: [pin.id: pin],
+            currentTab: fallback
+        )
+
+        let windowState = BrowserWindowState()
+        windowState.currentShortcutPinId = pin.id
+
+        let resolved = service.preferredTabForWindow(windowState, tabStore: store)
+
+        XCTAssertEqual(resolved?.id, fallback.id)
+        XCTAssertEqual(store.activateShortcutPinCallCount, 0)
+    }
+
+    func testPreferredTabForWindowReturnsExistingShortcutLiveTabWithoutActivating() {
+        let service = ShellSelectionService { _ in (nil, nil) }
+        let pin = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            index: 0,
+            launchURL: URL(string: "https://shortcut.example")!,
+            title: "Shortcut"
+        )
+        let liveTab = Tab(
+            url: pin.launchURL,
+            name: pin.title,
+            index: 0
+        )
+        liveTab.bindToShortcutPin(pin)
+        let store = FakeShellSelectionTabStore(
+            spaces: [],
+            allTabs: [],
+            tabsBySpace: [:],
+            shortcutPins: [pin.id: pin],
+            liveShortcutTabsByPin: [pin.id: liveTab]
+        )
+
+        let windowState = BrowserWindowState()
+        windowState.currentShortcutPinId = pin.id
+
+        let resolved = service.preferredTabForWindow(windowState, tabStore: store)
+
+        XCTAssertEqual(resolved?.id, liveTab.id)
+        XCTAssertEqual(store.activateShortcutPinCallCount, 0)
+    }
 }
 
 @MainActor
@@ -156,18 +219,22 @@ private final class FakeShellSelectionTabStore: ShellSelectionTabStore {
     private let allTabsValue: [Tab]
     private let tabsBySpace: [UUID: [Tab]]
     private let shortcutPins: [UUID: ShortcutPin]
+    private let liveShortcutTabsByPin: [UUID: Tab]
+    private(set) var activateShortcutPinCallCount = 0
 
     init(
         spaces: [Space],
         allTabs: [Tab],
         tabsBySpace: [UUID: [Tab]],
         shortcutPins: [UUID: ShortcutPin] = [:],
+        liveShortcutTabsByPin: [UUID: Tab] = [:],
         currentTab: Tab? = nil
     ) {
         self.spaces = spaces
         self.allTabsValue = allTabs
         self.tabsBySpace = tabsBySpace
         self.shortcutPins = shortcutPins
+        self.liveShortcutTabsByPin = liveShortcutTabsByPin
         self.currentTab = currentTab
     }
 
@@ -188,14 +255,15 @@ private final class FakeShellSelectionTabStore: ShellSelectionTabStore {
     }
 
     func liveShortcutTabs(in windowId: UUID) -> [Tab] {
-        []
+        Array(liveShortcutTabsByPin.values)
     }
 
     func shortcutLiveTab(for pinId: UUID, in windowId: UUID) -> Tab? {
-        nil
+        liveShortcutTabsByPin[pinId]
     }
 
     func activateShortcutPin(_ pin: ShortcutPin, in windowId: UUID, currentSpaceId: UUID?) -> Tab {
+        activateShortcutPinCallCount += 1
         XCTFail("Shortcut activation was not expected in this test")
         return Tab(url: pin.launchURL, name: pin.title, spaceId: currentSpaceId, index: 0)
     }

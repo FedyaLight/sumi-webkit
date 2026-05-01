@@ -60,8 +60,6 @@ struct URLBarView: View {
     @State var isZoomButtonHovering = false
     @State var isZoomPopoverHovering = false
     @State var zoomPopoverHideTask: Task<Void, Never>?
-    @State var didConfigurePermissionIndicator = false
-    @State var didConfigurePermissionPrompt = false
     @StateObject var permissionIndicatorViewModel = SumiPermissionIndicatorViewModel()
     @StateObject var permissionPromptPresenter = SumiPermissionPromptPresenter()
 

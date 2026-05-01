@@ -168,6 +168,8 @@ struct WindowView: View {
         .coordinateSpace(name: "WindowSpace")
         .onPreferenceChange(URLBarFramePreferenceKey.self) { frame in
             Task { @MainActor in
+                await Task.yield()
+                guard windowState.urlBarFrame != frame else { return }
                 windowState.urlBarFrame = frame
             }
         }

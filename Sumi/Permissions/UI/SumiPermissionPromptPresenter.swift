@@ -67,6 +67,7 @@ final class SumiPermissionPromptPresenter: ObservableObject {
     private var suppressedSourceIds = Set<String>()
     private var shownQuerySourceIds = Set<String>()
     private var eventTask: Task<Void, Never>?
+    private var isConfigured = false
 
     deinit {
         eventTask?.cancel()
@@ -77,6 +78,9 @@ final class SumiPermissionPromptPresenter: ObservableObject {
         systemPermissionService: any SumiSystemPermissionService,
         externalAppResolver: (any SumiExternalAppResolving)? = nil
     ) {
+        guard !isConfigured else { return }
+        isConfigured = true
+
         self.coordinator = coordinator
         self.systemPermissionService = systemPermissionService
         self.externalAppResolver = externalAppResolver
@@ -85,11 +89,13 @@ final class SumiPermissionPromptPresenter: ObservableObject {
         eventTask = Task { @MainActor [weak self, coordinator] in
             let stream = await coordinator.events()
             for await _ in stream {
+                await Task.yield()
                 await self?.refresh(autoPresent: true)
             }
         }
 
         Task { @MainActor [weak self] in
+            await Task.yield()
             await self?.refresh(autoPresent: true)
         }
     }
@@ -107,6 +113,7 @@ final class SumiPermissionPromptPresenter: ObservableObject {
             windowIsActive: windowState.window?.isKeyWindow ?? true
         )
         Task { @MainActor [weak self] in
+            await Task.yield()
             await self?.refresh(autoPresent: true)
         }
         _ = browserManager
@@ -114,20 +121,30 @@ final class SumiPermissionPromptPresenter: ObservableObject {
 
     func clear() {
         currentContext = nil
-        viewModel = nil
         currentSourceId = nil
-        isPresented = false
+        if viewModel != nil {
+            viewModel = nil
+        }
+        if isPresented {
+            isPresented = false
+        }
     }
 
     func closeForCurrentTabChange() {
-        viewModel = nil
         currentSourceId = nil
-        isPresented = false
+        if viewModel != nil {
+            viewModel = nil
+        }
+        if isPresented {
+            isPresented = false
+        }
     }
 
     func presentFromIndicatorClick() -> Bool {
         guard viewModel != nil else { return false }
-        isPresented = true
+        if !isPresented {
+            isPresented = true
+        }
         Task { @MainActor [weak self] in
             await self?.recordCurrentPromptShownIfNeeded()
         }
@@ -174,7 +191,9 @@ final class SumiPermissionPromptPresenter: ObservableObject {
         }
 
         if autoPresent, snapshot.windowIsActive {
-            isPresented = true
+            if !isPresented {
+                isPresented = true
+            }
             await recordPromptShownIfNeeded(candidate: candidate, coordinator: coordinator)
         }
     }
