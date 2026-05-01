@@ -125,6 +125,9 @@ final class BrowserWindowChromeTests: XCTestCase {
             XCTAssertTrue(button.accessibilityIdentifier().isEmpty)
             XCTAssertLessThan(button.frame.origin.x, -9_000)
         }
+
+        window.miniaturizeFromCustomBrowserChrome()
+        assertNativeBrowserControlsHidden(window)
     }
 
     func testMiniWindowNativeControlConfigurationRemainsVisibleAndIdentified() {
