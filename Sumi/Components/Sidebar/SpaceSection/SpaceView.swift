@@ -26,6 +26,7 @@ enum SpaceViewRenderMode {
 struct SpaceView: View {
     let space: Space
     let renderMode: SpaceViewRenderMode
+    let allowsInteraction: Bool
     @Binding var isSidebarHovered: Bool
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) var windowState
@@ -63,7 +64,7 @@ struct SpaceView: View {
     }
 
     var isInteractive: Bool {
-        renderMode.isInteractive
+        renderMode.isInteractive && allowsInteraction
     }
 
 

@@ -241,6 +241,11 @@ final class TabSuspensionService {
         }
 
         PerformanceTrace.emitEvent("TabSuspension.memoryPressureEvent")
+        NotificationCenter.default.post(
+            name: .sumiMemoryPressureReceived,
+            object: self,
+            userInfo: ["level": level.rawValue]
+        )
 
         let inactiveCutoff = dateProvider().addingTimeInterval(-Self.defaultMinimumInactiveInterval)
         let candidates = suspensionCandidates(inactiveBefore: inactiveCutoff)

@@ -557,6 +557,7 @@ enum DarkThemeStyle: String, CaseIterable, Identifiable {
 extension Notification.Name {
     static let tabUnloadTimeoutChanged = Notification.Name("tabUnloadTimeoutChanged")
     static let sumiMemorySaverPolicyChanged = Notification.Name("SumiMemorySaverPolicyChanged")
+    static let sumiMemoryPressureReceived = Notification.Name("SumiMemoryPressureReceived")
 }
 
 // MARK: - Environment Key

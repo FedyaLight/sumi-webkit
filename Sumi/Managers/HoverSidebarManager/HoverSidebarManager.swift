@@ -99,7 +99,7 @@ final class HoverSidebarManager: ObservableObject {
     /// Zen accepts a 7px vertical bounds error for edge-cross hover retention.
     var verticalSlack: CGFloat = HoverSidebarCompactMetrics.verticalBoundsSlack
     var sidebarPosition: SidebarPosition = .left
-    var hiddenHostRetentionDelay: TimeInterval
+    var inactiveHostRetentionDelay: TimeInterval
 
     // MARK: - Dependencies
     weak var browserManager: BrowserManager?
@@ -124,11 +124,11 @@ final class HoverSidebarManager: ObservableObject {
     init(
         eventMonitors: HoverSidebarEventMonitorClient = .live,
         mouseLocationProvider: @escaping () -> CGPoint = { NSEvent.mouseLocation },
-        hiddenHostRetentionDelay: TimeInterval = 0.85
+        inactiveHostRetentionDelay: TimeInterval = 30
     ) {
         self.eventMonitors = eventMonitors
         self.mouseLocationProvider = mouseLocationProvider
-        self.hiddenHostRetentionDelay = hiddenHostRetentionDelay
+        self.inactiveHostRetentionDelay = inactiveHostRetentionDelay
     }
 
     // MARK: - Lifecycle
@@ -150,15 +150,27 @@ final class HoverSidebarManager: ObservableObject {
         guard isActive,
               let registry = windowRegistry,
               let hostedWindowId,
-              registry.activeWindowId == hostedWindowId,
-              let activeState = registry.activeWindow,
-              !activeState.isSidebarVisible
+              let hostedState = registry.windows[hostedWindowId]
         else {
             uninstallMonitors()
             resetOverlayVisibilityAndHost()
             return
         }
 
+        guard !hostedState.isSidebarVisible else {
+            uninstallMonitors()
+            resetOverlayVisibilityAndHost()
+            return
+        }
+
+        guard registry.activeWindowId == hostedWindowId else {
+            uninstallMonitors()
+            hideOverlayImmediately()
+            releaseOverlayHostWhenInactive(after: inactiveHostRetentionDelay)
+            return
+        }
+
+        retainOverlayHostWhileCollapsed()
         installMonitorsIfNeeded()
     }
 
@@ -279,13 +291,13 @@ final class HoverSidebarManager: ObservableObject {
             if !isOverlayVisible {
                 requestOverlayReveal(animationDuration: HoverSidebarCompactMetrics.revealAnimationDuration)
             }
-        } else if isOverlayVisible || isOverlayHostPrewarmed {
+        } else if isOverlayVisible {
             scheduleOverlayHide(animationDuration: HoverSidebarCompactMetrics.hideAnimationDuration)
         }
     }
 
     func requestOverlayReveal(animationDuration: TimeInterval) {
-        prewarmOverlayHost()
+        retainOverlayHostWhileCollapsed()
         overlayVisibilityGeneration &+= 1
         let generation = overlayVisibilityGeneration
 
@@ -301,7 +313,20 @@ final class HoverSidebarManager: ObservableObject {
     }
 
     func retainOverlayHostForPinnedInteraction() {
+        retainOverlayHostWhileCollapsed()
+    }
+
+    func retainOverlayHostWhileCollapsed() {
         prewarmOverlayHost()
+    }
+
+    func releaseOverlayHostForMemoryPressure() {
+        overlayVisibilityGeneration &+= 1
+        overlayHostPrewarmGeneration &+= 1
+        hideOverlayImmediately()
+        if isOverlayHostPrewarmed {
+            isOverlayHostPrewarmed = false
+        }
     }
 
     func setOverlayVisibility(_ isVisible: Bool, animationDuration: TimeInterval) {
@@ -317,7 +342,6 @@ final class HoverSidebarManager: ObservableObject {
         withAnimation(.easeInOut(duration: animationDuration)) {
             isOverlayVisible = false
         }
-        releaseOverlayHostWhenIdle(after: max(animationDuration, hiddenHostRetentionDelay))
     }
 
     private func scheduleOverlayHide(animationDuration: TimeInterval) {
@@ -346,7 +370,7 @@ final class HoverSidebarManager: ObservableObject {
         }
     }
 
-    private func releaseOverlayHostWhenIdle(after delay: TimeInterval) {
+    private func releaseOverlayHostWhenInactive(after delay: TimeInterval) {
         overlayHostPrewarmGeneration &+= 1
         let generation = overlayHostPrewarmGeneration
 
@@ -357,6 +381,12 @@ final class HoverSidebarManager: ObservableObject {
             else { return }
 
             self.isOverlayHostPrewarmed = false
+        }
+    }
+
+    private func hideOverlayImmediately() {
+        if isOverlayVisible {
+            isOverlayVisible = false
         }
     }
 

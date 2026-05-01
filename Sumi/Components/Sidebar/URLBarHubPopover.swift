@@ -352,6 +352,7 @@ struct URLBarHubPopover: View {
     @State private var navigationDirection: NavigationDirection = .forward
     @State private var containerWidth: CGFloat = Mode.controls.preferredWidth
     @State private var bookmarkErrorMessage: String?
+    @State private var transientSessionToken: SidebarTransientSessionToken?
     @StateObject private var siteDataDetailsModel = URLBarSiteDataDetailsViewModel()
     @StateObject private var currentSitePermissionsModel = SumiCurrentSitePermissionsViewModel()
 
@@ -404,8 +405,12 @@ struct URLBarHubPopover: View {
         .clipped()
         .animation(Self.modeAnimation, value: containerWidth)
         .onAppear {
+            beginSidebarTransientSessionIfNeeded()
             applyInitialMode(animated: false)
             handleBookmarkPresentationRequest(bookmarkPresentationRequest)
+        }
+        .onDisappear {
+            finishSidebarTransientSession(reason: "URLBarHubPopover.disappear")
         }
         .onChange(of: bookmarkPresentationRequest) { _, request in
             handleBookmarkPresentationRequest(request)
@@ -839,20 +844,10 @@ struct URLBarHubPopover: View {
 
     private func shareCurrentPage() {
         guard let url = currentTab?.url else { return }
-        guard let contentView = NSApp.keyWindow?.contentView else {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(url.absoluteString, forType: .string)
-            return
-        }
-
-        let picker = NSSharingServicePicker(items: [url])
-        let anchor = NSRect(
-            x: contentView.bounds.midX,
-            y: contentView.bounds.midY,
-            width: 1,
-            height: 1
+        let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
+            window: windowState.window
         )
-        picker.show(relativeTo: anchor, of: contentView, preferredEdge: .minY)
+        browserManager.presentSharingServicePicker([url], source: source)
     }
 
     private func captureCurrentPage() {
@@ -926,6 +921,26 @@ struct URLBarHubPopover: View {
         {
             resetToControls()
         }
+    }
+
+    private func beginSidebarTransientSessionIfNeeded() {
+        guard transientSessionToken == nil else { return }
+        let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
+            window: windowState.window
+        )
+        transientSessionToken = windowState.sidebarTransientSessionCoordinator.beginSession(
+            kind: .urlHubPopover,
+            source: source,
+            path: "URLBarHubPopover"
+        )
+    }
+
+    private func finishSidebarTransientSession(reason: String) {
+        windowState.sidebarTransientSessionCoordinator.finishSession(
+            transientSessionToken,
+            reason: reason
+        )
+        transientSessionToken = nil
     }
 
     private func handleReaderMode() {
@@ -1887,4 +1902,3 @@ private struct HubSettingRow: View {
         isHovered ? 1.05 : 1
     }
 }
-
