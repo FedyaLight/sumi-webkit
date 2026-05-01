@@ -59,6 +59,12 @@ extension BrowserManager {
         dismissWorkspaceThemePickerDiscarding(sessionID: session.id)
     }
 
+    /// Commits and closes any open workspace theme picker session.
+    func dismissWorkspaceThemePickerIfNeededCommitting() {
+        guard let session = workspaceThemePickerSession else { return }
+        dismissWorkspaceThemePicker(sessionID: session.id)
+    }
+
     func finalizeWorkspaceThemePickerDismiss(_ session: WorkspaceThemePickerSession) {
         workspaceAppearanceService.finalizeDismissedGradientEditorSession(
             session,

@@ -64,7 +64,7 @@ enum SidebarHoverOverlayHostMountPolicy {
 
 enum SidebarHoverOverlayMetrics {
     static let cornerRadius: CGFloat = 12
-    static let revealAnimationDuration: TimeInterval = 0.12
+    static let revealAnimationDuration: TimeInterval = HoverSidebarCompactMetrics.revealAnimationDuration
 }
 
 struct SidebarHoverOverlayView: View {

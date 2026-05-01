@@ -5,6 +5,15 @@ import XCTest
 
 @MainActor
 final class HoverSidebarManagerTests: XCTestCase {
+    func testDefaultActivationZoneMatchesZenCompactSidebarEdge() {
+        let manager = HoverSidebarManager()
+
+        XCTAssertEqual(manager.triggerWidth, 5)
+        XCTAssertEqual(manager.overshootSlack, 10)
+        XCTAssertEqual(manager.keepOpenHysteresis, 0)
+        XCTAssertEqual(manager.verticalSlack, 7)
+    }
+
     func testVisibilityPolicyUsesLeftSidebarTriggerAndKeepOpenZones() {
         let frame = CGRect(x: 100, y: 100, width: 800, height: 600)
 

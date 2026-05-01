@@ -12,6 +12,10 @@ final class SidebarColumnViewController: NSViewController {
     private weak var registeredRecoveryAnchor: NSView?
     private let usesCollapsedPanelRoot: Bool
 
+    var collapsedPanelAnimatedContentView: NSView? {
+        hostingController?.view
+    }
+
     init(usesCollapsedPanelRoot: Bool = false) {
         self.usesCollapsedPanelRoot = usesCollapsedPanelRoot
         super.init(nibName: nil, bundle: nil)
@@ -41,11 +45,13 @@ final class SidebarColumnViewController: NSViewController {
         width: CGFloat,
         contextMenuController: SidebarContextMenuController? = nil,
         capturesPanelBackgroundPointerEvents: Bool = false,
-        isCollapsedPanelHitTestingEnabled: Bool = false
+        isCollapsedPanelHitTestingEnabled: Bool = false,
+        onPointerDown: (() -> Void)? = nil
     ) {
         let previousHostedSidebarView = hostingController?.view
         let containerView = view as? SidebarColumnBaseContainerView
         containerView?.contextMenuController = contextMenuController
+        containerView?.onPointerDown = onPointerDown
         (view as? SidebarColumnContainerView)?
             .capturesPanelBackgroundPointerEvents = capturesPanelBackgroundPointerEvents
         (view as? CollapsedSidebarPanelRootView)?
@@ -53,12 +59,14 @@ final class SidebarColumnViewController: NSViewController {
 
         if let hostingController = hostingController as? SidebarHostingController<Content> {
             hostingController.rootView = root
+            hostingController.onPointerDown = onPointerDown
             SidebarColumnPaintlessChrome.configure(hostingController.view)
             widthConstraint?.constant = width
         } else {
             removeHostingControllerIfNeeded()
 
             let nextHostingController = SidebarHostingController(rootView: root)
+            nextHostingController.onPointerDown = onPointerDown
             SidebarColumnPaintlessChrome.configure(nextHostingController.view)
             hostingController = nextHostingController
             addChild(nextHostingController)
@@ -89,11 +97,17 @@ final class SidebarColumnViewController: NSViewController {
         syncRecoveryAnchor(window: view.window)
     }
 
+    func setCollapsedPanelHitTestingEnabled(_ isEnabled: Bool) {
+        (view as? CollapsedSidebarPanelRootView)?
+            .isPanelHitTestingEnabled = isEnabled
+    }
+
     func teardownSidebarHosting() {
         unregisterRecoveryAnchor()
         let containerView = view as? SidebarColumnBaseContainerView
         containerView?.hostedSidebarView = nil
         containerView?.contextMenuController = nil
+        containerView?.onPointerDown = nil
         (view as? SidebarColumnContainerView)?.capturesPanelBackgroundPointerEvents = false
         (view as? CollapsedSidebarPanelRootView)?.isPanelHitTestingEnabled = false
         widthConstraint?.isActive = false
