@@ -28,7 +28,6 @@ extension URLBarView {
     }
 
     func configurePermissionIndicatorIfNeeded() {
-        guard !didConfigurePermissionIndicator else { return }
         permissionIndicatorViewModel.configure(
             coordinator: browserManager.permissionCoordinator,
             runtimeController: browserManager.runtimePermissionController,
@@ -36,17 +35,14 @@ extension URLBarView {
             externalSchemeStore: browserManager.externalSchemeSessionStore,
             indicatorEventStore: browserManager.permissionIndicatorEventStore
         )
-        didConfigurePermissionIndicator = true
     }
 
     func configurePermissionPromptIfNeeded() {
-        guard !didConfigurePermissionPrompt else { return }
         permissionPromptPresenter.configure(
             coordinator: browserManager.permissionCoordinator,
             systemPermissionService: browserManager.systemPermissionService,
             externalAppResolver: browserManager.externalAppResolver
         )
-        didConfigurePermissionPrompt = true
     }
 
     func refreshPermissionIndicator(for tab: Tab) {

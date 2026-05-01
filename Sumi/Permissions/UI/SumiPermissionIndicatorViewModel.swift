@@ -62,6 +62,7 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
     private var runtimeObservation: SumiRuntimePermissionObservation?
     private var eventTask: Task<Void, Never>?
     private var cancellables: Set<AnyCancellable> = []
+    private var isConfigured = false
 
     init(now: @escaping () -> Date = Date.init) {
         self.now = now
@@ -78,6 +79,9 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
         externalSchemeStore: SumiExternalSchemeSessionStore,
         indicatorEventStore: SumiPermissionIndicatorEventStore
     ) {
+        guard !isConfigured else { return }
+        isConfigured = true
+
         self.coordinator = coordinator
         self.runtimeController = runtimeController
         self.popupStore = popupStore
@@ -153,11 +157,13 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
         runtimeObservation?.cancel()
         runtimeObservation = nil
         currentWebView = nil
+        guard state != .hidden else { return }
         state = .hidden
     }
 
     func refresh() {
         Task { @MainActor [weak self] in
+            await Task.yield()
             await self?.refreshFromSources()
         }
     }
@@ -228,6 +234,7 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
 
     private func refreshFromSources() async {
         guard let currentContext else {
+            guard state != .hidden else { return }
             state = .hidden
             return
         }
@@ -246,7 +253,9 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
             pageId: currentContext.pageId,
             now: now()
         )
-        state = Self.state(from: snapshot)
+        let nextState = Self.state(from: snapshot)
+        guard state != nextState else { return }
+        state = nextState
     }
 
     private static func activeQuery(
