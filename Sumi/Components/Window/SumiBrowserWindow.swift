@@ -46,7 +46,6 @@ func promoteToSumiBrowserWindowIfNeeded(_ window: NSWindow) {
 
 private enum SumiBrowserWindowAssociatedKeys {
     static var didApplyInitialShellSize: UInt8 = 0
-    static var nativeStandardButtonBaseFrames: UInt8 = 0
 }
 
 extension NSWindow {
@@ -57,7 +56,7 @@ extension NSWindow {
         titlebarAppearsTransparent = true
         titlebarSeparatorStyle = .none
         toolbar = nil
-        configureNativeStandardWindowButtonsForBrowserChrome()
+        hideNativeStandardWindowButtonsForBrowserChrome()
     }
 
     @MainActor
@@ -91,23 +90,6 @@ extension NSWindow {
             objc_setAssociatedObject(
                 self,
                 &SumiBrowserWindowAssociatedKeys.didApplyInitialShellSize,
-                newValue,
-                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
-            )
-        }
-    }
-
-    private var nativeStandardButtonBaseFrames: [Int: NSRect] {
-        get {
-            (objc_getAssociatedObject(
-                self,
-                &SumiBrowserWindowAssociatedKeys.nativeStandardButtonBaseFrames
-            ) as? [Int: NSRect]) ?? [:]
-        }
-        set {
-            objc_setAssociatedObject(
-                self,
-                &SumiBrowserWindowAssociatedKeys.nativeStandardButtonBaseFrames,
                 newValue,
                 .OBJC_ASSOCIATION_RETAIN_NONATOMIC
             )
@@ -172,10 +154,22 @@ final class SumiBrowserWindow: NSWindow {
 
 @MainActor
 extension NSWindow {
-    func configureNativeStandardWindowButtonsForBrowserChrome(
-        buttonTypes: [NSWindow.ButtonType] = SumiBrowserChromeConfiguration.buttonTypes,
-        horizontalOffset: CGFloat = 0,
-        verticalOffset: CGFloat = 0
+    func hideNativeStandardWindowButtonsForBrowserChrome(
+        buttonTypes: [NSWindow.ButtonType] = SumiBrowserChromeConfiguration.buttonTypes
+    ) {
+        for type in buttonTypes {
+            guard let button = standardWindowButton(type) else { continue }
+            button.identifier = nil
+            button.setAccessibilityIdentifier(nil)
+            applyNativeStandardWindowButtonState(button, isVisible: false)
+        }
+    }
+
+    /// MiniWindow intentionally remains on AppKit's native titlebar-button path.
+    /// Browser windows call `hideNativeStandardWindowButtonsForBrowserChrome()`
+    /// and render `BrowserWindowTrafficLights` instead.
+    func configureNativeStandardWindowButtonsForMiniWindowChrome(
+        buttonTypes: [NSWindow.ButtonType] = SumiBrowserChromeConfiguration.buttonTypes
     ) {
         for type in buttonTypes {
             guard let button = standardWindowButton(type) else { continue }
@@ -183,52 +177,6 @@ extension NSWindow {
                 button.identifier = NSUserInterfaceItemIdentifier(identifier)
                 button.setAccessibilityIdentifier(identifier)
             }
-            button.superview?.needsLayout = true
-        }
-        alignNativeStandardWindowButtonsForBrowserChrome(
-            buttonTypes: buttonTypes,
-            horizontalOffset: horizontalOffset,
-            verticalOffset: verticalOffset
-        )
-    }
-
-    func syncNativeStandardWindowButtonsForBrowserChrome(
-        visibleOutsideFullScreen: Bool,
-        buttonTypes: [NSWindow.ButtonType] = SumiBrowserChromeConfiguration.buttonTypes,
-        horizontalOffset: CGFloat = 0,
-        verticalOffset: CGFloat = 0
-    ) {
-        setNativeStandardWindowButtonsForBrowserChromeVisible(
-            styleMask.contains(.fullScreen) || visibleOutsideFullScreen,
-            buttonTypes: buttonTypes,
-            horizontalOffset: horizontalOffset,
-            verticalOffset: verticalOffset
-        )
-    }
-
-    func setNativeStandardWindowButtonsForBrowserChromeVisible(
-        _ isVisible: Bool,
-        buttonTypes: [NSWindow.ButtonType] = SumiBrowserChromeConfiguration.buttonTypes,
-        horizontalOffset: CGFloat = 0,
-        verticalOffset: CGFloat = 0
-    ) {
-        guard isVisible else {
-            captureNativeStandardWindowButtonBaseFramesIfNeeded(buttonTypes: buttonTypes)
-            for type in buttonTypes {
-                guard let button = standardWindowButton(type) else { continue }
-                applyNativeStandardWindowButtonState(button, isVisible: false)
-            }
-            return
-        }
-
-        configureNativeStandardWindowButtonsForBrowserChrome(
-            buttonTypes: buttonTypes,
-            horizontalOffset: horizontalOffset,
-            verticalOffset: verticalOffset
-        )
-
-        for type in buttonTypes {
-            guard let button = standardWindowButton(type) else { continue }
             applyNativeStandardWindowButtonState(button, isVisible: true)
         }
     }
@@ -264,59 +212,9 @@ extension NSWindow {
         }
     }
 
-    private func captureNativeStandardWindowButtonBaseFramesIfNeeded(
-        buttonTypes: [NSWindow.ButtonType]
-    ) {
-        var baseFrames = nativeStandardButtonBaseFrames
-
-        for type in buttonTypes {
-            let key = Int(type.rawValue)
-            guard baseFrames[key] == nil,
-                  let button = standardWindowButton(type)
-            else { continue }
-
-            baseFrames[key] = button.frame
-        }
-
-        nativeStandardButtonBaseFrames = baseFrames
-    }
-
     private func parkedNativeStandardWindowButtonFrame(for button: NSButton) -> NSRect {
         var frame = button.frame
         frame.origin.x = -10_000 - frame.width
         return frame
-    }
-
-    private func alignNativeStandardWindowButtonsForBrowserChrome(
-        buttonTypes: [NSWindow.ButtonType],
-        horizontalOffset: CGFloat,
-        verticalOffset: CGFloat
-    ) {
-        var baseFrames = nativeStandardButtonBaseFrames
-
-        for type in buttonTypes {
-            guard let button = standardWindowButton(type) else { continue }
-
-            let key = Int(type.rawValue)
-            let baseFrame = baseFrames[key] ?? button.frame
-            baseFrames[key] = baseFrame
-
-            var alignedFrame = baseFrame
-            alignedFrame.origin.x += horizontalOffset
-            if button.superview?.isFlipped == true {
-                alignedFrame.origin.y += verticalOffset
-            } else {
-                alignedFrame.origin.y -= verticalOffset
-            }
-
-            if button.frame.origin.x != alignedFrame.origin.x
-                || button.frame.origin.y != alignedFrame.origin.y
-                || button.frame.size != alignedFrame.size
-            {
-                button.frame = alignedFrame
-            }
-        }
-
-        nativeStandardButtonBaseFrames = baseFrames
     }
 }

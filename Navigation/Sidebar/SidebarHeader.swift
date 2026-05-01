@@ -80,7 +80,6 @@ struct SidebarHeader: View {
 // MARK: - Sidebar Window Controls
 struct SidebarWindowControlsView: View {
     @EnvironmentObject var browserManager: BrowserManager
-    @EnvironmentObject private var trafficLightRenderState: BrowserWindowTrafficLightRenderState
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
     @Environment(\.sumiSettings) private var sumiSettings
@@ -102,18 +101,15 @@ struct SidebarWindowControlsView: View {
 
     @ViewBuilder
     private var trafficLightCluster: some View {
-        let isLeftSidebar = sumiSettings.sidebarPosition.shellEdge.isLeft
-
-        if sidebarPresentationContext.mode == .collapsedVisible && isLeftSidebar {
-            BrowserWindowTrafficLightProxyCluster(
-                parentWindow: windowState.window,
-                isVisible: true
-            )
-        } else {
-            BrowserWindowTrafficLightPlaceholderCluster(
-                renderState: trafficLightRenderState,
-                isVisible: isLeftSidebar
+        if shouldRenderTrafficLightsInSidebarHeader {
+            BrowserWindowTrafficLights(
+                actionProvider: .browserWindow(windowState.window)
             )
         }
+    }
+
+    private var shouldRenderTrafficLightsInSidebarHeader: Bool {
+        sumiSettings.sidebarPosition.shellEdge.isLeft
+            && sidebarPresentationContext.mode != .collapsedHidden
     }
 }

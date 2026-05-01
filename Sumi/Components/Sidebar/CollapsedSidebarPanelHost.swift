@@ -472,7 +472,6 @@ struct CollapsedSidebarPanelHost: NSViewRepresentable {
     var commandPalette: CommandPalette
     var sumiSettings: SumiSettingsService
     var resolvedThemeContext: ResolvedThemeContext
-    var trafficLightRenderState: BrowserWindowTrafficLightRenderState
     var presentationContext: SidebarPresentationContext
     var isHostRequested: Bool
 
@@ -515,7 +514,6 @@ struct CollapsedSidebarPanelHost: NSViewRepresentable {
             commandPalette: commandPalette,
             sumiSettings: sumiSettings,
             resolvedThemeContext: resolvedThemeContext,
-            trafficLightRenderState: trafficLightRenderState,
             presentationContext: presentationContext
         )
 

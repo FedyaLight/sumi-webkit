@@ -39,7 +39,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertFalse(window.isReleasedWhenClosed)
         XCTAssertTrue(window.isMovable)
         XCTAssertTrue(window.collectionBehavior.contains(.fullScreenPrimary))
-        assertNativeBrowserControlsVisible(window)
+        assertNativeBrowserControlsHidden(window)
     }
 
     func testBrowserWindowBridgeViewAttachPromotesWindowSynchronouslyOnAttach() {
@@ -104,116 +104,35 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertFalse(window.isOpaque)
         assertMinimumWindowConstraints(window)
         XCTAssertTrue(window.collectionBehavior.contains(.fullScreenPrimary))
-        assertNativeBrowserControlsVisible(window)
+        assertNativeBrowserControlsHidden(window)
     }
 
-    func testBrowserChromeConfiguresNativeControlIdentifiers() {
+    func testBrowserChromeHideNativeControlsClearsAccessibilityAndParksButtons() {
         let window = WindowChromeTestSupport.makeBrowserWindow()
 
-        for type in WindowChromeTestSupport.standardButtonTypes {
-            window.standardWindowButton(type)?.isHidden = true
-            window.standardWindowButton(type)?.alphaValue = 0
-            window.standardWindowButton(type)?.isEnabled = false
-            window.standardWindowButton(type)?.setAccessibilityElement(false)
-            window.standardWindowButton(type)?.identifier = nil
-            window.standardWindowButton(type)?.setAccessibilityIdentifier(nil)
-        }
+        window.configureNativeStandardWindowButtonsForMiniWindowChrome()
+        assertMiniWindowNativeControlsVisible(window)
 
-        window.configureNativeStandardWindowButtonsForBrowserChrome()
-
-        for type in WindowChromeTestSupport.standardButtonTypes {
-            guard let button = window.standardWindowButton(type) else {
-                XCTFail("Expected standard window button for \(type).")
-                return
-            }
-            XCTAssertEqual(
-                button.identifier?.rawValue,
-                BrowserWindowControlsAccessibilityIdentifiers.identifier(for: type)
-            )
-            XCTAssertEqual(
-                button.accessibilityIdentifier(),
-                BrowserWindowControlsAccessibilityIdentifiers.identifier(for: type)
-            )
-        }
-    }
-
-    func testBrowserChromeSyncsNativeControlsWithSidebarVisibility() {
-        let window = WindowChromeTestSupport.makeBrowserWindow()
-
-        window.syncNativeStandardWindowButtonsForBrowserChrome(visibleOutsideFullScreen: false)
+        window.hideNativeStandardWindowButtonsForBrowserChrome()
         assertNativeBrowserControlsHidden(window)
 
-        window.syncNativeStandardWindowButtonsForBrowserChrome(visibleOutsideFullScreen: true)
-        assertNativeBrowserControlsVisible(window)
-    }
-
-    func testBrowserChromeAppliesNativeControlOffsetsWithoutAccumulating() {
-        let window = WindowChromeTestSupport.makeBrowserWindow()
-        let horizontalOffset = SidebarChromeMetrics.nativeTrafficLightHorizontalOffset
-        let verticalOffset = SidebarChromeMetrics.nativeTrafficLightVerticalOffset
-        var originalFrames: [NSWindow.ButtonType: NSRect] = [:]
-
         for type in WindowChromeTestSupport.standardButtonTypes {
             guard let button = window.standardWindowButton(type) else {
                 XCTFail("Expected standard window button for \(type).")
-                return
+                continue
             }
-            originalFrames[type] = button.frame
-        }
-
-        window.syncNativeStandardWindowButtonsForBrowserChrome(
-            visibleOutsideFullScreen: true,
-            horizontalOffset: horizontalOffset,
-            verticalOffset: verticalOffset
-        )
-        window.syncNativeStandardWindowButtonsForBrowserChrome(
-            visibleOutsideFullScreen: true,
-            horizontalOffset: horizontalOffset,
-            verticalOffset: verticalOffset
-        )
-
-        for type in WindowChromeTestSupport.standardButtonTypes {
-            guard let button = window.standardWindowButton(type),
-                  let originalFrame = originalFrames[type]
-            else {
-                XCTFail("Expected standard window button for \(type).")
-                return
-            }
-            let expectedVerticalOffset = button.superview?.isFlipped == true ? verticalOffset : -verticalOffset
-            XCTAssertEqual(button.frame.origin.x, originalFrame.origin.x + horizontalOffset)
-            XCTAssertEqual(button.frame.origin.y, originalFrame.origin.y + expectedVerticalOffset)
-            XCTAssertEqual(button.frame.size, originalFrame.size)
+            XCTAssertTrue(button.identifier?.rawValue.isEmpty ?? true)
+            XCTAssertTrue(button.accessibilityIdentifier().isEmpty)
+            XCTAssertLessThan(button.frame.origin.x, -9_000)
         }
     }
 
-    func testBrowserChromeKeepsNativeControlsVisibleInFullscreen() async {
-        let window = WindowChromeTestSupport.makeBrowserWindow()
-        let renderState = BrowserWindowTrafficLightRenderState()
-        let coordinator = BrowserWindowNativeTrafficLightVisibilityBridge.Coordinator()
-        defer {
-            coordinator.detach()
-        }
+    func testMiniWindowNativeControlConfigurationRemainsVisibleAndIdentified() {
+        let window = WindowChromeTestSupport.makePlainWindow()
 
-        coordinator.attach(to: window)
-        coordinator.update(
-            renderState: renderState,
-            visibleOutsideFullScreen: false,
-            horizontalOffset: 0,
-            verticalOffset: 0,
-            revealDelay: 0
-        )
-        window.setNativeStandardWindowButtonsForBrowserChromeVisible(false)
+        window.configureNativeStandardWindowButtonsForMiniWindowChrome()
 
-        NotificationCenter.default.post(name: NSWindow.didEnterFullScreenNotification, object: window)
-        for _ in 0..<10 {
-            if renderState.isNativeClusterVisible {
-                break
-            }
-            await Task.yield()
-        }
-
-        assertNativeBrowserControlsVisible(window)
-        XCTAssertTrue(renderState.isNativeClusterVisible)
+        assertMiniWindowNativeControlsVisible(window)
     }
 
     func testMainWindowSceneUsesHiddenTitlebarStyle() throws {
@@ -237,10 +156,12 @@ final class BrowserWindowChromeTests: XCTestCase {
             XCTAssertEqual(button.alphaValue, 0, file: file, line: line)
             XCTAssertFalse(button.isEnabled, file: file, line: line)
             XCTAssertFalse(button.isAccessibilityElement(), file: file, line: line)
+            XCTAssertTrue(button.identifier?.rawValue.isEmpty ?? true, file: file, line: line)
+            XCTAssertTrue(button.accessibilityIdentifier().isEmpty, file: file, line: line)
         }
     }
 
-    private func assertNativeBrowserControlsVisible(
+    private func assertMiniWindowNativeControlsVisible(
         _ window: NSWindow,
         file: StaticString = #filePath,
         line: UInt = #line
@@ -282,5 +203,4 @@ final class BrowserWindowChromeTests: XCTestCase {
             encoding: .utf8
         )
     }
-
 }

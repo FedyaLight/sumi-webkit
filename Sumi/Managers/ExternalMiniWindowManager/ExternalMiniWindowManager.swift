@@ -195,7 +195,7 @@ final class MiniBrowserWindowController: NSWindowController, NSWindowDelegate {
         window.isMovableByWindowBackground = false
         window.isReleasedWhenClosed = false
         window.collectionBehavior.insert(.fullScreenPrimary)
-        window.configureNativeStandardWindowButtonsForBrowserChrome()
+        window.configureNativeStandardWindowButtonsForMiniWindowChrome()
         window.identifier = NSUserInterfaceItemIdentifier(
             BrowserWindowControlsAccessibilityIdentifiers.miniBrowserWindow
         )

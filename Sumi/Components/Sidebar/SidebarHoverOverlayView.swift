@@ -70,7 +70,6 @@ enum SidebarHoverOverlayMetrics {
 struct SidebarHoverOverlayView: View {
     @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject var hoverManager: HoverSidebarManager
-    @EnvironmentObject private var trafficLightRenderState: BrowserWindowTrafficLightRenderState
     @ObservedObject private var dragState = SidebarDragState.shared
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
@@ -184,7 +183,6 @@ struct SidebarHoverOverlayView: View {
             commandPalette: commandPalette,
             sumiSettings: sumiSettings,
             resolvedThemeContext: themeContext,
-            trafficLightRenderState: trafficLightRenderState,
             presentationContext: presentationContext,
             isHostRequested: shouldMountCollapsedSidebarHost
         )
