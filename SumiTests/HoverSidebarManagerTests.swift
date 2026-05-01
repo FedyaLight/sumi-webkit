@@ -102,7 +102,7 @@ final class HoverSidebarManagerTests: XCTestCase {
     }
 
     func testOverlayHideReleasesPrewarmedHostAfterAnimationDelay() async {
-        let manager = HoverSidebarManager()
+        let manager = HoverSidebarManager(hiddenHostRetentionDelay: 0)
 
         manager.requestOverlayReveal(animationDuration: 0)
         await drainMainQueue()
@@ -116,8 +116,57 @@ final class HoverSidebarManagerTests: XCTestCase {
         XCTAssertFalse(manager.isOverlayHostPrewarmed)
     }
 
+    func testOverlayHideRetainsPrewarmedHostDuringGracePeriod() async {
+        let manager = HoverSidebarManager(hiddenHostRetentionDelay: 0.05)
+
+        manager.requestOverlayReveal(animationDuration: 0)
+        await drainMainQueue()
+        manager.setOverlayVisibility(false, animationDuration: 0)
+        await drainMainQueue()
+
+        XCTAssertFalse(manager.isOverlayVisible)
+        XCTAssertTrue(manager.isOverlayHostPrewarmed)
+
+        await sleep(milliseconds: 80)
+
+        XCTAssertFalse(manager.isOverlayHostPrewarmed)
+    }
+
+    func testOverlayRevealDuringGracePeriodCancelsHostRelease() async {
+        let manager = HoverSidebarManager(hiddenHostRetentionDelay: 0.03)
+
+        manager.requestOverlayReveal(animationDuration: 0)
+        await drainMainQueue()
+        manager.setOverlayVisibility(false, animationDuration: 0)
+        await drainMainQueue()
+
+        XCTAssertTrue(manager.isOverlayHostPrewarmed)
+
+        manager.requestOverlayReveal(animationDuration: 0)
+        await drainMainQueue()
+        await sleep(milliseconds: 60)
+
+        XCTAssertTrue(manager.isOverlayVisible)
+        XCTAssertTrue(manager.isOverlayHostPrewarmed)
+    }
+
+    func testPinnedInteractionRetainsHostAndCancelsPendingRelease() async {
+        let manager = HoverSidebarManager(hiddenHostRetentionDelay: 0.03)
+
+        manager.requestOverlayReveal(animationDuration: 0)
+        await drainMainQueue()
+        manager.setOverlayVisibility(false, animationDuration: 0)
+        await drainMainQueue()
+
+        manager.retainOverlayHostForPinnedInteraction()
+        await sleep(milliseconds: 60)
+
+        XCTAssertFalse(manager.isOverlayVisible)
+        XCTAssertTrue(manager.isOverlayHostPrewarmed)
+    }
+
     func testOverlayHideCancelsPendingRevealBeforeVisibleStatePublishes() async {
-        let manager = HoverSidebarManager()
+        let manager = HoverSidebarManager(hiddenHostRetentionDelay: 0)
 
         manager.requestOverlayReveal(animationDuration: 0)
         manager.setOverlayVisibility(false, animationDuration: 0)
@@ -204,6 +253,10 @@ final class HoverSidebarManagerTests: XCTestCase {
 private func drainMainQueue() async {
     await Task.yield()
     await Task.yield()
+}
+
+private func sleep(milliseconds: UInt64) async {
+    try? await Task.sleep(nanoseconds: milliseconds * 1_000_000)
 }
 
 @MainActor

@@ -164,7 +164,9 @@ final class SidebarDDGHoverTrackingView: NSView, Hoverable {
 
     func setHoverTrackingEnabled(_ enabled: Bool) {
         guard hoverTrackingEnabled != enabled else {
-            if !enabled {
+            if enabled {
+                reconcileHoverForLifecycle()
+            } else {
                 clearMouseOverForLifecycle()
             }
             return
@@ -181,6 +183,12 @@ final class SidebarDDGHoverTrackingView: NSView, Hoverable {
         lastReportedHover = hovering
     }
 
+    func reconcileHoverForLifecycle(mouseLocationInWindow: NSPoint? = nil) {
+        let hovering = hoverTrackingEnabled && containsMouseLocation(mouseLocationInWindow)
+        setMouseOver(hovering)
+        reportAcceptedEventHoverIfNeeded()
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         removeSidebarHoverTrackingAreas()
@@ -190,7 +198,14 @@ final class SidebarDDGHoverTrackingView: NSView, Hoverable {
             return
         }
 
-        HoverTrackingArea.updateTrackingAreas(in: self)
+        addTrackingArea(SidebarDDGHoverTrackingArea(owner: self))
+        reconcileHoverForLifecycle()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateTrackingAreas()
+        reconcileHoverForLifecycle()
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
@@ -198,6 +213,16 @@ final class SidebarDDGHoverTrackingView: NSView, Hoverable {
         if newWindow == nil {
             clearMouseOverForLifecycle()
         }
+    }
+
+    override func layout() {
+        super.layout()
+        reconcileHoverForLifecycle()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        reconcileHoverForLifecycle()
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -260,9 +285,37 @@ final class SidebarDDGHoverTrackingView: NSView, Hoverable {
     }
 
     private func removeSidebarHoverTrackingAreas() {
-        for trackingArea in trackingAreas where trackingArea is HoverTrackingArea {
+        for trackingArea in trackingAreas where trackingArea is SidebarDDGHoverTrackingArea {
             removeTrackingArea(trackingArea)
         }
+    }
+
+    private func containsMouseLocation(_ mouseLocationInWindow: NSPoint?) -> Bool {
+        guard let window else { return false }
+        let mouseLocation = mouseLocationInWindow ?? window.mouseLocationOutsideOfEventStream
+        let localPoint = convert(mouseLocation, from: nil)
+        return sumi_findVisibleRectClampedToBounds().contains(localPoint)
+    }
+}
+
+private final class SidebarDDGHoverTrackingArea: NSTrackingArea {
+    init(owner: SidebarDDGHoverTrackingView) {
+        super.init(
+            rect: .zero,
+            options: [
+                .mouseEnteredAndExited,
+                .mouseMoved,
+                .activeInActiveApp,
+                .inVisibleRect,
+            ],
+            owner: owner,
+            userInfo: nil
+        )
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 }
 
