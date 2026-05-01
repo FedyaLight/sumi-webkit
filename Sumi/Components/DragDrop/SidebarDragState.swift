@@ -503,7 +503,7 @@ final class SidebarDragState: ObservableObject {
         armedDragScope = nil
         isHoveringNearEdge = false
         clearEssentialsPreviewState()
-        clearDetailedGeometryTargets(publishImmediately: true)
+        requestGeometryRefresh()
     }
 
     func beginPendingGeometryEpoch(
@@ -595,7 +595,6 @@ final class SidebarDragState: ObservableObject {
 
         isInternalDragGeometryArmed = false
         armedDragScope = nil
-        clearDetailedGeometryTargets(publishImmediately: true)
         requestGeometryRefresh()
     }
 
@@ -618,7 +617,7 @@ final class SidebarDragState: ObservableObject {
             return !isInternalDragSession
         }
 
-        return false
+        return true
     }
 
     func updateDragLocation(

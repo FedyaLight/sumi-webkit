@@ -94,7 +94,7 @@ class SidebarDragNSView: NSView {
             )
             
             var accepted = false
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            withAnimation(.easeInOut(duration: 0.18)) {
                 accepted = browserManager.tabManager.performSidebarDragOperation(operation)
             }
             return accepted
