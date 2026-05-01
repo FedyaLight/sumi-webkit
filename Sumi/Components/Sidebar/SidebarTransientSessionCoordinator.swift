@@ -107,11 +107,12 @@ enum SidebarTransientUIKind: String, CaseIterable {
     case emojiPopover
     case sharingPicker
     case downloadsPopover
+    case permissionPrompt
     case drag
 
     var blocksSidebarDragSources: Bool {
         switch self {
-        case .contextMenu, .dialog, .themePicker, .emojiPopover, .sharingPicker, .downloadsPopover:
+        case .contextMenu, .dialog, .themePicker, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt:
             return true
         case .drag:
             return false
@@ -120,7 +121,7 @@ enum SidebarTransientUIKind: String, CaseIterable {
 
     var pinsCollapsedSidebar: Bool {
         switch self {
-        case .contextMenu, .dialog, .themePicker, .emojiPopover, .sharingPicker, .downloadsPopover, .drag:
+        case .contextMenu, .dialog, .themePicker, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
             return true
         }
     }
@@ -603,7 +604,7 @@ final class SidebarTransientSessionCoordinator {
         switch kind {
         case .contextMenu:
             return pendingMenuActionRecoveryTier
-        case .dialog, .themePicker, .emojiPopover, .sharingPicker, .downloadsPopover, .drag:
+        case .dialog, .themePicker, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
             return .soft
         }
     }

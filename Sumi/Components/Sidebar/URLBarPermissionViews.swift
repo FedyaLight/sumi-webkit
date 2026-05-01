@@ -12,9 +12,19 @@ import WebKit
 
 extension URLBarView {
     func permissionIndicatorButton(for currentTab: Tab) -> some View {
+        permissionIndicatorButton(
+            for: currentTab,
+            state: permissionIndicatorDisplayState(for: currentTab)
+        )
+    }
+
+    func permissionIndicatorButton(
+        for _: Tab,
+        state: SumiPermissionIndicatorState
+    ) -> some View {
         let action = { handlePermissionIndicatorClick() }
 
-        return SumiPermissionIndicatorButton(viewModel: permissionIndicatorViewModel, action: action)
+        return SumiPermissionIndicatorButton(state: state, action: action)
         .sidebarAppKitPrimaryAction(action: action)
         .popover(isPresented: $permissionPromptPresenter.isPresented, arrowEdge: .bottom) {
             if let viewModel = permissionPromptPresenter.viewModel {
@@ -88,10 +98,63 @@ extension URLBarView {
         ].joined(separator: "|")
     }
 
+    func permissionIndicatorDisplayState(for currentTab: Tab) -> SumiPermissionIndicatorState {
+        let state = permissionIndicatorViewModel.state
+        guard !state.isVisible,
+              let promptViewModel = permissionPromptPresenter.viewModel
+        else {
+            return state
+        }
+
+        return promptIndicatorState(for: promptViewModel, currentTab: currentTab)
+    }
+
+    func promptIndicatorState(
+        for viewModel: SumiPermissionPromptViewModel,
+        currentTab: Tab
+    ) -> SumiPermissionIndicatorState {
+        let category: SumiPermissionIndicatorCategory = viewModel.isSystemBlocked
+            ? .systemBlocked
+            : .pendingRequest
+        let visualStyle: SumiPermissionIndicatorVisualStyle = viewModel.isSystemBlocked
+            ? .systemWarning
+            : .attention
+        let priority: SumiPermissionIndicatorPriority
+        switch category {
+        case .systemBlocked:
+            priority = viewModel.permissionType.isSensitivePowerful
+                ? .systemBlockedSensitive
+                : .genericPermissionsFallback
+        case .pendingRequest:
+            priority = viewModel.permissionType.isSensitivePowerful
+                ? .pendingSensitiveRequest
+                : .genericPermissionsFallback
+        case .hidden,
+             .activeRuntime,
+             .blockedEvent,
+             .storedException,
+             .reloadRequired,
+             .mixed:
+            priority = .genericPermissionsFallback
+        }
+
+        return SumiPermissionIndicatorState.visible(
+            category: category,
+            primaryPermissionType: viewModel.permissionType,
+            relatedPermissionTypes: viewModel.permissionTypes,
+            displayDomain: viewModel.displayDomain,
+            tabId: currentTab.id.uuidString.lowercased(),
+            pageId: currentTab.currentPermissionPageId(),
+            priority: priority,
+            visualStyle: visualStyle,
+            badgeCount: viewModel.permissionTypes.count > 1 ? viewModel.permissionTypes.count : nil
+        )
+    }
+
 }
 
 private struct SumiPermissionIndicatorButton: View {
-    @ObservedObject var viewModel: SumiPermissionIndicatorViewModel
+    let state: SumiPermissionIndicatorState
     let action: () -> Void
 
     @Environment(\.sumiSettings) private var sumiSettings
@@ -99,10 +162,6 @@ private struct SumiPermissionIndicatorButton: View {
 
     private var tokens: ChromeThemeTokens {
         themeContext.tokens(settings: sumiSettings)
-    }
-
-    private var state: SumiPermissionIndicatorState {
-        viewModel.state
     }
 
     var body: some View {

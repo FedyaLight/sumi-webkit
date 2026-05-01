@@ -141,21 +141,28 @@ struct WindowView: View {
             hoverSidebarManager.attach(browserManager: browserManager, windowState: windowState)
             hoverSidebarManager.windowRegistry = windowRegistry
             hoverSidebarManager.start()
+            revealCollapsedSidebarForPinnedTransientIfNeeded()
         }
         .onChange(of: windowState.isSidebarVisible) { _, _ in
             Task { @MainActor in
                 hoverSidebarManager.refreshMonitoring()
+                revealCollapsedSidebarForPinnedTransientIfNeeded()
             }
         }
         .onChange(of: windowRegistry.activeWindowId) { _, _ in
             Task { @MainActor in
                 hoverSidebarManager.refreshMonitoring()
+                revealCollapsedSidebarForPinnedTransientIfNeeded()
             }
+        }
+        .onChange(of: windowState.sidebarInteractionState.freezesSidebarHoverState) { _, _ in
+            revealCollapsedSidebarForPinnedTransientIfNeeded()
         }
         .onChange(of: sumiSettings.sidebarPosition) { _, newPosition in
             Task { @MainActor in
                 hoverSidebarManager.sidebarPosition = newPosition
                 hoverSidebarManager.refreshMonitoring()
+                revealCollapsedSidebarForPinnedTransientIfNeeded()
             }
         }
         .onDisappear {
@@ -227,6 +234,20 @@ struct WindowView: View {
             isSidebarVisible: windowState.isSidebarVisible,
             isDragging: sidebarDragState.isDragging,
             isInternalDragSession: sidebarDragState.isInternalDragSession
+        )
+    }
+
+    private func revealCollapsedSidebarForPinnedTransientIfNeeded() {
+        guard !windowState.isSidebarVisible,
+              windowRegistry.activeWindowId == windowState.id,
+              windowState.sidebarInteractionState.freezesSidebarHoverState,
+              windowState.sidebarTransientSessionCoordinator.hasPinnedTransientUI(for: windowState.id)
+        else {
+            return
+        }
+
+        hoverSidebarManager.requestOverlayReveal(
+            animationDuration: SidebarHoverOverlayMetrics.revealAnimationDuration
         )
     }
 
