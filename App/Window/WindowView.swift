@@ -99,19 +99,6 @@ struct WindowView: View {
             }
 
         }
-        .overlay(alignment: .topLeading) {
-            if shouldRenderParentBrowserTrafficLights {
-                chromeThemeScope {
-                    BrowserWindowTrafficLights(
-                        actionProvider: .browserWindow(windowState.window)
-                    )
-                }
-                .offset(
-                    x: SidebarChromeMetrics.horizontalPadding,
-                    y: parentTrafficLightTopOffset
-                )
-            }
-        }
         // System notification toasts - top trailing corner
         .overlay(alignment: .topTrailing) {
             VStack(spacing: 8) {
@@ -215,25 +202,6 @@ struct WindowView: View {
             transientUIPinsHoverSidebar: transientUIPinsHoverSidebar,
             sidebarDragPinsHoverSidebar: sidebarDragPinsHoverSidebar
         )
-    }
-
-    private var collapsedLeftSidebarPanelVisible: Bool {
-        !windowState.isSidebarVisible
-            && sidebarHoverOverlayRevealed
-            && sumiSettings.sidebarPosition.shellEdge.isLeft
-    }
-
-    private var dockedLeftSidebarVisible: Bool {
-        windowState.isSidebarVisible
-            && sumiSettings.sidebarPosition.shellEdge.isLeft
-    }
-
-    private var shouldRenderParentBrowserTrafficLights: Bool {
-        !dockedLeftSidebarVisible && !collapsedLeftSidebarPanelVisible
-    }
-
-    private var parentTrafficLightTopOffset: CGFloat {
-        max(0, (SidebarChromeMetrics.controlStripHeight - BrowserWindowTrafficLightMetrics.clusterHeight) / 2)
     }
 
     private var transientUIPinsHoverSidebar: Bool {

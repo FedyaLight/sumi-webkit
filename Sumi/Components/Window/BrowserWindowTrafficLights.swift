@@ -54,9 +54,15 @@ enum BrowserWindowTrafficLightMetrics {
 }
 
 enum BrowserWindowTrafficLightPalette {
-    static let close = Color(hex: "EC6A5E")
-    static let minimize = Color(hex: "F4BF4F")
-    static let zoom = Color(hex: "62C554")
+    static let close = Color(hex: "FF5F57")
+    static let closeActive = Color(hex: "FF7B72")
+    static let closeGlyph = Color(hex: "6E0802")
+    static let minimize = Color(hex: "FFBD2E")
+    static let minimizeActive = Color(hex: "FFD15C")
+    static let minimizeGlyph = Color(hex: "805300")
+    static let zoom = Color(hex: "28C840")
+    static let zoomActive = Color(hex: "54D96A")
+    static let zoomGlyph = Color(hex: "006400")
     static let inactive = Color(hex: "4E4F52")
 }
 
@@ -87,14 +93,25 @@ enum BrowserWindowTrafficLightAction: CaseIterable, Hashable {
         }
     }
 
-    var symbolName: String {
+    var activePaletteColor: Color {
         switch self {
         case .close:
-            return "xmark"
+            return BrowserWindowTrafficLightPalette.closeActive
         case .minimize:
-            return "minus"
+            return BrowserWindowTrafficLightPalette.minimizeActive
         case .zoom:
-            return "plus"
+            return BrowserWindowTrafficLightPalette.zoomActive
+        }
+    }
+
+    var glyphColor: Color {
+        switch self {
+        case .close:
+            return BrowserWindowTrafficLightPalette.closeGlyph
+        case .minimize:
+            return BrowserWindowTrafficLightPalette.minimizeGlyph
+        case .zoom:
+            return BrowserWindowTrafficLightPalette.zoomGlyph
         }
     }
 }
@@ -110,7 +127,7 @@ struct BrowserWindowTrafficLightActionProvider {
         targetWindow: NSWindow?,
         close: @escaping @MainActor (NSWindow) -> Void = { $0.performClose(nil) },
         minimize: @escaping @MainActor (NSWindow) -> Void = { $0.miniaturize(nil) },
-        zoom: @escaping @MainActor (NSWindow) -> Void = { $0.performZoom(nil) }
+        zoom: @escaping @MainActor (NSWindow) -> Void = { $0.toggleFullScreen(nil) }
     ) {
         self.targetWindow = targetWindow
         self.close = close
@@ -150,7 +167,8 @@ struct BrowserWindowTrafficLightActionProvider {
     }
 
     var drawsActivePalette: Bool {
-        targetWindow?.isKeyWindow != false
+        guard let targetWindow else { return true }
+        return targetWindow.isKeyWindow || targetWindow.isMainWindow
     }
 }
 
@@ -191,39 +209,146 @@ struct BrowserWindowTrafficLights: View {
         return Button {
             actionProvider.perform(action)
         } label: {
-            ZStack {
-                Circle()
-                    .fill(fillColor(for: action, isEnabled: isEnabled))
-                    .overlay {
-                        Circle()
-                            .stroke(Color.black.opacity(0.14), lineWidth: 0.75)
-                    }
-
-                Image(systemName: action.symbolName)
-                    .font(.system(size: 7, weight: .bold))
-                    .foregroundStyle(Color.black.opacity(isEnabled ? 0.58 : 0.22))
-                    .opacity(isClusterHovered && isEnabled ? 1 : 0)
-            }
-            .frame(
-                width: BrowserWindowTrafficLightMetrics.buttonDiameter,
-                height: BrowserWindowTrafficLightMetrics.buttonDiameter
-            )
-            .contentShape(Circle())
+            EmptyView()
         }
-        .buttonStyle(.plain)
+        .buttonStyle(
+            BrowserWindowTrafficLightButtonStyle(
+                action: action,
+                isEnabled: isEnabled,
+                isClusterHovered: isClusterHovered,
+                drawsActivePalette: actionProvider.drawsActivePalette
+            )
+        )
         .disabled(!isEnabled)
         .accessibilityIdentifier(action.accessibilityIdentifier)
     }
+}
 
-    private func fillColor(
-        for action: BrowserWindowTrafficLightAction,
-        isEnabled: Bool
-    ) -> Color {
-        guard isEnabled, actionProvider.drawsActivePalette else {
+private struct BrowserWindowTrafficLightButtonStyle: ButtonStyle {
+    let action: BrowserWindowTrafficLightAction
+    let isEnabled: Bool
+    let isClusterHovered: Bool
+    let drawsActivePalette: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        BrowserWindowTrafficLightButtonFace(
+            action: action,
+            isEnabled: isEnabled,
+            isClusterHovered: isClusterHovered,
+            isPressed: configuration.isPressed,
+            drawsActivePalette: drawsActivePalette
+        )
+    }
+}
+
+private struct BrowserWindowTrafficLightButtonFace: View {
+    let action: BrowserWindowTrafficLightAction
+    let isEnabled: Bool
+    let isClusterHovered: Bool
+    let isPressed: Bool
+    let drawsActivePalette: Bool
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(fillColor)
+                .overlay {
+                    Circle()
+                        .stroke(borderColor, lineWidth: 0.6)
+                }
+
+            glyph
+                .foregroundStyle(action.glyphColor)
+                .opacity(showsGlyph ? 1 : 0)
+        }
+        .frame(
+            width: BrowserWindowTrafficLightMetrics.buttonDiameter,
+            height: BrowserWindowTrafficLightMetrics.buttonDiameter
+        )
+        .contentShape(Circle())
+    }
+
+    @ViewBuilder
+    private var glyph: some View {
+        let diameter = BrowserWindowTrafficLightMetrics.buttonDiameter
+        let lineThickness = max(1.35, diameter * 0.13)
+
+        switch action {
+        case .close:
+            ZStack {
+                Capsule()
+                    .frame(width: diameter * 0.64, height: lineThickness)
+                    .rotationEffect(.degrees(45))
+                Capsule()
+                    .frame(width: diameter * 0.64, height: lineThickness)
+                    .rotationEffect(.degrees(-45))
+            }
+        case .minimize:
+            Capsule()
+                .frame(width: diameter * 0.70, height: lineThickness)
+        case .zoom:
+            BrowserWindowTrafficLightMirroredZoomGlyph()
+                .frame(width: diameter * 1.12, height: diameter * 1.12)
+        }
+    }
+
+    private var fillColor: Color {
+        guard isEnabled, drawsActivePalette else {
             return BrowserWindowTrafficLightPalette.inactive
         }
 
-        return action.paletteColor
+        return isPressed ? action.activePaletteColor : action.paletteColor
+    }
+
+    private var borderColor: Color {
+        guard isEnabled, drawsActivePalette else {
+            return Color.black.opacity(0.10)
+        }
+
+        return Color.black.opacity(isPressed ? 0.24 : 0.18)
+    }
+
+    private var showsGlyph: Bool {
+        isEnabled && drawsActivePalette && (isClusterHovered || isPressed)
+    }
+}
+
+private struct BrowserWindowTrafficLightMirroredZoomGlyph: Shape {
+    func path(in rect: CGRect) -> Path {
+        let referenceSize: CGFloat = 85.4
+        let scale = min(rect.width, rect.height) / referenceSize
+        let origin = CGPoint(
+            x: rect.midX - referenceSize * scale / 2,
+            y: rect.midY - referenceSize * scale / 2
+        )
+
+        func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: origin.x + x * scale, y: origin.y + y * scale)
+        }
+
+        var path = Path()
+
+        path.move(to: point(54.2, 20.8))
+        path.addLine(to: point(27.5, 20.8))
+        path.addCurve(
+            to: point(21.0, 27.3),
+            control1: point(23.9, 20.8),
+            control2: point(21.0, 23.7)
+        )
+        path.addLine(to: point(21.0, 54.0))
+        path.closeSubpath()
+
+        path.move(to: point(31.0, 64.5))
+        path.addLine(to: point(57.8, 64.5))
+        path.addCurve(
+            to: point(64.3, 58.0),
+            control1: point(61.4, 64.5),
+            control2: point(64.3, 61.6)
+        )
+        path.addLine(to: point(64.3, 31.2))
+        path.closeSubpath()
+
+        return path
     }
 }
 

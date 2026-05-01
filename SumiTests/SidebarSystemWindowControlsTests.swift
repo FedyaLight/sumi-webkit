@@ -159,15 +159,16 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertTrue(controlsSource.contains("parentWindow") == false)
         XCTAssertTrue(controlsSource.contains("targetWindow.performClose(nil)") || controlsSource.contains("$0.performClose(nil)"))
         XCTAssertTrue(controlsSource.contains("targetWindow.miniaturize(nil)") || controlsSource.contains("$0.miniaturize(nil)"))
-        XCTAssertTrue(controlsSource.contains("targetWindow.performZoom(nil)") || controlsSource.contains("$0.performZoom(nil)"))
+        XCTAssertTrue(controlsSource.contains("targetWindow.toggleFullScreen(nil)") || controlsSource.contains("$0.toggleFullScreen(nil)"))
+        XCTAssertTrue(controlsSource.contains("BrowserWindowTrafficLightMirroredZoomGlyph"))
         XCTAssertTrue(controlsSource.contains(BrowserWindowControlsAccessibilityIdentifiers.closeButton))
         XCTAssertTrue(controlsSource.contains(BrowserWindowControlsAccessibilityIdentifiers.minimizeButton))
         XCTAssertTrue(controlsSource.contains(BrowserWindowControlsAccessibilityIdentifiers.zoomButton))
         XCTAssertTrue(sidebarHeaderSource.contains("BrowserWindowTrafficLights("))
         XCTAssertTrue(sidebarHeaderSource.contains("sidebarPresentationContext.mode != .collapsedHidden"))
-        XCTAssertTrue(sidebarHeaderSource.contains("sumiSettings.sidebarPosition.shellEdge.isLeft"))
-        XCTAssertTrue(windowViewSource.contains("shouldRenderParentBrowserTrafficLights"))
-        XCTAssertTrue(windowViewSource.contains("BrowserWindowTrafficLights("))
+        XCTAssertFalse(sidebarHeaderSource.contains("sumiSettings.sidebarPosition.shellEdge.isLeft"))
+        XCTAssertFalse(windowViewSource.contains("shouldRenderParentBrowserTrafficLights"))
+        XCTAssertFalse(windowViewSource.contains("BrowserWindowTrafficLights("))
         XCTAssertTrue(windowSource.contains("hideNativeStandardWindowButtonsForBrowserChrome()"))
         XCTAssertTrue(panelHostSource.contains("CollapsedSidebarPanelWindow"))
 
@@ -205,7 +206,7 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
 
         XCTAssertTrue(window.didPerformClose)
         XCTAssertTrue(window.didMiniaturize)
-        XCTAssertTrue(window.didPerformZoom)
+        XCTAssertTrue(window.didToggleFullScreen)
     }
 
     func testTrafficLightActionProviderUsesWindowStyleMaskAvailability() {
@@ -279,8 +280,9 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertTrue(panelHostSource.contains("CollapsedSidebarPanelFrameResolver.panelFrame("))
         XCTAssertTrue(panelHostSource.contains("width: width"))
         XCTAssertTrue(panelHostSource.contains("height: parentContentScreenFrame.height"))
-        XCTAssertTrue(windowViewSource.contains("collapsedLeftSidebarPanelVisible"))
-        XCTAssertTrue(windowViewSource.contains("!dockedLeftSidebarVisible && !collapsedLeftSidebarPanelVisible"))
+        XCTAssertFalse(windowViewSource.contains("collapsedLeftSidebarPanelVisible"))
+        XCTAssertFalse(windowViewSource.contains("!dockedLeftSidebarVisible && !collapsedLeftSidebarPanelVisible"))
+        XCTAssertFalse(windowViewSource.contains("BrowserWindowTrafficLights("))
 
         XCTAssertFalse(panelHostSource.contains("TrafficLightReserved"))
         XCTAssertFalse(panelHostSource.contains("trafficLightReserved"))
@@ -289,15 +291,16 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertFalse(panelHostSource.contains("standardWindowButton"))
     }
 
-    func testRightCollapsedSidebarDoesNotDuplicateTrafficLightsInsidePanel() throws {
+    func testRightCollapsedSidebarUsesSameSidebarEmbeddedTrafficLights() throws {
         let headerSource = try Self.source(named: "Navigation/Sidebar/SidebarHeader.swift")
         let windowViewSource = try Self.source(named: "App/Window/WindowView.swift")
 
-        XCTAssertTrue(headerSource.contains("sumiSettings.sidebarPosition.shellEdge.isLeft"))
-        XCTAssertTrue(windowViewSource.contains("shouldRenderParentBrowserTrafficLights"))
-        XCTAssertTrue(windowViewSource.contains("dockedLeftSidebarVisible"))
-        XCTAssertTrue(windowViewSource.contains("collapsedLeftSidebarPanelVisible"))
-        XCTAssertFalse(headerSource.contains("shellEdge.isRight") && headerSource.contains("BrowserWindowTrafficLights("))
+        XCTAssertTrue(headerSource.contains("BrowserWindowTrafficLights("))
+        XCTAssertTrue(headerSource.contains("sidebarPresentationContext.mode != .collapsedHidden"))
+        XCTAssertFalse(headerSource.contains("sumiSettings.sidebarPosition.shellEdge.isLeft"))
+        XCTAssertFalse(headerSource.contains("shellEdge.isRight"))
+        XCTAssertFalse(windowViewSource.contains("shouldRenderParentBrowserTrafficLights"))
+        XCTAssertFalse(windowViewSource.contains("BrowserWindowTrafficLights("))
     }
 
     private static var repoRoot: URL {
@@ -337,7 +340,7 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
     private final class TrackingTrafficLightWindow: NSWindow {
         var didPerformClose = false
         var didMiniaturize = false
-        var didPerformZoom = false
+        var didToggleFullScreen = false
 
         override func performClose(_ sender: Any?) {
             didPerformClose = true
@@ -347,8 +350,8 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
             didMiniaturize = true
         }
 
-        override func performZoom(_ sender: Any?) {
-            didPerformZoom = true
+        override func toggleFullScreen(_ sender: Any?) {
+            didToggleFullScreen = true
         }
     }
 }
