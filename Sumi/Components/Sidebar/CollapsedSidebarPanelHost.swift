@@ -805,6 +805,7 @@ struct CollapsedSidebarPanelHost: NSViewRepresentable {
     var commandPalette: CommandPalette
     var sumiSettings: SumiSettingsService
     var resolvedThemeContext: ResolvedThemeContext
+    var chromeBackgroundResolvedThemeContext: ResolvedThemeContext
     var presentationContext: SidebarPresentationContext
     var isHostRequested: Bool
 
@@ -847,6 +848,7 @@ struct CollapsedSidebarPanelHost: NSViewRepresentable {
             commandPalette: commandPalette,
             sumiSettings: sumiSettings,
             resolvedThemeContext: resolvedThemeContext,
+            chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext,
             presentationContext: presentationContext
         )
 

@@ -297,7 +297,9 @@ final class SidebarThemeResolutionTests: XCTestCase {
         let dockedSource = String(source[dockedStart..<dockedEnd])
 
         XCTAssertTrue(source.contains("if !windowState.isSidebarVisible"))
-        XCTAssertTrue(source.contains("SidebarHoverOverlayView()"))
+        XCTAssertTrue(source.contains("SidebarHoverOverlayView("))
+        XCTAssertTrue(source.contains("resolvedThemeContext: sidebarResolvedThemeContext"))
+        XCTAssertTrue(source.contains("chromeBackgroundResolvedThemeContext: resolvedThemeContext"))
         XCTAssertFalse(source.contains("shouldRenderParentBrowserTrafficLights"))
         XCTAssertFalse(source.contains("BrowserWindowTrafficLights("))
         XCTAssertFalse(source.contains("BrowserWindowNativeTrafficLightVisibilityBridge("))
@@ -357,10 +359,11 @@ final class SidebarThemeResolutionTests: XCTestCase {
         XCTAssertTrue(source.contains("private var collapsedSidebarChromeBackground"))
         XCTAssertTrue(source.contains("if presentationContext.isCollapsedOverlay"))
         XCTAssertTrue(source.contains("presentationContext.mode == .collapsedVisible"))
-        XCTAssertTrue(source.contains("environmentContext.resolvedThemeContext"))
+        XCTAssertTrue(source.contains("environmentContext.chromeBackgroundResolvedThemeContext"))
         XCTAssertTrue(source.contains(".tokens(settings: environmentContext.sumiSettings)"))
         XCTAssertTrue(source.contains(".windowBackground"))
         XCTAssertTrue(source.contains("SpaceGradientBackgroundView(surface: .toolbarChrome)"))
+        XCTAssertTrue(source.contains(".environment(\\.resolvedThemeContext, backgroundThemeContext)"))
         XCTAssertFalse(source.contains("drawsSidebarChromeBackground"))
     }
 

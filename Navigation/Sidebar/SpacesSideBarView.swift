@@ -113,6 +113,35 @@ enum SpaceSidebarSnapshotTitleLayout {
     }
 }
 
+enum SpaceSidebarSnapshotThemeResolver {
+    @MainActor
+    static func pageThemeContext(
+        for space: Space,
+        baseContext: ResolvedThemeContext,
+        settings: SumiSettingsService,
+        isIncognito: Bool
+    ) -> ResolvedThemeContext {
+        let workspaceTheme = isIncognito ? WorkspaceTheme.incognito : space.workspaceTheme
+        let chromeColorScheme = ThemeContrastResolver.resolvedChromeColorScheme(
+            theme: workspaceTheme,
+            globalWindowScheme: baseContext.globalColorScheme,
+            settings: settings,
+            isIncognito: isIncognito
+        )
+
+        var context = baseContext
+        context.chromeColorScheme = chromeColorScheme
+        context.sourceChromeColorScheme = chromeColorScheme
+        context.targetChromeColorScheme = chromeColorScheme
+        context.workspaceTheme = workspaceTheme
+        context.sourceWorkspaceTheme = workspaceTheme
+        context.targetWorkspaceTheme = workspaceTheme
+        context.isInteractiveTransition = false
+        context.transitionProgress = 1.0
+        return context
+    }
+}
+
 enum SpaceSidebarSnapshotIcon {
     case image(Image)
     case system(String)
@@ -821,7 +850,7 @@ private struct SpaceSnapshotPinnedTileView: View {
             SpaceSnapshotIconView(
                 icon: item.icon,
                 size: configuration.faviconHeight,
-                cornerRadius: 6,
+                cornerRadius: PinnedTileFaviconLayout.cornerRadius,
                 foregroundColor: tokens.primaryText
             )
             .saturation(item.presentationState.shouldDesaturateIcon ? 0.0 : 1.0)
@@ -1046,11 +1075,11 @@ private struct SpaceSnapshotShortcutRowView: View {
                     .padding(.trailing, SidebarRowLayout.iconTrailingSpacing)
             }
 
-            Text(shortcut.title)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(tokens.primaryText)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            SpaceSnapshotFadingTitleLabel(
+                title: shortcut.title,
+                font: .system(size: 13, weight: .medium),
+                color: tokens.primaryText
+            )
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
 
             if shortcut.showsSplitBadge {
@@ -1175,11 +1204,11 @@ private struct SpaceSnapshotRegularTabRowView: View {
                     .frame(width: 22, height: 22)
             }
 
-            Text(tab.title)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(tokens.primaryText)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            SpaceSnapshotFadingTitleLabel(
+                title: tab.title,
+                font: .system(size: 13, weight: .medium),
+                color: tokens.primaryText
+            )
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         }
         .padding(.leading, SidebarRowLayout.leadingInset)
@@ -1246,11 +1275,11 @@ private struct SpaceSnapshotSplitHalfView: View {
                 cornerRadius: 4,
                 foregroundColor: tokens.primaryText
             )
-            Text(tab.title)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(tokens.primaryText)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            SpaceSnapshotFadingTitleLabel(
+                title: tab.title,
+                font: .system(size: 13, weight: .medium),
+                color: tokens.primaryText
+            )
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 8)
@@ -1262,6 +1291,66 @@ private struct SpaceSnapshotSplitHalfView: View {
             radius: isHighlighted ? 2 : 0,
             y: isHighlighted ? 1 : 0
         )
+    }
+}
+
+private struct SpaceSnapshotFadingTitleLabel: View {
+    let title: String
+    let font: Font
+    let color: Color
+    var fadeWidth: CGFloat = 32
+    var trailingFadePadding: CGFloat = 0
+    var height: CGFloat = SidebarRowLayout.titleHeight
+
+    var body: some View {
+        GeometryReader { proxy in
+            Text(title)
+                .font(font)
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .allowsTightening(false)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
+                .clipped()
+                .mask(
+                    SpaceSnapshotTrailingFadeMask(
+                        fadeWidth: fadeWidth,
+                        trailingPadding: trailingFadePadding
+                    )
+                )
+        }
+        .frame(height: height, alignment: .center)
+        .accessibilityLabel(title)
+    }
+}
+
+private struct SpaceSnapshotTrailingFadeMask: View {
+    let fadeWidth: CGFloat
+    let trailingPadding: CGFloat
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            let availableWidth = max(width - trailingPadding, 0)
+            let safeFadeWidth = min(fadeWidth, availableWidth)
+            let start = width > 0
+                ? (width - (trailingPadding + safeFadeWidth)) / width
+                : 1
+            let end = width > 0
+                ? (width - trailingPadding) / width
+                : 1
+
+            LinearGradient(
+                stops: [
+                    .init(color: .white, location: 0),
+                    .init(color: .white, location: max(0, min(start, 1))),
+                    .init(color: .clear, location: max(0, min(end, 1))),
+                    .init(color: .clear, location: 1)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        }
     }
 }
 
@@ -1674,7 +1763,12 @@ struct SpacesSideBarView: View {
                 includesEssentials: includesPinnedGrid,
                 width: width,
                 tokens: themeContext.tokens(settings: sumiSettings),
-                themeContext: themeContext
+                themeContext: SpaceSidebarSnapshotThemeResolver.pageThemeContext(
+                    for: space,
+                    baseContext: themeContext,
+                    settings: sumiSettings,
+                    isIncognito: windowState.isIncognito
+                )
             )
         } else {
             makeSidebarPage(

@@ -68,6 +68,9 @@ enum SidebarHoverOverlayMetrics {
 }
 
 struct SidebarHoverOverlayView: View {
+    let resolvedThemeContext: ResolvedThemeContext
+    let chromeBackgroundResolvedThemeContext: ResolvedThemeContext
+
     @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject var hoverManager: HoverSidebarManager
     @ObservedObject private var dragState = SidebarDragState.shared
@@ -75,7 +78,6 @@ struct SidebarHoverOverlayView: View {
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(CommandPalette.self) private var commandPalette
     @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
 
     /// Keep the hover sidebar on-screen while any sidebar transient UI is alive in compact mode.
     private var transientUIPinsHoverSidebar: Bool {
@@ -195,7 +197,8 @@ struct SidebarHoverOverlayView: View {
             windowRegistry: windowRegistry,
             commandPalette: commandPalette,
             sumiSettings: sumiSettings,
-            resolvedThemeContext: themeContext,
+            resolvedThemeContext: resolvedThemeContext,
+            chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext,
             presentationContext: presentationContext,
             isHostRequested: shouldMountCollapsedSidebarHost
         )

@@ -294,6 +294,50 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         )
     }
 
+    func testPinnedTileFaviconCornerRadiusMatchesTransitionSnapshot() {
+        XCTAssertEqual(PinnedTileFaviconLayout.cornerRadius, 6)
+    }
+
+    func testSnapshotPageThemeContextUsesPageWorkspaceThemeWithoutInteractiveProgress() {
+        let settings = makeIsolatedSettings()
+        let sourceTheme = WorkspaceTheme(
+            gradient: SpaceGradient(
+                angle: 0,
+                nodes: [GradientNode(colorHex: "#0A84FF", location: 0)],
+                grain: 0,
+                opacity: 1
+            )
+        )
+        let destinationTheme = WorkspaceTheme(
+            gradient: SpaceGradient(
+                angle: 0,
+                nodes: [GradientNode(colorHex: "#FF3B30", location: 0)],
+                grain: 0,
+                opacity: 1
+            )
+        )
+        let destination = Space(name: "Destination", workspaceTheme: destinationTheme)
+        var baseContext = ResolvedThemeContext.default
+        baseContext.workspaceTheme = sourceTheme
+        baseContext.sourceWorkspaceTheme = sourceTheme
+        baseContext.targetWorkspaceTheme = destinationTheme
+        baseContext.isInteractiveTransition = true
+        baseContext.transitionProgress = 0.42
+
+        let pageContext = SpaceSidebarSnapshotThemeResolver.pageThemeContext(
+            for: destination,
+            baseContext: baseContext,
+            settings: settings,
+            isIncognito: false
+        )
+
+        XCTAssertEqual(pageContext.workspaceTheme.gradient.primaryColorHex, "#FF3B30")
+        XCTAssertEqual(pageContext.sourceWorkspaceTheme.gradient.primaryColorHex, "#FF3B30")
+        XCTAssertEqual(pageContext.targetWorkspaceTheme.gradient.primaryColorHex, "#FF3B30")
+        XCTAssertFalse(pageContext.isInteractiveTransition)
+        XCTAssertEqual(pageContext.transitionProgress, 1.0, accuracy: 0.0001)
+    }
+
     func testSnapshotBuilderKeepsClosedFolderProjectionRowsForLiveLaunchers() throws {
         let browserManager = BrowserManager()
         let windowState = BrowserWindowState()

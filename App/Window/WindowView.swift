@@ -61,10 +61,12 @@ struct WindowView: View {
             // Collapsed hover-reveal sidebar overlay. Docked sidebar is a real layout column.
             if !windowState.isSidebarVisible {
                 chromeThemeScope {
-                    SidebarHoverOverlayView()
+                    SidebarHoverOverlayView(
+                        resolvedThemeContext: sidebarResolvedThemeContext,
+                        chromeBackgroundResolvedThemeContext: resolvedThemeContext
+                    )
                         .environmentObject(hoverSidebarManager)
                         .environment(windowState)
-                        .environment(\.resolvedThemeContext, sidebarResolvedThemeContext)
                 }
             }
 
@@ -298,6 +300,7 @@ struct WindowView: View {
             commandPalette: commandPalette,
             sumiSettings: sumiSettings,
             resolvedThemeContext: sidebarResolvedThemeContext,
+            chromeBackgroundResolvedThemeContext: resolvedThemeContext,
             presentationContext: presentationContext
         )
         .id("docked-sidebar-column")
