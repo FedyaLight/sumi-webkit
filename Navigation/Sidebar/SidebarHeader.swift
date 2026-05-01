@@ -109,7 +109,6 @@ struct SidebarWindowControlsView: View {
     }
 
     private var shouldRenderTrafficLightsInSidebarHeader: Bool {
-        sumiSettings.sidebarPosition.shellEdge.isLeft
-            && sidebarPresentationContext.mode != .collapsedHidden
+        sidebarPresentationContext.mode != .collapsedHidden
     }
 }
