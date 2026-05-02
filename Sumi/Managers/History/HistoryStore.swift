@@ -86,6 +86,26 @@ actor HistoryStore {
         return page.records
     }
 
+    func fetchVisitedURLs(profileId: UUID?) throws -> [URL] {
+        let ctx = ModelContext(container)
+        ctx.autosaveEnabled = false
+
+        var rawOffset = 0
+        var urls: [URL] = []
+        while true {
+            let entries = try fetchEntryChunk(
+                in: ctx,
+                profileId: profileId,
+                limit: Self.siteChunkSize,
+                offset: rawOffset
+            )
+            guard !entries.isEmpty else { break }
+            rawOffset += entries.count
+            urls.append(contentsOf: entries.compactMap { URL(string: $0.urlString) })
+        }
+        return urls
+    }
+
     func searchHistory(
         query: String,
         profileId: UUID?,
