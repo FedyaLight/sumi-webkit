@@ -118,7 +118,7 @@ final class PerformanceSettingsTests: XCTestCase {
 
         XCTAssertTrue(SettingsTabs.ordered.contains(.performance))
         XCTAssertEqual(SettingsTabs(paneQueryValue: "performance"), .performance)
-        XCTAssertEqual(SettingsTabs.performance.name, "Performance")
+        XCTAssertEqual(SettingsPaneDescriptor.descriptor(for: .performance).title, "Performance")
         XCTAssertEqual(SettingsTabs.performance.settingsSurfaceURL.absoluteString, "sumi://settings?pane=performance")
         XCTAssertTrue(settingsUtilsSource.contains("case performance"))
         XCTAssertTrue(tabRootSource.contains("SettingsPerformanceTab()"))
