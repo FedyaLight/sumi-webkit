@@ -335,7 +335,7 @@ extension SpaceView {
     private func regularTabExclusionZones(for tab: Tab) -> [SidebarDragSourceExclusionZone] {
         var exclusions: [SidebarDragSourceExclusionZone] = [.trailingStrip(40)]
         if tab.audioState.showsTabAudioButton {
-            exclusions.append(.leadingStrip(72))
+            exclusions.append(.fixedRect(SpaceTab.audioButtonHitFrame))
         }
         return exclusions
     }
