@@ -3,6 +3,7 @@ import SwiftUI
 enum SidebarDragSourceExclusionZone {
     case leadingStrip(CGFloat)
     case trailingStrip(CGFloat)
+    case fixedRect(CGRect)
     case topLeadingSquare(size: CGFloat, inset: CGFloat = 0)
     case topTrailingSquare(size: CGFloat, inset: CGFloat = 0)
 
@@ -17,6 +18,8 @@ enum SidebarDragSourceExclusionZone {
                 width: min(width, bounds.width),
                 height: bounds.height
             ).contains(point)
+        case .fixedRect(let rect):
+            return rect.contains(point)
         case .topLeadingSquare(let size, let inset):
             return CGRect(
                 x: inset,

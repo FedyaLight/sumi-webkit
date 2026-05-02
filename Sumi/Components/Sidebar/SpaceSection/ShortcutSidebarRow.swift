@@ -224,12 +224,14 @@ private struct ShortcutSidebarRowChrome: View {
                 .contentShape(Rectangle())
             }
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-            .onTapGesture(perform: action)
         }
         .frame(height: SidebarRowLayout.rowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(backgroundColor)
         .background(EmojiPickerAnchor(manager: emojiManager))
+        .overlay(alignment: .leading) {
+            rowActivationOverlay
+        }
         .overlay(alignment: .trailing) {
             trailingActionButton
                 .padding(.trailing, SidebarRowLayout.trailingInset)
@@ -509,6 +511,7 @@ private struct ShortcutSidebarRowChrome: View {
             runtimeAffordance: runtimeAffordance,
             dragSourceZone: dragSourceZone,
             dragHasTrailingActionExclusion: dragHasTrailingActionExclusion,
+            hasLiveAudioExclusion: liveTab?.audioState.showsTabAudioButton == true,
             action: action,
             dragIsEnabled: dragIsEnabled
         )
@@ -516,6 +519,53 @@ private struct ShortcutSidebarRowChrome: View {
 
     private var textColor: Color {
         tokens.primaryText
+    }
+
+    private var audioButtonHitFrame: CGRect? {
+        guard liveTab?.audioState.showsTabAudioButton == true else { return nil }
+
+        return ShortcutSidebarAudioHitArea.frameInRow(
+            usesResetLeadingAction: runtimeAffordance.usesResetLeadingAction
+        )
+    }
+
+    @ViewBuilder
+    private var rowActivationOverlay: some View {
+        GeometryReader { proxy in
+            let resetExclusionWidth = runtimeAffordance.usesResetLeadingAction
+                ? ShortcutSidebarAudioHitArea.contentStartX(usesResetLeadingAction: true)
+                : 0
+            let trailingExclusionWidth: CGFloat = dragHasTrailingActionExclusion ? 40 : 0
+            let trailingLimit = max(proxy.size.width - trailingExclusionWidth, resetExclusionWidth)
+
+            ZStack(alignment: .leading) {
+                if let audioButtonHitFrame {
+                    activationHitRegion(
+                        x: resetExclusionWidth,
+                        width: max(audioButtonHitFrame.minX - resetExclusionWidth, 0)
+                    )
+
+                    activationHitRegion(
+                        x: audioButtonHitFrame.maxX,
+                        width: max(trailingLimit - audioButtonHitFrame.maxX, 0)
+                    )
+                } else {
+                    activationHitRegion(
+                        x: resetExclusionWidth,
+                        width: max(trailingLimit - resetExclusionWidth, 0)
+                    )
+                }
+            }
+        }
+        .frame(height: SidebarRowLayout.rowHeight)
+    }
+
+    private func activationHitRegion(x: CGFloat, width: CGFloat) -> some View {
+        Color.clear
+            .frame(width: max(width, 0), height: SidebarRowLayout.rowHeight)
+            .contentShape(Rectangle())
+            .offset(x: x)
+            .onTapGesture(perform: action)
     }
 
     private func performActionButton() {
@@ -549,6 +599,7 @@ func makeShortcutSidebarDragSourceConfiguration(
     runtimeAffordance: SumiLauncherRuntimeAffordanceState,
     dragSourceZone: DropZoneID?,
     dragHasTrailingActionExclusion: Bool,
+    hasLiveAudioExclusion: Bool = false,
     action: (() -> Void)? = nil,
     dragIsEnabled: Bool = true
 ) -> SidebarDragSourceConfiguration? {
@@ -565,7 +616,8 @@ func makeShortcutSidebarDragSourceConfiguration(
         previewIcon: pin.favicon,
         exclusionZones: makeShortcutSidebarDragExclusionZones(
             runtimeAffordance: runtimeAffordance,
-            dragHasTrailingActionExclusion: dragHasTrailingActionExclusion
+            dragHasTrailingActionExclusion: dragHasTrailingActionExclusion,
+            hasLiveAudioExclusion: hasLiveAudioExclusion
         ),
         onActivate: action,
         isEnabled: dragIsEnabled
@@ -575,16 +627,56 @@ func makeShortcutSidebarDragSourceConfiguration(
 @MainActor
 func makeShortcutSidebarDragExclusionZones(
     runtimeAffordance: SumiLauncherRuntimeAffordanceState,
-    dragHasTrailingActionExclusion: Bool
+    dragHasTrailingActionExclusion: Bool,
+    hasLiveAudioExclusion: Bool = false
 ) -> [SidebarDragSourceExclusionZone] {
     var exclusions: [SidebarDragSourceExclusionZone] = []
     if runtimeAffordance.usesResetLeadingAction {
         exclusions.append(.leadingStrip(SidebarRowLayout.changedLauncherResetWidth + 12))
     }
+    if hasLiveAudioExclusion {
+        exclusions.append(
+            .fixedRect(
+                ShortcutSidebarAudioHitArea.frameInRow(
+                    usesResetLeadingAction: runtimeAffordance.usesResetLeadingAction
+                )
+            )
+        )
+    }
     if dragHasTrailingActionExclusion {
         exclusions.append(.trailingStrip(40))
     }
     return exclusions
+}
+
+private enum ShortcutSidebarAudioHitArea {
+    static let size: CGFloat = 22
+
+    static func contentStartX(usesResetLeadingAction: Bool) -> CGFloat {
+        guard usesResetLeadingAction else { return 0 }
+
+        return SidebarRowLayout.changedLauncherResetWidth
+            + SidebarRowLayout.changedLauncherResetTrailingGap
+    }
+
+    static func frameInRow(usesResetLeadingAction: Bool) -> CGRect {
+        let x: CGFloat
+        if usesResetLeadingAction {
+            x = contentStartX(usesResetLeadingAction: true)
+                + SidebarRowLayout.changedLauncherTitleLeading
+        } else {
+            x = SidebarRowLayout.leadingInset
+                + SidebarRowLayout.faviconSize
+                + SidebarRowLayout.iconTrailingSpacing
+        }
+
+        return CGRect(
+            x: x,
+            y: (SidebarRowLayout.rowHeight - size) / 2,
+            width: size,
+            height: size
+        )
+    }
 }
 
 private struct LauncherAudioButton: View {
@@ -619,8 +711,12 @@ private struct LauncherAudioButton: View {
                                 )
                             )
                     }
+                    .frame(width: 22, height: 22)
+                    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .frame(width: 22, height: 22)
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .sidebarDDGHover($isHovering, isEnabled: isAppKitInteractionEnabled)
                 .accessibilityIdentifier(accessibilityID ?? "shortcut-sidebar-audio")
                 .sidebarAppKitPrimaryAction(
