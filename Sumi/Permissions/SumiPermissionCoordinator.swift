@@ -16,7 +16,6 @@ actor SumiPermissionCoordinator {
         let tabId: String?
         var requestIds: Set<String>
         let keys: [SumiPermissionKey]
-        let policyResults: [SumiPermissionPolicyResult]
     }
 
     private let policyResolver: any SumiPermissionPolicyResolver
@@ -176,10 +175,6 @@ actor SumiPermissionCoordinator {
         state.activeQueriesByPageId[Self.normalizedPageId(pageId)]
     }
 
-    func query(id queryId: String) -> SumiPermissionAuthorizationQuery? {
-        queryById[queryId]?.query
-    }
-
     func recordPromptShown(queryId: String) async {
         guard let pending = queryById[queryId] else { return }
         await recordAntiAbuseEvents(
@@ -324,11 +319,6 @@ actor SumiPermissionCoordinator {
     }
 
     @discardableResult
-    func denyOnce(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
-        await settle(queryId: queryId, with: .denyOnce)
-    }
-
-    @discardableResult
     func denyForSession(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
         await settle(queryId: queryId, with: .denyForSession)
     }
@@ -370,7 +360,6 @@ actor SumiPermissionCoordinator {
             keys: pending.keys,
             queryId: pending.query.id,
             systemAuthorizationSnapshot: snapshot,
-            shouldPersist: false,
             shouldOfferSystemSettings: snapshots.contains { $0.shouldOpenSystemSettings }
                 || pending.query.shouldOfferSystemSettings,
             disablesPersistentAllow: pending.query.disablesPersistentAllow
@@ -396,18 +385,8 @@ actor SumiPermissionCoordinator {
     }
 
     @discardableResult
-    func setAskPersistently(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
-        await settle(queryId: queryId, with: .setAskPersistently)
-    }
-
-    @discardableResult
     func cancel(queryId: String, reason: String = "query-cancelled") async -> SumiPermissionCoordinatorDecision {
         await settle(queryId: queryId, with: .cancel(reason: reason))
-    }
-
-    @discardableResult
-    func expire(queryId: String, reason: String = "query-expired") async -> SumiPermissionCoordinatorDecision {
-        await settle(queryId: queryId, with: .expire(reason: reason))
     }
 
     @discardableResult
@@ -623,7 +602,6 @@ actor SumiPermissionCoordinator {
             systemAuthorizationSnapshot: currentSystemSnapshot ?? firstDecision.flatMap {
                 SumiPermissionCoordinatorDecision.decodedSnapshot($0.systemAuthorizationSnapshot)
             },
-            shouldPersist: false,
             shouldOfferSystemSettings: false,
             disablesPersistentAllow: context.isEphemeralProfile
         )
@@ -655,7 +633,6 @@ actor SumiPermissionCoordinator {
                 systemAuthorizationSnapshot: promptEvaluations
                     .compactMap(\.result.systemAuthorizationSnapshot)
                     .first,
-                shouldPersist: false,
                 shouldOfferSystemSettings: false,
                 disablesPersistentAllow: originalContext.isEphemeralProfile,
                 promptSuppression: suppression
@@ -721,7 +698,6 @@ actor SumiPermissionCoordinator {
             keys: promptEvaluations.map(\.key),
             queryId: nil,
             systemAuthorizationSnapshot: policyResults.compactMap(\.systemAuthorizationSnapshot).first,
-            shouldPersist: false,
             shouldOfferSystemSettings: policyResults.contains(where: \.mayOpenSystemSettings),
             disablesPersistentAllow: originalContext.isEphemeralProfile
                 || !allowedPersistences(for: policyResults).contains(.persistent)
@@ -790,8 +766,7 @@ actor SumiPermissionCoordinator {
             primaryRequestId: entry.request.id,
             tabId: request.tabId,
             requestIds: requestIds,
-            keys: promptEvaluations.map(\.key),
-            policyResults: promptEvaluations.map(\.result)
+            keys: promptEvaluations.map(\.key)
         )
         for requestId in requestIds {
             queryIdByRequestId[requestId] = query.id
@@ -839,7 +814,6 @@ actor SumiPermissionCoordinator {
         let state: SumiPermissionState?
         let source: SumiPermissionDecisionSource
         let reason: String
-        let shouldPersist: Bool
 
         switch userDecision {
         case .approveCurrentAttempt:
@@ -847,56 +821,47 @@ actor SumiPermissionCoordinator {
             state = .allow
             source = .user
             reason = "approved-current-attempt"
-            shouldPersist = false
         case .approveOnce:
             outcome = .granted
             state = .allow
             source = .user
             reason = "approved-once"
-            shouldPersist = false
         case .approveForSession:
             outcome = .granted
             state = .allow
             source = .user
             reason = persistence == .session ? "approved-for-session" : "approved-for-session-downgraded"
-            shouldPersist = false
         case .approvePersistently:
             outcome = .granted
             state = .allow
             source = .user
             reason = persistence == .persistent ? "approved-persistently" : "approved-persistently-downgraded"
-            shouldPersist = persistence == .persistent
         case .denyOnce:
             outcome = .denied
             state = .deny
             source = .user
             reason = "denied-once"
-            shouldPersist = false
         case .denyForSession:
             outcome = .denied
             state = .deny
             source = .user
             reason = persistence == .session ? "denied-for-session" : "denied-for-session-downgraded"
-            shouldPersist = false
         case .dismiss:
             outcome = .dismissed
             state = .ask
             source = .dismissed
             reason = "dismissed"
-            shouldPersist = false
         case .denyPersistently:
             if persistence == .persistent {
                 outcome = .denied
                 state = .deny
                 source = .user
                 reason = "denied-persistently"
-                shouldPersist = true
             } else {
                 outcome = .ignored
                 state = nil
                 source = .runtime
                 reason = "persistent-deny-unavailable"
-                shouldPersist = false
             }
         case .setAskPersistently:
             if persistence == .persistent {
@@ -904,26 +869,22 @@ actor SumiPermissionCoordinator {
                 state = .ask
                 source = .user
                 reason = "ask-persistently"
-                shouldPersist = true
             } else {
                 outcome = .ignored
                 state = nil
                 source = .runtime
                 reason = "persistent-ask-unavailable"
-                shouldPersist = false
             }
         case .cancel(let cancelReason):
             outcome = .cancelled
             state = nil
             source = .cancelled
             reason = cancelReason
-            shouldPersist = false
         case .expire(let expireReason):
             outcome = .expired
             state = nil
             source = .runtime
             reason = expireReason
-            shouldPersist = false
         }
 
         return SumiPermissionCoordinatorDecision(
@@ -936,7 +897,6 @@ actor SumiPermissionCoordinator {
             keys: pending.keys,
             queryId: pending.query.id,
             systemAuthorizationSnapshot: pending.query.systemAuthorizationSnapshots.first,
-            shouldPersist: shouldPersist,
             shouldOfferSystemSettings: pending.query.shouldOfferSystemSettings,
             disablesPersistentAllow: pending.query.disablesPersistentAllow
         )
@@ -1347,16 +1307,12 @@ actor SumiPermissionCoordinator {
                 promptTypes: request.permissionTypes
             ),
             availablePersistences: allowedPersistences,
-            defaultPersistence: defaultPersistence(from: allowedPersistences),
             systemAuthorizationSnapshots: systemSnapshots,
-            policySources: policyResults.map(\.source),
             policyReasons: policyResults.map(\.reason),
             createdAt: nowProvider(),
             isEphemeralProfile: request.isEphemeralProfile,
-            hasUserGesture: originalContext.hasUserGesture,
             shouldOfferSystemSettings: policyResults.contains(where: \.mayOpenSystemSettings),
-            disablesPersistentAllow: request.isEphemeralProfile || !allowedPersistences.contains(.persistent),
-            requiresSystemAuthorizationPrompt: policyResults.contains(where: \.requiresSystemAuthorizationPrompt)
+            disablesPersistentAllow: request.isEphemeralProfile || !allowedPersistences.contains(.persistent)
         )
     }
 
@@ -1373,14 +1329,6 @@ actor SumiPermissionCoordinator {
             }
         }
         return allowed ?? [.oneTime]
-    }
-
-    private func defaultPersistence(
-        from allowedPersistences: Set<SumiPermissionPersistence>
-    ) -> SumiPermissionPersistence {
-        if allowedPersistences.contains(.oneTime) { return .oneTime }
-        if allowedPersistences.contains(.session) { return .session }
-        return .persistent
     }
 
     private func presentationPermissionType(
@@ -1469,7 +1417,6 @@ actor SumiPermissionCoordinator {
             permissionTypes: pendingQueries.flatMap { $0.query.permissionTypes },
             keys: pendingQueries.flatMap(\.keys),
             queryId: pendingQueries.first?.query.id,
-            shouldPersist: false,
             shouldOfferSystemSettings: pendingQueries.contains { $0.query.shouldOfferSystemSettings },
             disablesPersistentAllow: pendingQueries.contains { $0.query.disablesPersistentAllow }
         )
@@ -1502,7 +1449,6 @@ actor SumiPermissionCoordinator {
                 keys: decision.keys,
                 queryId: decision.queryId,
                 systemAuthorizationSnapshot: decision.systemAuthorizationSnapshot,
-                shouldPersist: false,
                 shouldOfferSystemSettings: decision.shouldOfferSystemSettings,
                 disablesPersistentAllow: decision.disablesPersistentAllow,
                 promptSuppression: suppression

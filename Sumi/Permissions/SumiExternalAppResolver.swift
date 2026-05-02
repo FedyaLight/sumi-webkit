@@ -2,8 +2,6 @@ import AppKit
 import Foundation
 
 struct SumiExternalAppInfo: Equatable, Sendable {
-    let normalizedScheme: String
-    let appURL: URL
     let appDisplayName: String?
 }
 
@@ -35,8 +33,6 @@ final class SumiNSWorkspaceExternalAppResolver: SumiExternalAppResolving {
             return nil
         }
         return SumiExternalAppInfo(
-            normalizedScheme: SumiExternalSchemePermissionRequest.normalizedScheme(for: url),
-            appURL: appURL,
             appDisplayName: displayName(forApplicationAt: appURL)
         )
     }

@@ -77,7 +77,6 @@ enum SumiWebKitMediaCaptureDecisionMapper {
             reason: reason,
             permissionTypes: context.request.permissionTypes,
             keys: context.request.permissionTypes.map { context.request.key(for: $0) },
-            shouldPersist: false,
             shouldOfferSystemSettings: false,
             disablesPersistentAllow: context.isEphemeralProfile
         )
@@ -95,7 +94,6 @@ enum SumiWebKitMediaCaptureDecisionMapper {
             reason: reason,
             permissionTypes: context?.request.permissionTypes ?? [],
             keys: context?.request.permissionTypes.map { context?.request.key(for: $0) }.compactMap { $0 } ?? [],
-            shouldPersist: false,
             shouldOfferSystemSettings: false,
             disablesPersistentAllow: context?.isEphemeralProfile ?? false
         )

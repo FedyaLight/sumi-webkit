@@ -9,7 +9,6 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
             SumiPopupPermissionRequest.classify(
                 targetURL: URL(string: "https://popup.example"),
                 sourceURL: URL(string: "https://top.example"),
-                requestingOrigin: popupOrigin,
                 userActivation: .directWebKit
             ),
             .directUserActivated
@@ -18,7 +17,6 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
             SumiPopupPermissionRequest.classify(
                 targetURL: URL(string: "https://popup.example"),
                 sourceURL: URL(string: "https://top.example"),
-                requestingOrigin: popupOrigin,
                 userActivation: .recentBrowserEvent(kind: "mouseDown", eventTimestamp: 10, currentTime: 12)
             ),
             .shortWindowUserActivated
@@ -27,7 +25,6 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
             SumiPopupPermissionRequest.classify(
                 targetURL: URL(string: "https://popup.example"),
                 sourceURL: URL(string: "https://top.example"),
-                requestingOrigin: popupOrigin,
                 userActivation: .unknown
             ),
             .scriptOrBackground
@@ -36,7 +33,6 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
             SumiPopupPermissionRequest.classify(
                 targetURL: URL(string: "about:blank"),
                 sourceURL: URL(string: "https://top.example"),
-                requestingOrigin: popupOrigin,
                 userActivation: .directWebKit
             ),
             .emptyOrAboutBlank
@@ -45,7 +41,6 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
             SumiPopupPermissionRequest.classify(
                 targetURL: URL(string: "sumi://settings"),
                 sourceURL: URL(string: "https://top.example"),
-                requestingOrigin: popupOrigin,
                 userActivation: .directWebKit
             ),
             .internalOrBrowserOwned
@@ -62,11 +57,9 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
         )
 
         XCTAssertTrue(result.isAllowed)
-        XCTAssertEqual(result.coordinatorDecision?.outcome, .granted)
-        XCTAssertEqual(result.reason, "popup-user-activation-default-allow")
         let setCount = await store.setDecisionCallCount()
         XCTAssertEqual(setCount, 0)
-        XCTAssertTrue(bridge.blockedPopups(forPageId: "tab-a:1").isEmpty)
+        XCTAssertTrue(bridge.blockedPopupStore.records(forPageId: "tab-a:1").isEmpty)
     }
 
     func testBackgroundPopupWithNoStoredDecisionBlocksAndRecordsWithoutPersistingDeny() async {
@@ -83,8 +76,6 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
         )
 
         XCTAssertFalse(result.isAllowed)
-        XCTAssertEqual(result.coordinatorDecision?.outcome, .denied)
-        XCTAssertEqual(result.reason, SumiPopupPendingStrategy.backgroundPromptUnavailableBlock.reason)
         XCTAssertEqual(blockedStore.records(forPageId: "tab-a:1").count, 1)
         XCTAssertEqual(blockedStore.records(forPageId: "tab-a:1").first?.reason, .blockedByBackgroundPromptUnavailable)
         let setCount = await store.setDecisionCallCount()
@@ -106,7 +97,7 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
         )
 
         XCTAssertFalse(result.isAllowed)
-        XCTAssertEqual(bridge.blockedPopups(forPageId: "tab-a:1").first?.id, "unknown")
+        XCTAssertEqual(bridge.blockedPopupStore.records(forPageId: "tab-a:1").first?.id, "unknown")
     }
 
     func testPersistentDenyBlocksUserActivatedPopupAndPersistentAllowOpensBackgroundPopup() async {
@@ -120,8 +111,7 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
         )
 
         XCTAssertFalse(denied.isAllowed)
-        XCTAssertEqual(denied.coordinatorDecision?.outcome, .denied)
-        XCTAssertEqual(denyBridge.blockedPopups(forPageId: "tab-a:1").first?.reason, .blockedByStoredDeny)
+        XCTAssertEqual(denyBridge.blockedPopupStore.records(forPageId: "tab-a:1").first?.reason, .blockedByStoredDeny)
 
         let allowStore = PopupBridgePermissionStore()
         await allowStore.seed(popupKey(), decision: popupDecision(.allow, persistence: .persistent, reason: "stored-allow"))
@@ -133,8 +123,7 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
         )
 
         XCTAssertTrue(allowed.isAllowed)
-        XCTAssertEqual(allowed.coordinatorDecision?.outcome, .granted)
-        XCTAssertTrue(allowBridge.blockedPopups(forPageId: "tab-a:1").isEmpty)
+        XCTAssertTrue(allowBridge.blockedPopupStore.records(forPageId: "tab-a:1").isEmpty)
     }
 
     func testSessionAllowOpensBackgroundPopupForCurrentSession() async throws {
@@ -159,7 +148,6 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
         )
 
         XCTAssertTrue(result.isAllowed)
-        XCTAssertEqual(result.coordinatorDecision?.persistence, .session)
     }
 
     func testEphemeralProfileDoesNotReadOrWritePersistentPopupDecisions() async {
@@ -194,7 +182,7 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
         )
 
         XCTAssertTrue(userActivated.isAllowed)
-        XCTAssertTrue(userActivatedBridge.blockedPopups(forPageId: "tab-a:1").isEmpty)
+        XCTAssertTrue(userActivatedBridge.blockedPopupStore.records(forPageId: "tab-a:1").isEmpty)
 
         let backgroundBridge = SumiPopupPermissionBridge(
             coordinator: PopupFakePermissionCoordinator(decision: popupCoordinatorDecision(.promptRequired, reason: "ask")),
@@ -206,8 +194,7 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
         )
 
         XCTAssertFalse(background.isAllowed)
-        XCTAssertEqual(background.reason, SumiPopupPendingStrategy.backgroundPromptUnavailableBlock.reason)
-        XCTAssertEqual(backgroundBridge.blockedPopups(forPageId: "tab-a:1").first?.reason, .blockedByBackgroundPromptUnavailable)
+        XCTAssertEqual(backgroundBridge.blockedPopupStore.records(forPageId: "tab-a:1").first?.reason, .blockedByBackgroundPromptUnavailable)
     }
 
     func testSecurityContextUsesTrustedOriginsProfileAndNormalTabSurface() {
@@ -247,8 +234,7 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
         )
 
         XCTAssertFalse(result.isAllowed)
-        XCTAssertEqual(result.reason, "popup-origin-not-keyable")
-        XCTAssertEqual(bridge.blockedPopups(forPageId: "tab-a:1").first?.reason, .blockedByInvalidOrigin)
+        XCTAssertEqual(bridge.blockedPopupStore.records(forPageId: "tab-a:1").first?.reason, .blockedByInvalidOrigin)
     }
 
     func testBrowserOwnedExtensionPopupIsExplicitAndSumiInternalPopupIsBlocked() async {
@@ -280,7 +266,7 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
             tabContext: tabContext()
         )
         XCTAssertFalse(sumiBlocked.isAllowed)
-        XCTAssertEqual(bridge.blockedPopups(forPageId: "tab-a:1").first { $0.id == "sumi-popup" }?.reason, .blockedByPolicy)
+        XCTAssertEqual(bridge.blockedPopupStore.records(forPageId: "tab-a:1").first { $0.id == "sumi-popup" }?.reason, .blockedByPolicy)
     }
 
     func testAboutBlankAndEmptyPopupsAreNotReopenableWhenBlocked() async {
@@ -297,8 +283,6 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
 
         XCTAssertFalse(blank.isAllowed)
         XCTAssertFalse(empty.isAllowed)
-        XCTAssertEqual(bridge.blockedPopups(forPageId: "tab-a:1").first { $0.id == "blank" }?.canOpenLater, false)
-        XCTAssertEqual(bridge.blockedPopups(forPageId: "tab-a:1").first { $0.id == "empty" }?.canOpenLater, false)
     }
 
     func testDuplicateBackgroundProcessingRecordsOneBlockedPopupAttemptSeries() async {
@@ -308,25 +292,9 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
         _ = await bridge.evaluate(request, tabContext: tabContext())
         _ = await bridge.evaluate(request, tabContext: tabContext())
 
-        let records = bridge.blockedPopups(forPageId: "tab-a:1")
+        let records = bridge.blockedPopupStore.records(forPageId: "tab-a:1")
         XCTAssertEqual(records.count, 1)
         XCTAssertEqual(records.first?.attemptCount, 2)
-    }
-
-    func testOpenBlockedPopupBackendOnlyOpensSafeKnownURLAfterExplicitCall() async {
-        let bridge = realCoordinatorBridge(store: PopupBridgePermissionStore())
-        _ = await bridge.evaluate(
-            popupRequest(id: "blocked", targetURL: URL(string: "https://popup.example/window"), userActivation: .none),
-            tabContext: tabContext()
-        )
-        var openedURLs: [URL] = []
-
-        let opened = bridge.openBlockedPopup(id: "blocked", pageId: "tab-a:1") { url in
-            openedURLs.append(url)
-        }
-
-        XCTAssertTrue(opened)
-        XCTAssertEqual(openedURLs, [URL(string: "https://popup.example/window")!])
     }
 
     func testSourceLevelIntegrationRoutesBothPopupPathsThroughBridge() throws {
@@ -371,7 +339,6 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
     ) -> SumiPopupPermissionRequest {
         SumiPopupPermissionRequest(
             id: id,
-            path: .uiDelegateCreateWebView,
             targetURL: targetURL,
             sourceURL: sourceURL,
             requestingOrigin: requestingOrigin,
@@ -475,7 +442,6 @@ private actor PopupProceedPolicyResolver: SumiPermissionPolicyResolver {
             reason: SumiPermissionPolicyReason.allowed,
             systemAuthorizationSnapshot: nil,
             mayOpenSystemSettings: false,
-            requiresSystemAuthorizationPrompt: false,
             allowedPersistences: [.oneTime, .session, .persistent]
         )
     }
@@ -608,7 +574,6 @@ private func popupCoordinatorDecision(
         source: outcome == .granted || outcome == .denied ? .user : .defaultSetting,
         reason: reason,
         permissionTypes: [.popups],
-        keys: [popupKey()],
-        shouldPersist: false
+        keys: [popupKey()]
     )
 }

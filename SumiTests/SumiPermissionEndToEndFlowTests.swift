@@ -185,7 +185,6 @@ final class SumiPermissionEndToEndFlowTests: XCTestCase {
             request: SumiWebKitGeolocationRequest(
                 id: "geo-first",
                 requestingOrigin: sumiPermissionIntegrationOrigin(),
-                frameURL: URL(string: "https://example.com/page"),
                 isMainFrame: true
             ),
             tabContext: geolocationTabContext(pageId: "tab-a:1"),
@@ -565,10 +564,8 @@ final class SumiPermissionEndToEndFlowTests: XCTestCase {
     ) -> SumiWebKitMediaCaptureRequest {
         SumiWebKitMediaCaptureRequest(
             id: id,
-            webKitMediaTypeRawValue: 0,
             permissionTypes: permissionTypes,
             requestingOrigin: sumiPermissionIntegrationOrigin(),
-            frameURL: URL(string: "https://example.com/page"),
             isMainFrame: true
         )
     }
@@ -641,9 +638,7 @@ final class SumiPermissionEndToEndFlowTests: XCTestCase {
     ) -> SumiExternalSchemePermissionRequest {
         SumiExternalSchemePermissionRequest(
             id: id,
-            path: .navigationResponder,
             targetURL: URL(string: "mailto:test@example.com"),
-            sourceURL: URL(string: "https://example.com/page"),
             requestingOrigin: sumiPermissionIntegrationOrigin(),
             userActivation: userActivation,
             isMainFrame: true,
@@ -674,7 +669,6 @@ final class SumiPermissionEndToEndFlowTests: XCTestCase {
     ) -> SumiPopupPermissionRequest {
         SumiPopupPermissionRequest(
             id: id,
-            path: .uiDelegateCreateWebView,
             targetURL: URL(string: "https://popup.example/landing"),
             sourceURL: URL(string: "https://example.com/page"),
             requestingOrigin: sumiPermissionIntegrationOrigin(),

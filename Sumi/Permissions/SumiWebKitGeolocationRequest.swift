@@ -5,7 +5,6 @@ import WebKit
 struct SumiWebKitGeolocationRequest: Sendable {
     let id: String
     let requestingOrigin: SumiPermissionOrigin
-    let frameURL: URL?
     let isMainFrame: Bool
 
     @MainActor
@@ -18,7 +17,6 @@ struct SumiWebKitGeolocationRequest: Sendable {
             id: id,
             requestingOrigin: frameURL.map(SumiPermissionOrigin.init(url:))
                 ?? .invalid(reason: "missing-webkit-geolocation-frame-url"),
-            frameURL: frameURL,
             isMainFrame: frame.isMainFrame
         )
     }
@@ -33,7 +31,6 @@ struct SumiWebKitGeolocationRequest: Sendable {
         self.init(
             id: id,
             requestingOrigin: Self.permissionOrigin(from: origin),
-            frameURL: frame.safeRequest?.url,
             isMainFrame: frame.isMainFrame
         )
     }
@@ -41,12 +38,10 @@ struct SumiWebKitGeolocationRequest: Sendable {
     init(
         id: String = UUID().uuidString,
         requestingOrigin: SumiPermissionOrigin,
-        frameURL: URL?,
         isMainFrame: Bool
     ) {
         self.id = id
         self.requestingOrigin = requestingOrigin
-        self.frameURL = frameURL
         self.isMainFrame = isMainFrame
     }
 

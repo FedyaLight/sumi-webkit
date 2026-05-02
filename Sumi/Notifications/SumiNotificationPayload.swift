@@ -40,14 +40,6 @@ struct SumiNotificationPayload: Codable, Equatable, Sendable {
         }
     }
 
-    static func sanitizedTitle(_ value: String) -> String {
-        sanitized(value, maxLength: 256, fallback: "Sumi")
-    }
-
-    static func sanitizedBody(_ value: String) -> String {
-        sanitized(value, maxLength: 1024, fallback: "")
-    }
-
     private static func sanitizedOptional(_ value: String?, maxLength: Int) -> String? {
         guard let value else { return nil }
         let sanitized = sanitized(value, maxLength: maxLength, fallback: "")

@@ -77,15 +77,4 @@ enum SumiAutoplayPolicy: String, Codable, CaseIterable, Hashable, Sendable {
         }
     }
 
-    static func fromMediaTypesRequiringUserActionForPlayback(
-        _ mediaTypes: WKAudiovisualMediaTypes
-    ) -> SumiAutoplayPolicy {
-        if mediaTypes.isEmpty {
-            return .allowAll
-        }
-        if mediaTypes == .audio {
-            return .blockAudible
-        }
-        return .blockAll
-    }
 }

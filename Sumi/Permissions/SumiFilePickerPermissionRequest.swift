@@ -5,7 +5,6 @@ import WebKit
 struct SumiFilePickerPermissionRequest: Sendable {
     let id: String
     let requestingOrigin: SumiPermissionOrigin
-    let frameURL: URL?
     let isMainFrame: Bool
     let allowsMultipleSelection: Bool
     let allowsDirectories: Bool
@@ -23,7 +22,6 @@ struct SumiFilePickerPermissionRequest: Sendable {
         self.init(
             id: id,
             requestingOrigin: Self.permissionOrigin(from: frame.securityOrigin),
-            frameURL: frame.safeRequest?.url,
             isMainFrame: frame.isMainFrame,
             allowsMultipleSelection: parameters.allowsMultipleSelection,
             allowsDirectories: parameters.allowsDirectories,
@@ -36,7 +34,6 @@ struct SumiFilePickerPermissionRequest: Sendable {
     init(
         id: String = UUID().uuidString,
         requestingOrigin: SumiPermissionOrigin,
-        frameURL: URL?,
         isMainFrame: Bool,
         allowsMultipleSelection: Bool,
         allowsDirectories: Bool,
@@ -46,7 +43,6 @@ struct SumiFilePickerPermissionRequest: Sendable {
     ) {
         self.id = id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? UUID().uuidString : id
         self.requestingOrigin = requestingOrigin
-        self.frameURL = frameURL
         self.isMainFrame = isMainFrame
         self.allowsMultipleSelection = allowsMultipleSelection
         self.allowsDirectories = allowsDirectories

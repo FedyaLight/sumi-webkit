@@ -2,10 +2,6 @@ import Foundation
 import Common
 import Navigation
 
-enum SumiExternalSchemePermissionPath: String, Codable, Equatable, Sendable {
-    case navigationResponder
-}
-
 enum SumiExternalSchemeClassification: String, Codable, Equatable, Sendable {
     case directUserActivated
     case scriptOrBackground
@@ -31,20 +27,6 @@ enum SumiExternalSchemeUserActivationState: Equatable, Sendable {
         }
     }
 
-    var metadataValue: String {
-        switch self {
-        case .navigationAction:
-            return "navigation-action"
-        case .userEntered:
-            return "user-entered"
-        case .redirectChain:
-            return "redirect-chain"
-        case .none:
-            return "none"
-        case .unknown:
-            return "unknown"
-        }
-    }
 }
 
 struct SumiExternalSchemePermissionTabContext: Sendable {
@@ -93,34 +75,25 @@ struct SumiExternalSchemePermissionTabContext: Sendable {
 
 struct SumiExternalSchemePermissionRequest: Sendable {
     let id: String
-    let path: SumiExternalSchemePermissionPath
     let targetURL: URL?
-    let sourceURL: URL?
     let requestingOrigin: SumiPermissionOrigin
     let normalizedScheme: String
     let redactedTargetURLString: String?
     let userActivation: SumiExternalSchemeUserActivationState
     let classification: SumiExternalSchemeClassification
     let isMainFrame: Bool
-    let isRedirectChain: Bool
-    let navigationActionMetadata: [String: String]
 
     init(
         id: String = UUID().uuidString,
-        path: SumiExternalSchemePermissionPath,
         targetURL: URL?,
-        sourceURL: URL?,
         requestingOrigin: SumiPermissionOrigin,
         userActivation: SumiExternalSchemeUserActivationState,
         classification: SumiExternalSchemeClassification? = nil,
         isMainFrame: Bool,
-        isRedirectChain: Bool,
-        navigationActionMetadata: [String: String] = [:]
+        isRedirectChain: Bool
     ) {
         self.id = id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? UUID().uuidString : id
-        self.path = path
         self.targetURL = targetURL
-        self.sourceURL = sourceURL
         self.requestingOrigin = requestingOrigin
         self.normalizedScheme = Self.normalizedScheme(for: targetURL)
         self.redactedTargetURLString = Self.redactedDisplayString(for: targetURL)
@@ -131,8 +104,6 @@ struct SumiExternalSchemePermissionRequest: Sendable {
             isRedirectChain: isRedirectChain
         )
         self.isMainFrame = isMainFrame
-        self.isRedirectChain = isRedirectChain
-        self.navigationActionMetadata = navigationActionMetadata
     }
 
     var isUserActivated: Bool {
@@ -168,32 +139,17 @@ struct SumiExternalSchemePermissionRequest: Sendable {
         userActivation: SumiExternalSchemeUserActivationState? = nil
     ) -> SumiExternalSchemePermissionRequest {
         let targetURL = navigationAction.url
-        let sourceURL = navigationAction.sourceFrame.url
         let isRedirectChain = navigationAction.redirectHistory?.isEmpty == false
             || navigationAction.mainFrameNavigation?.navigationAction.redirectHistory?.isEmpty == false
             || navigationAction.navigationType.isRedirect
         let resolvedActivation = userActivation ?? userActivationState(from: navigationAction)
-        var metadata: [String: String] = [
-            "path": SumiExternalSchemePermissionPath.navigationResponder.rawValue,
-            "navigationType": navigationAction.navigationType.debugDescription,
-            "activation": resolvedActivation.metadataValue,
-            "isForMainFrame": String(navigationAction.isForMainFrame),
-            "isRedirectChain": String(isRedirectChain),
-            "sourceFrameIsMainFrame": String(navigationAction.sourceFrame.isMainFrame),
-            "targetFrameIsMainFrame": navigationAction.targetFrame.map { String($0.isMainFrame) } ?? "nil",
-            "targetURLScheme": targetURL.scheme?.lowercased() ?? "",
-        ]
-        metadata["modifierFlags"] = "\(navigationAction.modifierFlags.rawValue)"
 
         return SumiExternalSchemePermissionRequest(
-            path: .navigationResponder,
             targetURL: targetURL,
-            sourceURL: sourceURL,
             requestingOrigin: permissionOrigin(from: navigationAction.sourceFrame.securityOrigin),
             userActivation: resolvedActivation,
             isMainFrame: navigationAction.sourceFrame.isMainFrame,
-            isRedirectChain: isRedirectChain,
-            navigationActionMetadata: metadata
+            isRedirectChain: isRedirectChain
         )
     }
 

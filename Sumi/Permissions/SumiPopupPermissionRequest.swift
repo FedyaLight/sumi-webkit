@@ -7,7 +7,6 @@ import WebKit
 enum SumiPopupPermissionPath: String, Codable, Equatable, Sendable {
     case uiDelegateCreateWebView
     case navigationResponderTargetFrame
-    case openBlockedPopup
 }
 
 enum SumiPopupClassification: String, Codable, Equatable, Sendable {
@@ -55,7 +54,6 @@ final class SumiPopupUserActivationTracker {
     struct RecordedActivation {
         let kind: String
         let timestamp: TimeInterval
-        let modifierFlags: NSEvent.ModifierFlags
     }
 
     private let threshold: TimeInterval
@@ -79,8 +77,7 @@ final class SumiPopupUserActivationTracker {
     func record(event: NSEvent, kind: String) {
         lastActivation = RecordedActivation(
             kind: kind,
-            timestamp: event.timestamp,
-            modifierFlags: event.modifierFlags
+            timestamp: event.timestamp
         )
     }
 
@@ -157,7 +154,6 @@ struct SumiPopupPermissionTabContext: Sendable {
 
 struct SumiPopupPermissionRequest: Sendable {
     let id: String
-    let path: SumiPopupPermissionPath
     let targetURL: URL?
     let sourceURL: URL?
     let requestingOrigin: SumiPermissionOrigin
@@ -168,7 +164,6 @@ struct SumiPopupPermissionRequest: Sendable {
 
     init(
         id: String = UUID().uuidString,
-        path: SumiPopupPermissionPath,
         targetURL: URL?,
         sourceURL: URL?,
         requestingOrigin: SumiPermissionOrigin,
@@ -178,7 +173,6 @@ struct SumiPopupPermissionRequest: Sendable {
         navigationActionMetadata: [String: String] = [:]
     ) {
         self.id = id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? UUID().uuidString : id
-        self.path = path
         self.targetURL = targetURL
         self.sourceURL = sourceURL
         self.requestingOrigin = requestingOrigin
@@ -186,7 +180,6 @@ struct SumiPopupPermissionRequest: Sendable {
         self.classification = classification ?? Self.classify(
             targetURL: targetURL,
             sourceURL: sourceURL,
-            requestingOrigin: requestingOrigin,
             userActivation: userActivation
         )
         self.isMainFrame = isMainFrame
@@ -195,18 +188,6 @@ struct SumiPopupPermissionRequest: Sendable {
 
     var isUserActivated: Bool {
         userActivation.isUserActivated
-    }
-
-    var canOpenLater: Bool {
-        guard let targetURL,
-              !targetURL.isEmpty,
-              targetURL.navigationalScheme != .about,
-              targetURL.navigationalScheme != .javascript,
-              ["http", "https"].contains(targetURL.scheme?.lowercased() ?? "")
-        else {
-            return false
-        }
-        return true
     }
 
     var isExtensionOwnedPopup: Bool {
@@ -222,7 +203,6 @@ struct SumiPopupPermissionRequest: Sendable {
     static func classify(
         targetURL: URL?,
         sourceURL: URL?,
-        requestingOrigin: SumiPermissionOrigin,
         userActivation: SumiPopupUserActivationState
     ) -> SumiPopupClassification {
         if isBrowserOwned(sourceURL) || isBrowserOwned(targetURL) {
@@ -272,7 +252,6 @@ struct SumiPopupPermissionRequest: Sendable {
         }
 
         return SumiPopupPermissionRequest(
-            path: path,
             targetURL: targetURL,
             sourceURL: sourceURL,
             requestingOrigin: requestingOrigin,
@@ -296,7 +275,6 @@ struct SumiPopupPermissionRequest: Sendable {
         ]
         metadata["modifierFlags"] = "\(navigationAction.modifierFlags.rawValue)"
         return SumiPopupPermissionRequest(
-            path: .navigationResponderTargetFrame,
             targetURL: navigationAction.url,
             sourceURL: navigationAction.sourceFrame.url,
             requestingOrigin: permissionOrigin(from: navigationAction.sourceFrame.securityOrigin),

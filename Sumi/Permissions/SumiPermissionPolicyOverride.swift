@@ -9,20 +9,6 @@ struct SumiPermissionPolicyOverride: Equatable, Sendable {
     let action: Action
     let source: SumiPermissionDecisionSource
     let reason: String
-
-    static func allow(
-        source: SumiPermissionDecisionSource = .policy,
-        reason: String = SumiPermissionPolicyReason.policyAllowed
-    ) -> SumiPermissionPolicyOverride {
-        SumiPermissionPolicyOverride(action: .allow, source: source, reason: reason)
-    }
-
-    static func deny(
-        source: SumiPermissionDecisionSource = .policy,
-        reason: String = SumiPermissionPolicyReason.policyDenied
-    ) -> SumiPermissionPolicyOverride {
-        SumiPermissionPolicyOverride(action: .deny, source: source, reason: reason)
-    }
 }
 
 protocol SumiPermissionPolicyProvider: Sendable {

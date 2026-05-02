@@ -7,7 +7,6 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
         let result = await evaluate(.camera)
 
         XCTAssertTrue(result.isAllowedToProceed)
-        XCTAssertTrue(result.mayAskUser)
         XCTAssertEqual(result.source, .defaultSetting)
         XCTAssertEqual(result.reason, SumiPermissionPolicyReason.allowed)
     }
@@ -44,7 +43,7 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
         XCTAssertFalse(result.isAllowedToProceed)
         XCTAssertEqual(result.source, .insecureOrigin)
         XCTAssertEqual(result.reason, SumiPermissionPolicyReason.insecureRequestingOrigin)
-        XCTAssertEqual(result.deniedState, .deny)
+        XCTAssertEqual(result.decision?.state, .deny)
     }
 
     func testLocalDevelopmentHTTPOriginsProceed() async {
@@ -81,7 +80,6 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
 
             XCTAssertFalse(result.isAllowedToProceed, origin.identity)
             XCTAssertEqual(result.source, .invalidOrigin, origin.identity)
-            XCTAssertFalse(result.mayAskUser)
         }
     }
 
@@ -287,7 +285,7 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
             XCTAssertFalse(result.isAllowedToProceed, permissionType.identity)
             XCTAssertEqual(result.source, .runtime, permissionType.identity)
             XCTAssertEqual(result.reason, SumiPermissionPolicyReason.requiresUserActivation)
-            XCTAssertEqual(result.deniedState, .deny)
+            XCTAssertEqual(result.decision?.state, .deny)
         }
     }
 
@@ -347,7 +345,6 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
         let result = await evaluate(.camera, systemStates: [.camera: .authorized])
 
         XCTAssertTrue(result.isAllowedToProceed)
-        XCTAssertFalse(result.requiresSystemAuthorizationPrompt)
         XCTAssertEqual(result.systemAuthorizationSnapshot?.state, .authorized)
     }
 
@@ -357,7 +354,6 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
 
         XCTAssertTrue(result.isAllowedToProceed)
         XCTAssertEqual(result.source, .system)
-        XCTAssertTrue(result.requiresSystemAuthorizationPrompt)
         XCTAssertEqual(result.systemAuthorizationSnapshot?.state, .notDetermined)
         let requestAuthorizationCallCount = await service.requestAuthorizationCallCount()
         XCTAssertEqual(requestAuthorizationCallCount, 0)
@@ -369,7 +365,6 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
 
         XCTAssertTrue(result.isAllowedToProceed)
         XCTAssertEqual(result.source, .system)
-        XCTAssertTrue(result.requiresSystemAuthorizationPrompt)
         XCTAssertEqual(result.systemAuthorizationSnapshot?.kind, .screenCapture)
         XCTAssertEqual(result.systemAuthorizationSnapshot?.state, .notDetermined)
         let requestAuthorizationCallCount = await service.requestAuthorizationCallCount()
@@ -396,7 +391,6 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
             let result = await evaluate(permissionType, systemPermissionService: service)
 
             XCTAssertFalse(result.isAllowedToProceed, "\(kind.rawValue):\(state.rawValue)")
-            XCTAssertFalse(result.mayAskUser, "\(kind.rawValue):\(state.rawValue)")
             XCTAssertEqual(result.source, .system, "\(kind.rawValue):\(state.rawValue)")
             XCTAssertEqual(result.systemAuthorizationSnapshot?.state, state)
             XCTAssertEqual(
@@ -434,7 +428,11 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
         let result = await evaluate(
             .camera,
             policyProvider: StaticSumiPermissionPolicyProvider(
-                override: .deny(reason: "enterprise-policy-denied")
+                override: SumiPermissionPolicyOverride(
+                    action: .deny,
+                    source: .policy,
+                    reason: "enterprise-policy-denied"
+                )
             ),
             systemStates: [.camera: .authorized]
         )
@@ -448,7 +446,11 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
         let result = await evaluate(
             .camera,
             policyProvider: StaticSumiPermissionPolicyProvider(
-                override: .deny(source: .defaultSetting, reason: "default-camera-block")
+                override: SumiPermissionPolicyOverride(
+                    action: .deny,
+                    source: .defaultSetting,
+                    reason: "default-camera-block"
+                )
             )
         )
 
@@ -459,7 +461,11 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
 
     func testAllowPolicyOverrideCanProceedOnlyAfterHardGatesPass() async {
         let allowProvider = StaticSumiPermissionPolicyProvider(
-            override: .allow(reason: "enterprise-policy-allowed")
+            override: SumiPermissionPolicyOverride(
+                action: .allow,
+                source: .policy,
+                reason: "enterprise-policy-allowed"
+            )
         )
 
         let allowed = await evaluate(

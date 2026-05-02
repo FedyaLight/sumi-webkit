@@ -237,7 +237,6 @@ final class SumiNotificationPermissionBridgeTests: XCTestCase {
         SumiWebNotificationRequest(
             id: id,
             requestingOrigin: SumiPermissionOrigin(string: "https://example.com"),
-            frameURL: URL(string: "https://example.com/page"),
             isMainFrame: isMainFrame
         )
     }
@@ -414,18 +413,14 @@ private actor FakeNotificationPermissionCoordinator: SumiPermissionCoordinating 
             permissionTypes: [.notifications],
             presentationPermissionType: nil,
             availablePersistences: [.oneTime, .session, .persistent],
-            defaultPersistence: .oneTime,
             systemAuthorizationSnapshots: [
                 SumiSystemPermissionSnapshot(kind: .notifications, state: .authorized)
             ],
-            policySources: [.defaultSetting],
             policyReasons: [SumiPermissionPolicyReason.allowed],
             createdAt: context.now,
             isEphemeralProfile: context.isEphemeralProfile,
-            hasUserGesture: context.hasUserGesture,
             shouldOfferSystemSettings: false,
             disablesPersistentAllow: context.isEphemeralProfile,
-            requiresSystemAuthorizationPrompt: false
         )
     }
 }

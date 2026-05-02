@@ -310,7 +310,6 @@ final class SumiWebKitGeolocationBridgeTests: XCTestCase {
         SumiWebKitGeolocationRequest(
             id: "request-a",
             requestingOrigin: requestingOrigin,
-            frameURL: URL(string: "https://example.com/frame"),
             isMainFrame: isMainFrame
         )
     }
@@ -417,7 +416,6 @@ private actor FakeGeolocationPermissionCoordinator: SumiPermissionCoordinating {
                 reason: "fake-query-prompt-required",
                 permissionTypes: context.request.permissionTypes,
                 keys: context.request.permissionTypes.map { context.request.key(for: $0) },
-                shouldPersist: false,
                 disablesPersistentAllow: context.isEphemeralProfile
             )
         }
@@ -490,17 +488,13 @@ private actor FakeGeolocationPermissionCoordinator: SumiPermissionCoordinating {
             permissionTypes: [.geolocation],
             presentationPermissionType: nil,
             availablePersistences: [.oneTime, .session, .persistent],
-            defaultPersistence: .oneTime,
             systemAuthorizationSnapshots: [],
-            policySources: [.defaultSetting],
             policyReasons: [SumiPermissionPolicyReason.allowed],
             createdAt: context.now,
             isEphemeralProfile: context.isEphemeralProfile,
-            hasUserGesture: context.hasUserGesture,
             shouldOfferSystemSettings: false,
-            disablesPersistentAllow: context.isEphemeralProfile,
-            requiresSystemAuthorizationPrompt: false
-        )
+            disablesPersistentAllow: context.isEphemeralProfile
+    )
     }
 }
 
@@ -586,8 +580,7 @@ private func decision(
         source: outcome == .systemBlocked ? .system : .user,
         reason: reason,
         permissionTypes: [.geolocation],
-        keys: [],
-        shouldPersist: false
+        keys: []
     )
 }
 

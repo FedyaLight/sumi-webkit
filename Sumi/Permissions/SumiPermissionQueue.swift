@@ -41,7 +41,6 @@ struct SumiPermissionQueueCancellation: Equatable, Sendable {
 }
 
 struct SumiPermissionQueueAdvance: Equatable, Sendable {
-    let completedRequestIds: [String]
     let nextActive: SumiPermissionQueueEntry?
 }
 
@@ -92,14 +91,6 @@ actor SumiPermissionQueue {
         return .queued(entry, position: pageQueue.queued.count)
     }
 
-    func activeRequest(forPageId pageId: String) -> SumiPermissionQueueEntry? {
-        queuesByPageId[normalizedPageId(pageId)]?.active
-    }
-
-    func queuedRequests(forPageId pageId: String) -> [SumiPermissionQueueEntry] {
-        queuesByPageId[normalizedPageId(pageId)]?.queued ?? []
-    }
-
     func snapshot(forPageId pageId: String) -> SumiPermissionQueueSnapshot {
         let pageQueue = queuesByPageId[normalizedPageId(pageId)] ?? PageQueue()
         return SumiPermissionQueueSnapshot(active: pageQueue.active, queued: pageQueue.queued)
@@ -109,18 +100,15 @@ actor SumiPermissionQueue {
     func finishActiveRequest(pageId: String) -> SumiPermissionQueueAdvance {
         let pageId = normalizedPageId(pageId)
         guard var pageQueue = queuesByPageId[pageId],
-              let active = pageQueue.active
+              pageQueue.active != nil
         else {
-            return SumiPermissionQueueAdvance(completedRequestIds: [], nextActive: nil)
+            return SumiPermissionQueueAdvance(nextActive: nil)
         }
 
         let next = pageQueue.queued.isEmpty ? nil : pageQueue.queued.removeFirst()
         pageQueue.active = next
         store(pageQueue, forPageId: pageId)
-        return SumiPermissionQueueAdvance(
-            completedRequestIds: active.allRequestIds,
-            nextActive: next
-        )
+        return SumiPermissionQueueAdvance(nextActive: next)
     }
 
     @discardableResult

@@ -38,14 +38,6 @@ final class SumiAutoplayPolicyStoreAdapter {
         return SumiAutoplayDecisionMapper.policy(from: record.decision)
     }
 
-    func hasExplicitPolicy(for url: URL?, profile: Profile?) -> Bool {
-        guard let key = key(for: url, profile: profile) else { return false }
-        if key.isEphemeralProfile {
-            return ephemeralPoliciesByIdentity[key.persistentIdentity] != nil
-        }
-        return persistentRecord(for: key) != nil
-    }
-
     func setPolicy(
         _ policy: SumiAutoplayPolicy,
         for url: URL?,

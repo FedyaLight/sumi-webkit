@@ -22,7 +22,6 @@ final class SumiFilePickerPermissionBridge {
         let requestId: String
         let tabId: String
         let pageId: String
-        let navigationOrPageGeneration: String?
         let indicatorEventId: String?
         let completionHandler: SumiFilePickerCompletionHandler
     }
@@ -176,15 +175,11 @@ final class SumiFilePickerPermissionBridge {
             requestId: request.id,
             tabId: tabContext.tabId,
             pageId: tabContext.pageId,
-            navigationOrPageGeneration: tabContext.navigationOrPageGeneration,
             indicatorEventId: indicatorEventId,
             completionHandler: completionHandler
         )
 
         let presentationRequest = SumiFilePickerPanelPresentationRequest(
-            id: request.id,
-            tabId: tabContext.tabId,
-            pageId: tabContext.pageId,
             allowsMultipleSelection: request.allowsMultipleSelection,
             allowsDirectories: request.allowsDirectories,
             allowedContentTypeIdentifiers: request.allowedContentTypeIdentifiers,

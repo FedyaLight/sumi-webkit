@@ -6,7 +6,6 @@ enum SumiPermissionPolicyResult: Equatable, Sendable {
         reason: String,
         systemAuthorizationSnapshot: SumiSystemPermissionSnapshot?,
         mayOpenSystemSettings: Bool,
-        requiresSystemAuthorizationPrompt: Bool,
         allowedPersistences: Set<SumiPermissionPersistence>
     )
     case hardDeny(decision: SumiPermissionDecision)
@@ -22,17 +21,9 @@ enum SumiPermissionPolicyResult: Equatable, Sendable {
         return false
     }
 
-    var shouldProceed: Bool {
-        isAllowedToProceed
-    }
-
-    var mayAskUser: Bool {
-        isAllowedToProceed
-    }
-
     var mayOpenSystemSettings: Bool {
         switch self {
-        case .proceed(_, _, _, let mayOpenSystemSettings, _, _):
+        case .proceed(_, _, _, let mayOpenSystemSettings, _):
             return mayOpenSystemSettings
         case .systemBlocked(let snapshot, _):
             return snapshot.shouldOpenSystemSettings
@@ -41,22 +32,11 @@ enum SumiPermissionPolicyResult: Equatable, Sendable {
         }
     }
 
-    var requiresSystemAuthorizationPrompt: Bool {
-        if case .proceed(_, _, _, _, let requiresSystemAuthorizationPrompt, _) = self {
-            return requiresSystemAuthorizationPrompt
-        }
-        return false
-    }
-
     var allowedPersistences: Set<SumiPermissionPersistence> {
-        if case .proceed(_, _, _, _, _, let allowedPersistences) = self {
+        if case .proceed(_, _, _, _, let allowedPersistences) = self {
             return allowedPersistences
         }
         return []
-    }
-
-    var deniedState: SumiPermissionState? {
-        decision?.state
     }
 
     var decision: SumiPermissionDecision? {
@@ -74,7 +54,7 @@ enum SumiPermissionPolicyResult: Equatable, Sendable {
 
     var source: SumiPermissionDecisionSource {
         switch self {
-        case .proceed(let source, _, _, _, _, _):
+        case .proceed(let source, _, _, _, _):
             return source
         case .hardDeny(let decision),
              .systemBlocked(_, let decision),
@@ -87,7 +67,7 @@ enum SumiPermissionPolicyResult: Equatable, Sendable {
 
     var reason: String {
         switch self {
-        case .proceed(_, let reason, _, _, _, _):
+        case .proceed(_, let reason, _, _, _):
             return reason
         case .hardDeny(let decision),
              .systemBlocked(_, let decision),
@@ -100,7 +80,7 @@ enum SumiPermissionPolicyResult: Equatable, Sendable {
 
     var systemAuthorizationSnapshot: SumiSystemPermissionSnapshot? {
         switch self {
-        case .proceed(_, _, let snapshot, _, _, _):
+        case .proceed(_, _, let snapshot, _, _):
             return snapshot
         case .systemBlocked(let snapshot, _):
             return snapshot

@@ -294,7 +294,6 @@ final class SumiPermissionSettingsRepository {
                     displayDomain: row.scope.displayDomain,
                     key: key,
                     state: nil,
-                    detail: "privacy-site-settings-autoplay-reset",
                     now: now()
                 )
             case .allowAll:
@@ -303,7 +302,6 @@ final class SumiPermissionSettingsRepository {
                     displayDomain: row.scope.displayDomain,
                     key: key,
                     state: .allow,
-                    detail: "privacy-site-settings-autoplay-allow-all",
                     now: now()
                 )
             case .blockAudible:
@@ -312,7 +310,6 @@ final class SumiPermissionSettingsRepository {
                     displayDomain: row.scope.displayDomain,
                     key: key,
                     state: .deny,
-                    detail: "privacy-site-settings-autoplay-block-audible",
                     now: now()
                 )
             case .blockAll:
@@ -321,7 +318,6 @@ final class SumiPermissionSettingsRepository {
                     displayDomain: row.scope.displayDomain,
                     key: key,
                     state: .deny,
-                    detail: "privacy-site-settings-autoplay-block-all",
                     now: now()
                 )
             case .ask, .allow, .block:
@@ -406,7 +402,6 @@ final class SumiPermissionSettingsRepository {
                 displayDomain: displayDomain,
                 key: key,
                 state: .allow,
-                detail: "privacy-site-settings",
                 now: now()
             )
         case .block:
@@ -420,7 +415,6 @@ final class SumiPermissionSettingsRepository {
                 displayDomain: displayDomain,
                 key: key,
                 state: .deny,
-                detail: "privacy-site-settings",
                 now: now()
             )
         case .allowAll, .blockAudible, .blockAll:
@@ -438,7 +432,6 @@ final class SumiPermissionSettingsRepository {
             displayDomain: displayDomain,
             key: key,
             state: nil,
-            detail: "privacy-site-settings-reset",
             now: now()
         )
     }
@@ -753,7 +746,6 @@ final class SumiPermissionSettingsRepository {
                 isEphemeralProfile: record.isEphemeralProfile,
                 permissionType: .popups,
                 action: .blockedPopup,
-                detail: record.reason.rawValue,
                 createdAt: record.lastBlockedAt,
                 count: record.attemptCount
             )
@@ -772,7 +764,6 @@ final class SumiPermissionSettingsRepository {
                 isEphemeralProfile: record.isEphemeralProfile,
                 permissionType: .externalScheme(record.scheme),
                 action: record.result == .opened ? .openedExternalApp : .blocked,
-                detail: record.reason,
                 createdAt: record.lastAttemptAt,
                 count: record.attemptCount
             )
@@ -794,7 +785,6 @@ final class SumiPermissionSettingsRepository {
                 isEphemeralProfile: record.isEphemeralProfile,
                 permissionType: record.primaryPermissionType,
                 action: action,
-                detail: record.reason,
                 createdAt: record.createdAt,
                 count: record.attemptCount
             )

@@ -7,7 +7,6 @@ final class SumiStorageAccessPolicyTests: XCTestCase {
         let result = await evaluateStorageAccess()
 
         XCTAssertTrue(result.isAllowedToProceed)
-        XCTAssertTrue(result.mayAskUser)
         XCTAssertEqual(result.source, .defaultSetting)
         XCTAssertEqual(result.reason, SumiPermissionPolicyReason.allowed)
         XCTAssertTrue(result.allowedPersistences.contains(.persistent))
@@ -30,7 +29,6 @@ final class SumiStorageAccessPolicyTests: XCTestCase {
         XCTAssertFalse(result.isAllowedToProceed)
         XCTAssertEqual(result.source, .defaultSetting)
         XCTAssertEqual(result.reason, SumiPermissionPolicyReason.storageAccessSameOrigin)
-        XCTAssertFalse(result.mayAskUser)
     }
 
     func testInsecureRequestingOriginFailsClosed() async {

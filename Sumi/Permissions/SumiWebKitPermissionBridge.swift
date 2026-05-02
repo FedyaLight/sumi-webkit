@@ -63,8 +63,6 @@ protocol SumiPermissionCoordinating: Sendable {
 
     func activeQuery(forPageId pageId: String) async -> SumiPermissionAuthorizationQuery?
 
-    func query(id queryId: String) async -> SumiPermissionAuthorizationQuery?
-
     func recordPromptShown(queryId: String) async
 
     func stateSnapshot() async -> SumiPermissionCoordinatorState
@@ -82,9 +80,6 @@ protocol SumiPermissionCoordinating: Sendable {
 
     @discardableResult
     func approvePersistently(_ queryId: String) async -> SumiPermissionCoordinatorDecision
-
-    @discardableResult
-    func denyOnce(_ queryId: String) async -> SumiPermissionCoordinatorDecision
 
     @discardableResult
     func denyForSession(_ queryId: String) async -> SumiPermissionCoordinatorDecision
@@ -210,10 +205,6 @@ extension SumiPermissionCoordinating {
         return 0
     }
 
-    func query(id queryId: String) async -> SumiPermissionAuthorizationQuery? {
-        nil
-    }
-
     func recordPromptShown(queryId: String) async {
         _ = queryId
     }
@@ -236,11 +227,6 @@ extension SumiPermissionCoordinating {
     @discardableResult
     func approvePersistently(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
         ignoredSettlementDecision(reason: "approve-persistently-unavailable")
-    }
-
-    @discardableResult
-    func denyOnce(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
-        ignoredSettlementDecision(reason: "deny-once-unavailable")
     }
 
     @discardableResult

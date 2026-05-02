@@ -9,9 +9,6 @@ final class SumiFilePickerPanelPresenterTests: XCTestCase {
     func testOpenPanelConfigurationAppliesSupportedWebKitParameters() {
         let presenter = SumiFilePickerPanelPresenter()
         let request = SumiFilePickerPanelPresentationRequest(
-            id: "picker-a",
-            tabId: "tab-a",
-            pageId: "tab-a:1",
             allowsMultipleSelection: true,
             allowsDirectories: true,
             allowedContentTypeIdentifiers: [UTType.png.identifier],
@@ -33,9 +30,6 @@ final class SumiFilePickerPanelPresenterTests: XCTestCase {
     func testOpenPanelConfigurationCanDisableMultipleAndDirectorySelection() {
         let presenter = SumiFilePickerPanelPresenter()
         let request = SumiFilePickerPanelPresentationRequest(
-            id: "picker-b",
-            tabId: "tab-a",
-            pageId: "tab-a:1",
             allowsMultipleSelection: false,
             allowsDirectories: false
         )

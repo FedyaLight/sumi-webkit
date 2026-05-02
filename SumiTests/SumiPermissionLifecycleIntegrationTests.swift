@@ -121,7 +121,6 @@ private actor LifecycleIntegrationPolicyResolver: SumiPermissionPolicyResolver {
             reason: SumiPermissionPolicyReason.allowed,
             systemAuthorizationSnapshot: nil,
             mayOpenSystemSettings: false,
-            requiresSystemAuthorizationPrompt: false,
             allowedPersistences: [.oneTime, .session, .persistent]
         )
     }
@@ -152,7 +151,6 @@ private func lifecycleContext(
         requestingOrigin: SumiPermissionOrigin(string: "https://example.com"),
         topOrigin: SumiPermissionOrigin(string: "https://example.com"),
         permissionTypes: [permissionType],
-        hasUserGesture: true,
         requestedAt: lifecycleIntegrationDate(),
         profilePartitionId: "profile-a"
     )
@@ -161,7 +159,6 @@ private func lifecycleContext(
         committedURL: URL(string: "https://example.com"),
         visibleURL: URL(string: "https://example.com"),
         mainFrameURL: URL(string: "https://example.com"),
-        hasUserGesture: true,
         transientPageId: pageId,
         now: lifecycleIntegrationDate()
     )
@@ -217,16 +214,12 @@ private func waitForIntegrationActiveQuery(
         permissionTypes: [],
         presentationPermissionType: nil,
         availablePersistences: [],
-        defaultPersistence: .oneTime,
         systemAuthorizationSnapshots: [],
-        policySources: [],
         policyReasons: [],
         createdAt: lifecycleIntegrationDate(),
         isEphemeralProfile: false,
-        hasUserGesture: nil,
         shouldOfferSystemSettings: false,
         disablesPersistentAllow: false,
-        requiresSystemAuthorizationPrompt: false
     )
 }
 

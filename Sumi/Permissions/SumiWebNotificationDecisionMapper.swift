@@ -77,7 +77,6 @@ enum SumiWebNotificationDecisionMapper {
             reason: reason,
             permissionTypes: [.notifications],
             keys: [context.request.key(for: .notifications)],
-            shouldPersist: false,
             shouldOfferSystemSettings: false,
             disablesPersistentAllow: context.isEphemeralProfile
         )
@@ -95,7 +94,6 @@ enum SumiWebNotificationDecisionMapper {
             reason: reason,
             permissionTypes: [.notifications],
             keys: context.map { [$0.request.key(for: .notifications)] } ?? [],
-            shouldPersist: false,
             shouldOfferSystemSettings: false,
             disablesPersistentAllow: context?.isEphemeralProfile ?? false
         )

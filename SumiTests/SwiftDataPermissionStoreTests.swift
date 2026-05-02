@@ -73,7 +73,7 @@ final class SwiftDataPermissionStoreTests: XCTestCase {
         XCTAssertEqual(records.first?.key.profilePartitionId, "profile-a")
     }
 
-    func testListByDisplayDomain() async throws {
+    func testListRecordsCanBeFilteredByDisplayDomain() async throws {
         let harness = try makeHarness()
         try await harness.store.setDecision(
             for: key(.camera, requesting: "https://camera.example"),
@@ -84,10 +84,9 @@ final class SwiftDataPermissionStoreTests: XCTestCase {
             decision: decision(.allow)
         )
 
-        let records = try await harness.store.listDecisions(
-            forDisplayDomain: "Camera.Example",
-            profilePartitionId: "profile-a"
-        )
+        let records = try await harness.store
+            .listDecisions(profilePartitionId: "profile-a")
+            .filter { $0.displayDomain == "camera.example" }
 
         XCTAssertEqual(records.count, 1)
         XCTAssertEqual(records.first?.displayDomain, "camera.example")

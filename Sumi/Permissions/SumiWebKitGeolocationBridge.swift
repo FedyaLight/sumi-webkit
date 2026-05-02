@@ -39,7 +39,6 @@ enum SumiWebKitGeolocationDecisionMapper {
             reason: reason,
             permissionTypes: [.geolocation],
             keys: [context.request.key(for: .geolocation)],
-            shouldPersist: false,
             shouldOfferSystemSettings: false,
             disablesPersistentAllow: context.isEphemeralProfile
         )
@@ -57,7 +56,6 @@ enum SumiWebKitGeolocationDecisionMapper {
             reason: reason,
             permissionTypes: [.geolocation],
             keys: context.map { [$0.request.key(for: .geolocation)] } ?? [],
-            shouldPersist: false,
             shouldOfferSystemSettings: false,
             disablesPersistentAllow: context?.isEphemeralProfile ?? false
         )

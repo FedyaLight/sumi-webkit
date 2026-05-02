@@ -160,7 +160,6 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
         )
 
         XCTAssertTrue(suppressionBody.contains("outcome: .suppressed"))
-        XCTAssertTrue(suppressionBody.contains("shouldPersist: false"))
         XCTAssertFalse(suppressionBody.contains("persistentStore.setDecision"))
         XCTAssertFalse(suppressionBody.contains("SumiPermissionDecision(\n            state: .deny"))
 

@@ -48,7 +48,6 @@ struct SumiPermissionRecentActivityRecord: Identifiable, Equatable, Sendable {
     let isEphemeralProfile: Bool
     let permissionType: SumiPermissionType
     let action: Action
-    let detail: String?
     let createdAt: Date
     let count: Int
 
@@ -61,7 +60,6 @@ struct SumiPermissionRecentActivityRecord: Identifiable, Equatable, Sendable {
         isEphemeralProfile: Bool,
         permissionType: SumiPermissionType,
         action: Action,
-        detail: String? = nil,
         createdAt: Date = Date(),
         count: Int = 1
     ) {
@@ -73,7 +71,6 @@ struct SumiPermissionRecentActivityRecord: Identifiable, Equatable, Sendable {
         self.isEphemeralProfile = isEphemeralProfile
         self.permissionType = permissionType
         self.action = action
-        self.detail = detail
         self.createdAt = createdAt
         self.count = max(1, count)
     }
@@ -132,7 +129,6 @@ final class SumiPermissionRecentActivityStore: ObservableObject {
         displayDomain: String,
         key: SumiPermissionKey,
         state: SumiPermissionState?,
-        detail: String? = nil,
         now: Date = Date()
     ) {
         let action: SumiPermissionRecentActivityRecord.Action
@@ -155,7 +151,6 @@ final class SumiPermissionRecentActivityStore: ObservableObject {
                 isEphemeralProfile: key.isEphemeralProfile,
                 permissionType: key.permissionType,
                 action: action,
-                detail: detail,
                 createdAt: now
             )
         )
@@ -172,7 +167,6 @@ final class SumiPermissionRecentActivityStore: ObservableObject {
                 isEphemeralProfile: event.key.isEphemeralProfile,
                 permissionType: event.key.permissionType,
                 action: .autoRevoked,
-                detail: event.reason,
                 createdAt: event.revokedAt
             )
         )
@@ -208,7 +202,6 @@ final class SumiPermissionRecentActivityStore: ObservableObject {
                     isEphemeralProfile: key.isEphemeralProfile,
                     permissionType: key.permissionType,
                     action: fallbackAction,
-                    detail: decision.reason,
                     createdAt: now
                 )
             )

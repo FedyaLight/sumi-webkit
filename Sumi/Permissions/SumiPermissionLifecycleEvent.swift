@@ -15,17 +15,4 @@ enum SumiPermissionLifecycleEvent: Equatable, Sendable {
         topOrigin: SumiPermissionOrigin,
         reason: String
     )
-
-    var reason: String {
-        switch self {
-        case .mainFrameNavigation(_, _, _, _, let reason),
-             .webViewReplaced(_, _, _, let reason),
-             .webViewDeallocated(_, _, _, let reason),
-             .tabClosed(_, _, _, let reason),
-             .profileClosed(_, let reason),
-             .sessionClosed(_, let reason),
-             .currentSiteReset(_, _, _, _, _, let reason):
-            return reason
-        }
-    }
 }
