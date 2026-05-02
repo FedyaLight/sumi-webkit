@@ -13,6 +13,7 @@ final class SharedVisitedLinkStoreProvider {
     static let shared = SharedVisitedLinkStoreProvider()
 
     private var storesByProfileId: [UUID: NSObject] = [:]
+    private var pendingVisitedLinksByProfileId: [UUID: Set<URL>] = [:]
 
     func applyStore(
         to configuration: WKWebViewConfiguration,
@@ -29,6 +30,7 @@ final class SharedVisitedLinkStoreProvider {
             return
         }
         configuration.sumiVisitedLinkStoreObject = store
+        replayPendingVisitedLinks(for: profileId, on: store)
     }
 
     func applyStoreFromSourceIfAvailable(
@@ -59,6 +61,27 @@ final class SharedVisitedLinkStoreProvider {
         store.sumiAddVisitedLink(url)
     }
 
+    func preloadVisitedLinks(_ urls: [URL], for profileId: UUID) {
+        guard !urls.isEmpty else { return }
+        let uniqueURLs = Set(urls)
+        if let store = storesByProfileId[profileId] {
+            for url in uniqueURLs {
+                store.sumiAddVisitedLink(url)
+            }
+        } else {
+            pendingVisitedLinksByProfileId[profileId, default: []].formUnion(uniqueURLs)
+        }
+    }
+
+    func replaceVisitedLinks(_ urls: [URL], for profileId: UUID) {
+        pendingVisitedLinksByProfileId[profileId] = Set(urls)
+        guard let store = storesByProfileId[profileId] else {
+            return
+        }
+        store.sumiRemoveAllVisitedLinks()
+        replayPendingVisitedLinks(for: profileId, on: store)
+    }
+
     /// Releases only Sumi's in-memory reference to the SPI store object.
     /// This does not delete browser history, website data, cookies, profile
     /// records, or files.
@@ -77,6 +100,15 @@ final class SharedVisitedLinkStoreProvider {
 
         storesByProfileId[profileId] = seed
         return seed
+    }
+
+    private func replayPendingVisitedLinks(for profileId: UUID, on store: NSObject) {
+        guard let urls = pendingVisitedLinksByProfileId.removeValue(forKey: profileId) else {
+            return
+        }
+        for url in urls {
+            store.sumiAddVisitedLink(url)
+        }
     }
 }
 
@@ -126,6 +158,7 @@ private enum SumiVisitedLinkStoreSelector {
     static let getAddsVisitedLinks = NSSelectorFromString("_addsVisitedLinks")
     static let setAddsVisitedLinks = NSSelectorFromString("_setAddsVisitedLinks:")
     static let addVisitedLinkWithURL = NSSelectorFromString("addVisitedLinkWithURL:")
+    static let removeAll = NSSelectorFromString("removeAll")
 }
 
 extension NSObject {
@@ -137,5 +170,12 @@ extension NSObject {
             SumiVisitedLinkStoreSelector.addVisitedLinkWithURL,
             with: url as NSURL
         )
+    }
+
+    func sumiRemoveAllVisitedLinks() {
+        guard responds(to: SumiVisitedLinkStoreSelector.removeAll) else {
+            return
+        }
+        perform(SumiVisitedLinkStoreSelector.removeAll)
     }
 }
