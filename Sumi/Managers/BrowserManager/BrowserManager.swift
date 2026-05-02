@@ -517,7 +517,9 @@ class BrowserManager: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.tabStructuralRevision &+= 1
-                self?.tabSuspensionService.reconcileProactiveTimers(reason: "tab-structure-changed")
+                self?.tabSuspensionService.scheduleProactiveTimerReconcile(
+                    reason: "tab-structure-changed"
+                )
             }
     }
 

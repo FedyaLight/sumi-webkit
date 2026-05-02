@@ -662,7 +662,9 @@ class WebViewCoordinator {
             visibleTabIDs: Set(visibleTabIDs),
             tabManager: browserManager.tabManager
         )
-        browserManager.tabSuspensionService.reconcileProactiveTimers(reason: "visible-webviews-prepared")
+        browserManager.tabSuspensionService.scheduleProactiveTimerReconcile(
+            reason: "visible-webviews-prepared"
+        )
 
         return didCreateWebView
     }

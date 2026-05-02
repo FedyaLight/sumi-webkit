@@ -816,7 +816,7 @@ final class WebViewCoordinatorTests: XCTestCase {
         XCTAssertNil(secondTab.primaryWindowId)
     }
 
-    func testPrepareVisibleWebViewsDoesNotDeactivateSoleLiveHiddenTabInMaximumMode() throws {
+    func testPrepareVisibleWebViewsDoesNotDeactivateSoleLiveHiddenTabInMaximumMode() async throws {
         let browserManager = BrowserManager()
         let coordinator = WebViewCoordinator()
         browserManager.webViewCoordinator = coordinator
@@ -840,6 +840,7 @@ final class WebViewCoordinatorTests: XCTestCase {
 
         setCurrentTab(selectedTab, in: windowState)
         _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+        await browserManager.tabSuspensionService.drainScheduledProactiveTimerReconcileForTesting()
 
         XCTAssertTrue(coordinator.getWebView(for: hiddenTab.id, in: windowState.id) === hiddenWebView)
         XCTAssertEqual(coordinator.windowID(containing: hiddenWebView), windowState.id)
@@ -966,7 +967,7 @@ final class WebViewCoordinatorTests: XCTestCase {
         _ = settings
     }
 
-    func testHiddenCleanupDoesNotDeactivateSelectedVisibleOrEligibilityVetoedTabs() throws {
+    func testHiddenCleanupDoesNotDeactivateSelectedVisibleOrEligibilityVetoedTabs() async throws {
         let browserManager = BrowserManager()
         let coordinator = WebViewCoordinator()
         browserManager.webViewCoordinator = coordinator
@@ -1051,6 +1052,7 @@ final class WebViewCoordinatorTests: XCTestCase {
 
         setCurrentTab(selectedTab, in: windowState)
         _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+        await browserManager.tabSuspensionService.drainScheduledProactiveTimerReconcileForTesting()
 
         XCTAssertNotNil(coordinator.getWebView(for: selectedTab.id, in: windowState.id))
         for tab in [loadingTab, audioTab, pipTab, pdfTab, pageVetoTab, fileTab, protectedTab] {
@@ -1073,7 +1075,7 @@ final class WebViewCoordinatorTests: XCTestCase {
         _ = settings
     }
 
-    func testHiddenCleanupPreservesActiveSplitVisibleTabsAndLeavesHiddenDeactivationToTimer() throws {
+    func testHiddenCleanupPreservesActiveSplitVisibleTabsAndLeavesHiddenDeactivationToTimer() async throws {
         let browserManager = BrowserManager()
         let coordinator = WebViewCoordinator()
         browserManager.webViewCoordinator = coordinator
@@ -1109,6 +1111,7 @@ final class WebViewCoordinatorTests: XCTestCase {
         let hiddenWebView = try XCTUnwrap(coordinator.getOrCreateWebView(for: hiddenTab, in: windowState.id))
 
         _ = coordinator.prepareVisibleWebViews(for: windowState, browserManager: browserManager)
+        await browserManager.tabSuspensionService.drainScheduledProactiveTimerReconcileForTesting()
 
         XCTAssertTrue(coordinator.getWebView(for: leftTab.id, in: windowState.id) === leftWebView)
         XCTAssertTrue(coordinator.getWebView(for: rightTab.id, in: windowState.id) === rightWebView)

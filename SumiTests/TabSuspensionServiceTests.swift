@@ -534,8 +534,11 @@ final class TabSuspensionServiceTests: XCTestCase {
         setCurrentTab(selected, in: harness.windowState)
         attachWebView(to: selected, harness: harness)
         attachWebView(to: hidden, harness: harness)
+        let initialReconcileCount = harness.service.proactiveTimerReconcileCountForTesting
         harness.service.reconcileProactiveTimers(reason: "test-hidden")
 
+        XCTAssertEqual(harness.service.proactiveTimerReconcileCountForTesting, initialReconcileCount + 1)
+        XCTAssertEqual(harness.service.lastProactiveTimerReconcileReasonForTesting, "test-hidden")
         XCTAssertTrue(harness.service.proactiveTimerTabIDsForTesting.contains(hidden.id))
         XCTAssertEqual(
             harness.service.proactiveTimerStateForTesting(tabID: hidden.id)?.requestedDelay,
@@ -545,8 +548,63 @@ final class TabSuspensionServiceTests: XCTestCase {
         setCurrentTab(hidden, in: harness.windowState)
         harness.service.reconcileProactiveTimers(reason: "test-visible")
 
+        XCTAssertEqual(harness.service.proactiveTimerReconcileCountForTesting, initialReconcileCount + 2)
+        XCTAssertEqual(harness.service.lastProactiveTimerReconcileReasonForTesting, "test-visible")
         XCTAssertFalse(harness.service.proactiveTimerTabIDsForTesting.contains(hidden.id))
         XCTAssertEqual(harness.service.revisitCountForTesting(tabID: hidden.id), 1)
+    }
+
+    func testScheduledProactiveTimerReconcileCoalescesMultipleReasons() async {
+        let harness = makeHarness(memoryMode: .balanced)
+        let selected = makeTab("https://example.com/current", harness: harness)
+        let hidden = makeTab("https://example.com/hidden", harness: harness)
+
+        setCurrentTab(selected, in: harness.windowState)
+        attachWebView(to: selected, harness: harness)
+        attachWebView(to: hidden, harness: harness)
+        let initialReconcileCount = harness.service.proactiveTimerReconcileCountForTesting
+
+        harness.service.scheduleProactiveTimerReconcile(reason: "visible-webviews-prepared")
+        harness.service.scheduleProactiveTimerReconcile(reason: "tab-structure-changed")
+        harness.service.scheduleProactiveTimerReconcile(reason: "visible-webviews-prepared")
+
+        XCTAssertTrue(harness.service.isProactiveTimerReconcileScheduledForTesting)
+        XCTAssertEqual(harness.service.proactiveTimerReconcileCountForTesting, initialReconcileCount)
+
+        await harness.service.drainScheduledProactiveTimerReconcileForTesting()
+
+        XCTAssertFalse(harness.service.isProactiveTimerReconcileScheduledForTesting)
+        XCTAssertEqual(harness.service.proactiveTimerReconcileCountForTesting, initialReconcileCount + 1)
+        XCTAssertEqual(
+            harness.service.lastProactiveTimerReconcileReasonForTesting,
+            "coalesced(tab-structure-changed,visible-webviews-prepared)"
+        )
+        XCTAssertTrue(harness.service.proactiveTimerTabIDsForTesting.contains(hidden.id))
+        XCTAssertEqual(
+            harness.service.proactiveTimerStateForTesting(tabID: hidden.id)?.requestedDelay,
+            4 * 60 * 60
+        )
+    }
+
+    func testScheduledProactiveTimerReconcileCleansRemovedTabTimers() async {
+        let harness = makeHarness(memoryMode: .balanced)
+        let selected = makeTab("https://example.com/current", harness: harness)
+        let removed = makeTab("https://example.com/removed", harness: harness)
+
+        setCurrentTab(selected, in: harness.windowState)
+        attachWebView(to: selected, harness: harness)
+        attachWebView(to: removed, harness: harness)
+        harness.service.reconcileProactiveTimers(reason: "initial")
+        XCTAssertTrue(harness.service.proactiveTimerTabIDsForTesting.contains(removed.id))
+        let initialReconcileCount = harness.service.proactiveTimerReconcileCountForTesting
+
+        harness.browserManager.tabManager.removeTab(removed.id)
+        harness.service.scheduleProactiveTimerReconcile(reason: "tab-structure-changed")
+        await harness.service.drainScheduledProactiveTimerReconcileForTesting()
+
+        XCTAssertEqual(harness.service.proactiveTimerReconcileCountForTesting, initialReconcileCount + 1)
+        XCTAssertFalse(harness.service.proactiveTimerTabIDsForTesting.contains(removed.id))
+        XCTAssertNil(harness.service.proactiveTimerStateForTesting(tabID: removed.id))
     }
 
     func testModeAndCustomDelayChangesRebuildHiddenTabTimers() {
