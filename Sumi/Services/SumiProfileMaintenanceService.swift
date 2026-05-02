@@ -50,6 +50,8 @@ final class SumiProfileMaintenanceService {
                         message: "An error occurred while saving changes. Please try again."
                     )
                 )
+            } else {
+                SharedVisitedLinkStoreProvider.shared.discardStore(for: profile.id)
             }
         }
     }

@@ -579,6 +579,124 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertTrue(configuration.websiteDataStore === profile.dataStore)
     }
 
+    func testNormalTabConfigurationsShareVisitedLinkStoreWithinProfile() throws {
+        let provider = SharedVisitedLinkStoreProvider()
+        let browserConfiguration = BrowserConfiguration(
+            visitedLinkStoreProvider: provider
+        )
+        let profile = Profile(name: "Shared Links")
+
+        let first = browserConfiguration.normalTabWebViewConfiguration(
+            for: profile,
+            url: URL(string: "https://first.example")
+        )
+        let second = browserConfiguration.normalTabWebViewConfiguration(
+            for: profile,
+            url: URL(string: "https://second.example")
+        )
+
+        let firstStore = try XCTUnwrap(first.sumiVisitedLinkStoreObject)
+        let secondStore = try XCTUnwrap(second.sumiVisitedLinkStoreObject)
+        XCTAssertTrue(firstStore === secondStore)
+    }
+
+    func testNormalTabConfigurationsSeparateVisitedLinkStoresAcrossProfiles() throws {
+        let provider = SharedVisitedLinkStoreProvider()
+        let browserConfiguration = BrowserConfiguration(
+            visitedLinkStoreProvider: provider
+        )
+        let firstProfile = Profile(name: "First")
+        let secondProfile = Profile(name: "Second")
+
+        let first = browserConfiguration.normalTabWebViewConfiguration(
+            for: firstProfile,
+            url: URL(string: "https://first.example")
+        )
+        let second = browserConfiguration.normalTabWebViewConfiguration(
+            for: secondProfile,
+            url: URL(string: "https://second.example")
+        )
+
+        let firstStore = try XCTUnwrap(first.sumiVisitedLinkStoreObject)
+        let secondStore = try XCTUnwrap(second.sumiVisitedLinkStoreObject)
+        XCTAssertFalse(firstStore === secondStore)
+    }
+
+    func testEphemeralProfilesUseIsolatedVisitedLinkStores() throws {
+        let provider = SharedVisitedLinkStoreProvider()
+        let browserConfiguration = BrowserConfiguration(
+            visitedLinkStoreProvider: provider
+        )
+        let persistentProfile = Profile(name: "Persistent")
+        let firstEphemeralProfile = Profile.createEphemeral()
+        let secondEphemeralProfile = Profile.createEphemeral()
+
+        let persistent = browserConfiguration.normalTabWebViewConfiguration(
+            for: persistentProfile,
+            url: URL(string: "https://persistent.example")
+        )
+        let firstEphemeral = browserConfiguration.normalTabWebViewConfiguration(
+            for: firstEphemeralProfile,
+            url: URL(string: "https://private-a.example")
+        )
+        let secondEphemeral = browserConfiguration.normalTabWebViewConfiguration(
+            for: secondEphemeralProfile,
+            url: URL(string: "https://private-b.example")
+        )
+
+        let persistentStore = try XCTUnwrap(persistent.sumiVisitedLinkStoreObject)
+        let firstEphemeralStore = try XCTUnwrap(firstEphemeral.sumiVisitedLinkStoreObject)
+        let secondEphemeralStore = try XCTUnwrap(secondEphemeral.sumiVisitedLinkStoreObject)
+        XCTAssertFalse(persistentStore === firstEphemeralStore)
+        XCTAssertFalse(firstEphemeralStore === secondEphemeralStore)
+    }
+
+    func testProfileAwareAuxiliaryConfigurationCarriesStoreWithoutEnablingRecording() throws {
+        let provider = SharedVisitedLinkStoreProvider()
+        let browserConfiguration = BrowserConfiguration(
+            visitedLinkStoreProvider: provider
+        )
+        let profile = Profile(name: "Auxiliary")
+        let normal = browserConfiguration.normalTabWebViewConfiguration(
+            for: profile,
+            url: URL(string: "https://normal.example")
+        )
+        let auxiliary = browserConfiguration.auxiliaryWebViewConfiguration(
+            for: profile,
+            surface: .peek
+        )
+
+        let normalStore = try XCTUnwrap(normal.sumiVisitedLinkStoreObject)
+        let auxiliaryStore = try XCTUnwrap(auxiliary.sumiVisitedLinkStoreObject)
+        XCTAssertTrue(normalStore === auxiliaryStore)
+
+        let webView = WKWebView(frame: .zero, configuration: auxiliary)
+        XCTAssertFalse(webView.sumiAddsVisitedLinks)
+    }
+
+    func testProfilelessAuxiliaryConfigurationDoesNotReceiveDefaultProfileVisitedLinkStore() throws {
+        let provider = SharedVisitedLinkStoreProvider()
+        let browserConfiguration = BrowserConfiguration(
+            visitedLinkStoreProvider: provider
+        )
+        let profile = Profile(name: "Default")
+        let normal = browserConfiguration.normalTabWebViewConfiguration(
+            for: profile,
+            url: URL(string: "https://normal.example")
+        )
+        let auxiliary = browserConfiguration.auxiliaryWebViewConfiguration(
+            surface: .faviconDownload
+        )
+
+        XCTAssertFalse(auxiliary.websiteDataStore.isPersistent)
+        let normalStore = try XCTUnwrap(normal.sumiVisitedLinkStoreObject)
+        let auxiliaryStore = try XCTUnwrap(auxiliary.sumiVisitedLinkStoreObject)
+        XCTAssertFalse(normalStore === auxiliaryStore)
+
+        let webView = WKWebView(frame: .zero, configuration: auxiliary)
+        XCTAssertFalse(webView.sumiAddsVisitedLinks)
+    }
+
     func testAuxiliaryConfigurationsDoNotInstallTabSuspensionBridge() {
         let browserConfiguration = BrowserConfiguration()
         let configurations = [

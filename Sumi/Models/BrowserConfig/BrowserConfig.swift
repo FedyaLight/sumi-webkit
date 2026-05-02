@@ -39,6 +39,7 @@ class BrowserConfiguration {
 
     private let sharedProcessPool = WKProcessPool()
     private let autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter?
+    private let visitedLinkStoreProvider: SharedVisitedLinkStoreProvider
     private static let auxiliaryFilteredUserScriptMarkers = [
         "__sumiDDGFaviconTransportInstalled",
         "__sumiTabSuspension",
@@ -56,6 +57,15 @@ class BrowserConfiguration {
 
     init(autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter? = nil) {
         self.autoplayPolicyStore = autoplayPolicyStore
+        self.visitedLinkStoreProvider = .shared
+    }
+
+    init(
+        autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter? = nil,
+        visitedLinkStoreProvider: SharedVisitedLinkStoreProvider
+    ) {
+        self.autoplayPolicyStore = autoplayPolicyStore
+        self.visitedLinkStoreProvider = visitedLinkStoreProvider
     }
 
     private func makeBaseWebViewConfiguration() -> WKWebViewConfiguration {
@@ -124,6 +134,7 @@ class BrowserConfiguration {
     ) -> WKWebViewConfiguration {
         let config = makeBaseWebViewConfiguration()
         config.websiteDataStore = profile.dataStore
+        visitedLinkStoreProvider.applyStore(to: config, for: profile)
         config.userContentController = SumiNormalTabUserContentControllerFactory
             .makeController(
                 scriptsProvider: userScriptsProvider,
@@ -156,6 +167,14 @@ class BrowserConfiguration {
             profile?.dataStore
             ?? source?.websiteDataStore
             ?? WKWebsiteDataStore.nonPersistent()
+        if let profile {
+            visitedLinkStoreProvider.applyStore(to: config, for: profile)
+        } else {
+            visitedLinkStoreProvider.applyStoreFromSourceIfAvailable(
+                to: config,
+                source: source
+            )
+        }
         config.userContentController = makeAuxiliaryUserContentController(
             additionalUserScripts: additionalUserScripts
         )

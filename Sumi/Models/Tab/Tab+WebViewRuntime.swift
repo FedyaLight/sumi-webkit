@@ -75,6 +75,7 @@ extension Tab {
         webView.setValue(true, forKey: "drawsBackground")
         webView.owningTab = self
         SumiUserAgent.apply(to: webView)
+        SharedVisitedLinkStoreProvider.shared.enableVisitedLinkRecording(on: webView)
 
         if #available(macOS 13.3, *), RuntimeDiagnostics.isDeveloperInspectionEnabled {
             webView.isInspectable = true
@@ -253,6 +254,7 @@ extension Tab {
 
         if let webView = _webView {
             if didReuseExistingWebView || !(webView is FocusableWKWebView) {
+                SharedVisitedLinkStoreProvider.shared.enableVisitedLinkRecording(on: webView)
                 installNavigationDelegate(on: webView)
                 webView.uiDelegate = self
                 webView.allowsBackForwardNavigationGestures = true

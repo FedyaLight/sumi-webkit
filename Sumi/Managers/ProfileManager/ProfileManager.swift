@@ -141,6 +141,7 @@ final class ProfileManager: ObservableObject {
         
         // Remove from tracking immediately to stop tracking
         ephemeralProfiles.removeValue(forKey: windowId)
+        SharedVisitedLinkStoreProvider.shared.discardStore(for: profile.id)
         
         profile.destroyEphemeralDataStore()
         
