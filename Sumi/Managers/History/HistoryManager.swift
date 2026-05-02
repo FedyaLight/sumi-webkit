@@ -29,6 +29,7 @@ final class HistoryManager: ObservableObject {
     private var cleanupTask: Task<Void, Never>?
     private var changeTask: Task<Void, Never>?
     private var scheduledRefreshTask: Task<Void, Never>?
+    private var visitedLinkPreloadTask: Task<Void, Never>?
     private var recentVisitedCache: [HistoryListItem] = []
     private static let changeRefreshDebounceNanoseconds: UInt64 = 120_000_000
 
@@ -38,6 +39,7 @@ final class HistoryManager: ObservableObject {
         self.store = HistoryStore(container: context.container)
         self.currentProfileId = profileId
         scheduleDeferredHistoryCleanupIfNeeded()
+        preloadVisitedLinksForCurrentProfile()
         Task { [weak self] in
             await self?.refreshSummary(incrementRevision: false)
         }
@@ -47,10 +49,12 @@ final class HistoryManager: ObservableObject {
         cleanupTask?.cancel()
         changeTask?.cancel()
         scheduledRefreshTask?.cancel()
+        visitedLinkPreloadTask?.cancel()
     }
 
     func switchProfile(_ profileId: UUID?) {
         currentProfileId = profileId
+        preloadVisitedLinksForCurrentProfile()
         scheduledRefreshTask?.cancel()
         recentVisitedCache = []
         canClearHistory = false
@@ -197,6 +201,7 @@ final class HistoryManager: ObservableObject {
     func delete(query: HistoryQuery) async {
         let faviconDomains = await faviconBurnDomains(for: query)
         await dataProvider.deleteVisits(matching: query)
+        reloadVisitedLinksForCurrentProfile()
         if !faviconDomains.isEmpty {
             let remainingHosts = await dataProvider.remainingHistoryHosts(forSiteDomains: faviconDomains)
             await SumiFaviconSystem.shared.burnDomains(
@@ -214,6 +219,7 @@ final class HistoryManager: ObservableObject {
         domains: Set<String>
     ) async {
         await dataProvider.deleteSelection(visitIDs: visitIDs, domains: domains)
+        reloadVisitedLinksForCurrentProfile()
         if !domains.isEmpty {
             let remainingHosts = await dataProvider.remainingHistoryHosts(forSiteDomains: domains)
             await SumiFaviconSystem.shared.burnDomains(
@@ -228,6 +234,7 @@ final class HistoryManager: ObservableObject {
 
     func clearAll() async {
         await dataProvider.clearAll()
+        reloadVisitedLinksForCurrentProfile()
         await SumiFaviconSystem.shared.burnAfterHistoryClear(
             savedLogins: BasicAuthCredentialStore().allCredentialHosts()
         )
@@ -285,11 +292,52 @@ final class HistoryManager: ObservableObject {
                 calendar: .autoupdatingCurrent
             )
             if deletedCount > 0 {
+                reloadVisitedLinksForCurrentProfile()
                 await refreshSummary(incrementRevision: true)
             }
             UserDefaults.standard.set(Date(), forKey: Self.cleanupDefaultsKey)
         } catch {
             RuntimeDiagnostics.emit("Error during deferred history cleanup: \(error)")
+        }
+    }
+
+    private func preloadVisitedLinksForCurrentProfile() {
+        guard let profileId = currentProfileId else { return }
+        visitedLinkPreloadTask?.cancel()
+        visitedLinkPreloadTask = Task { [store] in
+            do {
+                let urls = try await store.fetchVisitedURLs(profileId: profileId)
+                await MainActor.run {
+                    SharedVisitedLinkStoreProvider.shared.preloadVisitedLinks(
+                        urls,
+                        for: profileId
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    RuntimeDiagnostics.emit("Error preloading visited links: \(error)")
+                }
+            }
+        }
+    }
+
+    private func reloadVisitedLinksForCurrentProfile() {
+        guard let profileId = currentProfileId else { return }
+        visitedLinkPreloadTask?.cancel()
+        visitedLinkPreloadTask = Task { [store] in
+            do {
+                let urls = try await store.fetchVisitedURLs(profileId: profileId)
+                await MainActor.run {
+                    SharedVisitedLinkStoreProvider.shared.replaceVisitedLinks(
+                        urls,
+                        for: profileId
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    RuntimeDiagnostics.emit("Error reloading visited links: \(error)")
+                }
+            }
         }
     }
 }
