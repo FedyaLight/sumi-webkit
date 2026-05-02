@@ -11,13 +11,6 @@ import UniformTypeIdentifiers
 import WebKit
 
 extension URLBarView {
-    func permissionIndicatorButton(for currentTab: Tab) -> some View {
-        permissionIndicatorButton(
-            for: currentTab,
-            state: permissionIndicatorDisplayState(for: currentTab)
-        )
-    }
-
     func permissionIndicatorButton(
         for _: Tab,
         state: SumiPermissionIndicatorState

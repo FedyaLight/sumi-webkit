@@ -130,11 +130,6 @@
 			path = UI;
 			sourceTree = "<group>";
 		};
-		7F6409912F4729B600A02697 /* Onboarding */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Onboarding;
-			sourceTree = "<group>";
-		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -178,7 +173,6 @@
 			children = (
 				2C8925322E88DFF9002236DC /* SumiTests */,
 				2C8925332E88DFF9002236DC /* SumiUITests */,
-				7F6409912F4729B600A02697 /* Onboarding */,
 				2D0834C72EC8D90400C302AC /* Settings */,
 				2D0834CF2EC8E0AD00C302AC /* Navigation */,
 				2D0834BE2EC8CE0C00C302AC /* CommandPalette */,
@@ -265,7 +259,6 @@
 				2D0834B32EC8C43B00C302AC /* App */,
 				2D0834C72EC8D90400C302AC /* Settings */,
 				564997D02E9B125200D89F78 /* UI */,
-				7F6409912F4729B600A02697 /* Onboarding */,
 			);
 			name = Sumi;
 			packageProductDependencies = (

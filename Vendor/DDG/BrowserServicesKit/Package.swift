@@ -38,20 +38,6 @@ let package = Package(
                 "ContentBlocking",
                 "Navigation"
             ],
-            exclude: [
-                "Autofill",
-                "DataClearing",
-                "DataImport",
-                "Email",
-                "GPC",
-                "LinkProtection",
-                "ReferrerTrimming",
-                "SecureVault",
-                "SmarterEncryption",
-                "Statistics",
-                "Subscription",
-                "Watchdog",
-            ],
             resources: [
                 .process("ContentBlocking/UserScripts/contentblockerrules.js"),
                 .process("ContentBlocking/UserScripts/surrogates.js"),

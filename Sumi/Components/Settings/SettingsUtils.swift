@@ -21,7 +21,6 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
     let icon: String
     let group: SettingsPaneGroup
     let keywords: [String]
-    var badge: String? = nil
 
     var id: SettingsTabs { tab }
 
@@ -270,21 +269,6 @@ enum SettingsTabs: Hashable, CaseIterable {
             return .trailing
         default:
             return .primary
-        }
-    }
-
-    var name: String {
-        switch self {
-        case .general: return "General"
-        case .appearance: return "Appearance"
-        case .performance: return "Performance"
-        case .privacy: return "Privacy & Security"
-        case .profiles: return "Profiles & Spaces"
-        case .shortcuts: return "Keyboard"
-        case .userScripts: return "Userscripts"
-        case .extensions: return "Extensions"
-        case .advanced: return "Data & Recovery"
-        case .about: return "About Sumi"
         }
     }
 

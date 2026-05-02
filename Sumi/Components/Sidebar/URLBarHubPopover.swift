@@ -28,16 +28,6 @@ struct URLBarTrackingProtectionPresenter: Equatable {
     let shieldAccessibilityValue: String
 
     static func make(
-        policy: SumiTrackingProtectionEffectivePolicy
-    ) -> URLBarTrackingProtectionPresenter {
-        make(
-            policy: policy,
-            siteOverride: .inherit,
-            isReloadRequired: false
-        )
-    }
-
-    static func make(
         policy: SumiTrackingProtectionEffectivePolicy,
         siteOverride: SumiTrackingProtectionSiteOverride,
         isReloadRequired: Bool
@@ -69,16 +59,6 @@ struct URLBarTrackingProtectionPresenter: Equatable {
         policy.isEnabled ? .disabled : .enabled
     }
 
-    var visibleStrings: [String] {
-        var strings = [
-            rowTitle,
-            siteHost,
-        ]
-        if let rowSubtitle {
-            strings.append(rowSubtitle)
-        }
-        return strings
-    }
 }
 
 struct SiteControlsSettingRowModel: Equatable, Identifiable {
@@ -749,48 +729,6 @@ struct URLBarHubPopover: View {
         }
     }
 
-    private func setAutoplayPolicy(_ policy: SumiAutoplayPolicy, for tab: Tab) {
-        guard let profile = activeProfile else { return }
-        Task { @MainActor in
-            do {
-                try await SumiAutoplayPolicyStoreAdapter.shared.setPolicy(
-                    policy,
-                    for: tab.url,
-                    profile: profile,
-                    source: .user
-                )
-                tab.markAutoplayReloadRequiredIfNeeded(afterChangingPolicyFor: tab.url)
-                rebuildCurrentTabAfterPermissionChange(tab)
-                tab.updateAutoplayReloadRequirementForCurrentSite()
-                refreshNonce += 1
-            } catch {
-                RuntimeDiagnostics.emit(
-                    "[URLBar] Failed to update autoplay policy: \(error.localizedDescription)"
-                )
-            }
-        }
-    }
-
-    private func resetAutoplayPolicy(for tab: Tab) {
-        guard let profile = activeProfile else { return }
-        Task { @MainActor in
-            do {
-                try await SumiAutoplayPolicyStoreAdapter.shared.resetPolicy(
-                    for: tab.url,
-                    profile: profile
-                )
-                tab.markAutoplayReloadRequiredIfNeeded(afterChangingPolicyFor: tab.url)
-                rebuildCurrentTabAfterPermissionChange(tab)
-                tab.updateAutoplayReloadRequirementForCurrentSite()
-                refreshNonce += 1
-            } catch {
-                RuntimeDiagnostics.emit(
-                    "[URLBar] Failed to reset autoplay policy: \(error.localizedDescription)"
-                )
-            }
-        }
-    }
-
     private func trackingPresenter(
         for row: SiteControlsSettingRowModel
     ) -> URLBarTrackingProtectionPresenter? {
@@ -823,23 +761,6 @@ struct URLBarHubPopover: View {
             afterChangingOverrideFor: currentTab.url
         )
         refreshNonce += 1
-    }
-
-    private func rebuildCurrentTabAfterPermissionChange(_ tab: Tab) {
-        browserManager.requireWebViewCoordinator().removeAllWebViews(for: tab)
-        tab.performComprehensiveWebViewCleanup()
-        tab.loadWebViewIfNeeded()
-
-        if let webView = tab.existingWebView {
-            browserManager.requireWebViewCoordinator().setWebView(
-                webView,
-                for: tab.id,
-                in: windowState.id
-            )
-            tab.assignWebViewToWindow(webView, windowId: windowState.id)
-        }
-
-        browserManager.refreshCompositor(for: windowState)
     }
 
     private func shareCurrentPage() {

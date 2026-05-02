@@ -46,7 +46,6 @@ Paths below are relative to the repository root.
 │   ├── Resources/           # Bundled scripts and related assets
 │   └── …                    # Protocols, Extensions, Diagnostics, …
 ├── Navigation/              # Sidebar navigation helpers used by the shell
-├── Onboarding/              # First-run / onboarding flows
 ├── CommandPalette/          # Command palette UI and accessories
 ├── UI/                      # Shared lightweight UI helpers
 ├── Settings/                # Settings-related helpers at target boundaries

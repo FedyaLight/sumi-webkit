@@ -9,7 +9,9 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
                 host: "example.com",
                 isEnabled: true,
                 source: .global
-            )
+            ),
+            siteOverride: .inherit,
+            isReloadRequired: false
         )
 
         XCTAssertEqual(presenter.rowTitle, "Tracking Protection")
@@ -29,7 +31,9 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
                 host: "example.com",
                 isEnabled: false,
                 source: .siteOverride(.disabled)
-            )
+            ),
+            siteOverride: .inherit,
+            isReloadRequired: false
         )
 
         XCTAssertNil(presenter.rowSubtitle)
@@ -48,9 +52,11 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
                 host: "example.com",
                 isEnabled: true,
                 source: .global
-            )
+            ),
+            siteOverride: .inherit,
+            isReloadRequired: false
         )
-        let visibleText = presenter.visibleStrings.joined(separator: "\n")
+        let visibleText = visibleStrings(for: presenter).joined(separator: "\n")
 
         XCTAssertFalse(visibleText.contains("Use Global Setting"))
         XCTAssertFalse(visibleText.contains("Enable for This Site"))
@@ -70,8 +76,8 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
 
         XCTAssertEqual(presenter.rowSubtitle, "Reload required")
         XCTAssertTrue(presenter.isReloadRequired)
-        XCTAssertTrue(presenter.visibleStrings.contains("Reload required"))
-        XCTAssertFalse(presenter.visibleStrings.contains("Reload"))
+        XCTAssertTrue(visibleStrings(for: presenter).contains("Reload required"))
+        XCTAssertFalse(visibleStrings(for: presenter).contains("Reload"))
     }
 
     func testPresenterDoesNotExposeLegacyURLHubDetailsText() {
@@ -80,9 +86,11 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
                 host: "example.com",
                 isEnabled: true,
                 source: .global
-            )
+            ),
+            siteOverride: .inherit,
+            isReloadRequired: false
         )
-        let visibleText = presenter.visibleStrings.joined(separator: "\n")
+        let visibleText = visibleStrings(for: presenter).joined(separator: "\n")
 
         XCTAssertFalse(visibleText.contains("Use Global Setting"))
         XCTAssertFalse(visibleText.contains("Enable for This Site"))
@@ -151,5 +159,16 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
             contentsOf: repoRoot.appendingPathComponent(relativePath),
             encoding: .utf8
         )
+    }
+
+    private func visibleStrings(for presenter: URLBarTrackingProtectionPresenter) -> [String] {
+        var strings = [
+            presenter.rowTitle,
+            presenter.siteHost,
+        ]
+        if let rowSubtitle = presenter.rowSubtitle {
+            strings.append(rowSubtitle)
+        }
+        return strings
     }
 }
