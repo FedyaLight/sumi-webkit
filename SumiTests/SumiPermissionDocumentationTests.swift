@@ -77,7 +77,7 @@ final class SumiPermissionDocumentationTests: XCTestCase {
         XCTAssertTrue(architecture.contains("camera"))
         XCTAssertTrue(architecture.contains("microphone"))
         XCTAssertTrue(architecture.contains("storageAccess"))
-        XCTAssertTrue(architecture.contains("MiniWindow/Peek permission integration"))
+        XCTAssertTrue(architecture.contains("MiniWindow/Glance permission integration"))
         XCTAssertTrue(architecture.contains("Extension permission bridging/UI"))
     }
 

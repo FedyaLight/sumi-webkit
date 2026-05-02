@@ -1,5 +1,5 @@
 //
-//  PeekWebView.swift
+//  GlanceWebView.swift
 //  Sumi
 //
 //  Created by Jonathan Caudill on 24/09/2025.
@@ -8,30 +8,30 @@
 import SwiftUI
 import WebKit
 
-struct PeekWebView: NSViewRepresentable {
-    @ObservedObject var session: PeekSession
-    weak var peekManager: PeekManager?
+struct GlanceWebView: NSViewRepresentable {
+    @ObservedObject var session: GlanceSession
+    weak var glanceManager: GlanceManager?
 
     func makeCoordinator() -> Coordinator {
         let coordinator = Coordinator(session: session)
         // Store coordinator reference for WebView extraction immediately
-        peekManager?.webViewCoordinator = coordinator
+        glanceManager?.webViewCoordinator = coordinator
         return coordinator
     }
 
     func makeNSView(context: Context) -> WKWebView {
-        // Peek is an auxiliary preview surface. Primary normal tabs use the
+        // Glance is an auxiliary preview surface. Primary normal tabs use the
         // normal-tab BrowserConfiguration path.
         let configuration: WKWebViewConfiguration
         if let profileId = session.sourceProfileId,
-           let profile = peekManager?.browserManager?.profileManager.profiles.first(where: { $0.id == profileId }) {
+           let profile = glanceManager?.browserManager?.profileManager.profiles.first(where: { $0.id == profileId }) {
             configuration = BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
                 for: profile,
-                surface: .peek
+                surface: .glance
             )
         } else {
             configuration = BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
-                surface: .peek
+                surface: .glance
             )
         }
 
@@ -39,7 +39,7 @@ struct PeekWebView: NSViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
-        webView.allowsMagnification = false // Disable zoom for peek
+        webView.allowsMagnification = false // Disable zoom for glance
 
         if #available(macOS 13.3, *), RuntimeDiagnostics.isDeveloperInspectionEnabled {
             webView.isInspectable = true
@@ -66,14 +66,14 @@ struct PeekWebView: NSViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
-        var session: PeekSession
+        var session: GlanceSession
         private var progressObservation: NSKeyValueObservation?
         private var didLoadInitialURL = false
         /// MEMORY LEAK FIX: Use weak reference to avoid retaining the WKWebView
-        /// when the peek overlay is dismissed. The view hierarchy holds the strong ref.
+        /// when the glance overlay is dismissed. The view hierarchy holds the strong ref.
         weak var webView: WKWebView?
 
-        init(session: PeekSession) {
+        init(session: GlanceSession) {
             self.session = session
         }
 
@@ -179,18 +179,18 @@ struct PeekWebView: NSViewRepresentable {
             return nil
         }
 
-        // Handle external links in peek by opening in new tab
+        // Handle external links in glance by opening in new tab
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
         ) {
-            // Let normal navigation proceed within the peek
+            // Let normal navigation proceed within the glance
             decisionHandler(.allow)
         }
 
         // MARK: - File Upload Support
-        // Peek file picking is an auxiliary-surface path. Normal tabs must route
+        // Glance file picking is an auxiliary-surface path. Normal tabs must route
         // file picker requests through SumiFilePickerPermissionBridge.
         func webView(
             _ webView: WKWebView,

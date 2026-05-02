@@ -2,8 +2,8 @@ import Foundation
 import WebKit
 
 @MainActor
-extension PeekManager {
-    func dismissPeek(reason: PeekDismissReason = .close) {
+extension GlanceManager {
+    func dismissGlance(reason: GlanceDismissReason = .close) {
         guard isActive || currentSession != nil else { return }
 
         if reason == .close {
@@ -13,7 +13,7 @@ extension PeekManager {
         isActive = false
         webView = nil
         webViewCoordinator = nil
-        NotificationCenter.default.post(name: .peekDidDeactivate, object: self)
+        NotificationCenter.default.post(name: .glanceDidDeactivate, object: self)
         currentSession = nil
     }
 
@@ -40,7 +40,7 @@ extension PeekManager {
 
         browserManager.splitManager.enterSplit(with: newTab, placeOn: .right, in: windowState)
         browserManager.selectTab(newTab)
-        dismissPeek(reason: .moveToSplit)
+        dismissGlance(reason: .moveToSplit)
     }
 
     func moveToNewTab() {
@@ -56,26 +56,26 @@ extension PeekManager {
         )
 
         browserManager.selectTab(newTab)
-        dismissPeek(reason: .promoteToTab)
+        dismissGlance(reason: .promoteToTab)
     }
 
     // MARK: - WebView Management
 
-    func createWebView() -> PeekWebView {
+    func createWebView() -> GlanceWebView {
         if let existingWebView = webView {
             return existingWebView
         }
 
         guard let currentSession else {
-            assertionFailure("PeekManager.createWebView called without an active session")
-            return PeekWebView(session: PeekSession(
+            assertionFailure("GlanceManager.createWebView called without an active session")
+            return GlanceWebView(session: GlanceSession(
                 targetURL: URL(string: "about:blank")!,
                 windowId: windowRegistry?.activeWindow?.id ?? UUID()
             ))
         }
 
-        var newWebView = PeekWebView(session: currentSession)
-        newWebView.peekManager = self
+        var newWebView = GlanceWebView(session: currentSession)
+        newWebView.glanceManager = self
         return newWebView
     }
 }

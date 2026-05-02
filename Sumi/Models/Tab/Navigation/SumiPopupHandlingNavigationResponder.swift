@@ -32,6 +32,8 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
         )
     }
 
+    /// WebKit `createWebView` path: merged navigation modifier flags drive routing —
+    /// Glance when explicitly triggered (Option) → pending `window.open` match → cross-host dynamic Glance (no modifiers) → new tab/window.
     func createWebViewAsync(
         from webView: WKWebView,
         with configuration: WKWebViewConfiguration,
@@ -63,13 +65,6 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
             return nil
         }
 
-        if let requestURL,
-           !isExtensionOriginated,
-           tab.shouldRedirectToPeek(url: requestURL) {
-            tab.openURLInGlance(requestURL)
-            return nil
-        }
-
         if let pendingNewWindow = newWindowPolicy(for: navigationAction) {
             return createChildWebView(
                 from: webView,
@@ -78,6 +73,16 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
                 policy: pendingNewWindow.policy,
                 isExtensionOriginated: isExtensionOriginated
             )
+        }
+
+        if let requestURL,
+           !isExtensionOriginated,
+           tab.shouldOpenDynamicallyInGlance(
+                url: requestURL,
+                modifierFlags: navigationFlags
+           ) {
+            tab.openURLInGlance(requestURL)
+            return nil
         }
 
         let behavior = SumiLinkOpenBehavior(
@@ -119,6 +124,7 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
         )
     }
 
+    /// Same branch ordering as ``createWebViewAsync``.
     private func createWebViewSynchronously(
         from webView: WKWebView,
         with configuration: WKWebViewConfiguration,
@@ -150,13 +156,6 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
             return nil
         }
 
-        if let requestURL,
-           !isExtensionOriginated,
-           tab.shouldRedirectToPeek(url: requestURL) {
-            tab.openURLInGlance(requestURL)
-            return nil
-        }
-
         if let pendingNewWindow = newWindowPolicy(for: navigationAction) {
             return createChildWebView(
                 from: webView,
@@ -165,6 +164,16 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
                 policy: pendingNewWindow.policy,
                 isExtensionOriginated: isExtensionOriginated
             )
+        }
+
+        if let requestURL,
+           !isExtensionOriginated,
+           tab.shouldOpenDynamicallyInGlance(
+                url: requestURL,
+                modifierFlags: navigationFlags
+           ) {
+            tab.openURLInGlance(requestURL)
+            return nil
         }
 
         let behavior = SumiLinkOpenBehavior(
@@ -287,7 +296,7 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
                 }
                 return PendingNewWindow(policy: policy, permissionResult: permissionResult)
             }
-            tab.clearWebViewInteractionEvent()
+            resetLinkGestureModifierState(for: tab)
             targetWebView.sumiLoadInNewWindow(url)
             return .cancel
         }
@@ -332,12 +341,21 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
             from: tab,
             activate: policy.shouldActivateTab
         )
-        return childTab.createPopupWebViewFromWebKitConfiguration(
+        let childWebView = childTab.createPopupWebViewFromWebKitConfiguration(
             configuration,
             currentURL: navigationAction.request.url,
             isExtensionOriginated: isExtensionOriginated,
             reason: "SumiPopupHandlingNavigationResponder.createChildWebView"
         )
+        resetLinkGestureModifierState(for: tab)
+        return childWebView
+    }
+
+    /// Clears AppKit/WebKit modifier snapshots on the opener after a link gesture opens another web view so later
+    /// link navigations (Glance, Cmd+new tab, middle-click, etc.) resolve modifiers from a clean slate — same idea as after ``decidePolicy`` new-window loads.
+    private func resetLinkGestureModifierState(for tab: Tab) {
+        tab.clearWebViewInteractionEvent()
+        tab.setClickModifierFlags([])
     }
 
     private func isSumiInternalURL(_ url: URL) -> Bool {

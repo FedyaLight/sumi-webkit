@@ -30,7 +30,7 @@ struct ChromeThemeTokens {
     let buttonPrimaryText: Color
     let buttonSecondaryBackground: Color
     let windowBackground: Color
-    /// Opaque floating surface (command palette, URL hub/identity popovers, theme picker, modal peek cards). Flat white / near-black.
+    /// Opaque floating surface (command palette, URL hub/identity popovers, theme picker, modal glance cards). Flat white / near-black.
     let commandPaletteBackground: Color
     /// Secondary fills inside the palette (e.g. “Tab” chip, favicon wells).
     let commandPaletteChipBackground: Color

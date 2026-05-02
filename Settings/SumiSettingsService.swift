@@ -26,7 +26,6 @@ class SumiSettingsService {
     private let sidebarCompactSpacesKey = "settings.sidebarCompactSpaces"
     private let topBarAddressViewKey = "settings.topBarAddressView"
     private let glanceEnabledKey = "settings.glanceEnabled"
-    private let glanceActivationMethodKey = "settings.glanceActivationMethod"
     private let showSidebarToggleButtonKey = "settings.showSidebarToggleButton"
     private let showNewTabButtonInTabListKey = "settings.showNewTabButtonInTabList"
     private let tabListNewTabButtonPositionKey = "settings.tabListNewTabButtonPosition"
@@ -149,12 +148,6 @@ class SumiSettingsService {
         }
     }
 
-    var glanceActivationMethod: GlanceActivationMethod {
-        didSet {
-            userDefaults.set(glanceActivationMethod.rawValue, forKey: glanceActivationMethodKey)
-        }
-    }
-
     var showSidebarToggleButton: Bool {
         didSet {
             userDefaults.set(showSidebarToggleButton, forKey: showSidebarToggleButtonKey)
@@ -250,7 +243,6 @@ class SumiSettingsService {
             sidebarCompactSpacesKey: false,
             topBarAddressViewKey: false,
             glanceEnabledKey: true,
-            glanceActivationMethodKey: GlanceActivationMethod.alt.rawValue,
             showSidebarToggleButtonKey: true,
             showNewTabButtonInTabListKey: true,
             tabListNewTabButtonPositionKey: TabListNewTabButtonPosition.bottom.rawValue,
@@ -297,9 +289,6 @@ class SumiSettingsService {
         } else {
             self.glanceEnabled = userDefaults.bool(forKey: glanceEnabledKey)
         }
-        self.glanceActivationMethod = GlanceActivationMethod(
-            rawValue: userDefaults.string(forKey: glanceActivationMethodKey) ?? GlanceActivationMethod.alt.rawValue
-        ) ?? .alt
         if userDefaults.object(forKey: showSidebarToggleButtonKey) == nil {
             self.showSidebarToggleButton = true
         } else {
@@ -486,24 +475,6 @@ enum SumiMemorySaverCustomDelay {
     static func validatedOrDefault(_ delay: TimeInterval?) -> TimeInterval {
         guard let delay, delay.isFinite, delay > 0 else { return defaultDelay }
         return clamped(delay)
-    }
-}
-
-enum GlanceActivationMethod: String, CaseIterable, Identifiable {
-    case ctrl = "ctrl"
-    case alt = "alt"
-    case shift = "shift"
-    case meta = "meta"
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .ctrl: return "Ctrl + Click"
-        case .alt: return "Option + Click"
-        case .shift: return "Shift + Click"
-        case .meta: return "Command + Click"
-        }
     }
 }
 

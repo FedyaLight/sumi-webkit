@@ -216,7 +216,7 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         let browserConfiguration = BrowserConfiguration()
         let configurations = [
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .faviconDownload),
-            browserConfiguration.auxiliaryWebViewConfiguration(surface: .peek),
+            browserConfiguration.auxiliaryWebViewConfiguration(surface: .glance),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .miniWindow),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .extensionOptions),
         ]
@@ -398,7 +398,7 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             "Sumi/Models/Tab/Tab+WebViewRuntime.swift",
             "Sumi/Models/BrowserConfig/BrowserConfig.swift",
             "Sumi/Favicons/DDG/SumiDDGFaviconUserContentController.swift",
-            "Sumi/Managers/PeekManager/PeekWebView.swift",
+            "Sumi/Managers/GlanceManager/GlanceWebView.swift",
             "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
             "Sumi/Favicons/DDG/Model/FaviconDownloader.swift",
         ] {

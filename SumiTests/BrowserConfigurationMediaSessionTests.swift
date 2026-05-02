@@ -57,7 +57,7 @@ final class BrowserConfigurationMediaSessionTests: XCTestCase {
         let browserConfiguration = BrowserConfiguration()
 
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
-            surface: .peek
+            surface: .glance
         )
 
         XCTAssertEqual(
