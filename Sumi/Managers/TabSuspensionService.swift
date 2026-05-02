@@ -158,6 +158,7 @@ struct TabSuspensionWebViewState: Equatable {
 @MainActor
 final class TabSuspensionService {
     private static let defaultMinimumInactiveInterval: TimeInterval = 10 * 60
+    private static let maxScheduledProactiveTimerReconcileReasons = 8
 
     private struct Candidate {
         let tab: Tab
@@ -183,8 +184,15 @@ final class TabSuspensionService {
     private var hiddenTabStates: [UUID: HiddenTabState] = [:]
     private var proactiveTimers: [UUID: ProactiveTimerState] = [:]
     private var revisitCounts: [UUID: Int] = [:]
+    private var scheduledProactiveTimerReconcileTask: Task<Void, Never>?
+    private var pendingProactiveTimerReconcileReasons: Set<String> = []
+    private var didTruncatePendingProactiveTimerReconcileReasons = false
 
     private(set) var proactiveTimerStartCountForTesting = 0
+#if DEBUG
+    private(set) var proactiveTimerReconcileCountForTesting = 0
+    private(set) var lastProactiveTimerReconcileReasonForTesting: String?
+#endif
 
     init(
         memoryMonitor: SumiMemoryPressureMonitoring?,
@@ -214,6 +222,7 @@ final class TabSuspensionService {
 
     deinit {
         MainActor.assumeIsolated {
+            cancelScheduledProactiveTimerReconcile()
             cancelAllProactiveTimers()
             if let memorySaverPolicyObserver {
                 NotificationCenter.default.removeObserver(memorySaverPolicyObserver)
@@ -372,7 +381,35 @@ final class TabSuspensionService {
         )
     }
 
+    func scheduleProactiveTimerReconcile(reason: String) {
+        notePendingProactiveTimerReconcileReason(reason)
+        guard scheduledProactiveTimerReconcileTask == nil else { return }
+
+        scheduledProactiveTimerReconcileTask = Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self, !Task.isCancelled else { return }
+
+            let reasons = self.pendingProactiveTimerReconcileReasons
+            let didTruncateReasons = self.didTruncatePendingProactiveTimerReconcileReasons
+            self.pendingProactiveTimerReconcileReasons.removeAll()
+            self.didTruncatePendingProactiveTimerReconcileReasons = false
+            self.scheduledProactiveTimerReconcileTask = nil
+
+            self.reconcileProactiveTimers(
+                reason: Self.coalescedProactiveTimerReconcileReason(
+                    reasons: reasons,
+                    didTruncateReasons: didTruncateReasons
+                )
+            )
+        }
+    }
+
     func reconcileProactiveTimers(reason: String) {
+#if DEBUG
+        proactiveTimerReconcileCountForTesting += 1
+        lastProactiveTimerReconcileReasonForTesting = reason
+#endif
+
         let tabs = allKnownTabs()
         let knownTabIDs = Set(tabs.map(\.id))
         for tabID in proactiveTimers.keys where !knownTabIDs.contains(tabID) {
@@ -393,6 +430,42 @@ final class TabSuspensionService {
         RuntimeDiagnostics.debug(category: "TabSuspension") {
             "reconciled proactive timers reason=\(reason) active=\(proactiveTimers.count)"
         }
+    }
+
+    private func notePendingProactiveTimerReconcileReason(_ reason: String) {
+        if pendingProactiveTimerReconcileReasons.contains(reason) {
+            return
+        }
+
+        guard pendingProactiveTimerReconcileReasons.count
+            < Self.maxScheduledProactiveTimerReconcileReasons
+        else {
+            didTruncatePendingProactiveTimerReconcileReasons = true
+            return
+        }
+
+        pendingProactiveTimerReconcileReasons.insert(reason)
+    }
+
+    private func cancelScheduledProactiveTimerReconcile() {
+        scheduledProactiveTimerReconcileTask?.cancel()
+        scheduledProactiveTimerReconcileTask = nil
+        pendingProactiveTimerReconcileReasons.removeAll()
+        didTruncatePendingProactiveTimerReconcileReasons = false
+    }
+
+    private static func coalescedProactiveTimerReconcileReason(
+        reasons: Set<String>,
+        didTruncateReasons: Bool
+    ) -> String {
+        var components = reasons.sorted()
+        if didTruncateReasons {
+            components.append("more")
+        }
+        if components.isEmpty {
+            components.append("unknown")
+        }
+        return "coalesced(\(components.joined(separator: ",")))"
     }
 
     func rebuildProactiveTimers(reason: String) {
@@ -567,6 +640,14 @@ final class TabSuspensionService {
             hiddenStartedAtLiveUptime: state.hiddenStartedAtLiveUptime,
             requestedDelay: state.requestedDelay
         )
+    }
+
+    var isProactiveTimerReconcileScheduledForTesting: Bool {
+        scheduledProactiveTimerReconcileTask != nil
+    }
+
+    func drainScheduledProactiveTimerReconcileForTesting() async {
+        await scheduledProactiveTimerReconcileTask?.value
     }
 #endif
 
