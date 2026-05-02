@@ -315,7 +315,7 @@ final class HistoryMenuTests: XCTestCase {
         let data = try XCTUnwrap(Self.makeImageData(color: .systemOrange, size: 16))
         let faviconURL = try XCTUnwrap(URL(string: "https://\(url.host ?? "example.com")/favicon-test.png"))
         try await SumiFaviconSystem.shared.manager.storeFavicon(data, with: faviconURL, for: url)
-        let favicon = await SumiFaviconSystem.shared.manager.getCachedFavicon(for: url, sizeCategory: .small)
+        let favicon = await SumiFaviconSystem.shared.manager.getCachedFavicon(for: url, sizeCategory: .small, fallBackToSmaller: false)
         XCTAssertNotNil(favicon, "Expected favicon cache to be seeded for \(url.absoluteString)")
     }
 

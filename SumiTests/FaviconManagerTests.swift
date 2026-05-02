@@ -18,7 +18,7 @@ final class FaviconManagerTests: XCTestCase {
         }
         let manager = makeManager(downloader: downloader)
 
-        let favicon = await manager.handleLiveFaviconLinks(
+        let favicon = await manager.handleFaviconLinks(
             [FaviconUserScript.FaviconLink(href: faviconURL, rel: "apple-touch-icon", type: "image/png")],
             documentUrl: pageURL,
             webView: nil
@@ -50,7 +50,7 @@ final class FaviconManagerTests: XCTestCase {
         }
         let manager = makeManager(downloader: downloader)
 
-        let favicon = await manager.loadFavicon(for: pageURL, webView: nil)
+        let favicon = await manager.handleFaviconLinks([], documentUrl: pageURL, webView: nil)
 
         XCTAssertEqual(Set(downloader.recordedURLs), Set([httpFallbackURL, httpsFallbackURL]))
         XCTAssertEqual(favicon?.url, httpsFallbackURL)
@@ -77,12 +77,12 @@ final class FaviconManagerTests: XCTestCase {
         }
         let manager = makeManager(downloader: downloader)
 
-        let initial = await manager.handleLiveFaviconLinks(
+        let initial = await manager.handleFaviconLinks(
             [FaviconUserScript.FaviconLink(href: pageIconURL, rel: "apple-touch-icon", type: "image/png")],
             documentUrl: pageURL,
             webView: nil
         )
-        let resolvedAfterFallbackOnlyCall = await manager.loadFavicon(for: pageURL, webView: nil)
+        let resolvedAfterFallbackOnlyCall = await manager.handleFaviconLinks([], documentUrl: pageURL, webView: nil)
 
         XCTAssertEqual(initial?.url, pageIconURL)
         XCTAssertEqual(resolvedAfterFallbackOnlyCall?.url, pageIconURL)
@@ -116,22 +116,22 @@ final class FaviconManagerTests: XCTestCase {
         }
         let manager = makeManager(downloader: downloader)
 
-        _ = await manager.handleLiveFaviconLinks(
+        _ = await manager.handleFaviconLinks(
             [FaviconUserScript.FaviconLink(href: initialURL, rel: "icon", type: "image/png")],
             documentUrl: pageURL,
             webView: nil
         )
-        let afterFailure = await manager.handleLiveFaviconLinks(
+        let afterFailure = await manager.handleFaviconLinks(
             [FaviconUserScript.FaviconLink(href: failingURL, rel: "icon", type: "image/png")],
             documentUrl: pageURL,
             webView: nil
         )
-        let afterHTML = await manager.handleLiveFaviconLinks(
+        let afterHTML = await manager.handleFaviconLinks(
             [FaviconUserScript.FaviconLink(href: htmlURL, rel: "icon", type: "text/html")],
             documentUrl: pageURL,
             webView: nil
         )
-        let afterGarbage = await manager.handleLiveFaviconLinks(
+        let afterGarbage = await manager.handleFaviconLinks(
             [FaviconUserScript.FaviconLink(href: tinyGarbageURL, rel: "icon")],
             documentUrl: pageURL,
             webView: nil
@@ -161,7 +161,7 @@ final class FaviconManagerTests: XCTestCase {
             downloader: RecordingFaviconDownloader { _ in imageData }
         )
 
-        _ = await writer.handleLiveFaviconLinks(
+        _ = await writer.handleFaviconLinks(
             [FaviconUserScript.FaviconLink(href: faviconURL, rel: "icon", type: "image/png")],
             documentUrl: pageURL,
             webView: nil

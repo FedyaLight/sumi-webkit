@@ -19,9 +19,6 @@ struct ShortcutLinkEditorSheet: View {
     @State private var title: String
     @State private var urlText: String
     @FocusState private var focusedField: ShortcutLinkEditorFocusedField?
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
-
     init(
         pin: ShortcutPin,
         onSave: @escaping (String, URL) -> Void,

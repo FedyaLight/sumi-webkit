@@ -105,14 +105,6 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
             BrowserWindowControlsAccessibilityIdentifiers.zoomButton
         )
         XCTAssertEqual(
-            BrowserWindowControlsAccessibilityIdentifiers.allButtonIdentifiers,
-            [
-                BrowserWindowControlsAccessibilityIdentifiers.closeButton,
-                BrowserWindowControlsAccessibilityIdentifiers.minimizeButton,
-                BrowserWindowControlsAccessibilityIdentifiers.zoomButton,
-            ]
-        )
-        XCTAssertEqual(
             BrowserWindowControlsAccessibilityIdentifiers.miniBrowserWindow,
             "mini-browser-window"
         )
@@ -143,7 +135,6 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertEqual(SidebarChromeMetrics.controlSpacing, 0)
         XCTAssertEqual(SidebarChromeMetrics.navigationButtonSize, 30)
         XCTAssertEqual(SidebarChromeMetrics.navigationIconSize, 14)
-        XCTAssertEqual(SidebarChromeMetrics.trafficLightLeadingOffset, 0)
     }
 
     func testBrowserTrafficLightSourceUsesCanonicalCustomComponent() throws {

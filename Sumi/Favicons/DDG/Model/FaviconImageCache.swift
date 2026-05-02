@@ -19,12 +19,9 @@
 import Foundation
 import Combine
 import Common
-import BrowserServicesKit
 import os.log
 
 protocol FaviconImageCaching {
-
-    init(faviconStoring: FaviconStoring)
 
     @MainActor
     var loaded: Bool { get }

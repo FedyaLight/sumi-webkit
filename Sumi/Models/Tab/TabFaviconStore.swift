@@ -19,13 +19,6 @@ enum TabFaviconStore {
         NotificationCenter.default.post(name: .faviconCacheUpdated, object: nil)
     }
 
-    static func getFaviconCacheStats() -> (count: Int, domains: [String]) {
-        let managerStats = withManager { $0.cacheStats() }
-        let manualKeys = withManualOverrides { Array($0.keys) }
-        let merged = Array(Set(managerStats.domains).union(manualKeys)).sorted()
-        return (merged.count, merged)
-    }
-
     private static func withManualOverrides<T>(_ body: (inout [String: NSImage]) -> T) -> T {
         manualOverridesLock.lock()
         defer { manualOverridesLock.unlock() }

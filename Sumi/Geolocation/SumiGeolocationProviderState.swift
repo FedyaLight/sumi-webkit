@@ -8,14 +8,3 @@ enum SumiGeolocationProviderState: Equatable, Hashable, Sendable {
     case unavailable
     case failed(reason: String)
 }
-
-extension SumiGeolocationProviderState {
-    var isAvailableForWebKitGrant: Bool {
-        switch self {
-        case .inactive, .active, .paused:
-            return true
-        case .revoked, .unavailable, .failed:
-            return false
-        }
-    }
-}

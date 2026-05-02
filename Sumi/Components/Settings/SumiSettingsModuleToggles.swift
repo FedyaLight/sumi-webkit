@@ -41,7 +41,6 @@ extension EnvironmentValues {
 struct SumiSettingsModuleToggleDescriptor: Identifiable, Equatable {
     let moduleID: SumiModuleID
     let title: String
-    let subtitle: String
     let toggleTitle: String
     let detail: String
 
@@ -50,7 +49,6 @@ struct SumiSettingsModuleToggleDescriptor: Identifiable, Equatable {
     static let trackingProtection = SumiSettingsModuleToggleDescriptor(
         moduleID: .trackingProtection,
         title: "Tracking Protection",
-        subtitle: "Off by default",
         toggleTitle: "Enable Tracking Protection",
         detail: "When off, Sumi does not load tracker data, rule lists, update jobs, or protection scripts. Tracker data updates are manual only and do not run in the background."
     )
@@ -58,7 +56,6 @@ struct SumiSettingsModuleToggleDescriptor: Identifiable, Equatable {
     static let adBlocking = SumiSettingsModuleToggleDescriptor(
         moduleID: .adBlocking,
         title: "Ad Blocking",
-        subtitle: "Off by default, separate from Tracking Protection",
         toggleTitle: "Enable Ad Blocking",
         detail: "Ad Blocking is separate from Tracking Protection. The ad-blocking engine is not implemented yet; while off, Sumi does not load ad-block filter lists."
     )
@@ -66,7 +63,6 @@ struct SumiSettingsModuleToggleDescriptor: Identifiable, Equatable {
     static let extensions = SumiSettingsModuleToggleDescriptor(
         moduleID: .extensions,
         title: "Extensions",
-        subtitle: "Off by default",
         toggleTitle: "Enable Extensions",
         detail: "When off, Sumi does not scan manifests, attach extension scripts, start native messaging, or register extension message handlers."
     )
@@ -74,17 +70,9 @@ struct SumiSettingsModuleToggleDescriptor: Identifiable, Equatable {
     static let userScripts = SumiSettingsModuleToggleDescriptor(
         moduleID: .userScripts,
         title: "Userscripts",
-        subtitle: "Off by default",
         toggleTitle: "Enable Userscripts",
         detail: "When off, Sumi does not read the userscript store or attach WKUserScript."
     )
-
-    static let all: [SumiSettingsModuleToggleDescriptor] = [
-        .trackingProtection,
-        .adBlocking,
-        .extensions,
-        .userScripts,
-    ]
 }
 
 struct SumiSettingsModuleToggleModel {

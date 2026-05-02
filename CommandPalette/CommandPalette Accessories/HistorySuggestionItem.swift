@@ -65,7 +65,7 @@ struct HistorySuggestionItem: View {
             return
         }
 
-        guard let image = await SumiFaviconResolver.shared.image(for: url) else {
+        guard let image = await SumiFaviconResolver.image(for: url) else {
             await MainActor.run { self.resolvedFavicon = defaultFavicon }
             return
         }

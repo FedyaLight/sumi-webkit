@@ -7,7 +7,6 @@ import AppKit
 import Combine
 import Foundation
 import SwiftUI
-import UserScript
 
 extension Tab {
     @MainActor
@@ -111,7 +110,4 @@ extension Tab {
         SumiFaviconSystem.shared.clearAll()
     }
 
-    static func getFaviconCacheStats() -> (count: Int, domains: [String]) {
-        TabFaviconStore.getFaviconCacheStats()
-    }
 }
