@@ -7,6 +7,8 @@ import OSLog
 
 @MainActor
 class TabManager: ObservableObject {
+    private static let faviconPresentationRefreshDebounceNanoseconds: UInt64 = 250_000_000
+
     enum TabManagerError: LocalizedError {
         case spaceNotFound(UUID)
 
@@ -62,6 +64,7 @@ class TabManager: ObservableObject {
     private(set) var structuralLookupBatchFlushCount = 0
     private(set) var structuralLookupImmediateFlushCount = 0
     private var faviconCacheObserver: NSObjectProtocol?
+    private var pendingFaviconPresentationRefreshTask: Task<Void, Never>?
     // Space activation to resume after a deferred profile switch
     var pendingSpaceActivation: UUID?
     
@@ -247,7 +250,7 @@ class TabManager: ObservableObject {
             queue: nil
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.refreshCachedFaviconPresentation()
+                self?.scheduleCachedFaviconPresentationRefresh()
             }
         }
         if loadPersistedState {
@@ -264,6 +267,8 @@ class TabManager: ObservableObject {
             scheduledStructuralPersistTask = nil
             startupRestoreTask?.cancel()
             startupRestoreTask = nil
+            pendingFaviconPresentationRefreshTask?.cancel()
+            pendingFaviconPresentationRefreshTask = nil
             if let faviconCacheObserver {
                 NotificationCenter.default.removeObserver(faviconCacheObserver)
                 self.faviconCacheObserver = nil
@@ -335,6 +340,21 @@ class TabManager: ObservableObject {
     func notifyTransientShortcutStateChanged() {
         queueTransientTabLookupRefresh()
         requestStructuralPublish()
+    }
+
+    private func scheduleCachedFaviconPresentationRefresh() {
+        pendingFaviconPresentationRefreshTask?.cancel()
+        pendingFaviconPresentationRefreshTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: Self.faviconPresentationRefreshDebounceNanoseconds)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+
+            self?.pendingFaviconPresentationRefreshTask = nil
+            self?.refreshCachedFaviconPresentation()
+        }
     }
 
     private func refreshCachedFaviconPresentation() {
