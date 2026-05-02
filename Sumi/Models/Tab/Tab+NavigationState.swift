@@ -1,5 +1,6 @@
 import BrowserServicesKit
 import Foundation
+import Navigation
 import WebKit
 
 extension Tab {
@@ -7,12 +8,24 @@ extension Tab {
 
     func goBack() {
         guard canGoBack else { return }
-        _webView?.goBack()
+        guard let webView = _webView else { return }
+        if let backItem = webView.backForwardList.backItem,
+           let navigator = webView.navigator() {
+            _ = navigator.go(to: backItem, withExpectedNavigationType: .backForward(distance: -1))
+        } else {
+            webView.goBack()
+        }
     }
 
     func goForward() {
         guard canGoForward else { return }
-        _webView?.goForward()
+        guard let webView = _webView else { return }
+        if let forwardItem = webView.backForwardList.forwardItem,
+           let navigator = webView.navigator() {
+            _ = navigator.go(to: forwardItem, withExpectedNavigationType: .backForward(distance: 1))
+        } else {
+            webView.goForward()
+        }
     }
 
     func stopLoading(on webView: WKWebView? = nil) {

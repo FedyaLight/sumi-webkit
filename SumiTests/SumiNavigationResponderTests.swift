@@ -83,8 +83,9 @@ final class SumiNavigationResponderTests: XCTestCase {
 
         XCTAssertTrue(uiDelegateSource.contains("popupHandling.createWebViewAsync("))
         XCTAssertTrue(uiDelegateSource.contains("completionHandler(popupWebView)"))
-        XCTAssertTrue(popupResponderSource.contains("FocusableWKWebView(frame: .zero, configuration: configuration)"))
-        XCTAssertTrue(popupResponderSource.contains("webViewConfigurationOverride: configuration"))
+        XCTAssertTrue(popupResponderSource.contains("createPopupWebViewFromWebKitConfiguration("))
+        XCTAssertFalse(popupResponderSource.contains("FocusableWKWebView(frame: .zero, configuration: configuration)"))
+        XCTAssertFalse(popupResponderSource.contains("webViewConfigurationOverride: configuration"))
         XCTAssertTrue(popupResponderSource.contains("popupPermissionBridge.evaluate("))
         XCTAssertTrue(popupResponderSource.contains("evaluateSynchronouslyForWebKitFallback("))
         XCTAssertTrue(popupResponderSource.contains("guard permissionResult.isAllowed else { return nil }"))

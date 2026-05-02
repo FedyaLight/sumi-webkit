@@ -36,6 +36,9 @@ extension Tab {
         }
 
         guard oldState != newState else { return }
-        SumiNativeNowPlayingController.shared.scheduleRefresh(delayNanoseconds: 0)
+
+        if oldState.isPlayingAudio != newState.isPlayingAudio {
+            SumiNativeNowPlayingController.shared.scheduleRefresh(delayNanoseconds: 0)
+        }
     }
 }

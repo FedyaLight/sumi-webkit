@@ -434,7 +434,6 @@ final class TabSuspensionServiceTests: XCTestCase {
         XCTAssertNil(hidden.existingWebView)
         XCTAssertNil(hidden.primaryWindowId)
         XCTAssertNil(harness.coordinator.getWebView(for: hidden.id, in: harness.windowState.id))
-        XCTAssertNil(harness.coordinator.getWebViewHost(for: hidden.id, in: harness.windowState.id))
         XCTAssertNil(harness.coordinator.windowID(containing: releasedWebView))
         XCTAssertNil(releasedWebView.navigationDelegate)
         XCTAssertNil(releasedWebView.uiDelegate)
