@@ -67,8 +67,12 @@ struct SpaceTab: View {
                             }
                             .animation(.easeInOut(duration: 0.1), value: tab.audioState.isMuted)
                         }
+                        .frame(width: 22, height: 22)
+                        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
                     .buttonStyle(PlainButtonStyle())
+                    .frame(width: 22, height: 22)
+                    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .sidebarDDGHover($isSpeakerHovered, isEnabled: isAppKitInteractionEnabled)
                     .accessibilityIdentifier("space-regular-tab-audio-\(tab.id.uuidString)")
                     .sidebarAppKitPrimaryAction(
@@ -124,17 +128,14 @@ struct SpaceTab: View {
             .background(
                 backgroundColor
             )
+            .overlay(alignment: .leading) {
+                rowActivationOverlay
+            }
             .overlay(alignment: .trailing) {
                 closeButton
                     .padding(.trailing, SidebarRowLayout.trailingInset)
             }
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        }
-        .onTapGesture {
-            if tab.isRenaming {
-                tab.saveRename()
-            }
-            action()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("tab-row-\(tab.id.uuidString)")
@@ -219,6 +220,58 @@ struct SpaceTab: View {
             isHovered: displayIsHovering,
             isSelected: isCurrentTab
         )
+    }
+
+    static var audioButtonHitFrame: CGRect {
+        CGRect(
+            x: SidebarRowLayout.leadingInset
+                + SidebarRowLayout.faviconSize
+                + 8,
+            y: (SidebarRowLayout.rowHeight - 22) / 2,
+            width: 22,
+            height: 22
+        )
+    }
+
+    private var activeAudioButtonHitFrame: CGRect {
+        guard tab.audioState.showsTabAudioButton else { return .null }
+
+        return Self.audioButtonHitFrame
+    }
+
+    @ViewBuilder
+    private var rowActivationOverlay: some View {
+        if !tab.isRenaming {
+            GeometryReader { proxy in
+                let trailingExclusionWidth: CGFloat = 40
+                let trailingLimit = max(proxy.size.width - trailingExclusionWidth, 0)
+
+                ZStack(alignment: .leading) {
+                    if tab.audioState.showsTabAudioButton {
+                        activationHitRegion(width: activeAudioButtonHitFrame.minX)
+
+                        activationHitRegion(
+                            width: max(trailingLimit - activeAudioButtonHitFrame.maxX, 0)
+                        )
+                        .offset(x: activeAudioButtonHitFrame.maxX)
+                    } else {
+                        activationHitRegion(width: trailingLimit)
+                    }
+                }
+            }
+            .frame(height: SidebarRowLayout.rowHeight)
+        }
+    }
+
+    private func activationHitRegion(width: CGFloat) -> some View {
+        Color.clear
+            .frame(width: max(width, 0), height: SidebarRowLayout.rowHeight)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: activateRow)
+    }
+
+    private func activateRow() {
+        action()
     }
 
     private var closeButton: some View {
