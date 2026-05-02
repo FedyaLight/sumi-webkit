@@ -4,7 +4,7 @@ struct SumiPermissionSecurityContext: Equatable, Sendable {
     enum Surface: String, Codable, CaseIterable, Hashable, Sendable {
         case normalTab
         case miniWindow
-        case peek
+        case glance
         case extensionPage
         case internalPage
         case unknown

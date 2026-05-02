@@ -241,7 +241,7 @@ class BrowserManager: ObservableObject {
     )
 
     var externalMiniWindowManager = ExternalMiniWindowManager()
-    @Published var peekManager = PeekManager()
+    @Published var glanceManager = GlanceManager()
 
     /// Shared with app shell / `ContentView` via `.environment`; retained strongly so routing never sees a dangling coordinator.
     /// After `SumiApp.setupApplicationLifecycle` runs, this must be set before any WebView routing or coordinator cleanup.
@@ -266,8 +266,8 @@ class BrowserManager: ObservableObject {
 
     weak var windowRegistry: WindowRegistry? {
         didSet {
-            // Update PeekManager's windowRegistry reference when this changes
-            peekManager.windowRegistry = windowRegistry
+            // Update GlanceManager's windowRegistry reference when this changes
+            glanceManager.windowRegistry = windowRegistry
             splitManager.windowRegistry = windowRegistry
             Task { @MainActor [weak self] in
                 await self?.reconcilePermissionSidebarPins(reason: "window-registry-updated")
@@ -493,7 +493,7 @@ class BrowserManager: ObservableObject {
         self.userscriptsModule.attach(browserManager: self)
         bindTabManagerStructuralUpdates()
         self.externalMiniWindowManager.attach(browserManager: self)
-        self.peekManager.attach(browserManager: self)
+        self.glanceManager.attach(browserManager: self)
         self.authenticationManager.attach(browserManager: self)
 
         self.dialogManager.onWillPresentModal = { [weak self] in

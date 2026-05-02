@@ -1,5 +1,5 @@
 //
-//  PeekSession.swift
+//  GlanceSession.swift
 //  Sumi
 //
 //  Created by Jonathan Caudill on 24/09/2025.
@@ -10,7 +10,7 @@ import WebKit
 import SwiftUI
 
 @MainActor
-class PeekSession: ObservableObject, Identifiable {
+class GlanceSession: ObservableObject, Identifiable {
     let id = UUID()
     let windowId: UUID
     let sourceProfileId: UUID?

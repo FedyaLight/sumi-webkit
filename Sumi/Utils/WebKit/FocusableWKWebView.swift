@@ -78,6 +78,7 @@ final class FocusableWKWebView: WKWebView {
         let owningTab = owningTab
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             owningTab?.setClickModifierFlags([])
+            owningTab?.clearWebViewInteractionEvent()
         }
     }
 

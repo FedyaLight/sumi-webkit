@@ -293,14 +293,14 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
                 source: .defaultSetting,
                 reason: SumiPermissionPolicyReason.miniWindowSensitiveDenied
             )
-        case .peek:
+        case .glance:
             guard requiresNormalTabSurface(permissionType) else { return nil }
             return deny(
                 .hardDeny,
                 context: context,
                 permissionType: permissionType,
                 source: .defaultSetting,
-                reason: SumiPermissionPolicyReason.peekSensitiveDenied
+                reason: SumiPermissionPolicyReason.glanceSensitiveDenied
             )
         case .extensionPage:
             return deny(

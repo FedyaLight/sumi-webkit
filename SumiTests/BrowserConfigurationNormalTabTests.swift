@@ -663,7 +663,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
         let auxiliary = browserConfiguration.auxiliaryWebViewConfiguration(
             for: profile,
-            surface: .peek
+            surface: .glance
         )
 
         let normalStore = try XCTUnwrap(normal.sumiVisitedLinkStoreObject)
@@ -701,7 +701,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let browserConfiguration = BrowserConfiguration()
         let configurations = [
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .faviconDownload),
-            browserConfiguration.auxiliaryWebViewConfiguration(surface: .peek),
+            browserConfiguration.auxiliaryWebViewConfiguration(surface: .glance),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .miniWindow),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .extensionOptions),
         ]
@@ -715,7 +715,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let browserConfiguration = BrowserConfiguration()
         let configurations = [
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .faviconDownload),
-            browserConfiguration.auxiliaryWebViewConfiguration(surface: .peek),
+            browserConfiguration.auxiliaryWebViewConfiguration(surface: .glance),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .miniWindow),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .extensionOptions),
         ]
@@ -750,7 +750,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let configurations = [
             browserConfiguration.auxiliaryWebViewConfiguration(
                 for: profile,
-                surface: .peek
+                surface: .glance
             ),
             browserConfiguration.auxiliaryWebViewConfiguration(
                 for: profile,
@@ -786,7 +786,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let browserConfiguration = BrowserConfiguration()
         let configurations = [
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .faviconDownload),
-            browserConfiguration.auxiliaryWebViewConfiguration(surface: .peek),
+            browserConfiguration.auxiliaryWebViewConfiguration(surface: .glance),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .miniWindow),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .extensionOptions),
         ]
@@ -868,7 +868,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
     func testAuxiliaryAndFaviconPathsDoNotAccessTrackingRuntime() throws {
         for relativePath in [
-            "Sumi/Managers/PeekManager/PeekWebView.swift",
+            "Sumi/Managers/GlanceManager/GlanceWebView.swift",
             "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
             "Sumi/Favicons/DDG/Model/FaviconDownloader.swift",
         ] {
@@ -883,7 +883,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
     func testAuxiliaryAndFaviconPathsDoNotAccessUserscriptsRuntime() throws {
         for relativePath in [
-            "Sumi/Managers/PeekManager/PeekWebView.swift",
+            "Sumi/Managers/GlanceManager/GlanceWebView.swift",
             "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
             "Sumi/Favicons/DDG/Model/FaviconDownloader.swift",
             "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift",
@@ -899,7 +899,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
     func testAuxiliaryAndFaviconPathsDoNotAccessExtensionsRuntime() throws {
         for relativePath in [
-            "Sumi/Managers/PeekManager/PeekWebView.swift",
+            "Sumi/Managers/GlanceManager/GlanceWebView.swift",
             "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
             "Sumi/Favicons/DDG/Model/FaviconDownloader.swift",
             "Sumi/Models/BrowserConfig/BrowserConfig.swift",
@@ -926,7 +926,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(faviconSource.contains("normalTabWebViewConfiguration("))
 
         for relativePath in [
-            "Sumi/Managers/PeekManager/PeekWebView.swift",
+            "Sumi/Managers/GlanceManager/GlanceWebView.swift",
             "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
             "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift",
         ] {
@@ -988,7 +988,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(lifecycleSource.contains("evaluateJavaScript"))
     }
 
-    func testCoordinatorDoesNotCreateNormalWebViewsOrFallbackToPeek() throws {
+    func testCoordinatorDoesNotCreateNormalWebViewsOrFallbackToGlance() throws {
         let testURL = URL(fileURLWithPath: #filePath)
         let repoRoot = testURL
             .deletingLastPathComponent()
@@ -1000,7 +1000,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(source.contains("createWebViewInternal"))
         XCTAssertFalse(source.contains("normalTabWebViewConfiguration"))
         XCTAssertFalse(source.contains("auxiliaryWebViewConfiguration"))
-        XCTAssertFalse(source.contains("surface: .peek"))
+        XCTAssertFalse(source.contains("surface: .glance"))
         XCTAssertFalse(source.contains("FocusableWKWebView(frame: .zero"))
         XCTAssertTrue(source.contains("tab.ensureWebView()"))
         XCTAssertTrue(source.contains("tab.makeNormalTabWebView"))

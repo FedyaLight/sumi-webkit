@@ -13,7 +13,7 @@ import SwiftUI
 private enum WindowTransientChromeZIndex {
     static let commandPalette: Double = 9_000
     /// Glance preview: above palette, below blocking dialogs.
-    static let peek: Double = 10_000
+    static let glance: Double = 10_000
     /// Modal dialogs (quit, settings paths, etc.) must stay above app chrome.
     static let dialog: Double = 11_000
     /// Drag ghost only.
@@ -23,7 +23,7 @@ private enum WindowTransientChromeZIndex {
 /// Main window view that orchestrates the browser UI layout
 struct WindowView: View {
     @EnvironmentObject var browserManager: BrowserManager
-    @EnvironmentObject private var peekManager: PeekManager
+    @EnvironmentObject private var glanceManager: GlanceManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(CommandPalette.self) private var commandPalette
@@ -79,11 +79,11 @@ struct WindowView: View {
                     .zIndex(WindowTransientChromeZIndex.dialog)
             }
 
-            // Peek overlay for external link previews
-            if peekManager.isActive || peekManager.currentSession != nil {
+            // Glance overlay for external link previews
+            if glanceManager.isActive || glanceManager.currentSession != nil {
                 chromeThemeScope {
-                    PeekOverlayView()
-                        .zIndex(WindowTransientChromeZIndex.peek)
+                    GlanceOverlayView()
+                        .zIndex(WindowTransientChromeZIndex.glance)
                 }
             }
 

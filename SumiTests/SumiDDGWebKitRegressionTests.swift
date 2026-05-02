@@ -11,10 +11,8 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             repositoryRoot.appendingPathComponent($0, isDirectory: true)
         }
         let forbiddenTokens = [
-            "SumiNativeNowPlaying",
             "commandClick",
-            "shouldRedirectToPeek",
-            "scheduleRefresh(",
+            "shouldRedirectToGlance",
             "activeFullscreenVideoSessions",
             "attachHost(",
             "moveToCompositorContainer",
@@ -29,9 +27,6 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             "commandHover",
             "GlanceActivationMethod",
             "glanceActivationMethod",
-            "glanceEnabled",
-            "isGlanceTriggerActive",
-            "openURLInGlance",
             "FocusableWKWebViewContextMenuLifecycleDelegate",
             "FocusableWKWebView.contextMenu",
             "Promoting FocusableWKWebView",

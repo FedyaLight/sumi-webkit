@@ -51,7 +51,6 @@ final class WindowWebContentController: NSViewController {
     private var lastHoverTabId: UUID?
     private var pendingSplitRepairKeepSide: SplitViewManager.Side? = nil
     private var hoveredLinkHandler: ((String?) -> Void)?
-    private var commandHoverHandler: ((Bool) -> Void)?
     private var singlePaneHost: SumiWebViewContainerView?
     private var leftPaneHost: SumiWebViewContainerView?
     private var rightPaneHost: SumiWebViewContainerView?
@@ -106,7 +105,6 @@ final class WindowWebContentController: NSViewController {
     func update(
         displayState: WebsiteDisplayState,
         hoveredLinkHandler: @escaping (String?) -> Void,
-        commandHoverHandler: @escaping (Bool) -> Void,
         chromeGeometry: BrowserChromeGeometry
     ) {
         if self.chromeGeometry != chromeGeometry {
@@ -116,11 +114,9 @@ final class WindowWebContentController: NSViewController {
 
         pendingDisplayState = displayState
         self.hoveredLinkHandler = hoveredLinkHandler
-        self.commandHoverHandler = commandHoverHandler
 
         if displayState.currentId == nil {
             hoveredLinkHandler(nil)
-            commandHoverHandler(false)
             lastHoverTabId = nil
         }
 
@@ -347,11 +343,6 @@ final class WindowWebContentController: NSViewController {
                 self?.hoveredLinkHandler?(href)
             }
         }
-        tab.onCommandHover = { [weak self] href in
-            DispatchQueue.main.async {
-                self?.commandHoverHandler?(href != nil)
-            }
-        }
     }
 
     private func webViewHost(
@@ -480,7 +471,6 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
     let browserManager: BrowserManager
     let webViewCoordinator: WebViewCoordinator
     @Binding var hoveredLink: String?
-    @Binding var isCommandPressed: Bool
     var splitFraction: CGFloat
     var splitOrientation: SplitOrientation
     var isSplit: Bool
@@ -501,11 +491,9 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
 
     func updateNSViewController(_ controller: WindowWebContentController, context: Context) {
         let hoveredLinkBinding = $hoveredLink
-        let commandPressedBinding = $isCommandPressed
         controller.update(
             displayState: makeDisplayState(),
             hoveredLinkHandler: { hoveredLinkBinding.wrappedValue = $0 },
-            commandHoverHandler: { commandPressedBinding.wrappedValue = $0 },
             chromeGeometry: chromeGeometry
         )
     }

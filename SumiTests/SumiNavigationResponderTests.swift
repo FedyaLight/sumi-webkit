@@ -1,3 +1,4 @@
+import AppKit
 import Common
 import Navigation
 import WebKit
@@ -218,6 +219,185 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertEqual(policy, .download)
     }
 
+    func testGlanceTriggerRequiresCleanOptionModifier() {
+        let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
+        let tab = Tab(url: URL(string: "https://source.example")!)
+        tab.sumiSettings = settings
+
+        XCTAssertTrue(tab.isGlanceTriggerActive([.option]))
+        XCTAssertFalse(tab.isGlanceTriggerActive([]))
+        XCTAssertFalse(tab.isGlanceTriggerActive([.command]))
+        XCTAssertFalse(tab.isGlanceTriggerActive([.option, .command]))
+        XCTAssertFalse(tab.isGlanceTriggerActive([.control]))
+        XCTAssertFalse(tab.isGlanceTriggerActive([.shift]))
+
+        settings.glanceEnabled = false
+        XCTAssertFalse(tab.isGlanceTriggerActive([.option]))
+    }
+
+    func testDynamicGlanceIgnoresModifiedClicks() {
+        let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
+        let tab = Tab(url: URL(string: "https://source.example/page")!)
+        tab.sumiSettings = settings
+        let externalURL = URL(string: "https://destination.example/page")!
+        let sameHostURL = URL(string: "https://source.example/other")!
+
+        XCTAssertTrue(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: []))
+        XCTAssertFalse(tab.shouldOpenDynamicallyInGlance(url: sameHostURL, modifierFlags: []))
+        XCTAssertFalse(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: [.command]))
+        XCTAssertFalse(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: [.option]))
+        XCTAssertFalse(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: [.option, .command]))
+
+        settings.glanceEnabled = false
+        XCTAssertFalse(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: []))
+    }
+
+    func testGlanceClickUsesEventModifierFlagsInsteadOfStaleClickState() {
+        let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
+        let browserManager = BrowserManager()
+        browserManager.sumiSettings = settings
+        let tab = Tab(url: URL(string: "https://source.example/page")!)
+        tab.browserManager = browserManager
+        tab.sumiSettings = settings
+        let targetURL = URL(string: "https://destination.example/page")!
+
+        tab.setClickModifierFlags([.command])
+        if tab.isGlanceTriggerActive([.command]) {
+            tab.openURLInGlance(targetURL)
+        }
+        XCTAssertNil(browserManager.glanceManager.currentSession)
+
+        if tab.isGlanceTriggerActive([.option]) {
+            tab.openURLInGlance(targetURL)
+        }
+        XCTAssertEqual(browserManager.glanceManager.currentSession?.currentURL, targetURL)
+    }
+
+    func testFreshNativeMouseDownWinsOverStaleWebKitModifierFlags() {
+        let tab = Tab(url: URL(string: "https://source.example/page")!)
+        tab.setClickModifierFlags([.command])
+        tab.recordWebViewInteraction(
+            makeMouseEvent(type: .leftMouseDown, modifierFlags: [.option])
+        )
+
+        XCTAssertEqual(
+            tab.resolvedNavigationModifierFlags(actionFlags: [.command, .option]),
+            [.option]
+        )
+    }
+
+    /// Mirrors post-`createWebView` / `decidePolicy` cleanup so Cmd+click does not leave stale `lastWebViewInteractionEvent`.
+    func testClearingModifierSnapshotAfterCmdGestureAllowsFreshGlanceResolution() {
+        let tab = Tab(url: URL(string: "https://source.example/page")!)
+        tab.recordWebViewInteraction(
+            makeMouseEvent(type: .leftMouseDown, modifierFlags: [.command])
+        )
+
+        XCTAssertEqual(
+            tab.resolvedNavigationModifierFlags(actionFlags: []),
+            [.command]
+        )
+
+        tab.clearWebViewInteractionEvent()
+        tab.setClickModifierFlags([])
+
+        XCTAssertEqual(tab.resolvedNavigationModifierFlags(actionFlags: []), [])
+
+        tab.recordWebViewInteraction(
+            makeMouseEvent(type: .leftMouseDown, modifierFlags: [.option])
+        )
+        let resolved = tab.resolvedNavigationModifierFlags(actionFlags: [])
+        XCTAssertEqual(resolved, [.option])
+        XCTAssertTrue(tab.isGlanceTriggerActive(resolved))
+    }
+
+    func testClearingSyntheticNewWindowClickStateDoesNotBreakPendingWindowPriority() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Models/Tab/Navigation/SumiPopupHandlingNavigationResponder.swift"
+            ),
+            encoding: .utf8
+        )
+        let asyncStart = try XCTUnwrap(source.range(of: "func createWebViewAsync(")?.lowerBound)
+        let syncStart = try XCTUnwrap(source.range(of: "private func createWebViewSynchronously(", range: asyncStart..<source.endIndex)?.lowerBound)
+        let policyStart = try XCTUnwrap(source.range(of: "func willStart", range: syncStart..<source.endIndex)?.lowerBound)
+        let createWebViewSources = [
+            String(source[asyncStart..<syncStart]),
+            String(source[syncStart..<policyStart]),
+        ]
+
+        for createWebViewSource in createWebViewSources {
+            let explicitGlance = try XCTUnwrap(createWebViewSource.range(of: "tab.isGlanceTriggerActive(navigationFlags)")?.lowerBound)
+            let pendingWindow = try XCTUnwrap(createWebViewSource.range(of: "newWindowPolicy(for: navigationAction)")?.lowerBound)
+            let dynamicGlance = try XCTUnwrap(createWebViewSource.range(of: "tab.shouldOpenDynamicallyInGlance(")?.lowerBound)
+
+            XCTAssertLessThan(explicitGlance, pendingWindow)
+            XCTAssertLessThan(pendingWindow, dynamicGlance)
+        }
+        XCTAssertTrue(source.contains("resetLinkGestureModifierState(for: tab)\n            targetWebView.sumiLoadInNewWindow(url)"))
+    }
+
+    func testPopupResponderOptionClickRoutesToGlance() async {
+        let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
+        let browserManager = BrowserManager()
+        browserManager.sumiSettings = settings
+        let tab = Tab(url: URL(string: "https://source.example/page")!)
+        tab.browserManager = browserManager
+        tab.sumiSettings = settings
+        tab.setClickModifierFlags([.option])
+        let responder = SumiPopupHandlingNavigationResponder(tab: tab)
+        let targetURL = URL(string: "https://destination.example/page")!
+        var preferences = NavigationPreferences.default
+
+        let policy = await responder.decidePolicy(
+            for: navigationAction(
+                url: targetURL,
+                navigationType: .linkActivated(isMiddleClick: false),
+                sourceURL: tab.url
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertTrue(policy?.isCancel == true)
+        XCTAssertEqual(browserManager.glanceManager.currentSession?.currentURL, targetURL)
+    }
+
+    func testPopupResponderCommandClickDoesNotRouteToGlance() async {
+        let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
+        let browserManager = BrowserManager()
+        browserManager.sumiSettings = settings
+        let tab = Tab(url: URL(string: "https://source.example/page")!)
+        tab.browserManager = browserManager
+        tab.sumiSettings = settings
+        tab.setClickModifierFlags([.command])
+        let responder = SumiPopupHandlingNavigationResponder(tab: tab)
+        let targetURL = URL(string: "https://destination.example/page")!
+        var preferences = NavigationPreferences.default
+
+        _ = await responder.decidePolicy(
+            for: navigationAction(
+                url: targetURL,
+                navigationType: .linkActivated(isMiddleClick: false),
+                sourceURL: tab.url
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertNil(browserManager.glanceManager.currentSession)
+        XCTAssertEqual(
+            SumiLinkOpenBehavior(
+                buttonIsMiddle: false,
+                modifierFlags: [.command],
+                switchToNewTabWhenOpenedPreference: false,
+                canOpenLinkInCurrentTab: true
+            ),
+            .newTab(selected: false)
+        )
+    }
+
     private func navigationAction(
         url: URL,
         navigationType: NavigationType,
@@ -252,6 +432,26 @@ final class SumiNavigationResponderTests: XCTestCase {
             shouldDownload: shouldDownload,
             mainFrameNavigation: nil
         )
+    }
+
+    private func makeMouseEvent(
+        type: NSEvent.EventType,
+        modifierFlags: NSEvent.ModifierFlags
+    ) -> NSEvent {
+        guard let event = NSEvent.mouseEvent(
+            with: type,
+            location: .zero,
+            modifierFlags: modifierFlags,
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        ) else {
+            fatalError("Failed to create mouse event")
+        }
+        return event
     }
 }
 

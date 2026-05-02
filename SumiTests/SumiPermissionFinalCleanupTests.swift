@@ -63,7 +63,7 @@ final class SumiPermissionFinalCleanupTests: XCTestCase {
             "Sumi/Bookmarks/BrowserManager+Bookmarks.swift",
             "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
             "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift",
-            "Sumi/Managers/PeekManager/PeekWebView.swift",
+            "Sumi/Managers/GlanceManager/GlanceWebView.swift",
             "Sumi/Managers/SumiScripts/UI/SumiScriptsManagerView.swift",
             "Sumi/Permissions/SumiFilePickerPanelPresenter.swift",
         ])

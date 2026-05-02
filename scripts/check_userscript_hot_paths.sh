@@ -33,7 +33,7 @@ is_allowed() {
     Sumi/Models/Tab/Tab+ScriptMessageHandler.swift:*evaluateJavaScript*) return 0 ;;
     Sumi/Models/Tab/Navigation/SumiNavigationHelpers.swift:*evaluateJavaScript*) return 0 ;;
     Sumi/Components/MiniWindow/MiniWindowWebView.swift:*evaluateJavaScript*) return 0 ;;
-    Sumi/Managers/PeekManager/PeekWebView.swift:*evaluateJavaScript*) return 0 ;;
+    Sumi/Managers/GlanceManager/GlanceWebView.swift:*evaluateJavaScript*) return 0 ;;
   esac
   return 1
 }

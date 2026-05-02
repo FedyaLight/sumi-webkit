@@ -21,37 +21,13 @@ extension Tab {
     func isGlanceTriggerActive(_ flags: NSEvent.ModifierFlags? = nil) -> Bool {
         guard sumiSettings?.glanceEnabled ?? true else { return false }
 
-        let activeFlags = flags ?? clickModifierFlags
-        switch sumiSettings?.glanceActivationMethod ?? .alt {
-        case .ctrl:
-            return activeFlags.contains(.control)
-        case .alt:
-            return activeFlags.contains(.option)
-        case .shift:
-            return activeFlags.contains(.shift)
-        case .meta:
-            return activeFlags.contains(.command)
-        }
+        let activeFlags = (flags ?? clickModifierFlags)
+            .intersection([.command, .option, .control, .shift])
+        return activeFlags == [.option]
     }
 
     func openURLInGlance(_ url: URL) {
-        browserManager?.peekManager.presentExternalURL(url, from: self)
-    }
-
-    func handleModifiedLinkClick(url: URL, flags: NSEvent.ModifierFlags) {
-        if isGlanceTriggerActive(flags) {
-            openURLInGlance(url)
-        } else if flags.contains(.command) {
-            let context = BrowserManager.TabOpenContext.background(
-                windowState: browserManager?.windowState(containing: self),
-                sourceTab: self,
-                preferredSpaceId: spaceId
-            )
-            browserManager?.openNewTab(
-                url: url.absoluteString,
-                context: context
-            )
-        }
+        browserManager?.glanceManager.presentExternalURL(url, from: self)
     }
 
     func navigationModifierFlags(from navigationAction: WKNavigationAction) -> NSEvent.ModifierFlags {
@@ -64,7 +40,12 @@ extension Tab {
         return resolvedNavigationModifierFlags(actionFlags: flags)
     }
 
-    private func resolvedNavigationModifierFlags(actionFlags: NSEvent.ModifierFlags) -> NSEvent.ModifierFlags {
+    /// Resolves which modifier keys apply to a link or popup navigation when WebKit reports empty or misleading flags,
+    /// using (in order) a fresh main-window mouseDown snapshot, WebKit-provided flags, the last interaction event, then tab click state.
+    func resolvedNavigationModifierFlags(actionFlags: NSEvent.ModifierFlags) -> NSEvent.ModifierFlags {
+        if let interactionFlags = recentWebViewMouseDownModifierFlags() {
+            return interactionFlags
+        }
         if !actionFlags.isEmpty {
             return actionFlags
         }
@@ -74,9 +55,13 @@ extension Tab {
         return clickModifierFlags
     }
 
-    func shouldRedirectToPeek(url: URL) -> Bool {
-        if isGlanceTriggerActive() {
-            return true
+    func shouldOpenDynamicallyInGlance(
+        url: URL,
+        modifierFlags: NSEvent.ModifierFlags
+    ) -> Bool {
+        guard sumiSettings?.glanceEnabled ?? true else { return false }
+        guard modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty else {
+            return false
         }
 
         guard let currentHost = self.url.host,
@@ -153,6 +138,8 @@ extension Tab {
 
 }
 
+/// Reports hovered `<a href>` for chrome (e.g. link status). Injected in the main frame only to limit work in subframes;
+/// links inside iframes will not drive the status line until hovered in the top document.
 @MainActor
 private final class SumiLinkInteractionUserScript: NSObject, UserScript, UserScriptMessaging, WKScriptMessageHandlerWithReply {
     private let context: String
@@ -167,15 +154,12 @@ private final class SumiLinkInteractionUserScript: NSObject, UserScript, UserScr
         self.context = "sumiLinkInteraction_\(tab.id.uuidString)"
         self.broker = UserScriptMessageBroker(context: context, requiresRunInPageContentWorld: true)
         self.messageNames = [context]
-        self.source = Self.makeSource(
-            context: context,
-            glanceActivationMethod: (tab.sumiSettings?.glanceActivationMethod ?? .alt).rawValue
-        )
+        self.source = Self.makeSource(context: context)
         super.init()
         registerSubfeature(delegate: SumiLinkInteractionSubfeature(tab: tab))
     }
 
-    private static func makeSource(context: String, glanceActivationMethod: String) -> String {
+    private static func makeSource(context: String) -> String {
         """
         (function() {
             if (window.__sumiLinkInteractionInstalled) { return; }
@@ -185,10 +169,6 @@ private final class SumiLinkInteractionUserScript: NSObject, UserScript, UserScr
             if (!handler) { return; }
 
             let currentHoveredLink = null;
-            let isCommandPressed = { value: false };
-            let pointerDownLink = { value: null };
-            let pointerDownFlags = { value: null };
-            const glanceActivationMethod = "\(glanceActivationMethod)";
 
             function post(method, params) {
                 handler.postMessage({
@@ -200,71 +180,19 @@ private final class SumiLinkInteractionUserScript: NSObject, UserScript, UserScr
             }
 
             function findLinkTarget(start) {
-                let target = start;
-                while (target && target !== document) {
-                    if (target.tagName === "A" && target.href) {
-                        return target;
+                let t = start;
+                while (t && t !== document) {
+                    if (t.nodeType === 1 && t.tagName === "A" && t.href) {
+                        return t;
                     }
-                    target = target.parentElement;
+                    t = t.parentElement;
                 }
                 return null;
-            }
-
-            function hasSingleModifier(event) {
-                let count = 0;
-                if (event.metaKey) count++;
-                if (event.altKey) count++;
-                if (event.ctrlKey) count++;
-                if (event.shiftKey) count++;
-                return count === 1;
-            }
-
-            function matchesGlanceModifier(event) {
-                switch (glanceActivationMethod) {
-                    case "ctrl": return event.ctrlKey;
-                    case "alt": return event.altKey;
-                    case "shift": return event.shiftKey;
-                    case "meta": return event.metaKey;
-                    default: return false;
-                }
             }
 
             function sendHover(method, href) {
                 post(method, { href: href || null });
             }
-
-            function capturePointerDown(event) {
-                const target = findLinkTarget(event.target);
-                if (!target || event.button !== 0 || !hasSingleModifier(event)) {
-                    pointerDownLink.value = null;
-                    pointerDownFlags.value = null;
-                    return;
-                }
-
-                pointerDownLink.value = target.href;
-                pointerDownFlags.value = {
-                    altKey: !!event.altKey,
-                    ctrlKey: !!event.ctrlKey,
-                    shiftKey: !!event.shiftKey,
-                    metaKey: !!event.metaKey
-                };
-            }
-
-            document.addEventListener("keydown", function(event) {
-                if (event.metaKey) {
-                    isCommandPressed.value = true;
-                    if (currentHoveredLink) {
-                        sendHover("commandHover", currentHoveredLink);
-                    }
-                }
-            }, true);
-
-            document.addEventListener("keyup", function(event) {
-                if (!event.metaKey) {
-                    isCommandPressed.value = false;
-                    sendHover("commandHover", null);
-                }
-            }, true);
 
             function updateHoveredLink(link) {
                 const href = link && link.href ? link.href : null;
@@ -274,11 +202,6 @@ private final class SumiLinkInteractionUserScript: NSObject, UserScript, UserScr
 
                 currentHoveredLink = href;
                 sendHover("linkHover", href);
-                if (isCommandPressed.value) {
-                    sendHover("commandHover", href);
-                } else if (!href) {
-                    sendHover("commandHover", null);
-                }
             }
 
             document.addEventListener("mouseover", function(event) {
@@ -297,40 +220,6 @@ private final class SumiLinkInteractionUserScript: NSObject, UserScript, UserScr
 
                 updateHoveredLink(null);
             }, { passive: true, capture: true });
-
-            document.addEventListener("mousedown", capturePointerDown, true);
-
-            document.addEventListener("click", function(event) {
-                const target = findLinkTarget(event.target);
-                if (!target || event.button !== 0 || event.defaultPrevented || !hasSingleModifier(event)) {
-                    pointerDownLink.value = null;
-                    pointerDownFlags.value = null;
-                    return;
-                }
-
-                const shouldOpenInGlance = matchesGlanceModifier(event);
-                const shouldOpenInNewTab = event.metaKey && glanceActivationMethod !== "meta";
-                if (!shouldOpenInGlance && !shouldOpenInNewTab) {
-                    return;
-                }
-
-                event.preventDefault();
-                event.stopPropagation();
-                if (event.stopImmediatePropagation) {
-                    event.stopImmediatePropagation();
-                }
-
-                post("commandClick", {
-                    href: pointerDownLink.value || target.href,
-                    altKey: pointerDownFlags.value ? pointerDownFlags.value.altKey : !!event.altKey,
-                    ctrlKey: pointerDownFlags.value ? pointerDownFlags.value.ctrlKey : !!event.ctrlKey,
-                    shiftKey: pointerDownFlags.value ? pointerDownFlags.value.shiftKey : !!event.shiftKey,
-                    metaKey: pointerDownFlags.value ? pointerDownFlags.value.metaKey : !!event.metaKey
-                });
-                pointerDownLink.value = null;
-                pointerDownFlags.value = null;
-                return false;
-            }, true);
         })();
         """
     }
@@ -379,20 +268,6 @@ private final class SumiLinkInteractionSubfeature: NSObject, Subfeature {
                 self?.tab?.onLinkHover?(payload.href)
                 return SumiJSONValue.object(["accepted": .bool(true)])
             }
-        case "commandHover":
-            return { [weak self] params, _ in
-                guard let payload = SumiHrefPayload.decode(from: params) else { return nil }
-                self?.tab?.onCommandHover?(payload.href)
-                return SumiJSONValue.object(["accepted": .bool(true)])
-            }
-        case "commandClick":
-            return { [weak self] params, _ in
-                guard let payload = SumiCommandClickPayload.decode(from: params),
-                      let url = URL(string: payload.href)
-                else { return nil }
-                self?.tab?.handleModifiedLinkClick(url: url, flags: payload.modifierFlags)
-                return SumiJSONValue.object(["accepted": .bool(true)])
-            }
         default:
             return nil
         }
@@ -412,37 +287,6 @@ private struct SumiHrefPayload {
         }
         guard let href = value as? String else { return nil }
         return SumiHrefPayload(href: href)
-    }
-}
-
-private struct SumiCommandClickPayload {
-    let href: String
-    let altKey: Bool
-    let ctrlKey: Bool
-    let shiftKey: Bool
-    let metaKey: Bool
-
-    var modifierFlags: NSEvent.ModifierFlags {
-        var flags: NSEvent.ModifierFlags = []
-        if altKey { flags.insert(.option) }
-        if ctrlKey { flags.insert(.control) }
-        if shiftKey { flags.insert(.shift) }
-        if metaKey { flags.insert(.command) }
-        return flags
-    }
-
-    static func decode(from params: Any) -> SumiCommandClickPayload? {
-        guard let dictionary = params as? [String: Any],
-              let href = dictionary["href"] as? String
-        else { return nil }
-
-        return SumiCommandClickPayload(
-            href: href,
-            altKey: dictionary["altKey"] as? Bool ?? false,
-            ctrlKey: dictionary["ctrlKey"] as? Bool ?? false,
-            shiftKey: dictionary["shiftKey"] as? Bool ?? false,
-            metaKey: dictionary["metaKey"] as? Bool ?? false
-        )
     }
 }
 

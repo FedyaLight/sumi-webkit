@@ -368,7 +368,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     // MARK: - Link Hover Callback
     var onLinkHover: ((String?) -> Void)? = nil
-    var onCommandHover: ((String?) -> Void)? = nil
 
     private var navigationStateObservedWebViews: NSHashTable<AnyObject> {
         navigationRuntime.observedWebViews
@@ -427,6 +426,13 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         guard age >= 0, age <= maxAge else { return nil }
         let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
         return flags.isEmpty ? nil : flags
+    }
+
+    func recentWebViewMouseDownModifierFlags(maxAge: TimeInterval = 1.0) -> NSEvent.ModifierFlags? {
+        guard let event = lastWebViewInteractionEvent,
+              event.type == .leftMouseDown || event.type == .otherMouseDown
+        else { return nil }
+        return recentWebViewInteractionModifierFlags(maxAge: maxAge)
     }
 
     func popupPermissionTabContext(for webView: WKWebView) -> SumiPopupPermissionTabContext? {

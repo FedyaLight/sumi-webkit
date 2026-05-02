@@ -1,5 +1,5 @@
 //
-//  PeekOverlayView.swift
+//  GlanceOverlayView.swift
 //  Sumi
 //
 //  Created by Jonathan Caudill on 24/09/2025.
@@ -8,15 +8,15 @@
 import SwiftUI
 import AppKit
 
-struct PeekOverlayView: View {
-    @EnvironmentObject private var peekManager: PeekManager
+struct GlanceOverlayView: View {
+    @EnvironmentObject private var glanceManager: GlanceManager
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(BrowserWindowState.self) private var windowState
-    @State private var webView: PeekWebView?
+    @State private var webView: GlanceWebView?
 
-    private var session: PeekSession? {
-        peekManager.currentSession
+    private var session: GlanceSession? {
+        glanceManager.currentSession
     }
 
     private var currentSpaceColor: Color {
@@ -28,7 +28,7 @@ struct PeekOverlayView: View {
             backgroundOverlay
 
             if session != nil {
-                peekContent()
+                glanceContent()
                     .zIndex(1000)
             } else {
                 RoundedRectangle(cornerRadius: 16)
@@ -51,7 +51,7 @@ struct PeekOverlayView: View {
             .contentShape(Rectangle())
             .allowsHitTesting(true)
             .onTapGesture {
-                peekManager.dismissPeek(reason: .close)
+                glanceManager.dismissGlance(reason: .close)
             }
     }
 
@@ -60,7 +60,7 @@ struct PeekOverlayView: View {
     }
 
     @ViewBuilder
-    private func peekContent() -> some View {
+    private func glanceContent() -> some View {
         GeometryReader { geometry in
             let frame = calculateLayout(geometry: geometry)
 
@@ -98,12 +98,12 @@ struct PeekOverlayView: View {
         .allowsHitTesting(true)
         .onAppear {
             if webView == nil {
-                if let preCreatedWebView = peekManager.webView {
+                if let preCreatedWebView = glanceManager.webView {
                     webView = preCreatedWebView
                 } else {
-                    let peekWebView = peekManager.createWebView()
-                    webView = peekWebView
-                    peekManager.updateWebView(peekWebView)
+                    let glanceWebView = glanceManager.createWebView()
+                    webView = glanceWebView
+                    glanceManager.updateWebView(glanceWebView)
                 }
             }
         }
@@ -115,7 +115,7 @@ struct PeekOverlayView: View {
             // Close button
             actionButton(
                 icon: "xmark",
-                action: { peekManager.dismissPeek(reason: .close) },
+                action: { glanceManager.dismissGlance(reason: .close) },
                 color: currentSpaceColor,
                 accessibilityID: "glance-close"
             )
@@ -123,16 +123,16 @@ struct PeekOverlayView: View {
             // Split view button (disabled if already in split view)
             actionButton(
                 icon: "square.split.2x1",
-                action: { peekManager.moveToSplitView() },
+                action: { glanceManager.moveToSplitView() },
                 color: currentSpaceColor,
-                disabled: !peekManager.canEnterSplitView,
+                disabled: !glanceManager.canEnterSplitView,
                 accessibilityID: "glance-send-to-split"
             )
 
             // New tab button
             actionButton(
                 icon: "plus.square.on.square",
-                action: { peekManager.moveToNewTab() },
+                action: { glanceManager.moveToNewTab() },
                 color: currentSpaceColor,
                 accessibilityID: "glance-open-in-tab"
             )
@@ -206,15 +206,15 @@ struct PeekOverlayView: View {
 
         // Center within the web area (excluding sidebar) with 60pt margins
         let horizontalMargin: CGFloat = 60
-        let peekWidth = max(0, webAreaWidth - (horizontalMargin * 2))
-        let peekXWithinWebArea = (webAreaWidth - peekWidth) / 2 // equals horizontalMargin
+        let glanceWidth = max(0, webAreaWidth - (horizontalMargin * 2))
+        let glanceXWithinWebArea = (webAreaWidth - glanceWidth) / 2 // equals horizontalMargin
 
-        let peekX = sidebarWidth + peekXWithinWebArea
+        let glanceX = sidebarWidth + glanceXWithinWebArea
 
         return CGRect(
-            x: peekX,
+            x: glanceX,
             y: 0,
-            width: peekWidth,
+            width: glanceWidth,
             height: webViewHeight
         )
     }

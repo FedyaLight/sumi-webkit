@@ -330,7 +330,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertFalse(faviconSource.contains("normalTabWebViewConfiguration("))
 
         for relativePath in [
-            "Sumi/Managers/PeekManager/PeekWebView.swift",
+            "Sumi/Managers/GlanceManager/GlanceWebView.swift",
             "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
             "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift",
         ] {
@@ -366,7 +366,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertTrue(coordinatorSource.contains("tab.makeNormalTabWebView"))
         XCTAssertFalse(coordinatorSource.contains("normalTabWebViewConfiguration"))
         XCTAssertFalse(coordinatorSource.contains("auxiliaryWebViewConfiguration"))
-        XCTAssertFalse(coordinatorSource.contains("surface: .peek"))
+        XCTAssertFalse(coordinatorSource.contains("surface: .glance"))
         XCTAssertFalse(coordinatorSource.contains("FocusableWKWebView(frame: .zero"))
     }
 

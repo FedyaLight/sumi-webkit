@@ -31,7 +31,7 @@ struct SumiApp: App {
                 .ignoresSafeArea(.all)
                 .writingToolsBehavior(.disabled)
                 .environmentObject(browserManager)
-                .environmentObject(browserManager.peekManager)
+                .environmentObject(browserManager.glanceManager)
                 .environmentObject(browserManager.extensionSurfaceStore)
                 .environment(windowRegistry)
                 .environment(webViewCoordinator)

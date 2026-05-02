@@ -1192,7 +1192,7 @@ class TabManager: ObservableObject {
         return newTab
     }
 
-    // Create a new tab with an existing WebView (used for Peek transfers)
+    // Create a new tab with an existing WebView (used for Glance transfers)
     @discardableResult
     func createNewTabWithWebView(
         url: String = SumiSurface.emptyTabURL.absoluteString,

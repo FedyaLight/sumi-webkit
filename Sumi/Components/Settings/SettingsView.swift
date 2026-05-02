@@ -73,21 +73,6 @@ struct SumiProfilesSettingsPane: View {
                             .toggleStyle(.switch)
                     }
 
-                    SettingsDivider()
-
-                    SettingsRow(
-                        title: "Glance trigger",
-                        subtitle: "Modifier used to open link previews."
-                    ) {
-                        Picker("", selection: $settings.glanceActivationMethod) {
-                            ForEach(GlanceActivationMethod.allCases) { method in
-                                Text(method.displayName).tag(method)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 170)
-                    }
-
                     SettingsRow(
                         title: "Pinned launcher style",
                         subtitle: "Controls the visual density of pinned launchers."
