@@ -22,6 +22,12 @@ enum SumiWebViewInteractionEvent {
 
 @MainActor
 final class FocusableWKWebView: WKWebView {
+    private static let webKitMouseTrackingLoadSheddingEnabled = true
+    private static let webKitMouseTrackingObserverClassName = "WKMouseTrackingObserver"
+
+    private var webKitMouseTrackingLoadSheddingObserver: NSKeyValueObservation?
+    private var webKitMouseTrackingArea: NSTrackingArea?
+
     weak var owningTab: Tab?
     let interactionEventsPublisher = PassthroughSubject<SumiWebViewInteractionEvent, Never>()
 
@@ -33,6 +39,63 @@ final class FocusableWKWebView: WKWebView {
     required init?(coder: NSCoder) {
         _ = Self.swizzleImmediateActionAnimationControllerOnce
         super.init(coder: coder)
+    }
+
+    deinit {
+        webKitMouseTrackingLoadSheddingObserver?.invalidate()
+    }
+
+    override func addTrackingArea(_ trackingArea: NSTrackingArea) {
+        guard Self.webKitMouseTrackingLoadSheddingEnabled,
+              trackingArea.owner?.className == Self.webKitMouseTrackingObserverClassName
+        else {
+            super.addTrackingArea(trackingArea)
+            return
+        }
+
+        installWebKitMouseTrackingLoadShedding(for: trackingArea)
+        if !trackingAreas.contains(trackingArea) {
+            super.addTrackingArea(trackingArea)
+        }
+        scheduleWebKitMouseTrackingLoadSheddingRefresh(for: trackingArea)
+    }
+
+    private func installWebKitMouseTrackingLoadShedding(for trackingArea: NSTrackingArea) {
+        guard webKitMouseTrackingArea !== trackingArea ||
+              webKitMouseTrackingLoadSheddingObserver == nil
+        else { return }
+
+        webKitMouseTrackingLoadSheddingObserver?.invalidate()
+        webKitMouseTrackingArea = trackingArea
+        webKitMouseTrackingLoadSheddingObserver = observe(\.isLoading, options: [.new]) { [weak self, trackingArea] _, change in
+            guard let isLoading = change.newValue else { return }
+            Task { @MainActor [weak self, trackingArea] in
+                guard let self, self.webKitMouseTrackingArea === trackingArea else { return }
+                self.updateWebKitMouseTrackingArea(trackingArea, isLoading: isLoading)
+            }
+        }
+    }
+
+    private func scheduleWebKitMouseTrackingLoadSheddingRefresh(for trackingArea: NSTrackingArea) {
+        Task { @MainActor [weak self, trackingArea] in
+            guard let self, self.webKitMouseTrackingArea === trackingArea else { return }
+            let currentIsLoading = self.isLoading
+            self.updateWebKitMouseTrackingArea(trackingArea, isLoading: currentIsLoading)
+        }
+    }
+
+    private func updateWebKitMouseTrackingArea(_ trackingArea: NSTrackingArea, isLoading: Bool) {
+        if isLoading {
+            guard trackingAreas.contains(trackingArea) else { return }
+            removeTrackingArea(trackingArea)
+        } else {
+            guard !trackingAreas.contains(trackingArea) else { return }
+            superAddTrackingArea(trackingArea)
+        }
+    }
+
+    private func superAddTrackingArea(_ trackingArea: NSTrackingArea) {
+        super.addTrackingArea(trackingArea)
     }
 
     override func mouseDown(with event: NSEvent) {

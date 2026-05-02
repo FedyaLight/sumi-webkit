@@ -1,3 +1,5 @@
+import AppKit
+import WebKit
 import XCTest
 @testable import Sumi
 
@@ -84,6 +86,56 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertTrue(webViewSource.contains("swizzled_immediateActionAnimationController"))
     }
 
+    func testFocusableWebViewContainsDDGMouseTrackingLoadSheddingHook() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Utils/WebKit/FocusableWKWebView.swift"
+            ),
+            encoding: .utf8
+        )
+        let start = try XCTUnwrap(source.range(of: "final class FocusableWKWebView"))
+            .lowerBound
+        let end = try XCTUnwrap(source.range(of: "@MainActor\nextension WKWebView"))
+            .lowerBound
+        let webViewSource = String(source[start..<end])
+
+        XCTAssertTrue(webViewSource.contains("webKitMouseTrackingLoadSheddingEnabled"))
+        XCTAssertTrue(webViewSource.contains("override func addTrackingArea(_ trackingArea: NSTrackingArea)"))
+        XCTAssertTrue(webViewSource.contains("WKMouseTrackingObserver"))
+        XCTAssertTrue(webViewSource.contains("observe(\\.isLoading"))
+        XCTAssertTrue(webViewSource.contains("webKitMouseTrackingLoadSheddingObserver?.invalidate()"))
+        XCTAssertTrue(webViewSource.contains("webKitMouseTrackingArea === trackingArea"))
+        XCTAssertTrue(webViewSource.contains("Task { @MainActor"))
+        XCTAssertTrue(webViewSource.contains("guard trackingAreas.contains(trackingArea)"))
+        XCTAssertTrue(webViewSource.contains("guard !trackingAreas.contains(trackingArea)"))
+        XCTAssertTrue(webViewSource.contains("removeTrackingArea(trackingArea)"))
+        XCTAssertTrue(webViewSource.contains("superAddTrackingArea(trackingArea)"))
+        XCTAssertFalse(webViewSource.contains("_ignoresMouseMoveEvents"))
+        XCTAssertFalse(webViewSource.contains("ignoresMouseMoveEvents"))
+    }
+
+    func testFocusableWebViewDoesNotDuplicateWebKitMouseTrackingObserverArea() {
+        let webView = FocusableWKWebView(
+            frame: NSRect(x: 0, y: 0, width: 320, height: 240),
+            configuration: WKWebViewConfiguration()
+        )
+        let owner = FakeWebKitMouseTrackingObserver()
+        let trackingArea = NSTrackingArea(
+            rect: webView.bounds,
+            options: [.activeAlways, .mouseMoved],
+            owner: owner,
+            userInfo: nil
+        )
+
+        webView.addTrackingArea(trackingArea)
+        webView.addTrackingArea(trackingArea)
+
+        XCTAssertEqual(webView.trackingAreas.filter { $0 === trackingArea }.count, 1)
+    }
+
     func testWebViewContainerLayoutDoesNotReparentDisplayedContent() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -144,5 +196,11 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(containerSource.contains("masksToBounds"))
         XCTAssertFalse(containerSource.contains("cornerRadius"))
         XCTAssertFalse(containerSource.contains("override var isOpaque"))
+    }
+}
+
+private final class FakeWebKitMouseTrackingObserver: NSObject {
+    override var className: String {
+        "WKMouseTrackingObserver"
     }
 }
