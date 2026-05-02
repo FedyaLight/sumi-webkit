@@ -337,6 +337,11 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
             )
         }
 
+        WebContentProcessDisplayNameProvider.apply(
+            WebContentProcessDisplayNameProvider.popup,
+            to: configuration
+        )
+
         let childTab = browserManager.createPopupTab(
             from: tab,
             activate: policy.shouldActivateTab
