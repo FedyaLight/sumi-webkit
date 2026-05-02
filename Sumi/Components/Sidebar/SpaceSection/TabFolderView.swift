@@ -80,12 +80,6 @@ struct TabFolderView: View {
             : displayedCollapsedProjectionIDs
     }
 
-    private var visibleCollapsedProjectionPins: [ShortcutPin] {
-        visibleCollapsedProjectionIDs.compactMap { pinId in
-            shortcutPinsInFolder.first { $0.id == pinId }
-        }
-    }
-
     private var visibleFolderBodyItems: [FolderListItem] {
         folder.isOpen
             ? folderItems

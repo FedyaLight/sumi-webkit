@@ -19,12 +19,9 @@
 import Foundation
 import Combine
 import Common
-import BrowserServicesKit
 import os.log
 
 protocol FaviconReferenceCaching {
-
-    init(faviconStoring: FaviconStoring)
 
     // References to favicon URLs for whole domains
     @MainActor

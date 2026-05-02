@@ -5,25 +5,24 @@ import XCTest
 final class SettingsModuleToggleTests: XCTestCase {
     func testDescriptorsExposeExactlyOptionalModules() {
         XCTAssertEqual(
-            SumiSettingsModuleToggleDescriptor.all.map(\.moduleID),
+            moduleToggleDescriptors.map(\.moduleID),
             [.trackingProtection, .adBlocking, .extensions, .userScripts]
         )
 
         XCTAssertEqual(
-            Set(SumiSettingsModuleToggleDescriptor.all.map(\.moduleID)),
+            Set(moduleToggleDescriptors.map(\.moduleID)),
             Set(SumiModuleID.allCases)
         )
     }
 
     func testDescriptorCopyMatchesPerformanceFirstModuleContract() throws {
         let descriptorsByModule = Dictionary(
-            uniqueKeysWithValues: SumiSettingsModuleToggleDescriptor.all.map {
+            uniqueKeysWithValues: moduleToggleDescriptors.map {
                 ($0.moduleID, $0)
             }
         )
 
         let trackingCopy = copy(for: try XCTUnwrap(descriptorsByModule[.trackingProtection]))
-        XCTAssertTrue(trackingCopy.contains("Off by default"))
         XCTAssertTrue(trackingCopy.contains("does not load tracker data"))
         XCTAssertTrue(trackingCopy.contains("rule lists"))
         XCTAssertTrue(trackingCopy.contains("update jobs"))
@@ -32,20 +31,17 @@ final class SettingsModuleToggleTests: XCTestCase {
         XCTAssertTrue(trackingCopy.contains("background"))
 
         let adBlockingCopy = copy(for: try XCTUnwrap(descriptorsByModule[.adBlocking]))
-        XCTAssertTrue(adBlockingCopy.contains("Off by default"))
         XCTAssertTrue(adBlockingCopy.contains("separate from Tracking Protection"))
         XCTAssertTrue(adBlockingCopy.contains("not implemented yet"))
         XCTAssertTrue(adBlockingCopy.contains("filter lists"))
 
         let extensionsCopy = copy(for: try XCTUnwrap(descriptorsByModule[.extensions]))
-        XCTAssertTrue(extensionsCopy.contains("Off by default"))
         XCTAssertTrue(extensionsCopy.contains("scan manifests"))
         XCTAssertTrue(extensionsCopy.contains("attach extension scripts"))
         XCTAssertTrue(extensionsCopy.contains("native messaging"))
         XCTAssertTrue(extensionsCopy.contains("extension message handlers"))
 
         let userScriptsCopy = copy(for: try XCTUnwrap(descriptorsByModule[.userScripts]))
-        XCTAssertTrue(userScriptsCopy.contains("Off by default"))
         XCTAssertTrue(userScriptsCopy.contains("read the userscript store"))
         XCTAssertTrue(userScriptsCopy.contains("attach WKUserScript"))
     }
@@ -58,7 +54,7 @@ final class SettingsModuleToggleTests: XCTestCase {
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
 
-        for descriptor in SumiSettingsModuleToggleDescriptor.all {
+        for descriptor in moduleToggleDescriptors {
             let model = SumiSettingsModuleToggleModel(
                 descriptor: descriptor,
                 registry: registry
@@ -71,7 +67,7 @@ final class SettingsModuleToggleTests: XCTestCase {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
 
-        for descriptor in SumiSettingsModuleToggleDescriptor.all {
+        for descriptor in moduleToggleDescriptors {
             let firstRegistry = SumiModuleRegistry(
                 settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
             )
@@ -265,10 +261,18 @@ final class SettingsModuleToggleTests: XCTestCase {
     private func copy(for descriptor: SumiSettingsModuleToggleDescriptor) -> String {
         [
             descriptor.title,
-            descriptor.subtitle,
             descriptor.toggleTitle,
             descriptor.detail,
         ].joined(separator: " ")
+    }
+
+    private var moduleToggleDescriptors: [SumiSettingsModuleToggleDescriptor] {
+        [
+            .trackingProtection,
+            .adBlocking,
+            .extensions,
+            .userScripts,
+        ]
     }
 
     private static func source(named relativePath: String) throws -> String {

@@ -28,10 +28,6 @@ final class SumiNormalTabUserScripts: UserScriptsProvider {
         managedUserScripts = userScripts
     }
 
-    func replaceContentBlockingUserScripts(_ userScripts: [UserScript]) {
-        contentBlockingUserScripts = userScripts
-    }
-
     func loadWKUserScripts() async -> [WKUserScript] {
         var scripts: [WKUserScript] = []
         scripts.reserveCapacity(userScripts.count)

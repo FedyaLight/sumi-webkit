@@ -7,12 +7,6 @@ enum BrowserWindowControlsAccessibilityIdentifiers {
     static let zoomButton = "browser-window-zoom-button"
     static let miniBrowserWindow = "mini-browser-window"
 
-    static let allButtonIdentifiers: Set<String> = [
-        closeButton,
-        minimizeButton,
-        zoomButton,
-    ]
-
     static func identifier(for buttonType: NSWindow.ButtonType) -> String? {
         switch buttonType {
         case .closeButton:

@@ -21,11 +21,7 @@ import Foundation
 import CoreData
 import os.log
 
-protocol DomainFireproofStatusProviding {
-    func isFireproof(fireproofDomain domain: String) -> Bool
-}
-
-internal class FireproofDomains: DomainFireproofStatusProviding {
+internal class FireproofDomains {
 
     enum Constants {
         static let allowedDomainsChangedNotification = Notification.Name("allowedDomainsChangedNotification")
@@ -58,10 +54,6 @@ internal class FireproofDomains: DomainFireproofStatusProviding {
         didSet {
             NotificationCenter.default.post(name: Constants.allowedDomainsChangedNotification, object: self)
         }
-    }
-
-    var fireproofDomains: [String] {
-        container.domains
     }
 
     init(store: FireproofDomainsStore, tld: TLD, defaults: UserDefaults = .standard) {
@@ -113,16 +105,6 @@ internal class FireproofDomains: DomainFireproofStatusProviding {
         }
     }
 
-    func toggle(domain: String) -> Bool {
-        dispatchPrecondition(condition: .onQueue(.main))
-        if isFireproof(fireproofDomain: domain) {
-            remove(domain: domain)
-            return false
-        }
-        add(domain: domain)
-        return true
-    }
-
     func add(domain: String, notify: Bool = true) {
         dispatchPrecondition(condition: .onQueue(.main))
 
@@ -152,19 +134,6 @@ internal class FireproofDomains: DomainFireproofStatusProviding {
         }
     }
 
-    /// Validates and normalizes arbitrary user input (URL or host) into an eTLD+1 host.
-    /// Returns nil if the input is empty, invalid, or already fireproofed.
-    func normalizedHost(fromUserInput input: String) -> String? {
-        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
-              let url = URL(trimmedAddressBarString: trimmed),
-              let scheme = url.navigationalScheme,
-              scheme == .http || scheme == .https
-        else { return nil }
-        let eTLDPlus1Domain = tld.eTLDplus1(url.host) ?? url.host
-        return eTLDPlus1Domain
-    }
-
     func remove(domain: String, changeToETLDPlus1: Bool = true) {
         dispatchPrecondition(condition: .onQueue(.main))
 
@@ -188,29 +157,8 @@ internal class FireproofDomains: DomainFireproofStatusProviding {
         }
     }
 
-    func clearAll() {
-        dispatchPrecondition(condition: .onQueue(.main))
-        container = FireproofDomainsContainer()
-        store.clear()
-    }
-
-    func isFireproof(cookieDomain: String) -> Bool {
-        let domainWithoutDotPrefix = cookieDomain.dropping(prefix: ".")
-        let eTLDPlus1Domain = tld.eTLDplus1(domainWithoutDotPrefix) ?? domainWithoutDotPrefix
-
-        return container.contains(domain: eTLDPlus1Domain)
-    }
-
     func isFireproof(fireproofDomain domain: String) -> Bool {
         let eTLDPlus1Domain = tld.eTLDplus1(domain) ?? domain
         return container.contains(domain: eTLDPlus1Domain)
     }
-
-    func isURLFireproof(url: URL) -> Bool {
-        guard let host = url.host else {
-            return false
-        }
-        return isFireproof(fireproofDomain: host)
-    }
-
 }

@@ -17,7 +17,6 @@
 //
 
 import Bookmarks
-import BrowserServicesKit
 import Cocoa
 import Combine
 import Common
@@ -39,16 +38,8 @@ protocol FaviconManagement: AnyObject {
     @MainActor
     var isCacheLoaded: Bool { get }
 
-    var faviconsLoadedPublisher: Published<Bool>.Publisher { get }
-
     @MainActor
     func handleFaviconLinks(_ faviconLinks: [FaviconUserScript.FaviconLink], documentUrl: URL, webView: WKWebView?) async -> Favicon?
-
-    @MainActor
-    func handleFaviconsByDocumentUrl(_ faviconsByDocumentUrl: [URL: [Favicon]]) async
-
-    @MainActor
-    func getCachedFaviconURL(for documentUrl: URL, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) -> URL?
 
     @MainActor
     func getCachedFavicon(for documentUrl: URL, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) -> Favicon?
@@ -58,16 +49,6 @@ protocol FaviconManagement: AnyObject {
 
     @MainActor
     func getCachedFavicon(forDomainOrAnySubdomain domain: String, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) -> Favicon?
-
-    @MainActor
-    func burn(except: FireproofDomains, bookmarkManager: BookmarkManager, savedLogins: Set<String>) async -> Result<Void, Error>
-
-    @MainActor
-    func burnDomains(_ domains: Set<String>,
-                     exceptBookmarks bookmarkManager: BookmarkManager,
-                     exceptSavedLogins: Set<String>,
-                     exceptExistingHistory history: BrowsingHistory,
-                     tld: TLD) async -> Result<Void, Error>
 }
 
 /**
@@ -76,26 +57,6 @@ protocol FaviconManagement: AnyObject {
  * All functions in this extension call their more verbose equivalents with `fallBackToSmaller = false`.
  */
 extension FaviconManagement {
-    @MainActor
-    func getCachedFaviconURL(for documentUrl: URL, sizeCategory: Favicon.SizeCategory) -> URL? {
-        getCachedFaviconURL(for: documentUrl, sizeCategory: sizeCategory, fallBackToSmaller: false)
-    }
-
-    @MainActor
-    func getCachedFavicon(for documentUrl: URL, sizeCategory: Favicon.SizeCategory) -> Favicon? {
-        getCachedFavicon(for: documentUrl, sizeCategory: sizeCategory, fallBackToSmaller: false)
-    }
-
-    @MainActor
-    func getCachedFavicon(for host: String, sizeCategory: Favicon.SizeCategory) -> Favicon? {
-        getCachedFavicon(for: host, sizeCategory: sizeCategory, fallBackToSmaller: false)
-    }
-
-    @MainActor
-    func getCachedFavicon(forDomainOrAnySubdomain domain: String, sizeCategory: Favicon.SizeCategory) -> Favicon? {
-        getCachedFavicon(forDomainOrAnySubdomain: domain, sizeCategory: sizeCategory, fallBackToSmaller: false)
-    }
-
     @MainActor
     func getCachedFavicon(forUrlOrAnySubdomain documentUrl: URL, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) -> Favicon? {
         if let favicon = getCachedFavicon(for: documentUrl, sizeCategory: sizeCategory, fallBackToSmaller: fallBackToSmaller) {
@@ -124,7 +85,6 @@ final class FaviconManager: FaviconManagement {
     private let faviconDownloader: any FaviconDownloading
 
     @Published private var faviconsLoaded = false
-    var faviconsLoadedPublisher: Published<Bool>.Publisher { $faviconsLoaded }
 
     var isCacheLoaded: Bool {
         imageCache.loaded && referenceCache.loaded
@@ -256,32 +216,6 @@ final class FaviconManager: FaviconManagement {
     }
 
     @MainActor
-    func handleLiveFaviconLinks(_ faviconLinks: [FaviconUserScript.FaviconLink], documentUrl: URL, webView: WKWebView?) async -> Favicon? {
-        await handleFaviconLinks(faviconLinks, documentUrl: documentUrl, webView: webView)
-    }
-
-    @MainActor
-    func loadFavicon(for documentUrl: URL, webView: WKWebView?) async -> Favicon? {
-        await handleFaviconLinks([], documentUrl: documentUrl, webView: webView)
-    }
-
-    func handleFaviconsByDocumentUrl(_ faviconsByDocumentUrl: [URL: [Favicon]]) async {
-        // Insert new favicons to cache
-        imageCache.insert(faviconsByDocumentUrl.values.reduce([], +))
-
-        // Pick most suitable favicons
-        for (documentUrl, newFavicons) in faviconsByDocumentUrl {
-            let weekAgo = Date.weekAgo
-            let cachedFavicons = imageCache.getFavicons(with: newFavicons.lazy.map(\.url))?
-                .filter { favicon in
-                    favicon.dateCreated > weekAgo
-                }
-
-            await handleFaviconReferenceCacheInsertion(documentURL: documentUrl, cachedFavicons: cachedFavicons ?? [], newFavicons: newFavicons)
-        }
-    }
-
-    @MainActor
     func clearAll() {
         imageCache.clearAllInMemory(markLoaded: true)
         referenceCache.clearAllInMemory(markLoaded: true)
@@ -307,12 +241,6 @@ final class FaviconManager: FaviconManagement {
 
         guard let host = documentURL.host else { return nil }
         return getCachedFavicon(for: host, sizeCategory: .small, fallBackToSmaller: true)?.image
-    }
-
-    @MainActor
-    func cacheStats() -> (count: Int, domains: [String]) {
-        let domains = Set(referenceCache.hostReferences.keys)
-        return (domains.count, Array(domains).sorted())
     }
 
     @MainActor
@@ -352,16 +280,6 @@ final class FaviconManager: FaviconManagement {
         } else {
             return currentFavicon
         }
-    }
-
-    func getCachedFaviconURL(for documentUrl: URL, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) -> URL? {
-        guard let faviconURL = referenceCache.getFaviconUrl(for: documentUrl, sizeCategory: sizeCategory) else {
-            guard fallBackToSmaller, let smallerSizeCategory = sizeCategory.smaller else {
-                return nil
-            }
-            return getCachedFaviconURL(for: documentUrl, sizeCategory: smallerSizeCategory, fallBackToSmaller: fallBackToSmaller)
-        }
-        return faviconURL
     }
 
     func getCachedFavicon(for documentUrl: URL, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) -> Favicon? {
@@ -585,16 +503,6 @@ fileprivate extension NSImage {
         let rep = NSCIImageRep(ciImage: ciImage)
         self.init(size: rep.size)
         addRepresentation(rep)
-    }
-}
-
-extension NSImage {
-    /// Returns a `data:image/png;base64,...` string for this image, or nil if encoding fails.
-    var base64PNGDataURL: String? {
-        guard let cgImage = cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
-        let bitmapRep = NSBitmapImageRep(cgImage: cgImage)
-        guard let pngData = bitmapRep.representation(using: .png, properties: [:]) else { return nil }
-        return "data:image/png;base64,\(pngData.base64EncodedString())"
     }
 }
 

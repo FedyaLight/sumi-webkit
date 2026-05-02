@@ -1,6 +1,5 @@
 import AppKit
 import Bookmarks
-import BrowserServicesKit
 import Combine
 import Common
 import CoreData
@@ -8,7 +7,6 @@ import Foundation
 import History
 import Persistence
 import PrivacyConfig
-import UserScript
 import WebKit
 
 enum SumiFaviconLookupKey {
@@ -463,11 +461,6 @@ final class SumiFaviconSystem {
             return favicon.image
         }
         return nil
-    }
-
-    func cacheStats() -> (count: Int, domains: [String]) {
-        let domains = Set(bookmarkMirror.allHosts())
-        return (domains.count, Array(domains).sorted())
     }
 
     func clearAll() {

@@ -7,7 +7,4 @@ enum SidebarChromeMetrics {
     static let controlSpacing: CGFloat = 0
     static let navigationButtonSize: CGFloat = 30
     static let navigationIconSize: CGFloat = 14
-    static let trafficLightLeadingOffset: CGFloat = 0
-    static let nativeTrafficLightHorizontalOffset: CGFloat = 9
-    static let nativeTrafficLightVerticalOffset: CGFloat = 5
 }

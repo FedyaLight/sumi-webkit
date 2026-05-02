@@ -430,7 +430,7 @@ private struct SumiWebKitGeolocationManagerHandle {
 }
 
 private func sumiGeolocationProviderStartUpdating(
-    geolocationManager: UnsafeRawPointer?,
+    _: UnsafeRawPointer?,
     clientInfo: UnsafeRawPointer?
 ) {
     guard let clientInfo else { return }
@@ -443,7 +443,7 @@ private func sumiGeolocationProviderStartUpdating(
 }
 
 private func sumiGeolocationProviderStopUpdating(
-    geolocationManager: UnsafeRawPointer?,
+    _: UnsafeRawPointer?,
     clientInfo: UnsafeRawPointer?
 ) {
     guard let clientInfo else { return }
@@ -456,7 +456,7 @@ private func sumiGeolocationProviderStopUpdating(
 }
 
 private func sumiGeolocationProviderSetEnableHighAccuracy(
-    geolocationManager: UnsafeRawPointer?,
+    _: UnsafeRawPointer?,
     enabled: Bool,
     clientInfo: UnsafeRawPointer?
 ) {
