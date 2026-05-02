@@ -15,6 +15,19 @@ enum BrowserConfigurationAuxiliarySurface: String, CaseIterable {
     case miniWindow
     case extensionOptions
 
+    var sumiWebContentProcessDisplayName: String {
+        switch self {
+        case .faviconDownload:
+            return "Sumi Web Content (Favicon)"
+        case .glance:
+            return "Sumi Web Content (Peek)"
+        case .miniWindow:
+            return "Sumi Web Content (Mini Window)"
+        case .extensionOptions:
+            return "Sumi Web Content (Extension Options)"
+        }
+    }
+
     var allowsJavaScript: Bool {
         switch self {
         case .faviconDownload:
@@ -116,7 +129,12 @@ class BrowserConfiguration {
     }
 
     lazy var webViewConfiguration: WKWebViewConfiguration = {
-        makeBaseWebViewConfiguration()
+        let config = makeBaseWebViewConfiguration()
+        WebContentProcessDisplayNameProvider.apply(
+            WebContentProcessDisplayNameProvider.auxiliaryTemplate,
+            to: config
+        )
+        return config
     }()
 
     var normalTabProcessPool: WKProcessPool {
@@ -144,6 +162,10 @@ class BrowserConfiguration {
             )
         applyAutoplayPolicy(
             autoplayPolicy ?? resolvedAutoplayPolicy(for: url, profile: profile),
+            to: config
+        )
+        WebContentProcessDisplayNameProvider.apply(
+            WebContentProcessDisplayNameProvider.normalTab,
             to: config
         )
         return config
@@ -187,6 +209,10 @@ class BrowserConfiguration {
             config.webExtensionController = source.webExtensionController
         }
 
+        WebContentProcessDisplayNameProvider.apply(
+            surface.sumiWebContentProcessDisplayName,
+            to: config
+        )
         return config
     }
 
