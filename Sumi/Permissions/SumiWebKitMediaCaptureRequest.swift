@@ -4,10 +4,8 @@ import WebKit
 
 struct SumiWebKitMediaCaptureRequest: Sendable {
     let id: String
-    let webKitMediaTypeRawValue: Int
     let permissionTypes: [SumiPermissionType]
     let requestingOrigin: SumiPermissionOrigin
-    let frameURL: URL?
     let isMainFrame: Bool
 
     @available(macOS 13.0, *)
@@ -20,27 +18,21 @@ struct SumiWebKitMediaCaptureRequest: Sendable {
     ) {
         self.init(
             id: id,
-            webKitMediaTypeRawValue: mediaType.rawValue,
             permissionTypes: SumiWebKitMediaCaptureDecisionMapper.permissionTypes(for: mediaType),
             requestingOrigin: SumiWebKitMediaCaptureRequest.permissionOrigin(from: origin),
-            frameURL: frame.safeRequest?.url,
             isMainFrame: frame.isMainFrame
         )
     }
 
     init(
         id: String = UUID().uuidString,
-        webKitMediaTypeRawValue: Int,
         permissionTypes: [SumiPermissionType],
         requestingOrigin: SumiPermissionOrigin,
-        frameURL: URL?,
         isMainFrame: Bool
     ) {
         self.id = id
-        self.webKitMediaTypeRawValue = webKitMediaTypeRawValue
         self.permissionTypes = permissionTypes
         self.requestingOrigin = requestingOrigin
-        self.frameURL = frameURL
         self.isMainFrame = isMainFrame
     }
 

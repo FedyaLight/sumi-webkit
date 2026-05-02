@@ -118,7 +118,6 @@ final class SumiPermissionAntiAbuseIntegrationTests: XCTestCase {
         let suppressionBody = String(suppressionTail.prefix(2_400))
 
         XCTAssertTrue(suppressionBody.contains("outcome: .suppressed"))
-        XCTAssertTrue(suppressionBody.contains("shouldPersist: false"))
         XCTAssertFalse(suppressionBody.contains("persistentStore.setDecision"))
         XCTAssertFalse(suppressionBody.contains("state: .deny"))
         XCTAssertFalse(notificationSource.contains("denyPersistently"))
@@ -128,7 +127,6 @@ final class SumiPermissionAntiAbuseIntegrationTests: XCTestCase {
         SumiWebNotificationRequest(
             id: id,
             requestingOrigin: sumiPermissionIntegrationOrigin(),
-            frameURL: URL(string: "https://example.com/page"),
             isMainFrame: true
         )
     }

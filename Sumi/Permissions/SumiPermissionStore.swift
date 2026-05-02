@@ -52,20 +52,5 @@ protocol SumiPermissionStore: Sendable {
     func setDecision(for key: SumiPermissionKey, decision: SumiPermissionDecision) async throws
     func resetDecision(for key: SumiPermissionKey) async throws
     func listDecisions(profilePartitionId: String) async throws -> [SumiPermissionStoreRecord]
-    func listDecisions(
-        forDisplayDomain displayDomain: String,
-        profilePartitionId: String
-    ) async throws -> [SumiPermissionStoreRecord]
-    func clearAll(profilePartitionId: String) async throws
-    func clearForDisplayDomains(
-        _ displayDomains: Set<String>,
-        profilePartitionId: String
-    ) async throws
-    func clearForOrigins(
-        _ origins: Set<SumiPermissionOrigin>,
-        profilePartitionId: String
-    ) async throws
-    @discardableResult
-    func expireDecisions(now: Date) async throws -> Int
     func recordLastUsed(for key: SumiPermissionKey, at date: Date) async throws
 }

@@ -174,10 +174,8 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
     ) -> SumiWebKitMediaCaptureRequest {
         SumiWebKitMediaCaptureRequest(
             id: "request-a",
-            webKitMediaTypeRawValue: 0,
             permissionTypes: permissionTypes,
             requestingOrigin: SumiPermissionOrigin(string: "https://example.com"),
-            frameURL: URL(string: "https://example.com/frame"),
             isMainFrame: true
         )
     }
@@ -201,7 +199,6 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
         SumiWebNotificationRequest(
             id: "notification-a",
             requestingOrigin: SumiPermissionOrigin(string: "https://example.com"),
-            frameURL: URL(string: "https://example.com/page"),
             isMainFrame: true
         )
     }
@@ -250,9 +247,7 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
     ) -> SumiExternalSchemePermissionRequest {
         SumiExternalSchemePermissionRequest(
             id: "external-a",
-            path: .navigationResponder,
             targetURL: targetURL,
-            sourceURL: URL(string: "https://request.example/page"),
             requestingOrigin: SumiPermissionOrigin(string: "https://request.example"),
             userActivation: userActivation,
             isMainFrame: true,
@@ -363,8 +358,6 @@ private final class PromptExternalResolver: SumiExternalAppResolving {
         let scheme = SumiExternalSchemePermissionRequest.normalizedScheme(for: url)
         guard handlerSchemes.contains(scheme) else { return nil }
         return SumiExternalAppInfo(
-            normalizedScheme: scheme,
-            appURL: URL(fileURLWithPath: "/Applications/External.app"),
             appDisplayName: "External App"
         )
     }

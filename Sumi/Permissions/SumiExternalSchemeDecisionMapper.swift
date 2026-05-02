@@ -9,9 +9,6 @@ enum SumiExternalSchemePermissionAction: Equatable, Sendable {
 
 struct SumiExternalSchemePermissionResult: Equatable, Sendable {
     let action: SumiExternalSchemePermissionAction
-    let coordinatorDecision: SumiPermissionCoordinatorDecision?
-    let reason: String
-
     var didOpen: Bool {
         if case .opened = action { return true }
         return false
@@ -19,28 +16,6 @@ struct SumiExternalSchemePermissionResult: Equatable, Sendable {
 }
 
 enum SumiExternalSchemeDecisionMapper {
-    static func defaultBlockDecision(
-        for context: SumiPermissionSecurityContext?,
-        scheme: String,
-        result: SumiExternalSchemeAttemptResult,
-        reason: String,
-        source: SumiPermissionDecisionSource = .defaultSetting
-    ) -> SumiPermissionCoordinatorDecision {
-        let permissionType = SumiPermissionType.externalScheme(scheme)
-        return SumiPermissionCoordinatorDecision(
-            outcome: .denied,
-            state: .deny,
-            persistence: .session,
-            source: source,
-            reason: reason,
-            permissionTypes: [permissionType],
-            keys: context.map { [$0.request.key(for: permissionType)] } ?? [],
-            shouldPersist: false,
-            shouldOfferSystemSettings: false,
-            disablesPersistentAllow: context?.isEphemeralProfile ?? false
-        )
-    }
-
     static func resultKind(
         for decision: SumiPermissionCoordinatorDecision,
         request: SumiExternalSchemePermissionRequest

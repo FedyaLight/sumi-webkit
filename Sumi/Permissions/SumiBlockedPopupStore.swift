@@ -18,12 +18,8 @@ struct SumiBlockedPopupRecord: Identifiable, Equatable, Sendable {
     let topOrigin: SumiPermissionOrigin
     let targetURL: URL?
     let sourceURL: URL?
-    let createdAt: Date
     var lastBlockedAt: Date
-    let userActivation: SumiPopupUserActivationState
     let reason: Reason
-    let canOpenLater: Bool
-    let navigationActionMetadata: [String: String]
     let profilePartitionId: String
     let isEphemeralProfile: Bool
     var attemptCount: Int
@@ -36,12 +32,8 @@ struct SumiBlockedPopupRecord: Identifiable, Equatable, Sendable {
         topOrigin: SumiPermissionOrigin,
         targetURL: URL?,
         sourceURL: URL?,
-        createdAt: Date,
         lastBlockedAt: Date,
-        userActivation: SumiPopupUserActivationState,
         reason: Reason,
-        canOpenLater: Bool,
-        navigationActionMetadata: [String: String],
         profilePartitionId: String = "",
         isEphemeralProfile: Bool = false,
         attemptCount: Int
@@ -53,12 +45,8 @@ struct SumiBlockedPopupRecord: Identifiable, Equatable, Sendable {
         self.topOrigin = topOrigin
         self.targetURL = targetURL
         self.sourceURL = sourceURL
-        self.createdAt = createdAt
         self.lastBlockedAt = lastBlockedAt
-        self.userActivation = userActivation
         self.reason = reason
-        self.canOpenLater = canOpenLater
-        self.navigationActionMetadata = navigationActionMetadata
         self.profilePartitionId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         self.isEphemeralProfile = isEphemeralProfile
         self.attemptCount = max(1, attemptCount)
@@ -113,20 +101,6 @@ final class SumiBlockedPopupStore: ObservableObject {
 
     func allRecords() -> [SumiBlockedPopupRecord] {
         recordsByPageId.values.flatMap { $0 }
-    }
-
-    func record(id: String, pageId: String) -> SumiBlockedPopupRecord? {
-        records(forPageId: pageId).first { $0.id == id }
-    }
-
-    func reopenableRecord(id: String, pageId: String) -> SumiBlockedPopupRecord? {
-        guard let record = record(id: id, pageId: pageId),
-              record.canOpenLater,
-              record.targetURL != nil
-        else {
-            return nil
-        }
-        return record
     }
 
     @discardableResult

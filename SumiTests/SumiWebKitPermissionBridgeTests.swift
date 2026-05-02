@@ -560,10 +560,8 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
     ) -> SumiWebKitMediaCaptureRequest {
         SumiWebKitMediaCaptureRequest(
             id: "request-a",
-            webKitMediaTypeRawValue: 0,
             permissionTypes: permissionTypes,
             requestingOrigin: requestingOrigin,
-            frameURL: URL(string: "https://example.com/frame"),
             isMainFrame: isMainFrame
         )
     }
@@ -571,17 +569,13 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
     private func displayRequest(
         permissionTypes: [SumiPermissionType],
         requestingOrigin: SumiPermissionOrigin = SumiPermissionOrigin(string: "https://example.com"),
-        isMainFrame: Bool = true,
-        withSystemAudio: Bool = false
+        isMainFrame: Bool = true
     ) -> SumiWebKitDisplayCaptureRequest {
         SumiWebKitDisplayCaptureRequest(
             id: "display-request-a",
-            webKitDisplayCaptureTypeRawValue: SumiWebKitDisplayCapturePermissionDecision.screenPrompt.rawValue,
             permissionTypes: permissionTypes,
             requestingOrigin: requestingOrigin,
-            frameURL: URL(string: "https://example.com/frame"),
-            isMainFrame: isMainFrame,
-            withSystemAudio: withSystemAudio
+            isMainFrame: isMainFrame
         )
     }
 
@@ -690,7 +684,6 @@ private actor FakePermissionCoordinator: SumiPermissionCoordinating {
                 reason: "fake-query-prompt-required",
                 permissionTypes: context.request.permissionTypes,
                 keys: context.request.permissionTypes.map { context.request.key(for: $0) },
-                shouldPersist: false,
                 disablesPersistentAllow: context.isEphemeralProfile
             )
         }
@@ -783,17 +776,13 @@ private actor FakePermissionCoordinator: SumiPermissionCoordinating {
             permissionTypes: context.request.permissionTypes,
             presentationPermissionType: nil,
             availablePersistences: [.oneTime, .session, .persistent],
-            defaultPersistence: .oneTime,
             systemAuthorizationSnapshots: [],
-            policySources: [.defaultSetting],
             policyReasons: [SumiPermissionPolicyReason.allowed],
             createdAt: context.now,
             isEphemeralProfile: context.isEphemeralProfile,
-            hasUserGesture: context.hasUserGesture,
             shouldOfferSystemSettings: false,
-            disablesPersistentAllow: context.isEphemeralProfile,
-            requiresSystemAuthorizationPrompt: false
-        )
+            disablesPersistentAllow: context.isEphemeralProfile
+    )
     }
 }
 
@@ -892,8 +881,7 @@ private func decision(
         source: outcome == .systemBlocked ? .system : .user,
         reason: reason,
         permissionTypes: permissionTypes,
-        keys: [],
-        shouldPersist: false
+        keys: []
     )
 }
 
@@ -919,7 +907,6 @@ private func proceedPolicyResult() -> SumiPermissionPolicyResult {
         reason: SumiPermissionPolicyReason.allowed,
         systemAuthorizationSnapshot: SumiSystemPermissionSnapshot(kind: .camera, state: .authorized),
         mayOpenSystemSettings: false,
-        requiresSystemAuthorizationPrompt: false,
         allowedPersistences: [.oneTime, .session, .persistent]
     )
 }

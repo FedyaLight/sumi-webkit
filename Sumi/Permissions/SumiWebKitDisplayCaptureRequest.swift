@@ -4,47 +4,34 @@ import WebKit
 
 struct SumiWebKitDisplayCaptureRequest: Sendable {
     let id: String
-    let webKitDisplayCaptureTypeRawValue: Int
     let permissionTypes: [SumiPermissionType]
     let requestingOrigin: SumiPermissionOrigin
-    let frameURL: URL?
     let isMainFrame: Bool
-    let withSystemAudio: Bool
 
     @MainActor
     init(
         id: String = UUID().uuidString,
         origin: WKSecurityOrigin,
-        frame: WKFrameInfo,
-        withSystemAudio: Bool
+        frame: WKFrameInfo
     ) {
         self.init(
             id: id,
-            webKitDisplayCaptureTypeRawValue: SumiWebKitDisplayCapturePermissionDecision.screenPrompt.rawValue,
             permissionTypes: [.screenCapture],
             requestingOrigin: SumiWebKitDisplayCaptureRequest.permissionOrigin(from: origin),
-            frameURL: frame.safeRequest?.url,
-            isMainFrame: frame.isMainFrame,
-            withSystemAudio: withSystemAudio
+            isMainFrame: frame.isMainFrame
         )
     }
 
     init(
         id: String = UUID().uuidString,
-        webKitDisplayCaptureTypeRawValue: Int,
         permissionTypes: [SumiPermissionType],
         requestingOrigin: SumiPermissionOrigin,
-        frameURL: URL?,
-        isMainFrame: Bool,
-        withSystemAudio: Bool
+        isMainFrame: Bool
     ) {
         self.id = id
-        self.webKitDisplayCaptureTypeRawValue = webKitDisplayCaptureTypeRawValue
         self.permissionTypes = permissionTypes
         self.requestingOrigin = requestingOrigin
-        self.frameURL = frameURL
         self.isMainFrame = isMainFrame
-        self.withSystemAudio = withSystemAudio
     }
 
     @MainActor

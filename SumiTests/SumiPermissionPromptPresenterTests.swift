@@ -133,15 +133,11 @@ private func promptQuery(
         permissionTypes: permissionTypes,
         presentationPermissionType: presentationPermissionType,
         availablePersistences: [.oneTime, .session, .persistent],
-        defaultPersistence: .oneTime,
         systemAuthorizationSnapshots: [],
-        policySources: [.defaultSetting],
         policyReasons: [SumiPermissionPolicyReason.allowed],
         createdAt: Date(timeIntervalSince1970: 1_800_000_000),
         isEphemeralProfile: false,
-        hasUserGesture: true,
         shouldOfferSystemSettings: false,
         disablesPersistentAllow: false,
-        requiresSystemAuthorizationPrompt: false
     )
 }

@@ -13,10 +13,9 @@ final class SumiPermissionQueueTests: XCTestCase {
             return
         }
         XCTAssertEqual(position, 1)
-        let active = await queue.activeRequest(forPageId: "page-a")
-        let queued = await queue.queuedRequests(forPageId: "page-a")
-        XCTAssertEqual(active?.request.id, "one")
-        XCTAssertEqual(queued.map(\.request.id), ["two"])
+        let snapshot = await queue.snapshot(forPageId: "page-a")
+        XCTAssertEqual(snapshot.active?.request.id, "one")
+        XCTAssertEqual(snapshot.queued.map(\.request.id), ["two"])
     }
 
     func testFIFOQueueAdvancement() async {
@@ -28,9 +27,7 @@ final class SumiPermissionQueueTests: XCTestCase {
         let firstAdvance = await queue.finishActiveRequest(pageId: "page-a")
         let secondAdvance = await queue.finishActiveRequest(pageId: "page-a")
 
-        XCTAssertEqual(firstAdvance.completedRequestIds, ["one"])
         XCTAssertEqual(firstAdvance.nextActive?.request.id, "two")
-        XCTAssertEqual(secondAdvance.completedRequestIds, ["two"])
         XCTAssertEqual(secondAdvance.nextActive?.request.id, "three")
     }
 
@@ -44,10 +41,9 @@ final class SumiPermissionQueueTests: XCTestCase {
             return
         }
         XCTAssertEqual(entry.allRequestIds, ["one", "two"])
-        let active = await queue.activeRequest(forPageId: "page-a")
-        let queued = await queue.queuedRequests(forPageId: "page-a")
-        XCTAssertEqual(active?.allRequestIds, ["one", "two"])
-        XCTAssertTrue(queued.isEmpty)
+        let snapshot = await queue.snapshot(forPageId: "page-a")
+        XCTAssertEqual(snapshot.active?.allRequestIds, ["one", "two"])
+        XCTAssertTrue(snapshot.queued.isEmpty)
     }
 
     func testCancelOneRequest() async {
@@ -59,10 +55,9 @@ final class SumiPermissionQueueTests: XCTestCase {
 
         XCTAssertEqual(cancellation.cancelledRequestIds, ["two"])
         XCTAssertNil(cancellation.promotedActive)
-        let active = await queue.activeRequest(forPageId: "page-a")
-        let queued = await queue.queuedRequests(forPageId: "page-a")
-        XCTAssertEqual(active?.request.id, "one")
-        XCTAssertTrue(queued.isEmpty)
+        let snapshot = await queue.snapshot(forPageId: "page-a")
+        XCTAssertEqual(snapshot.active?.request.id, "one")
+        XCTAssertTrue(snapshot.queued.isEmpty)
     }
 
     func testCancelAllRequestsForPageId() async {
@@ -91,7 +86,6 @@ final class SumiPermissionQueueTests: XCTestCase {
             requestingOrigin: SumiPermissionOrigin(string: "https://example.com"),
             topOrigin: SumiPermissionOrigin(string: "https://example.com"),
             permissionTypes: [type],
-            hasUserGesture: true,
             requestedAt: ISO8601DateFormatter().date(from: "2026-04-28T10:00:00Z")!,
             profilePartitionId: "profile-a"
         )

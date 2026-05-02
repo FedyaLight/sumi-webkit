@@ -14,7 +14,6 @@ final class SumiPermissionSecurityContextTests: XCTestCase {
             requestingOrigin: SumiPermissionOrigin(string: "https://camera.example/path"),
             topOrigin: SumiPermissionOrigin(string: "https://top.example"),
             permissionTypes: [.camera],
-            hasUserGesture: true,
             requestedAt: requestedAt,
             isEphemeralProfile: false,
             profilePartitionId: " Profile-A "
@@ -81,7 +80,6 @@ final class SumiPermissionSecurityContextTests: XCTestCase {
             isMainFrame: false,
             isActiveTab: false,
             isVisibleTab: false,
-            hasUserGesture: nil,
             isEphemeralProfile: true,
             profilePartitionId: "Ephemeral-A",
             transientPageId: " transient-page ",
@@ -142,7 +140,6 @@ final class SumiPermissionSecurityContextTests: XCTestCase {
             requestingOrigin: SumiPermissionOrigin(string: "https://example.com"),
             topOrigin: SumiPermissionOrigin(string: "https://example.com"),
             permissionTypes: [.camera],
-            hasUserGesture: hasUserGesture,
             profilePartitionId: "profile-a"
         )
     }

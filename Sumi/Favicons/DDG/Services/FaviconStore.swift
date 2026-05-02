@@ -78,7 +78,6 @@ protocol FaviconStoring {
 final class FaviconStore: FaviconStoring {
 
     enum FaviconStoreError: Error {
-        case notLoadedYet
         case savingFailed
     }
 
@@ -86,10 +85,6 @@ final class FaviconStore: FaviconStoring {
 
     init(database: CoreDataDatabase) {
         context = database.makeContext(concurrencyType: .privateQueueConcurrencyType, name: "Favicons")
-    }
-
-    init(context: NSManagedObjectContext) {
-        self.context = context
     }
 
     func loadFavicons() async throws -> [Favicon] {

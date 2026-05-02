@@ -10,14 +10,10 @@ struct SumiPermissionAuthorizationQuery: Identifiable, Equatable, Sendable {
     let permissionTypes: [SumiPermissionType]
     let presentationPermissionType: SumiPermissionType?
     let availablePersistences: Set<SumiPermissionPersistence>
-    let defaultPersistence: SumiPermissionPersistence
     let systemAuthorizationSnapshots: [SumiSystemPermissionSnapshot]
-    let policySources: [SumiPermissionDecisionSource]
     let policyReasons: [String]
     let createdAt: Date
     let isEphemeralProfile: Bool
-    let hasUserGesture: Bool?
     let shouldOfferSystemSettings: Bool
     let disablesPersistentAllow: Bool
-    let requiresSystemAuthorizationPrompt: Bool
 }

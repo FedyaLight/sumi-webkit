@@ -337,9 +337,7 @@ final class SumiPermissionCoordinatorTests: XCTestCase {
         XCTAssertEqual(query.topOrigin, SumiPermissionOrigin(string: "https://example.com"))
         XCTAssertEqual(query.permissionTypes, [.camera])
         XCTAssertEqual(query.availablePersistences, [.oneTime, .session, .persistent])
-        XCTAssertEqual(query.defaultPersistence, .oneTime)
         XCTAssertEqual(query.createdAt, fixedNow())
-        XCTAssertEqual(query.hasUserGesture, true)
 
         await coordinator.cancel(queryId: query.id)
         _ = await task.value
@@ -358,7 +356,6 @@ final class SumiPermissionCoordinatorTests: XCTestCase {
         let query = await waitForActiveQuery(coordinator)
 
         XCTAssertEqual(query.availablePersistences, [.oneTime])
-        XCTAssertEqual(query.defaultPersistence, .oneTime)
 
         await coordinator.cancel(queryId: query.id)
         _ = await task.value
@@ -406,7 +403,6 @@ final class SumiPermissionCoordinatorTests: XCTestCase {
         let query = await waitForActiveQuery(coordinator)
 
         XCTAssertEqual(query.systemAuthorizationSnapshots.first?.state, .notDetermined)
-        XCTAssertTrue(query.requiresSystemAuthorizationPrompt)
 
         await coordinator.cancel(queryId: query.id)
         _ = await task.value
@@ -598,19 +594,6 @@ final class SumiPermissionCoordinatorTests: XCTestCase {
         XCTAssertEqual(deniedResult.outcome, .denied)
         XCTAssertEqual(notificationsState, .deny)
 
-        let askStore = RecordingPermissionStore()
-        let askCoordinator = SumiPermissionCoordinator(
-            policyResolver: RecordingPolicyResolver(),
-            persistentStore: askStore,
-            now: fixedNow
-        )
-        let ask = Task { await askCoordinator.requestPermission(context(.camera, id: "ask-store")) }
-        let askQuery = await waitForActiveQuery(askCoordinator)
-        await askCoordinator.setAskPersistently(askQuery.id)
-        let askResult = await ask.value
-        let askState = await askStore.state(for: key(.camera))
-        XCTAssertEqual(askResult.outcome, .promptRequired)
-        XCTAssertEqual(askState, .ask)
     }
 
     func testDismissAndCancelDoNotWritePersistentStore() async {
@@ -681,16 +664,12 @@ final class SumiPermissionCoordinatorTests: XCTestCase {
             permissionTypes: [],
             presentationPermissionType: nil,
             availablePersistences: [],
-            defaultPersistence: .oneTime,
             systemAuthorizationSnapshots: [],
-            policySources: [],
             policyReasons: [],
             createdAt: fixedNow(),
             isEphemeralProfile: false,
-            hasUserGesture: nil,
             shouldOfferSystemSettings: false,
             disablesPersistentAllow: false,
-            requiresSystemAuthorizationPrompt: false
         )
     }
 
@@ -765,7 +744,6 @@ final class SumiPermissionCoordinatorTests: XCTestCase {
             requestingOrigin: SumiPermissionOrigin(string: "https://example.com"),
             topOrigin: SumiPermissionOrigin(string: "https://example.com"),
             permissionTypes: permissionTypes,
-            hasUserGesture: hasUserGesture,
             requestedAt: fixedNow(),
             isEphemeralProfile: isEphemeralProfile,
             profilePartitionId: profile
@@ -775,7 +753,6 @@ final class SumiPermissionCoordinatorTests: XCTestCase {
             committedURL: URL(string: "https://example.com"),
             visibleURL: URL(string: "https://example.com"),
             mainFrameURL: URL(string: "https://example.com"),
-            hasUserGesture: hasUserGesture,
             isEphemeralProfile: isEphemeralProfile,
             profilePartitionId: profile,
             transientPageId: pageId,
@@ -821,7 +798,6 @@ private actor RecordingPolicyResolver: SumiPermissionPolicyResolver {
             reason: SumiPermissionPolicyReason.allowed,
             systemAuthorizationSnapshot: nil,
             mayOpenSystemSettings: false,
-            requiresSystemAuthorizationPrompt: false,
             allowedPersistences: allowedPersistences(
                 permissionType: permissionType,
                 isEphemeralProfile: context.isEphemeralProfile

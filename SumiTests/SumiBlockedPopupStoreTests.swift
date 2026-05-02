@@ -9,10 +9,7 @@ final class SumiBlockedPopupStoreTests: XCTestCase {
         let popup = blockedPopup(
             id: "popup-a",
             targetURL: URL(string: "https://popup.example/window"),
-            userActivation: .none,
-            reason: .blockedByDefault,
-            canOpenLater: true,
-            metadata: ["navigationType": "other"]
+            reason: .blockedByDefault
         )
 
         let stored = store.record(popup)
@@ -24,11 +21,7 @@ final class SumiBlockedPopupStoreTests: XCTestCase {
         XCTAssertEqual(stored.topOrigin.identity, "https://top.example")
         XCTAssertEqual(stored.targetURL, URL(string: "https://popup.example/window"))
         XCTAssertEqual(stored.sourceURL, URL(string: "https://top.example/source"))
-        XCTAssertEqual(stored.createdAt, fixedDate)
-        XCTAssertEqual(stored.userActivation, .none)
         XCTAssertEqual(stored.reason, .blockedByDefault)
-        XCTAssertTrue(stored.canOpenLater)
-        XCTAssertEqual(stored.navigationActionMetadata["navigationType"], "other")
         XCTAssertEqual(store.records(forPageId: "tab-a:1"), [stored])
     }
 
@@ -61,17 +54,6 @@ final class SumiBlockedPopupStoreTests: XCTestCase {
         XCTAssertEqual(store.records(forPageId: "tab-b:1").map(\.id), ["popup-c"])
     }
 
-    func testReopenEligibilityRequiresSafeKnownTargetURL() {
-        let store = SumiBlockedPopupStore()
-        store.record(blockedPopup(id: "safe", targetURL: URL(string: "https://popup.example/window"), canOpenLater: true))
-        store.record(blockedPopup(id: "blank", targetURL: URL(string: "about:blank"), canOpenLater: false))
-        store.record(blockedPopup(id: "empty", targetURL: nil, canOpenLater: false))
-
-        XCTAssertEqual(store.reopenableRecord(id: "safe", pageId: "tab-a:1")?.id, "safe")
-        XCTAssertNil(store.reopenableRecord(id: "blank", pageId: "tab-a:1"))
-        XCTAssertNil(store.reopenableRecord(id: "empty", pageId: "tab-a:1"))
-    }
-
     private func blockedPopup(
         id: String,
         tabId: String = "tab-a",
@@ -79,10 +61,7 @@ final class SumiBlockedPopupStoreTests: XCTestCase {
         targetURL: URL? = URL(string: "https://popup.example/window"),
         sourceURL: URL? = URL(string: "https://top.example/source"),
         lastBlockedAt: Date = fixedDate,
-        userActivation: SumiPopupUserActivationState = .none,
-        reason: SumiBlockedPopupRecord.Reason = .blockedByDefault,
-        canOpenLater: Bool = true,
-        metadata: [String: String] = [:]
+        reason: SumiBlockedPopupRecord.Reason = .blockedByDefault
     ) -> SumiBlockedPopupRecord {
         SumiBlockedPopupRecord(
             id: id,
@@ -92,12 +71,8 @@ final class SumiBlockedPopupStoreTests: XCTestCase {
             topOrigin: SumiPermissionOrigin(string: "https://top.example"),
             targetURL: targetURL,
             sourceURL: sourceURL,
-            createdAt: fixedDate,
             lastBlockedAt: lastBlockedAt,
-            userActivation: userActivation,
             reason: reason,
-            canOpenLater: canOpenLater,
-            navigationActionMetadata: metadata,
             attemptCount: 1
         )
     }

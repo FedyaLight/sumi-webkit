@@ -140,8 +140,6 @@ final class SumiPermissionPromptEndToEndTests: XCTestCase {
             )
         }
         let query = await sumiPermissionIntegrationWaitForActiveQuery(harness.coordinator)
-
-        XCTAssertTrue(query.requiresSystemAuthorizationPrompt)
         let systemRequestCountBeforePrompt = await harness.systemService.requestAuthorizationCallCount(for: .camera)
         XCTAssertEqual(systemRequestCountBeforePrompt, 0)
 
@@ -274,7 +272,6 @@ final class SumiPermissionPromptEndToEndTests: XCTestCase {
         SumiWebNotificationRequest(
             id: id,
             requestingOrigin: sumiPermissionIntegrationOrigin(),
-            frameURL: URL(string: "https://example.com/page"),
             isMainFrame: true
         )
     }
@@ -331,12 +328,9 @@ final class SumiPermissionPromptEndToEndTests: XCTestCase {
     private func displayRequest(id: String) -> SumiWebKitDisplayCaptureRequest {
         SumiWebKitDisplayCaptureRequest(
             id: id,
-            webKitDisplayCaptureTypeRawValue: SumiWebKitDisplayCapturePermissionDecision.screenPrompt.rawValue,
             permissionTypes: [.screenCapture],
             requestingOrigin: sumiPermissionIntegrationOrigin(),
-            frameURL: URL(string: "https://example.com/page"),
-            isMainFrame: true,
-            withSystemAudio: false
+            isMainFrame: true
         )
     }
 }

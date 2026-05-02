@@ -18,13 +18,9 @@ struct SumiExternalSchemeAttemptRecord: Identifiable, Equatable, Sendable {
     let topOrigin: SumiPermissionOrigin
     let scheme: String
     let redactedTargetURLString: String?
-    let appDisplayName: String?
-    let createdAt: Date
     var lastAttemptAt: Date
-    let userActivation: SumiExternalSchemeUserActivationState
     let result: SumiExternalSchemeAttemptResult
     let reason: String
-    let navigationActionMetadata: [String: String]
     let profilePartitionId: String
     let isEphemeralProfile: Bool
     var attemptCount: Int
@@ -37,13 +33,9 @@ struct SumiExternalSchemeAttemptRecord: Identifiable, Equatable, Sendable {
         topOrigin: SumiPermissionOrigin,
         scheme: String,
         redactedTargetURLString: String?,
-        appDisplayName: String?,
-        createdAt: Date,
         lastAttemptAt: Date,
-        userActivation: SumiExternalSchemeUserActivationState,
         result: SumiExternalSchemeAttemptResult,
         reason: String,
-        navigationActionMetadata: [String: String],
         profilePartitionId: String = "",
         isEphemeralProfile: Bool = false,
         attemptCount: Int
@@ -55,13 +47,9 @@ struct SumiExternalSchemeAttemptRecord: Identifiable, Equatable, Sendable {
         self.topOrigin = topOrigin
         self.scheme = SumiPermissionType.normalizedExternalScheme(scheme)
         self.redactedTargetURLString = redactedTargetURLString
-        self.appDisplayName = appDisplayName
-        self.createdAt = createdAt
         self.lastAttemptAt = lastAttemptAt
-        self.userActivation = userActivation
         self.result = result
         self.reason = reason
-        self.navigationActionMetadata = navigationActionMetadata
         self.profilePartitionId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         self.isEphemeralProfile = isEphemeralProfile
         self.attemptCount = max(1, attemptCount)

@@ -323,12 +323,8 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
             topOrigin: context.origin,
             targetURL: URL(string: "https://example.com/popup"),
             sourceURL: context.mainFrameURL,
-            createdAt: Date(),
             lastBlockedAt: Date(),
-            userActivation: .none,
             reason: .blockedByDefault,
-            canOpenLater: true,
-            navigationActionMetadata: [:],
             attemptCount: 1
         )
     }

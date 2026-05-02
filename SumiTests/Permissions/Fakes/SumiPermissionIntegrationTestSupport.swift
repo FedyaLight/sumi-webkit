@@ -29,7 +29,6 @@ func sumiPermissionIntegrationContext(
     committedURL: URL? = URL(string: "https://example.com/page"),
     visibleURL: URL? = URL(string: "https://example.com/page"),
     mainFrameURL: URL? = URL(string: "https://example.com/page"),
-    hasUserGesture: Bool = false,
     isEphemeralProfile: Bool = false,
     profilePartitionId: String = "profile-a",
     navigationOrPageGeneration: String? = "1"
@@ -42,7 +41,6 @@ func sumiPermissionIntegrationContext(
         topOrigin: topOrigin,
         displayDomain: requestingOrigin.displayDomain,
         permissionTypes: permissionTypes,
-        hasUserGesture: hasUserGesture,
         requestedAt: sumiPermissionIntegrationNow,
         isEphemeralProfile: isEphemeralProfile,
         profilePartitionId: profilePartitionId
@@ -57,7 +55,6 @@ func sumiPermissionIntegrationContext(
         isMainFrame: true,
         isActiveTab: true,
         isVisibleTab: true,
-        hasUserGesture: hasUserGesture,
         isEphemeralProfile: isEphemeralProfile,
         profilePartitionId: profilePartitionId,
         transientPageId: pageId,
@@ -125,16 +122,12 @@ func sumiPermissionIntegrationWaitForActiveQuery(
         permissionTypes: [],
         presentationPermissionType: nil,
         availablePersistences: [],
-        defaultPersistence: .oneTime,
         systemAuthorizationSnapshots: [],
-        policySources: [],
         policyReasons: [],
         createdAt: sumiPermissionIntegrationNow,
         isEphemeralProfile: false,
-        hasUserGesture: nil,
         shouldOfferSystemSettings: false,
         disablesPersistentAllow: false,
-        requiresSystemAuthorizationPrompt: false
     )
 }
 
@@ -282,8 +275,6 @@ final class SumiPermissionIntegrationExternalAppResolver: SumiExternalAppResolvi
         let scheme = SumiExternalSchemePermissionRequest.normalizedScheme(for: url)
         guard handlerSchemes.contains(scheme) else { return nil }
         return SumiExternalAppInfo(
-            normalizedScheme: scheme,
-            appURL: URL(fileURLWithPath: "/Applications/\(appDisplayName ?? "Test").app"),
             appDisplayName: appDisplayName
         )
     }

@@ -13,15 +13,4 @@ enum SumiFilePickerPanelResult: Equatable, Sendable {
             return nil
         }
     }
-
-    var reason: String {
-        switch self {
-        case .selected:
-            return "file-picker-selected"
-        case .cancelled:
-            return "file-picker-cancelled"
-        case .failed(let reason):
-            return reason
-        }
-    }
 }

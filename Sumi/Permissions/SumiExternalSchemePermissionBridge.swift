@@ -53,8 +53,6 @@ final class SumiExternalSchemePermissionBridge {
             return finish(
                 request,
                 tabContext: tabContext,
-                appInfo: nil,
-                coordinatorDecision: nil,
                 result: .unsupportedScheme,
                 reason: "external-scheme-internal-browser-scheme"
             )
@@ -67,19 +65,15 @@ final class SumiExternalSchemePermissionBridge {
             return finish(
                 request,
                 tabContext: tabContext,
-                appInfo: nil,
-                coordinatorDecision: nil,
                 result: .unsupportedScheme,
                 reason: "external-scheme-invalid-url-or-scheme"
             )
         }
 
-        guard let appInfo = appResolver.appInfo(for: targetURL) else {
+        guard appResolver.appInfo(for: targetURL) != nil else {
             return finish(
                 request,
                 tabContext: tabContext,
-                appInfo: nil,
-                coordinatorDecision: nil,
                 result: .unsupportedScheme,
                 reason: "external-scheme-no-installed-handler"
             )
@@ -91,8 +85,6 @@ final class SumiExternalSchemePermissionBridge {
             return finish(
                 request,
                 tabContext: tabContext,
-                appInfo: appInfo,
-                coordinatorDecision: nil,
                 result: .blockedByDefault,
                 reason: "external-scheme-origin-not-keyable"
             )
@@ -115,8 +107,6 @@ final class SumiExternalSchemePermissionBridge {
                 return finish(
                     request,
                     tabContext: tabContext,
-                    appInfo: appInfo,
-                    coordinatorDecision: coordinatorDecision,
                     result: .blockedPromptPresenterUnavailable,
                     reason: "external-scheme-stale-page"
                 )
@@ -126,8 +116,6 @@ final class SumiExternalSchemePermissionBridge {
                 return finish(
                     request,
                     tabContext: tabContext,
-                    appInfo: appInfo,
-                    coordinatorDecision: coordinatorDecision,
                     result: .openFailed,
                     reason: "external-scheme-open-failed"
                 )
@@ -135,8 +123,6 @@ final class SumiExternalSchemePermissionBridge {
             return finish(
                 request,
                 tabContext: tabContext,
-                appInfo: appInfo,
-                coordinatorDecision: coordinatorDecision,
                 result: .opened,
                 reason: coordinatorDecision.reason
             )
@@ -165,8 +151,6 @@ final class SumiExternalSchemePermissionBridge {
                         return finish(
                             request,
                             tabContext: tabContext,
-                            appInfo: appInfo,
-                            coordinatorDecision: settlementDecision,
                             result: .blockedPromptPresenterUnavailable,
                             reason: "external-scheme-stale-page"
                         )
@@ -174,19 +158,15 @@ final class SumiExternalSchemePermissionBridge {
                     willOpen()
                     guard appResolver.open(targetURL) else {
                         return finish(
-                            request,
-                            tabContext: tabContext,
-                            appInfo: appInfo,
-                            coordinatorDecision: settlementDecision,
-                            result: .openFailed,
-                            reason: "external-scheme-open-failed"
+                        request,
+                        tabContext: tabContext,
+                        result: .openFailed,
+                        reason: "external-scheme-open-failed"
                         )
                     }
                     return finish(
                         request,
                         tabContext: tabContext,
-                        appInfo: appInfo,
-                        coordinatorDecision: settlementDecision,
                         result: .opened,
                         reason: settlementDecision.reason
                     )
@@ -195,50 +175,30 @@ final class SumiExternalSchemePermissionBridge {
                 return finish(
                     request,
                     tabContext: tabContext,
-                    appInfo: appInfo,
-                    coordinatorDecision: settlementDecision,
                     result: settlementResult,
                     reason: settlementDecision.reason
                 )
             }
 
-            let temporaryDecision = SumiExternalSchemeDecisionMapper.defaultBlockDecision(
-                for: context,
-                scheme: request.normalizedScheme,
-                result: .blockedPromptPresenterUnavailable,
-                reason: pendingStrategy.reason
-            )
             return finish(
                 request,
                 tabContext: tabContext,
-                appInfo: appInfo,
-                coordinatorDecision: temporaryDecision,
                 result: .blockedPromptPresenterUnavailable,
                 reason: pendingStrategy.reason
             )
 
         case .blockedByDefault where coordinatorDecision.outcome == .promptRequired:
-            let temporaryDecision = SumiExternalSchemeDecisionMapper.defaultBlockDecision(
-                for: context,
-                scheme: request.normalizedScheme,
-                result: .blockedByDefault,
-                reason: "external-scheme-background-default-block"
-            )
             return finish(
                 request,
                 tabContext: tabContext,
-                appInfo: appInfo,
-                coordinatorDecision: temporaryDecision,
                 result: .blockedByDefault,
-                reason: temporaryDecision.reason
+                reason: "external-scheme-background-default-block"
             )
 
         case .blockedByStoredDeny, .blockedByDefault, .unsupportedScheme:
             return finish(
                 request,
                 tabContext: tabContext,
-                appInfo: appInfo,
-                coordinatorDecision: coordinatorDecision,
                 result: result,
                 reason: coordinatorDecision.reason
             )
@@ -247,8 +207,6 @@ final class SumiExternalSchemePermissionBridge {
             return finish(
                 request,
                 tabContext: tabContext,
-                appInfo: appInfo,
-                coordinatorDecision: coordinatorDecision,
                 result: .openFailed,
                 reason: "external-scheme-open-failed"
             )
@@ -298,15 +256,9 @@ final class SumiExternalSchemePermissionBridge {
         )
     }
 
-    func attempts(forPageId pageId: String) -> [SumiExternalSchemeAttemptRecord] {
-        sessionStore.records(forPageId: pageId)
-    }
-
     private func finish(
         _ request: SumiExternalSchemePermissionRequest,
         tabContext: SumiExternalSchemePermissionTabContext,
-        appInfo: SumiExternalAppInfo?,
-        coordinatorDecision: SumiPermissionCoordinatorDecision?,
         result: SumiExternalSchemeAttemptResult,
         reason: String
     ) -> SumiExternalSchemePermissionResult {
@@ -319,13 +271,9 @@ final class SumiExternalSchemePermissionBridge {
                 topOrigin: topOrigin(for: tabContext),
                 scheme: request.normalizedScheme,
                 redactedTargetURLString: request.redactedTargetURLString,
-                appDisplayName: appInfo?.appDisplayName,
-                createdAt: now(),
                 lastAttemptAt: now(),
-                userActivation: request.userActivation,
                 result: result,
                 reason: reason,
-                navigationActionMetadata: request.navigationActionMetadata,
                 profilePartitionId: tabContext.profilePartitionId,
                 isEphemeralProfile: tabContext.isEphemeralProfile,
                 attemptCount: 1
@@ -336,27 +284,19 @@ final class SumiExternalSchemePermissionBridge {
         switch result {
         case .opened:
             return SumiExternalSchemePermissionResult(
-                action: .opened(record),
-                coordinatorDecision: coordinatorDecision,
-                reason: reason
+                action: .opened(record)
             )
         case .blockedByDefault, .blockedByStoredDeny, .blockedPromptPresenterUnavailable:
             return SumiExternalSchemePermissionResult(
-                action: .blocked(record),
-                coordinatorDecision: coordinatorDecision,
-                reason: reason
+                action: .blocked(record)
             )
         case .unsupportedScheme:
             return SumiExternalSchemePermissionResult(
-                action: .unsupported(record),
-                coordinatorDecision: coordinatorDecision,
-                reason: reason
+                action: .unsupported(record)
             )
         case .openFailed:
             return SumiExternalSchemePermissionResult(
-                action: .openFailed(record),
-                coordinatorDecision: coordinatorDecision,
-                reason: reason
+                action: .openFailed(record)
             )
         }
     }

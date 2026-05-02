@@ -315,15 +315,11 @@ private func promptQuery(
         permissionTypes: permissionTypes,
         presentationPermissionType: presentationPermissionType,
         availablePersistences: availablePersistences,
-        defaultPersistence: .oneTime,
         systemAuthorizationSnapshots: systemAuthorizationSnapshots,
-        policySources: [.defaultSetting],
         policyReasons: [SumiPermissionPolicyReason.allowed],
         createdAt: Date(timeIntervalSince1970: 1_800_000_000),
         isEphemeralProfile: isEphemeralProfile,
-        hasUserGesture: true,
         shouldOfferSystemSettings: systemAuthorizationSnapshots.contains(where: \.shouldOpenSystemSettings),
         disablesPersistentAllow: isEphemeralProfile || !availablePersistences.contains(.persistent),
-        requiresSystemAuthorizationPrompt: systemAuthorizationSnapshots.contains { $0.state == .notDetermined }
     )
 }

@@ -21,11 +21,6 @@ enum SumiAutoplayDecisionMapper {
         )
     }
 
-    static func policy(from record: SumiPermissionStoreRecord?) -> SumiAutoplayPolicy {
-        guard let record else { return .default }
-        return policy(from: record.decision)
-    }
-
     static func policy(from decision: SumiPermissionDecision) -> SumiAutoplayPolicy {
         if let rawPolicy = decision.metadata?[metadataKey],
            let policy = SumiAutoplayPolicy(rawValue: rawPolicy)

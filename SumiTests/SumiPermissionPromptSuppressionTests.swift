@@ -68,9 +68,7 @@ final class SumiPermissionPromptSuppressionTests: XCTestCase {
         )
         let request = SumiExternalSchemePermissionRequest(
             id: "external-a",
-            path: .navigationResponder,
             targetURL: URL(string: "zoommtg://join")!,
-            sourceURL: URL(string: "https://example.com")!,
             requestingOrigin: SumiPermissionOrigin(string: "https://example.com"),
             userActivation: .navigationAction,
             isMainFrame: true,

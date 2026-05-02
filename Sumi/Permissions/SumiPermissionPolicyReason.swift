@@ -23,6 +23,4 @@ enum SumiPermissionPolicyReason {
     static let requiresUserActivation = "user-activation-required"
     static let systemAuthorizationNotDetermined = "system-authorization-not-determined"
     static let systemAuthorizationBlocked = "system-authorization-blocked"
-    static let policyDenied = "policy-denied"
-    static let policyAllowed = "policy-allowed"
 }

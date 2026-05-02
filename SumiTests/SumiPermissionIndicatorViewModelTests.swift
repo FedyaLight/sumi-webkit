@@ -343,7 +343,6 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains(".disabled(!state.isVisible)"))
         XCTAssertFalse(source.contains("isVisible: state.isVisible"))
         XCTAssertFalse(source.contains("approveOnce("))
-        XCTAssertFalse(source.contains("denyOnce("))
 
         let copyRange = try XCTUnwrap(trailingActions.range(of: "copyLinkButton(for: currentTab)"))
         let hubRange = try XCTUnwrap(trailingActions.range(of: "hubButton"))
@@ -397,16 +396,12 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
             permissionTypes: permissionTypes,
             presentationPermissionType: presentationPermissionType,
             availablePersistences: [.oneTime, .session, .persistent],
-            defaultPersistence: .oneTime,
             systemAuthorizationSnapshots: [],
-            policySources: [.defaultSetting],
             policyReasons: ["test-policy"],
             createdAt: fixedDate,
             isEphemeralProfile: false,
-            hasUserGesture: true,
             shouldOfferSystemSettings: false,
             disablesPersistentAllow: false,
-            requiresSystemAuthorizationPrompt: false
         )
     }
 
@@ -450,12 +445,8 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
             topOrigin: SumiPermissionOrigin(string: "https://example.com"),
             targetURL: URL(string: "https://popup.example/window"),
             sourceURL: URL(string: "https://example.com/source"),
-            createdAt: fixedDate,
             lastBlockedAt: fixedDate,
-            userActivation: .none,
             reason: .blockedByDefault,
-            canOpenLater: true,
-            navigationActionMetadata: [:],
             attemptCount: 1
         )
     }
@@ -472,13 +463,9 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
             topOrigin: SumiPermissionOrigin(string: "https://example.com"),
             scheme: "zoommtg",
             redactedTargetURLString: "zoommtg://open",
-            appDisplayName: "Zoom",
-            createdAt: fixedDate,
             lastAttemptAt: fixedDate,
-            userActivation: .none,
             result: result,
             reason: result.rawValue,
-            navigationActionMetadata: [:],
             attemptCount: 1
         )
     }

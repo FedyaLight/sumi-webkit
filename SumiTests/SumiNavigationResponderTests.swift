@@ -159,7 +159,7 @@ final class SumiNavigationResponderTests: XCTestCase {
 
         XCTAssertTrue(policy?.isCancel == true)
         XCTAssertTrue(resolver.openedURLs.isEmpty)
-        XCTAssertEqual(bridge.attempts(forPageId: "tab-a:1").first?.result, .unsupportedScheme)
+        XCTAssertEqual(bridge.sessionStore.records(forPageId: "tab-a:1").first?.result, .unsupportedScheme)
     }
 
     func testExternalSchemeResponderSourceRoutesThroughBridgeBeforeAppOpen() throws {
@@ -546,8 +546,6 @@ private final class NavigationExternalSchemeFakeResolver: SumiExternalAppResolvi
         let scheme = SumiExternalSchemePermissionRequest.normalizedScheme(for: url)
         guard handlerSchemes.contains(scheme) else { return nil }
         return SumiExternalAppInfo(
-            normalizedScheme: scheme,
-            appURL: URL(fileURLWithPath: "/Applications/\(scheme).app"),
             appDisplayName: "External App"
         )
     }
@@ -654,7 +652,6 @@ private func navigationExternalCoordinatorDecision(
                 profilePartitionId: "profile-a",
                 transientPageId: "tab-a:1"
             ),
-        ],
-        shouldPersist: false
+        ]
     )
 }

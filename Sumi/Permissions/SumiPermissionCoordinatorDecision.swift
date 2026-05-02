@@ -24,7 +24,6 @@ struct SumiPermissionCoordinatorDecision: Equatable, Sendable {
     let keys: [SumiPermissionKey]
     let queryId: String?
     let systemAuthorizationSnapshot: SumiSystemPermissionSnapshot?
-    let shouldPersist: Bool
     let shouldOfferSystemSettings: Bool
     let disablesPersistentAllow: Bool
     let promptSuppression: SumiPermissionPromptSuppression?
@@ -39,7 +38,6 @@ struct SumiPermissionCoordinatorDecision: Equatable, Sendable {
         keys: [SumiPermissionKey] = [],
         queryId: String? = nil,
         systemAuthorizationSnapshot: SumiSystemPermissionSnapshot? = nil,
-        shouldPersist: Bool = false,
         shouldOfferSystemSettings: Bool = false,
         disablesPersistentAllow: Bool = false,
         promptSuppression: SumiPermissionPromptSuppression? = nil
@@ -53,7 +51,6 @@ struct SumiPermissionCoordinatorDecision: Equatable, Sendable {
         self.keys = keys
         self.queryId = queryId
         self.systemAuthorizationSnapshot = systemAuthorizationSnapshot
-        self.shouldPersist = shouldPersist
         self.shouldOfferSystemSettings = shouldOfferSystemSettings
         self.disablesPersistentAllow = disablesPersistentAllow
         self.promptSuppression = promptSuppression
@@ -89,7 +86,6 @@ struct SumiPermissionCoordinatorDecision: Equatable, Sendable {
             permissionTypes: resolvedPermissionTypes,
             keys: keys,
             systemAuthorizationSnapshot: policyResult.systemAuthorizationSnapshot,
-            shouldPersist: false,
             shouldOfferSystemSettings: policyResult.mayOpenSystemSettings,
             disablesPersistentAllow: context.isEphemeralProfile
         )
@@ -109,7 +105,6 @@ struct SumiPermissionCoordinatorDecision: Equatable, Sendable {
             permissionTypes: [key.permissionType],
             keys: [key],
             systemAuthorizationSnapshot: Self.decodedSnapshot(decision.systemAuthorizationSnapshot),
-            shouldPersist: false,
             shouldOfferSystemSettings: false,
             disablesPersistentAllow: key.isEphemeralProfile
         )

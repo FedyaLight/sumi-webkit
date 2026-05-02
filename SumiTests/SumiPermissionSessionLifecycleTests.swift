@@ -72,7 +72,6 @@ private actor SessionLifecyclePolicyResolver: SumiPermissionPolicyResolver {
             reason: SumiPermissionPolicyReason.allowed,
             systemAuthorizationSnapshot: nil,
             mayOpenSystemSettings: false,
-            requiresSystemAuthorizationPrompt: false,
             allowedPersistences: context.isEphemeralProfile ? [.oneTime, .session] : [.oneTime, .session, .persistent]
         )
     }
@@ -134,7 +133,6 @@ private func sessionContext(
         requestingOrigin: SumiPermissionOrigin(string: "https://example.com"),
         topOrigin: SumiPermissionOrigin(string: "https://example.com"),
         permissionTypes: [permissionType],
-        hasUserGesture: true,
         requestedAt: sessionLifecycleDate(),
         isEphemeralProfile: isEphemeralProfile,
         profilePartitionId: "profile-a"
@@ -144,7 +142,6 @@ private func sessionContext(
         committedURL: URL(string: "https://example.com"),
         visibleURL: URL(string: "https://example.com"),
         mainFrameURL: URL(string: "https://example.com"),
-        hasUserGesture: true,
         isEphemeralProfile: isEphemeralProfile,
         transientPageId: pageId,
         now: sessionLifecycleDate()
@@ -174,16 +171,12 @@ private func waitForSessionLifecycleActiveQuery(
         permissionTypes: [],
         presentationPermissionType: nil,
         availablePersistences: [],
-        defaultPersistence: .oneTime,
         systemAuthorizationSnapshots: [],
-        policySources: [],
         policyReasons: [],
         createdAt: sessionLifecycleDate(),
         isEphemeralProfile: false,
-        hasUserGesture: nil,
         shouldOfferSystemSettings: false,
         disablesPersistentAllow: false,
-        requiresSystemAuthorizationPrompt: false
     )
 }
 

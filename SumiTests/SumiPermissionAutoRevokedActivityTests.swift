@@ -20,6 +20,5 @@ final class SumiPermissionAutoRevokedActivityTests: XCTestCase {
 
         XCTAssertEqual(result.removedCount, 1)
         XCTAssertEqual(records.first?.action, .autoRevoked)
-        XCTAssertEqual(records.first?.detail, SumiPermissionAutoRevokedEvent.cleanupReason)
     }
 }

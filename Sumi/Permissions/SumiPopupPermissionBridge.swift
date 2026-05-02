@@ -9,7 +9,6 @@ enum SumiPopupPermissionEvent: Equatable, Sendable {
     case allowedBrowserOwned(requestId: String, pageId: String)
     case blockedByDefault(requestId: String, pageId: String, reason: String)
     case blockedByStoredDeny(requestId: String, pageId: String, reason: String)
-    case openedLater(requestId: String, pageId: String, targetURL: URL)
     case possibleAbuse(requestId: String, pageId: String, attemptCount: Int)
 }
 
@@ -52,16 +51,13 @@ final class SumiPopupPermissionBridge {
            !request.involvesSumiInternalScheme {
             emit(.allowedBrowserOwned(requestId: request.id, pageId: tabContext.pageId))
             return SumiPopupPermissionResult(
-                action: .allow,
-                coordinatorDecision: nil,
-                reason: "popup-browser-owned-allowed"
+                action: .allow
             )
         }
         if request.classification == .internalOrBrowserOwned {
             return block(
                 request,
                 tabContext: tabContext,
-                decision: nil,
                 reason: "popup-browser-owned-blocked",
                 blockedReason: .blockedByPolicy
             )
@@ -71,7 +67,6 @@ final class SumiPopupPermissionBridge {
             return block(
                 request,
                 tabContext: tabContext,
-                decision: nil,
                 reason: "popup-javascript-url-blocked",
                 blockedReason: .blockedByPolicy
             )
@@ -83,7 +78,6 @@ final class SumiPopupPermissionBridge {
             return block(
                 request,
                 tabContext: tabContext,
-                decision: nil,
                 reason: "popup-origin-not-keyable",
                 blockedReason: .blockedByInvalidOrigin
             )
@@ -104,43 +98,28 @@ final class SumiPopupPermissionBridge {
                 reason: coordinatorDecision.reason
             ))
             return SumiPopupPermissionResult(
-                action: .allow,
-                coordinatorDecision: coordinatorDecision,
-                reason: coordinatorDecision.reason
+                action: .allow
             )
 
         case .denied:
             return block(
                 request,
                 tabContext: tabContext,
-                decision: coordinatorDecision,
                 reason: coordinatorDecision.reason,
                 blockedReason: SumiPopupDecisionMapper.blockedReason(for: coordinatorDecision)
             )
 
         case .promptRequired:
             if request.isUserActivated {
-                let defaultDecision = SumiPopupDecisionMapper.defaultAllowDecision(
-                    for: context.replacingUserGesture(request.isUserActivated),
-                    reason: "popup-user-activation-default-allow"
-                )
                 emit(.allowedByUserActivation(requestId: request.id, pageId: tabContext.pageId))
                 return SumiPopupPermissionResult(
-                    action: .allow,
-                    coordinatorDecision: defaultDecision,
-                    reason: defaultDecision.reason
+                    action: .allow
                 )
             }
-            let decision = SumiPopupDecisionMapper.defaultBlockDecision(
-                for: context.replacingUserGesture(false),
-                reason: pendingStrategy.reason,
-                source: .defaultSetting
-            )
             return block(
                 request,
                 tabContext: tabContext,
-                decision: decision,
-                reason: decision.reason,
+                reason: pendingStrategy.reason,
                 blockedReason: .blockedByBackgroundPromptUnavailable
             )
 
@@ -148,7 +127,6 @@ final class SumiPopupPermissionBridge {
             return block(
                 request,
                 tabContext: tabContext,
-                decision: coordinatorDecision,
                 reason: "popup-background-default-block",
                 blockedReason: .blockedByDefault
             )
@@ -157,7 +135,6 @@ final class SumiPopupPermissionBridge {
             return block(
                 request,
                 tabContext: tabContext,
-                decision: coordinatorDecision,
                 reason: coordinatorDecision.reason,
                 blockedReason: SumiPopupDecisionMapper.blockedReason(for: coordinatorDecision)
             )
@@ -179,16 +156,13 @@ final class SumiPopupPermissionBridge {
            !request.involvesSumiInternalScheme {
             emit(.allowedBrowserOwned(requestId: request.id, pageId: tabContext.pageId))
             return SumiPopupPermissionResult(
-                action: .allow,
-                coordinatorDecision: nil,
-                reason: "popup-browser-owned-allowed"
+                action: .allow
             )
         }
         if request.classification == .internalOrBrowserOwned {
             return block(
                 request,
                 tabContext: tabContext,
-                decision: nil,
                 reason: "popup-browser-owned-blocked",
                 blockedReason: .blockedByPolicy
             )
@@ -198,7 +172,6 @@ final class SumiPopupPermissionBridge {
             return block(
                 request,
                 tabContext: tabContext,
-                decision: nil,
                 reason: "popup-javascript-url-blocked",
                 blockedReason: .blockedByPolicy
             )
@@ -209,7 +182,6 @@ final class SumiPopupPermissionBridge {
             return block(
                 request,
                 tabContext: tabContext,
-                decision: nil,
                 reason: "popup-origin-not-keyable",
                 blockedReason: .blockedByInvalidOrigin
             )
@@ -218,16 +190,13 @@ final class SumiPopupPermissionBridge {
         if request.isUserActivated {
             emit(.allowedByUserActivation(requestId: request.id, pageId: tabContext.pageId))
             return SumiPopupPermissionResult(
-                action: .allow,
-                coordinatorDecision: nil,
-                reason: "popup-user-activation-default-allow-sync-fallback"
+                action: .allow
             )
         }
 
         return block(
             request,
             tabContext: tabContext,
-            decision: nil,
             reason: pendingStrategy.reason,
             blockedReason: .blockedByBackgroundPromptUnavailable
         )
@@ -275,30 +244,9 @@ final class SumiPopupPermissionBridge {
         )
     }
 
-    func blockedPopups(forPageId pageId: String) -> [SumiBlockedPopupRecord] {
-        blockedPopupStore.records(forPageId: pageId)
-    }
-
-    @discardableResult
-    func openBlockedPopup(
-        id: String,
-        pageId: String,
-        opener: (URL) -> Void
-    ) -> Bool {
-        guard let record = blockedPopupStore.reopenableRecord(id: id, pageId: pageId),
-              let targetURL = record.targetURL
-        else {
-            return false
-        }
-        opener(targetURL)
-        emit(.openedLater(requestId: record.id, pageId: record.pageId, targetURL: targetURL))
-        return true
-    }
-
     private func block(
         _ request: SumiPopupPermissionRequest,
         tabContext: SumiPopupPermissionTabContext,
-        decision: SumiPermissionCoordinatorDecision?,
         reason: String,
         blockedReason: SumiBlockedPopupRecord.Reason
     ) -> SumiPopupPermissionResult {
@@ -311,12 +259,8 @@ final class SumiPopupPermissionBridge {
                 topOrigin: topOrigin(for: tabContext),
                 targetURL: request.targetURL,
                 sourceURL: request.sourceURL ?? tabContext.committedURL,
-                createdAt: now(),
                 lastBlockedAt: now(),
-                userActivation: request.userActivation,
                 reason: blockedReason,
-                canOpenLater: request.canOpenLater,
-                navigationActionMetadata: request.navigationActionMetadata,
                 profilePartitionId: tabContext.profilePartitionId,
                 isEphemeralProfile: tabContext.isEphemeralProfile,
                 attemptCount: 1
@@ -345,9 +289,7 @@ final class SumiPopupPermissionBridge {
             ))
         }
         return SumiPopupPermissionResult(
-            action: .block(record),
-            coordinatorDecision: decision,
-            reason: reason
+            action: .block(record)
         )
     }
 
@@ -357,42 +299,5 @@ final class SumiPopupPermissionBridge {
 
     private func emit(_ event: SumiPopupPermissionEvent) {
         eventSink?(event)
-    }
-}
-
-private extension SumiPermissionSecurityContext {
-    func replacingUserGesture(_ hasUserGesture: Bool) -> SumiPermissionSecurityContext {
-        let permissionRequest = SumiPermissionRequest(
-            id: request.id,
-            tabId: request.tabId,
-            pageId: request.pageId,
-            frameId: request.frameId,
-            requestingOrigin: request.requestingOrigin,
-            topOrigin: request.topOrigin,
-            displayDomain: request.displayDomain,
-            permissionTypes: request.permissionTypes,
-            hasUserGesture: hasUserGesture,
-            requestedAt: request.requestedAt,
-            isEphemeralProfile: request.isEphemeralProfile,
-            profilePartitionId: request.profilePartitionId
-        )
-        return SumiPermissionSecurityContext(
-            request: permissionRequest,
-            requestingOrigin: requestingOrigin,
-            topOrigin: topOrigin,
-            committedURL: committedURL,
-            visibleURL: visibleURL,
-            mainFrameURL: mainFrameURL,
-            isMainFrame: isMainFrame,
-            isActiveTab: isActiveTab,
-            isVisibleTab: isVisibleTab,
-            hasUserGesture: hasUserGesture,
-            isEphemeralProfile: isEphemeralProfile,
-            profilePartitionId: profilePartitionId,
-            transientPageId: transientPageId,
-            surface: surface,
-            navigationOrPageGeneration: navigationOrPageGeneration,
-            now: now
-        )
     }
 }

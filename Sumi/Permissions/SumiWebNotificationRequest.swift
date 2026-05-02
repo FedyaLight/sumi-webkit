@@ -5,7 +5,6 @@ import WebKit
 struct SumiWebNotificationRequest: Sendable {
     let id: String
     let requestingOrigin: SumiPermissionOrigin
-    let frameURL: URL?
     let isMainFrame: Bool
 
     @MainActor
@@ -16,7 +15,6 @@ struct SumiWebNotificationRequest: Sendable {
         self.init(
             id: id,
             requestingOrigin: Self.permissionOrigin(from: frame.securityOrigin),
-            frameURL: frame.safeRequest?.url,
             isMainFrame: frame.isMainFrame
         )
     }
@@ -24,12 +22,10 @@ struct SumiWebNotificationRequest: Sendable {
     init(
         id: String = UUID().uuidString,
         requestingOrigin: SumiPermissionOrigin,
-        frameURL: URL?,
         isMainFrame: Bool
     ) {
         self.id = Self.normalizedId(id)
         self.requestingOrigin = requestingOrigin
-        self.frameURL = frameURL
         self.isMainFrame = isMainFrame
     }
 

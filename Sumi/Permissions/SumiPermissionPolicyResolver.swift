@@ -108,7 +108,6 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
                         source: override.source,
                         reason: override.reason,
                         systemAuthorizationSnapshot: snapshot,
-                        requiresSystemAuthorizationPrompt: true
                     )
                 }
                 return proceed(
@@ -117,7 +116,6 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
                     source: .system,
                     reason: SumiPermissionPolicyReason.systemAuthorizationNotDetermined,
                     systemAuthorizationSnapshot: snapshot,
-                    requiresSystemAuthorizationPrompt: true
                 )
             case .denied,
                  .restricted,
@@ -387,15 +385,13 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
         permissionType: SumiPermissionType,
         source: SumiPermissionDecisionSource,
         reason: String,
-        systemAuthorizationSnapshot: SumiSystemPermissionSnapshot? = nil,
-        requiresSystemAuthorizationPrompt: Bool = false
+        systemAuthorizationSnapshot: SumiSystemPermissionSnapshot? = nil
     ) -> SumiPermissionPolicyResult {
         .proceed(
             source: source,
             reason: reason,
             systemAuthorizationSnapshot: systemAuthorizationSnapshot,
             mayOpenSystemSettings: systemAuthorizationSnapshot?.shouldOpenSystemSettings ?? false,
-            requiresSystemAuthorizationPrompt: requiresSystemAuthorizationPrompt,
             allowedPersistences: allowedPersistences(
                 for: permissionType,
                 isEphemeralProfile: context.isEphemeralProfile

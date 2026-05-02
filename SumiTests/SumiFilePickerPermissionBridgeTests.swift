@@ -300,7 +300,6 @@ final class SumiFilePickerPermissionBridgeTests: XCTestCase {
         SumiFilePickerPermissionRequest(
             id: "file-picker-a",
             requestingOrigin: requestingOrigin,
-            frameURL: URL(string: "https://example.com/form"),
             isMainFrame: true,
             allowsMultipleSelection: allowsMultipleSelection,
             allowsDirectories: allowsDirectories,

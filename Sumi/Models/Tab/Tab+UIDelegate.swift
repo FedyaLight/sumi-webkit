@@ -228,7 +228,7 @@ extension Tab: WKUIDelegate {
         _ webView: WKWebView,
         requestDisplayCapturePermissionForOrigin origin: WKSecurityOrigin,
         initiatedByFrame frame: WKFrameInfo,
-        withSystemAudio: Bool,
+        withSystemAudio _: Bool,
         decisionHandler: @escaping (Int) -> Void
     ) {
         RuntimeDiagnostics.emit(
@@ -246,8 +246,7 @@ extension Tab: WKUIDelegate {
 
         let displayRequest = SumiWebKitDisplayCaptureRequest(
             origin: origin,
-            frame: frame,
-            withSystemAudio: withSystemAudio
+            frame: frame
         )
 
         browserManager.webKitPermissionBridge.handleDisplayCaptureAuthorization(
@@ -285,12 +284,9 @@ extension Tab: WKUIDelegate {
         let isMainFrame = requestURL.absoluteString == mainFrameURL.absoluteString
         if devices.contains(.display) {
             let displayRequest = SumiWebKitDisplayCaptureRequest(
-                webKitDisplayCaptureTypeRawValue: Int(devices.rawValue),
                 permissionTypes: permissionTypes,
                 requestingOrigin: requestingOrigin,
-                frameURL: requestURL,
-                isMainFrame: isMainFrame,
-                withSystemAudio: false
+                isMainFrame: isMainFrame
             )
             browserManager.webKitPermissionBridge.handleDisplayCaptureAuthorization(
                 displayRequest,
@@ -303,10 +299,8 @@ extension Tab: WKUIDelegate {
         }
 
         let mediaRequest = SumiWebKitMediaCaptureRequest(
-            webKitMediaTypeRawValue: Int(devices.rawValue),
             permissionTypes: permissionTypes,
             requestingOrigin: requestingOrigin,
-            frameURL: requestURL,
             isMainFrame: isMainFrame
         )
         browserManager.webKitPermissionBridge.handleLegacyMediaCaptureAuthorization(

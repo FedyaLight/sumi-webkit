@@ -60,14 +60,14 @@ final class SumiAutoplayPermissionStoreTests: XCTestCase {
         let url = URL(string: "https://example.com/video")!
 
         try await harness.adapter.setPolicy(.blockAll, for: url, profile: profile)
-        XCTAssertTrue(harness.adapter.hasExplicitPolicy(for: url, profile: profile))
+        XCTAssertNotNil(harness.adapter.explicitPolicy(for: url, profile: profile))
 
         try await harness.adapter.resetPolicy(for: url, profile: profile)
 
         let key = try XCTUnwrap(harness.adapter.key(for: url, profile: profile))
         let storedRecord = try await harness.store.getDecision(for: key)
         XCTAssertNil(storedRecord)
-        XCTAssertFalse(harness.adapter.hasExplicitPolicy(for: url, profile: profile))
+        XCTAssertNil(harness.adapter.explicitPolicy(for: url, profile: profile))
         XCTAssertEqual(harness.adapter.effectivePolicy(for: url, profile: profile), .default)
     }
 
@@ -133,7 +133,7 @@ final class SumiAutoplayPermissionStoreTests: XCTestCase {
             UserDefaults.standard.removeObject(forKey: "settings.sitePermissionOverrides.autoplay")
         }
 
-        XCTAssertFalse(harness.adapter.hasExplicitPolicy(for: url, profile: profile))
+        XCTAssertNil(harness.adapter.explicitPolicy(for: url, profile: profile))
         XCTAssertEqual(harness.adapter.effectivePolicy(for: url, profile: profile), .default)
     }
 

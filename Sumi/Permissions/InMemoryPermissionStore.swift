@@ -116,50 +116,6 @@ actor InMemoryPermissionStore: SumiPermissionStore {
             .sorted(by: recordSort)
     }
 
-    func listDecisions(
-        forDisplayDomain displayDomain: String,
-        profilePartitionId: String
-    ) async throws -> [SumiPermissionStoreRecord] {
-        let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
-        let domain = SumiPermissionStoreRecord.normalizedDisplayDomain(displayDomain)
-        return records.values
-            .filter { $0.key.profilePartitionId == profileId && $0.displayDomain == domain }
-            .sorted(by: recordSort)
-    }
-
-    func clearAll(profilePartitionId: String) async throws {
-        let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
-        records = records.filter { _, record in
-            record.key.profilePartitionId != profileId
-        }
-    }
-
-    func clearForDisplayDomains(
-        _ displayDomains: Set<String>,
-        profilePartitionId: String
-    ) async throws {
-        let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
-        let domains = Set(displayDomains.map(SumiPermissionStoreRecord.normalizedDisplayDomain))
-        guard !domains.isEmpty else { return }
-        records = records.filter { _, record in
-            record.key.profilePartitionId != profileId || !domains.contains(record.displayDomain)
-        }
-    }
-
-    func clearForOrigins(
-        _ origins: Set<SumiPermissionOrigin>,
-        profilePartitionId: String
-    ) async throws {
-        let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
-        let originIdentities = Set(origins.map(\.identity))
-        guard !originIdentities.isEmpty else { return }
-        records = records.filter { _, record in
-            guard record.key.profilePartitionId == profileId else { return true }
-            return !originIdentities.contains(record.key.requestingOrigin.identity)
-                && !originIdentities.contains(record.key.topOrigin.identity)
-        }
-    }
-
     @discardableResult
     func expireDecisions(now: Date) async throws -> Int {
         let beforeCount = records.count
@@ -240,21 +196,6 @@ actor InMemoryPermissionStore: SumiPermissionStore {
         return removeRecords { _, record in
             record.key.profilePartitionId == profileId
         }
-    }
-
-    @discardableResult
-    func clearSessionDecisions(profilePartitionId: String) async -> Int {
-        let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
-        return removeRecords { memoryKey, record in
-            memoryKey.ownerKind == .session
-                && record.key.profilePartitionId == profileId
-                && record.decision.persistence == .session
-        }
-    }
-
-    @discardableResult
-    func clearTransientDecisions(profilePartitionId: String) async -> Int {
-        await clearForProfile(profilePartitionId: profilePartitionId)
     }
 
     @discardableResult

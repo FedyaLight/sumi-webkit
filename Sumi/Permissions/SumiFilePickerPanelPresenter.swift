@@ -4,9 +4,6 @@ import UniformTypeIdentifiers
 import WebKit
 
 struct SumiFilePickerPanelPresentationRequest: Equatable, Sendable {
-    let id: String
-    let tabId: String
-    let pageId: String
     let allowsMultipleSelection: Bool
     let allowsDirectories: Bool
     let canChooseFiles: Bool
@@ -16,9 +13,6 @@ struct SumiFilePickerPanelPresentationRequest: Equatable, Sendable {
     let prompt: String
 
     init(
-        id: String,
-        tabId: String,
-        pageId: String,
         allowsMultipleSelection: Bool,
         allowsDirectories: Bool,
         canChooseFiles: Bool = true,
@@ -27,9 +21,6 @@ struct SumiFilePickerPanelPresentationRequest: Equatable, Sendable {
         title: String = "Choose File",
         prompt: String = "Choose"
     ) {
-        self.id = id
-        self.tabId = tabId
-        self.pageId = pageId
         self.allowsMultipleSelection = allowsMultipleSelection
         self.allowsDirectories = allowsDirectories
         self.canChooseFiles = canChooseFiles

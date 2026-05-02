@@ -88,7 +88,6 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         XCTAssertEqual(resolver.openedURLs, [mailURL])
         XCTAssertEqual(result.record?.result, .opened)
         XCTAssertEqual(result.record?.scheme, "mailto")
-        XCTAssertEqual(result.record?.appDisplayName, "Mail")
         XCTAssertEqual(result.record?.redactedTargetURLString, "mailto:test@example.com")
         XCTAssertFalse(result.record?.redactedTargetURLString?.contains("secret") == true)
         XCTAssertTrue(events.contains(.opened(requestId: "external-a", pageId: "tab-a:1", scheme: "mailto")))
@@ -110,7 +109,7 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
 
         XCTAssertFalse(result.didOpen)
         XCTAssertEqual(result.record?.result, .blockedByStoredDeny)
-        XCTAssertEqual(result.reason, "stored-persistent-deny")
+        XCTAssertEqual(result.record?.reason, "stored-persistent-deny")
         XCTAssertTrue(resolver.openedURLs.isEmpty)
     }
 
@@ -126,8 +125,7 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
 
         XCTAssertFalse(result.didOpen)
         XCTAssertEqual(result.record?.result, .blockedPromptPresenterUnavailable)
-        XCTAssertEqual(result.reason, SumiExternalSchemePendingStrategy.promptPresenterUnavailableBlock.reason)
-        XCTAssertEqual(result.coordinatorDecision?.shouldPersist, false)
+        XCTAssertEqual(result.record?.reason, SumiExternalSchemePendingStrategy.promptPresenterUnavailableBlock.reason)
         XCTAssertTrue(resolver.openedURLs.isEmpty)
         let setCount = await store.setDecisionCallCount()
         XCTAssertEqual(setCount, 0)
@@ -145,7 +143,7 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
 
         XCTAssertFalse(result.didOpen)
         XCTAssertEqual(result.record?.result, .blockedByDefault)
-        XCTAssertEqual(result.reason, "external-scheme-background-default-block")
+        XCTAssertEqual(result.record?.reason, "external-scheme-background-default-block")
         XCTAssertTrue(resolver.openedURLs.isEmpty)
         let setCount = await store.setDecisionCallCount()
         XCTAssertEqual(setCount, 0)
@@ -215,7 +213,7 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         )
 
         XCTAssertEqual(result.record?.result, .blockedPromptPresenterUnavailable)
-        XCTAssertEqual(result.reason, SumiExternalSchemePendingStrategy.promptPresenterUnavailableBlock.reason)
+        XCTAssertEqual(result.record?.reason, SumiExternalSchemePendingStrategy.promptPresenterUnavailableBlock.reason)
         let setCount = await store.setDecisionCallCount()
         XCTAssertEqual(setCount, 0)
     }
@@ -248,7 +246,6 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         )
 
         XCTAssertTrue(result.didOpen)
-        XCTAssertEqual(result.coordinatorDecision?.persistence, .session)
         XCTAssertEqual(resolver.openedURLs, [mailURL])
     }
 
@@ -286,7 +283,7 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         )
 
         XCTAssertEqual(result.record?.result, .unsupportedScheme)
-        XCTAssertEqual(result.reason, "external-scheme-no-installed-handler")
+        XCTAssertEqual(result.record?.reason, "external-scheme-no-installed-handler")
         XCTAssertTrue(resolver.openedURLs.isEmpty)
         let getCount = await store.getDecisionCallCount()
         XCTAssertEqual(getCount, 0)
@@ -309,7 +306,7 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
 
         XCTAssertFalse(result.didOpen)
         XCTAssertEqual(result.record?.result, .openFailed)
-        XCTAssertEqual(result.reason, "external-scheme-open-failed")
+        XCTAssertEqual(result.record?.reason, "external-scheme-open-failed")
         XCTAssertEqual(resolver.openedURLs, [URL(string: "mailto:test@example.com")!])
     }
 
@@ -335,7 +332,7 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
 
         XCTAssertFalse(result.didOpen)
         XCTAssertEqual(result.record?.result, .blockedByDefault)
-        XCTAssertEqual(result.reason, "external-scheme-origin-not-keyable")
+        XCTAssertEqual(result.record?.reason, "external-scheme-origin-not-keyable")
         XCTAssertTrue(resolver.openedURLs.isEmpty)
         let contexts = await coordinator.recordedContexts()
         XCTAssertTrue(contexts.isEmpty)
@@ -390,7 +387,7 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         _ = await bridge.evaluate(request, tabContext: externalTabContext())
         _ = await bridge.evaluate(request, tabContext: externalTabContext())
 
-        let records = bridge.attempts(forPageId: "tab-a:1")
+        let records = bridge.sessionStore.records(forPageId: "tab-a:1")
         XCTAssertEqual(records.count, 1)
         XCTAssertEqual(records.first?.attemptCount, 2)
         XCTAssertTrue(events.contains(.possibleAbuse(requestId: "external-a", pageId: "tab-a:1", attemptCount: 2)))
@@ -446,8 +443,6 @@ private final class ExternalSchemeFakeResolver: SumiExternalAppResolving {
         let scheme = SumiExternalSchemePermissionRequest.normalizedScheme(for: url)
         guard handlerSchemes.contains(scheme) else { return nil }
         return SumiExternalAppInfo(
-            normalizedScheme: scheme,
-            appURL: URL(fileURLWithPath: "/Applications/\(scheme).app"),
             appDisplayName: appDisplayName
         )
     }
@@ -522,7 +517,6 @@ private actor ExternalSchemeProceedPolicyResolver: SumiPermissionPolicyResolver 
             reason: SumiPermissionPolicyReason.allowed,
             systemAuthorizationSnapshot: nil,
             mayOpenSystemSettings: false,
-            requiresSystemAuthorizationPrompt: false,
             allowedPersistences: [.oneTime, .session, .persistent]
         )
     }
@@ -611,24 +605,19 @@ private let externalFixedDate = Date(timeIntervalSince1970: 1_800_000_000)
 private func externalRequest(
     id: String = "external-a",
     targetURL: URL?,
-    sourceURL: URL? = URL(string: "https://request.example/source"),
     requestingOrigin: SumiPermissionOrigin = externalRequestOrigin,
     userActivation: SumiExternalSchemeUserActivationState,
     classification: SumiExternalSchemeClassification? = nil,
-    isRedirectChain: Bool = false,
-    metadata: [String: String] = [:]
+    isRedirectChain: Bool = false
 ) -> SumiExternalSchemePermissionRequest {
     SumiExternalSchemePermissionRequest(
         id: id,
-        path: .navigationResponder,
         targetURL: targetURL,
-        sourceURL: sourceURL,
         requestingOrigin: requestingOrigin,
         userActivation: userActivation,
         classification: classification,
         isMainFrame: true,
-        isRedirectChain: isRedirectChain,
-        navigationActionMetadata: metadata
+        isRedirectChain: isRedirectChain
     )
 }
 
@@ -713,7 +702,6 @@ private func externalCoordinatorDecision(
         source: outcome == .granted || outcome == .denied ? .user : .defaultSetting,
         reason: reason,
         permissionTypes: [.externalScheme("mailto")],
-        keys: [externalKey(scheme: "mailto")],
-        shouldPersist: false
+        keys: [externalKey(scheme: "mailto")]
     )
 }

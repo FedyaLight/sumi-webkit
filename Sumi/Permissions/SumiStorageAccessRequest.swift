@@ -2,23 +2,16 @@ import Foundation
 
 struct SumiStorageAccessRequest: Sendable {
     let id: String
-    let requestingDomain: String
-    let currentDomain: String
-    let quirkDomains: [String]
     let requestingOrigin: SumiPermissionOrigin
 
     init(
         id: String = UUID().uuidString,
         requestingDomain: String,
-        currentDomain: String,
-        quirkDomains: [String] = []
+        currentDomain _: String,
+        quirkDomains _: [String] = []
     ) {
         let normalizedRequestingDomain = Self.normalizedDomain(requestingDomain)
-        let normalizedCurrentDomain = Self.normalizedDomain(currentDomain)
         self.id = id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? UUID().uuidString : id
-        self.requestingDomain = normalizedRequestingDomain
-        self.currentDomain = normalizedCurrentDomain
-        self.quirkDomains = quirkDomains.map(Self.normalizedDomain).filter { !$0.isEmpty }
         self.requestingOrigin = Self.origin(from: normalizedRequestingDomain)
     }
 
