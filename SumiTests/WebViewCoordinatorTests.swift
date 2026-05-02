@@ -189,22 +189,41 @@ final class WebViewCoordinatorTests: XCTestCase {
         XCTAssertEqual(pane.subviews.count, 0)
     }
 
-    func testSetWebViewCreatesStableHostContainer() {
-        let coordinator = WebViewCoordinator()
+    func testWebViewContainerOwnsDisplayedTabContentView() {
         let tabId = UUID()
         let windowId = UUID()
+        let parent = NSView()
         let webView = WKWebView(frame: .zero)
+        let host = SumiWebViewContainerView(tabID: tabId, windowID: windowId, webView: webView)
 
-        coordinator.setWebView(webView, for: tabId, in: windowId)
-
-        let host = coordinator.getWebViewHost(for: tabId, in: windowId)
-        XCTAssertNotNil(host)
-        XCTAssertTrue(host?.webView === webView)
+        XCTAssertTrue(host.webView === webView)
         XCTAssertTrue(webView.superview === host)
 
-        host?.frame = NSRect(x: 0, y: 0, width: 320, height: 240)
-        host?.layoutSubtreeIfNeeded()
-        XCTAssertEqual(webView.frame, host?.bounds)
+        host.frame = NSRect(x: 0, y: 0, width: 320, height: 240)
+        host.layoutSubtreeIfNeeded()
+        XCTAssertEqual(webView.frame, host.bounds)
+
+        parent.addSubview(host)
+        host.removeFromSuperview()
+        XCTAssertNil(webView.superview)
+    }
+
+    func testWebViewContainerRemoveBeforeAttachmentDoesNotDetachDisplayedContent() {
+        let tabId = UUID()
+        let windowId = UUID()
+        let parent = NSView()
+        let webView = WKWebView(frame: .zero)
+        let host = SumiWebViewContainerView(tabID: tabId, windowID: windowId, webView: webView)
+
+        host.removeFromSuperview()
+        XCTAssertTrue(webView.superview === host)
+
+        parent.addSubview(host)
+        host.frame = NSRect(x: 0, y: 0, width: 320, height: 240)
+        host.layoutSubtreeIfNeeded()
+
+        XCTAssertTrue(webView.superview === host)
+        XCTAssertEqual(webView.frame, host.bounds)
     }
 
     func testSetWebViewReplacesReverseIndexForOverwrittenSlot() {
@@ -220,7 +239,6 @@ final class WebViewCoordinatorTests: XCTestCase {
         XCTAssertNil(coordinator.windowID(containing: firstWebView))
         XCTAssertEqual(coordinator.windowID(containing: replacementWebView), windowId)
         XCTAssertTrue(coordinator.getWebView(for: tabId, in: windowId) === replacementWebView)
-        XCTAssertTrue(coordinator.getWebViewHost(for: tabId, in: windowId)?.webView === replacementWebView)
     }
 
     func testWindowIDContainingWebViewUsesReverseIndexAcrossWindows() {
@@ -236,8 +254,6 @@ final class WebViewCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(coordinator.windowID(containing: firstWebView), firstWindowId)
         XCTAssertEqual(coordinator.windowID(containing: secondWebView), secondWindowId)
-        XCTAssertTrue(coordinator.getWebViewHost(for: tabId, in: firstWindowId)?.webView === firstWebView)
-        XCTAssertTrue(coordinator.getWebViewHost(for: tabId, in: secondWindowId)?.webView === secondWebView)
     }
 
     func testCoordinatorCreatedWebViewUpdatesTabTitleFromKVO() async {
@@ -250,6 +266,8 @@ final class WebViewCoordinatorTests: XCTestCase {
             in: browserManager.tabManager.currentSpace,
             activate: false
         )
+        // Avoid racing the coordinator-created test load with Tab.setupWebView's lazy initial navigation.
+        tab.isPopupHost = true
         let windowId = UUID()
         let expectation = expectation(description: "Tab title updates from WKWebView.title KVO")
         let expectedTitlePrefix = "Coordinator KVO Title"
@@ -310,7 +328,7 @@ final class WebViewCoordinatorTests: XCTestCase {
         root.addSubview(pane)
         coordinator.setCompositorContainerView(root, for: windowId)
         coordinator.setWebView(webView, for: tabId, in: windowId)
-        let host = try! XCTUnwrap(coordinator.getWebViewHost(for: tabId, in: windowId))
+        let host = SumiWebViewContainerView(tabID: tabId, windowID: windowId, webView: webView)
         pane.addSubview(host)
 
         coordinator.beginHistorySwipeProtection(
@@ -334,64 +352,6 @@ final class WebViewCoordinatorTests: XCTestCase {
 
         XCTAssertNil(host.superview)
         XCTAssertNil(webView.superview)
-    }
-
-    func testDeferredAttachHostCommandsCollapseToLatestPane() async {
-        let coordinator = WebViewCoordinator()
-        let tabId = UUID()
-        let windowId = UUID()
-        let (root, singlePane, leftPane, _) = makeCompositorPaneRoot()
-        let webView = WKWebView(frame: .zero)
-
-        coordinator.setCompositorContainerView(root, for: windowId)
-        coordinator.setWebView(webView, for: tabId, in: windowId)
-        let host = try! XCTUnwrap(coordinator.getWebViewHost(for: tabId, in: windowId))
-
-        coordinator.beginHistorySwipeProtection(
-            tabId: tabId,
-            webView: webView,
-            originURL: URL(string: "https://example.com/collapse"),
-            originHistoryItem: nil
-        )
-
-        XCTAssertFalse(coordinator.attachHost(host, to: singlePane))
-
-        XCTAssertFalse(coordinator.attachHost(host, to: leftPane))
-
-        coordinator.finishHistorySwipeProtection(
-            tabId: tabId,
-            webView: webView,
-            currentURL: URL(string: "https://example.com/collapse-finished"),
-            currentHistoryItem: nil
-        )
-        await Task.yield()
-
-        XCTAssertTrue(host.superview === leftPane)
-    }
-
-    func testDeferredCommandsDropWhenWindowContainerIsDestroyed() {
-        let coordinator = WebViewCoordinator()
-        let tabId = UUID()
-        let windowId = UUID()
-        let (root, _, leftPane, _) = makeCompositorPaneRoot()
-        let webView = WKWebView(frame: .zero)
-
-        coordinator.setCompositorContainerView(root, for: windowId)
-        coordinator.setWebView(webView, for: tabId, in: windowId)
-        let host = try! XCTUnwrap(coordinator.getWebViewHost(for: tabId, in: windowId))
-
-        coordinator.beginHistorySwipeProtection(
-            tabId: tabId,
-            webView: webView,
-            originURL: URL(string: "https://example.com/drop-window"),
-            originHistoryItem: nil
-        )
-
-        XCTAssertFalse(coordinator.attachHost(host, to: leftPane))
-
-        coordinator.removeCompositorContainerView(for: windowId)
-
-        XCTAssertNil(host.superview)
     }
 
     func testCleanupWindowDeferredCommandsAreRemovedAfterProtectedFlush() async {
@@ -787,8 +747,6 @@ final class WebViewCoordinatorTests: XCTestCase {
 
         XCTAssertNil(coordinator.getWebView(for: tab.id, in: firstWindowId))
         XCTAssertNil(coordinator.getWebView(for: tab.id, in: secondWindowId))
-        XCTAssertNil(coordinator.getWebViewHost(for: tab.id, in: firstWindowId))
-        XCTAssertNil(coordinator.getWebViewHost(for: tab.id, in: secondWindowId))
         XCTAssertNil(coordinator.windowID(containing: firstWebView))
         XCTAssertNil(coordinator.windowID(containing: secondWebView))
         XCTAssertNil(tab.primaryWindowId)
@@ -817,10 +775,8 @@ final class WebViewCoordinatorTests: XCTestCase {
         coordinator.cleanupWindow(firstWindowId, tabManager: browserManager.tabManager)
 
         XCTAssertNil(coordinator.getWebView(for: tab.id, in: firstWindowId))
-        XCTAssertNil(coordinator.getWebViewHost(for: tab.id, in: firstWindowId))
         XCTAssertNil(coordinator.windowID(containing: firstWebView))
         XCTAssertEqual(coordinator.windowID(containing: secondWebView), secondWindowId)
-        XCTAssertTrue(coordinator.getWebViewHost(for: tab.id, in: secondWindowId)?.webView === secondWebView)
         XCTAssertEqual(tab.primaryWindowId, secondWindowId)
         XCTAssertTrue(tab.assignedWebView === secondWebView)
     }
@@ -856,8 +812,6 @@ final class WebViewCoordinatorTests: XCTestCase {
         XCTAssertNil(coordinator.windowID(containing: secondWebView))
         XCTAssertNil(coordinator.getWebView(for: firstTab.id, in: firstWindowId))
         XCTAssertNil(coordinator.getWebView(for: secondTab.id, in: secondWindowId))
-        XCTAssertNil(coordinator.getWebViewHost(for: firstTab.id, in: firstWindowId))
-        XCTAssertNil(coordinator.getWebViewHost(for: secondTab.id, in: secondWindowId))
         XCTAssertNil(firstTab.primaryWindowId)
         XCTAssertNil(secondTab.primaryWindowId)
     }

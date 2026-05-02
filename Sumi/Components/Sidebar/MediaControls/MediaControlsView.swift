@@ -24,7 +24,7 @@ struct MediaControlsView: View {
                     onToggleMute: { Task { await mediaStore.toggleMute() } }
                 )
                 .padding(.horizontal, 8)
-                .padding(.bottom, 2)
+                .padding(.bottom, 4)
                 .transition(
                     .asymmetric(
                         insertion: .opacity
@@ -56,6 +56,16 @@ struct MediaControlsView: View {
 }
 
 private struct SumiBackgroundMediaCardView: View {
+    /// Single spring for layout + clip: avoids opacity fighting height (feels glued to the card edge).
+    private static let hoverExpandAnimation = Animation.spring(response: 0.3, dampingFraction: 0.86)
+
+    private static let collapsedCardHeight: CGFloat = 40
+    private static let cardVerticalPadding: CGFloat = 4
+    private static let controlsRowHeight: CGFloat = 26
+    /// When collapsed, reveal height is 0; band fills the card under vertical padding so Spacers can center the row.
+    private static let controlsBandCollapsedHeight =
+        collapsedCardHeight - cardVerticalPadding * 2
+
     let cardState: SumiBackgroundMediaCardState
     let onFocus: () -> Void
     let onPlayPause: () -> Void
@@ -86,52 +96,47 @@ private struct SumiBackgroundMediaCardView: View {
         tokens.buttonSecondaryBackground.opacity(0.98)
     }
 
+    private var cardCornerRadius: CGFloat {
+        sumiSettings.resolvedCornerRadius(10)
+    }
+
     var body: some View {
         cardBody()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func cardBody() -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if isExpanded {
-                revealSection
-                    .transition(
-                        .asymmetric(
-                            insertion: .opacity
-                                .combined(with: .offset(y: 6))
-                                .animation(.easeInOut(duration: 0.18)),
-                            removal: .opacity
-                                .combined(with: .offset(y: 10))
-                                .animation(.easeInOut(duration: 0.12))
-                        )
-                    )
-            }
+        let shape = RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
 
-            controlsRow
+        return VStack(alignment: .leading, spacing: 0) {
+            revealSection
+                .frame(maxHeight: isExpanded ? nil : 0, alignment: .top)
+                .clipped()
+                .allowsHitTesting(isExpanded)
+
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                controlsRow
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: isExpanded ? Self.controlsRowHeight : Self.controlsBandCollapsedHeight)
         }
         .padding(.horizontal, 6)
-        .padding(.vertical, 4)
+        .padding(.vertical, Self.cardVerticalPadding)
         .frame(maxWidth: .infinity)
-        .frame(height: isExpanded ? nil : 40, alignment: .center)
+        .frame(height: isExpanded ? nil : Self.collapsedCardHeight, alignment: .top)
         .background {
-            RoundedRectangle(
-                cornerRadius: sumiSettings.resolvedCornerRadius(10),
-                style: .continuous
-            )
-            .fill(cardBackground)
+            shape.fill(cardBackground)
         }
+        .clipShape(shape)
         .overlay {
-            RoundedRectangle(
-                cornerRadius: sumiSettings.resolvedCornerRadius(10),
-                style: .continuous
-            )
-            .stroke(cardBorder, lineWidth: 0.5)
+            shape.stroke(cardBorder, lineWidth: 0.5)
         }
         .shadow(color: .black.opacity(0.05), radius: 8, y: 1)
         .contentShape(Rectangle())
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.18)) {
+            withAnimation(Self.hoverExpandAnimation) {
                 isHovered = hovering
             }
         }
@@ -142,39 +147,27 @@ private struct SumiBackgroundMediaCardView: View {
             infoRow
         }
         .padding(.top, 5)
-        .padding(.bottom, 2)
+        .padding(.bottom, 5)
         .fixedSize(horizontal: false, vertical: true)
     }
 
     private var infoRow: some View {
         HStack(alignment: .top, spacing: 6) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 OverflowAwareMarqueeText(
                     text: cardState.title,
                     font: .system(size: 11, weight: .semibold),
                     color: tokens.primaryText
                 )
 
-                HStack(spacing: 6) {
+                if !cardState.subtitle.isEmpty {
                     Text(cardState.subtitle)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(tokens.secondaryText.opacity(0.9))
                         .lineLimit(1)
-
-                    if let sourceHost = cardState.sourceHost, !sourceHost.isEmpty {
-                        Text(sourceHost)
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(tokens.secondaryText.opacity(0.8))
-                            .lineLimit(1)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(
-                                controlBackground,
-                                in: Capsule(style: .continuous)
-                            )
-                    }
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Spacer(minLength: 4)
@@ -183,10 +176,17 @@ private struct SumiBackgroundMediaCardView: View {
     }
 
     private var controlsRow: some View {
-        HStack(spacing: 0) {
-            focusButton
-
-            Spacer(minLength: 12)
+        ZStack {
+            HStack(spacing: 0) {
+                focusButton
+                Spacer(minLength: 0)
+                compactIconButton(
+                    systemName: cardState.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
+                    help: cardState.isMuted ? "Unmute Audio" : "Mute Audio",
+                    isEnabled: cardState.canMute,
+                    action: onToggleMute
+                )
+            }
 
             compactIconButton(
                 systemName: cardState.isPlaying ? "pause.fill" : "play.fill",
@@ -195,16 +195,8 @@ private struct SumiBackgroundMediaCardView: View {
                 isPrimary: true,
                 action: onPlayPause
             )
-
-            Spacer(minLength: 12)
-
-            compactIconButton(
-                systemName: cardState.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
-                help: cardState.isMuted ? "Unmute Audio" : "Mute Audio",
-                isEnabled: cardState.canMute,
-                action: onToggleMute
-            )
         }
+        .frame(maxWidth: .infinity)
         .frame(height: 26)
     }
 
@@ -241,6 +233,10 @@ private struct SumiBackgroundMediaCardView: View {
                     controlBackground,
                     in: RoundedRectangle(cornerRadius: 5, style: .continuous)
                 )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .stroke(cardBorder.opacity(0.9), lineWidth: 0.5)
+                }
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)

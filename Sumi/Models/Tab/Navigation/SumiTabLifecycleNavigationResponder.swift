@@ -138,7 +138,6 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
         }
 
         tab.browserManager?.enforceSiteDataPolicyAfterNavigation(for: tab)
-        SumiNativeNowPlayingController.shared.scheduleRefresh(delayNanoseconds: 0)
     }
 
     func navigation(_ navigation: Navigation, didSameDocumentNavigationOf navigationType: WKSameDocumentNavigationType) {
@@ -166,8 +165,25 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
         else { return }
 
         let webView = webView(for: navigation)
+        if navigation.navigationAction.navigationType.isBackForward {
+            tab.finishBackForwardNavigationTracking(using: webView)
+        }
+
+        if error.sumiIsNavigationCancelled {
+            if tab.loadingState.isLoading {
+                tab.loadingState = .idle
+            }
+            tab.updateNavigationState()
+            tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.loading])
+            return
+        }
+
+        guard navigation.isCurrent else { return }
+
         tab.loadingState = .didFail(error)
-        tab.finishBackForwardNavigationTracking(using: webView)
+        if !navigation.navigationAction.navigationType.isBackForward {
+            tab.finishBackForwardNavigationTracking(using: webView)
+        }
         tab.updateNavigationState()
         tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.loading])
     }
@@ -207,5 +223,12 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
     private func webView(for navigation: Navigation) -> WKWebView? {
         navigation.navigationAction.targetFrame?.webView
             ?? navigation.navigationAction.sourceFrame.webView
+    }
+}
+
+private extension WKError {
+    var sumiIsNavigationCancelled: Bool {
+        let nsError = self as NSError
+        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
     }
 }

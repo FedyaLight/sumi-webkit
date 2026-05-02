@@ -558,8 +558,10 @@ final class SumiNativeNowPlayingControllerTests: XCTestCase {
             commandExecutor: { command, tab, _, _ in
                 guard tab.id == owner.id else { return false }
                 if command == .pause {
+                    owner.applyAudioState(.unmuted(isPlayingAudio: false))
                     currentInfo = self.activeInfo(title: "Owner", playbackState: .paused)
                 } else {
+                    owner.applyAudioState(.unmuted(isPlayingAudio: true))
                     currentInfo = self.activeInfo(title: "Owner", playbackState: .playing)
                 }
                 return true
@@ -651,7 +653,9 @@ final class SumiNativeNowPlayingControllerTests: XCTestCase {
                 return self.activeInfo(title: "Owner", playbackState: .playing)
             },
             commandExecutor: { command, tab, _, _ in
-                command == .pause && tab.id == owner.id
+                guard command == .pause, tab.id == owner.id else { return false }
+                owner.applyAudioState(.unmuted(isPlayingAudio: false))
+                return true
             }
         )
 
@@ -664,6 +668,55 @@ final class SumiNativeNowPlayingControllerTests: XCTestCase {
 
         XCTAssertEqual(controller.cardState?.tabId, owner.id)
         XCTAssertEqual(controller.cardState?.playbackState, .paused)
+    }
+
+    func testPlaybackStateFollowsTabAudioWhenResumedOutsideCard() async {
+        let browserManager = BrowserManager()
+        let windowRegistry = WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
+
+        let windowState = BrowserWindowState(id: UUID())
+        windowRegistry.register(windowState)
+
+        let current = makeTab(name: "Current", url: "https://sumi.example/current")
+        let owner = makeTab(name: "Owner", url: "https://sumi.example/owner")
+        owner.lastMediaActivityAt = Date()
+
+        attachRegularTabs(
+            [current, owner],
+            currentTabId: current.id,
+            to: windowState,
+            browserManager: browserManager
+        )
+
+        var currentInfo: SumiNativeNowPlayingInfo? = activeInfo(title: "Owner", playbackState: .playing)
+        let controller = makeController(
+            infoProvider: { tab, _, _ in
+                tab.id == owner.id ? currentInfo : nil
+            },
+            commandExecutor: { command, tab, _, _ in
+                guard tab.id == owner.id else { return false }
+                if command == .pause {
+                    owner.applyAudioState(.unmuted(isPlayingAudio: false))
+                    currentInfo = self.activeInfo(title: "Owner", playbackState: .paused)
+                }
+                return true
+            }
+        )
+
+        controller.configure(browserManager: browserManager)
+        await controller.refreshImmediately()
+        XCTAssertEqual(controller.cardState?.playbackState, .playing)
+
+        await controller.togglePlayPause()
+        await controller.refreshImmediately()
+        XCTAssertEqual(controller.cardState?.playbackState, .paused)
+
+        owner.applyAudioState(.unmuted(isPlayingAudio: true))
+        currentInfo = self.activeInfo(title: "Owner", playbackState: .playing)
+
+        await controller.refreshImmediately()
+        XCTAssertEqual(controller.cardState?.playbackState, .playing)
     }
 
     func testFreshPlayingTabReplacesPausedRetainedCard() async {
@@ -913,6 +966,10 @@ final class SumiNativeNowPlayingControllerTests: XCTestCase {
             tab.spaceId = space.id
             tab.index = index
             tab.browserManager = browserManager
+        }
+
+        if browserManager.webViewCoordinator == nil {
+            browserManager.webViewCoordinator = WebViewCoordinator()
         }
     }
 
