@@ -61,10 +61,6 @@ final class SumiBookmarksPageViewModel: ObservableObject {
         sortMode.allowsManualMove && searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    var selectedFolderTitle: String {
-        folders.first(where: { $0.id == selectedFolderID })?.title ?? "Bookmarks"
-    }
-
     func appear() {
         rebuildVisibleEntities()
     }
