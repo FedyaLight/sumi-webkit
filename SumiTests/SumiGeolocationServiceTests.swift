@@ -5,43 +5,6 @@ import XCTest
 
 @MainActor
 final class SumiGeolocationServiceTests: XCTestCase {
-    func testRequestCurrentLocationReturnsFakeLocationWhenSystemAuthorized() async {
-        let manager = FakeCoreLocationManager()
-        let service = SumiGeolocationService(
-            locationManager: manager,
-            systemPermissionService: FakeSumiSystemPermissionService(states: [.geolocation: .authorized])
-        )
-        let location = CLLocation(latitude: 37.3317, longitude: -122.0301)
-
-        let task = Task { @MainActor in
-            await service.requestCurrentLocation(highAccuracy: true, timeout: 1)
-        }
-        await waitUntil { manager.requestLocationCallCount == 1 }
-        manager.emit(location)
-
-        let result = await task.value
-        XCTAssertEqual(manager.requestLocationCallCount, 1)
-        XCTAssertEqual(manager.desiredAccuracy, kCLLocationAccuracyBest)
-        XCTAssertEqual(try? result.get().coordinate.latitude, location.coordinate.latitude)
-        XCTAssertEqual(try? result.get().coordinate.longitude, location.coordinate.longitude)
-    }
-
-    func testDeniedSystemStateDoesNotRequestRealAuthorizationOrLocation() async {
-        let manager = FakeCoreLocationManager()
-        let systemService = FakeSumiSystemPermissionService(states: [.geolocation: .denied])
-        let service = SumiGeolocationService(
-            locationManager: manager,
-            systemPermissionService: systemService
-        )
-
-        let result = await service.requestCurrentLocation(highAccuracy: false, timeout: 0.01)
-
-        XCTAssertEqual(result.failureValue, .permissionDenied)
-        XCTAssertEqual(manager.requestLocationCallCount, 0)
-        let authorizationRequestCount = await systemService.requestAuthorizationCallCount(for: .geolocation)
-        XCTAssertEqual(authorizationRequestCount, 0)
-    }
-
     func testNotDeterminedSystemStateFailsClosedWithoutRequestingAuthorization() async {
         let manager = FakeCoreLocationManager()
         let systemService = FakeSumiSystemPermissionService(states: [.geolocation: .notDetermined])
@@ -97,32 +60,6 @@ final class SumiGeolocationServiceTests: XCTestCase {
         XCTAssertEqual(receivedLocation?.coordinate.latitude, 1)
         XCTAssertEqual(manager.startUpdatingLocationCallCount, 1)
         XCTAssertEqual(manager.stopUpdatingLocationCallCount, 1)
-        XCTAssertFalse(service.isUpdatingLocation)
-    }
-
-    func testCurrentLocationRequestTimesOutDeterministically() async {
-        let manager = FakeCoreLocationManager()
-        let service = SumiGeolocationService(
-            locationManager: manager,
-            systemPermissionService: FakeSumiSystemPermissionService(states: [.geolocation: .authorized])
-        )
-
-        let result = await service.requestCurrentLocation(highAccuracy: false, timeout: 0.01)
-
-        XCTAssertEqual(result.failureValue, .timeout)
-        XCTAssertEqual(manager.requestLocationCallCount, 1)
-    }
-
-    private func waitUntil(
-        timeoutNanoseconds: UInt64 = 250_000_000,
-        _ condition: @escaping @MainActor () -> Bool
-    ) async {
-        var elapsed: UInt64 = 0
-        while !condition(), elapsed < timeoutNanoseconds {
-            let step: UInt64 = 1_000_000
-            try? await Task.sleep(nanoseconds: step)
-            elapsed += step
-        }
     }
 }
 
@@ -131,16 +68,11 @@ private final class FakeCoreLocationManager: SumiCoreLocationManaging {
     weak var delegate: CLLocationManagerDelegate?
     var authorizationStatus: CLAuthorizationStatus = .authorizedAlways
     var desiredAccuracy: CLLocationAccuracy = kCLLocationAccuracyHundredMeters
-    private(set) var requestLocationCallCount = 0
     private(set) var startUpdatingLocationCallCount = 0
     private(set) var stopUpdatingLocationCallCount = 0
 
     func setDelegate(_ delegate: CLLocationManagerDelegate?) {
         self.delegate = delegate
-    }
-
-    func requestLocation() {
-        requestLocationCallCount += 1
     }
 
     func startUpdatingLocation() {

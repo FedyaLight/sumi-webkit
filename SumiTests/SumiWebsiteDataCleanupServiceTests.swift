@@ -450,8 +450,6 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             visitedAt: historyTestDate("2026-04-23T09:00:00Z"),
             profileId: harness.profileID
         )
-        await harness.historyManager.refresh()
-
         await service.clear(
             range: .lastHour,
             categories: [.history, .siteData, .cache],
@@ -494,8 +492,6 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             visitedAt: historyTestDate("2026-04-23T11:30:00Z"),
             profileId: otherProfileID
         )
-        await harness.historyManager.refresh()
-
         await service.clear(
             range: .allTime,
             categories: [.history, .siteData],

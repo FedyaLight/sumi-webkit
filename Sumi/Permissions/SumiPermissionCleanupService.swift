@@ -83,29 +83,18 @@ final class SumiPermissionCleanupService {
 
         do {
             let records = try await store.listDecisions(profilePartitionId: profile.profilePartitionId)
-            var retainedCount = 0
-            var skippedCount = 0
             var removedEvents: [SumiPermissionAutoRevokedEvent] = []
 
             for record in records {
                 guard isCleanupEligible(record, now: startedAt, threshold: settings.staleThreshold) else {
-                    if record.decision.persistence == .persistent {
-                        retainedCount += 1
-                    } else {
-                        skippedCount += 1
-                    }
                     continue
                 }
 
-                let staleReferenceDate = Self.staleReferenceDate(for: record.decision)
                 try await store.resetDecision(for: record.key)
                 let event = SumiPermissionAutoRevokedEvent(
                     displayDomain: record.displayDomain,
                     key: record.key,
-                    priorState: record.decision.state,
-                    priorSource: record.decision.source,
-                    revokedAt: startedAt,
-                    staleReferenceDate: staleReferenceDate
+                    revokedAt: startedAt
                 )
                 removedEvents.append(event)
                 recentActivityStore.recordAutoRevoked(event)
@@ -114,7 +103,7 @@ final class SumiPermissionCleanupService {
                         type: .autoRevokedByCleanup,
                         key: record.key,
                         createdAt: startedAt,
-                        reason: SumiPermissionAutoRevokedEvent.cleanupReason
+                        reason: "unused-site-permission-cleanup"
                     )
                 )
             }
@@ -123,30 +112,16 @@ final class SumiPermissionCleanupService {
             userDefaults.set(finishedAt, forKey: lastRunKey(profile.profilePartitionId))
             userDefaults.set(removedEvents.count, forKey: lastRemovedKey(profile.profilePartitionId))
             return SumiPermissionCleanupResult(
-                profilePartitionId: profile.profilePartitionId,
-                startedAt: startedAt,
-                finishedAt: finishedAt,
-                scannedCount: records.count,
                 removedCount: removedEvents.count,
-                retainedCount: retainedCount,
-                skippedCount: skippedCount,
                 removedEvents: removedEvents,
-                wasThrottled: false,
-                errorMessage: nil
+                wasThrottled: false
             )
         } catch {
-            let finishedAt = now()
+            _ = now()
             return SumiPermissionCleanupResult(
-                profilePartitionId: profile.profilePartitionId,
-                startedAt: startedAt,
-                finishedAt: finishedAt,
-                scannedCount: 0,
                 removedCount: 0,
-                retainedCount: 0,
-                skippedCount: 0,
                 removedEvents: [],
-                wasThrottled: false,
-                errorMessage: error.localizedDescription
+                wasThrottled: false
             )
         }
     }

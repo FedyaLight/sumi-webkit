@@ -286,27 +286,6 @@ final class SumiBookmarkMirrorManager: BookmarkManager {
         }
     }
 
-    func clearMirror() {
-        let context = database.makeContext(concurrencyType: .privateQueueConcurrencyType, name: "SumiFaviconBookmarksClear")
-        var deletedIDs = Set<String>()
-
-        context.performAndWait {
-            let bookmarks = Self.fetchMirrorBookmarks(in: context, prefixes: [Self.mirrorPrefix, Self.realBookmarkPrefix])
-            for bookmark in bookmarks {
-                if let uuid = bookmark.uuid {
-                    deletedIDs.insert(uuid)
-                }
-                context.delete(bookmark)
-            }
-            if context.hasChanges {
-                try? context.save()
-            }
-        }
-
-        guard let faviconsFetcher, !deletedIDs.isEmpty else { return }
-        faviconsFetcher.updateBookmarkIDs(modified: [], deleted: deletedIDs)
-    }
-
     func allHosts() -> Set<String> {
         let context = database.makeContext(concurrencyType: .privateQueueConcurrencyType, name: "SumiFaviconBookmarksHosts")
         var hosts = Set<String>()
@@ -461,11 +440,6 @@ final class SumiFaviconSystem {
             return favicon.image
         }
         return nil
-    }
-
-    func clearAll() {
-        manager.clearAll()
-        bookmarkMirror.clearMirror()
     }
 
     func burnAfterHistoryClear(savedLogins: Set<String>) async {

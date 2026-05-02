@@ -138,10 +138,6 @@ final class HistoryManager: ObservableObject {
         }
     }
 
-    func refresh() async {
-        await refreshSummary(incrementRevision: true)
-    }
-
     private func refreshSummary(incrementRevision: Bool) async {
         await dataProvider.refreshData()
         canClearHistory = await dataProvider.hasHistory()

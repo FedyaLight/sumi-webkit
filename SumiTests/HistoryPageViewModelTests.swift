@@ -283,7 +283,6 @@ final class HistoryPageViewModelTests: XCTestCase {
     }
 
     private func makeLoadedViewModel(harness: Harness) async -> HistoryPageViewModel {
-        await harness.browserManager.historyManager.refresh()
         let viewModel = harness.makeViewModel()
         viewModel.appear()
         await drainMainQueue()
@@ -296,12 +295,21 @@ final class HistoryPageViewModelTests: XCTestCase {
         at timestamp: String,
         harness: Harness
     ) async throws {
-        _ = try await harness.browserManager.historyManager.store.recordVisit(
+        let baselineRevision = harness.browserManager.historyManager.revision
+        _ = harness.browserManager.historyManager.addVisit(
             url: url,
             title: title,
-            visitedAt: date(timestamp),
+            timestamp: date(timestamp),
+            tabId: nil,
             profileId: harness.profile.id
         )
+        for _ in 0..<30 {
+            if harness.browserManager.historyManager.revision > baselineRevision {
+                return
+            }
+            await drainMainQueue()
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
     }
 
     private func makeItem(url: URL, title: String) -> HistoryListItem {

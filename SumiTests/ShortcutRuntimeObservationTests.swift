@@ -491,9 +491,6 @@ final class ShortcutRuntimeObservationTests: XCTestCase {
     }
 
     func testFaviconCacheUpdateRefreshesLauncherOnlyPinWithoutReopening() async throws {
-        Tab.clearFaviconCache()
-        defer { Tab.clearFaviconCache() }
-
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
         let launchURL = URL(string: "https://refresh.example.com/page")!
