@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import Combine
 import WebKit
 import ObjectiveC.runtime
@@ -22,6 +23,12 @@ enum SumiWebViewInteractionEvent {
 
 @MainActor
 final class FocusableWKWebView: WKWebView {
+    /// Local kill switch for the DDG-style control-click workaround (not user-facing).
+    static var isControlClickFixEnabled: Bool = true
+
+    /// Mirrors `features.macOSBrowserConfig.features.controlClickFix.settings.domains` in DuckDuckGo’s bundled `macos-config.json` (`drive.google.com` only).
+    private static let controlClickFixAllowlistedHosts: Set<String> = ["drive.google.com"]
+
     private static let webKitMouseTrackingLoadSheddingEnabled = true
     private static let webKitMouseTrackingObserverClassName = "WKMouseTrackingObserver"
 
@@ -102,9 +109,52 @@ final class FocusableWKWebView: WKWebView {
         owningTab?.setClickModifierFlags(event.modifierFlags)
         owningTab?.recordPopupUserActivation(event, kind: "mouseDown")
 
+        if Self.shouldApplyControlClickFix(
+            event: event,
+            pageHost: url?.host,
+            isFixEnabled: Self.isControlClickFixEnabled
+        ),
+           let modifierReleased = NSEvent.keyEvent(
+            with: .flagsChanged,
+            location: event.locationInWindow,
+            modifierFlags: event.modifierFlags.subtracting(.control),
+            timestamp: event.timestamp,
+            windowNumber: event.windowNumber,
+            context: nil,
+            characters: "",
+            charactersIgnoringModifiers: "",
+            isARepeat: false,
+            keyCode: UInt16(kVK_Control)
+           ) {
+            NSApp.sendEvent(modifierReleased)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                guard let self else { return }
+                self.performDefaultMouseDownBehavior(with: event)
+            }
+            return
+        }
+
+        performDefaultMouseDownBehavior(with: event)
+    }
+
+    private func performDefaultMouseDownBehavior(with event: NSEvent) {
         super.mouseDown(with: event)
         owningTab?.activate()
         interactionEventsPublisher.send(.mouseDown(event))
+    }
+
+    /// DDG-style gate: left primary click + control + allowlisted host + kill switch.
+    static func shouldApplyControlClickFix(
+        event: NSEvent,
+        pageHost: String?,
+        isFixEnabled: Bool
+    ) -> Bool {
+        guard isFixEnabled else { return false }
+        guard event.type == .leftMouseDown, event.modifierFlags.contains(.control) else { return false }
+        guard let host = pageHost?.lowercased(), controlClickFixAllowlistedHosts.contains(host) else {
+            return false
+        }
+        return true
     }
 
     override func otherMouseDown(with event: NSEvent) {
