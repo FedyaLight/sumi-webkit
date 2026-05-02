@@ -136,18 +136,11 @@ final class SumiBrowserWindow: NSWindow {
         applyBrowserWindowShellConfiguration(shouldApplyInitialSize: false)
     }
 
-    /// No Touch Bar for browser windows. This custom chrome path has previously hit
-    /// `_NSTouchBarFinderObservation` KVO faults during panel and window teardown.
-    override func makeTouchBar() -> NSTouchBar? {
-        nil
-    }
-
     override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
-        let didChange = super.makeFirstResponder(responder)
-        if didChange {
+        defer {
             NotificationCenter.default.post(name: Self.firstResponderDidChangeNotification, object: self)
         }
-        return didChange
+        return super.makeFirstResponder(responder)
     }
 
     // Adapted from DuckDuckGo MainWindow.keyDown:

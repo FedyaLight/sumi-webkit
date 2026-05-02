@@ -18,7 +18,27 @@ final class BrowserConfigurationMediaSessionTests: XCTestCase {
         )
     }
 
-    func testEphemeralProfileDisablesMediaSession() {
+    func testRegularProfileKeepsDDGMediaAndFullscreenPreferencesEnabled() {
+        let browserConfiguration = BrowserConfiguration()
+        let profile = Profile(name: "Default")
+
+        let configuration = browserConfiguration.normalTabWebViewConfiguration(
+            for: profile,
+            url: URL(string: "https://www.youtube.com/watch?v=M3ozIvoCFzw")
+        )
+
+        XCTAssertTrue(configuration.preferences.isElementFullscreenEnabled)
+        XCTAssertTrue(configuration.allowsAirPlayForMediaPlayback)
+
+        if ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] == nil {
+            XCTAssertEqual(
+                configuration.preferences.value(forKey: "allowsPictureInPictureMediaPlayback") as? Bool,
+                true
+            )
+        }
+    }
+
+    func testEphemeralProfileKeepsMediaSessionEnabled() {
         let browserConfiguration = BrowserConfiguration()
         let profile = Profile.createEphemeral()
 
@@ -29,7 +49,20 @@ final class BrowserConfigurationMediaSessionTests: XCTestCase {
 
         XCTAssertEqual(
             configuration.preferences.value(forKey: "mediaSessionEnabled") as? Bool,
-            false
+            true
+        )
+    }
+
+    func testAuxiliaryNonPersistentConfigurationKeepsMediaSessionEnabledByDefault() {
+        let browserConfiguration = BrowserConfiguration()
+
+        let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
+            surface: .peek
+        )
+
+        XCTAssertEqual(
+            configuration.preferences.value(forKey: "mediaSessionEnabled") as? Bool,
+            true
         )
     }
 }

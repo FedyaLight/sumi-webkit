@@ -1,167 +1,73 @@
 import AppKit
+import Combine
 import WebKit
 import ObjectiveC.runtime
 
-private var focusableWKWebViewContextMenuLifecycleAssociationKey: UInt8 = 0
+enum SumiWebViewInteractionEvent {
+    case mouseDown(NSEvent)
+    case middleMouseDown(NSEvent)
+    case keyDown(NSEvent)
+    case scrollWheel(NSEvent)
 
-@MainActor
-private final class FocusableWKWebViewContextMenuLifecycleDelegate: NSObject, NSMenuDelegate {
-    weak var webView: FocusableWKWebView?
-    weak var windowState: BrowserWindowState?
-    weak var previousDelegate: NSMenuDelegate?
-
-    private var token: SidebarTransientSessionToken?
-    private weak var tokenCoordinator: SidebarTransientSessionCoordinator?
-    private var endTrackingObserver: NSObjectProtocol?
-    private var didOpen = false
-
-    init(
-        webView: FocusableWKWebView,
-        windowState: BrowserWindowState,
-        previousDelegate: NSMenuDelegate?
-    ) {
-        self.webView = webView
-        self.windowState = windowState
-        self.previousDelegate = previousDelegate
-        super.init()
-    }
-
-    deinit {
-        if let endTrackingObserver {
-            NotificationCenter.default.removeObserver(endTrackingObserver)
-        }
-        if Thread.isMainThread {
-            MainActor.assumeIsolated {
-                tokenCoordinator?.endSession(token)
-            }
-        }
-    }
-
-    func update(webView: FocusableWKWebView, windowState: BrowserWindowState) {
-        self.webView = webView
-        self.windowState = windowState
-    }
-
-    func menuWillOpen(_ menu: NSMenu) {
-        guard !didOpen else { return }
-        didOpen = true
-        observeEndTracking(for: menu)
-        previousDelegate?.menuWillOpen?(menu)
-        guard let webView,
-              let windowState
-        else { return }
-
-        let coordinator = windowState.sidebarTransientSessionCoordinator
-        coordinator.prepareMenuPresentationSource(ownerView: webView)
-        let source = coordinator.preparedPresentationSource(
-            window: webView.window ?? windowState.window,
-            ownerView: webView
-        )
-        tokenCoordinator = coordinator
-        token = coordinator.beginSession(
-            kind: .contextMenu,
-            source: source,
-            path: "FocusableWKWebView.contextMenu",
-            preservePendingSource: true
-        )
-    }
-
-    func menuDidClose(_ menu: NSMenu) {
-        if didOpen {
-            previousDelegate?.menuDidClose?(menu)
-        }
-        finish(menu)
-    }
-
-    private func finish(_ menu: NSMenu) {
-        removeEndTrackingObserver()
-
-        let tokenToEnd = token
-        token = nil
-        tokenCoordinator?.endSession(tokenToEnd)
-        tokenCoordinator = nil
-        didOpen = false
-
-        if menu.delegate === self {
-            menu.delegate = previousDelegate
-        }
-        objc_setAssociatedObject(
-            menu,
-            &focusableWKWebViewContextMenuLifecycleAssociationKey,
-            nil,
-            .OBJC_ASSOCIATION_ASSIGN
-        )
-    }
-
-    private func observeEndTracking(for menu: NSMenu) {
-        removeEndTrackingObserver()
-        endTrackingObserver = NotificationCenter.default.addObserver(
-            forName: NSMenu.didEndTrackingNotification,
-            object: menu,
-            queue: .main
-        ) { [weak self] notification in
-            guard let self,
-                  let menu = notification.object as? NSMenu
-            else { return }
-            MainActor.assumeIsolated {
-                self.finish(menu)
-            }
-        }
-    }
-
-    private func removeEndTrackingObserver() {
-        if let endTrackingObserver {
-            NotificationCenter.default.removeObserver(endTrackingObserver)
-            self.endTrackingObserver = nil
+    var event: NSEvent {
+        switch self {
+        case .mouseDown(let event),
+             .middleMouseDown(let event),
+             .keyDown(let event),
+             .scrollWheel(let event):
+            return event
         }
     }
 }
 
-// Simple subclass to ensure clicking a webview focuses its tab in the app state
 @MainActor
 final class FocusableWKWebView: WKWebView {
     weak var owningTab: Tab?
+    let interactionEventsPublisher = PassthroughSubject<SumiWebViewInteractionEvent, Never>()
+
+    override init(frame: CGRect, configuration: WKWebViewConfiguration) {
+        _ = Self.swizzleImmediateActionAnimationControllerOnce
+        super.init(frame: frame, configuration: configuration)
+    }
+
+    required init?(coder: NSCoder) {
+        _ = Self.swizzleImmediateActionAnimationControllerOnce
+        super.init(coder: coder)
+    }
 
     override func mouseDown(with event: NSEvent) {
         owningTab?.setClickModifierFlags(event.modifierFlags)
         owningTab?.recordPopupUserActivation(event, kind: "mouseDown")
 
-        if owningTab?.isFreezingNavigationStateDuringBackForwardGesture != true {
-            owningTab?.activate()
-        }
-        // Ensure this webview becomes first responder so it can receive menu events
-        if owningTab?.isFreezingNavigationStateDuringBackForwardGesture != true,
-           window?.firstResponder != self {
-            window?.makeFirstResponder(self)
-        }
         super.mouseDown(with: event)
+        owningTab?.activate()
+        interactionEventsPublisher.send(.mouseDown(event))
     }
 
     override func otherMouseDown(with event: NSEvent) {
         owningTab?.setClickModifierFlags(event.modifierFlags)
         owningTab?.recordPopupUserActivation(event, kind: "middleMouseDown")
         super.otherMouseDown(with: event)
+        if event.buttonNumber == 2 {
+            interactionEventsPublisher.send(.middleMouseDown(event))
+        }
     }
 
     override func keyDown(with event: NSEvent) {
         owningTab?.recordPopupUserActivation(event, kind: "keyDown")
         super.keyDown(with: event)
+        interactionEventsPublisher.send(.keyDown(event))
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        super.scrollWheel(with: event)
+        interactionEventsPublisher.send(.scrollWheel(event))
     }
 
     override func rightMouseDown(with event: NSEvent) {
-        if owningTab?.isFreezingNavigationStateDuringBackForwardGesture != true {
-            owningTab?.activate()
-        }
-        // Ensure this webview becomes first responder so willOpenMenu gets called
-        if owningTab?.isFreezingNavigationStateDuringBackForwardGesture != true,
-           window?.firstResponder != self {
-            RuntimeDiagnostics.debug("Promoting FocusableWKWebView to first responder before context menu.", category: "FocusableWKWebView")
-            window?.makeFirstResponder(self)
-        }
         super.rightMouseDown(with: event)
+        owningTab?.activate()
     }
-
-    override var acceptsFirstResponder: Bool { true }
 
     override var isInFullScreenMode: Bool {
         sumiIsInFullscreenElementPresentation
@@ -174,65 +80,54 @@ final class FocusableWKWebView: WKWebView {
             owningTab?.setClickModifierFlags([])
         }
     }
-    override func menu(for event: NSEvent) -> NSMenu? {
-        guard let menu = super.menu(for: event) else {
-            return nil
+
+    @objc dynamic func swizzled_immediateActionAnimationController(
+        forHitTestResult hitTestResult: AnyObject,
+        withType type: UInt,
+        userData: AnyObject?
+    ) -> AnyObject? {
+        if type == SumiImmediateActionType.linkPreview.rawValue {
+            return NSNull()
         }
-        prepareMenu(menu, isOpening: false)
-        return menu
+        return nil
     }
 
-    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
-        super.willOpenMenu(menu, with: event)
-        prepareMenu(menu, isOpening: true)
-    }
-
-    private func prepareMenu(_ menu: NSMenu, isOpening: Bool) {
-        let lifecycleDelegate = installContextMenuLifecycle(on: menu)
-        if isOpening {
-            lifecycleDelegate?.menuWillOpen(menu)
-        }
-    }
-
-    private func installContextMenuLifecycle(
-        on menu: NSMenu,
-        windowState explicitWindowState: BrowserWindowState? = nil
-    ) -> FocusableWKWebViewContextMenuLifecycleDelegate? {
-        guard let windowState = explicitWindowState ?? contextMenuWindowState() else { return nil }
-
-        if let lifecycleDelegate = objc_getAssociatedObject(
-            menu,
-            &focusableWKWebViewContextMenuLifecycleAssociationKey
-        ) as? FocusableWKWebViewContextMenuLifecycleDelegate {
-            lifecycleDelegate.update(webView: self, windowState: windowState)
-            if menu.delegate !== lifecycleDelegate {
-                lifecycleDelegate.previousDelegate = menu.delegate
-                menu.delegate = lifecycleDelegate
-            }
-            return lifecycleDelegate
-        }
-
-        let lifecycleDelegate = FocusableWKWebViewContextMenuLifecycleDelegate(
-            webView: self,
-            windowState: windowState,
-            previousDelegate: menu.delegate
+    private static let swizzleImmediateActionAnimationControllerOnce: Void = {
+        let selector = NSSelectorFromString(
+            "_immediateActionAnimationControllerForHitTestResult:withType:userData:"
         )
-        menu.delegate = lifecycleDelegate
-        objc_setAssociatedObject(
-            menu,
-            &focusableWKWebViewContextMenuLifecycleAssociationKey,
-            lifecycleDelegate,
-            .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+        let swizzledSelector = #selector(
+            swizzled_immediateActionAnimationController(
+                forHitTestResult:withType:userData:
+            )
         )
-        return lifecycleDelegate
-    }
 
-    private func contextMenuWindowState() -> BrowserWindowState? {
-        guard let owningTab else { return nil }
-        return owningTab.browserManager?.windowState(containing: owningTab)
-            ?? owningTab.browserManager?.windowRegistry?.activeWindow
-    }
+        guard let originalMethod = class_getInstanceMethod(FocusableWKWebView.self, selector),
+              let swizzledMethod = class_getInstanceMethod(FocusableWKWebView.self, swizzledSelector)
+        else {
+            assertionFailure("WKWebView immediate action selector is unavailable")
+            return
+        }
 
+        let didAddOriginalMethod = class_addMethod(
+            FocusableWKWebView.self,
+            selector,
+            method_getImplementation(originalMethod),
+            method_getTypeEncoding(originalMethod)
+        )
+        guard didAddOriginalMethod,
+              let webViewOriginalMethod = class_getInstanceMethod(FocusableWKWebView.self, selector)
+        else {
+            assertionFailure("Failed to add immediate action selector to FocusableWKWebView")
+            return
+        }
+
+        method_exchangeImplementations(webViewOriginalMethod, swizzledMethod)
+    }()
+
+    private enum SumiImmediateActionType: UInt {
+        case linkPreview = 1
+    }
 }
 
 @MainActor
@@ -256,13 +151,6 @@ extension WKWebView {
         fullscreenState != .notInFullscreen
     }
 
-    var sumiFullscreenTabContentViewForHost: NSView? {
-        if sumiIsInFullscreenElementPresentation {
-            return sumiFullScreenPlaceholderView
-        }
-
-        return self
-    }
 }
 
 // MARK: - Find In Page

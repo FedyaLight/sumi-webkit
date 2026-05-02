@@ -1,4 +1,5 @@
 import Combine
+import AppKit
 import Foundation
 import Navigation
 import ObjectiveC.runtime
@@ -139,6 +140,8 @@ final class TabWebViewRuntime {
     var trackingProtectionAppliedAttachmentState: SumiTrackingProtectionAttachmentState?
     var trackingProtectionReloadRequirement: SumiTrackingProtectionReloadRequirement?
     var autoplayReloadRequirement: SumiAutoplayReloadRequirement?
+    var lastWebViewInteractionEvent: NSEvent?
+    var webViewInteractionCancellables: [ObjectIdentifier: AnyCancellable] = [:]
     var resolvedFaviconCacheKey: String?
     var faviconsTabExtension: FaviconsTabExtension?
     var faviconCancellables: Set<AnyCancellable> = []

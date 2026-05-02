@@ -10,7 +10,10 @@ extension Tab {
             using: browserManager,
             in: windowState
         ) else {
-            resetPlaybackActivity()
+            // No resolvable web view for this window (e.g. tab backgrounded and host evicted from
+            // the window pool). Do not clear `audioState` here: `discoverOwner` still uses
+            // `tab.audioState.isPlayingAudio` after this call, and resetting would suppress the
+            // sidebar media card when switching away from the playing tab.
             return nil
         }
 

@@ -87,10 +87,12 @@ struct SumiApp: App {
         browserManager.webViewCoordinator = webViewCoordinator
         browserManager.windowRegistry = windowRegistry
         browserManager.sumiSettings = settingsManager
+
+        // `MediaControlsView` also configures this, but tab selection / activation can refresh the
+        // shared controller before the sidebar appears; without an early configure, `refreshImmediately`
+        // clears state because `browserManager` was still nil on the controller.
+        SumiNativeNowPlayingController.shared.configure(browserManager: browserManager)
         browserManager.tabManager.sumiSettings = settingsManager
-        SumiNativeNowPlayingController.shared.configure(
-            browserManager: browserManager
-        )
 
         // Initialize keyboard shortcut manager
         keyboardShortcutManager.setBrowserManager(browserManager)

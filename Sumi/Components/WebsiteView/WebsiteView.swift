@@ -134,7 +134,7 @@ struct WebsiteView: View {
     @ObservedObject private var sidebarDragState = SidebarDragState.shared
     @State private var hoveredLink: String?
     @State private var isCommandPressed: Bool = false
-    
+
     private let dragCoordinateSpace = "splitPreview"
 
     private var chromeGeometry: BrowserChromeGeometry {
@@ -217,10 +217,7 @@ struct WebsiteView: View {
                         )
                         .coordinateSpace(name: dragCoordinateSpace)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .browserContentSurface(
-                            geometry: chromeGeometry,
-                            background: contentSurfaceBackground
-                        )
+                        .background(contentSurfaceBackground)
                         .allowsHitTesting(true)
                     }
                     // Removed SwiftUI contextMenu - it intercepts ALL right-clicks

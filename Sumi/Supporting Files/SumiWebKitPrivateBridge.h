@@ -48,6 +48,26 @@ static inline void SumiAddPrivateUserStyleSheet(WKUserContentController *control
     [controller _addUserStyleSheet:userStyleSheet];
 }
 
+static inline BOOL SumiSetWKPreferenceBool(WKPreferences *preferences, NSString *key, BOOL enabled)
+{
+    @try {
+        [preferences setValue:@(enabled) forKey:key];
+        return YES;
+    } @catch (NSException *exception) {
+        return NO;
+    }
+}
+
+static inline void SumiSetMediaSessionEnabled(WKPreferences *preferences, BOOL enabled)
+{
+    SumiSetWKPreferenceBool(preferences, @"mediaSessionEnabled", enabled);
+}
+
+static inline void SumiSetAllowsPictureInPictureMediaPlayback(WKPreferences *preferences, BOOL enabled)
+{
+    SumiSetWKPreferenceBool(preferences, @"allowsPictureInPictureMediaPlayback", enabled);
+}
+
 @interface WKWebView (SumiWKNowPlayingPrivate)
 @property (nonatomic, readonly, getter=_isPlayingAudio) BOOL _playingAudio;
 @property (nonatomic, readonly) BOOL _hasActiveNowPlayingSession;
@@ -55,10 +75,5 @@ static inline void SumiAddPrivateUserStyleSheet(WKUserContentController *control
 - (void)_playPredominantOrNowPlayingMediaSession:(void(^)(BOOL success))completionHandler;
 - (void)_pauseNowPlayingMediaSession:(void(^)(BOOL success))completionHandler;
 @end
-
-static inline void SumiSetMediaSessionEnabled(WKPreferences *preferences, BOOL enabled)
-{
-    [preferences setValue:@(enabled) forKey:@"mediaSessionEnabled"];
-}
 
 NS_ASSUME_NONNULL_END

@@ -69,7 +69,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertEqual(SumiMemorySaverCustomDelay.clamped(48 * 60 * 60), 24 * 60 * 60)
 
         let settingsSource = try Self.source(named: "Sumi/Components/Settings/Tabs/Performance.swift")
-        XCTAssertTrue(settingsSource.contains("Section(\"Memory Saver\")"))
+        XCTAssertTrue(settingsSource.contains("title: \"Memory Saver\""))
         XCTAssertTrue(settingsSource.contains("Custom Deactivation Delay"))
         XCTAssertFalse(settingsSource.contains("Lightweight"))
         XCTAssertFalse(settingsSource.contains("title: \"Performance\""))

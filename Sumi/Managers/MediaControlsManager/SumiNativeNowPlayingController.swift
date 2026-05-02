@@ -192,7 +192,6 @@ final class SumiNativeNowPlayingController: ObservableObject {
             return nil
         }
 
-        let info = await infoProvider(owner.tab, browserManager, owner.windowState)
         guard qualifiesForCard(
             owner.tab,
             in: owner.windowState,
@@ -201,6 +200,7 @@ final class SumiNativeNowPlayingController: ObservableObject {
             return nil
         }
 
+        let info = await infoProvider(owner.tab, browserManager, owner.windowState)
         return makeCardState(
             tab: owner.tab,
             windowState: owner.windowState,
@@ -219,7 +219,6 @@ final class SumiNativeNowPlayingController: ObservableObject {
         )
 
         for (tab, windowState) in candidates {
-            let info = await infoProvider(tab, browserManager, windowState)
             guard qualifiesForCard(
                 tab,
                 in: windowState,
@@ -228,6 +227,7 @@ final class SumiNativeNowPlayingController: ObservableObject {
                 continue
             }
 
+            let info = await infoProvider(tab, browserManager, windowState)
             return makeCardState(
                 tab: tab,
                 windowState: windowState,
@@ -293,14 +293,14 @@ final class SumiNativeNowPlayingController: ObservableObject {
         let sourceHost = normalizedHost(for: tab.url)
         let tabTitle = normalizedTitle(tab.name) ?? "Media"
         let title = normalizedTitle(info?.title) ?? tabTitle
-        let subtitle = normalizedTitle(info?.artist) ?? sourceHost ?? tabTitle
+        let subtitle = normalizedTitle(info?.artist) ?? ""
         let favicon = SumiFaviconResolver.cacheKey(for: tab.url)
         let ownerContext = OwnerContext(tabId: tab.id, windowId: windowState.id)
         let playbackState: SumiBackgroundMediaPlaybackState
-        if pausedCardOwner == ownerContext {
-            playbackState = .paused
-        } else if tab.audioState.isPlayingAudio {
+        if tab.audioState.isPlayingAudio {
             playbackState = .playing
+        } else if pausedCardOwner == ownerContext {
+            playbackState = .paused
         } else {
             playbackState = info?.playbackState ?? .paused
         }

@@ -34,9 +34,11 @@ final class SumiDownloadsNavigationResponder: NavigationResponder {
             isRestoringSessionState = false
         }
 
+        let modifierFlags = tab?.navigationModifierFlags(from: navigationAction)
+            ?? navigationAction.modifierFlags
         let optionDownloadRequested = navigationAction.navigationType.isLinkActivated
-            && navigationAction.modifierFlags.contains(.option)
-            && !navigationAction.modifierFlags.contains(.command)
+            && modifierFlags.contains(.option)
+            && !modifierFlags.contains(.command)
 
         if (navigationAction.shouldDownload && !isRestoringSessionState) || optionDownloadRequested {
             return .download

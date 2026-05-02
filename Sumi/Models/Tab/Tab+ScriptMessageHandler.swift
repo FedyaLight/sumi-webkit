@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import Navigation
 import UserScript
 import WebKit
 
@@ -55,7 +56,33 @@ extension Tab {
 
     func navigationModifierFlags(from navigationAction: WKNavigationAction) -> NSEvent.ModifierFlags {
         let flags = navigationAction.modifierFlags.intersection([.command, .option, .control, .shift])
-        return flags.isEmpty ? clickModifierFlags : flags
+        return resolvedNavigationModifierFlags(actionFlags: flags)
+    }
+
+    func navigationModifierFlags(from navigationAction: NavigationAction) -> NSEvent.ModifierFlags {
+        let flags = navigationAction.modifierFlags.intersection([.command, .option, .control, .shift])
+        return resolvedNavigationModifierFlags(actionFlags: flags)
+    }
+
+    private func resolvedNavigationModifierFlags(actionFlags: NSEvent.ModifierFlags) -> NSEvent.ModifierFlags {
+        if !actionFlags.isEmpty {
+            return actionFlags
+        }
+        if let interactionFlags = recentWebViewInteractionModifierFlags() {
+            return interactionFlags
+        }
+        return clickModifierFlags
+    }
+
+    func shouldRedirectToPeek(url: URL) -> Bool {
+        if isGlanceTriggerActive() {
+            return true
+        }
+
+        guard let currentHost = self.url.host,
+              let newHost = url.host else { return false }
+
+        return currentHost != newHost
     }
 
     func handleOAuthRequest(url: URL, interactive: Bool, requestId: String) {
@@ -124,16 +151,6 @@ extension Tab {
         }
     }
 
-    func shouldRedirectToPeek(url: URL) -> Bool {
-        if isGlanceTriggerActive() {
-            return true
-        }
-
-        guard let currentHost = self.url.host,
-              let newHost = url.host else { return false }
-
-        return currentHost != newHost
-    }
 }
 
 @MainActor

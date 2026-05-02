@@ -52,6 +52,9 @@ final class WindowWebContentController: NSViewController {
     private var pendingSplitRepairKeepSide: SplitViewManager.Side? = nil
     private var hoveredLinkHandler: ((String?) -> Void)?
     private var commandHoverHandler: ((Bool) -> Void)?
+    private var singlePaneHost: SumiWebViewContainerView?
+    private var leftPaneHost: SumiWebViewContainerView?
+    private var rightPaneHost: SumiWebViewContainerView?
 
     init(
         browserManager: BrowserManager,
@@ -82,6 +85,9 @@ final class WindowWebContentController: NSViewController {
     }
 
     func tearDownController() {
+        clearPane(.single)
+        clearPane(.left)
+        clearPane(.right)
         webViewCoordinator.removeCompositorContainerView(for: windowState.id)
     }
 
@@ -229,7 +235,7 @@ final class WindowWebContentController: NSViewController {
     private func hostedWebViewCount(in root: NSView) -> Int {
         var count = 0
         for subview in root.subviews {
-            if subview is WKWebView {
+            if subview is SumiWebViewContainerView || subview is WKWebView {
                 count += 1
             } else {
                 count += hostedWebViewCount(in: subview)
@@ -282,15 +288,15 @@ final class WindowWebContentController: NSViewController {
         containerView.leftPaneView.isHidden = true
         containerView.rightPaneView.isHidden = true
 
-        if let tab, let host = webViewHost(for: tab) {
-            _ = webViewCoordinator.attachHost(host, to: containerView.singlePaneView)
-            webViewCoordinator.reconcileHostedSubviews(in: containerView.singlePaneView, keeping: host)
+        if let tab, let host = webViewHost(for: tab, pane: .single) {
+            attach(host, to: containerView.singlePaneView)
+            removeHostedSubviews(in: containerView.singlePaneView, keeping: host)
         } else {
-            webViewCoordinator.reconcileHostedSubviews(in: containerView.singlePaneView, keeping: nil)
+            clearPane(.single)
         }
 
-        webViewCoordinator.reconcileHostedSubviews(in: containerView.leftPaneView, keeping: nil)
-        webViewCoordinator.reconcileHostedSubviews(in: containerView.rightPaneView, keeping: nil)
+        clearPane(.left)
+        clearPane(.right)
     }
 
     private func showSplitPanes(
@@ -302,23 +308,23 @@ final class WindowWebContentController: NSViewController {
         containerView.setPaneLayout(.split(fraction: fraction, orientation: orientation))
         containerView.layoutSubtreeIfNeeded()
         containerView.singlePaneView.isHidden = true
-        webViewCoordinator.reconcileHostedSubviews(in: containerView.singlePaneView, keeping: nil)
+        clearPane(.single)
 
         containerView.leftPaneView.isHidden = false
         containerView.rightPaneView.isHidden = false
 
-        if let leftTab, let host = webViewHost(for: leftTab) {
-            _ = webViewCoordinator.attachHost(host, to: containerView.leftPaneView)
-            webViewCoordinator.reconcileHostedSubviews(in: containerView.leftPaneView, keeping: host)
+        if let leftTab, let host = webViewHost(for: leftTab, pane: .left) {
+            attach(host, to: containerView.leftPaneView)
+            removeHostedSubviews(in: containerView.leftPaneView, keeping: host)
         } else {
-            webViewCoordinator.reconcileHostedSubviews(in: containerView.leftPaneView, keeping: nil)
+            clearPane(.left)
         }
 
-        if let rightTab, let host = webViewHost(for: rightTab) {
-            _ = webViewCoordinator.attachHost(host, to: containerView.rightPaneView)
-            webViewCoordinator.reconcileHostedSubviews(in: containerView.rightPaneView, keeping: host)
+        if let rightTab, let host = webViewHost(for: rightTab, pane: .right) {
+            attach(host, to: containerView.rightPaneView)
+            removeHostedSubviews(in: containerView.rightPaneView, keeping: host)
         } else {
-            webViewCoordinator.reconcileHostedSubviews(in: containerView.rightPaneView, keeping: nil)
+            clearPane(.right)
         }
     }
 
@@ -326,7 +332,7 @@ final class WindowWebContentController: NSViewController {
         guard webViewCoordinator.hasActiveHistorySwipe(in: windowState.id) == false else { return }
         guard let tabId,
               let window = view.window,
-              let host = webViewCoordinator.getWebViewHost(for: tabId, in: windowState.id),
+              let host = displayedHost(for: tabId),
               host.window === window
         else {
             return
@@ -341,7 +347,6 @@ final class WindowWebContentController: NSViewController {
                 self?.hoveredLinkHandler?(href)
             }
         }
-
         tab.onCommandHover = { [weak self] href in
             DispatchQueue.main.async {
                 self?.commandHoverHandler?(href != nil)
@@ -349,8 +354,103 @@ final class WindowWebContentController: NSViewController {
         }
     }
 
-    private func webViewHost(for tab: Tab) -> SumiWebViewContainerView? {
-        webViewCoordinator.getWebViewHost(for: tab.id, in: windowState.id)
+    private func webViewHost(
+        for tab: Tab,
+        pane: CompositorPaneDestination
+    ) -> SumiWebViewContainerView? {
+        guard tab.requiresPrimaryWebView else {
+            clearPane(pane)
+            return nil
+        }
+        let webView = webViewCoordinator.getWebView(for: tab.id, in: windowState.id)
+            ?? webViewCoordinator.getOrCreateWebView(for: tab, in: windowState.id)
+        guard let webView else {
+            clearPane(pane)
+            return nil
+        }
+
+        if let host = paneHost(pane),
+           host.tabID == tab.id,
+           host.webView === webView
+        {
+            return host
+        }
+
+        clearPane(pane)
+        let host = SumiWebViewContainerView(tab: tab, windowID: windowState.id, webView: webView)
+        setPaneHost(host, for: pane)
+        return host
+    }
+
+    private func attach(_ host: SumiWebViewContainerView, to paneView: NSView) {
+        if host.superview !== paneView {
+            if host.superview != nil {
+                host.removeFromSuperview()
+            }
+            paneView.addSubview(host)
+        }
+        // After any `removeFromSuperview` (clears owner in host); must follow reparenting.
+        host.compositorContentOwner = self
+        host.attachDisplayedContentIfNeeded()
+        host.frame = paneView.bounds
+        host.autoresizingMask = [.width, .height]
+        host.isHidden = false
+    }
+
+    private func clearPane(_ pane: CompositorPaneDestination) {
+        let paneView = paneView(for: pane)
+        if let host = paneHost(pane) {
+            host.compositorContentOwner = nil
+            host.removeFromSuperview()
+        }
+        setPaneHost(nil, for: pane)
+        removeHostedSubviews(in: paneView, keeping: nil)
+    }
+
+    private func removeHostedSubviews(in paneView: NSView, keeping keepView: NSView?) {
+        for subview in paneView.subviews where subview !== keepView {
+            subview.removeFromSuperview()
+        }
+        keepView?.isHidden = false
+    }
+
+    private func displayedHost(for tabId: UUID) -> SumiWebViewContainerView? {
+        [singlePaneHost, leftPaneHost, rightPaneHost].compactMap { $0 }.first {
+            $0.tabID == tabId
+        }
+    }
+
+    private func paneHost(_ pane: CompositorPaneDestination) -> SumiWebViewContainerView? {
+        switch pane {
+        case .single:
+            return singlePaneHost
+        case .left:
+            return leftPaneHost
+        case .right:
+            return rightPaneHost
+        }
+    }
+
+    private func setPaneHost(_ host: SumiWebViewContainerView?, for pane: CompositorPaneDestination) {
+        switch pane {
+        case .single:
+            singlePaneHost = host
+        case .left:
+            leftPaneHost = host
+        case .right:
+            rightPaneHost = host
+        }
+    }
+
+    private func paneView(for pane: CompositorPaneDestination) -> NSView {
+        switch pane {
+        case .single:
+            return containerView.singlePaneView
+        case .left:
+            return containerView.leftPaneView
+        case .right:
+            return containerView.rightPaneView
+        }
     }
 
     private func missingPreparedWebViews(for visibleTabIds: Set<UUID>) -> Bool {
@@ -450,20 +550,6 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
 
 // MARK: - Container View
 
-private enum WebColumnPaintlessChrome {
-    static func configure(
-        _ view: NSView,
-        cornerRadius: CGFloat = 0,
-        clipsToBounds: Bool = false
-    ) {
-        view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.clear.cgColor
-        view.layer?.isOpaque = false
-        view.layer?.cornerRadius = cornerRadius
-        view.layer?.masksToBounds = clipsToBounds
-    }
-}
-
 private class ContainerView: NSView {
     enum PaneLayout: Equatable {
         case single
@@ -485,8 +571,6 @@ private class ContainerView: NSView {
     ) {
         self.chromeGeometry = chromeGeometry
         super.init(frame: .zero)
-        WebColumnPaintlessChrome.configure(self)
-        applyChromeGeometry()
 
         singlePaneView.identifier = CompositorPaneDestination.single.viewIdentifier
         leftPaneView.identifier = CompositorPaneDestination.left.viewIdentifier
@@ -509,18 +593,6 @@ private class ContainerView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override var isOpaque: Bool { false }
-
-    override func draw(_ dirtyRect: NSRect) {
-        // Paintless AppKit shell. SwiftUI WindowBackground owns browser chrome fill.
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        WebColumnPaintlessChrome.configure(self)
-        applyChromeGeometry()
-    }
-
     override func layout() {
         super.layout()
         applyPaneLayout()
@@ -538,7 +610,6 @@ private class ContainerView: NSView {
     func setChromeGeometry(_ geometry: BrowserChromeGeometry) {
         guard chromeGeometry != geometry else { return }
         chromeGeometry = geometry
-        applyChromeGeometry()
         needsLayout = true
     }
 
@@ -584,12 +655,6 @@ private class ContainerView: NSView {
             leftPaneView.frame = frames.left
             rightPaneView.frame = frames.right
         }
-    }
-
-    private func applyChromeGeometry() {
-        singlePaneView.setChromeGeometry(chromeGeometry)
-        leftPaneView.setChromeGeometry(chromeGeometry)
-        rightPaneView.setChromeGeometry(chromeGeometry)
     }
 
     private func splitPaneFrames(
@@ -667,41 +732,4 @@ private class ContainerView: NSView {
     }
 }
 
-private final class PaneContainerView: NSView {
-    private var chromeGeometry = BrowserChromeGeometry()
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        applyChromeGeometry()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override var isOpaque: Bool { false }
-
-    override func draw(_ dirtyRect: NSRect) {
-        // Paintless AppKit pane. The resolved SwiftUI window background shows through gaps.
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        applyChromeGeometry()
-    }
-
-    func setChromeGeometry(_ geometry: BrowserChromeGeometry) {
-        guard chromeGeometry != geometry else { return }
-        chromeGeometry = geometry
-        applyChromeGeometry()
-    }
-
-    private func applyChromeGeometry() {
-        WebColumnPaintlessChrome.configure(
-            self,
-            cornerRadius: chromeGeometry.contentRadius,
-            clipsToBounds: true
-        )
-    }
-}
+private final class PaneContainerView: NSView {}

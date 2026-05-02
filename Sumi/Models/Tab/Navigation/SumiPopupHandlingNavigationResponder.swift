@@ -81,7 +81,8 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
         }
 
         let behavior = SumiLinkOpenBehavior(
-            event: NSApp.currentEvent,
+            buttonIsMiddle: false,
+            modifierFlags: tab.navigationModifierFlags(from: navigationAction),
             switchToNewTabWhenOpenedPreference: false,
             canOpenLinkInCurrentTab: false,
             shouldSelectNewTab: true
@@ -167,7 +168,8 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
         }
 
         let behavior = SumiLinkOpenBehavior(
-            event: NSApp.currentEvent,
+            buttonIsMiddle: false,
+            modifierFlags: tab.navigationModifierFlags(from: navigationAction),
             switchToNewTabWhenOpenedPreference: false,
             canOpenLinkInCurrentTab: false,
             shouldSelectNewTab: true
@@ -232,7 +234,8 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
                 || (navigationAction.navigationType == .other && navigationAction.isUserInitiated))
         guard isLinkActivated else { return .next }
 
-        if tab.isGlanceTriggerActive(navigationAction.modifierFlags) {
+        let modifierFlags = tab.navigationModifierFlags(from: navigationAction)
+        if tab.isGlanceTriggerActive(modifierFlags) {
             tab.openURLInGlance(navigationAction.url)
             return .cancel
         }
@@ -245,7 +248,7 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
 
         let behavior = SumiLinkOpenBehavior(
             buttonIsMiddle: navigationAction.navigationType.isMiddleButtonClick,
-            modifierFlags: navigationAction.modifierFlags,
+            modifierFlags: modifierFlags,
             switchToNewTabWhenOpenedPreference: false,
             canOpenLinkInCurrentTab: canOpenLinkInCurrentTab
         )
@@ -284,6 +287,7 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
                 }
                 return PendingNewWindow(policy: policy, permissionResult: permissionResult)
             }
+            tab.clearWebViewInteractionEvent()
             targetWebView.sumiLoadInNewWindow(url)
             return .cancel
         }
@@ -326,30 +330,14 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
 
         let childTab = browserManager.createPopupTab(
             from: tab,
-            webViewConfigurationOverride: configuration,
             activate: policy.shouldActivateTab
         )
-        let childWebView = FocusableWKWebView(frame: .zero, configuration: configuration)
-        childWebView.uiDelegate = childTab
-        childWebView.allowsBackForwardNavigationGestures = true
-        childWebView.allowsMagnification = true
-        childWebView.owningTab = childTab
-        SharedVisitedLinkStoreProvider.shared.enableVisitedLinkRecording(on: childWebView)
-
-        childTab.adoptPopupWebView(childWebView)
-        if isExtensionOriginated {
-            browserManager.extensionsModule.prepareWebViewForExtensionRuntime(
-                childWebView,
-                currentURL: navigationAction.request.url,
-                reason: "SumiPopupHandlingNavigationResponder.createChildWebView"
-            )
-        }
-
-        SumiUserAgent.apply(to: childWebView)
-        childWebView.configuration.preferences.isFraudulentWebsiteWarningEnabled = true
-        childWebView.configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
-
-        return childWebView
+        return childTab.createPopupWebViewFromWebKitConfiguration(
+            configuration,
+            currentURL: navigationAction.request.url,
+            isExtensionOriginated: isExtensionOriginated,
+            reason: "SumiPopupHandlingNavigationResponder.createChildWebView"
+        )
     }
 
     private func isSumiInternalURL(_ url: URL) -> Bool {

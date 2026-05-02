@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Navigation
 import WebKit
@@ -42,12 +43,14 @@ extension Tab {
     func installNavigationDelegate(on webView: WKWebView) -> SumiTabNavigationDelegateBundle {
         if let existing = navigationDelegateBundle(for: webView) {
             webView.navigationDelegate = existing.distributedNavigationDelegate
+            bindWebViewInteractionEvents(on: webView)
             return existing
         }
 
         let bundle = SumiTabNavigationDelegateBundle(tab: self)
         navigationDelegateBundles.setObject(bundle, forKey: webView)
         webView.navigationDelegate = bundle.distributedNavigationDelegate
+        bindWebViewInteractionEvents(on: webView)
         return bundle
     }
 
@@ -57,6 +60,7 @@ extension Tab {
 
     func removeNavigationDelegateBundle(for webView: WKWebView) {
         navigationDelegateBundles.removeObject(forKey: webView)
+        webViewInteractionCancellables.removeValue(forKey: ObjectIdentifier(webView))
     }
 
     func dispatchCreateWebView(
@@ -68,5 +72,18 @@ extension Tab {
         } else {
             callback()
         }
+    }
+
+    private func bindWebViewInteractionEvents(on webView: WKWebView) {
+        guard let webView = webView as? FocusableWKWebView else { return }
+        let webViewID = ObjectIdentifier(webView)
+        guard webViewInteractionCancellables[webViewID] == nil else { return }
+
+        webViewInteractionCancellables[webViewID] = webView.interactionEventsPublisher
+            .sink { [weak self] interactionEvent in
+                MainActor.assumeIsolated {
+                    self?.recordWebViewInteraction(interactionEvent)
+                }
+            }
     }
 }

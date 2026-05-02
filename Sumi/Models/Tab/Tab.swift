@@ -53,8 +53,6 @@ enum SumiWebViewShutdown {
     @MainActor
     private static func stopNativeMedia(on webView: WKWebView) {
         webView.pauseAllMediaPlayback(completionHandler: nil)
-        webView.setAllMediaPlaybackSuspended(true, completionHandler: nil)
-        webView.closeAllMediaPresentations(completionHandler: nil)
 
         if webView.cameraCaptureState != .none {
             webView.setCameraCaptureState(.none, completionHandler: nil)
@@ -79,7 +77,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     // If true, this tab is created to host a popup window; do not perform initial load.
     var isPopupHost: Bool = false
 
-    // Track the current click modifiers so Glance can respond to the configured trigger.
+    // Track the current click modifiers for native popup/link routing fallback.
     var clickModifierFlags: NSEvent.ModifierFlags = []
     private let navigationRuntime = TabNavigationRuntime()
     let mediaRuntime = TabMediaRuntime()
@@ -356,6 +354,14 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { webViewRuntime.faviconCancellables }
         set { webViewRuntime.faviconCancellables = newValue }
     }
+    var lastWebViewInteractionEvent: NSEvent? {
+        get { webViewRuntime.lastWebViewInteractionEvent }
+        set { webViewRuntime.lastWebViewInteractionEvent = newValue }
+    }
+    var webViewInteractionCancellables: [ObjectIdentifier: AnyCancellable] {
+        get { webViewRuntime.webViewInteractionCancellables }
+        set { webViewRuntime.webViewInteractionCancellables = newValue }
+    }
     
     weak var browserManager: BrowserManager?
     weak var sumiSettings: SumiSettingsService?
@@ -392,7 +398,35 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func recordPopupUserActivation(_ event: NSEvent, kind: String) {
+        recordWebViewInteraction(event)
         popupUserActivationTracker.record(event: event, kind: kind)
+    }
+
+    func recordWebViewInteraction(_ interactionEvent: SumiWebViewInteractionEvent) {
+        switch interactionEvent {
+        case .mouseDown(let event),
+             .middleMouseDown(let event),
+             .keyDown(let event):
+            recordWebViewInteraction(event)
+        case .scrollWheel:
+            break
+        }
+    }
+
+    func recordWebViewInteraction(_ event: NSEvent) {
+        lastWebViewInteractionEvent = event
+    }
+
+    func clearWebViewInteractionEvent() {
+        lastWebViewInteractionEvent = nil
+    }
+
+    func recentWebViewInteractionModifierFlags(maxAge: TimeInterval = 1.0) -> NSEvent.ModifierFlags? {
+        guard let event = lastWebViewInteractionEvent else { return nil }
+        let age = ProcessInfo.processInfo.systemUptime - event.timestamp
+        guard age >= 0, age <= maxAge else { return nil }
+        let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        return flags.isEmpty ? nil : flags
     }
 
     func popupPermissionTabContext(for webView: WKWebView) -> SumiPopupPermissionTabContext? {
@@ -1045,8 +1079,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         }
         resetPlaybackActivity()
         loadingState = .idle
-        SumiNativeNowPlayingController.shared.handleTabUnloaded(id)
-        SumiNativeNowPlayingController.shared.scheduleRefresh(delayNanoseconds: 0)
         NotificationCenter.default.post(
             name: .sumiTabLifecycleDidChange,
             object: self

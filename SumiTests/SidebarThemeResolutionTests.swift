@@ -404,7 +404,7 @@ final class SidebarThemeResolutionTests: XCTestCase {
         XCTAssertFalse(source.contains("static let backgroundColor = NSColor.windowBackgroundColor"))
     }
 
-    func testWebsiteCompositorContainersArePaintlessChromeFallbacks() throws {
+    func testWebsiteCompositorContainersDoNotClipLiveWebContent() throws {
         let source = try String(
             contentsOf: Self.repoRoot.appendingPathComponent(
                 "Sumi/Components/WebsiteView/WebsiteCompositorView.swift"
@@ -415,14 +415,12 @@ final class SidebarThemeResolutionTests: XCTestCase {
             .lowerBound
         let webColumnSource = String(source[containerSource...])
 
-        XCTAssertTrue(webColumnSource.contains("WebColumnPaintlessChrome.configure"))
-        XCTAssertTrue(webColumnSource.contains("view.layer?.backgroundColor = NSColor.clear.cgColor"))
-        XCTAssertTrue(webColumnSource.contains("override var isOpaque: Bool { false }"))
-        XCTAssertTrue(webColumnSource.contains("view.layer?.cornerRadius = cornerRadius"))
-        XCTAssertTrue(webColumnSource.contains("view.layer?.masksToBounds = clipsToBounds"))
-        XCTAssertTrue(webColumnSource.contains("singlePaneView.setChromeGeometry(chromeGeometry)"))
+        XCTAssertFalse(webColumnSource.contains("WebColumnPaintlessChrome"))
+        XCTAssertFalse(webColumnSource.contains("view.layer?.backgroundColor = NSColor.clear.cgColor"))
+        XCTAssertFalse(webColumnSource.contains("view.layer?.cornerRadius"))
+        XCTAssertFalse(webColumnSource.contains("view.layer?.masksToBounds"))
+        XCTAssertFalse(webColumnSource.contains("singlePaneView.setChromeGeometry(chromeGeometry)"))
         XCTAssertTrue(webColumnSource.contains("chromeGeometry.elementSeparation"))
-        XCTAssertFalse(webColumnSource.contains("NSColor.windowBackgroundColor.setFill()"))
     }
 
     func testWebsiteChromeSurfacesUseResolvedTokensAndZenGeometry() throws {
@@ -471,6 +469,7 @@ final class SidebarThemeResolutionTests: XCTestCase {
 
         XCTAssertTrue(websiteSource.contains("BrowserChromeGeometry(settings: sumiSettings)"))
         XCTAssertTrue(websiteSource.contains(".browserContentSurface("))
+        XCTAssertTrue(websiteSource.contains(".background(contentSurfaceBackground)"))
         XCTAssertTrue(websiteSource.contains("themeContext.tokens(settings: sumiSettings).windowBackground"))
         XCTAssertTrue(websiteSource.contains("themeContext.nativeSurfaceThemeContext.tokens(settings: sumiSettings).windowBackground"))
         XCTAssertTrue(websiteSource.contains("background: nativeSurfaceContentSurfaceBackground"))
@@ -611,7 +610,7 @@ final class SidebarThemeResolutionTests: XCTestCase {
         XCTAssertFalse(themeSource.contains("ZenWorkspaceThemeResolver.resolve"))
     }
 
-    func testWebViewHostIsPaintlessChromeFallback() throws {
+    func testWebViewHostDoesNotPaintChromeFallback() throws {
         let source = try String(
             contentsOf: Self.repoRoot.appendingPathComponent(
                 "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift"
@@ -624,9 +623,9 @@ final class SidebarThemeResolutionTests: XCTestCase {
             .lowerBound
         let hostSource = String(source[start..<end])
 
-        XCTAssertTrue(hostSource.contains("override var isOpaque: Bool { false }"))
-        XCTAssertTrue(hostSource.contains("configurePaintlessChrome()"))
-        XCTAssertTrue(hostSource.contains("layer?.backgroundColor = NSColor.clear.cgColor"))
+        XCTAssertFalse(hostSource.contains("override var isOpaque: Bool { false }"))
+        XCTAssertFalse(hostSource.contains("configurePaintlessChrome()"))
+        XCTAssertFalse(hostSource.contains("layer?.backgroundColor = NSColor.clear.cgColor"))
         XCTAssertFalse(hostSource.contains("NSColor.windowBackgroundColor.setFill()"))
     }
 

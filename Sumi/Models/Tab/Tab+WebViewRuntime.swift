@@ -27,11 +27,43 @@ extension Tab {
         _webView
     }
 
-    func adoptPopupWebView(_ webView: WKWebView) {
+    @discardableResult
+    func createPopupWebViewFromWebKitConfiguration(
+        _ configuration: WKWebViewConfiguration,
+        currentURL: URL?,
+        isExtensionOriginated: Bool,
+        reason: String
+    ) -> WKWebView {
+        let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         _webView = webView
+
         installNavigationDelegate(on: webView)
         webView.uiDelegate = self
+        webView.allowsBackForwardNavigationGestures = true
+        webView.allowsMagnification = true
+        webView.setValue(true, forKey: "drawsBackground")
+        webView.owningTab = self
+        SumiUserAgent.apply(to: webView)
+        SharedVisitedLinkStoreProvider.shared.enableVisitedLinkRecording(on: webView)
+
+        if #available(macOS 13.3, *), RuntimeDiagnostics.isDeveloperInspectionEnabled {
+            webView.isInspectable = true
+        }
+
+        webView.allowsLinkPreview = true
+        webView.configuration.preferences.isFraudulentWebsiteWarningEnabled = true
+        webView.configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         installRuntimeObservers(on: webView)
+
+        if isExtensionOriginated {
+            browserManager?.extensionsModule.prepareWebViewForExtensionRuntime(
+                webView,
+                currentURL: currentURL,
+                reason: reason
+            )
+        }
+
+        return webView
     }
 
     /// Assigns the primary WebView to a specific window to avoid orphan runtime instances.
@@ -214,13 +246,6 @@ extension Tab {
             )
         }
 
-        if let auxiliaryOverrideConfiguration {
-            BrowserConfiguration.shared.applyMediaSessionPolicy(
-                to: auxiliaryOverrideConfiguration,
-                profile: profile
-            )
-        }
-
         if let existingWebView = reusableExistingWebView {
             if canReuseAsNormalTabWebView(existingWebView) {
                 _webView = existingWebView
@@ -371,10 +396,6 @@ extension Tab {
             ),
             userScriptsProvider: normalTabUserScriptsProvider(for: url),
             contentBlockingService: trackingProtectionDecision?.contentBlockingService
-        )
-        BrowserConfiguration.shared.applyMediaSessionPolicy(
-            to: configuration,
-            profile: profile
         )
         return configuration
     }

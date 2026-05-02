@@ -90,10 +90,11 @@ class BrowserConfiguration {
         // Media settings
         config.mediaTypesRequiringUserActionForPlayback = []
 
-        // Enable media and fullscreen capabilities on the shared template.
-        config.preferences.setValue(true, forKey: "allowsInlineMediaPlayback")
-        config.preferences.setValue(true, forKey: "mediaDevicesEnabled")
+        // DDG parity: WebKit owns normal media, fullscreen, and system MediaSession behavior.
         config.preferences.isElementFullscreenEnabled = true
+        if !NSApp.sumiIsSandboxed {
+            SumiSetAllowsPictureInPictureMediaPlayback(config.preferences, true)
+        }
 
         // Enable background media playback
         config.allowsAirPlayForMediaPlayback = true
@@ -141,7 +142,6 @@ class BrowserConfiguration {
                 contentBlockingService: contentBlockingService,
                 profileId: profile.id
             )
-        applyMediaSessionPolicy(to: config, profile: profile)
         applyAutoplayPolicy(
             autoplayPolicy ?? resolvedAutoplayPolicy(for: url, profile: profile),
             to: config
@@ -187,7 +187,6 @@ class BrowserConfiguration {
             config.webExtensionController = source.webExtensionController
         }
 
-        applyMediaSessionPolicy(to: config, profile: profile)
         return config
     }
 
@@ -212,18 +211,6 @@ class BrowserConfiguration {
     }
 
     @MainActor
-    func applyMediaSessionPolicy(
-        to configuration: WKWebViewConfiguration,
-        profile: Profile?
-    ) {
-        let isMediaSessionEnabled = profile?.dataStore.isPersistent ?? true
-        SumiSetMediaSessionEnabled(
-            configuration.preferences,
-            isMediaSessionEnabled
-        )
-    }
-
-    @MainActor
     func applyAutoplayPolicy(
         _ policy: SumiAutoplayPolicy,
         to configuration: WKWebViewConfiguration
@@ -239,5 +226,11 @@ class BrowserConfiguration {
     ) -> SumiAutoplayPolicy {
         (autoplayPolicyStore ?? SumiAutoplayPolicyStoreAdapter.shared)
             .effectivePolicy(for: url, profile: profile)
+    }
+}
+
+private extension NSApplication {
+    var sumiIsSandboxed: Bool {
+        ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
     }
 }
