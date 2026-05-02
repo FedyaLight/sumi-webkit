@@ -212,6 +212,13 @@ final class HistoryTabRecorder {
             isEphemeral: profile?.isEphemeral ?? tab.isEphemeral
         ) {
             localVisitIDs.append(visitID)
+            if let profile {
+                SharedVisitedLinkStoreProvider.shared.recordVisitedLink(
+                    url,
+                    for: profile,
+                    sourceConfiguration: tab.existingWebView?.configuration
+                )
+            }
         }
         visitState = .added
     }
