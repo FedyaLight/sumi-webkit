@@ -317,6 +317,13 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
             return nil
         }
 
+        if let profile = explicitPopupOpenerProfile(for: tab, browserManager: browserManager) {
+            SharedVisitedLinkStoreProvider.shared.applyStore(
+                to: configuration,
+                for: profile
+            )
+        }
+
         let childTab = browserManager.createPopupTab(
             from: tab,
             webViewConfigurationOverride: configuration,
@@ -327,6 +334,7 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
         childWebView.allowsBackForwardNavigationGestures = true
         childWebView.allowsMagnification = true
         childWebView.owningTab = childTab
+        SharedVisitedLinkStoreProvider.shared.enableVisitedLinkRecording(on: childWebView)
 
         childTab.adoptPopupWebView(childWebView)
         if isExtensionOriginated {
@@ -348,5 +356,31 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
         SumiSurface.isSettingsSurfaceURL(url)
             || SumiSurface.isHistorySurfaceURL(url)
             || SumiSurface.isBookmarksSurfaceURL(url)
+    }
+
+    private func explicitPopupOpenerProfile(
+        for tab: Tab,
+        browserManager: BrowserManager
+    ) -> Profile? {
+        if let profileId = tab.profileId {
+            if let windowState = browserManager.windowRegistry?.windows.values.first(where: { window in
+                window.ephemeralTabs.contains(where: { $0.id == tab.id })
+            }),
+               let ephemeralProfile = windowState.ephemeralProfile,
+               ephemeralProfile.id == profileId
+            {
+                return ephemeralProfile
+            }
+
+            return browserManager.profileManager.profiles.first { $0.id == profileId }
+        }
+
+        if let spaceId = tab.spaceId,
+           let space = browserManager.tabManager.spaces.first(where: { $0.id == spaceId }),
+           let profileId = space.profileId {
+            return browserManager.profileManager.profiles.first { $0.id == profileId }
+        }
+
+        return nil
     }
 }

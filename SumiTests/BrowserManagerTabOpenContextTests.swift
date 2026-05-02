@@ -86,22 +86,25 @@ final class BrowserManagerTabOpenContextTests: XCTestCase {
         XCTAssertTrue(newTab.isUnloaded)
     }
 
-    func testBackgroundOpenKeepsCurrentSelectionAndDefersWebViewMaterialization() {
+    func testBackgroundOpenKeepsCurrentSelectionAndStartsWebViewLoad() {
         let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
         let coordinator = WebViewCoordinator()
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = coordinator
 
-        let profileId = UUID()
-        let space = Space(name: "Primary", profileId: profileId)
+        let profile = Profile(name: "Primary")
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+
+        let space = Space(name: "Primary", profileId: profile.id)
         browserManager.tabManager.spaces = [space]
         browserManager.tabManager.currentSpace = space
 
         let windowState = BrowserWindowState()
         windowState.tabManager = browserManager.tabManager
         windowState.currentSpaceId = space.id
-        windowState.currentProfileId = profileId
+        windowState.currentProfileId = profile.id
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
@@ -123,19 +126,19 @@ final class BrowserManagerTabOpenContextTests: XCTestCase {
 
         XCTAssertEqual(windowState.currentTabId, currentTab.id)
         XCTAssertEqual(newTab.spaceId, space.id)
-        XCTAssertTrue(newTab.isUnloaded)
-        XCTAssertNil(newTab.existingWebView)
+        XCTAssertFalse(newTab.isUnloaded)
+        XCTAssertNotNil(newTab.existingWebView)
         XCTAssertNil(coordinator.getWebView(for: newTab.id, in: windowState.id))
     }
 
-    func testBackgroundIncognitoOpenKeepsCurrentSelectionAndDefersWebViewMaterialization() {
+    func testBackgroundIncognitoOpenKeepsCurrentSelectionAndStartsWebViewLoad() {
         let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
         let coordinator = WebViewCoordinator()
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = coordinator
 
-        let profile = Profile(name: "Private")
+        let profile = Profile.createEphemeral()
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
 
@@ -163,8 +166,8 @@ final class BrowserManagerTabOpenContextTests: XCTestCase {
 
         XCTAssertEqual(windowState.currentTabId, currentTab.id)
         XCTAssertTrue(windowState.ephemeralTabs.contains(where: { $0.id == newTab.id }))
-        XCTAssertTrue(newTab.isUnloaded)
-        XCTAssertNil(newTab.existingWebView)
+        XCTAssertFalse(newTab.isUnloaded)
+        XCTAssertNotNil(newTab.existingWebView)
         XCTAssertNil(coordinator.getWebView(for: newTab.id, in: windowState.id))
     }
 

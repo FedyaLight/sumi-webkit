@@ -899,7 +899,7 @@ class BrowserManager: ObservableObject {
     ) {
         guard tab.requiresPrimaryWebView else { return }
         _ = windowState
-        // Background tabs stay data-only; selection is the lazy restore boundary.
+        tab.loadWebViewIfNeeded()
     }
 
     func resolvedTabOpenSpace(for context: TabOpenContext) -> Space? {
