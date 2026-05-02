@@ -51,6 +51,20 @@ class SearchManager {
             }
         }
     }
+
+    private struct RankedTabSuggestion {
+        let tab: Tab
+        let text: String
+        let nameMatches: Bool
+        let nameLength: Int
+    }
+
+    private struct RankedHistorySuggestion {
+        let entry: HistoryListItem
+        let text: String
+        let titleMatches: Bool
+        let visitedAt: Date?
+    }
     
     func setTabManager(_ tabManager: TabManager?) {
         self.tabManager = tabManager
@@ -142,88 +156,101 @@ class SearchManager {
     }
     
     @MainActor private func searchTabs(for query: String) -> [SearchSuggestion] {
-        guard let tabManager = tabManager else { return [] }
-        
+        guard let tabManager else { return [] }
+
         let lowercaseQuery = query.lowercased()
-        var matchingTabs: [SearchSuggestion] = []
+        var matchingTabs: [RankedTabSuggestion] = []
         // Use TabManager's profile-aware access (handles fallback internally)
         let allTabs: [Tab] = tabManager.allTabsForCurrentProfile()
-        
+
         for tab in allTabs {
-            let nameMatch = tab.name.lowercased().contains(lowercaseQuery)
-            let urlMatch = tab.url.absoluteString.lowercased().contains(lowercaseQuery)
-            let hostMatch = tab.url.host?.lowercased().contains(lowercaseQuery) ?? false
-            
-            if nameMatch || urlMatch || hostMatch {
-                let suggestion = SearchSuggestion(
+            let nameMatches = tab.name.lowercased().contains(lowercaseQuery)
+            let isMatch: Bool
+
+            if nameMatches {
+                isMatch = true
+            } else {
+                let urlMatches = tab.url.absoluteString.lowercased().contains(lowercaseQuery)
+                let hostMatches = tab.url.host?.lowercased().contains(lowercaseQuery) ?? false
+                isMatch = urlMatches || hostMatches
+            }
+
+            guard isMatch else { continue }
+
+            matchingTabs.append(
+                RankedTabSuggestion(
+                    tab: tab,
                     text: tab.name,
-                    type: .tab(tab)
+                    nameMatches: nameMatches,
+                    nameLength: tab.name.count
                 )
-                matchingTabs.append(suggestion)
-            }
+            )
         }
-        
-        // Sort by relevance (name matches first, then URL matches)
-        let sortedTabs = matchingTabs.sorted { (lhs: SearchSuggestion, rhs: SearchSuggestion) -> Bool in
-            if case .tab(let lhsTab) = lhs.type, case .tab(let rhsTab) = rhs.type {
-                let lhsNameMatch = lhsTab.name.lowercased().contains(lowercaseQuery)
-                let rhsNameMatch = rhsTab.name.lowercased().contains(lowercaseQuery)
-                
-                if lhsNameMatch && !rhsNameMatch {
-                    return true
-                } else if !lhsNameMatch && rhsNameMatch {
-                    return false
-                } else {
-                    return lhsTab.name.count < rhsTab.name.count
-                }
+
+        // Sort by relevance: name matches first, then shorter tab names.
+        let sortedTabs = matchingTabs.sorted { lhs, rhs -> Bool in
+            if lhs.nameMatches != rhs.nameMatches {
+                return lhs.nameMatches
             }
-            return false
+            return lhs.nameLength < rhs.nameLength
         }
-        
-        return Array(sortedTabs.prefix(3)) // Limit to 3 tab suggestions
+
+        return Array(
+            sortedTabs.prefix(3).map { ranked in
+                SearchSuggestion(
+                    text: ranked.text,
+                    type: .tab(ranked.tab)
+                )
+            }
+        ) // Limit to 3 tab suggestions
     }
-    
+
     @MainActor private func searchHistory(for query: String) async -> [SearchSuggestion] {
-        guard let historyManager = historyManager else { return [] }
-        
+        guard let historyManager else { return [] }
+
         let lowercaseQuery = query.lowercased()
         let historyEntries = await historyManager.searchSuggestions(matching: query, limit: 20)
-        
-        var matchingHistory: [SearchSuggestion] = []
-        
+
+        var matchingHistory: [RankedHistorySuggestion] = []
+
         for entry in historyEntries {
-            let titleMatch = entry.title.lowercased().contains(lowercaseQuery)
-            let urlMatch = entry.url.absoluteString.lowercased().contains(lowercaseQuery)
-            let hostMatch = entry.url.host?.lowercased().contains(lowercaseQuery) ?? false
-            
-            if titleMatch || urlMatch || hostMatch {
-                let suggestion = SearchSuggestion(
+            let titleMatches = entry.title.lowercased().contains(lowercaseQuery)
+            let isMatch: Bool
+
+            if titleMatches {
+                isMatch = true
+            } else {
+                let urlMatches = entry.url.absoluteString.lowercased().contains(lowercaseQuery)
+                let hostMatches = entry.url.host?.lowercased().contains(lowercaseQuery) ?? false
+                isMatch = urlMatches || hostMatches
+            }
+
+            guard isMatch else { continue }
+
+            matchingHistory.append(
+                RankedHistorySuggestion(
+                    entry: entry,
                     text: entry.displayTitle,
-                    type: .history(entry)
+                    titleMatches: titleMatches,
+                    visitedAt: entry.visitedAt
                 )
-                matchingHistory.append(suggestion)
-            }
+            )
         }
-        
-        // Sort by relevance (title matches first, then URL matches, then by visit count and recency)
-        let sortedHistory = matchingHistory.sorted { (lhs: SearchSuggestion, rhs: SearchSuggestion) -> Bool in
-            if case .history(let lhsHistory) = lhs.type, case .history(let rhsHistory) = rhs.type {
-                let lhsTitleMatch = lhsHistory.title.lowercased().contains(lowercaseQuery)
-                let rhsTitleMatch = rhsHistory.title.lowercased().contains(lowercaseQuery)
-                
-                // First prioritize title matches
-                if lhsTitleMatch && !rhsTitleMatch {
-                    return true
-                } else if !lhsTitleMatch && rhsTitleMatch {
-                    return false
-                } else {
-                    return (lhsHistory.visitedAt ?? .distantPast) > (rhsHistory.visitedAt ?? .distantPast)
-                }
+
+        // Sort by relevance: title matches first, then by recency.
+        let sortedHistory = matchingHistory.sorted { lhs, rhs -> Bool in
+            if lhs.titleMatches != rhs.titleMatches {
+                return lhs.titleMatches
             }
-            return false
+            return (lhs.visitedAt ?? .distantPast) > (rhs.visitedAt ?? .distantPast)
         }
-        
-        return sortedHistory
+
+        return sortedHistory.map { ranked in
+            SearchSuggestion(
+                text: ranked.text,
+                type: .history(ranked.entry)
+            )
+        }
     }
 
     private func makeLocalSuggestions(
