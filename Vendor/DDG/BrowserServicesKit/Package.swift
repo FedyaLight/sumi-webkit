@@ -20,45 +20,41 @@ let package = Package(
         .library(name: "WKAbstractions", targets: ["WKAbstractions"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/duckduckgo/duckduckgo-autofill.git", exact: "19.0.0"),
         .package(url: "https://github.com/duckduckgo/TrackerRadarKit.git", exact: "3.1.0"),
         .package(url: "https://github.com/gumob/PunycodeSwift.git", exact: "3.0.0"),
         .package(url: "https://github.com/duckduckgo/content-scope-scripts.git", exact: "14.2.0"),
-        .package(url: "https://github.com/vapor/jwt-kit.git", exact: "4.13.5"),
         .package(path: "../URLPredictor"),
     ],
     targets: [
-        .binaryTarget(
-            name: "BloomFilter",
-            url: "https://github.com/duckduckgo/bloom_cpp/releases/download/3.0.4/BloomFilter.xcframework.zip",
-            checksum: "137fefd4a0ccf79560d7071d3387475806b84a7719785a6f80ea9c1d838c7d6b"
-        ),
-        .binaryTarget(
-            name: "GRDB",
-            url: "https://github.com/duckduckgo/GRDB.swift/releases/download/2.4.2/GRDB.xcframework.zip",
-            checksum: "5380265b0e70f0ed28eb1e12640eb6cde5e4bfd39893c86b31f8d17126887174"
-        ),
         .target(
             name: "BrowserServicesKit",
             dependencies: [
-                .product(name: "Autofill", package: "duckduckgo-autofill"),
                 .product(name: "ContentScopeScripts", package: "content-scope-scripts"),
                 "Persistence",
                 "PrivacyConfig",
                 "TrackerRadarKit",
-                "BloomFilterWrapper",
                 "Common",
                 "UserScript",
                 "ContentBlocking",
-                "SecureStorage",
-                "Subscription",
-                "PixelKit",
                 "Navigation"
+            ],
+            exclude: [
+                "Autofill",
+                "DataClearing",
+                "DataImport",
+                "Email",
+                "GPC",
+                "LinkProtection",
+                "ReferrerTrimming",
+                "SecureVault",
+                "SmarterEncryption",
+                "Statistics",
+                "Subscription",
+                "Watchdog",
             ],
             resources: [
                 .process("ContentBlocking/UserScripts/contentblockerrules.js"),
                 .process("ContentBlocking/UserScripts/surrogates.js"),
-                .process("SmarterEncryption/Store/HTTPSUpgrade.xcdatamodeld"),
                 .copy("../../PrivacyInfo.xcprivacy")
             ],
             swiftSettings: [
@@ -131,32 +127,9 @@ let package = Package(
             ]
         ),
         .target(
-            name: "Networking",
-            dependencies: [
-                .product(name: "JWTKit", package: "jwt-kit"),
-                "Common"
-            ],
-            swiftSettings: [
-                .define("DEBUG", .when(configuration: .debug))
-            ]
-        ),
-        .target(
             name: "Persistence",
             dependencies: [
                 "Common",
-            ],
-            swiftSettings: [
-                .define("DEBUG", .when(configuration: .debug))
-            ]
-        ),
-        .target(
-            name: "PixelKit",
-            dependencies: [
-                "Common",
-                "Persistence"
-            ],
-            exclude: [
-                "README.md"
             ],
             swiftSettings: [
                 .define("DEBUG", .when(configuration: .debug))
@@ -174,49 +147,12 @@ let package = Package(
             ]
         ),
         .target(
-            name: "SecureStorage",
-            dependencies: [
-                "Common",
-                "PixelKit",
-                "GRDB",
-            ],
-            swiftSettings: [
-                .define("DEBUG", .when(configuration: .debug))
-            ]
-        ),
-        .target(
-            name: "Subscription",
-            dependencies: [
-                "Common",
-                "Networking",
-                "UserScript",
-                "PixelKit",
-                "Persistence",
-                "SecureStorage"
-            ],
-            swiftSettings: [
-                .define("DEBUG", .when(configuration: .debug))
-            ]
-        ),
-        .target(
             name: "UserScript",
             dependencies: [
                 "Common",
             ],
             swiftSettings: [
                 .define("DEBUG", .when(configuration: .debug))
-            ]
-        ),
-        .target(
-            name: "BloomFilterObjC",
-            dependencies: [
-                "BloomFilter"
-            ]
-        ),
-        .target(
-            name: "BloomFilterWrapper",
-            dependencies: [
-                "BloomFilterObjC",
             ]
         ),
         .target(

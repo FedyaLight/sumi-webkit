@@ -55,10 +55,6 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
     private var observesDismissNotifications = false
     private var localMouseDownMonitor: Any?
 
-    var isPresented: Bool {
-        activeSession?.popover.isShown == true
-    }
-
     var hasActiveSession: Bool {
         activeSession != nil
     }
@@ -437,7 +433,7 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         close(sessionID: activeSession.session.id, committing: false)
     }
 
-    @MainActor @objc private func applicationWillResignActive(_ notification: Notification) {
+    @MainActor @objc private func applicationWillResignActive(_: Notification) {
         closeActive(committing: false)
     }
 

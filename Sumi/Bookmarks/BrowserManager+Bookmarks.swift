@@ -63,14 +63,6 @@ extension BrowserManager {
         openHistoryURL(url, in: windowState, preferredOpenMode: preferredOpenMode)
     }
 
-    func openBookmarkURLsFromMenuItem(_ urls: [URL]) {
-        if let activeWindow = windowRegistry?.activeWindow {
-            openHistoryURLsInNewTabs(urls, in: activeWindow)
-        } else {
-            openHistoryURLsInNewWindow(urls)
-        }
-    }
-
     func manageBookmarksFromMenu() {
         openBookmarksTab()
     }
