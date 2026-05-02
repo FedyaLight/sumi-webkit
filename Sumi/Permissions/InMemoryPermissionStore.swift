@@ -4,7 +4,6 @@ actor InMemoryPermissionStore: SumiPermissionStore {
     private struct MemoryKey: Hashable, Sendable {
         let ownerKind: OwnerKind
         let ownerId: String
-        let persistentIdentity: String
     }
 
     private enum OwnerKind: String, Sendable {
@@ -161,12 +160,6 @@ actor InMemoryPermissionStore: SumiPermissionStore {
         }
     }
 
-    @discardableResult
-    func clearOneTimeDecisions(forPageId pageId: String) async -> Int {
-        await clearForPageId(pageId)
-    }
-
-    @discardableResult
     func clearOneTimeDecisions(forTabId tabId: String) async -> Int {
         let ownerId = normalizedOwnerId(tabId)
         guard !ownerId.isEmpty else { return 0 }
@@ -241,8 +234,7 @@ actor InMemoryPermissionStore: SumiPermissionStore {
         guard let transientPageId = key.transientPageId else { return nil }
         return MemoryKey(
             ownerKind: .page,
-            ownerId: normalizedOwnerId(transientPageId),
-            persistentIdentity: key.persistentIdentity
+            ownerId: normalizedOwnerId(transientPageId)
         )
     }
 
@@ -252,8 +244,7 @@ actor InMemoryPermissionStore: SumiPermissionStore {
     ) -> MemoryKey {
         MemoryKey(
             ownerKind: .session,
-            ownerId: normalizedOwnerId(sessionOwnerId ?? key.profilePartitionId),
-            persistentIdentity: key.persistentIdentity
+            ownerId: normalizedOwnerId(sessionOwnerId ?? key.profilePartitionId)
         )
     }
 

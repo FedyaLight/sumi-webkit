@@ -105,9 +105,4 @@ extension Tab {
         return SwiftUI.Image(nsImage: image)
     }
 
-    static func clearFaviconCache() {
-        TabFaviconStore.clearCache()
-        SumiFaviconSystem.shared.clearAll()
-    }
-
 }

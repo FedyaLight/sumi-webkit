@@ -7,23 +7,23 @@ import XCTest
 
 @MainActor
 final class HistoryMenuTests: XCTestCase {
-    override func tearDown() {
-        Tab.clearFaviconCache()
-        super.tearDown()
-    }
-
     func testHistoryMenuBuildsDDGStyleStructureAndRecentVisitIcons() async throws {
         let harness = try makeHarness()
         let url = URL(string: "https://example.com")!
         try await seedFavicon(for: url)
 
-        try await harness.browserManager.historyManager.store.recordVisit(
+        let baselineRevision = harness.browserManager.historyManager.revision
+        _ = harness.browserManager.historyManager.addVisit(
             url: url,
             title: "Example",
-            visitedAt: Date(),
+            timestamp: Date(),
+            tabId: nil,
             profileId: harness.profile.id
         )
-        await harness.browserManager.historyManager.refresh()
+        await waitForHistoryRevision(
+            manager: harness.browserManager.historyManager,
+            beyond: baselineRevision
+        )
 
         let menu = SumiHistoryMenu(
             browserManager: harness.browserManager,
@@ -363,6 +363,19 @@ final class HistoryMenuTests: XCTestCase {
             DispatchQueue.main.async {
                 continuation.resume()
             }
+        }
+    }
+
+    private func waitForHistoryRevision(
+        manager: HistoryManager,
+        beyond baseline: UInt
+    ) async {
+        for _ in 0..<20 {
+            if manager.revision > baseline {
+                return
+            }
+            await drainMainQueue()
+            try? await Task.sleep(nanoseconds: 20_000_000)
         }
     }
 }

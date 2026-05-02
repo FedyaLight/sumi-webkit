@@ -6,11 +6,6 @@ import XCTest
 
 @MainActor
 final class HistoryTabRecorderTests: XCTestCase {
-    override func tearDown() {
-        Tab.clearFaviconCache()
-        super.tearDown()
-    }
-
     func testRegularCommitRecordsVisitAndBackForwardCommitDoesNot() async throws {
         let harness = try makeHarness()
         let firstURL = URL(string: "https://example.com/first")!

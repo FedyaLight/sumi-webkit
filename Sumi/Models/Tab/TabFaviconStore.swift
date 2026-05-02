@@ -12,13 +12,6 @@ enum TabFaviconStore {
         return withManager { $0.image(forLookupKey: key) }
     }
 
-    static func clearCache() {
-        withManualOverrides { overrides in
-            overrides.removeAll()
-        }
-        NotificationCenter.default.post(name: .faviconCacheUpdated, object: nil)
-    }
-
     private static func withManualOverrides<T>(_ body: (inout [String: NSImage]) -> T) -> T {
         manualOverridesLock.lock()
         defer { manualOverridesLock.unlock() }

@@ -191,7 +191,6 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         )
 
         XCTAssertTrue(snapshot.usesSharedEssentials)
-        XCTAssertEqual(snapshot.stationaryEssentials?.profileId, profileId)
         XCTAssertEqual(snapshot.stationaryEssentials?.items.map(\.id), [essential.id])
     }
 
@@ -375,7 +374,6 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         }
 
         XCTAssertFalse(folderSnapshot.isOpen)
-        XCTAssertEqual(folderSnapshot.children.map(\.id), [firstPin.id, secondPin.id])
         XCTAssertEqual(folderSnapshot.bodyChildren.map(\.id), [secondPin.id])
         XCTAssertTrue(folderSnapshot.hasActiveSelection)
     }

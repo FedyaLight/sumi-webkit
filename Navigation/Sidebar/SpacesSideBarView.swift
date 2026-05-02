@@ -176,7 +176,6 @@ struct SpaceFolderSnapshot: Identifiable {
     let iconValue: String
     let isOpen: Bool
     let hasActiveSelection: Bool
-    let children: [SpaceShortcutSnapshot]
     let bodyChildren: [SpaceShortcutSnapshot]
 }
 
@@ -195,7 +194,6 @@ enum SpacePinnedItemSnapshot: Identifiable {
 }
 
 struct EssentialsSnapshot {
-    let profileId: UUID?
     let items: [SpaceShortcutSnapshot]
 }
 
@@ -221,7 +219,6 @@ enum SpaceRegularItemSnapshot: Identifiable {
 
 struct SpaceSidebarPageSnapshot {
     let spaceId: UUID
-    let profileId: UUID?
     let title: String
     let iconValue: String
     let essentials: EssentialsSnapshot?
@@ -256,6 +253,7 @@ struct SpaceSidebarTransitionSnapshot {
     func matches(sourceSpaceId: UUID, destinationSpaceId: UUID) -> Bool {
         source.spaceId == sourceSpaceId && destination.spaceId == destinationSpaceId
     }
+
 }
 
 @MainActor
@@ -333,7 +331,6 @@ enum SpaceSidebarTransitionSnapshotBuilder {
 
         return SpaceSidebarPageSnapshot(
             spaceId: space.id,
-            profileId: profileId,
             title: space.name,
             iconValue: space.icon,
             essentials: windowState.isIncognito
@@ -378,7 +375,6 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         splitManager: SplitViewManager
     ) -> EssentialsSnapshot {
         EssentialsSnapshot(
-            profileId: profileId,
             items: profileId == nil
                 ? []
                 : browserManager.tabManager.essentialPins(for: profileId).map {
@@ -482,7 +478,6 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             hasActiveSelection: projectionState.hasActiveProjection
                 || childSnapshots.contains { $0.presentationState.isSelected }
                 || (!folder.isOpen && !bodyChildren.isEmpty),
-            children: childSnapshots,
             bodyChildren: bodyChildren
         )
     }
@@ -1137,7 +1132,6 @@ private struct SpaceSnapshotRegularTabsSectionView: View {
                         case .split(let split):
                             SpaceSnapshotSplitRowView(
                                 split: split,
-                                rowCornerRadius: snapshot.rowCornerRadius,
                                 tokens: tokens
                             )
                         }
@@ -1227,7 +1221,6 @@ private struct SpaceSnapshotRegularTabRowView: View {
 
 private struct SpaceSnapshotSplitRowView: View {
     let split: SpaceSplitRowSnapshot
-    let rowCornerRadius: CGFloat
     let tokens: ChromeThemeTokens
 
     var body: some View {

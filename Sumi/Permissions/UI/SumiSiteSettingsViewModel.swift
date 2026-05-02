@@ -10,11 +10,9 @@ final class SumiSiteSettingsViewModel: ObservableObject {
     @Published private(set) var cleanupSettings = SumiPermissionCleanupSettings()
     @Published private(set) var cleanupStatusText: String?
     @Published var searchText = ""
-    @Published var statusMessage: String?
     @Published var errorMessage: String?
 
     let repository: SumiPermissionSettingsRepository
-    private(set) var profileContext: SumiPermissionSettingsProfileContext?
 
     init(repository: SumiPermissionSettingsRepository) {
         self.repository = repository
@@ -27,12 +25,10 @@ final class SumiSiteSettingsViewModel: ObservableObject {
             siteRows = []
             cleanupSettings = SumiPermissionCleanupSettings()
             cleanupStatusText = nil
-            profileContext = nil
             return
         }
 
         let context = SumiPermissionSettingsProfileContext(profile: profile)
-        profileContext = context
         isLoading = true
         defer { isLoading = false }
 
