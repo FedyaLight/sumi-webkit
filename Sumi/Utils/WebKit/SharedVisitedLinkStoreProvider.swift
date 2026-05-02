@@ -45,6 +45,20 @@ final class SharedVisitedLinkStoreProvider {
         webView.sumiSetAddsVisitedLinks(true)
     }
 
+    func recordVisitedLink(
+        _ url: URL,
+        for profile: Profile,
+        sourceConfiguration: WKWebViewConfiguration?
+    ) {
+        guard let store = store(
+            for: profile.id,
+            seed: sourceConfiguration?.sumiVisitedLinkStoreObject
+        ) else {
+            return
+        }
+        store.sumiAddVisitedLink(url)
+    }
+
     /// Releases only Sumi's in-memory reference to the SPI store object.
     /// This does not delete browser history, website data, cookies, profile
     /// records, or files.
@@ -111,4 +125,17 @@ private enum SumiVisitedLinkStoreSelector {
     static let setStore = NSSelectorFromString("_setVisitedLinkStore:")
     static let getAddsVisitedLinks = NSSelectorFromString("_addsVisitedLinks")
     static let setAddsVisitedLinks = NSSelectorFromString("_setAddsVisitedLinks:")
+    static let addVisitedLinkWithURL = NSSelectorFromString("addVisitedLinkWithURL:")
+}
+
+extension NSObject {
+    func sumiAddVisitedLink(_ url: URL) {
+        guard responds(to: SumiVisitedLinkStoreSelector.addVisitedLinkWithURL) else {
+            return
+        }
+        perform(
+            SumiVisitedLinkStoreSelector.addVisitedLinkWithURL,
+            with: url as NSURL
+        )
+    }
 }
