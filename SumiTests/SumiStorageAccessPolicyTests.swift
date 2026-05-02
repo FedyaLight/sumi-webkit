@@ -77,9 +77,9 @@ final class SumiStorageAccessPolicyTests: XCTestCase {
         XCTAssertFalse(miniWindow.isAllowedToProceed)
         XCTAssertEqual(miniWindow.reason, SumiPermissionPolicyReason.miniWindowSensitiveDenied)
 
-        let peek = await evaluateStorageAccess(surface: .peek)
-        XCTAssertFalse(peek.isAllowedToProceed)
-        XCTAssertEqual(peek.reason, SumiPermissionPolicyReason.peekSensitiveDenied)
+        let glance = await evaluateStorageAccess(surface: .glance)
+        XCTAssertFalse(glance.isAllowedToProceed)
+        XCTAssertEqual(glance.reason, SumiPermissionPolicyReason.glanceSensitiveDenied)
     }
 
     private func evaluateStorageAccess(

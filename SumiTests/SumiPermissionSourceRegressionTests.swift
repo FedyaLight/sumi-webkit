@@ -42,7 +42,7 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
             "Sumi/Models/Tab/Tab+UIDelegate.swift",
             "Sumi/Permissions/SumiFilePickerPanelPresenter.swift",
             "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
-            "Sumi/Managers/PeekManager/PeekWebView.swift",
+            "Sumi/Managers/GlanceManager/GlanceWebView.swift",
         ].map(sourceFile).joined(separator: "\n")
 
         XCTAssertTrue(normalOpenPanel.contains("filePickerPermissionBridge.handleOpenPanel("))

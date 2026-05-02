@@ -85,7 +85,7 @@ final class SumiPermissionSecurityContextTests: XCTestCase {
             isEphemeralProfile: true,
             profilePartitionId: "Ephemeral-A",
             transientPageId: " transient-page ",
-            surface: .peek,
+            surface: .glance,
             navigationOrPageGeneration: " generation-b ",
             now: now
         )
@@ -97,7 +97,7 @@ final class SumiPermissionSecurityContextTests: XCTestCase {
         XCTAssertTrue(context.isEphemeralProfile)
         XCTAssertEqual(context.profilePartitionId, "ephemeral-a")
         XCTAssertEqual(context.transientPageId, "transient-page")
-        XCTAssertEqual(context.surface, .peek)
+        XCTAssertEqual(context.surface, .glance)
         XCTAssertEqual(context.navigationOrPageGeneration, "generation-b")
     }
 

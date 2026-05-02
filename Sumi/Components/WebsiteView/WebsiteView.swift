@@ -11,7 +11,6 @@ import AppKit
 // MARK: - Status Bar View
 struct LinkStatusBar: View {
     let hoveredLink: String?
-    let isCommandPressed: Bool
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @State private var shouldShow: Bool = false
@@ -52,12 +51,7 @@ struct LinkStatusBar: View {
     }
     
     private func displayText(for link: String) -> String {
-        let truncatedLink = truncateLink(link)
-        if isCommandPressed {
-            return "Open \(truncatedLink) in a new tab and focus it"
-        } else {
-            return truncatedLink
-        }
+        truncateLink(link)
     }
     
     private func handleHoverChange(newLink: String?) {
@@ -133,7 +127,6 @@ struct WebsiteView: View {
     @Environment(\.resolvedThemeContext) private var themeContext
     @ObservedObject private var sidebarDragState = SidebarDragState.shared
     @State private var hoveredLink: String?
-    @State private var isCommandPressed: Bool = false
 
     private let dragCoordinateSpace = "splitPreview"
 
@@ -205,7 +198,6 @@ struct WebsiteView: View {
                             browserManager: browserManager,
                             webViewCoordinator: webViewCoordinator,
                             hoveredLink: $hoveredLink,
-                            isCommandPressed: $isCommandPressed,
                             splitFraction: splitManager.dividerFraction(for: windowState.id),
                             splitOrientation: splitManager.orientation(for: windowState.id),
                             isSplit: splitManager.isSplit(for: windowState.id),
@@ -230,8 +222,7 @@ struct WebsiteView: View {
                 Spacer()
                 if sumiSettings.showLinkStatusBar {
                     LinkStatusBar(
-                        hoveredLink: hoveredLink,
-                        isCommandPressed: isCommandPressed
+                        hoveredLink: hoveredLink
                     )
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)

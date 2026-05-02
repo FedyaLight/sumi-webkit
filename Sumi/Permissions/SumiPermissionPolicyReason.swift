@@ -17,7 +17,7 @@ enum SumiPermissionPolicyReason {
     static let insecureTopOrigin = "top-origin-not-secure"
     static let virtualURLMismatch = "visible-url-does-not-match-committed-origin"
     static let miniWindowSensitiveDenied = "mini-window-sensitive-permission-denied"
-    static let peekSensitiveDenied = "peek-sensitive-permission-denied"
+    static let glanceSensitiveDenied = "glance-sensitive-permission-denied"
     static let extensionPageUnsupported = "extension-page-site-permission-unsupported"
     static let unknownSurfaceSensitiveDenied = "unknown-surface-sensitive-permission-denied"
     static let requiresUserActivation = "user-activation-required"

@@ -11,7 +11,7 @@ import WebKit
 
 enum BrowserConfigurationAuxiliarySurface: String, CaseIterable {
     case faviconDownload
-    case peek
+    case glance
     case miniWindow
     case extensionOptions
 
@@ -19,7 +19,7 @@ enum BrowserConfigurationAuxiliarySurface: String, CaseIterable {
         switch self {
         case .faviconDownload:
             return false
-        case .peek, .miniWindow, .extensionOptions:
+        case .glance, .miniWindow, .extensionOptions:
             return true
         }
     }
@@ -28,7 +28,7 @@ enum BrowserConfigurationAuxiliarySurface: String, CaseIterable {
         switch self {
         case .faviconDownload:
             return false
-        case .peek, .miniWindow, .extensionOptions:
+        case .glance, .miniWindow, .extensionOptions:
             return true
         }
     }
@@ -152,7 +152,7 @@ class BrowserConfiguration {
     // MARK: - Auxiliary Surface Configuration
 
     /// Auxiliary WebViews are intentionally separate from primary normal tabs:
-    /// popup WebViews come from WebKit, Peek/MiniWindow/Favicon use lightweight
+    /// popup WebViews come from WebKit, Glance/MiniWindow/Favicon use lightweight
     /// wrappers, and extension option pages may start from WebKit extension
     /// context config.
     @MainActor
