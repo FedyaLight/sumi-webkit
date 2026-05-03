@@ -4,7 +4,7 @@ import XCTest
 
 @MainActor
 final class NavigationToolbarControlsTests: XCTestCase {
-    func testTabLoadingStateNotificationEmitsOnlyOnRealChanges() {
+    func testTabLoadingStateNotificationEmitsOnlyOnLoadingActivityChanges() {
         let tab = Tab(url: URL(string: "https://example.com")!, name: "Example")
         var notifications: [Notification] = []
         let observer = NotificationCenter.default.addObserver(
@@ -25,10 +25,10 @@ final class NavigationToolbarControlsTests: XCTestCase {
         tab.loadingState = .didCommit
         tab.loadingState = .idle
 
-        XCTAssertEqual(notifications.count, 3)
+        XCTAssertEqual(notifications.count, 2)
         XCTAssertEqual(
             notifications.compactMap { $0.userInfo?["tabId"] as? UUID },
-            [tab.id, tab.id, tab.id]
+            [tab.id, tab.id]
         )
     }
 
