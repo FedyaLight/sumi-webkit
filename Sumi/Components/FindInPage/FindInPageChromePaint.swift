@@ -8,7 +8,7 @@ import SwiftUI
 
 /// AppKit colors for find-in-page, derived from the same `ChromeThemeTokens` recipe as the rest of chrome.
 struct FindInPageChromePaint {
-    /// Outer strip behind the inner focus ring (slightly tied to toolbar + field).
+    /// Outer strip behind the inner focus ring.
     var shellBackground: NSColor
     var fieldUnfocused: NSColor
     var fieldFocused: NSColor
@@ -19,10 +19,9 @@ struct FindInPageChromePaint {
 
     @MainActor
     static func resolve(tokens: ChromeThemeTokens) -> FindInPageChromePaint {
-        // Light mixing keeps the bar visually consistent with URL bar / chrome fields without cloning a single flat token.
-        let shell = tokens.toolbarBackground.mixed(with: tokens.fieldBackground, amount: 0.30)
-        let fieldIdle = tokens.fieldBackground.mixed(with: tokens.toolbarBackground, amount: 0.18)
-        let fieldActive = tokens.fieldBackgroundHover.mixed(with: tokens.toolbarBackground, amount: 0.12)
+        let shell = tokens.commandPaletteBackground
+        let fieldIdle = shell.overlaying(tokens.fieldBackground)
+        let fieldActive = shell.overlaying(tokens.fieldBackgroundHover)
         let accent = tokens.accent
 
         return FindInPageChromePaint(

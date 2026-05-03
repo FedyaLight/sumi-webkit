@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import XCTest
 @testable import Sumi
@@ -75,5 +76,46 @@ final class ThemeChromeRecipeBuilderTests: XCTestCase {
         XCTAssertEqual(token.green, expected.green, accuracy: 0.02)
         XCTAssertEqual(token.blue, expected.blue, accuracy: 0.02)
         XCTAssertEqual(token.alpha, expected.alpha, accuracy: 0.02)
+    }
+
+    func testFindInPagePaintUsesOpaqueSurfacesInLightRecipe() {
+        let paint = findInPagePaint(scheme: .light)
+
+        XCTAssertEqual(Self.alpha(of: paint.shellBackground), 1, accuracy: 0.02)
+        XCTAssertEqual(Self.alpha(of: paint.fieldUnfocused), 1, accuracy: 0.02)
+        XCTAssertEqual(Self.alpha(of: paint.fieldFocused), 1, accuracy: 0.02)
+    }
+
+    func testFindInPagePaintUsesOpaqueSurfacesInDarkRecipe() {
+        let paint = findInPagePaint(scheme: .dark)
+
+        XCTAssertEqual(Self.alpha(of: paint.shellBackground), 1, accuracy: 0.02)
+        XCTAssertEqual(Self.alpha(of: paint.fieldUnfocused), 1, accuracy: 0.02)
+        XCTAssertEqual(Self.alpha(of: paint.fieldFocused), 1, accuracy: 0.02)
+    }
+
+    private func findInPagePaint(scheme: ColorScheme) -> FindInPageChromePaint {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        var context = ResolvedThemeContext.default
+        context.globalColorScheme = scheme
+        context.chromeColorScheme = scheme
+        context.sourceChromeColorScheme = scheme
+        context.targetChromeColorScheme = scheme
+        context.transitionProgress = 1.0
+
+        return FindInPageChromePaint.resolve(tokens: context.tokens(settings: settings))
+    }
+
+    private static func alpha(of color: NSColor) -> CGFloat {
+        let rgb = color.usingColorSpace(.sRGB) ?? color
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        rgb.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        return alpha
     }
 }

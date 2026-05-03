@@ -12,12 +12,23 @@ enum CommandPaletteLayoutPolicy {
     static let idealWidth: CGFloat = 765
     static let horizontalPadding: CGFloat = 10
     static let minimumWidth: CGFloat = 200
+    static let horizontalVignetteOutset: CGFloat = 56
+    static let verticalVignetteOutset: CGFloat = 72
+    static let contentHeight: CGFloat = 328
+
+    static var panelHeight: CGFloat {
+        contentHeight + verticalVignetteOutset * 2
+    }
 
     static func effectiveWidth(availableWindowWidth: CGFloat) -> CGFloat {
         min(
             idealWidth,
             max(minimumWidth, availableWindowWidth - (horizontalPadding * 2))
         )
+    }
+
+    static func panelWidth(availableWindowWidth: CGFloat) -> CGFloat {
+        effectiveWidth(availableWindowWidth: availableWindowWidth) + horizontalVignetteOutset * 2
     }
 }
 
@@ -35,7 +46,7 @@ struct CommandPaletteView: View {
     @State private var selectedSuggestionIndex: Int = -1
     @State private var hoveredSuggestionIndex: Int? = nil
     @State private var activeSiteSearch: SiteSearchEntry? = nil
-    @State private var paletteHostView: NSView?
+    @State private var paletteCardView: NSView?
     @State private var outsideClickMonitor: Any?
     @State private var searchDebounceTask: Task<Void, Never>?
 
@@ -79,9 +90,17 @@ struct CommandPaletteView: View {
         let textFieldFont = Font.system(size: 13, weight: .semibold)
 
         ZStack {
-            Color.clear
+            if isVisible {
+                MouseEventShieldView(
+                    onClick: {
+                        windowState.window?.makeFirstResponder(nil)
+                        isSearchFocused = false
+                        commandPalette.close(preserveDraft: true)
+                    }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea()
-                .allowsHitTesting(false)
+            }
 
             VStack {
                 Spacer()
@@ -270,9 +289,9 @@ struct CommandPaletteView: View {
                             )
                         )
                         .background(
-                            CommandPaletteHostViewReader { view in
-                                if paletteHostView !== view {
-                                    paletteHostView = view
+                            CommandPaletteCardBoundsReader { view in
+                                if paletteCardView !== view {
+                                    paletteCardView = view
                                 }
                             }
                         )
@@ -282,13 +301,15 @@ struct CommandPaletteView: View {
                             .easeInOut(duration: 0.15),
                             value: searchManager.suggestions.count
                         )
-                        .padding(CommandPaletteChromeMetrics.vignetteOutset)
+                        .padding(.horizontal, CommandPaletteChromeMetrics.horizontalVignetteOutset)
+                        .padding(.vertical, CommandPaletteChromeMetrics.verticalVignetteOutset)
                         Spacer()
                     }
                     .frame(
                         width: effectiveCommandPaletteWidth
-                            + CommandPaletteChromeMetrics.vignetteOutset * 2,
-                        height: 328 + CommandPaletteChromeMetrics.vignetteOutset * 2
+                            + CommandPaletteChromeMetrics.horizontalVignetteOutset * 2,
+                        height: CommandPaletteLayoutPolicy.contentHeight
+                            + CommandPaletteChromeMetrics.verticalVignetteOutset * 2
                     )
 
                     Spacer()
@@ -299,34 +320,13 @@ struct CommandPaletteView: View {
         }
         .allowsHitTesting(isVisible)
         .opacity(isVisible ? 1.0 : 0.0)
-        .onChange(of: commandPalette.isVisible) { _, newVisible in
-            if newVisible {
-                installOutsideClickMonitorIfNeeded()
-                searchManager.setTabManager(browserManager.tabManager)
-                searchManager.setHistoryManager(browserManager.historyManager)
-                searchManager.updateProfileContext()
-
-                text = commandPalette.prefilledText
-
-                DispatchQueue.main.async {
-                    isSearchFocused = true
-                    DispatchQueue.main.async {
-                        NSApplication.shared.sendAction(
-                            #selector(NSText.selectAll(_:)),
-                            to: nil,
-                            from: nil
-                        )
-                    }
-                }
-            } else {
-                searchDebounceTask?.cancel()
-                removeOutsideClickMonitor()
-                isSearchFocused = false
-                searchManager.clearSuggestions()
-                text = ""
-                activeSiteSearch = nil
-                selectedSuggestionIndex = -1
+        .onAppear {
+            if commandPalette.isVisible {
+                handleVisibilityChanged(true)
             }
+        }
+        .onChange(of: commandPalette.isVisible) { _, newVisible in
+            handleVisibilityChanged(newVisible)
         }
         .onDisappear {
             searchDebounceTask?.cancel()
@@ -358,13 +358,13 @@ struct CommandPaletteView: View {
     }
 
     private func availableWindowWidth(from layoutWidth: CGFloat) -> CGFloat {
-        if layoutWidth > 0 {
-            return layoutWidth
-        }
         if let contentWidth = windowState.window?.contentView?.bounds.width,
            contentWidth > 0
         {
             return contentWidth
+        }
+        if layoutWidth > 0 {
+            return layoutWidth
         }
         return windowState.window?.frame.width ?? 0
     }
@@ -386,6 +386,36 @@ struct CommandPaletteView: View {
             try? await Task.sleep(nanoseconds: 160_000_000)
             guard !Task.isCancelled else { return }
             searchManager.searchSuggestions(for: trimmedQuery)
+        }
+    }
+
+    private func handleVisibilityChanged(_ newVisible: Bool) {
+        if newVisible {
+            installOutsideClickMonitorIfNeeded()
+            searchManager.setTabManager(browserManager.tabManager)
+            searchManager.setHistoryManager(browserManager.historyManager)
+            searchManager.updateProfileContext()
+
+            text = commandPalette.prefilledText
+
+            DispatchQueue.main.async {
+                isSearchFocused = true
+                DispatchQueue.main.async {
+                    NSApplication.shared.sendAction(
+                        #selector(NSText.selectAll(_:)),
+                        to: nil,
+                        from: nil
+                    )
+                }
+            }
+        } else {
+            searchDebounceTask?.cancel()
+            removeOutsideClickMonitor()
+            isSearchFocused = false
+            searchManager.clearSuggestions()
+            text = ""
+            activeSiteSearch = nil
+            selectedSuggestionIndex = -1
         }
     }
 
@@ -581,28 +611,18 @@ struct CommandPaletteView: View {
         outsideClickMonitor = NSEvent.addLocalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
         ) { event in
-            guard commandPalette.isVisible else { return event }
-
-            guard let paletteHostView else {
-                return event
-            }
-
-            let clickedInsidePalette: Bool = {
-                guard let eventWindow = event.window else { return false }
-                guard paletteHostView.window === eventWindow else { return false }
-                let localPoint = paletteHostView.convert(event.locationInWindow, from: nil)
-                return paletteHostView.bounds.contains(localPoint)
-            }()
-
-            if !clickedInsidePalette {
+            CommandPaletteOutsideClickRouting.monitorResult(
+                for: event,
+                isPaletteVisible: commandPalette.isVisible,
+                cardView: paletteCardView
+            ) {
+                // Close asynchronously and return the original event so sidebar/browser chrome handles this click.
                 DispatchQueue.main.async {
-                    paletteHostView.window?.makeFirstResponder(nil)
+                    windowState.window?.makeFirstResponder(nil)
                     isSearchFocused = false
                     commandPalette.close(preserveDraft: true)
                 }
             }
-
-            return event
         }
     }
 
@@ -611,13 +631,83 @@ struct CommandPaletteView: View {
         NSEvent.removeMonitor(outsideClickMonitor)
         self.outsideClickMonitor = nil
     }
+
 }
 
-private struct CommandPaletteHostViewReader: NSViewRepresentable {
+enum CommandPaletteOutsideClickRouting {
+    static func monitorResult(
+        for event: NSEvent,
+        isPaletteVisible: Bool,
+        cardView: NSView?,
+        onOutsideClick: () -> Void
+    ) -> NSEvent? {
+        monitorResult(
+            for: event,
+            isPaletteVisible: isPaletteVisible,
+            isEventInsideCard: isEventInsideCard(event, cardView: cardView),
+            onOutsideClick: onOutsideClick
+        )
+    }
+
+    static func monitorResult(
+        for event: NSEvent,
+        isPaletteVisible: Bool,
+        isEventInsideCard: Bool,
+        onOutsideClick: () -> Void
+    ) -> NSEvent? {
+        guard isPaletteVisible else { return event }
+        guard !isEventInsideCard else { return event }
+
+        onOutsideClick()
+        return event
+    }
+
+    static func isEventInsideCard(_ event: NSEvent, cardView: NSView?) -> Bool {
+        guard let cardView,
+              let eventWindow = event.window ?? NSApp.window(withWindowNumber: event.windowNumber),
+              isLocationInsideCard(
+                event.locationInWindow,
+                eventWindow: eventWindow,
+                cardView: cardView
+              )
+        else { return false }
+
+        return true
+    }
+
+    static func isLocationInsideCard(
+        _ locationInWindow: NSPoint,
+        eventWindow: NSWindow,
+        cardView: NSView?
+    ) -> Bool {
+        guard let cardView,
+              cardView.window === eventWindow
+        else { return false }
+
+        return isLocationInsideCard(locationInWindow, cardView: cardView)
+    }
+
+    static func isLocationInsideCard(
+        _ locationInWindow: NSPoint,
+        cardView: NSView?
+    ) -> Bool {
+        guard let cardView else { return false }
+        let localPoint = cardView.convert(locationInWindow, from: nil)
+        return cardView.bounds.contains(localPoint)
+    }
+}
+
+private final class CommandPaletteCardBoundsProbeView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+}
+
+private struct CommandPaletteCardBoundsReader: NSViewRepresentable {
     let onResolve: (NSView) -> Void
 
     func makeNSView(context: Context) -> NSView {
-        let view = NSView()
+        let view = CommandPaletteCardBoundsProbeView()
         DispatchQueue.main.async {
             onResolve(view)
         }
@@ -635,7 +725,8 @@ private struct CommandPaletteHostViewReader: NSViewRepresentable {
 
 private enum CommandPaletteChromeMetrics {
     /// Keeps multi-layer shadows from clipping against the fixed palette frame.
-    static let vignetteOutset: CGFloat = 40
+    static let horizontalVignetteOutset = CommandPaletteLayoutPolicy.horizontalVignetteOutset
+    static let verticalVignetteOutset = CommandPaletteLayoutPolicy.verticalVignetteOutset
 }
 
 /// Soft shadows only in a band around the card; page corners stay bright (no window-wide scrim).
@@ -651,16 +742,16 @@ private struct CommandPaletteLocalVignetteModifier: ViewModifier {
             switch chromeScheme {
             case .light:
                 content
-                    .shadow(color: Color.black.opacity(0.18), radius: 58, x: 0, y: 26)
-                    .shadow(color: Color.black.opacity(0.105), radius: 28, x: 0, y: 13)
-                    .shadow(color: Color.black.opacity(0.052), radius: 12, x: 0, y: 6)
+                    .shadow(color: Color.black.opacity(0.145), radius: 34, x: 0, y: 14)
+                    .shadow(color: Color.black.opacity(0.09), radius: 18, x: 0, y: 7)
+                    .shadow(color: Color.black.opacity(0.045), radius: 8, x: 0, y: 3)
             case .dark:
                 content
-                    .shadow(color: Color.black.opacity(0.42), radius: 48, x: 0, y: 22)
-                    .shadow(color: Color.black.opacity(0.21), radius: 22, x: 0, y: 10)
+                    .shadow(color: Color.black.opacity(0.36), radius: 32, x: 0, y: 14)
+                    .shadow(color: Color.black.opacity(0.18), radius: 16, x: 0, y: 7)
             @unknown default:
                 content
-                    .shadow(color: Color.black.opacity(0.18), radius: 50, x: 0, y: 22)
+                    .shadow(color: Color.black.opacity(0.145), radius: 34, x: 0, y: 14)
             }
         }
     }

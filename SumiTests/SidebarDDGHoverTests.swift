@@ -31,6 +31,62 @@ final class SidebarDDGHoverTests: XCTestCase {
         XCTAssertFalse(source.contains("keyWindow"))
     }
 
+    func testCommandPaletteOutsideClickMonitorUsesPassThroughRouting() throws {
+        let source = try Self.source(named: "CommandPalette/CommandPaletteView.swift")
+        let monitorStart = try XCTUnwrap(source.range(of: "private func installOutsideClickMonitorIfNeeded()"))
+        let monitorEnd = try XCTUnwrap(source[monitorStart.lowerBound...].range(of: "private func removeOutsideClickMonitor()"))
+        let monitorBody = String(source[monitorStart.lowerBound..<monitorEnd.lowerBound])
+
+        XCTAssertTrue(monitorBody.contains("CommandPaletteOutsideClickRouting.monitorResult"))
+        XCTAssertFalse(monitorBody.contains("return nil"))
+        XCTAssertTrue(source.contains("cardView.window === eventWindow"))
+    }
+
+    func testCommandPaletteOutsideClickRoutingKeepsInsideCardEvent() throws {
+        let event = try Self.mouseDownEvent()
+        var closeCount = 0
+
+        let result = CommandPaletteOutsideClickRouting.monitorResult(
+            for: event,
+            isPaletteVisible: true,
+            isEventInsideCard: true
+        ) {
+            closeCount += 1
+        }
+
+        XCTAssertTrue(result === event)
+        XCTAssertEqual(closeCount, 0)
+    }
+
+    func testCommandPaletteOutsideClickRoutingClosesOutsideCardAndPreservesEvent() throws {
+        let event = try Self.mouseDownEvent()
+        var closeCount = 0
+
+        let result = CommandPaletteOutsideClickRouting.monitorResult(
+            for: event,
+            isPaletteVisible: true,
+            isEventInsideCard: false
+        ) {
+            closeCount += 1
+        }
+
+        XCTAssertTrue(result === event)
+        XCTAssertEqual(closeCount, 1)
+    }
+
+    func testCommandPaletteCardHitDetectionSeparatesInsideAndOutsideGeometry() {
+        let cardView = Self.makePaletteCardView()
+
+        XCTAssertTrue(CommandPaletteOutsideClickRouting.isLocationInsideCard(
+            NSPoint(x: 32, y: 32),
+            cardView: cardView
+        ))
+        XCTAssertFalse(CommandPaletteOutsideClickRouting.isLocationInsideCard(
+            NSPoint(x: 180, y: 90),
+            cardView: cardView
+        ))
+    }
+
     func testDirectMouseOverMutationDoesNotReportSwiftUIHover() {
         let view = SidebarDDGHoverTrackingView(frame: NSRect(x: 0, y: 0, width: 120, height: 36))
         var reported: [Bool] = []
@@ -240,6 +296,27 @@ final class SidebarDDGHoverTests: XCTestCase {
         url.deleteLastPathComponent()
         url.deleteLastPathComponent()
         return url
+    }
+
+    private static func makePaletteCardView() -> NSView {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 140))
+        let view = NSView(frame: NSRect(x: 20, y: 20, width: 100, height: 60))
+        container.addSubview(view)
+        return view
+    }
+
+    private static func mouseDownEvent() throws -> NSEvent {
+        return try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        ))
     }
 
     private static func enterExitEvent(_ type: NSEvent.EventType, timestamp: TimeInterval) -> NSEvent {
