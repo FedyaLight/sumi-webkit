@@ -610,10 +610,26 @@ class WebViewCoordinator {
     }
 
     func liveWebViews(for tab: Tab) -> [WKWebView] {
-        uniqueWebViews(
-            getAllWebViews(for: tab.id)
-                + [tab.assignedWebView, tab.existingWebView].compactMap { $0 }
-        )
+        var seen = Set<ObjectIdentifier>()
+        var result: [WKWebView] = []
+        func appendUnique(_ webView: WKWebView?) {
+            guard let webView else { return }
+            let id = ObjectIdentifier(webView)
+            if seen.insert(id).inserted {
+                result.append(webView)
+            }
+        }
+        if let windowWebViews = webViewsByTabAndWindow[tab.id] {
+            result.reserveCapacity(windowWebViews.count + 2)
+            for webView in windowWebViews.values {
+                appendUnique(webView)
+            }
+        } else {
+            result.reserveCapacity(2)
+        }
+        appendUnique(tab.assignedWebView)
+        appendUnique(tab.existingWebView)
+        return result
     }
 
     func windowIDs(for tabId: UUID) -> [UUID] {
@@ -1123,6 +1139,8 @@ class WebViewCoordinator {
         }
 
         RuntimeDiagnostics.debug("Completed full WebView cleanup.", category: "WebViewCoordinator")
+
+        pruneStaleWebViewBookkeeping(reason: "cleanupAllWebViews")
     }
 
     // MARK: - WebView Creation & Cross-Window Sync
@@ -1376,14 +1394,24 @@ class WebViewCoordinator {
         return nil
     }
 
-    private func pruneDeadWeakWebViewReferences() {
-        weakWebViewsByIdentifier = weakWebViewsByIdentifier.filter { _, entry in
-            entry.value != nil
+    private func pruneStaleWebViewBookkeeping(reason: String) {
+        guard weakWebViewsByIdentifier.isEmpty == false else { return }
+        let staleIDs = weakWebViewsByIdentifier.compactMap { key, entry -> ObjectIdentifier? in
+            entry.value == nil ? key : nil
         }
+        guard staleIDs.isEmpty == false else { return }
+        for id in staleIDs {
+            weakWebViewsByIdentifier.removeValue(forKey: id)
+            activeHistorySwipeProtections.removeValue(forKey: id)
+            deferredProtectedWebViewCommands.removeValue(forKey: id)
+        }
+        RuntimeDiagnostics.swipeTrace(
+            "pruneStaleWebViewBookkeeping reason=\(reason) count=\(staleIDs.count)"
+        )
     }
 
     private func pruneInvalidDeferredProtectedCommands(reason: String) {
-        pruneDeadWeakWebViewReferences()
+        pruneStaleWebViewBookkeeping(reason: "\(reason).staleBookkeeping")
 
         for sourceWebViewID in Array(deferredProtectedWebViewCommands.keys) {
             guard resolveWebView(with: sourceWebViewID) != nil else {
