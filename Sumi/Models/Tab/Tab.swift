@@ -154,8 +154,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { navigationRuntime.loadingState }
         set {
             guard navigationRuntime.loadingState != newValue else { return }
+            let oldIsLoading = navigationRuntime.loadingState.isLoading
             objectWillChange.send()
             navigationRuntime.loadingState = newValue
+            guard oldIsLoading != newValue.isLoading else { return }
             NotificationCenter.default.post(
                 name: .sumiTabLoadingStateDidChange,
                 object: self,
