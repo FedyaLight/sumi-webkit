@@ -16,11 +16,9 @@ final class FindInPagePanelController {
 
     private var panelWindow: TransientChromePanelWindow?
     private let hostingController = NSHostingController(rootView: AnyView(EmptyView()))
+    private let parentObserver = TransientChromeParentWindowObserver()
     private weak var anchorView: NSView?
     private weak var attachedParentWindow: NSWindow?
-    private weak var observedParentWindow: NSWindow?
-    private weak var observedContentView: NSView?
-    private var observers: [NSObjectProtocol] = []
     private var currentRoot = AnyView(EmptyView())
     private var currentIsPresented = false
     private var currentAllowsDismissalAnimation = true
@@ -138,7 +136,7 @@ final class FindInPagePanelController {
         guard let anchorView else { return nil }
         return TransientChromePanelFrameResolver.topStripFrame(
             in: anchorView,
-            fallbackWindow: observedParentWindow ?? attachedParentWindow,
+            fallbackWindow: parentObserver.parentWindow ?? attachedParentWindow,
             height: Self.panelHeight
         )
     }
@@ -364,82 +362,21 @@ final class FindInPagePanelController {
     }
 
     private func bindParentWindow(_ parentWindow: NSWindow) {
-        guard observedParentWindow !== parentWindow else { return }
-        unbindParentWindow()
-        observedParentWindow = parentWindow
-
-        let center = NotificationCenter.default
-        let names: [Notification.Name] = [
-            NSWindow.didMoveNotification,
-            NSWindow.didResizeNotification,
-            NSWindow.didChangeScreenNotification,
-            NSWindow.didEnterFullScreenNotification,
-            NSWindow.didExitFullScreenNotification,
-        ]
-
-        observers = names.map { name in
-            center.addObserver(
-                forName: name,
-                object: parentWindow,
-                queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.syncFrame()
-                }
-            }
-        }
-
-        observers.append(
-            center.addObserver(
-                forName: NSWindow.willCloseNotification,
-                object: parentWindow,
-                queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    self?.teardown()
-                }
+        parentObserver.bind(
+            to: parentWindow,
+            onGeometryChange: { [weak self] in
+                self?.syncFrame()
+            },
+            onWillClose: { [weak self] in
+                self?.teardown()
+            },
+            onSheetBegin: { [weak self] in
+                self?.suspendForParentSheet()
+            },
+            onSheetEnd: { [weak self] in
+                self?.resumeAfterParentSheet()
             }
         )
-
-        observers.append(
-            center.addObserver(
-                forName: NSWindow.willBeginSheetNotification,
-                object: parentWindow,
-                queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.suspendForParentSheet()
-                }
-            }
-        )
-
-        observers.append(
-            center.addObserver(
-                forName: NSWindow.didEndSheetNotification,
-                object: parentWindow,
-                queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.resumeAfterParentSheet()
-                }
-            }
-        )
-
-        if let contentView = parentWindow.contentView {
-            contentView.postsFrameChangedNotifications = true
-            observedContentView = contentView
-            observers.append(
-                center.addObserver(
-                    forName: NSView.frameDidChangeNotification,
-                    object: contentView,
-                    queue: .main
-                ) { [weak self] _ in
-                    MainActor.assumeIsolated {
-                        self?.syncFrame()
-                    }
-                }
-            )
-        }
     }
 
     private func suspendForParentSheet() {
@@ -451,7 +388,7 @@ final class FindInPagePanelController {
         isSuspendedForParentSheet = false
         guard let anchorView else { return }
         update(
-            parentWindow: observedParentWindow ?? attachedParentWindow,
+            parentWindow: parentObserver.parentWindow ?? attachedParentWindow,
             anchorView: anchorView,
             root: currentRoot,
             isPresented: currentIsPresented,
@@ -460,11 +397,7 @@ final class FindInPagePanelController {
     }
 
     private func unbindParentWindow() {
-        let center = NotificationCenter.default
-        observers.forEach(center.removeObserver)
-        observers = []
-        observedParentWindow = nil
-        observedContentView = nil
+        parentObserver.unbind()
         isSuspendedForParentSheet = false
     }
 }

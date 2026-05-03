@@ -11,6 +11,7 @@ import SwiftUI
 
 /// Relative stacking for full-window transient chrome (higher draws above lower).
 private enum WindowTransientChromeZIndex {
+    static let findInPage: Double = 3_500
     static let commandPalette: Double = 9_000
     /// Glance preview: above palette, below blocking dialogs.
     static let glance: Double = 10_000
@@ -328,7 +329,7 @@ struct WindowView: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .allowsHitTesting(false)
-            .zIndex(3500)
+            .zIndex(WindowTransientChromeZIndex.findInPage)
 
             // Command palette uses a small child panel centered in the browser window, leaving uncovered sidebar areas interactive.
             CommandPalettePanelHost(
