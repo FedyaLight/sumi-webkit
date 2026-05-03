@@ -210,11 +210,10 @@ actor TabSnapshotRepository {
         ctx.autosaveEnabled = false
 
         do {
+            let existingTabsById = try fetchTabs(in: ctx, ids: Set(latestByTabID.keys))
             var didUpdate = false
             for runtimeState in deduplicatedStates {
-                let tabID = runtimeState.id
-                let predicate = #Predicate<TabEntity> { $0.id == tabID }
-                guard let existing = try ctx.fetch(FetchDescriptor<TabEntity>(predicate: predicate)).first else {
+                guard let existing = existingTabsById[runtimeState.id] else {
                     continue
                 }
 
@@ -238,7 +237,9 @@ actor TabSnapshotRepository {
 
         try validateDelta(delta)
 
+        let upsertSpaceIds = Set(delta.spaces.map(\.id))
         do {
+            let deletedSpacesById = try fetchSpaces(in: ctx, ids: delta.deletedSpaceIds)
             for spaceId in delta.deletedSpaceIds {
                 for tab in try fetchTabs(in: ctx, spaceId: spaceId) {
                     ctx.delete(tab)
@@ -246,7 +247,7 @@ actor TabSnapshotRepository {
                 for folder in try fetchFolders(in: ctx, spaceId: spaceId) {
                     ctx.delete(folder)
                 }
-                if let space = try fetchSpace(in: ctx, id: spaceId) {
+                if upsertSpaceIds.contains(spaceId) == false, let space = deletedSpacesById[spaceId] {
                     ctx.delete(space)
                 }
             }
@@ -255,9 +256,11 @@ actor TabSnapshotRepository {
         }
 
         let upsertTabIds = Set(delta.tabs.map(\.id))
+        let deletedTabIds = delta.deletedTabIds.subtracting(upsertTabIds)
         do {
-            for tabId in delta.deletedTabIds.subtracting(upsertTabIds) {
-                if let tab = try fetchTab(in: ctx, id: tabId) {
+            let deletedTabsById = try fetchTabs(in: ctx, ids: deletedTabIds)
+            for tabId in deletedTabIds {
+                if let tab = deletedTabsById[tabId] {
                     ctx.delete(tab)
                 }
             }
@@ -266,9 +269,11 @@ actor TabSnapshotRepository {
         }
 
         let upsertFolderIds = Set(delta.folders.map(\.id))
+        let deletedFolderIds = delta.deletedFolderIds.subtracting(upsertFolderIds)
         do {
-            for folderId in delta.deletedFolderIds.subtracting(upsertFolderIds) {
-                if let folder = try fetchFolder(in: ctx, id: folderId) {
+            let deletedFoldersById = try fetchFolders(in: ctx, ids: deletedFolderIds)
+            for folderId in deletedFolderIds {
+                if let folder = deletedFoldersById[folderId] {
                     ctx.delete(folder)
                 }
             }
@@ -277,27 +282,27 @@ actor TabSnapshotRepository {
         }
 
         do {
+            let existingSpacesById = try fetchSpaces(in: ctx, ids: upsertSpaceIds)
             for space in delta.spaces {
-                let existing = try fetchSpace(in: ctx, id: space.id)
-                upsertSpace(in: ctx, space, existing: existing)
+                upsertSpace(in: ctx, space, existing: existingSpacesById[space.id])
             }
         } catch {
             throw classify(error)
         }
 
         do {
+            let existingFoldersById = try fetchFolders(in: ctx, ids: upsertFolderIds)
             for folder in delta.folders {
-                let existing = try fetchFolder(in: ctx, id: folder.id)
-                upsertFolder(in: ctx, folder, existing: existing)
+                upsertFolder(in: ctx, folder, existing: existingFoldersById[folder.id])
             }
         } catch {
             throw classify(error)
         }
 
         do {
+            let existingTabsById = try fetchTabs(in: ctx, ids: upsertTabIds)
             for tab in delta.tabs {
-                let existing = try fetchTab(in: ctx, id: tab.id)
-                upsertTab(in: ctx, tab, existing: existing)
+                upsertTab(in: ctx, tab, existing: existingTabsById[tab.id])
             }
         } catch {
             throw classify(error)
@@ -489,22 +494,28 @@ actor TabSnapshotRepository {
         state.currentSpaceID = snapshotState.currentSpaceID
     }
 
-    private func fetchTab(in ctx: ModelContext, id: UUID) throws -> TabEntity? {
-        let tabId = id
-        let predicate = #Predicate<TabEntity> { $0.id == tabId }
-        return try ctx.fetch(FetchDescriptor<TabEntity>(predicate: predicate)).first
+    private func fetchTabs(in ctx: ModelContext, ids: Set<UUID>) throws -> [UUID: TabEntity] {
+        guard ids.isEmpty == false else { return [:] }
+        let targetIds = ids
+        let predicate = #Predicate<TabEntity> { targetIds.contains($0.id) }
+        let tabs = try ctx.fetch(FetchDescriptor<TabEntity>(predicate: predicate))
+        return Dictionary(tabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
-    private func fetchFolder(in ctx: ModelContext, id: UUID) throws -> FolderEntity? {
-        let folderId = id
-        let predicate = #Predicate<FolderEntity> { $0.id == folderId }
-        return try ctx.fetch(FetchDescriptor<FolderEntity>(predicate: predicate)).first
+    private func fetchFolders(in ctx: ModelContext, ids: Set<UUID>) throws -> [UUID: FolderEntity] {
+        guard ids.isEmpty == false else { return [:] }
+        let targetIds = ids
+        let predicate = #Predicate<FolderEntity> { targetIds.contains($0.id) }
+        let folders = try ctx.fetch(FetchDescriptor<FolderEntity>(predicate: predicate))
+        return Dictionary(folders.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
-    private func fetchSpace(in ctx: ModelContext, id: UUID) throws -> SpaceEntity? {
-        let spaceId = id
-        let predicate = #Predicate<SpaceEntity> { $0.id == spaceId }
-        return try ctx.fetch(FetchDescriptor<SpaceEntity>(predicate: predicate)).first
+    private func fetchSpaces(in ctx: ModelContext, ids: Set<UUID>) throws -> [UUID: SpaceEntity] {
+        guard ids.isEmpty == false else { return [:] }
+        let targetIds = ids
+        let predicate = #Predicate<SpaceEntity> { targetIds.contains($0.id) }
+        let spaces = try ctx.fetch(FetchDescriptor<SpaceEntity>(predicate: predicate))
+        return Dictionary(spaces.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     private func fetchTabs(in ctx: ModelContext, spaceId: UUID) throws -> [TabEntity] {
