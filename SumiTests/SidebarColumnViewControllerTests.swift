@@ -972,6 +972,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
     func testCollapsedSidebarPanelControllerPrewarmsWithoutAttachingAndVisibleAttaches() throws {
         let parentWindow = makeWindow()
         let controller = CollapsedSidebarPanelController()
+        controller.frameSyncBurstDurationOverrideForTesting = 0.04
 
         controller.update(
             parentWindow: parentWindow,
@@ -1009,6 +1010,81 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         XCTAssertTrue(controller.isPanelAttachedForTesting)
         XCTAssertTrue(controller.isFrameSyncTimerActiveForTesting)
         XCTAssertTrue(parentWindow.childWindows?.contains { $0 === prewarmedPanel } == true)
+
+        drainMainRunLoop()
+
+        XCTAssertTrue(controller.isPanelAttachedForTesting)
+        XCTAssertTrue(parentWindow.childWindows?.contains { $0 === prewarmedPanel } == true)
+        XCTAssertFalse(controller.isFrameSyncTimerActiveForTesting)
+    }
+
+    func testCollapsedSidebarPanelControllerResizeNotificationAndOverlayAttachDoNotStartIdleTimer() throws {
+        let parentWindow = makeWindow()
+        let controller = CollapsedSidebarPanelController()
+        controller.frameSyncBurstDurationOverrideForTesting = 0.04
+
+        controller.update(
+            parentWindow: parentWindow,
+            root: AnyView(Color.clear.frame(width: 220, height: 240)),
+            width: 220,
+            presentationContext: .collapsedVisible(sidebarWidth: 220),
+            contextMenuController: nil,
+            isHostRequested: true
+        )
+        drainMainRunLoop()
+        XCTAssertFalse(controller.isFrameSyncTimerActiveForTesting)
+
+        controller.updateDragPreviewOverlay(
+            parentWindow: parentWindow,
+            root: AnyView(Color.clear),
+            isPresented: true
+        )
+        XCTAssertTrue(controller.isDragPreviewOverlayAttachedForTesting)
+        XCTAssertFalse(controller.isFrameSyncTimerActiveForTesting)
+
+        parentWindow.setFrame(NSRect(x: 40, y: 60, width: 500, height: 360), display: false)
+        drainMainRunLoop()
+        NotificationCenter.default.post(name: NSWindow.didResizeNotification, object: parentWindow)
+        drainMainRunLoop()
+
+        XCTAssertTrue(controller.isPanelAttachedForTesting)
+        XCTAssertTrue(controller.isDragPreviewOverlayAttachedForTesting)
+        XCTAssertFalse(controller.isFrameSyncTimerActiveForTesting)
+    }
+
+    func testCollapsedSidebarPanelControllerLiveResizeUsesTemporaryFrameSyncBurst() throws {
+        let parentWindow = makeWindow()
+        let controller = CollapsedSidebarPanelController()
+        controller.frameSyncBurstDurationOverrideForTesting = 0.05
+
+        controller.update(
+            parentWindow: parentWindow,
+            root: AnyView(Color.clear.frame(width: 220, height: 240)),
+            width: 220,
+            presentationContext: .collapsedVisible(sidebarWidth: 220),
+            contextMenuController: nil,
+            isHostRequested: true
+        )
+        drainMainRunLoop()
+        XCTAssertFalse(controller.isFrameSyncTimerActiveForTesting)
+
+        controller.frameSyncBurstDurationOverrideForTesting = 0.3
+        NotificationCenter.default.post(name: NSWindow.willStartLiveResizeNotification, object: parentWindow)
+        drainMainRunLoop()
+        XCTAssertTrue(controller.isFrameSyncTimerActiveForTesting)
+        XCTAssertEqual(controller.frameSyncBurstReasonForTesting, "live-resize")
+
+        parentWindow.setFrame(NSRect(x: 20, y: 30, width: 480, height: 340), display: false)
+        drainMainRunLoop()
+        NotificationCenter.default.post(name: NSWindow.didResizeNotification, object: parentWindow)
+        drainMainRunLoop()
+
+        XCTAssertTrue(controller.isFrameSyncTimerActiveForTesting)
+
+        NotificationCenter.default.post(name: NSWindow.didEndLiveResizeNotification, object: parentWindow)
+        runMainRunLoopBriefly()
+
+        XCTAssertFalse(controller.isFrameSyncTimerActiveForTesting)
     }
 
     func testCollapsedSidebarPanelControllerVisiblePanelIsInteractiveAndNonActivating() throws {
@@ -1150,6 +1226,7 @@ final class SidebarColumnViewControllerTests: XCTestCase {
 
         XCTAssertNil(controller.panelWindowForTesting)
         XCTAssertFalse(controller.isPanelAttachedForTesting)
+        XCTAssertFalse(controller.isFrameSyncTimerActiveForTesting)
     }
 
     func testSidebarDragPreviewMapperUsesParentWindowForChildPanelPreviewCoordinates() {
@@ -2584,6 +2661,10 @@ final class SidebarColumnViewControllerTests: XCTestCase {
         for _ in 0..<8 {
             RunLoop.main.run(until: Date().addingTimeInterval(0.02))
         }
+    }
+
+    private func runMainRunLoopBriefly() {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.01))
     }
 
     #if DEBUG
