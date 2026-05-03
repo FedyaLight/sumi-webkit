@@ -304,6 +304,10 @@ final class TabSuspensionService {
               let coordinator = browserManager.webViewCoordinator
         else { return false }
 
+        guard tabLevelSuspensionIneligibility(for: tab, context: context) == nil else {
+            return false
+        }
+
         let liveWebViews = coordinator.liveWebViews(for: tab)
         guard suspensionEligibility(
             for: tab,
@@ -331,6 +335,11 @@ final class TabSuspensionService {
     }
 
     func suspensionEligibility(for tab: Tab) -> TabSuspensionEligibility {
+        let context = suspensionEvaluationContext()
+        if let ineligibility = tabLevelSuspensionIneligibility(for: tab, context: context) {
+            return ineligibility
+        }
+
         guard let browserManager,
               let coordinator = browserManager.webViewCoordinator
         else {
@@ -340,7 +349,7 @@ final class TabSuspensionService {
         return suspensionEligibility(
             for: tab,
             liveWebViews: coordinator.liveWebViews(for: tab),
-            context: suspensionEvaluationContext()
+            context: context
         )
     }
 
@@ -531,6 +540,9 @@ final class TabSuspensionService {
         guard revisitCounts[tab.id, default: 0] <= context.policy.revisitProtectionLimit else {
             return false
         }
+        guard tabLevelSuspensionIneligibility(for: tab, context: context) == nil else {
+            return false
+        }
         guard let coordinator = browserManager?.webViewCoordinator else { return false }
         return suspensionEligibility(
             for: tab,
@@ -592,6 +604,9 @@ final class TabSuspensionService {
               !context.visibleTabIDs.contains(tab.id)
         else {
             noteTabBecameVisible(tab)
+            return
+        }
+        guard tabLevelSuspensionIneligibility(for: tab, context: context) == nil else {
             return
         }
 
@@ -664,27 +679,37 @@ final class TabSuspensionService {
 
         return allKnownTabs()
             .compactMap { tab -> Candidate? in
-                let webViews = coordinator.liveWebViews(for: tab)
-                let eligibility = if let webViewStates = webViewStatesByTabID[tab.id] {
-                    suspensionEligibility(
-                        for: tab,
-                        webViewStates: webViewStates,
-                        context: context
-                    )
-                } else {
-                    suspensionEligibility(
-                        for: tab,
-                        liveWebViews: webViews,
-                        context: context
-                    )
-                }
-                guard eligibility.isEligible else {
+                guard tabLevelSuspensionIneligibility(for: tab, context: context) == nil else {
                     return nil
                 }
                 if let cutoffDate,
                    let lastSelectedAt = tab.lastSelectedAt,
                    lastSelectedAt >= cutoffDate {
                     return nil
+                }
+
+                let eligibility: TabSuspensionEligibility
+                let webViews: [WKWebView]
+                if let webViewStates = webViewStatesByTabID[tab.id] {
+                    eligibility = suspensionEligibility(
+                        for: tab,
+                        webViewStates: webViewStates,
+                        context: context
+                    )
+                    guard eligibility.isEligible else {
+                        return nil
+                    }
+                    webViews = coordinator.liveWebViews(for: tab)
+                } else {
+                    webViews = coordinator.liveWebViews(for: tab)
+                    eligibility = suspensionEligibility(
+                        for: tab,
+                        liveWebViews: webViews,
+                        context: context
+                    )
+                    guard eligibility.isEligible else {
+                        return nil
+                    }
                 }
                 return Candidate(tab: tab, webViews: webViews)
             }
@@ -703,6 +728,10 @@ final class TabSuspensionService {
         liveWebViews: [WKWebView],
         context: TabSuspensionEvaluationContext
     ) -> TabSuspensionEligibility {
+        if let ineligibility = tabLevelSuspensionIneligibility(for: tab, context: context) {
+            return ineligibility
+        }
+
         guard let coordinator = browserManager?.webViewCoordinator else {
             return .ineligible(reason: .noLiveWebView)
         }
@@ -722,6 +751,16 @@ final class TabSuspensionService {
         webViewStates: [TabSuspensionWebViewState],
         context: TabSuspensionEvaluationContext
     ) -> TabSuspensionEligibility {
+        if let ineligibility = tabLevelSuspensionIneligibility(for: tab, context: context) {
+            return ineligibility
+        }
+        return webViewStateSuspensionEligibility(webViewStates)
+    }
+
+    private func tabLevelSuspensionIneligibility(
+        for tab: Tab,
+        context: TabSuspensionEvaluationContext
+    ) -> TabSuspensionEligibility? {
         guard !context.selectedTabIDs.contains(tab.id) else { return .ineligible(reason: .selected) }
         guard !context.visibleTabIDs.contains(tab.id) else { return .ineligible(reason: .visible) }
         guard tab.requiresPrimaryWebView else { return .ineligible(reason: .noPrimaryWebView) }
@@ -729,14 +768,19 @@ final class TabSuspensionService {
 
         guard !tab.isPopupHost else { return .ineligible(reason: .popupHost) }
         guard !tab.isSuspended else { return .ineligible(reason: .alreadySuspended) }
-        guard !webViewStates.isEmpty else { return .ineligible(reason: .noLiveWebView) }
         guard !tab.isLoading else { return .ineligible(reason: .loading) }
         guard !tab.audioState.isPlayingAudio else { return .ineligible(reason: .playingAudio) }
         guard !isRecentlyAudible(tab) else { return .ineligible(reason: .recentlyAudible) }
         guard tab.pageSuspensionVeto == .none else { return .ineligible(reason: .pageVeto) }
         guard !tab.hasPictureInPictureVideo else { return .ineligible(reason: .pictureInPicture) }
         guard !tab.isDisplayingPDFDocument else { return .ineligible(reason: .pdfDocument) }
+        return nil
+    }
 
+    private func webViewStateSuspensionEligibility(
+        _ webViewStates: [TabSuspensionWebViewState]
+    ) -> TabSuspensionEligibility {
+        guard !webViewStates.isEmpty else { return .ineligible(reason: .noLiveWebView) }
         for state in webViewStates {
             guard !state.isProtectedFromCompositorMutation else { return .ineligible(reason: .compositorProtected) }
             guard !state.isLoading else { return .ineligible(reason: .loading) }

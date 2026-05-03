@@ -326,6 +326,144 @@ final class TabSuspensionServiceTests: XCTestCase {
         )
     }
 
+    func testTabLevelEligibilityReasonsWinOverInjectedWebViewStateFailures() {
+        let webViewFailure = TabSuspensionWebViewState(
+            isLoading: true,
+            isPlayingAudio: true,
+            isCapturingCamera: true,
+            isCapturingMicrophone: true,
+            isFullscreen: true,
+            isPictureInPicture: true,
+            isPDFDocument: true,
+            isProtectedFromCompositorMutation: true
+        )
+
+        do {
+            let harness = makeHarness()
+            let selected = makeTab("https://example.com/current", harness: harness)
+            setCurrentTab(selected, in: harness.windowState)
+
+            XCTAssertEqual(
+                harness.service.suspensionEligibility(for: selected, webViewStates: [webViewFailure]),
+                .ineligible(reason: .selected)
+            )
+        }
+
+        do {
+            let harness = makeHarness()
+            let left = makeTab("https://example.com/left", harness: harness)
+            let right = makeTab("https://example.com/right", harness: harness)
+            setCurrentTab(left, in: harness.windowState)
+            var splitState = harness.browserManager.splitManager.getSplitState(for: harness.windowState.id)
+            splitState.isSplit = true
+            splitState.leftTabId = left.id
+            splitState.rightTabId = right.id
+            harness.browserManager.splitManager.setSplitState(splitState, for: harness.windowState.id)
+
+            XCTAssertEqual(
+                harness.service.suspensionEligibility(for: right, webViewStates: [webViewFailure]),
+                .ineligible(reason: .visible)
+            )
+        }
+
+        let cases: [(url: String, reason: TabSuspensionEligibility.Reason, configure: (Tab) -> Void)] = [
+            (SumiSurface.emptyTabURL.absoluteString, .noPrimaryWebView, { _ in }),
+            ("file:///tmp/suspension.html", .unsupportedURLScheme, { _ in }),
+            ("https://example.com/popup", .popupHost, { $0.isPopupHost = true }),
+            ("https://example.com/already", .alreadySuspended, { $0.isSuspended = true }),
+            ("https://example.com/loading", .loading, { $0.loadingState = .didCommit }),
+            ("https://example.com/audio", .playingAudio, { $0.applyAudioState(.unmuted(isPlayingAudio: true)) }),
+            ("https://example.com/recent-audio", .recentlyAudible, { $0.lastMediaActivityAt = self.now.addingTimeInterval(-30) }),
+            ("https://example.com/page-veto", .pageVeto, { $0.pageSuspensionVeto = .pageReportedUnableToSuspend }),
+            ("https://example.com/pip", .pictureInPicture, { $0.hasPictureInPictureVideo = true }),
+            ("https://example.com/pdf", .pdfDocument, { $0.isDisplayingPDFDocument = true }),
+        ]
+
+        for testCase in cases {
+            let (harness, hidden) = makeEligibilitySubject(hiddenURL: testCase.url)
+            testCase.configure(hidden)
+
+            XCTAssertEqual(
+                harness.service.suspensionEligibility(for: hidden, webViewStates: [webViewFailure]),
+                .ineligible(reason: testCase.reason),
+                "Expected tab-level reason for \(testCase.url)"
+            )
+        }
+    }
+
+    func testNoLiveWebViewEligibilityIsRejectedAfterTabPreflightPasses() {
+        let harness = makeHarness()
+        let selected = makeTab("https://example.com/current", harness: harness)
+        let hidden = makeTab("https://example.com/no-live-webview", harness: harness)
+
+        setCurrentTab(selected, in: harness.windowState)
+        attachWebView(to: selected, harness: harness)
+
+        XCTAssertEqual(
+            harness.service.suspensionEligibility(for: hidden),
+            .ineligible(reason: .noLiveWebView)
+        )
+    }
+
+    func testInjectedEligibleWebViewStateKeepsHiddenTabEligible() {
+        let (harness, hidden) = makeEligibilitySubject()
+
+        XCTAssertEqual(
+            harness.service.suspensionEligibility(for: hidden, webViewStates: [.init()]),
+            .eligible
+        )
+    }
+
+    func testWebViewLevelEligibilityReasonsArePreservedWithInjectedStates() {
+        let cases: [(state: TabSuspensionWebViewState, reason: TabSuspensionEligibility.Reason)] = [
+            (.init(isProtectedFromCompositorMutation: true), .compositorProtected),
+            (.init(isLoading: true), .loading),
+            (.init(isPlayingAudio: true), .playingAudio),
+            (.init(isCapturingCamera: true), .cameraCapture),
+            (.init(isCapturingMicrophone: true), .microphoneCapture),
+            (.init(isFullscreen: true), .fullscreen),
+            (.init(isPictureInPicture: true), .pictureInPicture),
+            (.init(isPDFDocument: true), .pdfDocument),
+        ]
+
+        for testCase in cases {
+            let (harness, hidden) = makeEligibilitySubject()
+
+            XCTAssertEqual(
+                harness.service.suspensionEligibility(for: hidden, webViewStates: [testCase.state]),
+                .ineligible(reason: testCase.reason)
+            )
+        }
+    }
+
+    func testSuspendRechecksCompositorProtectionBeforeDiscarding() throws {
+        let (harness, hidden) = makeEligibilitySubject()
+        let webView = try XCTUnwrap(
+            harness.coordinator.getWebView(for: hidden.id, in: harness.windowState.id)
+        )
+        harness.coordinator.beginHistorySwipeProtection(
+            tabId: hidden.id,
+            webView: webView,
+            originURL: hidden.url,
+            originHistoryItem: nil
+        )
+
+        XCTAssertEqual(
+            harness.service.suspensionEligibility(for: hidden),
+            .ineligible(reason: .compositorProtected)
+        )
+        XCTAssertFalse(harness.service.suspend(hidden, reason: "test-compositor-protection"))
+        XCTAssertFalse(hidden.isSuspended)
+        XCTAssertTrue(harness.coordinator.getWebView(for: hidden.id, in: harness.windowState.id) === webView)
+
+        harness.coordinator.finishHistorySwipeProtection(
+            tabId: hidden.id,
+            webView: webView,
+            currentURL: hidden.url,
+            currentHistoryItem: nil
+        )
+    }
+
     func testPageSuspensionRuntimeStateResetClearsNativeVetoAndDocumentFlags() {
         let tab = Tab(url: URL(string: "https://example.com/reset")!)
         tab.pageSuspensionVeto = .pageReportedUnableToSuspend
