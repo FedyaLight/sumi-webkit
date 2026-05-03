@@ -71,10 +71,6 @@ struct WindowView: View {
             }
 
             chromeThemeScope {
-                CommandPaletteView()
-                    .zIndex(WindowTransientChromeZIndex.commandPalette)
-            }
-            chromeThemeScope {
                 DialogView()
                     .zIndex(WindowTransientChromeZIndex.dialog)
             }
@@ -320,19 +316,40 @@ struct WindowView: View {
                     .zIndex(2000)
             }
 
-            // Find-in-page lives only over the web column so it never intercepts sidebar hover/clicks.
-            chromeThemeScope {
-                FindInPageChromeHitTestingWrapper(
-                    findManager: browserManager.findManager,
-                    windowStateID: windowState.id,
-                    themeContext: resolvedThemeContext
-                )
-                .environmentObject(browserManager)
-                .zIndex(3500)
-            }
+            // Find-in-page is hosted in a child panel over the web column so WebKit cursor tracking below it is cut off.
+            FindInPagePanelHost(
+                browserManager: browserManager,
+                findManager: browserManager.findManager,
+                windowRegistry: windowRegistry,
+                windowState: windowState,
+                sumiSettings: sumiSettings,
+                resolvedThemeContext: resolvedThemeContext,
+                colorScheme: globalColorScheme
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .allowsHitTesting(false)
+            .zIndex(3500)
+
+            // Command palette uses a small child panel centered in the browser window, leaving uncovered sidebar areas interactive.
+            CommandPalettePanelHost(
+                browserManager: browserManager,
+                windowState: windowState,
+                commandPalette: commandPalette,
+                sumiSettings: sumiSettings,
+                resolvedThemeContext: resolvedThemeContext,
+                colorScheme: globalColorScheme,
+                isPresented: commandPalette.isVisible && !transientChromeModalSuppressed
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .allowsHitTesting(false)
+            .zIndex(WindowTransientChromeZIndex.commandPalette)
         }
         .padding(.bottom, BrowserChromeGeometry.elementSeparation)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var transientChromeModalSuppressed: Bool {
+        browserManager.dialogManager.isPresented(in: windowState.window)
     }
 
     private var appKitGlobalAppearance: NSAppearance {

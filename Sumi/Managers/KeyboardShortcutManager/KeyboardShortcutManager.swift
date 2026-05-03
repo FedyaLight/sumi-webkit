@@ -481,11 +481,11 @@ class KeyboardShortcutManager {
     }
 
     private func isManagedSumiBrowserWindow(_ window: NSWindow) -> Bool {
-        windowRegistry?.windows.values.contains(where: { $0.window === window }) == true
+        browserWindowState(containing: window) != nil
     }
 
     private func shouldBypassShortcutRouting(keyWindow: NSWindow) -> Bool {
-        if let state = windowRegistry?.windows.values.first(where: { $0.window === keyWindow }),
+        if let state = browserWindowState(containing: keyWindow),
            state.isCommandPaletteVisible {
             return true
         }
@@ -493,6 +493,16 @@ class KeyboardShortcutManager {
             return true
         }
         return false
+    }
+
+    private func browserWindowState(containing window: NSWindow) -> BrowserWindowState? {
+        windowRegistry?.windows.values.first { state in
+            guard let browserWindow = state.window else { return false }
+            if browserWindow === window {
+                return true
+            }
+            return browserWindow.childWindows?.contains(where: { $0 === window }) == true
+        }
     }
 
     /// Control+Tab / Control+Shift+Tab: run the shortcut map first, then `NSMenu.performKeyEquivalent`

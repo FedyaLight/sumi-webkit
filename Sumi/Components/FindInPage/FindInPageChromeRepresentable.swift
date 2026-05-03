@@ -6,6 +6,12 @@
 import AppKit
 import SwiftUI
 
+/// Shared layout for find-in-page chrome and its transient panel strip.
+enum FindInPageChromeLayout {
+    /// Top padding (8) + representable (48) plus bottom inset so SwiftUI `.shadow` is not clipped by the panel.
+    static let stripHeight: CGFloat = 92
+}
+
 struct FindChromePaintSignature: Equatable {
     var theme: ResolvedThemeContext
     var settingsBits: Int
@@ -21,28 +27,46 @@ struct FindChromePaintSignature: Equatable {
 struct FindInPageChromeHitTestingWrapper: View {
     @ObservedObject var findManager: FindManager
     @Environment(WindowRegistry.self) private var windowRegistry
+    @Environment(\.colorScheme) private var colorScheme
     let windowStateID: UUID
     let themeContext: ResolvedThemeContext
+    let keepsChromeMounted: Bool
+    let isInteractive: Bool
 
     private var shouldMountFindChrome: Bool {
-        windowRegistry.activeWindow?.id == windowStateID && findManager.isFindBarVisible
+        windowRegistry.activeWindow?.id == windowStateID
+            && (findManager.isFindBarVisible || keepsChromeMounted)
     }
 
     var body: some View {
         if shouldMountFindChrome {
-            HStack(spacing: 0) {
-                Spacer(minLength: 0)
-                FindInPageChromeRepresentable(
-                    findManager: findManager,
-                    windowStateID: windowStateID,
-                    themeContext: themeContext
-                )
-                .frame(width: 400, height: 48)
-                Spacer(minLength: 0)
+            ZStack(alignment: .top) {
+                MouseEventShieldView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    FindInPageChromeRepresentable(
+                        findManager: findManager,
+                        windowStateID: windowStateID,
+                        themeContext: themeContext,
+                        keepsChromeMounted: keepsChromeMounted,
+                        isInteractive: isInteractive
+                    )
+                    .frame(width: 400, height: 48)
+                    .shadow(
+                        color: .black.opacity(colorScheme == .dark ? 0.38 : 0.15),
+                        radius: 12,
+                        x: 0,
+                        y: 4
+                    )
+                    Spacer(minLength: 0)
+                }
+                .padding(.top, 8)
             }
-            .padding(.top, 8)
-            .fixedSize(horizontal: false, vertical: true)
+            .frame(height: FindInPageChromeLayout.stripHeight, alignment: .top)
             .frame(maxWidth: .infinity, alignment: .top)
+            .allowsHitTesting(isInteractive)
         } else {
             Color.clear
                 .frame(width: 0, height: 0)
@@ -58,6 +82,8 @@ struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
     @Environment(\.sumiSettings) private var sumiSettings
     let windowStateID: UUID
     let themeContext: ResolvedThemeContext
+    let keepsChromeMounted: Bool
+    let isInteractive: Bool
 
     func makeCoordinator() -> Coordinator {
         Coordinator(findManager: findManager)
@@ -101,15 +127,20 @@ struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
         let isActiveWindow = windowRegistry.activeWindow?.id == windowStateID
         let model = findManager.currentModel
         let visible = (model?.isVisible == true) && isActiveWindow
+        if visible {
+            context.coordinator.lastVisibleModel = model
+        }
+        let displayModel = visible ? model : context.coordinator.lastVisibleModel
+        let shouldRender = visible || (keepsChromeMounted && displayModel != nil)
 
-        if !visible, let window = container.view.window,
+        if (!visible || !isInteractive), let window = container.view.window,
            let responder = window.firstResponder as? NSView,
            responder.isDescendant(of: container.view) {
             window.makeFirstResponder(nil)
         }
 
-        findVC.view.isHidden = !visible
-        container.view.isHidden = !visible
+        findVC.view.isHidden = !shouldRender
+        container.view.isHidden = !shouldRender
 
         let signature = FindChromePaintSignature(
             theme: themeContext,
@@ -121,12 +152,12 @@ struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
             findVC.applyChromeColors(paint)
         }
 
-        if visible {
-            if findVC.model !== model {
-                findVC.model = model
+        if shouldRender {
+            if findVC.model !== displayModel {
+                findVC.model = displayModel
             }
             let generation = findManager.findFieldFocusGeneration
-            if generation != context.coordinator.lastAppliedFocusGeneration {
+            if visible && isInteractive && generation != context.coordinator.lastAppliedFocusGeneration {
                 context.coordinator.lastAppliedFocusGeneration = generation
                 findVC.makeMeFirstResponder()
                 // One deferred retry: representable can update before the NSView is in a window or first responder commits.
@@ -138,6 +169,7 @@ struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
             }
         } else if findVC.model != nil {
             findVC.model = nil
+            context.coordinator.lastVisibleModel = nil
         }
     }
 
@@ -145,6 +177,7 @@ struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
     final class Coordinator: NSObject, FindInPageDelegate {
         weak var findManager: FindManager?
         weak var findViewController: FindInPageViewController?
+        var lastVisibleModel: FindInPageModel?
         var lastAppliedFocusGeneration: UInt = 0
         var lastChromePaintSignature: FindChromePaintSignature?
 
