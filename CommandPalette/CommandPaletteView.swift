@@ -301,15 +301,15 @@ struct CommandPaletteView: View {
                             .easeInOut(duration: 0.15),
                             value: searchManager.suggestions.count
                         )
-                        .padding(.horizontal, CommandPaletteChromeMetrics.horizontalVignetteOutset)
-                        .padding(.vertical, CommandPaletteChromeMetrics.verticalVignetteOutset)
+                        .padding(.horizontal, CommandPaletteLayoutPolicy.horizontalVignetteOutset)
+                        .padding(.vertical, CommandPaletteLayoutPolicy.verticalVignetteOutset)
                         Spacer()
                     }
                     .frame(
                         width: effectiveCommandPaletteWidth
-                            + CommandPaletteChromeMetrics.horizontalVignetteOutset * 2,
+                            + CommandPaletteLayoutPolicy.horizontalVignetteOutset * 2,
                         height: CommandPaletteLayoutPolicy.contentHeight
-                            + CommandPaletteChromeMetrics.verticalVignetteOutset * 2
+                            + CommandPaletteLayoutPolicy.verticalVignetteOutset * 2
                     )
 
                     Spacer()
@@ -722,12 +722,6 @@ private struct CommandPaletteCardBoundsReader: NSViewRepresentable {
 }
 
 // MARK: - Local vignette (Zen-like, not full-page dim)
-
-private enum CommandPaletteChromeMetrics {
-    /// Keeps multi-layer shadows from clipping against the fixed palette frame.
-    static let horizontalVignetteOutset = CommandPaletteLayoutPolicy.horizontalVignetteOutset
-    static let verticalVignetteOutset = CommandPaletteLayoutPolicy.verticalVignetteOutset
-}
 
 /// Soft shadows only in a band around the card; page corners stay bright (no window-wide scrim).
 private struct CommandPaletteLocalVignetteModifier: ViewModifier {

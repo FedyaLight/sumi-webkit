@@ -80,6 +80,113 @@ enum TransientChromePanelFrameResolver {
     }
 }
 
+@MainActor
+final class TransientChromeParentWindowObserver {
+    private weak var observedWindow: NSWindow?
+    private var observers: [NSObjectProtocol] = []
+
+    var parentWindow: NSWindow? {
+        observedWindow
+    }
+
+    func bind(
+        to parentWindow: NSWindow,
+        onGeometryChange: @escaping @MainActor () -> Void,
+        onWillClose: @escaping @MainActor () -> Void,
+        onSheetBegin: @escaping @MainActor () -> Void,
+        onSheetEnd: @escaping @MainActor () -> Void
+    ) {
+        guard observedWindow !== parentWindow else { return }
+        unbind()
+        observedWindow = parentWindow
+
+        let center = NotificationCenter.default
+        let geometryNotifications: [Notification.Name] = [
+            NSWindow.didMoveNotification,
+            NSWindow.didResizeNotification,
+            NSWindow.didChangeScreenNotification,
+            NSWindow.didEnterFullScreenNotification,
+            NSWindow.didExitFullScreenNotification,
+        ]
+
+        observers = geometryNotifications.map { name in
+            center.addObserver(
+                forName: name,
+                object: parentWindow,
+                queue: .main
+            ) { _ in
+                MainActor.assumeIsolated {
+                    onGeometryChange()
+                }
+            }
+        }
+
+        observers.append(
+            center.addObserver(
+                forName: NSWindow.willCloseNotification,
+                object: parentWindow,
+                queue: .main
+            ) { _ in
+                Task { @MainActor in
+                    onWillClose()
+                }
+            }
+        )
+
+        observers.append(
+            center.addObserver(
+                forName: NSWindow.willBeginSheetNotification,
+                object: parentWindow,
+                queue: .main
+            ) { _ in
+                MainActor.assumeIsolated {
+                    onSheetBegin()
+                }
+            }
+        )
+
+        observers.append(
+            center.addObserver(
+                forName: NSWindow.didEndSheetNotification,
+                object: parentWindow,
+                queue: .main
+            ) { _ in
+                MainActor.assumeIsolated {
+                    onSheetEnd()
+                }
+            }
+        )
+
+        if let contentView = parentWindow.contentView {
+            contentView.postsFrameChangedNotifications = true
+            observers.append(
+                center.addObserver(
+                    forName: NSView.frameDidChangeNotification,
+                    object: contentView,
+                    queue: .main
+                ) { _ in
+                    MainActor.assumeIsolated {
+                        onGeometryChange()
+                    }
+                }
+            )
+        }
+    }
+
+    func unbind() {
+        let center = NotificationCenter.default
+        observers.forEach(center.removeObserver)
+        observers = []
+        observedWindow = nil
+    }
+
+    deinit {
+        MainActor.assumeIsolated {
+            unbind()
+        }
+    }
+}
+
 final class TransientChromePanelAnchorView: NSView {
     var onWindowChanged: ((NSWindow?) -> Void)?
 

@@ -21,9 +21,8 @@ struct FindChromePaintSignature: Equatable {
     }
 }
 
-/// Wraps find chrome so `FindManager` / `WindowRegistry` drive visibility.
-/// When find is closed we **remove** the AppKit host from the hierarchy so it cannot keep capturing mouse/hover
-/// after Cmd+F (SwiftUI `allowsHitTesting(false)` alone is not always reliable for `NSViewControllerRepresentable`).
+/// Mounts find chrome only while the active window needs it or while the transient panel is dismissing.
+/// During dismissal the AppKit host stays alive for animation, while hit testing/focus are disabled.
 struct FindInPageChromeHitTestingWrapper: View {
     @ObservedObject var findManager: FindManager
     @Environment(WindowRegistry.self) private var windowRegistry

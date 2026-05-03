@@ -29,6 +29,7 @@ final class SidebarDDGHoverTests: XCTestCase {
         XCTAssertTrue(source.contains("CommandPaletteLayoutPolicy"))
         XCTAssertTrue(source.contains("GeometryReader"))
         XCTAssertFalse(source.contains("keyWindow"))
+        XCTAssertFalse(source.contains("CommandPaletteChromeMetrics"))
     }
 
     func testCommandPaletteOutsideClickMonitorUsesPassThroughRouting() throws {
@@ -85,6 +86,29 @@ final class SidebarDDGHoverTests: XCTestCase {
             NSPoint(x: 180, y: 90),
             cardView: cardView
         ))
+    }
+
+    func testTransientChromePanelsShareParentWindowObserverSource() throws {
+        let sharedSource = try Self.source(named: "Sumi/Components/Window/TransientChromePanel.swift")
+        let commandSource = try Self.source(named: "Sumi/Components/Window/CommandPalettePanelHost.swift")
+        let findSource = try Self.source(named: "Sumi/Components/FindInPage/FindInPagePanelHost.swift")
+
+        XCTAssertTrue(sharedSource.contains("final class TransientChromeParentWindowObserver"))
+        XCTAssertTrue(sharedSource.contains("NSWindow.willBeginSheetNotification"))
+        XCTAssertTrue(sharedSource.contains("NSWindow.didEndSheetNotification"))
+        XCTAssertTrue(sharedSource.contains("NSView.frameDidChangeNotification"))
+        XCTAssertTrue(commandSource.contains("parentObserver.bind"))
+        XCTAssertTrue(findSource.contains("parentObserver.bind"))
+        XCTAssertFalse(commandSource.contains("observedContentView"))
+        XCTAssertFalse(findSource.contains("observedContentView"))
+    }
+
+    func testTransientChromeZIndexesUseNamedConstants() throws {
+        let source = try Self.source(named: "App/Window/WindowView.swift")
+
+        XCTAssertTrue(source.contains("static let findInPage"))
+        XCTAssertTrue(source.contains("WindowTransientChromeZIndex.findInPage"))
+        XCTAssertFalse(source.contains(".zIndex(3500)"))
     }
 
     func testDirectMouseOverMutationDoesNotReportSwiftUIHover() {
