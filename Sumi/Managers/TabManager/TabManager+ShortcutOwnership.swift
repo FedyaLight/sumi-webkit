@@ -155,8 +155,7 @@ extension TabManager {
             index: index,
             folderId: folderId,
             launchURL: tab.url,
-            title: tab.name,
-            faviconCacheKey: ShortcutPin.makeFaviconCacheKey(for: tab.url)
+            title: tab.name
         )
     }
 
@@ -177,8 +176,6 @@ extension TabManager {
                 tab.spaceId = resolvedLiveSpaceId(for: pin, currentSpaceId: windowCurrentSpaceId)
                 tab.folderId = pin.folderId
                 tab.profileId = pin.profileId
-                tab.favicon = pin.favicon
-                tab.faviconIsTemplateGlobePlaceholder = pin.faviconIsUncachedGlobeTemplate
                 if let windowState = browserManager?.windowRegistry?.windows[windowId] {
                     if windowState.currentShortcutPinId == pin.id {
                         windowState.currentShortcutPinRole = pin.role
@@ -477,8 +474,6 @@ private extension TabManager {
             folderId: folderId,
             launchURL: pin.launchURL,
             title: pin.title,
-            faviconCacheKey: pin.faviconCacheKey ?? ShortcutPin.makeFaviconCacheKey(for: pin.launchURL),
-            systemIconName: pin.systemIconName,
             iconAsset: pin.iconAsset
         )
     }
@@ -550,13 +545,12 @@ private extension TabManager {
         let tab = Tab(
             url: pin.launchURL,
             name: pin.title,
-            favicon: pin.systemIconName,
+            favicon: SumiPersistentGlyph.launcherSystemImageFallback,
             spaceId: targetSpaceId,
             index: 0,
             browserManager: browserManager
         )
-        tab.favicon = pin.favicon
-        tab.faviconIsTemplateGlobePlaceholder = pin.faviconIsUncachedGlobeTemplate
+        _ = tab.applyCachedFaviconOrPlaceholder(for: pin.launchURL)
         attach(tab)
         var arr = tabsBySpace[targetSpaceId] ?? []
         let safeIndex = max(0, min(targetIndex ?? arr.count, arr.count))

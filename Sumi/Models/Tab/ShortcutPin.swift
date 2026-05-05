@@ -101,12 +101,9 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
     let index: Int
     let folderId: UUID?
     let launchURL: URL
-    let systemIconName: String
     let iconAsset: String?
-    private(set) var faviconCacheKey: String?
 
     @Published var title: String
-    @Published var favicon: Image
 
     init(
         id: UUID,
@@ -117,8 +114,6 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
         folderId: UUID? = nil,
         launchURL: URL,
         title: String,
-        faviconCacheKey: String? = nil,
-        systemIconName: String = SumiPersistentGlyph.launcherSystemImageFallback,
         iconAsset: String? = nil
     ) {
         self.id = id
@@ -129,19 +124,8 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
         self.folderId = folderId
         self.launchURL = launchURL
         self.title = title
-        self.systemIconName = systemIconName
-        self.iconAsset = Self.normalizedIconAsset(iconAsset, fallbackSystemIconName: systemIconName)
-        self.faviconCacheKey = faviconCacheKey ?? Self.makeFaviconCacheKey(for: launchURL)
-        self.favicon = Self.cachedFavicon(
-            cacheKey: self.faviconCacheKey,
-            fallbackSystemIconName: systemIconName
-        )
+        self.iconAsset = Self.normalizedIconAsset(iconAsset)
         super.init()
-    }
-
-    func refreshFromLiveTab(_ tab: Tab) {
-        favicon = tab.favicon
-        faviconCacheKey = Self.makeFaviconCacheKey(for: launchURL) ?? Self.makeFaviconCacheKey(for: tab.url)
     }
 
     func refreshed(index: Int? = nil) -> ShortcutPin {
@@ -154,8 +138,6 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
             folderId: self.folderId,
             launchURL: launchURL,
             title: title,
-            faviconCacheKey: faviconCacheKey,
-            systemIconName: systemIconName,
             iconAsset: iconAsset
         )
     }
@@ -170,8 +152,6 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
             folderId: folderId,
             launchURL: launchURL,
             title: title,
-            faviconCacheKey: faviconCacheKey,
-            systemIconName: systemIconName,
             iconAsset: iconAsset
         )
     }
@@ -179,17 +159,12 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
     func updated(
         title: String? = nil,
         launchURL: URL? = nil,
-        faviconCacheKey: String? = nil,
-        systemIconName: String? = nil,
         iconAsset: String?? = nil,
         index: Int? = nil,
         folderId: UUID?? = nil
     ) -> ShortcutPin {
         let resolvedLaunchURL = launchURL ?? self.launchURL
         let resolvedFolderId = folderId ?? self.folderId
-        let resolvedCacheKey = faviconCacheKey
-            ?? Self.makeFaviconCacheKey(for: resolvedLaunchURL)
-            ?? self.faviconCacheKey
 
         return ShortcutPin(
             id: id,
@@ -200,58 +175,39 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
             folderId: resolvedFolderId,
             launchURL: resolvedLaunchURL,
             title: title ?? self.title,
-            faviconCacheKey: resolvedCacheKey,
-            systemIconName: systemIconName ?? self.systemIconName,
             iconAsset: iconAsset ?? self.iconAsset
         )
     }
 
-    func applyCachedFaviconIfAvailable() {
-        favicon = Self.cachedFavicon(
-            cacheKey: faviconCacheKey,
-            fallbackSystemIconName: systemIconName
-        )
-    }
-
-    static func makeFaviconCacheKey(for url: URL) -> String? {
-        SumiFaviconResolver.cacheKey(for: url)
-    }
-
-    private static func normalizedIconAsset(_ iconAsset: String?, fallbackSystemIconName: String) -> String? {
+    private static func normalizedIconAsset(_ iconAsset: String?) -> String? {
         if let iconAsset {
             let normalized = SumiPersistentGlyph.normalizedLauncherIconValue(iconAsset)
-            return normalized
+            return normalized == SumiPersistentGlyph.launcherSystemImageFallback ? nil : normalized
         }
 
-        let trimmedFallback = fallbackSystemIconName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedFallback.isEmpty,
-              trimmedFallback != SumiPersistentGlyph.launcherSystemImageFallback else {
-            return nil
-        }
-
-        return SumiPersistentGlyph.normalizedLauncherIconValue(trimmedFallback)
+        return nil
     }
 
-    private static func cachedFavicon(cacheKey: String?, fallbackSystemIconName: String) -> Image {
-        if let cacheKey, let cached = Tab.getCachedFavicon(for: cacheKey) {
+    static func cachedLaunchFavicon(for url: URL) -> Image? {
+        Tab.getCachedFavicon(forDocumentURL: url)
+    }
+
+    var storedFavicon: Image {
+        if let cached = Self.cachedLaunchFavicon(for: launchURL) {
             return cached
         }
-        return Image(systemName: fallbackSystemIconName)
+        return Image(systemName: SumiPersistentGlyph.launcherSystemImageFallback)
     }
 
-    /// Aligns with `Tab.faviconIsTemplateGlobePlaceholder` when assigning `pin.favicon` to a tab.
-    var faviconIsUncachedGlobeTemplate: Bool {
-        guard systemIconName == SumiPersistentGlyph.launcherSystemImageFallback else { return false }
-        guard let key = faviconCacheKey else { return true }
-        return Tab.getCachedFavicon(for: key) == nil
+    var storedFaviconIsTemplateGlobePlaceholder: Bool {
+        Self.cachedLaunchFavicon(for: launchURL) == nil
     }
 
-    /// When set, Essentials / space-pinned UI should draw this SF Symbol with chrome tokens (same as regular tab rows).
-    var pinnedChromeTemplateSystemImageName: String? {
+    var storedChromeTemplateSystemImageName: String? {
         if SumiSurface.isSettingsSurfaceURL(launchURL) {
             return SumiSurface.settingsTabFaviconSystemImageName
         }
-        if faviconIsUncachedGlobeTemplate {
+        if storedFaviconIsTemplateGlobePlaceholder {
             return SumiPersistentGlyph.launcherSystemImageFallback
         }
         return nil

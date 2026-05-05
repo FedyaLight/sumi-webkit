@@ -474,7 +474,7 @@ extension SpaceView {
         let syntheticTab = Tab(
             url: pin.launchURL,
             name: pin.resolvedDisplayTitle(liveTab: activeShortcutTab(for: pin)),
-            favicon: pin.systemIconName,
+            favicon: SumiPersistentGlyph.launcherSystemImageFallback,
             spaceId: space.id,
             index: 0,
             browserManager: browserManager

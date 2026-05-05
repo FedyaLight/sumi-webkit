@@ -1188,7 +1188,6 @@ final class TabSuspensionServiceTests: XCTestCase {
         XCTAssertEqual(actual.folderId, expected.folderId, file: file, line: line)
         XCTAssertEqual(actual.launchURL, expected.launchURL, file: file, line: line)
         XCTAssertEqual(actual.title, expected.title, file: file, line: line)
-        XCTAssertEqual(actual.systemIconName, expected.systemIconName, file: file, line: line)
         XCTAssertEqual(actual.iconAsset, expected.iconAsset, file: file, line: line)
     }
 

@@ -9,21 +9,15 @@ import Foundation
 import SwiftUI
 
 extension Tab {
-    @MainActor
-    private func syncBoundLauncherPinAfterFaviconResolved() {
-        guard !faviconIsTemplateGlobePlaceholder else { return }
-        browserManager?.tabManager.propagateLauncherFaviconFromLiveTabIfNeeded(self)
-    }
-
     @discardableResult
     func applyCachedFaviconOrPlaceholder(for url: URL) -> Bool {
         let defaultFavicon = SwiftUI.Image(systemName: "globe")
+        let lookupIdentifier = Self.faviconLookupIdentifier(for: url)
 
         if SumiSurface.isSettingsSurfaceURL(url) {
             favicon = SwiftUI.Image(systemName: SumiSurface.settingsTabFaviconSystemImageName)
             faviconIsTemplateGlobePlaceholder = false
             resolvedFaviconCacheKey = nil
-            syncBoundLauncherPinAfterFaviconResolved()
             return true
         }
 
@@ -31,7 +25,6 @@ extension Tab {
             favicon = SwiftUI.Image(systemName: SumiSurface.historyTabFaviconSystemImageName)
             faviconIsTemplateGlobePlaceholder = false
             resolvedFaviconCacheKey = nil
-            syncBoundLauncherPinAfterFaviconResolved()
             return true
         }
 
@@ -39,14 +32,14 @@ extension Tab {
             favicon = SwiftUI.Image(systemName: SumiSurface.bookmarksTabFaviconSystemImageName)
             faviconIsTemplateGlobePlaceholder = false
             resolvedFaviconCacheKey = nil
-            syncBoundLauncherPinAfterFaviconResolved()
             return true
         }
 
-        guard let cacheKey = SumiFaviconResolver.cacheKey(for: url),
-              let image = TabFaviconStore.getCachedImage(for: cacheKey)
+        guard SumiFaviconResolver.cacheKey(for: url) != nil,
+              let lookupIdentifier,
+              let image = TabFaviconStore.getCachedImage(forDocumentURL: url)
         else {
-            if resolvedFaviconCacheKey == SumiFaviconResolver.cacheKey(for: url),
+            if resolvedFaviconCacheKey == lookupIdentifier,
                !faviconIsTemplateGlobePlaceholder {
                 return false
             }
@@ -57,8 +50,7 @@ extension Tab {
 
         favicon = SwiftUI.Image(nsImage: image)
         faviconIsTemplateGlobePlaceholder = false
-        resolvedFaviconCacheKey = cacheKey
-        syncBoundLauncherPinAfterFaviconResolved()
+        resolvedFaviconCacheKey = lookupIdentifier
         return true
     }
 
@@ -91,8 +83,7 @@ extension Tab {
                 guard let cacheKey = SumiFaviconResolver.cacheKey(for: currentURL) else { return }
                 self.favicon = SwiftUI.Image(nsImage: image)
                 self.faviconIsTemplateGlobePlaceholder = false
-                self.resolvedFaviconCacheKey = cacheKey
-                self.syncBoundLauncherPinAfterFaviconResolved()
+                self.resolvedFaviconCacheKey = Self.faviconLookupIdentifier(for: currentURL) ?? cacheKey
             }
             .store(in: &cancellables)
         faviconCancellables = cancellables
@@ -103,6 +94,19 @@ extension Tab {
             return nil
         }
         return SwiftUI.Image(nsImage: image)
+    }
+
+    static func getCachedFavicon(forDocumentURL url: URL) -> SwiftUI.Image? {
+        guard let image = TabFaviconStore.getCachedImage(forDocumentURL: url) else {
+            return nil
+        }
+        return SwiftUI.Image(nsImage: image)
+    }
+
+    private static func faviconLookupIdentifier(for url: URL) -> String? {
+        guard SumiFaviconResolver.cacheKey(for: url) != nil else { return nil }
+        let absoluteString = url.absoluteString.trimmingCharacters(in: .whitespacesAndNewlines)
+        return absoluteString.isEmpty ? nil : absoluteString
     }
 
 }

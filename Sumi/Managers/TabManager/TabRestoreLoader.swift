@@ -29,7 +29,6 @@ struct TabRestoreShortcutDTO: Sendable {
     let folderId: UUID?
     let launchURL: URL
     let title: String
-    let faviconCacheKey: String?
     let iconAsset: String?
 }
 
@@ -365,7 +364,6 @@ actor TabRestoreLoader {
                     folderId: nil,
                     launchURL: launchURL,
                     title: raw.name,
-                    faviconCacheKey: SumiFaviconResolver.cacheKey(for: launchURL),
                     iconAsset: raw.iconAsset
                 )
 
@@ -401,7 +399,6 @@ actor TabRestoreLoader {
                     folderId: folderId,
                     launchURL: launchURL,
                     title: raw.name,
-                    faviconCacheKey: SumiFaviconResolver.cacheKey(for: launchURL),
                     iconAsset: raw.iconAsset
                 )
                 spacePinnedShortcutsBySpace[spaceId, default: []].append(shortcut)

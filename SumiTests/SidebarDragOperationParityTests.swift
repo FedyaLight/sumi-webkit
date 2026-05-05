@@ -3600,6 +3600,7 @@ final class SidebarContextMenuBuilderTests: XCTestCase {
             runtimeAffordance: .liveSelected,
             dragSourceZone: .spacePinned(spaceId),
             dragHasTrailingActionExclusion: true,
+            previewIcon: pin.storedFavicon,
             dragIsEnabled: true
         )
 

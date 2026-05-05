@@ -1004,7 +1004,6 @@ extension TabManager {
             folderId: dto.folderId,
             launchURL: dto.launchURL,
             title: dto.title,
-            faviconCacheKey: dto.faviconCacheKey,
             iconAsset: dto.iconAsset
         )
     }

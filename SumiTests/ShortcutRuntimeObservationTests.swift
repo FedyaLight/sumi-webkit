@@ -269,22 +269,6 @@ final class ShortcutRuntimeObservationTests: XCTestCase {
         XCTAssertEqual(projection.liveTabsByPinId[pin.id]?.url, pin.launchURL)
     }
 
-    func testShortcutPinMigratesLegacySystemIconNameIntoIconAsset() {
-        let pin = ShortcutPin(
-            id: UUID(),
-            role: .spacePinned,
-            profileId: nil,
-            spaceId: UUID(),
-            index: 0,
-            folderId: nil,
-            launchURL: URL(string: "https://example.com")!,
-            title: "Launcher",
-            systemIconName: "house"
-        )
-
-        XCTAssertEqual(pin.iconAsset, "house")
-    }
-
     func testLauncherIconAssetPersistsAcrossSnapshotReload() async throws {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
@@ -374,7 +358,8 @@ final class ShortcutRuntimeObservationTests: XCTestCase {
                 resolvedTitle: pin.resolvedDisplayTitle(liveTab: liveTab),
                 runtimeAffordance: initialRuntimeAffordance,
                 dragSourceZone: .spacePinned(space.id),
-                dragHasTrailingActionExclusion: true
+                dragHasTrailingActionExclusion: true,
+                previewIcon: liveTab.favicon
             )
         )
 
@@ -397,7 +382,8 @@ final class ShortcutRuntimeObservationTests: XCTestCase {
                 resolvedTitle: pin.resolvedDisplayTitle(liveTab: liveTab),
                 runtimeAffordance: updatedRuntimeAffordance,
                 dragSourceZone: .spacePinned(space.id),
-                dragHasTrailingActionExclusion: true
+                dragHasTrailingActionExclusion: true,
+                previewIcon: liveTab.favicon
             )
         )
 
@@ -432,7 +418,7 @@ final class ShortcutRuntimeObservationTests: XCTestCase {
         let initialDragConfiguration = makePinnedTileDragSourceConfiguration(
             pin: pin,
             resolvedTitle: pin.resolvedDisplayTitle(liveTab: liveTab),
-            previewIcon: pin.favicon,
+            previewIcon: liveTab.favicon,
             pinnedConfiguration: .large,
             exclusionZones: []
         )
@@ -445,49 +431,90 @@ final class ShortcutRuntimeObservationTests: XCTestCase {
         let updatedDragConfiguration = makePinnedTileDragSourceConfiguration(
             pin: pin,
             resolvedTitle: pin.resolvedDisplayTitle(liveTab: liveTab),
-            previewIcon: pin.favicon,
+            previewIcon: liveTab.favicon,
             pinnedConfiguration: .large,
             exclusionZones: []
         )
         XCTAssertEqual(updatedDragConfiguration.item.title, "Updated Essentials Title")
     }
 
-    func testPropagateLauncherFaviconRefreshesPinCacheKey() throws {
+    func testLiveLauncherPresentationUsesLiveFaviconInsteadOfStoredLauncherFavicon() async throws {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
-        let pinId = UUID()
+        let launchURL = URL(string: "https://drift.example.com/launcher")!
         let pin = ShortcutPin(
-            id: pinId,
+            id: UUID(),
             role: .essential,
             profileId: profileId,
             spaceId: nil,
             index: 0,
             folderId: nil,
-            launchURL: URL(string: "about:blank")!,
-            title: "Example",
+            launchURL: launchURL,
+            title: "Launcher",
             iconAsset: nil
         )
         tabManager.setPinnedTabs([pin], for: profileId)
 
-        let tab = Tab(
-            url: URL(string: "https://example.com/favicon")!,
-            name: "Example",
-            favicon: "globe",
+        let storedData = try XCTUnwrap(makeImageData(color: .systemRed, size: 64))
+        let liveData = try XCTUnwrap(makeImageData(color: .systemBlue, size: 64))
+        let storedFaviconURL = try XCTUnwrap(URL(string: "https://drift.example.com/stored-icon.png"))
+        try await SumiFaviconSystem.shared.manager.storeFavicon(storedData, with: storedFaviconURL, for: launchURL)
+
+        let liveTab = tabManager.activateShortcutPin(
+            pin,
+            in: UUID(),
+            currentSpaceId: nil
+        )
+        liveTab.favicon = Image(nsImage: try XCTUnwrap(NSImage(data: liveData)))
+        liveTab.faviconIsTemplateGlobePlaceholder = false
+
+        let storedRender = render(image: pin.storedFavicon)
+        let liveRender = render(image: liveTab.favicon)
+        XCTAssertNotEqual(storedRender.tiffRepresentation, liveRender.tiffRepresentation)
+
+        let liveDragConfiguration = makePinnedTileDragSourceConfiguration(
+            pin: pin,
+            resolvedTitle: pin.resolvedDisplayTitle(liveTab: liveTab),
+            previewIcon: liveTab.favicon,
+            pinnedConfiguration: .large,
+            exclusionZones: []
+        )
+        let previewRender = render(image: try XCTUnwrap(liveDragConfiguration.previewIcon))
+
+        XCTAssertEqual(previewRender.tiffRepresentation, liveRender.tiffRepresentation)
+        XCTAssertNotEqual(previewRender.tiffRepresentation, storedRender.tiffRepresentation)
+        XCTAssertEqual(render(image: pin.storedFavicon).tiffRepresentation, storedRender.tiffRepresentation)
+    }
+
+    func testStoredLauncherFaviconUsesDDGDocumentURLExceptionOverHostFallback() async throws {
+        let profileId = UUID()
+        let launchURL = URL(string: "https://exception.example.com/app")!
+        let pin = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: profileId,
             spaceId: nil,
-            index: 0
+            index: 0,
+            folderId: nil,
+            launchURL: launchURL,
+            title: "Launcher",
+            iconAsset: nil
         )
-        tab.bindToShortcutPin(try XCTUnwrap(tabManager.shortcutPin(by: pinId)))
-        tab.favicon = Image(systemName: "house.fill")
-        tab.faviconIsTemplateGlobePlaceholder = false
 
-        XCTAssertNil(pin.faviconCacheKey)
+        let hostData = try XCTUnwrap(makeImageData(color: .systemRed, size: 64))
+        let documentData = try XCTUnwrap(makeImageData(color: .systemBlue, size: 64))
+        let hostURL = try XCTUnwrap(URL(string: "https://exception.example.com/"))
+        let hostFaviconURL = try XCTUnwrap(URL(string: "https://exception.example.com/favicon.ico"))
+        let documentFaviconURL = try XCTUnwrap(URL(string: "https://exception.example.com/app-icon.png"))
+        try await SumiFaviconSystem.shared.manager.storeFavicon(hostData, with: hostFaviconURL, for: hostURL)
+        try await SumiFaviconSystem.shared.manager.storeFavicon(documentData, with: documentFaviconURL, for: launchURL)
 
-        tabManager.propagateLauncherFaviconFromLiveTabIfNeeded(tab)
+        let expectedDocumentRender = render(image: Image(nsImage: try XCTUnwrap(NSImage(data: documentData))))
+        let hostRender = render(image: Image(nsImage: try XCTUnwrap(NSImage(data: hostData))))
+        let storedRender = render(image: pin.storedFavicon)
 
-        XCTAssertEqual(
-            pin.faviconCacheKey,
-            ShortcutPin.makeFaviconCacheKey(for: URL(string: "https://example.com/favicon")!)
-        )
+        XCTAssertEqual(storedRender.tiffRepresentation, expectedDocumentRender.tiffRepresentation)
+        XCTAssertNotEqual(storedRender.tiffRepresentation, hostRender.tiffRepresentation)
     }
 
     func testFaviconCacheUpdateRefreshesLauncherOnlyPinWithoutReopening() async throws {
@@ -507,7 +534,7 @@ final class ShortcutRuntimeObservationTests: XCTestCase {
         )
         tabManager.setPinnedTabs([pin], for: profileId)
 
-        let beforeRender = render(image: pin.favicon)
+        let beforeRender = render(image: pin.storedFavicon)
         let expectedData = try XCTUnwrap(makeImageData(color: .systemGreen, size: 64))
         let expectedImage = try XCTUnwrap(NSImage(data: expectedData))
         let expectedRender = render(image: Image(nsImage: expectedImage))
@@ -515,10 +542,10 @@ final class ShortcutRuntimeObservationTests: XCTestCase {
         try await SumiFaviconSystem.shared.manager.storeFavicon(expectedData, with: faviconURL, for: launchURL)
 
         waitUntil("launcher-only pin should refresh from favicon cache update") {
-            self.render(image: pin.favicon).tiffRepresentation == expectedRender.tiffRepresentation
+            self.render(image: pin.storedFavicon).tiffRepresentation == expectedRender.tiffRepresentation
         }
 
-        let afterRender = render(image: pin.favicon)
+        let afterRender = render(image: pin.storedFavicon)
         XCTAssertNotEqual(beforeRender.tiffRepresentation, afterRender.tiffRepresentation)
         XCTAssertEqual(afterRender.tiffRepresentation, expectedRender.tiffRepresentation)
     }
