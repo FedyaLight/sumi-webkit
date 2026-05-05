@@ -11,15 +11,14 @@ import AppKit
 struct ShortcutRecorderView: View {
     @Binding var keyCombination: KeyCombination
     @State private var isRecording = false
-    @State private var recordingKey: String = ""
-    @State private var recordingModifiers: Modifiers = []
+    @State private var pendingCombination: KeyCombination?
     @State private var hasConflict = false
     @State private var conflictAction: ShortcutAction? = nil
     @State private var eventMonitor: Any?
 
     let action: ShortcutAction
     let shortcutManager: KeyboardShortcutManager
-    let onRecordingComplete: () -> Void
+    let onCommit: (KeyCombination) -> Bool
 
     var body: some View {
         HStack(spacing: 8) {
@@ -62,12 +61,6 @@ struct ShortcutRecorderView: View {
             .foregroundColor(.secondary)
             .disabled(keyCombination.key.isEmpty && keyCombination.modifiers.isEmpty)
         }
-        .onChange(of: recordingKey) {
-            checkForConflicts()
-        }
-        .onChange(of: recordingModifiers) {
-            checkForConflicts()
-        }
         .onDisappear {
             removeKeyMonitor()
         }
@@ -83,39 +76,53 @@ struct ShortcutRecorderView: View {
 
     private func startRecording() {
         isRecording = true
-        recordingKey = ""
-        recordingModifiers = []
+        pendingCombination = nil
+        hasConflict = false
+        conflictAction = nil
         KeyboardShortcutManager.pushShortcutRecorderCaptureSession()
         setupKeyMonitor()
     }
 
     private func finishRecording() {
+        guard let pendingCombination else {
+            cancelRecording()
+            return
+        }
+
         isRecording = false
         removeKeyMonitor()
-        if !recordingKey.isEmpty || !recordingModifiers.isEmpty {
-            let newCombination = KeyCombination(key: recordingKey, modifiers: recordingModifiers)
-            if shortcutManager.isValidKeyCombination(newCombination) {
-                keyCombination = newCombination
-                onRecordingComplete()
-            }
+        if shortcutManager.isValidKeyCombination(pendingCombination),
+           !hasConflict,
+           onCommit(pendingCombination) {
+            keyCombination = pendingCombination
         }
+        self.pendingCombination = nil
+    }
+
+    private func cancelRecording() {
+        isRecording = false
+        pendingCombination = nil
+        hasConflict = false
+        conflictAction = nil
+        removeKeyMonitor()
     }
 
     private func clearShortcut() {
-        keyCombination = KeyCombination(key: "", modifiers: [])
+        let emptyCombination = KeyCombination(key: "", modifiers: [])
         removeKeyMonitor()
-        onRecordingComplete()
+        if onCommit(emptyCombination) {
+            keyCombination = emptyCombination
+        }
     }
 
-    private func checkForConflicts() {
-        guard !recordingKey.isEmpty || !recordingModifiers.isEmpty else {
+    private func checkForConflicts(_ combination: KeyCombination?) {
+        guard let combination, !combination.isEmpty else {
             hasConflict = false
             conflictAction = nil
             return
         }
 
-        let testCombination = KeyCombination(key: recordingKey, modifiers: recordingModifiers)
-        if let conflictingAction = shortcutManager.hasConflict(keyCombination: testCombination, excludingAction: action) {
+        if let conflictingAction = shortcutManager.hasConflict(keyCombination: combination, excludingAction: action) {
             hasConflict = true
             conflictAction = conflictingAction
         } else {
@@ -125,9 +132,8 @@ struct ShortcutRecorderView: View {
     }
 
     private func setupKeyMonitor() {
-        // Remove any existing monitor first
         removeKeyMonitor()
-        
+
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { event in
             guard isRecording else { return event }
 
@@ -143,7 +149,7 @@ struct ShortcutRecorderView: View {
             }
         }
     }
-    
+
     private func removeKeyMonitor() {
         if let monitor = eventMonitor {
             NSEvent.removeMonitor(monitor)
@@ -153,38 +159,21 @@ struct ShortcutRecorderView: View {
     }
 
     private func handleKeyDown(_ event: NSEvent) {
-        // Don't record modifier keys alone
-        guard !event.modifierFlags.contains(.command) ||
-              !event.modifierFlags.contains(.option) ||
-              !event.modifierFlags.contains(.control) ||
-              !event.modifierFlags.contains(.shift) else {
+        if event.keyCode == 0x35 {
+            cancelRecording()
             return
         }
 
-        // Use charactersIgnoringModifiers for consistent handling of bracket keys
-        // This ensures Cmd+[ works correctly on US keyboards where [ requires Shift
-        if let key = event.charactersIgnoringModifiers?.lowercased() {
-            recordingKey = key
+        guard let combination = KeyCombination(from: event) else { return }
+        pendingCombination = combination
+        checkForConflicts(combination)
+        if shortcutManager.isValidKeyCombination(combination), !hasConflict {
             finishRecording()
         }
     }
 
     private func handleFlagsChanged(_ event: NSEvent) {
-        var newModifiers: Modifiers = []
-
-        if event.modifierFlags.contains(.command) {
-            newModifiers.insert(.command)
-        }
-        if event.modifierFlags.contains(.option) {
-            newModifiers.insert(.option)
-        }
-        if event.modifierFlags.contains(.control) {
-            newModifiers.insert(.control)
-        }
-        if event.modifierFlags.contains(.shift) {
-            newModifiers.insert(.shift)
-        }
-
-        recordingModifiers = newModifiers
+        pendingCombination = KeyCombination(key: "", modifiers: Modifiers(eventModifierFlags: event.modifierFlags))
+        checkForConflicts(nil)
     }
 }

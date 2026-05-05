@@ -44,10 +44,10 @@ class KeyboardShortcutManager {
         }
     }
 
-    private let userDefaults = UserDefaults.standard
+    private let userDefaults: UserDefaults
     private let shortcutsKey = "keyboard.shortcuts"
     private let shortcutsVersionKey = "keyboard.shortcuts.version"
-    private let currentVersion = 8 // Increment when changing default shortcut surface
+    private let currentVersion = 9 // Increment when changing default shortcut surface
     private let hiddenActions: Set<ShortcutAction> = [.toggleTopBarAddressView]
     /// Shortcuts left to AppKit / system responders when not handled by the menu + shortcut map.
     /// Note: Cmd+Q is not listed here so `closeBrowser` can run via `executeShortcut` when SwiftUI `Commands`
@@ -58,12 +58,28 @@ class KeyboardShortcutManager {
         KeyCombination(key: "m", modifiers: [.command]),
     ]
 
-    /// Hash-based storage for O(1) lookup: ["cmd+t": KeyboardShortcut]
-    private var shortcutMap: [String: KeyboardShortcut] = [:]
+    private let forcedBrowserDefaults: Set<ShortcutAction> = [
+        .newTab,
+        .closeTab,
+        .undoCloseTab,
+        .newWindow,
+        .closeWindow,
+    ]
+
+    /// Action is the source of truth. Lookup keys are derived so editing one shortcut cannot overwrite another action.
+    private var shortcutsByAction: [ShortcutAction: KeyboardShortcut] = [:]
+
+    private var enabledLookup: [String: ShortcutAction] {
+        var lookup: [String: ShortcutAction] = [:]
+        for shortcut in shortcutsByAction.values where shortcut.isEnabled && !shortcut.keyCombination.isEmpty {
+            lookup[shortcut.lookupKey] = shortcut.action
+        }
+        return lookup
+    }
 
     /// All shortcuts for UI display (sorted by display name)
     var shortcuts: [KeyboardShortcut] {
-        Array(shortcutMap.values)
+        Array(shortcutsByAction.values)
             .filter { !hiddenActions.contains($0.action) }
             .sorted { $0.action.displayName < $1.action.displayName }
     }
@@ -71,9 +87,12 @@ class KeyboardShortcutManager {
     weak var browserManager: BrowserManager?
     weak var windowRegistry: WindowRegistry?
 
-    init() {
+    init(userDefaults: UserDefaults = .standard, installEventMonitor: Bool = true) {
+        self.userDefaults = userDefaults
         loadShortcuts()
-        setupGlobalMonitor()
+        if installEventMonitor {
+            setupGlobalMonitor()
+        }
     }
 
     func setBrowserManager(_ manager: BrowserManager) {
@@ -89,82 +108,81 @@ class KeyboardShortcutManager {
         // Load from UserDefaults or use defaults
         if let data = userDefaults.data(forKey: shortcutsKey),
            let decoded = decodePersistedShortcuts(from: data) {
-            // Populate hash map from loaded shortcuts
-            for shortcut in decoded {
-                if hiddenActions.contains(shortcut.action) {
-                    continue
-                }
-                shortcutMap[shortcut.lookupKey] = shortcut
-            }
+            shortcutsByAction = normalizedShortcuts(from: decoded, savedVersion: savedVersion)
 
             // Check if we need to merge new shortcuts
             if savedVersion < currentVersion {
-                mergeWithDefaults()
                 savePersistedShortcutVersion()
-            } else if decoded.count != shortcutMap.count {
+                saveShortcuts()
+            } else if decoded.count != shortcutsByAction.count {
                 saveShortcuts()
             }
         } else {
-            // Use defaults and populate hash map
-            let defaults = KeyboardShortcut.defaultShortcuts
-            for shortcut in defaults {
-                shortcutMap[shortcut.lookupKey] = shortcut
-            }
+            shortcutsByAction = normalizedShortcuts(from: [], savedVersion: currentVersion)
             savePersistedShortcutVersion()
             saveShortcuts()
         }
     }
 
     private func decodePersistedShortcuts(from data: Data) -> [KeyboardShortcut]? {
-        try? JSONDecoder().decode([KeyboardShortcut].self, from: data)
+        guard let rawShortcuts = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            return nil
+        }
+
+        return rawShortcuts.compactMap { rawShortcut in
+            guard let itemData = try? JSONSerialization.data(withJSONObject: rawShortcut) else {
+                return nil
+            }
+            return try? JSONDecoder().decode(KeyboardShortcut.self, from: itemData)
+        }
     }
 
     private func savePersistedShortcutVersion() {
         userDefaults.set(currentVersion, forKey: shortcutsVersionKey)
     }
 
-    private func mergeWithDefaults() {
+    private func normalizedShortcuts(from persistedShortcuts: [KeyboardShortcut], savedVersion: Int) -> [ShortcutAction: KeyboardShortcut] {
         let defaultShortcuts = KeyboardShortcut.defaultShortcuts
-        var needsUpdate = false
-        let forcedBrowserDefaults: Set<ShortcutAction> = [
-            .newTab,
-            .closeTab,
-            .undoCloseTab,
-            .newWindow,
-            .closeWindow,
-        ]
-
-        for defaultShortcut in defaultShortcuts where forcedBrowserDefaults.contains(defaultShortcut.action) {
-            if let existingKey = shortcutMap.first(where: { $0.value.action == defaultShortcut.action })?.key {
-                if shortcutMap[existingKey] != defaultShortcut {
-                    shortcutMap.removeValue(forKey: existingKey)
-                    shortcutMap[defaultShortcut.lookupKey] = defaultShortcut
-                    needsUpdate = true
-                }
-            } else {
-                shortcutMap[defaultShortcut.lookupKey] = defaultShortcut
-                needsUpdate = true
-            }
-        }
+        var result: [ShortcutAction: KeyboardShortcut] = [:]
 
         for defaultShortcut in defaultShortcuts {
             if hiddenActions.contains(defaultShortcut.action) {
                 continue
             }
-            if forcedBrowserDefaults.contains(defaultShortcut.action) {
-                continue
-            }
-            // Check if this shortcut already exists (by action)
-            if !shortcutMap.values.contains(where: { $0.action == defaultShortcut.action }) {
-                // Add missing shortcut
-                shortcutMap[defaultShortcut.lookupKey] = defaultShortcut
-                needsUpdate = true
-            }
+            result[defaultShortcut.action] = defaultShortcut
         }
 
-        if needsUpdate {
-            saveShortcuts()
+        for persistedShortcut in persistedShortcuts where !persistedShortcut.isEnabled || persistedShortcut.keyCombination.isEmpty {
+            if hiddenActions.contains(persistedShortcut.action) {
+                continue
+            }
+            if savedVersion < currentVersion, forcedBrowserDefaults.contains(persistedShortcut.action) {
+                continue
+            }
+            result[persistedShortcut.action] = persistedShortcut
         }
+
+        for persistedShortcut in persistedShortcuts where persistedShortcut.isEnabled && !persistedShortcut.keyCombination.isEmpty {
+            if hiddenActions.contains(persistedShortcut.action) {
+                continue
+            }
+            if savedVersion < currentVersion, forcedBrowserDefaults.contains(persistedShortcut.action) {
+                continue
+            }
+            if systemOwnedShortcuts.contains(persistedShortcut.keyCombination) {
+                continue
+            }
+            if hasConflict(
+                keyCombination: persistedShortcut.keyCombination,
+                excludingAction: persistedShortcut.action,
+                in: result
+            ) != nil {
+                continue
+            }
+            result[persistedShortcut.action] = persistedShortcut
+        }
+
+        return result
     }
 
     private func saveShortcuts() {
@@ -175,53 +193,81 @@ class KeyboardShortcutManager {
 
     // MARK: - Public Interface
 
-    /// O(n) lookup of shortcut by action (for specific action queries)
     func shortcut(for action: ShortcutAction) -> KeyboardShortcut? {
-        shortcutMap.values.first { $0.action == action && $0.isEnabled }
+        guard let shortcut = shortcutsByAction[action],
+              shortcut.isEnabled,
+              !shortcut.keyCombination.isEmpty else {
+            return nil
+        }
+        return shortcut
     }
 
-    func updateShortcut(action: ShortcutAction, keyCombination: KeyCombination) {
-        // Find the existing shortcut first
-        guard var shortcut = shortcutMap.values.first(where: { $0.action == action }) else {
-            return
+    func shortcutRecord(for action: ShortcutAction) -> KeyboardShortcut? {
+        shortcutsByAction[action]
+    }
+
+    @discardableResult
+    func updateShortcut(action: ShortcutAction, keyCombination: KeyCombination) -> Bool {
+        guard isValidKeyCombination(keyCombination),
+              !systemOwnedShortcuts.contains(keyCombination),
+              hasConflict(keyCombination: keyCombination, excludingAction: action) == nil,
+              var shortcut = shortcutsByAction[action] else {
+            return false
         }
 
-        // Remove old entry
-        shortcutMap.removeValue(forKey: shortcut.lookupKey)
-
-        // Update and add back
         shortcut.keyCombination = keyCombination
-        shortcutMap[keyCombination.lookupKey] = shortcut
+        shortcut.isEnabled = true
+        shortcutsByAction[action] = shortcut
         saveShortcuts()
+        return true
+    }
+
+    @discardableResult
+    func clearShortcut(action: ShortcutAction) -> Bool {
+        guard var shortcut = shortcutsByAction[action] else {
+            return false
+        }
+        shortcut.keyCombination = KeyCombination(key: "")
+        shortcut.isEnabled = false
+        shortcutsByAction[action] = shortcut
+        saveShortcuts()
+        return true
     }
 
     func toggleShortcut(action: ShortcutAction, isEnabled: Bool) {
-        if let key = shortcutMap.first(where: { $0.value.action == action })?.key,
-           var shortcut = shortcutMap[key] {
-            shortcut.isEnabled = isEnabled
-            shortcutMap[key] = shortcut
-            saveShortcuts()
+        guard var shortcut = shortcutsByAction[action] else { return }
+        if isEnabled {
+            guard !shortcut.keyCombination.isEmpty,
+                  !systemOwnedShortcuts.contains(shortcut.keyCombination),
+                  hasConflict(keyCombination: shortcut.keyCombination, excludingAction: action) == nil else {
+                return
+            }
         }
+        shortcut.isEnabled = isEnabled
+        shortcutsByAction[action] = shortcut
+        saveShortcuts()
     }
 
     func resetToDefaults() {
-        shortcutMap.removeAll()
-        let defaults = KeyboardShortcut.defaultShortcuts
-        for shortcut in defaults {
-            shortcutMap[shortcut.lookupKey] = shortcut
-        }
+        shortcutsByAction = normalizedShortcuts(from: [], savedVersion: currentVersion)
+        savePersistedShortcutVersion()
         saveShortcuts()
     }
 
     // MARK: - Conflict Detection
 
     func hasConflict(keyCombination: KeyCombination, excludingAction: ShortcutAction? = nil) -> ShortcutAction? {
-        guard let shortcut = shortcutMap[keyCombination.lookupKey],
-              shortcut.isEnabled else {
-            return nil
-        }
+        hasConflict(keyCombination: keyCombination, excludingAction: excludingAction, in: shortcutsByAction)
+    }
 
-        if shortcut.action != excludingAction {
+    private func hasConflict(
+        keyCombination: KeyCombination,
+        excludingAction: ShortcutAction?,
+        in shortcuts: [ShortcutAction: KeyboardShortcut]
+    ) -> ShortcutAction? {
+        guard !keyCombination.isEmpty else { return nil }
+        for shortcut in shortcuts.values where shortcut.isEnabled && shortcut.lookupKey == keyCombination.lookupKey {
+            guard shortcut.action != excludingAction else { continue }
             return shortcut.action
         }
         return nil
@@ -284,7 +330,8 @@ class KeyboardShortcutManager {
             return false
         }
 
-        guard let shortcut = shortcutMap[keyCombination.lookupKey],
+        guard let action = enabledLookup[keyCombination.lookupKey],
+              let shortcut = shortcutsByAction[action],
               shortcut.isEnabled else {
             RuntimeDiagnostics.debug("No registered shortcut for \(keyCombination.lookupKey).", category: "KeyboardShortcutManager")
             return false

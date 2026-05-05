@@ -101,6 +101,32 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         XCTAssertNil(harness.browserManager.lastSessionWindowsStore.tabSnapshot)
     }
 
+    func testStartupRestorationUsesLaunchWindowForFirstArchivedSnapshot() {
+        let first = makeLastSessionWindowSnapshot(sidebarWidth: 320)
+        let second = makeLastSessionWindowSnapshot(sidebarWidth: 420)
+        let plan = StartupWindowRestorationPlanner.plan(
+            archivedSnapshots: [first, second],
+            existingSessions: [],
+            hasStartupWindow: true
+        )
+
+        XCTAssertEqual(plan.primarySnapshotForStartupWindow, first)
+        XCTAssertEqual(plan.additionalSnapshots, [second])
+    }
+
+    func testStartupRestorationDoesNotReapplySnapshotAlreadyInExistingWindow() {
+        let first = makeLastSessionWindowSnapshot(sidebarWidth: 320)
+        let second = makeLastSessionWindowSnapshot(sidebarWidth: 420)
+        let plan = StartupWindowRestorationPlanner.plan(
+            archivedSnapshots: [first, second],
+            existingSessions: [first.session],
+            hasStartupWindow: true
+        )
+
+        XCTAssertNil(plan.primarySnapshotForStartupWindow)
+        XCTAssertEqual(plan.additionalSnapshots, [second])
+    }
+
     private func makeHarness(
         startupMode: SumiStartupMode,
         startupPage: String = SumiStartupPageURL.defaultURLString
@@ -165,6 +191,29 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
             launchURL: URL(string: "https://launcher.example")!,
             title: "Launcher",
             iconAsset: nil
+        )
+    }
+
+    private func makeLastSessionWindowSnapshot(sidebarWidth: Double) -> LastSessionWindowSnapshot {
+        LastSessionWindowSnapshot(
+            id: UUID(),
+            session: WindowSessionSnapshot(
+                currentTabId: nil,
+                currentSpaceId: UUID(),
+                currentProfileId: nil,
+                activeShortcutPinId: nil,
+                activeShortcutPinRole: nil,
+                isShowingEmptyState: true,
+                commandPaletteReason: .emptySpace,
+                activeTabsBySpace: [],
+                activeShortcutsBySpace: [],
+                sidebarWidth: sidebarWidth,
+                savedSidebarWidth: sidebarWidth,
+                sidebarContentWidth: sidebarWidth - Double(BrowserWindowState.sidebarHorizontalPadding),
+                isSidebarVisible: true,
+                urlBarDraft: URLBarDraftState(text: "", navigateCurrentTab: false),
+                splitSession: nil
+            )
         )
     }
 }

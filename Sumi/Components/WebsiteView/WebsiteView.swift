@@ -122,6 +122,7 @@ struct WebsiteView: View {
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(WebViewCoordinator.self) private var webViewCoordinator
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(KeyboardShortcutManager.self) private var keyboardShortcutManager
     @EnvironmentObject var splitManager: SplitViewManager
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
@@ -190,6 +191,7 @@ struct WebsiteView: View {
                         )
                         .environmentObject(browserManager)
                         .environmentObject(browserManager.extensionSurfaceStore)
+                        .environment(keyboardShortcutManager)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .browserContentSurface(
                             geometry: chromeGeometry,

@@ -28,6 +28,46 @@ final class SumiStartupSessionCoordinator {
     }
 }
 
+enum StartupWindowRestorationPlanner {
+    struct Plan {
+        var primarySnapshotForStartupWindow: LastSessionWindowSnapshot?
+        var additionalSnapshots: [LastSessionWindowSnapshot]
+    }
+
+    static func plan(
+        archivedSnapshots: [LastSessionWindowSnapshot],
+        existingSessions: Set<WindowSessionSnapshot>,
+        hasStartupWindow: Bool
+    ) -> Plan {
+        let hasArchivedSessionInExistingWindow = archivedSnapshots.contains {
+            existingSessions.contains($0.session)
+        }
+
+        if hasArchivedSessionInExistingWindow {
+            return Plan(
+                primarySnapshotForStartupWindow: nil,
+                additionalSnapshots: archivedSnapshots.filter {
+                    !existingSessions.contains($0.session)
+                }
+            )
+        }
+
+        guard hasStartupWindow, let primarySnapshot = archivedSnapshots.first else {
+            return Plan(
+                primarySnapshotForStartupWindow: nil,
+                additionalSnapshots: archivedSnapshots.filter {
+                    !existingSessions.contains($0.session)
+                }
+            )
+        }
+
+        return Plan(
+            primarySnapshotForStartupWindow: primarySnapshot,
+            additionalSnapshots: Array(archivedSnapshots.dropFirst())
+        )
+    }
+}
+
 @MainActor
 extension BrowserManager {
     var firstRegularWindowForStartupPolicy: BrowserWindowState? {
@@ -130,10 +170,30 @@ extension BrowserManager {
             let existingSessions = Set(
                 self.currentRegularWindowSnapshots(excludingWindowID: nil).map(\.session)
             )
-            let snapshotsToRestore = self.startupLastSessionWindowSnapshots.filter {
-                !existingSessions.contains($0.session)
+            let startupWindow = self.firstRegularWindowForStartupPolicy
+            let restorationPlan = StartupWindowRestorationPlanner.plan(
+                archivedSnapshots: self.startupLastSessionWindowSnapshots,
+                existingSessions: existingSessions,
+                hasStartupWindow: startupWindow != nil
+            )
+
+            if let startupWindow,
+               let primarySnapshot = restorationPlan.primarySnapshotForStartupWindow
+            {
+                self.windowSessionService.applyWindowSessionSnapshot(
+                    primarySnapshot.session,
+                    to: startupWindow,
+                    delegate: self
+                )
             }
-            for snapshot in snapshotsToRestore {
+
+            let refreshedExistingSessions = Set(
+                self.currentRegularWindowSnapshots(excludingWindowID: nil).map(\.session)
+            )
+            let unresolvedSnapshotsToRestore = restorationPlan.additionalSnapshots.filter {
+                !refreshedExistingSessions.contains($0.session)
+            }
+            for snapshot in unresolvedSnapshotsToRestore {
                 await self.reopenWindow(from: snapshot.session)
             }
             self.refreshLastSessionWindowsStore(excludingWindowID: nil)
