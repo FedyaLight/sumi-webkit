@@ -32,7 +32,8 @@ public extension WKFrameInfo {
 
 #if _FRAME_HANDLE_ENABLED
     @nonobjc var handle: FrameHandle {
-        guard let handle = self.value(forKey: "handle") as? FrameHandle else {
+        guard let rawHandle = self.value(forKey: "handle"),
+              let handle = FrameHandle(rawValue: rawHandle) else {
             assertionFailure("WKFrameInfo.handle is missing")
             return self.isMainFrame ? (webView?.mainFrameHandle ?? .fallbackMainFrameHandle) : .fallbackNonMainFrameHandle
         }

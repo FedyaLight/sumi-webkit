@@ -28,7 +28,11 @@ extension WKWebView {
                 || self.responds(to: NSSelectorFromString(Self.mainFrameKey)) else {
             return .fallbackMainFrameHandle
         }
-        return value(forKey: Self.mainFrameKey) as? FrameHandle ?? .fallbackMainFrameHandle
+        guard let rawHandle = value(forKey: Self.mainFrameKey),
+              let handle = FrameHandle(rawValue: rawHandle) else {
+            return .fallbackMainFrameHandle
+        }
+        return handle
     }
 
 #endif

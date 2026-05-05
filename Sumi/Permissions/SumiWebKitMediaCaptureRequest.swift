@@ -61,6 +61,7 @@ struct SumiWebKitMediaCaptureRequest: Sendable {
 struct SumiWebKitMediaCaptureTabContext: Sendable {
     let tabId: String
     let pageId: String
+    let surface: SumiPermissionSecurityContext.Surface
     let profilePartitionId: String
     let isEphemeralProfile: Bool
     let committedURL: URL?
@@ -74,6 +75,7 @@ struct SumiWebKitMediaCaptureTabContext: Sendable {
     init(
         tabId: String,
         pageId: String,
+        surface: SumiPermissionSecurityContext.Surface = .normalTab,
         profilePartitionId: String,
         isEphemeralProfile: Bool,
         committedURL: URL?,
@@ -86,6 +88,7 @@ struct SumiWebKitMediaCaptureTabContext: Sendable {
     ) {
         self.tabId = tabId.trimmingCharacters(in: .whitespacesAndNewlines)
         self.pageId = pageId.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.surface = surface
         self.profilePartitionId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         self.isEphemeralProfile = isEphemeralProfile
         self.committedURL = committedURL

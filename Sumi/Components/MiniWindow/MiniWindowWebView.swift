@@ -293,9 +293,6 @@ extension MiniWindowWebView.Coordinator: WKUIDelegate {
     // MARK: - Media Capture Permission
 
     /// Handle requests for media capture authorization (camera/microphone).
-    /// This is used for OAuth providers that may require getUserMedia during auth flows.
-    /// MiniWindow permission integration is intentionally separate from the normal-tab
-    /// website permission architecture and remains deferred.
     @available(macOS 13.0, *)
     func webView(
         _ webView: WKWebView,
@@ -306,12 +303,45 @@ extension MiniWindowWebView.Coordinator: WKUIDelegate {
     ) {
         RuntimeDiagnostics.emit("🔐 [MiniWindow] Media capture authorization requested for type: \(type.rawValue) from origin: \(origin)")
 
-        let knownOAuthDomains = [
-            "accounts.google.com", "login.microsoftonline.com", "github.com",
-            "appleid.apple.com", "auth0.com", "okta.com", "auth.cloudflare.com"
-        ]
-        let isKnownOAuth = knownOAuthDomains.contains { origin.host.contains($0) }
-        decisionHandler(isKnownOAuth ? .grant : .deny)
+        guard let browserManager = session.browserManager,
+              let profile = session.profile
+        else {
+            RuntimeDiagnostics.emit("🔐 [MiniWindow] Denying media capture because browser/profile context is unavailable.")
+            decisionHandler(.deny)
+            return
+        }
+
+        let mediaRequest = SumiWebKitMediaCaptureRequest(
+            mediaType: type,
+            origin: origin,
+            frame: frame
+        )
+        let tabId = "mini-window-\(session.id.uuidString.lowercased())"
+        let visibleURL = webView.url ?? session.currentURL
+        let pageGeneration = visibleURL.absoluteString
+        let tabContext = SumiWebKitMediaCaptureTabContext(
+            tabId: tabId,
+            pageId: "\(tabId):\(pageGeneration)",
+            surface: .miniWindow,
+            profilePartitionId: profile.id.uuidString.lowercased(),
+            isEphemeralProfile: profile.isEphemeral,
+            committedURL: webView.url,
+            visibleURL: visibleURL,
+            mainFrameURL: webView.url ?? session.currentURL,
+            isActiveTab: true,
+            isVisibleTab: webView.window?.isVisible == true,
+            navigationOrPageGeneration: pageGeneration,
+            isCurrentPage: { [weak webView] in
+                webView?.url?.absoluteString == visibleURL.absoluteString
+            }
+        )
+
+        browserManager.webKitPermissionBridge.handleMediaCaptureAuthorization(
+            mediaRequest,
+            tabContext: tabContext,
+            webView: webView,
+            decisionHandler: decisionHandler
+        )
     }
 
     // MARK: - File Upload Support

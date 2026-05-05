@@ -12,6 +12,7 @@ import AppKit
 @MainActor
 final class MiniWindowSession: ObservableObject, Identifiable {
     let id = UUID()
+    weak var browserManager: BrowserManager?
     let profile: Profile?
     let originName: String
     private let targetSpaceResolver: () -> String
@@ -27,12 +28,14 @@ final class MiniWindowSession: ObservableObject, Identifiable {
 
     init(
         url: URL,
+        browserManager: BrowserManager? = nil,
         profile: Profile?,
         originName: String,
         targetSpaceResolver: @escaping () -> String,
         adoptHandler: @escaping (MiniWindowSession) -> Void,
         authCompletionHandler: ((Bool, URL?) -> Void)? = nil
     ) {
+        self.browserManager = browserManager
         self.profile = profile
         self.originName = originName
         self.targetSpaceResolver = targetSpaceResolver
@@ -98,6 +101,7 @@ final class ExternalMiniWindowManager {
         let profile = browserManager.currentProfile
         let session = MiniWindowSession(
             url: url,
+            browserManager: browserManager,
             profile: profile,
             originName: profile?.name ?? "Default",
             targetSpaceResolver: { [weak browserManager] in

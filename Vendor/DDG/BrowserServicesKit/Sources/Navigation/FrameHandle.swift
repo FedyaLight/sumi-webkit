@@ -19,7 +19,7 @@
 import WebKit
 
 #if _FRAME_HANDLE_ENABLED
-public struct FrameHandle: Hashable, _ObjectiveCBridgeable {
+public struct FrameHandle: Hashable {
     private let rawValue: Any
 
     private static let frameIDKey = "frameID"
@@ -56,29 +56,6 @@ public struct FrameHandle: Hashable, _ObjectiveCBridgeable {
     public func hash(into hasher: inout Hasher) {
         hasher.combine(frameID)
     }
-
-    // swiftlint:disable identifier_name
-
-    public func _bridgeToObjectiveC() -> NSObject {
-        return rawValue as? NSObject ?? NSObject()
-    }
-
-    public static func _conditionallyBridgeFromObjectiveC(_ source: NSObject, result: inout FrameHandle?) -> Bool {
-        result = FrameHandle(rawValue: source)
-        return result != nil
-    }
-
-    public static func _forceBridgeFromObjectiveC(_ source: NSObject, result: inout FrameHandle?) {
-        _=_conditionallyBridgeFromObjectiveC(source, result: &result)
-    }
-
-    public static func _unconditionallyBridgeFromObjectiveC(_ source: NSObject?) -> FrameHandle {
-        var result: FrameHandle!
-        _=_conditionallyBridgeFromObjectiveC(source!, result: &result)
-        return result
-    }
-
-    // swiftlint:enable identifier_name
 
     // fallback values
     public static var fallbackMainFrameHandle: FrameHandle {
