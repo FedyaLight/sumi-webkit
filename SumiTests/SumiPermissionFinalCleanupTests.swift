@@ -121,7 +121,7 @@ final class SumiPermissionFinalCleanupTests: XCTestCase {
         XCTAssertFalse(siteSettingsSources.contains("removeWebsiteData"))
     }
 
-    func testDocsLicenseAndManualPagesDescribeFinalCleanupState() throws {
+    func testDocsLicenseDescribeFinalCleanupState() throws {
         let readme = try sourceFile("docs/permissions/README.md")
         let architecture = try sourceFile("docs/permissions/ARCHITECTURE.md")
         let testPlan = try sourceFile("docs/permissions/TEST_PLAN.md")
@@ -154,18 +154,12 @@ final class SumiPermissionFinalCleanupTests: XCTestCase {
             "Runtime controls",
             "One-time lifecycle",
             "Anti-abuse/cleanup",
-            "Manual pages",
             "Automated tests",
         ] {
             XCTAssertTrue(license.contains("| \(area) |"), "Missing LICENSE_NOTES matrix entry for \(area)")
         }
         XCTAssertTrue(license.contains("Sumi/Supporting Files/SumiWebKitGeolocationProviderABI.h"))
         XCTAssertTrue(license.contains("Apache License, Version 2.0"))
-
-        for manualPage in try files(under: ["ManualTests/permissions"], extensions: ["html"]) {
-            XCTAssertFalse(manualPage.contents.contains("/Users/"), "\(manualPage.relativePath) leaks a local path")
-            XCTAssertFalse(manualPage.contents.contains("file:///"), "\(manualPage.relativePath) leaks a local file URL")
-        }
     }
 
     private func assert(

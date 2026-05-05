@@ -177,7 +177,7 @@ final public class UserContentController: WKUserContentController {
 
     @MainActor
     private func installGlobalContentRuleLists(_ globalContentRuleLists: [String: WKContentRuleList]) {
-        assert(globalContentRuleLists.isEmpty, "installGlobalContentRuleLists should be called after removing all Content Rule Lists")
+        assert(self.globalContentRuleLists.isEmpty, "installGlobalContentRuleLists should be called after removing all Content Rule Lists")
         guard self.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking) else {
             Logger.contentBlocking.debug("\(self): ❗️ content blocking disabled, removing all content rule lists")
             removeAllContentRuleLists()
