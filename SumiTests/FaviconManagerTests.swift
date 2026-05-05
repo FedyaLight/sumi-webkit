@@ -36,6 +36,41 @@ final class FaviconManagerTests: XCTestCase {
         )
     }
 
+    func testHandleFaviconLinksAcceptsSVGFaviconsOnMacOSAndCachesDocumentAndHost() async throws {
+        let faviconURL = URL(string: "https://svg.example.com/favicon.svg")!
+        let pageURL = URL(string: "https://svg.example.com/article")!
+        let svgData = Data(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+              <rect width="128" height="128" fill="#0074D8"/>
+              <circle cx="64" cy="64" r="36" fill="#FFFFFF"/>
+            </svg>
+            """.utf8
+        )
+        let downloader = RecordingFaviconDownloader { url in
+            XCTAssertEqual(url, faviconURL)
+            return svgData
+        }
+        let manager = makeManager(downloader: downloader)
+
+        let favicon = await manager.handleFaviconLinks(
+            [FaviconUserScript.FaviconLink(href: faviconURL, rel: "icon", type: "image/svg+xml")],
+            documentUrl: pageURL,
+            webView: nil
+        )
+
+        XCTAssertEqual(downloader.recordedURLs, [faviconURL])
+        XCTAssertEqual(favicon?.url, faviconURL)
+        XCTAssertEqual(
+            manager.getCachedFavicon(for: pageURL, sizeCategory: .small, fallBackToSmaller: true)?.url,
+            faviconURL
+        )
+        XCTAssertEqual(
+            manager.getCachedFavicon(for: "svg.example.com", sizeCategory: .small, fallBackToSmaller: true)?.url,
+            faviconURL
+        )
+    }
+
     func testFallbackUsesCurrentSchemeThenHTTPSUpgrade() async throws {
         let pageURL = URL(string: "http://upgrade.example.com/path")!
         let httpFallbackURL = URL(string: "http://upgrade.example.com/favicon.ico")!

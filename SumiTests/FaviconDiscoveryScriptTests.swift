@@ -44,6 +44,43 @@ final class FaviconDiscoveryScriptTests: XCTestCase {
         await fulfillment(of: [payloadReceived], timeout: 5.0)
     }
 
+    func testDDGUserContentControllerReportsSVGFaviconPayloadThroughFaviconUserScript() async throws {
+        let controller = SumiNormalTabUserContentControllerFactory.makeController()
+        let scriptsProvider = try XCTUnwrap(controller.sumiNormalTabUserScriptsProvider).faviconScripts
+        let recorder = FaviconUserScriptRecorder()
+        scriptsProvider.faviconScript.delegate = recorder
+        await controller.awaitContentBlockingAssetsInstalled()
+
+        let webView = makeWebView(userContentController: controller)
+        let payloadReceived = expectation(description: "SVG favicon payload delivered")
+        recorder.onLinks = { links, documentURL, messageWebView in
+            guard documentURL.absoluteString == "https://example.com/article" else { return }
+            guard messageWebView === webView else { return }
+            guard links.contains(where: {
+                $0.href.absoluteString == "https://example.com/favicon.svg"
+                    && $0.rel == "icon"
+                    && $0.type == "image/svg+xml"
+            }) else { return }
+            payloadReceived.fulfill()
+        }
+
+        try await loadHTML(
+            """
+            <!doctype html>
+            <html>
+              <head>
+                <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+              </head>
+              <body>ok</body>
+            </html>
+            """,
+            baseURL: URL(string: "https://example.com/article")!,
+            into: webView
+        )
+
+        await fulfillment(of: [payloadReceived], timeout: 5.0)
+    }
+
     func testDDGUserContentControllerReportsDynamicHeadChanges() async throws {
         let controller = SumiNormalTabUserContentControllerFactory.makeController()
         let scriptsProvider = try XCTUnwrap(controller.sumiNormalTabUserScriptsProvider).faviconScripts
