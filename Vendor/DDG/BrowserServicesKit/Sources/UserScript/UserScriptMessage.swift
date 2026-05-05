@@ -19,11 +19,7 @@
 import WebKit
 
 public protocol UserScriptMessage {
-    var messageName: String { get }
-    var messageBody: Any { get }
     var messageHost: String { get }
-    var isMainFrame: Bool { get }
-    var messageWebView: WKWebView? { get }
 }
 
 extension WKScriptMessage: UserScriptMessage {
@@ -43,11 +39,4 @@ extension WKScriptMessage: UserScriptMessage {
         return frameInfo.securityOrigin.port == 0 ? "" : ":\(frameInfo.securityOrigin.port)"
     }
 
-    public var isMainFrame: Bool {
-        return frameInfo.isMainFrame
-    }
-
-    public var messageWebView: WKWebView? {
-        return webView
-    }
 }

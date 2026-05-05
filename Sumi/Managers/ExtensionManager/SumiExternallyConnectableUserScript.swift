@@ -14,7 +14,7 @@ final class SumiExternallyConnectableUserScript: NSObject, UserScript, UserScrip
 
     init(manager: ExtensionManager, policies: [ExternallyConnectablePolicy]) {
         let context = ExtensionManager.externallyConnectableNativeBridgeHandlerName
-        self.broker = UserScriptMessageBroker(context: context, requiresRunInPageContentWorld: true)
+        self.broker = UserScriptMessageBroker(context: context)
         self.messageNames = [context]
         self.source = policies
             .sorted { $0.extensionId < $1.extensionId }

@@ -38,10 +38,6 @@ public protocol UserScript: WKScriptMessageHandler {
 
 extension UserScript {
 
-    static public var requiresRunInPageContentWorld: Bool {
-        return false
-    }
-
     public var requiresRunInPageContentWorld: Bool {
         return false
     }
@@ -108,25 +104,6 @@ extension UserScript {
                                            injectionTime: injectionTime,
                                            forMainFrameOnly: forMainFrameOnly,
                                            requiresRunInPageContentWorld: requiresRunInPageContentWorld)
-    }
-
-    @MainActor
-    public func makeWKUserScriptSync() -> WKUserScript {
-        return Self.makeWKUserScript(from: Self.prepareScriptSource(from: source),
-                                     injectionTime: injectionTime,
-                                     forMainFrameOnly: forMainFrameOnly,
-                                     requiresRunInPageContentWorld: requiresRunInPageContentWorld).wkUserScript
-    }
-
-}
-
-extension StaticUserScript {
-
-    @MainActor
-    public static func makeWKUserScript() -> WKUserScript {
-        return makeWKUserScript(from: prepareScriptSource(from: source),
-                                injectionTime: injectionTime,
-                                forMainFrameOnly: forMainFrameOnly).wkUserScript
     }
 
 }

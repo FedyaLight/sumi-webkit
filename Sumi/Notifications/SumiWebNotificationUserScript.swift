@@ -14,7 +14,7 @@ final class SumiWebNotificationUserScript: NSObject, UserScript, UserScriptMessa
 
     init(tab: Tab) {
         self.context = "sumiWebNotifications_\(tab.id.uuidString)"
-        self.broker = UserScriptMessageBroker(context: context, requiresRunInPageContentWorld: true)
+        self.broker = UserScriptMessageBroker(context: context)
         self.messageNames = [context]
         self.source = Self.makeSource(context: context)
         super.init()

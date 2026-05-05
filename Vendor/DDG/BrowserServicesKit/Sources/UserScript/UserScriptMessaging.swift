@@ -59,7 +59,7 @@ public protocol Subfeature {
     ///
     var featureName: String { get }
 
-    /// Subfeatures may sometime need access to the message broker - for example to push messages into the page
+    /// Subfeatures may need access to the message broker when they are registered.
     var broker: UserScriptMessageBroker? { get set }
     func with(broker: UserScriptMessageBroker)
 }
@@ -93,22 +93,16 @@ public final class UserScriptMessageBroker: NSObject {
     /// ContentScopeScripts would have a single 'context', but then will have multiple
     /// sub-features.
     public let context: String
-    public let requiresRunInPageContentWorld: Bool
-    public let debug: Bool
 
     /// We determine which feature should receive a given message
     /// based on this
     var callbacks: [String: Subfeature] = [:]
 
     public init(context: String,
-                hostProvider: UserScriptHostProvider = SecurityOriginHostProvider(),
-                requiresRunInPageContentWorld: Bool = false,
-                debug: Bool = false
+                hostProvider: UserScriptHostProvider = SecurityOriginHostProvider()
     ) {
         self.context = context
         self.hostProvider = hostProvider
-        self.requiresRunInPageContentWorld = requiresRunInPageContentWorld
-        self.debug = debug
     }
 
     public func registerSubfeature(delegate: Subfeature) {
@@ -122,28 +116,6 @@ public final class UserScriptMessageBroker: NSObject {
                 hasModernWebkitAPI: true
         )
         return config
-    }
-
-    public func push(method: String, params: Encodable?, for delegate: Subfeature, into webView: WKWebView) {
-        guard let js = SubscriptionEvent.toJS(
-                context: context,
-                featureName: delegate.featureName,
-                subscriptionName: method,
-                params: params ?? [:] as [String: String],
-                debug: debug
-        )
-        else {
-            return
-        }
-        if #available(macOS 11.0, iOS 14.0, *) {
-            DispatchQueue.main.async {
-                if !self.requiresRunInPageContentWorld {
-                    webView.evaluateJavaScript(js, in: nil, in: WKContentWorld.defaultClient)
-                } else {
-                    webView.evaluateJavaScript(js)
-                }
-            }
-        }
     }
 
     public enum Action {
@@ -311,16 +283,6 @@ public enum HostnameMatchingRule {
     case exact(hostname: String)
     /// Matches the hostname exactly OR any subdomain of it (e.g. "duck.ai" matches "duck.ai" and "foo.duck.ai")
     case exactOrSubdomain(hostname: String)
-
-    public static func makeExactRule(for url: URL) -> HostnameMatchingRule? {
-        guard let host = url.host else { return nil }
-
-        if let port = url.port, port > 0 {
-            return .exact(hostname: host + ":\(port)")
-        } else {
-            return .exact(hostname: host)
-        }
-    }
 }
 
 /// Force consumers to be explicit about the difference between accepting messages

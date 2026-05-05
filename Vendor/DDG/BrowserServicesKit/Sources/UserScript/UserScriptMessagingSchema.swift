@@ -118,50 +118,6 @@ public struct MessageError: Encodable {
     public let message: String
 }
 
-/// Use this format to push data into UserScript
-///
-/// https://duckduckgo.github.io/content-scope-scripts/classes/Messaging_Schema.SubscriptionEvent.html
-public struct SubscriptionEvent {
-    public let context: String
-    public let featureName: String
-    public let subscriptionName: String
-    public let params: Encodable
-
-    public func toJSON() -> String? {
-
-        // I added this because I couldn't figure out the generic/recursive Encodable
-        let dictionary: [String: Encodable] = [
-            "context": self.context,
-            "featureName": self.featureName,
-            "subscriptionName": self.subscriptionName,
-            "params": self.params
-        ]
-
-        return GenericJSONOutput.toJSON(dict: dictionary)
-    }
-
-    public static func toJS(context: String, featureName: String, subscriptionName: String, params: Encodable, debug: Bool = false) -> String? {
-
-        let res = SubscriptionEvent(context: context, featureName: featureName, subscriptionName: subscriptionName, params: params)
-        guard let json = res.toJSON() else {
-            assertionFailure("Could not convert a SubscriptionEvent to JSON")
-            return nil
-        }
-
-        let warnStatement = debug ? "console.warn(\"missing '\(res.subscriptionName)'\", \(json))" : ""
-
-        return """
-           (() => {
-              if (!('\(res.subscriptionName)' in (navigator?.duckduckgo?.messageHandlers ?? {}))) {
-                 \(warnStatement)
-              } else {
-                  navigator?.duckduckgo?.messageHandlers?.\(res.subscriptionName)?.(\(json));
-              }
-           })();
-           """
-    }
-}
-
 /// https://duckduckgo.github.io/content-scope-scripts/classes/Messaging.WebkitMessagingConfig.html
 public struct WebkitMessagingConfig: Encodable {
     let webkitMessageHandlerNames: [String]

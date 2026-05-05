@@ -21,16 +21,7 @@ import Foundation
 public extension Bundle {
 
     enum Key {
-        public static let name = kCFBundleNameKey as String
-        public static let identifier = kCFBundleIdentifierKey as String
-        public static let buildNumber = kCFBundleVersionKey as String
         public static let versionNumber = "CFBundleShortVersionString"
-        public static let executableName = kCFBundleExecutableKey as String
-
-        /// Custom key that may be added by the adhoc build workflow to append a suffix to the build version
-        public static let alphaBuildSuffix = "DDG_ALPHA_BUILD_SUFFIX"
-        /// Custom key that may be added by the build workflow to indicate a commit of the build
-        public static let commitSHA = "DDG_COMMIT_SHA"
     }
 
     var releaseVersionNumber: String? { infoDictionary?[Key.versionNumber] as? String }

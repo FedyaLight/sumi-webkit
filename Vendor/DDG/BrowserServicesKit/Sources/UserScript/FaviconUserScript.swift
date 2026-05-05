@@ -37,11 +37,6 @@ public final class FaviconUserScript: NSObject, Subfeature {
     public struct FaviconsFoundPayload: Codable, Equatable {
         public let documentUrl: URL
         public let favicons: [FaviconLink]
-
-        public init(documentUrl: URL, favicons: [FaviconLink]) {
-            self.documentUrl = documentUrl
-            self.favicons = favicons
-        }
     }
 
     /// Represents a single favicon link element from the page
