@@ -29,16 +29,6 @@ extension BrowserWindowState {
         set { windowThemeState.progress = newValue }
     }
 
-    var isThemeTransitioning: Bool {
-        get { windowThemeState.isTransitioning }
-        set {
-            guard !newValue else { return }
-            if !windowThemeState.isInteractive {
-                windowThemeState.mode = .idle
-            }
-        }
-    }
-
     var themeTransitionToken: UUID? {
         get { windowThemeState.token }
         set { windowThemeState.token = newValue }
@@ -105,41 +95,3 @@ extension BrowserWindowState {
         )
     }
 }
-
-#if DEBUG
-struct SidebarThemeResolutionSnapshot: Equatable {
-    let workspacePrimaryHex: String
-    let sourceWorkspacePrimaryHex: String
-    let targetWorkspacePrimaryHex: String
-    let chromeColorScheme: ColorScheme
-    let sourceChromeColorScheme: ColorScheme
-    let targetChromeColorScheme: ColorScheme
-    let chromeDarknessProgress: Double
-    let transitionProgress: Double
-
-    init(context: ResolvedThemeContext) {
-        workspacePrimaryHex = context.workspaceTheme.gradient.primaryColorHex
-        sourceWorkspacePrimaryHex = context.sourceWorkspaceTheme.gradient.primaryColorHex
-        targetWorkspacePrimaryHex = context.targetWorkspaceTheme.gradient.primaryColorHex
-        chromeColorScheme = context.chromeColorScheme
-        sourceChromeColorScheme = context.sourceChromeColorScheme
-        targetChromeColorScheme = context.targetChromeColorScheme
-        chromeDarknessProgress = context.chromeDarknessProgress
-        transitionProgress = context.transitionProgress
-    }
-
-    @MainActor
-    static func make(
-        windowState: BrowserWindowState,
-        settings: SumiSettingsService,
-        globalColorScheme: ColorScheme
-    ) -> SidebarThemeResolutionSnapshot {
-        SidebarThemeResolutionSnapshot(
-            context: windowState.resolvedThemeContext(
-                global: globalColorScheme,
-                settings: settings
-            )
-        )
-    }
-}
-#endif

@@ -3,7 +3,6 @@ import Foundation
 protocol SumiPermissionAntiAbuseStoring: Sendable {
     func record(_ event: SumiPermissionAntiAbuseEvent) async
     func events(for key: SumiPermissionKey, now: Date) async -> [SumiPermissionAntiAbuseEvent]
-    func allEvents(profilePartitionId: String, isEphemeralProfile: Bool, now: Date) async -> [SumiPermissionAntiAbuseEvent]
     func clearSuppressionState(for key: SumiPermissionKey, now: Date) async
 }
 
@@ -31,17 +30,6 @@ actor SumiPermissionAntiAbuseStore: SumiPermissionAntiAbuseStoring {
         self.maximumEventsPerProfile = max(1, maximumEventsPerProfile)
     }
 
-    static func memoryOnly(
-        retentionInterval: TimeInterval = SumiPermissionPromptCooldown.eventRetention,
-        maximumEventsPerProfile: Int = SumiPermissionPromptCooldown.maximumEventsPerProfile
-    ) -> SumiPermissionAntiAbuseStore {
-        SumiPermissionAntiAbuseStore(
-            userDefaults: nil,
-            retentionInterval: retentionInterval,
-            maximumEventsPerProfile: maximumEventsPerProfile
-        )
-    }
-
     func record(_ event: SumiPermissionAntiAbuseEvent) async {
         loadIfNeeded()
         records.append(event)
@@ -57,23 +45,6 @@ actor SumiPermissionAntiAbuseStore: SumiPermissionAntiAbuseStoring {
             .filter {
                 $0.key.persistentIdentity == key.persistentIdentity
                     && $0.key.isEphemeralProfile == key.isEphemeralProfile
-            }
-            .sorted { $0.createdAt < $1.createdAt }
-    }
-
-    func allEvents(
-        profilePartitionId: String,
-        isEphemeralProfile: Bool,
-        now: Date
-    ) async -> [SumiPermissionAntiAbuseEvent] {
-        loadIfNeeded()
-        prune(now: now)
-        persistIfNeeded()
-        let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
-        return records
-            .filter {
-                $0.key.profilePartitionId == profileId
-                    && $0.key.isEphemeralProfile == isEphemeralProfile
             }
             .sorted { $0.createdAt < $1.createdAt }
     }

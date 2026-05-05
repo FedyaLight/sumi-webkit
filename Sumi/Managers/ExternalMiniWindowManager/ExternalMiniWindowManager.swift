@@ -237,11 +237,6 @@ private final class MiniBrowserHostingView<Content: View>: NSHostingView<Content
 private final class MiniBrowserHostingController<Content: View>: NSViewController {
     private let hostingView: MiniBrowserHostingView<Content>
 
-    var rootView: Content {
-        get { hostingView.rootView }
-        set { hostingView.rootView = newValue }
-    }
-
     init(rootView: Content) {
         self.hostingView = MiniBrowserHostingView(rootView: rootView)
         super.init(nibName: nil, bundle: nil)

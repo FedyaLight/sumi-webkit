@@ -25,11 +25,21 @@ struct TabBackForwardNavigationContext {
 struct SumiTrackingProtectionReloadRequirement: Equatable {
     let siteHost: String?
     let desiredAttachmentState: SumiTrackingProtectionAttachmentState
+
+    static func == (lhs: SumiTrackingProtectionReloadRequirement, rhs: SumiTrackingProtectionReloadRequirement) -> Bool {
+        lhs.siteHost == rhs.siteHost
+            && lhs.desiredAttachmentState == rhs.desiredAttachmentState
+    }
 }
 
 struct SumiAutoplayReloadRequirement: Equatable {
     let desiredPolicy: SumiAutoplayPolicy
     let runtimeRequirement: SumiRuntimePermissionReloadRequirement
+
+    static func == (lhs: SumiAutoplayReloadRequirement, rhs: SumiAutoplayReloadRequirement) -> Bool {
+        lhs.desiredPolicy == rhs.desiredPolicy
+            && lhs.runtimeRequirement == rhs.runtimeRequirement
+    }
 }
 
 enum BackForwardNavigationSettleDecision {

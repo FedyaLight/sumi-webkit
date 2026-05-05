@@ -59,15 +59,5 @@ public enum _WKWebsiteAutoplayPolicy: UInt {
     case allow
     case allowWithoutSound
     case deny
-
-    public init(_ mediaTypes: WKAudiovisualMediaTypes) {
-        if mediaTypes == WKAudiovisualMediaTypes.all {
-            self = .deny
-        } else if mediaTypes.contains(.audio) {
-            self = .allowWithoutSound
-        } else {
-            self = .allow
-        }
-    }
 }
 #endif

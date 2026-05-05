@@ -10,15 +10,6 @@ enum SumiWebViewInteractionEvent {
     case keyDown(NSEvent)
     case scrollWheel(NSEvent)
 
-    var event: NSEvent {
-        switch self {
-        case .mouseDown(let event),
-             .middleMouseDown(let event),
-             .keyDown(let event),
-             .scrollWheel(let event):
-            return event
-        }
-    }
 }
 
 @MainActor

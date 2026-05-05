@@ -34,7 +34,6 @@ public final class Navigation {
 
     @Published public fileprivate(set) var state: NavigationState
     public private(set) var isCommitted: Bool = false
-    public private(set) var didReceiveAuthenticationChallenge: Bool = false
 
     /// Currently performed Navigation Action. May change for server redirects.
     public var navigationAction: NavigationAction {
@@ -45,9 +44,6 @@ public final class Navigation {
     public var redirectHistory: [NavigationAction] {
         Array(navigationActions.dropLast())
     }
-    /// contains NavigationResponse if it was received during navigation
-    public private(set) var navigationResponse: NavigationResponse?
-
     public init(identity: NavigationIdentity, responders: ResponderChain, state: NavigationState, redirectHistory: [NavigationAction]? = nil, isCurrent: Bool, isCommitted: Bool = false) {
         self.state = state
         self.identity = identity
@@ -137,8 +133,6 @@ public struct NavigationIdentity: Equatable {
     public init(_ value: AnyObject?) {
         self.value = value.map { Unmanaged.passUnretained($0).toOpaque() }
     }
-
-    public static var expected = NavigationIdentity(nil)
 
     fileprivate mutating func resolve(with navigation: WKNavigation?) {
         guard let navigation else { return }
@@ -234,19 +228,14 @@ extension Navigation {
         isCurrent = false
     }
 
-    func challengeRececived() {
-        self.didReceiveAuthenticationChallenge = true
-    }
-
     func committed(_ navigation: WKNavigation?) {
         self.resolve(with: navigation)
         assert(state == .started || state.isResponseReceived)
         self.isCommitted = true
     }
 
-    func receivedResponse(_ response: NavigationResponse) {
+    func receivedResponse(_: NavigationResponse) {
         assert(state == .started)
-        self.navigationResponse = response
         self.state = .responseReceived
     }
 
@@ -311,7 +300,7 @@ extension Navigation {
         }
     }
 
-    func willPerformClientRedirect(to url: URL, delay: TimeInterval) {
+    func willPerformClientRedirect(delay: TimeInterval) {
         switch state {
         case .started, .responseReceived:
             self.state = .willPerformClientRedirect(delay: delay)

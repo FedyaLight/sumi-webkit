@@ -56,15 +56,6 @@ final class SumiExtensionsModule {
         moduleRegistry.isEnabled(.extensions)
     }
 
-    var hasLoadedRuntime: Bool {
-        cachedManager != nil
-    }
-
-    var isExtensionSupportAvailable: Bool {
-        cachedManager?.isExtensionSupportAvailable
-            ?? ExtensionUtils.isExtensionSupportAvailable
-    }
-
     func attach(browserManager: BrowserManager) {
         self.browserManager = browserManager
         cachedManager?.attach(browserManager: browserManager)

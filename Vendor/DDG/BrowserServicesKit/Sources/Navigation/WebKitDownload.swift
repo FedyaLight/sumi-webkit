@@ -28,12 +28,6 @@ import WebKit
     func cancel(_ completionHandler: ((Data?) -> Void)?)
 }
 
-extension WebKitDownload {
-    public func cancel() {
-        cancel(/*completionHandler:*/ nil)
-    }
-}
-
 extension WKDownload: WebKitDownload {
 
     /// The WebView that initiated this download

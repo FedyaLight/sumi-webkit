@@ -126,26 +126,6 @@ public extension NavigationType {
         return false
     }
 
-#if PRIVATE_NAVIGATION_DID_FINISH_CALLBACKS_ENABLED
-    var backForwardDistance: Int? {
-        if case .backForward(distance: let distance) = self, distance != 0 { return distance }
-        return nil
-    }
-
-    var isGoingBack: Bool {
-        (backForwardDistance ?? 0) < 0
-    }
-
-    var isGoingForward: Bool {
-        (backForwardDistance ?? 0) > 0
-    }
-#endif
-
-    var isSessionRestoration: Bool {
-        if case .sessionRestoration = self { return true }
-        return false
-    }
-
     var isSameDocumentNavigation: Bool {
         if case .sameDocumentNavigation = self { return true }
         return false
@@ -163,7 +143,6 @@ public protocol WebViewNavigationAction {
 #if os(macOS)
     var isMiddleClick: Bool { get }
 #endif
-    var isUserInitiated: Bool? { get }
 }
 
 public struct HistoryItemIdentity: Hashable {

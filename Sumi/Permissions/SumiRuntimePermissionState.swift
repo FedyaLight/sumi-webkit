@@ -91,38 +91,4 @@ struct SumiRuntimePermissionState: Codable, Equatable, Hashable, Sendable {
         self.storageAccess = storageAccess
     }
 
-    func state(for permissionType: SumiPermissionType) -> SumiRuntimePermissionStateValue {
-        switch permissionType {
-        case .camera:
-            return .media(camera)
-        case .microphone:
-            return .media(microphone)
-        case .cameraAndMicrophone:
-            return .cameraAndMicrophone(cameraAndMicrophone)
-        case .screenCapture:
-            return .media(screenCapture)
-        case .geolocation:
-            return .geolocation(geolocation)
-        case .notifications:
-            return .nonDevice(notifications)
-        case .popups:
-            return .nonDevice(popups)
-        case .externalScheme:
-            return .nonDevice(externalScheme)
-        case .autoplay:
-            return .autoplay(autoplay)
-        case .filePicker:
-            return .nonDevice(filePicker)
-        case .storageAccess:
-            return .nonDevice(storageAccess)
-        }
-    }
-}
-
-enum SumiRuntimePermissionStateValue: Equatable, Hashable, Sendable {
-    case media(SumiMediaCaptureRuntimeState)
-    case cameraAndMicrophone(SumiCameraAndMicrophoneRuntimeState)
-    case geolocation(SumiGeolocationRuntimeState)
-    case autoplay(SumiRuntimeAutoplayState)
-    case nonDevice(SumiNonDeviceRuntimeState)
 }

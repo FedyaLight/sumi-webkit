@@ -2,11 +2,8 @@ import AppKit
 import SwiftUI
 
 struct ZenWorkspaceThemeResolution: Equatable {
-    let primaryColor: Color
-    let primaryHex: String
     let chromeColorScheme: ColorScheme
     let blackContrast: Double
-    let toolbarTextColor: Color
     let backgroundGradient: SpaceGradient
     let toolbarGradient: SpaceGradient
     let isThemeExplicitScheme: Bool
@@ -25,8 +22,6 @@ enum ZenWorkspaceThemeResolver {
         isIncognito: Bool = false
     ) -> ZenWorkspaceThemeResolution {
         let primaryRGB = primaryRGBComponents(for: theme, settings: settings)
-        let primaryColor = color(from: primaryRGB)
-        let primaryHex = hexString(from: primaryRGB)
         let hasWorkspaceColors = !theme.gradientTheme.normalizedColors.isEmpty
         let usesWorkspaceExplicitScheme = hasWorkspaceColors
             && theme.usesExplicitColorScheme
@@ -42,11 +37,8 @@ enum ZenWorkspaceThemeResolver {
         )
 
         return ZenWorkspaceThemeResolution(
-            primaryColor: primaryColor,
-            primaryHex: primaryHex,
             chromeColorScheme: contrast.scheme,
             blackContrast: contrast.blackContrast,
-            toolbarTextColor: toolbarTextColor(for: contrast.scheme),
             backgroundGradient: resolvedGradient(
                 theme.gradient,
                 forToolbar: false,
@@ -63,20 +55,6 @@ enum ZenWorkspaceThemeResolver {
             ),
             isThemeExplicitScheme: usesWorkspaceExplicitScheme
         )
-    }
-
-    static func resolvedChromeColorScheme(
-        theme: WorkspaceTheme,
-        globalWindowScheme: ColorScheme,
-        settings: SumiSettingsService,
-        isIncognito: Bool = false
-    ) -> ColorScheme {
-        resolve(
-            theme: theme,
-            globalWindowScheme: globalWindowScheme,
-            settings: settings,
-            isIncognito: isIncognito
-        ).chromeColorScheme
     }
 
     static func primaryColor(
@@ -269,17 +247,6 @@ enum ZenWorkspaceThemeResolver {
         }
 
         return rgbComponents(of: Color(hex: primary.hex))
-    }
-
-    private static func toolbarTextColor(for scheme: ColorScheme) -> Color {
-        switch scheme {
-        case .light:
-            return Color.black.opacity(Double(toolbarTextAlpha))
-        case .dark:
-            return Color.white.opacity(Double(toolbarTextAlpha))
-        @unknown default:
-            return Color.primary
-        }
     }
 
     private static func toolbarTextCandidate(

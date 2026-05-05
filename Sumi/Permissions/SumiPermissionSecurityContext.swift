@@ -29,46 +29,6 @@ struct SumiPermissionSecurityContext: Equatable, Sendable {
 
     init(
         request: SumiPermissionRequest,
-        requestingOrigin: SumiPermissionOrigin? = nil,
-        topOrigin: SumiPermissionOrigin? = nil,
-        committedURL: URL? = nil,
-        visibleURL: URL? = nil,
-        mainFrameURL: URL? = nil,
-        isMainFrame: Bool = true,
-        isActiveTab: Bool = true,
-        isVisibleTab: Bool = true,
-        hasUserGesture: Bool? = nil,
-        isEphemeralProfile: Bool? = nil,
-        profilePartitionId: String? = nil,
-        transientPageId: String? = nil,
-        surface: Surface = .normalTab,
-        navigationOrPageGeneration: String? = nil,
-        now: Date = Date()
-    ) {
-        self.request = request
-        self.requestingOrigin = requestingOrigin ?? request.requestingOrigin
-        self.topOrigin = topOrigin ?? request.topOrigin
-        self.committedURL = committedURL
-        self.visibleURL = visibleURL
-        self.mainFrameURL = mainFrameURL
-        self.isMainFrame = isMainFrame
-        self.isActiveTab = isActiveTab
-        self.isVisibleTab = isVisibleTab
-        self.hasUserGesture = hasUserGesture ?? request.hasUserGesture
-        self.isEphemeralProfile = isEphemeralProfile ?? request.isEphemeralProfile
-        self.profilePartitionId = SumiPermissionKey.normalizedProfilePartitionId(
-            profilePartitionId ?? request.profilePartitionId
-        )
-        self.transientPageId = Self.normalizedOptionalId(
-            transientPageId ?? request.pageId ?? request.tabId
-        )
-        self.surface = surface
-        self.navigationOrPageGeneration = Self.normalizedOptionalId(navigationOrPageGeneration)
-        self.now = now
-    }
-
-    init(
-        request: SumiPermissionRequest,
         requestingOrigin: SumiPermissionOrigin,
         topOrigin: SumiPermissionOrigin,
         committedURL: URL?,

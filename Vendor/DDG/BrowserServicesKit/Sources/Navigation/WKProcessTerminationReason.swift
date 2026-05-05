@@ -23,6 +23,4 @@ public enum WKProcessTerminationReason: Int {
     case requestedByClient
     case crash
     case exceededSharedProcessCrashLimit
-
-    public static let userInfoKey: String = "WKProcessTerminationReasonKey"
 }

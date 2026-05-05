@@ -270,10 +270,6 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
         }
     }
 
-    func toggleCategory(_ category: SumiBrowsingDataCategory) {
-        setCategory(category, selected: !isSelected(category))
-    }
-
     func subtitle(for category: SumiBrowsingDataCategory) -> String {
         if isLoadingSummary {
             return "Checking current profile..."

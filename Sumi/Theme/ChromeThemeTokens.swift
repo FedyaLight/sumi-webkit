@@ -3,7 +3,6 @@ import SwiftUI
 
 struct ChromeThemeTokens {
     let accent: Color
-    let toolbarBackground: Color
     let fieldBackground: Color
     let fieldBackgroundHover: Color
     let primaryText: Color
@@ -16,8 +15,6 @@ struct ChromeThemeTokens {
     let pinnedHoverBackground: Color
     let pinnedIdleBackground: Color
     let separator: Color
-    let dropGuide: Color
-    let dropGuideBackground: Color
     let toastBackground: Color
     let toastBorder: Color
     let toastPrimaryText: Color
@@ -41,6 +38,11 @@ struct ChromeThemeTokens {
 private struct ChromeThemeTokenRecipeKey: Equatable {
     let context: ResolvedThemeContext
     let settingsFingerprint: Int
+
+    static func == (lhs: ChromeThemeTokenRecipeKey, rhs: ChromeThemeTokenRecipeKey) -> Bool {
+        lhs.context == rhs.context
+            && lhs.settingsFingerprint == rhs.settingsFingerprint
+    }
 }
 
 @MainActor

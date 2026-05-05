@@ -86,7 +86,6 @@ struct HistoryListItem: Identifiable, Equatable, Hashable {
     let domain: String
     let siteDomain: String?
     let visitedAt: Date?
-    let relativeDay: String
     let timeText: String
     let visitCount: Int
     let isSiteAggregate: Bool
@@ -108,10 +107,6 @@ struct HistoryListItem: Identifiable, Equatable, Hashable {
             || (siteDomain?.lowercased().contains(needle) ?? false)
     }
 
-    func matchesDomains(_ domains: Set<String>) -> Bool {
-        let matchDomain = siteDomain ?? domain
-        return domains.contains(matchDomain)
-    }
 }
 
 enum HistoryRange: String, Codable, CaseIterable, Equatable, Hashable {
@@ -159,48 +154,6 @@ enum HistoryRange: String, Codable, CaseIterable, Equatable, Hashable {
 
     var paneQueryValue: String { rawValue }
 
-    init?(date: Date, referenceDate: Date, calendar: Calendar = .autoupdatingCurrent) {
-        guard referenceDate >= date else { return nil }
-
-        let dayDelta = calendar.dateComponents(
-            [.day],
-            from: calendar.startOfDay(for: date),
-            to: calendar.startOfDay(for: referenceDate)
-        ).day ?? 0
-
-        switch dayDelta {
-        case 0:
-            self = .today
-        case 1:
-            self = .yesterday
-        default:
-            let weekday = calendar.component(.weekday, from: date)
-            if dayDelta < 7, let range = Self(weekday: weekday) {
-                self = range
-            } else {
-                self = .older
-            }
-        }
-    }
-
-    static func displayedRanges(
-        for referenceDate: Date,
-        calendar: Calendar = .autoupdatingCurrent
-    ) -> [Self] {
-        var currentRange: Self? = .today
-        var ranges: [Self] = []
-        for _ in 0..<7 {
-            guard let unwrappedCurrentRange = currentRange else { break }
-            ranges.append(unwrappedCurrentRange)
-            currentRange = unwrappedCurrentRange.previousRange(
-                for: referenceDate,
-                calendar: calendar
-            )
-        }
-        ranges.append(.older)
-        return ranges
-    }
-
     func dateRange(
         for referenceDate: Date,
         calendar: Calendar = .autoupdatingCurrent
@@ -229,19 +182,6 @@ enum HistoryRange: String, Codable, CaseIterable, Equatable, Hashable {
         }
 
         return startDate..<nextDay
-    }
-
-    private init?(weekday: Int) {
-        switch weekday {
-        case 1: self = .sunday
-        case 2: self = .monday
-        case 3: self = .tuesday
-        case 4: self = .wednesday
-        case 5: self = .thursday
-        case 6: self = .friday
-        case 7: self = .saturday
-        default: return nil
-        }
     }
 
     private func weekday(
@@ -274,45 +214,10 @@ enum HistoryRange: String, Codable, CaseIterable, Equatable, Hashable {
         }
     }
 
-    private func previousRange(
-        for referenceDate: Date,
-        calendar: Calendar
-    ) -> Self? {
-        switch self {
-        case .all:
-            return .today
-        case .today:
-            return .yesterday
-        case .yesterday:
-            guard let yesterday = dateRange(for: referenceDate, calendar: calendar)?.lowerBound,
-                  let previousDay = calendar.date(byAdding: .day, value: -1, to: yesterday)
-            else {
-                return nil
-            }
-            return Self(date: previousDay, referenceDate: referenceDate, calendar: calendar)
-        case .sunday:
-            return .saturday
-        case .monday:
-            return .sunday
-        case .tuesday:
-            return .monday
-        case .wednesday:
-            return .tuesday
-        case .thursday:
-            return .wednesday
-        case .friday:
-            return .thursday
-        case .saturday:
-            return .friday
-        case .older, .allSites:
-            return nil
-        }
-    }
 }
 
 struct HistoryRangeCount: Equatable, Hashable, Identifiable {
     let id: HistoryRange
-    let count: Int
 }
 
 enum HistoryQuery: Equatable, Hashable {

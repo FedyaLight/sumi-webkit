@@ -188,13 +188,10 @@ class BrowserManager: ObservableObject {
     var findManager: FindManager
     let systemPermissionService: any SumiSystemPermissionService
     let permissionCoordinator: any SumiPermissionCoordinating
-    let geolocationProvider: (any SumiGeolocationProviding)?
-    let notificationService: any SumiNotificationServicing
     let runtimePermissionController: any SumiRuntimePermissionControlling
     let webKitPermissionBridge: SumiWebKitPermissionBridge
     let webKitGeolocationBridge: SumiWebKitGeolocationBridge
     let notificationPermissionBridge: SumiNotificationPermissionBridge
-    let filePickerPanelPresenter: any SumiFilePickerPanelPresenting
     let filePickerPermissionBridge: SumiFilePickerPermissionBridge
     let storageAccessPermissionBridge: SumiStorageAccessPermissionBridge
     let permissionIndicatorEventStore: SumiPermissionIndicatorEventStore
@@ -415,8 +412,6 @@ class BrowserManager: ObservableObject {
         self.findManager = FindManager()
         self.systemPermissionService = systemPermissionService
         self.permissionCoordinator = permissionCoordinator
-        self.geolocationProvider = geolocationProvider
-        self.notificationService = notificationService
         self.runtimePermissionController = runtimePermissionController
         self.webKitPermissionBridge = webKitPermissionBridge
             ?? SumiWebKitPermissionBridge(
@@ -440,7 +435,6 @@ class BrowserManager: ObservableObject {
                 panelPresenter: filePickerPanelPresenter,
                 indicatorEventStore: permissionIndicatorEventStore
             )
-        self.filePickerPanelPresenter = filePickerPanelPresenter
         self.filePickerPermissionBridge = resolvedFilePickerPermissionBridge
         self.storageAccessPermissionBridge = storageAccessPermissionBridge
             ?? SumiStorageAccessPermissionBridge(
@@ -1000,7 +994,6 @@ class BrowserManager: ObservableObject {
 
     func openSiteSettingsTab(
         focusing tab: Tab? = nil,
-        profile: Profile? = nil,
         in windowState: BrowserWindowState? = nil
     ) {
         guard let windowState = windowState ?? windowRegistry?.activeWindow else { return }

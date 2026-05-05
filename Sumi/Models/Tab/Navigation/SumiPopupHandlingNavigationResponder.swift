@@ -8,7 +8,6 @@ import WebKit
 final class SumiPopupHandlingNavigationResponder: NavigationResponder {
     private struct PendingNewWindow {
         let policy: SumiNewWindowPolicy
-        let permissionResult: SumiPopupPermissionResult
     }
 
     private weak var tab: Tab?
@@ -294,7 +293,7 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
                 guard newWindowNavigationAction.request.url?.matches(url) ?? false else {
                     return nil
                 }
-                return PendingNewWindow(policy: policy, permissionResult: permissionResult)
+                return PendingNewWindow(policy: policy)
             }
             resetLinkGestureModifierState(for: tab)
             targetWebView.sumiLoadInNewWindow(url)

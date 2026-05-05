@@ -111,18 +111,10 @@ final class SumiPermissionCleanupService {
             let finishedAt = now()
             userDefaults.set(finishedAt, forKey: lastRunKey(profile.profilePartitionId))
             userDefaults.set(removedEvents.count, forKey: lastRemovedKey(profile.profilePartitionId))
-            return SumiPermissionCleanupResult(
-                removedCount: removedEvents.count,
-                removedEvents: removedEvents,
-                wasThrottled: false
-            )
+            return .completed
         } catch {
             _ = now()
-            return SumiPermissionCleanupResult(
-                removedCount: 0,
-                removedEvents: [],
-                wasThrottled: false
-            )
+            return .completed
         }
     }
 

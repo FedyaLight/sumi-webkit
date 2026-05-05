@@ -22,7 +22,7 @@ import CoreData
 /**
  * This enum defines available favorites folders with their UUIDs as raw value.
  */
-public enum FavoritesFolderID: String, CaseIterable {
+enum FavoritesFolderID: String, CaseIterable {
     /// Mobile form factor favorites folder
     case mobile = "mobile_favorites_root"
     /// Desktop form factor favorites folder
@@ -255,19 +255,19 @@ extension BookmarkEntity {
 extension BookmarkEntity {
 
     @objc(insertObject:inFavoritesAtIndex:)
-    @NSManaged private func insertIntoFavorites(_ value: BookmarkEntity, at idx: Int)
+    @NSManaged private func insertIntoFavorites(_: BookmarkEntity, at _: Int)
 
     @objc(addFavoritesObject:)
-    @NSManaged private func addToFavorites(_ value: BookmarkEntity)
+    @NSManaged private func addToFavorites(_: BookmarkEntity)
 
     @objc(removeFavoritesObject:)
-    @NSManaged private func removeFromFavorites(_ value: BookmarkEntity)
+    @NSManaged private func removeFromFavorites(_: BookmarkEntity)
 
     @objc(addFavorites:)
-    @NSManaged private func addToFavorites(_ values: NSOrderedSet)
+    @NSManaged private func addToFavorites(_: NSOrderedSet)
 
     @objc(removeFavorites:)
-    @NSManaged private func removeFromFavorites(_ values: NSOrderedSet)
+    @NSManaged private func removeFromFavorites(_: NSOrderedSet)
 
 }
 
@@ -275,16 +275,16 @@ extension BookmarkEntity {
 extension BookmarkEntity {
 
     @objc(addFavoriteFoldersObject:)
-    @NSManaged private func addToFavoriteFolders(_ value: BookmarkEntity)
+    @NSManaged private func addToFavoriteFolders(_: BookmarkEntity)
 
     @objc(removeFavoriteFoldersObject:)
-    @NSManaged private func removeFromFavoriteFolders(_ value: BookmarkEntity)
+    @NSManaged private func removeFromFavoriteFolders(_: BookmarkEntity)
 
     @objc(addFavoriteFolders:)
-    @NSManaged private func addToFavoriteFolders(_ values: NSSet)
+    @NSManaged private func addToFavoriteFolders(_: NSSet)
 
     @objc(removeFavoriteFolders:)
-    @NSManaged private func removeFromFavoriteFolders(_ values: NSSet)
+    @NSManaged private func removeFromFavoriteFolders(_: NSSet)
 
 }
 

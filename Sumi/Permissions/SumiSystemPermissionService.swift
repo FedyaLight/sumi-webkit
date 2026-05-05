@@ -15,7 +15,6 @@ protocol SumiSystemPermissionService: Sendable {
     ) async -> SumiSystemPermissionAuthorizationState
     @discardableResult
     func openSystemSettings(for kind: SumiSystemPermissionKind) async -> Bool
-    func refreshAuthorizationStates() async
 }
 
 extension SumiSystemPermissionService {
@@ -24,22 +23,6 @@ extension SumiSystemPermissionService {
         return SumiSystemPermissionSnapshot(kind: kind, state: state)
     }
 
-    func authorizationSnapshots(
-        for kinds: [SumiSystemPermissionKind] = SumiSystemPermissionKind.allCases
-    ) async -> [SumiSystemPermissionSnapshot] {
-        var snapshots: [SumiSystemPermissionSnapshot] = []
-        snapshots.reserveCapacity(kinds.count)
-        for kind in kinds {
-            snapshots.append(await authorizationSnapshot(for: kind))
-        }
-        return snapshots
-    }
-
-    func mediaPreflightAuthorizationSnapshots() async -> [SumiSystemPermissionSnapshot] {
-        await authorizationSnapshots(for: [.camera, .microphone])
-    }
-
-    func refreshAuthorizationStates() async {}
 }
 
 struct MacSumiSystemPermissionService: SumiSystemPermissionService {

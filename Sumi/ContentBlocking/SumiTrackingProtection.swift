@@ -385,7 +385,7 @@ final class SumiTrackingProtectionDataStore: ObservableObject {
         )
     }
 
-    func downloadedDataSet(from data: Data, etag: String) throws -> SumiTrackerDataSet {
+    func downloadedDataSet(from data: Data) throws -> SumiTrackerDataSet {
         let trackerData = try JSONDecoder().decode(TrackerData.self, from: data)
         return SumiTrackerDataSet(
             trackerData: trackerData
