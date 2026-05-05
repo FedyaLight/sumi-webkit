@@ -12,7 +12,6 @@ let package = Package(
         .library(name: "BrowserServicesKit", targets: ["BrowserServicesKit"]),
         .library(name: "Bookmarks", targets: ["Bookmarks"]),
         .library(name: "Common", targets: ["Common"]),
-        .library(name: "History", targets: ["History"]),
         .library(name: "Navigation", targets: ["Navigation"]),
         .library(name: "Persistence", targets: ["Persistence"]),
         .library(name: "PrivacyConfig", targets: ["PrivacyConfig"]),
@@ -74,19 +73,6 @@ let package = Package(
             name: "ContentBlocking",
             dependencies: [
                 "TrackerRadarKit",
-            ],
-            swiftSettings: [
-                .define("DEBUG", .when(configuration: .debug))
-            ]
-        ),
-        .target(
-            name: "History",
-            dependencies: [
-                "Persistence",
-                "Common"
-            ],
-            resources: [
-                .process("CoreData/BrowsingHistory.xcdatamodeld")
             ],
             swiftSettings: [
                 .define("DEBUG", .when(configuration: .debug))

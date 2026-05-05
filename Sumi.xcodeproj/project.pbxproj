@@ -10,7 +10,6 @@
 		A11DD020B11D000100000001 /* BrowserServicesKit in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000001 /* BrowserServicesKit */; };
 		A11DD020B11D000100000002 /* Bookmarks in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000002 /* Bookmarks */; };
 		A11DD020B11D000100000003 /* Common in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000003 /* Common */; };
-		A11DD020B11D000100000004 /* History in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000004 /* History */; };
 		A11DD020B11D000100000005 /* Navigation in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000005 /* Navigation */; };
 		A11DD020B11D000100000006 /* Persistence in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000006 /* Persistence */; };
 		A11DD020B11D000100000007 /* PrivacyConfig in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000007 /* PrivacyConfig */; };
@@ -156,7 +155,6 @@
 				A11DD020B11D000100000001 /* BrowserServicesKit in Frameworks */,
 				A11DD020B11D000100000002 /* Bookmarks in Frameworks */,
 				A11DD020B11D000100000003 /* Common in Frameworks */,
-				A11DD020B11D000100000004 /* History in Frameworks */,
 				A11DD020B11D000100000005 /* Navigation in Frameworks */,
 				A11DD020B11D000100000006 /* Persistence in Frameworks */,
 				A11DD020B11D000100000007 /* PrivacyConfig in Frameworks */,
@@ -265,7 +263,6 @@
 				A11DD010B11D000100000001 /* BrowserServicesKit */,
 				A11DD010B11D000100000002 /* Bookmarks */,
 				A11DD010B11D000100000003 /* Common */,
-				A11DD010B11D000100000004 /* History */,
 				A11DD010B11D000100000005 /* Navigation */,
 				A11DD010B11D000100000006 /* Persistence */,
 				A11DD010B11D000100000007 /* PrivacyConfig */,
@@ -753,10 +750,6 @@
 		A11DD010B11D000100000003 /* Common */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = Common;
-		};
-		A11DD010B11D000100000004 /* History */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = History;
 		};
 		A11DD010B11D000100000005 /* Navigation */ = {
 			isa = XCSwiftPackageProductDependency;
