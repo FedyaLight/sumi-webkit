@@ -20,13 +20,7 @@ protocol SumiGeolocationProviding: AnyObject {
     func resume() -> SumiGeolocationProviderState
 
     @discardableResult
-    func revoke() -> SumiGeolocationProviderState
-
-    @discardableResult
     func stop(pageId: String?) -> SumiGeolocationProviderState
-
-    @discardableResult
-    func stop() -> SumiGeolocationProviderState
 
     func observeState(
         _ handler: @escaping @MainActor (SumiGeolocationProviderState) -> Void
@@ -178,18 +172,6 @@ final class SumiGeolocationProvider: NSObject, SumiGeolocationProviding {
     }
 
     @discardableResult
-    func revoke() -> SumiGeolocationProviderState {
-        geolocationService.stopUpdatingLocation()
-        allowedPageIds.removeAll()
-        tabIdsByPageId.removeAll()
-        currentState = .revoked
-        if webKitIsUpdating {
-            manager.providerDidFailToDeterminePosition(.providerRevoked)
-        }
-        return currentState
-    }
-
-    @discardableResult
     func stop(pageId: String?) -> SumiGeolocationProviderState {
         if let pageId {
             cancelAllowedRequest(pageId: pageId)
@@ -199,7 +181,7 @@ final class SumiGeolocationProvider: NSObject, SumiGeolocationProviding {
     }
 
     @discardableResult
-    func stop() -> SumiGeolocationProviderState {
+    private func stop() -> SumiGeolocationProviderState {
         geolocationService.stopUpdatingLocation()
         webKitIsUpdating = false
         enableHighAccuracy = false

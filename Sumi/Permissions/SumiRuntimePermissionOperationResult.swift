@@ -17,26 +17,3 @@ enum SumiRuntimePermissionOperationResult: Equatable, Hashable, Sendable {
         }
     }
 }
-
-struct SumiRuntimePermissionBatchResult: Equatable, Sendable {
-    var resultsByPermissionType: [SumiPermissionType: SumiRuntimePermissionOperationResult]
-
-    init(_ resultsByPermissionType: [SumiPermissionType: SumiRuntimePermissionOperationResult] = [:]) {
-        self.resultsByPermissionType = resultsByPermissionType
-    }
-
-    subscript(permissionType: SumiPermissionType) -> SumiRuntimePermissionOperationResult? {
-        resultsByPermissionType[permissionType]
-    }
-
-    var hasFailure: Bool {
-        resultsByPermissionType.values.contains { result in
-            switch result {
-            case .failed, .deniedByRuntime:
-                return true
-            case .applied, .unsupported, .requiresReload, .noOp:
-                return false
-            }
-        }
-    }
-}

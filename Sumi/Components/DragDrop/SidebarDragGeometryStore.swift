@@ -82,13 +82,11 @@ struct SidebarEssentialsLayoutMetrics: Equatable {
     var frame: CGRect
     var dropFrame: CGRect
     var dropSlotFrames: [SidebarEssentialsDropSlotMetrics]
-    var columnCount: Int
     var firstSyntheticRowSlot: Int
     var visibleItemCount: Int
     var visibleRowCount: Int
     var maxDropRowCount: Int
     var itemSize: CGSize
-    var gridSpacing: CGFloat
     var canAcceptDrop: Bool
 
     var dropHitFrame: CGRect {

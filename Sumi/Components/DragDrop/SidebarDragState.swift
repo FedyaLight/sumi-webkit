@@ -643,13 +643,11 @@ final class SidebarDragState: ObservableObject {
             frame: frame,
             dropFrame: dropFrame,
             dropSlotFrames: resolvedDropSlotFrames,
-            columnCount: columnCount,
             firstSyntheticRowSlot: resolvedFirstSyntheticRowSlot,
             visibleItemCount: visibleItemCount ?? itemCount,
             visibleRowCount: resolvedVisibleRowCount,
             maxDropRowCount: resolvedMaxDropRowCount,
             itemSize: itemSize,
-            gridSpacing: gridSpacing,
             canAcceptDrop: canAcceptDrop
         )
     }

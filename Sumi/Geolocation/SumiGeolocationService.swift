@@ -3,7 +3,6 @@ import Foundation
 
 @MainActor
 protocol SumiCoreLocationManaging: AnyObject {
-    var authorizationStatus: CLAuthorizationStatus { get }
     var desiredAccuracy: CLLocationAccuracy { get set }
     func setDelegate(_ delegate: CLLocationManagerDelegate?)
     func startUpdatingLocation()
