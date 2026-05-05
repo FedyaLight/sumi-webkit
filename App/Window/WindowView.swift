@@ -24,7 +24,6 @@ private enum WindowTransientChromeZIndex {
 /// Main window view that orchestrates the browser UI layout
 struct WindowView: View {
     @EnvironmentObject var browserManager: BrowserManager
-    @EnvironmentObject private var glanceManager: GlanceManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(CommandPalette.self) private var commandPalette
@@ -77,9 +76,10 @@ struct WindowView: View {
             }
 
             // Glance overlay for external link previews
-            if glanceManager.isActive || glanceManager.currentSession != nil {
+            if browserManager.glanceManager.isActive || browserManager.glanceManager.currentSession != nil {
                 chromeThemeScope {
                     GlanceOverlayView()
+                        .environmentObject(browserManager.glanceManager)
                         .zIndex(WindowTransientChromeZIndex.glance)
                 }
             }

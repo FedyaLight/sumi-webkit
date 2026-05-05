@@ -12,39 +12,56 @@ final class LastSessionWindowsStore: ObservableObject {
             "\(SumiAppIdentity.runtimeBundleIdentifier).history.lastSessionWindows"
     }
 
+    private struct Archive: Codable {
+        var snapshots: [LastSessionWindowSnapshot]
+        var tabSnapshot: TabSnapshotRepository.Snapshot?
+    }
+
     @Published private(set) var snapshots: [LastSessionWindowSnapshot]
+    private(set) var tabSnapshot: TabSnapshotRepository.Snapshot?
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
-        self.snapshots = Self.loadSnapshots(from: userDefaults)
+        let archive = Self.loadArchive(from: userDefaults)
+        self.snapshots = archive.snapshots
+        self.tabSnapshot = archive.tabSnapshot
     }
 
     var canRestoreLastSession: Bool {
         !snapshots.isEmpty
     }
 
-    func updateSnapshots(_ snapshots: [LastSessionWindowSnapshot]) {
+    func updateSnapshots(
+        _ snapshots: [LastSessionWindowSnapshot],
+        tabSnapshot: TabSnapshotRepository.Snapshot? = nil
+    ) {
         let normalized = snapshots.uniqued(by: \.session)
         self.snapshots = normalized
+        self.tabSnapshot = tabSnapshot
         save()
     }
 
     private let userDefaults: UserDefaults
 
     private func save() {
-        guard let data = try? JSONEncoder().encode(snapshots) else {
+        let archive = Archive(snapshots: snapshots, tabSnapshot: tabSnapshot)
+        guard let data = try? JSONEncoder().encode(archive) else {
             return
         }
         userDefaults.set(data, forKey: Const.defaultsKey)
     }
 
-    private static func loadSnapshots(from userDefaults: UserDefaults) -> [LastSessionWindowSnapshot] {
-        guard let data = userDefaults.data(forKey: Const.defaultsKey),
-              let snapshots = try? JSONDecoder().decode([LastSessionWindowSnapshot].self, from: data)
-        else {
-            return []
+    private static func loadArchive(from userDefaults: UserDefaults) -> Archive {
+        guard let data = userDefaults.data(forKey: Const.defaultsKey) else {
+            return Archive(snapshots: [], tabSnapshot: nil)
         }
-        return snapshots
+        if let archive = try? JSONDecoder().decode(Archive.self, from: data) {
+            return archive
+        }
+        if let snapshots = try? JSONDecoder().decode([LastSessionWindowSnapshot].self, from: data) {
+            return Archive(snapshots: snapshots, tabSnapshot: nil)
+        }
+        return Archive(snapshots: [], tabSnapshot: nil)
     }
 }
 

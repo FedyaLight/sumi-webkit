@@ -330,6 +330,8 @@ struct SumiSettingsTabRootView: View {
             SettingsAppearanceTab()
         case .general:
             SettingsGeneralTab()
+        case .startup:
+            SettingsStartupTab()
         case .performance:
             SettingsPerformanceTab()
         case .privacy:

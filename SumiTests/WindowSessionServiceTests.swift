@@ -55,6 +55,107 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertTrue(delegate.committedThemes.isEmpty)
     }
 
+    func testActiveEssentialShortcutSurvivesPreloadSetupAndMaterializesAfterTabLoad() throws {
+        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let space = Space(id: UUID(), name: "Primary")
+        let profileId = UUID()
+        let pin = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: profileId,
+            spaceId: nil,
+            index: 0,
+            folderId: nil,
+            launchURL: URL(string: "https://essential.example")!,
+            title: "Essential",
+            iconAsset: nil
+        )
+        let staleLiveTabId = UUID()
+        let sessionKey = try seedWindowSession(
+            currentSpaceId: space.id,
+            currentTabId: staleLiveTabId,
+            activeShortcutPinId: pin.id,
+            activeShortcutPinRole: .essential
+        )
+        defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
+
+        let service = WindowSessionService(lastWindowSessionKey: sessionKey)
+        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        let windowRegistry = WindowRegistry()
+        let windowState = BrowserWindowState()
+        delegate.windowRegistry = windowRegistry
+        windowRegistry.register(windowState)
+
+        service.setupWindowState(windowState, delegate: delegate)
+
+        XCTAssertEqual(windowState.currentTabId, staleLiveTabId)
+        XCTAssertEqual(windowState.currentShortcutPinId, pin.id)
+        XCTAssertEqual(windowState.currentShortcutPinRole, .essential)
+
+        tabManager.spaces = [space]
+        tabManager.currentSpace = space
+        tabManager.setPinnedTabs([pin], for: profileId)
+        tabManager.markInitialDataLoadFinished()
+
+        service.handleTabManagerDataLoaded(delegate: delegate)
+
+        let liveTab = try XCTUnwrap(tabManager.shortcutLiveTab(for: pin.id, in: windowState.id))
+        XCTAssertEqual(windowState.currentTabId, liveTab.id)
+        XCTAssertEqual(windowState.currentShortcutPinId, pin.id)
+        XCTAssertEqual(windowState.currentShortcutPinRole, .essential)
+        XCTAssertFalse(windowState.isShowingEmptyState)
+    }
+
+    func testRememberedSpacePinnedShortcutSurvivesPreloadSetupAndMaterializesAfterTabLoad() throws {
+        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let space = Space(id: UUID(), name: "Primary")
+        let pin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            profileId: nil,
+            spaceId: space.id,
+            index: 0,
+            folderId: nil,
+            launchURL: URL(string: "https://space.example")!,
+            title: "Space Pin",
+            iconAsset: nil
+        )
+        let sessionKey = try seedWindowSession(
+            currentSpaceId: space.id,
+            activeShortcutsBySpace: [
+                SpaceShortcutSelectionSnapshot(spaceId: space.id, shortcutPinId: pin.id)
+            ]
+        )
+        defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
+
+        let service = WindowSessionService(lastWindowSessionKey: sessionKey)
+        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        let windowRegistry = WindowRegistry()
+        let windowState = BrowserWindowState()
+        delegate.windowRegistry = windowRegistry
+        windowRegistry.register(windowState)
+
+        service.setupWindowState(windowState, delegate: delegate)
+
+        XCTAssertNil(windowState.currentShortcutPinId)
+        XCTAssertEqual(windowState.selectedShortcutPinForSpace[space.id], pin.id)
+
+        tabManager.spaces = [space]
+        tabManager.currentSpace = space
+        tabManager.setSpacePinnedShortcuts([pin], for: space.id)
+        tabManager.markInitialDataLoadFinished()
+
+        service.handleTabManagerDataLoaded(delegate: delegate)
+
+        let liveTab = try XCTUnwrap(tabManager.shortcutLiveTab(for: pin.id, in: windowState.id))
+        XCTAssertEqual(windowState.currentTabId, liveTab.id)
+        XCTAssertEqual(windowState.currentShortcutPinId, pin.id)
+        XCTAssertEqual(windowState.currentShortcutPinRole, .spacePinned)
+        XCTAssertEqual(windowState.currentSpaceId, space.id)
+        XCTAssertEqual(windowState.selectedShortcutPinForSpace[space.id], pin.id)
+        XCTAssertFalse(windowState.isShowingEmptyState)
+    }
+
     func testSetupWindowStateFallsBackToDefaultWhenLoadedSpaceIsMissing() async throws {
         let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
         await tabManager.loadFromStoreAwaitingResult()
@@ -101,18 +202,24 @@ final class WindowSessionServiceTests: XCTestCase {
         )
     }
 
-    private func seedWindowSession(currentSpaceId: UUID) throws -> String {
+    private func seedWindowSession(
+        currentSpaceId: UUID,
+        currentTabId: UUID? = nil,
+        activeShortcutPinId: UUID? = nil,
+        activeShortcutPinRole: ShortcutPinRole? = nil,
+        activeShortcutsBySpace: [SpaceShortcutSelectionSnapshot] = []
+    ) throws -> String {
         let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
         let snapshot = WindowSessionSnapshot(
-            currentTabId: nil,
+            currentTabId: currentTabId,
             currentSpaceId: currentSpaceId,
             currentProfileId: nil,
-            activeShortcutPinId: nil,
-            activeShortcutPinRole: nil,
+            activeShortcutPinId: activeShortcutPinId,
+            activeShortcutPinRole: activeShortcutPinRole,
             isShowingEmptyState: false,
             commandPaletteReason: nil,
             activeTabsBySpace: [],
-            activeShortcutsBySpace: [],
+            activeShortcutsBySpace: activeShortcutsBySpace,
             sidebarWidth: Double(BrowserWindowState.sidebarDefaultWidth),
             savedSidebarWidth: Double(BrowserWindowState.sidebarDefaultWidth),
             sidebarContentWidth: Double(BrowserWindowState.sidebarContentWidth(

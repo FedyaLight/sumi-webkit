@@ -16,8 +16,7 @@ extension BrowserManager {
 
     var canOfferStartupLastSessionRestoreShortcut: Bool {
         !didConsumeStartupLastSessionRestoreOffer
-            && startupLastSessionWindowSnapshots.count > 1
-            && currentRegularWindowSnapshots(excludingWindowID: nil).count <= 1
+            && !startupLastSessionWindowSnapshots.isEmpty
     }
 
     var canRestoreAnyLastSession: Bool {
@@ -231,9 +230,13 @@ extension BrowserManager {
     }
 
     func reopenAllWindowsFromLastSession() {
-        let sourceSnapshots = canOfferStartupLastSessionRestoreShortcut
+        let useStartupArchive = canOfferStartupLastSessionRestoreShortcut
+        let sourceSnapshots = useStartupArchive
             ? startupLastSessionWindowSnapshots
             : lastSessionWindowsStore.snapshots
+        let sourceTabSnapshot = useStartupArchive
+            ? (startupLastSessionTabSnapshot ?? lastSessionWindowsStore.tabSnapshot)
+            : lastSessionWindowsStore.tabSnapshot
         let existingSessions = Set(currentRegularWindowSnapshots(excludingWindowID: nil).map(\.session))
         let snapshotsToRestore = sourceSnapshots.filter { !existingSessions.contains($0.session) }
         guard !snapshotsToRestore.isEmpty else { return }
@@ -241,6 +244,9 @@ extension BrowserManager {
         didConsumeStartupLastSessionRestoreOffer = true
         Task { @MainActor [weak self] in
             guard let self else { return }
+            if let sourceTabSnapshot {
+                self.tabManager.mergeSnapshotForLastSessionRestore(sourceTabSnapshot)
+            }
             for snapshot in snapshotsToRestore {
                 await self.reopenWindow(from: snapshot.session)
             }
@@ -286,6 +292,16 @@ extension BrowserManager {
     }
 
     func refreshLastSessionWindowsStore(excludingWindowID: UUID?) {
+        if canOfferStartupLastSessionRestoreShortcut,
+           let startupLastSessionTabSnapshot
+        {
+            lastSessionWindowsStore.updateSnapshots(
+                startupLastSessionWindowSnapshots,
+                tabSnapshot: startupLastSessionTabSnapshot
+            )
+            return
+        }
+
         var snapshots = currentRegularWindowSnapshots(excludingWindowID: excludingWindowID)
         if snapshots.isEmpty, excludingWindowID != nil {
             snapshots = currentRegularWindowSnapshots(excludingWindowID: nil)
@@ -318,7 +334,7 @@ extension BrowserManager {
         }
     }
 
-    private func reopenWindow(from snapshot: WindowSessionSnapshot) async {
+    func reopenWindow(from snapshot: WindowSessionSnapshot) async {
         let existingWindowIDs = Set(windowRegistry?.windows.keys.map { $0 } ?? [])
         createNewWindow()
         guard let targetWindow = await windowRegistry?.awaitNextRegisteredWindow(
@@ -336,7 +352,7 @@ extension BrowserManager {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    private func currentRegularWindowSnapshots(
+    func currentRegularWindowSnapshots(
         excludingWindowID: UUID?
     ) -> [LastSessionWindowSnapshot] {
         let regularWindows = (windowRegistry?.allWindows ?? [])

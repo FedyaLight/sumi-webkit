@@ -40,6 +40,18 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
                     "site search", "command palette"
                 ]
             )
+        case .startup:
+            return SettingsPaneDescriptor(
+                tab: tab,
+                title: "Startup",
+                subtitle: "Choose what Sumi opens when a new app session starts.",
+                icon: tab.icon,
+                group: .browser,
+                keywords: [
+                    "startup", "launch", "restore", "previous session",
+                    "pinned", "essential", "launcher", "homepage", "start page"
+                ]
+            )
         case .appearance:
             return SettingsPaneDescriptor(
                 tab: tab,
@@ -225,6 +237,7 @@ enum SumiExtensionsSettingsSubPane: String, CaseIterable, Hashable {
 
 enum SettingsTabs: Hashable, CaseIterable {
     case general
+    case startup
     case appearance
     case performance
     case privacy
@@ -274,6 +287,7 @@ enum SettingsTabs: Hashable, CaseIterable {
     var icon: String {
         switch self {
         case .general: return "gearshape"
+        case .startup: return "power"
         case .appearance: return "paintpalette"
         case .performance: return "speedometer"
         case .privacy: return "lock.shield"
@@ -291,6 +305,7 @@ enum SettingsTabs: Hashable, CaseIterable {
         switch self {
         case .appearance: return "appearance"
         case .general: return "general"
+        case .startup: return "startup"
         case .performance: return "performance"
         case .privacy: return "privacy"
         case .profiles: return "profiles"
@@ -306,6 +321,7 @@ enum SettingsTabs: Hashable, CaseIterable {
         switch paneQueryValue.lowercased() {
         case "appearance": self = .appearance
         case "general": self = .general
+        case "startup": self = .startup
         case "performance": self = .performance
         case "privacy": self = .privacy
         case "profiles": self = .profiles
