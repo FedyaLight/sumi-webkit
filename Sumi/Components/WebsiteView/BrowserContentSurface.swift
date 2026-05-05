@@ -1,5 +1,14 @@
 import SwiftUI
 
+enum BrowserContentViewportVisuals {
+    static let shadowOpacity: Double = 0.3
+    static let shadowRadius: CGFloat = 4
+    static let shadowX: CGFloat = 0
+    static let shadowY: CGFloat = 0
+    static let cornerCutoutShadowOpacityMultiplier: CGFloat = 0.45
+    static let cornerCutoutShadowRadiusMultiplier: CGFloat = 1.35
+}
+
 struct BrowserContentSurfaceModifier: ViewModifier {
     let geometry: BrowserChromeGeometry
     let background: Color
@@ -13,7 +22,7 @@ struct BrowserContentSurfaceModifier: ViewModifier {
                     style: .continuous
                 )
             )
-            .shadow(color: Color.black.opacity(0.3), radius: 4, x: 0, y: 0)
+            .browserContentViewportShadow()
     }
 }
 
@@ -27,6 +36,15 @@ extension View {
                 geometry: geometry,
                 background: background
             )
+        )
+    }
+
+    func browserContentViewportShadow() -> some View {
+        shadow(
+            color: Color.black.opacity(BrowserContentViewportVisuals.shadowOpacity),
+            radius: BrowserContentViewportVisuals.shadowRadius,
+            x: BrowserContentViewportVisuals.shadowX,
+            y: BrowserContentViewportVisuals.shadowY
         )
     }
 }
