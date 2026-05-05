@@ -456,8 +456,17 @@ private enum FaviconPayloadValidator {
         guard data.count > 8 else { return false }
 
         let prefix = data.prefix(32)
+        let textPrefix = data.prefix(512)
 
-        if isHTML(prefix) || isXML(prefix) || isSVG(prefix) || isPlainText(prefix) {
+        if isHTML(textPrefix) || isPlainText(textPrefix) {
+            return false
+        }
+
+        if isSVG(textPrefix) {
+            return true
+        }
+
+        if isXML(textPrefix) {
             return false
         }
 
@@ -485,11 +494,12 @@ private enum FaviconPayloadValidator {
     }
 
     private static func isHTML(_ prefix: Data) -> Bool {
-        lowercasedASCII(prefix).hasPrefix("<!doctype") || lowercasedASCII(prefix).hasPrefix("<html")
+        let ascii = lowercasedASCII(prefix).trimmingCharacters(in: .whitespacesAndNewlines)
+        return ascii.hasPrefix("<!doctype") || ascii.hasPrefix("<html")
     }
 
     private static func isXML(_ prefix: Data) -> Bool {
-        lowercasedASCII(prefix).hasPrefix("<?xml")
+        lowercasedASCII(prefix).trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<?xml")
     }
 
     private static func isSVG(_ prefix: Data) -> Bool {
