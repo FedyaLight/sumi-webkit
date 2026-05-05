@@ -1218,7 +1218,8 @@ class BrowserManager: ObservableObject {
 
     /// Get the current tab for a specific window
     func currentTab(for windowState: BrowserWindowState) -> Tab? {
-        shellSelectionService.currentTab(
+        guard !windowState.isAwaitingInitialSessionResolution else { return nil }
+        return shellSelectionService.currentTab(
             for: windowState,
             tabStore: tabManager.runtimeStore
         )

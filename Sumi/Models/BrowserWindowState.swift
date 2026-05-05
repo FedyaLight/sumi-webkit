@@ -73,6 +73,9 @@ class BrowserWindowState {
     /// Whether this window is intentionally showing an empty page state instead of a live tab
     var isShowingEmptyState: Bool = false
 
+    /// Suppresses global selection fallbacks until this window's persisted startup selection is resolved.
+    var isAwaitingInitialSessionResolution: Bool
+
     /// Why the floating command palette / URL bar is currently being presented.
     var commandPalettePresentationReason: CommandPalettePresentationReason = .none
 
@@ -180,8 +183,13 @@ class BrowserWindowState {
     /// Whether the download warning has been shown in this incognito session
     var hasShownDownloadWarning: Bool = false
     
-    init(id: UUID = UUID(), initialWorkspaceTheme: WorkspaceTheme? = nil) {
+    init(
+        id: UUID = UUID(),
+        initialWorkspaceTheme: WorkspaceTheme? = nil,
+        awaitsInitialSessionResolution: Bool = false
+    ) {
         self.id = id
+        self.isAwaitingInitialSessionResolution = awaitsInitialSessionResolution
         var initialThemeState = WindowThemeState()
         if let initialWorkspaceTheme {
             initialThemeState.restore(initialWorkspaceTheme)

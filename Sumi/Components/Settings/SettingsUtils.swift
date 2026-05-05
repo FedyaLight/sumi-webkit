@@ -238,8 +238,8 @@ enum SumiExtensionsSettingsSubPane: String, CaseIterable, Hashable {
 
 enum SettingsTabs: Hashable, CaseIterable {
     case general
-    case appearance
     case startup
+    case appearance
     case performance
     case privacy
     case profiles

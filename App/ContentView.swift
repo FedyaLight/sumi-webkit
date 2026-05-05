@@ -22,7 +22,10 @@ struct ContentView: View {
     ) {
         self.providedWindowState = windowState
         _defaultWindowState = State(
-            initialValue: BrowserWindowState(initialWorkspaceTheme: initialWorkspaceTheme)
+            initialValue: BrowserWindowState(
+                initialWorkspaceTheme: initialWorkspaceTheme,
+                awaitsInitialSessionResolution: true
+            )
         )
     }
     

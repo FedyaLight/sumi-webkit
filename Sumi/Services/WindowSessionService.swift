@@ -170,6 +170,7 @@ final class WindowSessionService {
                 source: "tabManagerDataLoaded"
             )
 
+            windowState.isAwaitingInitialSessionResolution = false
             windowState.refreshCompositor()
             persistWindowSession(for: windowState, delegate: delegate)
         }
@@ -290,6 +291,7 @@ final class WindowSessionService {
             source: source
         )
 
+        windowState.isAwaitingInitialSessionResolution = false
         RuntimeDiagnostics.debug(
             "Setup window state \(windowState.id.uuidString) currentTab=\(windowState.currentTabId?.uuidString ?? "none") currentSpace=\(windowState.currentSpaceId?.uuidString ?? "none")",
             category: "WindowSessionService"
