@@ -10,6 +10,38 @@ extension NSPasteboard.PasteboardType {
     static let sumiTabItem = NSPasteboard.PasteboardType("com.sumi.tab-drag-item")
 }
 
+extension NSPasteboard {
+    var sumiDroppedURL: URL? {
+        if let urlString = string(forType: .URL) ?? string(forType: .fileURL),
+           let url = URL(string: urlString) {
+            return url
+        }
+
+        if let string = string(forType: .string) {
+            if let url = URL(string: string), url.scheme != nil {
+                return url
+            }
+            if string.hasPrefix("/") {
+                return URL(fileURLWithPath: string)
+            }
+        }
+
+        let fileURLs = readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL]
+        if let fileURL = fileURLs?.first {
+            return fileURL
+        }
+
+        let urls = readObjects(
+            forClasses: [NSURL.self],
+            options: nil
+        ) as? [URL]
+        return urls?.first
+    }
+}
+
 // MARK: - Drop Zone Identity
 
 enum DropZoneID: Hashable {

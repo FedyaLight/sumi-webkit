@@ -249,6 +249,92 @@ extension BrowserManager {
         createNewTab(in: windowState, url: url.absoluteString)
     }
 
+    @discardableResult
+    func openDroppedURL(
+        _ url: URL,
+        in windowState: BrowserWindowState,
+        at slot: DropZoneSlot
+    ) -> Bool {
+        guard slot != .empty else { return false }
+
+        if windowState.isIncognito {
+            _ = openNewTab(
+                url: url.absoluteString,
+                context: .foreground(windowState: windowState)
+            )
+            return true
+        }
+
+        switch slot {
+        case .spaceRegular(let spaceId, let index):
+            guard tabManager.spaces.contains(where: { $0.id == spaceId }) else { return false }
+            let tab = openNewTab(
+                url: url.absoluteString,
+                context: .foreground(windowState: windowState, preferredSpaceId: spaceId)
+            )
+            _ = tabManager.reorderRegularTabs(tab, in: spaceId, to: index)
+            return true
+
+        case .spacePinned(let spaceId, let index):
+            guard tabManager.spaces.contains(where: { $0.id == spaceId }) else { return false }
+            let tab = openNewTab(
+                url: url.absoluteString,
+                context: .foreground(windowState: windowState, preferredSpaceId: spaceId)
+            )
+            return tabManager.convertTabToShortcutPin(
+                tab,
+                role: .spacePinned,
+                profileId: nil,
+                spaceId: spaceId,
+                folderId: nil,
+                at: index
+            ) != nil
+
+        case .folder(let folderId, let index):
+            guard let spaceId = tabManager.folderSpaceId(for: folderId) else { return false }
+            let tab = openNewTab(
+                url: url.absoluteString,
+                context: .foreground(windowState: windowState, preferredSpaceId: spaceId)
+            )
+            return tabManager.convertTabToShortcutPin(
+                tab,
+                role: .spacePinned,
+                profileId: nil,
+                spaceId: spaceId,
+                folderId: folderId,
+                at: index,
+                openTargetFolder: false
+            ) != nil
+
+        case .essentials(let index):
+            let insertion = tabManager.resolveEssentialsInsertion(
+                using: TabManager.EssentialsInsertionContext(
+                    target: TabManager.EssentialsTargetContext(windowState: windowState),
+                    targetIndex: index
+                )
+            )
+            guard let insertion else { return false }
+            let tab = openNewTab(
+                url: url.absoluteString,
+                context: .foreground(
+                    windowState: windowState,
+                    preferredSpaceId: windowState.currentSpaceId
+                )
+            )
+            return tabManager.convertTabToShortcutPin(
+                tab,
+                role: .essential,
+                profileId: insertion.profileId,
+                spaceId: nil,
+                folderId: nil,
+                at: insertion.index
+            ) != nil
+
+        case .empty:
+            return false
+        }
+    }
+
     private func showWebInspectorAlert() {
         let alert = NSAlert()
         alert.messageText = "Open Web Inspector"

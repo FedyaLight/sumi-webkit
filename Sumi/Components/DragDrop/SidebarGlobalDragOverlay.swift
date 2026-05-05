@@ -49,13 +49,25 @@ class SidebarDragNSView: NSView {
                 state.beginExternalDragSession(itemId: item.tabId)
             }
         } else if !state.isInternalDragSession {
+            guard sender.draggingPasteboard.sumiDroppedURL != nil else {
+                state.resetInteractionState()
+                return []
+            }
             state.beginExternalDragSession(itemId: nil)
         }
-        return updateDragSlot(sender: sender) ? .move : []
+        return updateDragSlot(sender: sender)
+            ? dragOperation(for: sender.draggingPasteboard)
+            : []
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        updateDragSlot(sender: sender) ? .move : []
+        guard SumiDragItem.fromPasteboard(sender.draggingPasteboard) != nil
+                || sender.draggingPasteboard.sumiDroppedURL != nil else {
+            return []
+        }
+        return updateDragSlot(sender: sender)
+            ? dragOperation(for: sender.draggingPasteboard)
+            : []
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
@@ -100,9 +112,20 @@ class SidebarDragNSView: NSView {
             return accepted
         }
 
-        // Add additional drag payload extraction for raw URLs dropped into sidebar here
+        if let droppedURL = sender.draggingPasteboard.sumiDroppedURL,
+           let windowState {
+            return browserManager.openDroppedURL(
+                droppedURL,
+                in: windowState,
+                at: resolution.slot
+            )
+        }
 
         return false
+    }
+
+    private func dragOperation(for pasteboard: NSPasteboard) -> NSDragOperation {
+        SumiDragItem.fromPasteboard(pasteboard) == nil ? .copy : .move
     }
 
     private func updateDragSlot(sender: NSDraggingInfo) -> Bool {

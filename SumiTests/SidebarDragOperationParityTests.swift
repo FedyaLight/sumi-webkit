@@ -4656,6 +4656,144 @@ private extension TabDragManager.DragContainer {
 
 @MainActor
 final class SidebarDragOperationParityTests: XCTestCase {
+    func testDroppedFileURLPasteboardStringResolvesToFileURL() {
+        let fileURL = URL(fileURLWithPath: "/tmp/sidebar-drop-page.html")
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("sumi.sidebar-drop.file-url.\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        pasteboard.setString(fileURL.absoluteString, forType: .fileURL)
+
+        XCTAssertEqual(pasteboard.sumiDroppedURL, fileURL)
+    }
+
+    func testDroppedNSURLObjectResolvesToFileURL() {
+        let fileURL = URL(fileURLWithPath: "/tmp/sidebar-drop-object.html")
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("sumi.sidebar-drop.nsurl.\(UUID().uuidString)"))
+        pasteboard.clearContents()
+
+        XCTAssertTrue(pasteboard.writeObjects([fileURL as NSURL]))
+
+        XCTAssertEqual(pasteboard.sumiDroppedURL, fileURL)
+    }
+
+    func testDroppedFileURLIntoRegularSlotCreatesSelectedTabAtRequestedPosition() {
+        let harness = makeDropHarness()
+        let existing = harness.browserManager.tabManager.createNewTab(
+            url: "https://example.com/existing",
+            in: harness.space,
+            activate: false
+        )
+        let fileURL = URL(fileURLWithPath: "/tmp/sidebar-drop-regular.html")
+
+        let accepted = harness.browserManager.openDroppedURL(
+            fileURL,
+            in: harness.windowState,
+            at: .spaceRegular(spaceId: harness.space.id, slot: 0)
+        )
+
+        let tabs = harness.browserManager.tabManager.tabsBySpace[harness.space.id] ?? []
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(tabs.map(\.url), [fileURL, existing.url])
+        XCTAssertEqual(harness.windowState.currentTabId, tabs.first?.id)
+    }
+
+    func testDroppedURLIntoSpacePinnedSlotCreatesLiveLauncherAtRequestedPosition() {
+        let harness = makeDropHarness()
+        let existingPin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: harness.space.id,
+            index: 0,
+            launchURL: URL(string: "https://example.com/existing")!,
+            title: "Existing"
+        )
+        harness.browserManager.tabManager.setSpacePinnedShortcuts([existingPin], for: harness.space.id)
+        let droppedURL = URL(string: "https://example.com/pinned")!
+
+        let accepted = harness.browserManager.openDroppedURL(
+            droppedURL,
+            in: harness.windowState,
+            at: .spacePinned(spaceId: harness.space.id, slot: 0)
+        )
+
+        let pins = harness.browserManager.tabManager.spacePinnedPins(for: harness.space.id)
+        let droppedPin = pins.first
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(pins.map(\.launchURL), [droppedURL, existingPin.launchURL])
+        XCTAssertEqual(harness.windowState.currentShortcutPinId, droppedPin?.id)
+        XCTAssertEqual(
+            droppedPin.flatMap { harness.browserManager.tabManager.shortcutLiveTab(for: $0.id, in: harness.windowState.id) }?.url,
+            droppedURL
+        )
+    }
+
+    func testDroppedURLIntoFolderSlotCreatesFolderLauncher() {
+        let harness = makeDropHarness()
+        let folder = harness.browserManager.tabManager.createFolder(for: harness.space.id, name: "Folder")
+        folder.isOpen = false
+        let droppedURL = URL(string: "https://example.com/folder")!
+
+        let accepted = harness.browserManager.openDroppedURL(
+            droppedURL,
+            in: harness.windowState,
+            at: .folder(folderId: folder.id, slot: 0)
+        )
+
+        let pins = harness.browserManager.tabManager.folderPinnedPins(for: folder.id, in: harness.space.id)
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(pins.map(\.launchURL), [droppedURL])
+        XCTAssertFalse(folder.isOpen)
+    }
+
+    func testDroppedURLIntoEssentialsSlotCreatesLiveEssential() {
+        let harness = makeDropHarness()
+        let existingPin = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: harness.profile.id,
+            index: 0,
+            launchURL: URL(string: "https://example.com/existing")!,
+            title: "Existing"
+        )
+        harness.browserManager.tabManager.setPinnedTabs([existingPin], for: harness.profile.id)
+        let droppedURL = URL(string: "https://example.com/essential")!
+
+        let accepted = harness.browserManager.openDroppedURL(
+            droppedURL,
+            in: harness.windowState,
+            at: .essentials(slot: 0)
+        )
+
+        let pins = harness.browserManager.tabManager.essentialPins(for: harness.profile.id)
+        let droppedPin = pins.first
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(pins.map(\.launchURL), [droppedURL, existingPin.launchURL])
+        XCTAssertEqual(harness.windowState.currentShortcutPinId, droppedPin?.id)
+        XCTAssertEqual(
+            droppedPin.flatMap { harness.browserManager.tabManager.shortcutLiveTab(for: $0.id, in: harness.windowState.id) }?.url,
+            droppedURL
+        )
+    }
+
+    func testDroppedURLInIncognitoCreatesOnlyEphemeralTab() {
+        let harness = makeDropHarness()
+        harness.windowState.isIncognito = true
+        harness.windowState.ephemeralProfile = harness.profile
+        harness.windowState.currentProfileId = harness.profile.id
+        harness.windowState.ephemeralSpaces = [harness.space]
+        let droppedURL = URL(string: "https://example.com/private")!
+
+        let accepted = harness.browserManager.openDroppedURL(
+            droppedURL,
+            in: harness.windowState,
+            at: .spacePinned(spaceId: harness.space.id, slot: 0)
+        )
+
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(harness.windowState.ephemeralTabs.map(\.url), [droppedURL])
+        XCTAssertTrue(harness.browserManager.tabManager.spacePinnedPins(for: harness.space.id).isEmpty)
+        XCTAssertEqual(harness.windowState.currentTabId, harness.windowState.ephemeralTabs.first?.id)
+    }
+
     func testRegularToFolderCreatesFolderChildLauncherAndKeepsClosedFolderClosed() throws {
         let tabManager = try makeInMemoryTabManager()
         let space = tabManager.createSpace(name: "Workspace")
@@ -5308,6 +5446,35 @@ final class SidebarDragOperationParityTests: XCTestCase {
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
         return TabManager(context: container.mainContext, loadPersistedState: false)
+    }
+
+    private func makeDropHarness() -> (
+        browserManager: BrowserManager,
+        windowRegistry: WindowRegistry,
+        windowState: BrowserWindowState,
+        profile: Profile,
+        space: Space
+    ) {
+        let browserManager = BrowserManager()
+        let windowRegistry = WindowRegistry()
+        let profile = Profile(name: "Primary")
+        let space = Space(name: "Primary", profileId: profile.id)
+        let windowState = BrowserWindowState()
+
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+        browserManager.windowRegistry = windowRegistry
+        browserManager.tabManager.spaces = [space]
+        browserManager.tabManager.currentSpace = space
+
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentSpaceId = space.id
+        windowState.currentProfileId = profile.id
+
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+
+        return (browserManager, windowRegistry, windowState, profile, space)
     }
 
     private static var repoRoot: URL {
