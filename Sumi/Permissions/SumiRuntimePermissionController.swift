@@ -147,7 +147,7 @@ final class SumiRuntimePermissionController: SumiRuntimePermissionControlling {
             SumiRuntimePermissionReloadRequirement(
                 kind: .rebuild,
                 permissionType: .autoplay,
-                reason: "wkwebview-autoplay-policy-is-configuration-only",
+                reason: "wkwebpagepreferences-autoplay-policy-requires-navigation-reload",
                 currentAutoplayState: currentState,
                 requestedAutoplayState: requestedState
             )

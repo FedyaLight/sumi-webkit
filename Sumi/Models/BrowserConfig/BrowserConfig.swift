@@ -233,6 +233,8 @@ class BrowserConfiguration {
         _ policy: SumiAutoplayPolicy,
         to configuration: WKWebViewConfiguration
     ) {
+        // Fallback only. Normal tabs enforce autoplay through per-navigation
+        // WKWebpagePreferences in SumiAutoplayPolicyNavigationResponder.
         configuration.mediaTypesRequiringUserActionForPlayback =
             policy.mediaTypesRequiringUserActionForPlayback
     }

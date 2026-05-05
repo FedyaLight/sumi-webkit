@@ -413,7 +413,7 @@ final class SumiPermissionEndToEndFlowTests: XCTestCase {
         XCTAssertTrue(storedAllow.isAllowed)
     }
 
-    func testAutoplayCanonicalSettingFeedsBrowserConfigAndMarksActivePageReloadRequired() async throws {
+    func testAutoplayCanonicalSettingFeedsFallbackConfigAndMarksActivePageReloadRequired() async throws {
         let container = try sumiPermissionIntegrationModelContainer()
         let store = SwiftDataPermissionStore(container: container)
         let adapter = SumiAutoplayPolicyStoreAdapter(modelContainer: container, persistentStore: store)

@@ -1,9 +1,10 @@
 import AppKit
 import Common
-import Navigation
+import SwiftData
 import WebKit
 import XCTest
 
+@testable import Navigation
 @testable import Sumi
 
 @MainActor
@@ -178,6 +179,132 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertTrue(responderSource.contains("return .cancel"))
         XCTAssertFalse(responderSource.contains("NSWorkspace.shared.open"))
         XCTAssertFalse(responderSource.contains("workspace.open"))
+    }
+
+    func testAutoplayPolicyResponderMapsStoredPoliciesToWebPagePreferences() async throws {
+        let harness = try makeAutoplayHarness()
+        let profile = makeProfile("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        let url = URL(string: "https://video.example/watch")!
+        let cases: [(SumiAutoplayPolicy, _WKWebsiteAutoplayPolicy)] = [
+            (.allowAll, .allow),
+            (.blockAudible, .allowWithoutSound),
+            (.blockAll, .deny),
+        ]
+
+        for (policy, expectedPolicy) in cases {
+            try await harness.adapter.setPolicy(policy, for: url, profile: profile)
+            let responder = makeAutoplayResponder(
+                store: harness.adapter,
+                profile: profile
+            )
+            var preferences = NavigationPreferences.default
+
+            let decision = await responder.decidePolicy(
+                for: navigationAction(
+                    url: url,
+                    navigationType: .linkActivated(isMiddleClick: false)
+                ),
+                preferences: &preferences
+            )
+
+            XCTAssertNil(decision)
+            XCTAssertTrue(preferences.mustApplyAutoplayPolicy)
+            XCTAssertEqual(preferences.autoplayPolicy, expectedPolicy)
+        }
+    }
+
+    func testAutoplayPolicyResponderAppliesDefaultPolicyWhenNoSiteDecisionExists() async throws {
+        let harness = try makeAutoplayHarness()
+        let profile = makeProfile("bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee")
+        let responder = makeAutoplayResponder(
+            store: harness.adapter,
+            profile: profile
+        )
+        var preferences = NavigationPreferences.default
+
+        let decision = await responder.decidePolicy(
+            for: navigationAction(
+                url: URL(string: "https://video.example/watch")!,
+                navigationType: .linkActivated(isMiddleClick: false)
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertNil(decision)
+        XCTAssertTrue(preferences.mustApplyAutoplayPolicy)
+        XCTAssertEqual(preferences.autoplayPolicy, .allow)
+    }
+
+    func testAutoplayPolicyResponderIgnoresNonMainFrameAndNonWebNavigations() async throws {
+        let harness = try makeAutoplayHarness()
+        let profile = makeProfile("cccccccc-bbbb-cccc-dddd-eeeeeeeeeeee")
+        let responder = makeAutoplayResponder(
+            store: harness.adapter,
+            profile: profile
+        )
+        var nonMainPreferences = NavigationPreferences.default
+        var filePreferences = NavigationPreferences.default
+
+        _ = await responder.decidePolicy(
+            for: navigationAction(
+                url: URL(string: "https://video.example/embed")!,
+                navigationType: .other,
+                isMainFrame: false
+            ),
+            preferences: &nonMainPreferences
+        )
+        _ = await responder.decidePolicy(
+            for: navigationAction(
+                url: URL(fileURLWithPath: "/tmp/autoplay.html"),
+                navigationType: .other
+            ),
+            preferences: &filePreferences
+        )
+
+        XCTAssertFalse(nonMainPreferences.mustApplyAutoplayPolicy)
+        XCTAssertNil(nonMainPreferences.autoplayPolicy)
+        XCTAssertFalse(filePreferences.mustApplyAutoplayPolicy)
+        XCTAssertNil(filePreferences.autoplayPolicy)
+    }
+
+    func testAutoplayPolicyResponderKeepsProfileDecisionsIsolated() async throws {
+        let harness = try makeAutoplayHarness()
+        let profileA = makeProfile("dddddddd-bbbb-cccc-dddd-eeeeeeeeeeee")
+        let profileB = makeProfile("eeeeeeee-bbbb-cccc-dddd-eeeeeeeeeeee")
+        let url = URL(string: "https://video.example/watch")!
+        try await harness.adapter.setPolicy(.blockAll, for: url, profile: profileA)
+        let responder = makeAutoplayResponder(
+            store: harness.adapter,
+            profile: profileB
+        )
+        var preferences = NavigationPreferences.default
+
+        _ = await responder.decidePolicy(
+            for: navigationAction(
+                url: url,
+                navigationType: .linkActivated(isMiddleClick: false)
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertTrue(preferences.mustApplyAutoplayPolicy)
+        XCTAssertEqual(preferences.autoplayPolicy, .allow)
+    }
+
+    func testAutoplayPolicyResponderIsRegisteredBeforeLifecycleResponder() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: repoRoot.appendingPathComponent(
+                "Sumi/Models/Tab/Navigation/SumiTabNavigationDelegateBundle.swift"
+            ),
+            encoding: .utf8
+        )
+
+        let autoplayIndex = try XCTUnwrap(source.range(of: ".strong(autoplayPolicy)")?.lowerBound)
+        let lifecycleIndex = try XCTUnwrap(source.range(of: ".strong(lifecycle)")?.lowerBound)
+        XCTAssertLessThan(autoplayIndex, lifecycleIndex)
     }
 
     func testDownloadResponderRequestsDownloadForDownloadNavigationAction() async {
@@ -405,7 +532,8 @@ final class SumiNavigationResponderTests: XCTestCase {
         webView: WKWebView? = nil,
         sourceURL: URL? = nil,
         sourceSecurityOrigin: SecurityOrigin? = nil,
-        isUserInitiated: Bool = true
+        isUserInitiated: Bool = true,
+        isMainFrame: Bool = true
     ) -> NavigationAction {
         let webView = webView ?? WKWebView(frame: .zero)
         let frameURL = sourceURL ?? url
@@ -417,7 +545,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         let frame = FrameInfo(
             webView: webView,
             handle: FrameHandle(rawValue: UInt64(1))!,
-            isMainFrame: true,
+            isMainFrame: isMainFrame,
             url: frameURL,
             securityOrigin: securityOrigin
         )
@@ -432,6 +560,39 @@ final class SumiNavigationResponderTests: XCTestCase {
             shouldDownload: shouldDownload,
             mainFrameNavigation: nil
         )
+    }
+
+    private func makeAutoplayHarness() throws -> (
+        container: ModelContainer,
+        adapter: SumiAutoplayPolicyStoreAdapter
+    ) {
+        let container = try ModelContainer(
+            for: Schema([PermissionDecisionEntity.self]),
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        let store = SwiftDataPermissionStore(container: container)
+        return (
+            container,
+            SumiAutoplayPolicyStoreAdapter(
+                modelContainer: container,
+                persistentStore: store
+            )
+        )
+    }
+
+    private func makeAutoplayResponder(
+        store: SumiAutoplayPolicyStoreAdapter,
+        profile: Profile
+    ) -> SumiAutoplayPolicyNavigationResponder {
+        SumiAutoplayPolicyNavigationResponder(
+            tab: Tab(url: URL(string: "https://video.example")!),
+            autoplayPolicyStore: store,
+            profileProvider: { _ in profile }
+        )
+    }
+
+    private func makeProfile(_ id: String) -> Profile {
+        Profile(id: UUID(uuidString: id)!, name: "Profile", icon: "person")
     }
 
     private func makeMouseEvent(
@@ -464,6 +625,12 @@ private extension NavigationActionPolicy {
     var isDownload: Bool {
         if case .download = self { return true }
         return false
+    }
+}
+
+private extension NavigationPreferences {
+    static var `default`: NavigationPreferences {
+        NavigationPreferences(userAgent: nil, preferences: WKWebpagePreferences())
     }
 }
 
