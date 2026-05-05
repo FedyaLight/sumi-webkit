@@ -12,6 +12,7 @@ final class SumiTabNavigationDelegateBundle {
     private let externalScheme: SumiExternalSchemeNavigationResponder
     private let downloads: SumiDownloadsNavigationResponder
     private let scriptAttachment: SumiTabScriptAttachmentNavigationResponder
+    private let autoplayPolicy: SumiAutoplayPolicyNavigationResponder
     private let lifecycle: SumiTabLifecycleNavigationResponder
 
     init(tab: Tab) {
@@ -24,6 +25,7 @@ final class SumiTabNavigationDelegateBundle {
         )
         self.downloads = SumiDownloadsNavigationResponder(tab: tab, downloadManager: tab.browserManager?.downloadManager)
         self.scriptAttachment = SumiTabScriptAttachmentNavigationResponder(tab: tab)
+        self.autoplayPolicy = SumiAutoplayPolicyNavigationResponder(tab: tab)
         self.lifecycle = SumiTabLifecycleNavigationResponder(tab: tab)
 
         distributedNavigationDelegate.setResponders(
@@ -32,6 +34,7 @@ final class SumiTabNavigationDelegateBundle {
             .strong(externalScheme),
             .strong(downloads),
             .strong(scriptAttachment),
+            .strong(autoplayPolicy),
             .strong(lifecycle),
             .weak(tab.findInPage)
         )

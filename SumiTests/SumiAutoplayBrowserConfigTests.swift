@@ -6,7 +6,7 @@ import XCTest
 
 @MainActor
 final class SumiAutoplayBrowserConfigTests: XCTestCase {
-    func testNoDecisionUsesCurrentDefaultAllowAllConfiguration() throws {
+    func testNoDecisionUsesCurrentDefaultAllowAllFallbackConfiguration() throws {
         let harness = try makeHarness()
         let profile = makeProfile("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
         let configuration = harness.browserConfiguration.normalTabWebViewConfiguration(
@@ -17,7 +17,7 @@ final class SumiAutoplayBrowserConfigTests: XCTestCase {
         XCTAssertEqual(configuration.mediaTypesRequiringUserActionForPlayback, [])
     }
 
-    func testOldUserDefaultsValueDoesNotAffectBrowserConfiguration() throws {
+    func testOldUserDefaultsValueDoesNotAffectBrowserFallbackConfiguration() throws {
         let harness = try makeHarness()
         let profile = makeProfile("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
         UserDefaults.standard.set(
@@ -36,7 +36,7 @@ final class SumiAutoplayBrowserConfigTests: XCTestCase {
         XCTAssertEqual(configuration.mediaTypesRequiringUserActionForPlayback, [])
     }
 
-    func testStoredAllowAllAppliesAllowAllConfiguration() async throws {
+    func testStoredAllowAllAppliesAllowAllFallbackConfiguration() async throws {
         let harness = try makeHarness()
         let profile = makeProfile("11111111-1111-1111-1111-111111111111")
         let url = URL(string: "https://example.com")!
@@ -50,7 +50,7 @@ final class SumiAutoplayBrowserConfigTests: XCTestCase {
         XCTAssertEqual(configuration.mediaTypesRequiringUserActionForPlayback, [])
     }
 
-    func testStoredBlockAudibleAppliesAudioConfiguration() async throws {
+    func testStoredBlockAudibleAppliesAudioFallbackConfiguration() async throws {
         let harness = try makeHarness()
         let profile = makeProfile("22222222-2222-2222-2222-222222222222")
         let url = URL(string: "https://example.com")!
@@ -64,7 +64,7 @@ final class SumiAutoplayBrowserConfigTests: XCTestCase {
         XCTAssertEqual(configuration.mediaTypesRequiringUserActionForPlayback, .audio)
     }
 
-    func testStoredBlockAllAppliesAllConfiguration() async throws {
+    func testStoredBlockAllAppliesAllFallbackConfiguration() async throws {
         let harness = try makeHarness()
         let profile = makeProfile("33333333-3333-3333-3333-333333333333")
         let url = URL(string: "https://example.com")!
@@ -98,7 +98,7 @@ final class SumiAutoplayBrowserConfigTests: XCTestCase {
         XCTAssertEqual(second.mediaTypesRequiringUserActionForPlayback, [])
     }
 
-    func testUnknownOriginUsesDefaultConfiguration() async throws {
+    func testUnknownOriginUsesDefaultFallbackConfiguration() async throws {
         let harness = try makeHarness()
         let profile = makeProfile("66666666-6666-6666-6666-666666666666")
         try await harness.adapter.setPolicy(
