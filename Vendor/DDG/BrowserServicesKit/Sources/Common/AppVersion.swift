@@ -20,18 +20,6 @@ import Foundation
 
 public struct AppVersion {
 
-    public static let shared = AppVersion()
-
-    private let bundle: InfoBundle
-
-    public init(bundle: InfoBundle = Bundle.main) {
-        self.bundle = bundle
-    }
-
-    public var versionNumber: String {
-        return bundle.object(forInfoDictionaryKey: Bundle.Key.versionNumber) as? String ?? ""
-    }
-
     public enum AppRunType: String {
         case normal
         case unitTests

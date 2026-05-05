@@ -21,14 +21,8 @@ public enum PrivacyFeature: String {
     case macOSBrowserConfig
 }
 
-public protocol PrivacySubfeature: RawRepresentable where RawValue == String {
-    var parent: PrivacyFeature { get }
-}
+public protocol PrivacySubfeature: RawRepresentable where RawValue == String {}
 
 public enum MacOSBrowserConfigSubfeature: String, PrivacySubfeature {
-    public var parent: PrivacyFeature {
-        .macOSBrowserConfig
-    }
-
     case faviconWKDownload
 }

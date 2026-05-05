@@ -98,10 +98,6 @@ class KeyboardShortcutManager {
         return shortcut
     }
 
-    func shortcutRecord(for action: ShortcutAction) -> KeyboardShortcut? {
-        shortcutsByAction[action]
-    }
-
     func setShortcut(action: ShortcutAction, keyCombination: KeyCombination) -> ShortcutValidationResult {
         let validation = validate(keyCombination, excludingAction: action)
         guard validation.allowsCommit, shortcutsByAction[action] != nil else {
@@ -131,14 +127,6 @@ class KeyboardShortcutManager {
 
     func validate(_ keyCombination: KeyCombination, excludingAction: ShortcutAction? = nil) -> ShortcutValidationResult {
         validator.validate(keyCombination, in: shortcutsByAction, excludingAction: excludingAction)
-    }
-
-    func conflict(for keyCombination: KeyCombination, excludingAction: ShortcutAction? = nil) -> ShortcutAction? {
-        validator.conflict(for: keyCombination, in: shortcutsByAction, excludingAction: excludingAction)
-    }
-
-    func isValidKeyCombination(_ keyCombination: KeyCombination) -> Bool {
-        validator.isValidKeyCombination(keyCombination)
     }
 
     func executeShortcut(_ event: NSEvent) -> Bool {

@@ -22,7 +22,10 @@ public extension UnsafeMutableRawPointer {
 
     /// HEX String representation of the pointer with trimmed leading zeros
     var hexValue: String {
-        self.debugDescription.replacing(regex: "^0x0*", with: "0x")
+        let hex = self.debugDescription
+        guard hex.hasPrefix("0x") else { return hex }
+        let suffix = hex.dropFirst(2).drop { $0 == "0" }
+        return "0x" + (suffix.isEmpty ? "0" : suffix)
     }
 
 }

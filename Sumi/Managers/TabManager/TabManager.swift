@@ -86,58 +86,6 @@ class TabManager: ObservableObject {
         Array(spacePinnedShortcuts[spaceId] ?? []).sorted { $0.index < $1.index }
     }
 
-    func normalizedLauncherLookupURL(_ url: URL) -> String {
-        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: true) else {
-            return url.absoluteString.lowercased()
-        }
-        components.fragment = nil
-        return components.string?.lowercased() ?? url.absoluteString.lowercased()
-    }
-
-    func spacePinnedPin(matching url: URL, in spaceId: UUID) -> ShortcutPin? {
-        let normalizedURL = normalizedLauncherLookupURL(url)
-        return spacePinnedPins(for: spaceId).first { pin in
-            normalizedLauncherLookupURL(pin.launchURL) == normalizedURL
-        }
-    }
-
-    @discardableResult
-    func ensureSpacePinnedLauncher(for tab: Tab, in spaceId: UUID) -> ShortcutPin? {
-        return withStructuralUpdateTransaction {
-            guard spaces.contains(where: { $0.id == spaceId }) else { return nil }
-
-            if let shortcutId = tab.shortcutPinId,
-               let existingPin = shortcutPin(by: shortcutId),
-               existingPin.role == .spacePinned {
-                return existingPin
-            }
-
-            if let existingPin = spacePinnedPin(matching: tab.url, in: spaceId) {
-                let trimmedTitle = tab.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                let refreshedTitle = trimmedTitle.isEmpty ? existingPin.title : trimmedTitle
-                let updatedPin = updateShortcutPin(existingPin, title: refreshedTitle) ?? existingPin
-                return updatedPin
-            }
-
-            let targetIndex = topLevelSpacePinnedItems(for: spaceId).count
-            let newPin = makeShortcutPin(
-                from: tab,
-                role: .spacePinned,
-                profileId: nil,
-                spaceId: spaceId,
-                folderId: nil,
-                index: targetIndex
-            )
-
-            guard let insertedPin = insertShortcutPin(newPin, at: targetIndex) else {
-                return nil
-            }
-
-            scheduleStructuralPersistence()
-            return insertedPin
-        }
-    }
-
     func liveSpacePinnedTabs(for spaceId: UUID) -> [Tab] {
         transientShortcutTabsByWindow.values
             .flatMap(\.values)

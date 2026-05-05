@@ -10,7 +10,6 @@ protocol ShellSelectionTabStore: AnyObject {
     func activeShortcutTab(for windowId: UUID) -> Tab?
     func liveShortcutTabs(in windowId: UUID) -> [Tab]
     func shortcutLiveTab(for pinId: UUID, in windowId: UUID) -> Tab?
-    func activateShortcutPin(_ pin: ShortcutPin, in windowId: UUID, currentSpaceId: UUID?) -> Tab
 }
 
 @MainActor

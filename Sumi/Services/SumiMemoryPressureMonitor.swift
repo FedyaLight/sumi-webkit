@@ -54,9 +54,4 @@ final class SumiMemoryPressureMonitor: SumiMemoryPressureMonitoring {
         }
     }
 
-#if DEBUG
-    func processMemoryPressureEventForTesting(_ event: DispatchSource.MemoryPressureEvent) {
-        handle(event)
-    }
-#endif
 }
