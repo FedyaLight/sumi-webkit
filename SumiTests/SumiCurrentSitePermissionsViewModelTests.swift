@@ -17,7 +17,7 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
         )
 
         XCTAssertEqual(viewModel.rows, [])
-        XCTAssertEqual(viewModel.summary.subtitle, "Default")
+        XCTAssertNil(viewModel.summary.activityText)
         XCTAssertFalse(viewModel.context?.isSupportedWebOrigin ?? true)
     }
 
@@ -264,7 +264,7 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
         XCTAssertNil(popupsRecord)
         XCTAssertNil(mailtoRecord)
         XCTAssertEqual(blockedPopupStore.records(forPageId: context.pageId!).count, 0)
-        XCTAssertEqual(indicatorStore.records(forPageId: context.pageId!).count, 0)
+        XCTAssertEqual(indicatorStore.recordsSnapshot(forPageId: context.pageId!).count, 0)
     }
 
     private func context(

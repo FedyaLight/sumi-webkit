@@ -26,7 +26,7 @@ final class SumiExtensionsModule {
     init(
         moduleRegistry: SumiModuleRegistry = .shared,
         context: ModelContext? = nil,
-        browserConfiguration: BrowserConfiguration = .shared,
+        browserConfiguration: BrowserConfiguration? = nil,
         initialProfileProvider: @escaping @MainActor () -> Profile? = { nil },
         // Explicit injection seam for focused tests; production constructs lazily only when enabled.
         managerFactory: @escaping @MainActor (
@@ -44,7 +44,7 @@ final class SumiExtensionsModule {
     ) {
         self.moduleRegistry = moduleRegistry
         self.context = context
-        self.browserConfiguration = browserConfiguration
+        self.browserConfiguration = browserConfiguration ?? .shared
         self.initialProfileProvider = initialProfileProvider
         self.managerFactory = managerFactory
         self.surfaceStore = surfaceStore ?? BrowserExtensionSurfaceStore(
@@ -54,6 +54,10 @@ final class SumiExtensionsModule {
 
     var isEnabled: Bool {
         moduleRegistry.isEnabled(.extensions)
+    }
+
+    var hasLoadedRuntime: Bool {
+        cachedManager != nil
     }
 
     func attach(browserManager: BrowserManager) {

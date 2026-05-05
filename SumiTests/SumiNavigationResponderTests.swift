@@ -9,6 +9,8 @@ import XCTest
 
 @MainActor
 final class SumiNavigationResponderTests: XCTestCase {
+    private var retainedAutoplayTabs: [Tab] = []
+
     func testAssignWebViewInstallsDistributedNavigationDelegateBundle() {
         let tab = Tab(url: URL(string: "https://example.com")!)
         let webView = WKWebView(frame: .zero)
@@ -262,9 +264,9 @@ final class SumiNavigationResponderTests: XCTestCase {
         )
 
         XCTAssertFalse(nonMainPreferences.mustApplyAutoplayPolicy)
-        XCTAssertNil(nonMainPreferences.autoplayPolicy)
+        XCTAssertEqual(nonMainPreferences.autoplayPolicy, .default)
         XCTAssertFalse(filePreferences.mustApplyAutoplayPolicy)
-        XCTAssertNil(filePreferences.autoplayPolicy)
+        XCTAssertEqual(filePreferences.autoplayPolicy, .default)
     }
 
     func testAutoplayPolicyResponderKeepsProfileDecisionsIsolated() async throws {
@@ -584,8 +586,10 @@ final class SumiNavigationResponderTests: XCTestCase {
         store: SumiAutoplayPolicyStoreAdapter,
         profile: Profile
     ) -> SumiAutoplayPolicyNavigationResponder {
-        SumiAutoplayPolicyNavigationResponder(
-            tab: Tab(url: URL(string: "https://video.example")!),
+        let tab = Tab(url: URL(string: "https://video.example")!)
+        retainedAutoplayTabs.append(tab)
+        return SumiAutoplayPolicyNavigationResponder(
+            tab: tab,
             autoplayPolicyStore: store,
             profileProvider: { _ in profile }
         )

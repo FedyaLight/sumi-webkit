@@ -7,8 +7,7 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
         let presenter = URLBarTrackingProtectionPresenter.make(
             policy: SumiTrackingProtectionEffectivePolicy(
                 host: "example.com",
-                isEnabled: true,
-                source: .global
+                isEnabled: true
             ),
             isReloadRequired: false
         )
@@ -26,8 +25,7 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
         let presenter = URLBarTrackingProtectionPresenter.make(
             policy: SumiTrackingProtectionEffectivePolicy(
                 host: "example.com",
-                isEnabled: false,
-                source: .siteOverride(.disabled)
+                isEnabled: false
             ),
             isReloadRequired: false
         )
@@ -44,8 +42,7 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
         let presenter = URLBarTrackingProtectionPresenter.make(
             policy: SumiTrackingProtectionEffectivePolicy(
                 host: "example.com",
-                isEnabled: true,
-                source: .global
+                isEnabled: true
             ),
             isReloadRequired: false
         )
@@ -60,8 +57,7 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
         let presenter = URLBarTrackingProtectionPresenter.make(
             policy: SumiTrackingProtectionEffectivePolicy(
                 host: "example.com",
-                isEnabled: false,
-                source: .siteOverride(.disabled)
+                isEnabled: false
             ),
             isReloadRequired: true
         )
@@ -75,8 +71,7 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
         let presenter = URLBarTrackingProtectionPresenter.make(
             policy: SumiTrackingProtectionEffectivePolicy(
                 host: "example.com",
-                isEnabled: true,
-                source: .global
+                isEnabled: true
             ),
             isReloadRequired: false
         )
@@ -99,8 +94,7 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
             URLBarTrackingProtectionPresenter.siteOverrideAfterToggle(
                 for: SumiTrackingProtectionEffectivePolicy(
                     host: "example.com",
-                    isEnabled: false,
-                    source: .global
+                    isEnabled: false
                 )
             ),
             .enabled
@@ -110,8 +104,7 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
             URLBarTrackingProtectionPresenter.siteOverrideAfterToggle(
                 for: SumiTrackingProtectionEffectivePolicy(
                     host: "example.com",
-                    isEnabled: true,
-                    source: .global
+                    isEnabled: true
                 )
             ),
             .disabled

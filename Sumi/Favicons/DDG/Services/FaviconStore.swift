@@ -56,7 +56,7 @@ private final class SecureCodingValueTransformer<T: NSObject & NSSecureCoding>: 
 
     override func reverseTransformedValue(_ value: Any?) -> Any? {
         guard let data = value as? Data else { return nil }
-        return try? NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(data) as? T
+        return try? NSKeyedUnarchiver.unarchivedObject(ofClass: T.self, from: data)
     }
 }
 

@@ -93,15 +93,10 @@ final class FaviconDownloader: NSObject {
         Task { @MainActor [weak self] in
             guard let self else { return }
             let task = self.pendingDownloads.removeValue(forKey: download)
-            defer {
-                // continuation is always called after removing the FaviconDownloadTask from the store on MainActor.
-                // it should guarantee the continuation is only called once.
-                task?.continuation.resume(with: .failure(URLError(.cancelled)))
-            }
             download.delegate = nil
-            download.cancel { _ in
-                try? task?.destinationURL.map(FileManager.default.removeItem(at:))
-            }
+            _ = await download.cancel()
+            try? task?.destinationURL.map(FileManager.default.removeItem(at:))
+            task?.continuation.resume(with: .failure(URLError(.cancelled)))
         }
     }
 
@@ -110,10 +105,11 @@ final class FaviconDownloader: NSObject {
         self.pendingDownloads.removeAll()
 
         for (download, task) in pendingDownloads {
-            download.cancel { _ in
+            Task { @MainActor in
+                _ = await download.cancel()
                 try? task.destinationURL.map(FileManager.default.removeItem(at:))
+                task.continuation.resume(with: .failure(URLError(.cancelled)))
             }
-            task.continuation.resume(with: .failure(URLError(.cancelled)))
         }
     }
 }

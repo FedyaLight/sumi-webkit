@@ -4,7 +4,7 @@ import XCTest
 
 final class SumiPermissionAntiAbuseStoreTests: XCTestCase {
     func testRecordsAndFiltersEventsByCanonicalPermissionKey() async {
-        let store = SumiPermissionAntiAbuseStore.memoryOnly()
+        let store = SumiPermissionAntiAbuseStore(userDefaults: nil)
         let key = antiAbuseKey(.camera)
         let other = antiAbuseKey(.microphone)
         let now = Date(timeIntervalSince1970: 1_800_000_000)
@@ -45,7 +45,8 @@ final class SumiPermissionAntiAbuseStoreTests: XCTestCase {
     }
 
     func testRetentionCapRemovesOldAndExcessEvents() async {
-        let store = SumiPermissionAntiAbuseStore.memoryOnly(
+        let store = SumiPermissionAntiAbuseStore(
+            userDefaults: nil,
             retentionInterval: 100,
             maximumEventsPerProfile: 2
         )

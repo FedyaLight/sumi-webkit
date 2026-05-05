@@ -6,7 +6,7 @@ import XCTest
 final class NavigationToolbarControlsTests: XCTestCase {
     func testTabLoadingStateNotificationEmitsOnlyOnLoadingActivityChanges() {
         let tab = Tab(url: URL(string: "https://example.com")!, name: "Example")
-        var notifications: [Notification] = []
+        let notifications = NavigationToolbarNotificationRecorder()
         let observer = NotificationCenter.default.addObserver(
             forName: .sumiTabLoadingStateDidChange,
             object: tab,
@@ -27,7 +27,7 @@ final class NavigationToolbarControlsTests: XCTestCase {
 
         XCTAssertEqual(notifications.count, 2)
         XCTAssertEqual(
-            notifications.compactMap { $0.userInfo?["tabId"] as? UUID },
+            notifications.tabIds,
             [tab.id, tab.id]
         )
     }
@@ -78,5 +78,26 @@ final class NavigationToolbarControlsTests: XCTestCase {
             contentsOf: repoRoot.appendingPathComponent(relativePath),
             encoding: .utf8
         )
+    }
+}
+
+private final class NavigationToolbarNotificationRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [Notification] = []
+
+    func append(_ notification: Notification) {
+        lock.withLock {
+            values.append(notification)
+        }
+    }
+
+    var count: Int {
+        lock.withLock { values.count }
+    }
+
+    var tabIds: [UUID] {
+        lock.withLock {
+            values.compactMap { $0.userInfo?["tabId"] as? UUID }
+        }
     }
 }

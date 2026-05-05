@@ -3,7 +3,7 @@ import UserScript
 import WebKit
 
 @MainActor
-final class SumiWebNotificationUserScript: NSObject, UserScript, UserScriptMessaging, WKScriptMessageHandlerWithReply {
+final class SumiWebNotificationUserScript: NSObject, UserScript, @MainActor UserScriptMessaging, WKScriptMessageHandlerWithReply {
     private let context: String
     let broker: UserScriptMessageBroker
     let source: String
@@ -257,7 +257,7 @@ final class SumiWebNotificationUserScript: NSObject, UserScript, UserScriptMessa
 }
 
 @MainActor
-private final class SumiWebNotificationSubfeature: NSObject, Subfeature {
+private final class SumiWebNotificationSubfeature: NSObject, @MainActor Subfeature {
     let featureName = "webNotifications"
     let messageOriginPolicy: MessageOriginPolicy = .all
     weak var tab: Tab?

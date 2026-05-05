@@ -1,5 +1,6 @@
 import BrowserServicesKit
 import Combine
+import ContentBlocking
 import Foundation
 import ObjectiveC
 import PrivacyConfig

@@ -36,6 +36,9 @@ let package = Package(
                 "ContentBlocking",
                 "Navigation"
             ],
+            exclude: [
+                "ContentBlocking"
+            ],
             resources: [
                 .copy("../../PrivacyInfo.xcprivacy")
             ],
@@ -71,6 +74,7 @@ let package = Package(
             dependencies: [
                 "TrackerRadarKit",
             ],
+            path: "Sources/BrowserServicesKit/ContentBlocking",
             swiftSettings: [
                 .define("DEBUG", .when(configuration: .debug))
             ]

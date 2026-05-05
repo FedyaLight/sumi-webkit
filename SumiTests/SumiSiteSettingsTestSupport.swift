@@ -298,7 +298,7 @@ struct SiteSettingsRepositoryHarness {
         let cleanupService = SumiPermissionCleanupService(
             store: store,
             recentActivityStore: recentStore,
-            antiAbuseStore: SumiPermissionAntiAbuseStore.memoryOnly(),
+            antiAbuseStore: SumiPermissionAntiAbuseStore(userDefaults: nil),
             userDefaults: userDefaults,
             now: { Date(timeIntervalSince1970: 1_800_000_000) }
         )

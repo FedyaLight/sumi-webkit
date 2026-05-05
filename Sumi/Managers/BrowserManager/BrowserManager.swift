@@ -344,9 +344,7 @@ class BrowserManager: ObservableObject {
                 sessionOwnerId: "browser"
             )
         let geolocationProvider = geolocationProvider
-            ?? SumiGeolocationProvider(
-                processPool: BrowserConfiguration.shared.normalTabProcessPool
-            )
+            ?? SumiGeolocationProvider(browserConfiguration: BrowserConfiguration.shared)
         let notificationService = notificationService ?? SumiNotificationService()
         let runtimePermissionController = runtimePermissionController
             ?? SumiRuntimePermissionController(geolocationProvider: geolocationProvider)

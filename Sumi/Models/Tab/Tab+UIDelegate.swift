@@ -224,7 +224,7 @@ extension Tab: WKUIDelegate {
     }
 
     @objc(_webView:requestDisplayCapturePermissionForOrigin:initiatedByFrame:withSystemAudio:decisionHandler:)
-    func webView(
+    func _webView(
         _ webView: WKWebView,
         requestDisplayCapturePermissionForOrigin origin: WKSecurityOrigin,
         initiatedByFrame frame: WKFrameInfo,

@@ -200,7 +200,7 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
     }
 
     func testAuxiliaryAndUnsafeSurfacesDenySensitivePermissions() async {
-        let miniWindow = await evaluate(.camera, surface: .miniWindow)
+        let miniWindow = await evaluate(.geolocation, surface: .miniWindow)
         XCTAssertFalse(miniWindow.isAllowedToProceed)
         XCTAssertEqual(miniWindow.source, .defaultSetting)
         XCTAssertEqual(miniWindow.reason, SumiPermissionPolicyReason.miniWindowSensitiveDenied)

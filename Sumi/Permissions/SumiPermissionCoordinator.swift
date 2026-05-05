@@ -444,7 +444,7 @@ actor SumiPermissionCoordinator {
     func cancelTab(tabId: String, reason: String = "tab-cancelled") async -> SumiPermissionCoordinatorDecision {
         let normalizedTabId = Self.normalizedOptionalId(tabId)
         if let normalizedTabId {
-            await memoryStore.clearOneTimeDecisions(forTabId: normalizedTabId)
+            _ = await memoryStore.clearOneTimeDecisions(forTabId: normalizedTabId)
         }
         let matchingPrimaryIds = queryById.values
             .filter { $0.tabId == normalizedTabId }

@@ -159,7 +159,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     init(
         context: ModelContext,
         initialProfile: Profile?,
-        browserConfiguration: BrowserConfiguration = .shared
+        browserConfiguration: BrowserConfiguration? = nil
     ) {
         let signpostState = PerformanceTrace.beginInterval("ExtensionManager.init")
         defer {
@@ -167,7 +167,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         }
 
         self.context = context
-        self.browserConfiguration = browserConfiguration
+        self.browserConfiguration = browserConfiguration ?? .shared
         self.currentProfileId = initialProfile?.id
         self.pinnedToolbarExtensionIDsByProfile = Self.loadPinnedToolbarExtensionIDsByProfile()
         self.pinnedToolbarExtensionIDs = Self.normalizedPinnedToolbarExtensionIDs(

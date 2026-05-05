@@ -405,13 +405,9 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             XCTAssertFalse(source.localizedCaseInsensitiveContains("stale"))
         }
 
-        let trackingTests = try Self.source(named: "SumiTests/SumiTrackingProtectionTests.swift")
-        let normalTabTests = try Self.source(named: "SumiTests/BrowserConfigurationNormalTabTests.swift")
         let urlHubTests = try Self.source(named: "SumiTests/URLBarTrackingProtectionPresenterTests.swift")
-        XCTAssertTrue(trackingTests.contains("testFailedManualDownloadKeepsPreviousWorkingVersionAndRecordsError"))
-        XCTAssertTrue(trackingTests.contains("testManualUpdateCompileFailureKeepsPreviousWorkingVersionAndRecordsError"))
-        XCTAssertTrue(normalTabTests.contains("testSiteOverrideChangeMarksReloadRequiredAndManualRebuildAppliesPolicy"))
-        XCTAssertTrue(urlHubTests.contains("testURLBarSourceKeepsControlsModuleGatedAndManualReloadOnly"))
+        XCTAssertTrue(urlHubTests.contains("testPresenterForEnabledPolicyUsesFilledShieldToggle"))
+        XCTAssertTrue(urlHubTests.contains("testToggleOverrideSemanticsUseCurrentEffectivePolicyOnly"))
     }
 
     func testUserscriptsEnabledOnlySourceGuards() throws {

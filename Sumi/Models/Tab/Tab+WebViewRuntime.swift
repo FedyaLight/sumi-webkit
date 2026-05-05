@@ -420,7 +420,7 @@ extension Tab {
     }
 
     private func canReuseAsNormalTabWebView(_ webView: WKWebView) -> Bool {
-        guard webView.configuration.processPool === BrowserConfiguration.shared.normalTabProcessPool else {
+        guard webView.configuration.sumiIsNormalTabWebViewConfiguration else {
             return false
         }
         guard let profile = resolveProfile(),

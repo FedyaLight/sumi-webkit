@@ -308,13 +308,13 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
         let store = SumiPermissionIndicatorEventStore()
         store.record(indicatorEvent())
 
-        XCTAssertEqual(store.records(forPageId: "tab-a:1").count, 1)
+        XCTAssertEqual(store.recordsSnapshot(forPageId: "tab-a:1").count, 1)
         XCTAssertEqual(store.clear(pageId: "tab-a:1"), 1)
-        XCTAssertTrue(store.records(forPageId: "tab-a:1").isEmpty)
+        XCTAssertTrue(store.recordsSnapshot(forPageId: "tab-a:1").isEmpty)
 
         store.record(indicatorEvent(pageId: "tab-a:2"))
         XCTAssertEqual(store.clear(tabId: "tab-a"), 1)
-        XCTAssertTrue(store.records(forPageId: "tab-a:2").isEmpty)
+        XCTAssertTrue(store.recordsSnapshot(forPageId: "tab-a:2").isEmpty)
     }
 
     func testURLBarContainsExactlyOneDynamicPermissionIndicatorAnchor() throws {

@@ -4,7 +4,7 @@ import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
-final class SumiExternallyConnectableUserScript: NSObject, UserScript, UserScriptMessaging, WKScriptMessageHandlerWithReply {
+final class SumiExternallyConnectableUserScript: NSObject, UserScript, @MainActor UserScriptMessaging, WKScriptMessageHandlerWithReply {
     let broker: UserScriptMessageBroker
     let source: String
     let injectionTime: WKUserScriptInjectionTime = .atDocumentStart

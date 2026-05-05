@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import ObjectiveC.runtime
 import SwiftUI
 import WebKit
 
@@ -47,10 +48,11 @@ enum BrowserConfigurationAuxiliarySurface: String, CaseIterable {
     }
 }
 
+@MainActor
 class BrowserConfiguration {
     static let shared = BrowserConfiguration()
 
-    private let sharedProcessPool = WKProcessPool()
+    let webKitProcessPoolContext = SumiWebKitProcessPoolContext()
     private let autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter?
     private let visitedLinkStoreProvider: SharedVisitedLinkStoreProvider
     private static let auxiliaryFilteredUserScriptMarkers = [
@@ -68,14 +70,17 @@ class BrowserConfiguration {
         "sumiWebNotifications_",
     ]
 
-    init(autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter? = nil) {
+    init(
+        autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter? = nil,
+        visitedLinkStoreProvider: SharedVisitedLinkStoreProvider? = nil
+    ) {
         self.autoplayPolicyStore = autoplayPolicyStore
-        self.visitedLinkStoreProvider = .shared
+        self.visitedLinkStoreProvider = visitedLinkStoreProvider ?? .shared
     }
 
     private func makeBaseWebViewConfiguration() -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
-        config.processPool = sharedProcessPool
+        webKitProcessPoolContext.apply(to: config)
         config.writingToolsBehavior = .none
 
         // Match Nook: the shared template configuration uses the default store.
@@ -129,10 +134,6 @@ class BrowserConfiguration {
         return config
     }()
 
-    var normalTabProcessPool: WKProcessPool {
-        sharedProcessPool
-    }
-
     // MARK: - Normal Tab Configuration
 
     @MainActor
@@ -144,6 +145,7 @@ class BrowserConfiguration {
         contentBlockingService: SumiContentBlockingService? = nil
     ) -> WKWebViewConfiguration {
         let config = makeBaseWebViewConfiguration()
+        config.sumiIsNormalTabWebViewConfiguration = true
         config.websiteDataStore = profile.dataStore
         visitedLinkStoreProvider.applyStore(to: config, for: profile)
         config.userContentController = SumiNormalTabUserContentControllerFactory
@@ -246,6 +248,48 @@ class BrowserConfiguration {
     ) -> SumiAutoplayPolicy {
         (autoplayPolicyStore ?? SumiAutoplayPolicyStoreAdapter.shared)
             .effectivePolicy(for: url, profile: profile)
+    }
+}
+
+final class SumiWebKitProcessPoolContext {
+    private let processPool: NSObject
+
+    init() {
+        guard let processPoolClass = NSClassFromString("WKProcessPool") as? NSObject.Type else {
+            preconditionFailure("WKProcessPool class is unavailable")
+        }
+        self.processPool = processPoolClass.init()
+    }
+
+    func apply(to configuration: WKWebViewConfiguration) {
+        configuration.setValue(processPool, forKey: "processPool")
+    }
+
+    var opaquePointer: UnsafeRawPointer {
+        UnsafeRawPointer(Unmanaged.passUnretained(processPool).toOpaque())
+    }
+}
+
+private enum BrowserConfigurationAssociatedKeys {
+    static var isNormalTabWebViewConfiguration: UInt8 = 0
+}
+
+extension WKWebViewConfiguration {
+    var sumiIsNormalTabWebViewConfiguration: Bool {
+        get {
+            (objc_getAssociatedObject(
+                self,
+                &BrowserConfigurationAssociatedKeys.isNormalTabWebViewConfiguration
+            ) as? Bool) == true
+        }
+        set {
+            objc_setAssociatedObject(
+                self,
+                &BrowserConfigurationAssociatedKeys.isNormalTabWebViewConfiguration,
+                newValue,
+                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+            )
+        }
     }
 }
 

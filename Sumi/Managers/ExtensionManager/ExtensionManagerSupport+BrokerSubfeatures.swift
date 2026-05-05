@@ -14,7 +14,7 @@ import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
-final class ExternallyConnectablePageSubfeature: NSObject, Subfeature {
+final class ExternallyConnectablePageSubfeature: NSObject, @MainActor Subfeature {
     let featureName = "runtime"
     let messageOriginPolicy: MessageOriginPolicy = .all
 
