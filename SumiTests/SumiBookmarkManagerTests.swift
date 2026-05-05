@@ -1,5 +1,6 @@
 import XCTest
 
+import Bookmarks
 @testable import Sumi
 
 @MainActor
@@ -169,25 +170,31 @@ final class SumiBookmarkManagerTests: XCTestCase {
 
     func testImportSkipsURLVariantDuplicatesAndExportPreservesFolders() throws {
         let manager = makeManager()
-        let nodes: [SumiImportedBookmarkNode] = [
+        let nodes: [BookmarkOrFolder] = [
             .folder(
-                title: "Imported",
+                name: "Imported",
                 children: [
-                    .bookmark(title: "Example", url: try XCTUnwrap(URL(string: "https://example.com"))),
-                    .bookmark(title: "Example Duplicate", url: try XCTUnwrap(URL(string: "http://example.com/"))),
-                    .bookmark(title: "Bad", url: try XCTUnwrap(URL(string: "ftp://example.com/file"))),
+                    .bookmark(name: "Example", url: try XCTUnwrap(URL(string: "https://example.com"))),
+                    .bookmark(name: "Example Duplicate", url: try XCTUnwrap(URL(string: "http://example.com/"))),
+                    .bookmark(name: "Bad", url: try XCTUnwrap(URL(string: "ftp://example.com/file"))),
                 ]
             ),
         ]
 
         let summary = try manager.importBookmarks(nodes)
 
-        XCTAssertEqual(summary.imported, 2)
+        XCTAssertEqual(summary.successful, 2)
         XCTAssertEqual(summary.duplicates, 1)
         XCTAssertEqual(summary.failed, 1)
         XCTAssertEqual(manager.visibleEntities(in: nil, query: "Example", sortMode: .manual).map(\.title), ["Imported"])
 
-        let html = try manager.exportBookmarksHTML()
+        let exportDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("SumiBookmarkManagerExport-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: exportDirectory, withIntermediateDirectories: true)
+        temporaryDirectories.append(exportDirectory)
+        let exportURL = exportDirectory.appendingPathComponent("Bookmarks.html")
+        try manager.exportBookmarksHTML(to: exportURL)
+        let html = try String(contentsOf: exportURL, encoding: .utf8)
         XCTAssertTrue(html.contains("<H3>Imported</H3>"))
         XCTAssertTrue(html.contains("<A HREF=\"https://example.com\">Example</A>"))
     }

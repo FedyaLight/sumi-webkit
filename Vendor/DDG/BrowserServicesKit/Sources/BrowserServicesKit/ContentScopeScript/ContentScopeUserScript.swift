@@ -252,8 +252,7 @@ public final class ContentScopeUserScript: NSObject, UserScript, UserScriptMessa
     public init(_ privacyConfigManager: PrivacyConfigurationManaging,
                 properties: ContentScopeProperties,
                 scriptContext: ContentScopeScriptContext = .contentScope,
-                allowedNonisolatedFeatures: [String] = [],
-                privacyConfigurationJSONGenerator: CustomisedPrivacyConfigurationJSONGenerating?
+                allowedNonisolatedFeatures: [String] = []
     ) throws {
         self.scriptContext = scriptContext
         self.allowedNonisolatedFeatures = allowedNonisolatedFeatures
@@ -266,18 +265,16 @@ public final class ContentScopeUserScript: NSObject, UserScript, UserScriptMessa
             privacyConfigManager,
             properties: properties,
             scriptContext: scriptContext,
-            config: broker.messagingConfig(),
-            privacyConfigurationJSONGenerator: privacyConfigurationJSONGenerator
+            config: broker.messagingConfig()
         )
     }
 
     public static func generateSource(_ privacyConfigurationManager: PrivacyConfigurationManaging,
                                       properties: ContentScopeProperties,
                                       scriptContext: ContentScopeScriptContext,
-                                      config: WebkitMessagingConfig,
-                                      privacyConfigurationJSONGenerator: CustomisedPrivacyConfigurationJSONGenerating?
+                                      config: WebkitMessagingConfig
     ) throws -> String {
-        let privacyConfigJsonData = privacyConfigurationJSONGenerator?.privacyConfiguration ?? privacyConfigurationManager.currentConfig
+        let privacyConfigJsonData = privacyConfigurationManager.currentConfig
         guard let privacyConfigJson = String(data: privacyConfigJsonData, encoding: .utf8),
               let userUnprotectedDomains = try? JSONEncoder().encode(privacyConfigurationManager.privacyConfig.userUnprotectedDomains),
               let userUnprotectedDomainsString = String(data: userUnprotectedDomains, encoding: .utf8),

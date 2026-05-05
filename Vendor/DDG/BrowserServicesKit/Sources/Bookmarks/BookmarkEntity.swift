@@ -47,7 +47,6 @@ public class BookmarkEntity: NSManagedObject {
         case folderStructureHasCycle
         case folderHasURL
         case invalidFavoritesFolder
-        case invalidFavoritesStatus
     }
 
     @nonobjc public class func fetchRequest() -> NSFetchRequest<BookmarkEntity> {
@@ -73,14 +72,6 @@ public class BookmarkEntity: NSManagedObject {
     @NSManaged public var modifiedAt: Date?
     /// In-memory flag. When set to `false`, disables adjusting `modifiedAt` on `willSave()`. It's reset to `true` on `didSave()`.
     public var shouldManageModifiedAt: Bool = true
-
-    public func isFavorite(on platform: FavoritesFolderID) -> Bool {
-        favoriteFoldersSet.contains { $0.uuid == platform.rawValue }
-    }
-
-    public var favoritedOn: [FavoritesFolderID] {
-        favoriteFoldersSet.compactMap(\.uuid).compactMap(FavoritesFolderID.init)
-    }
 
     public convenience init(context moc: NSManagedObjectContext) {
         self.init(entity: BookmarkEntity.entity(in: moc),
@@ -139,11 +130,6 @@ public class BookmarkEntity: NSManagedObject {
         }
     }
 
-    public var urlObject: URL? {
-        guard let url = url else { return nil }
-        return url.isBookmarklet() ? url.toEncodedBookmarklet() : URL(string: url)
-    }
-
     public var isRoot: Bool {
         uuid == Constants.rootFolderID
     }
@@ -151,30 +137,6 @@ public class BookmarkEntity: NSManagedObject {
     public var childrenArray: [BookmarkEntity] {
         let children = children?.array as? [BookmarkEntity] ?? []
         return children.filter { $0.isStub == false && $0.isPendingDeletion == false }
-    }
-
-    public var favoritesArray: [BookmarkEntity] {
-        let children = favorites?.array as? [BookmarkEntity] ?? []
-        return children.filter { $0.isStub == false && $0.isPendingDeletion == false }
-    }
-
-    public var favoriteFoldersSet: Set<BookmarkEntity> {
-        return favoriteFolders.flatMap(Set<BookmarkEntity>.init) ?? []
-    }
-
-    public var lastChildrenArrayReceivedFromSync: [String]? {
-        get {
-            guard let lastChildrenPayloadReceivedFromSync else {
-                return nil
-            }
-            guard !lastChildrenPayloadReceivedFromSync.isEmpty else {
-                return []
-            }
-            return lastChildrenPayloadReceivedFromSync.components(separatedBy: ",")
-        }
-        set {
-            lastChildrenPayloadReceivedFromSync = newValue?.filter({ !$0.isEmpty }).joined(separator: ",")
-      }
     }
 
     public static func makeFolder(title: String,
@@ -212,52 +174,6 @@ public class BookmarkEntity: NSManagedObject {
         return object
     }
 
-    // If `insertAt` is nil, it is inserted at the end.
-    public func addToFavorites(insertAt: Int? = nil,
-                               favoritesRoot root: BookmarkEntity) {
-
-        if let position = insertAt {
-            root.insertIntoFavorites(self, at: position)
-        } else {
-            root.addToFavorites(self)
-        }
-    }
-
-    public func addToFavorites(folders: [BookmarkEntity]) {
-        for root in folders {
-            root.addToFavorites(self)
-        }
-    }
-
-    public func removeFromFavorites(folders: [BookmarkEntity]) {
-        for root in folders {
-            root.removeFromFavorites(self)
-        }
-    }
-
-    public func removeFromFavorites(favoritesRoot: BookmarkEntity) {
-        favoritesRoot.removeFromFavorites(self)
-    }
-
-    public func markPendingDeletion() {
-        var queue: [BookmarkEntity] = [self]
-
-        while !queue.isEmpty {
-            let currentObject = queue.removeFirst()
-
-            currentObject.url = nil
-            currentObject.title = nil
-            currentObject.isPendingDeletion = true
-
-            if currentObject.isFolder {
-                queue.append(contentsOf: currentObject.childrenArray)
-            }
-        }
-    }
-
-    public func cancelDeletion() {
-        isPendingDeletion = false
-    }
 }
 
 // MARK: Validation
@@ -270,7 +186,8 @@ extension BookmarkEntity {
     }
 
     func validateFavoritesFolder() throws {
-        let uuids = Set(favoriteFoldersSet.compactMap(\.uuid))
+        let folders = favoriteFolders.flatMap(Set<BookmarkEntity>.init) ?? []
+        let uuids = Set(folders.compactMap(\.uuid))
         guard uuids.isSubset(of: Constants.favoriteFoldersIDs) else {
             throw Error.invalidFavoritesFolder
         }

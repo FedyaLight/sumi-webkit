@@ -83,16 +83,6 @@ enum SumiBookmarkSortMode: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-struct SumiBookmarkImportSummary: Equatable, Sendable {
-    var imported: Int
-    var duplicates: Int
-    var failed: Int
-
-    var message: String {
-        "\(imported) imported, \(duplicates) duplicate, \(failed) failed."
-    }
-}
-
 struct SumiBookmarkAllTabsResult: Equatable, Sendable {
     var created: Int
     var duplicates: Int
@@ -175,24 +165,5 @@ enum SumiBookmarkError: LocalizedError, Equatable {
         case .exportFailed(let message):
             return message
         }
-    }
-}
-
-struct SumiImportedBookmarkNode: Equatable, Sendable {
-    enum Kind: Equatable, Sendable {
-        case bookmark(URL)
-        case folder
-    }
-
-    var title: String
-    var kind: Kind
-    var children: [SumiImportedBookmarkNode]
-
-    static func bookmark(title: String, url: URL) -> SumiImportedBookmarkNode {
-        SumiImportedBookmarkNode(title: title, kind: .bookmark(url), children: [])
-    }
-
-    static func folder(title: String, children: [SumiImportedBookmarkNode]) -> SumiImportedBookmarkNode {
-        SumiImportedBookmarkNode(title: title, kind: .folder, children: children)
     }
 }
