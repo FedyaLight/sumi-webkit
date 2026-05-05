@@ -356,7 +356,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             showsNewTabButtonInList: settings.showNewTabButtonInTabList,
             showsTopNewTabButton: settings.tabListNewTabButtonPosition == .top,
             rowCornerRadius: settings.resolvedCornerRadius(12),
-            pinnedTabsConfiguration: settings.pinnedTabsLook
+            pinnedTabsConfiguration: .large
         )
     }
 
@@ -1673,7 +1673,7 @@ struct SpacesSideBarView: View {
                     EssentialsSnapshotGrid(
                         snapshot: essentials,
                         width: max(width - BrowserWindowState.sidebarHorizontalPadding, 0),
-                        configuration: transitionSnapshot?.source.pinnedTabsConfiguration ?? sumiSettings.pinnedTabsLook,
+                        configuration: transitionSnapshot?.source.pinnedTabsConfiguration ?? .large,
                         tokens: themeContext.tokens(settings: sumiSettings)
                     )
                     .padding(.horizontal, 8)

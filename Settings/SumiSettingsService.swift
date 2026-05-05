@@ -16,7 +16,6 @@ class SumiSettingsService {
     private let userDefaults: UserDefaults
     private let windowSchemeModeKey = "settings.windowSchemeMode"
     private let themeUseSystemColorsKey = "settings.themeUseSystemColors"
-    private let themeStyledStatusPanelKey = "settings.themeStyledStatusPanel"
     private let themeBorderRadiusKey = "settings.themeBorderRadius"
     private let darkThemeStyleKey = "settings.darkThemeStyle"
     private let searchEngineKey = "settings.searchEngine"
@@ -30,8 +29,6 @@ class SumiSettingsService {
     private let showNewTabButtonInTabListKey = "settings.showNewTabButtonInTabList"
     private let tabListNewTabButtonPositionKey = "settings.tabListNewTabButtonPosition"
     private let showLinkStatusBarKey = "settings.showLinkStatusBar"
-    private let showEssentialsUnloadIndicatorKey = "settings.showEssentialsUnloadIndicator"
-    private let pinnedTabsLookKey = "settings.pinnedTabsLook"
     private let siteSearchEntriesKey = "settings.siteSearchEntries"
     private let didFinishOnboardingKey = "settings.didFinishOnboarding"
     private let tabLayoutKey = "settings.tabLayout"
@@ -55,12 +52,6 @@ class SumiSettingsService {
     var themeUseSystemColors: Bool {
         didSet {
             userDefaults.set(themeUseSystemColors, forKey: themeUseSystemColorsKey)
-        }
-    }
-
-    var themeStyledStatusPanel: Bool {
-        didSet {
-            userDefaults.set(themeStyledStatusPanel, forKey: themeStyledStatusPanelKey)
         }
     }
 
@@ -172,18 +163,6 @@ class SumiSettingsService {
         }
     }
 
-    var showEssentialsUnloadIndicator: Bool {
-        didSet {
-            userDefaults.set(showEssentialsUnloadIndicator, forKey: showEssentialsUnloadIndicatorKey)
-        }
-    }
-    
-    var pinnedTabsLook: PinnedTabsConfiguration {
-        didSet {
-            userDefaults.set(pinnedTabsLook, forKey: pinnedTabsLookKey)
-        }
-    }
-
     var siteSearchEntries: [SiteSearchEntry] {
         didSet {
             if let data = try? JSONEncoder().encode(siteSearchEntries) {
@@ -232,7 +211,6 @@ class SumiSettingsService {
         userDefaults.register(defaults: [
             windowSchemeModeKey: WindowSchemeMode.auto.rawValue,
             themeUseSystemColorsKey: false,
-            themeStyledStatusPanelKey: true,
             themeBorderRadiusKey: -1,
             darkThemeStyleKey: DarkThemeStyle.default.rawValue,
             searchEngineKey: SearchProvider.google.rawValue,
@@ -247,8 +225,6 @@ class SumiSettingsService {
             showNewTabButtonInTabListKey: true,
             tabListNewTabButtonPositionKey: TabListNewTabButtonPosition.bottom.rawValue,
             showLinkStatusBarKey: true,
-            showEssentialsUnloadIndicatorKey: false,
-            pinnedTabsLookKey: "large",
             didFinishOnboardingKey: true,
             tabLayoutKey: TabLayout.sidebar.rawValue,
             memoryModeKey: SumiMemoryMode.balanced.rawValue,
@@ -261,7 +237,6 @@ class SumiSettingsService {
             rawValue: userDefaults.string(forKey: windowSchemeModeKey) ?? WindowSchemeMode.auto.rawValue
         ) ?? .auto
         self.themeUseSystemColors = userDefaults.bool(forKey: themeUseSystemColorsKey)
-        self.themeStyledStatusPanel = userDefaults.bool(forKey: themeStyledStatusPanelKey)
         let storedBorderRadius = userDefaults.integer(forKey: themeBorderRadiusKey)
         self.themeBorderRadius = userDefaults.object(forKey: themeBorderRadiusKey) == nil ? -1 : storedBorderRadius
         self.darkThemeStyle = DarkThemeStyle(
@@ -303,8 +278,6 @@ class SumiSettingsService {
             rawValue: userDefaults.string(forKey: tabListNewTabButtonPositionKey) ?? TabListNewTabButtonPosition.bottom.rawValue
         ) ?? .bottom
         self.showLinkStatusBar = userDefaults.bool(forKey: showLinkStatusBarKey)
-        self.showEssentialsUnloadIndicator = userDefaults.bool(forKey: showEssentialsUnloadIndicatorKey)
-        self.pinnedTabsLook = PinnedTabsConfiguration(rawValue: userDefaults.string(forKey: pinnedTabsLookKey) ?? "large") ?? .large
         self.tabLayout = TabLayout(rawValue: userDefaults.string(forKey: tabLayoutKey) ?? TabLayout.sidebar.rawValue) ?? .sidebar
         self.didFinishOnboarding = userDefaults.bool(forKey: didFinishOnboardingKey)
         let storedMemoryMode = userDefaults.string(forKey: memoryModeKey)

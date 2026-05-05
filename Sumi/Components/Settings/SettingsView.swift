@@ -17,86 +17,11 @@ enum SettingsViewStateDeferral {
     }
 }
 
-/// Profiles + sidebar behavior (also used in the in-tab settings surface).
+/// Profiles and space assignments (also used in the in-tab settings surface).
 struct SumiProfilesSettingsPane: View {
-    @EnvironmentObject private var browserManager: BrowserManager
-    @Environment(\.sumiSettings) private var sumiSettings
-
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             ProfilesSettingsView()
-
-            SettingsSectionCard(
-                title: "Sidebar & Glance",
-                subtitle: "Single-window Sumi behavior for spaces, launchers, and link previews."
-            ) {
-                @Bindable var settings = sumiSettings
-
-                VStack(alignment: .leading, spacing: 12) {
-                    SettingsRow(
-                        title: "Compact spaces",
-                        subtitle: "Use denser space presentation in the sidebar."
-                    ) {
-                        Toggle("", isOn: $settings.sidebarCompactSpaces)
-                            .labelsHidden()
-                            .toggleStyle(.switch)
-                    }
-
-                    SettingsRow(
-                        title: "Sidebar side",
-                        subtitle: "Place the browser sidebar on the left or right edge."
-                    ) {
-                        Picker("", selection: $settings.sidebarPosition) {
-                            ForEach(SidebarPosition.allCases) { position in
-                                Text(position.displayName).tag(position)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 120)
-                    }
-
-                    SettingsRow(
-                        title: "Glance",
-                        subtitle: "Preview links without fully opening a tab."
-                    ) {
-                        Toggle("", isOn: $settings.glanceEnabled)
-                            .labelsHidden()
-                            .toggleStyle(.switch)
-                    }
-
-                    SettingsRow(
-                        title: "Essentials unload indicator",
-                        subtitle: "Show when an Essential's hidden runtime has been deactivated."
-                    ) {
-                        Toggle("", isOn: $settings.showEssentialsUnloadIndicator)
-                            .labelsHidden()
-                            .toggleStyle(.switch)
-                    }
-
-                    SettingsRow(
-                        title: "Pinned launcher style",
-                        subtitle: "Controls the visual density of pinned launchers."
-                    ) {
-                        Picker("", selection: $settings.pinnedTabsLook) {
-                            ForEach(PinnedTabsConfiguration.allCases) { configuration in
-                                Text(configuration.name).tag(configuration)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 170)
-                    }
-
-                    SettingsActionRow(
-                        title: "Current space theme",
-                        subtitle: "Open the theme editor for the active space.",
-                        systemImage: "paintpalette",
-                        buttonTitle: "Edit Theme..."
-                    ) {
-                        browserManager.showGradientEditor()
-                    }
-                    .disabled(browserManager.tabManager.currentSpace == nil)
-                }
-            }
         }
     }
 }

@@ -40,7 +40,7 @@ struct PinnedTabView: View {
     @State private var isActionHovered = false
 
     var body: some View {
-        let pinnedTabsConfiguration: PinnedTabsConfiguration = sumiSettings.pinnedTabsLook
+        let pinnedTabsConfiguration: PinnedTabsConfiguration = .large
         let cornerRadius = sumiSettings.resolvedCornerRadius(pinnedTabsConfiguration.cornerRadius)
         ZStack {
             PinnedTileVisual(
@@ -216,7 +216,7 @@ struct PinnedTileVisual: View {
     private let faviconBlur: CGFloat = 30.0
 
     var body: some View {
-        let pinnedTabsConfiguration = configuration ?? sumiSettings.pinnedTabsLook
+        let pinnedTabsConfiguration = configuration ?? .large
         let cornerRadius = sumiSettings.resolvedCornerRadius(pinnedTabsConfiguration.cornerRadius)
 
         ZStack {

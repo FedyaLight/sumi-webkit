@@ -112,7 +112,6 @@ extension SumiSettingsService {
     var chromeTokenRecipeFingerprint: Int {
         var hasher = Hasher()
         hasher.combine(themeUseSystemColors)
-        hasher.combine(themeStyledStatusPanel)
         hasher.combine(darkThemeStyle)
         hasher.combine(Self.systemControlAccentFingerprint)
         return hasher.finalize()
