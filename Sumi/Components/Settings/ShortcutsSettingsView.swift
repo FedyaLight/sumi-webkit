@@ -7,19 +7,13 @@ struct ShortcutsSettingsView: View {
     @State private var selectedCategory: ShortcutCategory?
 
     private var filteredShortcuts: [KeyboardShortcut] {
-        shortcutManager.shortcuts
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return shortcutManager.shortcuts
             .filter { shortcut in
                 selectedCategory.map { shortcut.action.category == $0 } ?? true
             }
             .filter { shortcut in
-                let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
                 return query.isEmpty || shortcut.action.displayName.localizedCaseInsensitiveContains(query)
-            }
-            .sorted {
-                if $0.action.category != $1.action.category {
-                    return $0.action.category.rawValue < $1.action.category.rawValue
-                }
-                return $0.action.displayName < $1.action.displayName
             }
     }
 
@@ -134,13 +128,6 @@ private struct ShortcutCategorySection: View {
 private struct ShortcutRowView: View {
     let shortcut: KeyboardShortcut
     let shortcutManager: KeyboardShortcutManager
-    @State private var localKeyCombination: KeyCombination
-
-    init(shortcut: KeyboardShortcut, shortcutManager: KeyboardShortcutManager) {
-        self.shortcut = shortcut
-        self.shortcutManager = shortcutManager
-        _localKeyCombination = State(initialValue: shortcut.keyCombination)
-    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -150,43 +137,28 @@ private struct ShortcutRowView: View {
 
             Spacer(minLength: 12)
 
-            if shortcut.isCustomizable {
-                ShortcutRecorderView(
-                    keyCombination: $localKeyCombination,
-                    action: shortcut.action,
-                    shortcutManager: shortcutManager,
-                    onCommit: commit
-                )
-
-                Toggle("", isOn: Binding(
-                    get: { shortcut.isEnabled },
-                    set: { shortcutManager.toggleShortcut(action: shortcut.action, isEnabled: $0) }
-                ))
-                .toggleStyle(.switch)
-                .labelsHidden()
-                .disabled(shortcut.keyCombination.isEmpty)
-            } else {
-                Text(shortcut.keyCombination.displayString)
-                    .font(.system(.body, design: .monospaced))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color(.controlBackgroundColor))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-            }
+            ShortcutRecorderView(
+                keyCombination: shortcut.keyCombination,
+                onValidate: validate,
+                onCommit: commit,
+                onClear: clear
+            )
         }
         .padding(12)
         .background(Color(.controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 8))
-        .onChange(of: shortcut) { _, newShortcut in
-            localKeyCombination = newShortcut.keyCombination
-        }
     }
 
-    private func commit(_ combination: KeyCombination) -> Bool {
-        if combination.isEmpty {
-            return shortcutManager.clearShortcut(action: shortcut.action)
-        }
-        return shortcutManager.updateShortcut(action: shortcut.action, keyCombination: combination)
+    private func validate(_ combination: KeyCombination) -> ShortcutValidationResult {
+        shortcutManager.validate(combination, excludingAction: shortcut.action)
+    }
+
+    private func commit(_ combination: KeyCombination) -> ShortcutValidationResult {
+        shortcutManager.setShortcut(action: shortcut.action, keyCombination: combination)
+    }
+
+    private func clear() -> Bool {
+        shortcutManager.clearShortcut(action: shortcut.action)
     }
 }
 

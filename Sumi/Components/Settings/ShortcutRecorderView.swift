@@ -9,23 +9,22 @@ import SwiftUI
 import AppKit
 
 struct ShortcutRecorderView: View {
-    @Binding var keyCombination: KeyCombination
+    let keyCombination: KeyCombination?
+    let onValidate: (KeyCombination) -> ShortcutValidationResult
+    let onCommit: (KeyCombination) -> ShortcutValidationResult
+    let onClear: () -> Bool
+
     @State private var isRecording = false
     @State private var pendingCombination: KeyCombination?
-    @State private var hasConflict = false
-    @State private var conflictAction: ShortcutAction? = nil
+    @State private var validationResult: ShortcutValidationResult = .valid
     @State private var eventMonitor: Any?
-
-    let action: ShortcutAction
-    let shortcutManager: KeyboardShortcutManager
-    let onCommit: (KeyCombination) -> Bool
 
     var body: some View {
         HStack(spacing: 8) {
             Button(action: toggleRecording) {
                 HStack(spacing: 4) {
                     Image(systemName: isRecording ? "stop.fill" : "pencil")
-                    Text(isRecording ? "Recording..." : keyCombination.displayString)
+                    Text(isRecording ? "Recording..." : (keyCombination?.displayString ?? "Not Set"))
                         .font(.system(.body, design: .monospaced))
                 }
                 .padding(.horizontal, 12)
@@ -36,7 +35,7 @@ struct ShortcutRecorderView: View {
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
-                        .stroke(hasConflict ? Color.red : Color.clear, lineWidth: 1)
+                        .stroke(validationResult == .valid ? Color.clear : Color.red, lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)
@@ -48,10 +47,10 @@ struct ShortcutRecorderView: View {
                 }
             }
 
-            if hasConflict, let conflictAction = conflictAction {
+            if let message = validationResult.userMessage {
                 Image(systemName: "exclamationmark.triangle")
                     .foregroundColor(.red)
-                    .help("Conflicts with \(conflictAction.displayName)")
+                    .help(message)
             }
 
             Button("Clear") {
@@ -59,7 +58,7 @@ struct ShortcutRecorderView: View {
             }
             .buttonStyle(.borderless)
             .foregroundColor(.secondary)
-            .disabled(keyCombination.key.isEmpty && keyCombination.modifiers.isEmpty)
+            .disabled(keyCombination == nil)
         }
         .onDisappear {
             removeKeyMonitor()
@@ -77,8 +76,7 @@ struct ShortcutRecorderView: View {
     private func startRecording() {
         isRecording = true
         pendingCombination = nil
-        hasConflict = false
-        conflictAction = nil
+        validationResult = .valid
         KeyboardShortcutManager.pushShortcutRecorderCaptureSession()
         setupKeyMonitor()
     }
@@ -91,50 +89,37 @@ struct ShortcutRecorderView: View {
 
         isRecording = false
         removeKeyMonitor()
-        if shortcutManager.isValidKeyCombination(pendingCombination),
-           !hasConflict,
-           onCommit(pendingCombination) {
-            keyCombination = pendingCombination
-        }
+        let result = onCommit(pendingCombination)
+        validationResult = result
         self.pendingCombination = nil
     }
 
     private func cancelRecording() {
         isRecording = false
         pendingCombination = nil
-        hasConflict = false
-        conflictAction = nil
+        validationResult = .valid
         removeKeyMonitor()
     }
 
     private func clearShortcut() {
-        let emptyCombination = KeyCombination(key: "", modifiers: [])
         removeKeyMonitor()
-        if onCommit(emptyCombination) {
-            keyCombination = emptyCombination
+        if onClear() {
+            validationResult = .valid
         }
     }
 
-    private func checkForConflicts(_ combination: KeyCombination?) {
-        guard let combination, !combination.isEmpty else {
-            hasConflict = false
-            conflictAction = nil
+    private func validate(_ combination: KeyCombination?) {
+        guard let combination else {
+            validationResult = .invalid
             return
         }
-
-        if let conflictingAction = shortcutManager.hasConflict(keyCombination: combination, excludingAction: action) {
-            hasConflict = true
-            conflictAction = conflictingAction
-        } else {
-            hasConflict = false
-            conflictAction = nil
-        }
+        validationResult = onValidate(combination)
     }
 
     private func setupKeyMonitor() {
         removeKeyMonitor()
 
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { event in
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
             guard isRecording else { return event }
 
             switch event.type {
@@ -166,14 +151,14 @@ struct ShortcutRecorderView: View {
 
         guard let combination = KeyCombination(from: event) else { return }
         pendingCombination = combination
-        checkForConflicts(combination)
-        if shortcutManager.isValidKeyCombination(combination), !hasConflict {
+        validate(combination)
+        if validationResult.allowsCommit {
             finishRecording()
         }
     }
 
     private func handleFlagsChanged(_ event: NSEvent) {
-        pendingCombination = KeyCombination(key: "", modifiers: Modifiers(eventModifierFlags: event.modifierFlags))
-        checkForConflicts(nil)
+        pendingCombination = nil
+        validationResult = Modifiers(eventModifierFlags: event.modifierFlags).isEmpty ? .valid : .invalid
     }
 }

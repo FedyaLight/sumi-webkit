@@ -136,8 +136,8 @@ final class SumiHistoryMenu: NSMenu {
     private func updateNavigationState() {
         backMenuItem.isEnabled = browserManager?.canGoBackInActiveWindow == true
         forwardMenuItem.isEnabled = browserManager?.canGoForwardInActiveWindow == true
-        applyShortcut(.goBack, to: backMenuItem, fallbackKey: "[", fallbackModifiers: [.command])
-        applyShortcut(.goForward, to: forwardMenuItem, fallbackKey: "]", fallbackModifiers: [.command])
+        applyShortcut(.goBack, to: backMenuItem)
+        applyShortcut(.goForward, to: forwardMenuItem)
     }
 
     private func updateRecentlyClosedMenu() {
@@ -162,10 +162,10 @@ final class SumiHistoryMenu: NSMenu {
 
         if browserManager?.canOfferStartupLastSessionRestoreShortcut == true {
             clearShortcut(on: reopenLastClosedMenuItem)
-            applyShortcut(.undoCloseTab, to: reopenAllWindowsFromLastSessionMenuItem, fallbackKey: "t", fallbackModifiers: [.command, .shift])
+            applyShortcut(.undoCloseTab, to: reopenAllWindowsFromLastSessionMenuItem)
         } else {
             clearShortcut(on: reopenAllWindowsFromLastSessionMenuItem)
-            applyShortcut(.undoCloseTab, to: reopenLastClosedMenuItem, fallbackKey: "t", fallbackModifiers: [.command, .shift])
+            applyShortcut(.undoCloseTab, to: reopenLastClosedMenuItem)
         }
     }
 
@@ -200,7 +200,7 @@ final class SumiHistoryMenu: NSMenu {
         addItem(.separator())
 
         showHistoryMenuItem.isEnabled = true
-        applyShortcut(.viewHistory, to: showHistoryMenuItem, fallbackKey: "y", fallbackModifiers: [.command])
+        applyShortcut(.viewHistory, to: showHistoryMenuItem)
         addItem(showHistoryMenuItem)
 
         addItem(.separator())
@@ -213,21 +213,19 @@ final class SumiHistoryMenu: NSMenu {
 
     private func applyShortcut(
         _ action: ShortcutAction,
-        to item: NSMenuItem,
-        fallbackKey: String,
-        fallbackModifiers: NSEvent.ModifierFlags
+        to item: NSMenuItem
     ) {
         guard let shortcutManager,
               let shortcut = shortcutManager.shortcut(for: action),
-              let keyEquivalent = KeyboardShortcutPresentation.nsMenuKeyEquivalent(for: shortcut.keyCombination)
+              let keyCombination = shortcut.keyCombination,
+              let keyEquivalent = KeyboardShortcutPresentation.nsMenuKeyEquivalent(for: keyCombination)
         else {
-            item.keyEquivalent = fallbackKey
-            item.keyEquivalentModifierMask = fallbackModifiers
+            clearShortcut(on: item)
             return
         }
 
         item.keyEquivalent = keyEquivalent
-        item.keyEquivalentModifierMask = shortcut.keyCombination.modifiers.nsEventModifierFlags
+        item.keyEquivalentModifierMask = keyCombination.modifiers.nsEventModifierFlags
     }
 
     private func clearShortcut(on item: NSMenuItem) {

@@ -25,9 +25,10 @@ struct SumiCommands: Commands {
     /// View extension to apply dynamic keyboard shortcut if enabled
     private func dynamicShortcut(_ action: ShortcutAction) -> some ViewModifier {
         let shortcut = shortcutManager.shortcut(for: action)
+        let keyCombination = shortcut?.keyCombination
         return DynamicShortcutModifier(
-            keyEquivalent: shortcut.flatMap { KeyboardShortcutPresentation.keyEquivalent(for: $0.keyCombination) },
-            modifiers: shortcut.map { KeyboardShortcutPresentation.eventModifiers(for: $0.keyCombination.modifiers) } ?? []
+            keyEquivalent: keyCombination.flatMap { KeyboardShortcutPresentation.keyEquivalent(for: $0) },
+            modifiers: keyCombination.map { KeyboardShortcutPresentation.eventModifiers(for: $0.modifiers) } ?? []
         )
     }
 
