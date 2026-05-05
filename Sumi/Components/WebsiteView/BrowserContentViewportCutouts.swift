@@ -8,12 +8,23 @@ enum BrowserContentViewportCorner: CaseIterable {
     case bottomRight
 }
 
-struct BrowserContentViewportCutoutBackground {
+struct BrowserContentViewportCutoutBackground: Equatable {
     var baseColor: NSColor
     var sourceGradient: SpaceGradient?
     var targetGradient: SpaceGradient?
     var transitionProgress: Double
     var usesTransitionLayers: Bool
+
+    static func == (
+        lhs: BrowserContentViewportCutoutBackground,
+        rhs: BrowserContentViewportCutoutBackground
+    ) -> Bool {
+        lhs.baseColor.sumiSRGBA.isApproximatelyEqual(to: rhs.baseColor.sumiSRGBA)
+            && lhs.sourceGradient == rhs.sourceGradient
+            && lhs.targetGradient == rhs.targetGradient
+            && abs(lhs.transitionProgress - rhs.transitionProgress) <= 0.000_1
+            && lhs.usesTransitionLayers == rhs.usesTransitionLayers
+    }
 
     static func solid(_ color: NSColor) -> Self {
         BrowserContentViewportCutoutBackground(
@@ -29,10 +40,6 @@ struct BrowserContentViewportCutoutBackground {
         drawSampledChromeBackground(in: view)
     }
 
-    private var clampedTransitionProgress: Double {
-        min(max(transitionProgress, 0), 1)
-    }
-
     private func drawSampledChromeBackground(in view: NSView) {
         let referenceView = view.window?.contentView ?? view.superview ?? view
         let referenceBounds = referenceView.bounds
@@ -41,6 +48,10 @@ struct BrowserContentViewportCutoutBackground {
         let pixelLength = 1 / max(scale, 1)
         let pixelWidth = max(1, Int(ceil(view.bounds.width * scale)))
         let pixelHeight = max(1, Int(ceil(view.bounds.height * scale)))
+        let sampler = BrowserContentViewportCutoutBackgroundSampler(
+            background: self,
+            referenceBounds: referenceBounds
+        )
 
         for yIndex in 0..<pixelHeight {
             let sampleY = min(view.bounds.height, (CGFloat(yIndex) + 0.5) * pixelLength)
@@ -53,9 +64,8 @@ struct BrowserContentViewportCutoutBackground {
                     x: originInReference.x + sampleX,
                     y: originInReference.y + sampleY
                 )
-                sampledColor(
-                    at: referencePoint,
-                    in: referenceBounds
+                sampler.sampledColor(
+                    at: referencePoint
                 ).setFill()
                 NSRect(
                     x: rectX,
@@ -67,20 +77,42 @@ struct BrowserContentViewportCutoutBackground {
         }
     }
 
-    private func sampledColor(at point: NSPoint, in referenceBounds: NSRect) -> NSColor {
-        let base = baseColor.sumiSRGBA
+}
+
+private struct BrowserContentViewportCutoutBackgroundSampler {
+    let baseColor: SumiRGBA
+    let sourceGradient: PreparedSpaceGradient?
+    let targetGradient: PreparedSpaceGradient?
+    let transitionProgress: CGFloat
+    let usesTransitionLayers: Bool
+    let referenceBounds: NSRect
+
+    init(
+        background: BrowserContentViewportCutoutBackground,
+        referenceBounds: NSRect
+    ) {
+        baseColor = background.baseColor.sumiSRGBA
+        sourceGradient = PreparedSpaceGradient(background.sourceGradient)
+        targetGradient = PreparedSpaceGradient(background.targetGradient)
+        transitionProgress = CGFloat(min(max(background.transitionProgress, 0), 1))
+        usesTransitionLayers = background.usesTransitionLayers
+        self.referenceBounds = referenceBounds
+    }
+
+    func sampledColor(at point: NSPoint) -> NSColor {
+        let base = baseColor
         var result = SumiRGBA(red: base.red, green: base.green, blue: base.blue, alpha: 1)
 
         let uv = normalizedSwiftUIUnitPoint(for: point, in: referenceBounds)
         if usesTransitionLayers {
             result = composite(
                 sampleGradient(sourceGradient, at: uv),
-                opacity: CGFloat(1 - clampedTransitionProgress),
+                opacity: 1 - transitionProgress,
                 over: result
             )
             result = composite(
                 sampleGradient(targetGradient, at: uv),
-                opacity: CGFloat(clampedTransitionProgress),
+                opacity: transitionProgress,
                 over: result
             )
         } else {
@@ -99,7 +131,7 @@ struct BrowserContentViewportCutoutBackground {
         )
     }
 
-    private func normalizedSwiftUIUnitPoint(
+    func normalizedSwiftUIUnitPoint(
         for point: NSPoint,
         in referenceBounds: NSRect
     ) -> CGPoint {
@@ -117,32 +149,30 @@ struct BrowserContentViewportCutoutBackground {
     }
 
     private func sampleGradient(
-        _ gradient: SpaceGradient?,
+        _ gradient: PreparedSpaceGradient?,
         at uv: CGPoint
     ) -> (color: SumiRGBA, opacity: CGFloat)? {
         guard let gradient else { return nil }
-        let nodes = Array(gradient.sortedNodes.prefix(3))
-        guard nodes.isEmpty == false else { return nil }
+        let nodes = gradient.nodes
 
-        let opacity = CGFloat(min(max(gradient.opacity, 0), 1))
         let color: SumiRGBA
         if nodes.count == 1 {
-            color = Self.color(for: nodes[0])
+            color = nodes[0].color
         } else if nodes.count == 2 {
             color = sampleLinearGradient(nodes: nodes, angle: gradient.angle, at: uv)
         } else {
             color = sampleBarycentricGradient(nodes: nodes, at: uv)
         }
 
-        return (color, opacity)
+        return (color, gradient.opacity)
     }
 
     private func sampleLinearGradient(
-        nodes: [GradientNode],
-        angle: Double,
+        nodes: [PreparedGradientNode],
+        angle: CGFloat,
         at uv: CGPoint
     ) -> SumiRGBA {
-        let theta = CGFloat(Angle(degrees: angle).radians)
+        let theta = angle * .pi / 180
         let dx = cos(theta)
         let dy = sin(theta)
         let start = CGPoint(x: 0.5 - 0.5 * dx, y: 0.5 - 0.5 * dy)
@@ -155,35 +185,34 @@ struct BrowserContentViewportCutoutBackground {
         return sampleStops(nodes: nodes, at: location)
     }
 
-    private func sampleStops(nodes: [GradientNode], at location: CGFloat) -> SumiRGBA {
-        let sortedNodes = nodes.sorted { $0.location < $1.location }
-        guard let first = sortedNodes.first else { return .clear }
-        guard sortedNodes.count > 1 else { return Self.color(for: first) }
+    private func sampleStops(nodes: [PreparedGradientNode], at location: CGFloat) -> SumiRGBA {
+        guard let first = nodes.first else { return .clear }
+        guard nodes.count > 1 else { return first.color }
 
-        if location <= CGFloat(first.location) {
-            return Self.color(for: first)
+        if location <= first.location {
+            return first.color
         }
 
-        for index in 1..<sortedNodes.count {
-            let previous = sortedNodes[index - 1]
-            let current = sortedNodes[index]
-            let previousLocation = CGFloat(previous.location)
-            let currentLocation = CGFloat(current.location)
+        for index in 1..<nodes.count {
+            let previous = nodes[index - 1]
+            let current = nodes[index]
+            let previousLocation = previous.location
+            let currentLocation = current.location
             guard location <= currentLocation else { continue }
 
             let span = max(currentLocation - previousLocation, 0.000_001)
             let amount = (location - previousLocation) / span
-            return Self.color(for: previous).mixed(
-                with: Self.color(for: current),
+            return previous.color.mixed(
+                with: current.color,
                 amount: amount
             )
         }
 
-        return Self.color(for: sortedNodes[sortedNodes.count - 1])
+        return nodes[nodes.count - 1].color
     }
 
     private func sampleBarycentricGradient(
-        nodes: [GradientNode],
+        nodes: [PreparedGradientNode],
         at uv: CGPoint
     ) -> SumiRGBA {
         let pA = CGPoint(x: 0.08, y: 0.08)
@@ -211,10 +240,10 @@ struct BrowserContentViewportCutoutBackground {
         v /= sum
         w /= sum
 
-        return Self.color(for: nodes[0])
+        return nodes[0].color
             .scaled(by: u)
-            .adding(Self.color(for: nodes[1]).scaled(by: v))
-            .adding(Self.color(for: nodes[2]).scaled(by: w))
+            .adding(nodes[1].color.scaled(by: v))
+            .adding(nodes[2].color.scaled(by: w))
     }
 
     private func composite(
@@ -227,8 +256,31 @@ struct BrowserContentViewportCutoutBackground {
         return sample.color.composited(alpha: alpha, over: base)
     }
 
-    private static func color(for node: GradientNode) -> SumiRGBA {
-        (NSColor(Color(hex: node.colorHex)).usingColorSpace(.sRGB) ?? .clear).sumiSRGBA
+}
+
+private struct PreparedSpaceGradient {
+    let angle: CGFloat
+    let opacity: CGFloat
+    let nodes: [PreparedGradientNode]
+
+    init?(_ gradient: SpaceGradient?) {
+        guard let gradient else { return nil }
+        let preparedNodes = gradient.sortedNodes.prefix(3).map(PreparedGradientNode.init)
+        guard preparedNodes.isEmpty == false else { return nil }
+
+        angle = CGFloat(gradient.angle)
+        opacity = CGFloat(min(max(gradient.opacity, 0), 1))
+        nodes = preparedNodes
+    }
+}
+
+private struct PreparedGradientNode {
+    let color: SumiRGBA
+    let location: CGFloat
+
+    init(_ node: GradientNode) {
+        color = (NSColor(Color(hex: node.colorHex)).usingColorSpace(.sRGB) ?? .clear).sumiSRGBA
+        location = CGFloat(node.location)
     }
 }
 
@@ -239,6 +291,13 @@ private struct SumiRGBA {
     var alpha: CGFloat
 
     static let clear = SumiRGBA(red: 0, green: 0, blue: 0, alpha: 0)
+
+    func isApproximatelyEqual(to other: SumiRGBA) -> Bool {
+        abs(red - other.red) <= 0.000_1
+            && abs(green - other.green) <= 0.000_1
+            && abs(blue - other.blue) <= 0.000_1
+            && abs(alpha - other.alpha) <= 0.000_1
+    }
 
     func mixed(with other: SumiRGBA, amount: CGFloat) -> SumiRGBA {
         let ratio = min(max(amount, 0), 1)
@@ -390,12 +449,14 @@ final class BrowserContentCornerCutoutView: NSView {
 
     var cornerRadius: CGFloat = 0 {
         didSet {
+            guard abs(cornerRadius - oldValue) > 0.000_1 else { return }
             needsDisplay = true
         }
     }
 
     var cutoutBackground: BrowserContentViewportCutoutBackground = .solid(.clear) {
         didSet {
+            guard cutoutBackground != oldValue else { return }
             needsDisplay = true
         }
     }
