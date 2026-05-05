@@ -96,7 +96,7 @@ extension SecurityOrigin {
 
 extension FrameInfo: CustomDebugStringConvertible {
     public var debugDescription: String {
-        let webViewPtr = webView.map(NSValue.init(nonretainedObject:))?.pointerValue?.debugDescription.replacing(regex: "^0x0*", with: "0x") ?? "<nil>"
+        let webViewPtr = webView.map(NSValue.init(nonretainedObject:))?.pointerValue?.hexValue ?? "<nil>"
 #if _FRAME_HANDLE_ENABLED
         let handle = handle.debugDescription + " "
 #else

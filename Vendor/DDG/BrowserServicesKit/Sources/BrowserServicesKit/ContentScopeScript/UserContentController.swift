@@ -129,11 +129,8 @@ final public class UserContentController: WKUserContentController {
         installUserScripts(wkUserScripts, handlers: userScripts.userScripts)
     }
 
-    enum ContentRuleListIdentifier: Hashable {
-        case global(String), local(String)
-    }
     @MainActor
-    private var contentRuleLists = [ContentRuleListIdentifier: WKContentRuleList]()
+    private var globalContentRuleLists = [String: WKContentRuleList]()
     @MainActor
     private var assetsPublisherCancellables: Set<AnyCancellable>?
     @MainActor
@@ -180,7 +177,7 @@ final public class UserContentController: WKUserContentController {
 
     @MainActor
     private func installGlobalContentRuleLists(_ globalContentRuleLists: [String: WKContentRuleList]) {
-        assert(contentRuleLists.isEmpty, "installGlobalContentRuleLists should be called after removing all Content Rule Lists")
+        assert(globalContentRuleLists.isEmpty, "installGlobalContentRuleLists should be called after removing all Content Rule Lists")
         guard self.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking) else {
             Logger.contentBlocking.debug("\(self): ❗️ content blocking disabled, removing all content rule lists")
             removeAllContentRuleLists()
@@ -188,64 +185,14 @@ final public class UserContentController: WKUserContentController {
         }
 
         Logger.contentBlocking.debug("\(self): ❇️ installing global rule lists: \(globalContentRuleLists))")
-        contentRuleLists = globalContentRuleLists.reduce(into: [:]) {
-            $0[.global($1.key)] = $1.value
-        }
+        self.globalContentRuleLists = globalContentRuleLists
         globalContentRuleLists.values.forEach(self.add)
-    }
-
-    public struct ContentRulesNotFoundError: Error {}
-    @MainActor
-    public func enableGlobalContentRuleList(withIdentifier identifier: String) throws {
-        guard let ruleList = contentBlockingAssets?.globalRuleLists[identifier]
-                // when enabling from a $contentBlockingAssets subscription, the ruleList gets
-                // to contentRuleLists before contentBlockingAssets value is set
-                ?? contentRuleLists[.global(identifier)] else {
-            Logger.contentBlocking.debug("\(self): ❗️ can‘t enable rule list `\(identifier)` as it‘s not available")
-            throw ContentRulesNotFoundError()
-        }
-        guard contentRuleLists[.global(identifier)] == nil else { return /* already enabled */ }
-
-        Logger.contentBlocking.debug("\(self): 🟩 enabling rule list `\(identifier)`")
-        contentRuleLists[.global(identifier)] = ruleList
-        add(ruleList)
-    }
-
-    public struct ContentRulesNotEnabledError: Error {}
-    @MainActor
-    public func disableGlobalContentRuleList(withIdentifier identifier: String) throws {
-        guard let ruleList = contentRuleLists[.global(identifier)] else {
-            Logger.contentBlocking.debug("\(self): ❗️ can‘t disable rule list `\(identifier)` as it‘s not enabled")
-            throw ContentRulesNotEnabledError()
-        }
-
-        Logger.contentBlocking.debug("\(self): 🔻 disabling rule list `\(identifier)`")
-        contentRuleLists[.global(identifier)] = nil
-        remove(ruleList)
-    }
-
-    @MainActor
-    public func installLocalContentRuleList(_ ruleList: WKContentRuleList, identifier: String) {
-        // replace if already installed
-        removeLocalContentRuleList(withIdentifier: identifier)
-
-        Logger.contentBlocking.debug("\(self): 🔸 installing local rule list `\(identifier)`")
-        contentRuleLists[.local(identifier)] = ruleList
-        add(ruleList)
-    }
-
-    @MainActor
-    public func removeLocalContentRuleList(withIdentifier identifier: String) {
-        guard let ruleList = contentRuleLists.removeValue(forKey: .local(identifier)) else { return }
-
-        Logger.contentBlocking.debug("\(self): 🔻 removing local rule list `\(identifier)`")
-        remove(ruleList)
     }
 
     @MainActor
     public override func removeAllContentRuleLists() {
         Logger.contentBlocking.debug("\(self): 🧹 removing all content rule lists")
-        contentRuleLists.removeAll(keepingCapacity: true)
+        globalContentRuleLists.removeAll(keepingCapacity: true)
         super.removeAllContentRuleLists()
     }
 
@@ -286,11 +233,7 @@ final public class UserContentController: WKUserContentController {
 
     @MainActor
     private func removeInstalledScriptMessageHandlers() {
-        if #available(macOS 11.0, *) {
-            self.removeAllScriptMessageHandlers()
-        } else {
-            self.scriptMessageHandler.registeredMessageNames.forEach(self.removeScriptMessageHandler)
-        }
+        self.removeAllScriptMessageHandlers()
         self.scriptMessageHandler.clear()
     }
 
@@ -316,15 +259,11 @@ final public class UserContentController: WKUserContentController {
             }
             guard !scriptMessageHandler.isMessageHandlerRegistered(for: messageName) else { continue }
 
-            if #available(macOS 11.0, iOS 14.0, *) {
-                let contentWorld: WKContentWorld = userScript.getContentWorld()
-                if userScript is WKScriptMessageHandlerWithReply {
-                    addScriptMessageHandler(scriptMessageHandler, contentWorld: contentWorld, name: messageName)
-                } else {
-                    add(scriptMessageHandler, contentWorld: contentWorld, name: messageName)
-                }
+            let contentWorld: WKContentWorld = userScript.getContentWorld()
+            if userScript is WKScriptMessageHandlerWithReply {
+                addScriptMessageHandler(scriptMessageHandler, contentWorld: contentWorld, name: messageName)
             } else {
-                add(scriptMessageHandler, name: messageName)
+                add(scriptMessageHandler, contentWorld: contentWorld, name: messageName)
             }
         }
     }
@@ -396,10 +335,6 @@ private class PermanentScriptMessageHandler: NSObject, WKScriptMessageHandler, W
     }
     private var registeredMessageHandlers = [String: WeakScriptMessageHandlerBox]()
 
-    var registeredMessageNames: [String] {
-        Array(registeredMessageHandlers.keys)
-    }
-
     func clear() {
         self.registeredMessageHandlers.removeAll()
     }
@@ -416,7 +351,7 @@ private class PermanentScriptMessageHandler: NSObject, WKScriptMessageHandler, W
         self.registeredMessageHandlers[messageName] = .init(handler: handler)
     }
 
-    public func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let box = self.registeredMessageHandlers[message.messageName] else {
             Logger.contentBlocking.debug("Dropping message for unregistered script handler \(message.messageName)")
             return
@@ -428,7 +363,7 @@ private class PermanentScriptMessageHandler: NSObject, WKScriptMessageHandler, W
         handler.userContentController(userContentController, didReceive: message)
     }
 
-    public func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage, replyHandler: @escaping (Any?, String?) -> Void) {
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage, replyHandler: @escaping (Any?, String?) -> Void) {
         guard let box = self.registeredMessageHandlers[message.messageName] else {
             Logger.contentBlocking.debug("Dropping message with reply for unregistered script handler \(message.messageName)")
             replyHandler(nil, "Script message handler is unavailable.")

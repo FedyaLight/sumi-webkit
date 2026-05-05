@@ -8,7 +8,6 @@ final class DefaultTabRuntimeStore: ShellSelectionTabStore {
         self.tabManager = tabManager
     }
 
-    var currentTab: Tab? { tabManager.currentTab }
     var spaces: [Space] { tabManager.spaces }
 
     func tab(for id: UUID) -> Tab? {
@@ -35,7 +34,4 @@ final class DefaultTabRuntimeStore: ShellSelectionTabStore {
         tabManager.shortcutLiveTab(for: pinId, in: windowId)
     }
 
-    func activateShortcutPin(_ pin: ShortcutPin, in windowId: UUID, currentSpaceId: UUID?) -> Tab {
-        tabManager.activateShortcutPin(pin, in: windowId, currentSpaceId: currentSpaceId)
-    }
 }

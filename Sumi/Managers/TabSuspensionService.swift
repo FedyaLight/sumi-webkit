@@ -1,13 +1,6 @@
 import Foundation
 import WebKit
 
-struct TabSuspensionResult: Equatable {
-    let level: SumiMemoryPressureLevel
-    let candidateCount: Int
-    let suspendedCount: Int
-    let suspendedTabIDs: [UUID]
-}
-
 struct TabSuspensionPolicy: Equatable {
     static let moderateProactiveDeactivationDelay: TimeInterval = 6 * 60 * 60
     static let balancedProactiveDeactivationDelay: TimeInterval = 4 * 60 * 60
@@ -169,8 +162,6 @@ final class TabSuspensionService {
     }
 
     private struct ProactiveTimerState {
-        let hiddenStartedAtLiveUptime: TimeInterval
-        let requestedDelay: TimeInterval
         let task: Task<Void, Never>
     }
 
@@ -190,7 +181,6 @@ final class TabSuspensionService {
     private(set) var proactiveTimerStartCountForTesting = 0
 #if DEBUG
     private(set) var proactiveTimerReconcileCountForTesting = 0
-    private(set) var lastProactiveTimerReconcileReasonForTesting: String?
 #endif
 
     init(
@@ -237,12 +227,7 @@ final class TabSuspensionService {
         reconcileProactiveTimers(reason: "attach")
     }
 
-    func proactiveSuspensionPolicyForTesting() -> TabSuspensionPolicy {
-        currentSuspensionPolicy
-    }
-
-    @discardableResult
-    func handleMemoryPressure(_ level: SumiMemoryPressureLevel) -> TabSuspensionResult {
+    func handleMemoryPressure(_ level: SumiMemoryPressureLevel) {
         let signpostState = PerformanceTrace.beginInterval("TabSuspension.memoryPressure")
         defer {
             PerformanceTrace.endInterval("TabSuspension.memoryPressure", signpostState)
@@ -267,25 +252,18 @@ final class TabSuspensionService {
             suspensionLimit = candidates.count
         }
 
-        var suspendedTabIDs: [UUID] = []
+        var suspendedCount = 0
         for candidate in candidates.prefix(suspensionLimit) {
             guard suspend(candidate.tab, reason: "memory-pressure-\(level.rawValue)") else {
                 continue
             }
-            suspendedTabIDs.append(candidate.tab.id)
+            suspendedCount += 1
         }
 
         PerformanceTrace.emitEvent("TabSuspension.tabsSuspended")
         RuntimeDiagnostics.debug(category: "TabSuspension") {
-            "memoryPressure level=\(level.rawValue) candidates=\(candidates.count) suspended=\(suspendedTabIDs.count)"
+            "memoryPressure level=\(level.rawValue) candidates=\(candidates.count) suspended=\(suspendedCount)"
         }
-
-        return TabSuspensionResult(
-            level: level,
-            candidateCount: candidates.count,
-            suspendedCount: suspendedTabIDs.count,
-            suspendedTabIDs: suspendedTabIDs
-        )
     }
 
     @discardableResult
@@ -327,40 +305,6 @@ final class TabSuspensionService {
             "suspended tab=\(tab.id.uuidString.prefix(8)) reason=\(reason)"
         }
         return true
-    }
-
-    func suspensionCandidateTabIDsForTesting() -> [UUID] {
-        suspensionCandidates().map { $0.tab.id }
-    }
-
-    func suspensionEligibility(for tab: Tab) -> TabSuspensionEligibility {
-        let context = suspensionEvaluationContext()
-        if let ineligibility = tabLevelSuspensionIneligibility(for: tab, context: context) {
-            return ineligibility
-        }
-
-        guard let browserManager,
-              let coordinator = browserManager.webViewCoordinator
-        else {
-            return .ineligible(reason: .noLiveWebView)
-        }
-
-        return suspensionEligibility(
-            for: tab,
-            liveWebViews: coordinator.liveWebViews(for: tab),
-            context: context
-        )
-    }
-
-    func suspensionEligibility(
-        for tab: Tab,
-        webViewStates: [TabSuspensionWebViewState]
-    ) -> TabSuspensionEligibility {
-        suspensionEligibility(
-            for: tab,
-            webViewStates: webViewStates,
-            context: suspensionEvaluationContext()
-        )
     }
 
     func suspensionEvaluationContext() -> TabSuspensionEvaluationContext {
@@ -415,7 +359,6 @@ final class TabSuspensionService {
     func reconcileProactiveTimers(reason: String) {
 #if DEBUG
         proactiveTimerReconcileCountForTesting += 1
-        lastProactiveTimerReconcileReasonForTesting = reason
 #endif
 
         let tabs = allKnownTabs()
@@ -572,11 +515,7 @@ final class TabSuspensionService {
                 requestedDelay: requestedDelay
             )
         }
-        proactiveTimers[tabID] = ProactiveTimerState(
-            hiddenStartedAtLiveUptime: hiddenStartedAtLiveUptime,
-            requestedDelay: requestedDelay,
-            task: task
-        )
+        proactiveTimers[tabID] = ProactiveTimerState(task: task)
     }
 
     private func handleProactiveTimerFired(
@@ -632,38 +571,6 @@ final class TabSuspensionService {
         }
         proactiveTimers.removeAll()
     }
-
-#if DEBUG
-    var proactiveTimerTabIDsForTesting: Set<UUID> {
-        Set(proactiveTimers.keys)
-    }
-
-    func proactiveTimerStateForTesting(tabID: UUID) -> (hiddenStartedAtLiveUptime: TimeInterval, requestedDelay: TimeInterval)? {
-        guard let state = proactiveTimers[tabID] else { return nil }
-        return (state.hiddenStartedAtLiveUptime, state.requestedDelay)
-    }
-
-    func revisitCountForTesting(tabID: UUID) -> Int {
-        revisitCounts[tabID, default: 0]
-    }
-
-    func fireProactiveTimerForTesting(tabID: UUID) {
-        guard let state = proactiveTimers[tabID] else { return }
-        handleProactiveTimerFired(
-            tabID: tabID,
-            hiddenStartedAtLiveUptime: state.hiddenStartedAtLiveUptime,
-            requestedDelay: state.requestedDelay
-        )
-    }
-
-    var isProactiveTimerReconcileScheduledForTesting: Bool {
-        scheduledProactiveTimerReconcileTask != nil
-    }
-
-    func drainScheduledProactiveTimerReconcileForTesting() async {
-        await scheduledProactiveTimerReconcileTask?.value
-    }
-#endif
 
     private func suspensionCandidates(
         inactiveBefore cutoffDate: Date? = nil,

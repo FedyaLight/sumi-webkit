@@ -32,8 +32,4 @@ public struct SecurityOrigin: Hashable {
 
     public static let empty = SecurityOrigin(protocol: "", host: "", port: 0)
 
-    public var isEmpty: Bool {
-        self == .empty
-    }
-
 }

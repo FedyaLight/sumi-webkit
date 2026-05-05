@@ -49,11 +49,6 @@ extension URL {
                        port: self.port ?? 0)
     }
 
-    public func isPart(ofDomain domain: String) -> Bool {
-        guard let host = host else { return false }
-        return host == domain || host.hasSuffix(".\(domain)")
-    }
-
     public struct NavigationalScheme: RawRepresentable, Hashable, Sendable {
         public let rawValue: String
 
@@ -86,12 +81,6 @@ extension URL {
         self.scheme.map(NavigationalScheme.init(rawValue:))
     }
 
-    public func replacing(host: String?) -> URL? {
-        guard var components = URLComponents(url: self, resolvingAgainstBaseURL: false) else { return self }
-        components.host = host
-        return components.url
-    }
-
     public func appending(_ path: String) -> URL {
         appendingPathComponent(path)
     }
@@ -104,10 +93,6 @@ extension URL {
     public enum URLProtocol: String {
         case http
         case https
-
-        public var scheme: String {
-            return "\(rawValue)://"
-        }
     }
 
     public func toHttps() -> URL? {
@@ -115,24 +100,6 @@ extension URL {
         guard components.scheme == URLProtocol.http.rawValue else { return self }
         components.scheme = URLProtocol.https.rawValue
         return components.url
-    }
-
-    public func getQueryItems() -> [URLQueryItem]? {
-        guard var components = URLComponents(url: self, resolvingAgainstBaseURL: false),
-              let encodedQuery = components.percentEncodedQuery
-        else { return nil }
-        components.percentEncodedQuery = encodedQuery.encodingPlusesAsSpaces()
-        return components.queryItems ?? nil
-    }
-
-    public func getQueryItem(named name: String) -> URLQueryItem? {
-        getQueryItems()?.first(where: { queryItem -> Bool in
-            queryItem.name == name
-        })
-    }
-
-    public func getParameter(named name: String) -> String? {
-        getQueryItem(named: name)?.value
     }
 
 }

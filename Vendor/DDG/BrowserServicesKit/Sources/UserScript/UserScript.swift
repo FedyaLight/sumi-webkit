@@ -55,17 +55,6 @@ extension UserScript {
         return Self.getContentWorld(requiresRunInPageContentWorld)
     }
 
-    /// Loads a JavaScript file from the given bundle and applies placeholder replacements.
-    ///
-    /// The raw file content is cached in memory for the process lifetime.
-    /// Only suitable for immutable bundle resources. Replacements are applied
-    /// fresh on each call against the cached template.
-    public static func loadJS(_ jsFile: String, from bundle: Bundle, withReplacements replacements: [String: String] = [:]) throws -> String {
-        let js = try JSFileCache.content(forFile: jsFile, in: bundle)
-
-        return js.applyingReplacements(replacements)
-    }
-
     fileprivate nonisolated static func prepareScriptSource(from source: String) -> String {
         let hash = SHA256.hash(data: Data(source.utf8)).hashValue
 

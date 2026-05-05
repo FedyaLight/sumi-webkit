@@ -90,7 +90,8 @@ final class FaviconDownloader: NSObject {
     }
 
     nonisolated private func cancel(_ download: WKDownload) {
-        DispatchQueue.main.asyncOrNow {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
             let task = self.pendingDownloads.removeValue(forKey: download)
             defer {
                 // continuation is always called after removing the FaviconDownloadTask from the store on MainActor.
@@ -109,10 +110,8 @@ final class FaviconDownloader: NSObject {
         self.pendingDownloads.removeAll()
 
         for (download, task) in pendingDownloads {
-            DispatchQueue.main.asyncOrNow {
-                download.cancel { _ in
-                    try? task.destinationURL.map(FileManager.default.removeItem(at:))
-                }
+            download.cancel { _ in
+                try? task.destinationURL.map(FileManager.default.removeItem(at:))
             }
             task.continuation.resume(with: .failure(URLError(.cancelled)))
         }

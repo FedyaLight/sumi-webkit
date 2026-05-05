@@ -58,22 +58,6 @@ struct SidebarDragScope: Equatable {
         self.sourceItemKind = item.kind
     }
 
-    init(
-        windowId: UUID? = nil,
-        spaceId: UUID,
-        profileId: UUID? = nil,
-        sourceContainer: TabDragManager.DragContainer,
-        sourceItemId: UUID,
-        sourceItemKind: SumiDragItemKind
-    ) {
-        self.windowId = windowId
-        self.spaceId = spaceId
-        self.profileId = profileId
-        self.sourceContainer = sourceContainer
-        self.sourceItemId = sourceItemId
-        self.sourceItemKind = sourceItemKind
-    }
-
     func matches(windowId targetWindowId: UUID?) -> Bool {
         guard let windowId, let targetWindowId else {
             return true

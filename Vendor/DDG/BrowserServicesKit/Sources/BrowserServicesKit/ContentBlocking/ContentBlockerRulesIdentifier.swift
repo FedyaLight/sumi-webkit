@@ -85,14 +85,6 @@ public class ContentBlockerRulesIdentifier: Equatable, Codable {
         return identifier
     }
 
-    public class func hash(domains: [String]?) -> String {
-        guard let domains = domains, !domains.isEmpty else {
-            return ""
-        }
-
-        return domains.joined().sha1
-    }
-
     public init(name: String, tdsEtag: String, tempListId: String?, allowListId: String?, unprotectedSitesHash: String?) {
 
         self.name = Self.normalize(identifier: name)

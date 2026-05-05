@@ -17,16 +17,6 @@
 //
 import Foundation
 
-/// Fire-and-forget notifications from the user script
-///
-/// https://duckduckgo.github.io/content-scope-scripts/classes/Messaging_Schema.NotificationMessage.html
-public struct NotificationMessage {
-    public let context: String
-    public let featureName: String
-    public let method: String
-    public let params: Any
-}
-
 /// A RequestMessage is just a NotificationMessage but with an 'id' field
 /// The presence of the 'id' field indicates that a response is expected
 ///
@@ -35,7 +25,6 @@ public struct RequestMessage {
     public let context: String
     public let featureName: String
     public let id: String
-    public let method: String
     public let params: Any
 }
 
@@ -116,13 +105,6 @@ extension ResponseError: LocalizedError {
 /// https://duckduckgo.github.io/content-scope-scripts/classes/Messaging_Schema.MessageError.html
 struct MessageError: Encodable {
     let message: String
-}
-
-/// https://duckduckgo.github.io/content-scope-scripts/classes/Messaging.WebkitMessagingConfig.html
-public struct WebkitMessagingConfig: Encodable {
-    let webkitMessageHandlerNames: [String]
-    let secret: String
-    var hasModernWebkitAPI: Bool
 }
 
 // helper types for nested JSON output (please remove if there's a better way

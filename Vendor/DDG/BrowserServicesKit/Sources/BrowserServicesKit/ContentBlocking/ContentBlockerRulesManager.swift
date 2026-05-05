@@ -17,32 +17,25 @@
 //
 
 import Foundation
-import TrackerRadarKit
 import WebKit
 
 public enum ContentBlockerRulesManager {
     public typealias CompletionToken = String
 
-    public struct Rules {
+        public struct Rules {
         public let name: String
         public let rulesList: WKContentRuleList
-        public let trackerData: TrackerData
-        public let encodedTrackerData: String
         public let etag: String
         public let identifier: ContentBlockerRulesIdentifier
 
         public init(
             name: String,
             rulesList: WKContentRuleList,
-            trackerData: TrackerData,
-            encodedTrackerData: String,
             etag: String,
             identifier: ContentBlockerRulesIdentifier
         ) {
             self.name = name
             self.rulesList = rulesList
-            self.trackerData = trackerData
-            self.encodedTrackerData = encodedTrackerData
             self.etag = etag
             self.identifier = identifier
         }

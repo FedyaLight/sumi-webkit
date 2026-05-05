@@ -468,8 +468,6 @@ final class SumiContentBlockingService {
         let rules = ContentBlockerRulesManager.Rules(
             name: definition.name,
             rulesList: ruleList,
-            trackerData: Self.emptyTrackerData,
-            encodedTrackerData: Self.encodedEmptyTrackerData,
             etag: definition.contentHash,
             identifier: rulesIdentifier
         )
@@ -499,21 +497,6 @@ final class SumiContentBlockingService {
         )
     }
 
-    private static let emptyTrackerData = TrackerData(
-        trackers: [:],
-        entities: [:],
-        domains: [:],
-        cnames: [:]
-    )
-
-    private static let encodedEmptyTrackerData: String = {
-        guard let data = try? JSONEncoder().encode(emptyTrackerData),
-              let encoded = String(data: data, encoding: .utf8)
-        else {
-            return "{}"
-        }
-        return encoded
-    }()
 }
 
 final class SumiContentBlockingPrivacyConfigurationManager: PrivacyConfigurationManaging {

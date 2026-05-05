@@ -86,7 +86,6 @@ extension UserScriptMessaging {
 public final class UserScriptMessageBroker: NSObject {
 
     public let hostProvider: UserScriptHostProvider
-    private let generatedSecret: String = UUID().uuidString
 
     /// A value used to differentiate entire categories of messages. For example
     /// ContentScopeScripts would have a single 'context', but then will have multiple
@@ -108,18 +107,9 @@ public final class UserScriptMessageBroker: NSObject {
         callbacks[delegate.featureName] = delegate
     }
 
-    public func messagingConfig() -> WebkitMessagingConfig {
-        let config = WebkitMessagingConfig(
-                webkitMessageHandlerNames: [context],
-                secret: generatedSecret,
-                hasModernWebkitAPI: true
-        )
-        return config
-    }
-
     public enum Action {
         case respond(handler: Subfeature.Handler, request: RequestMessage)
-        case notify(handler: Subfeature.Handler, notification: NotificationMessage)
+        case notify(handler: Subfeature.Handler, params: Any)
         case error(BrokerError)
     }
 
@@ -189,7 +179,7 @@ public final class UserScriptMessageBroker: NSObject {
         /// if the incoming message had an 'id' field, it requires a response
         if let id = dict["id"] as? String {
 
-            let incoming = RequestMessage(context: context, featureName: featureName, id: id, method: method, params: methodParams)
+            let incoming = RequestMessage(context: context, featureName: featureName, id: id, params: methodParams)
 
             /// other we can respond through the reply handler as normal
             return .respond(handler: handler, request: incoming)
@@ -197,8 +187,7 @@ public final class UserScriptMessageBroker: NSObject {
 
         /// If we get this far, we are confident the message was in the correct format
         /// but we don't think it requires a response. Therefor we treat it as a fire-and-forget notification
-        let notification = NotificationMessage(context: context, featureName: featureName, method: method, params: methodParams)
-        return .notify(handler: handler, notification: notification)
+        return .notify(handler: handler, params: methodParams)
     }
 
     /// Perform the side-effect described in an action
@@ -207,9 +196,9 @@ public final class UserScriptMessageBroker: NSObject {
             /// for `notify` we just need to execute the handler and continue
             /// we **do not** forward any errors to the client
             /// As far as the client is concerned, a `notification` is fire-and-forget
-        case .notify(let handler, let notification):
+        case .notify(let handler, let params):
             do {
-                _=try await handler(notification.params, original)
+                _=try await handler(params, original)
             } catch {
                 Logger.general.error("UserScriptMessaging: unhandled exception \(error.localizedDescription, privacy: .public)")
             }
