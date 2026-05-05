@@ -6,16 +6,11 @@ import XCTest
 @MainActor
 final class KeyboardShortcutManagerTests: XCTestCase {
     private let shortcutsKey = "keyboard.shortcuts"
-    private let shortcutsVersionKey = "keyboard.shortcuts.version"
-    private var originalShortcutsData: Data?
-    private var originalVersion: Any?
     private var testDefaults: UserDefaults!
     private var testDefaultsSuiteName: String!
 
     override func setUp() {
         super.setUp()
-        originalShortcutsData = UserDefaults.standard.data(forKey: shortcutsKey)
-        originalVersion = UserDefaults.standard.object(forKey: shortcutsVersionKey)
         testDefaultsSuiteName = "KeyboardShortcutManagerTests-\(UUID().uuidString)"
         testDefaults = UserDefaults(suiteName: testDefaultsSuiteName)!
         testDefaults.removePersistentDomain(forName: testDefaultsSuiteName)
@@ -25,19 +20,6 @@ final class KeyboardShortcutManagerTests: XCTestCase {
         testDefaults.removePersistentDomain(forName: testDefaultsSuiteName)
         testDefaults = nil
         testDefaultsSuiteName = nil
-
-        if let originalShortcutsData {
-            UserDefaults.standard.set(originalShortcutsData, forKey: shortcutsKey)
-        } else {
-            UserDefaults.standard.removeObject(forKey: shortcutsKey)
-        }
-
-        if let originalVersion {
-            UserDefaults.standard.set(originalVersion, forKey: shortcutsVersionKey)
-        } else {
-            UserDefaults.standard.removeObject(forKey: shortcutsVersionKey)
-        }
-
         super.tearDown()
     }
 
@@ -45,100 +27,172 @@ final class KeyboardShortcutManagerTests: XCTestCase {
         KeyboardShortcutManager(userDefaults: testDefaults, installEventMonitor: false)
     }
 
-    func testLegacyPiPShortcutIsDroppedWithoutDiscardingOtherShortcuts() throws {
-        let persistedShortcuts = [
-            """
-            {
-              "id":"\(UUID().uuidString)",
-              "action":"toggle_pip",
-              "keyCombination":{"key":"p","modifiers":{"rawValue":9}},
-              "isEnabled":true,
-              "isCustomizable":true
-            }
-            """,
-            """
-            {
-              "id":"\(UUID().uuidString)",
-              "action":"copy_current_url",
-              "keyCombination":{"key":"c","modifiers":{"rawValue":9}},
-              "isEnabled":true,
-              "isCustomizable":true
-            }
-            """,
-        ].joined(separator: ",")
-
-        let json = "[\(persistedShortcuts)]"
-        testDefaults.set(Data(json.utf8), forKey: shortcutsKey)
-        testDefaults.set(7, forKey: shortcutsVersionKey)
-
+    func testDefaultsCreateFullVisibleActionSet() {
         let manager = makeManager()
+        let visibleDefaultActions = Set(DefaultKeyboardShortcuts.shortcuts.map(\.action))
+            .subtracting(DefaultKeyboardShortcuts.hiddenActions)
 
-        XCTAssertEqual(
-            manager.shortcuts.first { $0.action == .openCommandPalette }?.keyCombination,
-            KeyCombination(key: "p", modifiers: [.command, .shift])
-        )
-        XCTAssertEqual(
-            manager.shortcuts.first { $0.action == .copyCurrentURL }?.keyCombination,
-            KeyCombination(key: "c", modifiers: [.command, .shift])
-        )
-
-        let persistedData = try XCTUnwrap(testDefaults.data(forKey: shortcutsKey))
-        let persistedJSON = try XCTUnwrap(String(data: persistedData, encoding: .utf8))
-        XCTAssertFalse(persistedJSON.contains("toggle_pip"))
+        XCTAssertEqual(Set(manager.shortcuts.map(\.action)), visibleDefaultActions)
     }
 
-    func testConflictingShortcutDoesNotOverwriteExistingAction() {
+    func testConflictingShortcutReturnsConflictAndDoesNotOverwriteExistingAction() {
         let manager = makeManager()
         let existingNewTab = manager.shortcut(for: .newTab)?.keyCombination
+        let existingDuplicateTab = manager.shortcut(for: .duplicateTab)?.keyCombination
 
-        XCTAssertFalse(
-            manager.updateShortcut(
-                action: .duplicateTab,
-                keyCombination: KeyCombination(key: "t", modifiers: [.command])
-            )
+        let result = manager.setShortcut(
+            action: .duplicateTab,
+            keyCombination: KeyCombination(key: "t", modifiers: [.command])
         )
 
+        XCTAssertEqual(result, .conflict(.newTab))
         XCTAssertEqual(manager.shortcut(for: .newTab)?.keyCombination, existingNewTab)
-        XCTAssertEqual(
-            manager.shortcut(for: .duplicateTab)?.keyCombination,
-            KeyCombination(key: "d", modifiers: [.option])
-        )
+        XCTAssertEqual(manager.shortcut(for: .duplicateTab)?.keyCombination, existingDuplicateTab)
     }
 
-    func testClearingShortcutKeepsActionVisible() throws {
+    func testSystemOwnedShortcutReturnsSystemOwned() {
+        let manager = makeManager()
+        let existing = manager.shortcutRecord(for: .muteUnmuteAudio)?.keyCombination
+
+        let result = manager.setShortcut(
+            action: .muteUnmuteAudio,
+            keyCombination: KeyCombination(key: "m", modifiers: [.command])
+        )
+
+        XCTAssertEqual(result, .systemOwned)
+        XCTAssertEqual(manager.shortcutRecord(for: .muteUnmuteAudio)?.keyCombination, existing)
+    }
+
+    func testInvalidShortcutReturnsInvalid() {
+        let manager = makeManager()
+        let existing = manager.shortcut(for: .viewHistory)?.keyCombination
+
+        let result = manager.setShortcut(
+            action: .viewHistory,
+            keyCombination: KeyCombination(key: "a")
+        )
+
+        XCTAssertEqual(result, .invalid)
+        XCTAssertEqual(manager.shortcut(for: .viewHistory)?.keyCombination, existing)
+    }
+
+    func testClearingShortcutKeepsActionVisibleAndRemovesRuntimeLookup() throws {
         let manager = makeManager()
 
         XCTAssertTrue(manager.clearShortcut(action: .viewHistory))
 
         let cleared = try XCTUnwrap(manager.shortcutRecord(for: .viewHistory))
-        XCTAssertTrue(cleared.keyCombination.isEmpty)
-        XCTAssertFalse(cleared.isEnabled)
+        XCTAssertNil(cleared.keyCombination)
         XCTAssertTrue(manager.shortcuts.contains { $0.action == .viewHistory })
         XCTAssertNil(manager.shortcut(for: .viewHistory))
+        XCTAssertFalse(manager.executeShortcut(try XCTUnwrap(Self.keyEvent(keyCode: 0x10, characters: "y", modifiers: [.command]))))
     }
 
-    func testResetRestoresVisibleDefaultActions() {
+    func testResetClearsOverridesAndRestoresDefaults() {
         let manager = makeManager()
-        XCTAssertTrue(manager.clearShortcut(action: .viewHistory))
+        XCTAssertEqual(
+            manager.setShortcut(action: .viewHistory, keyCombination: KeyCombination(key: "y", modifiers: [.command, .option])),
+            .valid
+        )
+        XCTAssertTrue(manager.clearShortcut(action: .muteUnmuteAudio))
 
         manager.resetToDefaults()
 
-        let visibleDefaultActions = Set(KeyboardShortcut.defaultShortcuts.map(\.action))
-            .subtracting([.toggleTopBarAddressView])
-        XCTAssertEqual(Set(manager.shortcuts.map(\.action)), visibleDefaultActions)
         XCTAssertEqual(
             manager.shortcut(for: .viewHistory)?.keyCombination,
             KeyCombination(key: "y", modifiers: [.command])
         )
+        XCTAssertNil(manager.shortcutRecord(for: .muteUnmuteAudio)?.keyCombination)
+        XCTAssertNil(testDefaults.data(forKey: shortcutsKey))
+    }
+
+    func testPersistedOverridesRoundTrip() {
+        let manager = makeManager()
+        XCTAssertEqual(
+            manager.setShortcut(action: .viewHistory, keyCombination: KeyCombination(key: "y", modifiers: [.command, .option])),
+            .valid
+        )
+        XCTAssertTrue(manager.clearShortcut(action: .copyCurrentURL))
+
+        let restoredManager = makeManager()
+
+        XCTAssertEqual(
+            restoredManager.shortcut(for: .viewHistory)?.keyCombination,
+            KeyCombination(key: "y", modifiers: [.command, .option])
+        )
+        XCTAssertNil(restoredManager.shortcut(for: .copyCurrentURL))
+        XCTAssertNil(restoredManager.shortcutRecord(for: .copyCurrentURL)?.keyCombination)
+    }
+
+    func testInvalidPersistedOverridesResetToDefaults() throws {
+        let json = """
+        [
+          {
+            "action":"view_history",
+            "keyCombination":{"key":"m","modifiers":{"rawValue":1}}
+          }
+        ]
+        """
+        testDefaults.set(Data(json.utf8), forKey: shortcutsKey)
+
+        let manager = makeManager()
+
+        XCTAssertEqual(
+            manager.shortcut(for: .viewHistory)?.keyCombination,
+            KeyCombination(key: "y", modifiers: [.command])
+        )
+        XCTAssertNil(testDefaults.data(forKey: shortcutsKey))
+    }
+
+    func testDuplicatePersistedOverridesResetToDefaults() throws {
+        let json = """
+        [
+          {
+            "action":"view_history",
+            "keyCombination":{"key":"y","modifiers":{"rawValue":3}}
+          },
+          {
+            "action":"view_history",
+            "keyCombination":null
+          }
+        ]
+        """
+        testDefaults.set(Data(json.utf8), forKey: shortcutsKey)
+
+        let manager = makeManager()
+
+        XCTAssertEqual(
+            manager.shortcut(for: .viewHistory)?.keyCombination,
+            KeyCombination(key: "y", modifiers: [.command])
+        )
+        XCTAssertNil(testDefaults.data(forKey: shortcutsKey))
     }
 
     func testCommandMIsNotAssignedToMuteByDefault() throws {
         let manager = makeManager()
 
         let muteShortcut = try XCTUnwrap(manager.shortcutRecord(for: .muteUnmuteAudio))
-        XCTAssertTrue(muteShortcut.keyCombination.isEmpty)
-        XCTAssertFalse(muteShortcut.isEnabled)
+        XCTAssertNil(muteShortcut.keyCombination)
         XCTAssertNil(manager.shortcut(for: .muteUnmuteAudio))
+    }
+
+    func testEnabledLookupUpdatesAfterSetClearAndReset() throws {
+        let manager = makeManager()
+        let commandOptionY = try XCTUnwrap(Self.keyEvent(keyCode: 0x10, characters: "y", modifiers: [.command, .option]))
+        let commandY = try XCTUnwrap(Self.keyEvent(keyCode: 0x10, characters: "y", modifiers: [.command]))
+
+        XCTAssertEqual(
+            manager.setShortcut(action: .viewHistory, keyCombination: KeyCombination(key: "y", modifiers: [.command, .option])),
+            .valid
+        )
+        XCTAssertTrue(manager.executeShortcut(commandOptionY))
+        XCTAssertFalse(manager.executeShortcut(commandY))
+
+        XCTAssertTrue(manager.clearShortcut(action: .viewHistory))
+        XCTAssertFalse(manager.executeShortcut(commandOptionY))
+
+        manager.resetToDefaults()
+        XCTAssertTrue(manager.executeShortcut(commandY))
     }
 
     func testKeyCombinationParsingUsesPhysicalKeysAndIgnoresCapsLock() throws {
@@ -186,7 +240,21 @@ final class KeyboardShortcutManagerTests: XCTestCase {
         charactersIgnoringModifiers: String,
         modifiers: NSEvent.ModifierFlags
     ) -> KeyCombination? {
-        let event = NSEvent.keyEvent(
+        keyEvent(
+            keyCode: keyCode,
+            characters: characters,
+            charactersIgnoringModifiers: charactersIgnoringModifiers,
+            modifiers: modifiers
+        ).flatMap(KeyCombination.init(from:))
+    }
+
+    private static func keyEvent(
+        keyCode: UInt16,
+        characters: String,
+        charactersIgnoringModifiers: String? = nil,
+        modifiers: NSEvent.ModifierFlags
+    ) -> NSEvent? {
+        NSEvent.keyEvent(
             with: .keyDown,
             location: .zero,
             modifierFlags: modifiers,
@@ -194,10 +262,9 @@ final class KeyboardShortcutManagerTests: XCTestCase {
             windowNumber: 0,
             context: nil,
             characters: characters,
-            charactersIgnoringModifiers: charactersIgnoringModifiers,
+            charactersIgnoringModifiers: charactersIgnoringModifiers ?? characters,
             isARepeat: false,
             keyCode: keyCode
         )
-        return event.flatMap(KeyCombination.init(from:))
     }
 }

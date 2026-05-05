@@ -4,8 +4,6 @@ import SwiftUI
 enum KeyboardShortcutPresentation {
     static func keyEquivalent(for keyCombination: KeyCombination) -> KeyEquivalent? {
         switch keyCombination.key.lowercased() {
-        case "":
-            return nil
         case "return", "enter":
             return .return
         case "escape", "esc":
@@ -54,8 +52,6 @@ enum KeyboardShortcutPresentation {
 
     static func nsMenuKeyEquivalent(for keyCombination: KeyCombination) -> String? {
         switch keyCombination.key.lowercased() {
-        case "":
-            return nil
         case "return", "enter":
             return "\r"
         case "delete", "backspace":
