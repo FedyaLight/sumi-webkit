@@ -50,6 +50,7 @@ telemetry-id
 
 # Local dev artifacts (not part of the Xcode app)
 debug-pages/
+ManualTests/
 specs/
 default.profraw
 

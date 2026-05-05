@@ -51,13 +51,13 @@ final class SumiPermissionDocumentationTests: XCTestCase {
         }
     }
 
-    func testReadmeLinksToStableDocsAndManualSuite() throws {
+    func testReadmeLinksToStableDocs() throws {
         let readme = try docSource("README.md")
 
         XCTAssertTrue(readme.contains("ARCHITECTURE.md"))
         XCTAssertTrue(readme.contains("TEST_PLAN.md"))
         XCTAssertTrue(readme.contains("LICENSE_NOTES.md"))
-        XCTAssertTrue(readme.contains("../../ManualTests/permissions/README.md"))
+        XCTAssertFalse(readme.contains("../../ManualTests/permissions/README.md"))
     }
 
     func testLicenseNotesPreserveReferenceAndAttributionMarkers() throws {

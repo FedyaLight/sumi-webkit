@@ -38,24 +38,4 @@ final class SumiScreenCapturePermissionTests: XCTestCase {
         )
     }
 
-    func testManualScreenCapturePageExistsAndUsesGuardedDisplayMedia() throws {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let source = try String(
-            contentsOf: repoRoot.appendingPathComponent("ManualTests/permissions/screen-capture.html"),
-            encoding: .utf8
-        )
-
-        XCTAssertTrue(source.contains("getDisplayMedia({ video: true })"))
-        XCTAssertTrue(source.contains("getDisplayMedia({ video: true, audio: true })"))
-        XCTAssertTrue(source.contains("Query display-capture permission"))
-        let shared = try String(
-            contentsOf: repoRoot.appendingPathComponent("ManualTests/permissions/shared/permissions-test.js"),
-            encoding: .utf8
-        )
-        XCTAssertTrue(shared.contains("track.addEventListener(\"ended\""))
-        XCTAssertTrue(shared.contains("track.addEventListener(\"mute\""))
-        XCTAssertTrue(shared.contains("track.addEventListener(\"unmute\""))
-    }
 }
