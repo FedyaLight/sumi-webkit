@@ -66,7 +66,7 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
         XCTAssertEqual(result.skipped, 1)
         XCTAssertEqual(result.folderTitle, "Saved Tabs")
         XCTAssertEqual(harness.browserManager.bookmarkManager.bookmark(for: secondURL)?.title, "Second")
-        XCTAssertEqual(harness.browserManager.bookmarkManager.bookmarks().count, 2)
+        XCTAssertEqual(harness.browserManager.bookmarkManager.snapshot().root.childBookmarkCount, 2)
     }
 
     private func makeHarness() throws -> (

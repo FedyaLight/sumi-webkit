@@ -66,18 +66,10 @@ extension Tab {
                     }
                 }
             } else {
-                if #available(macOS 15.5, *) {
-                    performMainFrameNavigationAfterHydrationIfNeeded(
-                        on: webView
-                    ) { resolvedWebView in
-                        resolvedWebView.reload()
-                    }
-                } else {
-                    performMainFrameNavigation(
-                        on: webView
-                    ) { resolvedWebView in
-                        resolvedWebView.reload()
-                    }
+                performMainFrameNavigationAfterHydrationIfNeeded(
+                    on: webView
+                ) { resolvedWebView in
+                    resolvedWebView.reload()
                 }
             }
         }
@@ -145,17 +137,10 @@ extension Tab {
         guard waitForContentBlockingAssets,
               let controller = webView.configuration.userContentController as? UserContentController
         else {
-            if #available(macOS 15.5, *) {
-                performMainFrameNavigationAfterHydrationIfNeeded(
-                    on: webView,
-                    performLoad: performLoad
-                )
-            } else {
-                performMainFrameNavigation(
-                    on: webView,
-                    performLoad: performLoad
-                )
-            }
+            performMainFrameNavigationAfterHydrationIfNeeded(
+                on: webView,
+                performLoad: performLoad
+            )
             return
         }
 

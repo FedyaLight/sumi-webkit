@@ -205,14 +205,6 @@ final class CollapsedSidebarPanelController {
             )
         }
 
-        #if DEBUG
-        SidebarDebugMetrics.recordCollapsedSidebarHost(
-            controller: sidebarController,
-            presentationMode: presentationContext.mode,
-            isMounted: true
-        )
-        #endif
-
         if presentationContext.mode == .collapsedVisible {
             reveal(panel, in: parentWindow)
         } else {
@@ -727,13 +719,6 @@ final class CollapsedSidebarPanelController {
 
         if teardownHostedContent {
             sidebarController.teardownSidebarHosting()
-            #if DEBUG
-            SidebarDebugMetrics.recordCollapsedSidebarHost(
-                controller: sidebarController,
-                presentationMode: .collapsedHidden,
-                isMounted: false
-            )
-            #endif
         }
 
         if destroyWindow {

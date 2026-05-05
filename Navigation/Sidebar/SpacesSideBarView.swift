@@ -236,10 +236,6 @@ struct SpaceSidebarTransitionSnapshot {
     let destination: SpaceSidebarPageSnapshot
     let stationaryEssentials: EssentialsSnapshot?
 
-    var usesSharedEssentials: Bool {
-        stationaryEssentials != nil
-    }
-
     func page(for spaceId: UUID) -> SpaceSidebarPageSnapshot? {
         if source.spaceId == spaceId {
             return source

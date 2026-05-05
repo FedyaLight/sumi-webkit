@@ -117,9 +117,6 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        #if DEBUG
-        SidebarDebugMetrics.recordInteractiveItemViewInitialized(ObjectIdentifier(self))
-        #endif
         hostingView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(hostingView)
         NSLayoutConstraint.activate([
@@ -136,12 +133,6 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
     }
 
     deinit {
-        #if DEBUG
-        let id = ObjectIdentifier(self)
-        MainActor.assumeIsolated {
-            SidebarDebugMetrics.recordInteractiveItemViewDeinitialized(id)
-        }
-        #endif
     }
 
     override var acceptsFirstResponder: Bool {

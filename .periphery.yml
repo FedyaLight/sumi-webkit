@@ -12,6 +12,13 @@ retain_swift_ui_previews: true
 retain_unused_protocol_func_params: true
 relative_results: true
 disable_update_check: true
+report_include:
+  - "App/**/*.swift"
+  - "CommandPalette/**/*.swift"
+  - "Navigation/**/*.swift"
+  - "Settings/**/*.swift"
+  - "Sumi/**/*.swift"
+  - "UI/**/*.swift"
 index_exclude:
   - "**/*?.build/**/*"
   - "**/SourcePackages/checkouts/**"

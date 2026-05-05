@@ -41,8 +41,7 @@ struct ExtensionUtils {
     }
 
     static var isExtensionSupportAvailable: Bool {
-        if #available(macOS 15.5, *) { return true }
-        return false
+        true
     }
 
     static func applicationSupportRoot() -> URL {

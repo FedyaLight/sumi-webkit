@@ -19,7 +19,6 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
     private final class ActiveSession {
         let session: WorkspaceThemePickerSession
         let popover: NSPopover
-        let hostingController: WorkspaceThemePickerPopoverHostingController
         weak var windowState: BrowserWindowState?
         weak var browserManager: BrowserManager?
         weak var transientCoordinator: SidebarTransientSessionCoordinator?
@@ -31,7 +30,6 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         init(
             session: WorkspaceThemePickerSession,
             popover: NSPopover,
-            hostingController: WorkspaceThemePickerPopoverHostingController,
             windowState: BrowserWindowState,
             browserManager: BrowserManager,
             transientCoordinator: SidebarTransientSessionCoordinator?,
@@ -39,7 +37,6 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         ) {
             self.session = session
             self.popover = popover
-            self.hostingController = hostingController
             self.windowState = windowState
             self.browserManager = browserManager
             self.transientCoordinator = transientCoordinator
@@ -107,7 +104,6 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         activeSession = ActiveSession(
             session: session,
             popover: popover,
-            hostingController: hostingController,
             windowState: windowState,
             browserManager: browserManager,
             transientCoordinator: session.presentationSource?.coordinator,

@@ -7,14 +7,8 @@ enum SidebarFolderDragRegion: Hashable {
     case after
 }
 
-enum SidebarTopLevelPinnedItemKind: Equatable {
-    case shortcut(UUID)
-    case folder(UUID)
-}
-
 struct SidebarTopLevelPinnedItemMetrics: Equatable {
     let itemId: UUID
-    var kind: SidebarTopLevelPinnedItemKind
     var spaceId: UUID
     var topLevelIndex: Int
     var frame: CGRect
@@ -137,21 +131,6 @@ struct SidebarRuntimeGeometryStore {
     var regularListHitTargets: [UUID: SidebarRegularListHitMetrics] = [:]
     var essentialsLayoutMetricsBySpace: [UUID: SidebarEssentialsLayoutMetrics] = [:]
 
-    var hasDetailedDragGeometry: Bool {
-        !topLevelPinnedItemTargets.isEmpty
-            || !folderDropTargets.isEmpty
-            || !folderChildDropTargets.isEmpty
-            || !regularListHitTargets.isEmpty
-            || !essentialsLayoutMetricsBySpace.isEmpty
-    }
-
-    mutating func removeDetailedDragGeometry() {
-        topLevelPinnedItemTargets = [:]
-        folderDropTargets = [:]
-        folderChildDropTargets = [:]
-        regularListHitTargets = [:]
-        essentialsLayoutMetricsBySpace = [:]
-    }
 }
 
 struct SidebarGeometrySnapshot: Equatable {

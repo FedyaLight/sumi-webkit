@@ -213,18 +213,13 @@ extension BrowserManager {
             return
         }
 
-        if #available(macOS 13.3, *) {
-            guard let webView = currentTab.ensureWebView() else {
-                RuntimeDiagnostics.emit("No web view available to inspect")
-                return
-            }
-
-            webView.isInspectable = true
-
-            showWebInspectorAlert()
-        } else {
-            RuntimeDiagnostics.emit("Web inspector requires macOS 13.3 or later")
+        guard let webView = currentTab.ensureWebView() else {
+            RuntimeDiagnostics.emit("No web view available to inspect")
+            return
         }
+
+        webView.isInspectable = true
+        showWebInspectorAlert()
     }
 
     // MARK: - Profile Switch Toast

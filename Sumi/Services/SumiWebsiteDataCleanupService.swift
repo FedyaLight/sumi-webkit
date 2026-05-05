@@ -575,9 +575,7 @@ extension WKWebsiteDataStore {
         var types = Self.allWebsiteDataTypesExceptCookies
 
         types.remove(WKWebsiteDataTypeLocalStorage)
-        if #available(macOS 12.2, *) {
-            types.remove(WKWebsiteDataTypeIndexedDBDatabases)
-        }
+        types.remove(WKWebsiteDataTypeIndexedDBDatabases)
 
         return types
     }

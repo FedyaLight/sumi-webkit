@@ -77,7 +77,6 @@ private enum SidebarDragStateDeferredGeometry {
     static func updateTopLevelPinnedItemTarget(
         isActive: Bool,
         itemId: UUID,
-        kind: SidebarTopLevelPinnedItemKind,
         spaceId: UUID,
         topLevelIndex: Int,
         frame: CGRect,
@@ -85,7 +84,6 @@ private enum SidebarDragStateDeferredGeometry {
     ) {
         SidebarDragState.shared.scheduleTopLevelPinnedItemTarget(
             itemId: itemId,
-            kind: kind,
             spaceId: spaceId,
             topLevelIndex: topLevelIndex,
             frame: frame,
@@ -97,7 +95,6 @@ private enum SidebarDragStateDeferredGeometry {
     static func removeTopLevelPinnedItemTarget(itemId: UUID, generation: Int) {
         SidebarDragState.shared.scheduleTopLevelPinnedItemTarget(
             itemId: itemId,
-            kind: .shortcut(itemId),
             spaceId: UUID(),
             topLevelIndex: 0,
             frame: nil,
@@ -399,7 +396,6 @@ extension View {
 
     func sidebarTopLevelPinnedItemGeometry(
         itemId: UUID,
-        kind: SidebarTopLevelPinnedItemKind,
         spaceId: UUID,
         topLevelIndex: Int,
         generation: Int,
@@ -408,7 +404,6 @@ extension View {
         modifier(
             SidebarTopLevelPinnedItemGeometryReporter(
                 itemId: itemId,
-                kind: kind,
                 spaceId: spaceId,
                 topLevelIndex: topLevelIndex,
                 generation: generation,
@@ -568,7 +563,6 @@ struct SidebarFolderDropGeometryReporter: ViewModifier {
 
 struct SidebarTopLevelPinnedItemGeometryReporter: ViewModifier {
     let itemId: UUID
-    let kind: SidebarTopLevelPinnedItemKind
     let spaceId: UUID
     let topLevelIndex: Int
     let generation: Int
@@ -613,7 +607,6 @@ struct SidebarTopLevelPinnedItemGeometryReporter: ViewModifier {
         SidebarDragStateDeferredGeometry.updateTopLevelPinnedItemTarget(
             isActive: isActive,
             itemId: itemId,
-            kind: kind,
             spaceId: spaceId,
             topLevelIndex: topLevelIndex,
             frame: frame,

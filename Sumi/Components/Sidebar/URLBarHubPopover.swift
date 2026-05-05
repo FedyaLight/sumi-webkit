@@ -19,17 +19,13 @@ struct URLBarTrackingProtectionPresenter: Equatable {
 
     let rowTitle: String
     let rowSubtitle: String?
-    let siteHost: String
     let isEnabled: Bool
-    let siteOverride: SumiTrackingProtectionSiteOverride
-    let isReloadRequired: Bool
     let shieldIcon: ShieldIcon
     let shieldAccessibilityLabel: String
     let shieldAccessibilityValue: String
 
     static func make(
         policy: SumiTrackingProtectionEffectivePolicy,
-        siteOverride: SumiTrackingProtectionSiteOverride,
         isReloadRequired: Bool
     ) -> URLBarTrackingProtectionPresenter {
         let isEnabled = policy.isEnabled
@@ -37,10 +33,7 @@ struct URLBarTrackingProtectionPresenter: Equatable {
         return URLBarTrackingProtectionPresenter(
             rowTitle: "Tracking Protection",
             rowSubtitle: isReloadRequired ? "Reload required" : nil,
-            siteHost: policy.host ?? "Current site",
             isEnabled: isEnabled,
-            siteOverride: siteOverride,
-            isReloadRequired: isReloadRequired,
             shieldIcon: ShieldIcon(
                 chromeIconName: isEnabled ? "shield.fill" : "tracking-protection",
                 fallbackSystemName: isEnabled ? "shield.fill" : "shield",
@@ -361,12 +354,8 @@ struct URLBarHubPopover: View {
     }
 
     private var showsExtensionSection: Bool {
-        if #available(macOS 15.5, *) {
-            let sumiScriptsEnabled = browserManager.userscriptsModule.isEnabled
-            return !extensionSurfaceStore.enabledExtensions.isEmpty || sumiScriptsEnabled
-        }
-
-        return false
+        let sumiScriptsEnabled = browserManager.userscriptsModule.isEnabled
+        return !extensionSurfaceStore.enabledExtensions.isEmpty || sumiScriptsEnabled
     }
 
     private var tokens: ChromeThemeTokens {
@@ -617,24 +606,22 @@ struct URLBarHubPopover: View {
 
     @ViewBuilder
     private var extensionSection: some View {
-        if #available(macOS 15.5, *) {
-            VStack(alignment: .leading, spacing: 8) {
-                HubSectionHeader(
-                    title: "Extensions",
-                    actionTitle: "Manage",
-                    action: {
-                        browserManager.openSettingsTab(selecting: .extensions, in: windowState)
-                        onClose()
-                    }
-                )
+        VStack(alignment: .leading, spacing: 8) {
+            HubSectionHeader(
+                title: "Extensions",
+                actionTitle: "Manage",
+                action: {
+                    browserManager.openSettingsTab(selecting: .extensions, in: windowState)
+                    onClose()
+                }
+            )
 
-                ExtensionActionView(
-                    extensions: extensionSurfaceStore.enabledExtensions,
-                    layout: .hubTiles
-                )
-                .environmentObject(browserManager)
-                .environment(windowState)
-            }
+            ExtensionActionView(
+                extensions: extensionSurfaceStore.enabledExtensions,
+                layout: .hubTiles
+            )
+            .environmentObject(browserManager)
+            .environment(windowState)
         }
     }
 
@@ -732,13 +719,12 @@ struct URLBarHubPopover: View {
     private func trackingPresenter(
         for row: SiteControlsSettingRowModel
     ) -> URLBarTrackingProtectionPresenter? {
-        guard case .tracking(let policy, let siteOverride, let reloadRequired) = row.kind else {
+        guard case .tracking(let policy, _, let reloadRequired) = row.kind else {
             return nil
         }
 
         return URLBarTrackingProtectionPresenter.make(
             policy: policy,
-            siteOverride: siteOverride,
             isReloadRequired: reloadRequired
         )
     }

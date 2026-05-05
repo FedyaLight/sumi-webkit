@@ -317,7 +317,7 @@ extension BrowserManager {
     private func importBookmarks(from source: SumiBookmarkImportSource) {
         do {
             let nodes = try source.readBookmarks()
-            let summary = try bookmarkManager.importBookmarks(nodes, sourceName: source.title)
+            let summary = try bookmarkManager.importBookmarks(nodes)
             showBookmarkResultAlert(
                 title: "Bookmarks Imported",
                 message: "\(source.title): \(summary.message)"

@@ -11,8 +11,7 @@ extension CustomNavigationType {
 
 extension NavigationAction {
     var sumiIsUserEnteredURL: Bool {
-        if #available(macOS 12.0, *),
-           case .other = navigationType,
+        if case .other = navigationType,
            case .user = request.attribution {
             return true
         } else if case .custom(.sumiUserEnteredURL) = navigationType {
@@ -160,8 +159,7 @@ enum SumiNewWindowPolicy: Equatable {
             self = .tab(selected: linkOpenBehavior.shouldSelectNewTab)
         } else if windowFeatures.width != nil {
             self = .popup(origin: windowFeatures.sumiOrigin, size: windowFeatures.sumiSize)
-        } else if #available(macOS 14.1, *),
-                  windowFeatures.statusBarVisibility == nil,
+        } else if windowFeatures.statusBarVisibility == nil,
                   windowFeatures.menuBarVisibility == nil,
                   preferTabsToWindows {
             self = .tab(selected: linkOpenBehavior.shouldSelectNewTab)

@@ -46,18 +46,10 @@ final class BrowserPrivacyService {
     }
 
     private func reloadFromOrigin(_ tab: Tab, webView: WKWebView) {
-        if #available(macOS 15.5, *) {
-            tab.performMainFrameNavigationAfterHydrationIfNeeded(
-                on: webView
-            ) { resolvedWebView in
-                resolvedWebView.reloadFromOrigin()
-            }
-        } else {
-            tab.performMainFrameNavigation(
-                on: webView
-            ) { resolvedWebView in
-                resolvedWebView.reloadFromOrigin()
-            }
+        tab.performMainFrameNavigationAfterHydrationIfNeeded(
+            on: webView
+        ) { resolvedWebView in
+            resolvedWebView.reloadFromOrigin()
         }
     }
 }

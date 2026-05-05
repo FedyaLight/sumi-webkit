@@ -13,9 +13,6 @@ struct SidebarAppKitItemBridge<Content: View>: NSViewRepresentable {
 
     func makeNSView(context: Context) -> SidebarInteractiveItemView {
         let view = SidebarInteractiveItemView(frame: .zero)
-        #if DEBUG
-        SidebarDebugMetrics.recordSidebarAppKitItemBridgeAttached(ObjectIdentifier(view))
-        #endif
         view.contextMenuController = controller
         view.update(rootView: AnyView(content), configuration: configuration)
         SidebarUITestDragMarker.recordEvent(
@@ -35,9 +32,6 @@ struct SidebarAppKitItemBridge<Content: View>: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ nsView: SidebarInteractiveItemView, coordinator: ()) {
-        #if DEBUG
-        SidebarDebugMetrics.recordSidebarAppKitItemBridgeDetached(ObjectIdentifier(nsView))
-        #endif
         SidebarUITestDragMarker.recordEvent(
             "bridgeDismantle",
             dragItemID: nsView.recoveryMetadata.dragItemID,

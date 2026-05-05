@@ -108,8 +108,6 @@ final class SumiContentBlockingService {
     private var cancellables = Set<AnyCancellable>()
 
     private(set) var latestUpdate: ContentBlockerRulesManager.UpdateEvent?
-    private(set) var lastCompilationError: Error?
-
     init(
         policy: SumiContentBlockingPolicy = .defaultPolicy,
         compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler(),
@@ -206,44 +204,10 @@ final class SumiContentBlockingService {
         privacyConfigurationManager.setContentBlockingEnabled(policy.shouldEnableContentBlockingFeature)
 
         if policy.ruleLists.isEmpty {
-            lastCompilationError = nil
             publish(Self.emptyUpdate())
         } else {
             scheduleCompilation(for: policy, previousPolicy: previousPolicy)
         }
-    }
-
-    func validateManualTrackingRuleLists(
-        _ definitions: [SumiContentRuleListDefinition]
-    ) async throws {
-        try await validateRuleLists(definitions)
-    }
-
-    func prepareManualTrackingDataUpdate(
-        trackingRuleLists: [SumiContentRuleListDefinition]
-    ) async throws -> SumiPreparedContentBlockingUpdate {
-        var definitions = trackingRuleLists
-        if let ruleListProvider {
-            definitions.append(
-                contentsOf: try ruleListProvider
-                    .ruleListSet(profileId: nil)
-                    .siteDataCookieBlocking
-            )
-        } else if let siteDataRuleSource {
-            definitions.append(contentsOf: try siteDataRuleSource.ruleLists(profileId: nil))
-        }
-
-        return try await prepareRuleListUpdate(ruleLists: definitions)
-    }
-
-    func commitPreparedManualTrackingDataUpdate(
-        _ preparedUpdate: SumiPreparedContentBlockingUpdate,
-        refreshProfileSubjects: Bool = true
-    ) {
-        commitPreparedContentBlockingUpdate(
-            preparedUpdate,
-            refreshProfileSubjects: refreshProfileSubjects
-        )
     }
 
     func validateRuleLists(
@@ -272,7 +236,6 @@ final class SumiContentBlockingService {
         compilationGeneration += 1
         trackingRefreshGeneration += 1
         currentPolicy = preparedUpdate.policy
-        lastCompilationError = nil
         privacyConfigurationManager.setContentBlockingEnabled(
             preparedUpdate.policy.shouldEnableContentBlockingFeature
         )
@@ -325,14 +288,12 @@ final class SumiContentBlockingService {
             do {
                 let ruleLists = try self.ruleLists(profileId: nil)
                 guard generation == self.trackingRefreshGeneration else { return }
-                self.lastCompilationError = nil
                 self.setPolicy(ruleLists.isEmpty ? .disabled : .enabled(ruleLists: ruleLists))
                 if refreshProfileSubjects {
                     self.scheduleActiveProfilePolicyRefreshes(delayNanoseconds: 0)
                 }
             } catch {
                 guard generation == self.trackingRefreshGeneration else { return }
-                self.lastCompilationError = error
                 if refreshProfileSubjects {
                     self.scheduleActiveProfilePolicyRefreshes(delayNanoseconds: 0)
                 }
@@ -380,7 +341,6 @@ final class SumiContentBlockingService {
                 self.profileSubject(for: profileId).send(update)
             } catch {
                 guard self.profileRefreshGenerations[key] == generation else { return }
-                self.lastCompilationError = error
                 let subject = self.profileSubject(for: profileId)
                 if subject.value == nil {
                     subject.send(Self.emptyUpdate())
@@ -438,12 +398,10 @@ final class SumiContentBlockingService {
             let update = try await updateEvent(for: policy.ruleLists)
 
             guard generation == compilationGeneration, policy == currentPolicy else { return }
-            lastCompilationError = nil
             privacyConfigurationManager.setContentBlockingEnabled(policy.shouldEnableContentBlockingFeature)
             publish(update)
         } catch {
             guard generation == compilationGeneration, policy == currentPolicy else { return }
-            lastCompilationError = error
             if let previousPolicy,
                latestUpdate?.rules.isEmpty == false {
                 currentPolicy = previousPolicy

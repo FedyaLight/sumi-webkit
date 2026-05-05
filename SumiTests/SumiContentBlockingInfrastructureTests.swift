@@ -68,7 +68,6 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
         XCTAssertEqual(assets.globalRuleLists.count, 1)
         XCTAssertEqual(assets.updateEvent.rules.count, 1)
         XCTAssertTrue(service.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking))
-        XCTAssertNil(service.lastCompilationError)
     }
 
     func testInvalidRuleDataFailsSafelyWithoutAttachingRules() async throws {
@@ -88,7 +87,6 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
 
         XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
         XCTAssertFalse(service.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking))
-        XCTAssertNotNil(service.lastCompilationError)
     }
 
     func testPolicyUpdateReplacesRuleListsOnExistingBSKController() async throws {

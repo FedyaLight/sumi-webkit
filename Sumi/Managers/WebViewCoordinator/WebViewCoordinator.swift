@@ -377,9 +377,7 @@ final class SumiWebViewContainerView: NSView {
 
     /// DuckDuckGo `observeFullScreenWindowWillExitFullScreen` (Mission Control controller re-init when enabled).
     private func observeFullScreenWindowWillExitFullScreen(fullScreenWindowController: NSWindowController) {
-        guard #available(macOS 12.0, *),
-              let fullScreenWindow = fullScreenWindowController.window
-        else { return }
+        guard let fullScreenWindow = fullScreenWindowController.window else { return }
 
         NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification, object: fullScreenWindow)
             .receive(on: DispatchQueue.main)
@@ -1048,20 +1046,11 @@ class WebViewCoordinator {
         if let url = URL(string: tab.url.absoluteString) {
             let performLoad = { [weak tab, weak webView] in
                 guard let tab, let webView else { return }
-                if #available(macOS 15.5, *) {
-                    tab.performMainFrameNavigationAfterHydrationIfNeeded(
-                        on: webView
-                    ) { resolvedWebView in
-                        guard !resolvedWebView.isLoading, resolvedWebView.url == nil else { return }
-                        resolvedWebView.load(URLRequest(url: url))
-                    }
-                } else {
-                    tab.performMainFrameNavigation(
-                        on: webView
-                    ) { resolvedWebView in
-                        guard !resolvedWebView.isLoading, resolvedWebView.url == nil else { return }
-                        resolvedWebView.load(URLRequest(url: url))
-                    }
+                tab.performMainFrameNavigationAfterHydrationIfNeeded(
+                    on: webView
+                ) { resolvedWebView in
+                    guard !resolvedWebView.isLoading, resolvedWebView.url == nil else { return }
+                    resolvedWebView.load(URLRequest(url: url))
                 }
             }
 
@@ -1673,12 +1662,10 @@ class WebViewCoordinator {
             guard let tab = resolvedTab(with: tabID) else {
                 return false
             }
-            if #available(macOS 15.5, *) {
-                rebuildLiveWebViews(
-                    for: tab,
-                    preferredPrimaryWindowId: preferredPrimaryWindowID
-                )
-            }
+            rebuildLiveWebViews(
+                for: tab,
+                preferredPrimaryWindowId: preferredPrimaryWindowID
+            )
         case .evictHiddenWebViews(let windowID):
             guard let browserManager,
                   browserManager.windowRegistry?.windows[windowID] != nil
@@ -2126,18 +2113,10 @@ class WebViewCoordinator {
                 continue
             }
 
-            if #available(macOS 15.5, *) {
-                tab.performMainFrameNavigationAfterHydrationIfNeeded(
-                    on: webView
-                ) { resolvedWebView in
-                    resolvedWebView.load(URLRequest(url: url))
-                }
-            } else {
-                tab.performMainFrameNavigation(
-                    on: webView
-                ) { resolvedWebView in
-                    resolvedWebView.load(URLRequest(url: url))
-                }
+            tab.performMainFrameNavigationAfterHydrationIfNeeded(
+                on: webView
+            ) { resolvedWebView in
+                resolvedWebView.load(URLRequest(url: url))
             }
         }
     }
@@ -2153,18 +2132,10 @@ class WebViewCoordinator {
                 )
                 continue
             }
-            if #available(macOS 15.5, *) {
-                tab.performMainFrameNavigationAfterHydrationIfNeeded(
-                    on: webView
-                ) { resolvedWebView in
-                    resolvedWebView.reload()
-                }
-            } else {
-                tab.performMainFrameNavigation(
-                    on: webView
-                ) { resolvedWebView in
-                    resolvedWebView.reload()
-                }
+            tab.performMainFrameNavigationAfterHydrationIfNeeded(
+                on: webView
+            ) { resolvedWebView in
+                resolvedWebView.reload()
             }
         }
     }

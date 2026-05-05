@@ -120,22 +120,6 @@ struct SettingsActionRow: View {
     }
 }
 
-struct SettingsStatusRow: View {
-    let title: String
-    let value: String
-    var systemImage: String? = nil
-
-    var body: some View {
-        SettingsRow(title: title, systemImage: systemImage) {
-            Text(value)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-    }
-}
-
 struct SettingsDivider: View {
     var body: some View {
         Divider()

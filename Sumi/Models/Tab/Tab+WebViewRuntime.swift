@@ -46,7 +46,7 @@ extension Tab {
         SumiUserAgent.apply(to: webView)
         SharedVisitedLinkStoreProvider.shared.enableVisitedLinkRecording(on: webView)
 
-        if #available(macOS 13.3, *), RuntimeDiagnostics.isDeveloperInspectionEnabled {
+        if RuntimeDiagnostics.isDeveloperInspectionEnabled {
             webView.isInspectable = true
         }
 
@@ -109,7 +109,7 @@ extension Tab {
         SumiUserAgent.apply(to: webView)
         SharedVisitedLinkStoreProvider.shared.enableVisitedLinkRecording(on: webView)
 
-        if #available(macOS 13.3, *), RuntimeDiagnostics.isDeveloperInspectionEnabled {
+        if RuntimeDiagnostics.isDeveloperInspectionEnabled {
             webView.isInspectable = true
         }
 
@@ -299,7 +299,7 @@ extension Tab {
         }
 
         if let webView = _webView {
-            if #available(macOS 13.3, *), RuntimeDiagnostics.isDeveloperInspectionEnabled {
+            if RuntimeDiagnostics.isDeveloperInspectionEnabled {
                 webView.isInspectable = true
             }
 
