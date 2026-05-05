@@ -14,9 +14,9 @@ struct SumiSiteSettingsNavigationRow: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .contentShape(Rectangle())
         .accessibilityLabel(accessibilityLabel ?? title)
     }
 }

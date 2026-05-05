@@ -30,15 +30,6 @@ struct SettingsGeneralTab: View {
                 }
 
                 SettingsRow(
-                    title: "Preview link URL",
-                    subtitle: "Show the hovered link target in the status area."
-                ) {
-                    Toggle("", isOn: $settings.showLinkStatusBar)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                }
-
-                SettingsRow(
                     title: "Glance",
                     subtitle: "Preview links without fully opening a tab."
                 ) {

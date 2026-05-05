@@ -23,28 +23,27 @@ struct SettingsStartupTab: View {
                 }
             }
 
-            SettingsSection(
-                title: "Startup Page",
-                subtitle: "Used when startup is set to open a specific page."
-            ) {
-                SettingsRow(
-                    title: "Page URL",
-                    subtitle: "Use a full URL or a bare domain."
+            if settings.startupMode == .specificPage {
+                SettingsSection(
+                    title: "Startup Page",
+                    subtitle: "Used when startup is set to open a specific page."
                 ) {
-                    TextField("https://example.com", text: $settings.startupPageURLString)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 260)
-                        .disabled(settings.startupMode != .specificPage)
-                }
+                    SettingsRow(
+                        title: "Page URL",
+                        subtitle: "Use a full URL or a bare domain."
+                    ) {
+                        TextField("https://example.com", text: $settings.startupPageURLString)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 260)
+                    }
 
-                if settings.startupMode == .specificPage,
-                   let message = SumiStartupPageURL.validationMessage(for: settings.startupPageURLString)
-                {
-                    SettingsDivider()
+                    if let message = SumiStartupPageURL.validationMessage(for: settings.startupPageURLString) {
+                        SettingsDivider()
 
-                    Label(message, systemImage: "exclamationmark.triangle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        Label(message, systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }
