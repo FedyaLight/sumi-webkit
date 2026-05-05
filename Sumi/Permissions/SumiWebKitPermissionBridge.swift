@@ -604,7 +604,7 @@ final class SumiWebKitPermissionBridge {
             isEphemeralProfile: tabContext.isEphemeralProfile,
             profilePartitionId: tabContext.profilePartitionId,
             transientPageId: tabContext.pageId,
-            surface: .normalTab,
+            surface: tabContext.surface,
             navigationOrPageGeneration: tabContext.navigationOrPageGeneration,
             now: permissionRequest.requestedAt
         )
@@ -617,7 +617,7 @@ final class SumiWebKitPermissionBridge {
         timeoutReason: String
     ) async -> SumiPermissionCoordinatorDecision {
         if shouldWaitForPromptUI,
-           context.surface == .normalTab,
+           (context.surface == .normalTab || context.surface == .miniWindow),
            context.isActiveTab,
            context.isVisibleTab {
             return await coordinator.requestPermission(context)
