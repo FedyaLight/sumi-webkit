@@ -516,15 +516,7 @@ final class SumiContentBlockingService {
     }()
 }
 
-private final class SumiContentBlockingInternalUserDecider: InternalUserDecider {
-    let isInternalUser = false
-}
-
 final class SumiContentBlockingPrivacyConfigurationManager: PrivacyConfigurationManaging {
-    let currentConfig = Data("{}".utf8)
-    let internalUserDecider: InternalUserDecider = SumiContentBlockingInternalUserDecider()
-
-    private let updatesSubject = PassthroughSubject<Void, Never>()
     private let lock = NSLock()
     private var configuration: SumiContentBlockingPrivacyConfiguration
 
@@ -532,10 +524,6 @@ final class SumiContentBlockingPrivacyConfigurationManager: PrivacyConfiguration
         configuration = SumiContentBlockingPrivacyConfiguration(
             isContentBlockingEnabled: isContentBlockingEnabled
         )
-    }
-
-    var updatesPublisher: AnyPublisher<Void, Never> {
-        updatesSubject.eraseToAnyPublisher()
     }
 
     var privacyConfig: PrivacyConfiguration {
@@ -554,106 +542,22 @@ final class SumiContentBlockingPrivacyConfigurationManager: PrivacyConfiguration
         }
         configuration = SumiContentBlockingPrivacyConfiguration(isContentBlockingEnabled: isEnabled)
         lock.unlock()
-        updatesSubject.send(())
-    }
-
-    @discardableResult
-    func reload(etag: String?, data: Data?) -> PrivacyConfigurationManager.ReloadResult {
-        _ = etag
-        _ = data
-        return .embedded
     }
 }
 
 struct SumiContentBlockingPrivacyConfiguration: PrivacyConfiguration {
     let isContentBlockingEnabled: Bool
 
-    var identifier: String {
-        isContentBlockingEnabled ? "sumi-content-blocking-enabled" : "sumi-content-blocking-disabled"
-    }
-
-    let version: String? = nil
-    let userUnprotectedDomains: [String] = []
-    let tempUnprotectedDomains: [String] = []
-    let trackerAllowlist = PrivacyConfigurationData.TrackerAllowlist(entries: [:], state: PrivacyConfigurationData.State.disabled)
-
-    func isEnabled(featureKey: PrivacyFeature, versionProvider: AppVersionProvider, defaultValue: Bool) -> Bool {
-        featureKey == .contentBlocking ? isContentBlockingEnabled : false
-    }
-
-    func stateFor(featureKey: PrivacyFeature, versionProvider: AppVersionProvider) -> PrivacyConfigurationFeatureState {
-        featureKey == .contentBlocking && isContentBlockingEnabled ? .enabled : .disabled(.featureMissing)
+    func isEnabled(featureKey: PrivacyFeature, defaultValue: Bool) -> Bool {
+        _ = defaultValue
+        return featureKey == .contentBlocking ? isContentBlockingEnabled : false
     }
 
     func isSubfeatureEnabled(
         _ subfeature: any PrivacySubfeature,
-        versionProvider: AppVersionProvider,
-        randomizer: (Range<Double>) -> Double,
         defaultValue: Bool
     ) -> Bool {
         _ = subfeature
-        _ = randomizer
-        _ = defaultValue
-        return false
+        return defaultValue
     }
-
-    func stateFor(
-        _ subfeature: any PrivacySubfeature,
-        versionProvider: AppVersionProvider,
-        randomizer: (Range<Double>) -> Double
-    ) -> PrivacyConfigurationFeatureState {
-        _ = subfeature
-        _ = randomizer
-        return .disabled(.featureMissing)
-    }
-
-    func exceptionsList(forFeature featureKey: PrivacyFeature) -> [String] {
-        _ = featureKey
-        return []
-    }
-
-    func isFeature(_ feature: PrivacyFeature, enabledForDomain: String?) -> Bool {
-        _ = enabledForDomain
-        return feature == .contentBlocking && isContentBlockingEnabled
-    }
-
-    func isProtected(domain: String?) -> Bool {
-        _ = domain
-        return isContentBlockingEnabled
-    }
-
-    func isUserUnprotected(domain: String?) -> Bool {
-        _ = domain
-        return false
-    }
-
-    func isTempUnprotected(domain: String?) -> Bool {
-        _ = domain
-        return false
-    }
-
-    func isInExceptionList(domain: String?, forFeature featureKey: PrivacyFeature) -> Bool {
-        _ = domain
-        _ = featureKey
-        return false
-    }
-
-    func settings(for feature: PrivacyFeature) -> PrivacyConfigurationData.PrivacyFeature.FeatureSettings {
-        _ = feature
-        return [:]
-    }
-
-    func settings(for subfeature: any PrivacySubfeature) -> PrivacyConfigurationData.PrivacyFeature.SubfeatureSettings? {
-        _ = subfeature
-        return nil
-    }
-
-    func userEnabledProtection(forDomain: String) {
-        _ = forDomain
-    }
-
-    func userDisabledProtection(forDomain: String) {
-        _ = forDomain
-    }
-
 }

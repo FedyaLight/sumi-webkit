@@ -50,9 +50,6 @@ private final class NativeMessagingProcessSession {
     private let onClose: (CloseReason) -> Void
 
     private var process: Process?
-    private var inputPipe: Pipe?
-    private var outputPipe: Pipe?
-    private var errorPipe: Pipe?
     private var stdinHandle: FileHandle?
     private var stdoutHandle: FileHandle?
     private var stderrHandle: FileHandle?
@@ -162,9 +159,6 @@ private final class NativeMessagingProcessSession {
         process.standardError = error
 
         self.process = process
-        self.inputPipe = input
-        self.outputPipe = output
-        self.errorPipe = error
         self.stdinHandle = stdinHandle
         self.stdoutHandle = stdoutHandle
         self.stderrHandle = stderrHandle
@@ -488,9 +482,6 @@ private final class NativeMessagingProcessSession {
         }
         process?.terminationHandler = nil
         process = nil
-        inputPipe = nil
-        outputPipe = nil
-        errorPipe = nil
         outputBuffer.removeAll()
         processExitStatus = nil
 
@@ -534,9 +525,6 @@ private final class NativeMessagingProcessSession {
             closeStdinHandle()
         }
 
-        inputPipe = nil
-        outputPipe = nil
-        errorPipe = nil
         process = nil
     }
 
@@ -880,59 +868,6 @@ final class NativeMessagingHandler: NSObject {
     func disconnect() {
         finishConnection(disconnectPort: false)
     }
-
-    #if DEBUG
-        func debugConnectForTesting(
-            onReady: @escaping (Error?) -> Void,
-            onMessage: @escaping (Any) -> Void,
-            onDisconnect: @escaping () -> Void
-        ) {
-            self.onDisconnect = onDisconnect
-
-            do {
-                let manifest = try loadManifest()
-                let session = NativeMessagingProcessSession(
-                    manifest: manifest,
-                    closeOnMalformedMessage: false,
-                    onMessage: { object in
-                        DispatchQueue.main.async {
-                            onMessage(object)
-                        }
-                    },
-                    onClose: { [weak self] _ in
-                        DispatchQueue.main.async {
-                            self?.finishConnection(disconnectPort: false)
-                        }
-                    }
-                )
-                self.session = session
-                session.start { [weak self, weak session] result in
-                    DispatchQueue.main.async {
-                        guard let self, let session, self.session === session else {
-                            return
-                        }
-
-                        switch result {
-                        case .success:
-                            onReady(nil)
-                        case .failure(let error):
-                            self.finishConnection(disconnectPort: false)
-                            onReady(error)
-                        }
-                    }
-                }
-            } catch {
-                onReady(error)
-            }
-        }
-
-        func debugPostMessageForTesting(
-            _ message: Any,
-            completion: ((Error?) -> Void)? = nil
-        ) {
-            session?.send(message, completion: completion)
-        }
-    #endif
 
     private func startResponseTimeout(
         for session: NativeMessagingProcessSession,
