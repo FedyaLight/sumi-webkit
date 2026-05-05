@@ -222,10 +222,21 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
 
         XCTAssertTrue(featureSource.contains("BrowserContentCornerCutoutView"))
         XCTAssertTrue(featureSource.contains("BrowserContentViewportShadowView"))
-        XCTAssertTrue(featureSource.contains("layer.shadowPath"))
+        XCTAssertTrue(featureSource.contains("shadowSurfaceLayer.shadowPath"))
         XCTAssertTrue(featureSource.contains("drawViewportShadow"))
         XCTAssertTrue(featureSource.contains("containsPointInsideRoundedViewport"))
         XCTAssertTrue(featureSource.contains("override func hitTest"))
+        XCTAssertTrue(featureSource.contains("cutoutPath.addClip()"))
+        XCTAssertTrue(featureSource.contains("guard distance >= 0 else { continue }"))
+        XCTAssertTrue(featureSource.contains("BrowserContentViewportVisuals.cornerCutoutShadowOpacityMultiplier"))
+        XCTAssertTrue(featureSource.contains("let referenceView = view.window?.contentView"))
+        XCTAssertTrue(featureSource.contains("let originInReference = view.convert(NSPoint.zero, to: referenceView)"))
+        XCTAssertTrue(featureSource.contains("sampledColor(\n                    at: referencePoint,\n                    in: referenceBounds"))
+        XCTAssertTrue(featureSource.contains("setAccessibilityElement(false)"))
+        XCTAssertTrue(featureSource.contains("setAccessibilityHidden(true)"))
+        XCTAssertTrue(featureSource.contains("override func viewDidChangeEffectiveAppearance()"))
+        XCTAssertTrue(featureSource.contains("updateDisplayedHostViewportStyles()"))
+        XCTAssertTrue(featureSource.contains("cutoutView.needsDisplay = true"))
 
         let forbiddenTokens = [
             "evaluateJavaScript",

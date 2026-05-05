@@ -320,6 +320,8 @@ final class BrowserContentViewportShadowView: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
         autoresizingMask = []
+        setAccessibilityElement(false)
+        setAccessibilityHidden(true)
         configureLayer()
     }
 
@@ -402,6 +404,8 @@ final class BrowserContentCornerCutoutView: NSView {
         self.corner = corner
         super.init(frame: .zero)
         autoresizingMask = []
+        setAccessibilityElement(false)
+        setAccessibilityHidden(true)
     }
 
     @available(*, unavailable)
@@ -415,6 +419,11 @@ final class BrowserContentCornerCutoutView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
     }
 
     override func draw(_ dirtyRect: NSRect) {
