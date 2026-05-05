@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import Common
 import Foundation
 import UserScript
 import WebKit
@@ -55,17 +56,30 @@ final class FaviconsTabExtension {
 
         guard faviconManagement.isCacheLoaded else { return }
 
-        if let cachedFavicon = faviconManagement.getCachedFavicon(
-            forUrlOrAnySubdomain: currentURL,
-            sizeCategory: .small,
-            fallBackToSmaller: false
-        )?.image {
+        if let cachedFavicon = cachedFavicon(for: currentURL)?.image {
             if cachedFavicon != favicon {
                 favicon = cachedFavicon
             }
         } else if previousURL?.host != currentURL.host {
             favicon = nil
         }
+    }
+
+    private func cachedFavicon(for currentURL: URL) -> Favicon? {
+        if let favicon = faviconManagement.getCachedFavicon(
+            for: currentURL,
+            sizeCategory: .small,
+            fallBackToSmaller: false
+        ) {
+            return favicon
+        }
+
+        guard let domain = TLD().eTLDplus1(currentURL.host) else { return nil }
+        return faviconManagement.getCachedFavicon(
+            forHostOrAnySubdomain: domain,
+            sizeCategory: .small,
+            fallBackToSmaller: false
+        )
     }
 
     deinit {

@@ -21,7 +21,6 @@ import Cocoa
 import Combine
 import Common
 import CoreImage
-import History
 import os.log
 import Persistence
 import PrivacyConfig
@@ -45,31 +44,7 @@ protocol FaviconManagement: AnyObject {
     func getCachedFavicon(for documentUrl: URL, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) -> Favicon?
 
     @MainActor
-    func getCachedFavicon(for host: String, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) -> Favicon?
-
-    @MainActor
-    func getCachedFavicon(forDomainOrAnySubdomain domain: String, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) -> Favicon?
-}
-
-/**
- * This extension provides convenience functions for fetching favicons at a specific size category.
- *
- * All functions in this extension call their more verbose equivalents with `fallBackToSmaller = false`.
- */
-extension FaviconManagement {
-    @MainActor
-    func getCachedFavicon(forUrlOrAnySubdomain documentUrl: URL, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) -> Favicon? {
-        if let favicon = getCachedFavicon(for: documentUrl, sizeCategory: sizeCategory, fallBackToSmaller: fallBackToSmaller) {
-            return favicon
-        }
-
-        if let domain = TLD().eTLDplus1(documentUrl.host),
-           let favicon = getCachedFavicon(forDomainOrAnySubdomain: domain, sizeCategory: sizeCategory, fallBackToSmaller: fallBackToSmaller) {
-            return favicon
-        }
-
-        return nil
-    }
+    func getCachedFavicon(forHostOrAnySubdomain domain: String, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) -> Favicon?
 }
 
 final class FaviconManager: FaviconManagement {
@@ -216,22 +191,6 @@ final class FaviconManager: FaviconManagement {
     }
 
     @MainActor
-    func clearAll() {
-        imageCache.clearAllInMemory(markLoaded: true)
-        referenceCache.clearAllInMemory(markLoaded: true)
-
-        Task {
-            do {
-                try await store.clearAll()
-            } catch {
-                Logger.favicons.error("Failed clearing favicon store: \(error.localizedDescription)")
-            }
-        }
-
-        NotificationCenter.default.post(name: .faviconCacheUpdated, object: nil)
-    }
-
-    @MainActor
     func image(forLookupKey key: String) -> NSImage? {
         guard let documentURL = SumiFaviconLookupKey.documentURL(for: key) else { return nil }
 
@@ -293,6 +252,7 @@ final class FaviconManager: FaviconManagement {
         return imageCache.get(faviconUrl: faviconURL)
     }
 
+    @MainActor
     func getCachedFavicon(for host: String, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) -> Favicon? {
         guard let faviconUrl = referenceCache.getFaviconUrl(for: host, sizeCategory: sizeCategory) else {
             guard fallBackToSmaller, let smallerSizeCategory = sizeCategory.smaller else {
@@ -304,7 +264,7 @@ final class FaviconManager: FaviconManagement {
         return imageCache.get(faviconUrl: faviconUrl)
     }
 
-    func getCachedFavicon(forDomainOrAnySubdomain domain: String, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) -> Favicon? {
+    func getCachedFavicon(forHostOrAnySubdomain domain: String, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) -> Favicon? {
         if let favicon = getCachedFavicon(for: domain, sizeCategory: sizeCategory, fallBackToSmaller: fallBackToSmaller) {
             return favicon
         }
@@ -325,21 +285,6 @@ final class FaviconManager: FaviconManagement {
     func burn(except fireproofDomains: FireproofDomains, bookmarkManager: BookmarkManager, savedLogins: Set<String> = []) async -> Result<Void, Error> {
         await referenceCache.burn(except: fireproofDomains, bookmarkManager: bookmarkManager, savedLogins: savedLogins)
         return await imageCache.burn(except: fireproofDomains, bookmarkManager: bookmarkManager, savedLogins: savedLogins)
-    }
-
-    func burnDomains(_ baseDomains: Set<String>,
-                     exceptBookmarks bookmarkManager: BookmarkManager,
-                     exceptSavedLogins: Set<String> = [],
-                     exceptExistingHistory history: BrowsingHistory,
-                     tld: TLD) async -> Result<Void, Error> {
-        let existingHistoryDomains = Set(history.compactMap { $0.url.host })
-        return await burnDomains(
-            baseDomains,
-            exceptBookmarks: bookmarkManager,
-            exceptSavedLogins: exceptSavedLogins,
-            exceptExistingHistoryHosts: existingHistoryDomains,
-            tld: tld
-        )
     }
 
     func burnDomains(_ baseDomains: Set<String>,

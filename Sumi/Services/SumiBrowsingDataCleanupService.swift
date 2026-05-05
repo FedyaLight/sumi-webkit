@@ -205,6 +205,7 @@ final class SumiBrowsingDataCleanupService {
                     modifiedSince: .distantPast,
                     in: dataStore
                 )
+                await clearFaviconCacheIfHistoryWasNotCleared(categories: categories)
             } else if !domains.isEmpty {
                 await websiteDataCleanupService.removeWebsiteDataForDomains(
                     domains,
@@ -214,6 +215,13 @@ final class SumiBrowsingDataCleanupService {
                 )
             }
         }
+    }
+
+    private func clearFaviconCacheIfHistoryWasNotCleared(categories: Set<SumiBrowsingDataCategory>) async {
+        guard !categories.contains(.history) else { return }
+        await SumiFaviconSystem.shared.burnAfterHistoryClear(
+            savedLogins: BasicAuthCredentialStore().allCredentialHosts()
+        )
     }
 
     private func normalizeDomains(_ domains: Set<String>) -> Set<String> {
