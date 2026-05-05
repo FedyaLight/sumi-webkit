@@ -69,8 +69,6 @@ final class ShortcutActionDispatcher {
                 browserManager.showQuitDialog()
             case .toggleFullScreen:
                 browserManager.toggleFullScreenForActiveWindow()
-            case .openCommandPalette:
-                browserManager.openCommandPaletteForActiveWindow(reason: .keyboard)
             case .openDevTools:
                 browserManager.openWebInspector()
             case .viewDownloads:

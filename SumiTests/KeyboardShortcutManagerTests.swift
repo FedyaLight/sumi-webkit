@@ -176,6 +176,13 @@ final class KeyboardShortcutManagerTests: XCTestCase {
         XCTAssertNil(manager.shortcut(for: .muteUnmuteAudio))
     }
 
+    func testCommandShiftPIsNotRegisteredForCommandPalette() throws {
+        let manager = makeManager()
+        let commandShiftP = try XCTUnwrap(Self.keyEvent(keyCode: 0x23, characters: "P", modifiers: [.command, .shift]))
+
+        XCTAssertFalse(manager.executeShortcut(commandShiftP))
+    }
+
     func testEnabledLookupUpdatesAfterSetClearAndReset() throws {
         let manager = makeManager()
         let commandOptionY = try XCTUnwrap(Self.keyEvent(keyCode: 0x10, characters: "y", modifiers: [.command, .option]))
