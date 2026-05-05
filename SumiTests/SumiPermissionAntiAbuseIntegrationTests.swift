@@ -7,9 +7,9 @@ import XCTest
 @MainActor
 final class SumiPermissionAntiAbuseIntegrationTests: XCTestCase {
     func testDismissCooldownSuppressesNotificationPromptAsDefaultWithoutPersistentDeny() async {
-        var now = sumiPermissionIntegrationNow
+        let clock = SumiPermissionAntiAbuseTestClock(now: sumiPermissionIntegrationNow)
         let store = SumiPermissionIntegrationStore()
-        let antiAbuseStore = SumiPermissionAntiAbuseStore.memoryOnly()
+        let antiAbuseStore = SumiPermissionAntiAbuseStore(userDefaults: nil)
         let system = FakeSumiSystemPermissionService(
             states: sumiPermissionIntegrationAuthorizedSystemStates()
         )
@@ -18,12 +18,12 @@ final class SumiPermissionAntiAbuseIntegrationTests: XCTestCase {
             memoryStore: InMemoryPermissionStore(),
             persistentStore: store,
             antiAbuseStore: antiAbuseStore,
-            now: { now }
+            now: { clock.now() }
         )
         let bridge = SumiNotificationPermissionBridge(
             coordinator: coordinator,
             notificationService: FakeSumiNotificationService(),
-            now: { now }
+            now: { clock.now() }
         )
 
         let firstTask = Task {
@@ -43,7 +43,7 @@ final class SumiPermissionAntiAbuseIntegrationTests: XCTestCase {
         let firstResult = await firstTask.value
         XCTAssertEqual(firstResult, .default)
 
-        now = sumiPermissionIntegrationNow.addingTimeInterval(60)
+        clock.set(sumiPermissionIntegrationNow.addingTimeInterval(60))
         let second = await bridge.requestWebsitePermission(
             request: notificationRequest(id: "notification-second"),
             tabContext: notificationTabContext()
@@ -63,9 +63,9 @@ final class SumiPermissionAntiAbuseIntegrationTests: XCTestCase {
     }
 
     func testManualAllowClearsSuppressionForExactPermissionKey() async throws {
-        var now = sumiPermissionIntegrationNow
+        let clock = SumiPermissionAntiAbuseTestClock(now: sumiPermissionIntegrationNow)
         let store = SumiPermissionIntegrationStore()
-        let antiAbuseStore = SumiPermissionAntiAbuseStore.memoryOnly()
+        let antiAbuseStore = SumiPermissionAntiAbuseStore(userDefaults: nil)
         let coordinator = SumiPermissionCoordinator(
             policyResolver: DefaultSumiPermissionPolicyResolver(
                 systemPermissionService: FakeSumiSystemPermissionService(
@@ -75,7 +75,7 @@ final class SumiPermissionAntiAbuseIntegrationTests: XCTestCase {
             memoryStore: InMemoryPermissionStore(),
             persistentStore: store,
             antiAbuseStore: antiAbuseStore,
-            now: { now }
+            now: { clock.now() }
         )
 
         let firstTask = Task {
@@ -88,7 +88,7 @@ final class SumiPermissionAntiAbuseIntegrationTests: XCTestCase {
         await coordinator.dismiss(firstQuery.id)
         _ = await firstTask.value
 
-        now = sumiPermissionIntegrationNow.addingTimeInterval(60)
+        clock.set(sumiPermissionIntegrationNow.addingTimeInterval(60))
         let suppressed = await coordinator.requestPermission(
             sumiPermissionIntegrationContext([.camera], id: "camera-suppressed")
         )
@@ -153,5 +153,24 @@ final class SumiPermissionAntiAbuseIntegrationTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         return try String(contentsOf: repoRoot.appendingPathComponent(relativePath), encoding: .utf8)
+    }
+}
+
+private final class SumiPermissionAntiAbuseTestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Date
+
+    init(now: Date) {
+        self.value = now
+    }
+
+    func now() -> Date {
+        lock.withLock { value }
+    }
+
+    func set(_ value: Date) {
+        lock.withLock {
+            self.value = value
+        }
     }
 }

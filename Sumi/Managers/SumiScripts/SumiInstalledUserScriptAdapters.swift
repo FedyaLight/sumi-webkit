@@ -19,7 +19,7 @@ private struct SumiGMMessagePayload {
 }
 
 @MainActor
-final class SumiInstalledUserScriptAdapter: NSObject, UserScript, UserScriptMessaging, WKScriptMessageHandlerWithReply {
+final class SumiInstalledUserScriptAdapter: NSObject, UserScript, @MainActor UserScriptMessaging, WKScriptMessageHandlerWithReply {
     let broker: UserScriptMessageBroker
     let source: String
     let injectionTime: WKUserScriptInjectionTime
@@ -148,7 +148,7 @@ final class SumiInstalledUserStyleAdapter: NSObject, UserScript {
 }
 
 @MainActor
-private final class SumiGMSubfeature: NSObject, Subfeature {
+private final class SumiGMSubfeature: NSObject, @MainActor Subfeature {
     let featureName = SumiInstalledUserScriptFeature.gm
     let messageOriginPolicy: MessageOriginPolicy = .all
 

@@ -1,19 +1,19 @@
 import SwiftUI
 
 private struct SumiModuleRegistryEnvironmentKey: EnvironmentKey {
-    static let defaultValue = SumiModuleRegistry.shared
+    static let defaultValue = MainActor.assumeIsolated { SumiModuleRegistry.shared }
 }
 
 private struct SumiTrackingProtectionModuleEnvironmentKey: EnvironmentKey {
-    static let defaultValue = SumiTrackingProtectionModule.shared
+    static let defaultValue = MainActor.assumeIsolated { SumiTrackingProtectionModule.shared }
 }
 
 private struct SumiExtensionsModuleEnvironmentKey: EnvironmentKey {
-    static let defaultValue = SumiExtensionsModule.shared
+    static let defaultValue = MainActor.assumeIsolated { SumiExtensionsModule.shared }
 }
 
 private struct SumiUserscriptsModuleEnvironmentKey: EnvironmentKey {
-    static let defaultValue = SumiUserscriptsModule.shared
+    static let defaultValue = MainActor.assumeIsolated { SumiUserscriptsModule.shared }
 }
 
 extension EnvironmentValues {

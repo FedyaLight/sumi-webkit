@@ -365,7 +365,7 @@ final class SumiTrackingProtectionDataStore: ObservableObject {
     }
 
     func loadActiveDataSet() throws -> SumiTrackerDataSet {
-        if let downloadedETag,
+        if downloadedETag != nil,
            fileManager.fileExists(atPath: downloadedDataURL.path),
            let downloadedData = try? Data(contentsOf: downloadedDataURL),
            let trackerData = try? JSONDecoder().decode(TrackerData.self, from: downloadedData) {

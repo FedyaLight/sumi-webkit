@@ -141,7 +141,7 @@ extension Tab {
 /// Reports hovered `<a href>` for chrome (e.g. link status). Injected in the main frame only to limit work in subframes;
 /// links inside iframes will not drive the status line until hovered in the top document.
 @MainActor
-private final class SumiLinkInteractionUserScript: NSObject, UserScript, UserScriptMessaging, WKScriptMessageHandlerWithReply {
+private final class SumiLinkInteractionUserScript: NSObject, UserScript, @MainActor UserScriptMessaging, WKScriptMessageHandlerWithReply {
     private let context: String
     let broker: UserScriptMessageBroker
     let source: String
@@ -245,7 +245,7 @@ private final class SumiLinkInteractionUserScript: NSObject, UserScript, UserScr
 }
 
 @MainActor
-private final class SumiLinkInteractionSubfeature: NSObject, Subfeature {
+private final class SumiLinkInteractionSubfeature: NSObject, @MainActor Subfeature {
     let featureName = "linkInteraction"
     let messageOriginPolicy: MessageOriginPolicy = .all
     weak var tab: Tab?
@@ -286,7 +286,7 @@ private struct SumiHrefPayload {
 }
 
 @MainActor
-private final class SumiTabSuspensionUserScript: NSObject, UserScript, UserScriptMessaging, WKScriptMessageHandlerWithReply {
+private final class SumiTabSuspensionUserScript: NSObject, UserScript, @MainActor UserScriptMessaging, WKScriptMessageHandlerWithReply {
     private let context: String
     let broker: UserScriptMessageBroker
     let source: String
@@ -351,7 +351,7 @@ private final class SumiTabSuspensionUserScript: NSObject, UserScript, UserScrip
 }
 
 @MainActor
-private final class SumiTabSuspensionSubfeature: NSObject, Subfeature {
+private final class SumiTabSuspensionSubfeature: NSObject, @MainActor Subfeature {
     let featureName = "tabSuspension"
     let messageOriginPolicy: MessageOriginPolicy = .all
     weak var tab: Tab?
@@ -389,7 +389,7 @@ private struct SumiTabSuspensionPayload {
 }
 
 @MainActor
-private final class SumiIdentityUserScript: NSObject, UserScript, UserScriptMessaging, WKScriptMessageHandlerWithReply {
+private final class SumiIdentityUserScript: NSObject, UserScript, @MainActor UserScriptMessaging, WKScriptMessageHandlerWithReply {
     private let context: String
     let broker: UserScriptMessageBroker
     let source: String
@@ -455,7 +455,7 @@ private final class SumiIdentityUserScript: NSObject, UserScript, UserScriptMess
 }
 
 @MainActor
-private final class SumiIdentitySubfeature: NSObject, Subfeature {
+private final class SumiIdentitySubfeature: NSObject, @MainActor Subfeature {
     let featureName = "identity"
     let messageOriginPolicy: MessageOriginPolicy = .all
     weak var tab: Tab?

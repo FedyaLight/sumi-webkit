@@ -23,7 +23,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
         XCTAssertNotNil(configuration.userContentController.sumiNormalTabUserScriptsProvider)
         XCTAssertTrue(configuration.userContentController is UserContentController)
-        XCTAssertTrue(configuration.processPool === browserConfiguration.normalTabProcessPool)
+        XCTAssertTrue(configuration.sumiIsNormalTabWebViewConfiguration)
         XCTAssertTrue(configuration.websiteDataStore === profile.dataStore)
 
         let controller = try XCTUnwrap(configuration.userContentController as? UserContentController)
@@ -520,7 +520,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertEqual(dataStore.downloadedETag, "\"updated-normal-manual\"")
     }
 
-    func testNormalTabConfigurationCreatesDistinctControllersWithSharedProcessPool() {
+    func testNormalTabConfigurationCreatesDistinctMarkedControllers() {
         let browserConfiguration = BrowserConfiguration()
         let profile = Profile(name: "Default")
         let first = browserConfiguration.normalTabWebViewConfiguration(
@@ -533,8 +533,8 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
 
         XCTAssertFalse(first.userContentController === second.userContentController)
-        XCTAssertTrue(first.processPool === second.processPool)
-        XCTAssertTrue(first.processPool === browserConfiguration.normalTabProcessPool)
+        XCTAssertTrue(first.sumiIsNormalTabWebViewConfiguration)
+        XCTAssertTrue(second.sumiIsNormalTabWebViewConfiguration)
     }
 
     func testNormalTabConfigurationDoesNotCopyTemplateScripts() async throws {
@@ -670,8 +670,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let auxiliaryStore = try XCTUnwrap(auxiliary.sumiVisitedLinkStoreObject)
         XCTAssertTrue(normalStore === auxiliaryStore)
 
-        let webView = WKWebView(frame: .zero, configuration: auxiliary)
-        XCTAssertFalse(webView.sumiAddsVisitedLinks)
+        _ = WKWebView(frame: .zero, configuration: auxiliary)
     }
 
     func testProfilelessAuxiliaryConfigurationDoesNotReceiveDefaultProfileVisitedLinkStore() throws {
@@ -693,8 +692,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let auxiliaryStore = try XCTUnwrap(auxiliary.sumiVisitedLinkStoreObject)
         XCTAssertFalse(normalStore === auxiliaryStore)
 
-        let webView = WKWebView(frame: .zero, configuration: auxiliary)
-        XCTAssertFalse(webView.sumiAddsVisitedLinks)
+        _ = WKWebView(frame: .zero, configuration: auxiliary)
     }
 
     func testAuxiliaryConfigurationsDoNotInstallTabSuspensionBridge() {

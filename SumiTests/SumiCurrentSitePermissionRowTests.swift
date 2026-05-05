@@ -64,6 +64,6 @@ final class SumiCurrentSitePermissionRowTests: XCTestCase {
             isEphemeralProfile: false
         )
 
-        XCTAssertEqual(summary.subtitle, "Microphone muted, 2 blocked attempts")
+        XCTAssertEqual(summary.activityText, "Microphone muted, 2 blocked attempts")
     }
 }

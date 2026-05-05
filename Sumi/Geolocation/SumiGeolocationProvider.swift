@@ -68,19 +68,21 @@ final class SumiGeolocationProvider: NSObject, SumiGeolocationProviding {
     }
 
     convenience init?(
-        processPool: WKProcessPool
+        browserConfiguration: BrowserConfiguration
     ) {
         self.init(
-            processPool: processPool,
+            webKitProcessPoolContext: browserConfiguration.webKitProcessPoolContext,
             geolocationService: SumiGeolocationService()
         )
     }
 
     init?(
-        processPool: WKProcessPool,
+        webKitProcessPoolContext: SumiWebKitProcessPoolContext,
         geolocationService: any SumiGeolocationServicing
     ) {
-        guard let manager = SumiWebKitGeolocationManagerHandle(processPool: processPool) else {
+        guard let manager = SumiWebKitGeolocationManagerHandle(
+            webKitProcessPoolContext: webKitProcessPoolContext
+        ) else {
             return nil
         }
         self.manager = manager
@@ -342,13 +344,13 @@ private struct SumiWebKitGeolocationManagerHandle {
 
     private let manager: UnsafeRawPointer
 
-    init?(processPool: WKProcessPool) {
+    init?(webKitProcessPoolContext: SumiWebKitProcessPoolContext) {
         guard let getGeolocationManager = Self.getGeolocationManager,
               Self.setProviderSymbol != nil,
               Self.didChangePosition != nil,
               Self.didFail != nil,
               Self.positionCreate != nil,
-              let manager = getGeolocationManager(Unmanaged.passUnretained(processPool).toOpaque())
+              let manager = getGeolocationManager(webKitProcessPoolContext.opaquePointer)
         else {
             return nil
         }

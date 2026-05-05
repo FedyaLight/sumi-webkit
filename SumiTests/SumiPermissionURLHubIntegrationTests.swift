@@ -126,7 +126,7 @@ final class SumiPermissionURLHubIntegrationTests: XCTestCase {
         XCTAssertNil(harness.autoplayStore.explicitPolicy(for: profileURL, profile: profile))
         XCTAssertTrue(blockedStore.records(forPageId: context.pageId!).isEmpty)
         XCTAssertTrue(externalStore.records(forPageId: context.pageId!).isEmpty)
-        XCTAssertTrue(indicatorStore.records(forPageId: context.pageId!).isEmpty)
+        XCTAssertTrue(indicatorStore.recordsSnapshot(forPageId: context.pageId!).isEmpty)
 
         let settingsSource = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionsViewModel.swift")
         XCTAssertFalse(settingsSource.contains("removeWebsiteData"))
@@ -160,7 +160,7 @@ final class SumiPermissionURLHubIntegrationTests: XCTestCase {
             memoryStore: InMemoryPermissionStore(),
             persistentStore: store,
             sessionOwnerId: "window-a",
-            now: sumiPermissionIntegrationDate
+            now: { sumiPermissionIntegrationDate() }
         )
         return (store, coordinator, SumiPermissionIntegrationAutoplayStore())
     }

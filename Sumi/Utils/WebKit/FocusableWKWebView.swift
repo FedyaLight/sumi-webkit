@@ -65,18 +65,26 @@ final class FocusableWKWebView: WKWebView {
 
         webKitMouseTrackingLoadSheddingObserver?.invalidate()
         webKitMouseTrackingArea = trackingArea
-        webKitMouseTrackingLoadSheddingObserver = observe(\.isLoading, options: [.new]) { [weak self, trackingArea] _, change in
+        let trackingAreaID = ObjectIdentifier(trackingArea)
+        webKitMouseTrackingLoadSheddingObserver = observe(\.isLoading, options: [.new]) { [weak self, trackingAreaID] _, change in
             guard let isLoading = change.newValue else { return }
-            Task { @MainActor [weak self, trackingArea] in
-                guard let self, self.webKitMouseTrackingArea === trackingArea else { return }
+            Task { @MainActor [weak self, trackingAreaID] in
+                guard let self,
+                      let trackingArea = self.webKitMouseTrackingArea,
+                      ObjectIdentifier(trackingArea) == trackingAreaID
+                else { return }
                 self.updateWebKitMouseTrackingArea(trackingArea, isLoading: isLoading)
             }
         }
     }
 
     private func scheduleWebKitMouseTrackingLoadSheddingRefresh(for trackingArea: NSTrackingArea) {
-        Task { @MainActor [weak self, trackingArea] in
-            guard let self, self.webKitMouseTrackingArea === trackingArea else { return }
+        let trackingAreaID = ObjectIdentifier(trackingArea)
+        Task { @MainActor [weak self, trackingAreaID] in
+            guard let self,
+                  let trackingArea = self.webKitMouseTrackingArea,
+                  ObjectIdentifier(trackingArea) == trackingAreaID
+            else { return }
             let currentIsLoading = self.isLoading
             self.updateWebKitMouseTrackingArea(trackingArea, isLoading: currentIsLoading)
         }

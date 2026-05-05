@@ -50,4 +50,12 @@ final class SumiModuleRegistry {
         settingsStore.setEnabled(isEnabled, for: moduleID)
     }
 
+    func enable(_ moduleID: SumiModuleID) {
+        setEnabled(true, for: moduleID)
+    }
+
+    func disable(_ moduleID: SumiModuleID) {
+        setEnabled(false, for: moduleID)
+    }
+
 }

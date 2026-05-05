@@ -179,7 +179,6 @@ final class HistoryViewDataProvider {
                 referenceDate: referenceDateProvider(),
                 calendar: calendar
             )
-            let referenceDate = referenceDateProvider()
             return records.map(makeHistoryItem)
         } catch {
             RuntimeDiagnostics.emit("Error loading recent history menu items: \(error)")
@@ -200,7 +199,6 @@ final class HistoryViewDataProvider {
                 referenceDate: referenceDateProvider(),
                 calendar: calendar
             )
-            let referenceDate = referenceDateProvider()
             return records.map(makeHistoryItem)
         } catch {
             RuntimeDiagnostics.emit("Error loading history suggestions: \(error)")
@@ -222,7 +220,6 @@ final class HistoryViewDataProvider {
                 referenceDate: referenceDateProvider(),
                 calendar: calendar
             )
-            let referenceDate = referenceDateProvider()
             return HistoryListPage(
                 items: page.records.map(makeHistoryItem),
                 nextOffset: page.nextOffset,

@@ -93,7 +93,6 @@ final class SumiPermissionFinalCleanupTests: XCTestCase {
             "SumiWebKitDisplayCapturePermissionDecision",
             appearsOnlyIn: [
                 "Sumi/Models/Tab/Tab+UIDelegate.swift",
-                "Sumi/Permissions/SumiWebKitDisplayCaptureRequest.swift",
                 "Sumi/Permissions/SumiWebKitMediaCaptureDecisionMapper.swift",
                 "Sumi/Permissions/SumiWebKitPermissionBridge.swift",
             ]

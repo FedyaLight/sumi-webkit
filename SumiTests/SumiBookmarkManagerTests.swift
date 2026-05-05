@@ -186,7 +186,7 @@ final class SumiBookmarkManagerTests: XCTestCase {
         XCTAssertEqual(summary.successful, 2)
         XCTAssertEqual(summary.duplicates, 1)
         XCTAssertEqual(summary.failed, 1)
-        XCTAssertEqual(manager.visibleEntities(in: nil, query: "Example", sortMode: .manual).map(\.title), ["Imported"])
+        XCTAssertEqual(manager.visibleEntities(in: nil, query: "Example", sortMode: .manual).map(\.title), ["Example"])
 
         let exportDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("SumiBookmarkManagerExport-\(UUID().uuidString)", isDirectory: true)

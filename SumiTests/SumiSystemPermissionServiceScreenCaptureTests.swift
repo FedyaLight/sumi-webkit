@@ -61,11 +61,11 @@ final class SumiSystemPermissionServiceScreenCaptureTests: XCTestCase {
     }
 
     func testMacScreenCaptureRequestUsesInjectedRequestClosureOnlyWhenNotDetermined() async {
-        var requestCallCount = 0
+        let requestCallCount = SumiScreenCaptureRequestCounter()
         let service = MacSumiSystemPermissionService(
             screenCapturePreflightAccess: { false },
             requestScreenCaptureAccess: {
-                requestCallCount += 1
+                requestCallCount.increment()
                 return true
             }
         )
@@ -73,7 +73,7 @@ final class SumiSystemPermissionServiceScreenCaptureTests: XCTestCase {
         let state = await service.requestAuthorization(for: .screenCapture)
 
         XCTAssertEqual(state, .authorized)
-        XCTAssertEqual(requestCallCount, 1)
+        XCTAssertEqual(requestCallCount.count, 1)
     }
 
     func testScreenCaptureSystemSettingsLinkIsBestEffort() {
@@ -95,9 +95,41 @@ final class SumiSystemPermissionServiceScreenCaptureTests: XCTestCase {
         )
         let resolver = DefaultSumiPermissionPolicyResolver(systemPermissionService: service)
 
-        _ = await resolver.evaluate(SumiPermissionSecurityContext(request: request))
+        _ = await resolver.evaluate(SumiPermissionSecurityContext(
+            request: request,
+            requestingOrigin: request.requestingOrigin,
+            topOrigin: request.topOrigin,
+            committedURL: URL(string: "https://example.com"),
+            visibleURL: URL(string: "https://example.com"),
+            mainFrameURL: URL(string: "https://example.com"),
+            isMainFrame: true,
+            isActiveTab: true,
+            isVisibleTab: true,
+            hasUserGesture: false,
+            isEphemeralProfile: false,
+            profilePartitionId: "profile-a",
+            transientPageId: nil,
+            surface: .normalTab,
+            navigationOrPageGeneration: nil,
+            now: Date()
+        ))
 
         let requestAuthorizationCallCount = await service.requestAuthorizationCallCount(for: .screenCapture)
         XCTAssertEqual(requestAuthorizationCallCount, 0)
+    }
+}
+
+private final class SumiScreenCaptureRequestCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    func increment() {
+        lock.withLock {
+            value += 1
+        }
+    }
+
+    var count: Int {
+        lock.withLock { value }
     }
 }

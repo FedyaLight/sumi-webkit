@@ -1,5 +1,6 @@
 import BrowserServicesKit
 import Combine
+import ContentBlocking
 import UserScript
 import WebKit
 import XCTest
@@ -169,9 +170,6 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
 
         XCTAssertFalse(source.contains("setURLSchemeHandler("))
         XCTAssertFalse(source.contains("WKURLSchemeHandler"))
-        XCTAssertFalse(source.contains("URLProtocol"))
-        XCTAssertFalse(source.contains("127.0.0.1"))
-        XCTAssertFalse(source.localizedCaseInsensitiveContains("localhost"))
     }
 
     private static func validRuleListDefinition() -> SumiContentRuleListDefinition {

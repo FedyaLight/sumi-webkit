@@ -1,5 +1,7 @@
 import Foundation
 
+@testable import Sumi
+
 struct TestDefaultsHarness {
     let suiteName = "SumiTests.\(UUID().uuidString)"
     let defaults: UserDefaults

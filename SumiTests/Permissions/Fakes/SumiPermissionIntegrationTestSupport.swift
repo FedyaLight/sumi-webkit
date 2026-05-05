@@ -55,6 +55,7 @@ func sumiPermissionIntegrationContext(
         isMainFrame: true,
         isActiveTab: true,
         isVisibleTab: true,
+        hasUserGesture: false,
         isEphemeralProfile: isEphemeralProfile,
         profilePartitionId: profilePartitionId,
         transientPageId: pageId,
