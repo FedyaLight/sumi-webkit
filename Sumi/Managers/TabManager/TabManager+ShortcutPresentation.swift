@@ -76,7 +76,7 @@ extension TabManager {
             id: pin.id,
             url: pin.launchURL,
             name: pin.title,
-            favicon: pin.systemIconName,
+            favicon: SumiPersistentGlyph.launcherSystemImageFallback,
             spaceId: pin.role == .essential ? nil : pin.spaceId,
             index: pin.index,
             browserManager: browserManager
@@ -84,8 +84,7 @@ extension TabManager {
         tab.bindToShortcutPin(pin)
         tab.profileId = pin.profileId
         tab.folderId = pin.folderId
-        tab.favicon = pin.favicon
-        tab.faviconIsTemplateGlobePlaceholder = pin.faviconIsUncachedGlobeTemplate
+        _ = tab.applyCachedFaviconOrPlaceholder(for: pin.launchURL)
         return tab
     }
 
@@ -140,16 +139,4 @@ extension TabManager {
             .filter { role == nil || $0.shortcutPinRole == role }
     }
 
-    /// After a favicon cache miss (e.g. cleared cache), the live `Tab` may resolve a bitmap while the
-    /// `ShortcutPin` still shows the globe. Copies the resolved favicon onto the pin for default (non-custom) icons
-    /// and notifies sidebar views that listen for shortcut runtime changes.
-    func propagateLauncherFaviconFromLiveTabIfNeeded(_ tab: Tab) {
-        guard tab.isShortcutLiveInstance,
-              let pinId = tab.shortcutPinId,
-              let pin = shortcutPin(by: pinId),
-              pin.iconAsset == nil else {
-            return
-        }
-        pin.refreshFromLiveTab(tab)
-    }
 }

@@ -5,6 +5,30 @@ enum TabFaviconStore {
     private static let manualOverridesLock = NSLock()
     private static var manualOverrides: [String: NSImage] = [:]
 
+    static func getCachedImage(forDocumentURL url: URL) -> NSImage? {
+        if let key = SumiFaviconResolver.cacheKey(for: url),
+           let manual = withManualOverrides({ $0[key] }) {
+            return manual
+        }
+
+        return withManager { manager in
+            if let favicon = manager.getCachedFavicon(
+                for: url,
+                sizeCategory: .small,
+                fallBackToSmaller: true
+            ) {
+                return favicon.image
+            }
+
+            guard let host = url.host else { return nil }
+            return manager.getCachedFavicon(
+                for: host,
+                sizeCategory: .small,
+                fallBackToSmaller: true
+            )?.image
+        }
+    }
+
     static func getCachedImage(for key: String) -> NSImage? {
         if let manual = withManualOverrides({ $0[key] }) {
             return manual

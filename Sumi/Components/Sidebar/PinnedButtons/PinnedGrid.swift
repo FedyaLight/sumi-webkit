@@ -892,16 +892,17 @@ private struct LivePinnedTileContent: View {
 
     var body: some View {
         let resolvedTitle = pin.resolvedDisplayTitle(liveTab: liveTab)
+        let chromeTemplateSystemImageName = Self.chromeTemplateSystemImageName(for: liveTab)
         PinnedTabView(
-            tabIcon: pin.favicon,
-            chromeTemplateSystemImageName: pin.pinnedChromeTemplateSystemImageName,
+            tabIcon: liveTab.favicon,
+            chromeTemplateSystemImageName: chromeTemplateSystemImageName,
             presentationState: presentationState,
             liveTab: liveTab,
             dragSourceConfiguration: makePinnedTileDragSourceConfiguration(
                 pin: pin,
                 resolvedTitle: resolvedTitle,
-                previewIcon: pin.favicon,
-                chromeTemplateSystemImageName: pin.pinnedChromeTemplateSystemImageName,
+                previewIcon: liveTab.favicon,
+                chromeTemplateSystemImageName: chromeTemplateSystemImageName,
                 previewPresentationState: presentationState,
                 pinnedConfiguration: dragPinnedConfiguration,
                 exclusionZones: dragExclusionZones,
@@ -941,6 +942,16 @@ private struct LivePinnedTileContent: View {
         }
     }
 
+    private static func chromeTemplateSystemImageName(for liveTab: Tab) -> String? {
+        if SumiSurface.isSettingsSurfaceURL(liveTab.url) {
+            return SumiSurface.settingsTabFaviconSystemImageName
+        }
+        if liveTab.faviconIsTemplateGlobePlaceholder {
+            return SumiPersistentGlyph.launcherSystemImageFallback
+        }
+        return nil
+    }
+
     private var dragExclusionZones: [SidebarDragSourceExclusionZone] {
         var zones: [SidebarDragSourceExclusionZone] = []
 
@@ -968,19 +979,21 @@ private struct StoredPinnedTileContent: View {
     let dragPinnedConfiguration: PinnedTabsConfiguration
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
+    @State private var faviconCacheRefreshID = UUID()
 
     var body: some View {
+        let _ = faviconCacheRefreshID
         let resolvedTitle = pin.preferredDisplayTitle
         PinnedTabView(
-            tabIcon: pin.favicon,
-            chromeTemplateSystemImageName: pin.pinnedChromeTemplateSystemImageName,
+            tabIcon: pin.storedFavicon,
+            chromeTemplateSystemImageName: pin.storedChromeTemplateSystemImageName,
             presentationState: presentationState,
             liveTab: nil,
             dragSourceConfiguration: makePinnedTileDragSourceConfiguration(
                 pin: pin,
                 resolvedTitle: resolvedTitle,
-                previewIcon: pin.favicon,
-                chromeTemplateSystemImageName: pin.pinnedChromeTemplateSystemImageName,
+                previewIcon: pin.storedFavicon,
+                chromeTemplateSystemImageName: pin.storedChromeTemplateSystemImageName,
                 previewPresentationState: presentationState,
                 pinnedConfiguration: dragPinnedConfiguration,
                 exclusionZones: dragExclusionZones,
@@ -1005,6 +1018,9 @@ private struct StoredPinnedTileContent: View {
             action: onActivate,
             onUnload: onUnload
         )
+        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { _ in
+            faviconCacheRefreshID = UUID()
+        }
         .overlay(alignment: .bottomTrailing) {
             if essentialRuntimeState?.showsSplitProxyBadge == true {
                 Image(systemName: "rectangle.split.2x1")

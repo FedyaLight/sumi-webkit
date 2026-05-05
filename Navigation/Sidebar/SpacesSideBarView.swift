@@ -614,11 +614,11 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             return .system(SumiPersistentGlyph.resolvedLauncherSystemImageName(iconAsset))
         }
 
-        if let systemName = pin.pinnedChromeTemplateSystemImageName {
+        if let systemName = pin.storedChromeTemplateSystemImageName {
             return .system(systemName)
         }
 
-        return .image(pin.favicon)
+        return .image(pin.storedFavicon)
     }
 }
 

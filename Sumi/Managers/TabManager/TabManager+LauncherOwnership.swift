@@ -67,14 +67,12 @@ extension TabManager {
         _ pin: ShortcutPin,
         title: String? = nil,
         launchURL: URL? = nil,
-        systemIconName: String? = nil,
         iconAsset: String?? = nil
     ) -> ShortcutPin? {
         return withStructuralUpdateTransaction {
             let updatedPin = pin.updated(
                 title: title,
                 launchURL: launchURL,
-                systemIconName: systemIconName,
                 iconAsset: iconAsset
             )
 
@@ -138,7 +136,6 @@ extension TabManager {
             title: resolvedTitle,
             launchURL: liveTab.url
         )
-        updated?.refreshFromLiveTab(liveTab)
         return updated
     }
 
@@ -162,7 +159,7 @@ extension TabManager {
                 let duplicateTab = Tab(
                     url: liveTab.url,
                     name: liveTab.name,
-                    favicon: pin.systemIconName,
+                    favicon: SumiPersistentGlyph.launcherSystemImageFallback,
                     spaceId: targetSpaceId,
                     index: 0,
                     browserManager: browserManager
@@ -185,7 +182,6 @@ extension TabManager {
                 title: pin.title,
                 launchURL: pin.launchURL
             )
-            updated?.refreshFromLiveTab(liveTab)
             return updated
         }
     }
@@ -278,8 +274,6 @@ extension TabManager {
                     tab.spaceId = resolvedLiveSpaceId(for: insertedPin, currentSpaceId: currentSpaceId)
                     tab.folderId = nil
                     tab.profileId = insertedPin.profileId
-                    tab.favicon = insertedPin.favicon
-                    tab.faviconIsTemplateGlobePlaceholder = insertedPin.faviconIsUncachedGlobeTemplate
 
                     if let windowState = browserManager?.windowRegistry?.windows[windowId],
                        windowState.currentShortcutPinId == sourcePin.id {
@@ -314,8 +308,6 @@ extension TabManager {
                 folderId: pin.folderId,
                 launchURL: pin.launchURL,
                 title: pin.title,
-                faviconCacheKey: pin.faviconCacheKey ?? ShortcutPin.makeFaviconCacheKey(for: pin.launchURL),
-                systemIconName: pin.systemIconName,
                 iconAsset: pin.iconAsset
             )
         }
@@ -333,7 +325,6 @@ extension TabManager {
         liveTabs[pin.id] = tab
         transientShortcutTabsByWindow[windowId] = liveTabs
         notifyTransientShortcutStateChanged()
-        pin.refreshFromLiveTab(tab)
 
         if let windowState = browserManager?.windowRegistry?.windows[windowId] {
             windowState.currentShortcutPinId = pin.id
@@ -354,24 +345,19 @@ extension TabManager {
     func activateShortcutPin(_ pin: ShortcutPin, in windowId: UUID, currentSpaceId: UUID?) -> Tab {
         return withStructuralUpdateTransaction {
             if let existing = transientShortcutTabsByWindow[windowId]?[pin.id] {
-                pin.applyCachedFaviconIfAvailable()
                 existing.bindToShortcutPin(pin)
                 existing.spaceId = resolvedLiveSpaceId(for: pin, currentSpaceId: currentSpaceId)
                 existing.folderId = pin.folderId
                 existing.profileId = pin.profileId
-                existing.favicon = pin.favicon
-                existing.faviconIsTemplateGlobePlaceholder = pin.faviconIsUncachedGlobeTemplate
                 attach(existing)
                 return existing
             }
-
-            pin.applyCachedFaviconIfAvailable()
 
             let resolvedSpaceId = resolvedLiveSpaceId(for: pin, currentSpaceId: currentSpaceId)
             let tab = Tab(
                 url: pin.launchURL,
                 name: pin.title,
-                favicon: pin.systemIconName,
+                favicon: SumiPersistentGlyph.launcherSystemImageFallback,
                 spaceId: resolvedSpaceId,
                 index: 0,
                 browserManager: browserManager
@@ -379,8 +365,7 @@ extension TabManager {
             tab.bindToShortcutPin(pin)
             tab.profileId = pin.profileId
             tab.folderId = pin.folderId
-            tab.favicon = pin.favicon
-            tab.faviconIsTemplateGlobePlaceholder = pin.faviconIsUncachedGlobeTemplate
+            _ = tab.applyCachedFaviconOrPlaceholder(for: pin.launchURL)
             attach(tab)
             var liveTabs = transientShortcutTabsByWindow[windowId] ?? [:]
             liveTabs[pin.id] = tab

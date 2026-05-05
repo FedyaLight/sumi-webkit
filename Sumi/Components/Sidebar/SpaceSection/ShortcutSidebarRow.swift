@@ -174,9 +174,11 @@ private struct ShortcutSidebarRowChrome: View {
     @State private var isRowHovered = false
     @State private var isActionHovered = false
     @State private var isResetHovered = false
+    @State private var faviconCacheRefreshID = UUID()
     @StateObject private var emojiManager = EmojiPickerManager()
 
     var body: some View {
+        let _ = faviconCacheRefreshID
         let cornerRadius = sumiSettings.resolvedCornerRadius(12)
         HStack(spacing: 0) {
             if runtimeAffordance.usesResetLeadingAction, let onResetToLaunchURL {
@@ -269,6 +271,9 @@ private struct ShortcutSidebarRowChrome: View {
         .onChange(of: runtimeAffordance.isSelected) { _, _ in
             recordShortcutSidebarMarker("shortcutRowSelectionChange")
         }
+        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { _ in
+            faviconCacheRefreshID = UUID()
+        }
         .sidebarAppKitContextMenu(
             isInteractionEnabled: dragIsEnabled,
             dragSource: dragSourceConfiguration,
@@ -308,13 +313,13 @@ private struct ShortcutSidebarRowChrome: View {
         Group {
             if let launcherIconAsset = pin.iconAsset {
                 launcherGlyph(for: launcherIconAsset)
-            } else if let systemName = pin.pinnedChromeTemplateSystemImageName {
+            } else if let systemName = chromeTemplateSystemImageName {
                 Image(systemName: systemName)
                     .font(.system(size: SidebarRowLayout.faviconSize * 0.78, weight: .medium))
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(textColor)
             } else {
-                pin.favicon
+                displayFavicon
                     .resizable()
                     .scaledToFit()
             }
@@ -323,6 +328,23 @@ private struct ShortcutSidebarRowChrome: View {
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .saturation(runtimeAffordance.shouldDesaturateIcon ? 0.0 : 1.0)
         .opacity(runtimeAffordance.shouldDesaturateIcon ? 0.8 : 1.0)
+    }
+
+    private var displayFavicon: Image {
+        liveTab?.favicon ?? pin.storedFavicon
+    }
+
+    private var chromeTemplateSystemImageName: String? {
+        if let liveTab {
+            if SumiSurface.isSettingsSurfaceURL(liveTab.url) {
+                return SumiSurface.settingsTabFaviconSystemImageName
+            }
+            if liveTab.faviconIsTemplateGlobePlaceholder {
+                return SumiPersistentGlyph.launcherSystemImageFallback
+            }
+            return nil
+        }
+        return pin.storedChromeTemplateSystemImageName
     }
 
     @ViewBuilder
@@ -512,6 +534,7 @@ private struct ShortcutSidebarRowChrome: View {
             dragSourceZone: dragSourceZone,
             dragHasTrailingActionExclusion: dragHasTrailingActionExclusion,
             hasLiveAudioExclusion: liveTab?.audioState.showsTabAudioButton == true,
+            previewIcon: displayFavicon,
             action: action,
             dragIsEnabled: dragIsEnabled
         )
@@ -600,6 +623,7 @@ func makeShortcutSidebarDragSourceConfiguration(
     dragSourceZone: DropZoneID?,
     dragHasTrailingActionExclusion: Bool,
     hasLiveAudioExclusion: Bool = false,
+    previewIcon: Image,
     action: (() -> Void)? = nil,
     dragIsEnabled: Bool = true
 ) -> SidebarDragSourceConfiguration? {
@@ -613,7 +637,7 @@ func makeShortcutSidebarDragSourceConfiguration(
         ),
         sourceZone: dragSourceZone,
         previewKind: .row,
-        previewIcon: pin.favicon,
+        previewIcon: previewIcon,
         exclusionZones: makeShortcutSidebarDragExclusionZones(
             runtimeAffordance: runtimeAffordance,
             dragHasTrailingActionExclusion: dragHasTrailingActionExclusion,

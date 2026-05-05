@@ -235,12 +235,12 @@ private struct ShortcutLinkEditorIcon: View {
             Image(systemName: SumiPersistentGlyph.resolvedLauncherSystemImageName(iconAsset))
                 .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(tokens.primaryText)
-        } else if let templateName = pin.pinnedChromeTemplateSystemImageName {
+        } else if let templateName = pin.storedChromeTemplateSystemImageName {
             Image(systemName: templateName)
                 .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(tokens.primaryText)
         } else {
-            pin.favicon
+            pin.storedFavicon
                 .resizable()
                 .scaledToFit()
                 .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))

@@ -156,7 +156,6 @@ extension TabManager {
                         index: snapshotTab.index,
                         launchURL: url,
                         title: snapshotTab.name,
-                        faviconCacheKey: SumiFaviconResolver.cacheKey(for: url),
                         iconAsset: snapshotTab.iconAsset
                     )
                 )
@@ -189,7 +188,6 @@ extension TabManager {
                         folderId: snapshotTab.folderId,
                         launchURL: url,
                         title: snapshotTab.name,
-                        faviconCacheKey: SumiFaviconResolver.cacheKey(for: url),
                         iconAsset: snapshotTab.iconAsset
                     )
                 )

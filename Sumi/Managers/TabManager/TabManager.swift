@@ -109,7 +109,6 @@ class TabManager: ObservableObject {
             if let shortcutId = tab.shortcutPinId,
                let existingPin = shortcutPin(by: shortcutId),
                existingPin.role == .spacePinned {
-                existingPin.refreshFromLiveTab(tab)
                 return existingPin
             }
 
@@ -117,7 +116,6 @@ class TabManager: ObservableObject {
                 let trimmedTitle = tab.name.trimmingCharacters(in: .whitespacesAndNewlines)
                 let refreshedTitle = trimmedTitle.isEmpty ? existingPin.title : trimmedTitle
                 let updatedPin = updateShortcutPin(existingPin, title: refreshedTitle) ?? existingPin
-                updatedPin.refreshFromLiveTab(tab)
                 return updatedPin
             }
 
@@ -135,7 +133,6 @@ class TabManager: ObservableObject {
                 return nil
             }
 
-            insertedPin.refreshFromLiveTab(tab)
             scheduleStructuralPersistence()
             return insertedPin
         }
@@ -358,22 +355,12 @@ class TabManager: ObservableObject {
     }
 
     private func refreshCachedFaviconPresentation() {
-        let launcherPins = Array(pinnedByProfile.values.joined()) + Array(spacePinnedShortcuts.values.joined())
-        let liveShortcutPinIDs = Set(
-            transientShortcutTabsByWindow.values.flatMap { tabsByPin in
-                tabsByPin.keys
-            }
-        )
-
-        for pin in launcherPins where pin.iconAsset == nil && !liveShortcutPinIDs.contains(pin.id) {
-            pin.applyCachedFaviconIfAvailable()
-        }
-
         let tabsNeedingRefresh = Array(tabsBySpace.values.joined())
             + Array(transientShortcutTabsByWindow.values.joined().map(\.value))
         for tab in tabsNeedingRefresh where tab.faviconIsTemplateGlobePlaceholder {
             _ = tab.applyCachedFaviconOrPlaceholder(for: tab.url)
         }
+        requestStructuralPublish()
     }
 
     func tab(for id: UUID) -> Tab? {
