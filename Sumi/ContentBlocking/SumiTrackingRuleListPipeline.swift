@@ -2,11 +2,6 @@ import Combine
 import Foundation
 import TrackerRadarKit
 
-enum SumiTrackingRuleListKind: String, CaseIterable, Sendable {
-    case trackerDataSet
-    case siteDataCookieBlocking
-}
-
 struct SumiTrackingRuleListSet: Equatable, Sendable {
     let trackerDataSet: [SumiContentRuleListDefinition]
     let siteDataCookieBlocking: [SumiContentRuleListDefinition]
@@ -19,23 +14,8 @@ struct SumiTrackingRuleListSet: Equatable, Sendable {
         self.siteDataCookieBlocking = siteDataCookieBlocking
     }
 
-    static let empty = SumiTrackingRuleListSet()
-
     var allDefinitions: [SumiContentRuleListDefinition] {
         trackerDataSet + siteDataCookieBlocking
-    }
-
-    var isEmpty: Bool {
-        allDefinitions.isEmpty
-    }
-
-    func definitions(for kind: SumiTrackingRuleListKind) -> [SumiContentRuleListDefinition] {
-        switch kind {
-        case .trackerDataSet:
-            return trackerDataSet
-        case .siteDataCookieBlocking:
-            return siteDataCookieBlocking
-        }
     }
 }
 

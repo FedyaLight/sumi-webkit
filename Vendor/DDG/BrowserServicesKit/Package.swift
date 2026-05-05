@@ -37,8 +37,6 @@ let package = Package(
                 "Navigation"
             ],
             resources: [
-                .process("ContentBlocking/UserScripts/contentblockerrules.js"),
-                .process("ContentBlocking/UserScripts/surrogates.js"),
                 .copy("../../PrivacyInfo.xcprivacy")
             ],
             swiftSettings: [

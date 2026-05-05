@@ -248,16 +248,11 @@ private final class SumiLinkInteractionUserScript: NSObject, UserScript, UserScr
 private final class SumiLinkInteractionSubfeature: NSObject, Subfeature {
     let featureName = "linkInteraction"
     let messageOriginPolicy: MessageOriginPolicy = .all
-    weak var broker: UserScriptMessageBroker?
     weak var tab: Tab?
 
     init(tab: Tab) {
         self.tab = tab
         super.init()
-    }
-
-    func with(broker: UserScriptMessageBroker) {
-        self.broker = broker
     }
 
     func handler(forMethodNamed methodName: String) -> Subfeature.Handler? {
@@ -359,16 +354,11 @@ private final class SumiTabSuspensionUserScript: NSObject, UserScript, UserScrip
 private final class SumiTabSuspensionSubfeature: NSObject, Subfeature {
     let featureName = "tabSuspension"
     let messageOriginPolicy: MessageOriginPolicy = .all
-    weak var broker: UserScriptMessageBroker?
     weak var tab: Tab?
 
     init(tab: Tab) {
         self.tab = tab
         super.init()
-    }
-
-    func with(broker: UserScriptMessageBroker) {
-        self.broker = broker
     }
 
     func handler(forMethodNamed methodName: String) -> Subfeature.Handler? {
@@ -468,16 +458,11 @@ private final class SumiIdentityUserScript: NSObject, UserScript, UserScriptMess
 private final class SumiIdentitySubfeature: NSObject, Subfeature {
     let featureName = "identity"
     let messageOriginPolicy: MessageOriginPolicy = .all
-    weak var broker: UserScriptMessageBroker?
     weak var tab: Tab?
 
     init(tab: Tab) {
         self.tab = tab
         super.init()
-    }
-
-    func with(broker: UserScriptMessageBroker) {
-        self.broker = broker
     }
 
     func handler(forMethodNamed methodName: String) -> Subfeature.Handler? {

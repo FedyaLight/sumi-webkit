@@ -260,16 +260,11 @@ final class SumiWebNotificationUserScript: NSObject, UserScript, UserScriptMessa
 private final class SumiWebNotificationSubfeature: NSObject, Subfeature {
     let featureName = "webNotifications"
     let messageOriginPolicy: MessageOriginPolicy = .all
-    weak var broker: UserScriptMessageBroker?
     weak var tab: Tab?
 
     init(tab: Tab) {
         self.tab = tab
         super.init()
-    }
-
-    func with(broker: UserScriptMessageBroker) {
-        self.broker = broker
     }
 
     func handler(forMethodNamed methodName: String) -> Subfeature.Handler? {

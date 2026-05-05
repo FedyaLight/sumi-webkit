@@ -17,17 +17,12 @@ import WebKit
 final class ExternallyConnectablePageSubfeature: NSObject, Subfeature {
     let featureName = "runtime"
     let messageOriginPolicy: MessageOriginPolicy = .all
-    weak var broker: UserScriptMessageBroker?
 
     weak var manager: ExtensionManager?
 
     init(manager: ExtensionManager) {
         self.manager = manager
         super.init()
-    }
-
-    func with(broker: UserScriptMessageBroker) {
-        self.broker = broker
     }
 
     func handler(forMethodNamed method: String) -> Subfeature.Handler? {

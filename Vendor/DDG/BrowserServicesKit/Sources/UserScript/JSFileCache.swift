@@ -33,17 +33,13 @@ enum JSFileCache {
         if let cached { return cached }
 
         guard let path = bundle.path(forResource: file, ofType: "js") else {
-            throw UserScriptError.failedToLoadJS(jsFile: file, error: CocoaError(.fileReadNoSuchFile))
+            throw CocoaError(.fileReadNoSuchFile)
         }
 
-        do {
-            let content = try String(contentsOfFile: path)
-            lock.lock()
-            storage[cacheKey] = content
-            lock.unlock()
-            return content
-        } catch {
-            throw UserScriptError.failedToLoadJS(jsFile: file, error: error)
-        }
+        let content = try String(contentsOfFile: path)
+        lock.lock()
+        storage[cacheKey] = content
+        lock.unlock()
+        return content
     }
 }

@@ -56,7 +56,6 @@ public final class FaviconUserScript: NSObject, Subfeature {
     public let messageOriginPolicy: MessageOriginPolicy = .all
     public let featureName: String = "favicon"
 
-    public weak var broker: UserScriptMessageBroker?
     public weak var delegate: FaviconUserScriptDelegate?
 
     public override init() {

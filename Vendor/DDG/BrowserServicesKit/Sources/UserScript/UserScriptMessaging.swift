@@ -60,7 +60,6 @@ public protocol Subfeature {
     var featureName: String { get }
 
     /// Subfeatures may need access to the message broker when they are registered.
-    var broker: UserScriptMessageBroker? { get set }
     func with(broker: UserScriptMessageBroker)
 }
 
@@ -87,7 +86,7 @@ extension UserScriptMessaging {
 public final class UserScriptMessageBroker: NSObject {
 
     public let hostProvider: UserScriptHostProvider
-    public let generatedSecret: String = UUID().uuidString
+    private let generatedSecret: String = UUID().uuidString
 
     /// A value used to differentiate entire categories of messages. For example
     /// ContentScopeScripts would have a single 'context', but then will have multiple

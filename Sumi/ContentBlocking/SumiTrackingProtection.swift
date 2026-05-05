@@ -26,16 +26,9 @@ enum SumiTrackingProtectionSiteOverride: String, Codable, CaseIterable, Sendable
     }
 }
 
-enum SumiTrackingProtectionEffectiveSource: Equatable, Sendable {
-    case moduleDisabled
-    case global
-    case siteOverride(SumiTrackingProtectionSiteOverride)
-}
-
 struct SumiTrackingProtectionEffectivePolicy: Equatable, Sendable {
     let host: String?
     let isEnabled: Bool
-    let source: SumiTrackingProtectionEffectiveSource
 }
 
 struct SumiTrackingProtectionAttachmentState: Equatable, Sendable {
@@ -191,14 +184,12 @@ final class SumiTrackingProtectionSettings: ObservableObject {
             case .enabled:
                 return SumiTrackingProtectionEffectivePolicy(
                     host: host,
-                    isEnabled: true,
-                    source: .siteOverride(.enabled)
+                    isEnabled: true
                 )
             case .disabled:
                 return SumiTrackingProtectionEffectivePolicy(
                     host: host,
-                    isEnabled: false,
-                    source: .siteOverride(.disabled)
+                    isEnabled: false
                 )
             case .inherit:
                 break
@@ -207,8 +198,7 @@ final class SumiTrackingProtectionSettings: ObservableObject {
 
         return SumiTrackingProtectionEffectivePolicy(
             host: host,
-            isEnabled: globalMode == .enabled,
-            source: .global
+            isEnabled: globalMode == .enabled
         )
     }
 
@@ -273,20 +263,15 @@ struct SumiTrackingProtectionDataMetadata: Equatable, Sendable {
 
 struct SumiTrackerDataSet {
     let trackerData: TrackerData
-    let encodedTrackerData: String
-    let etag: String
-    let source: SumiTrackingProtectionDataSource
 }
 
 protocol SumiBundledTrackerDataProviding: Sendable {
     var embeddedDataEtag: String { get }
-    var embeddedDataSHA: String { get }
     func embeddedData() throws -> Data
 }
 
 struct SumiBundleTrackerDataProvider: SumiBundledTrackerDataProviding {
     let embeddedDataEtag = "\"54459ec6535c6508e5a529d96f20eb1f\""
-    let embeddedDataSHA = "0243a5443fc87652f22322c9d217cff547c2d808dd9f073cde8d607bf13a1dd8"
 
     func embeddedData() throws -> Data {
         guard let url = Bundle.main.url(forResource: "trackerData", withExtension: "json") else {
@@ -383,13 +368,9 @@ final class SumiTrackingProtectionDataStore: ObservableObject {
         if let downloadedETag,
            fileManager.fileExists(atPath: downloadedDataURL.path),
            let downloadedData = try? Data(contentsOf: downloadedDataURL),
-           let trackerData = try? JSONDecoder().decode(TrackerData.self, from: downloadedData),
-           let encodedTrackerData = String(data: downloadedData, encoding: .utf8) {
+           let trackerData = try? JSONDecoder().decode(TrackerData.self, from: downloadedData) {
             return SumiTrackerDataSet(
-                trackerData: trackerData,
-                encodedTrackerData: encodedTrackerData,
-                etag: downloadedETag,
-                source: .downloaded
+                trackerData: trackerData
             )
         }
 
@@ -400,20 +381,14 @@ final class SumiTrackingProtectionDataStore: ObservableObject {
         let bundledData = try bundledProvider.embeddedData()
         let trackerData = try JSONDecoder().decode(TrackerData.self, from: bundledData)
         return SumiTrackerDataSet(
-            trackerData: trackerData,
-            encodedTrackerData: String(data: bundledData, encoding: .utf8) ?? "{}",
-            etag: bundledProvider.embeddedDataEtag,
-            source: .bundled
+            trackerData: trackerData
         )
     }
 
     func downloadedDataSet(from data: Data, etag: String) throws -> SumiTrackerDataSet {
         let trackerData = try JSONDecoder().decode(TrackerData.self, from: data)
         return SumiTrackerDataSet(
-            trackerData: trackerData,
-            encodedTrackerData: String(data: data, encoding: .utf8) ?? "{}",
-            etag: etag,
-            source: .downloaded
+            trackerData: trackerData
         )
     }
 
