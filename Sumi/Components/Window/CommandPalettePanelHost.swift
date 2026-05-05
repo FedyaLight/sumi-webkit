@@ -31,15 +31,6 @@ final class CommandPalettePanelController {
     private var currentIsPresented = false
     private var isSuspendedForParentSheet = false
 
-    var panelWindowForTesting: TransientChromePanelWindow? {
-        panelWindow
-    }
-
-    var isPanelAttachedForTesting: Bool {
-        guard let panelWindow, let attachedParentWindow else { return false }
-        return attachedParentWindow.childWindows?.contains(panelWindow) == true
-    }
-
     func update(
         parentWindow: NSWindow?,
         anchorView: NSView,

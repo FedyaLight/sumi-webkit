@@ -468,7 +468,7 @@ final class SidebarCurrentDragResolverTests: XCTestCase {
     func testDragLocationMapperFlipsWindowPointIntoSwiftUITopLeftSpace() {
         let location = SidebarDragLocationMapper.swiftUITopLeftPoint(
             windowPoint: CGPoint(x: 80, y: 292),
-            contentHeight: 400
+            topBoundaryY: 400
         )
 
         XCTAssertEqual(location, CGPoint(x: 80, y: 108))

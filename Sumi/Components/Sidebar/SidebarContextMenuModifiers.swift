@@ -34,7 +34,6 @@ private struct SidebarAppKitItemModifier: ViewModifier {
             let dragScope = dragSource.flatMap {
                 SidebarDragScope(
                     windowState: windowState,
-                    presentationMode: presentationContext.mode,
                     sourceZone: $0.sourceZone,
                     item: $0.item
                 )

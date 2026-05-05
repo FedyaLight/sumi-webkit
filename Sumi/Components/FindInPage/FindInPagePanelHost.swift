@@ -26,15 +26,6 @@ final class FindInPagePanelController {
     private var isPanelRevealed = false
     private var panelPresentationGeneration: UInt64 = 0
 
-    var panelWindowForTesting: TransientChromePanelWindow? {
-        panelWindow
-    }
-
-    var isPanelAttachedForTesting: Bool {
-        guard let panelWindow, let attachedParentWindow else { return false }
-        return attachedParentWindow.childWindows?.contains(panelWindow) == true
-    }
-
     var shouldKeepHostedChromeMounted: Bool {
         panelWindow?.isVisible == true || isPanelRevealed || isPanelContentOffsetAnimationActive
     }

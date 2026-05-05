@@ -516,9 +516,24 @@ final class SumiContentBlockingService {
     }()
 }
 
+private final class SumiContentBlockingInternalUserDecider: InternalUserDecider {
+    let isInternalUser = false
+
+    var isInternalUserPublisher: AnyPublisher<Bool, Never> {
+        Just(false).eraseToAnyPublisher()
+    }
+
+    @discardableResult
+    func markUserAsInternalIfNeeded(forUrl url: URL?, response: HTTPURLResponse?) -> Bool {
+        _ = url
+        _ = response
+        return false
+    }
+}
+
 final class SumiContentBlockingPrivacyConfigurationManager: PrivacyConfigurationManaging {
     let currentConfig = Data("{}".utf8)
-    let internalUserDecider: InternalUserDecider = SumiStaticInternalUserDecider()
+    let internalUserDecider: InternalUserDecider = SumiContentBlockingInternalUserDecider()
 
     private let updatesSubject = PassthroughSubject<Void, Never>()
     private let lock = NSLock()

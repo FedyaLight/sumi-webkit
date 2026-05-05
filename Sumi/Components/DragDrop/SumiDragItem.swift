@@ -36,7 +36,6 @@ struct SidebarDragScope: Equatable {
     let windowId: UUID?
     let spaceId: UUID
     let profileId: UUID?
-    let presentationMode: SidebarPresentationMode
     let sourceContainer: TabDragManager.DragContainer
     let sourceItemId: UUID
     let sourceItemKind: SumiDragItemKind
@@ -44,7 +43,6 @@ struct SidebarDragScope: Equatable {
     @MainActor
     init?(
         windowState: BrowserWindowState?,
-        presentationMode: SidebarPresentationMode,
         sourceZone: DropZoneID,
         item: SumiDragItem
     ) {
@@ -55,7 +53,6 @@ struct SidebarDragScope: Equatable {
         self.windowId = windowState?.id
         self.spaceId = spaceId
         self.profileId = windowState?.currentProfileId
-        self.presentationMode = presentationMode
         self.sourceContainer = sourceZone.asDragContainer
         self.sourceItemId = item.tabId
         self.sourceItemKind = item.kind
@@ -65,7 +62,6 @@ struct SidebarDragScope: Equatable {
         windowId: UUID? = nil,
         spaceId: UUID,
         profileId: UUID? = nil,
-        presentationMode: SidebarPresentationMode = .docked,
         sourceContainer: TabDragManager.DragContainer,
         sourceItemId: UUID,
         sourceItemKind: SumiDragItemKind
@@ -73,7 +69,6 @@ struct SidebarDragScope: Equatable {
         self.windowId = windowId
         self.spaceId = spaceId
         self.profileId = profileId
-        self.presentationMode = presentationMode
         self.sourceContainer = sourceContainer
         self.sourceItemId = sourceItemId
         self.sourceItemKind = sourceItemKind
