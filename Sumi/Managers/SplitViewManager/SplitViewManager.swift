@@ -301,7 +301,7 @@ final class SplitViewManager: ObservableObject {
             return
         }
 
-        let current = bm.currentTab(for: windowState) ?? tm.currentTab
+        let current = bm.currentTab(for: windowState)
         guard let current else { return }
         if current.representsSumiNativeSurface {
             return

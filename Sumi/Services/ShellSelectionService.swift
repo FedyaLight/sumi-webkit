@@ -2,7 +2,6 @@ import Foundation
 
 @MainActor
 protocol ShellSelectionTabStore: AnyObject {
-    var currentTab: Tab? { get }
     var spaces: [Space] { get }
 
     func tab(for id: UUID) -> Tab?
@@ -80,7 +79,7 @@ final class ShellSelectionService {
             return active
         }
 
-        return tabStore.currentTab
+        return nil
     }
 
     func preferredRegularTabForWindow(
@@ -113,10 +112,7 @@ final class ShellSelectionService {
             return regularTabs.first
         }
 
-        return tabStore.currentTab.flatMap { current in
-            guard !current.isShortcutLiveInstance, isSelectableTab(current) else { return nil }
-            return current
-        }
+        return nil
     }
 
     func preferredTabForSpace(

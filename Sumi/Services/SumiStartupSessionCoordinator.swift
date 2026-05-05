@@ -115,6 +115,7 @@ extension BrowserManager {
             windowState.currentSpaceId = fallbackSpaceId
             windowState.currentProfileId = fallbackSpaceId.flatMap { space(for: $0)?.profileId }
                 ?? currentProfile?.id
+            windowState.isAwaitingInitialSessionResolution = false
             splitManager.restoreSession(nil, for: windowState.id)
             windowState.refreshCompositor()
         }

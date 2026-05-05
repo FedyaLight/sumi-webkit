@@ -147,7 +147,7 @@ final class ShellSelectionServiceTests: XCTestCase {
         XCTAssertEqual(displayed.map(\.id), [leftTab.id, splitTab.id])
     }
 
-    func testPreferredTabForWindowDoesNotActivateMissingShortcutDuringRead() {
+    func testPreferredTabForWindowDoesNotActivateMissingShortcutOrUseGlobalFallbackDuringRead() {
         let service = ShellSelectionService { _ in (nil, nil) }
         let fallback = Tab(
             url: URL(string: "https://fallback.example")!,
@@ -165,8 +165,7 @@ final class ShellSelectionServiceTests: XCTestCase {
             spaces: [],
             allTabs: [fallback],
             tabsBySpace: [:],
-            shortcutPins: [pin.id: pin],
-            currentTab: fallback
+            shortcutPins: [pin.id: pin]
         )
 
         let windowState = BrowserWindowState()
@@ -174,8 +173,28 @@ final class ShellSelectionServiceTests: XCTestCase {
 
         let resolved = service.preferredTabForWindow(windowState, tabStore: store)
 
-        XCTAssertEqual(resolved?.id, fallback.id)
+        XCTAssertNil(resolved)
         XCTAssertEqual(store.activateShortcutPinCallCount, 0)
+    }
+
+    func testPreferredRegularTabForWindowRequiresCurrentWindowSpace() {
+        let service = ShellSelectionService { _ in (nil, nil) }
+        let otherSpace = Space(name: "Other")
+        let otherTab = Tab(
+            url: URL(string: "https://other.example")!,
+            name: "Other",
+            spaceId: otherSpace.id,
+            index: 0
+        )
+        let store = FakeShellSelectionTabStore(
+            spaces: [otherSpace],
+            allTabs: [otherTab],
+            tabsBySpace: [otherSpace.id: [otherTab]]
+        )
+
+        let windowState = BrowserWindowState()
+
+        XCTAssertNil(service.preferredRegularTabForWindow(windowState, tabStore: store))
     }
 
     func testPreferredTabForWindowReturnsExistingShortcutLiveTabWithoutActivating() {
@@ -213,7 +232,6 @@ final class ShellSelectionServiceTests: XCTestCase {
 
 @MainActor
 private final class FakeShellSelectionTabStore: ShellSelectionTabStore {
-    var currentTab: Tab?
     var spaces: [Space]
 
     private let allTabsValue: [Tab]
@@ -227,15 +245,13 @@ private final class FakeShellSelectionTabStore: ShellSelectionTabStore {
         allTabs: [Tab],
         tabsBySpace: [UUID: [Tab]],
         shortcutPins: [UUID: ShortcutPin] = [:],
-        liveShortcutTabsByPin: [UUID: Tab] = [:],
-        currentTab: Tab? = nil
+        liveShortcutTabsByPin: [UUID: Tab] = [:]
     ) {
         self.spaces = spaces
         self.allTabsValue = allTabs
         self.tabsBySpace = tabsBySpace
         self.shortcutPins = shortcutPins
         self.liveShortcutTabsByPin = liveShortcutTabsByPin
-        self.currentTab = currentTab
     }
 
     func tab(for id: UUID) -> Tab? {

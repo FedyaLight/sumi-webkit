@@ -43,16 +43,41 @@ final class WindowSessionServiceTests: XCTestCase {
         defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
 
         let initialTheme = makeVisibleTheme()
-        let windowState = BrowserWindowState(initialWorkspaceTheme: initialTheme)
+        let windowState = BrowserWindowState(
+            initialWorkspaceTheme: initialTheme,
+            awaitsInitialSessionResolution: true
+        )
         let service = WindowSessionService(lastWindowSessionKey: sessionKey)
         let delegate = TestWindowSessionDelegate(tabManager: tabManager)
 
         service.setupWindowState(windowState, delegate: delegate)
 
         XCTAssertEqual(windowState.currentSpaceId, spaceId)
+        XCTAssertTrue(windowState.isAwaitingInitialSessionResolution)
         XCTAssertTrue(windowState.workspaceTheme.visuallyEquals(initialTheme))
         XCTAssertFalse(windowState.workspaceTheme.visuallyEquals(.default))
         XCTAssertTrue(delegate.committedThemes.isEmpty)
+    }
+
+    func testBrowserManagerSuppressesGlobalCurrentTabFallbackDuringInitialSessionResolution() throws {
+        let browserManager = BrowserManager()
+        let space = Space(id: UUID(), name: "Primary")
+        browserManager.tabManager.spaces = [space]
+        browserManager.tabManager.currentSpace = space
+
+        let fallbackTab = browserManager.tabManager.createNewTab(
+            url: "https://first.example",
+            in: space,
+            activate: true
+        )
+        let windowState = BrowserWindowState(awaitsInitialSessionResolution: true)
+        windowState.currentSpaceId = space.id
+
+        XCTAssertNil(browserManager.currentTab(for: windowState))
+
+        windowState.isAwaitingInitialSessionResolution = false
+
+        XCTAssertEqual(browserManager.currentTab(for: windowState)?.id, fallbackTab.id)
     }
 
     func testActiveEssentialShortcutSurvivesPreloadSetupAndMaterializesAfterTabLoad() throws {
@@ -82,7 +107,7 @@ final class WindowSessionServiceTests: XCTestCase {
         let service = WindowSessionService(lastWindowSessionKey: sessionKey)
         let delegate = TestWindowSessionDelegate(tabManager: tabManager)
         let windowRegistry = WindowRegistry()
-        let windowState = BrowserWindowState()
+        let windowState = BrowserWindowState(awaitsInitialSessionResolution: true)
         delegate.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
@@ -91,6 +116,7 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertEqual(windowState.currentTabId, staleLiveTabId)
         XCTAssertEqual(windowState.currentShortcutPinId, pin.id)
         XCTAssertEqual(windowState.currentShortcutPinRole, .essential)
+        XCTAssertTrue(windowState.isAwaitingInitialSessionResolution)
 
         tabManager.spaces = [space]
         tabManager.currentSpace = space
@@ -104,6 +130,7 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertEqual(windowState.currentShortcutPinId, pin.id)
         XCTAssertEqual(windowState.currentShortcutPinRole, .essential)
         XCTAssertFalse(windowState.isShowingEmptyState)
+        XCTAssertFalse(windowState.isAwaitingInitialSessionResolution)
     }
 
     func testRememberedSpacePinnedShortcutSurvivesPreloadSetupAndMaterializesAfterTabLoad() throws {
@@ -131,7 +158,7 @@ final class WindowSessionServiceTests: XCTestCase {
         let service = WindowSessionService(lastWindowSessionKey: sessionKey)
         let delegate = TestWindowSessionDelegate(tabManager: tabManager)
         let windowRegistry = WindowRegistry()
-        let windowState = BrowserWindowState()
+        let windowState = BrowserWindowState(awaitsInitialSessionResolution: true)
         delegate.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
@@ -139,6 +166,7 @@ final class WindowSessionServiceTests: XCTestCase {
 
         XCTAssertNil(windowState.currentShortcutPinId)
         XCTAssertEqual(windowState.selectedShortcutPinForSpace[space.id], pin.id)
+        XCTAssertTrue(windowState.isAwaitingInitialSessionResolution)
 
         tabManager.spaces = [space]
         tabManager.currentSpace = space
@@ -154,6 +182,7 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertEqual(windowState.currentSpaceId, space.id)
         XCTAssertEqual(windowState.selectedShortcutPinForSpace[space.id], pin.id)
         XCTAssertFalse(windowState.isShowingEmptyState)
+        XCTAssertFalse(windowState.isAwaitingInitialSessionResolution)
     }
 
     func testSetupWindowStateFallsBackToDefaultWhenLoadedSpaceIsMissing() async throws {
