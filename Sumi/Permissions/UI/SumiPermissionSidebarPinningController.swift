@@ -3,17 +3,11 @@ import Foundation
 @MainActor
 final class SumiPermissionSidebarPinningController {
     private struct SessionRecord {
-        let pageId: String
-        let windowID: UUID
         let source: SidebarTransientPresentationSource
         let token: SidebarTransientSessionToken
     }
 
     private var sessionsByQueryID: [String: SessionRecord] = [:]
-
-    var activeQueryIDsForTesting: Set<String> {
-        Set(sessionsByQueryID.keys)
-    }
 
     func reconcile(
         activeQueries: [SumiPermissionAuthorizationQuery],
@@ -40,12 +34,6 @@ final class SumiPermissionSidebarPinningController {
         }
     }
 
-    func finishAll(reason: String) {
-        for queryID in Array(sessionsByQueryID.keys) {
-            finishSession(queryID: queryID, reason: reason)
-        }
-    }
-
     private func beginSession(
         for query: SumiPermissionAuthorizationQuery,
         in windowState: BrowserWindowState,
@@ -60,8 +48,6 @@ final class SumiPermissionSidebarPinningController {
             path: "SumiPermissionSidebarPinningController.\(reason)"
         )
         sessionsByQueryID[query.id] = SessionRecord(
-            pageId: query.pageId,
-            windowID: windowState.id,
             source: source,
             token: token
         )

@@ -16,10 +16,6 @@ final class SumiSiteDataPolicyEnforcementService {
         self.cleanupService = cleanupService ?? SumiWebsiteDataCleanupService.shared
     }
 
-    func state(forHost host: String, profile: Profile?) -> SumiSiteDataPolicyState {
-        policyStore.state(forHost: host, profileId: profile?.id)
-    }
-
     func setBlockStorage(
         _ isEnabled: Bool,
         forHost host: String,

@@ -48,11 +48,6 @@ struct SidebarShellEdge: Equatable {
         isLeft ? "sidebar.left" : "sidebar.right"
     }
 
-    func hiddenOffset(sidebarWidth: CGFloat, hiddenPadding: CGFloat) -> CGFloat {
-        let distance = sidebarWidth + hiddenPadding
-        return isLeft ? -distance : distance
-    }
-
     func resizeDelta(startingMouseX: CGFloat, currentMouseX: CGFloat) -> CGFloat {
         isLeft ? (currentMouseX - startingMouseX) : (startingMouseX - currentMouseX)
     }

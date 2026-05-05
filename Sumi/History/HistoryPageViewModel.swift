@@ -107,10 +107,6 @@ final class HistoryPageViewModel: ObservableObject {
         scheduleSnapshotRebuild()
     }
 
-    func selectRange(_ range: HistoryRange) {
-        selectedRange = range
-    }
-
     func clearFilters() {
         domainFilter = nil
         if searchText.isEmpty == false {

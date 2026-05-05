@@ -16,11 +16,6 @@ enum ThemeContrastResolver {
         case forceDark
     }
 
-    /// Zen maps `--zen-primary-color` to `AccentColor` by default; chrome surfaces do not use a separate user accent.
-    static func accent() -> Color {
-        Color(nsColor: .controlAccentColor)
-    }
-
     static func resolvedChromeColorScheme(
         theme: WorkspaceTheme,
         globalWindowScheme: ColorScheme,
@@ -221,7 +216,6 @@ enum ThemeContrastResolver {
 @MainActor
 private struct ThemeChromePalette {
     let background: Color
-    let toolbarBackground: Color
     let fieldBackground: Color
     let fieldBackgroundHover: Color
     let primaryText: Color
@@ -234,8 +228,6 @@ private struct ThemeChromePalette {
     let pinnedHoverBackground: Color
     let pinnedIdleBackground: Color
     let separator: Color
-    let dropGuide: Color
-    let dropGuideBackground: Color
     let toastBackground: Color
     let toastBorder: Color
     let toastPrimaryText: Color
@@ -329,20 +321,8 @@ private struct ThemeChromePalette {
             }
         }()
 
-        let dropGuide: Color = {
-            switch scheme {
-            case .light:
-                return accent.mixed(with: .black, amount: 0.1)
-            case .dark:
-                return accent.mixed(with: .white, amount: 0.2)
-            @unknown default:
-                return accent
-            }
-        }()
-
         return ThemeChromePalette(
             background: background,
-            toolbarBackground: elevatedStrong.opacity(0.98),
             fieldBackground: fieldBackground,
             fieldBackgroundHover: fieldBackgroundHover,
             primaryText: primaryText,
@@ -356,8 +336,6 @@ private struct ThemeChromePalette {
             pinnedHoverBackground: fieldBackgroundHover,
             pinnedIdleBackground: fieldBackground,
             separator: separator,
-            dropGuide: dropGuide,
-            dropGuideBackground: dropGuide.opacity(scheme == .dark ? 0.16 : 0.12),
             toastBackground: elevatedStrong.opacity(0.98),
             toastBorder: separator.opacity(scheme == .dark ? 0.7 : 1.0),
             toastPrimaryText: primaryText,
@@ -395,7 +373,6 @@ private struct ThemeChromePalette {
 
         return ThemeChromePalette(
             background: mix(background, other.background),
-            toolbarBackground: mix(toolbarBackground, other.toolbarBackground),
             fieldBackground: mix(fieldBackground, other.fieldBackground),
             fieldBackgroundHover: mix(fieldBackgroundHover, other.fieldBackgroundHover),
             primaryText: mix(primaryText, other.primaryText),
@@ -408,8 +385,6 @@ private struct ThemeChromePalette {
             pinnedHoverBackground: mix(pinnedHoverBackground, other.pinnedHoverBackground),
             pinnedIdleBackground: mix(pinnedIdleBackground, other.pinnedIdleBackground),
             separator: mix(separator, other.separator),
-            dropGuide: mix(dropGuide, other.dropGuide),
-            dropGuideBackground: mix(dropGuideBackground, other.dropGuideBackground),
             toastBackground: mix(toastBackground, other.toastBackground),
             toastBorder: mix(toastBorder, other.toastBorder),
             toastPrimaryText: mix(toastPrimaryText, other.toastPrimaryText),
@@ -432,7 +407,6 @@ private struct ThemeChromePalette {
     func resolve(accent: Color) -> ChromeThemeTokens {
         ChromeThemeTokens(
             accent: accent,
-            toolbarBackground: toolbarBackground,
             fieldBackground: fieldBackground,
             fieldBackgroundHover: fieldBackgroundHover,
             primaryText: primaryText,
@@ -445,8 +419,6 @@ private struct ThemeChromePalette {
             pinnedHoverBackground: pinnedHoverBackground,
             pinnedIdleBackground: pinnedIdleBackground,
             separator: separator,
-            dropGuide: dropGuide,
-            dropGuideBackground: dropGuideBackground,
             toastBackground: toastBackground,
             toastBorder: toastBorder,
             toastPrimaryText: toastPrimaryText,

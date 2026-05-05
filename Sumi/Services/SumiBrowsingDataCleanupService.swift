@@ -109,11 +109,6 @@ struct SumiBrowsingDataSummary: Equatable {
     var siteDataSiteCount: Int = 0
     var cacheSiteCount: Int = 0
 
-    func hasData(for categories: Set<SumiBrowsingDataCategory>) -> Bool {
-        categories.contains(.history) && historyVisitCount > 0
-            || categories.contains(.siteData) && siteDataSiteCount > 0
-            || categories.contains(.cache) && cacheSiteCount > 0
-    }
 }
 
 @MainActor

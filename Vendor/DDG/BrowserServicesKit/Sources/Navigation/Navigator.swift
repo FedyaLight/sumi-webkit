@@ -25,14 +25,10 @@ public struct Navigator {
 
     let webView: WKWebView
     let distributedNavigationDelegate: DistributedNavigationDelegate
-    let currentNavigation: Navigation?
-    let expectedNavigations: UnsafeMutablePointer<[ExpectedNavigation]>?
 
-    init(webView: WKWebView, distributedNavigationDelegate: DistributedNavigationDelegate, currentNavigation: Navigation?, expectedNavigations: UnsafeMutablePointer<[ExpectedNavigation]>? = nil) {
+    init(webView: WKWebView, distributedNavigationDelegate: DistributedNavigationDelegate) {
         self.webView = webView
         self.distributedNavigationDelegate = distributedNavigationDelegate
-        self.currentNavigation = currentNavigation
-        self.expectedNavigations = expectedNavigations
     }
 
     init?(webView: WKWebView) {
@@ -40,14 +36,13 @@ public struct Navigator {
             assertionFailure("webView.navigationDelegate is not DistributedNavigationDelegate")
             return nil
         }
-        self.init(webView: webView, distributedNavigationDelegate: distributedNavigationDelegate, currentNavigation: nil, expectedNavigations: nil)
+        self.init(webView: webView, distributedNavigationDelegate: distributedNavigationDelegate)
     }
 
     @discardableResult
     public func go(to item: WKBackForwardListItem, withExpectedNavigationType expectedNavigationType: NavigationType? = .redirect(.developer)) -> ExpectedNavigation? {
         webView.go(to: item)?
-            .expectedNavigation(with: expectedNavigationType, distributedNavigationDelegate: distributedNavigationDelegate, currentNavigation: currentNavigation)
-            .appending(to: expectedNavigations)
+            .expectedNavigation(with: expectedNavigationType, distributedNavigationDelegate: distributedNavigationDelegate)
     }
 
 }
@@ -70,11 +65,6 @@ public final class ExpectedNavigation {
         }
     }
 
-    fileprivate func appending(to expectedNavigations: UnsafeMutablePointer<[ExpectedNavigation]>?) -> Self {
-        expectedNavigations?.pointee.append(self)
-        return self
-    }
-
 }
 extension ExpectedNavigation: NavigationProtocol {}
 extension ExpectedNavigation: CustomDebugStringConvertible {
@@ -92,8 +82,8 @@ extension ExpectedNavigation: CustomDebugStringConvertible {
 extension WKNavigation {
 
     @MainActor
-    func expectedNavigation(with expectedNavigationType: NavigationType?, distributedNavigationDelegate: DistributedNavigationDelegate, currentNavigation: Navigation?) -> ExpectedNavigation {
-        let navigation = Navigation(identity: NavigationIdentity(self), responders: distributedNavigationDelegate.responders, state: .expected(expectedNavigationType), redirectHistory: currentNavigation?.navigationActions, isCurrent: false)
+    func expectedNavigation(with expectedNavigationType: NavigationType?, distributedNavigationDelegate: DistributedNavigationDelegate) -> ExpectedNavigation {
+        let navigation = Navigation(identity: NavigationIdentity(self), responders: distributedNavigationDelegate.responders, state: .expected(expectedNavigationType), isCurrent: false)
         navigation.associate(with: self)
         return ExpectedNavigation(navigation: navigation)
     }
@@ -104,10 +94,6 @@ extension WKWebView {
 
     public func navigator() -> Navigator? {
         Navigator(webView: self)
-    }
-
-    public func navigator(distributedNavigationDelegate: DistributedNavigationDelegate, redirectedNavigation: Navigation?, expectedNavigations: UnsafeMutablePointer<[ExpectedNavigation]>? = nil) -> Navigator {
-        Navigator(webView: self, distributedNavigationDelegate: distributedNavigationDelegate, currentNavigation: redirectedNavigation, expectedNavigations: expectedNavigations)
     }
 
 }

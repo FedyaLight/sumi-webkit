@@ -119,10 +119,6 @@ final class SumiTrackingProtectionModule {
         return assets
     }
 
-    func contentBlockingServiceIfEnabled() -> SumiContentBlockingService? {
-        contentBlockingAssetsIfEnabled()?.contentBlockingService
-    }
-
     func normalizedSiteHost(for url: URL?) -> String? {
         siteNormalizer.normalizedHost(for: url)
     }
@@ -192,10 +188,7 @@ final class SumiTrackingProtectionModule {
 
             switch updateResult {
             case .downloaded(let data, let etag, let date):
-                let stagedDataSet = try dataStore.downloadedDataSet(
-                    from: data,
-                    etag: etag
-                )
+                let stagedDataSet = try dataStore.downloadedDataSet(from: data)
                 let preparedUpdate = try await prepareManualTrackingDataUpdate(
                     dataSet: stagedDataSet,
                     settings: settings,

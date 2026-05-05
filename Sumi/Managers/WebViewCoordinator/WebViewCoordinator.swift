@@ -72,7 +72,6 @@ final class SumiWebViewContainerView: NSView {
     private static let webKitFullscreenNextResponderBridgeEnabled = true
 
     let tabID: UUID
-    let windowID: UUID
     let webView: WKWebView
     weak var tab: Tab?
 
@@ -88,19 +87,9 @@ final class SumiWebViewContainerView: NSView {
 
     override var constraints: [NSLayoutConstraint] { [] }
 
-    init(tab: Tab, windowID: UUID, webView: WKWebView) {
+    init(tab: Tab, webView: WKWebView) {
         self.tab = tab
         self.tabID = tab.id
-        self.windowID = windowID
-        self.webView = webView
-        super.init(frame: .zero)
-
-        configure(webView: webView)
-    }
-
-    init(tabID: UUID, windowID: UUID, webView: WKWebView) {
-        self.tabID = tabID
-        self.windowID = windowID
         self.webView = webView
         super.init(frame: .zero)
 

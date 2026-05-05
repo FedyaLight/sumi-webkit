@@ -14,7 +14,6 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
         var displayDomain: String
         var tabId: String
         var pageId: String
-        var now: Date
 
         init(
             coordinatorState: SumiPermissionCoordinatorState? = nil,
@@ -25,8 +24,7 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
             autoplayReloadRequired: Bool = false,
             displayDomain: String = "Current site",
             tabId: String = "",
-            pageId: String = "",
-            now: Date = Date()
+            pageId: String = ""
         ) {
             self.coordinatorState = coordinatorState
             self.runtimeState = runtimeState
@@ -37,7 +35,6 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
             self.displayDomain = normalizedDisplayDomain(displayDomain)
             self.tabId = normalizedId(tabId)
             self.pageId = normalizedId(pageId)
-            self.now = now
         }
     }
 
@@ -151,16 +148,6 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
         refresh()
     }
 
-    func clear() {
-        currentContext = nil
-        currentRuntimeState = nil
-        runtimeObservation?.cancel()
-        runtimeObservation = nil
-        currentWebView = nil
-        guard state != .hidden else { return }
-        state = .hidden
-    }
-
     func refresh() {
         Task { @MainActor [weak self] in
             await Task.yield()
@@ -250,8 +237,7 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
             autoplayReloadRequired: currentContext.autoplayReloadRequired,
             displayDomain: currentContext.displayDomain,
             tabId: currentContext.tabId,
-            pageId: currentContext.pageId,
-            now: now()
+            pageId: currentContext.pageId
         )
         let nextState = Self.state(from: snapshot)
         guard state != nextState else { return }
@@ -672,13 +658,4 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "Current site" : trimmed
     }
-}
-
-private func normalizedId(_ value: String) -> String {
-    value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-}
-
-private func normalizedDisplayDomain(_ value: String) -> String {
-    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-    return trimmed.isEmpty ? "Current site" : trimmed
 }

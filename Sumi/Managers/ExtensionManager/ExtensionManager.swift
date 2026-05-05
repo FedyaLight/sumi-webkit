@@ -333,12 +333,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         return created
     }
 
-    static func isManagedExternallyConnectablePageBridgeScript(
-        _ script: WKUserScript
-    ) -> Bool {
-        script.source.contains(externallyConnectablePageBridgeMarker)
-    }
-
     func normalTabUserScripts() -> [UserScript] {
         guard externallyConnectablePolicies.isEmpty == false else { return [] }
         return [

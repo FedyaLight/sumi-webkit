@@ -42,28 +42,6 @@ extension WKWebView {
 
 #if _SESSION_STATE_WITH_FILTER_ENABLED
 
-    @nonobjc
-    @available(macOS, deprecated: 12.0)
-    public func sessionStateData() -> Data? {
-        guard self.responds(to: Selector.sessionStateData) else {
-            assertionFailure("\(Self.self) does not respond to _sessionStateData")
-            return nil
-        }
-
-        return self.perform(Selector.sessionStateData)?.takeUnretainedValue() as? Data
-    }
-
-    @nonobjc
-    @available(macOS, deprecated: 12.0)
-    public func restoreSessionState(from data: Data) {
-        guard self.responds(to: Selector.restoreFromSessionStateData) else {
-            assertionFailure("\(Self.self) does not respond to _restoreFromSessionStateData:")
-            return
-        }
-
-        self.perform(Selector.restoreFromSessionStateData, with: data)
-    }
-
     public typealias SessionStateFilterBlockType = @convention(block) (WKBackForwardListItem) -> Bool
     @nonobjc
     public func sessionState(withFilter filter: @escaping SessionStateFilterBlockType) -> Any? {
@@ -88,8 +66,6 @@ extension WKWebView {
     }
 
     enum Selector {
-        static let sessionStateData = NSSelectorFromString("_sessionStateData")
-        static let restoreFromSessionStateData = NSSelectorFromString("_restoreFromSessionStateData:")
         static let sessionStateWithFilter = NSSelectorFromString("_sessionStateWithFilter:")
         static let restoreSessionStateAndNavigate = NSSelectorFromString("_restoreSessionState:andNavigate:")
     }

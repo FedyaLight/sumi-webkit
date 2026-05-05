@@ -145,10 +145,6 @@ final class AuthenticationManager: NSObject {
         }
     }
 
-    func savedCredentialHosts() -> Set<String> {
-        credentialStore.allCredentialHosts()
-    }
-
     private func handleMiniWindowCompletion(success: Bool, finalURL: URL?) {
         guard let request = activeIdentityRequest, let tab = activeIdentityTab else {
             clearActiveIdentityState()

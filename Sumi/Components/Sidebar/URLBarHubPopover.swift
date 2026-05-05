@@ -435,7 +435,6 @@ struct URLBarHubPopover: View {
                 onOpenSiteSettings: {
                     browserManager.openSiteSettingsTab(
                         focusing: currentTab,
-                        profile: activeProfile,
                         in: windowState
                     )
                     onClose()

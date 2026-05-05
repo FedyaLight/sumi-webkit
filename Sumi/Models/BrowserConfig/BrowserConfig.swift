@@ -73,14 +73,6 @@ class BrowserConfiguration {
         self.visitedLinkStoreProvider = .shared
     }
 
-    init(
-        autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter? = nil,
-        visitedLinkStoreProvider: SharedVisitedLinkStoreProvider
-    ) {
-        self.autoplayPolicyStore = autoplayPolicyStore
-        self.visitedLinkStoreProvider = visitedLinkStoreProvider
-    }
-
     private func makeBaseWebViewConfiguration() -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
         config.processPool = sharedProcessPool

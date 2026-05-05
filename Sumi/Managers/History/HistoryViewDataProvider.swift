@@ -6,13 +6,12 @@ final class HistoryViewDataProvider {
     private let currentProfileIdProvider: @MainActor () -> UUID?
     private let referenceDateProvider: @MainActor () -> Date
     private let calendar: Calendar
-    private let relativeDayFormatter: DateFormatter
     private let timeFormatter: DateFormatter
 
     private var refreshGeneration: UInt64 = 0
     private var rangesCache: [HistoryRangeCount] = [
-        .init(id: .all, count: 0),
-        .init(id: .allSites, count: 0),
+        .init(id: .all),
+        .init(id: .allSites),
     ]
 
     init(
@@ -25,12 +24,6 @@ final class HistoryViewDataProvider {
         self.currentProfileIdProvider = currentProfileIdProvider
         self.referenceDateProvider = referenceDateProvider
         self.calendar = calendar
-
-        let relativeDayFormatter = DateFormatter()
-        relativeDayFormatter.calendar = calendar
-        relativeDayFormatter.dateStyle = .medium
-        relativeDayFormatter.timeStyle = .none
-        self.relativeDayFormatter = relativeDayFormatter
 
         let timeFormatter = DateFormatter()
         timeFormatter.calendar = calendar
@@ -49,10 +42,10 @@ final class HistoryViewDataProvider {
         let profileId = currentProfileIdProvider()
 
         do {
-            let hasHistory = try await store.hasVisits(profileId: profileId)
+            _ = try await store.hasVisits(profileId: profileId)
             let loadedRanges = [
-                HistoryRangeCount(id: .all, count: hasHistory ? 1 : 0),
-                HistoryRangeCount(id: .allSites, count: 0),
+                HistoryRangeCount(id: .all),
+                HistoryRangeCount(id: .allSites),
             ]
             guard generation == refreshGeneration else { return }
             rangesCache = loadedRanges
@@ -60,8 +53,8 @@ final class HistoryViewDataProvider {
             RuntimeDiagnostics.emit("Error loading bounded history summary: \(error)")
             guard generation == refreshGeneration else { return }
             rangesCache = [
-                .init(id: .all, count: 0),
-                .init(id: .allSites, count: 0),
+                .init(id: .all),
+                .init(id: .allSites),
             ]
         }
     }
@@ -100,28 +93,6 @@ final class HistoryViewDataProvider {
             ? query
             : .searchTerm(trimmedSearch)
         return await historyPage(for: effectiveQuery, limit: limit, offset: offset)
-    }
-
-    func items(
-        for query: HistoryQuery,
-        limit: Int = HistoryStore.defaultHistoryPageLimit,
-        offset: Int = 0
-    ) async -> [HistoryListItem] {
-        await page(for: query, limit: limit, offset: offset).items
-    }
-
-    func visitRecords(for query: HistoryQuery) async -> [HistoryVisitRecord] {
-        do {
-            return try await store.fetchVisitRecordsForExplicitAction(
-                matching: query,
-                profileId: currentProfileIdProvider(),
-                referenceDate: referenceDateProvider(),
-                calendar: calendar
-            )
-        } catch {
-            RuntimeDiagnostics.emit("Error loading explicit history visits: \(error)")
-            return []
-        }
     }
 
     func visitDomains(for query: HistoryQuery) async -> Set<String> {
@@ -209,7 +180,7 @@ final class HistoryViewDataProvider {
                 calendar: calendar
             )
             let referenceDate = referenceDateProvider()
-            return records.map { makeHistoryItem(from: $0, referenceDate: referenceDate) }
+            return records.map(makeHistoryItem)
         } catch {
             RuntimeDiagnostics.emit("Error loading recent history menu items: \(error)")
             return []
@@ -230,7 +201,7 @@ final class HistoryViewDataProvider {
                 calendar: calendar
             )
             let referenceDate = referenceDateProvider()
-            return records.map { makeHistoryItem(from: $0, referenceDate: referenceDate) }
+            return records.map(makeHistoryItem)
         } catch {
             RuntimeDiagnostics.emit("Error loading history suggestions: \(error)")
             return []
@@ -253,7 +224,7 @@ final class HistoryViewDataProvider {
             )
             let referenceDate = referenceDateProvider()
             return HistoryListPage(
-                items: page.records.map { makeHistoryItem(from: $0, referenceDate: referenceDate) },
+                items: page.records.map(makeHistoryItem),
                 nextOffset: page.nextOffset,
                 hasMore: page.hasMore
             )
@@ -331,10 +302,7 @@ final class HistoryViewDataProvider {
         }
     }
 
-    private func makeHistoryItem(
-        from visit: HistoryVisitRecord,
-        referenceDate: Date
-    ) -> HistoryListItem {
+    private func makeHistoryItem(from visit: HistoryVisitRecord) -> HistoryListItem {
         let visitID = VisitIdentifier(
             uuid: visit.id.uuidString,
             url: visit.url,
@@ -349,7 +317,6 @@ final class HistoryViewDataProvider {
             domain: visit.domain,
             siteDomain: visit.siteDomain,
             visitedAt: visit.visitedAt,
-            relativeDay: relativeDayString(for: visit.visitedAt, referenceDate: referenceDate),
             timeText: timeFormatter.string(from: visit.visitedAt),
             visitCount: 1,
             isSiteAggregate: false
@@ -365,32 +332,10 @@ final class HistoryViewDataProvider {
             domain: site.domain,
             siteDomain: site.domain,
             visitedAt: nil,
-            relativeDay: "",
             timeText: "",
             visitCount: site.visitCount,
             isSiteAggregate: true
         )
     }
 
-    private func relativeDayString(
-        for date: Date,
-        referenceDate: Date
-    ) -> String {
-        if calendar.isDate(date, inSameDayAs: referenceDate) {
-            return HistoryRange.today.title
-        }
-        if let yesterday = calendar.date(byAdding: .day, value: -1, to: referenceDate),
-           calendar.isDate(date, inSameDayAs: yesterday)
-        {
-            return HistoryRange.yesterday.title
-        }
-        if let range = HistoryRange(
-            date: date,
-            referenceDate: referenceDate,
-            calendar: calendar
-        ), range != .older {
-            return range.title
-        }
-        return relativeDayFormatter.string(from: date)
-    }
 }

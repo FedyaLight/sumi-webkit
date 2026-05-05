@@ -374,7 +374,7 @@ final class WindowWebContentController: NSViewController {
         }
 
         clearPane(pane)
-        let host = SumiWebViewContainerView(tab: tab, windowID: windowState.id, webView: webView)
+        let host = SumiWebViewContainerView(tab: tab, webView: webView)
         configureViewportStyle(on: host)
         setPaneHost(host, for: pane)
         return host

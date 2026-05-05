@@ -106,21 +106,6 @@ final class SumiPermissionSettingsRepository {
         )
     }
 
-    @discardableResult
-    func runCleanup(
-        profile: SumiPermissionSettingsProfileContext,
-        force: Bool = false
-    ) async -> SumiPermissionCleanupResult {
-        guard let permissionCleanupService else {
-            return .disabled(profilePartitionId: profile.profilePartitionId, now: now())
-        }
-        return await permissionCleanupService.run(
-            profile: profile,
-            settings: cleanupSettings(profile: profile),
-            force: force
-        )
-    }
-
     func permissionRecords(
         profile: SumiPermissionSettingsProfileContext
     ) async throws -> [SumiPermissionStoreRecord] {
@@ -189,7 +174,6 @@ final class SumiPermissionSettingsRepository {
             }
         let snapshot = await systemSnapshot(for: category)
         return SumiSiteSettingsCategoryDetail(
-            category: category,
             defaultBehaviorText: category.defaultBehaviorText,
             systemSnapshot: snapshot,
             rows: rows
@@ -245,7 +229,6 @@ final class SumiPermissionSettingsRepository {
             ? await dataSummary(for: scope, profileObject: profileObject)
             : nil
         return SumiSiteSettingsSiteDetail(
-            scope: scope,
             profileName: profile.profileName,
             dataSummary: dataSummary,
             permissionRows: rows,
@@ -474,8 +457,6 @@ final class SumiPermissionSettingsRepository {
             disabledReason: disabledReason,
             systemStatus: system.text,
             showsSystemSettingsAction: system.showsSettings,
-            isStoredException: record != nil,
-            updatedAt: record?.decision.updatedAt,
             accessibilityLabel: "\(title(for: category, permissionType: permissionType)), \(option.title), \(scope.title)"
         )
     }
@@ -500,8 +481,6 @@ final class SumiPermissionSettingsRepository {
             disabledReason: nil,
             systemStatus: nil,
             showsSystemSettingsAction: false,
-            isStoredException: record != nil,
-            updatedAt: record?.decision.updatedAt,
             accessibilityLabel: "Autoplay, \(option.title), \(scope.title)"
         )
     }
@@ -521,8 +500,6 @@ final class SumiPermissionSettingsRepository {
             disabledReason: "Scheme-specific exceptions appear after a site attempts to open an external app link.",
             systemStatus: nil,
             showsSystemSettingsAction: false,
-            isStoredException: false,
-            updatedAt: nil,
             accessibilityLabel: "External app links, ask before opening external apps, \(scope.title)"
         )
     }
@@ -571,8 +548,6 @@ final class SumiPermissionSettingsRepository {
             disabledReason: nil,
             systemStatus: nil,
             showsSystemSettingsAction: false,
-            isStoredException: false,
-            updatedAt: nil,
             accessibilityLabel: "File picker, always asks, \(scope.title)"
         )
     }

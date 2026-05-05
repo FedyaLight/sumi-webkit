@@ -87,11 +87,6 @@ public final class UserScriptMessageBroker: NSObject {
 
     public let hostProvider: UserScriptHostProvider
 
-    /// A value used to differentiate entire categories of messages. For example
-    /// ContentScopeScripts would have a single 'context', but then will have multiple
-    /// sub-features.
-    public let context: String
-
     /// We determine which feature should receive a given message
     /// based on this
     var callbacks: [String: Subfeature] = [:]
@@ -99,7 +94,7 @@ public final class UserScriptMessageBroker: NSObject {
     public init(context: String,
                 hostProvider: UserScriptHostProvider = SecurityOriginHostProvider()
     ) {
-        self.context = context
+        _ = context
         self.hostProvider = hostProvider
     }
 

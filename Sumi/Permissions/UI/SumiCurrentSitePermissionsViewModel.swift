@@ -4,7 +4,6 @@ import WebKit
 
 @MainActor
 protocol SumiCurrentSiteAutoplayPolicyManaging: AnyObject {
-    func effectivePolicy(for url: URL?, profile: Profile?) -> SumiAutoplayPolicy
     func explicitPolicy(for url: URL?, profile: Profile?) -> SumiAutoplayPolicy?
     func setPolicy(
         _ policy: SumiAutoplayPolicy,

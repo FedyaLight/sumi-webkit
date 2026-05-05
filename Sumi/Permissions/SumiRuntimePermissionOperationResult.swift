@@ -8,12 +8,4 @@ enum SumiRuntimePermissionOperationResult: Equatable, Hashable, Sendable {
     case noOp
     case failed(reason: String)
 
-    var isSuccessfulNoThrowResult: Bool {
-        switch self {
-        case .applied, .noOp, .requiresReload:
-            return true
-        case .unsupported, .deniedByRuntime, .failed:
-            return false
-        }
-    }
 }

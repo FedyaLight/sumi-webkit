@@ -31,10 +31,6 @@ final class SumiUserscriptsModule {
         moduleRegistry.isEnabled(.userScripts)
     }
 
-    var hasLoadedRuntime: Bool {
-        cachedManager != nil
-    }
-
     func attach(browserManager: BrowserManager) {
         self.browserManager = browserManager
         cachedManager?.attach(browserManager: browserManager)

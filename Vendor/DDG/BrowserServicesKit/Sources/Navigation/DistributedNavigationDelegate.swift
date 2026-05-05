@@ -250,7 +250,7 @@ private extension DistributedNavigationDelegate {
                 // but create a new Navigation and client-redirect an old one for non-finished navigations
                 if wkNavigationAction.isSameDocumentNavigation {
                     if navigation === startedNavigation, !navigation.state.isFinished {
-                        navigation.willPerformClientRedirect(to: wkNavigationAction.request.url ?? .empty, delay: 0)
+                        navigation.willPerformClientRedirect(delay: 0)
                     }
                     // continue to new Navigation object creation
                 } else {
@@ -407,20 +407,6 @@ extension DistributedNavigationDelegate: WKNavigationDelegate {
                     self.didCancelNavigationAction(navigationAction, withRedirectNavigations: nil)
                 }
 
-            case .redirect(_, let redirect):
-                assert(navigationAction.isForMainFrame)
-
-                decisionHandler(.cancel, wkPreferences)
-                var expectedNavigations = [ExpectedNavigation]()
-                // run the `redirect` closure with a Navigator wrapper collecting all the ExpectedNavigations produced
-                withUnsafeMutablePointer(to: &expectedNavigations) { expectedNavigationsPtr in
-                    let navigator = webView.navigator(distributedNavigationDelegate: self, redirectedNavigation: mainFrameNavigation, expectedNavigations: expectedNavigationsPtr)
-                    redirect(navigator)
-                }
-                // Already started Navigations will also receive didFail
-                // In case navigation has not started yet, use the below callback to handle it.
-                didCancelNavigationAction(navigationAction, withRedirectNavigations: expectedNavigations)
-
             case .download:
                 self.willStartDownload(with: navigationAction, in: webView)
                 decisionHandler(.downloadPolicy, wkPreferences)
@@ -508,8 +494,6 @@ extension DistributedNavigationDelegate: WKNavigationDelegate {
                         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         // previous navigation may stil be expecting completion at this point
         let navigation = navigationExpectedToStart ?? startedNavigation
-        navigation?.challengeRececived()
-
         Logger.navigation.log("didReceive challenge: \(navigation?.debugDescription ?? webView.debugDescription): \(challenge.protectionSpace.description)")
 
         makeAsyncDecision(for: navigation?.debugDescription ?? challenge.debugDescription, boundToLifetimeOf: webView, with: navigation?.navigationResponders ?? responders) { @MainActor responder in
@@ -752,7 +736,7 @@ extension DistributedNavigationDelegate: WKNavigationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay + 0.5, execute: delayedFinishItem!)
         })
         // set Navigation state to .redirected and expect the redirect NavigationAction
-        redirectedNavigation.willPerformClientRedirect(to: url, delay: delay)
+        redirectedNavigation.willPerformClientRedirect(delay: delay)
     }
 
     @MainActor
@@ -974,20 +958,6 @@ extension DistributedNavigationDelegate: WKNavigationDelegate {
     }
 #endif
 
-#if PRIVATE_NAVIGATION_PERFORMANCE_ENABLED
-    @MainActor
-    @objc(_webView:didGeneratePageLoadTiming:)
-    @available(macOS 15.2, *)
-    public func webView(_ webView: WKWebView, didGeneratePageLoadTiming timing: NSObject) {
-        // Create wrapper that extracts data from WebKit's private _WKPageLoadTiming object
-        let pageLoadTiming = WKPageLoadTiming(timing)
-
-        for responder in responders {
-            responder.didGeneratePageLoadTiming(pageLoadTiming)
-        }
-    }
-#endif
-
     // MARK: Downloads
 
     @MainActor
@@ -1113,7 +1083,7 @@ extension DistributedNavigationDelegate: WKNavigationDelegate {
         if startedNavigation != nil {
             var userInfo = [String: Any]()
             if let reason {
-                userInfo[WKProcessTerminationReason.userInfoKey] = reason
+                userInfo["WKProcessTerminationReasonKey"] = reason
             }
             let error = WKError(WKError.Code.webContentProcessTerminated, userInfo: userInfo)
             self.webView(webView, didFail: nil, isProvisional: true, with: error)

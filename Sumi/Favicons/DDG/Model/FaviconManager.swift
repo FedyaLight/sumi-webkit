@@ -90,28 +90,6 @@ final class FaviconManager: FaviconManagement {
         }
     }
 
-    @MainActor
-    init(
-        store: FaviconStoring,
-        bookmarkManager: BookmarkManager,
-        fireproofDomains: FireproofDomains,
-        privacyConfigurationManager: PrivacyConfigurationManaging,
-        faviconDownloader: any FaviconDownloading,
-        imageCache: ((FaviconStoring) -> FaviconImageCaching)? = nil,
-        referenceCache: ((FaviconStoring) -> FaviconReferenceCaching)? = nil
-    ) {
-        self.store = store
-        self.bookmarkManager = bookmarkManager
-        self.faviconDownloader = faviconDownloader
-        self.imageCache = imageCache?(store) ?? FaviconImageCache(faviconStoring: store)
-        self.referenceCache = referenceCache?(store) ?? FaviconReferenceCache(faviconStoring: store)
-        _ = privacyConfigurationManager
-
-        Task {
-            await loadFaviconsRecoveringIfNeeded(fireproofDomains)
-        }
-    }
-
     private func loadFaviconsRecoveringIfNeeded(_ fireproofDomains: FireproofDomains) async {
         do {
             try await loadFavicons(fireproofDomains)

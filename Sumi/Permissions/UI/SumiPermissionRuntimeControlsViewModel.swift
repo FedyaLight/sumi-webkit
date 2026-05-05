@@ -90,12 +90,6 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
         onRuntimeStateChanged = nil
     }
 
-    func setReloadRequired(_ reloadRequired: Bool) {
-        guard self.reloadRequired != reloadRequired else { return }
-        self.reloadRequired = reloadRequired
-        rebuildControls()
-    }
-
     func perform(
         _ actionKind: SumiPermissionRuntimeControl.Action.Kind
     ) async -> SumiPermissionRuntimeControlResult {
@@ -241,8 +235,7 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
             runtimeState: runtimeState,
             reloadRequired: reloadRequired,
             displayDomain: pageContext?.displayDomain ?? SumiPermissionRuntimeControlsStrings.defaultDisplayDomain,
-            inProgressActionKind: inProgressActionKind,
-            lastResult: lastResult
+            inProgressActionKind: inProgressActionKind
         )
     }
 
@@ -255,8 +248,7 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
         runtimeState: SumiRuntimePermissionState?,
         reloadRequired: Bool,
         displayDomain: String,
-        inProgressActionKind: SumiPermissionRuntimeControl.Action.Kind? = nil,
-        lastResult: SumiPermissionRuntimeControlResult? = nil
+        inProgressActionKind: SumiPermissionRuntimeControl.Action.Kind? = nil
     ) -> [SumiPermissionRuntimeControl] {
         guard runtimeState != nil || reloadRequired else { return [] }
         var controls: [SumiPermissionRuntimeControl] = []
@@ -265,8 +257,7 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
                 permissionType: .camera,
                 state: runtimeState.camera,
                 displayDomain: displayDomain,
-                inProgressActionKind: inProgressActionKind,
-                lastResult: lastResult
+                inProgressActionKind: inProgressActionKind
             ) {
                 controls.append(camera)
             }
@@ -274,24 +265,21 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
                 permissionType: .microphone,
                 state: runtimeState.microphone,
                 displayDomain: displayDomain,
-                inProgressActionKind: inProgressActionKind,
-                lastResult: lastResult
+                inProgressActionKind: inProgressActionKind
             ) {
                 controls.append(microphone)
             }
             if let location = geolocationControl(
                 state: runtimeState.geolocation,
                 displayDomain: displayDomain,
-                inProgressActionKind: inProgressActionKind,
-                lastResult: lastResult
+                inProgressActionKind: inProgressActionKind
             ) {
                 controls.append(location)
             }
             if let screen = screenCaptureControl(
                 state: runtimeState.screenCapture,
                 displayDomain: displayDomain,
-                inProgressActionKind: inProgressActionKind,
-                lastResult: lastResult
+                inProgressActionKind: inProgressActionKind
             ) {
                 controls.append(screen)
             }
@@ -300,8 +288,7 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
             controls.append(
                 autoplayControl(
                     displayDomain: displayDomain,
-                    inProgressActionKind: inProgressActionKind,
-                    lastResult: lastResult
+                    inProgressActionKind: inProgressActionKind
                 )
             )
         }
@@ -312,8 +299,7 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
         permissionType: SumiPermissionType,
         state: SumiMediaCaptureRuntimeState,
         displayDomain: String,
-        inProgressActionKind: SumiPermissionRuntimeControl.Action.Kind?,
-        lastResult: SumiPermissionRuntimeControlResult?
+        inProgressActionKind: SumiPermissionRuntimeControl.Action.Kind?
     ) -> SumiPermissionRuntimeControl? {
         let descriptor = SumiPermissionIconCatalog.icon(for: permissionType, visualStyle: .active)
         let isCamera = permissionType == .camera
@@ -323,13 +309,11 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
 
         let actions: [SumiPermissionRuntimeControl.Action]
         let subtitle: String
-        let runtimeStateDescription: String
         switch state {
         case .active:
             subtitle = isCamera
                 ? SumiPermissionRuntimeControlsStrings.cameraActive
                 : SumiPermissionRuntimeControlsStrings.microphoneActive
-            runtimeStateDescription = "active"
             actions = [
                 action(isCamera ? .muteCamera : .muteMicrophone),
                 action(isCamera ? .stopCamera : .stopMicrophone),
@@ -338,26 +322,21 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
             subtitle = isCamera
                 ? SumiPermissionRuntimeControlsStrings.cameraMuted
                 : SumiPermissionRuntimeControlsStrings.microphoneMuted
-            runtimeStateDescription = "muted"
             actions = [
                 action(isCamera ? .unmuteCamera : .unmuteMicrophone),
                 action(isCamera ? .stopCamera : .stopMicrophone),
             ]
         case .unavailable:
             subtitle = SumiPermissionRuntimeControlsStrings.unavailableInWebKit
-            runtimeStateDescription = "unavailable"
             actions = []
         case .unsupported:
             subtitle = SumiPermissionRuntimeControlsStrings.unavailableInWebKit
-            runtimeStateDescription = "unsupported"
             actions = []
         case .stopping:
             subtitle = SumiPermissionRuntimeControlsStrings.stopping
-            runtimeStateDescription = "stopping"
             actions = []
         case .revoking:
             subtitle = SumiPermissionRuntimeControlsStrings.revoking
-            runtimeStateDescription = "revoking"
             actions = []
         case .none:
             return nil
@@ -365,8 +344,6 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
 
         return SumiPermissionRuntimeControl(
             id: permissionType.identity,
-            permissionType: permissionType,
-            runtimeStateDescription: runtimeStateDescription,
             title: title,
             subtitle: subtitle,
             iconName: descriptor.chromeIconName,
@@ -374,7 +351,6 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
             actions: actions,
             disabledReason: actions.isEmpty ? subtitle : nil,
             inProgressActionKind: inProgressActionKind,
-            lastResult: lastResult,
             accessibilityLabel: "\(title), \(subtitle), \(displayDomain)"
         )
     }
@@ -382,35 +358,29 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
     private static func geolocationControl(
         state: SumiGeolocationRuntimeState,
         displayDomain: String,
-        inProgressActionKind: SumiPermissionRuntimeControl.Action.Kind?,
-        lastResult: SumiPermissionRuntimeControlResult?
+        inProgressActionKind: SumiPermissionRuntimeControl.Action.Kind?
     ) -> SumiPermissionRuntimeControl? {
         let descriptor = SumiPermissionIconCatalog.icon(for: .geolocation, visualStyle: .active)
         let actions: [SumiPermissionRuntimeControl.Action]
         let subtitle: String
-        let runtimeStateDescription: String
         switch state {
         case .active:
             subtitle = SumiPermissionRuntimeControlsStrings.locationActive
-            runtimeStateDescription = "active"
             actions = [
                 action(.pauseGeolocation),
                 action(.stopGeolocationForVisit),
             ]
         case .paused:
             subtitle = SumiPermissionRuntimeControlsStrings.locationPaused
-            runtimeStateDescription = "paused"
             actions = [
                 action(.resumeGeolocation),
                 action(.stopGeolocationForVisit),
             ]
         case .unavailable:
             subtitle = SumiPermissionRuntimeControlsStrings.unavailableInWebKit
-            runtimeStateDescription = "unavailable"
             actions = []
         case .unsupportedProvider:
             subtitle = SumiPermissionRuntimeControlsStrings.unavailableInWebKit
-            runtimeStateDescription = "unsupported"
             actions = []
         case .revoked, .none:
             return nil
@@ -418,8 +388,6 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
 
         return SumiPermissionRuntimeControl(
             id: SumiPermissionType.geolocation.identity,
-            permissionType: .geolocation,
-            runtimeStateDescription: runtimeStateDescription,
             title: SumiPermissionRuntimeControlsStrings.locationTitle,
             subtitle: subtitle,
             iconName: descriptor.chromeIconName,
@@ -427,7 +395,6 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
             actions: actions,
             disabledReason: actions.isEmpty ? subtitle : nil,
             inProgressActionKind: inProgressActionKind,
-            lastResult: lastResult,
             accessibilityLabel: "\(SumiPermissionRuntimeControlsStrings.locationTitle), \(subtitle), \(displayDomain)"
         )
     }
@@ -435,8 +402,7 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
     private static func screenCaptureControl(
         state: SumiMediaCaptureRuntimeState,
         displayDomain: String,
-        inProgressActionKind: SumiPermissionRuntimeControl.Action.Kind?,
-        lastResult: SumiPermissionRuntimeControlResult?
+        inProgressActionKind: SumiPermissionRuntimeControl.Action.Kind?
     ) -> SumiPermissionRuntimeControl? {
         switch state {
         case .active, .muted, .stopping, .revoking:
@@ -444,8 +410,6 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
             let subtitle = SumiPermissionRuntimeControlsStrings.screenSharingControlledByWebKit
             return SumiPermissionRuntimeControl(
                 id: SumiPermissionType.screenCapture.identity,
-                permissionType: .screenCapture,
-                runtimeStateDescription: state.rawValue,
                 title: SumiPermissionRuntimeControlsStrings.screenSharingTitle,
                 subtitle: subtitle,
                 iconName: descriptor.chromeIconName,
@@ -453,7 +417,6 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
                 actions: [],
                 disabledReason: subtitle,
                 inProgressActionKind: inProgressActionKind,
-                lastResult: lastResult,
                 accessibilityLabel: "\(SumiPermissionRuntimeControlsStrings.screenSharingTitle), \(subtitle), \(displayDomain)"
             )
         case .unsupported, .unavailable, .none:
@@ -463,14 +426,11 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
 
     private static func autoplayControl(
         displayDomain: String,
-        inProgressActionKind: SumiPermissionRuntimeControl.Action.Kind?,
-        lastResult: SumiPermissionRuntimeControlResult?
+        inProgressActionKind: SumiPermissionRuntimeControl.Action.Kind?
     ) -> SumiPermissionRuntimeControl {
         let descriptor = SumiPermissionIconCatalog.icon(for: .autoplay, visualStyle: .reloadRequired)
         return SumiPermissionRuntimeControl(
             id: SumiPermissionType.autoplay.identity,
-            permissionType: .autoplay,
-            runtimeStateDescription: "reload-required",
             title: SumiPermissionRuntimeControlsStrings.autoplayTitle,
             subtitle: SumiPermissionRuntimeControlsStrings.autoplayReloadRequired,
             iconName: descriptor.chromeIconName,
@@ -478,7 +438,6 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
             actions: [action(.reloadAutoplay)],
             disabledReason: nil,
             inProgressActionKind: inProgressActionKind,
-            lastResult: lastResult,
             accessibilityLabel: "\(SumiPermissionRuntimeControlsStrings.autoplayTitle), \(SumiPermissionRuntimeControlsStrings.autoplayReloadRequired), \(displayDomain)"
         )
     }

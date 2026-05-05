@@ -132,15 +132,6 @@ extension WKWebViewConfiguration {
 }
 
 extension WKWebView {
-    var sumiAddsVisitedLinks: Bool {
-        guard responds(to: SumiVisitedLinkStoreSelector.getAddsVisitedLinks) else {
-            return false
-        }
-        return value(
-            forKey: NSStringFromSelector(SumiVisitedLinkStoreSelector.getAddsVisitedLinks)
-        ) as? Bool ?? false
-    }
-
     func sumiSetAddsVisitedLinks(_ enabled: Bool) {
         guard responds(to: SumiVisitedLinkStoreSelector.setAddsVisitedLinks) else {
             return
@@ -155,7 +146,6 @@ extension WKWebView {
 private enum SumiVisitedLinkStoreSelector {
     static let getStore = NSSelectorFromString("_visitedLinkStore")
     static let setStore = NSSelectorFromString("_setVisitedLinkStore:")
-    static let getAddsVisitedLinks = NSSelectorFromString("_addsVisitedLinks")
     static let setAddsVisitedLinks = NSSelectorFromString("_setAddsVisitedLinks:")
     static let addVisitedLinkWithURL = NSSelectorFromString("addVisitedLinkWithURL:")
     static let removeAll = NSSelectorFromString("removeAll")

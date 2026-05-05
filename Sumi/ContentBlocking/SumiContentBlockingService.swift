@@ -150,10 +150,6 @@ final class SumiContentBlockingService {
         }
     }
 
-    var policy: SumiContentBlockingPolicy {
-        currentPolicy
-    }
-
     var updatesPublisher: AnyPublisher<ContentBlockerRulesManager.UpdateEvent, Never> {
         updatesSubject.compactMap { $0 }.eraseToAnyPublisher()
     }

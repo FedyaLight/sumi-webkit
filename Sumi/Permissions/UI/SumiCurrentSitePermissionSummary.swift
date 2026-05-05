@@ -2,11 +2,9 @@ import Foundation
 import WebKit
 
 struct SumiCurrentSitePermissionSummary: Equatable, Sendable {
-    var subtitle: String
     var activityText: String?
 
     static let `default` = SumiCurrentSitePermissionSummary(
-        subtitle: SumiCurrentSitePermissionsStrings.defaultSummary,
         activityText: nil
     )
 
@@ -62,7 +60,6 @@ struct SumiCurrentSitePermissionSummary: Equatable, Sendable {
             .joined(separator: ", ")
             .capitalizingFirstLetter()
         return SumiCurrentSitePermissionSummary(
-            subtitle: subtitle,
             activityText: compactItems.count > 1 ? subtitle : first.capitalizingFirstLetter()
         )
     }

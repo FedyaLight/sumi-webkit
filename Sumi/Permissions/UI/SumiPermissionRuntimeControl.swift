@@ -24,8 +24,6 @@ struct SumiPermissionRuntimeControl: Equatable, Identifiable, Sendable {
     }
 
     let id: String
-    let permissionType: SumiPermissionType
-    let runtimeStateDescription: String
     let title: String
     let subtitle: String
     let iconName: String?
@@ -33,7 +31,6 @@ struct SumiPermissionRuntimeControl: Equatable, Identifiable, Sendable {
     let actions: [Action]
     let disabledReason: String?
     let inProgressActionKind: Action.Kind?
-    let lastResult: SumiPermissionRuntimeControlResult?
     let accessibilityLabel: String
 
     var isOperationInProgress: Bool {

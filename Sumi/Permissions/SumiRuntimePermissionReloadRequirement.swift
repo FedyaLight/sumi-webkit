@@ -25,4 +25,20 @@ struct SumiRuntimePermissionReloadRequirement: Equatable, Hashable, Sendable {
         self.currentAutoplayState = currentAutoplayState
         self.requestedAutoplayState = requestedAutoplayState
     }
+
+    static func == (lhs: SumiRuntimePermissionReloadRequirement, rhs: SumiRuntimePermissionReloadRequirement) -> Bool {
+        lhs.kind == rhs.kind
+            && lhs.permissionType == rhs.permissionType
+            && lhs.reason == rhs.reason
+            && lhs.currentAutoplayState == rhs.currentAutoplayState
+            && lhs.requestedAutoplayState == rhs.requestedAutoplayState
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(kind)
+        hasher.combine(permissionType)
+        hasher.combine(reason)
+        hasher.combine(currentAutoplayState)
+        hasher.combine(requestedAutoplayState)
+    }
 }

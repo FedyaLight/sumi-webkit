@@ -27,16 +27,6 @@ struct ResolvedThemeContext: Equatable {
         workspaceTheme.gradient
     }
 
-    var chromeDarknessProgress: Double {
-        let source = sourceChromeColorScheme == .dark ? 1.0 : 0.0
-        let target = targetChromeColorScheme == .dark ? 1.0 : 0.0
-
-        if isInteractiveTransition || sourceChromeColorScheme != targetChromeColorScheme {
-            return source + (target - source) * transitionProgress
-        }
-
-        return chromeColorScheme == .dark ? 1.0 : 0.0
-    }
 }
 
 private struct ResolvedThemeContextKey: EnvironmentKey {

@@ -20,7 +20,6 @@ private struct SumiGMMessagePayload {
 
 @MainActor
 final class SumiInstalledUserScriptAdapter: NSObject, UserScript, UserScriptMessaging, WKScriptMessageHandlerWithReply {
-    let script: SumiInstalledUserScript
     let broker: UserScriptMessageBroker
     let source: String
     let injectionTime: WKUserScriptInjectionTime
@@ -28,8 +27,6 @@ final class SumiInstalledUserScriptAdapter: NSObject, UserScript, UserScriptMess
     let requiresRunInPageContentWorld: Bool
     let messageNames: [String]
     let bridge: UserScriptGMBridge?
-
-    private let gmSubfeature: SumiGMSubfeature?
 
     init(
         script: SumiInstalledUserScript,
@@ -40,8 +37,6 @@ final class SumiInstalledUserScriptAdapter: NSObject, UserScript, UserScriptMess
         notificationPermissionBridge: SumiNotificationPermissionBridge?,
         notificationTabContextProvider: (@MainActor (WKWebView?) -> SumiWebNotificationTabContext?)?
     ) {
-        self.script = script
-
         let context = "sumiGM_\(script.id.uuidString)"
         let injectInto = Self.effectiveInjectionScope(for: script)
         let requiresPageWorld = injectInto != .content
@@ -74,11 +69,9 @@ final class SumiInstalledUserScriptAdapter: NSObject, UserScript, UserScriptMess
 
         if let bridge {
             let subfeature = SumiGMSubfeature(bridge: bridge)
-            self.gmSubfeature = subfeature
             super.init()
             registerSubfeature(delegate: subfeature)
         } else {
-            self.gmSubfeature = nil
             super.init()
         }
     }

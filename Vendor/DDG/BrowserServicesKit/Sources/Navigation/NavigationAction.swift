@@ -20,10 +20,6 @@ import Common
 import Foundation
 import WebKit
 
-public struct MainFrame: Sendable {
-    fileprivate init() {}
-}
-
 public struct NavigationAction {
 
     private static var maxIdentifier: UInt64 = 0
@@ -51,13 +47,6 @@ public struct NavigationAction {
     public let sourceFrame: FrameInfo
     /// The target frame, `nil` if this is a new window navigation
     public let targetFrame: FrameInfo?
-
-    /// Used to protect main frame .redirect NavigationActionPolicy actions as only main frame can be redirected
-    /// `nil` for non-main-frame navigations
-    public var mainFrameTarget: MainFrame? {
-        guard targetFrame?.isMainFrame == true else { return nil }
-        return MainFrame()
-    }
 
     /// Currently active Main Frame Navigation associated with the NavigationAction
     /// May be non-nil for non-main-frame NavigationActions
@@ -166,11 +155,6 @@ public struct NavigationAction {
 #endif
     }
 
-    internal static func sessionRestoreNavigation(webView: WKWebView, mainFrameNavigation: Navigation?) -> Self {
-        assert(webView.backForwardList.currentItem == nil)
-        return self.init(request: URLRequest(url: webView.url ?? .empty), navigationType: .sessionRestoration, currentHistoryItemIdentity: nil, redirectHistory: nil, isUserInitiated: false, sourceFrame: .mainFrame(for: webView), targetFrame: .mainFrame(for: webView), shouldDownload: false, mainFrameNavigation: mainFrameNavigation)
-    }
-
     internal static func alternateHtmlLoadNavigation(webView: WKWebView, mainFrameNavigation: Navigation?) -> Self {
         return self.init(request: URLRequest(url: webView.url ?? .empty), navigationType: .alternateHtmlLoad, currentHistoryItemIdentity: nil, redirectHistory: nil, isUserInitiated: false, sourceFrame: .mainFrame(for: webView), targetFrame: .mainFrame(for: webView), shouldDownload: false, mainFrameNavigation: mainFrameNavigation)
     }
@@ -215,17 +199,8 @@ public struct NavigationPreferences: Equatable {
         }
     }
 
-    public static let `default` = NavigationPreferences(userAgent: nil, contentMode: .recommended, javaScriptEnabled: true)
-
-    public static var customHeadersSupported: Bool { false }
-
-    public init(userAgent: String?, contentMode: WKWebpagePreferences.ContentMode, javaScriptEnabled: Bool) {
-        self.userAgent = userAgent
-        self.contentMode = contentMode
-        self.javaScriptEnabledValue = javaScriptEnabled
-    }
-
     internal init(userAgent: String?, preferences: WKWebpagePreferences) {
+        self.userAgent = userAgent
         self.contentMode = preferences.preferredContentMode
         self.javaScriptEnabledValue = preferences.allowsContentJavaScript
 
@@ -254,21 +229,11 @@ public enum NavigationActionPolicy: Sendable {
     case allow
     case cancel
     case download
-    case redirect(MainFrame, @Sendable @MainActor (Navigator) -> Void)
 }
 
 extension NavigationActionPolicy? {
     /// Pass decision making to next responder
     public static let next = NavigationActionPolicy?.none
-}
-
-extension NavigationActionPolicy? {
-    public var debugDescription: String {
-        if case .some(let policy) = self {
-            return policy.debugDescription
-        }
-        return "next"
-    }
 }
 
 extension NavigationAction: CustomDebugStringConvertible {
@@ -298,7 +263,6 @@ extension NavigationActionPolicy: CustomDebugStringConvertible {
         case .allow: return "allow"
         case .cancel: return "cancel"
         case .download: return "download"
-        case .redirect: return "redirect"
         }
     }
 }

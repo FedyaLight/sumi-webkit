@@ -12,11 +12,6 @@ struct SumiPermissionSettingsProfileContext: Equatable, Hashable, Sendable {
         self.profileName = profile.name
     }
 
-    init(profilePartitionId: String, isEphemeralProfile: Bool, profileName: String = "Current Profile") {
-        self.profilePartitionId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
-        self.isEphemeralProfile = isEphemeralProfile
-        self.profileName = profileName
-    }
 }
 
 enum SumiSiteSettingsPermissionCategory: String, CaseIterable, Identifiable, Hashable, Sendable {
@@ -315,8 +310,6 @@ struct SumiSiteSettingsPermissionRow: Identifiable, Equatable, Sendable {
     let disabledReason: String?
     let systemStatus: String?
     let showsSystemSettingsAction: Bool
-    let isStoredException: Bool
-    let updatedAt: Date?
     let accessibilityLabel: String
 
     var statusLines: [String] {
@@ -332,14 +325,12 @@ struct SumiSiteSettingsPermissionRow: Identifiable, Equatable, Sendable {
 }
 
 struct SumiSiteSettingsCategoryDetail: Equatable, Sendable {
-    let category: SumiSiteSettingsPermissionCategory
     let defaultBehaviorText: String
     let systemSnapshot: SumiSystemPermissionSnapshot?
     let rows: [SumiSiteSettingsPermissionRow]
 }
 
 struct SumiSiteSettingsSiteDetail: Equatable, Sendable {
-    let scope: SumiPermissionSiteScope
     let profileName: String
     let dataSummary: SumiSiteSettingsDataSummary?
     let permissionRows: [SumiSiteSettingsPermissionRow]
