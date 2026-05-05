@@ -31,7 +31,6 @@ enum ShortcutAction: String, CaseIterable, Hashable, Codable {
     case closeBrowser = "close_browser"
     case toggleFullScreen = "toggle_full_screen"
 
-    case openCommandPalette = "open_command_palette"
     case openDevTools = "open_dev_tools"
     case viewDownloads = "view_downloads"
     case viewHistory = "view_history"
@@ -75,7 +74,6 @@ enum ShortcutAction: String, CaseIterable, Hashable, Codable {
         case .closeWindow: return "Close Window"
         case .closeBrowser: return "Close Browser"
         case .toggleFullScreen: return "Toggle Full Screen"
-        case .openCommandPalette: return "Open Command Palette"
         case .openDevTools: return "Developer Tools"
         case .viewDownloads: return "View Downloads"
         case .viewHistory: return "View History"
@@ -103,7 +101,7 @@ enum ShortcutAction: String, CaseIterable, Hashable, Codable {
             return .spaces
         case .newWindow, .closeWindow, .closeBrowser, .toggleFullScreen, .toggleSidebar:
             return .window
-        case .openCommandPalette, .openDevTools, .viewDownloads, .viewHistory, .expandAllFolders, .zoomIn, .zoomOut, .actualSize, .copyCurrentURL, .muteUnmuteAudio:
+        case .openDevTools, .viewDownloads, .viewHistory, .expandAllFolders, .zoomIn, .zoomOut, .actualSize, .copyCurrentURL, .muteUnmuteAudio:
             return .tools
         }
     }
