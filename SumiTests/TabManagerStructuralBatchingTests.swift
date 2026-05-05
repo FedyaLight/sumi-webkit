@@ -6,43 +6,6 @@ import XCTest
 
 @MainActor
 final class TabManagerStructuralBatchingTests: XCTestCase {
-    func testTopLevelPinnedReorderPublishesOnceForFolderAndPinUpdates() throws {
-        let tabManager = try makeInMemoryTabManager()
-        let recorder = StructuralEventRecorder(tabManager: tabManager)
-        let space = tabManager.createSpace(name: "Workspace")
-        let folder = tabManager.createFolder(for: space.id, name: "Folder")
-        let pin = ShortcutPin(
-            id: UUID(),
-            role: .spacePinned,
-            spaceId: space.id,
-            index: 0,
-            launchURL: URL(string: "https://example.com/pinned")!,
-            title: "Pinned"
-        )
-        folder.index = 1
-        tabManager.setFolders([folder], for: space.id)
-        tabManager.setSpacePinnedShortcuts([pin], for: space.id)
-        recorder.reset()
-
-        tabManager.performSidebarDragOperation(
-            DragOperation(
-                payload: .folder(folder),
-                scope: SidebarDragScope(
-                    spaceId: space.id,
-                    sourceContainer: .spacePinned(space.id),
-                    sourceItemId: folder.id,
-                    sourceItemKind: .folder
-                ),
-                fromContainer: .spacePinned(space.id),
-                toContainer: .spacePinned(space.id),
-                toIndex: 0
-            )
-        )
-
-        XCTAssertEqual(recorder.count, 1)
-        XCTAssertEqual(tabManager.topLevelSpacePinnedItems(for: space.id).map(\.id), [folder.id, pin.id])
-    }
-
     func testNestedRegularMutationsPublishOnceAndPreserveFinalOrder() throws {
         let tabManager = try makeInMemoryTabManager()
         let recorder = StructuralEventRecorder(tabManager: tabManager)

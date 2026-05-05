@@ -743,6 +743,26 @@ private struct SidebarEssentialsLayoutGeometrySignature: Equatable {
     let canAcceptDrop: Bool
     let generation: Int
     let isEnabled: Bool
+
+    static func == (
+        lhs: SidebarEssentialsLayoutGeometrySignature,
+        rhs: SidebarEssentialsLayoutGeometrySignature
+    ) -> Bool {
+        lhs.itemCount == rhs.itemCount
+            && lhs.columnCount == rhs.columnCount
+            && lhs.firstSyntheticRowSlot == rhs.firstSyntheticRowSlot
+            && lhs.rowCount == rhs.rowCount
+            && lhs.visibleItemCount == rhs.visibleItemCount
+            && lhs.visibleRowCount == rhs.visibleRowCount
+            && lhs.maxDropRowCount == rhs.maxDropRowCount
+            && lhs.dropFrame == rhs.dropFrame
+            && lhs.dropSlotFrames == rhs.dropSlotFrames
+            && lhs.itemSize == rhs.itemSize
+            && lhs.gridSpacing == rhs.gridSpacing
+            && lhs.canAcceptDrop == rhs.canAcceptDrop
+            && lhs.generation == rhs.generation
+            && lhs.isEnabled == rhs.isEnabled
+    }
 }
 
 struct SidebarEssentialsLayoutGeometryReporter: ViewModifier {

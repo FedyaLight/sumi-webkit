@@ -1,6 +1,5 @@
 import SwiftData
 import WebKit
-import WKAbstractions
 import XCTest
 
 @testable import Sumi
@@ -536,10 +535,10 @@ private func historyTestDate(_ value: String) -> Date {
 }
 
 @MainActor
-private final class FakeDDGWebsiteDataStore: DDGWebsiteDataStore {
+private final class FakeDDGWebsiteDataStore: SumiWebsiteDataStore {
     typealias Record = FakeDDGWebsiteDataRecord
 
-    var httpCookieStore: any DDGHTTPCookieStore {
+    var httpCookieStore: any SumiHTTPCookieStore {
         cookieStore
     }
 
@@ -583,7 +582,7 @@ private final class FakeDDGWebsiteDataStore: DDGWebsiteDataStore {
 }
 
 @MainActor
-private final class FakeDDGCookieStore: DDGHTTPCookieStore {
+private final class FakeDDGCookieStore: SumiHTTPCookieStore {
     var cookies: [HTTPCookie]
     private(set) var deletedCookies: [HTTPCookie] = []
 
@@ -605,7 +604,7 @@ private final class FakeDDGCookieStore: DDGHTTPCookieStore {
     }
 }
 
-private struct FakeDDGWebsiteDataRecord: DDGWebsiteDataRecord, Hashable {
+private struct FakeDDGWebsiteDataRecord: SumiWebsiteDataRecord, Hashable {
     let displayName: String
 }
 

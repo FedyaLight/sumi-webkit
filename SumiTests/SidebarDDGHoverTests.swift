@@ -224,26 +224,13 @@ final class SidebarDDGHoverTests: XCTestCase {
     }
 
     func testActionVisibilityDoesNotChangeTrailingFadeReservation() {
-        let reservedPadding = SidebarHoverChrome.trailingActionFadePadding
+        let reservedPadding = SidebarHoverChrome.trailingFadePadding(showsTrailingAction: true)
 
         XCTAssertEqual(reservedPadding, SidebarRowLayout.trailingActionFadePadding)
         XCTAssertFalse(SidebarHoverChrome.showsTrailingAction(isHovered: false, isSelected: false))
         XCTAssertTrue(SidebarHoverChrome.showsTrailingAction(isHovered: true, isSelected: false))
         XCTAssertTrue(SidebarHoverChrome.showsTrailingAction(isHovered: false, isSelected: true))
-        XCTAssertEqual(reservedPadding, SidebarHoverChrome.trailingActionFadePadding)
-    }
-
-    func testHoverRoutingUsesAppKitBridgeForAllSidebarPresentationModes() {
-        let docked = SidebarPresentationContext.docked(sidebarWidth: 280)
-        let collapsedHidden = SidebarPresentationContext.collapsedHidden(sidebarWidth: 280)
-        let collapsedVisible = SidebarPresentationContext.collapsedVisible(sidebarWidth: 280)
-
-        XCTAssertFalse(SidebarHoverInputRouting.usesSwiftUIHover(in: docked))
-        XCTAssertTrue(SidebarHoverInputRouting.usesAppKitHoverBridge(in: docked))
-        XCTAssertFalse(SidebarHoverInputRouting.usesSwiftUIHover(in: collapsedHidden))
-        XCTAssertTrue(SidebarHoverInputRouting.usesAppKitHoverBridge(in: collapsedHidden))
-        XCTAssertFalse(SidebarHoverInputRouting.usesSwiftUIHover(in: collapsedVisible))
-        XCTAssertTrue(SidebarHoverInputRouting.usesAppKitHoverBridge(in: collapsedVisible))
+        XCTAssertEqual(reservedPadding, SidebarHoverChrome.trailingFadePadding(showsTrailingAction: true))
     }
 
     func testCollapsedSidebarHoverTrackingUsesActiveAppTrackingArea() throws {

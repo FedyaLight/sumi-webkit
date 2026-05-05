@@ -356,16 +356,6 @@ private struct SidebarDDGHoverModifier: ViewModifier {
     }
 }
 
-enum SidebarHoverInputRouting {
-    static func usesSwiftUIHover(in presentationContext: SidebarPresentationContext) -> Bool {
-        false
-    }
-
-    static func usesAppKitHoverBridge(in presentationContext: SidebarPresentationContext) -> Bool {
-        true
-    }
-}
-
 extension View {
     func sidebarDDGHover(
         _ isHovered: Binding<Bool>,
@@ -409,7 +399,4 @@ enum SidebarHoverChrome {
         showsTrailingAction ? SidebarRowLayout.trailingActionFadePadding : 0
     }
 
-    static var trailingActionFadePadding: CGFloat {
-        SidebarRowLayout.trailingActionFadePadding
-    }
 }

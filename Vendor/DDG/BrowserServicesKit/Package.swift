@@ -16,7 +16,6 @@ let package = Package(
         .library(name: "Persistence", targets: ["Persistence"]),
         .library(name: "PrivacyConfig", targets: ["PrivacyConfig"]),
         .library(name: "UserScript", targets: ["UserScript"]),
-        .library(name: "WKAbstractions", targets: ["WKAbstractions"]),
     ],
     dependencies: [
         .package(url: "https://github.com/duckduckgo/TrackerRadarKit.git", exact: "3.1.0"),
@@ -123,13 +122,6 @@ let package = Package(
             dependencies: [
                 "Common",
             ],
-            swiftSettings: [
-                .define("DEBUG", .when(configuration: .debug))
-            ]
-        ),
-        .target(
-            name: "WKAbstractions",
-            dependencies: [],
             swiftSettings: [
                 .define("DEBUG", .when(configuration: .debug))
             ]
