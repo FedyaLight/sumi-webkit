@@ -36,7 +36,7 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
                 icon: tab.icon,
                 group: .browser,
                 keywords: [
-                    "quit", "url", "hover", "glance", "search", "engine",
+                    "quit", "url", "glance", "search", "engine",
                     "site search", "command palette"
                 ]
             )
@@ -61,7 +61,8 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
                 group: .browser,
                 keywords: [
                     "sidebar", "side", "compact spaces", "new tab",
-                    "toggle button", "tab list", "button position"
+                    "toggle button", "tab list", "button position",
+                    "hover", "preview link", "status area"
                 ]
             )
         case .performance:
@@ -237,8 +238,8 @@ enum SumiExtensionsSettingsSubPane: String, CaseIterable, Hashable {
 
 enum SettingsTabs: Hashable, CaseIterable {
     case general
-    case startup
     case appearance
+    case startup
     case performance
     case privacy
     case profiles

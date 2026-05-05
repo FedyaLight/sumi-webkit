@@ -50,6 +50,17 @@ struct SettingsAppearanceTab: View {
                 SettingsDivider()
 
                 SettingsRow(
+                    title: "Preview link URL",
+                    subtitle: "Show the hovered link target in the status area."
+                ) {
+                    Toggle("", isOn: $settings.showLinkStatusBar)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+
+                SettingsDivider()
+
+                SettingsRow(
                     title: "New Tab button",
                     subtitle: "Show a New Tab control in the tab list."
                 ) {
