@@ -1,157 +1,149 @@
 //
 //  BookmarkCoreDataImporter.swift
 //
-//  Copyright © 2022 DuckDuckGo. All rights reserved.
-//
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
-//
-//  http://www.apache.org/licenses/LICENSE-2.0
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
-//
 
 import CoreData
 import Foundation
-import Persistence
 
-public class BookmarkCoreDataImporter {
+public final class BookmarkCoreDataImporter {
+    public typealias URLAcceptance = (URL) -> Bool
+    public typealias URLKeys = (URL) -> Set<String>
 
-    let context: NSManagedObjectContext
-    let favoritesDisplayMode: FavoritesDisplayMode
+    private let context: NSManagedObjectContext
+    private let acceptsURL: URLAcceptance
+    private let urlKeys: URLKeys
 
-    public init(database: CoreDataDatabase, favoritesDisplayMode: FavoritesDisplayMode) {
-        self.context = database.makeContext(concurrencyType: .privateQueueConcurrencyType)
-        self.favoritesDisplayMode = favoritesDisplayMode
+    public init(
+        context: NSManagedObjectContext,
+        acceptsURL: @escaping URLAcceptance = BookmarkCoreDataImporter.defaultAcceptsURL(_:),
+        urlKeys: @escaping URLKeys = BookmarkCoreDataImporter.defaultURLKeys(for:)
+    ) {
+        self.context = context
+        self.acceptsURL = acceptsURL
+        self.urlKeys = urlKeys
     }
 
-    public func importBookmarks(_ bookmarks: [BookmarkOrFolder]) async throws -> BookmarksImportSummary {
+    public func importBookmarks(_ bookmarks: [BookmarkOrFolder], parent: BookmarkEntity? = nil) throws -> BookmarksImportSummary {
+        var result: Result<BookmarksImportSummary, Error>!
+        context.performAndWait {
+            do {
+                let targetParent = try parent ?? requiredRootFolder()
+                var knownURLKeys = try existingURLKeys()
+                var summary = BookmarksImportSummary(successful: 0, duplicates: 0, failed: 0)
 
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<BookmarksImportSummary, Error>) in
-
-            context.performAndWait { () in
-                do {
-                    let favoritesFolders = BookmarkUtils.fetchFavoritesFolders(for: favoritesDisplayMode, in: context)
-
-                    guard let topLevelBookmarksFolder = BookmarkUtils.fetchRootFolder(context) else {
-                        throw BookmarksCoreDataError.fetchingExistingItemFailed
-                    }
-
-                    var bookmarkURLToIDMap = try bookmarkURLToID(in: context)
-                    var summary = BookmarksImportSummary(successful: 0, duplicates: 0, failed: 0)
-
-                    try recursivelyCreateEntities(from: bookmarks,
-                                                  parent: topLevelBookmarksFolder,
-                                                  favoritesFolders: favoritesFolders,
-                                                  bookmarkURLToIDMap: &bookmarkURLToIDMap,
-                                                  summary: &summary)
-                    try context.save()
-                    continuation.resume(returning: summary)
-                } catch {
-                    continuation.resume(throwing: error)
+                for bookmark in bookmarks {
+                    importBookmarkOrFolder(bookmark, into: targetParent, knownURLKeys: &knownURLKeys, summary: &summary)
                 }
+
+                if context.hasChanges {
+                    try context.save()
+                }
+                result = .success(summary)
+            } catch {
+                context.rollback()
+                result = .failure(error)
             }
         }
+        return try result.get()
     }
 
-    private func bookmarkURLToID(in context: NSManagedObjectContext) throws -> [String: NSManagedObjectID] {
-        let fetch = NSFetchRequest<NSFetchRequestResult>(entityName: "BookmarkEntity")
-        fetch.predicate = NSPredicate(
-            format: "%K == false && %K == NO AND (%K == NO OR %K == nil)",
+    private func requiredRootFolder() throws -> BookmarkEntity {
+        guard let root = BookmarkUtils.fetchRootFolder(context) else {
+            throw BookmarkImportExportError.missingRootFolder
+        }
+        return root
+    }
+
+    private func existingURLKeys() throws -> Set<String> {
+        let request = BookmarkEntity.fetchRequest()
+        request.predicate = NSPredicate(
+            format: "%K == false AND %K == false AND (%K == NO OR %K == nil)",
             #keyPath(BookmarkEntity.isFolder),
             #keyPath(BookmarkEntity.isPendingDeletion),
             #keyPath(BookmarkEntity.isStub), #keyPath(BookmarkEntity.isStub)
         )
-        fetch.resultType = .dictionaryResultType
+        request.propertiesToFetch = [#keyPath(BookmarkEntity.url)]
 
-        let idDescription = NSExpressionDescription()
-        idDescription.name = "objectID"
-        idDescription.expression = NSExpression.expressionForEvaluatedObject()
-        idDescription.expressionResultType = .objectIDAttributeType
-
-        fetch.propertiesToFetch = [idDescription, #keyPath(BookmarkEntity.url)]
-
-        let dict = try context.fetch(fetch) as? [[String: Any]]
-
-        if let result = dict?.reduce(into: [String: NSManagedObjectID](), { partialResult, data in
-            guard let urlString = data[#keyPath(BookmarkEntity.url)] as? String,
-                  let objectID = data["objectID"] as? NSManagedObjectID else { return }
-
-            partialResult[urlString] = objectID
-        }) {
-            return result
+        return try context.fetch(request).reduce(into: Set<String>()) { keys, bookmark in
+            guard let urlString = bookmark.url,
+                  let url = URL(string: urlString)
+            else {
+                return
+            }
+            keys.formUnion(urlKeys(url))
         }
-        return [:]
     }
 
-    private func recursivelyCreateEntities(from bookmarks: [BookmarkOrFolder],
-                                           parent: BookmarkEntity,
-                                           favoritesFolders: [BookmarkEntity],
-                                           bookmarkURLToIDMap: inout [String: NSManagedObjectID],
-                                           summary: inout BookmarksImportSummary) throws {
-        for bookmarkOrFolder in bookmarks {
-            if bookmarkOrFolder.isInvalidBookmark {
+    private func importBookmarkOrFolder(
+        _ bookmarkOrFolder: BookmarkOrFolder,
+        into parent: BookmarkEntity,
+        knownURLKeys: inout Set<String>,
+        summary: inout BookmarksImportSummary
+    ) {
+        if bookmarkOrFolder.isInvalidBookmark {
+            summary.failed += 1
+            return
+        }
+
+        switch bookmarkOrFolder.type {
+        case .folder:
+            let folder = BookmarkEntity.makeFolder(
+                title: sanitizedFolderTitle(bookmarkOrFolder.name),
+                parent: parent,
+                context: context
+            )
+            summary.successful += 1
+            for child in bookmarkOrFolder.children ?? [] {
+                importBookmarkOrFolder(child, into: folder, knownURLKeys: &knownURLKeys, summary: &summary)
+            }
+        case .bookmark, .favorite:
+            guard let url = bookmarkOrFolder.url, acceptsURL(url) else {
                 summary.failed += 1
-                continue
+                return
             }
 
-            switch bookmarkOrFolder.type {
-            case .folder:
-                let folder = BookmarkEntity.makeFolder(title: bookmarkOrFolder.name,
-                                                       parent: parent,
-                                                       context: context)
-                summary.successful += 1
-                if let children = bookmarkOrFolder.children {
-                    try recursivelyCreateEntities(from: children,
-                                                  parent: folder,
-                                                  favoritesFolders: favoritesFolders,
-                                                  bookmarkURLToIDMap: &bookmarkURLToIDMap,
-                                                  summary: &summary)
-                }
-            case .favorite:
-                if let url = bookmarkOrFolder.url {
-                    if let objectID = bookmarkURLToIDMap[url.absoluteString],
-                       let bookmark = try? context.existingObject(with: objectID) as? BookmarkEntity {
-                        bookmark.addToFavorites(folders: favoritesFolders)
-                    } else {
-                        let newFavorite = BookmarkEntity.makeBookmark(title: bookmarkOrFolder.name,
-                                                                      url: url.absoluteString,
-                                                                      parent: parent,
-                                                                      context: context)
-                        newFavorite.addToFavorites(folders: favoritesFolders)
-                        bookmarkURLToIDMap[url.absoluteString] = newFavorite.objectID
-                    }
-                    summary.successful += 1
-                } else {
-                    summary.failed += 1
-                }
-            case .bookmark:
-                if let url = bookmarkOrFolder.url {
-                    if parent.isRoot,
-                       parent.childrenArray.first(where: { $0.urlObject == url }) != nil {
-                        summary.successful += 1
-                        continue
-                    } else {
-                        let newBookmark = BookmarkEntity.makeBookmark(title: bookmarkOrFolder.name,
-                                                                      url: url.absoluteString,
-                                                                      parent: parent,
-                                                                      context: context)
-                        bookmarkURLToIDMap[url.absoluteString] = newBookmark.objectID
-                    }
-                    summary.successful += 1
-                } else {
-                    summary.failed += 1
-                }
+            let keys = urlKeys(url)
+            if !knownURLKeys.isDisjoint(with: keys) {
+                summary.duplicates += 1
+                return
             }
+
+            _ = BookmarkEntity.makeBookmark(
+                title: sanitizedTitle(bookmarkOrFolder.name, fallbackURL: url),
+                url: url.absoluteString,
+                parent: parent,
+                context: context
+            )
+            knownURLKeys.formUnion(keys)
+            summary.successful += 1
         }
     }
 
-    private func containsBookmark(with url: URL) -> Bool {
-        return false
+    public static func defaultAcceptsURL(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https"
+        else {
+            return false
+        }
+        return url.host?.isEmpty == false
+    }
+
+    public static func defaultURLKeys(for url: URL) -> Set<String> {
+        [url.absoluteString.lowercased()]
+    }
+
+    private func sanitizedFolderTitle(_ title: String) -> String {
+        title.nilIfTrimmedEmpty ?? "Folder"
+    }
+
+    private func sanitizedTitle(_ title: String, fallbackURL: URL) -> String {
+        title.nilIfTrimmedEmpty ?? fallbackURL.host ?? fallbackURL.absoluteString
+    }
+}
+
+private extension String {
+    var nilIfTrimmedEmpty: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }

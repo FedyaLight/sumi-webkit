@@ -351,53 +351,22 @@ final class SumiBookmarkManager: ObservableObject {
     }
 
     func importBookmarks(
-        _ nodes: [SumiImportedBookmarkNode],
+        _ bookmarks: [BookmarkOrFolder],
         parentID: String? = nil
-    ) throws -> SumiBookmarkImportSummary {
+    ) throws -> BookmarksImportSummary {
         let parent = try requiredFolderEntity(for: parentID)
-        var summary = SumiBookmarkImportSummary(
-            imported: 0,
-            duplicates: 0,
-            failed: 0
+        let importer = BookmarkCoreDataImporter(
+            context: context,
+            acceptsURL: Self.canBookmark(_:),
+            urlKeys: { Set($0.sumiBookmarkButtonURLVariants().map(Self.urlKey)) }
         )
-        var knownURLKeys = Set(bookmarkIDByURLKey.keys)
-
-        for node in nodes {
-            importNode(
-                node,
-                into: parent,
-                knownURLKeys: &knownURLKeys,
-                summary: &summary
-            )
-        }
-
-        try saveAndReload()
+        let summary = try importer.importBookmarks(bookmarks, parent: parent)
+        reload()
         return summary
     }
 
-    func exportBookmarksHTML() throws -> String {
-        guard let root = rootFolder() else {
-            throw SumiBookmarkError.exportFailed("Bookmarks storage is not ready.")
-        }
-
-        var lines: [String] = [
-            "<!DOCTYPE NETSCAPE-Bookmark-file-1>",
-            "<META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=UTF-8\">",
-            "<TITLE>Bookmarks</TITLE>",
-            "<H1>Bookmarks</H1>",
-            "<DL><p>",
-        ]
-        appendExportLines(for: root.childrenArray, indent: 1, to: &lines)
-        lines.append("</DL><p>")
-        return lines.joined(separator: "\n")
-    }
-
     func exportBookmarksHTML(to destination: URL) throws {
-        do {
-            try exportBookmarksHTML().write(to: destination, atomically: true, encoding: .utf8)
-        } catch {
-            throw SumiBookmarkError.exportFailed(error.localizedDescription)
-        }
+        try BookmarkHTMLExporter.exportBookmarksHTML(from: context, to: destination)
     }
 
     private func installSaveObserver() {
@@ -704,73 +673,6 @@ final class SumiBookmarkManager: ObservableObject {
             return []
         }
         return [url]
-    }
-
-    private func importNode(
-        _ node: SumiImportedBookmarkNode,
-        into parent: BookmarkEntity,
-        knownURLKeys: inout Set<String>,
-        summary: inout SumiBookmarkImportSummary
-    ) {
-        switch node.kind {
-        case .folder:
-            let folder = BookmarkEntity.makeFolder(
-                title: sanitizedFolderTitle(node.title),
-                parent: parent,
-                context: context
-            )
-            summary.imported += 1
-            for child in node.children {
-                importNode(child, into: folder, knownURLKeys: &knownURLKeys, summary: &summary)
-            }
-        case .bookmark(let url):
-            guard Self.canBookmark(url) else {
-                summary.failed += 1
-                return
-            }
-            let variantKeys = Set(url.sumiBookmarkButtonURLVariants().map(Self.urlKey))
-            if !knownURLKeys.isDisjoint(with: variantKeys) {
-                summary.duplicates += 1
-                return
-            }
-            _ = BookmarkEntity.makeBookmark(
-                title: sanitizedTitle(node.title, fallbackURL: url),
-                url: url.absoluteString,
-                parent: parent,
-                context: context
-            )
-            knownURLKeys.formUnion(variantKeys)
-            summary.imported += 1
-        }
-    }
-
-    private func appendExportLines(
-        for entities: [BookmarkEntity],
-        indent: Int,
-        to lines: inout [String]
-    ) {
-        let prefix = String(repeating: "    ", count: indent)
-        for entity in entities {
-            let title = htmlEscaped(entity.title?.nilIfTrimmedEmpty ?? "Untitled")
-            if entity.isFolder {
-                lines.append("\(prefix)<DT><H3>\(title)</H3>")
-                lines.append("\(prefix)<DL><p>")
-                appendExportLines(for: entity.childrenArray, indent: indent + 1, to: &lines)
-                lines.append("\(prefix)</DL><p>")
-            } else if let urlString = entity.url,
-                      let url = URL(string: urlString)
-            {
-                lines.append("\(prefix)<DT><A HREF=\"\(htmlEscaped(url.absoluteString))\">\(title)</A>")
-            }
-        }
-    }
-
-    private func htmlEscaped(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
     }
 
     private func uniqueURLsPreservingOrder(_ urls: [URL]) -> [URL] {

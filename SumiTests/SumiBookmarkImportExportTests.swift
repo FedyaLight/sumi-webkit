@@ -1,6 +1,7 @@
 import SQLite3
 import XCTest
 
+import Bookmarks
 @testable import Sumi
 
 final class SumiBookmarkImportExportTests: XCTestCase {
@@ -28,11 +29,11 @@ final class SumiBookmarkImportExportTests: XCTestCase {
         </DL><p>
         """.write(to: fileURL, atomically: true, encoding: .utf8)
 
-        let nodes = try SumiBookmarkImportReaders.readHTML(from: fileURL)
+        let nodes = try BookmarkImportSource(id: "html", title: "HTML", fileURL: fileURL, kind: .html).readBookmarks()
 
         XCTAssertEqual(nodes.count, 1)
-        XCTAssertEqual(nodes.first?.title, "Docs")
-        XCTAssertEqual(nodes.first?.children.first?.title, "Docs Home")
+        XCTAssertEqual(nodes.first?.name, "Docs")
+        XCTAssertEqual(nodes.first?.children?.first?.name, "Docs Home")
     }
 
     func testChromiumImportReadsBookmarkBarAsOrdinaryFolder() throws {
@@ -63,10 +64,10 @@ final class SumiBookmarkImportExportTests: XCTestCase {
         }
         """.write(to: fileURL, atomically: true, encoding: .utf8)
 
-        let nodes = try SumiBookmarkImportReaders.readChromiumBookmarks(from: fileURL)
+        let nodes = try BookmarkImportSource(id: "chromium", title: "Chromium", fileURL: fileURL, kind: .chromiumJSON).readBookmarks()
 
-        XCTAssertEqual(nodes.map(\.title), ["Bookmarks Bar", "Other"])
-        XCTAssertEqual(nodes.first?.children.first?.title, "Toolbar")
+        XCTAssertEqual(nodes.map(\.name), ["Bookmarks Bar", "Other"])
+        XCTAssertEqual(nodes.first?.children?.first?.name, "Toolbar")
     }
 
     func testSafariImportSkipsReadingList() throws {
@@ -100,22 +101,22 @@ final class SumiBookmarkImportExportTests: XCTestCase {
         let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
         try data.write(to: fileURL)
 
-        let nodes = try SumiBookmarkImportReaders.readSafariPlist(from: fileURL)
+        let nodes = try BookmarkImportSource(id: "safari", title: "Safari", fileURL: fileURL, kind: .safariPlist).readBookmarks()
 
         XCTAssertEqual(nodes.count, 1)
-        XCTAssertEqual(nodes.first?.title, "Bookmarks Menu")
-        XCTAssertEqual(nodes.first?.children.first?.title, "Apple")
+        XCTAssertEqual(nodes.first?.name, "Bookmarks Menu")
+        XCTAssertEqual(nodes.first?.children?.first?.name, "Apple")
     }
 
     func testFirefoxImportReadsMinimalPlacesDatabase() throws {
         let fileURL = try temporaryFile(named: "places.sqlite")
         try createFirefoxFixture(at: fileURL)
 
-        let nodes = try SumiBookmarkImportReaders.readFirefoxPlaces(from: fileURL)
+        let nodes = try BookmarkImportSource(id: "firefox", title: "Firefox", fileURL: fileURL, kind: .firefoxSQLite).readBookmarks()
 
         XCTAssertEqual(nodes.count, 1)
-        XCTAssertEqual(nodes.first?.title, "Bookmarks Menu")
-        XCTAssertEqual(nodes.first?.children.first?.title, "Mozilla")
+        XCTAssertEqual(nodes.first?.name, "Bookmarks Menu")
+        XCTAssertEqual(nodes.first?.children?.first?.name, "Mozilla")
     }
 
     private func temporaryFile(named name: String) throws -> URL {

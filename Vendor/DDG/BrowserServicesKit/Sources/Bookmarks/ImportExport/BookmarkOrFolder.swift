@@ -1,61 +1,32 @@
 //
 //  BookmarkOrFolder.swift
 //
-//  Copyright © 2022 DuckDuckGo. All rights reserved.
-//
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
-//
-//  http://www.apache.org/licenses/LICENSE-2.0
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
-//
 
 import Foundation
 
-public class BookmarkOrFolder {
-    public let name: String
-
+public final class BookmarkOrFolder {
     public enum BookmarkType: String {
         case bookmark
         case favorite
         case folder
     }
 
+    public let name: String
     public let type: BookmarkType
-
     public let urlString: String?
-
     public var children: [BookmarkOrFolder]?
 
     public var url: URL? {
-        if let url = self.urlString {
-            return URL(string: url)
-        }
-
-        return nil
+        urlString.flatMap(URL.init(string:))
     }
 
-    // There's no guarantee that imported bookmarks will have a URL, this is used to filter them out during import
     public var isInvalidBookmark: Bool {
         switch type {
         case .bookmark, .favorite:
             return urlString == nil
-        default:
+        case .folder:
             return false
         }
-    }
-
-    public enum CodingKeys: String, CodingKey {
-        case name
-        case type
-        case urlString = "url"
-        case children
     }
 
     public init(name: String, type: BookmarkType, urlString: String?, children: [BookmarkOrFolder]?) {
@@ -63,5 +34,13 @@ public class BookmarkOrFolder {
         self.type = type
         self.urlString = urlString
         self.children = children
+    }
+
+    public static func bookmark(name: String, url: URL) -> BookmarkOrFolder {
+        BookmarkOrFolder(name: name, type: .bookmark, urlString: url.absoluteString, children: nil)
+    }
+
+    public static func folder(name: String, children: [BookmarkOrFolder]) -> BookmarkOrFolder {
+        BookmarkOrFolder(name: name, type: .folder, urlString: nil, children: children)
     }
 }
