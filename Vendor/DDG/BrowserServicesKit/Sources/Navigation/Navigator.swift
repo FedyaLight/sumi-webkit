@@ -44,80 +44,8 @@ public struct Navigator {
     }
 
     @discardableResult
-    public func load(_ request: URLRequest, withExpectedNavigationType expectedNavigationType: NavigationType? = .redirect(.developer)) -> ExpectedNavigation? {
-        webView.load(request)?
-            .expectedNavigation(with: expectedNavigationType, distributedNavigationDelegate: distributedNavigationDelegate, currentNavigation: currentNavigation)
-            .appending(to: expectedNavigations)
-    }
-    @discardableResult
-    public func loadFileURL(_ url: URL, allowingReadAccessTo readAccessURL: URL, withExpectedNavigationType expectedNavigationType: NavigationType? = .redirect(.developer)) -> ExpectedNavigation? {
-        webView.loadFileURL(url, allowingReadAccessTo: readAccessURL)?
-            .expectedNavigation(with: expectedNavigationType, distributedNavigationDelegate: distributedNavigationDelegate, currentNavigation: currentNavigation)
-            .appending(to: expectedNavigations)
-    }
-    @discardableResult
-    public func loadHTMLString(_ string: String, baseURL: URL?, withExpectedNavigationType expectedNavigationType: NavigationType? = .redirect(.developer)) -> ExpectedNavigation? {
-        webView.loadHTMLString(string, baseURL: baseURL)?
-            .expectedNavigation(with: expectedNavigationType, distributedNavigationDelegate: distributedNavigationDelegate, currentNavigation: currentNavigation)
-            .appending(to: expectedNavigations)
-    }
-    @discardableResult
-    public func load(_ data: Data, mimeType MIMEType: String, characterEncodingName: String, baseURL: URL, withExpectedNavigationType expectedNavigationType: NavigationType? = .redirect(.developer)) -> ExpectedNavigation? {
-        webView.load(data, mimeType: MIMEType, characterEncodingName: characterEncodingName, baseURL: baseURL)?
-            .expectedNavigation(with: expectedNavigationType, distributedNavigationDelegate: distributedNavigationDelegate, currentNavigation: currentNavigation)
-            .appending(to: expectedNavigations)
-    }
-    @discardableResult
     public func go(to item: WKBackForwardListItem, withExpectedNavigationType expectedNavigationType: NavigationType? = .redirect(.developer)) -> ExpectedNavigation? {
         webView.go(to: item)?
-            .expectedNavigation(with: expectedNavigationType, distributedNavigationDelegate: distributedNavigationDelegate, currentNavigation: currentNavigation)
-            .appending(to: expectedNavigations)
-    }
-    @discardableResult
-    public func goBack(withExpectedNavigationType expectedNavigationType: NavigationType? = .redirect(.developer)) -> ExpectedNavigation? {
-        webView.goBack()?
-            .expectedNavigation(with: expectedNavigationType, distributedNavigationDelegate: distributedNavigationDelegate, currentNavigation: currentNavigation)
-            .appending(to: expectedNavigations)
-    }
-    @discardableResult
-    public func goForward(withExpectedNavigationType expectedNavigationType: NavigationType? = .redirect(.developer)) -> ExpectedNavigation? {
-        webView.goForward()?
-            .expectedNavigation(with: expectedNavigationType, distributedNavigationDelegate: distributedNavigationDelegate, currentNavigation: currentNavigation)
-            .appending(to: expectedNavigations)
-    }
-    @discardableResult
-    public func reload(withExpectedNavigationType expectedNavigationType: NavigationType? = .redirect(.developer)) -> ExpectedNavigation? {
-        webView.reload()?
-            .expectedNavigation(with: expectedNavigationType, distributedNavigationDelegate: distributedNavigationDelegate, currentNavigation: currentNavigation)
-            .appending(to: expectedNavigations)
-    }
-    @discardableResult
-    public func reloadFromOrigin(withExpectedNavigationType expectedNavigationType: NavigationType? = .redirect(.developer)) -> ExpectedNavigation? {
-        webView.reloadFromOrigin()?
-            .expectedNavigation(with: expectedNavigationType, distributedNavigationDelegate: distributedNavigationDelegate, currentNavigation: currentNavigation)
-            .appending(to: expectedNavigations)
-    }
-
-    @available(macOS 12.0, iOS 15.0, *)
-    @discardableResult
-    public func loadFileRequest(_ request: URLRequest, allowingReadAccessTo readAccessURL: URL, withExpectedNavigationType expectedNavigationType: NavigationType? = .redirect(.developer)) -> ExpectedNavigation {
-        webView.loadFileRequest(request, allowingReadAccessTo: readAccessURL)
-            .expectedNavigation(with: expectedNavigationType, distributedNavigationDelegate: distributedNavigationDelegate, currentNavigation: currentNavigation)
-            .appending(to: expectedNavigations)
-    }
-
-    @available(macOS 12.0, iOS 15.0, *)
-    @discardableResult
-    public func loadSimulatedRequest(_ request: URLRequest, response: URLResponse, responseData data: Data, withExpectedNavigationType expectedNavigationType: NavigationType? = .redirect(.developer)) -> ExpectedNavigation {
-        webView.loadSimulatedRequest(request, response: response, responseData: data)
-            .expectedNavigation(with: expectedNavigationType, distributedNavigationDelegate: distributedNavigationDelegate, currentNavigation: currentNavigation)
-            .appending(to: expectedNavigations)
-    }
-
-    @available(macOS 12.0, iOS 15.0, *)
-    @discardableResult
-    public func loadSimulatedRequest(_ request: URLRequest, responseHTML string: String, withExpectedNavigationType expectedNavigationType: NavigationType? = .redirect(.developer)) -> ExpectedNavigation {
-        webView.loadSimulatedRequest(request, responseHTML: string)
             .expectedNavigation(with: expectedNavigationType, distributedNavigationDelegate: distributedNavigationDelegate, currentNavigation: currentNavigation)
             .appending(to: expectedNavigations)
     }
@@ -176,10 +104,6 @@ extension WKWebView {
 
     public func navigator() -> Navigator? {
         Navigator(webView: self)
-    }
-
-    public func navigator(distributedNavigationDelegate: DistributedNavigationDelegate, expectedNavigations: UnsafeMutablePointer<[ExpectedNavigation]>? = nil) -> Navigator {
-        Navigator(webView: self, distributedNavigationDelegate: distributedNavigationDelegate, currentNavigation: nil, expectedNavigations: expectedNavigations)
     }
 
     public func navigator(distributedNavigationDelegate: DistributedNavigationDelegate, redirectedNavigation: Navigation?, expectedNavigations: UnsafeMutablePointer<[ExpectedNavigation]>? = nil) -> Navigator {

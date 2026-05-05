@@ -297,7 +297,6 @@ final class FaviconsFetchOperation: Operation, @unchecked Sendable {
     private var _isFinished: Bool = false
     private var _didStart: (() -> Void)?
     private var _didFinish: ((Error?) -> Void)?
-    private var _didReceiveHTTPRequestError: ((Error) -> Void)?
 }
 
 /**

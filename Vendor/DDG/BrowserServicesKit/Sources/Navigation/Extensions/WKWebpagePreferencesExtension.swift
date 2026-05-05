@@ -19,36 +19,6 @@
 import Foundation
 import WebKit
 
-extension WKWebpagePreferences {
-
-#if _WEBPAGE_PREFS_CUSTOM_HEADERS_ENABLED
-
-    private static let customHeaderFieldsKey = "customHeaderFields"
-
-    public static var customHeaderFieldsSupported: Bool {
-        self.instancesRespond(to: NSSelectorFromString("_" + Self.customHeaderFieldsKey))
-        || self.instancesRespond(to: NSSelectorFromString(Self.customHeaderFieldsKey))
-    }
-
-    /// used to add custom request headers to `WKNavigationAction` before the request is sent
-    public var customHeaderFields: [CustomHeaderFields]? {
-        get {
-            guard Self.customHeaderFieldsSupported else { return nil }
-            return value(forKey: Self.customHeaderFieldsKey) as? [CustomHeaderFields]
-        }
-        set {
-            guard Self.customHeaderFieldsSupported else {
-                assertionFailure("custom header fields not supported")
-                return
-            }
-            setValue(newValue as NSArray?, forKey: Self.customHeaderFieldsKey)
-        }
-    }
-
-#endif
-
-}
-
 #if _WEBPAGE_PREFS_AUTOPLAY_POLICY_ENABLED
 extension WKWebpagePreferences {
 

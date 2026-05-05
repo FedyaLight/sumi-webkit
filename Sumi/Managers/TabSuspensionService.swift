@@ -162,7 +162,6 @@ final class TabSuspensionService {
 
     private struct Candidate {
         let tab: Tab
-        let webViews: [WKWebView]
     }
 
     private struct HiddenTabState {
@@ -689,7 +688,6 @@ final class TabSuspensionService {
                 }
 
                 let eligibility: TabSuspensionEligibility
-                let webViews: [WKWebView]
                 if let webViewStates = webViewStatesByTabID[tab.id] {
                     eligibility = suspensionEligibility(
                         for: tab,
@@ -699,9 +697,8 @@ final class TabSuspensionService {
                     guard eligibility.isEligible else {
                         return nil
                     }
-                    webViews = coordinator.liveWebViews(for: tab)
                 } else {
-                    webViews = coordinator.liveWebViews(for: tab)
+                    let webViews = coordinator.liveWebViews(for: tab)
                     eligibility = suspensionEligibility(
                         for: tab,
                         liveWebViews: webViews,
@@ -711,7 +708,7 @@ final class TabSuspensionService {
                         return nil
                     }
                 }
-                return Candidate(tab: tab, webViews: webViews)
+                return Candidate(tab: tab)
             }
             .sorted { lhs, rhs in
                 let leftDate = lhs.tab.lastSelectedAt ?? .distantPast

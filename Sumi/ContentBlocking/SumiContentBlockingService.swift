@@ -518,17 +518,6 @@ final class SumiContentBlockingService {
 
 private final class SumiContentBlockingInternalUserDecider: InternalUserDecider {
     let isInternalUser = false
-
-    var isInternalUserPublisher: AnyPublisher<Bool, Never> {
-        Just(false).eraseToAnyPublisher()
-    }
-
-    @discardableResult
-    func markUserAsInternalIfNeeded(forUrl url: URL?, response: HTTPURLResponse?) -> Bool {
-        _ = url
-        _ = response
-        return false
-    }
 }
 
 final class SumiContentBlockingPrivacyConfigurationManager: PrivacyConfigurationManaging {

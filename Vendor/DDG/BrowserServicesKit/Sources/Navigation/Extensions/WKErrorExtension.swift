@@ -16,41 +16,7 @@
 //  limitations under the License.
 //
 
-import Common
 import WebKit
-
-extension WKError {
-
-    public var failingUrl: URL? {
-        return _nsError.userInfo[NSURLErrorFailingURLErrorKey] as? URL
-    }
-
-    public var isFrameLoadInterrupted: Bool {
-        code == .frameLoadInterruptedByPolicyChange && _nsError.domain == WKError.WebKitErrorDomain
-    }
-
-    public var isNavigationCancelled: Bool {
-        code.rawValue == NSURLErrorCancelled && _nsError.domain == NSURLErrorDomain
-    }
-
-    public var isServerCertificateUntrusted: Bool {
-        _nsError.isServerCertificateUntrusted
-    }
-
-    public var isWebContentProcessTerminated: Bool {
-        code == .webContentProcessTerminated && _nsError is WKError
-    }
-}
-
-extension NSError {
-    public var isServerCertificateUntrusted: Bool {
-        code == NSURLErrorServerCertificateUntrusted && domain == NSURLErrorDomain
-    }
-}
-
-public extension WKError {
-    static let WebKitErrorDomain = "WebKitErrorDomain"
-}
 
 public extension WKError.Code {
 #if os(macOS)
@@ -66,8 +32,7 @@ public extension WKError.Code {
 extension WKError: LocalizedError {
 
     public var errorDescription: String? {
-        "<WKError \((self as NSError).domain) error \(code.rawValue) \"\(self.localizedDescription)\"" +
-        "\(self.failingUrl != nil ? " url: \"\(self.failingUrl!)\"" : "")>"
+        "<WKError \((self as NSError).domain) error \(code.rawValue) \"\(self.localizedDescription)\">"
     }
 
 }

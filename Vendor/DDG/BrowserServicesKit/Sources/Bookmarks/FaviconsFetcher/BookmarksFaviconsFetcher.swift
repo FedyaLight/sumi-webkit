@@ -82,12 +82,6 @@ public enum BookmarksFaviconsFetcherError: CustomNSError {
         }
     }
 
-    public var underlyingError: Error {
-        switch self {
-        case .failedToStoreBookmarkIDs(let error), .failedToRetrieveBookmarkIDs(let error), .other(let error):
-            return error
-        }
-    }
 }
 
 /**
@@ -99,7 +93,6 @@ public enum BookmarksFaviconsFetcherError: CustomNSError {
 public final class BookmarksFaviconsFetcher {
 
     @Published public private(set) var isFetchingInProgress: Bool = false
-    public let fetchingDidFinishPublisher: AnyPublisher<Result<Void, Error>, Never>
 
     public init(
         database: CoreDataDatabase,
@@ -113,8 +106,6 @@ public final class BookmarksFaviconsFetcher {
         self.fetcher = fetcher
         self.faviconStore = faviconStore
         self.errorEvents = errorEvents
-
-        fetchingDidFinishPublisher = fetchingDidFinishSubject.eraseToAnyPublisher()
 
         isFetchingInProgressCancellable = Publishers
             .Merge(fetchingDidStartSubject.map({ true }), fetchingDidFinishSubject.map({ _ in false }))
