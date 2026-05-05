@@ -1,11 +1,9 @@
 import AppKit
 import Bookmarks
-import Combine
 import Common
 import CoreData
 import Foundation
 import Persistence
-import PrivacyConfig
 import WebKit
 
 enum SumiFaviconLookupKey {
@@ -73,92 +71,6 @@ private enum SumiFaviconPersistence {
         let directory = rootDirectoryURL().appendingPathComponent(component, isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
-    }
-}
-
-struct SumiStaticPrivacyConfiguration: PrivacyConfiguration {
-    let identifier = "sumi-favicon-static"
-    let version: String? = nil
-    let userUnprotectedDomains: [String] = []
-    let tempUnprotectedDomains: [String] = []
-    let trackerAllowlist = PrivacyConfigurationData.TrackerAllowlist(entries: [:], state: PrivacyConfigurationData.State.disabled)
-
-    func isEnabled(featureKey: PrivacyFeature, versionProvider: AppVersionProvider, defaultValue: Bool) -> Bool {
-        defaultValue
-    }
-
-    func stateFor(featureKey: PrivacyFeature, versionProvider: AppVersionProvider) -> PrivacyConfigurationFeatureState {
-        .disabled(.featureMissing)
-    }
-
-    func isSubfeatureEnabled(
-        _ subfeature: any PrivacySubfeature,
-        versionProvider: AppVersionProvider,
-        randomizer: (Range<Double>) -> Double,
-        defaultValue: Bool
-    ) -> Bool {
-        defaultValue
-    }
-
-    func stateFor(
-        _ subfeature: any PrivacySubfeature,
-        versionProvider: AppVersionProvider,
-        randomizer: (Range<Double>) -> Double
-    ) -> PrivacyConfigurationFeatureState {
-        .disabled(.featureMissing)
-    }
-
-    func exceptionsList(forFeature featureKey: PrivacyFeature) -> [String] { [] }
-    func isFeature(_ feature: PrivacyFeature, enabledForDomain: String?) -> Bool { true }
-    func isProtected(domain: String?) -> Bool { true }
-    func isUserUnprotected(domain: String?) -> Bool { false }
-    func isTempUnprotected(domain: String?) -> Bool { false }
-    func isInExceptionList(domain: String?, forFeature featureKey: PrivacyFeature) -> Bool { false }
-    func settings(for feature: PrivacyFeature) -> PrivacyConfigurationData.PrivacyFeature.FeatureSettings { [:] }
-    func settings(for subfeature: any PrivacySubfeature) -> PrivacyConfigurationData.PrivacyFeature.SubfeatureSettings? { nil }
-    func userEnabledProtection(forDomain: String) {}
-    func userDisabledProtection(forDomain: String) {}
-
-    func stateFor(
-        subfeatureID: SubfeatureID,
-        parentFeatureID: ParentFeatureID,
-        versionProvider: AppVersionProvider,
-        randomizer: (Range<Double>) -> Double
-    ) -> PrivacyConfigurationFeatureState {
-        .disabled(.featureMissing)
-    }
-
-    func cohorts(for subfeature: any PrivacySubfeature) -> [PrivacyConfigurationData.Cohort]? { nil }
-    func cohorts(subfeatureID: SubfeatureID, parentFeatureID: ParentFeatureID) -> [PrivacyConfigurationData.Cohort]? { nil }
-}
-
-final class SumiStaticInternalUserDecider: InternalUserDecider {
-    let isInternalUser = false
-    var isInternalUserPublisher: AnyPublisher<Bool, Never> {
-        Just(false).eraseToAnyPublisher()
-    }
-
-    @discardableResult
-    func markUserAsInternalIfNeeded(forUrl url: URL?, response: HTTPURLResponse?) -> Bool {
-        _ = url
-        _ = response
-        return false
-    }
-}
-
-final class SumiStaticPrivacyConfigurationManager: PrivacyConfigurationManaging {
-    let currentConfig = Data("{}".utf8)
-    var updatesPublisher: AnyPublisher<Void, Never> {
-        Empty(completeImmediately: false).eraseToAnyPublisher()
-    }
-    let privacyConfig: PrivacyConfiguration = SumiStaticPrivacyConfiguration()
-    let internalUserDecider: InternalUserDecider = SumiStaticInternalUserDecider()
-
-    @discardableResult
-    func reload(etag: String?, data: Data?) -> PrivacyConfigurationManager.ReloadResult {
-        _ = etag
-        _ = data
-        return .embedded
     }
 }
 
@@ -363,7 +275,9 @@ final class SumiFaviconSystem {
 
     private init() {
         let rootDirectoryURL = SumiFaviconPersistence.directory(named: "Favicons/DDGBackend-v2")
-        let privacyConfigurationManager = SumiStaticPrivacyConfigurationManager()
+        let privacyConfigurationManager = SumiContentBlockingPrivacyConfigurationManager(
+            isContentBlockingEnabled: false
+        )
 
         faviconDatabase = Self.makeDatabase(
             name: "Favicons",

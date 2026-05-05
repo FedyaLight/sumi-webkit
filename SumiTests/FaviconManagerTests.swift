@@ -246,7 +246,7 @@ final class FaviconManagerTests: XCTestCase {
             store: store,
             bookmarkManager: bookmarkManager,
             fireproofDomains: FireproofDomains(store: FireproofDomainsStore(context: nil), tld: TLD()),
-            privacyConfigurationManager: SumiStaticPrivacyConfigurationManager(),
+            privacyConfigurationManager: SumiContentBlockingPrivacyConfigurationManager(isContentBlockingEnabled: false),
             faviconDownloader: downloader
         )
     }

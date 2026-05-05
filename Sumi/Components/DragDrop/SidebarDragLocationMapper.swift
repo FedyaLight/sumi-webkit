@@ -9,16 +9,6 @@ struct SidebarMappedDragLocations {
 enum SidebarDragLocationMapper {
     static func swiftUITopLeftPoint(
         windowPoint: CGPoint,
-        contentHeight: CGFloat
-    ) -> CGPoint {
-        swiftUITopLeftPoint(
-            windowPoint: windowPoint,
-            topBoundaryY: contentHeight
-        )
-    }
-
-    static func swiftUITopLeftPoint(
-        windowPoint: CGPoint,
         topBoundaryY: CGFloat
     ) -> CGPoint {
         CGPoint(
@@ -95,30 +85,6 @@ enum SidebarDragLocationMapper {
         currentMouseScreenPoint: NSPoint?
     ) -> NSPoint {
         currentMouseScreenPoint ?? callbackScreenPoint
-    }
-
-    static func swiftUIGlobalPointFromSourceScreenPoint(
-        callbackScreenPoint: NSPoint,
-        in view: NSView,
-        currentMouseScreenPoint: NSPoint? = NSEvent.mouseLocation
-    ) -> CGPoint? {
-        sourceLocationsFromScreenPoint(
-            callbackScreenPoint: callbackScreenPoint,
-            in: view,
-            currentMouseScreenPoint: currentMouseScreenPoint
-        )?.dropLocation
-    }
-
-    static func swiftUIPreviewPointFromSourceScreenPoint(
-        callbackScreenPoint: NSPoint,
-        in view: NSView,
-        currentMouseScreenPoint: NSPoint? = NSEvent.mouseLocation
-    ) -> CGPoint? {
-        sourceLocationsFromScreenPoint(
-            callbackScreenPoint: callbackScreenPoint,
-            in: view,
-            currentMouseScreenPoint: currentMouseScreenPoint
-        )?.previewLocation
     }
 
     static func sourceLocationsFromScreenPoint(
