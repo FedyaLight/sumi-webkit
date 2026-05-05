@@ -4,7 +4,6 @@ import Combine
 import Common
 import CoreData
 import Foundation
-import History
 import Persistence
 import PrivacyConfig
 import WebKit
@@ -166,15 +165,13 @@ final class SumiStaticPrivacyConfigurationManager: PrivacyConfigurationManaging 
 @MainActor
 final class SumiBookmarkMirrorManager: BookmarkManager {
     private let database: CoreDataDatabase
-    private let rootDirectoryURL: URL
     private weak var faviconsFetcher: BookmarksFaviconsFetcher?
     nonisolated private static let mirrorPrefix = "sumi-favicon-mirror-"
     nonisolated private static let realBookmarkPrefix = "sumi-real-bookmark-"
     private var didInitializeFetcherState = false
 
-    init(database: CoreDataDatabase, rootDirectoryURL: URL) {
+    init(database: CoreDataDatabase) {
         self.database = database
-        self.rootDirectoryURL = rootDirectoryURL
         prepareFolderStructureIfNeeded()
     }
 
@@ -359,16 +356,14 @@ final class SumiFaviconSystem {
     let bookmarkMirror: SumiBookmarkMirrorManager
     let fireproofDomains: FireproofDomains
 
-    private let rootDirectoryURL: URL
-    private let privacyConfigurationManager: PrivacyConfigurationManaging
     private let faviconDatabase: CoreDataDatabase
     private let bookmarkDatabase: CoreDataDatabase
     private let fireproofDatabase: CoreDataDatabase
     private let bookmarksFaviconsFetcher: BookmarksFaviconsFetcher
 
     private init() {
-        rootDirectoryURL = SumiFaviconPersistence.directory(named: "Favicons/DDGBackend-v2")
-        privacyConfigurationManager = SumiStaticPrivacyConfigurationManager()
+        let rootDirectoryURL = SumiFaviconPersistence.directory(named: "Favicons/DDGBackend-v2")
+        let privacyConfigurationManager = SumiStaticPrivacyConfigurationManager()
 
         faviconDatabase = Self.makeDatabase(
             name: "Favicons",
@@ -390,8 +385,7 @@ final class SumiFaviconSystem {
         )
 
         bookmarkMirror = SumiBookmarkMirrorManager(
-            database: bookmarkDatabase,
-            rootDirectoryURL: rootDirectoryURL
+            database: bookmarkDatabase
         )
         fireproofDomains = FireproofDomains(
             store: FireproofDomainsStore(database: fireproofDatabase, tableName: "FireproofDomains"),
@@ -429,38 +423,11 @@ final class SumiFaviconSystem {
         bookmarkMirror.syncBookmarks(bookmarks)
     }
 
-    func image(forLookupKey key: String) -> NSImage? {
-        guard let documentURL = SumiFaviconLookupKey.documentURL(for: key) else { return nil }
-        if let favicon = manager.getCachedFavicon(for: documentURL, sizeCategory: .small, fallBackToSmaller: true) {
-            return favicon.image
-        }
-        if let host = documentURL.host,
-           let favicon = manager.getCachedFavicon(for: host, sizeCategory: .small, fallBackToSmaller: true)
-        {
-            return favicon.image
-        }
-        return nil
-    }
-
     func burnAfterHistoryClear(savedLogins: Set<String>) async {
         _ = await manager.burn(
             except: fireproofDomains,
             bookmarkManager: bookmarkMirror,
             savedLogins: savedLogins
-        )
-    }
-
-    func burnDomains(
-        _ domains: Set<String>,
-        remainingHistory: BrowsingHistory,
-        savedLogins: Set<String>
-    ) async {
-        _ = await manager.burnDomains(
-            domains,
-            exceptBookmarks: bookmarkMirror,
-            exceptSavedLogins: savedLogins,
-            exceptExistingHistory: remainingHistory,
-            tld: TLD()
         )
     }
 

@@ -1390,14 +1390,6 @@ private struct URLBarSiteDataFavicon: View {
             return Image(nsImage: image)
         }
 
-        if let favicon = manager.getCachedFavicon(
-            forDomainOrAnySubdomain: normalizedDomain,
-            sizeCategory: .small,
-            fallBackToSmaller: true
-        ), let image = favicon.image {
-            return Image(nsImage: image)
-        }
-
         return nil
     }
 }
