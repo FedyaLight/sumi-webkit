@@ -209,9 +209,14 @@ struct KeyCombination: Hashable, Codable {
     }
 
     var displayString: String {
+        guard !key.isEmpty else { return "Not Set" }
         var parts = modifiers.displayStrings
         parts.append(key.uppercased())
         return parts.joined(separator: " + ")
+    }
+
+    var isEmpty: Bool {
+        key.isEmpty
     }
 
     private static let physicalKeyMap: [UInt16: String] = [
@@ -229,8 +234,13 @@ struct KeyCombination: Hashable, Codable {
         physicalKeyMap[event.keyCode]
     }
 
+    private static let namedPhysicalKeys: Set<String> = [
+        "return", "tab", "space", "delete", "escape", "leftarrow", "rightarrow", "downarrow", "uparrow"
+    ]
+
     /// Unique hash for O(1) lookup: "cmd+shift+t"
     var lookupKey: String {
+        guard !key.isEmpty else { return "" }
         var parts: [String] = []
         if modifiers.contains(.command) { parts.append("cmd") }
         if modifiers.contains(.option) { parts.append("opt") }
@@ -249,6 +259,8 @@ struct KeyCombination: Hashable, Codable {
         let resolvedKey: String
         if keyWithoutModifiers == "=", keyWithModifiers == "+" {
             resolvedKey = "+"
+        } else if let physicalKey, Self.namedPhysicalKeys.contains(physicalKey) {
+            resolvedKey = physicalKey
         } else if !keyWithoutModifiers.isEmpty, keyWithoutModifiers.canBeConverted(to: .ascii) {
             resolvedKey = keyWithoutModifiers
         } else if let physicalKey {
@@ -278,6 +290,19 @@ struct Modifiers: OptionSet, Hashable, Codable {
     static let option = Modifiers(rawValue: 1 << 1)
     static let control = Modifiers(rawValue: 1 << 2)
     static let shift = Modifiers(rawValue: 1 << 3)
+
+    init(rawValue: Int) {
+        self.rawValue = rawValue
+    }
+
+    init(eventModifierFlags: NSEvent.ModifierFlags) {
+        var modifiers: Modifiers = []
+        if eventModifierFlags.contains(.command) { modifiers.insert(.command) }
+        if eventModifierFlags.contains(.option) { modifiers.insert(.option) }
+        if eventModifierFlags.contains(.control) { modifiers.insert(.control) }
+        if eventModifierFlags.contains(.shift) { modifiers.insert(.shift) }
+        self = modifiers
+    }
 
     var displayStrings: [String] {
         var strings: [String] = []
@@ -344,7 +369,7 @@ extension KeyboardShortcut {
             KeyboardShortcut(action: .toggleSidebar, keyCombination: KeyCombination(key: "s", modifiers: [.command])),
             KeyboardShortcut(action: .copyCurrentURL, keyCombination: KeyCombination(key: "c", modifiers: [.command, .shift])),
             KeyboardShortcut(action: .hardReload, keyCombination: KeyCombination(key: "r", modifiers: [.command, .shift])),
-            KeyboardShortcut(action: .muteUnmuteAudio, keyCombination: KeyCombination(key: "m", modifiers: [.command])),
+            KeyboardShortcut(action: .muteUnmuteAudio, keyCombination: KeyCombination(key: ""), isEnabled: false),
             KeyboardShortcut(action: .customizeSpaceGradient, keyCombination: KeyCombination(key: "g", modifiers: [.command, .shift]))
         ]
     }

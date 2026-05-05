@@ -219,8 +219,7 @@ final class SumiHistoryMenu: NSMenu {
     ) {
         guard let shortcutManager,
               let shortcut = shortcutManager.shortcut(for: action),
-              shortcut.isEnabled,
-              let keyEquivalent = keyEquivalent(for: shortcut.keyCombination.key)
+              let keyEquivalent = KeyboardShortcutPresentation.nsMenuKeyEquivalent(for: shortcut.keyCombination)
         else {
             item.keyEquivalent = fallbackKey
             item.keyEquivalentModifierMask = fallbackModifiers
@@ -234,24 +233,6 @@ final class SumiHistoryMenu: NSMenu {
     private func clearShortcut(on item: NSMenuItem) {
         item.keyEquivalent = ""
         item.keyEquivalentModifierMask = []
-    }
-
-    private func keyEquivalent(for key: String) -> String? {
-        switch key.lowercased() {
-        case "return", "enter":
-            return "\r"
-        case "delete", "backspace":
-            return "\u{8}"
-        case "tab":
-            return "\t"
-        case "space":
-            return " "
-        default:
-            if key.count == 1 {
-                return key.lowercased()
-            }
-            return nil
-        }
     }
 }
 
@@ -340,16 +321,5 @@ private extension NSImage {
         )
         image.unlockFocus()
         return image
-    }
-}
-
-private extension Modifiers {
-    var nsEventModifierFlags: NSEvent.ModifierFlags {
-        var flags: NSEvent.ModifierFlags = []
-        if contains(.command) { flags.insert(.command) }
-        if contains(.shift) { flags.insert(.shift) }
-        if contains(.option) { flags.insert(.option) }
-        if contains(.control) { flags.insert(.control) }
-        return flags
     }
 }

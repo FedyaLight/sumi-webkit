@@ -11,6 +11,7 @@ import SwiftUI
 struct SumiSettingsTabRootView: View {
     @Environment(\.sumiSettings) private var sumiSettingsModel
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(KeyboardShortcutManager.self) private var keyboardShortcutManager
     @ObservedObject var browserManager: BrowserManager
     /// When `nil` (e.g. standalone preview), sidebar still works; tab URL sync is skipped.
     var windowState: BrowserWindowState?
@@ -339,7 +340,7 @@ struct SumiSettingsTabRootView: View {
         case .profiles:
             SumiProfilesSettingsPane()
         case .shortcuts:
-            ShortcutsSettingsView()
+            ShortcutsSettingsView(shortcutManager: keyboardShortcutManager)
         case .extensions, .userScripts:
             SumiExtensionsSettingsPane()
         case .advanced:

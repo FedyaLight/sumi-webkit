@@ -22,53 +22,12 @@ struct SumiCommands: Commands {
 
     // MARK: - Dynamic Keyboard Shortcuts
 
-    /// Returns the key equivalent for a given action, or nil if disabled
-    private func keyEquivalent(for action: ShortcutAction) -> KeyEquivalent? {
-        guard let shortcut = shortcutManager.shortcut(for: action),
-              shortcut.isEnabled else { return nil }
-        // Handle special keys
-        switch shortcut.keyCombination.key.lowercased() {
-        case "return", "enter": return .return
-        case "escape", "esc": return .escape
-        case "delete", "backspace": return .delete
-        case "tab": return .tab
-        case "space": return .space
-        case "up", "uparrow": return .upArrow
-        case "down", "downarrow": return .downArrow
-        case "left", "leftarrow": return .leftArrow
-        case "right", "rightarrow": return .rightArrow
-        case "home": return .home
-        case "end": return .end
-        case "pageup": return .pageUp
-        case "pagedown": return .pageDown
-        case "clear": return .clear
-        default:
-            // Handle single character keys
-            if shortcut.keyCombination.key.count == 1,
-               let char = shortcut.keyCombination.key.first {
-                return KeyEquivalent(char)
-            }
-            return nil
-        }
-    }
-
-    /// Returns the event modifiers for a given action
-    private func eventModifiers(for action: ShortcutAction) -> EventModifiers {
-        guard let shortcut = shortcutManager.shortcut(for: action),
-              shortcut.isEnabled else { return [] }
-        var modifiers: EventModifiers = []
-        if shortcut.keyCombination.modifiers.contains(.command) { modifiers.insert(.command) }
-        if shortcut.keyCombination.modifiers.contains(.shift) { modifiers.insert(.shift) }
-        if shortcut.keyCombination.modifiers.contains(.option) { modifiers.insert(.option) }
-        if shortcut.keyCombination.modifiers.contains(.control) { modifiers.insert(.control) }
-        return modifiers
-    }
-
     /// View extension to apply dynamic keyboard shortcut if enabled
     private func dynamicShortcut(_ action: ShortcutAction) -> some ViewModifier {
-        DynamicShortcutModifier(
-            keyEquivalent: keyEquivalent(for: action),
-            modifiers: eventModifiers(for: action)
+        let shortcut = shortcutManager.shortcut(for: action)
+        return DynamicShortcutModifier(
+            keyEquivalent: shortcut.flatMap { KeyboardShortcutPresentation.keyEquivalent(for: $0.keyCombination) },
+            modifiers: shortcut.map { KeyboardShortcutPresentation.eventModifiers(for: $0.keyCombination.modifiers) } ?? []
         )
     }
 
