@@ -32,24 +32,24 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
             return SettingsPaneDescriptor(
                 tab: tab,
                 title: "General",
-                subtitle: "Window behavior, URL bar, search engines, and site search.",
+                subtitle: "Window behavior, Glance, search engines, and site search.",
                 icon: tab.icon,
                 group: .browser,
                 keywords: [
-                    "quit", "url", "hover", "sidebar", "new tab", "search",
-                    "engine", "site search", "command palette"
+                    "quit", "url", "hover", "glance", "search", "engine",
+                    "site search", "command palette"
                 ]
             )
         case .appearance:
             return SettingsPaneDescriptor(
                 tab: tab,
                 title: "Appearance",
-                subtitle: "Window scheme, theme styling, radius, and workspace color.",
+                subtitle: "Sidebar chrome and tab-list controls.",
                 icon: tab.icon,
                 group: .browser,
                 keywords: [
-                    "theme", "dark", "light", "auto", "system colors",
-                    "border radius", "status panel", "workspace", "space theme"
+                    "sidebar", "side", "compact spaces", "new tab",
+                    "toggle button", "tab list", "button position"
                 ]
             )
         case .performance:
@@ -83,12 +83,11 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
             return SettingsPaneDescriptor(
                 tab: tab,
                 title: "Profiles & Spaces",
-                subtitle: "Profiles, space assignments, sidebar behavior, and glance.",
+                subtitle: "Profiles, personas, and space assignments.",
                 icon: tab.icon,
                 group: .browsing,
                 keywords: [
-                    "profiles", "spaces", "personas", "sidebar", "glance",
-                    "launcher", "essentials", "compact spaces"
+                    "profiles", "spaces", "personas", "assignments"
                 ]
             )
         case .shortcuts:

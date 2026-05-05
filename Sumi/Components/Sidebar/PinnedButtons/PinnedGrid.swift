@@ -306,8 +306,6 @@ struct PinnedGrid: View {
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
-    @Environment(\.sumiSettings) var sumiSettings
-
     init(
         width: CGFloat,
         spaceId: UUID? = nil,
@@ -327,7 +325,7 @@ struct PinnedGrid: View {
     var body: some View {
         let _ = browserManager.tabStructuralRevision
 
-        let pinnedTabsConfiguration: PinnedTabsConfiguration = sumiSettings.pinnedTabsLook
+        let pinnedTabsConfiguration: PinnedTabsConfiguration = .large
         // Use profile-filtered essentials
         let effectiveProfileId = profileId ?? windowState.currentProfileId ?? browserManager.currentProfile?.id
         let items: [ShortcutPin] = effectiveProfileId != nil
@@ -892,8 +890,6 @@ private struct LivePinnedTileContent: View {
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
 
-    @Environment(\.sumiSettings) private var sumiSettings
-
     var body: some View {
         let resolvedTitle = pin.resolvedDisplayTitle(liveTab: liveTab)
         PinnedTabView(
@@ -914,7 +910,7 @@ private struct LivePinnedTileContent: View {
             ),
             accessibilityID: accessibilityID,
             isAppKitInteractionEnabled: isAppKitInteractionEnabled,
-            showsUnloadIndicator: sumiSettings.showEssentialsUnloadIndicator,
+            showsUnloadIndicator: false,
             supportsMiddleClickUnload: true,
             contextMenuEntries: makeEssentialsContextMenuEntries(
                 showsCloseCurrentPage: showsCloseAction,
@@ -952,10 +948,6 @@ private struct LivePinnedTileContent: View {
             zones.append(.topLeadingSquare(size: 22, inset: 6))
         }
 
-        if sumiSettings.showEssentialsUnloadIndicator && presentationState.isOpenLive {
-            zones.append(.topTrailingSquare(size: 22, inset: 6))
-        }
-
         return zones
     }
 }
@@ -977,8 +969,6 @@ private struct StoredPinnedTileContent: View {
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
 
-    @Environment(\.sumiSettings) private var sumiSettings
-
     var body: some View {
         let resolvedTitle = pin.preferredDisplayTitle
         PinnedTabView(
@@ -999,7 +989,7 @@ private struct StoredPinnedTileContent: View {
             ),
             accessibilityID: accessibilityID,
             isAppKitInteractionEnabled: isAppKitInteractionEnabled,
-            showsUnloadIndicator: sumiSettings.showEssentialsUnloadIndicator,
+            showsUnloadIndicator: false,
             supportsMiddleClickUnload: true,
             contextMenuEntries: makeEssentialsContextMenuEntries(
                 showsCloseCurrentPage: showsCloseAction,
@@ -1030,12 +1020,7 @@ private struct StoredPinnedTileContent: View {
         }
     }
 
-    private var dragExclusionZones: [SidebarDragSourceExclusionZone] {
-        if sumiSettings.showEssentialsUnloadIndicator && presentationState.isOpenLive {
-            return [.topTrailingSquare(size: 22, inset: 6)]
-        }
-        return []
-    }
+    private var dragExclusionZones: [SidebarDragSourceExclusionZone] { [] }
 }
 
 @MainActor

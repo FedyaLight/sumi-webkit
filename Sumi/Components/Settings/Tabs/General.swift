@@ -39,37 +39,12 @@ struct SettingsGeneralTab: View {
                 }
 
                 SettingsRow(
-                    title: "Sidebar toggle button",
-                    subtitle: "Expose the sidebar visibility control in browser chrome."
+                    title: "Glance",
+                    subtitle: "Preview links without fully opening a tab."
                 ) {
-                    Toggle("", isOn: $settings.showSidebarToggleButton)
+                    Toggle("", isOn: $settings.glanceEnabled)
                         .labelsHidden()
                         .toggleStyle(.switch)
-                }
-
-                SettingsDivider()
-
-                SettingsRow(
-                    title: "New Tab button",
-                    subtitle: "Show a New Tab control in the tab list."
-                ) {
-                    Toggle("", isOn: $settings.showNewTabButtonInTabList)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                }
-
-                SettingsRow(
-                    title: "New Tab button position",
-                    subtitle: "Choose where the tab-list button appears."
-                ) {
-                    Picker("", selection: $settings.tabListNewTabButtonPosition) {
-                        ForEach(TabListNewTabButtonPosition.allCases) { position in
-                            Text(position.displayName).tag(position)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: 150)
-                    .disabled(!settings.showNewTabButtonInTabList)
                 }
             }
 

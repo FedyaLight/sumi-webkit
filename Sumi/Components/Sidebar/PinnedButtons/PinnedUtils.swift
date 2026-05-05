@@ -8,64 +8,27 @@
 import SwiftUI
 
 
-enum PinnedTabsConfiguration: String, CaseIterable, Identifiable {
-    case large = "large"
-    case small = "small"
-    
-    var id: String { rawValue }
+enum PinnedTabsConfiguration {
+    case large
     
     var faviconHeight: CGFloat {
-        switch self {
-        case .large:
-            return 20
-        case .small:
-            return 16
-        }
-    }
-    
-    var name: String {
-        switch self {
-        case .large:
-            return "Arc"
-        case .small:
-            return "Dia"
-        }
+        20
     }
     
     var minWidth: CGFloat {
-        switch self {
-        case .large:
-            return 47
-        case .small:
-            return 41
-        }
+        47
     }
     
     var height: CGFloat {
-        switch self {
-        case .large:
-            return 47
-        case .small:
-            return 41
-        }
+        47
     }
     
     var cornerRadius: CGFloat {
-        switch self {
-        case .large:
-            return 12
-        case .small:
-            return 10
-        }
+        12
     }
     
     var strokeWidth: CGFloat {
-        switch self {
-        case .large:
-            return 2
-        case .small:
-            return 1.5
-        }
+        2
     }
     
     var gridSpacing: CGFloat { 7 }

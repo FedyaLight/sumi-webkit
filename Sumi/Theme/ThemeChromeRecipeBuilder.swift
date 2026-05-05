@@ -278,11 +278,6 @@ private struct ThemeChromePalette {
         let secondaryText = ThemeContrastResolver.secondaryText(for: scheme)
         let tertiaryText = ThemeContrastResolver.tertiaryText(for: scheme)
         let buttonPrimaryText = ThemeContrastResolver.preferredForeground(on: accent)
-        let styledStatusPanelBackground = ThemeChromeRecipeBuilder.styledStatusPanelBackground(
-            for: scheme,
-            accent: accent,
-            settings: settings
-        )
         let fieldBackground = ThemeChromeRecipeBuilder.zenToolbarElementBackground(scheme: scheme)
         let fieldBackgroundHover = ThemeChromeRecipeBuilder.zenToolbarElementHoverBackground(
             elementBackground: fieldBackground,
@@ -368,13 +363,9 @@ private struct ThemeChromePalette {
             toastPrimaryText: primaryText,
             toastSecondaryText: secondaryText,
             toastIconBackground: elevatedSubtle.opacity(scheme == .dark ? 0.72 : 0.8),
-            statusPanelBackground: settings.themeStyledStatusPanel
-                ? styledStatusPanelBackground
-                : elevatedStrong.opacity(0.98),
+            statusPanelBackground: elevatedStrong.opacity(0.98),
             statusPanelBorder: separator.opacity(scheme == .dark ? 0.72 : 0.9),
-            statusPanelText: settings.themeStyledStatusPanel
-                ? ThemeContrastResolver.preferredForeground(on: styledStatusPanelBackground)
-                : primaryText,
+            statusPanelText: primaryText,
             buttonPrimaryBackground: accent,
             buttonPrimaryText: buttonPrimaryText,
             buttonSecondaryBackground: elevatedSubtle.opacity(scheme == .dark ? 0.9 : 1.0),
@@ -642,30 +633,6 @@ enum ThemeChromeRecipeBuilder {
             return Color.white.opacity(0.08)
         @unknown default:
             return Color.black.opacity(0.05)
-        }
-    }
-
-    static func styledStatusPanelBackground(
-        for scheme: ColorScheme,
-        accent: Color,
-        settings: SumiSettingsService
-    ) -> Color {
-        switch scheme {
-        case .light:
-            return accent.mixed(with: .white, amount: 0.32)
-        case .dark:
-            let amount: CGFloat
-            switch settings.darkThemeStyle {
-            case .default:
-                amount = 0.58
-            case .night:
-                amount = 0.72
-            case .colorful:
-                amount = 0.45
-            }
-            return accent.mixed(with: .black, amount: amount)
-        @unknown default:
-            return accent
         }
     }
 
