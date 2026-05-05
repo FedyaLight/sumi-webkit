@@ -78,6 +78,11 @@ final class SumiWebViewContainerView: NSView {
 
     private var cancellables = Set<AnyCancellable>()
     private var blurViewIsHiddenCancellable: AnyCancellable?
+    private var viewportCornerRadius: CGFloat = 0
+    private var viewportCutoutBackground: BrowserContentViewportCutoutBackground = .solid(.clear)
+    private let cornerCutoutViews = BrowserContentViewportCorner.allCases.map {
+        BrowserContentCornerCutoutView(corner: $0)
+    }
     /// DDG `MainViewController` parity: fullscreen `nextResponder` target (see `WebsiteCompositorView.attach`).
     weak var compositorContentOwner: WindowWebContentController?
 
@@ -108,6 +113,22 @@ final class SumiWebViewContainerView: NSView {
         webView.autoresizingMask = [.width, .height]
 
         addDisplayedContent(webView.sumiTabContentView)
+        installCornerCutoutsIfNeeded()
+    }
+
+    func setBrowserContentViewport(
+        geometry: BrowserChromeGeometry,
+        cutoutBackground: BrowserContentViewportCutoutBackground
+    ) {
+        viewportCornerRadius = geometry.contentRadius
+        viewportCutoutBackground = cutoutBackground
+
+        for cutoutView in cornerCutoutViews {
+            cutoutView.cornerRadius = effectiveViewportCornerRadius
+            cutoutView.cutoutBackground = cutoutBackground
+        }
+        installCornerCutoutsIfNeeded()
+        needsLayout = true
     }
 
     func attachDisplayedContentIfNeeded() {
@@ -119,7 +140,11 @@ final class SumiWebViewContainerView: NSView {
 
     private func addDisplayedContent(_ displayedView: NSView) {
         frameDisplayedContent(displayedView)
-        addSubview(displayedView)
+        if let firstCutoutView = cornerCutoutViews.first(where: { $0.superview === self }) {
+            addSubview(displayedView, positioned: .below, relativeTo: firstCutoutView)
+        } else {
+            addSubview(displayedView)
+        }
     }
 
     private func frameDisplayedContent(_ displayedView: NSView) {
@@ -135,6 +160,14 @@ final class SumiWebViewContainerView: NSView {
     override func layout() {
         super.layout()
         webView.sumiTabContentView.frame = bounds
+        layoutCornerCutouts()
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard containsPointInsideRoundedViewport(point) else {
+            return nil
+        }
+        return super.hitTest(point)
     }
 
     override func removeFromSuperview() {
@@ -151,6 +184,7 @@ final class SumiWebViewContainerView: NSView {
 
     override func didAddSubview(_ subview: NSView) {
         super.didAddSubview(subview)
+        guard subview === webView.sumiTabContentView else { return }
         guard webView.sumiTabContentView !== webView else {
             blurViewIsHiddenCancellable?.cancel()
             blurViewIsHiddenCancellable = nil
@@ -195,6 +229,113 @@ final class SumiWebViewContainerView: NSView {
                 self.observeFullScreenWindowWillExitFullScreen(fullScreenWindowController: fullScreenWindowController)
             }
             .store(in: &cancellables)
+    }
+
+    private var effectiveViewportCornerRadius: CGFloat {
+        min(
+            max(0, viewportCornerRadius),
+            max(0, bounds.width / 2),
+            max(0, bounds.height / 2)
+        )
+    }
+
+    private func installCornerCutoutsIfNeeded() {
+        for cutoutView in cornerCutoutViews where cutoutView.superview !== self {
+            cutoutView.cornerRadius = effectiveViewportCornerRadius
+            cutoutView.cutoutBackground = viewportCutoutBackground
+            addSubview(cutoutView, positioned: .above, relativeTo: nil)
+        }
+        layoutCornerCutouts()
+    }
+
+    private func layoutCornerCutouts() {
+        let radius = effectiveViewportCornerRadius
+        guard radius > 0,
+              bounds.width > 0,
+              bounds.height > 0
+        else {
+            cornerCutoutViews.forEach { $0.isHidden = true }
+            return
+        }
+
+        for cutoutView in cornerCutoutViews {
+            cutoutView.isHidden = false
+            cutoutView.cornerRadius = radius
+            cutoutView.cutoutBackground = viewportCutoutBackground
+            cutoutView.frame = frame(for: cutoutView.corner, radius: radius)
+            cutoutView.needsDisplay = true
+        }
+    }
+
+    private func frame(
+        for corner: BrowserContentViewportCorner,
+        radius: CGFloat
+    ) -> NSRect {
+        switch corner {
+        case .topLeft:
+            NSRect(
+                x: bounds.minX,
+                y: bounds.maxY - radius,
+                width: radius,
+                height: radius
+            )
+        case .topRight:
+            NSRect(
+                x: bounds.maxX - radius,
+                y: bounds.maxY - radius,
+                width: radius,
+                height: radius
+            )
+        case .bottomLeft:
+            NSRect(
+                x: bounds.minX,
+                y: bounds.minY,
+                width: radius,
+                height: radius
+            )
+        case .bottomRight:
+            NSRect(
+                x: bounds.maxX - radius,
+                y: bounds.minY,
+                width: radius,
+                height: radius
+            )
+        }
+    }
+
+    private func containsPointInsideRoundedViewport(_ point: NSPoint) -> Bool {
+        guard bounds.contains(point) else { return false }
+
+        let radius = effectiveViewportCornerRadius
+        guard radius > 0 else { return true }
+
+        let minX = bounds.minX
+        let maxX = bounds.maxX
+        let minY = bounds.minY
+        let maxY = bounds.maxY
+
+        if point.x >= minX + radius && point.x <= maxX - radius {
+            return true
+        }
+
+        if point.y >= minY + radius && point.y <= maxY - radius {
+            return true
+        }
+
+        let center: NSPoint
+        if point.x < minX + radius {
+            center = point.y < minY + radius
+                ? NSPoint(x: minX + radius, y: minY + radius)
+                : NSPoint(x: minX + radius, y: maxY - radius)
+        } else {
+            center = point.y < minY + radius
+                ? NSPoint(x: maxX - radius, y: minY + radius)
+                : NSPoint(x: maxX - radius, y: maxY - radius)
+        }
+
+        let dx = point.x - center.x
+        let dy = point.y - center.y
+        return dx * dx + dy * dy <= radius * radius
     }
 
     /// DuckDuckGo `observeTabMainWindow`: fullscreen `WKFullScreenWindowController.nextResponder` → embedder VC.

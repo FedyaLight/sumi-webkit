@@ -175,10 +175,12 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(liveWebViewPath.contains(".browserContentSurface("))
         XCTAssertFalse(liveWebViewPath.contains(".clipShape("))
         XCTAssertFalse(liveWebViewPath.contains(".shadow("))
-        XCTAssertTrue(liveWebViewPath.contains(".background(contentSurfaceBackground)"))
+        XCTAssertFalse(liveWebViewPath.contains(".background(contentSurfaceBackground)"))
+        XCTAssertFalse(liveWebViewPath.contains(".browserContentViewportBackground("))
+        XCTAssertTrue(liveWebViewPath.contains("contentViewportCutoutBackground: contentViewportCutoutBackground"))
     }
 
-    func testWebsiteCompositorPaneContainersStayPlainNSViews() throws {
+    func testWebsiteCompositorOwnsChromeShadowOutsideWebViewHost() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -192,10 +194,53 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             .lowerBound
         let containerSource = String(source[start...])
 
-        XCTAssertFalse(containerSource.contains("wantsLayer = true"))
+        XCTAssertTrue(containerSource.contains("BrowserContentViewportShadowView"))
+        XCTAssertTrue(containerSource.contains("addSubview(chromeShadowView"))
+        XCTAssertTrue(containerSource.contains("positioned: .above, relativeTo: chromeShadowView"))
+        XCTAssertTrue(containerSource.contains("subview !== chromeShadowView"))
         XCTAssertFalse(containerSource.contains("masksToBounds"))
-        XCTAssertFalse(containerSource.contains("cornerRadius"))
         XCTAssertFalse(containerSource.contains("override var isOpaque"))
+    }
+
+    func testRoundedWebContentViewportUsesCutoutsWithoutWebPageInjectionSnapshotsOrMasks() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+
+        let featurePaths = [
+            "Sumi/Components/WebsiteView/BrowserContentViewportCutouts.swift",
+            "Sumi/Components/WebsiteView/WebsiteView.swift",
+            "Sumi/Components/WebsiteView/WebsiteCompositorView.swift",
+            "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift",
+        ]
+        let featureSource = try featurePaths.map {
+            try String(
+                contentsOf: repositoryRoot.appendingPathComponent($0),
+                encoding: .utf8
+            )
+        }.joined(separator: "\n")
+
+        XCTAssertTrue(featureSource.contains("BrowserContentCornerCutoutView"))
+        XCTAssertTrue(featureSource.contains("BrowserContentViewportShadowView"))
+        XCTAssertTrue(featureSource.contains("layer.shadowPath"))
+        XCTAssertTrue(featureSource.contains("drawViewportShadow"))
+        XCTAssertTrue(featureSource.contains("containsPointInsideRoundedViewport"))
+        XCTAssertTrue(featureSource.contains("override func hitTest"))
+
+        let forbiddenTokens = [
+            "evaluateJavaScript",
+            "WKUserScript",
+            "addUserScript",
+            "takeSnapshot",
+            "bitmapImageRepForCachingDisplay",
+            "cacheDisplay",
+            "masksToBounds = true",
+            "layer?.mask",
+            ".mask(",
+        ]
+
+        let violations = forbiddenTokens.filter { featureSource.contains($0) }
+        XCTAssertTrue(violations.isEmpty, violations.joined(separator: "\n"))
     }
 }
 

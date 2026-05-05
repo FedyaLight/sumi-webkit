@@ -38,6 +38,7 @@ final class WindowWebContentController: NSViewController {
     private let webViewCoordinator: WebViewCoordinator
     private let windowState: BrowserWindowState
     private var chromeGeometry: BrowserChromeGeometry
+    private var contentViewportCutoutBackground: BrowserContentViewportCutoutBackground
     private lazy var containerView = ContainerView(
         browserManager: browserManager,
         splitManager: browserManager.splitManager,
@@ -59,11 +60,13 @@ final class WindowWebContentController: NSViewController {
         browserManager: BrowserManager,
         webViewCoordinator: WebViewCoordinator,
         chromeGeometry: BrowserChromeGeometry,
+        contentViewportCutoutBackground: BrowserContentViewportCutoutBackground,
         windowState: BrowserWindowState
     ) {
         self.browserManager = browserManager
         self.webViewCoordinator = webViewCoordinator
         self.chromeGeometry = chromeGeometry
+        self.contentViewportCutoutBackground = contentViewportCutoutBackground
         self.windowState = windowState
         super.init(nibName: nil, bundle: nil)
     }
@@ -105,12 +108,15 @@ final class WindowWebContentController: NSViewController {
     func update(
         displayState: WebsiteDisplayState,
         hoveredLinkHandler: @escaping (String?) -> Void,
-        chromeGeometry: BrowserChromeGeometry
+        chromeGeometry: BrowserChromeGeometry,
+        contentViewportCutoutBackground: BrowserContentViewportCutoutBackground
     ) {
         if self.chromeGeometry != chromeGeometry {
             self.chromeGeometry = chromeGeometry
             containerView.setChromeGeometry(chromeGeometry)
         }
+        self.contentViewportCutoutBackground = contentViewportCutoutBackground
+        updateDisplayedHostViewportStyles()
 
         pendingDisplayState = displayState
         self.hoveredLinkHandler = hoveredLinkHandler
@@ -286,7 +292,7 @@ final class WindowWebContentController: NSViewController {
 
         if let tab, let host = webViewHost(for: tab, pane: .single) {
             attach(host, to: containerView.singlePaneView)
-            removeHostedSubviews(in: containerView.singlePaneView, keeping: host)
+            containerView.singlePaneView.removeHostedSubviews(keeping: host)
         } else {
             clearPane(.single)
         }
@@ -311,14 +317,14 @@ final class WindowWebContentController: NSViewController {
 
         if let leftTab, let host = webViewHost(for: leftTab, pane: .left) {
             attach(host, to: containerView.leftPaneView)
-            removeHostedSubviews(in: containerView.leftPaneView, keeping: host)
+            containerView.leftPaneView.removeHostedSubviews(keeping: host)
         } else {
             clearPane(.left)
         }
 
         if let rightTab, let host = webViewHost(for: rightTab, pane: .right) {
             attach(host, to: containerView.rightPaneView)
-            removeHostedSubviews(in: containerView.rightPaneView, keeping: host)
+            containerView.rightPaneView.removeHostedSubviews(keeping: host)
         } else {
             clearPane(.right)
         }
@@ -369,22 +375,22 @@ final class WindowWebContentController: NSViewController {
 
         clearPane(pane)
         let host = SumiWebViewContainerView(tab: tab, windowID: windowState.id, webView: webView)
+        configureViewportStyle(on: host)
         setPaneHost(host, for: pane)
         return host
     }
 
-    private func attach(_ host: SumiWebViewContainerView, to paneView: NSView) {
-        if host.superview !== paneView {
-            if host.superview != nil {
-                host.removeFromSuperview()
-            }
-            paneView.addSubview(host)
+    private func attach(_ host: SumiWebViewContainerView, to paneView: PaneContainerView) {
+        if host.superview != nil && host.superview !== paneView {
+            host.removeFromSuperview()
         }
+        paneView.placeContentHostAboveChromeShadow(host)
         // After any `removeFromSuperview` (clears owner in host); must follow reparenting.
         host.compositorContentOwner = self
-        host.attachDisplayedContentIfNeeded()
         host.frame = paneView.bounds
         host.autoresizingMask = [.width, .height]
+        configureViewportStyle(on: host)
+        host.attachDisplayedContentIfNeeded()
         host.isHidden = false
     }
 
@@ -395,14 +401,7 @@ final class WindowWebContentController: NSViewController {
             host.removeFromSuperview()
         }
         setPaneHost(nil, for: pane)
-        removeHostedSubviews(in: paneView, keeping: nil)
-    }
-
-    private func removeHostedSubviews(in paneView: NSView, keeping keepView: NSView?) {
-        for subview in paneView.subviews where subview !== keepView {
-            subview.removeFromSuperview()
-        }
-        keepView?.isHidden = false
+        paneView.removeHostedSubviews(keeping: nil)
     }
 
     private func displayedHost(for tabId: UUID) -> SumiWebViewContainerView? {
@@ -433,7 +432,7 @@ final class WindowWebContentController: NSViewController {
         }
     }
 
-    private func paneView(for pane: CompositorPaneDestination) -> NSView {
+    private func paneView(for pane: CompositorPaneDestination) -> PaneContainerView {
         switch pane {
         case .single:
             return containerView.singlePaneView
@@ -453,6 +452,19 @@ final class WindowWebContentController: NSViewController {
             }
             return webViewCoordinator.getWebView(for: tabId, in: windowState.id) == nil
         }
+    }
+
+    private func updateDisplayedHostViewportStyles() {
+        [singlePaneHost, leftPaneHost, rightPaneHost].compactMap { $0 }.forEach {
+            configureViewportStyle(on: $0)
+        }
+    }
+
+    private func configureViewportStyle(on host: SumiWebViewContainerView) {
+        host.setBrowserContentViewport(
+            geometry: chromeGeometry,
+            cutoutBackground: contentViewportCutoutBackground
+        )
     }
 
     private func scheduleSplitRepair(keep side: SplitViewManager.Side) {
@@ -478,6 +490,7 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
     var rightId: UUID?
     var isSplitDropCaptureActive: Bool
     var chromeGeometry: BrowserChromeGeometry
+    var contentViewportCutoutBackground: BrowserContentViewportCutoutBackground
     let windowState: BrowserWindowState
 
     func makeNSViewController(context: Context) -> WindowWebContentController {
@@ -485,6 +498,7 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
             browserManager: browserManager,
             webViewCoordinator: webViewCoordinator,
             chromeGeometry: chromeGeometry,
+            contentViewportCutoutBackground: contentViewportCutoutBackground,
             windowState: windowState
         )
     }
@@ -494,7 +508,8 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
         controller.update(
             displayState: makeDisplayState(),
             hoveredLinkHandler: { hoveredLinkBinding.wrappedValue = $0 },
-            chromeGeometry: chromeGeometry
+            chromeGeometry: chromeGeometry,
+            contentViewportCutoutBackground: contentViewportCutoutBackground
         )
     }
 
@@ -563,6 +578,9 @@ private class ContainerView: NSView {
         singlePaneView.identifier = CompositorPaneDestination.single.viewIdentifier
         leftPaneView.identifier = CompositorPaneDestination.left.viewIdentifier
         rightPaneView.identifier = CompositorPaneDestination.right.viewIdentifier
+        singlePaneView.setChromeGeometry(chromeGeometry)
+        leftPaneView.setChromeGeometry(chromeGeometry)
+        rightPaneView.setChromeGeometry(chromeGeometry)
 
         addSubview(singlePaneView)
         addSubview(leftPaneView)
@@ -598,6 +616,9 @@ private class ContainerView: NSView {
     func setChromeGeometry(_ geometry: BrowserChromeGeometry) {
         guard chromeGeometry != geometry else { return }
         chromeGeometry = geometry
+        singlePaneView.setChromeGeometry(geometry)
+        leftPaneView.setChromeGeometry(geometry)
+        rightPaneView.setChromeGeometry(geometry)
         needsLayout = true
     }
 
@@ -720,4 +741,69 @@ private class ContainerView: NSView {
     }
 }
 
-private final class PaneContainerView: NSView {}
+private final class PaneContainerView: NSView {
+    private let chromeShadowView = BrowserContentViewportShadowView(frame: .zero)
+    private var chromeGeometry = BrowserChromeGeometry()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        chromeShadowView.isHidden = true
+        addSubview(chromeShadowView, positioned: .below, relativeTo: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var acceptsFirstResponder: Bool { false }
+
+    func setChromeGeometry(_ geometry: BrowserChromeGeometry) {
+        guard chromeGeometry != geometry else { return }
+        chromeGeometry = geometry
+        needsLayout = true
+    }
+
+    func placeContentHostAboveChromeShadow(_ host: SumiWebViewContainerView) {
+        chromeShadowView.isHidden = false
+        addSubview(host, positioned: .above, relativeTo: chromeShadowView)
+    }
+
+    func removeHostedSubviews(keeping keepView: NSView?) {
+        for subview in subviews
+            where subview !== keepView && subview !== chromeShadowView
+        {
+            subview.removeFromSuperview()
+        }
+        keepView?.isHidden = false
+        chromeShadowView.isHidden = keepView == nil
+    }
+
+    override func layout() {
+        super.layout()
+        layoutChromeShadow()
+    }
+
+    private func layoutChromeShadow() {
+        let outset = BrowserContentViewportShadowView.shadowOutset
+        chromeShadowView.isHidden = bounds.width <= 0
+            || bounds.height <= 0
+            || hostedContentView == nil
+        chromeShadowView.frame = bounds.insetBy(dx: -outset, dy: -outset)
+        chromeShadowView.viewportRect = NSRect(
+            x: outset,
+            y: outset,
+            width: bounds.width,
+            height: bounds.height
+        )
+        chromeShadowView.cornerRadius = min(
+            max(0, chromeGeometry.contentRadius),
+            max(0, bounds.width / 2),
+            max(0, bounds.height / 2)
+        )
+    }
+
+    private var hostedContentView: SumiWebViewContainerView? {
+        subviews.first { $0 is SumiWebViewContainerView } as? SumiWebViewContainerView
+    }
+}

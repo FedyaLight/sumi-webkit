@@ -208,6 +208,70 @@ final class WebViewCoordinatorTests: XCTestCase {
         XCTAssertNil(webView.superview)
     }
 
+    func testWebViewContainerInstallsCornerCutoutsWithoutMaskingWebViewOrOwningChromeShadow() {
+        let tabId = UUID()
+        let windowId = UUID()
+        let webView = WKWebView(frame: .zero)
+        let host = SumiWebViewContainerView(tabID: tabId, windowID: windowId, webView: webView)
+
+        host.frame = NSRect(x: 0, y: 0, width: 320, height: 240)
+        host.setBrowserContentViewport(
+            geometry: BrowserChromeGeometry(outerRadius: 24, elementSeparation: 0),
+            cutoutBackground: .solid(.windowBackgroundColor)
+        )
+        host.layoutSubtreeIfNeeded()
+
+        let cutouts = host.subviews.compactMap { $0 as? BrowserContentCornerCutoutView }
+        let shadows = host.subviews.compactMap { $0 as? BrowserContentViewportShadowView }
+        XCTAssertEqual(cutouts.count, BrowserContentViewportCorner.allCases.count)
+        XCTAssertEqual(shadows.count, 0)
+        XCTAssertTrue(webView.superview === host)
+        XCTAssertNil(host.layer?.mask)
+        XCTAssertNil(webView.layer?.mask)
+        XCTAssertTrue(cutouts.allSatisfy { $0.hitTest(NSPoint(x: 1, y: 1)) == nil })
+    }
+
+    func testBrowserContentViewportShadowViewUsesLayerShadowAndIgnoresHitTesting() throws {
+        let shadowView = BrowserContentViewportShadowView(
+            frame: NSRect(x: 0, y: 0, width: 124, height: 124)
+        )
+
+        shadowView.viewportRect = NSRect(x: 12, y: 12, width: 100, height: 100)
+        shadowView.cornerRadius = 16
+        shadowView.layoutSubtreeIfNeeded()
+
+        XCTAssertFalse(shadowView.isOpaque)
+        XCTAssertNil(shadowView.hitTest(NSPoint(x: 1, y: 1)))
+        let shadowLayer = try XCTUnwrap(shadowView.layer?.sublayers?.first as? CAShapeLayer)
+        XCTAssertEqual(shadowLayer.shadowOpacity, Float(BrowserContentViewportVisuals.shadowOpacity))
+        XCTAssertEqual(shadowLayer.shadowRadius, BrowserContentViewportVisuals.shadowRadius)
+        XCTAssertEqual(shadowLayer.frame, shadowView.viewportRect)
+        XCTAssertNotNil(shadowLayer.path)
+        XCTAssertNotNil(shadowLayer.shadowPath)
+        XCTAssertEqual(shadowLayer.path, shadowLayer.shadowPath)
+        XCTAssertNil(shadowLayer.backgroundColor)
+        XCTAssertFalse(shadowView.layer?.masksToBounds ?? false)
+    }
+
+    func testWebViewContainerHitTestingRejectsOnlyRoundedCornerCutouts() {
+        let tabId = UUID()
+        let windowId = UUID()
+        let webView = WKWebView(frame: .zero)
+        let host = SumiWebViewContainerView(tabID: tabId, windowID: windowId, webView: webView)
+
+        host.frame = NSRect(x: 0, y: 0, width: 100, height: 100)
+        host.setBrowserContentViewport(
+            geometry: BrowserChromeGeometry(outerRadius: 24, elementSeparation: 0),
+            cutoutBackground: .solid(.windowBackgroundColor)
+        )
+        host.layoutSubtreeIfNeeded()
+
+        XCTAssertNil(host.hitTest(NSPoint(x: 1, y: 1)))
+        XCTAssertNotNil(host.hitTest(NSPoint(x: 24, y: 24)))
+        XCTAssertNotNil(host.hitTest(NSPoint(x: 50, y: 1)))
+        XCTAssertNotNil(host.hitTest(NSPoint(x: 1, y: 50)))
+    }
+
     func testWebViewContainerRemoveBeforeAttachmentDoesNotDetachDisplayedContent() {
         let tabId = UUID()
         let windowId = UUID()
