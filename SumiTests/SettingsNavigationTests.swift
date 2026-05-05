@@ -6,10 +6,51 @@ final class SettingsNavigationTests: XCTestCase {
     func testSidebarOrderingKeepsAboutLastAndHidesUserscripts() {
         XCTAssertEqual(
             SettingsTabs.ordered,
-            [.general, .appearance, .performance, .privacy, .profiles, .shortcuts, .extensions, .advanced, .about]
+            [.general, .startup, .appearance, .performance, .privacy, .profiles, .shortcuts, .extensions, .advanced, .about]
         )
         XCTAssertEqual(SettingsTabs.ordered.last, .about)
         XCTAssertFalse(SettingsTabs.ordered.contains(.userScripts))
+    }
+
+    func testStartupSettingsDefaultAndPersistence() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        XCTAssertEqual(settings.startupMode, .restorePreviousSession)
+        XCTAssertEqual(settings.startupPageURLString, SumiStartupPageURL.defaultURLString)
+
+        settings.startupMode = .specificPage
+        settings.startupPageURLString = "example.com"
+
+        let reloaded = SumiSettingsService(userDefaults: harness.defaults)
+        XCTAssertEqual(reloaded.startupMode, .specificPage)
+        XCTAssertEqual(reloaded.startupPageURLString, "example.com")
+        XCTAssertEqual(reloaded.resolvedStartupPageURL.absoluteString, "https://example.com")
+    }
+
+    func testStartupPageURLNormalizationAndValidation() {
+        XCTAssertEqual(
+            SumiStartupPageURL.normalizedURLString(from: "example.com"),
+            "https://example.com"
+        )
+        XCTAssertEqual(
+            SumiStartupPageURL.normalizedURLString(from: "https://example.com/path"),
+            "https://example.com/path"
+        )
+        XCTAssertEqual(
+            SumiStartupPageURL.normalizedURLString(from: "about:blank"),
+            "about:blank"
+        )
+        XCTAssertEqual(
+            SumiStartupPageURL.normalizedURLString(from: "sumi://settings?pane=startup"),
+            "sumi://settings?pane=startup"
+        )
+        XCTAssertNil(SumiStartupPageURL.normalizedURLString(from: "plain search text"))
+        XCTAssertNil(SumiStartupPageURL.normalizedURLString(from: "ftp://example.com"))
+        XCTAssertNil(SumiStartupPageURL.normalizedURLString(from: "https://"))
+        XCTAssertEqual(SumiStartupPageURL.runtimeURL(from: "plain search text"), SumiSurface.emptyTabURL)
+        XCTAssertNotNil(SumiStartupPageURL.validationMessage(for: "plain search text"))
     }
 
     func testAllVisiblePaneQueriesRoundTripThroughSettingsSurfaceURL() {
@@ -48,6 +89,20 @@ final class SettingsNavigationTests: XCTestCase {
         settings.applyNavigationFromSettingsSurfaceURL(SettingsTabs.about.settingsSurfaceURL)
 
         XCTAssertEqual(settings.currentSettingsTab, .about)
+    }
+
+    func testStartupPaneQueryRoutesThroughSettingsSurfaceURL() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        let url = URL(string: "sumi://settings?pane=startup")!
+
+        settings.applyNavigationFromSettingsSurfaceURL(url)
+
+        XCTAssertEqual(settings.currentSettingsTab, .startup)
+        XCTAssertEqual(SettingsTabs(paneQueryValue: "startup"), .startup)
+        XCTAssertEqual(SettingsTabs.startup.settingsSurfaceURL, url)
     }
 
     func testPrivacySiteSettingsRouteRoundTripsThroughSettingsSurfaceURL() {
@@ -119,6 +174,10 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(
             SettingsPaneDescriptor.filtered(by: "custom delay").map(\.tab),
             [.performance]
+        )
+        XCTAssertEqual(
+            SettingsPaneDescriptor.filtered(by: "previous session").map(\.tab),
+            [.startup]
         )
         XCTAssertTrue(
             SettingsPaneDescriptor.filtered(by: "safari extension").map(\.tab).contains(.extensions)

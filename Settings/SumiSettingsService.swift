@@ -35,6 +35,8 @@ class SumiSettingsService {
     private let customSearchEnginesKey = "settings.customSearchEngines"
     private let memoryModeKey = "settings.memoryMode"
     private let memorySaverCustomDeactivationDelayKey = "settings.memorySaver.customDeactivationDelay"
+    private let startupModeKey = "settings.startup.mode"
+    private let startupPageURLStringKey = "settings.startup.pageURL"
 
     var currentSettingsTab: SettingsTabs = .general
 
@@ -202,6 +204,22 @@ class SumiSettingsService {
         }
     }
 
+    var startupMode: SumiStartupMode {
+        didSet {
+            userDefaults.set(startupMode.rawValue, forKey: startupModeKey)
+        }
+    }
+
+    var startupPageURLString: String {
+        didSet {
+            userDefaults.set(startupPageURLString, forKey: startupPageURLStringKey)
+        }
+    }
+
+    var resolvedStartupPageURL: URL {
+        SumiStartupPageURL.runtimeURL(from: startupPageURLString)
+    }
+
     init(
         userDefaults: UserDefaults = .standard
     ) {
@@ -229,6 +247,8 @@ class SumiSettingsService {
             tabLayoutKey: TabLayout.sidebar.rawValue,
             memoryModeKey: SumiMemoryMode.balanced.rawValue,
             memorySaverCustomDeactivationDelayKey: SumiMemorySaverCustomDelay.defaultDelay,
+            startupModeKey: SumiStartupMode.restorePreviousSession.rawValue,
+            startupPageURLStringKey: SumiStartupPageURL.defaultURLString,
         ])
 
         // Initialize properties from UserDefaults
@@ -296,6 +316,15 @@ class SumiSettingsService {
         if storedCustomDelay != resolvedCustomDelay {
             userDefaults.set(resolvedCustomDelay, forKey: memorySaverCustomDeactivationDelayKey)
         }
+        let storedStartupMode = userDefaults.string(forKey: startupModeKey)
+        let resolvedStartupMode = SumiStartupMode.persistedValue(storedStartupMode)
+        self.startupMode = resolvedStartupMode
+        if storedStartupMode != resolvedStartupMode.rawValue {
+            userDefaults.set(resolvedStartupMode.rawValue, forKey: startupModeKey)
+        }
+        self.startupPageURLString =
+            userDefaults.string(forKey: startupPageURLStringKey)
+            ?? SumiStartupPageURL.defaultURLString
 
         if let data = userDefaults.data(forKey: siteSearchEntriesKey),
            let decoded = try? JSONDecoder().decode([SiteSearchEntry].self, from: data) {
@@ -395,6 +424,117 @@ class SumiSettingsService {
         if !didFinishOnboarding {
             didFinishOnboarding = true
         }
+    }
+}
+
+enum SumiStartupMode: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
+    case nothing
+    case restorePreviousSession
+    case specificPage
+
+    var id: String { rawValue }
+
+    static func persistedValue(_ rawValue: String?) -> SumiStartupMode {
+        switch rawValue {
+        case Self.nothing.rawValue:
+            return .nothing
+        case Self.restorePreviousSession.rawValue:
+            return .restorePreviousSession
+        case Self.specificPage.rawValue:
+            return .specificPage
+        default:
+            return .restorePreviousSession
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .nothing:
+            return "Nothing"
+        case .restorePreviousSession:
+            return "Restore previous session"
+        case .specificPage:
+            return "Open a specific page"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .nothing:
+            return "Start with a clean empty window. Your previous session stays available from History."
+        case .restorePreviousSession:
+            return "Restore regular tabs, windows, and active pinned launcher instances."
+        case .specificPage:
+            return "Open one configured page in a regular tab."
+        }
+    }
+}
+
+enum SumiStartupPageURL {
+    static let defaultURLString = SumiSurface.emptyTabURL.absoluteString
+    static let allowedSchemes: Set<String> = ["http", "https", "file", "about", "sumi"]
+
+    static func normalizedURLString(from input: String) -> String? {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let url = URL(string: trimmed),
+           let scheme = url.scheme?.lowercased() {
+            guard allowedSchemes.contains(scheme) else { return nil }
+            if ["http", "https"].contains(scheme) {
+                guard hasHTTPHost(url) else {
+                    return nil
+                }
+            }
+            return trimmed
+        }
+
+        guard isBareDomain(trimmed) else { return nil }
+        let normalized = "https://\(trimmed)"
+        guard let url = URL(string: normalized),
+              hasHTTPHost(url)
+        else {
+            return nil
+        }
+        return normalized
+    }
+
+    static func validatedURL(from input: String) -> URL? {
+        normalizedURLString(from: input).flatMap(URL.init(string:))
+    }
+
+    static func runtimeURL(from input: String) -> URL {
+        validatedURL(from: input) ?? SumiSurface.emptyTabURL
+    }
+
+    static func validationMessage(for input: String) -> String? {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return "Sumi will open a blank page until you enter a URL."
+        }
+        return normalizedURLString(from: trimmed) == nil
+            ? "Enter a URL such as https://example.com or example.com."
+            : nil
+    }
+
+    private static func isBareDomain(_ value: String) -> Bool {
+        guard !value.contains(where: \.isWhitespace),
+              value.contains("."),
+              !value.hasPrefix("."),
+              !value.hasSuffix(".")
+        else {
+            return false
+        }
+
+        let labels = value.split(separator: ".", omittingEmptySubsequences: false)
+        guard labels.count >= 2, labels.allSatisfy({ !$0.isEmpty }) else {
+            return false
+        }
+        return labels.last?.contains(where: { $0.isLetter || $0.isNumber }) == true
+    }
+
+    private static func hasHTTPHost(_ url: URL) -> Bool {
+        url.host(percentEncoded: false)?.isEmpty == false || url.host?.isEmpty == false
     }
 }
 

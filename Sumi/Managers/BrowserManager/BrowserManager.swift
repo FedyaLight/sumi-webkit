@@ -213,6 +213,7 @@ class BrowserManager: ObservableObject {
     weak var sumiSettings: SumiSettingsService? {
         didSet {
             tabSuspensionService.rebuildProactiveTimers(reason: "settings-attached")
+            reconcileStartupSessionIfPossible()
         }
     }
     let sumiProfileRouter = SumiProfileRouter()
@@ -239,6 +240,7 @@ class BrowserManager: ObservableObject {
     lazy var windowSessionService = WindowSessionService(
         lastWindowSessionKey: Self.lastWindowSessionKey
     )
+    let startupSessionCoordinator = SumiStartupSessionCoordinator()
 
     var externalMiniWindowManager = ExternalMiniWindowManager()
     @Published var glanceManager = GlanceManager()
@@ -272,13 +274,15 @@ class BrowserManager: ObservableObject {
             Task { @MainActor [weak self] in
                 await self?.reconcilePermissionSidebarPins(reason: "window-registry-updated")
             }
+            reconcileStartupSessionIfPossible()
         }
     }
 
     private var savedSidebarWidth: CGFloat = BrowserWindowState.sidebarDefaultWidth
     private var savedSidebarVisibility: Bool = true
     var isSwitchingProfile: Bool = false
-    let startupLastSessionWindowSnapshots: [LastSessionWindowSnapshot]
+    var startupLastSessionWindowSnapshots: [LastSessionWindowSnapshot]
+    var startupLastSessionTabSnapshot: TabSnapshotRepository.Snapshot?
     var didConsumeStartupLastSessionRestoreOffer = false
     private var structuralChangeCancellable: AnyCancellable?
     private var tabManagerLoadObserverToken: NSObjectProtocol?
@@ -401,6 +405,7 @@ class BrowserManager: ObservableObject {
         self.recentlyClosedManager = RecentlyClosedManager()
         self.lastSessionWindowsStore = LastSessionWindowsStore()
         self.startupLastSessionWindowSnapshots = self.lastSessionWindowsStore.snapshots
+        self.startupLastSessionTabSnapshot = self.lastSessionWindowsStore.tabSnapshot
         self.compositorManager = TabCompositorManager()
         self.tabSuspensionService = TabSuspensionService(
             memoryMonitor: SumiMemoryPressureMonitor()
@@ -540,6 +545,7 @@ class BrowserManager: ObservableObject {
     /// Called when TabManager finishes loading initial data from persistence
     private func handleTabManagerDataLoaded() {
         windowSessionService.handleTabManagerDataLoaded(delegate: self)
+        reconcileStartupSessionIfPossible()
     }
 
     // MARK: - Profile Switching
@@ -1183,6 +1189,7 @@ class BrowserManager: ObservableObject {
     func setupWindowState(_ windowState: BrowserWindowState) {
         windowSessionService.setupWindowState(windowState, delegate: self)
         extensionsModule.notifyWindowOpenedIfLoaded(windowState)
+        reconcileStartupSessionIfPossible()
 
         if let window = NSApplication.shared.windows.first(where: {
             $0.contentView?.subviews.contains(where: {

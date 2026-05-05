@@ -136,14 +136,9 @@ final class WindowSessionService {
             if let shortcutPinId = windowState.currentShortcutPinId,
                let pin = delegate.tabManager.shortcutPin(by: shortcutPinId)
             {
-                let liveTab =
-                    delegate.tabManager.activeShortcutTab(for: windowState.id)
-                    ?? delegate.tabManager.activateShortcutPin(
-                        pin,
-                        in: windowState.id,
-                        currentSpaceId: windowState.currentSpaceId
-                    )
-                windowState.currentTabId = liveTab.id
+                materializeShortcutSelection(pin, in: windowState, delegate: delegate)
+            } else if materializeRememberedSpaceShortcut(in: windowState, delegate: delegate) {
+                // Restored from the per-space launcher selection snapshot.
             } else if let currentTabId = windowState.currentTabId,
                       delegate.tabManager.allTabs().contains(where: { $0.id == currentTabId }) == false
             {
@@ -198,6 +193,15 @@ final class WindowSessionService {
             windowState.currentTabId = delegate.tabManager.currentTab?.id
         }
 
+        if restored && !delegate.tabManager.hasLoadedInitialData {
+            syncWorkspaceThemeAfterSessionRestore(
+                windowState,
+                delegate: delegate,
+                source: "setupWindowState.preInitialTabManagerLoad"
+            )
+            return
+        }
+
         finalizeWindowStateRestore(windowState, delegate: delegate, source: "setupWindowState")
     }
 
@@ -216,6 +220,7 @@ final class WindowSessionService {
         delegate: WindowSessionServiceDelegate,
         source: String
     ) {
+        materializeShortcutSelectionIfNeeded(in: windowState, delegate: delegate)
 
         if !windowState.isShowingEmptyState,
            !delegate.hasValidCurrentSelection(in: windowState)
@@ -290,6 +295,60 @@ final class WindowSessionService {
             category: "WindowSessionService"
         )
         persistWindowSession(for: windowState, delegate: delegate)
+    }
+
+    @discardableResult
+    private func materializeShortcutSelectionIfNeeded(
+        in windowState: BrowserWindowState,
+        delegate: WindowSessionServiceDelegate
+    ) -> Bool {
+        if let shortcutPinId = windowState.currentShortcutPinId,
+           let pin = delegate.tabManager.shortcutPin(by: shortcutPinId)
+        {
+            materializeShortcutSelection(pin, in: windowState, delegate: delegate)
+            return true
+        }
+
+        return materializeRememberedSpaceShortcut(in: windowState, delegate: delegate)
+    }
+
+    @discardableResult
+    private func materializeRememberedSpaceShortcut(
+        in windowState: BrowserWindowState,
+        delegate: WindowSessionServiceDelegate
+    ) -> Bool {
+        guard let currentSpaceId = windowState.currentSpaceId,
+              let shortcutPinId = windowState.selectedShortcutPinForSpace[currentSpaceId],
+              let pin = delegate.tabManager.shortcutPin(by: shortcutPinId)
+        else {
+            return false
+        }
+
+        materializeShortcutSelection(pin, in: windowState, delegate: delegate)
+        return true
+    }
+
+    private func materializeShortcutSelection(
+        _ pin: ShortcutPin,
+        in windowState: BrowserWindowState,
+        delegate: WindowSessionServiceDelegate
+    ) {
+        let liveTab = delegate.tabManager.shortcutLiveTab(for: pin.id, in: windowState.id)
+            ?? delegate.tabManager.activateShortcutPin(
+                pin,
+                in: windowState.id,
+                currentSpaceId: windowState.currentSpaceId
+            )
+
+        windowState.currentTabId = liveTab.id
+        windowState.currentShortcutPinId = pin.id
+        windowState.currentShortcutPinRole = pin.role
+        windowState.isShowingEmptyState = false
+
+        if let spaceId = pin.spaceId {
+            windowState.currentSpaceId = spaceId
+            windowState.selectedShortcutPinForSpace[spaceId] = pin.id
+        }
     }
 
     private func syncWorkspaceThemeAfterSessionRestore(

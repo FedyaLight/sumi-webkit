@@ -1,0 +1,141 @@
+//
+//  SumiStartupSessionCoordinator.swift
+//  Sumi
+//
+
+import Foundation
+
+@MainActor
+final class SumiStartupSessionCoordinator {
+    private var didApplyStartupPolicy = false
+    private var isApplyingStartupPolicy = false
+
+    func applyIfReady(browserManager: BrowserManager) {
+        guard !didApplyStartupPolicy,
+              !isApplyingStartupPolicy,
+              browserManager.tabManager.hasLoadedInitialData,
+              let settings = browserManager.sumiSettings,
+              browserManager.firstRegularWindowForStartupPolicy != nil
+        else {
+            return
+        }
+
+        isApplyingStartupPolicy = true
+        defer { isApplyingStartupPolicy = false }
+
+        browserManager.applyStartupPolicy(settings.startupMode)
+        didApplyStartupPolicy = true
+    }
+}
+
+@MainActor
+extension BrowserManager {
+    var firstRegularWindowForStartupPolicy: BrowserWindowState? {
+        windowRegistry?.allWindows
+            .sorted { $0.id.uuidString < $1.id.uuidString }
+            .first { !$0.isIncognito }
+    }
+
+    func reconcileStartupSessionIfPossible() {
+        startupSessionCoordinator.applyIfReady(browserManager: self)
+    }
+
+    func applyStartupPolicy(_ mode: SumiStartupMode) {
+        switch mode {
+        case .restorePreviousSession:
+            restoreAdditionalStartupWindowsIfNeeded()
+        case .nothing:
+            applyCleanStartupPolicy(opening: nil)
+        case .specificPage:
+            applyCleanStartupPolicy(opening: sumiSettings?.resolvedStartupPageURL ?? SumiSurface.emptyTabURL)
+        }
+    }
+
+    private func applyCleanStartupPolicy(opening startupURL: URL?) {
+        archiveLoadedStartupSessionForManualRestore()
+
+        tabManager.resetRegularTabsAndShortcutLiveInstancesForStartup()
+
+        guard let windowState = firstRegularWindowForStartupPolicy else { return }
+        resetWindowStatesForCleanStartup(selectedWindow: windowState)
+
+        if let startupURL {
+            let targetSpace = windowState.currentSpaceId.flatMap { space(for: $0) }
+                ?? tabManager.currentSpace
+                ?? tabManager.spaces.first
+            let tab = tabManager.createNewTab(
+                url: startupURL.absoluteString,
+                in: targetSpace,
+                activate: false
+            )
+            selectTab(tab, in: windowState, loadPolicy: .deferred)
+        } else {
+            showEmptyState(in: windowState)
+        }
+
+        Task { [weak self] in
+            _ = await self?.tabManager.persistFullReconcileAwaitingResult(
+                reason: "startup clean policy"
+            )
+        }
+    }
+
+    private func archiveLoadedStartupSessionForManualRestore() {
+        let archivedWindowSnapshots = startupLastSessionWindowSnapshots.isEmpty
+            ? currentRegularWindowSnapshots(excludingWindowID: nil)
+            : startupLastSessionWindowSnapshots
+        let tabSnapshot = tabManager._buildSnapshot()
+        guard !archivedWindowSnapshots.isEmpty || !tabSnapshot.tabs.isEmpty else {
+            return
+        }
+        startupLastSessionWindowSnapshots = archivedWindowSnapshots
+        startupLastSessionTabSnapshot = tabSnapshot
+        lastSessionWindowsStore.updateSnapshots(
+            archivedWindowSnapshots,
+            tabSnapshot: tabSnapshot
+        )
+        didConsumeStartupLastSessionRestoreOffer = false
+    }
+
+    private func resetWindowStatesForCleanStartup(selectedWindow: BrowserWindowState) {
+        for windowState in windowRegistry?.allWindows ?? [] where !windowState.isIncognito {
+            let fallbackSpaceId = windowState.currentSpaceId
+                ?? tabManager.currentSpace?.id
+                ?? tabManager.spaces.first?.id
+
+            windowState.currentTabId = nil
+            windowState.currentShortcutPinId = nil
+            windowState.currentShortcutPinRole = nil
+            windowState.activeTabForSpace.removeAll()
+            windowState.recentRegularTabIdsBySpace.removeAll()
+            windowState.selectedShortcutPinForSpace.removeAll()
+            windowState.isShowingEmptyState = windowState.id == selectedWindow.id
+            windowState.commandPalettePresentationReason =
+                windowState.id == selectedWindow.id ? .emptySpace : .none
+            windowState.currentSpaceId = fallbackSpaceId
+            windowState.currentProfileId = fallbackSpaceId.flatMap { space(for: $0)?.profileId }
+                ?? currentProfile?.id
+            splitManager.restoreSession(nil, for: windowState.id)
+            windowState.refreshCompositor()
+        }
+    }
+
+    private func restoreAdditionalStartupWindowsIfNeeded() {
+        guard !startupLastSessionWindowSnapshots.isEmpty else { return }
+
+        didConsumeStartupLastSessionRestoreOffer = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let existingSessions = Set(
+                self.currentRegularWindowSnapshots(excludingWindowID: nil).map(\.session)
+            )
+            let snapshotsToRestore = self.startupLastSessionWindowSnapshots.filter {
+                !existingSessions.contains($0.session)
+            }
+            for snapshot in snapshotsToRestore {
+                await self.reopenWindow(from: snapshot.session)
+            }
+            self.refreshLastSessionWindowsStore(excludingWindowID: nil)
+        }
+    }
+}
