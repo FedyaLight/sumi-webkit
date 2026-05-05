@@ -72,29 +72,8 @@ enum SumiWebsiteDataDomain {
     }
 }
 
-struct SumiCookieIdentifier: Hashable, Sendable {
-    let name: String
-    let domain: String
-    let path: String
-
-    init(name: String, domain: String, path: String) {
-        self.name = name
-        self.domain = domain
-        self.path = path
-    }
-
-    init(cookie: HTTPCookie) {
-        self.init(name: cookie.name, domain: cookie.domain, path: cookie.path)
-    }
-
-    func matches(_ cookie: HTTPCookie) -> Bool {
-        cookie.name == name && cookie.domain == domain && cookie.path == path
-    }
-}
-
 enum SumiCookieRemovalSelection: Hashable, Sendable {
     case all
-    case exact(SumiCookieIdentifier)
     case exactDomains(Set<String>)
     case domains(Set<String>)
 
@@ -102,8 +81,6 @@ enum SumiCookieRemovalSelection: Hashable, Sendable {
         switch self {
         case .all:
             return true
-        case .exact(let identifier):
-            return identifier.matches(cookie)
         case .exactDomains(let domains):
             return domains.contains { cookie.belongsExactlyTo($0) }
         case .domains(let domains):
@@ -589,6 +566,16 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
     private struct CleanupKey: Hashable {
         let storeIdentifier: String
         let operation: CleanupOperation
+
+        static func == (lhs: CleanupKey, rhs: CleanupKey) -> Bool {
+            lhs.storeIdentifier == rhs.storeIdentifier
+                && lhs.operation == rhs.operation
+        }
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(storeIdentifier)
+            hasher.combine(operation)
+        }
     }
 
     private enum CleanupOperation: Hashable {
@@ -649,14 +636,6 @@ extension WKWebsiteDataStore {
         ]
     }
 
-    static var sumiPersonalDataCacheTypes: Set<String> {
-        [
-            WKWebsiteDataTypeLocalStorage,
-            WKWebsiteDataTypeSessionStorage,
-            WKWebsiteDataTypeIndexedDBDatabases,
-            WKWebsiteDataTypeWebSQLDatabases
-        ]
-    }
 }
 
 extension HTTPCookie {

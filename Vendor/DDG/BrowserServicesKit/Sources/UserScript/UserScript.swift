@@ -42,7 +42,6 @@ extension UserScript {
         return false
     }
 
-    @available(macOS 11.0, iOS 14.0, *)
     @MainActor
     static func getContentWorld(_ requiresRunInPageContentWorld: Bool) -> WKContentWorld {
         if requiresRunInPageContentWorld {
@@ -51,7 +50,6 @@ extension UserScript {
         return .defaultClient
     }
 
-    @available(macOS 11.0, iOS 14.0, *)
     @MainActor
     public func getContentWorld() -> WKContentWorld {
         return Self.getContentWorld(requiresRunInPageContentWorld)
@@ -87,15 +85,11 @@ extension UserScript {
                                              injectionTime: WKUserScriptInjectionTime,
                                              forMainFrameOnly: Bool,
                                              requiresRunInPageContentWorld: Bool = false) -> WKUserScriptBox {
-        if #available(macOS 11.0, iOS 14.0, *) {
-            let contentWorld = getContentWorld(requiresRunInPageContentWorld)
-            return .init(wkUserScript: WKUserScript(source: source,
-                                                    injectionTime: injectionTime,
-                                                    forMainFrameOnly: forMainFrameOnly,
-                                                    in: contentWorld))
-        } else {
-            return .init(wkUserScript: WKUserScript(source: source, injectionTime: injectionTime, forMainFrameOnly: forMainFrameOnly))
-        }
+        let contentWorld = getContentWorld(requiresRunInPageContentWorld)
+        return WKUserScriptBox(wkUserScript: WKUserScript(source: source,
+                                                          injectionTime: injectionTime,
+                                                          forMainFrameOnly: forMainFrameOnly,
+                                                          in: contentWorld))
     }
 
     public func makeWKUserScript() async -> WKUserScriptBox {
@@ -106,8 +100,4 @@ extension UserScript {
                                            requiresRunInPageContentWorld: requiresRunInPageContentWorld)
     }
 
-}
-
-public enum UserScriptError: Error {
-    case failedToLoadJS(jsFile: String, error: Error)
 }

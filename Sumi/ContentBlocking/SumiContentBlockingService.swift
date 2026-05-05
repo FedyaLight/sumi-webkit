@@ -656,26 +656,4 @@ struct SumiContentBlockingPrivacyConfiguration: PrivacyConfiguration {
         _ = forDomain
     }
 
-    func stateFor(
-        subfeatureID: SubfeatureID,
-        parentFeatureID: ParentFeatureID,
-        versionProvider: AppVersionProvider,
-        randomizer: (Range<Double>) -> Double
-    ) -> PrivacyConfigurationFeatureState {
-        _ = subfeatureID
-        _ = parentFeatureID
-        _ = randomizer
-        return .disabled(.featureMissing)
-    }
-
-    func cohorts(for subfeature: any PrivacySubfeature) -> [PrivacyConfigurationData.Cohort]? {
-        _ = subfeature
-        return nil
-    }
-
-    func cohorts(subfeatureID: SubfeatureID, parentFeatureID: ParentFeatureID) -> [PrivacyConfigurationData.Cohort]? {
-        _ = subfeatureID
-        _ = parentFeatureID
-        return nil
-    }
 }

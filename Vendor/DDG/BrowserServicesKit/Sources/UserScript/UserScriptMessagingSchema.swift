@@ -42,13 +42,13 @@ public struct RequestMessage {
 /// Sent in response to a `RequestMessage`
 ///
 /// https://duckduckgo.github.io/content-scope-scripts/classes/Messaging_Schema.MessageResponse.html
-public struct MessageResponse {
-    public let context: String
-    public let featureName: String
-    public let id: String
-    public let result: Encodable
+struct MessageResponse {
+    let context: String
+    let featureName: String
+    let id: String
+    let result: Encodable
 
-    public static func toJSON(request: RequestMessage, result: Encodable) -> String? {
+    static func toJSON(request: RequestMessage, result: Encodable) -> String? {
 
         // construct a 'MessageResponse' -> this is done to verify the types against the schema
         let res = MessageResponse(
@@ -73,20 +73,20 @@ public struct MessageResponse {
 /// Like a MessageResponse, except it has a 'MessageError' instead of a result
 ///
 /// https://duckduckgo.github.io/content-scope-scripts/classes/Messaging_Schema.MessageResponse.html
-public struct MessageErrorResponse: Encodable {
-    public let context: String
-    public let featureName: String
-    public let id: String
-    public let error: MessageError
+struct MessageErrorResponse: Encodable {
+    let context: String
+    let featureName: String
+    let id: String
+    let error: MessageError
 
-    public static func forRequest(request: RequestMessage, error: ResponseError) -> Self {
+    static func forRequest(request: RequestMessage, error: ResponseError) -> Self {
         MessageErrorResponse(context: request.context,
                              featureName: request.featureName,
                              id: request.id,
                              error: MessageError(message: error.localizedDescription))
     }
 
-    public func toJSON() -> String {
+    func toJSON() -> String {
         // swiftlint:disable:next force_try
         let jsonData = try! JSONEncoder().encode(self)
         let jsonString = String(data: jsonData, encoding: .utf8)!
@@ -94,7 +94,7 @@ public struct MessageErrorResponse: Encodable {
     }
 }
 
-public enum ResponseError: Error {
+enum ResponseError: Error {
     case missingEncodableResult
     case jsonEncodingFailed
     case otherError(Error)
@@ -114,8 +114,8 @@ extension ResponseError: LocalizedError {
 }
 
 /// https://duckduckgo.github.io/content-scope-scripts/classes/Messaging_Schema.MessageError.html
-public struct MessageError: Encodable {
-    public let message: String
+struct MessageError: Encodable {
+    let message: String
 }
 
 /// https://duckduckgo.github.io/content-scope-scripts/classes/Messaging.WebkitMessagingConfig.html

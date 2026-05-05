@@ -131,15 +131,13 @@ final class SumiTrackingProtectionModule {
         guard isEnabled else {
             return SumiTrackingProtectionEffectivePolicy(
                 host: normalizedSiteHost(for: url),
-                isEnabled: false,
-                source: .moduleDisabled
+                isEnabled: false
             )
         }
         return settingsIfEnabled()?.resolve(for: url)
             ?? SumiTrackingProtectionEffectivePolicy(
                 host: normalizedSiteHost(for: url),
-                isEnabled: false,
-                source: .moduleDisabled
+                isEnabled: false
             )
     }
 

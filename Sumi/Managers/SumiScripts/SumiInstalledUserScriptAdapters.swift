@@ -158,17 +158,12 @@ final class SumiInstalledUserStyleAdapter: NSObject, UserScript {
 private final class SumiGMSubfeature: NSObject, Subfeature {
     let featureName = SumiInstalledUserScriptFeature.gm
     let messageOriginPolicy: MessageOriginPolicy = .all
-    weak var broker: UserScriptMessageBroker?
 
     private let bridge: UserScriptGMBridge
 
     init(bridge: UserScriptGMBridge) {
         self.bridge = bridge
         super.init()
-    }
-
-    func with(broker: UserScriptMessageBroker) {
-        self.broker = broker
     }
 
     func handler(forMethodNamed methodName: String) -> Subfeature.Handler? {

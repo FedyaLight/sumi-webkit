@@ -74,16 +74,8 @@ final class HistoryPageViewModel: ObservableObject {
         sections.contains { !$0.items.isEmpty }
     }
 
-    var canClearHistory: Bool {
-        historyManager.canClearHistory
-    }
-
     var selectionCount: Int {
         selectedItemIDs.count
-    }
-
-    var visibleItemCount: Int {
-        visibleItems.count
     }
 
     var hasSelection: Bool {
@@ -94,13 +86,6 @@ final class HistoryPageViewModel: ObservableObject {
         guard !visibleItems.isEmpty else { return false }
         let visibleIDs = Set(visibleItems.map(\.id))
         return visibleIDs.isSubset(of: selectedItemIDs)
-    }
-
-    var canDeleteVisibleResults: Bool {
-        guard hasVisibleItems else { return false }
-        if domainFilter != nil { return true }
-        if trimmedSearchText.isEmpty == false { return true }
-        return selectedRange != .all && selectedRange != .allSites
     }
 
     var activeFilterDescription: String? {
@@ -205,16 +190,6 @@ final class HistoryPageViewModel: ObservableObject {
         Task { [weak self] in
             await self?.deleteItem(item)
         }
-    }
-
-    func deleteVisibleResults() {
-        Task { [weak self] in
-            await self?.deleteVisibleResultsNow()
-        }
-    }
-
-    func clearAllHistory() {
-        browserManager?.clearAllHistoryFromMenu()
     }
 
     func showBrowsingDataDialog() {
@@ -441,38 +416,6 @@ final class HistoryPageViewModel: ObservableObject {
             domains: selectedDomains
         )
         clearSelection()
-    }
-
-    private func deleteVisibleResultsNow() async {
-        guard canDeleteVisibleResults,
-              confirmDeletion(
-                "Delete History Results",
-                "This will permanently remove the visible history entries."
-              )
-        else { return }
-
-        if let deleteQuery = deleteQueryForVisibleResults() {
-            await historyManager.delete(query: deleteQuery)
-        } else if selectedRange == .allSites, domainFilter == nil {
-            let domains = Set(sections.flatMap(\.items).map { $0.siteDomain ?? $0.domain })
-            await historyManager.delete(query: .domainFilter(domains))
-        } else {
-            let visitIDs = sections.flatMap(\.items).compactMap(\.visitID)
-            await historyManager.delete(query: .visits(visitIDs))
-        }
-    }
-
-    private func deleteQueryForVisibleResults() -> HistoryQuery? {
-        if let domainFilter, trimmedSearchText.isEmpty {
-            return .domainFilter([domainFilter])
-        }
-        if domainFilter == nil, trimmedSearchText.isEmpty == false {
-            return .searchTerm(trimmedSearchText)
-        }
-        if domainFilter == nil, selectedRange != .all, selectedRange != .allSites {
-            return .rangeFilter(selectedRange)
-        }
-        return nil
     }
 
     private func selectedVisibleItems() -> [HistoryListItem] {

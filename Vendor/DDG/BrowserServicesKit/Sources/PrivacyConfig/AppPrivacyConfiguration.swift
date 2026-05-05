@@ -19,6 +19,9 @@
 import Foundation
 import Common
 
+private typealias SubfeatureID = String
+private typealias ParentFeatureID = String
+
 public struct AppPrivacyConfiguration: PrivacyConfiguration {
 
     private enum Constants {
@@ -339,25 +342,6 @@ public struct AppPrivacyConfiguration: PrivacyConfiguration {
 
     public func userDisabledProtection(forDomain domain: String) {
         locallyUnprotected.disableProtection(forDomain: domain.punycodeEncodedHostname.lowercased())
-    }
-}
-
-extension AppPrivacyConfiguration {
-
-    public func stateFor(subfeatureID: SubfeatureID, parentFeatureID: ParentFeatureID, versionProvider: AppVersionProvider,
-                         randomizer: (Range<Double>) -> Double) -> PrivacyConfigurationFeatureState {
-        guard let parentFeature = PrivacyFeature(rawValue: parentFeatureID) else { return .disabled(.featureMissing) }
-        guard let subfeatureData = subfeatures(for: parentFeature)[subfeatureID] else { return .disabled(.featureMissing) }
-        return stateFor(subfeatureID: subfeatureID, subfeatureData: subfeatureData, parentFeature: parentFeature, versionProvider: versionProvider, randomizer: randomizer)
-    }
-
-    public func cohorts(for subfeature: any PrivacySubfeature) -> [PrivacyConfigurationData.Cohort]? {
-        subfeatures(for: subfeature.parent)[subfeature.rawValue]?.cohorts
-    }
-
-    public func cohorts(subfeatureID: SubfeatureID, parentFeatureID: ParentFeatureID) -> [PrivacyConfigurationData.Cohort]? {
-        guard let parentFeature = PrivacyFeature(rawValue: parentFeatureID) else { return nil }
-        return subfeatures(for: parentFeature)[subfeatureID]?.cohorts
     }
 }
 
