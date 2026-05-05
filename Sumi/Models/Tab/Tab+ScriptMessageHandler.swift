@@ -152,7 +152,7 @@ private final class SumiLinkInteractionUserScript: NSObject, UserScript, UserScr
 
     init(tab: Tab) {
         self.context = "sumiLinkInteraction_\(tab.id.uuidString)"
-        self.broker = UserScriptMessageBroker(context: context, requiresRunInPageContentWorld: true)
+        self.broker = UserScriptMessageBroker(context: context)
         self.messageNames = [context]
         self.source = Self.makeSource(context: context)
         super.init()
@@ -302,7 +302,7 @@ private final class SumiTabSuspensionUserScript: NSObject, UserScript, UserScrip
 
     init(tab: Tab) {
         self.context = "sumiTabSuspension_\(tab.id.uuidString)"
-        self.broker = UserScriptMessageBroker(context: context, requiresRunInPageContentWorld: true)
+        self.broker = UserScriptMessageBroker(context: context)
         self.messageNames = [context]
         self.source = Self.makeSource(context: context)
         super.init()
@@ -410,7 +410,7 @@ private final class SumiIdentityUserScript: NSObject, UserScript, UserScriptMess
 
     init(tab: Tab) {
         self.context = "sumiIdentity_\(tab.id.uuidString)"
-        self.broker = UserScriptMessageBroker(context: context, requiresRunInPageContentWorld: true)
+        self.broker = UserScriptMessageBroker(context: context)
         self.messageNames = [context]
         self.source = Self.makeSource(context: context)
         super.init()

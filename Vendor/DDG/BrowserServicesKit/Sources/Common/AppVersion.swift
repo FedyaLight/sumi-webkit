@@ -18,13 +18,7 @@
 
 import Foundation
 
-public protocol OSVersionProviding {
-
-    var osVersionMajorMinorPatch: String { get }
-
-}
-
-public struct AppVersion: OSVersionProviding {
+public struct AppVersion {
 
     public static let shared = AppVersion()
 
@@ -34,60 +28,8 @@ public struct AppVersion: OSVersionProviding {
         self.bundle = bundle
     }
 
-    public var name: String {
-        return bundle.object(forInfoDictionaryKey: Bundle.Key.name) as? String ?? ""
-    }
-
-    public var productName: String {
-        return bundle.object(forInfoDictionaryKey: Bundle.Key.executableName) as? String ?? ""
-    }
-
-    public var identifier: String {
-        return bundle.object(forInfoDictionaryKey: Bundle.Key.identifier) as? String ?? ""
-    }
-
-    public var majorVersionNumber: String {
-        return String(versionNumber.split(separator: ".").first ?? "")
-    }
-
     public var versionNumber: String {
         return bundle.object(forInfoDictionaryKey: Bundle.Key.versionNumber) as? String ?? ""
-    }
-
-    public var buildNumber: String {
-        return bundle.object(forInfoDictionaryKey: Bundle.Key.buildNumber) as? String ?? ""
-    }
-
-    public var alphaBuildSuffix: String {
-        return bundle.object(forInfoDictionaryKey: Bundle.Key.alphaBuildSuffix) as? String ?? ""
-    }
-
-    public var commitSHA: String {
-        return bundle.object(forInfoDictionaryKey: Bundle.Key.commitSHA) as? String ?? ""
-    }
-
-    public var commitSHAShort: String {
-        return String(commitSHA.prefix(7))
-    }
-
-    public var versionAndBuildNumber: String {
-        let baseVersion = "\(versionNumber).\(buildNumber)"
-        let suffix = alphaBuildSuffix
-        return suffix.isEmpty ? baseVersion : "\(baseVersion)-\(suffix)"
-    }
-
-    public var localized: String {
-        return "\(name) \(versionAndBuildNumber)"
-    }
-
-    public var osVersionMajorMinorPatch: String {
-        let os = ProcessInfo().operatingSystemVersion
-        return "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"
-    }
-
-    public var osVersionMajorMinor: String {
-        let os = ProcessInfo().operatingSystemVersion
-        return "\(os.majorVersion).\(os.minorVersion)"
     }
 
     public enum AppRunType: String {
@@ -98,56 +40,6 @@ public struct AppVersion: OSVersionProviding {
         case uiTestsOnboarding
         case uiTestsStartupPerformance
         case xcPreviews
-
-        /// Whether the Sparkle Updater should be allowed or not.
-        public var allowsUpdates: Bool {
-            switch self {
-            case .normal, .integrationTests, .unitTests, .uiTestsOnboarding, .xcPreviews:
-                return true
-            case .uiTests, .uiTestsStartupPerformance:
-                return false
-            }
-        }
-
-        /// Whether Onboarding is allowed or not.
-        public var allowsOnboarding: Bool {
-            switch self {
-            case .normal, .integrationTests, .unitTests, .uiTestsOnboarding, .xcPreviews:
-                return true
-            case .uiTests, .uiTestsStartupPerformance:
-                return false
-            }
-        }
-
-        /// Whether the app should open a fallback window on launch when no window was restored or opened by a URL event.
-        public var opensWindowOnStartupIfNeeded: Bool {
-            switch self {
-            case .normal, .uiTestsStartupPerformance:
-                return true
-            case .integrationTests, .unitTests, .uiTests, .uiTestsOnboarding, .xcPreviews:
-                return false
-            }
-        }
-
-        /// Defines if app run type requires loading full environment, i.e. databases, saved state, keychain etc.
-        public var requiresEnvironment: Bool {
-            switch self {
-            case .normal, .integrationTests, .uiTests, .uiTestsOnboarding, .uiTestsStartupPerformance:
-                return true
-            case .unitTests, .xcPreviews:
-                return false
-            }
-        }
-
-        /// Whether the app should attempt to restore windows and tabs from the previous session on launch.
-        public var stateRestorationAllowed: Bool {
-            switch self {
-            case .normal, .uiTests, .uiTestsStartupPerformance:
-                return true
-            case .integrationTests, .unitTests, .uiTestsOnboarding, .xcPreviews:
-                return false
-            }
-        }
     }
 
     public static let runType: AppRunType = {
@@ -173,17 +65,4 @@ public struct AppVersion: OSVersionProviding {
             return .normal
         }
     }()
-
-    public var runType: AppRunType { Self.runType }
-
-    /// Returns true if this is an App Store build.
-    /// Returns false for DMG/Sparkle builds.
-    ///
-    /// This check works across all targets including VPN agents and system extensions
-    /// by examining the bundle identifier prefix.
-    public static var isAppStoreBuild: Bool = {
-        guard let bundleId = Bundle.main.bundleIdentifier else { return false }
-        return bundleId.hasPrefix("com.duckduckgo.mobile.ios")
-    }()
-
 }

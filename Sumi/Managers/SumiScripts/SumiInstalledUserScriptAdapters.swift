@@ -62,10 +62,7 @@ final class SumiInstalledUserScriptAdapter: NSObject, UserScript, UserScriptMess
             bridge = nil
         }
 
-        self.broker = UserScriptMessageBroker(
-            context: context,
-            requiresRunInPageContentWorld: requiresPageWorld
-        )
+        self.broker = UserScriptMessageBroker(context: context)
         self.bridge = bridge
         self.messageNames = bridge == nil ? [] : [context]
         self.injectionTime = script.injectionTime
