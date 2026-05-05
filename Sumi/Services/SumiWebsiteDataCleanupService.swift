@@ -1,6 +1,5 @@
 import Foundation
 import WebKit
-import WKAbstractions
 
 @MainActor
 protocol SumiWebsiteDataCleanupServicing: AnyObject {
@@ -129,6 +128,62 @@ struct SumiEmptyWebsiteDataPreservationPolicy: SumiWebsiteDataPreservationPolicy
 }
 
 @MainActor
+protocol SumiWebsiteDataStore {
+    associatedtype Record: SumiWebsiteDataRecord
+
+    var httpCookieStore: any SumiHTTPCookieStore { get }
+
+    func removeData(ofTypes types: Set<String>, modifiedSince: Date) async
+    func dataRecords(ofTypes types: Set<String>) async -> [Record]
+    func removeData(ofTypes types: Set<String>, for records: [Record]) async
+}
+
+@MainActor
+protocol SumiHTTPCookieStore {
+    func allCookies() async -> [HTTPCookie]
+    func deleteCookie(_ cookie: HTTPCookie) async
+}
+
+@MainActor
+protocol SumiWebsiteDataRecord {
+    var displayName: String { get }
+}
+
+struct SumiWebsiteDataStoreWrapper: SumiWebsiteDataStore {
+    let wrapped: WKWebsiteDataStore
+
+    var httpCookieStore: any SumiHTTPCookieStore {
+        SumiHTTPCookieStoreWrapper(wrapped: wrapped.httpCookieStore)
+    }
+
+    func removeData(ofTypes types: Set<String>, modifiedSince: Date) async {
+        await wrapped.removeData(ofTypes: types, modifiedSince: modifiedSince)
+    }
+
+    func dataRecords(ofTypes types: Set<String>) async -> [WKWebsiteDataRecord] {
+        await wrapped.dataRecords(ofTypes: types)
+    }
+
+    func removeData(ofTypes types: Set<String>, for records: [WKWebsiteDataRecord]) async {
+        await wrapped.removeData(ofTypes: types, for: records)
+    }
+}
+
+struct SumiHTTPCookieStoreWrapper: SumiHTTPCookieStore {
+    let wrapped: WKHTTPCookieStore
+
+    func allCookies() async -> [HTTPCookie] {
+        await wrapped.allCookies()
+    }
+
+    func deleteCookie(_ cookie: HTTPCookie) async {
+        await wrapped.deleteCookie(cookie)
+    }
+}
+
+extension WKWebsiteDataRecord: SumiWebsiteDataRecord {}
+
+@MainActor
 final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
     static let shared = SumiWebsiteDataCleanupService()
 
@@ -144,11 +199,11 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
 
     func fetchCookies(in dataStore: WKWebsiteDataStore) async -> [HTTPCookie] {
         await fetchCookies(
-            using: WebsiteDataStoreWrapper(wrapped: dataStore)
+            using: SumiWebsiteDataStoreWrapper(wrapped: dataStore)
         )
     }
 
-    func fetchCookies<Store: DDGWebsiteDataStore>(using store: Store) async -> [HTTPCookie] {
+    func fetchCookies<Store: SumiWebsiteDataStore>(using store: Store) async -> [HTTPCookie] {
         await store.httpCookieStore.allCookies()
     }
 
@@ -158,11 +213,11 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
     ) async -> [WKWebsiteDataRecord] {
         await fetchWebsiteDataRecords(
             ofTypes: dataTypes,
-            using: WebsiteDataStoreWrapper(wrapped: dataStore)
+            using: SumiWebsiteDataStoreWrapper(wrapped: dataStore)
         )
     }
 
-    func fetchWebsiteDataRecords<Store: DDGWebsiteDataStore>(
+    func fetchWebsiteDataRecords<Store: SumiWebsiteDataStore>(
         ofTypes dataTypes: Set<String>,
         using store: Store
     ) async -> [Store.Record] {
@@ -177,11 +232,11 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
         await fetchSiteDataEntries(
             forDomain: domain,
             ofTypes: dataTypes,
-            using: WebsiteDataStoreWrapper(wrapped: dataStore)
+            using: SumiWebsiteDataStoreWrapper(wrapped: dataStore)
         )
     }
 
-    func fetchSiteDataEntries<Store: DDGWebsiteDataStore>(
+    func fetchSiteDataEntries<Store: SumiWebsiteDataStore>(
         forDomain domain: String,
         ofTypes dataTypes: Set<String>,
         using store: Store
@@ -224,12 +279,12 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
     ) async {
         await removeCookies(
             selection,
-            using: WebsiteDataStoreWrapper(wrapped: dataStore),
+            using: SumiWebsiteDataStoreWrapper(wrapped: dataStore),
             storeIdentifier: identifier(for: dataStore)
         )
     }
 
-    func removeCookies<Store: DDGWebsiteDataStore>(
+    func removeCookies<Store: SumiWebsiteDataStore>(
         _ selection: SumiCookieRemovalSelection,
         using store: Store,
         storeIdentifier: String
@@ -250,12 +305,12 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
         await removeWebsiteData(
             ofTypes: dataTypes,
             modifiedSince: date,
-            using: WebsiteDataStoreWrapper(wrapped: dataStore),
+            using: SumiWebsiteDataStoreWrapper(wrapped: dataStore),
             storeIdentifier: identifier(for: dataStore)
         )
     }
 
-    func removeWebsiteData<Store: DDGWebsiteDataStore>(
+    func removeWebsiteData<Store: SumiWebsiteDataStore>(
         ofTypes dataTypes: Set<String>,
         modifiedSince date: Date,
         using store: Store,
@@ -277,7 +332,7 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
         await removeWebsiteDataForDomain(
             domain,
             includingCookies: includingCookies,
-            using: WebsiteDataStoreWrapper(wrapped: dataStore),
+            using: SumiWebsiteDataStoreWrapper(wrapped: dataStore),
             storeIdentifier: identifier(for: dataStore)
         )
     }
@@ -292,7 +347,7 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
             domains,
             ofTypes: dataTypes,
             includingCookies: includingCookies,
-            using: WebsiteDataStoreWrapper(wrapped: dataStore),
+            using: SumiWebsiteDataStoreWrapper(wrapped: dataStore),
             storeIdentifier: identifier(for: dataStore)
         )
     }
@@ -307,12 +362,12 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
             host,
             ofTypes: dataTypes,
             includingCookies: includingCookies,
-            using: WebsiteDataStoreWrapper(wrapped: dataStore),
+            using: SumiWebsiteDataStoreWrapper(wrapped: dataStore),
             storeIdentifier: identifier(for: dataStore)
         )
     }
 
-    func removeWebsiteDataForDomains<Store: DDGWebsiteDataStore>(
+    func removeWebsiteDataForDomains<Store: SumiWebsiteDataStore>(
         _ domains: Set<String>,
         ofTypes dataTypes: Set<String>,
         includingCookies: Bool,
@@ -343,7 +398,7 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
         }
     }
 
-    func removeWebsiteDataForExactHost<Store: DDGWebsiteDataStore>(
+    func removeWebsiteDataForExactHost<Store: SumiWebsiteDataStore>(
         _ host: String,
         ofTypes dataTypes: Set<String>,
         includingCookies: Bool,
@@ -370,7 +425,7 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
         }
     }
 
-    func removeWebsiteDataForDomain<Store: DDGWebsiteDataStore>(
+    func removeWebsiteDataForDomain<Store: SumiWebsiteDataStore>(
         _ domain: String,
         includingCookies: Bool,
         using store: Store,
@@ -393,12 +448,12 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
 
     func clearAllProfileWebsiteData(in dataStore: WKWebsiteDataStore) async {
         await clearAllProfileWebsiteData(
-            using: WebsiteDataStoreWrapper(wrapped: dataStore),
+            using: SumiWebsiteDataStoreWrapper(wrapped: dataStore),
             storeIdentifier: identifier(for: dataStore)
         )
     }
 
-    func clearAllProfileWebsiteData<Store: DDGWebsiteDataStore>(
+    func clearAllProfileWebsiteData<Store: SumiWebsiteDataStore>(
         using store: Store,
         storeIdentifier: String
     ) async {
@@ -410,7 +465,7 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
         }
     }
 
-    private func performClearAllProfileWebsiteData<Store: DDGWebsiteDataStore>(
+    private func performClearAllProfileWebsiteData<Store: SumiWebsiteDataStore>(
         using store: Store
     ) async {
         await store.removeData(
@@ -430,7 +485,7 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
         await performRemoveCookies(.all, using: store)
     }
 
-    private func performRemoveWebsiteDataForDomain<Store: DDGWebsiteDataStore>(
+    private func performRemoveWebsiteDataForDomain<Store: SumiWebsiteDataStore>(
         _ domain: String,
         includingCookies: Bool,
         using store: Store
@@ -449,7 +504,7 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
         )
     }
 
-    private func performRemoveWebsiteDataForDomains<Store: DDGWebsiteDataStore>(
+    private func performRemoveWebsiteDataForDomains<Store: SumiWebsiteDataStore>(
         _ normalizedDomains: Set<String>,
         ofTypes dataTypes: Set<String>,
         includingCookies: Bool,
@@ -469,7 +524,7 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
         }
     }
 
-    private func performRemoveWebsiteDataForExactHost<Store: DDGWebsiteDataStore>(
+    private func performRemoveWebsiteDataForExactHost<Store: SumiWebsiteDataStore>(
         _ normalizedHost: String,
         ofTypes dataTypes: Set<String>,
         includingCookies: Bool,
@@ -488,7 +543,7 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
         }
     }
 
-    private func performRemoveCookies<Store: DDGWebsiteDataStore>(
+    private func performRemoveCookies<Store: SumiWebsiteDataStore>(
         _ selection: SumiCookieRemovalSelection,
         using store: Store
     ) async {

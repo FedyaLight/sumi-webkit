@@ -234,26 +234,6 @@ enum SidebarItemInputRouting {
         return .appKitOwner(.unavailableLeanContextMenu)
     }
 
-    static func usesAppKitOwner(
-        in presentationContext: SidebarPresentationContext,
-        menu: SidebarContextMenuLeafConfiguration?,
-        dragSource: SidebarDragSourceConfiguration? = nil,
-        hasMiddleClick: Bool = false,
-        requiresManualPrimaryMouseTracking: Bool = false,
-        requiresAppKitRecovery: Bool = false
-    ) -> Bool {
-        if case .appKitOwner = route(
-            in: presentationContext,
-            menu: menu,
-            dragSource: dragSource,
-            hasMiddleClick: hasMiddleClick,
-            requiresManualPrimaryMouseTracking: requiresManualPrimaryMouseTracking,
-            requiresAppKitRecovery: requiresAppKitRecovery
-        ) {
-            return true
-        }
-        return false
-    }
 }
 
 struct SidebarContextMenuResolvedTarget {

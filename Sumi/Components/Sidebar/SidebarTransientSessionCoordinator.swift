@@ -322,17 +322,6 @@ final class SidebarTransientSessionCoordinator {
         return token
     }
 
-    func updateHandles(
-        _ handles: [SidebarTransientInteractionHandle],
-        for token: SidebarTransientSessionToken?
-    ) {
-        guard let token,
-              var record = sessions[token.id]
-        else { return }
-        record.handles = handles
-        sessions[token.id] = record
-    }
-
     func endSession(_ token: SidebarTransientSessionToken?) {
         endSession(token, reason: "endSession")
     }

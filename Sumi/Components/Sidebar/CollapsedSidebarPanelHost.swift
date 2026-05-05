@@ -118,7 +118,6 @@ final class CollapsedSidebarPanelController {
     private weak var attachedParentWindow: NSWindow?
     private weak var dragPreviewOverlayParentWindow: NSWindow?
     private weak var observedParentWindow: NSWindow?
-    private weak var observedContentView: NSView?
     private var observers: [NSObjectProtocol] = []
     private var currentSidebarWidth: CGFloat = BrowserWindowState.sidebarDefaultWidth
     private var currentSidebarPosition: SidebarPosition = .left
@@ -129,37 +128,9 @@ final class CollapsedSidebarPanelController {
     private var frameSyncBurstReason: String?
     private var isLiveResizeFrameSyncActive = false
 
-    var frameSyncBurstDurationOverrideForTesting: TimeInterval?
-
-    var panelWindowForTesting: CollapsedSidebarPanelWindow? {
-        panelWindow
-    }
-
-    var dragPreviewOverlayWindowForTesting: CollapsedSidebarDragPreviewOverlayWindow? {
-        dragPreviewOverlayWindow
-    }
-
-    var attachedParentWindowForTesting: NSWindow? {
-        attachedParentWindow
-    }
-
-    var isPanelAttachedForTesting: Bool {
+    private var isPanelAttached: Bool {
         guard let panelWindow, let attachedParentWindow else { return false }
         return attachedParentWindow.childWindows?.contains(panelWindow) == true
-    }
-
-    var isDragPreviewOverlayAttachedForTesting: Bool {
-        guard let dragPreviewOverlayWindow,
-              let dragPreviewOverlayParentWindow else { return false }
-        return dragPreviewOverlayParentWindow.childWindows?.contains(dragPreviewOverlayWindow) == true
-    }
-
-    var isFrameSyncTimerActiveForTesting: Bool {
-        frameSyncTimer != nil
-    }
-
-    var frameSyncBurstReasonForTesting: String? {
-        frameSyncBurstReason
     }
 
     func update<Content: View>(
@@ -191,7 +162,7 @@ final class CollapsedSidebarPanelController {
         }
 
         let shouldKeepVisibleContentForHideAnimation = presentationContext.mode == .collapsedHidden
-            && (isPanelRevealed || panel.isVisible || isPanelAttachedForTesting)
+            && (isPanelRevealed || panel.isVisible || isPanelAttached)
         if shouldKeepVisibleContentForHideAnimation {
             sidebarController.setCollapsedPanelHitTestingEnabled(false)
         } else {
@@ -401,15 +372,14 @@ final class CollapsedSidebarPanelController {
             return
         }
 
-        let effectiveDuration = effectiveFrameSyncBurstDuration(duration)
-        guard effectiveDuration > 0 else {
+        guard duration > 0 else {
             syncFrame()
             stopFrameSyncTimer()
             return
         }
 
         let now = ProcessInfo.processInfo.systemUptime
-        let requestedDeadline = now + effectiveDuration
+        let requestedDeadline = now + duration
         if frameSyncTimer == nil
             || (frameSyncBurstDeadline ?? 0) <= now
             || reason == CollapsedSidebarPanelFrameSync.liveResizeReason
@@ -469,14 +439,6 @@ final class CollapsedSidebarPanelController {
             stopFrameSyncTimer()
             return
         }
-    }
-
-    private func effectiveFrameSyncBurstDuration(_ duration: TimeInterval) -> TimeInterval {
-        if let frameSyncBurstDurationOverrideForTesting {
-            return frameSyncBurstDurationOverrideForTesting
-        }
-
-        return duration
     }
 
     private func preparePanelContentClipping(_ panel: CollapsedSidebarPanelWindow) {
@@ -780,7 +742,7 @@ final class CollapsedSidebarPanelController {
 
     private func handleCollapsedSidebarDismissalRequest() {
         guard let panelWindow,
-              panelWindow.isVisible || isPanelAttachedForTesting
+              panelWindow.isVisible || isPanelAttached
         else { return }
 
         sidebarController.setCollapsedPanelHitTestingEnabled(false)
@@ -889,7 +851,6 @@ final class CollapsedSidebarPanelController {
 
         if let contentView = parentWindow.contentView {
             contentView.postsFrameChangedNotifications = true
-            observedContentView = contentView
             observers.append(
                 center.addObserver(
                     forName: NSView.frameDidChangeNotification,
@@ -909,7 +870,6 @@ final class CollapsedSidebarPanelController {
         observers.forEach(center.removeObserver)
         observers = []
         observedParentWindow = nil
-        observedContentView = nil
         isLiveResizeFrameSyncActive = false
     }
 }
