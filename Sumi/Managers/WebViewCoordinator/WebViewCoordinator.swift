@@ -120,6 +120,11 @@ final class SumiWebViewContainerView: NSView {
         geometry: BrowserChromeGeometry,
         cutoutBackground: BrowserContentViewportCutoutBackground
     ) {
+        let radiusChanged = abs(viewportCornerRadius - geometry.contentRadius) > 0.000_1
+        let backgroundChanged = viewportCutoutBackground != cutoutBackground
+        let needsCutoutInstall = cornerCutoutViews.contains { $0.superview !== self }
+        guard radiusChanged || backgroundChanged || needsCutoutInstall else { return }
+
         viewportCornerRadius = geometry.contentRadius
         viewportCutoutBackground = cutoutBackground
 
@@ -127,8 +132,12 @@ final class SumiWebViewContainerView: NSView {
             cutoutView.cornerRadius = effectiveViewportCornerRadius
             cutoutView.cutoutBackground = cutoutBackground
         }
-        installCornerCutoutsIfNeeded()
-        needsLayout = true
+        if needsCutoutInstall {
+            installCornerCutoutsIfNeeded()
+        }
+        if radiusChanged {
+            needsLayout = true
+        }
     }
 
     func attachDisplayedContentIfNeeded() {
@@ -259,11 +268,16 @@ final class SumiWebViewContainerView: NSView {
         }
 
         for cutoutView in cornerCutoutViews {
+            let wasHidden = cutoutView.isHidden
             cutoutView.isHidden = false
             cutoutView.cornerRadius = radius
-            cutoutView.cutoutBackground = viewportCutoutBackground
-            cutoutView.frame = frame(for: cutoutView.corner, radius: radius)
-            cutoutView.needsDisplay = true
+            let newFrame = frame(for: cutoutView.corner, radius: radius)
+            if cutoutView.frame != newFrame {
+                cutoutView.frame = newFrame
+                cutoutView.needsDisplay = true
+            } else if wasHidden {
+                cutoutView.needsDisplay = true
+            }
         }
     }
 
