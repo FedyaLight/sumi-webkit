@@ -233,13 +233,13 @@ final class SidebarDDGHoverTests: XCTestCase {
         XCTAssertEqual(reservedPadding, SidebarHoverChrome.trailingActionFadePadding)
     }
 
-    func testHoverRoutingUsesNativeTrackingForDockedAndAppKitBridgeForCollapsedOverlay() {
+    func testHoverRoutingUsesAppKitBridgeForAllSidebarPresentationModes() {
         let docked = SidebarPresentationContext.docked(sidebarWidth: 280)
         let collapsedHidden = SidebarPresentationContext.collapsedHidden(sidebarWidth: 280)
         let collapsedVisible = SidebarPresentationContext.collapsedVisible(sidebarWidth: 280)
 
-        XCTAssertTrue(SidebarHoverInputRouting.usesSwiftUIHover(in: docked))
-        XCTAssertFalse(SidebarHoverInputRouting.usesAppKitHoverBridge(in: docked))
+        XCTAssertFalse(SidebarHoverInputRouting.usesSwiftUIHover(in: docked))
+        XCTAssertTrue(SidebarHoverInputRouting.usesAppKitHoverBridge(in: docked))
         XCTAssertFalse(SidebarHoverInputRouting.usesSwiftUIHover(in: collapsedHidden))
         XCTAssertTrue(SidebarHoverInputRouting.usesAppKitHoverBridge(in: collapsedHidden))
         XCTAssertFalse(SidebarHoverInputRouting.usesSwiftUIHover(in: collapsedVisible))

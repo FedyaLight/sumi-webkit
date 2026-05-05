@@ -336,54 +336,33 @@ private struct SidebarDDGHoverModifier: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if SidebarHoverInputRouting.usesSwiftUIHover(in: presentationContext) {
-            content
-                .onHover { hovering in
-                    setHoverState(effectiveIsEnabled ? hovering : false)
-                }
-                .onChange(of: effectiveIsEnabled) { _, enabled in
-                    if !enabled {
-                        isHovered = false
-                    }
-                }
-                .onDisappear {
+        content
+            .overlay {
+                SidebarDDGHoverBridge(
+                    isHovered: $isHovered,
+                    isEnabled: effectiveIsEnabled
+                )
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+            .onChange(of: effectiveIsEnabled) { _, enabled in
+                if !enabled {
                     isHovered = false
                 }
-        } else {
-            content
-                .overlay {
-                    SidebarDDGHoverBridge(
-                        isHovered: $isHovered,
-                        isEnabled: effectiveIsEnabled
-                    )
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-                }
-                .onChange(of: effectiveIsEnabled) { _, enabled in
-                    if !enabled {
-                        isHovered = false
-                    }
-                }
-                .onDisappear {
-                    isHovered = false
-                }
-        }
-    }
-
-    private func setHoverState(_ hovering: Bool) {
-        if isHovered != hovering {
-            isHovered = hovering
-        }
+            }
+            .onDisappear {
+                isHovered = false
+            }
     }
 }
 
 enum SidebarHoverInputRouting {
     static func usesSwiftUIHover(in presentationContext: SidebarPresentationContext) -> Bool {
-        presentationContext.inputMode == .dockedLayout
+        false
     }
 
     static func usesAppKitHoverBridge(in presentationContext: SidebarPresentationContext) -> Bool {
-        presentationContext.inputMode == .collapsedOverlay
+        true
     }
 }
 
