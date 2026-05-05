@@ -1127,26 +1127,6 @@ extension DistributedNavigationDelegate: WKNavigationDelegate {
 // MARK: - Forwarding
 extension DistributedNavigationDelegate {
 
-    /// Here Responders can be registered as handlers for custom WKNavigationDelegate methods not implemented in DistributedNavigationDelegate
-    /// !!! BE CAREFUL:
-    /// If this method is used to register one of the exclusive delegate methods of higher priority than already present in DistributedNavigationDelegate
-    /// (such as one of the decidePolicyForNavigationAction (sync/async/with preferences) methods or a higher priority private API method)
-    /// this will lead to the designated DistributedNavigationDelegate method not called at all.
-    /// !!! Only one responder can be registered per custom method handler
-    public func registerCustomDelegateMethodHandler(_ handler: ResponderRefMaker, forSelectorNamed selectorStr: String) {
-        dispatchPrecondition(condition: .onQueue(.main))
-        let selector = NSSelectorFromString(selectorStr)
-        assert(customDelegateMethodHandlers[selector] == nil)
-        assert((handler.ref.responder as? NSObject)!.responds(to: selector))
-        customDelegateMethodHandlers[selector] = handler.ref
-    }
-
-    public func registerCustomDelegateMethodHandler(_ handler: ResponderRefMaker, forSelectorsNamed selectors: [String]) {
-        for selector in selectors {
-            registerCustomDelegateMethodHandler(handler, forSelectorNamed: selector)
-        }
-    }
-
     public override func responds(to selector: Selector!) -> Bool {
         if !super.responds(to: selector) {
             return customDelegateMethodHandlers[selector] != nil

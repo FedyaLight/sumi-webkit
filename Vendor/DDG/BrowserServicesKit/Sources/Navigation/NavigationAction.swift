@@ -27,10 +27,6 @@ public struct MainFrame: Sendable {
 public struct NavigationAction {
 
     private static var maxIdentifier: UInt64 = 0
-#if DEBUG
-    static func resetIdentifier() { maxIdentifier = 0 }
-#endif
-
     /// auto-incremented id
     public var identifier: UInt64 = {
         Self.maxIdentifier += 1
@@ -221,15 +217,7 @@ public struct NavigationPreferences: Equatable {
 
     public static let `default` = NavigationPreferences(userAgent: nil, contentMode: .recommended, javaScriptEnabled: true)
 
-#if _WEBPAGE_PREFS_CUSTOM_HEADERS_ENABLED
-    public static var customHeadersSupported: Bool {
-        WKWebpagePreferences.customHeaderFieldsSupported
-    }
-
-    public var customHeaders: [CustomHeaderFields]?
-#else
     public static var customHeadersSupported: Bool { false }
-#endif
 
     public init(userAgent: String?, contentMode: WKWebpagePreferences.ContentMode, javaScriptEnabled: Bool) {
         self.userAgent = userAgent
@@ -245,11 +233,6 @@ public struct NavigationPreferences: Equatable {
         self.autoplayPolicy = .init(rawValue: preferences.autoplayPolicy)
 #endif
 
-#if _WEBPAGE_PREFS_CUSTOM_HEADERS_ENABLED
-        if Self.customHeadersSupported {
-            self.customHeaders = preferences.customHeaderFields
-        }
-#endif
     }
 
     internal func applying(to preferences: WKWebpagePreferences) -> WKWebpagePreferences {
@@ -262,11 +245,6 @@ public struct NavigationPreferences: Equatable {
         }
 #endif
 
-#if _WEBPAGE_PREFS_CUSTOM_HEADERS_ENABLED
-        if Self.customHeadersSupported, let customHeaders = customHeaders {
-            preferences.customHeaderFields = customHeaders
-        }
-#endif
         return preferences
     }
 
