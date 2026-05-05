@@ -6,7 +6,6 @@ import Foundation
 final class SumiBookmarkManager: ObservableObject {
     @Published private(set) var revision: UInt = 0
 
-    private let database: SumiBookmarkDatabase
     private let context: NSManagedObjectContext
     private let syncFavicons: Bool
     private var bookmarksByID: [String: SumiBookmark] = [:]
@@ -19,7 +18,6 @@ final class SumiBookmarkManager: ObservableObject {
         database: SumiBookmarkDatabase = SumiBookmarkDatabase(),
         syncFavicons: Bool = true
     ) {
-        self.database = database
         self.syncFavicons = syncFavicons
         context = database.makeContext(
             concurrencyType: .mainQueueConcurrencyType,
@@ -75,16 +73,6 @@ final class SumiBookmarkManager: ObservableObject {
         foldersCache
     }
 
-    func bookmarks() -> [SumiBookmark] {
-        bookmarksByID.values.sorted { lhs, rhs in
-            Self.compareTitles(lhs.title, rhs.title, ascending: true)
-        }
-    }
-
-    func allHosts() -> Set<String> {
-        Set(bookmarksByID.values.compactMap { $0.url.host?.lowercased() })
-    }
-
     func snapshot(sortMode: SumiBookmarkSortMode = .manual) -> SumiBookmarksSnapshot {
         guard let root = rootFolder(),
               let rootNode = makeSnapshotNode(
@@ -102,7 +90,6 @@ final class SumiBookmarkManager: ObservableObject {
                 url: nil,
                 parentID: nil,
                 parentTitle: nil,
-                depth: 0,
                 children: [],
                 childBookmarkCount: 0
             )
@@ -365,12 +352,10 @@ final class SumiBookmarkManager: ObservableObject {
 
     func importBookmarks(
         _ nodes: [SumiImportedBookmarkNode],
-        sourceName: String,
         parentID: String? = nil
     ) throws -> SumiBookmarkImportSummary {
         let parent = try requiredFolderEntity(for: parentID)
         var summary = SumiBookmarkImportSummary(
-            sourceName: sourceName,
             imported: 0,
             duplicates: 0,
             failed: 0
@@ -494,14 +479,12 @@ final class SumiBookmarkManager: ObservableObject {
             ?? url.sumiSuggestedTitlePlaceholder
             ?? url.absoluteString
         let folderID = entity.parent?.uuid
-        let folderTitle = displayTitle(forFolder: entity.parent)
 
         return SumiBookmark(
             id: id,
             title: title,
             url: url,
-            folderID: folderID,
-            folderTitle: folderTitle
+            folderID: folderID
         )
     }
 
@@ -537,7 +520,6 @@ final class SumiBookmarkManager: ObservableObject {
                 url: nil,
                 parentID: entity.parent?.uuid,
                 parentTitle: displayTitle(forFolder: entity.parent),
-                depth: depth,
                 children: childNodes,
                 childBookmarkCount: count
             )
@@ -560,7 +542,6 @@ final class SumiBookmarkManager: ObservableObject {
             url: url,
             parentID: entity.parent?.uuid,
             parentTitle: displayTitle(forFolder: entity.parent),
-            depth: depth,
             children: [],
             childBookmarkCount: 0
         )

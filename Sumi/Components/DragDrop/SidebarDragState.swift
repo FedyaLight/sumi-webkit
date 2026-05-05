@@ -2,17 +2,6 @@ import AppKit
 import Combine
 import SwiftUI
 
-#if DEBUG
-struct SidebarDragGeometryInstrumentation: Equatable {
-    var reporterUpdateCount: Int = 0
-    var deferredMutationScheduleCount: Int = 0
-    var coalescedFlushCount: Int = 0
-    var publishedGeometrySnapshotRevisionCount: Int = 0
-    var unchangedGeometrySnapshotPublishSkipCount: Int = 0
-    var activeReporterCountBySection: [String: Int] = [:]
-}
-#endif
-
 private enum SidebarDragGeometryMutationKey: Hashable {
     case page(SidebarPageGeometryKey)
     case section(SidebarSectionGeometryKey)
@@ -24,7 +13,6 @@ private enum SidebarDragGeometryMutationKey: Hashable {
 }
 
 private struct SidebarDragGeometryMutation {
-    let key: SidebarDragGeometryMutationKey
     let apply: @MainActor (SidebarDragState) -> Void
 }
 
@@ -67,9 +55,6 @@ final class SidebarDragState: ObservableObject {
     private var isGeometrySnapshotPublishScheduled = false
     private var deferredGeometryMutations: [SidebarDragGeometryMutationKey: SidebarDragGeometryMutation] = [:]
     private var isDeferredGeometryMutationFlushScheduled = false
-    #if DEBUG
-    private var geometryInstrumentation = SidebarDragGeometryInstrumentation()
-    #endif
     
     init() {}
 
@@ -99,17 +84,9 @@ final class SidebarDragState: ObservableObject {
 
     private func setGeometrySnapshot(_ snapshot: SidebarGeometrySnapshot) {
         guard geometrySnapshot != snapshot else {
-            #if DEBUG
-            geometryInstrumentation.unchangedGeometrySnapshotPublishSkipCount += 1
-            updateGeometryInstrumentationActiveReporterCounts(from: snapshot)
-            #endif
             return
         }
         geometrySnapshot = snapshot
-        #if DEBUG
-        geometryInstrumentation.publishedGeometrySnapshotRevisionCount += 1
-        updateGeometryInstrumentationActiveReporterCounts(from: snapshot)
-        #endif
     }
 
     private func scheduleGeometrySnapshotPublish() {
@@ -125,23 +102,6 @@ final class SidebarDragState: ObservableObject {
         isGeometrySnapshotPublishScheduled = false
         setGeometrySnapshot(snapshot(from: activeGeometryStore))
     }
-
-    #if DEBUG
-    func publishGeometrySnapshotForTesting() {
-        flushDeferredGeometryMutations()
-        flushScheduledGeometrySnapshotPublish()
-    }
-
-    func resetGeometryInstrumentationForTesting() {
-        geometryInstrumentation = SidebarDragGeometryInstrumentation()
-        updateGeometryInstrumentationActiveReporterCounts(from: geometrySnapshot)
-    }
-
-    func geometryInstrumentationSnapshotForTesting() -> SidebarDragGeometryInstrumentation {
-        geometryInstrumentation
-    }
-    #endif
-
     private func publishActiveGeometryStore() {
         scheduleGeometrySnapshotPublish()
     }
@@ -151,18 +111,9 @@ final class SidebarDragState: ObservableObject {
         reporterSection: String,
         apply: @escaping @MainActor (SidebarDragState) -> Void
     ) {
-        #if DEBUG
-        geometryInstrumentation.reporterUpdateCount += 1
-        geometryInstrumentation.deferredMutationScheduleCount += 1
-        geometryInstrumentation.activeReporterCountBySection[reporterSection, default: 0] += 0
-        #else
         _ = reporterSection
-        #endif
 
-        deferredGeometryMutations[key] = SidebarDragGeometryMutation(
-            key: key,
-            apply: apply
-        )
+        deferredGeometryMutations[key] = SidebarDragGeometryMutation(apply: apply)
 
         guard !isDeferredGeometryMutationFlushScheduled else { return }
         isDeferredGeometryMutationFlushScheduled = true
@@ -179,10 +130,6 @@ final class SidebarDragState: ObservableObject {
         let mutations = Array(deferredGeometryMutations.values)
         deferredGeometryMutations = [:]
 
-        #if DEBUG
-        geometryInstrumentation.coalescedFlushCount += 1
-        #endif
-
         for mutation in mutations {
             mutation.apply(self)
         }
@@ -192,38 +139,6 @@ final class SidebarDragState: ObservableObject {
         flushDeferredGeometryMutations()
         flushScheduledGeometrySnapshotPublish()
     }
-
-    private func clearDetailedGeometryTargets(publishImmediately: Bool) {
-        var didChange = activeGeometryStore.hasDetailedDragGeometry
-        activeGeometryStore.removeDetailedDragGeometry()
-
-        if pendingGeometryStore?.hasDetailedDragGeometry == true {
-            pendingGeometryStore?.removeDetailedDragGeometry()
-            didChange = true
-        }
-
-        guard didChange else { return }
-        publishActiveGeometryStore()
-        if publishImmediately {
-            flushScheduledGeometrySnapshotPublish()
-        }
-    }
-
-    #if DEBUG
-    private func updateGeometryInstrumentationActiveReporterCounts(
-        from snapshot: SidebarGeometrySnapshot
-    ) {
-        geometryInstrumentation.activeReporterCountBySection = [
-            "page": snapshot.pageGeometryByKey.count,
-            "section": snapshot.sectionFramesBySpace.count,
-            "topLevelPinned": snapshot.topLevelPinnedItemTargets.count,
-            "folder": snapshot.folderDropTargets.count,
-            "folderChild": snapshot.folderChildDropTargets.count,
-            "regular": snapshot.regularListHitTargets.count,
-            "essentials": snapshot.essentialsLayoutMetricsBySpace.count,
-        ]
-    }
-    #endif
 
     func schedulePageGeometry(
         spaceId: UUID,
@@ -296,7 +211,6 @@ final class SidebarDragState: ObservableObject {
 
     func scheduleTopLevelPinnedItemTarget(
         itemId: UUID,
-        kind: SidebarTopLevelPinnedItemKind,
         spaceId: UUID,
         topLevelIndex: Int,
         frame: CGRect?,
@@ -309,7 +223,6 @@ final class SidebarDragState: ObservableObject {
         ) { state in
             state.applyTopLevelPinnedItemTarget(
                 itemId: itemId,
-                kind: kind,
                 spaceId: spaceId,
                 topLevelIndex: topLevelIndex,
                 frame: frame,
@@ -869,7 +782,6 @@ final class SidebarDragState: ObservableObject {
 
     func applyTopLevelPinnedItemTarget(
         itemId: UUID,
-        kind: SidebarTopLevelPinnedItemKind,
         spaceId: UUID,
         topLevelIndex: Int,
         frame: CGRect?,
@@ -884,7 +796,6 @@ final class SidebarDragState: ObservableObject {
 
             store.topLevelPinnedItemTargets[itemId] = SidebarTopLevelPinnedItemMetrics(
                 itemId: itemId,
-                kind: kind,
                 spaceId: spaceId,
                 topLevelIndex: topLevelIndex,
                 frame: frame

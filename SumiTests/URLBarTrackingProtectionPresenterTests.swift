@@ -10,14 +10,11 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
                 isEnabled: true,
                 source: .global
             ),
-            siteOverride: .inherit,
             isReloadRequired: false
         )
 
         XCTAssertEqual(presenter.rowTitle, "Tracking Protection")
         XCTAssertNil(presenter.rowSubtitle)
-        XCTAssertEqual(presenter.siteOverride, .inherit)
-        XCTAssertFalse(presenter.isReloadRequired)
         XCTAssertEqual(presenter.shieldIcon.chromeIconName, "shield.fill")
         XCTAssertEqual(presenter.shieldIcon.fallbackSystemName, "shield.fill")
         XCTAssertTrue(presenter.shieldIcon.showsCheckmark)
@@ -32,13 +29,10 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
                 isEnabled: false,
                 source: .siteOverride(.disabled)
             ),
-            siteOverride: .inherit,
             isReloadRequired: false
         )
 
         XCTAssertNil(presenter.rowSubtitle)
-        XCTAssertEqual(presenter.siteOverride, .inherit)
-        XCTAssertFalse(presenter.isReloadRequired)
         XCTAssertEqual(presenter.shieldIcon.chromeIconName, "tracking-protection")
         XCTAssertEqual(presenter.shieldIcon.fallbackSystemName, "shield")
         XCTAssertFalse(presenter.shieldIcon.showsCheckmark)
@@ -53,7 +47,6 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
                 isEnabled: true,
                 source: .global
             ),
-            siteOverride: .inherit,
             isReloadRequired: false
         )
         let visibleText = visibleStrings(for: presenter).joined(separator: "\n")
@@ -70,12 +63,10 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
                 isEnabled: false,
                 source: .siteOverride(.disabled)
             ),
-            siteOverride: .disabled,
             isReloadRequired: true
         )
 
         XCTAssertEqual(presenter.rowSubtitle, "Reload required")
-        XCTAssertTrue(presenter.isReloadRequired)
         XCTAssertTrue(visibleStrings(for: presenter).contains("Reload required"))
         XCTAssertFalse(visibleStrings(for: presenter).contains("Reload"))
     }
@@ -87,7 +78,6 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
                 isEnabled: true,
                 source: .global
             ),
-            siteOverride: .inherit,
             isReloadRequired: false
         )
         let visibleText = visibleStrings(for: presenter).joined(separator: "\n")
@@ -164,7 +154,6 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
     private func visibleStrings(for presenter: URLBarTrackingProtectionPresenter) -> [String] {
         var strings = [
             presenter.rowTitle,
-            presenter.siteHost,
         ]
         if let rowSubtitle = presenter.rowSubtitle {
             strings.append(rowSubtitle)

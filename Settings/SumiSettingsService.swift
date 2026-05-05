@@ -627,14 +627,6 @@ enum DarkThemeStyle: String, CaseIterable, Identifiable {
     case colorful = "colorful"
 
     var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .default: return "Default"
-        case .night: return "Night"
-        case .colorful: return "Colorful"
-        }
-    }
 }
 
 // MARK: - Notification Names

@@ -41,7 +41,7 @@ struct GlanceWebView: NSViewRepresentable {
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = false // Disable zoom for glance
 
-        if #available(macOS 13.3, *), RuntimeDiagnostics.isDeveloperInspectionEnabled {
+        if RuntimeDiagnostics.isDeveloperInspectionEnabled {
             webView.isInspectable = true
         }
 

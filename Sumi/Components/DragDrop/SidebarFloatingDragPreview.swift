@@ -6,10 +6,6 @@ enum SidebarDragPreviewPresentationSurface: Equatable {
     case collapsedPanelOverlayWindow
 }
 
-enum SidebarDropIndicatorPresentationSurface: Equatable {
-    case sidebarHostedLayer
-}
-
 enum SidebarDragVisualSurfacePolicy {
     static func floatingPreviewSurface(
         for presentationContext: SidebarPresentationContext
@@ -35,11 +31,6 @@ enum SidebarDragVisualSurfacePolicy {
             && floatingPreviewSurface(for: presentationContext) == .collapsedPanelOverlayWindow
     }
 
-    static func dropIndicatorSurface(
-        for presentationContext: SidebarPresentationContext
-    ) -> SidebarDropIndicatorPresentationSurface {
-        .sidebarHostedLayer
-    }
 }
 
 enum SidebarFloatingDragPreviewPolicy {

@@ -190,7 +190,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             settings: settings
         )
 
-        XCTAssertTrue(snapshot.usesSharedEssentials)
+        XCTAssertNotNil(snapshot.stationaryEssentials)
         XCTAssertEqual(snapshot.stationaryEssentials?.items.map(\.id), [essential.id])
     }
 
@@ -220,7 +220,6 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             settings: settings
         )
 
-        XCTAssertFalse(snapshot.usesSharedEssentials)
         XCTAssertNil(snapshot.stationaryEssentials)
         XCTAssertEqual(snapshot.source.essentials?.items.map(\.id), [sourceEssential.id])
         XCTAssertEqual(snapshot.destination.essentials?.items.map(\.id), [destinationEssential.id])

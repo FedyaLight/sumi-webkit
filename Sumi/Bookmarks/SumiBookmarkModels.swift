@@ -5,7 +5,6 @@ struct SumiBookmark: Equatable, Identifiable, Sendable {
     var title: String
     var url: URL
     var folderID: String?
-    var folderTitle: String?
 }
 
 struct SumiBookmarkFolder: Equatable, Identifiable, Sendable {
@@ -26,7 +25,6 @@ struct SumiBookmarkEntity: Equatable, Identifiable, Sendable {
     var url: URL?
     var parentID: String?
     var parentTitle: String?
-    var depth: Int
     var children: [SumiBookmarkEntity]
     var childBookmarkCount: Int
 
@@ -86,7 +84,6 @@ enum SumiBookmarkSortMode: String, CaseIterable, Identifiable, Sendable {
 }
 
 struct SumiBookmarkImportSummary: Equatable, Sendable {
-    var sourceName: String
     var imported: Int
     var duplicates: Int
     var failed: Int
@@ -106,15 +103,6 @@ struct SumiBookmarkAllTabsResult: Equatable, Sendable {
 enum SumiBookmarkEditorMode: Equatable, Sendable {
     case add
     case edit
-
-    var title: String {
-        switch self {
-        case .add:
-            return "Add Bookmark"
-        case .edit:
-            return "Edit Bookmark"
-        }
-    }
 
     var primaryActionTitle: String {
         switch self {

@@ -279,16 +279,10 @@ final class SidebarContextMenuController {
     }
 
     func registerInteractiveOwner(_ ownerView: SidebarInteractiveItemView) {
-        #if DEBUG
-        SidebarDebugMetrics.recordInteractiveOwnerAttached(ObjectIdentifier(ownerView))
-        #endif
         interactiveOwnerRegistry.register(ownerView)
     }
 
     func unregisterInteractiveOwner(_ ownerView: SidebarInteractiveItemView) {
-        #if DEBUG
-        SidebarDebugMetrics.recordInteractiveOwnerDetached(ObjectIdentifier(ownerView))
-        #endif
         endPrimaryMouseTracking(ownerView)
         interactiveOwnerRegistry.unregister(ownerView)
     }

@@ -20,13 +20,12 @@ final class SumiBookmarkManagerTests: XCTestCase {
 
         let bookmark = try manager.createBookmark(url: url, title: "Example")
 
-        XCTAssertEqual(manager.bookmarks().count, 1)
+        XCTAssertEqual(manager.snapshot().root.childBookmarkCount, 1)
         XCTAssertEqual(manager.bookmark(for: url)?.id, bookmark.id)
         XCTAssertEqual(
             manager.bookmark(for: try XCTUnwrap(URL(string: "http://example.com/")))?.id,
             bookmark.id
         )
-        XCTAssertEqual(manager.allHosts(), ["example.com"])
     }
 
     func testRepeatedCreateReturnsExistingBookmark() throws {
@@ -38,7 +37,7 @@ final class SumiBookmarkManagerTests: XCTestCase {
         let second = try manager.createBookmark(url: variantURL, title: "Second")
 
         XCTAssertEqual(first.id, second.id)
-        XCTAssertEqual(manager.bookmarks().count, 1)
+        XCTAssertEqual(manager.snapshot().root.childBookmarkCount, 1)
         XCTAssertEqual(manager.bookmark(for: variantURL)?.title, "First")
     }
 
@@ -62,7 +61,7 @@ final class SumiBookmarkManagerTests: XCTestCase {
         try manager.removeBookmark(id: bookmark.id)
 
         XCTAssertFalse(manager.isBookmarked(updatedURL))
-        XCTAssertTrue(manager.bookmarks().isEmpty)
+        XCTAssertEqual(manager.snapshot().root.childBookmarkCount, 0)
     }
 
     func testDuplicateURLUpdateIsRejected() throws {
@@ -97,7 +96,7 @@ final class SumiBookmarkManagerTests: XCTestCase {
         XCTAssertNil(addState.bookmarkID)
         XCTAssertEqual(addState.title, "Editor Page")
         XCTAssertEqual(addState.urlString, "https://editor.example/path")
-        XCTAssertTrue(manager.bookmarks().isEmpty)
+        XCTAssertEqual(manager.snapshot().root.childBookmarkCount, 0)
 
         let savedBookmark = try manager.createBookmark(
             url: tab.url,
@@ -152,7 +151,8 @@ final class SumiBookmarkManagerTests: XCTestCase {
         try manager.removeEntities(ids: [folder.id])
         XCTAssertNil(manager.entity(id: zed.id))
         XCTAssertNil(manager.entity(id: nested.id))
-        XCTAssertEqual(manager.bookmarks().map(\.id), [alpha.id])
+        XCTAssertEqual(manager.snapshot().root.childBookmarkCount, 1)
+        XCTAssertEqual(manager.entity(id: alpha.id)?.id, alpha.id)
     }
 
     func testCannotMoveFolderIntoDescendant() throws {
@@ -180,12 +180,12 @@ final class SumiBookmarkManagerTests: XCTestCase {
             ),
         ]
 
-        let summary = try manager.importBookmarks(nodes, sourceName: "Fixture")
+        let summary = try manager.importBookmarks(nodes)
 
         XCTAssertEqual(summary.imported, 2)
         XCTAssertEqual(summary.duplicates, 1)
         XCTAssertEqual(summary.failed, 1)
-        XCTAssertEqual(manager.bookmarks().map(\.title), ["Example"])
+        XCTAssertEqual(manager.visibleEntities(in: nil, query: "Example", sortMode: .manual).map(\.title), ["Imported"])
 
         let html = try manager.exportBookmarksHTML()
         XCTAssertTrue(html.contains("<H3>Imported</H3>"))

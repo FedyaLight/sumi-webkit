@@ -210,7 +210,7 @@ private extension SidebarDragState {
             generation: activeGeometryGeneration
         )
         if publish {
-            publishGeometrySnapshotForTesting()
+            flushDeferredGeometryForDragStart()
         }
     }
 
@@ -227,7 +227,7 @@ private extension SidebarDragState {
             generation: activeGeometryGeneration
         )
         if publish {
-            publishGeometrySnapshotForTesting()
+            flushDeferredGeometryForDragStart()
         }
     }
 
@@ -251,26 +251,24 @@ private extension SidebarDragState {
             isActive: true,
             generation: activeGeometryGeneration
         )
-        publishGeometrySnapshotForTesting()
+        flushDeferredGeometryForDragStart()
     }
 
     func updateTopLevelPinnedItemTarget(
         itemId: UUID,
-        kind: SidebarTopLevelPinnedItemKind,
         spaceId: UUID,
         topLevelIndex: Int,
         frame: CGRect
     ) {
         applyTopLevelPinnedItemTarget(
             itemId: itemId,
-            kind: kind,
             spaceId: spaceId,
             topLevelIndex: topLevelIndex,
             frame: frame,
             isActive: true,
             generation: activeGeometryGeneration
         )
-        publishGeometrySnapshotForTesting()
+        flushDeferredGeometryForDragStart()
     }
 
     func updateFolderChildDropTarget(
@@ -287,7 +285,7 @@ private extension SidebarDragState {
             isActive: true,
             generation: activeGeometryGeneration
         )
-        publishGeometrySnapshotForTesting()
+        flushDeferredGeometryForDragStart()
     }
 
     func updateRegularListHitTarget(spaceId: UUID, frame: CGRect, itemCount: Int) {
@@ -297,7 +295,7 @@ private extension SidebarDragState {
             itemCount: itemCount,
             generation: activeGeometryGeneration
         )
-        publishGeometrySnapshotForTesting()
+        flushDeferredGeometryForDragStart()
     }
 
     func updateEssentialsLayoutMetrics(
@@ -355,7 +353,7 @@ private extension SidebarDragState {
             maxDropRowCount: resolvedMaxDropRowCount,
             generation: activeGeometryGeneration
         )
-        publishGeometrySnapshotForTesting()
+        flushDeferredGeometryForDragStart()
     }
 
     private static func resolvedMetricsRowCount(
@@ -860,7 +858,6 @@ final class SidebarCurrentDragResolverTests: XCTestCase {
         )
         registerTopLevelPinnedItem(
             itemId: folderId,
-            kind: .folder(folderId),
             spaceId: spaceId,
             topLevelIndex: 2,
             frame: CGRect(x: 0, y: 100, width: 240, height: 180)
@@ -903,21 +900,18 @@ final class SidebarCurrentDragResolverTests: XCTestCase {
         )
         registerTopLevelPinnedItem(
             itemId: firstShortcutId,
-            kind: .shortcut(firstShortcutId),
             spaceId: spaceId,
             topLevelIndex: 0,
             frame: CGRect(x: 0, y: 100, width: 240, height: SidebarRowLayout.rowHeight)
         )
         registerTopLevelPinnedItem(
             itemId: folderId,
-            kind: .folder(folderId),
             spaceId: spaceId,
             topLevelIndex: 1,
             frame: CGRect(x: 0, y: 140, width: 240, height: 150)
         )
         registerTopLevelPinnedItem(
             itemId: lastShortcutId,
-            kind: .shortcut(lastShortcutId),
             spaceId: spaceId,
             topLevelIndex: 2,
             frame: CGRect(x: 0, y: 300, width: 240, height: SidebarRowLayout.rowHeight)
@@ -1559,14 +1553,12 @@ final class SidebarCurrentDragResolverTests: XCTestCase {
 
     private func registerTopLevelPinnedItem(
         itemId: UUID,
-        kind: SidebarTopLevelPinnedItemKind,
         spaceId: UUID,
         topLevelIndex: Int,
         frame: CGRect
     ) {
         state.updateTopLevelPinnedItemTarget(
             itemId: itemId,
-            kind: kind,
             spaceId: spaceId,
             topLevelIndex: topLevelIndex,
             frame: frame
@@ -1789,78 +1781,6 @@ final class SidebarDragStateTests: XCTestCase {
         )
     }
 
-    func testDeferredGeometryMutationsCoalesceAndPublishLatestSnapshot() {
-        let spaceId = UUID()
-
-        state.resetGeometryInstrumentationForTesting()
-        state.schedulePageGeometry(
-            spaceId: spaceId,
-            profileId: nil,
-            frame: CGRect(x: 0, y: 0, width: 200, height: 300),
-            renderMode: .interactive,
-            generation: state.activeGeometryGeneration
-        )
-        state.schedulePageGeometry(
-            spaceId: spaceId,
-            profileId: nil,
-            frame: CGRect(x: 0, y: 0, width: 220, height: 320),
-            renderMode: .interactive,
-            generation: state.activeGeometryGeneration
-        )
-        state.scheduleSectionFrame(
-            spaceId: spaceId,
-            section: .spaceRegular,
-            frame: CGRect(x: 0, y: 220, width: 220, height: 80),
-            generation: state.activeGeometryGeneration
-        )
-
-        XCTAssertTrue(state.geometrySnapshot.pageGeometryByKey.isEmpty)
-
-        state.publishGeometrySnapshotForTesting()
-
-        XCTAssertEqual(
-            state.geometrySnapshot.pageGeometryByKey[SidebarPageGeometryKey(spaceId: spaceId, profileId: nil)]?.frame,
-            CGRect(x: 0, y: 0, width: 220, height: 320)
-        )
-        XCTAssertEqual(
-            state.geometrySnapshot.sectionFramesBySpace[SidebarSectionGeometryKey(spaceId: spaceId, section: .spaceRegular)],
-            CGRect(x: 0, y: 220, width: 220, height: 80)
-        )
-
-        let instrumentation = state.geometryInstrumentationSnapshotForTesting()
-        XCTAssertEqual(instrumentation.reporterUpdateCount, 3)
-        XCTAssertEqual(instrumentation.deferredMutationScheduleCount, 3)
-        XCTAssertEqual(instrumentation.coalescedFlushCount, 1)
-        XCTAssertEqual(instrumentation.publishedGeometrySnapshotRevisionCount, 1)
-        XCTAssertEqual(instrumentation.activeReporterCountBySection["page"], 1)
-        XCTAssertEqual(instrumentation.activeReporterCountBySection["section"], 1)
-    }
-
-    func testUnchangedGeometrySnapshotDoesNotPublishNewRevision() {
-        let spaceId = UUID()
-
-        state.updatePageGeometry(
-            spaceId: spaceId,
-            profileId: nil,
-            frame: CGRect(x: 0, y: 0, width: 200, height: 300),
-            renderMode: .interactive
-        )
-        state.resetGeometryInstrumentationForTesting()
-
-        state.applyPageGeometry(
-            spaceId: spaceId,
-            profileId: nil,
-            frame: CGRect(x: 0, y: 0, width: 200, height: 300),
-            renderMode: .interactive,
-            generation: state.activeGeometryGeneration
-        )
-        state.publishGeometrySnapshotForTesting()
-
-        let instrumentation = state.geometryInstrumentationSnapshotForTesting()
-        XCTAssertEqual(instrumentation.publishedGeometrySnapshotRevisionCount, 0)
-        XCTAssertEqual(instrumentation.unchangedGeometrySnapshotPublishSkipCount, 1)
-    }
-
     func testDragStartFlushesArmedDetailedGeometrySnapshot() {
         let spaceId = UUID()
         let itemId = UUID()
@@ -1946,7 +1866,6 @@ final class SidebarDragStateTests: XCTestCase {
         )
         state.updateTopLevelPinnedItemTarget(
             itemId: itemId,
-            kind: .shortcut(itemId),
             spaceId: spaceId,
             topLevelIndex: 0,
             frame: CGRect(x: 0, y: 80, width: 240, height: SidebarRowLayout.rowHeight)
@@ -2209,7 +2128,7 @@ final class SidebarDragStateTests: XCTestCase {
             itemCount: 2,
             generation: pendingGeneration
         )
-        state.publishGeometrySnapshotForTesting()
+        state.flushDeferredGeometryForDragStart()
 
         XCTAssertEqual(state.pendingGeometryGeneration, nil)
         XCTAssertEqual(state.activeGeometryGeneration, pendingGeneration)
@@ -2517,27 +2436,6 @@ final class SidebarDragStateTests: XCTestCase {
             isSidebarVisible: false,
             isCollapsedOverlayRevealed: true
         ))
-    }
-
-    func testCollapsedPanelDropIndicatorsRemainInHostedSidebarLayer() {
-        XCTAssertEqual(
-            SidebarDragVisualSurfacePolicy.dropIndicatorSurface(
-                for: .docked(sidebarWidth: 280)
-            ),
-            .sidebarHostedLayer
-        )
-        XCTAssertEqual(
-            SidebarDragVisualSurfacePolicy.dropIndicatorSurface(
-                for: .collapsedVisible(sidebarWidth: 280)
-            ),
-            .sidebarHostedLayer
-        )
-        XCTAssertEqual(
-            SidebarDragVisualSurfacePolicy.dropIndicatorSurface(
-                for: .collapsedVisible(sidebarWidth: 280, sidebarPosition: .right)
-            ),
-            .sidebarHostedLayer
-        )
     }
 
     func testCollapsedPanelDragVisualSourceUsesPanelOverlayInsteadOfParentOverlay() throws {

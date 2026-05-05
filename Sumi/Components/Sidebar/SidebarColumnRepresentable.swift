@@ -117,22 +117,9 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
                 browserManager?.dismissWorkspaceThemePickerIfNeededCommitting()
             }
         )
-        #if DEBUG
-        SidebarDebugMetrics.recordCollapsedSidebarHost(
-            controller: controller,
-            presentationMode: presentationContext.mode,
-            isMounted: presentationContext.isCollapsedOverlay
-        )
-        #endif
     }
 
     static func dismantleNSViewController(_ nsViewController: SidebarColumnViewController, coordinator: ()) {
-        #if DEBUG
-        SidebarDebugMetrics.recordCollapsedHiddenSidebarHost(
-            controller: nsViewController,
-            isMounted: false
-        )
-        #endif
         nsViewController.teardownSidebarHosting()
     }
 }

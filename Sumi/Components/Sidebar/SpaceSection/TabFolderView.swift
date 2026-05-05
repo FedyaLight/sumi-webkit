@@ -815,7 +815,6 @@ struct TabFolderView: View {
         SumiFolderGlyphPresentationState(
             iconValue: folder.icon,
             isOpen: folderPreviewIsOpen,
-            isDragOpenPreviewed: isFolderDragOpenPreviewed,
             hasActiveProjection: folderHasProjectedContent
         )
     }
@@ -957,27 +956,11 @@ enum SumiFolderGlyphShellState: Equatable {
 
 struct SumiFolderGlyphPresentationState: Equatable {
     let shellState: SumiFolderGlyphShellState
-    let isDragOpenPreviewed: Bool
     let isActive: Bool
     let bundledIconName: String?
 
     init(iconValue: String?, isOpen: Bool, hasActiveProjection: Bool) {
-        self.init(
-            iconValue: iconValue,
-            isOpen: isOpen,
-            isDragOpenPreviewed: false,
-            hasActiveProjection: hasActiveProjection
-        )
-    }
-
-    init(
-        iconValue: String?,
-        isOpen: Bool,
-        isDragOpenPreviewed: Bool,
-        hasActiveProjection: Bool
-    ) {
         shellState = isOpen ? .open : .closed
-        self.isDragOpenPreviewed = isDragOpenPreviewed
         isActive = !isOpen && hasActiveProjection
 
         switch SumiZenFolderIconCatalog.resolveFolderIcon(iconValue) {

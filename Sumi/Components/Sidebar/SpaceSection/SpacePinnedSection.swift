@@ -269,7 +269,6 @@ extension SpaceView {
         .environment(windowState)
         .sidebarTopLevelPinnedItemGeometry(
             itemId: folder.id,
-            kind: .folder(folder.id),
             spaceId: space.id,
             topLevelIndex: topLevelPinnedIndex,
             generation: dragState.sidebarGeometryGeneration,
@@ -306,7 +305,6 @@ extension SpaceView {
         )
         .sidebarTopLevelPinnedItemGeometry(
             itemId: pin.id,
-            kind: .shortcut(pin.id),
             spaceId: space.id,
             topLevelIndex: topLevelPinnedIndex,
             generation: dragState.sidebarGeometryGeneration,
