@@ -8,11 +8,11 @@ final class ZoomManagerTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        clearZoomDefaults()
+        Self.clearZoomDefaults()
     }
 
     override func tearDown() {
-        clearZoomDefaults()
+        Self.clearZoomDefaults()
         super.tearDown()
     }
 
@@ -85,7 +85,7 @@ final class ZoomManagerTests: XCTestCase {
         XCTAssertEqual(manager.getZoomLevel(for: tabId), 2.5, accuracy: 0.001)
     }
 
-    private func clearZoomDefaults() {
+    nonisolated private static func clearZoomDefaults() {
         let defaults = UserDefaults.standard
         for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("zoom.") {
             defaults.removeObject(forKey: key)

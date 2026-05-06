@@ -3,11 +3,11 @@ import XCTest
 
 @testable import Sumi
 
+private let webKitPermissionBridgeFixedDate = Date(timeIntervalSince1970: 1_800_000_000)
+
 @available(macOS 13.0, *)
 @MainActor
 final class SumiWebKitPermissionBridgeTests: XCTestCase {
-    private let fixedDate = Date(timeIntervalSince1970: 1_800_000_000)
-
     func testMediaTypeMapping() {
         XCTAssertEqual(
             SumiWebKitMediaCaptureDecisionMapper.permissionTypes(for: .camera),
@@ -108,7 +108,7 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
                 systemPermissionService: FakeSumiSystemPermissionService(states: [.camera: .authorized])
             ),
             persistentStore: store,
-            now: { self.fixedDate }
+            now: { webKitPermissionBridgeFixedDate }
         )
         let bridge = makeBridge(coordinator: coordinator)
 
@@ -485,7 +485,7 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
             screenCapturePendingStrategy: screenCapturePendingStrategy,
             pendingPollIntervalNanoseconds: pendingPollIntervalNanoseconds,
             coordinatorTimeoutNanoseconds: coordinatorTimeoutNanoseconds,
-            now: { self.fixedDate }
+            now: { webKitPermissionBridgeFixedDate }
         )
     }
 
@@ -500,7 +500,7 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
         let coordinator = SumiPermissionCoordinator(
             policyResolver: BridgePolicyResolver(result: policyResult),
             persistentStore: store,
-            now: { self.fixedDate }
+            now: { webKitPermissionBridgeFixedDate }
         )
         return makeBridge(
             coordinator: coordinator,
