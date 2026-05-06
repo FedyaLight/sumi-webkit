@@ -1,5 +1,4 @@
 import Combine
-import BrowserServicesKit
 import Foundation
 import WebKit
 
@@ -174,14 +173,14 @@ extension Tab {
         on userContentController: WKUserContentController,
         for targetURL: URL?
     ) async {
-        guard let provider = userContentController.sumiNormalTabUserScriptsProvider,
-              let controller = userContentController as? UserContentController
+        guard let controller = userContentController.sumiNormalTabUserContentController,
+              let provider = controller.normalTabUserScriptsProvider
         else { return }
 
         provider.replaceManagedUserScripts(normalTabManagedUserScripts(for: targetURL))
         let signpostState = PerformanceTrace.beginInterval("Tab.replaceNormalTabUserScripts")
         defer { PerformanceTrace.endInterval("Tab.replaceNormalTabUserScripts", signpostState) }
-        await controller.replaceUserScripts(with: provider)
+        await controller.replaceNormalTabUserScripts(with: provider)
     }
 
     func cancelPendingMainFrameNavigation() {

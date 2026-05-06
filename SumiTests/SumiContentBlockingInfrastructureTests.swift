@@ -128,7 +128,8 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
         let replacementProvider = SumiNormalTabUserScripts(
             managedUserScripts: [TestContentBlockingProviderUserScript(source: "window.__sumiReplacementScript = true;")]
         )
-        await firstController.replaceUserScripts(with: replacementProvider)
+        let normalTabController = try XCTUnwrap(firstController.sumiNormalTabUserContentController)
+        await normalTabController.replaceNormalTabUserScripts(with: replacementProvider)
         XCTAssertEqual(compiler.compileCount, 1)
     }
 
