@@ -63,7 +63,7 @@ final class HoverTrackingArea: NSTrackingArea {
         }
     }
 
-    private var observers: [NSKeyValueObservation]?
+    private var observers: [AnyObject]?
     private var lastEventTimestamp: TimeInterval = 0
 
     private static let mouseExitedSelector = NSStringFromSelector(#selector(NSResponder.mouseExited))
@@ -86,17 +86,24 @@ final class HoverTrackingArea: NSTrackingArea {
             owner.observe(\.mouseDownColor) { [weak self] _, _ in self?.updateLayer() },
             owner.observe(\.cornerRadius) { [weak self] _, _ in self?.updateLayer() },
             owner.observe(\.backgroundInset) { [weak self] _, _ in self?.updateLayer() },
-            (owner as? NSControl)?.observe(\.isEnabled) { [weak self] _, _ in self?.updateLayer(animated: false) },
+            (owner as? NSControl).map { control in
+                ClosureKeyValueObserver(object: control, keyPath: "enabled") { [weak self] in
+                    self?.updateLayer(animated: false)
+                }
+            },
             owner.observe(\.isMouseDown) { [weak self] _, _ in self?.mouseDownDidChange() },
             owner.observe(\.isMouseOver, options: .new) { [weak self] _, change in
                 self?.processMouseOverEvent(isMouseOver: change.newValue ?? false)
             },
-            owner.observe(\.window) { [weak self] _, _ in self?.viewWindowDidChange() },
+            ClosureKeyValueObserver(object: owner, keyPath: "window") { [weak self] in
+                self?.viewWindowDidChange()
+            },
         ].compactMap { $0 }
     }
 
     deinit {
-        observers?.forEach { $0.invalidate() }
+        observers?.compactMap { $0 as? NSKeyValueObservation }.forEach { $0.invalidate() }
+        observers?.compactMap { $0 as? ClosureKeyValueObserver }.forEach { $0.invalidate() }
     }
 
     required init?(coder: NSCoder) {
@@ -221,7 +228,7 @@ extension NSTrackingArea {
     }
 }
 
-@objc protocol HoverableProperties {
+@MainActor @objc protocol HoverableProperties {
 
     @objc dynamic var backgroundColor: NSColor? { get }
 
@@ -240,7 +247,7 @@ extension NSTrackingArea {
     @objc dynamic var mustAnimateOnMouseOver: Bool { get }
 }
 
-protocol Hoverable: NSView, HoverableProperties {
+@MainActor protocol Hoverable: NSView, HoverableProperties {
 
     func backgroundLayer(createIfNeeded: Bool) -> CALayer?
 
@@ -253,4 +260,35 @@ extension Hoverable {
     func mouseEntered(with event: NSEvent) {}
     func mouseMoved(with event: NSEvent) {}
     func mouseExited(with event: NSEvent) {}
+}
+
+private final class ClosureKeyValueObserver: NSObject {
+
+    private weak var object: NSObject?
+    private let keyPath: String
+    private let onChange: () -> Void
+    private var isObserving = true
+
+    init(object: NSObject, keyPath: String, onChange: @escaping () -> Void) {
+        self.object = object
+        self.keyPath = keyPath
+        self.onChange = onChange
+        super.init()
+        object.addObserver(self, forKeyPath: keyPath, options: [], context: nil)
+    }
+
+    deinit {
+        invalidate()
+    }
+
+    func invalidate() {
+        guard isObserving else { return }
+        object?.removeObserver(self, forKeyPath: keyPath)
+        isObserving = false
+    }
+
+    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
+        guard keyPath == self.keyPath else { return }
+        onChange()
+    }
 }

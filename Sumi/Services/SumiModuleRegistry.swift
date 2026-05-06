@@ -11,6 +11,7 @@ enum SumiModuleID: String, CaseIterable, Codable, Hashable, Identifiable, Sendab
     }
 }
 
+@MainActor
 final class SumiModuleSettingsStore {
     static let standard = SumiModuleSettingsStore(userDefaults: .standard)
 
@@ -33,6 +34,7 @@ final class SumiModuleSettingsStore {
     }
 }
 
+@MainActor
 final class SumiModuleRegistry {
     static let shared = SumiModuleRegistry()
 
