@@ -274,7 +274,7 @@ private final class CountingContentRuleListCompiler: SumiContentRuleListCompilin
     }
 }
 
-private final class TestContentBlockingProviderUserScript: NSObject, UserScript {
+private final class TestContentBlockingProviderUserScript: NSObject, SumiUserScript {
     let source: String
     let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
     let forMainFrameOnly = true

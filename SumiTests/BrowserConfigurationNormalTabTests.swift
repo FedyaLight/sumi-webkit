@@ -1,7 +1,6 @@
 import BrowserServicesKit
 import SwiftData
 import TrackerRadarKit
-import UserScript
 import WebKit
 import XCTest
 
@@ -1217,7 +1216,7 @@ private final class NormalTabExtensionsRuntimeProbe {
     var managerCount = 0
 }
 
-private final class TestNormalTabUserScript: NSObject, UserScript {
+private final class TestNormalTabUserScript: NSObject, SumiUserScript {
     let source: String
     let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
     let forMainFrameOnly = true

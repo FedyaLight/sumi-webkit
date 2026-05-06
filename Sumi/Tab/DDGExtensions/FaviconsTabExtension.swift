@@ -2,7 +2,6 @@ import AppKit
 import Combine
 import Common
 import Foundation
-import UserScript
 import WebKit
 
 /**
@@ -10,7 +9,7 @@ import WebKit
  *
  * The ownership boundary stays the same as DDG:
  * - load cached favicon or placeholder from the shared favicon backend
- * - receive live favicon links only through `FaviconUserScript`
+ * - receive live favicon links only through `SumiDDGFaviconUserScript`
  * - publish the resolved favicon back to the tab/UI layer
  */
 @MainActor
@@ -18,7 +17,7 @@ final class FaviconsTabExtension {
     let faviconManagement: FaviconManagement
 
     private weak var tab: Tab?
-    private weak var faviconUserScript: FaviconUserScript?
+    private weak var faviconUserScript: SumiDDGFaviconUserScript?
     private var cancellables = Set<AnyCancellable>()
     private var faviconHandlingTask: Task<Void, Never>? {
         willSet {
@@ -91,10 +90,10 @@ final class FaviconsTabExtension {
     }
 }
 
-extension FaviconsTabExtension: FaviconUserScriptDelegate {
+extension FaviconsTabExtension: SumiDDGFaviconUserScriptDelegate {
     func faviconUserScript(
-        _ faviconUserScript: FaviconUserScript,
-        didFindFaviconLinks faviconLinks: [FaviconUserScript.FaviconLink],
+        _ faviconUserScript: SumiDDGFaviconUserScript,
+        didFindFaviconLinks faviconLinks: [SumiDDGFaviconUserScript.FaviconLink],
         for documentUrl: URL,
         in webView: WKWebView?
     ) {

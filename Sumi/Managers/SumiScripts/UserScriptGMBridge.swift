@@ -3,7 +3,7 @@
 //  Sumi
 //
 //  Native implementation of Greasemonkey/Tampermonkey API.
-//  Provides GM.* and GM_* native glue behind a BSK UserScriptMessageBroker,
+//  Provides GM.* and GM_* native glue behind a SumiUserScriptMessageBroker,
 //  with native URLSession for GM_xmlhttpRequest (bypasses CORS/CSP).
 //
 //  Greasemonkey-style APIs commonly used by translation/network userscripts.

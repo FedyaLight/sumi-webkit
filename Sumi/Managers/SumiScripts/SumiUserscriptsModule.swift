@@ -1,6 +1,5 @@
 import Foundation
 import SwiftData
-import UserScript
 import WebKit
 
 @MainActor
@@ -69,7 +68,7 @@ final class SumiUserscriptsModule {
         webViewId: UUID,
         profileId: UUID?,
         isEphemeral: Bool
-    ) -> [UserScript] {
+    ) -> [SumiUserScript] {
         guard let manager = managerIfEnabled() else { return [] }
         return manager.normalTabUserScripts(
             for: url,

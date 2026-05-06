@@ -9,32 +9,89 @@ import WebKit
 @MainActor
 final class SumiNormalTabUserScripts: UserScriptsProvider {
     let faviconScripts = SumiDDGFaviconUserScripts()
-    private var contentBlockingUserScripts: [UserScript]
-    private var managedUserScripts: [UserScript]
+    private var contentBlockingUserScripts: [SumiUserScript]
+    private var managedUserScripts: [SumiUserScript]
+    private var bskUserScriptAdapters: [SumiBrowserServicesKitUserScriptAdapter] = []
 
     init(
-        contentBlockingUserScripts: [UserScript] = [],
-        managedUserScripts: [UserScript] = []
+        contentBlockingUserScripts: [SumiUserScript] = [],
+        managedUserScripts: [SumiUserScript] = []
     ) {
         self.contentBlockingUserScripts = contentBlockingUserScripts
         self.managedUserScripts = managedUserScripts
+        self.bskUserScriptAdapters = Self.makeBrowserServicesKitAdapters(
+            from: contentBlockingUserScripts + faviconScripts.userScripts + managedUserScripts
+        )
     }
 
-    var userScripts: [UserScript] {
+    var sumiUserScripts: [SumiUserScript] {
         contentBlockingUserScripts + faviconScripts.userScripts + managedUserScripts
     }
 
-    func replaceManagedUserScripts(_ userScripts: [UserScript]) {
+    func replaceManagedUserScripts(_ userScripts: [SumiUserScript]) {
         managedUserScripts = userScripts
+        bskUserScriptAdapters = Self.makeBrowserServicesKitAdapters(from: sumiUserScripts)
+    }
+
+    var userScripts: [UserScript] {
+        bskUserScriptAdapters
     }
 
     func loadWKUserScripts() async -> [WKUserScript] {
         var scripts: [WKUserScript] = []
-        scripts.reserveCapacity(userScripts.count)
-        for userScript in userScripts {
-            scripts.append(SumiDDGUserScriptBuilder.makeWKUserScript(from: userScript))
+        scripts.reserveCapacity(sumiUserScripts.count)
+        for userScript in sumiUserScripts {
+            scripts.append(SumiUserScriptBuilder.makeWKUserScript(from: userScript))
         }
         return scripts
+    }
+
+    private static func makeBrowserServicesKitAdapters(
+        from userScripts: [SumiUserScript]
+    ) -> [SumiBrowserServicesKitUserScriptAdapter] {
+        userScripts.map(SumiBrowserServicesKitUserScriptAdapter.init)
+    }
+}
+
+private final class SumiBrowserServicesKitUserScriptAdapter: NSObject, UserScript, WKScriptMessageHandlerWithReply {
+    private let userScript: SumiUserScript
+    let source: String
+    let injectionTime: WKUserScriptInjectionTime
+    let forMainFrameOnly: Bool
+    let requiresRunInPageContentWorld: Bool
+    let messageNames: [String]
+
+    @MainActor
+    init(_ userScript: SumiUserScript) {
+        self.userScript = userScript
+        self.source = userScript.source
+        self.injectionTime = userScript.injectionTime
+        self.forMainFrameOnly = userScript.forMainFrameOnly
+        self.requiresRunInPageContentWorld = userScript.requiresRunInPageContentWorld
+        self.messageNames = userScript.messageNames
+        super.init()
+    }
+
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) async -> (Any?, String?) {
+        guard let handler = userScript as? WKScriptMessageHandlerWithReply else {
+            await MainActor.run {
+                userScript.userContentController(userContentController, didReceive: message)
+            }
+            return (nil, nil)
+        }
+
+        return await handler.userContentController(userContentController, didReceive: message)
+    }
+
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) {
+        _ = userContentController
+        _ = message
     }
 }
 

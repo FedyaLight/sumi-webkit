@@ -1,5 +1,4 @@
 import AppKit
-import UserScript
 import WebKit
 import XCTest
 
@@ -283,12 +282,12 @@ final class FaviconDiscoveryScriptTests: XCTestCase {
 }
 
 @MainActor
-private final class FaviconUserScriptRecorder: NSObject, FaviconUserScriptDelegate {
-    var onLinks: (([FaviconUserScript.FaviconLink], URL, WKWebView?) -> Void)?
+private final class FaviconUserScriptRecorder: NSObject, SumiDDGFaviconUserScriptDelegate {
+    var onLinks: (([SumiDDGFaviconUserScript.FaviconLink], URL, WKWebView?) -> Void)?
 
     func faviconUserScript(
-        _ faviconUserScript: FaviconUserScript,
-        didFindFaviconLinks faviconLinks: [FaviconUserScript.FaviconLink],
+        _ faviconUserScript: SumiDDGFaviconUserScript,
+        didFindFaviconLinks faviconLinks: [SumiDDGFaviconUserScript.FaviconLink],
         for documentUrl: URL,
         in webView: WKWebView?
     ) {

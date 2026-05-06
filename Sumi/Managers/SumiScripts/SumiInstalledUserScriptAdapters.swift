@@ -1,7 +1,6 @@
 import Foundation
 import Common
 import os.log
-import UserScript
 import WebKit
 
 private enum SumiInstalledUserScriptFeature {
@@ -114,8 +113,8 @@ private struct SumiGMMessagePayload {
 }
 
 @MainActor
-final class SumiInstalledUserScriptAdapter: NSObject, UserScript, @MainActor UserScriptMessaging, WKScriptMessageHandlerWithReply {
-    let broker: UserScriptMessageBroker
+final class SumiInstalledUserScriptAdapter: NSObject, SumiUserScript, @MainActor SumiUserScriptMessaging, WKScriptMessageHandlerWithReply {
+    let broker: SumiUserScriptMessageBroker
     let source: String
     let injectionTime: WKUserScriptInjectionTime
     let forMainFrameOnly: Bool
@@ -152,7 +151,7 @@ final class SumiInstalledUserScriptAdapter: NSObject, UserScript, @MainActor Use
             bridge = nil
         }
 
-        self.broker = UserScriptMessageBroker(context: context)
+        self.broker = SumiUserScriptMessageBroker(context: context)
         self.bridge = bridge
         self.messageNames = bridge == nil ? [] : [context]
         self.injectionTime = script.injectionTime
@@ -210,7 +209,7 @@ final class SumiInstalledUserScriptAdapter: NSObject, UserScript, @MainActor Use
 
 @MainActor
 private func executeInstalledUserScriptBrokerAction(
-    _ action: UserScriptMessageBroker.Action,
+    _ action: SumiUserScriptMessageBroker.Action,
     original: WKScriptMessage
 ) async throws -> String {
     switch action {
@@ -255,7 +254,7 @@ private func executeInstalledUserScriptBrokerAction(
 }
 
 private struct SumiInstalledUserScriptMessageResponse: Encodable {
-    let request: RequestMessage
+    let request: SumiUserScriptRequestMessage
     let result: Encodable
 
     func encode(to encoder: Encoder) throws {
@@ -285,7 +284,7 @@ private struct SumiInstalledUserScriptMessageErrorResponse: Encodable {
     let id: String
     private let error: MessageError
 
-    init(request: RequestMessage, message: String) {
+    init(request: SumiUserScriptRequestMessage, message: String) {
         self.context = request.context
         self.featureName = request.featureName
         self.id = request.id
@@ -307,7 +306,7 @@ private struct SumiInstalledUserScriptMessageErrorResponse: Encodable {
 }
 
 @MainActor
-final class SumiInstalledUserStyleAdapter: NSObject, UserScript {
+final class SumiInstalledUserStyleAdapter: NSObject, SumiUserScript {
     let source: String
     let injectionTime: WKUserScriptInjectionTime
     let forMainFrameOnly: Bool
@@ -341,9 +340,9 @@ final class SumiInstalledUserStyleAdapter: NSObject, UserScript {
 }
 
 @MainActor
-private final class SumiGMSubfeature: NSObject, @MainActor Subfeature {
+private final class SumiGMSubfeature: NSObject, @MainActor SumiUserScriptSubfeature {
     let featureName = SumiInstalledUserScriptFeature.gm
-    let messageOriginPolicy: MessageOriginPolicy = .all
+    let messageOriginPolicy: SumiUserScriptMessageOriginPolicy = .all
 
     private let bridge: UserScriptGMBridge
 
@@ -352,7 +351,7 @@ private final class SumiGMSubfeature: NSObject, @MainActor Subfeature {
         super.init()
     }
 
-    func handler(forMethodNamed methodName: String) -> Subfeature.Handler? {
+    func handler(forMethodNamed methodName: String) -> SumiUserScriptSubfeature.Handler? {
         switch methodName {
         case "GM.getValue", "GM.getValues", "GM.setValue", "GM.setValues",
              "GM.deleteValue", "GM.deleteValues", "GM.listValues",
