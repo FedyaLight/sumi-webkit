@@ -2,21 +2,20 @@
 //  ExtensionManagerSupport+BrokerSubfeatures.swift
 //  Sumi
 //
-//  Subfeature adapters that route BSK UserScriptMessageBroker messages
+//  Subfeature adapters that route SumiUserScriptMessageBroker messages
 //  to the existing ExtensionManager handlers for externally_connectable.
 //
 
 import Foundation
-import UserScript
 import WebKit
 
 // MARK: - Page-world subfeature (sendMessage + connect from web pages)
 
 @available(macOS 15.5, *)
 @MainActor
-final class ExternallyConnectablePageSubfeature: NSObject, @MainActor Subfeature {
+final class ExternallyConnectablePageSubfeature: NSObject, @MainActor SumiUserScriptSubfeature {
     let featureName = "runtime"
-    let messageOriginPolicy: MessageOriginPolicy = .all
+    let messageOriginPolicy: SumiUserScriptMessageOriginPolicy = .all
 
     weak var manager: ExtensionManager?
 
@@ -25,7 +24,7 @@ final class ExternallyConnectablePageSubfeature: NSObject, @MainActor Subfeature
         super.init()
     }
 
-    func handler(forMethodNamed method: String) -> Subfeature.Handler? {
+    func handler(forMethodNamed method: String) -> SumiUserScriptSubfeature.Handler? {
         switch method {
         case "runtime.sendMessage", "sendMessage":
             return { [weak self] _, original in

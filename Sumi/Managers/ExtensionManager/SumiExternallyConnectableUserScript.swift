@@ -1,13 +1,12 @@
 import Foundation
 import Common
 import os.log
-import UserScript
 import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
-final class SumiExternallyConnectableUserScript: NSObject, UserScript, @MainActor UserScriptMessaging, WKScriptMessageHandlerWithReply {
-    let broker: UserScriptMessageBroker
+final class SumiExternallyConnectableUserScript: NSObject, SumiUserScript, @MainActor SumiUserScriptMessaging, WKScriptMessageHandlerWithReply {
+    let broker: SumiUserScriptMessageBroker
     let source: String
     let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
     let forMainFrameOnly = false
@@ -16,7 +15,7 @@ final class SumiExternallyConnectableUserScript: NSObject, UserScript, @MainActo
 
     init(manager: ExtensionManager, policies: [ExternallyConnectablePolicy]) {
         let context = ExtensionManager.externallyConnectableNativeBridgeHandlerName
-        self.broker = UserScriptMessageBroker(context: context)
+        self.broker = SumiUserScriptMessageBroker(context: context)
         self.messageNames = [context]
         self.source = policies
             .sorted { $0.extensionId < $1.extensionId }
@@ -124,7 +123,7 @@ private enum SumiExternallyConnectableJSONValue: Sendable {
 @available(macOS 15.5, *)
 @MainActor
 private func executeExternallyConnectableBrokerAction(
-    _ action: UserScriptMessageBroker.Action,
+    _ action: SumiUserScriptMessageBroker.Action,
     original: WKScriptMessage
 ) async throws -> String {
     switch action {
@@ -170,7 +169,7 @@ private func executeExternallyConnectableBrokerAction(
 
 @available(macOS 15.5, *)
 private struct SumiExternallyConnectableMessageResponse: Encodable {
-    let request: RequestMessage
+    let request: SumiUserScriptRequestMessage
     let result: Encodable
 
     func encode(to encoder: Encoder) throws {
@@ -201,7 +200,7 @@ private struct SumiExternallyConnectableMessageErrorResponse: Encodable {
     let id: String
     private let error: MessageError
 
-    init(request: RequestMessage, message: String) {
+    init(request: SumiUserScriptRequestMessage, message: String) {
         self.context = request.context
         self.featureName = request.featureName
         self.id = request.id

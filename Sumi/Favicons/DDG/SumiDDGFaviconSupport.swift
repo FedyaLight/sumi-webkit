@@ -1,12 +1,10 @@
 import Common
-import CryptoKit
 import Foundation
 import os.log
-import UserScript
 import WebKit
 
-final class SumiFaviconTransportUserScript: NSObject, UserScript, @MainActor UserScriptMessaging, WKScriptMessageHandlerWithReply {
-    let broker: UserScriptMessageBroker
+final class SumiFaviconTransportUserScript: NSObject, SumiUserScript, @MainActor SumiUserScriptMessaging, WKScriptMessageHandlerWithReply {
+    let broker: SumiUserScriptMessageBroker
     let source: String
     let injectionTime: WKUserScriptInjectionTime = .atDocumentEnd
     let forMainFrameOnly = true
@@ -14,7 +12,7 @@ final class SumiFaviconTransportUserScript: NSObject, UserScript, @MainActor Use
     let messageNames: [String]
 
     init(context: String = "sumiFavicons") {
-        let broker = UserScriptMessageBroker(context: context)
+        let broker = SumiUserScriptMessageBroker(context: context)
         self.broker = broker
         self.messageNames = [context]
         self.source = Self.makeSource(context: context)
@@ -148,10 +146,10 @@ final class SumiFaviconTransportUserScript: NSObject, UserScript, @MainActor Use
 }
 
 @MainActor
-final class SumiDDGFaviconUserScripts: UserScriptsProvider {
+final class SumiDDGFaviconUserScripts: SumiUserScriptsProvider {
     let transportScript: SumiFaviconTransportUserScript
-    let faviconScript = FaviconUserScript()
-    lazy var userScripts: [UserScript] = [transportScript]
+    let faviconScript = SumiDDGFaviconUserScript()
+    lazy var userScripts: [SumiUserScript] = [transportScript]
 
     init() {
         let transportScript = SumiFaviconTransportUserScript()
@@ -163,15 +161,50 @@ final class SumiDDGFaviconUserScripts: UserScriptsProvider {
         var scripts: [WKUserScript] = []
         scripts.reserveCapacity(userScripts.count)
         for userScript in userScripts {
-            scripts.append(SumiDDGUserScriptBuilder.makeWKUserScript(from: userScript))
+            scripts.append(SumiUserScriptBuilder.makeWKUserScript(from: userScript))
         }
         return scripts
     }
 }
 
+protocol SumiDDGFaviconUserScriptDelegate: AnyObject {
+    @MainActor
+    func faviconUserScript(
+        _ faviconUserScript: SumiDDGFaviconUserScript,
+        didFindFaviconLinks faviconLinks: [SumiDDGFaviconUserScript.FaviconLink],
+        for documentUrl: URL,
+        in webView: WKWebView?
+    )
+}
+
+final class SumiDDGFaviconUserScript: NSObject {
+    struct FaviconsFoundPayload: Codable, Equatable {
+        let documentUrl: URL
+        let favicons: [FaviconLink]
+    }
+
+    struct FaviconLink: Codable, Equatable {
+        let href: URL
+        let rel: String
+        let type: String?
+
+        init(href: URL, rel: String, type: String? = nil) {
+            self.href = href
+            self.rel = rel
+            self.type = type
+        }
+    }
+
+    weak var delegate: SumiDDGFaviconUserScriptDelegate?
+
+    enum MessageNames: String, CaseIterable {
+        case faviconFound
+    }
+}
+
 @MainActor
 private func executeDDGFaviconBrokerAction(
-    _ action: UserScriptMessageBroker.Action,
+    _ action: SumiUserScriptMessageBroker.Action,
     original: WKScriptMessage
 ) async throws -> String {
     switch action {
@@ -217,19 +250,19 @@ private func executeDDGFaviconBrokerAction(
 }
 
 @MainActor
-private final class SumiDDGFaviconSubfeature: NSObject, @MainActor Subfeature {
+private final class SumiDDGFaviconSubfeature: NSObject, @MainActor SumiUserScriptSubfeature {
     let featureName: String = "favicon"
-    let messageOriginPolicy: MessageOriginPolicy = .all
+    let messageOriginPolicy: SumiUserScriptMessageOriginPolicy = .all
 
-    private let faviconScript: FaviconUserScript
+    private let faviconScript: SumiDDGFaviconUserScript
 
-    init(faviconScript: FaviconUserScript) {
+    init(faviconScript: SumiDDGFaviconUserScript) {
         self.faviconScript = faviconScript
         super.init()
     }
 
-    func handler(forMethodNamed methodName: String) -> Subfeature.Handler? {
-        switch FaviconUserScript.MessageNames(rawValue: methodName) {
+    func handler(forMethodNamed methodName: String) -> SumiUserScriptSubfeature.Handler? {
+        switch SumiDDGFaviconUserScript.MessageNames(rawValue: methodName) {
         case .faviconFound:
             return { [weak self] params, original in
                 try await self?.faviconFound(params: params, original: original)
@@ -257,7 +290,7 @@ private struct SumiDDGFaviconRequestEnvelope: Sendable {
     let featureName: String
     let id: String
 
-    init(request: RequestMessage) {
+    init(request: SumiUserScriptRequestMessage) {
         self.context = request.context
         self.featureName = request.featureName
         self.id = request.id
@@ -274,7 +307,7 @@ private struct SumiDDGFaviconMessageParams: Sendable {
             return
         }
 
-        guard let faviconsPayload: FaviconUserScript.FaviconsFoundPayload = DecodableHelper.decode(from: params) else {
+        guard let faviconsPayload: SumiDDGFaviconUserScript.FaviconsFoundPayload = DecodableHelper.decode(from: params) else {
             self.documentUrl = nil
             self.favicons = []
             return
@@ -289,7 +322,7 @@ private struct SumiDDGFaviconMessageParams: Sendable {
         let rel: String
         let type: String?
 
-        init(faviconLink: FaviconUserScript.FaviconLink) {
+        init(faviconLink: SumiDDGFaviconUserScript.FaviconLink) {
             self.href = faviconLink.href
             self.rel = faviconLink.rel
             self.type = faviconLink.type
@@ -299,7 +332,7 @@ private struct SumiDDGFaviconMessageParams: Sendable {
 
 private struct SumiDDGFaviconMessagePayload {
     let documentUrl: URL
-    let favicons: [FaviconUserScript.FaviconLink]
+    let favicons: [SumiDDGFaviconUserScript.FaviconLink]
 
     static func decode(from params: Any) -> SumiDDGFaviconMessagePayload? {
         guard let params = params as? SumiDDGFaviconMessageParams,
@@ -311,7 +344,7 @@ private struct SumiDDGFaviconMessagePayload {
         return SumiDDGFaviconMessagePayload(
             documentUrl: documentUrl,
             favicons: params.favicons.map {
-                FaviconUserScript.FaviconLink(href: $0.href, rel: $0.rel, type: $0.type)
+                SumiDDGFaviconUserScript.FaviconLink(href: $0.href, rel: $0.rel, type: $0.type)
             }
         )
     }
@@ -366,30 +399,5 @@ private struct SumiDDGFaviconMessageErrorResponse: Encodable {
 
     private struct MessageError: Encodable {
         let message: String
-    }
-}
-
-enum SumiDDGUserScriptBuilder {
-    @MainActor
-    static func makeWKUserScript(from userScript: UserScript) -> WKUserScript {
-        WKUserScript(
-            source: preparedSource(from: userScript.source),
-            injectionTime: userScript.injectionTime,
-            forMainFrameOnly: userScript.forMainFrameOnly,
-            in: userScript.getContentWorld()
-        )
-    }
-
-    private static func preparedSource(from source: String) -> String {
-        let hash = SHA256.hash(data: Data(source.utf8)).hashValue
-
-        return """
-        (() => {
-            if (window.navigator._duckduckgoloader_ && window.navigator._duckduckgoloader_.includes('\(hash)')) {return}
-            \(source)
-            window.navigator._duckduckgoloader_ = window.navigator._duckduckgoloader_ || [];
-            window.navigator._duckduckgoloader_.push('\(hash)')
-        })()
-        """
     }
 }

@@ -1,4 +1,3 @@
-import UserScript
 import WebKit
 import XCTest
 

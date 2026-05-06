@@ -3,11 +3,10 @@ import Common
 import Foundation
 import Navigation
 import os.log
-import UserScript
 import WebKit
 
 extension Tab {
-    func normalTabCoreUserScripts() -> [UserScript] {
+    func normalTabCoreUserScripts() -> [SumiUserScript] {
         [
             SumiLinkInteractionUserScript(tab: self),
             SumiIdentityUserScript(tab: self),
@@ -143,9 +142,9 @@ extension Tab {
 /// Reports hovered `<a href>` for chrome (e.g. link status). Injected in the main frame only to limit work in subframes;
 /// links inside iframes will not drive the status line until hovered in the top document.
 @MainActor
-private final class SumiLinkInteractionUserScript: NSObject, UserScript, @MainActor UserScriptMessaging, WKScriptMessageHandlerWithReply {
+private final class SumiLinkInteractionUserScript: NSObject, SumiUserScript, @MainActor SumiUserScriptMessaging, WKScriptMessageHandlerWithReply {
     private let context: String
-    let broker: UserScriptMessageBroker
+    let broker: SumiUserScriptMessageBroker
     let source: String
     let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
     let forMainFrameOnly = true
@@ -154,7 +153,7 @@ private final class SumiLinkInteractionUserScript: NSObject, UserScript, @MainAc
 
     init(tab: Tab) {
         self.context = "sumiLinkInteraction_\(tab.id.uuidString)"
-        self.broker = UserScriptMessageBroker(context: context)
+        self.broker = SumiUserScriptMessageBroker(context: context)
         self.messageNames = [context]
         self.source = Self.makeSource(context: context)
         super.init()
@@ -247,9 +246,9 @@ private final class SumiLinkInteractionUserScript: NSObject, UserScript, @MainAc
 }
 
 @MainActor
-private final class SumiLinkInteractionSubfeature: NSObject, @MainActor Subfeature {
+private final class SumiLinkInteractionSubfeature: NSObject, @MainActor SumiUserScriptSubfeature {
     let featureName = "linkInteraction"
-    let messageOriginPolicy: MessageOriginPolicy = .all
+    let messageOriginPolicy: SumiUserScriptMessageOriginPolicy = .all
     weak var tab: Tab?
 
     init(tab: Tab) {
@@ -257,7 +256,7 @@ private final class SumiLinkInteractionSubfeature: NSObject, @MainActor Subfeatu
         super.init()
     }
 
-    func handler(forMethodNamed methodName: String) -> Subfeature.Handler? {
+    func handler(forMethodNamed methodName: String) -> SumiUserScriptSubfeature.Handler? {
         switch methodName {
         case "linkHover":
             return { [weak self] params, _ in
@@ -293,9 +292,9 @@ private struct SumiHrefPayload {
 }
 
 @MainActor
-private final class SumiTabSuspensionUserScript: NSObject, UserScript, @MainActor UserScriptMessaging, WKScriptMessageHandlerWithReply {
+private final class SumiTabSuspensionUserScript: NSObject, SumiUserScript, @MainActor SumiUserScriptMessaging, WKScriptMessageHandlerWithReply {
     private let context: String
-    let broker: UserScriptMessageBroker
+    let broker: SumiUserScriptMessageBroker
     let source: String
     let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
     let forMainFrameOnly = true
@@ -304,7 +303,7 @@ private final class SumiTabSuspensionUserScript: NSObject, UserScript, @MainActo
 
     init(tab: Tab) {
         self.context = "sumiTabSuspension_\(tab.id.uuidString)"
-        self.broker = UserScriptMessageBroker(context: context)
+        self.broker = SumiUserScriptMessageBroker(context: context)
         self.messageNames = [context]
         self.source = Self.makeSource(context: context)
         super.init()
@@ -358,9 +357,9 @@ private final class SumiTabSuspensionUserScript: NSObject, UserScript, @MainActo
 }
 
 @MainActor
-private final class SumiTabSuspensionSubfeature: NSObject, @MainActor Subfeature {
+private final class SumiTabSuspensionSubfeature: NSObject, @MainActor SumiUserScriptSubfeature {
     let featureName = "tabSuspension"
-    let messageOriginPolicy: MessageOriginPolicy = .all
+    let messageOriginPolicy: SumiUserScriptMessageOriginPolicy = .all
     weak var tab: Tab?
 
     init(tab: Tab) {
@@ -368,7 +367,7 @@ private final class SumiTabSuspensionSubfeature: NSObject, @MainActor Subfeature
         super.init()
     }
 
-    func handler(forMethodNamed methodName: String) -> Subfeature.Handler? {
+    func handler(forMethodNamed methodName: String) -> SumiUserScriptSubfeature.Handler? {
         guard methodName == "canBeSuspended" else { return nil }
         return { [weak self] params, _ in
             guard let payload = SumiTabSuspensionPayload.decode(from: params) else {
@@ -401,9 +400,9 @@ private struct SumiTabSuspensionPayload {
 }
 
 @MainActor
-private final class SumiIdentityUserScript: NSObject, UserScript, @MainActor UserScriptMessaging, WKScriptMessageHandlerWithReply {
+private final class SumiIdentityUserScript: NSObject, SumiUserScript, @MainActor SumiUserScriptMessaging, WKScriptMessageHandlerWithReply {
     private let context: String
-    let broker: UserScriptMessageBroker
+    let broker: SumiUserScriptMessageBroker
     let source: String
     let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
     let forMainFrameOnly = true
@@ -412,7 +411,7 @@ private final class SumiIdentityUserScript: NSObject, UserScript, @MainActor Use
 
     init(tab: Tab) {
         self.context = "sumiIdentity_\(tab.id.uuidString)"
-        self.broker = UserScriptMessageBroker(context: context)
+        self.broker = SumiUserScriptMessageBroker(context: context)
         self.messageNames = [context]
         self.source = Self.makeSource(context: context)
         super.init()
@@ -468,7 +467,7 @@ private final class SumiIdentityUserScript: NSObject, UserScript, @MainActor Use
 
 @MainActor
 private func executeTabScriptBrokerAction(
-    _ action: UserScriptMessageBroker.Action,
+    _ action: SumiUserScriptMessageBroker.Action,
     original: WKScriptMessage
 ) async throws -> String {
     switch action {
@@ -539,7 +538,7 @@ private struct SumiTabScriptMessageParams: Sendable {
 }
 
 private struct SumiTabScriptMessageResponse: Encodable {
-    let request: RequestMessage
+    let request: SumiUserScriptRequestMessage
     let result: Encodable
 
     func encode(to encoder: Encoder) throws {
@@ -569,7 +568,7 @@ private struct SumiTabScriptMessageErrorResponse: Encodable {
     let id: String
     private let error: MessageError
 
-    init(request: RequestMessage, message: String) {
+    init(request: SumiUserScriptRequestMessage, message: String) {
         self.context = request.context
         self.featureName = request.featureName
         self.id = request.id
@@ -591,9 +590,9 @@ private struct SumiTabScriptMessageErrorResponse: Encodable {
 }
 
 @MainActor
-private final class SumiIdentitySubfeature: NSObject, @MainActor Subfeature {
+private final class SumiIdentitySubfeature: NSObject, @MainActor SumiUserScriptSubfeature {
     let featureName = "identity"
-    let messageOriginPolicy: MessageOriginPolicy = .all
+    let messageOriginPolicy: SumiUserScriptMessageOriginPolicy = .all
     weak var tab: Tab?
 
     init(tab: Tab) {
@@ -601,7 +600,7 @@ private final class SumiIdentitySubfeature: NSObject, @MainActor Subfeature {
         super.init()
     }
 
-    func handler(forMethodNamed methodName: String) -> Subfeature.Handler? {
+    func handler(forMethodNamed methodName: String) -> SumiUserScriptSubfeature.Handler? {
         guard methodName == "request" else { return nil }
         return { [weak self] params, _ in
             guard let payload = SumiIdentityRequestPayload.decode(from: params),

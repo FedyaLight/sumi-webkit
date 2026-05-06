@@ -1,10 +1,10 @@
 # SumiScripts Module - Integration Guide
 
-This document describes how the native Sumi userscript runtime is wired into the BrowserServicesKit user-script pipeline.
+This document describes how the native Sumi userscript runtime is wired into the normal-tab user-content pipeline.
 
 ## Overview
 
-The runtime is owned by `SumiUserscriptsModule`, which is attached to `BrowserManager` but does not construct `SumiScriptsManager` until `SumiModuleRegistry.isEnabled(.userScripts)` is true and a userscript feature actually needs the manager. While disabled there is no manager, store watcher, installed-script adapter, pending install/update work, GM bridge, or BSK `UserScript` contribution for future normal-tab navigations.
+The runtime is owned by `SumiUserscriptsModule`, which is attached to `BrowserManager` but does not construct `SumiScriptsManager` until `SumiModuleRegistry.isEnabled(.userScripts)` is true and a userscript feature actually needs the manager. While disabled there is no manager, store watcher, installed-script adapter, pending install/update work, GM bridge, or Sumi `UserScript` contribution for future normal-tab navigations.
 
 Normal tabs do not mutate `WKUserContentController` directly. They build one `SumiNormalTabUserScripts` provider and install it through the Prompt 03 BrowserServicesKit `UserContentController`.
 
@@ -21,7 +21,7 @@ Tab setup / normal-tab navigation
           -> SumiScriptsManager
           -> UserScriptInjector.makeUserScripts(...)
           -> SumiInstalledUserScriptAdapter / SumiInstalledUserStyleAdapter
-          -> UserScriptGMBridge behind a BSK UserScriptMessageBroker
+          -> UserScriptGMBridge behind a SumiUserScriptMessageBroker
   -> BSK UserContentController installs WKUserScripts and weak broker handlers
 ```
 
@@ -44,7 +44,7 @@ That BSK replacement path removes only BSK-installed scripts/handlers and then i
 
 ## Broker Boundaries
 
-Each script or feature owns its own BSK `UserScriptMessageBroker` context:
+Each script or feature owns its own `SumiUserScriptMessageBroker` context:
 
 | Context | Owner |
 | --- | --- |
@@ -59,7 +59,7 @@ Payload parsing stays local to the subfeature. Malformed payloads return no side
 
 Sumi keeps GM APIs because installed userscripts rely on them. The native bridge is no longer a global script-message hot path:
 
-- `UserScriptInjector` returns BSK `UserScript` adapters instead of mutating a controller.
+- `UserScriptInjector` returns Sumi `UserScript` adapters instead of mutating a controller.
 - `SumiInstalledUserScriptAdapter` registers a per-script broker only when the script needs GM/native glue.
 - `SumiGMSubfeature` routes allowed GM methods to `UserScriptGMBridge`.
 - Network and download APIs remain native, but only through the typed `gm` broker boundary.

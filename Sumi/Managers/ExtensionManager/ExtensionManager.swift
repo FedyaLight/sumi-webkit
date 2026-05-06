@@ -10,7 +10,6 @@ import Combine
 import Foundation
 import OSLog
 import SwiftData
-import UserScript
 import WebKit
 
 @available(macOS 15.5, *)
@@ -333,7 +332,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         return created
     }
 
-    func normalTabUserScripts() -> [UserScript] {
+    func normalTabUserScripts() -> [SumiUserScript] {
         guard externallyConnectablePolicies.isEmpty == false else { return [] }
         return [
             SumiExternallyConnectableUserScript(

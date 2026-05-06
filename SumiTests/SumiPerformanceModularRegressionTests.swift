@@ -1,6 +1,5 @@
 import BrowserServicesKit
 import SwiftData
-import UserScript
 import WebKit
 import XCTest
 

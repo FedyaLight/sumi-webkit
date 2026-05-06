@@ -1,13 +1,12 @@
 import Foundation
 import Common
 import os.log
-import UserScript
 import WebKit
 
 @MainActor
-final class SumiWebNotificationUserScript: NSObject, UserScript, @MainActor UserScriptMessaging, WKScriptMessageHandlerWithReply {
+final class SumiWebNotificationUserScript: NSObject, SumiUserScript, @MainActor SumiUserScriptMessaging, WKScriptMessageHandlerWithReply {
     private let context: String
-    let broker: UserScriptMessageBroker
+    let broker: SumiUserScriptMessageBroker
     let source: String
     let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
     let forMainFrameOnly = true
@@ -16,7 +15,7 @@ final class SumiWebNotificationUserScript: NSObject, UserScript, @MainActor User
 
     init(tab: Tab) {
         self.context = "sumiWebNotifications_\(tab.id.uuidString)"
-        self.broker = UserScriptMessageBroker(context: context)
+        self.broker = SumiUserScriptMessageBroker(context: context)
         self.messageNames = [context]
         self.source = Self.makeSource(context: context)
         super.init()
@@ -252,7 +251,7 @@ final class SumiWebNotificationUserScript: NSObject, UserScript, @MainActor User
         }
     }
 
-    private func executeBrokerAction(_ action: UserScriptMessageBroker.Action, original: WKScriptMessage) async throws -> String {
+    private func executeBrokerAction(_ action: SumiUserScriptMessageBroker.Action, original: WKScriptMessage) async throws -> String {
         switch action {
         case .notify(let handler, let params):
             let params = SumiWebNotificationMessageParams(from: params)
@@ -301,7 +300,7 @@ final class SumiWebNotificationUserScript: NSObject, UserScript, @MainActor User
 }
 
 private struct SumiWebNotificationMessageResponse: Encodable {
-    let request: RequestMessage
+    let request: SumiUserScriptRequestMessage
     let result: Encodable
 
     func encode(to encoder: Encoder) throws {
@@ -331,7 +330,7 @@ private struct SumiWebNotificationMessageErrorResponse: Encodable {
     let id: String
     private let error: MessageError
 
-    init(request: RequestMessage, message: String) {
+    init(request: SumiUserScriptRequestMessage, message: String) {
         self.context = request.context
         self.featureName = request.featureName
         self.id = request.id
@@ -353,9 +352,9 @@ private struct SumiWebNotificationMessageErrorResponse: Encodable {
 }
 
 @MainActor
-private final class SumiWebNotificationSubfeature: NSObject, @MainActor Subfeature {
+private final class SumiWebNotificationSubfeature: NSObject, @MainActor SumiUserScriptSubfeature {
     let featureName = "webNotifications"
-    let messageOriginPolicy: MessageOriginPolicy = .all
+    let messageOriginPolicy: SumiUserScriptMessageOriginPolicy = .all
     weak var tab: Tab?
 
     init(tab: Tab) {
@@ -363,7 +362,7 @@ private final class SumiWebNotificationSubfeature: NSObject, @MainActor Subfeatu
         super.init()
     }
 
-    func handler(forMethodNamed methodName: String) -> Subfeature.Handler? {
+    func handler(forMethodNamed methodName: String) -> SumiUserScriptSubfeature.Handler? {
         switch methodName {
         case "getPermission", "requestPermission", "showNotification", "closeNotification":
             return { [weak self] params, original in

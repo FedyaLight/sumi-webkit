@@ -10,7 +10,6 @@
 //
 
 import Foundation
-import UserScript
 import WebKit
 
 @MainActor
@@ -30,7 +29,7 @@ final class UserScriptInjector {
         webViewId: UUID,
         profileId: UUID?,
         isEphemeral: Bool
-    ) -> [UserScript] {
+    ) -> [SumiUserScript] {
         activeBridges[webViewId] = [:]
 
         return scripts.map { script in

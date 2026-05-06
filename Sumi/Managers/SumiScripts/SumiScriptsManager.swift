@@ -10,7 +10,7 @@
 //
 //  Lifecycle:
 //  - On module activation, loads scripts from disk
-//  - On navigation policy: prepares BSK UserScript adapters for the URL
+//  - On navigation policy: prepares Sumi user-script adapters for the URL
 //  - On disable: releases all native GM bridge state
 //
 //  INTEGRATION NOTES:
@@ -20,7 +20,7 @@
 //  Dependency sketch:
 //  Tab (WebView/Navigation) → SumiScriptsManager
 //    → UserScriptStore (disk manifest + SwiftData mirror in UserScriptStore+SwiftData)
-//    → UserScriptInjector → BSK UserScript adapters → per-script UserScriptGMBridge glue
+//    -> UserScriptInjector -> Sumi user-script adapters -> per-script UserScriptGMBridge glue
 //    Remote installs: SumiScriptsRemoteInstall (URL sniffing, preview, NSAlert)
 //
 
@@ -29,7 +29,6 @@ import Foundation
 import WebKit
 import Combine
 import SwiftData
-import UserScript
 
 @MainActor
 final class SumiScriptsManager: ObservableObject {
@@ -382,7 +381,7 @@ final class SumiScriptsManager: ObservableObject {
         webViewId: UUID,
         profileId: UUID? = nil,
         isEphemeral: Bool = false
-    ) -> [UserScript] {
+    ) -> [SumiUserScript] {
         guard isEnabled, let store, let injector else { return [] }
 
         let matchingScripts = store.scriptsForURL(url)
@@ -401,7 +400,7 @@ final class SumiScriptsManager: ObservableObject {
         activeScriptCount = matchingScripts.count
 
         RuntimeDiagnostics.debug(
-            "Prepared \(matchingScripts.count) BSK userscript(s) for \(url.host ?? url.absoluteString)",
+            "Prepared \(matchingScripts.count) Sumi userscript(s) for \(url.host ?? url.absoluteString)",
             category: "SumiScripts"
         )
         return userScripts

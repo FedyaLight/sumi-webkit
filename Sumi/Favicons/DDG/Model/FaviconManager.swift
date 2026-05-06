@@ -23,7 +23,6 @@ import Common
 import CoreImage
 import os.log
 import Persistence
-import UserScript
 import WebKit
 
 @MainActor
@@ -37,7 +36,7 @@ protocol FaviconManagement: AnyObject {
     var isCacheLoaded: Bool { get }
 
     @MainActor
-    func handleFaviconLinks(_ faviconLinks: [FaviconUserScript.FaviconLink], documentUrl: URL, webView: WKWebView?) async -> Favicon?
+    func handleFaviconLinks(_ faviconLinks: [SumiDDGFaviconUserScript.FaviconLink], documentUrl: URL, webView: WKWebView?) async -> Favicon?
 
     @MainActor
     func getCachedFavicon(for documentUrl: URL, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) -> Favicon?
@@ -152,7 +151,7 @@ final class FaviconManager: FaviconManagement {
     private let referenceCache: FaviconReferenceCaching
 
     @MainActor
-    func handleFaviconLinks(_ faviconLinks: [FaviconUserScript.FaviconLink], documentUrl: URL, webView: WKWebView?) async -> Favicon? {
+    func handleFaviconLinks(_ faviconLinks: [SumiDDGFaviconUserScript.FaviconLink], documentUrl: URL, webView: WKWebView?) async -> Favicon? {
         await awaitFaviconsLoaded()
         guard !Task.isCancelled else { return nil }
 
@@ -419,7 +418,7 @@ private struct FaviconLinkSnapshot: Sendable {
         self.rel = rel
     }
 
-    init(_ faviconLink: FaviconUserScript.FaviconLink) {
+    init(_ faviconLink: SumiDDGFaviconUserScript.FaviconLink) {
         self.init(href: faviconLink.href, rel: faviconLink.rel)
     }
 }

@@ -1,7 +1,6 @@
 import AppKit
 import Foundation
 import SwiftData
-import UserScript
 import WebKit
 
 @MainActor
@@ -99,7 +98,7 @@ final class SumiExtensionsModule {
         return manager
     }
 
-    func normalTabUserScripts() -> [UserScript] {
+    func normalTabUserScripts() -> [SumiUserScript] {
         managerIfEnabled()?.normalTabUserScripts() ?? []
     }
 

@@ -1,7 +1,6 @@
 import Combine
 import BrowserServicesKit
 import Foundation
-import UserScript
 import WebKit
 
 extension Tab {
@@ -153,7 +152,7 @@ extension Tab {
         SumiNormalTabUserScripts(managedUserScripts: normalTabManagedUserScripts(for: targetURL))
     }
 
-    func normalTabManagedUserScripts(for targetURL: URL?) -> [UserScript] {
+    func normalTabManagedUserScripts(for targetURL: URL?) -> [SumiUserScript] {
         var scripts = normalTabCoreUserScripts()
         scripts.append(contentsOf: browserManager?.extensionsModule.normalTabUserScripts() ?? [])
 
