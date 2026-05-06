@@ -1,5 +1,4 @@
 import Foundation
-import Common
 import Navigation
 
 enum SumiExternalSchemeClassification: String, Codable, Equatable, Sendable {
@@ -146,7 +145,7 @@ struct SumiExternalSchemePermissionRequest: Sendable {
 
         return SumiExternalSchemePermissionRequest(
             targetURL: targetURL,
-            requestingOrigin: permissionOrigin(from: navigationAction.sourceFrame.securityOrigin),
+            requestingOrigin: permissionOrigin(from: SumiSecurityOrigin(navigationAction.sourceFrame.securityOrigin)),
             userActivation: resolvedActivation,
             isMainFrame: navigationAction.sourceFrame.isMainFrame,
             isRedirectChain: isRedirectChain
@@ -228,19 +227,8 @@ struct SumiExternalSchemePermissionRequest: Sendable {
         return scheme.unicodeScalars.allSatisfy { allowed.contains($0) }
     }
 
-    private static func permissionOrigin(from origin: SecurityOrigin) -> SumiPermissionOrigin {
-        let scheme = origin.`protocol`.trimmingCharacters(in: .whitespacesAndNewlines)
-        let host = origin.host.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !scheme.isEmpty, !host.isEmpty else {
-            return .invalid(reason: "missing-navigation-external-scheme-security-origin")
-        }
-        var components = URLComponents()
-        components.scheme = scheme
-        components.host = host
-        if origin.port > 0 {
-            components.port = origin.port
-        }
-        return SumiPermissionOrigin(url: components.url)
+    private static func permissionOrigin(from origin: SumiSecurityOrigin) -> SumiPermissionOrigin {
+        origin.permissionOrigin(missingReason: "missing-navigation-external-scheme-security-origin")
     }
 
     @MainActor
