@@ -6,7 +6,6 @@
 //
 
 import AppKit
-import BrowserServicesKit
 import Combine
 import Foundation
 import SwiftUI
@@ -38,7 +37,7 @@ enum SumiWebViewShutdown {
             webViewId: tabId
         )
 
-        if let controller = webView.configuration.userContentController as? UserContentController {
+        if let controller = webView.configuration.userContentController.sumiNormalTabUserContentController {
             controller.cleanUpBeforeClosing()
         }
 
