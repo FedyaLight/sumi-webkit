@@ -240,7 +240,7 @@ final class SumiNavigationHistoryMenuDelegate: NSObject, NSMenuDelegate {
             menuItem.state = item.isCurrent ? .on : .off
             menuItem.isEnabled = item.url != nil
             menuItem.representedObject = item.id
-            menuItem.image = SumiNavigationHistoryFaviconResolver.image(for: item.url)
+            menuItem.image = SumiFaviconResolver.menuImage(for: item.url)
             menu.addItem(menuItem)
         }
     }
@@ -256,59 +256,5 @@ final class SumiNavigationHistoryMenuDelegate: NSObject, NSMenuDelegate {
             windowState: windowState,
             event: NSApp.currentEvent
         )
-    }
-}
-
-private enum SumiNavigationHistoryFaviconResolver {
-    static func image(for url: URL?) -> NSImage? {
-        guard let url else { return placeholderImage() }
-
-        if let systemName = systemImageName(for: url),
-           let image = NSImage(systemSymbolName: systemName, accessibilityDescription: nil) {
-            image.size = NSSize(width: 16, height: 16)
-            return image
-        }
-
-        if let cacheKey = SumiFaviconResolver.cacheKey(for: url),
-           let image = TabFaviconStore.getCachedImage(for: cacheKey) {
-            return image.sumiNavigationHistoryMenuResizedToFaviconSize()
-        }
-
-        return placeholderImage()
-    }
-
-    private static func systemImageName(for url: URL) -> String? {
-        if SumiSurface.isSettingsSurfaceURL(url) {
-            return SumiSurface.settingsTabFaviconSystemImageName
-        }
-        if SumiSurface.isHistorySurfaceURL(url) {
-            return SumiSurface.historyTabFaviconSystemImageName
-        }
-        if SumiSurface.isBookmarksSurfaceURL(url) {
-            return SumiSurface.bookmarksTabFaviconSystemImageName
-        }
-        return nil
-    }
-
-    private static func placeholderImage() -> NSImage? {
-        let placeholder = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
-        placeholder?.size = NSSize(width: 16, height: 16)
-        return placeholder
-    }
-}
-
-private extension NSImage {
-    func sumiNavigationHistoryMenuResizedToFaviconSize() -> NSImage {
-        let targetSize = NSSize(width: 16, height: 16)
-        let image = NSImage(size: targetSize)
-        image.lockFocus()
-        draw(
-            in: NSRect(origin: .zero, size: targetSize),
-            from: NSRect(origin: .zero, size: size),
-            operation: .copy,
-            fraction: 1.0
-        )
-        image.unlockFocus()
-        return image
     }
 }
