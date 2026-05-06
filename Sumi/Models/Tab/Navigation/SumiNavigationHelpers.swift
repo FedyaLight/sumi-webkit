@@ -1,5 +1,4 @@
 import AppKit
-import Common
 import Foundation
 import Navigation
 import WebKit
@@ -33,10 +32,6 @@ extension NavigationAction {
     }
 }
 
-extension URL.NavigationalScheme {
-    static let javascript = URL.NavigationalScheme(rawValue: "javascript")
-}
-
 extension URL {
     var sumiIsExternalSchemeLink: Bool {
         guard let scheme = scheme?.lowercased(),
@@ -60,7 +55,7 @@ extension URL {
             .javascript,
             .duck,
             .webkitExtension,
-        ].contains(navigationalScheme)
+        ].contains(sumiNavigationalScheme)
     }
 }
 

@@ -1,5 +1,4 @@
 import AppKit
-import Common
 import Foundation
 import Navigation
 import os.log
@@ -476,7 +475,7 @@ private func executeTabScriptBrokerAction(
         do {
             _ = try await handler(params, original)
         } catch {
-            Logger.general.error("UserScriptMessaging: unhandled exception \(error.localizedDescription, privacy: .public)")
+            Logger.sumiGeneral.error("UserScriptMessaging: unhandled exception \(error.localizedDescription, privacy: .public)")
         }
         return "{}"
 

@@ -1,5 +1,4 @@
 import Foundation
-import Common
 import os.log
 import WebKit
 
@@ -132,7 +131,7 @@ private func executeExternallyConnectableBrokerAction(
         do {
             _ = try await handler(params, original)
         } catch {
-            Logger.general.error("UserScriptMessaging: unhandled exception \(error.localizedDescription, privacy: .public)")
+            Logger.sumiGeneral.error("UserScriptMessaging: unhandled exception \(error.localizedDescription, privacy: .public)")
         }
         return "{}"
 

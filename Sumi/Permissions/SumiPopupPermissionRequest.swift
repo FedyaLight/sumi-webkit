@@ -208,10 +208,10 @@ struct SumiPopupPermissionRequest: Sendable {
         if isBrowserOwned(sourceURL) || isBrowserOwned(targetURL) {
             return .internalOrBrowserOwned
         }
-        guard let targetURL, !targetURL.isEmpty else {
+        guard let targetURL, !targetURL.sumiIsEmpty else {
             return .emptyOrAboutBlank
         }
-        if targetURL.navigationalScheme == .about {
+        if targetURL.sumiNavigationalScheme == .about {
             return .emptyOrAboutBlank
         }
         switch userActivation {

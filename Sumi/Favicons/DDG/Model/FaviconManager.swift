@@ -291,13 +291,13 @@ final class FaviconManager: FaviconManagement {
     // MARK: - Private
 
     private func fallbackFaviconLinks(for documentUrl: URL) -> [FaviconLinkSnapshot] {
-        guard let root = documentUrl.root else { return [] }
+        guard let root = documentUrl.sumiRoot else { return [] }
         var result = [FaviconLinkSnapshot]()
-        if [.https, .http].contains(documentUrl.navigationalScheme) {
-            result.append(FaviconLinkSnapshot(href: root.appending("favicon.ico"), rel: "favicon.ico"))
+        if [.https, .http].contains(documentUrl.sumiNavigationalScheme) {
+            result.append(FaviconLinkSnapshot(href: root.sumiAppending("favicon.ico"), rel: "favicon.ico"))
         }
-        if documentUrl.navigationalScheme == .http, let upgradedRoot = root.toHttps() {
-            result.append(FaviconLinkSnapshot(href: upgradedRoot.appending("favicon.ico"), rel: "favicon.ico"))
+        if documentUrl.sumiNavigationalScheme == .http, let upgradedRoot = root.sumiToHttps() {
+            result.append(FaviconLinkSnapshot(href: upgradedRoot.sumiAppending("favicon.ico"), rel: "favicon.ico"))
         }
         return result
     }
@@ -309,7 +309,7 @@ final class FaviconManager: FaviconManagement {
         let urlsToLinks = faviconLinks.reduce(into: [URL: FaviconLinkSnapshot]()) { result, faviconLink in
             result[faviconLink.href] = faviconLink
         }
-        let weekAgo = Date.weekAgo
+        let weekAgo = Date.sumiWeekAgo
         let faviconURLs = Array(urlsToLinks.keys)
         let cachedFavicons = imageCache.getFavicons(with: faviconURLs)?
             .filter { favicon in
@@ -399,7 +399,7 @@ final class FaviconManager: FaviconManagement {
         // Insert new favicons to cache
         imageCache.insert(favicons)
         // Pick most suitable favicons
-        let cachedFavicons = imageCache.getFavicons(with: faviconURLs)?.filter { $0.dateCreated > Date.weekAgo }
+        let cachedFavicons = imageCache.getFavicons(with: faviconURLs)?.filter { $0.dateCreated > Date.sumiWeekAgo }
 
         return await handleFaviconReferenceCacheInsertion(
             documentURL: documentUrl,
