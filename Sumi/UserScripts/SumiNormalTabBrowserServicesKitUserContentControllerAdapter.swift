@@ -1,47 +1,20 @@
-import BrowserServicesKit
 import Combine
-import ContentBlocking
 import Foundation
-import ObjectiveC
-import UserScript
 import WebKit
 
-@MainActor
-final class SumiBrowserServicesKitEmptyUserScriptsProvider: UserScriptsProvider {
-    var userScripts: [UserScript] {
-        []
-    }
+struct SumiNormalTabContentBlockingUpdate {
+    let globalRuleLists: [String: WKContentRuleList]
+    let updateRuleCount: Int
 
-    func loadWKUserScripts() async -> [WKUserScript] {
-        []
-    }
+    static let empty = SumiNormalTabContentBlockingUpdate(
+        globalRuleLists: [:],
+        updateRuleCount: 0
+    )
 }
 
-@MainActor
-private enum SumiNormalTabBrowserServicesKitAssociatedKeys {
-    static var controllerDelegate: UInt8 = 0
-    static var controllerBridge: UInt8 = 0
-}
-
-struct SumiNormalTabUserContent: UserContentControllerNewContent {
-    typealias SourceProvider = SumiNormalTabUserScripts
-    typealias UserScripts = SumiBrowserServicesKitEmptyUserScriptsProvider
-
-    let rulesUpdate: ContentBlockerRulesManager.UpdateEvent
+struct SumiNormalTabUserContent {
+    let contentBlockingUpdate: SumiNormalTabContentBlockingUpdate
     let sourceProvider: SumiNormalTabUserScripts
-    let makeUserScripts: @MainActor (SumiNormalTabUserScripts) -> SumiBrowserServicesKitEmptyUserScriptsProvider
-
-    init(
-        rulesUpdate: ContentBlockerRulesManager.UpdateEvent,
-        sourceProvider: SumiNormalTabUserScripts,
-        makeUserScripts: @escaping @MainActor (SumiNormalTabUserScripts) -> SumiBrowserServicesKitEmptyUserScriptsProvider = { _ in
-            SumiBrowserServicesKitEmptyUserScriptsProvider()
-        }
-    ) {
-        self.rulesUpdate = rulesUpdate
-        self.sourceProvider = sourceProvider
-        self.makeUserScripts = makeUserScripts
-    }
 }
 
 @MainActor
@@ -55,7 +28,7 @@ struct SumiNormalTabContentBlockingAssetSource {
         SumiNormalTabContentBlockingAssetSource(
             assetsPublisher: Just(
                 SumiNormalTabUserContent(
-                    rulesUpdate: disabledContentBlockingUpdate(),
+                    contentBlockingUpdate: .empty,
                     sourceProvider: scriptsProvider
                 )
             )
@@ -79,91 +52,76 @@ struct SumiNormalTabContentBlockingAssetSource {
             privacyConfigurationManager: contentBlockingService.privacyConfigurationManager
         )
     }
-
-    private static func disabledContentBlockingUpdate() -> ContentBlockerRulesManager.UpdateEvent {
-        ContentBlockerRulesManager.UpdateEvent(
-            rules: [],
-            changes: [:],
-            completionTokens: []
-        )
-    }
-}
-
-extension WKUserContentController {
-    @MainActor
-    fileprivate var sumiNormalTabControllerDelegate: SumiNormalTabUserContentControllerDelegate? {
-        get {
-            objc_getAssociatedObject(
-                self,
-                &SumiNormalTabBrowserServicesKitAssociatedKeys.controllerDelegate
-            ) as? SumiNormalTabUserContentControllerDelegate
-        }
-        set {
-            objc_setAssociatedObject(
-                self,
-                &SumiNormalTabBrowserServicesKitAssociatedKeys.controllerDelegate,
-                newValue,
-                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
-            )
-        }
-    }
-
-    @MainActor
-    var sumiNormalTabUserContentControllerBridge: SumiNormalTabUserContentControllerBridge? {
-        get {
-            objc_getAssociatedObject(
-                self,
-                &SumiNormalTabBrowserServicesKitAssociatedKeys.controllerBridge
-            ) as? SumiNormalTabUserContentControllerBridge
-        }
-        set {
-            objc_setAssociatedObject(
-                self,
-                &SumiNormalTabBrowserServicesKitAssociatedKeys.controllerBridge,
-                newValue,
-                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
-            )
-        }
-    }
 }
 
 @MainActor
-final class SumiNormalTabUserContentControllerBridge: SumiNormalTabUserContentControlling {
-    private unowned let controller: UserContentController
-    private let messageHandlerRegistry: SumiUserScriptMessageHandlerRegistry
+final class SumiNormalTabUserContentController: WKUserContentController, SumiNormalTabUserContentControlling {
+    private struct ContentBlockingAssets {
+        let globalRuleLists: [String: WKContentRuleList]
+        let updateRuleCount: Int
+        let isContentBlockingFeatureEnabled: Bool
+    }
 
-    init(controller: UserContentController) {
-        self.controller = controller
-        self.messageHandlerRegistry = SumiUserScriptMessageHandlerRegistry(userContentController: controller)
+    private let privacyConfigurationManager: SumiContentBlockingPrivacyConfigurationManager
+    private lazy var messageHandlerRegistry = SumiUserScriptMessageHandlerRegistry(userContentController: self)
+    private var globalContentRuleLists = [String: WKContentRuleList]()
+    private var assetsPublisherCancellable: AnyCancellable?
+    private var assetWaiters = [UUID: CheckedContinuation<Void, Never>]()
+    private var isCleanedUp = false
+
+    @Published private var contentBlockingAssets: ContentBlockingAssets?
+
+    init(assetSource: SumiNormalTabContentBlockingAssetSource) {
+        privacyConfigurationManager = assetSource.privacyConfigurationManager
+        super.init()
+
+        assetsPublisherCancellable = assetSource.assetsPublisher.sink { [weak self] content in
+            Task { @MainActor [weak self] in
+                self?.installContentBlockingUpdate(content.contentBlockingUpdate)
+            }
+        }
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 
     var wkUserContentController: WKUserContentController {
-        controller
+        self
     }
 
     var normalTabUserScriptsProvider: SumiNormalTabUserScripts? {
-        controller.sumiNormalTabUserScriptsProvider
+        sumiNormalTabUserScriptsProvider
     }
 
     var contentBlockingAssetSummary: SumiNormalTabContentBlockingAssetSummary {
-        SumiNormalTabContentBlockingAssetSummary(
-            isInstalled: controller.contentBlockingAssetsInstalled,
-            globalRuleListCount: controller.contentBlockingAssets?.globalRuleLists.count ?? 0,
-            updateRuleCount: controller.contentBlockingAssets?.updateEvent.rules.count ?? 0,
-            isContentBlockingFeatureEnabled: controller.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking)
+        guard let contentBlockingAssets else {
+            return SumiNormalTabContentBlockingAssetSummary(
+                isInstalled: false,
+                globalRuleListCount: 0,
+                updateRuleCount: 0,
+                isContentBlockingFeatureEnabled: isContentBlockingFeatureEnabled
+            )
+        }
+
+        return SumiNormalTabContentBlockingAssetSummary(
+            isInstalled: true,
+            globalRuleListCount: contentBlockingAssets.globalRuleLists.count,
+            updateRuleCount: contentBlockingAssets.updateRuleCount,
+            isContentBlockingFeatureEnabled: isContentBlockingFeatureEnabled
         )
     }
 
 #if DEBUG
     var contentBlockingAssetSummaryPublisher: AnyPublisher<SumiNormalTabContentBlockingAssetSummary, Never> {
-        controller.$contentBlockingAssets
-            .compactMap { [weak controller] assets -> SumiNormalTabContentBlockingAssetSummary? in
-                guard let controller, let assets else { return nil }
+        $contentBlockingAssets
+            .compactMap { assets -> SumiNormalTabContentBlockingAssetSummary? in
+                guard let assets else { return nil }
                 return SumiNormalTabContentBlockingAssetSummary(
                     isInstalled: true,
                     globalRuleListCount: assets.globalRuleLists.count,
-                    updateRuleCount: assets.updateEvent.rules.count,
-                    isContentBlockingFeatureEnabled: controller.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking)
+                    updateRuleCount: assets.updateRuleCount,
+                    isContentBlockingFeatureEnabled: assets.isContentBlockingFeatureEnabled
                 )
             }
             .eraseToAnyPublisher()
@@ -175,30 +133,79 @@ final class SumiNormalTabUserContentControllerBridge: SumiNormalTabUserContentCo
     }
 
     func waitForContentBlockingAssetsInstalled() async {
-        await controller.awaitContentBlockingAssetsInstalled()
+        await awaitContentBlockingAssetsInstalled()
         if let provider = normalTabUserScriptsProvider {
             await messageHandlerRegistry.replaceUserScripts(with: provider)
         }
     }
 
     func cleanUpBeforeClosing() {
-        messageHandlerRegistry.cleanUpBeforeClosing()
-        controller.cleanUpBeforeClosing()
-    }
-}
+        guard !isCleanedUp else { return }
 
-final class SumiNormalTabUserContentControllerDelegate: UserContentControllerDelegate {
-    @MainActor
-    func userContentController(
-        _ userContentController: UserContentController,
-        didInstallContentRuleLists contentRuleLists: [String: WKContentRuleList],
-        userScripts: UserScriptsProvider,
-        updateEvent: ContentBlockerRulesManager.UpdateEvent
-    ) {
-        _ = userContentController
-        _ = contentRuleLists
-        _ = userScripts
-        _ = updateEvent
+        isCleanedUp = true
+        assetsPublisherCancellable?.cancel()
+        assetsPublisherCancellable = nil
+        messageHandlerRegistry.cleanUpBeforeClosing()
+        removeAllUserScripts()
+        removeAllContentRuleLists()
+    }
+
+    override func removeAllContentRuleLists() {
+        globalContentRuleLists.removeAll(keepingCapacity: true)
+        super.removeAllContentRuleLists()
+    }
+
+    private var isContentBlockingFeatureEnabled: Bool {
+        privacyConfigurationManager.sumiPrivacyConfig.isEnabled(featureKey: .contentBlocking)
+    }
+
+    private func installContentBlockingUpdate(_ update: SumiNormalTabContentBlockingUpdate) {
+        guard !isCleanedUp, assetsPublisherCancellable != nil else { return }
+
+        removeAllContentRuleLists()
+
+        let isContentBlockingFeatureEnabled = isContentBlockingFeatureEnabled
+        if isContentBlockingFeatureEnabled {
+            globalContentRuleLists = update.globalRuleLists
+            update.globalRuleLists.values.forEach(add)
+        }
+
+        contentBlockingAssets = ContentBlockingAssets(
+            globalRuleLists: update.globalRuleLists,
+            updateRuleCount: update.updateRuleCount,
+            isContentBlockingFeatureEnabled: isContentBlockingFeatureEnabled
+        )
+        resumeAssetWaiters()
+    }
+
+    private func awaitContentBlockingAssetsInstalled() async {
+        guard contentBlockingAssets == nil else { return }
+
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if contentBlockingAssets != nil {
+                    continuation.resume()
+                } else {
+                    assetWaiters[id] = continuation
+                }
+            }
+        } onCancel: { [weak self, id] in
+            Task { @MainActor [weak self, id] in
+                self?.resumeAssetWaiter(id)
+            }
+        }
+    }
+
+    private func resumeAssetWaiter(_ id: UUID) {
+        guard let waiter = assetWaiters.removeValue(forKey: id) else { return }
+        waiter.resume()
+    }
+
+    private func resumeAssetWaiters() {
+        let waiters = assetWaiters.values
+        assetWaiters.removeAll(keepingCapacity: true)
+        waiters.forEach { $0.resume() }
     }
 }
 
@@ -223,16 +230,9 @@ enum SumiNormalTabUserContentControllerFactory {
             )
         }
 
-        let delegate = SumiNormalTabUserContentControllerDelegate()
-        let controller = UserContentController(
-            assetsPublisher: assetSource.assetsPublisher,
-            privacyConfigurationManager: assetSource.privacyConfigurationManager
-        )
-        controller.delegate = delegate
-        controller.sumiNormalTabControllerDelegate = delegate
+        let controller = SumiNormalTabUserContentController(assetSource: assetSource)
         controller.sumiNormalTabUserScriptsProvider = scriptsProvider
-        controller.sumiUsesNormalTabBrowserServicesKitUserContentController = true
-        controller.sumiNormalTabUserContentControllerBridge = SumiNormalTabUserContentControllerBridge(controller: controller)
+        controller.sumiUsesNormalTabSumiUserContentController = true
         return controller
     }
 }

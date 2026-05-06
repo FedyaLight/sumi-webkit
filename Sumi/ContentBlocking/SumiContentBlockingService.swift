@@ -157,7 +157,7 @@ final class SumiContentBlockingService {
         updatesPublisher
             .map { update in
                 SumiNormalTabUserContent(
-                    rulesUpdate: update,
+                    contentBlockingUpdate: Self.normalTabContentBlockingUpdate(for: update),
                     sourceProvider: scriptsProvider
                 )
             }
@@ -184,7 +184,7 @@ final class SumiContentBlockingService {
             .compactMap { $0 }
             .map { update in
                 SumiNormalTabUserContent(
-                    rulesUpdate: update,
+                    contentBlockingUpdate: Self.normalTabContentBlockingUpdate(for: update),
                     sourceProvider: scriptsProvider
                 )
             }
@@ -489,6 +489,17 @@ final class SumiContentBlockingService {
             rules: [],
             changes: [:],
             completionTokens: []
+        )
+    }
+
+    private static func normalTabContentBlockingUpdate(
+        for update: ContentBlockerRulesManager.UpdateEvent
+    ) -> SumiNormalTabContentBlockingUpdate {
+        SumiNormalTabContentBlockingUpdate(
+            globalRuleLists: update.rules.reduce(into: [:]) { result, rules in
+                result[rules.name] = rules.rulesList
+            },
+            updateRuleCount: update.rules.count
         )
     }
 
