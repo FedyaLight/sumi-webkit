@@ -3,7 +3,6 @@ import Combine
 import ContentBlocking
 import Foundation
 import ObjectiveC
-import PrivacyConfig
 import UserScript
 import WebKit
 
@@ -61,7 +60,7 @@ struct SumiNormalTabUserContent: UserContentControllerNewContent {
 @MainActor
 struct SumiNormalTabContentBlockingAssetSource {
     let assetsPublisher: AnyPublisher<SumiNormalTabUserContent, Never>
-    let privacyConfigurationManager: PrivacyConfigurationManaging
+    let privacyConfigurationManager: SumiContentBlockingPrivacyConfigurationManager
 
     static func disabledEmpty(
         scriptsProvider: SumiNormalTabUserScripts
