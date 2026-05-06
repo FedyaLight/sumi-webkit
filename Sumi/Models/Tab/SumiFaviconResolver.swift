@@ -38,9 +38,9 @@ enum SumiFaviconResolver {
         return image
     }
 
+    @MainActor
     static func image(for url: URL, webView: WKWebView? = nil) async -> NSImage? {
-        let manager = await MainActor.run { SumiFaviconSystem.shared.manager }
-        return await manager.handleFaviconLinks([], documentUrl: url, webView: webView)?.image
+        await SumiFaviconSystem.shared.manager.handleFaviconLinks([], documentUrl: url, webView: webView)?.image
     }
 
     private static func systemImageName(for url: URL) -> String? {
@@ -58,23 +58,39 @@ enum SumiFaviconResolver {
 }
 
 private enum MenuImageCache {
-    private static let cache = NSCache<NSString, NSImage>()
-    private static let observer: NSObjectProtocol = NotificationCenter.default.addObserver(
-        forName: .faviconCacheUpdated,
-        object: nil,
-        queue: .main
-    ) { _ in
-        cache.removeAllObjects()
-    }
+    private static let storage = Storage()
 
     static func image(for key: String) -> NSImage? {
-        _ = observer
-        return cache.object(forKey: key as NSString)
+        storage.image(for: key)
     }
 
     static func setImage(_ image: NSImage, for key: String) {
-        _ = observer
-        cache.setObject(image, forKey: key as NSString)
+        storage.setImage(image, for: key)
+    }
+
+    private final class Storage: @unchecked Sendable {
+        private let cache = NSCache<NSString, NSImage>()
+        private var observer: NSObjectProtocol?
+
+        init() {
+            observer = NotificationCenter.default.addObserver(
+                forName: .faviconCacheUpdated,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.cache.removeAllObjects()
+            }
+        }
+
+        func image(for key: String) -> NSImage? {
+            _ = observer
+            return cache.object(forKey: key as NSString)
+        }
+
+        func setImage(_ image: NSImage, for key: String) {
+            _ = observer
+            cache.setObject(image, forKey: key as NSString)
+        }
     }
 }
 

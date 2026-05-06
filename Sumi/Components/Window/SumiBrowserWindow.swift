@@ -45,7 +45,11 @@ func promoteToSumiBrowserWindowIfNeeded(_ window: NSWindow) {
 }
 
 private enum SumiBrowserWindowAssociatedKeys {
-    static var didApplyInitialShellSize: UInt8 = 0
+    static let didApplyInitialShellSize: UInt8 = 0
+
+    static var didApplyInitialShellSizePointer: UnsafeRawPointer {
+        withUnsafePointer(to: didApplyInitialShellSize) { UnsafeRawPointer($0) }
+    }
 }
 
 extension NSWindow {
@@ -83,13 +87,13 @@ extension NSWindow {
 
     private var hasAppliedInitialBrowserShellSize: Bool {
         get {
-            (objc_getAssociatedObject(self, &SumiBrowserWindowAssociatedKeys.didApplyInitialShellSize) as? Bool)
+            (objc_getAssociatedObject(self, SumiBrowserWindowAssociatedKeys.didApplyInitialShellSizePointer) as? Bool)
                 ?? false
         }
         set {
             objc_setAssociatedObject(
                 self,
-                &SumiBrowserWindowAssociatedKeys.didApplyInitialShellSize,
+                SumiBrowserWindowAssociatedKeys.didApplyInitialShellSizePointer,
                 newValue,
                 .OBJC_ASSOCIATION_RETAIN_NONATOMIC
             )

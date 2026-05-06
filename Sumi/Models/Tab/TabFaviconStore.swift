@@ -2,12 +2,11 @@ import AppKit
 import Foundation
 
 enum TabFaviconStore {
-    private static let manualOverridesLock = NSLock()
-    private static var manualOverrides: [String: NSImage] = [:]
+    private static let manualOverrides = ManualFaviconOverrides()
 
     static func getCachedImage(forDocumentURL url: URL) -> NSImage? {
         if let key = SumiFaviconResolver.cacheKey(for: url),
-           let manual = withManualOverrides({ $0[key] }) {
+           let manual = manualOverrides.image(for: key) {
             return manual
         }
 
@@ -30,19 +29,13 @@ enum TabFaviconStore {
     }
 
     static func getCachedImage(for key: String) -> NSImage? {
-        if let manual = withManualOverrides({ $0[key] }) {
+        if let manual = manualOverrides.image(for: key) {
             return manual
         }
         return withManager { $0.image(forLookupKey: key) }
     }
 
-    private static func withManualOverrides<T>(_ body: (inout [String: NSImage]) -> T) -> T {
-        manualOverridesLock.lock()
-        defer { manualOverridesLock.unlock() }
-        return body(&manualOverrides)
-    }
-
-    private static func withManager<T>(_ body: @MainActor (FaviconManager) -> T) -> T {
+    private static func withManager<T: Sendable>(_ body: @MainActor (FaviconManager) -> T) -> T {
         if Thread.isMainThread {
             return MainActor.assumeIsolated {
                 body(SumiFaviconSystem.shared.manager)
@@ -54,5 +47,16 @@ enum TabFaviconStore {
             result = body(SumiFaviconSystem.shared.manager)
         }
         return result
+    }
+
+    private final class ManualFaviconOverrides: @unchecked Sendable {
+        private let lock = NSLock()
+        private var images: [String: NSImage] = [:]
+
+        func image(for key: String) -> NSImage? {
+            lock.lock()
+            defer { lock.unlock() }
+            return images[key]
+        }
     }
 }

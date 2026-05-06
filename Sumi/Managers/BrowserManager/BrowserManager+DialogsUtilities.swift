@@ -8,6 +8,7 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 private final class SidebarSharingServicePickerRetainer {
     static let shared = SidebarSharingServicePickerRetainer()
 

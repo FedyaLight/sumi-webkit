@@ -5,8 +5,13 @@ import Navigation
 import WebKit
 
 extension CustomNavigationType {
-    static let sumiUserEnteredURL = CustomNavigationType(rawValue: "userEnteredUrl")
-    static let sumiUserRequestedPageDownload = CustomNavigationType(rawValue: "userRequestedPageDownload")
+    static var sumiUserEnteredURL: CustomNavigationType {
+        CustomNavigationType(rawValue: "userEnteredUrl")
+    }
+
+    static var sumiUserRequestedPageDownload: CustomNavigationType {
+        CustomNavigationType(rawValue: "userRequestedPageDownload")
+    }
 }
 
 extension NavigationAction {

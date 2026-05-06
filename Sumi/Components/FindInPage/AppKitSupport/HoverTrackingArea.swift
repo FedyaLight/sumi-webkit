@@ -91,18 +91,18 @@ final class HoverTrackingArea: NSTrackingArea {
         _ = Self.swizzleMouseExitedOnce
 
         observers = [
-            owner.observe(\.backgroundColor) { [weak self] _, _ in self?.updateLayer() },
-            owner.observe(\.mouseOverColor) { [weak self] _, _ in self?.updateLayer() },
-            owner.observe(\.mouseDownColor) { [weak self] _, _ in self?.updateLayer() },
-            owner.observe(\.cornerRadius) { [weak self] _, _ in self?.updateLayer() },
-            owner.observe(\.backgroundInset) { [weak self] _, _ in self?.updateLayer() },
+            owner.observe(\.backgroundColor) { @MainActor [weak self] _, _ in self?.updateLayer() },
+            owner.observe(\.mouseOverColor) { @MainActor [weak self] _, _ in self?.updateLayer() },
+            owner.observe(\.mouseDownColor) { @MainActor [weak self] _, _ in self?.updateLayer() },
+            owner.observe(\.cornerRadius) { @MainActor [weak self] _, _ in self?.updateLayer() },
+            owner.observe(\.backgroundInset) { @MainActor [weak self] _, _ in self?.updateLayer() },
             (owner as? NSControl).map { control in
                 ClosureKeyValueObserver(object: control, keyPath: "enabled") { [weak self] in
                     self?.updateLayer(animated: false)
                 }
             },
-            owner.observe(\.isMouseDown) { [weak self] _, _ in self?.mouseDownDidChange() },
-            owner.observe(\.isMouseOver, options: .new) { [weak self] _, change in
+            owner.observe(\.isMouseDown) { @MainActor [weak self] _, _ in self?.mouseDownDidChange() },
+            owner.observe(\.isMouseOver, options: .new) { @MainActor [weak self] _, change in
                 self?.processMouseOverEvent(isMouseOver: change.newValue ?? false)
             },
             ClosureKeyValueObserver(object: owner, keyPath: "window") { [weak self] in
@@ -111,7 +111,7 @@ final class HoverTrackingArea: NSTrackingArea {
         ].compactMap { $0 }
     }
 
-    deinit {
+    isolated deinit {
         observers?.compactMap { $0 as? NSKeyValueObservation }.forEach { $0.invalidate() }
         observers?.compactMap { $0 as? ClosureKeyValueObserver }.forEach { $0.invalidate() }
     }
@@ -229,7 +229,7 @@ private extension HoverTrackingArea {
 
 extension NSTrackingArea {
 
-    @objc dynamic fileprivate func swizzled_mouseExited(_ event: NSEvent) {
+    @MainActor @objc dynamic fileprivate func swizzled_mouseExited(_ event: NSEvent) {
         self.swizzled_mouseExited(event)
         if let hoverTrackingArea = self as? HoverTrackingArea,
             hoverTrackingArea.view?.isMouseOver == true {

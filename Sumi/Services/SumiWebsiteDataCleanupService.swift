@@ -547,9 +547,11 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
         }
 
         let task = Task { @MainActor in
-            await PerformanceTrace.withInterval("WebsiteDataCleanup.coalescedOperation") {
-                await body()
+            let state = PerformanceTrace.beginInterval("WebsiteDataCleanup.coalescedOperation")
+            defer {
+                PerformanceTrace.endInterval("WebsiteDataCleanup.coalescedOperation", state)
             }
+            await body()
         }
         inFlightCleanups[key] = task
         await task.value
