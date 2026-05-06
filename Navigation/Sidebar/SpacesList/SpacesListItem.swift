@@ -128,7 +128,7 @@ struct SpacesListItem: View {
             onDeleteSpace: deleteAction
         )
 
-        makeSpaceListContextMenuEntries(
+        return makeSpaceListContextMenuEntries(
             canDelete: canDeleteSpace,
             callbacks: callbacks
         )

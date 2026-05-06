@@ -27,7 +27,7 @@ final class SumiBookmarkManager: ObservableObject {
         installSaveObserver()
     }
 
-    deinit {
+    isolated deinit {
         if let saveObserver {
             NotificationCenter.default.removeObserver(saveObserver)
         }
@@ -377,16 +377,16 @@ final class SumiBookmarkManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] notification in
+            guard let self,
+                  let savingContext = notification.object as? NSManagedObjectContext,
+                  savingContext !== self.context,
+                  savingContext.persistentStoreCoordinator === self.context.persistentStoreCoordinator
+            else {
+                return
+            }
+            self.context.mergeChanges(fromContextDidSave: notification)
             Task { @MainActor [weak self] in
-                guard let self,
-                      let savingContext = notification.object as? NSManagedObjectContext,
-                      savingContext !== self.context,
-                      savingContext.persistentStoreCoordinator === self.context.persistentStoreCoordinator
-                else {
-                    return
-                }
-                self.context.mergeChanges(fromContextDidSave: notification)
-                self.reload()
+                self?.reload()
             }
         }
     }

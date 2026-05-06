@@ -136,9 +136,9 @@ internal class CoreDataStore<ManagedObject: ValueRepresentableManagedObject> {
         return try result.get()
     }
 
-    func remove(objectWithId id: NSManagedObjectID, completionHandler: ((Error?) -> Void)?) {
+    func remove(objectWithId id: NSManagedObjectID, completionHandler: (@Sendable (Error?) -> Void)?) {
         guard let context = writeContext() else { return }
-        func mainQueueCompletion(error: Error?) {
+        @Sendable func mainQueueCompletion(error: Error?) {
             guard completionHandler != nil else { return }
             DispatchQueue.main.async {
                 completionHandler?(error)
