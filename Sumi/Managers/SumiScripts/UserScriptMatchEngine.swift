@@ -71,9 +71,8 @@ enum UserScriptMatchEngine {
 
     // MARK: - Match Pattern (MDN spec)
 
-    /// Cache for compiled match pattern regexes
-    private static var matchPatternCache = [String: NSRegularExpression]()
-    private static let cacheLock = NSLock()
+    /// Cache for compiled match pattern regexes.
+    private static let matchPatternCache = UserScriptRegexCache()
 
     /// Matches a URL against an MDN match pattern.
     /// Format: <scheme>://<host>/<path>
@@ -96,9 +95,6 @@ enum UserScriptMatchEngine {
     }
 
     private static func compiledMatchPattern(_ pattern: String) -> NSRegularExpression? {
-        cacheLock.lock()
-        defer { cacheLock.unlock() }
-
         if let cached = matchPatternCache[pattern] {
             return cached
         }
@@ -168,8 +164,8 @@ enum UserScriptMatchEngine {
 
     // MARK: - Include/Exclude Pattern (Greasemonkey glob/regex)
 
-    /// Cache for compiled include pattern regexes
-    private static var includePatternCache = [String: NSRegularExpression]()
+    /// Cache for compiled include pattern regexes.
+    private static let includePatternCache = UserScriptRegexCache()
 
     /// Matches a URL string against a Greasemonkey @include/@exclude pattern.
     /// Supports:
@@ -178,13 +174,10 @@ enum UserScriptMatchEngine {
     static func includePattern(_ pattern: String, matches urlString: String) -> Bool {
         let trimmed = pattern.trimmingCharacters(in: .whitespaces)
 
-        cacheLock.lock()
         if let cached = includePatternCache[trimmed] {
-            cacheLock.unlock()
             let range = NSRange(location: 0, length: (urlString as NSString).length)
             return cached.firstMatch(in: urlString, options: [], range: range) != nil
         }
-        cacheLock.unlock()
 
         let regex: NSRegularExpression?
 
@@ -197,9 +190,7 @@ enum UserScriptMatchEngine {
         }
 
         if let regex {
-            cacheLock.lock()
             includePatternCache[trimmed] = regex
-            cacheLock.unlock()
 
             let range = NSRange(location: 0, length: (urlString as NSString).length)
             return regex.firstMatch(in: urlString, options: [], range: range) != nil
@@ -242,5 +233,25 @@ enum UserScriptMatchEngine {
         }
         regex += "$"
         return try? NSRegularExpression(pattern: regex, options: [.caseInsensitive])
+    }
+}
+
+private final class UserScriptRegexCache: @unchecked Sendable {
+    // Shared regex instances are immutable after compilation; dictionary access is
+    // serialized here so static caches can remain synchronous and process-wide.
+    private let lock = NSLock()
+    private var cache = [String: NSRegularExpression]()
+
+    subscript(pattern: String) -> NSRegularExpression? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return cache[pattern]
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            cache[pattern] = newValue
+        }
     }
 }

@@ -105,20 +105,32 @@ struct SumiNormalTabContentBlockingAssetSource {
 }
 
 private enum SumiNormalTabAssociatedKeys {
-    static var scriptsProvider = 0
-    static var controllerDelegate = 0
-    static var marker = 0
+    static let scriptsProvider: UInt8 = 0
+    static let controllerDelegate: UInt8 = 0
+    static let marker: UInt8 = 0
+
+    static var scriptsProviderPointer: UnsafeRawPointer {
+        withUnsafePointer(to: scriptsProvider) { UnsafeRawPointer($0) }
+    }
+
+    static var controllerDelegatePointer: UnsafeRawPointer {
+        withUnsafePointer(to: controllerDelegate) { UnsafeRawPointer($0) }
+    }
+
+    static var markerPointer: UnsafeRawPointer {
+        withUnsafePointer(to: marker) { UnsafeRawPointer($0) }
+    }
 }
 
 extension WKUserContentController {
     fileprivate var sumiNormalTabControllerDelegate: SumiNormalTabUserContentControllerDelegate? {
         get {
-            objc_getAssociatedObject(self, &SumiNormalTabAssociatedKeys.controllerDelegate) as? SumiNormalTabUserContentControllerDelegate
+            objc_getAssociatedObject(self, SumiNormalTabAssociatedKeys.controllerDelegatePointer) as? SumiNormalTabUserContentControllerDelegate
         }
         set {
             objc_setAssociatedObject(
                 self,
-                &SumiNormalTabAssociatedKeys.controllerDelegate,
+                SumiNormalTabAssociatedKeys.controllerDelegatePointer,
                 newValue,
                 .OBJC_ASSOCIATION_RETAIN_NONATOMIC
             )
@@ -127,12 +139,12 @@ extension WKUserContentController {
 
     var sumiNormalTabUserScriptsProvider: SumiNormalTabUserScripts? {
         get {
-            objc_getAssociatedObject(self, &SumiNormalTabAssociatedKeys.scriptsProvider) as? SumiNormalTabUserScripts
+            objc_getAssociatedObject(self, SumiNormalTabAssociatedKeys.scriptsProviderPointer) as? SumiNormalTabUserScripts
         }
         set {
             objc_setAssociatedObject(
                 self,
-                &SumiNormalTabAssociatedKeys.scriptsProvider,
+                SumiNormalTabAssociatedKeys.scriptsProviderPointer,
                 newValue,
                 .OBJC_ASSOCIATION_RETAIN_NONATOMIC
             )
@@ -141,12 +153,12 @@ extension WKUserContentController {
 
     var sumiUsesNormalTabBrowserServicesKitUserContentController: Bool {
         get {
-            (objc_getAssociatedObject(self, &SumiNormalTabAssociatedKeys.marker) as? Bool) == true
+            (objc_getAssociatedObject(self, SumiNormalTabAssociatedKeys.markerPointer) as? Bool) == true
         }
         set {
             objc_setAssociatedObject(
                 self,
-                &SumiNormalTabAssociatedKeys.marker,
+                SumiNormalTabAssociatedKeys.markerPointer,
                 newValue,
                 .OBJC_ASSOCIATION_RETAIN_NONATOMIC
             )

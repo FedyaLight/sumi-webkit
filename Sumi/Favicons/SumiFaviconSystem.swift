@@ -44,6 +44,19 @@ protocol BookmarkManager: AnyObject {
     func allHosts() -> Set<String>
 }
 
+private final class SumiBookmarksFaviconFetchTrigger: @unchecked Sendable {
+    private let fetcher: BookmarksFaviconsFetcher
+
+    init(fetcher: BookmarksFaviconsFetcher) {
+        self.fetcher = fetcher
+    }
+
+    func startFetching() async {
+        // BookmarksFaviconsFetcher serializes bookmark favicon state work through its operation queue.
+        await fetcher.startFetching()
+    }
+}
+
 private enum SumiFaviconPersistence {
     static func rootDirectoryURL() -> URL {
         if RuntimeDiagnostics.isRunningTests {
@@ -78,6 +91,7 @@ private enum SumiFaviconPersistence {
 final class SumiBookmarkMirrorManager: BookmarkManager {
     private let database: CoreDataDatabase
     private weak var faviconsFetcher: BookmarksFaviconsFetcher?
+    private var faviconFetchTrigger: SumiBookmarksFaviconFetchTrigger?
     nonisolated private static let mirrorPrefix = "sumi-favicon-mirror-"
     nonisolated private static let realBookmarkPrefix = "sumi-real-bookmark-"
     private var didInitializeFetcherState = false
@@ -89,6 +103,7 @@ final class SumiBookmarkMirrorManager: BookmarkManager {
 
     func attach(fetcher: BookmarksFaviconsFetcher) {
         faviconsFetcher = fetcher
+        faviconFetchTrigger = SumiBookmarksFaviconFetchTrigger(fetcher: fetcher)
         guard !didInitializeFetcherState else { return }
         fetcher.initializeFetcherState()
         didInitializeFetcherState = true
@@ -189,8 +204,9 @@ final class SumiBookmarkMirrorManager: BookmarkManager {
         }
         if !modifiedIDs.isEmpty || !deletedIDs.isEmpty {
             faviconsFetcher.updateBookmarkIDs(modified: modifiedIDs, deleted: deletedIDs)
+            guard let faviconFetchTrigger else { return }
             Task {
-                await faviconsFetcher.startFetching()
+                await faviconFetchTrigger.startFetching()
             }
         }
     }

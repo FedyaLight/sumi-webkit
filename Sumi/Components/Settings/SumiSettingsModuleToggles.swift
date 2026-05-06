@@ -75,6 +75,7 @@ struct SumiSettingsModuleToggleDescriptor: Identifiable, Equatable {
     )
 }
 
+@MainActor
 struct SumiSettingsModuleToggleModel {
     let descriptor: SumiSettingsModuleToggleDescriptor
     let registry: SumiModuleRegistry

@@ -86,6 +86,7 @@ enum HoverSidebarVisibilityPolicy {
 /// Manages reveal/hide of the overlay sidebar when the real sidebar is collapsed.
 /// Uses a local monitor for in-app hover and drag responsiveness without global
 /// event monitoring.
+@MainActor
 final class HoverSidebarManager: ObservableObject {
     // MARK: - Published State
     @Published var isOverlayVisible: Bool = false
@@ -196,7 +197,11 @@ final class HoverSidebarManager: ObservableObject {
         }
     }
 
-    deinit { stop() }
+    deinit {
+        MainActor.assumeIsolated {
+            stop()
+        }
+    }
 
     // MARK: - Mouse Logic
     private func scheduleHandleMouseMovement() {

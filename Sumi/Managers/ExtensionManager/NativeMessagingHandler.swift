@@ -62,6 +62,10 @@ private final class NativeMessagingProcessSession {
     private var outputBuffer = Data()
     private var isClosed = false
     private var processExitStatus: Int32?
+    private lazy var terminationObserver = NativeMessagingProcessTerminationObserver(
+        stateQueue: stateQueue,
+        session: self
+    )
 
     init(
         manifest: NativeMessagingHostManifest,
@@ -163,10 +167,9 @@ private final class NativeMessagingProcessSession {
         self.stdoutHandle = stdoutHandle
         self.stderrHandle = stderrHandle
 
-        process.terminationHandler = { [weak self] process in
-            self?.stateQueue.async { [weak self] in
-                self?.handleProcessExit(status: process.terminationStatus)
-            }
+        let terminationObserver = terminationObserver
+        process.terminationHandler = { process in
+            terminationObserver.processDidTerminate(status: process.terminationStatus)
         }
 
         configureSources()
@@ -405,7 +408,7 @@ private final class NativeMessagingProcessSession {
         }
     }
 
-    private func handleProcessExit(status: Int32) {
+    fileprivate func handleProcessExit(status: Int32) {
         guard isClosed == false else { return }
 
         processExitStatus = status
@@ -616,6 +619,28 @@ private final class NativeMessagingProcessSession {
             code: code,
             userInfo: [NSLocalizedDescriptionKey: message]
         )
+    }
+}
+
+@available(macOS 15.5, *)
+private final class NativeMessagingProcessTerminationObserver: @unchecked Sendable {
+    // Process invokes terminationHandler as @Sendable; this observer is sendable
+    // because it only schedules session access back onto the session's state queue.
+    private let stateQueue: DispatchQueue
+    private weak var session: NativeMessagingProcessSession?
+
+    init(
+        stateQueue: DispatchQueue,
+        session: NativeMessagingProcessSession
+    ) {
+        self.stateQueue = stateQueue
+        self.session = session
+    }
+
+    func processDidTerminate(status: Int32) {
+        stateQueue.async { [weak self] in
+            self?.session?.handleProcessExit(status: status)
+        }
     }
 }
 

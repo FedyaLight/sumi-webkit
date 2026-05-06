@@ -2,7 +2,7 @@ import Foundation
 import UserScript
 import WebKit
 
-final class SumiFaviconTransportUserScript: NSObject, UserScript, UserScriptMessaging, WKScriptMessageHandlerWithReply {
+final class SumiFaviconTransportUserScript: NSObject, UserScript, @MainActor UserScriptMessaging, WKScriptMessageHandlerWithReply {
     let broker: UserScriptMessageBroker
     let source: String
     let injectionTime: WKUserScriptInjectionTime = .atDocumentEnd
