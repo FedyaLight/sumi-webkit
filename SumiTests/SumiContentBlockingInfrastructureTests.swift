@@ -152,7 +152,7 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
     func testWebViewCoordinatorAwaitsContentBlockingAssetsBeforeInitialLoad() throws {
         let source = try Self.source(named: "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift")
 
-        let waitRange = try XCTUnwrap(source.range(of: "await controller.awaitContentBlockingAssetsInstalled()"))
+        let waitRange = try XCTUnwrap(source.range(of: "await controller.waitForContentBlockingAssetsInstalled()"))
         let loadRange = try XCTUnwrap(source.range(of: "performLoad()", range: waitRange.upperBound..<source.endIndex))
 
         XCTAssertLessThan(waitRange.lowerBound, loadRange.lowerBound)
