@@ -1,6 +1,8 @@
 import AppKit
+import Common
 import Foundation
 import Navigation
+import os.log
 import UserScript
 import WebKit
 
@@ -231,7 +233,7 @@ private final class SumiLinkInteractionUserScript: NSObject, UserScript, @MainAc
     ) async -> (Any?, String?) {
         let action = broker.messageHandlerFor(message)
         do {
-            let json = try await broker.execute(action: action, original: message)
+            let json = try await executeTabScriptBrokerAction(action, original: message)
             return (json, nil)
         } catch {
             return (nil, error.localizedDescription)
@@ -274,6 +276,11 @@ private struct SumiHrefPayload {
     let href: String?
 
     static func decode(from params: Any) -> SumiHrefPayload? {
+        if let params = params as? SumiTabScriptMessageParams {
+            guard params.hasHref else { return nil }
+            return SumiHrefPayload(href: params.href)
+        }
+
         guard let dictionary = params as? [String: Any],
               dictionary.keys.contains("href") else { return nil }
         let value = dictionary["href"]
@@ -337,7 +344,7 @@ private final class SumiTabSuspensionUserScript: NSObject, UserScript, @MainActo
     ) async -> (Any?, String?) {
         let action = broker.messageHandlerFor(message)
         do {
-            let json = try await broker.execute(action: action, original: message)
+            let json = try await executeTabScriptBrokerAction(action, original: message)
             return (json, nil)
         } catch {
             return (nil, error.localizedDescription)
@@ -380,6 +387,11 @@ private struct SumiTabSuspensionPayload {
     let canBeSuspended: Bool
 
     static func decode(from params: Any) -> SumiTabSuspensionPayload? {
+        if let params = params as? SumiTabScriptMessageParams,
+           let canBeSuspended = params.canBeSuspended {
+            return SumiTabSuspensionPayload(canBeSuspended: canBeSuspended)
+        }
+
         guard let dictionary = params as? [String: Any],
               let canBeSuspended = dictionary["canBeSuspended"] as? Bool
         else { return nil }
@@ -441,7 +453,7 @@ private final class SumiIdentityUserScript: NSObject, UserScript, @MainActor Use
     ) async -> (Any?, String?) {
         let action = broker.messageHandlerFor(message)
         do {
-            let json = try await broker.execute(action: action, original: message)
+            let json = try await executeTabScriptBrokerAction(action, original: message)
             return (json, nil)
         } catch {
             return (nil, error.localizedDescription)
@@ -451,6 +463,130 @@ private final class SumiIdentityUserScript: NSObject, UserScript, @MainActor Use
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         _ = userContentController
         _ = message
+    }
+}
+
+@MainActor
+private func executeTabScriptBrokerAction(
+    _ action: UserScriptMessageBroker.Action,
+    original: WKScriptMessage
+) async throws -> String {
+    switch action {
+    case .notify(let handler, let params):
+        let params = SumiTabScriptMessageParams(from: params)
+        do {
+            _ = try await handler(params, original)
+        } catch {
+            Logger.general.error("UserScriptMessaging: unhandled exception \(error.localizedDescription, privacy: .public)")
+        }
+        return "{}"
+
+    case .respond(let handler, let request):
+        let params = SumiTabScriptMessageParams(from: request.params)
+        do {
+            guard let result = try await handler(params, original) else {
+                return SumiTabScriptMessageErrorResponse(
+                    request: request,
+                    message: "could not access encodable result"
+                ).toJSON()
+            }
+
+            return SumiTabScriptMessageResponse(request: request, result: result).toJSON()
+                ?? SumiTabScriptMessageErrorResponse(
+                    request: request,
+                    message: "could not convert result to json"
+                ).toJSON()
+        } catch {
+            return SumiTabScriptMessageErrorResponse(
+                request: request,
+                message: error.localizedDescription
+            ).toJSON()
+        }
+
+    case .error(let error):
+        throw NSError(
+            domain: "UserScriptMessaging",
+            code: 0,
+            userInfo: [NSLocalizedDescriptionKey: error.localizedDescription]
+        )
+    }
+}
+
+private struct SumiTabScriptMessageParams: Sendable {
+    let href: String?
+    let hasHref: Bool
+    let canBeSuspended: Bool?
+    let url: String?
+    let interactive: Bool?
+    let requestId: String?
+
+    init(from params: Any) {
+        if let params = params as? SumiTabScriptMessageParams {
+            self = params
+            return
+        }
+
+        let dictionary = params as? [String: Any] ?? [:]
+        let hrefValue = dictionary["href"]
+
+        self.href = hrefValue as? String
+        self.hasHref = dictionary.keys.contains("href")
+        self.canBeSuspended = dictionary["canBeSuspended"] as? Bool
+        self.url = dictionary["url"] as? String
+        self.interactive = dictionary["interactive"] as? Bool
+        self.requestId = dictionary["requestId"] as? String
+    }
+}
+
+private struct SumiTabScriptMessageResponse: Encodable {
+    let request: RequestMessage
+    let result: Encodable
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(request.context, forKey: .context)
+        try container.encode(request.featureName, forKey: .featureName)
+        try container.encode(request.id, forKey: .id)
+        try result.encode(to: container.superEncoder(forKey: .result))
+    }
+
+    func toJSON() -> String? {
+        guard let jsonData = try? JSONEncoder().encode(self) else { return nil }
+        return String(data: jsonData, encoding: .utf8)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case context
+        case featureName
+        case id
+        case result
+    }
+}
+
+private struct SumiTabScriptMessageErrorResponse: Encodable {
+    let context: String
+    let featureName: String
+    let id: String
+    private let error: MessageError
+
+    init(request: RequestMessage, message: String) {
+        self.context = request.context
+        self.featureName = request.featureName
+        self.id = request.id
+        self.error = MessageError(message: message)
+    }
+
+    func toJSON() -> String {
+        guard let jsonData = try? JSONEncoder().encode(self),
+              let jsonString = String(data: jsonData, encoding: .utf8)
+        else {
+            return #"{"error":{"message":"could not convert result to json"}}"#
+        }
+        return jsonString
+    }
+
+    private struct MessageError: Encodable {
+        let message: String
     }
 }
 
@@ -488,6 +624,20 @@ private struct SumiIdentityRequestPayload {
     let requestId: String
 
     static func decode(from params: Any) -> SumiIdentityRequestPayload? {
+        if let params = params as? SumiTabScriptMessageParams {
+            guard let url = params.url else {
+                RuntimeDiagnostics.emit("❌ [Tab] Invalid OAuth request: missing or invalid URL")
+                return nil
+            }
+
+            let rawRequestId = params.requestId?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return SumiIdentityRequestPayload(
+                url: url,
+                interactive: params.interactive ?? true,
+                requestId: rawRequestId?.isEmpty == false ? rawRequestId! : UUID().uuidString
+            )
+        }
+
         guard let dictionary = params as? [String: Any],
               let url = dictionary["url"] as? String
         else {

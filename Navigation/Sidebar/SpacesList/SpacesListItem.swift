@@ -121,12 +121,16 @@ struct SpacesListItem: View {
     // MARK: - Context Menu
 
     private func spaceContextMenuEntries() -> [SidebarContextMenuEntry] {
+        let canDeleteSpace: Bool = browserManager.tabManager.spaces.count > 1
+        let deleteAction: (() -> Void)? = canDeleteSpace ? { showDeleteConfirmation() } : nil
+        let callbacks = SidebarSpaceListMenuCallbacks(
+            onOpenSettings: { showSpaceEditDialog() },
+            onDeleteSpace: deleteAction
+        )
+
         makeSpaceListContextMenuEntries(
-            canDelete: browserManager.tabManager.spaces.count > 1,
-            callbacks: .init(
-                onOpenSettings: showSpaceEditDialog,
-                onDeleteSpace: browserManager.tabManager.spaces.count > 1 ? showDeleteConfirmation : nil
-            )
+            canDelete: canDeleteSpace,
+            callbacks: callbacks
         )
     }
 

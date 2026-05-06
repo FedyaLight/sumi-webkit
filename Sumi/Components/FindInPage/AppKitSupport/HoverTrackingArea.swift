@@ -91,19 +91,19 @@ final class HoverTrackingArea: NSTrackingArea {
         _ = Self.swizzleMouseExitedOnce
 
         observers = [
-            owner.observe(\.backgroundColor) { @MainActor [weak self] _, _ in self?.updateLayer() },
-            owner.observe(\.mouseOverColor) { @MainActor [weak self] _, _ in self?.updateLayer() },
-            owner.observe(\.mouseDownColor) { @MainActor [weak self] _, _ in self?.updateLayer() },
-            owner.observe(\.cornerRadius) { @MainActor [weak self] _, _ in self?.updateLayer() },
-            owner.observe(\.backgroundInset) { @MainActor [weak self] _, _ in self?.updateLayer() },
+            owner.observeOnMainActor(\.backgroundColor) { [weak self] _ in self?.updateLayer() },
+            owner.observeOnMainActor(\.mouseOverColor) { [weak self] _ in self?.updateLayer() },
+            owner.observeOnMainActor(\.mouseDownColor) { [weak self] _ in self?.updateLayer() },
+            owner.observeOnMainActor(\.cornerRadius) { [weak self] _ in self?.updateLayer() },
+            owner.observeOnMainActor(\.backgroundInset) { [weak self] _ in self?.updateLayer() },
             (owner as? NSControl).map { control in
                 ClosureKeyValueObserver(object: control, keyPath: "enabled") { [weak self] in
                     self?.updateLayer(animated: false)
                 }
             },
-            owner.observe(\.isMouseDown) { @MainActor [weak self] _, _ in self?.mouseDownDidChange() },
-            owner.observe(\.isMouseOver, options: .new) { @MainActor [weak self] _, change in
-                self?.processMouseOverEvent(isMouseOver: change.newValue ?? false)
+            owner.observeOnMainActor(\.isMouseDown) { [weak self] _ in self?.mouseDownDidChange() },
+            owner.observeOnMainActor(\.isMouseOver, options: .new, snapshot: { $0.newValue ?? false }) { [weak self] _, isMouseOver in
+                self?.processMouseOverEvent(isMouseOver: isMouseOver)
             },
             ClosureKeyValueObserver(object: owner, keyPath: "window") { [weak self] in
                 self?.viewWindowDidChange()
@@ -270,6 +270,30 @@ extension Hoverable {
     func mouseEntered(with event: NSEvent) {}
     func mouseMoved(with event: NSEvent) {}
     func mouseExited(with event: NSEvent) {}
+
+    func observeOnMainActor<Value>(
+        _ keyPath: KeyPath<Self, Value>,
+        options: NSKeyValueObservingOptions = [],
+        changeHandler: @escaping @MainActor @Sendable (Self) -> Void
+    ) -> NSKeyValueObservation {
+        observeOnMainActor(keyPath, options: options, snapshot: { _ in () }) { object, _ in
+            changeHandler(object)
+        }
+    }
+
+    func observeOnMainActor<Value, Snapshot: Sendable>(
+        _ keyPath: KeyPath<Self, Value>,
+        options: NSKeyValueObservingOptions = [],
+        snapshot: @escaping @Sendable (NSKeyValueObservedChange<Value>) -> Snapshot,
+        changeHandler: @escaping @MainActor @Sendable (Self, Snapshot) -> Void
+    ) -> NSKeyValueObservation {
+        observe(keyPath, options: options) { object, change in
+            let snapshot = snapshot(change)
+            MainActor.assumeIsolated {
+                changeHandler(object, snapshot)
+            }
+        }
+    }
 }
 
 private final class ClosureKeyValueObserver: NSObject {

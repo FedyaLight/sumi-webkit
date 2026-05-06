@@ -58,7 +58,7 @@ protocol FaviconReferenceCaching {
 
 final class FaviconReferenceCache: FaviconReferenceCaching {
 
-    private let storing: FaviconStoring
+    private let storing: FaviconReferenceCacheStorage
 
     // References to favicon URLs for whole domains
     private(set) var hostReferences = [String: FaviconHostReference]()
@@ -67,7 +67,7 @@ final class FaviconReferenceCache: FaviconReferenceCaching {
     private(set) var urlReferences = [URL: FaviconUrlReference]()
 
     init(faviconStoring: FaviconStoring) {
-        storing = faviconStoring
+        storing = FaviconReferenceCacheStorage(storing: faviconStoring)
     }
 
     private(set) var loaded = false
@@ -250,8 +250,9 @@ final class FaviconReferenceCache: FaviconReferenceCaching {
     private func insertToHostCache(faviconUrls: (smallFaviconUrl: URL?, mediumFaviconUrl: URL?), host: String, documentUrl: URL) {
         // Remove existing
         if let oldReference = hostReferences[host] {
-            Task.detached {
-                await self.removeHostReferencesFromStore([oldReference])
+            let storing = storing
+            Task {
+                await storing.removeHostReferences([oldReference])
             }
         }
 
@@ -264,9 +265,10 @@ final class FaviconReferenceCache: FaviconReferenceCaching {
                                               dateCreated: Date())
         hostReferences[host] = hostReference
 
-        Task.detached {
+        let storing = storing
+        Task {
             do {
-                try await self.storing.save(hostReference: hostReference)
+                try await storing.save(hostReference: hostReference)
                 Logger.favicons.debug("Host reference saved successfully. host: \(hostReference.host)")
             } catch {
                 Logger.favicons.error("Saving of host reference failed: \(error.localizedDescription)")
@@ -278,8 +280,9 @@ final class FaviconReferenceCache: FaviconReferenceCaching {
     private func insertToUrlCache(faviconUrls: (smallFaviconUrl: URL?, mediumFaviconUrl: URL?), documentUrl: URL) {
         // Remove existing
         if let oldReference = urlReferences[documentUrl] {
+            let storing = storing
             Task {
-                await self.removeUrlReferencesFromStore([oldReference])
+                await storing.removeUrlReferences([oldReference])
             }
         }
 
@@ -292,9 +295,10 @@ final class FaviconReferenceCache: FaviconReferenceCaching {
 
         urlReferences[documentUrl] = urlReference
 
+        let storing = storing
         Task {
             do {
-                try await self.storing.save(urlReference: urlReference)
+                try await storing.save(urlReference: urlReference)
                 Logger.favicons.debug("URL reference saved successfully. document URL: \(urlReference.documentUrl.absoluteString)")
             } catch {
                 Logger.favicons.error("Saving of URL reference failed: \(error.localizedDescription)")
@@ -313,13 +317,49 @@ final class FaviconReferenceCache: FaviconReferenceCaching {
     private func removeHostReferences(filter isRemoved: (FaviconHostReference) -> Bool) -> Task<Void, Never> {
         let hostReferencesToRemove = hostReferences.values.filter(isRemoved)
         hostReferencesToRemove.forEach { hostReferences[$0.host] = nil }
+        let storing = storing
 
-        return Task.detached {
-            await self.removeHostReferencesFromStore(hostReferencesToRemove)
+        return Task {
+            await storing.removeHostReferences(hostReferencesToRemove)
         }
     }
 
-    private func removeHostReferencesFromStore(_ hostReferences: [FaviconHostReference]) async {
+    @MainActor
+    private func removeUrlReferences(filter isRemoved: (FaviconUrlReference) -> Bool) -> Task<Void, Never> {
+        let urlReferencesToRemove = urlReferences.values.filter(isRemoved)
+        urlReferencesToRemove.forEach { urlReferences[$0.documentUrl] = nil }
+        let storing = storing
+
+        return Task {
+            await storing.removeUrlReferences(urlReferencesToRemove)
+        }
+    }
+}
+
+// `FaviconStore` serializes reference persistence through its private Core Data
+// context queue; this boundary keeps persistence tasks from capturing the
+// main-actor reference cache while preserving that storage lifetime.
+private final class FaviconReferenceCacheStorage: @unchecked Sendable {
+
+    private let storing: FaviconStoring
+
+    init(storing: FaviconStoring) {
+        self.storing = storing
+    }
+
+    func loadFaviconReferences() async throws -> ([FaviconHostReference], [FaviconUrlReference]) {
+        try await storing.loadFaviconReferences()
+    }
+
+    func save(hostReference: FaviconHostReference) async throws {
+        try await storing.save(hostReference: hostReference)
+    }
+
+    func save(urlReference: FaviconUrlReference) async throws {
+        try await storing.save(urlReference: urlReference)
+    }
+
+    func removeHostReferences(_ hostReferences: [FaviconHostReference]) async {
         guard !hostReferences.isEmpty else { return }
 
         do {
@@ -330,17 +370,7 @@ final class FaviconReferenceCache: FaviconReferenceCaching {
         }
     }
 
-    @MainActor
-    private func removeUrlReferences(filter isRemoved: (FaviconUrlReference) -> Bool) -> Task<Void, Never> {
-        let urlReferencesToRemove = urlReferences.values.filter(isRemoved)
-        urlReferencesToRemove.forEach { urlReferences[$0.documentUrl] = nil }
-
-        return Task.detached {
-            await self.removeUrlReferencesFromStore(urlReferencesToRemove)
-        }
-    }
-
-    private func removeUrlReferencesFromStore(_ urlReferences: [FaviconUrlReference]) async {
+    func removeUrlReferences(_ urlReferences: [FaviconUrlReference]) async {
         guard !urlReferences.isEmpty else { return }
 
         do {

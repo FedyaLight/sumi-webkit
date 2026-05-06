@@ -6,8 +6,12 @@ private enum FindInPagePanelAnimation {
     static let revealDuration: TimeInterval = 0.22
     static let hideDuration: TimeInterval = 0.14
     static let contentOffsetAnimationKey = "sumi.findInPagePanel.contentOffset"
-    static let revealTimingFunction = CAMediaTimingFunction(controlPoints: 0.18, 0.82, 0.2, 1.0)
-    static let hideTimingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1.0)
+    static var revealTimingFunction: CAMediaTimingFunction {
+        CAMediaTimingFunction(controlPoints: 0.18, 0.82, 0.2, 1.0)
+    }
+    static var hideTimingFunction: CAMediaTimingFunction {
+        CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1.0)
+    }
 }
 
 @MainActor

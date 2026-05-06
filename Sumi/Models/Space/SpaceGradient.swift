@@ -289,7 +289,26 @@ extension SpaceGradient: Animatable {
 
 #if canImport(AppKit)
 // MARK: - Cached NSColor
-private let _SpaceGradientColorCache = NSCache<NSString, NSColor>()
+private final class SpaceGradientColorCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private let cache = NSCache<NSString, NSColor>()
+
+    // NSCache is internally thread-safe, but this wrapper gives Swift's concurrency
+    // checker one small synchronized boundary for the private process-wide cache.
+    func object(forKey key: NSString) -> NSColor? {
+        lock.lock()
+        defer { lock.unlock() }
+        return cache.object(forKey: key)
+    }
+
+    func setObject(_ object: NSColor, forKey key: NSString) {
+        lock.lock()
+        defer { lock.unlock() }
+        cache.setObject(object, forKey: key)
+    }
+}
+
+private let _SpaceGradientColorCache = SpaceGradientColorCache()
 private func cachedNSColor(for hex: String) -> NSColor {
     if let c = _SpaceGradientColorCache.object(forKey: hex as NSString) { return c }
     let ns = NSColor(Color(hex: hex)).usingColorSpace(.sRGB) ?? .black

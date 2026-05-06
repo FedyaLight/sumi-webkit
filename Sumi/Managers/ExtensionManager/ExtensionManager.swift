@@ -270,22 +270,20 @@ final class ExtensionManager: NSObject, ObservableObject {
         }
     #endif
 
-    deinit {
+    isolated deinit {
         let signpostState = PerformanceTrace.beginInterval("ExtensionManager.deinit")
         defer {
             PerformanceTrace.endInterval("ExtensionManager.deinit", signpostState)
         }
 
-        MainActor.assumeIsolated { [self] in
-            tearDownExtensionRuntime(
-                reason: "deinit",
-                removeUIState: true,
-                releaseController: true
-            )
-            #if DEBUG
-                clearDebugState()
-            #endif
-        }
+        tearDownExtensionRuntime(
+            reason: "deinit",
+            removeUIState: true,
+            releaseController: true
+        )
+        #if DEBUG
+            clearDebugState()
+        #endif
 
         #if DEBUG
             if let controllerIdentifierStorage {

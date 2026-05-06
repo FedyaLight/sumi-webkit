@@ -19,7 +19,13 @@ private enum SumiWKFullscreenWindowControllerSelectors {
     static let initWithWindowWebViewPage = NSSelectorFromString("initWithWindow:webView:page:")
 }
 
-private var sumiFullscreenWindowControllerAssociatedTabKey: UInt8 = 0
+private enum SumiFullscreenWindowControllerAssociatedKeys {
+    private static let associatedTabStorage = StaticString("Sumi.sumiFullscreenWindowController.associatedTab")
+
+    static var associatedTab: UnsafeRawPointer {
+        UnsafeRawPointer(associatedTabStorage.utf8Start)
+    }
+}
 
 enum WebViewSyncLoadPolicy {
     static func shouldLoadTarget(
@@ -503,12 +509,15 @@ private extension NSWindowController {
 
     var sumiAssociatedTab: Tab? {
         get {
-            (objc_getAssociatedObject(self, &sumiFullscreenWindowControllerAssociatedTabKey) as? WeakTabReference)?.tab
+            (objc_getAssociatedObject(
+                self,
+                SumiFullscreenWindowControllerAssociatedKeys.associatedTab
+            ) as? WeakTabReference)?.tab
         }
         set {
             objc_setAssociatedObject(
                 self,
-                &sumiFullscreenWindowControllerAssociatedTabKey,
+                SumiFullscreenWindowControllerAssociatedKeys.associatedTab,
                 newValue.map { WeakTabReference(tab: $0) },
                 .OBJC_ASSOCIATION_RETAIN_NONATOMIC
             )
@@ -1045,9 +1054,9 @@ class WebViewCoordinator {
 
             if let controller = webView.configuration.userContentController as? UserContentController {
                 Task { @MainActor in
-                    await PerformanceTrace.withInterval("ContentBlocking.assetsInstallWait") {
-                        await controller.awaitContentBlockingAssetsInstalled()
-                    }
+                    let signpostState = PerformanceTrace.beginInterval("ContentBlocking.assetsInstallWait")
+                    await controller.awaitContentBlockingAssetsInstalled()
+                    PerformanceTrace.endInterval("ContentBlocking.assetsInstallWait", signpostState)
                     performLoad()
                 }
             } else {

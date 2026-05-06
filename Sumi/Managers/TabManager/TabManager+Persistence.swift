@@ -349,6 +349,12 @@ struct TabStructuralDirtySet: Sendable {
 }
 
 @MainActor
+private func waitUntilSharedFaviconManagerLoaded() async {
+    let faviconManager = SumiFaviconSystem.shared.manager
+    await faviconManager.waitUntilLoaded()
+}
+
+@MainActor
 extension TabManager {
     private enum StructuralPersistencePayload: Sendable {
         case incremental(TabSnapshotRepository.StructuralDelta, TabStructuralDirtySet, Int)
@@ -786,9 +792,8 @@ extension TabManager {
             }
 
             let loader = TabRestoreLoader(container: context.container)
-            let faviconManager = SumiFaviconSystem.shared.manager
             async let payloadTask = loader.load(defaultProfileId: defaultProfileId)
-            async let faviconLoadTask: Void = faviconManager.waitUntilLoaded()
+            async let faviconLoadTask: Void = waitUntilSharedFaviconManagerLoaded()
             let payload = try await payloadTask
             await faviconLoadTask
             if Task.isCancelled { return false }

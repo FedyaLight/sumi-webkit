@@ -65,7 +65,7 @@ final class HistoryPageViewModel: ObservableObject {
             }
     }
 
-    deinit {
+    isolated deinit {
         snapshotTask?.cancel()
         revisionCancellable?.cancel()
     }

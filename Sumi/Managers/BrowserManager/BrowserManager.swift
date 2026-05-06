@@ -1161,7 +1161,7 @@ class BrowserManager: ObservableObject {
             persistWindowSession(for: windowState)
         }
     }
-    deinit {
+    isolated deinit {
         permissionRecentActivityTask?.cancel()
         permissionSidebarPinningTask?.cancel()
         pendingWindowSessionPersistTasks.values.forEach { $0.cancel() }

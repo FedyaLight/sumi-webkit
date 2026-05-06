@@ -46,7 +46,7 @@ private final class NativeMessagingProcessSession {
     private let manifest: NativeMessagingHostManifest
     private let closeOnMalformedMessage: Bool
     private let stateQueue: DispatchQueue
-    private let onMessage: (Any) -> Void
+    private let onMessage: (Data) -> Void
     private let onClose: (CloseReason) -> Void
 
     private var process: Process?
@@ -70,7 +70,7 @@ private final class NativeMessagingProcessSession {
     init(
         manifest: NativeMessagingHostManifest,
         closeOnMalformedMessage: Bool,
-        onMessage: @escaping (Any) -> Void,
+        onMessage: @escaping (Data) -> Void,
         onClose: @escaping (CloseReason) -> Void
     ) {
         self.manifest = manifest
@@ -101,6 +101,10 @@ private final class NativeMessagingProcessSession {
         _ message: Any,
         completion: ((Error?) -> Void)? = nil
     ) {
+        let frameResult = Result {
+            try Self.frame(for: message)
+        }
+
         stateQueue.async { [weak self] in
             guard let self else { return }
             guard self.isClosed == false else {
@@ -112,9 +116,10 @@ private final class NativeMessagingProcessSession {
             }
 
             let frame: Data
-            do {
-                frame = try Self.frame(for: message)
-            } catch {
+            switch frameResult {
+            case .success(let preparedFrame):
+                frame = preparedFrame
+            case .failure(let error):
                 completion?(error)
                 return
             }
@@ -397,8 +402,8 @@ private final class NativeMessagingProcessSession {
             outputBuffer.removeSubrange(0..<totalLength)
 
             do {
-                let object = try JSONSerialization.jsonObject(with: payload)
-                onMessage(object)
+                _ = try JSONSerialization.jsonObject(with: payload)
+                onMessage(payload)
             } catch {
                 if closeOnMalformedMessage {
                     closeLocked(.error(error), notify: true)
@@ -645,6 +650,23 @@ private final class NativeMessagingProcessTerminationObserver: @unchecked Sendab
 }
 
 @available(macOS 15.5, *)
+@MainActor
+private final class NativeMessagingSingleShotCompletion {
+    private var completion: ((Any?, Error?) -> Void)?
+
+    init(_ completion: @escaping (Any?, Error?) -> Void) {
+        self.completion = completion
+    }
+
+    func complete(response: Any?, error: Error?) {
+        guard let completion else { return }
+        self.completion = nil
+        completion(response, error)
+    }
+}
+
+@available(macOS 15.5, *)
+@MainActor
 final class NativeMessagingHandler: NSObject {
     private static let logger = Logger.sumi(category: "NativeMessaging")
     private static let missingHostBackoff: TimeInterval = 5
@@ -758,60 +780,69 @@ final class NativeMessagingHandler: NSObject {
         _ message: Any,
         completion: @escaping (Any?, Error?) -> Void
     ) {
+        let singleShotCompletion = NativeMessagingSingleShotCompletion(completion)
+
         do {
             let manifest = try loadManifest()
             weak var sessionReference: NativeMessagingProcessSession?
             let session = NativeMessagingProcessSession(
                 manifest: manifest,
                 closeOnMalformedMessage: true,
-                onMessage: { [weak self] response in
+                onMessage: { [weak self] responsePayload in
                     self?.completeSingleShot(
-                        session: sessionReference,
-                        response: response,
+                        sessionID: sessionReference.map(ObjectIdentifier.init),
+                        responsePayload: responsePayload,
                         error: nil,
-                        completion: completion
+                        completion: singleShotCompletion
                     )
                 },
                 onClose: { [weak self] reason in
                     self?.completeSingleShot(
-                        session: sessionReference,
-                        response: nil,
+                        sessionID: sessionReference.map(ObjectIdentifier.init),
+                        responsePayload: nil,
                         error: Self.error(from: reason),
-                        completion: completion
+                        completion: singleShotCompletion
                     )
                 }
             )
             sessionReference = session
             self.session = session
+            let sessionID = ObjectIdentifier(session)
 
-            session.start { [weak self, weak session] result in
+            session.start { [weak self] result in
                 DispatchQueue.main.async {
-                    guard let self, let session, self.session === session else {
+                    guard let self,
+                          let session = self.session,
+                          ObjectIdentifier(session) == sessionID
+                    else {
                         return
                     }
 
                     switch result {
                     case .failure(let error):
                         Self.logger.warning("Native messaging send failed: \(error.localizedDescription, privacy: .public). Delaying failure to prevent extension retry loops.")
-                        DispatchQueue.main.asyncAfter(deadline: .now() + Self.missingHostBackoff) { [weak self, weak session] in
-                            guard let self, let session, self.session === session else {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + Self.missingHostBackoff) { [weak self] in
+                            guard let self,
+                                  let currentSession = self.session,
+                                  ObjectIdentifier(currentSession) == sessionID
+                            else {
                                 return
                             }
                             self.session = nil
-                            completion(nil, error)
+                            singleShotCompletion.complete(response: nil, error: error)
                         }
                     case .success:
                         self.startResponseTimeout(
                             for: session,
-                            completion: completion
+                            completion: singleShotCompletion
                         )
                         session.send(message) { [weak self, weak session] error in
                             guard let error else { return }
                             self?.completeSingleShot(
-                                session: session,
-                                response: nil,
+                                sessionID: session.map(ObjectIdentifier.init),
+                                responsePayload: nil,
                                 error: error,
-                                completion: completion
+                                completion: singleShotCompletion
                             )
                         }
                     }
@@ -820,7 +851,7 @@ final class NativeMessagingHandler: NSObject {
         } catch {
             Self.logger.warning("Native messaging send failed: \(error.localizedDescription, privacy: .public). Delaying failure to prevent extension retry loops.")
             DispatchQueue.main.asyncAfter(deadline: .now() + Self.missingHostBackoff) {
-                completion(nil, error)
+                singleShotCompletion.complete(response: nil, error: error)
             }
         }
     }
@@ -837,8 +868,11 @@ final class NativeMessagingHandler: NSObject {
             let session = NativeMessagingProcessSession(
                 manifest: manifest,
                 closeOnMalformedMessage: false,
-                onMessage: { [weak self] object in
+                onMessage: { [weak self] payload in
                     DispatchQueue.main.async {
+                        guard let object = Self.decodeMessagePayload(payload) else {
+                            return
+                        }
                         self?.port?.sendMessage(object) { _ in }
                     }
                 },
@@ -849,6 +883,7 @@ final class NativeMessagingHandler: NSObject {
                 }
             )
             self.session = session
+            let sessionID = ObjectIdentifier(session)
 
             port.messageHandler = { [weak self] _, message in
                 guard let message else { return }
@@ -863,16 +898,22 @@ final class NativeMessagingHandler: NSObject {
                 self?.disconnect()
             }
 
-            session.start { [weak self, weak session, weak port] result in
+            session.start { [weak self, weak port] result in
                 DispatchQueue.main.async {
-                    guard let self, let session, self.session === session else {
+                    guard let self,
+                          let currentSession = self.session,
+                          ObjectIdentifier(currentSession) == sessionID
+                    else {
                         return
                     }
 
                     if case .failure(let error) = result {
                         Self.logger.warning("Native messaging connection failed: \(error.localizedDescription, privacy: .public). Delaying disconnect to prevent extension retry loops.")
-                        DispatchQueue.main.asyncAfter(deadline: .now() + Self.missingHostBackoff) { [weak self, weak session, weak port] in
-                            guard let self, let session, self.session === session else {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + Self.missingHostBackoff) { [weak self, weak port] in
+                            guard let self,
+                                  let currentSession = self.session,
+                                  ObjectIdentifier(currentSession) == sessionID
+                            else {
                                 return
                             }
                             port?.disconnect()
@@ -896,12 +937,13 @@ final class NativeMessagingHandler: NSObject {
 
     private func startResponseTimeout(
         for session: NativeMessagingProcessSession,
-        completion: @escaping (Any?, Error?) -> Void
+        completion: NativeMessagingSingleShotCompletion
     ) {
-        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + responseTimeout) { [weak self, weak session] in
+        let sessionID = ObjectIdentifier(session)
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + responseTimeout) { [weak self] in
             self?.completeSingleShot(
-                session: session,
-                response: nil,
+                sessionID: sessionID,
+                responsePayload: nil,
                 error: NSError(
                     domain: "NativeMessaging",
                     code: 4,
@@ -913,22 +955,24 @@ final class NativeMessagingHandler: NSObject {
     }
 
     private func completeSingleShot(
-        session: NativeMessagingProcessSession?,
-        response: Any?,
+        sessionID: ObjectIdentifier?,
+        responsePayload: Data?,
         error: Error?,
-        completion: @escaping (Any?, Error?) -> Void
+        completion: NativeMessagingSingleShotCompletion
     ) {
-        DispatchQueue.main.async { [weak self, weak session] in
+        DispatchQueue.main.async { [weak self] in
             guard let self,
-                  let session,
-                  self.session === session
+                  let sessionID,
+                  let currentSession = self.session,
+                  ObjectIdentifier(currentSession) == sessionID
             else {
                 return
             }
 
             self.session = nil
-            session.cancel(notify: false)
-            completion(response, error)
+            currentSession.cancel(notify: false)
+            let response = responsePayload.flatMap(Self.decodeMessagePayload)
+            completion.complete(response: response, error: error)
         }
     }
 
@@ -995,5 +1039,9 @@ final class NativeMessagingHandler: NSObject {
         case .error(let error):
             return error
         }
+    }
+
+    private static func decodeMessagePayload(_ payload: Data) -> Any? {
+        try? JSONSerialization.jsonObject(with: payload)
     }
 }
