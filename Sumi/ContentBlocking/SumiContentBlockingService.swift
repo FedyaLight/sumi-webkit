@@ -1,4 +1,3 @@
-import BrowserServicesKit
 import Combine
 import ContentBlocking
 import CryptoKit
