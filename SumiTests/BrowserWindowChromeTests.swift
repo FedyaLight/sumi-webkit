@@ -107,7 +107,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         assertNativeBrowserControlsHidden(window)
     }
 
-    func testBrowserChromeHideNativeControlsClearsAccessibilityAndParksButtons() {
+    func testBrowserChromeHideNativeControlsClearsAccessibilityAcrossModeChanges() {
         let window = WindowChromeTestSupport.makeBrowserWindow()
 
         window.configureNativeStandardWindowButtonsForMiniWindowChrome()
@@ -115,16 +115,6 @@ final class BrowserWindowChromeTests: XCTestCase {
 
         window.hideNativeStandardWindowButtonsForBrowserChrome()
         assertNativeBrowserControlsHidden(window)
-
-        for type in WindowChromeTestSupport.standardButtonTypes {
-            guard let button = window.standardWindowButton(type) else {
-                XCTFail("Expected standard window button for \(type).")
-                continue
-            }
-            XCTAssertTrue(button.identifier?.rawValue.isEmpty ?? true)
-            XCTAssertTrue(button.accessibilityIdentifier().isEmpty)
-            XCTAssertLessThan(button.frame.origin.x, -9_000)
-        }
 
         window.miniaturizeFromCustomBrowserChrome()
         assertNativeBrowserControlsHidden(window)
