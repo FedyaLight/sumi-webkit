@@ -41,7 +41,7 @@ final class SumiBookmarksPageViewModel: ObservableObject {
         rebuildVisibleEntities()
     }
 
-    deinit {
+    isolated deinit {
         revisionCancellable?.cancel()
     }
 
