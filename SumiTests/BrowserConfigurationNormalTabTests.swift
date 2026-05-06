@@ -21,14 +21,19 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
                 .sumiUsesNormalTabBrowserServicesKitUserContentController
         )
         XCTAssertNotNil(configuration.userContentController.sumiNormalTabUserScriptsProvider)
-        XCTAssertTrue(configuration.userContentController is UserContentController)
         XCTAssertTrue(configuration.sumiIsNormalTabWebViewConfiguration)
         XCTAssertTrue(configuration.websiteDataStore === profile.dataStore)
 
-        let controller = try XCTUnwrap(configuration.userContentController as? UserContentController)
-        await controller.awaitContentBlockingAssetsInstalled()
-        XCTAssertFalse(configuration.userContentController.userScripts.isEmpty)
-        XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
+        let controller = try XCTUnwrap(configuration.userContentController.sumiNormalTabUserContentController)
+        XCTAssertTrue(controller.wkUserContentController === configuration.userContentController)
+        XCTAssertNotNil(controller.normalTabUserScriptsProvider)
+
+        await controller.waitForContentBlockingAssetsInstalled()
+
+        let contentBlockingSummary = controller.contentBlockingAssetSummary
+        XCTAssertTrue(contentBlockingSummary.isInstalled)
+        XCTAssertFalse(controller.wkUserContentController.userScripts.isEmpty)
+        XCTAssertEqual(contentBlockingSummary.globalRuleListCount, 0)
     }
 
     func testBrowserManagerStartupWithTrackingDisabledDoesNotInitializeTrackingRuntime() {
@@ -132,10 +137,10 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         tab.setupWebView()
 
         let webView = try XCTUnwrap(tab.existingWebView)
-        let controller = try XCTUnwrap(webView.configuration.userContentController as? UserContentController)
-        await controller.awaitContentBlockingAssetsInstalled()
+        let controller = try XCTUnwrap(webView.configuration.userContentController.sumiNormalTabUserContentController)
+        await controller.waitForContentBlockingAssetsInstalled()
 
-        XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
+        XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 0)
         XCTAssertEqual(probe.settingsCount, 0)
         XCTAssertEqual(probe.dataStoreCount, 0)
         XCTAssertEqual(probe.serviceCount, 0)
@@ -165,11 +170,9 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         tab.setupWebView()
 
         let webView = try XCTUnwrap(tab.existingWebView)
-        let controller = try XCTUnwrap(webView.configuration.userContentController as? UserContentController)
-        await controller.awaitContentBlockingAssetsInstalled()
-        let provider = try XCTUnwrap(
-            webView.configuration.userContentController.sumiNormalTabUserScriptsProvider
-        )
+        let controller = try XCTUnwrap(webView.configuration.userContentController.sumiNormalTabUserContentController)
+        await controller.waitForContentBlockingAssetsInstalled()
+        let provider = try XCTUnwrap(controller.normalTabUserScriptsProvider)
         let sources = provider.userScripts.map(\.source).joined(separator: "\n")
 
         XCTAssertTrue(sources.contains("sumiLinkInteraction_\(tab.id.uuidString)"))
@@ -208,11 +211,9 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         tab.setupWebView()
 
         let webView = try XCTUnwrap(tab.existingWebView)
-        let controller = try XCTUnwrap(webView.configuration.userContentController as? UserContentController)
-        await controller.awaitContentBlockingAssetsInstalled()
-        let provider = try XCTUnwrap(
-            webView.configuration.userContentController.sumiNormalTabUserScriptsProvider
-        )
+        let controller = try XCTUnwrap(webView.configuration.userContentController.sumiNormalTabUserContentController)
+        await controller.waitForContentBlockingAssetsInstalled()
+        let provider = try XCTUnwrap(controller.normalTabUserScriptsProvider)
         let sources = provider.userScripts.map(\.source).joined(separator: "\n")
 
         XCTAssertTrue(sources.contains("sumiLinkInteraction_\(tab.id.uuidString)"))

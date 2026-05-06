@@ -159,6 +159,20 @@ struct SumiNormalTabContentBlockingAssetSource {
     }
 }
 
+struct SumiNormalTabContentBlockingAssetSummary: Equatable {
+    let isInstalled: Bool
+    let globalRuleListCount: Int
+}
+
+@MainActor
+protocol SumiNormalTabUserContentControlling: AnyObject {
+    var wkUserContentController: WKUserContentController { get }
+    var normalTabUserScriptsProvider: SumiNormalTabUserScripts? { get }
+    var contentBlockingAssetSummary: SumiNormalTabContentBlockingAssetSummary { get }
+
+    func waitForContentBlockingAssetsInstalled() async
+}
+
 @MainActor
 private enum SumiNormalTabAssociatedKeys {
     static var scriptsProvider: UInt8 = 0
@@ -210,6 +224,34 @@ extension WKUserContentController {
                 .OBJC_ASSOCIATION_RETAIN_NONATOMIC
             )
         }
+    }
+}
+
+extension WKUserContentController {
+    @MainActor
+    var sumiNormalTabUserContentController: SumiNormalTabUserContentControlling? {
+        self as? SumiNormalTabUserContentControlling
+    }
+}
+
+extension UserContentController: SumiNormalTabUserContentControlling {
+    var wkUserContentController: WKUserContentController {
+        self
+    }
+
+    var normalTabUserScriptsProvider: SumiNormalTabUserScripts? {
+        sumiNormalTabUserScriptsProvider
+    }
+
+    var contentBlockingAssetSummary: SumiNormalTabContentBlockingAssetSummary {
+        SumiNormalTabContentBlockingAssetSummary(
+            isInstalled: contentBlockingAssetsInstalled,
+            globalRuleListCount: contentBlockingAssets?.globalRuleLists.count ?? 0
+        )
+    }
+
+    func waitForContentBlockingAssetsInstalled() async {
+        await awaitContentBlockingAssetsInstalled()
     }
 }
 
