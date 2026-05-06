@@ -53,7 +53,7 @@ protocol FaviconReferenceCaching {
     @MainActor
     func burn(except fireproofDomains: FireproofDomains, bookmarkManager: BookmarkManager, savedLogins: Set<String>) async
     @MainActor
-    func burnDomains(_ baseDomains: Set<String>, exceptBookmarks bookmarkManager: BookmarkManager, exceptSavedLogins logins: Set<String>, exceptHistoryDomains history: Set<String>, tld: TLD) async
+    func burnDomains(_ baseDomains: Set<String>, exceptBookmarks bookmarkManager: BookmarkManager, exceptSavedLogins logins: Set<String>, exceptHistoryDomains history: Set<String>, registrableDomainResolver: any SumiRegistrableDomainResolving) async
 }
 
 final class FaviconReferenceCache: FaviconReferenceCaching {
@@ -227,12 +227,12 @@ final class FaviconReferenceCache: FaviconReferenceCaching {
                      exceptBookmarks bookmarkManager: BookmarkManager,
                      exceptSavedLogins logins: Set<String>,
                      exceptHistoryDomains history: Set<String>,
-                     tld: TLD) async {
+                     registrableDomainResolver: any SumiRegistrableDomainResolving) async {
         // Remove host references
         let bookmarkedHosts = bookmarkManager.allHosts()
         await removeHostReferences(filter: { hostReference in
             let host = hostReference.host
-            let baseDomain = tld.eTLDplus1(host) ?? ""
+            let baseDomain = registrableDomainResolver.registrableDomain(forHost: host) ?? ""
             return baseDomains.contains(baseDomain) && !bookmarkedHosts.contains(host) && !logins.contains(host) && !history.contains(host)
         }).value
         // Remove URL references

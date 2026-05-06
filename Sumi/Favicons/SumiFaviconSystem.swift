@@ -1,6 +1,5 @@
 import AppKit
 import Bookmarks
-import Common
 import CoreData
 import Foundation
 import Persistence
@@ -319,7 +318,7 @@ final class SumiFaviconSystem {
         )
         fireproofDomains = FireproofDomains(
             store: FireproofDomainsStore(database: fireproofDatabase, tableName: "FireproofDomains"),
-            tld: TLD()
+            registrableDomainResolver: SumiRegistrableDomainResolver()
         )
         manager = FaviconManager(
             cacheType: .standard(faviconDatabase),
@@ -371,7 +370,7 @@ final class SumiFaviconSystem {
             exceptBookmarks: bookmarkMirror,
             exceptSavedLogins: savedLogins,
             exceptExistingHistoryHosts: remainingHistoryHosts,
-            tld: TLD()
+            registrableDomainResolver: SumiRegistrableDomainResolver()
         )
     }
 

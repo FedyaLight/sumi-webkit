@@ -1,6 +1,5 @@
 import AppKit
 import Combine
-import Common
 import Foundation
 import WebKit
 
@@ -18,6 +17,7 @@ final class FaviconsTabExtension {
 
     private weak var tab: Tab?
     private weak var faviconUserScript: SumiDDGFaviconUserScript?
+    private let registrableDomainResolver: any SumiRegistrableDomainResolving
     private var cancellables = Set<AnyCancellable>()
     private var faviconHandlingTask: Task<Void, Never>? {
         willSet {
@@ -30,10 +30,12 @@ final class FaviconsTabExtension {
     init(
         scriptsPublisher: some Publisher<SumiDDGFaviconUserScripts, Never>,
         tab: Tab,
-        faviconManagement: FaviconManagement
+        faviconManagement: FaviconManagement,
+        registrableDomainResolver: any SumiRegistrableDomainResolving = SumiRegistrableDomainResolver()
     ) {
         self.tab = tab
         self.faviconManagement = faviconManagement
+        self.registrableDomainResolver = registrableDomainResolver
 
         scriptsPublisher
             .sink { [weak self] scripts in
@@ -73,7 +75,7 @@ final class FaviconsTabExtension {
             return favicon
         }
 
-        guard let domain = TLD().eTLDplus1(currentURL.host) else { return nil }
+        guard let domain = registrableDomainResolver.registrableDomain(forHost: currentURL.host) else { return nil }
         return faviconManagement.getCachedFavicon(
             forHostOrAnySubdomain: domain,
             sizeCategory: .small,

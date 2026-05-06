@@ -52,7 +52,7 @@ protocol FaviconImageCaching {
                      exceptBookmarks bookmarkManager: BookmarkManager,
                      exceptSavedLogins logins: Set<String>,
                      exceptHistoryDomains history: Set<String>,
-                     tld: TLD) async -> Result<Void, Error>
+                     registrableDomainResolver: any SumiRegistrableDomainResolving) async -> Result<Void, Error>
 }
 
 final class FaviconImageCache: FaviconImageCaching {
@@ -166,10 +166,12 @@ final class FaviconImageCache: FaviconImageCaching {
                      exceptBookmarks bookmarkManager: BookmarkManager,
                      exceptSavedLogins logins: Set<String>,
                      exceptHistoryDomains history: Set<String>,
-                     tld: TLD) async -> Result<Void, Error> {
+                     registrableDomainResolver: any SumiRegistrableDomainResolving) async -> Result<Void, Error> {
         let bookmarkedHosts = bookmarkManager.allHosts()
         return await removeFavicons { favicon in
-            guard let host = favicon.documentUrl.host, let baseDomain = tld.eTLDplus1(host) else { return false }
+            guard let host = favicon.documentUrl.host,
+                  let baseDomain = registrableDomainResolver.registrableDomain(forHost: host)
+            else { return false }
             return baseDomains.contains(baseDomain)
                 && !bookmarkedHosts.contains(host)
                 && !logins.contains(host)

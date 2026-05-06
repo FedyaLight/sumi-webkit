@@ -16,7 +16,6 @@
 //  limitations under the License.
 //
 
-import Common
 import Foundation
 import CoreData
 import os.log
@@ -33,7 +32,7 @@ internal class FireproofDomains {
     private let defaults: UserDefaults
     private let logger = Logger.sumi(category: "Fireproof")
 
-    let tld: TLD
+    let registrableDomainResolver: any SumiRegistrableDomainResolving
 
     private enum DefaultsKey {
         static let legacyDomains = "sumi.fireproof.legacyDomains"
@@ -56,9 +55,13 @@ internal class FireproofDomains {
         }
     }
 
-    init(store: FireproofDomainsStore, tld: TLD, defaults: UserDefaults = .standard) {
+    init(
+        store: FireproofDomainsStore,
+        registrableDomainResolver: any SumiRegistrableDomainResolving = SumiRegistrableDomainResolver(),
+        defaults: UserDefaults = .standard
+    ) {
         self.store = store
-        self.tld = tld
+        self.registrableDomainResolver = registrableDomainResolver
         self.defaults = defaults
 
         migrateFireproofDomainsToETLDPlus1()
@@ -72,7 +75,7 @@ internal class FireproofDomains {
 
                 var container = FireproofDomainsContainer()
                 do {
-                    let eTLDPlus1Domains = Set(domains.map { tld.eTLDplus1($0) ?? $0 })
+                    let eTLDPlus1Domains = Set(domains.map { registrableDomainResolver.registrableDomain(forHost: $0) ?? $0 })
                     let added = try store.add(eTLDPlus1Domains)
                     for (domain, id) in added {
                         try container.add(domain: domain, withId: id)
@@ -95,7 +98,7 @@ internal class FireproofDomains {
         // Perform migration to eTLD+1
         if !areDomainsMigratedToETLDPlus1 {
             for domain in container.domains {
-                if let eTLDPlus1Domain = tld.eTLDplus1(domain),
+                if let eTLDPlus1Domain = registrableDomainResolver.registrableDomain(forHost: domain),
                    domain != eTLDPlus1Domain {
                     remove(domain: domain, changeToETLDPlus1: false)
                     add(domain: eTLDPlus1Domain, notify: false)
@@ -108,7 +111,7 @@ internal class FireproofDomains {
     func add(domain: String, notify: Bool = true) {
         dispatchPrecondition(condition: .onQueue(.main))
 
-        let eTLDPlus1Domain = tld.eTLDplus1(domain) ?? domain
+        let eTLDPlus1Domain = registrableDomainResolver.registrableDomain(forHost: domain) ?? domain
         guard !isFireproof(fireproofDomain: eTLDPlus1Domain) else {
             return
         }
@@ -139,7 +142,7 @@ internal class FireproofDomains {
 
         let newDomain: String
         if changeToETLDPlus1 {
-            newDomain = tld.eTLDplus1(domain) ?? domain
+            newDomain = registrableDomainResolver.registrableDomain(forHost: domain) ?? domain
         } else {
             newDomain = domain
         }
@@ -158,7 +161,7 @@ internal class FireproofDomains {
     }
 
     func isFireproof(fireproofDomain domain: String) -> Bool {
-        let eTLDPlus1Domain = tld.eTLDplus1(domain) ?? domain
+        let eTLDPlus1Domain = registrableDomainResolver.registrableDomain(forHost: domain) ?? domain
         return container.contains(domain: eTLDPlus1Domain)
     }
 }

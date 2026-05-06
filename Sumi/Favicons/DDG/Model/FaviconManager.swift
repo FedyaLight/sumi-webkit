@@ -276,16 +276,16 @@ final class FaviconManager: FaviconManagement {
                      exceptBookmarks bookmarkManager: BookmarkManager,
                      exceptSavedLogins: Set<String> = [],
                      exceptExistingHistoryHosts existingHistoryDomains: Set<String>,
-                     tld: TLD) async -> Result<Void, Error> {
+                     registrableDomainResolver: any SumiRegistrableDomainResolving) async -> Result<Void, Error> {
         await referenceCache.burnDomains(baseDomains, exceptBookmarks: bookmarkManager,
                                          exceptSavedLogins: exceptSavedLogins,
                                          exceptHistoryDomains: existingHistoryDomains,
-                                         tld: tld)
+                                         registrableDomainResolver: registrableDomainResolver)
         return await imageCache.burnDomains(baseDomains,
                                             exceptBookmarks: bookmarkManager,
                                             exceptSavedLogins: exceptSavedLogins,
                                             exceptHistoryDomains: existingHistoryDomains,
-                                            tld: tld)
+                                            registrableDomainResolver: registrableDomainResolver)
     }
 
     // MARK: - Private
