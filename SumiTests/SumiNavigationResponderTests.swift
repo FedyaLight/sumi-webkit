@@ -1,5 +1,4 @@
 import AppKit
-import Common
 import SwiftData
 import WebKit
 import XCTest
@@ -122,7 +121,7 @@ final class SumiNavigationResponderTests: XCTestCase {
                 navigationType: .linkActivated(isMiddleClick: false),
                 webView: webView,
                 sourceURL: URL(string: "https://request.example/page")!,
-                sourceSecurityOrigin: SecurityOrigin(protocol: "https", host: "request.example", port: 0)
+                sourceSecurityOrigin: SumiSecurityOrigin(protocol: "https", host: "request.example", port: 0)
             ),
             preferences: &preferences
         )
@@ -155,7 +154,7 @@ final class SumiNavigationResponderTests: XCTestCase {
                 navigationType: .linkActivated(isMiddleClick: false),
                 webView: webView,
                 sourceURL: URL(string: "https://request.example/page")!,
-                sourceSecurityOrigin: SecurityOrigin(protocol: "https", host: "request.example", port: 0)
+                sourceSecurityOrigin: SumiSecurityOrigin(protocol: "https", host: "request.example", port: 0)
             ),
             preferences: &preferences
         )
@@ -163,6 +162,54 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertTrue(policy?.isCancel == true)
         XCTAssertTrue(resolver.openedURLs.isEmpty)
         XCTAssertEqual(bridge.sessionStore.records(forPageId: "tab-a:1").first?.result, .unsupportedScheme)
+    }
+
+    func testExternalSchemeResponderDerivesPermissionOriginFromNavigationSecurityOrigin() async {
+        let tab = Tab(url: URL(string: "https://example.com")!)
+        let resolver = NavigationExternalSchemeFakeResolver(handlerSchemes: ["mailto"])
+        let coordinator = NavigationExternalSchemeRecordingCoordinator()
+        let bridge = SumiExternalSchemePermissionBridge(
+            coordinator: coordinator,
+            appResolver: resolver,
+            now: { Date(timeIntervalSince1970: 1_800_000_000) }
+        )
+        let responder = SumiExternalSchemeNavigationResponder(
+            tab: tab,
+            permissionBridge: bridge,
+            tabContextProvider: { _ in navigationExternalTabContext() }
+        )
+        let webView = WKWebView(frame: .zero)
+        var preferences = NavigationPreferences.default
+
+        _ = await responder.decidePolicy(
+            for: navigationAction(
+                url: URL(string: "mailto:test@example.com")!,
+                navigationType: .linkActivated(isMiddleClick: false),
+                webView: webView,
+                sourceURL: URL(string: "https://wrong.example/page")!,
+                sourceSecurityOrigin: SumiSecurityOrigin(protocol: "https", host: "request.example", port: 0)
+            ),
+            preferences: &preferences
+        )
+
+        let contexts = await coordinator.recordedContexts()
+        XCTAssertEqual(contexts.first?.requestingOrigin.identity, "https://request.example")
+    }
+
+    func testPopupRequestDerivesPermissionOriginFromNavigationSecurityOrigin() {
+        let action = navigationAction(
+            url: URL(string: "https://popup.example/window")!,
+            navigationType: .linkActivated(isMiddleClick: false),
+            sourceURL: URL(string: "https://wrong.example/page")!,
+            sourceSecurityOrigin: SumiSecurityOrigin(protocol: "https", host: "request.example", port: 0)
+        )
+
+        let request = SumiPopupPermissionRequest.fromNavigationAction(
+            action,
+            activationState: .navigationAction
+        )
+
+        XCTAssertEqual(request.requestingOrigin.identity, "https://request.example")
     }
 
     func testExternalSchemeResponderSourceRoutesThroughBridgeBeforeAppOpen() throws {
@@ -533,13 +580,13 @@ final class SumiNavigationResponderTests: XCTestCase {
         shouldDownload: Bool = false,
         webView: WKWebView? = nil,
         sourceURL: URL? = nil,
-        sourceSecurityOrigin: SecurityOrigin? = nil,
+        sourceSecurityOrigin: SumiSecurityOrigin? = nil,
         isUserInitiated: Bool = true,
         isMainFrame: Bool = true
     ) -> NavigationAction {
         let webView = webView ?? WKWebView(frame: .zero)
         let frameURL = sourceURL ?? url
-        let securityOrigin = sourceSecurityOrigin ?? SecurityOrigin(
+        let securityOrigin = sourceSecurityOrigin ?? SumiSecurityOrigin(
             protocol: frameURL.scheme ?? "",
             host: frameURL.host ?? "",
             port: frameURL.port ?? 0
@@ -549,7 +596,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             handle: FrameHandle(rawValue: UInt64(1))!,
             isMainFrame: isMainFrame,
             url: frameURL,
-            securityOrigin: securityOrigin
+            securityOrigin: securityOrigin.browserServicesKitSecurityOrigin
         )
         return NavigationAction(
             request: URLRequest(url: url),
@@ -774,6 +821,58 @@ private actor NavigationExternalSchemeFakeCoordinator: SumiPermissionCoordinatin
     @discardableResult
     func cancelTab(tabId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
         navigationExternalCoordinatorDecision(.cancelled, reason: reason)
+    }
+}
+
+private actor NavigationExternalSchemeRecordingCoordinator: SumiPermissionCoordinating {
+    private var contexts: [SumiPermissionSecurityContext] = []
+
+    func requestPermission(_ context: SumiPermissionSecurityContext) async -> SumiPermissionCoordinatorDecision {
+        contexts.append(context)
+        return navigationExternalCoordinatorDecision(.promptRequired, reason: "recorded")
+    }
+
+    func queryPermissionState(_ context: SumiPermissionSecurityContext) async -> SumiPermissionCoordinatorDecision {
+        contexts.append(context)
+        return navigationExternalCoordinatorDecision(.promptRequired, reason: "recorded")
+    }
+
+    func activeQuery(forPageId _: String) -> SumiPermissionAuthorizationQuery? {
+        nil
+    }
+
+    func stateSnapshot() -> SumiPermissionCoordinatorState {
+        SumiPermissionCoordinatorState()
+    }
+
+    func events() -> AsyncStream<SumiPermissionCoordinatorEvent> {
+        AsyncStream { continuation in
+            continuation.finish()
+        }
+    }
+
+    @discardableResult
+    func cancel(requestId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
+        navigationExternalCoordinatorDecision(.cancelled, reason: reason)
+    }
+
+    @discardableResult
+    func cancel(pageId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
+        navigationExternalCoordinatorDecision(.cancelled, reason: reason)
+    }
+
+    @discardableResult
+    func cancelNavigation(pageId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
+        navigationExternalCoordinatorDecision(.cancelled, reason: reason)
+    }
+
+    @discardableResult
+    func cancelTab(tabId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
+        navigationExternalCoordinatorDecision(.cancelled, reason: reason)
+    }
+
+    func recordedContexts() -> [SumiPermissionSecurityContext] {
+        contexts
     }
 }
 

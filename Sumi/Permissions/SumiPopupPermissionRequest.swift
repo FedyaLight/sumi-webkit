@@ -1,5 +1,4 @@
 import AppKit
-import Common
 import Foundation
 import Navigation
 import WebKit
@@ -277,7 +276,7 @@ struct SumiPopupPermissionRequest: Sendable {
         return SumiPopupPermissionRequest(
             targetURL: navigationAction.url,
             sourceURL: navigationAction.sourceFrame.url,
-            requestingOrigin: permissionOrigin(from: navigationAction.sourceFrame.securityOrigin),
+            requestingOrigin: permissionOrigin(from: SumiSecurityOrigin(navigationAction.sourceFrame.securityOrigin)),
             userActivation: activationState,
             isMainFrame: navigationAction.sourceFrame.isMainFrame,
             navigationActionMetadata: metadata
@@ -286,33 +285,15 @@ struct SumiPopupPermissionRequest: Sendable {
 
     @MainActor
     private static func permissionOrigin(from origin: WKSecurityOrigin) -> SumiPermissionOrigin {
-        let scheme = origin.`protocol`.trimmingCharacters(in: .whitespacesAndNewlines)
-        let host = origin.host.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !scheme.isEmpty, !host.isEmpty else {
-            return .invalid(reason: "missing-webkit-popup-security-origin")
-        }
-        var components = URLComponents()
-        components.scheme = scheme
-        components.host = host
-        if origin.port > 0 {
-            components.port = origin.port
-        }
-        return SumiPermissionOrigin(url: components.url)
+        SumiSecurityOrigin(
+            protocol: origin.`protocol`,
+            host: origin.host,
+            port: origin.port
+        ).permissionOrigin(missingReason: "missing-webkit-popup-security-origin")
     }
 
-    private static func permissionOrigin(from origin: SecurityOrigin) -> SumiPermissionOrigin {
-        let scheme = origin.`protocol`.trimmingCharacters(in: .whitespacesAndNewlines)
-        let host = origin.host.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !scheme.isEmpty, !host.isEmpty else {
-            return .invalid(reason: "missing-navigation-popup-security-origin")
-        }
-        var components = URLComponents()
-        components.scheme = scheme
-        components.host = host
-        if origin.port > 0 {
-            components.port = origin.port
-        }
-        return SumiPermissionOrigin(url: components.url)
+    private static func permissionOrigin(from origin: SumiSecurityOrigin) -> SumiPermissionOrigin {
+        origin.permissionOrigin(missingReason: "missing-navigation-popup-security-origin")
     }
 
     private static func isBrowserOwned(_ url: URL?) -> Bool {
