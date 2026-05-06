@@ -7,30 +7,15 @@ import UserScript
 import WebKit
 
 @MainActor
-final class SumiNormalTabUserScripts: UserScriptsProvider {
-    let faviconScripts = SumiDDGFaviconUserScripts()
-    private var contentBlockingUserScripts: [SumiUserScript]
-    private var managedUserScripts: [SumiUserScript]
-    private var bskUserScriptAdapters: [SumiBrowserServicesKitUserScriptAdapter] = []
+final class SumiBrowserServicesKitNormalTabUserScriptsProvider: UserScriptsProvider {
+    unowned let sumiProvider: SumiNormalTabUserScripts
+    private var bskUserScriptAdapters: [SumiBrowserServicesKitUserScriptAdapter]
+    private var scriptsRevision: Int
 
-    init(
-        contentBlockingUserScripts: [SumiUserScript] = [],
-        managedUserScripts: [SumiUserScript] = []
-    ) {
-        self.contentBlockingUserScripts = contentBlockingUserScripts
-        self.managedUserScripts = managedUserScripts
-        self.bskUserScriptAdapters = Self.makeBrowserServicesKitAdapters(
-            from: contentBlockingUserScripts + faviconScripts.userScripts + managedUserScripts
-        )
-    }
-
-    var sumiUserScripts: [SumiUserScript] {
-        contentBlockingUserScripts + faviconScripts.userScripts + managedUserScripts
-    }
-
-    func replaceManagedUserScripts(_ userScripts: [SumiUserScript]) {
-        managedUserScripts = userScripts
-        bskUserScriptAdapters = Self.makeBrowserServicesKitAdapters(from: sumiUserScripts)
+    init(sumiProvider: SumiNormalTabUserScripts) {
+        self.sumiProvider = sumiProvider
+        self.bskUserScriptAdapters = Self.makeBrowserServicesKitAdapters(from: sumiProvider.userScripts)
+        self.scriptsRevision = sumiProvider.scriptsRevision
     }
 
     var userScripts: [UserScript] {
@@ -38,18 +23,47 @@ final class SumiNormalTabUserScripts: UserScriptsProvider {
     }
 
     func loadWKUserScripts() async -> [WKUserScript] {
-        var scripts: [WKUserScript] = []
-        scripts.reserveCapacity(sumiUserScripts.count)
-        for userScript in sumiUserScripts {
-            scripts.append(SumiUserScriptBuilder.makeWKUserScript(from: userScript))
-        }
-        return scripts
+        await sumiProvider.loadWKUserScripts()
+    }
+
+    func refreshIfNeeded() {
+        guard scriptsRevision != sumiProvider.scriptsRevision else { return }
+        bskUserScriptAdapters = Self.makeBrowserServicesKitAdapters(from: sumiProvider.userScripts)
+        scriptsRevision = sumiProvider.scriptsRevision
     }
 
     private static func makeBrowserServicesKitAdapters(
         from userScripts: [SumiUserScript]
     ) -> [SumiBrowserServicesKitUserScriptAdapter] {
         userScripts.map(SumiBrowserServicesKitUserScriptAdapter.init)
+    }
+}
+
+@MainActor
+private enum SumiNormalTabBrowserServicesKitAssociatedKeys {
+    static var scriptsProviderAdapter: UInt8 = 0
+    static var controllerDelegate: UInt8 = 0
+}
+
+extension SumiNormalTabUserScripts {
+    @MainActor
+    fileprivate var browserServicesKitUserScriptsProvider: SumiBrowserServicesKitNormalTabUserScriptsProvider {
+        if let provider = objc_getAssociatedObject(
+            self,
+            &SumiNormalTabBrowserServicesKitAssociatedKeys.scriptsProviderAdapter
+        ) as? SumiBrowserServicesKitNormalTabUserScriptsProvider {
+            provider.refreshIfNeeded()
+            return provider
+        }
+
+        let provider = SumiBrowserServicesKitNormalTabUserScriptsProvider(sumiProvider: self)
+        objc_setAssociatedObject(
+            self,
+            &SumiNormalTabBrowserServicesKitAssociatedKeys.scriptsProviderAdapter,
+            provider,
+            .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+        )
+        return provider
     }
 }
 
@@ -97,16 +111,18 @@ private final class SumiBrowserServicesKitUserScriptAdapter: NSObject, UserScrip
 
 struct SumiNormalTabUserContent: UserContentControllerNewContent {
     typealias SourceProvider = SumiNormalTabUserScripts
-    typealias UserScripts = SumiNormalTabUserScripts
+    typealias UserScripts = SumiBrowserServicesKitNormalTabUserScriptsProvider
 
     let rulesUpdate: ContentBlockerRulesManager.UpdateEvent
     let sourceProvider: SumiNormalTabUserScripts
-    let makeUserScripts: @MainActor (SumiNormalTabUserScripts) -> SumiNormalTabUserScripts
+    let makeUserScripts: @MainActor (SumiNormalTabUserScripts) -> SumiBrowserServicesKitNormalTabUserScriptsProvider
 
     init(
         rulesUpdate: ContentBlockerRulesManager.UpdateEvent,
         sourceProvider: SumiNormalTabUserScripts,
-        makeUserScripts: @escaping @MainActor (SumiNormalTabUserScripts) -> SumiNormalTabUserScripts = { $0 }
+        makeUserScripts: @escaping @MainActor (SumiNormalTabUserScripts) -> SumiBrowserServicesKitNormalTabUserScriptsProvider = {
+            $0.browserServicesKitUserScriptsProvider
+        }
     ) {
         self.rulesUpdate = rulesUpdate
         self.sourceProvider = sourceProvider
@@ -159,85 +175,23 @@ struct SumiNormalTabContentBlockingAssetSource {
     }
 }
 
-struct SumiNormalTabContentBlockingAssetSummary: Equatable {
-    let isInstalled: Bool
-    let globalRuleListCount: Int
-    let updateRuleCount: Int
-    let isContentBlockingFeatureEnabled: Bool
-}
-
-@MainActor
-protocol SumiNormalTabUserContentControlling: AnyObject {
-    var wkUserContentController: WKUserContentController { get }
-    var normalTabUserScriptsProvider: SumiNormalTabUserScripts? { get }
-    var contentBlockingAssetSummary: SumiNormalTabContentBlockingAssetSummary { get }
-#if DEBUG
-    var contentBlockingAssetSummaryPublisher: AnyPublisher<SumiNormalTabContentBlockingAssetSummary, Never> { get }
-#endif
-
-    func replaceNormalTabUserScripts(with provider: SumiNormalTabUserScripts) async
-    func waitForContentBlockingAssetsInstalled() async
-    func cleanUpBeforeClosing()
-}
-
-@MainActor
-private enum SumiNormalTabAssociatedKeys {
-    static var scriptsProvider: UInt8 = 0
-    static var controllerDelegate: UInt8 = 0
-    static var marker: UInt8 = 0
-}
-
 extension WKUserContentController {
     @MainActor
     fileprivate var sumiNormalTabControllerDelegate: SumiNormalTabUserContentControllerDelegate? {
         get {
-            objc_getAssociatedObject(self, &SumiNormalTabAssociatedKeys.controllerDelegate) as? SumiNormalTabUserContentControllerDelegate
+            objc_getAssociatedObject(
+                self,
+                &SumiNormalTabBrowserServicesKitAssociatedKeys.controllerDelegate
+            ) as? SumiNormalTabUserContentControllerDelegate
         }
         set {
             objc_setAssociatedObject(
                 self,
-                &SumiNormalTabAssociatedKeys.controllerDelegate,
+                &SumiNormalTabBrowserServicesKitAssociatedKeys.controllerDelegate,
                 newValue,
                 .OBJC_ASSOCIATION_RETAIN_NONATOMIC
             )
         }
-    }
-
-    @MainActor
-    var sumiNormalTabUserScriptsProvider: SumiNormalTabUserScripts? {
-        get {
-            objc_getAssociatedObject(self, &SumiNormalTabAssociatedKeys.scriptsProvider) as? SumiNormalTabUserScripts
-        }
-        set {
-            objc_setAssociatedObject(
-                self,
-                &SumiNormalTabAssociatedKeys.scriptsProvider,
-                newValue,
-                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
-            )
-        }
-    }
-
-    @MainActor
-    var sumiUsesNormalTabBrowserServicesKitUserContentController: Bool {
-        get {
-            (objc_getAssociatedObject(self, &SumiNormalTabAssociatedKeys.marker) as? Bool) == true
-        }
-        set {
-            objc_setAssociatedObject(
-                self,
-                &SumiNormalTabAssociatedKeys.marker,
-                newValue,
-                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
-            )
-        }
-    }
-}
-
-extension WKUserContentController {
-    @MainActor
-    var sumiNormalTabUserContentController: SumiNormalTabUserContentControlling? {
-        self as? SumiNormalTabUserContentControlling
     }
 }
 
@@ -276,7 +230,7 @@ extension UserContentController: SumiNormalTabUserContentControlling {
 #endif
 
     func replaceNormalTabUserScripts(with provider: SumiNormalTabUserScripts) async {
-        await replaceUserScripts(with: provider)
+        await replaceUserScripts(with: provider.browserServicesKitUserScriptsProvider)
     }
 
     func waitForContentBlockingAssetsInstalled() async {
@@ -305,7 +259,7 @@ enum SumiNormalTabUserContentControllerFactory {
         scriptsProvider: SumiNormalTabUserScripts? = nil,
         contentBlockingService: SumiContentBlockingService? = nil,
         profileId: UUID? = nil
-    ) -> UserContentController {
+    ) -> WKUserContentController {
         let scriptsProvider = scriptsProvider ?? SumiNormalTabUserScripts()
         let assetSource: SumiNormalTabContentBlockingAssetSource
         if let contentBlockingService {
