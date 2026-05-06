@@ -7,14 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A11DD020B11D000100000001 /* BrowserServicesKit in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000001 /* BrowserServicesKit */; };
 		A11DD020B11D000100000002 /* Bookmarks in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000002 /* Bookmarks */; };
 		A11DD020B11D000100000003 /* Common in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000003 /* Common */; };
 		A11DD020B11D000100000005 /* Navigation in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000005 /* Navigation */; };
 		A11DD020B11D000100000006 /* Persistence in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000006 /* Persistence */; };
 		A11DD020B11D000100000007 /* PrivacyConfig in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000007 /* PrivacyConfig */; };
-		A11DD020B11D000100000008 /* UserScript in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000008 /* UserScript */; };
-		A11DD021B11D000100000001 /* UserScript in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD011B11D000100000001 /* UserScript */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -134,7 +131,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A11DD021B11D000100000001 /* UserScript in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -149,13 +145,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A11DD020B11D000100000001 /* BrowserServicesKit in Frameworks */,
 				A11DD020B11D000100000002 /* Bookmarks in Frameworks */,
 				A11DD020B11D000100000003 /* Common in Frameworks */,
 				A11DD020B11D000100000005 /* Navigation in Frameworks */,
 				A11DD020B11D000100000006 /* Persistence in Frameworks */,
 				A11DD020B11D000100000007 /* PrivacyConfig in Frameworks */,
-				A11DD020B11D000100000008 /* UserScript in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -229,7 +223,6 @@
 			);
 			name = SumiTests;
 			packageProductDependencies = (
-				A11DD011B11D000100000001 /* UserScript */,
 			);
 			productName = SumiTests;
 			productReference = 2C89252E2E88DFF9002236DC /* SumiTests.xctest */;
@@ -255,13 +248,11 @@
 			);
 			name = Sumi;
 			packageProductDependencies = (
-				A11DD010B11D000100000001 /* BrowserServicesKit */,
 				A11DD010B11D000100000002 /* Bookmarks */,
 				A11DD010B11D000100000003 /* Common */,
 				A11DD010B11D000100000005 /* Navigation */,
 				A11DD010B11D000100000006 /* Persistence */,
 				A11DD010B11D000100000007 /* PrivacyConfig */,
-				A11DD010B11D000100000008 /* UserScript */,
 			);
 			productName = Sumi;
 			productReference = 7F8340FC2E37F39400674A5D /* Sumi.app */;
@@ -733,10 +724,6 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		A11DD010B11D000100000001 /* BrowserServicesKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = BrowserServicesKit;
-		};
 		A11DD010B11D000100000002 /* Bookmarks */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = Bookmarks;
@@ -756,14 +743,6 @@
 		A11DD010B11D000100000007 /* PrivacyConfig */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PrivacyConfig;
-		};
-		A11DD010B11D000100000008 /* UserScript */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = UserScript;
-		};
-		A11DD011B11D000100000001 /* UserScript */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = UserScript;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
