@@ -1,9 +1,8 @@
 import Combine
-import ContentBlocking
 import CryptoKit
 import Foundation
 import TrackerRadarKit
-@preconcurrency import WebKit
+import WebKit
 
 struct SumiContentRuleListDefinition: Equatable, Sendable {
     let name: String
@@ -83,7 +82,7 @@ enum SumiContentBlockingCompilationError: Error {
 
 struct SumiPreparedContentBlockingUpdate {
     let policy: SumiContentBlockingPolicy
-    let updateEvent: ContentBlockerRulesManager.UpdateEvent
+    let updateEvent: SumiContentBlockerRulesUpdate
 }
 
 @MainActor
@@ -91,7 +90,7 @@ final class SumiContentBlockingService {
     let privacyConfigurationManager: SumiContentBlockingPrivacyConfigurationManager
 
     private let compiler: SumiContentRuleListCompiling
-    private let updatesSubject: CurrentValueSubject<ContentBlockerRulesManager.UpdateEvent?, Never>
+    private let updatesSubject: CurrentValueSubject<SumiContentBlockerRulesUpdate?, Never>
     private let ruleListProvider: SumiContentRuleListSetProviding?
     private let trackingProtectionSettings: SumiTrackingProtectionSettings?
     private let trackingRuleSource: SumiTrackingProtectionRuleProviding?
@@ -99,14 +98,14 @@ final class SumiContentBlockingService {
     private let siteDataPolicyStore: SumiSiteDataPolicyStore?
     private let siteDataRuleSource: SumiSiteDataContentRuleProviding?
     private var currentPolicy: SumiContentBlockingPolicy
-    private var compiledRulesByIdentifier: [String: ContentBlockerRulesManager.Rules] = [:]
+    private var compiledRulesByIdentifier: [String: SumiContentBlockerRules] = [:]
     private var compilationGeneration = 0
     private var trackingRefreshGeneration = 0
     private var profileRefreshGenerations: [String: Int] = [:]
-    private var profileUpdateSubjects: [String: CurrentValueSubject<ContentBlockerRulesManager.UpdateEvent?, Never>] = [:]
+    private var profileUpdateSubjects: [String: CurrentValueSubject<SumiContentBlockerRulesUpdate?, Never>] = [:]
     private var cancellables = Set<AnyCancellable>()
 
-    private(set) var latestUpdate: ContentBlockerRulesManager.UpdateEvent?
+    private(set) var latestUpdate: SumiContentBlockerRulesUpdate?
     init(
         policy: SumiContentBlockingPolicy = .defaultPolicy,
         compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler(),
@@ -129,7 +128,7 @@ final class SumiContentBlockingService {
             isContentBlockingEnabled: policy.shouldEnableContentBlockingFeature
         )
 
-        let initialUpdate: ContentBlockerRulesManager.UpdateEvent?
+        let initialUpdate: SumiContentBlockerRulesUpdate?
         if policy.ruleLists.isEmpty {
             initialUpdate = Self.emptyUpdate()
         } else {
@@ -149,7 +148,7 @@ final class SumiContentBlockingService {
         }
     }
 
-    var updatesPublisher: AnyPublisher<ContentBlockerRulesManager.UpdateEvent, Never> {
+    var updatesPublisher: AnyPublisher<SumiContentBlockerRulesUpdate, Never> {
         updatesSubject.compactMap { $0 }.eraseToAnyPublisher()
     }
 
@@ -413,8 +412,8 @@ final class SumiContentBlockingService {
 
     private func updateEvent(
         for definitions: [SumiContentRuleListDefinition]
-    ) async throws -> ContentBlockerRulesManager.UpdateEvent {
-        var compiledRules: [ContentBlockerRulesManager.Rules] = []
+    ) async throws -> SumiContentBlockerRulesUpdate {
+        var compiledRules: [SumiContentBlockerRules] = []
         compiledRules.reserveCapacity(definitions.count)
 
         for definition in definitions {
@@ -426,17 +425,17 @@ final class SumiContentBlockingService {
 
     private func profileSubject(
         for profileId: UUID
-    ) -> CurrentValueSubject<ContentBlockerRulesManager.UpdateEvent?, Never> {
+    ) -> CurrentValueSubject<SumiContentBlockerRulesUpdate?, Never> {
         let key = profileId.uuidString.lowercased()
         if let subject = profileUpdateSubjects[key] {
             return subject
         }
-        let subject = CurrentValueSubject<ContentBlockerRulesManager.UpdateEvent?, Never>(nil)
+        let subject = CurrentValueSubject<SumiContentBlockerRulesUpdate?, Never>(nil)
         profileUpdateSubjects[key] = subject
         return subject
     }
 
-    private func rule(for definition: SumiContentRuleListDefinition) async throws -> ContentBlockerRulesManager.Rules {
+    private func rule(for definition: SumiContentRuleListDefinition) async throws -> SumiContentBlockerRules {
         let rulesIdentifier = SumiContentBlockerRulesIdentifier(
             name: definition.name,
             tdsEtag: definition.contentHash,
@@ -460,32 +459,32 @@ final class SumiContentBlockingService {
             )
         }
 
-        let rules = ContentBlockerRulesManager.Rules(
+        let rules = SumiContentBlockerRules(
             name: definition.name,
             rulesList: ruleList,
             etag: definition.contentHash,
-            identifier: Self.browserServicesKitIdentifier(for: rulesIdentifier)
+            identifier: rulesIdentifier
         )
         compiledRulesByIdentifier[storeIdentifier] = rules
         return rules
     }
 
-    private func publish(_ update: ContentBlockerRulesManager.UpdateEvent) {
+    private func publish(_ update: SumiContentBlockerRulesUpdate) {
         latestUpdate = update
         updatesSubject.send(update)
     }
 
-    private static func updateEvent(for rules: [ContentBlockerRulesManager.Rules]) -> ContentBlockerRulesManager.UpdateEvent {
-        let changes = Dictionary(uniqueKeysWithValues: rules.map { ($0.name, ContentBlockerRulesIdentifier.Difference.all) })
-        return ContentBlockerRulesManager.UpdateEvent(
+    private static func updateEvent(for rules: [SumiContentBlockerRules]) -> SumiContentBlockerRulesUpdate {
+        let changes = Dictionary(uniqueKeysWithValues: rules.map { ($0.name, SumiContentBlockerRulesIdentifier.Difference.all) })
+        return SumiContentBlockerRulesUpdate(
             rules: rules,
             changes: changes,
             completionTokens: []
         )
     }
 
-    private static func emptyUpdate() -> ContentBlockerRulesManager.UpdateEvent {
-        ContentBlockerRulesManager.UpdateEvent(
+    private static func emptyUpdate() -> SumiContentBlockerRulesUpdate {
+        SumiContentBlockerRulesUpdate(
             rules: [],
             changes: [:],
             completionTokens: []
@@ -493,25 +492,13 @@ final class SumiContentBlockingService {
     }
 
     private static func normalTabContentBlockingUpdate(
-        for update: ContentBlockerRulesManager.UpdateEvent
+        for update: SumiContentBlockerRulesUpdate
     ) -> SumiNormalTabContentBlockingUpdate {
         SumiNormalTabContentBlockingUpdate(
             globalRuleLists: update.rules.reduce(into: [:]) { result, rules in
                 result[rules.name] = rules.rulesList
             },
             updateRuleCount: update.rules.count
-        )
-    }
-
-    private static func browserServicesKitIdentifier(
-        for identifier: SumiContentBlockerRulesIdentifier
-    ) -> ContentBlockerRulesIdentifier {
-        ContentBlockerRulesIdentifier(
-            name: identifier.name,
-            tdsEtag: identifier.tdsEtag,
-            tempListId: identifier.tempListId,
-            allowListId: identifier.allowListId,
-            unprotectedSitesHash: identifier.unprotectedSitesHash
         )
     }
 
