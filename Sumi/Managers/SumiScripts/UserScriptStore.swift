@@ -585,14 +585,12 @@ final class UserScriptStore {
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd,
             eventMask: [.write, .rename, .delete],
-            queue: .global(qos: .utility)
+            queue: .main
         )
 
         source.setEventHandler { [weak self] in
-            DispatchQueue.main.async {
-                self?.reload()
-                self?.onScriptsChanged?()
-            }
+            self?.reload()
+            self?.onScriptsChanged?()
         }
 
         source.setCancelHandler { [fd] in
