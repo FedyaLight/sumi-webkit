@@ -170,6 +170,7 @@ protocol SumiNormalTabUserContentControlling: AnyObject {
     var normalTabUserScriptsProvider: SumiNormalTabUserScripts? { get }
     var contentBlockingAssetSummary: SumiNormalTabContentBlockingAssetSummary { get }
 
+    func replaceNormalTabUserScripts(with provider: SumiNormalTabUserScripts) async
     func waitForContentBlockingAssetsInstalled() async
     func cleanUpBeforeClosing()
 }
@@ -249,6 +250,10 @@ extension UserContentController: SumiNormalTabUserContentControlling {
             isInstalled: contentBlockingAssetsInstalled,
             globalRuleListCount: contentBlockingAssets?.globalRuleLists.count ?? 0
         )
+    }
+
+    func replaceNormalTabUserScripts(with provider: SumiNormalTabUserScripts) async {
+        await replaceUserScripts(with: provider)
     }
 
     func waitForContentBlockingAssetsInstalled() async {
