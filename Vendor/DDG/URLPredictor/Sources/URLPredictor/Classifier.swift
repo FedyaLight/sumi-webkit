@@ -33,7 +33,7 @@ public enum Classifier {
         guard let p = ddg_up_get_psl_ptr() else {
             throw Error.resultNil
         }
-        guard let s = String(validatingUTF8: p) else {
+        guard let s = String(validatingCString: p) else {
             throw Error.resultNotUTF8
         }
         return s
@@ -171,7 +171,7 @@ public enum Classifier {
                     throw Error.resultNil
                 }
                 defer { ddg_up_free_string(raw) }
-                guard let s = String(validatingUTF8: raw) else {
+                guard let s = String(validatingCString: raw) else {
                     throw Error.resultNotUTF8
                 }
                 return s
