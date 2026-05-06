@@ -15,14 +15,16 @@ struct HoverSidebarEventMonitorClient {
     ) -> Any?
     let removeMonitor: (Any) -> Void
 
-    static let live = HoverSidebarEventMonitorClient(
-        addLocalMonitor: { mask, handler in
-            NSEvent.addLocalMonitorForEvents(matching: mask, handler: handler)
-        },
-        removeMonitor: { monitor in
-            NSEvent.removeMonitor(monitor)
-        }
-    )
+    static func live() -> HoverSidebarEventMonitorClient {
+        HoverSidebarEventMonitorClient(
+            addLocalMonitor: { mask, handler in
+                NSEvent.addLocalMonitorForEvents(matching: mask, handler: handler)
+            },
+            removeMonitor: { monitor in
+                NSEvent.removeMonitor(monitor)
+            }
+        )
+    }
 }
 
 enum HoverSidebarCompactMetrics {
@@ -122,7 +124,7 @@ final class HoverSidebarManager: ObservableObject {
     private let mouseLocationProvider: () -> CGPoint
 
     init(
-        eventMonitors: HoverSidebarEventMonitorClient = .live,
+        eventMonitors: HoverSidebarEventMonitorClient = .live(),
         mouseLocationProvider: @escaping () -> CGPoint = { NSEvent.mouseLocation },
         inactiveHostRetentionDelay: TimeInterval = 30
     ) {
