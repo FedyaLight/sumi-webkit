@@ -19,7 +19,6 @@
 import Bookmarks
 import Cocoa
 import Combine
-import Common
 import CoreImage
 import os.log
 import Persistence
