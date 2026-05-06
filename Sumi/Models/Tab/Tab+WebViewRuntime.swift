@@ -310,10 +310,10 @@ extension Tab {
         registerNormalTabWithExtensionRuntimeIfNeeded(reason: "Tab.setupWebView")
 
         if !isPopupHost && _existingWebView == nil {
-            if let controller = _webView?.configuration.userContentController as? UserContentController {
+            if let controller = _webView?.configuration.userContentController.sumiNormalTabUserContentController {
                 Task { @MainActor [weak self] in
                     let signpostState = PerformanceTrace.beginInterval("ContentBlocking.assetsInstallWait")
-                    await controller.awaitContentBlockingAssetsInstalled()
+                    await controller.waitForContentBlockingAssetsInstalled()
                     PerformanceTrace.endInterval("ContentBlocking.assetsInstallWait", signpostState)
                     guard let self, self._existingWebView == nil else { return }
                     self.loadURL(self.url)

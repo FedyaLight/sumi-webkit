@@ -1,4 +1,3 @@
-import BrowserServicesKit
 import Foundation
 import Navigation
 import WebKit
@@ -135,7 +134,7 @@ extension Tab {
         performLoad: @escaping @MainActor (WKWebView) -> Void
     ) {
         guard waitForContentBlockingAssets,
-              let controller = webView.configuration.userContentController as? UserContentController
+              let controller = webView.configuration.userContentController.sumiNormalTabUserContentController
         else {
             performMainFrameNavigationAfterHydrationIfNeeded(
                 on: webView,
@@ -148,7 +147,7 @@ extension Tab {
         let token = UUID()
         pendingMainFrameNavigationToken = token
         pendingMainFrameNavigationTask = Task { @MainActor [weak self, weak webView] in
-            await controller.awaitContentBlockingAssetsInstalled()
+            await controller.waitForContentBlockingAssetsInstalled()
             guard let self,
                   let webView,
                   self.pendingMainFrameNavigationToken == token

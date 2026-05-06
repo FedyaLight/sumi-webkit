@@ -6,7 +6,6 @@
 //
 
 import AppKit
-import BrowserServicesKit
 import Combine
 import CoreGraphics
 import Foundation
@@ -1052,10 +1051,10 @@ class WebViewCoordinator {
                 }
             }
 
-            if let controller = webView.configuration.userContentController as? UserContentController {
+            if let controller = webView.configuration.userContentController.sumiNormalTabUserContentController {
                 Task { @MainActor in
                     let signpostState = PerformanceTrace.beginInterval("ContentBlocking.assetsInstallWait")
-                    await controller.awaitContentBlockingAssetsInstalled()
+                    await controller.waitForContentBlockingAssetsInstalled()
                     PerformanceTrace.endInterval("ContentBlocking.assetsInstallWait", signpostState)
                     performLoad()
                 }
