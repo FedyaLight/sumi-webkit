@@ -591,12 +591,11 @@ final class SumiNavigationResponderTests: XCTestCase {
             host: frameURL.host ?? "",
             port: frameURL.port ?? 0
         )
-        let frame = FrameInfo(
+        let frame = securityOrigin.navigationFrameInfo(
             webView: webView,
             handle: FrameHandle(rawValue: UInt64(1))!,
             isMainFrame: isMainFrame,
-            url: frameURL,
-            securityOrigin: securityOrigin.browserServicesKitSecurityOrigin
+            url: frameURL
         )
         return NavigationAction(
             request: URLRequest(url: url),
