@@ -46,6 +46,7 @@ final class SettingsModuleToggleTests: XCTestCase {
         XCTAssertTrue(userScriptsCopy.contains("attach WKUserScript"))
     }
 
+    @MainActor
     func testToggleModelsReflectDisabledDefaults() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -59,10 +60,12 @@ final class SettingsModuleToggleTests: XCTestCase {
                 descriptor: descriptor,
                 registry: registry
             )
-            XCTAssertFalse(model.isEnabled, "\(descriptor.title) should default to disabled")
+            let isEnabled = model.isEnabled
+            XCTAssertFalse(isEnabled, "\(descriptor.title) should default to disabled")
         }
     }
 
+    @MainActor
     func testToggleModelsPersistThroughModuleRegistryStore() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -81,7 +84,8 @@ final class SettingsModuleToggleTests: XCTestCase {
             let enabledRegistry = SumiModuleRegistry(
                 settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
             )
-            XCTAssertTrue(enabledRegistry.isEnabled(descriptor.moduleID))
+            let enabledValue = enabledRegistry.isEnabled(descriptor.moduleID)
+            XCTAssertTrue(enabledValue)
 
             let secondModel = SumiSettingsModuleToggleModel(
                 descriptor: descriptor,
@@ -92,7 +96,8 @@ final class SettingsModuleToggleTests: XCTestCase {
             let disabledRegistry = SumiModuleRegistry(
                 settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
             )
-            XCTAssertFalse(disabledRegistry.isEnabled(descriptor.moduleID))
+            let disabledValue = disabledRegistry.isEnabled(descriptor.moduleID)
+            XCTAssertFalse(disabledValue)
         }
     }
 

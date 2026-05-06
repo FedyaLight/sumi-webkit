@@ -3,6 +3,7 @@ import XCTest
 @testable import Sumi
 
 final class SumiModuleRegistryTests: XCTestCase {
+    @MainActor
     func testCleanInstallDefaultsAllOptionalModulesDisabled() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -11,11 +12,15 @@ final class SumiModuleRegistryTests: XCTestCase {
         let registry = SumiModuleRegistry(settingsStore: store)
 
         for moduleID in SumiModuleID.allCases {
-            XCTAssertFalse(registry.isEnabled(moduleID), "\(moduleID.rawValue) should default to disabled")
-            XCTAssertNil(harness.defaults.object(forKey: store.key(for: moduleID)))
+            let isEnabled = registry.isEnabled(moduleID)
+            let storedValue = harness.defaults.object(forKey: store.key(for: moduleID))
+
+            XCTAssertFalse(isEnabled, "\(moduleID.rawValue) should default to disabled")
+            XCTAssertNil(storedValue)
         }
     }
 
+    @MainActor
     func testCleanInstallDefaultsTrackingProtectionDisabled() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -23,10 +28,14 @@ final class SumiModuleRegistryTests: XCTestCase {
         let store = SumiModuleSettingsStore(userDefaults: harness.defaults)
         let registry = SumiModuleRegistry(settingsStore: store)
 
-        XCTAssertFalse(registry.isEnabled(.trackingProtection))
-        XCTAssertNil(harness.defaults.object(forKey: store.key(for: .trackingProtection)))
+        let isEnabled = registry.isEnabled(.trackingProtection)
+        let storedValue = harness.defaults.object(forKey: store.key(for: .trackingProtection))
+
+        XCTAssertFalse(isEnabled)
+        XCTAssertNil(storedValue)
     }
 
+    @MainActor
     func testCleanInstallDefaultsExtensionsDisabled() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -34,10 +43,14 @@ final class SumiModuleRegistryTests: XCTestCase {
         let store = SumiModuleSettingsStore(userDefaults: harness.defaults)
         let registry = SumiModuleRegistry(settingsStore: store)
 
-        XCTAssertFalse(registry.isEnabled(.extensions))
-        XCTAssertNil(harness.defaults.object(forKey: store.key(for: .extensions)))
+        let isEnabled = registry.isEnabled(.extensions)
+        let storedValue = harness.defaults.object(forKey: store.key(for: .extensions))
+
+        XCTAssertFalse(isEnabled)
+        XCTAssertNil(storedValue)
     }
 
+    @MainActor
     func testCleanInstallDefaultsUserscriptsDisabled() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -45,10 +58,14 @@ final class SumiModuleRegistryTests: XCTestCase {
         let store = SumiModuleSettingsStore(userDefaults: harness.defaults)
         let registry = SumiModuleRegistry(settingsStore: store)
 
-        XCTAssertFalse(registry.isEnabled(.userScripts))
-        XCTAssertNil(harness.defaults.object(forKey: store.key(for: .userScripts)))
+        let isEnabled = registry.isEnabled(.userScripts)
+        let storedValue = harness.defaults.object(forKey: store.key(for: .userScripts))
+
+        XCTAssertFalse(isEnabled)
+        XCTAssertNil(storedValue)
     }
 
+    @MainActor
     func testCleanInstallDefaultsAdBlockingDisabled() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -56,10 +73,14 @@ final class SumiModuleRegistryTests: XCTestCase {
         let store = SumiModuleSettingsStore(userDefaults: harness.defaults)
         let registry = SumiModuleRegistry(settingsStore: store)
 
-        XCTAssertFalse(registry.isEnabled(.adBlocking))
-        XCTAssertNil(harness.defaults.object(forKey: store.key(for: .adBlocking)))
+        let isEnabled = registry.isEnabled(.adBlocking)
+        let storedValue = harness.defaults.object(forKey: store.key(for: .adBlocking))
+
+        XCTAssertFalse(isEnabled)
+        XCTAssertNil(storedValue)
     }
 
+    @MainActor
     func testEnablingModulesPersistsAcrossRegistryRecreation() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -74,10 +95,12 @@ final class SumiModuleRegistryTests: XCTestCase {
                 settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
             )
 
-            XCTAssertTrue(recreatedRegistry.isEnabled(moduleID))
+            let isEnabled = recreatedRegistry.isEnabled(moduleID)
+            XCTAssertTrue(isEnabled)
         }
     }
 
+    @MainActor
     func testDisablingModulesPersistsAcrossRegistryRecreation() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -93,11 +116,15 @@ final class SumiModuleRegistryTests: XCTestCase {
                 settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
             )
 
-            XCTAssertFalse(recreatedRegistry.isEnabled(moduleID))
-            XCTAssertEqual(harness.defaults.object(forKey: store.key(for: moduleID)) as? Bool, false as Bool?)
+            let isEnabled = recreatedRegistry.isEnabled(moduleID)
+            let storedValue = harness.defaults.object(forKey: store.key(for: moduleID)) as? Bool
+
+            XCTAssertFalse(isEnabled)
+            XCTAssertEqual(storedValue, false as Bool?)
         }
     }
 
+    @MainActor
     func testSetEnabledMirrorsEnableAndDisable() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -107,12 +134,15 @@ final class SumiModuleRegistryTests: XCTestCase {
         )
 
         registry.setEnabled(true, for: .trackingProtection)
-        XCTAssertTrue(registry.isEnabled(.trackingProtection))
+        let enabledValue = registry.isEnabled(.trackingProtection)
+        XCTAssertTrue(enabledValue)
 
         registry.setEnabled(false, for: .trackingProtection)
-        XCTAssertFalse(registry.isEnabled(.trackingProtection))
+        let disabledValue = registry.isEnabled(.trackingProtection)
+        XCTAssertFalse(disabledValue)
     }
 
+    @MainActor
     func testTrackingProtectionEnableDisablePersists() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -121,16 +151,15 @@ final class SumiModuleRegistryTests: XCTestCase {
         let registry = SumiModuleRegistry(settingsStore: store)
 
         registry.enable(.trackingProtection)
-        XCTAssertTrue(
-            SumiModuleRegistry(settingsStore: store).isEnabled(.trackingProtection)
-        )
+        let enabledValue = SumiModuleRegistry(settingsStore: store).isEnabled(.trackingProtection)
+        XCTAssertTrue(enabledValue)
 
         registry.disable(.trackingProtection)
-        XCTAssertFalse(
-            SumiModuleRegistry(settingsStore: store).isEnabled(.trackingProtection)
-        )
+        let disabledValue = SumiModuleRegistry(settingsStore: store).isEnabled(.trackingProtection)
+        XCTAssertFalse(disabledValue)
     }
 
+    @MainActor
     func testExtensionsEnableDisablePersists() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -139,16 +168,15 @@ final class SumiModuleRegistryTests: XCTestCase {
         let registry = SumiModuleRegistry(settingsStore: store)
 
         registry.enable(.extensions)
-        XCTAssertTrue(
-            SumiModuleRegistry(settingsStore: store).isEnabled(.extensions)
-        )
+        let enabledValue = SumiModuleRegistry(settingsStore: store).isEnabled(.extensions)
+        XCTAssertTrue(enabledValue)
 
         registry.disable(.extensions)
-        XCTAssertFalse(
-            SumiModuleRegistry(settingsStore: store).isEnabled(.extensions)
-        )
+        let disabledValue = SumiModuleRegistry(settingsStore: store).isEnabled(.extensions)
+        XCTAssertFalse(disabledValue)
     }
 
+    @MainActor
     func testUserscriptsEnableDisablePersists() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -157,16 +185,15 @@ final class SumiModuleRegistryTests: XCTestCase {
         let registry = SumiModuleRegistry(settingsStore: store)
 
         registry.enable(.userScripts)
-        XCTAssertTrue(
-            SumiModuleRegistry(settingsStore: store).isEnabled(.userScripts)
-        )
+        let enabledValue = SumiModuleRegistry(settingsStore: store).isEnabled(.userScripts)
+        XCTAssertTrue(enabledValue)
 
         registry.disable(.userScripts)
-        XCTAssertFalse(
-            SumiModuleRegistry(settingsStore: store).isEnabled(.userScripts)
-        )
+        let disabledValue = SumiModuleRegistry(settingsStore: store).isEnabled(.userScripts)
+        XCTAssertFalse(disabledValue)
     }
 
+    @MainActor
     func testAdBlockingEnableDisablePersists() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -175,25 +202,29 @@ final class SumiModuleRegistryTests: XCTestCase {
         let registry = SumiModuleRegistry(settingsStore: store)
 
         registry.enable(.adBlocking)
-        XCTAssertTrue(
-            SumiModuleRegistry(settingsStore: store).isEnabled(.adBlocking)
-        )
+        let enabledValue = SumiModuleRegistry(settingsStore: store).isEnabled(.adBlocking)
+        XCTAssertTrue(enabledValue)
 
         registry.disable(.adBlocking)
-        XCTAssertFalse(
-            SumiModuleRegistry(settingsStore: store).isEnabled(.adBlocking)
-        )
+        let disabledValue = SumiModuleRegistry(settingsStore: store).isEnabled(.adBlocking)
+        XCTAssertFalse(disabledValue)
     }
 
+    @MainActor
     func testSettingsKeysUseExpectedModuleIdentifiers() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let store = SumiModuleSettingsStore(userDefaults: harness.defaults)
 
-        XCTAssertEqual(store.key(for: .trackingProtection), "settings.modules.trackingProtection.enabled")
-        XCTAssertEqual(store.key(for: .adBlocking), "settings.modules.adBlocking.enabled")
-        XCTAssertEqual(store.key(for: .extensions), "settings.modules.extensions.enabled")
-        XCTAssertEqual(store.key(for: .userScripts), "settings.modules.userScripts.enabled")
+        let trackingProtectionKey = store.key(for: .trackingProtection)
+        let adBlockingKey = store.key(for: .adBlocking)
+        let extensionsKey = store.key(for: .extensions)
+        let userScriptsKey = store.key(for: .userScripts)
+
+        XCTAssertEqual(trackingProtectionKey, "settings.modules.trackingProtection.enabled")
+        XCTAssertEqual(adBlockingKey, "settings.modules.adBlocking.enabled")
+        XCTAssertEqual(extensionsKey, "settings.modules.extensions.enabled")
+        XCTAssertEqual(userScriptsKey, "settings.modules.userScripts.enabled")
     }
 
     func testRegistrySourceDoesNotReferenceOptionalRuntimeSymbols() throws {
