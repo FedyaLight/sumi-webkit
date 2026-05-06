@@ -20,21 +20,21 @@ final class SumiPermissionAntiAbuseStoreTests: XCTestCase {
     }
 
     func testPersistentProfilesSurviveStoreRecreationButEphemeralProfilesDoNotPersist() async {
-        let defaults = UserDefaults(suiteName: "SumiAntiAbuseStoreTests-\(UUID().uuidString)")!
+        let suiteName = "SumiAntiAbuseStoreTests-\(UUID().uuidString)"
         let storageKey = "anti-abuse-\(UUID().uuidString)"
         let persistentKey = antiAbuseKey(.camera)
         let ephemeralKey = antiAbuseKey(.camera, profile: "ephemeral", isEphemeral: true)
         let now = Date(timeIntervalSince1970: 1_800_000_000)
 
         let firstStore = SumiPermissionAntiAbuseStore(
-            userDefaults: defaults,
+            userDefaults: UserDefaults(suiteName: suiteName)!,
             storageKey: storageKey
         )
         await firstStore.record(event(.userDismissed, key: persistentKey, at: now))
         await firstStore.record(event(.userDismissed, key: ephemeralKey, at: now))
 
         let secondStore = SumiPermissionAntiAbuseStore(
-            userDefaults: defaults,
+            userDefaults: UserDefaults(suiteName: suiteName)!,
             storageKey: storageKey
         )
         let persistentEvents = await secondStore.events(for: persistentKey, now: now)

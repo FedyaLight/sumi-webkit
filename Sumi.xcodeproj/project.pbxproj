@@ -391,7 +391,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 15.7;
 				PRODUCT_BUNDLE_IDENTIFIER = com.sumi.browser.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sumi.app/Contents/MacOS/Sumi";
 				TEST_TARGET_NAME = Sumi;
 			};
@@ -412,7 +412,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 15.7;
 				PRODUCT_BUNDLE_IDENTIFIER = com.sumi.browser.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Sumi.app/Contents/MacOS/Sumi";
 				TEST_TARGET_NAME = Sumi;
 			};

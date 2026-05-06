@@ -3,11 +3,11 @@ import XCTest
 
 @testable import Sumi
 
+private let webKitGeolocationBridgeFixedDate = Date(timeIntervalSince1970: 1_800_000_000)
+
 @available(macOS 12.0, *)
 @MainActor
 final class SumiWebKitGeolocationBridgeTests: XCTestCase {
-    private let fixedDate = Date(timeIntervalSince1970: 1_800_000_000)
-
     func testSecurityContextConstructionUsesTrustedBrowserData() {
         let provider = FakeSumiGeolocationProvider()
         let bridge = makeBridge(
@@ -254,7 +254,7 @@ final class SumiWebKitGeolocationBridgeTests: XCTestCase {
             pendingStrategy: pendingStrategy,
             pendingPollIntervalNanoseconds: pendingPollIntervalNanoseconds,
             coordinatorTimeoutNanoseconds: coordinatorTimeoutNanoseconds,
-            now: { self.fixedDate }
+            now: { webKitGeolocationBridgeFixedDate }
         )
     }
 
@@ -271,7 +271,7 @@ final class SumiWebKitGeolocationBridgeTests: XCTestCase {
                 systemPermissionService: systemService
             ),
             persistentStore: store,
-            now: { self.fixedDate }
+            now: { webKitGeolocationBridgeFixedDate }
         )
         return makeBridge(
             coordinator: coordinator,

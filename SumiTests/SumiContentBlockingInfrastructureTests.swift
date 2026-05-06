@@ -98,19 +98,13 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
         await controller.awaitContentBlockingAssetsInstalled()
         XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
 
-        let enabledAssetsTask = Task {
-            await Self.waitForAssets(on: controller) { $0.globalRuleLists.count == 1 }
-        }
         service.setPolicy(.enabled(ruleLists: [Self.validRuleListDefinition()]))
-        let enabledAssets = await enabledAssetsTask.value
-        XCTAssertEqual(enabledAssets.globalRuleLists.count, 1)
+        let enabledRuleListCount = await Self.waitForAssetRuleListCount(on: controller) { $0 == 1 }
+        XCTAssertEqual(enabledRuleListCount, 1)
 
-        let disabledAssetsTask = Task {
-            await Self.waitForAssets(on: controller) { $0.globalRuleLists.isEmpty }
-        }
         service.setPolicy(.disabled)
-        let disabledAssets = await disabledAssetsTask.value
-        XCTAssertEqual(disabledAssets.globalRuleLists.count, 0)
+        let disabledRuleListCount = await Self.waitForAssetRuleListCount(on: controller) { $0 == 0 }
+        XCTAssertEqual(disabledRuleListCount, 0)
     }
 
     func testCompiledRuleListsAreCachedAcrossControllersAndScriptReplacement() async throws {
@@ -220,19 +214,24 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
         return corpus
     }
 
-    private static func waitForAssets(
+    private static func waitForAssetRuleListCount(
         on controller: UserContentController,
-        where predicate: @escaping (UserContentController.ContentBlockingAssets) -> Bool
-    ) async -> UserContentController.ContentBlockingAssets {
-        if let assets = controller.contentBlockingAssets, predicate(assets) {
-            return assets
+        where predicate: @escaping (Int) -> Bool
+    ) async -> Int {
+        if let assets = controller.contentBlockingAssets {
+            let count = assets.globalRuleLists.count
+            if predicate(count) {
+                return count
+            }
         }
 
         return await withCheckedContinuation { continuation in
             var cancellable: AnyCancellable?
             cancellable = controller.$contentBlockingAssets.sink { assets in
-                guard let assets, predicate(assets) else { return }
-                continuation.resume(returning: assets)
+                guard let assets else { return }
+                let count = assets.globalRuleLists.count
+                guard predicate(count) else { return }
+                continuation.resume(returning: count)
                 cancellable?.cancel()
             }
         }

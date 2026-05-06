@@ -3,10 +3,10 @@ import XCTest
 
 @testable import Sumi
 
+private let filePickerBridgeFixedDate = Date(timeIntervalSince1970: 1_800_000_100)
+
 @MainActor
 final class SumiFilePickerPermissionBridgeTests: XCTestCase {
-    private let fixedDate = Date(timeIntervalSince1970: 1_800_000_100)
-
     func testUserActivatedFilePickerProceedsToFakePanel() async {
         let presenter = FilePickerFakePanelPresenter(nextResult: .selected([fileURL("one.txt")]))
         let bridge = makeBridge(presenter: presenter)
@@ -250,12 +250,12 @@ final class SumiFilePickerPermissionBridgeTests: XCTestCase {
                 systemPermissionService: FakeSumiSystemPermissionService()
             ),
             persistentStore: store,
-            now: { self.fixedDate }
+            now: { filePickerBridgeFixedDate }
         )
         return SumiFilePickerPermissionBridge(
             coordinator: coordinator,
             panelPresenter: presenter,
-            now: { self.fixedDate }
+            now: { filePickerBridgeFixedDate }
         )
     }
 

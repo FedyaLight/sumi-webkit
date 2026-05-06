@@ -3,11 +3,11 @@ import XCTest
 
 @testable import Sumi
 
+private let promptBridgeFixedDate = Date(timeIntervalSince1970: 1_800_000_400)
+
 @available(macOS 13.0, *)
 @MainActor
 final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
-    private let fixedDate = Date(timeIntervalSince1970: 1_800_000_400)
-
     func testMediaPromptRequiredWaitsForUserSettlementAndGrants() async {
         let coordinator = makeCoordinator(
             systemStates: [.camera: .authorized],
@@ -16,7 +16,7 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
         let bridge = SumiWebKitPermissionBridge(
             coordinator: coordinator,
             runtimeController: FakeSumiRuntimePermissionController(),
-            now: { self.fixedDate }
+            now: { promptBridgeFixedDate }
         )
         let expectation = XCTestExpectation(description: "media decision")
         var decisions: [WKPermissionDecision] = []
@@ -48,7 +48,7 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
         let bridge = SumiNotificationPermissionBridge(
             coordinator: coordinator,
             notificationService: FakeSumiNotificationService(),
-            now: { self.fixedDate }
+            now: { promptBridgeFixedDate }
         )
 
         let task = Task {
@@ -68,7 +68,7 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
         let coordinator = makeCoordinator(store: PromptBridgePermissionStore())
         let bridge = SumiStorageAccessPermissionBridge(
             coordinator: coordinator,
-            now: { self.fixedDate }
+            now: { promptBridgeFixedDate }
         )
         let expectation = XCTestExpectation(description: "storage access completion")
         let webView = WKWebView()
@@ -98,7 +98,7 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
         let bridge = SumiExternalSchemePermissionBridge(
             coordinator: coordinator,
             appResolver: resolver,
-            now: { self.fixedDate }
+            now: { promptBridgeFixedDate }
         )
         let targetURL = URL(string: "mailto:test@example.com")!
 
@@ -123,7 +123,7 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
         let bridge = SumiExternalSchemePermissionBridge(
             coordinator: coordinator,
             appResolver: resolver,
-            now: { self.fixedDate }
+            now: { promptBridgeFixedDate }
         )
 
         let result = await bridge.evaluate(
@@ -149,7 +149,7 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
                 systemPermissionService: FakeSumiSystemPermissionService(states: systemStates)
             ),
             persistentStore: store,
-            now: { self.fixedDate }
+            now: { promptBridgeFixedDate }
         )
     }
 

@@ -3,10 +3,10 @@ import XCTest
 
 @testable import Sumi
 
+private let storageAccessBridgeFixedDate = Date(timeIntervalSince1970: 1_800_000_200)
+
 @MainActor
 final class SumiStorageAccessPermissionBridgeTests: XCTestCase {
-    private let fixedDate = Date(timeIntervalSince1970: 1_800_000_200)
-
     func testSecurityContextPreservesRequestingAndTopOrigins() {
         let bridge = makeBridge(store: StorageAccessBridgePermissionStore())
         let context = bridge.securityContext(
@@ -196,14 +196,14 @@ final class SumiStorageAccessPermissionBridgeTests: XCTestCase {
                 systemPermissionService: FakeSumiSystemPermissionService()
             ),
             persistentStore: store,
-            now: { self.fixedDate }
+            now: { storageAccessBridgeFixedDate }
         )
         return SumiStorageAccessPermissionBridge(
             coordinator: coordinator,
             pendingStrategy: pendingStrategy,
             pendingPollIntervalNanoseconds: 1_000_000,
             coordinatorTimeoutNanoseconds: 100_000_000,
-            now: { self.fixedDate }
+            now: { storageAccessBridgeFixedDate }
         )
     }
 
@@ -293,8 +293,8 @@ final class SumiStorageAccessPermissionBridgeTests: XCTestCase {
             persistence: persistence,
             source: .user,
             reason: reason,
-            createdAt: fixedDate,
-            updatedAt: fixedDate
+            createdAt: storageAccessBridgeFixedDate,
+            updatedAt: storageAccessBridgeFixedDate
         )
     }
 
