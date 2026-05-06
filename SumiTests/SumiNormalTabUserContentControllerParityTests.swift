@@ -1,0 +1,275 @@
+import WebKit
+import XCTest
+
+@testable import Sumi
+
+@MainActor
+final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
+    func testNormalTabFactoryExposesSumiBoundaryAndInstallsProviderScriptsOnce() async throws {
+        let provider = SumiNormalTabUserScripts(
+            contentBlockingUserScripts: [
+                ParityUserScript(context: "sumiParityContentBlocking", sourceMarker: "__sumiParityContentBlocking")
+            ],
+            managedUserScripts: [
+                ParityUserScript(context: "sumiParityManaged", sourceMarker: "__sumiParityManaged")
+            ]
+        )
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            scriptsProvider: provider
+        )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+
+        XCTAssertTrue(controller.sumiUsesNormalTabBrowserServicesKitUserContentController)
+        XCTAssertTrue(normalTabController.wkUserContentController === controller)
+        XCTAssertTrue(normalTabController.normalTabUserScriptsProvider === provider)
+        XCTAssertTrue(controller.sumiNormalTabUserScriptsProvider === provider)
+        XCTAssertEqual(normalTabController.contentBlockingAssetSummary.globalRuleListCount, 0)
+        XCTAssertFalse(normalTabController.contentBlockingAssetSummary.isContentBlockingFeatureEnabled)
+        XCTAssertEqual(controller.userScripts.count, provider.userScripts.count)
+        XCTAssertEqual(installedScriptCount(containing: "__sumiParityContentBlocking", in: controller), 1)
+        XCTAssertEqual(installedScriptCount(containing: "__sumiParityManaged", in: controller), 1)
+        XCTAssertEqual(installedScriptCount(containing: "__sumiDDGFaviconTransportInstalled", in: controller), 1)
+    }
+
+    func testReplacingManagedScriptsUpdatesVisibleInstalledSetAndKeepsProviderBoundary() async throws {
+        let provider = SumiNormalTabUserScripts(
+            contentBlockingUserScripts: [
+                ParityUserScript(context: "sumiParityStableContentBlocking", sourceMarker: "__sumiParityStableContentBlocking")
+            ],
+            managedUserScripts: [
+                ParityUserScript(context: "sumiParityFirstManaged", sourceMarker: "__sumiParityFirstManaged")
+            ]
+        )
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            scriptsProvider: provider
+        )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+        let initialSummary = normalTabController.contentBlockingAssetSummary
+
+        provider.replaceManagedUserScripts([
+            ParityUserScript(context: "sumiParitySecondManaged", sourceMarker: "__sumiParitySecondManaged")
+        ])
+        await normalTabController.replaceNormalTabUserScripts(with: provider)
+
+        XCTAssertTrue(controller.sumiUsesNormalTabBrowserServicesKitUserContentController)
+        XCTAssertTrue(normalTabController.normalTabUserScriptsProvider === provider)
+        XCTAssertEqual(normalTabController.contentBlockingAssetSummary, initialSummary)
+        XCTAssertEqual(controller.userScripts.count, provider.userScripts.count)
+        XCTAssertEqual(installedScriptCount(containing: "__sumiParityStableContentBlocking", in: controller), 1)
+        XCTAssertEqual(installedScriptCount(containing: "__sumiParityFirstManaged", in: controller), 0)
+        XCTAssertEqual(installedScriptCount(containing: "__sumiParitySecondManaged", in: controller), 1)
+        XCTAssertEqual(installedScriptCount(containing: "__sumiDDGFaviconTransportInstalled", in: controller), 1)
+    }
+
+    func testEquivalentReplacementDoesNotDuplicateInstalledScripts() async throws {
+        let provider = SumiNormalTabUserScripts(
+            managedUserScripts: [
+                ParityUserScript(context: "sumiParityIdempotentManaged", sourceMarker: "__sumiParityIdempotentManaged")
+            ]
+        )
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            scriptsProvider: provider
+        )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+
+        await normalTabController.replaceNormalTabUserScripts(with: provider)
+        await normalTabController.replaceNormalTabUserScripts(with: provider)
+
+        XCTAssertEqual(controller.userScripts.count, provider.userScripts.count)
+        XCTAssertEqual(installedScriptCount(containing: "__sumiParityIdempotentManaged", in: controller), 1)
+        XCTAssertEqual(installedScriptCount(containing: "__sumiDDGFaviconTransportInstalled", in: controller), 1)
+    }
+
+    func testWaitForContentBlockingAssetsInstalledReturnsForAlreadyInstalledDisabledAssets() async throws {
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController()
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+        let installedSummary = normalTabController.contentBlockingAssetSummary
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+
+        XCTAssertTrue(installedSummary.isInstalled)
+        XCTAssertEqual(normalTabController.contentBlockingAssetSummary, installedSummary)
+        XCTAssertEqual(installedSummary.globalRuleListCount, 0)
+        XCTAssertFalse(installedSummary.isContentBlockingFeatureEnabled)
+    }
+
+    func testCleanupIsIdempotentAndPreventsLaterScriptReplacement() async throws {
+        let provider = SumiNormalTabUserScripts(
+            managedUserScripts: [
+                ParityUserScript(context: "sumiParityCleanupInitial", sourceMarker: "__sumiParityCleanupInitial")
+            ]
+        )
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            scriptsProvider: provider
+        )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+
+        normalTabController.cleanUpBeforeClosing()
+        normalTabController.cleanUpBeforeClosing()
+
+        XCTAssertTrue(controller.userScripts.isEmpty)
+
+        provider.replaceManagedUserScripts([
+            ParityUserScript(context: "sumiParityCleanupReplacement", sourceMarker: "__sumiParityCleanupReplacement")
+        ])
+        await normalTabController.replaceNormalTabUserScripts(with: provider)
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+
+        XCTAssertTrue(controller.userScripts.isEmpty)
+        XCTAssertEqual(installedScriptCount(containing: "__sumiParityCleanupReplacement", in: controller), 0)
+    }
+
+    func testMessageHandlerForwardingFollowsManagedScriptReplacement() async throws {
+        let firstDelivered = expectation(description: "first managed handler delivered")
+        let secondDelivered = expectation(description: "replacement managed handler delivered")
+        let context = "sumiParityForwarding"
+        let firstScript = ParityUserScript(context: context, sourceMarker: "__sumiParityForwardingFirst")
+        let secondScript = ParityUserScript(context: context, sourceMarker: "__sumiParityForwardingSecond")
+        let provider = SumiNormalTabUserScripts(managedUserScripts: [firstScript])
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            scriptsProvider: provider
+        )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+
+        let webView = makeWebView(userContentController: controller)
+        firstScript.onMessage = { message in
+            XCTAssertEqual(message.messageName, context)
+            XCTAssertTrue(message.webView === webView)
+            firstDelivered.fulfill()
+        }
+        secondScript.onMessage = { message in
+            XCTAssertEqual(message.messageName, context)
+            XCTAssertTrue(message.webView === webView)
+            secondDelivered.fulfill()
+        }
+        try await loadBlankDocument(into: webView)
+
+        try await postMessage(to: context, in: webView)
+        await fulfillment(of: [firstDelivered], timeout: 5.0)
+
+        provider.replaceManagedUserScripts([secondScript])
+        await normalTabController.replaceNormalTabUserScripts(with: provider)
+
+        try await postMessage(to: context, in: webView)
+        await fulfillment(of: [secondDelivered], timeout: 5.0)
+    }
+
+    private func postMessage(to context: String, in webView: WKWebView) async throws {
+        try await evaluate(
+            """
+            const handler = window.webkit?.messageHandlers?.["\(context)"];
+            if (!handler) { throw new Error("missing handler \(context)"); }
+            handler.postMessage({
+                context: "\(context)",
+                featureName: "parity",
+                method: "notify",
+                params: { value: "round-trip" }
+            });
+            """,
+            in: webView
+        )
+    }
+
+    private func installedScriptCount(
+        containing marker: String,
+        in controller: WKUserContentController
+    ) -> Int {
+        controller.userScripts.filter { $0.source.contains(marker) }.count
+    }
+
+    private func makeWebView(userContentController: WKUserContentController) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController = userContentController
+        return WKWebView(
+            frame: CGRect(x: 0, y: 0, width: 800, height: 600),
+            configuration: configuration
+        )
+    }
+
+    private func loadBlankDocument(into webView: WKWebView) async throws {
+        let didFinish = expectation(description: "blank document loaded")
+        let delegate = ParityNavigationDelegateBox {
+            didFinish.fulfill()
+        }
+
+        webView.navigationDelegate = delegate
+        webView.loadHTMLString(
+            "<!doctype html><html><body>ok</body></html>",
+            baseURL: URL(string: "https://example.com")
+        )
+        await fulfillment(of: [didFinish], timeout: 5.0)
+        webView.navigationDelegate = nil
+    }
+
+    private func evaluate(
+        _ script: String,
+        in webView: WKWebView
+    ) async throws {
+        let wrappedScript = """
+        (() => {
+        \(script)
+        return null;
+        })();
+        """
+
+        try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<Void, Error>) in
+            webView.evaluateJavaScript(wrappedScript) { value, error in
+                _ = value
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: ())
+                }
+            }
+        }
+    }
+}
+
+@MainActor
+private final class ParityUserScript: NSObject, SumiUserScript {
+    let source: String
+    let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
+    let forMainFrameOnly = true
+    let requiresRunInPageContentWorld = true
+    let messageNames: [String]
+    var onMessage: ((WKScriptMessage) -> Void)?
+
+    init(context: String, sourceMarker: String) {
+        self.source = "window.\(sourceMarker) = true;"
+        self.messageNames = [context]
+        super.init()
+    }
+
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) {
+        _ = userContentController
+        onMessage?(message)
+    }
+}
+
+private final class ParityNavigationDelegateBox: NSObject, WKNavigationDelegate {
+    private let onFinish: () -> Void
+
+    init(onFinish: @escaping () -> Void) {
+        self.onFinish = onFinish
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFinish navigation: WKNavigation!
+    ) {
+        _ = webView
+        _ = navigation
+        onFinish()
+    }
+}
