@@ -213,7 +213,7 @@ extension WKUserContentController {
     }
 }
 
-private final class SumiNormalTabUserContentControllerDelegate: UserContentControllerDelegate {
+final class SumiNormalTabUserContentControllerDelegate: UserContentControllerDelegate {
     @MainActor
     func userContentController(
         _ userContentController: UserContentController,

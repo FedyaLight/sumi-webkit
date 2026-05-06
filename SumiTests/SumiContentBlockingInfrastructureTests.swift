@@ -1,7 +1,6 @@
 import BrowserServicesKit
 import Combine
 import ContentBlocking
-import UserScript
 import WebKit
 import XCTest
 
@@ -30,7 +29,7 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
             assetsPublisher: assetSource.assetsPublisher,
             privacyConfigurationManager: assetSource.privacyConfigurationManager
         )
-        let delegate = NoOpUserContentControllerDelegate()
+        let delegate = SumiNormalTabUserContentControllerDelegate()
         controller.delegate = delegate
 
         await controller.awaitContentBlockingAssetsInstalled()
@@ -235,21 +234,6 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
                 cancellable?.cancel()
             }
         }
-    }
-}
-
-private final class NoOpUserContentControllerDelegate: UserContentControllerDelegate {
-    @MainActor
-    func userContentController(
-        _ userContentController: UserContentController,
-        didInstallContentRuleLists contentRuleLists: [String: WKContentRuleList],
-        userScripts: UserScriptsProvider,
-        updateEvent: ContentBlockerRulesManager.UpdateEvent
-    ) {
-        _ = userContentController
-        _ = contentRuleLists
-        _ = userScripts
-        _ = updateEvent
     }
 }
 
