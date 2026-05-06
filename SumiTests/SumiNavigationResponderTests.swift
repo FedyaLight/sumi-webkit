@@ -430,6 +430,98 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertLessThan(autoplayIndex, lifecycleIndex)
     }
 
+    func testActionResponderChainStopsAtFirstPolicyDecisionForAllowCancelDownload() async {
+        let cases: [(NavigationActionPolicy, String)] = [
+            (.allow, "allow"),
+            (.cancel, "cancel"),
+            (.download, "download"),
+        ]
+
+        for (expectedPolicy, caseName) in cases {
+            let first = ActionPolicyProbeResponder(name: "\(caseName)-first", decision: .next)
+            let decider = ActionPolicyProbeResponder(name: "\(caseName)-decider", decision: expectedPolicy)
+            let skipped = ActionPolicyProbeResponder(name: "\(caseName)-skipped", decision: .allow)
+            var preferences = NavigationPreferences.default
+
+            let policy = await evaluateActionPolicy(
+                with: [first, decider, skipped],
+                action: navigationAction(
+                    url: URL(string: "https://example.com/\(caseName)")!,
+                    navigationType: .linkActivated(isMiddleClick: false)
+                ),
+                preferences: &preferences
+            )
+
+            XCTAssertActionPolicy(policy, expectedPolicy)
+            XCTAssertEqual(first.callCount, 1)
+            XCTAssertEqual(decider.callCount, 1)
+            XCTAssertEqual(skipped.callCount, 0)
+        }
+    }
+
+    func testActionResponderChainCarriesPreferencesMutatedByContinuingResponder() async {
+        let mutator = ActionPolicyProbeResponder(name: "mutator", decision: .next) { preferences in
+            preferences.userAgent = "SumiNavigationParity/1"
+            preferences.contentMode = .desktop
+            preferences.javaScriptEnabled = false
+        }
+        let decider = ActionPolicyProbeResponder(name: "decider", decision: .allow)
+        var preferences = NavigationPreferences.default
+
+        let policy = await evaluateActionPolicy(
+            with: [mutator, decider],
+            action: navigationAction(
+                url: URL(string: "https://example.com/preferences")!,
+                navigationType: .linkActivated(isMiddleClick: false)
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertActionPolicy(policy, .allow)
+        XCTAssertEqual(decider.observedPreferences.first?.userAgent, "SumiNavigationParity/1")
+        XCTAssertEqual(decider.observedPreferences.first?.contentMode, .desktop)
+        XCTAssertEqual(decider.observedPreferences.first?.javaScriptEnabled, false)
+
+        let appliedPreferences = preferences.applying(to: WKWebpagePreferences())
+        XCTAssertEqual(appliedPreferences.preferredContentMode, .desktop)
+        XCTAssertFalse(appliedPreferences.allowsContentJavaScript)
+    }
+
+    func testResponseResponderChainStopsAtFirstPolicyDecisionForAllowCancelDownload() async {
+        let response = NavigationResponse(
+            response: URLResponse(
+                url: URL(string: "https://example.com/file.bin")!,
+                mimeType: "application/octet-stream",
+                expectedContentLength: 128,
+                textEncodingName: nil
+            ),
+            isForMainFrame: true,
+            canShowMIMEType: false,
+            mainFrameNavigation: nil
+        )
+        let cases: [(NavigationResponsePolicy, String)] = [
+            (.allow, "allow"),
+            (.cancel, "cancel"),
+            (.download, "download"),
+        ]
+
+        for (expectedPolicy, caseName) in cases {
+            let first = ResponsePolicyProbeResponder(name: "\(caseName)-first", decision: .next)
+            let decider = ResponsePolicyProbeResponder(name: "\(caseName)-decider", decision: expectedPolicy)
+            let skipped = ResponsePolicyProbeResponder(name: "\(caseName)-skipped", decision: .allow)
+
+            let policy = await evaluateResponsePolicy(
+                with: [first, decider, skipped],
+                response: response
+            )
+
+            XCTAssertEqual(policy, expectedPolicy)
+            XCTAssertEqual(first.callCount, 1)
+            XCTAssertEqual(decider.callCount, 1)
+            XCTAssertEqual(skipped.callCount, 0)
+        }
+    }
+
     func testDownloadResponderRequestsDownloadForDownloadNavigationAction() async {
         let tab = Tab(url: URL(string: "https://example.com")!)
         let responder = SumiDownloadsNavigationResponder(tab: tab, downloadManager: nil)
@@ -445,6 +537,22 @@ final class SumiNavigationResponderTests: XCTestCase {
         )
 
         XCTAssertTrue(policy?.isDownload == true)
+    }
+
+    func testDownloadResponderContinuesForRegularNavigationAction() async {
+        let tab = Tab(url: URL(string: "https://example.com")!)
+        let responder = SumiDownloadsNavigationResponder(tab: tab, downloadManager: nil)
+        var preferences = NavigationPreferences.default
+
+        let policy = await responder.decidePolicy(
+            for: navigationAction(
+                url: URL(string: "https://example.com/page")!,
+                navigationType: .linkActivated(isMiddleClick: false)
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertNil(policy)
     }
 
     func testDownloadResponderRequestsDownloadForUnshowableResponse() async {
@@ -467,6 +575,37 @@ final class SumiNavigationResponderTests: XCTestCase {
         )
 
         XCTAssertEqual(policy, .download)
+    }
+
+    func testDownloadResponderCancelsSessionRestorationCacheDownloadResponse() async {
+        let tab = Tab(url: URL(string: "https://example.com")!)
+        let responder = SumiDownloadsNavigationResponder(tab: tab, downloadManager: nil)
+        var preferences = NavigationPreferences.default
+        let action = navigationAction(
+            url: URL(string: "https://example.com/restored-file.bin")!,
+            navigationType: .sessionRestoration,
+            requestCachePolicy: .returnCacheDataElseLoad,
+            isUserInitiated: false
+        )
+
+        _ = await responder.decidePolicy(for: action, preferences: &preferences)
+        let navigation = mainFrameNavigation(receiving: action)
+
+        let policy = await responder.decidePolicy(
+            for: NavigationResponse(
+                response: URLResponse(
+                    url: URL(string: "https://example.com/restored-file.bin")!,
+                    mimeType: "application/octet-stream",
+                    expectedContentLength: 128,
+                    textEncodingName: nil
+                ),
+                isForMainFrame: true,
+                canShowMIMEType: false,
+                mainFrameNavigation: navigation
+            )
+        )
+
+        XCTAssertEqual(policy, .cancel)
     }
 
     func testGlanceTriggerRequiresCleanOptionModifier() {
@@ -652,6 +791,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         url: URL,
         navigationType: NavigationType,
         shouldDownload: Bool = false,
+        requestCachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy,
         webView: WKWebView? = nil,
         sourceURL: URL? = nil,
         sourceSecurityOrigin: SumiSecurityOrigin? = nil,
@@ -671,8 +811,9 @@ final class SumiNavigationResponderTests: XCTestCase {
             isMainFrame: isMainFrame,
             url: frameURL
         )
+        let request = URLRequest(url: url, cachePolicy: requestCachePolicy)
         return NavigationAction(
-            request: URLRequest(url: url),
+            request: request,
             navigationType: navigationType,
             currentHistoryItemIdentity: nil,
             redirectHistory: nil,
@@ -682,6 +823,46 @@ final class SumiNavigationResponderTests: XCTestCase {
             shouldDownload: shouldDownload,
             mainFrameNavigation: nil
         )
+    }
+
+    private func mainFrameNavigation(receiving action: NavigationAction) -> Navigation {
+        let navigation = Navigation(
+            identity: NavigationIdentity(nil),
+            responders: ResponderChain(),
+            state: .expected(nil),
+            isCurrent: false
+        )
+        navigation.navigationActionReceived(action)
+        return navigation
+    }
+
+    private func evaluateActionPolicy(
+        with responders: [ActionPolicyProbeResponder],
+        action: NavigationAction,
+        preferences: inout NavigationPreferences
+    ) async -> NavigationActionPolicy? {
+        var chain = ResponderChain()
+        chain.setResponders(responders.map { ResponderRefMaker.strong($0) })
+        for responder in chain {
+            if let policy = await responder.decidePolicy(for: action, preferences: &preferences) {
+                return policy
+            }
+        }
+        return .next
+    }
+
+    private func evaluateResponsePolicy(
+        with responders: [ResponsePolicyProbeResponder],
+        response: NavigationResponse
+    ) async -> NavigationResponsePolicy? {
+        var chain = ResponderChain()
+        chain.setResponders(responders.map { ResponderRefMaker.strong($0) })
+        for responder in chain {
+            if let policy = await responder.decidePolicy(for: response) {
+                return policy
+            }
+        }
+        return .next
     }
 
     private func makeAutoplayHarness() throws -> (
@@ -740,6 +921,26 @@ final class SumiNavigationResponderTests: XCTestCase {
     }
 }
 
+private func XCTAssertActionPolicy(
+    _ actual: NavigationActionPolicy?,
+    _ expected: NavigationActionPolicy,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) {
+    switch (actual, expected) {
+    case (.some(.allow), .allow),
+        (.some(.cancel), .cancel),
+        (.some(.download), .download):
+        break
+    default:
+        XCTFail(
+            "Expected \(expected.debugDescription), got \(actual?.debugDescription ?? "nil")",
+            file: file,
+            line: line
+        )
+    }
+}
+
 private extension NavigationActionPolicy {
     var isCancel: Bool {
         if case .cancel = self { return true }
@@ -755,6 +956,56 @@ private extension NavigationActionPolicy {
 private extension NavigationPreferences {
     static var `default`: NavigationPreferences {
         NavigationPreferences(userAgent: nil, preferences: WKWebpagePreferences())
+    }
+}
+
+@MainActor
+private final class ActionPolicyProbeResponder: NavigationResponder {
+    private let name: String
+    private let decision: NavigationActionPolicy?
+    private let mutatePreferences: ((inout NavigationPreferences) -> Void)?
+    private(set) var callCount = 0
+    private(set) var observedActions: [NavigationAction] = []
+    private(set) var observedPreferences: [NavigationPreferences] = []
+
+    init(
+        name: String,
+        decision: NavigationActionPolicy?,
+        mutatePreferences: ((inout NavigationPreferences) -> Void)? = nil
+    ) {
+        self.name = name
+        self.decision = decision
+        self.mutatePreferences = mutatePreferences
+    }
+
+    func decidePolicy(
+        for navigationAction: NavigationAction,
+        preferences: inout NavigationPreferences
+    ) async -> NavigationActionPolicy? {
+        callCount += 1
+        observedActions.append(navigationAction)
+        observedPreferences.append(preferences)
+        mutatePreferences?(&preferences)
+        return decision
+    }
+}
+
+@MainActor
+private final class ResponsePolicyProbeResponder: NavigationResponder {
+    private let name: String
+    private let decision: NavigationResponsePolicy?
+    private(set) var callCount = 0
+    private(set) var observedResponses: [NavigationResponse] = []
+
+    init(name: String, decision: NavigationResponsePolicy?) {
+        self.name = name
+        self.decision = decision
+    }
+
+    func decidePolicy(for navigationResponse: NavigationResponse) async -> NavigationResponsePolicy? {
+        callCount += 1
+        observedResponses.append(navigationResponse)
+        return decision
     }
 }
 
