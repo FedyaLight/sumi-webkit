@@ -1,5 +1,4 @@
 import Foundation
-import Navigation
 import WebKit
 
 struct SumiWebKitMediaCaptureRequest: Sendable {
