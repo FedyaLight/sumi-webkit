@@ -5,6 +5,7 @@
 
 import AppKit
 
+@MainActor
 final class SidebarContextMenuBuilder: NSObject, NSMenuDelegate {
     private let entries: [SidebarContextMenuEntry]
     private let onMenuWillOpen: () -> Void
@@ -141,11 +142,25 @@ private final class SidebarContextMenuActionTarget: NSObject {
 
     @objc func performAction() {
         onActionWillDispatch(title, classification)
-        DispatchQueue.main.async { [classification, title, action, onActionDidDrain] in
-            action()
-            DispatchQueue.main.async {
-                onActionDidDrain(title, classification)
-            }
+        scheduleOnMainRunLoop { [self] in
+            performDeferredAction()
         }
+    }
+
+    private func performDeferredAction() {
+        action()
+        scheduleOnMainRunLoop { [self] in
+            finishDeferredAction()
+        }
+    }
+
+    private func finishDeferredAction() {
+        onActionDidDrain(title, classification)
+    }
+
+    private func scheduleOnMainRunLoop(_ work: @escaping () -> Void) {
+        let runLoop = CFRunLoopGetMain()
+        CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue, work)
+        CFRunLoopWakeUp(runLoop)
     }
 }
