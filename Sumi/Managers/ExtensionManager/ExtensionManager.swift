@@ -282,6 +282,9 @@ final class ExtensionManager: NSObject, ObservableObject {
                 removeUIState: true,
                 releaseController: true
             )
+            #if DEBUG
+                clearDebugState()
+            #endif
         }
 
         #if DEBUG
@@ -290,7 +293,6 @@ final class ExtensionManager: NSObject, ObservableObject {
                     for: controllerIdentifierStorage
                 )
             }
-            clearDebugState()
         #endif
     }
 

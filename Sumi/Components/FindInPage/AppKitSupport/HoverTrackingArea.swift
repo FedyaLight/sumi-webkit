@@ -24,6 +24,7 @@ import os.log
 private let hoverTrackingAreaLog = Logger(subsystem: "Sumi", category: "FindInPageHover")
 
 /// Used in `MouseOverButton` to automatically manage `isMouseOver` state and update layer when needed
+@MainActor
 final class HoverTrackingArea: NSTrackingArea {
 
     static func updateTrackingAreas(in view: NSView & Hoverable) {
@@ -55,9 +56,18 @@ final class HoverTrackingArea: NSTrackingArea {
         if (view as? NSControl)?.isEnabled == false {
             return nil
         } else if view.isMouseDown {
-            return view.mouseDownColor ?? view.mouseOverColor ?? view.backgroundColor
+            if let mouseDownColor = view.mouseDownColor {
+                return mouseDownColor
+            }
+            if let mouseOverColor = view.mouseOverColor {
+                return mouseOverColor
+            }
+            return view.backgroundColor
         } else if view.isMouseOver {
-            return view.mouseOverColor ?? view.backgroundColor
+            if let mouseOverColor = view.mouseOverColor {
+                return mouseOverColor
+            }
+            return view.backgroundColor
         } else {
             return view.backgroundColor
         }
