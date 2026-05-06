@@ -161,6 +161,83 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         await fulfillment(of: [secondDelivered], timeout: 5.0)
     }
 
+    func testReplyCapableHandlerForwardsOriginalMessage() async throws {
+        let context = "sumiParityReplyForwarding"
+        let replyScript = ReplyParityUserScript(context: context, sourceMarker: "__sumiParityReplyForwarding")
+        let provider = SumiNormalTabUserScripts(managedUserScripts: [replyScript])
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            scriptsProvider: provider
+        )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+
+        let webView = makeWebView(userContentController: controller)
+        let delivered = expectation(description: "reply handler delivered original message")
+        replyScript.onReply = { message in
+            XCTAssertEqual(message.messageName, context)
+            XCTAssertTrue(message.webView === webView)
+            XCTAssertEqual(message.frameInfo.securityOrigin.host, "example.com")
+            delivered.fulfill()
+            return #"{"context":"\#(context)","id":"reply-id","result":{"accepted":true}}"#
+        }
+        try await loadBlankDocument(into: webView)
+
+        let response = try await evaluateReturningString(
+            """
+            const response = await window.webkit.messageHandlers["\(context)"].postMessage({
+                context: "\(context)",
+                featureName: "parity",
+                method: "reply",
+                id: "reply-id",
+                params: { value: "round-trip" }
+            });
+            return response;
+            """,
+            in: webView
+        )
+
+        XCTAssertTrue(response.contains(#""accepted":true"#), response)
+        await fulfillment(of: [delivered], timeout: 5.0)
+    }
+
+    func testReleasedReplyHandlerReturnsUnavailableError() async throws {
+        let context = "sumiParityReleasedReply"
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController()
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+        let webView = makeWebView(userContentController: controller)
+        try await loadBlankDocument(into: webView)
+
+        weak var weakScript: ReplyParityUserScript?
+        do {
+            let replyScript = ReplyParityUserScript(context: context, sourceMarker: "__sumiParityReleasedReply")
+            weakScript = replyScript
+            let transientProvider = SumiNormalTabUserScripts(managedUserScripts: [replyScript])
+            await normalTabController.replaceNormalTabUserScripts(with: transientProvider)
+        }
+        XCTAssertNil(weakScript)
+
+        let response = try await evaluateReturningString(
+            """
+            try {
+                await window.webkit.messageHandlers["\(context)"].postMessage({
+                    context: "\(context)",
+                    featureName: "parity",
+                    method: "reply",
+                    id: "released",
+                    params: {}
+                });
+                return "resolved";
+            } catch (error) {
+                return String(error && (error.message || error));
+            }
+            """,
+            in: webView
+        )
+
+        XCTAssertTrue(response.contains("Script message handler is unavailable."), response)
+    }
+
     private func postMessage(to context: String, in webView: WKWebView) async throws {
         try await evaluate(
             """
@@ -231,6 +308,19 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
             }
         }
     }
+
+    private func evaluateReturningString(
+        _ script: String,
+        in webView: WKWebView
+    ) async throws -> String {
+        let value = try await webView.callAsyncJavaScript(
+            script,
+            arguments: [:],
+            in: nil,
+            contentWorld: .page
+        )
+        return value as? String ?? String(describing: value)
+    }
 }
 
 @MainActor
@@ -254,6 +344,38 @@ private final class ParityUserScript: NSObject, SumiUserScript {
     ) {
         _ = userContentController
         onMessage?(message)
+    }
+}
+
+@MainActor
+private final class ReplyParityUserScript: NSObject, SumiUserScript, WKScriptMessageHandlerWithReply {
+    let source: String
+    let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
+    let forMainFrameOnly = true
+    let requiresRunInPageContentWorld = true
+    let messageNames: [String]
+    var onReply: ((WKScriptMessage) -> String)?
+
+    init(context: String, sourceMarker: String) {
+        self.source = "window.\(sourceMarker) = true;"
+        self.messageNames = [context]
+        super.init()
+    }
+
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) async -> (Any?, String?) {
+        _ = userContentController
+        return (onReply?(message) ?? #"{"result":{}}"#, nil)
+    }
+
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) {
+        _ = userContentController
+        _ = message
     }
 }
 
