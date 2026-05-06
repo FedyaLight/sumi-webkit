@@ -287,17 +287,24 @@ extension FocusableWKWebView {
     }
 
     private struct AssociatedKeys {
-        static var findCompletionHandler: UInt8 = 0
+        static let findCompletionHandler: UInt8 = 0
+
+        static var findCompletionHandlerPointer: UnsafeRawPointer {
+            withUnsafePointer(to: findCompletionHandler) { UnsafeRawPointer($0) }
+        }
     }
 
     private var findInPageCompletionHandler: ((FindResult) -> Void)? {
         get {
-            objc_getAssociatedObject(self, &AssociatedKeys.findCompletionHandler) as? ((FindResult) -> Void)
+            objc_getAssociatedObject(
+                self,
+                AssociatedKeys.findCompletionHandlerPointer
+            ) as? ((FindResult) -> Void)
         }
         set {
             objc_setAssociatedObject(
                 self,
-                &AssociatedKeys.findCompletionHandler,
+                AssociatedKeys.findCompletionHandlerPointer,
                 newValue,
                 .OBJC_ASSOCIATION_RETAIN_NONATOMIC
             )
