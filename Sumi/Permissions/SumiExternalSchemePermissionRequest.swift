@@ -145,7 +145,7 @@ struct SumiExternalSchemePermissionRequest: Sendable {
 
         return SumiExternalSchemePermissionRequest(
             targetURL: targetURL,
-            requestingOrigin: permissionOrigin(from: SumiSecurityOrigin(navigationAction.sourceFrame.securityOrigin)),
+            requestingOrigin: permissionOrigin(from: SumiSecurityOrigin(navigationFrame: navigationAction.sourceFrame)),
             userActivation: resolvedActivation,
             isMainFrame: navigationAction.sourceFrame.isMainFrame,
             isRedirectChain: isRedirectChain

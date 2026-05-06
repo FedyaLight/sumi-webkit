@@ -12,6 +12,7 @@
 		A11DD020B11D000100000005 /* Navigation in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000005 /* Navigation */; };
 		A11DD020B11D000100000006 /* Persistence in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000006 /* Persistence */; };
 		A11DD020B11D000100000007 /* PrivacyConfig in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000007 /* PrivacyConfig */; };
+		A11DD020B11D000100000008 /* URLPredictor in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000008 /* URLPredictor */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -150,6 +151,7 @@
 				A11DD020B11D000100000005 /* Navigation in Frameworks */,
 				A11DD020B11D000100000006 /* Persistence in Frameworks */,
 				A11DD020B11D000100000007 /* PrivacyConfig in Frameworks */,
+				A11DD020B11D000100000008 /* URLPredictor in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -253,6 +255,7 @@
 				A11DD010B11D000100000005 /* Navigation */,
 				A11DD010B11D000100000006 /* Persistence */,
 				A11DD010B11D000100000007 /* PrivacyConfig */,
+				A11DD010B11D000100000008 /* URLPredictor */,
 			);
 			productName = Sumi;
 			productReference = 7F8340FC2E37F39400674A5D /* Sumi.app */;
@@ -292,6 +295,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				A11DD000B11D000100000001 /* XCLocalSwiftPackageReference "Vendor/DDG/BrowserServicesKit" */,
+				A11DD000B11D000100000002 /* XCLocalSwiftPackageReference "Vendor/DDG/URLPredictor" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7F8340FD2E37F39400674A5D /* Products */;
@@ -721,6 +725,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Vendor/DDG/BrowserServicesKit;
 		};
+		A11DD000B11D000100000002 /* XCLocalSwiftPackageReference "Vendor/DDG/URLPredictor" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Vendor/DDG/URLPredictor;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -743,6 +751,11 @@
 		A11DD010B11D000100000007 /* PrivacyConfig */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PrivacyConfig;
+		};
+		A11DD010B11D000100000008 /* URLPredictor */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A11DD000B11D000100000002 /* XCLocalSwiftPackageReference "Vendor/DDG/URLPredictor" */;
+			productName = URLPredictor;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

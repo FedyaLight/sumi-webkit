@@ -276,7 +276,7 @@ struct SumiPopupPermissionRequest: Sendable {
         return SumiPopupPermissionRequest(
             targetURL: navigationAction.url,
             sourceURL: navigationAction.sourceFrame.url,
-            requestingOrigin: permissionOrigin(from: SumiSecurityOrigin(navigationAction.sourceFrame.securityOrigin)),
+            requestingOrigin: permissionOrigin(from: SumiSecurityOrigin(navigationFrame: navigationAction.sourceFrame)),
             userActivation: activationState,
             isMainFrame: navigationAction.sourceFrame.isMainFrame,
             navigationActionMetadata: metadata
