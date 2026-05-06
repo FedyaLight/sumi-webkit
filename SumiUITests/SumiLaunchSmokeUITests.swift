@@ -537,7 +537,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
             app: app,
             window: window,
             collapsedSidebar: false,
-            dismissTransient: dismissThemePicker
+            dismissTransient: Self.dismissThemePicker
         )
         exerciseTransientActionFlow(
             elementID: "space-title-\(fixture.personalSpaceID)",
@@ -546,7 +546,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
             app: app,
             window: window,
             collapsedSidebar: false,
-            dismissTransient: dismissEmojiPicker
+            dismissTransient: Self.dismissEmojiPicker
         )
         exerciseTransientActionFlow(
             elementID: "space-title-\(fixture.personalSpaceID)",
@@ -555,7 +555,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
             app: app,
             window: window,
             collapsedSidebar: false,
-            dismissTransient: dismissSpaceSettingsDialog
+            dismissTransient: Self.dismissSpaceSettingsDialog
         )
         if let topLevelLauncherID = fixture.topLevelLauncherID {
             exerciseTransientActionFlow(
@@ -565,7 +565,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
                 app: app,
                 window: window,
                 collapsedSidebar: false,
-                dismissTransient: dismissEmojiPicker
+                dismissTransient: Self.dismissEmojiPicker
             )
             exerciseTransientActionFlow(
                 elementID: "space-pinned-shortcut-\(topLevelLauncherID)",
@@ -574,7 +574,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
                 app: app,
                 window: window,
                 collapsedSidebar: false,
-                dismissTransient: dismissShortcutLinkEditor
+                dismissTransient: Self.dismissShortcutLinkEditor
             )
             assertNewTabButtonOpensCommandPalette(
                 fixture: fixture,
@@ -591,7 +591,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
                 app: app,
                 window: window,
                 collapsedSidebar: false,
-                dismissTransient: dismissFolderIconPicker
+                dismissTransient: Self.dismissFolderIconPicker
             )
             assertNewTabButtonOpensCommandPalette(
                 fixture: fixture,
@@ -609,7 +609,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
                 app: app,
                 window: window,
                 collapsedSidebar: false,
-                dismissTransient: dismissShortcutLinkEditor
+                dismissTransient: Self.dismissShortcutLinkEditor
             )
         }
     }
@@ -630,7 +630,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
             app: app,
             window: window,
             collapsedSidebar: true,
-            dismissTransient: dismissThemePicker
+            dismissTransient: Self.dismissThemePicker
         )
         exerciseTransientActionFlow(
             elementID: "space-title-\(fixture.personalSpaceID)",
@@ -639,7 +639,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
             app: app,
             window: window,
             collapsedSidebar: true,
-            dismissTransient: dismissEmojiPicker
+            dismissTransient: Self.dismissEmojiPicker
         )
         exerciseTransientActionFlow(
             elementID: "space-title-\(fixture.personalSpaceID)",
@@ -648,7 +648,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
             app: app,
             window: window,
             collapsedSidebar: true,
-            dismissTransient: dismissSpaceSettingsDialog
+            dismissTransient: Self.dismissSpaceSettingsDialog
         )
         if let topLevelLauncherID = fixture.topLevelLauncherID {
             exerciseTransientActionFlow(
@@ -658,7 +658,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
                 app: app,
                 window: window,
                 collapsedSidebar: true,
-                dismissTransient: dismissEmojiPicker
+                dismissTransient: Self.dismissEmojiPicker
             )
             exerciseTransientActionFlow(
                 elementID: "space-pinned-shortcut-\(topLevelLauncherID)",
@@ -667,7 +667,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
                 app: app,
                 window: window,
                 collapsedSidebar: true,
-                dismissTransient: dismissShortcutLinkEditor
+                dismissTransient: Self.dismissShortcutLinkEditor
             )
             assertNewTabButtonOpensCommandPalette(
                 fixture: fixture,
@@ -684,7 +684,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
                 app: app,
                 window: window,
                 collapsedSidebar: true,
-                dismissTransient: dismissFolderIconPicker
+                dismissTransient: Self.dismissFolderIconPicker
             )
             assertNewTabButtonOpensCommandPalette(
                 fixture: fixture,
@@ -702,7 +702,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
                 app: app,
                 window: window,
                 collapsedSidebar: true,
-                dismissTransient: dismissShortcutLinkEditor
+                dismissTransient: Self.dismissShortcutLinkEditor
             )
         }
     }
@@ -860,7 +860,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
             collapsedSidebar: false,
             menuActionTitle: "Edit Link…",
             dismissPresentedUI: { app, window in
-                self.dismissShortcutLinkEditor(app: app, window: window)
+                Self.dismissShortcutLinkEditor(app: app, window: window)
             }
         )
     }
@@ -2228,7 +2228,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
         window: XCUIElement,
         collapsedSidebar: Bool,
         opensWithPrimaryClick: Bool = false,
-        dismissTransient: @MainActor (XCUIApplication, XCUIElement) -> Void,
+        dismissTransient: @MainActor @Sendable (XCUIApplication, XCUIElement) -> Void,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
@@ -2649,23 +2649,23 @@ final class SumiLaunchSmokeUITests: XCTestCase {
     }
 
     @MainActor
-    private func dismissThemePicker(app: XCUIApplication, window: XCUIElement) {
+    private static func dismissThemePicker(app: XCUIApplication, window: XCUIElement) {
         Thread.sleep(forTimeInterval: 0.25)
         window.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.08)).click()
     }
 
     @MainActor
-    private func dismissEmojiPicker(app: XCUIApplication, window: XCUIElement) {
+    private static func dismissEmojiPicker(app: XCUIApplication, window: XCUIElement) {
         window.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.08)).click()
     }
 
     @MainActor
-    private func dismissSpaceSettingsDialog(app: XCUIApplication, window: XCUIElement) {
+    private static func dismissSpaceSettingsDialog(app: XCUIApplication, window: XCUIElement) {
         app.buttons["Cancel"].click()
     }
 
     @MainActor
-    private func dismissShortcutLinkEditor(app: XCUIApplication, window: XCUIElement) {
+    private static func dismissShortcutLinkEditor(app: XCUIApplication, window: XCUIElement) {
         app.buttons["Cancel"].click()
     }
 
@@ -2733,7 +2733,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
     }
 
     @MainActor
-    private func dismissFolderIconPicker(app: XCUIApplication, window: XCUIElement) {
+    private static func dismissFolderIconPicker(app: XCUIApplication, window: XCUIElement) {
         app.buttons["Done"].click()
     }
 
