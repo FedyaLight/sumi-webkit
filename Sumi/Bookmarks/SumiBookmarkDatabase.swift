@@ -29,7 +29,7 @@ final class SumiBookmarkDatabase {
             concurrencyType: concurrencyType,
             name: name
         )
-        context.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
+        context.mergePolicy = NSMergePolicy(merge: .mergeByPropertyObjectTrumpMergePolicyType)
         return context
     }
 

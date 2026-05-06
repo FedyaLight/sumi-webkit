@@ -266,16 +266,17 @@ final class SumiNavigationLongPressButton: MouseOverButton {
         menuTimer?.invalidate()
         menuTimer = nil
 
-        guard let menu else {
+        guard menu != nil else {
             super.mouseDown(with: event)
             return
         }
 
         isMouseDown = true
 
-        let timer = Timer(timeInterval: 0.3, repeats: false) { [weak self] _ in
-            self?.displayMenu(menu)
-            guard let mouseUpEvent = event.sumiNavigationMouseUpEvent() else { return }
+        let mouseUpEventSnapshot = SumiNavigationMouseUpEventSnapshot(event: event)
+        let timer = Timer(timeInterval: 0.3, repeats: false) { [weak self, mouseUpEventSnapshot] _ in
+            self?.displayInstalledMenu()
+            guard let mouseUpEvent = mouseUpEventSnapshot.makeEvent() else { return }
             self?.window?.postEvent(mouseUpEvent, atStart: true)
         }
         menuTimer = timer
@@ -327,14 +328,39 @@ final class SumiNavigationLongPressButton: MouseOverButton {
         menuTimer = nil
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: bounds.height + 4), in: self)
     }
+
+    private func displayInstalledMenu() {
+        guard let menu else { return }
+        displayMenu(menu)
+    }
 }
 
-private extension NSEvent {
-    func sumiNavigationMouseUpEvent() -> NSEvent? {
+private struct SumiNavigationMouseUpEventSnapshot: Sendable {
+    let locationX: CGFloat
+    let locationY: CGFloat
+    let modifierFlagsRawValue: UInt
+    let timestamp: TimeInterval
+    let windowNumber: Int
+    let eventNumber: Int
+    let clickCount: Int
+    let pressure: Float
+
+    init(event: NSEvent) {
+        locationX = event.locationInWindow.x
+        locationY = event.locationInWindow.y
+        modifierFlagsRawValue = event.modifierFlags.rawValue
+        timestamp = event.timestamp
+        windowNumber = event.windowNumber
+        eventNumber = event.eventNumber
+        clickCount = event.clickCount
+        pressure = event.pressure
+    }
+
+    func makeEvent() -> NSEvent? {
         NSEvent.mouseEvent(
             with: .leftMouseUp,
-            location: locationInWindow,
-            modifierFlags: modifierFlags,
+            location: NSPoint(x: locationX, y: locationY),
+            modifierFlags: NSEvent.ModifierFlags(rawValue: modifierFlagsRawValue),
             timestamp: timestamp,
             windowNumber: windowNumber,
             context: nil,
