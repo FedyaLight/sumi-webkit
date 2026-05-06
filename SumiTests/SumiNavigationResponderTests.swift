@@ -212,6 +212,80 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertEqual(request.requestingOrigin.identity, "https://request.example")
     }
 
+    func testNavigationFrameInfoBridgePreservesSourceOriginPortForPermissionOrigin() {
+        let webView = WKWebView(frame: .zero)
+        let sourceURL = URL(string: "https://request.example:8443/frame")!
+        let frame = SumiSecurityOrigin(protocol: "https", host: "request.example", port: 8443)
+            .navigationFrameInfo(
+                webView: webView,
+                handle: FrameHandle(rawValue: UInt64(2))!,
+                isMainFrame: false,
+                url: sourceURL
+            )
+
+        let origin = SumiSecurityOrigin(navigationFrame: frame)
+            .permissionOrigin(missingReason: "missing-navigation-frame-origin")
+
+        XCTAssertEqual(origin.kind, .web)
+        XCTAssertEqual(origin.identity, "https://request.example:8443")
+        XCTAssertEqual(frame.url, sourceURL)
+        XCTAssertFalse(frame.isMainFrame)
+    }
+
+    func testNavigationFrameInfoBridgeFailsClosedForEmptySecurityOrigin() {
+        let frame = SumiSecurityOrigin.empty.navigationFrameInfo(
+            webView: WKWebView(frame: .zero),
+            handle: FrameHandle(rawValue: UInt64(3))!,
+            isMainFrame: true,
+            url: URL(string: "about:blank")!
+        )
+
+        let origin = SumiSecurityOrigin(navigationFrame: frame)
+            .permissionOrigin(missingReason: "missing-navigation-frame-origin")
+
+        XCTAssertEqual(origin.kind, .invalid)
+        XCTAssertEqual(origin.detail, "missing-navigation-frame-origin")
+    }
+
+    func testPopupRequestPreservesPortedNavigationSourceFrameOriginAndFrameFlag() {
+        let sourceURL = URL(string: "https://request.example:8443/frame")!
+        let action = navigationAction(
+            url: URL(string: "https://popup.example/window")!,
+            navigationType: .linkActivated(isMiddleClick: false),
+            sourceURL: sourceURL,
+            sourceSecurityOrigin: SumiSecurityOrigin(protocol: "https", host: "request.example", port: 8443),
+            isMainFrame: false
+        )
+
+        let request = SumiPopupPermissionRequest.fromNavigationAction(
+            action,
+            activationState: .navigationAction
+        )
+
+        XCTAssertEqual(request.requestingOrigin.identity, "https://request.example:8443")
+        XCTAssertEqual(request.sourceURL, sourceURL)
+        XCTAssertFalse(request.isMainFrame)
+        XCTAssertEqual(request.navigationActionMetadata["isForMainFrame"], "false")
+    }
+
+    func testExternalSchemeRequestPreservesPortedNavigationSourceFrameOriginAndFrameFlag() {
+        let sourceURL = URL(string: "https://request.example:8443/frame")!
+        let action = navigationAction(
+            url: URL(string: "mailto:test@example.com")!,
+            navigationType: .linkActivated(isMiddleClick: false),
+            sourceURL: sourceURL,
+            sourceSecurityOrigin: SumiSecurityOrigin(protocol: "https", host: "request.example", port: 8443),
+            isMainFrame: false
+        )
+
+        let request = SumiExternalSchemePermissionRequest.fromNavigationAction(action)
+
+        XCTAssertEqual(request.requestingOrigin.identity, "https://request.example:8443")
+        XCTAssertEqual(request.userActivation, .navigationAction)
+        XCTAssertEqual(request.classification, .directUserActivated)
+        XCTAssertFalse(request.isMainFrame)
+    }
+
     func testExternalSchemeResponderSourceRoutesThroughBridgeBeforeAppOpen() throws {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
