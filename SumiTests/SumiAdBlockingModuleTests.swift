@@ -392,7 +392,8 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         for relativePath in [
             "Sumi/Models/Tab/Tab+WebViewRuntime.swift",
             "Sumi/Models/BrowserConfig/BrowserConfig.swift",
-            "Sumi/Favicons/DDG/SumiDDGFaviconUserContentController.swift",
+            "Sumi/UserScripts/SumiNormalTabBrowserServicesKitUserContentControllerAdapter.swift",
+            "Sumi/UserScripts/SumiNormalTabUserScripts.swift",
             "Sumi/Managers/GlanceManager/GlanceWebView.swift",
             "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
             "Sumi/Favicons/DDG/Model/FaviconDownloader.swift",
