@@ -1,3 +1,4 @@
+import Combine
 import WebKit
 import XCTest
 
@@ -96,6 +97,142 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         XCTAssertEqual(normalTabController.contentBlockingAssetSummary, installedSummary)
         XCTAssertEqual(installedSummary.globalRuleListCount, 0)
         XCTAssertFalse(installedSummary.isContentBlockingFeatureEnabled)
+    }
+
+    func testDisabledNoAssetsAwaitKeepsVisibleSummaryEmptyAndDisabled() async throws {
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController()
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+
+        XCTAssertEqual(
+            normalTabController.contentBlockingAssetSummary,
+            SumiNormalTabContentBlockingAssetSummary(
+                isInstalled: true,
+                globalRuleListCount: 0,
+                updateRuleCount: 0,
+                isContentBlockingFeatureEnabled: false
+            )
+        )
+    }
+
+    func testEnabledContentBlockingAssetsReportInstalledRuleAndFeatureSummary() async throws {
+        let service = SumiContentBlockingService(
+            policy: .enabled(ruleLists: [
+                Self.validRuleListDefinition(name: "SumiParityEnabledRules")
+            ])
+        )
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: service
+        )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+        let summary = normalTabController.contentBlockingAssetSummary
+
+        XCTAssertTrue(summary.isInstalled)
+        XCTAssertEqual(summary.globalRuleListCount, 1)
+        XCTAssertEqual(summary.updateRuleCount, 1)
+        XCTAssertTrue(summary.isContentBlockingFeatureEnabled)
+    }
+
+    func testContentBlockingPolicyReplacementUpdatesVisibleSummaryAndDoesNotDuplicateEquivalentRules() async throws {
+        let service = SumiContentBlockingService(
+            policy: .enabled(ruleLists: [
+                Self.validRuleListDefinition(name: "SumiParityInitialRulesA"),
+                Self.validRuleListDefinition(name: "SumiParityInitialRulesB"),
+            ])
+        )
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: service
+        )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+        let initialSummary = normalTabController.contentBlockingAssetSummary
+        XCTAssertEqual(initialSummary.globalRuleListCount, 2)
+        XCTAssertEqual(initialSummary.updateRuleCount, 2)
+        XCTAssertTrue(initialSummary.isContentBlockingFeatureEnabled)
+
+        let replacementPolicy = SumiContentBlockingPolicy.enabled(ruleLists: [
+            Self.validRuleListDefinition(name: "SumiParityReplacementRules")
+        ])
+        service.setPolicy(replacementPolicy)
+        let replacementSummary = await waitForContentBlockingSummary(on: normalTabController) {
+            $0.globalRuleListCount == 1 && $0.updateRuleCount == 1
+        }
+
+        XCTAssertTrue(replacementSummary.isInstalled)
+        XCTAssertTrue(replacementSummary.isContentBlockingFeatureEnabled)
+
+        service.setPolicy(replacementPolicy)
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+
+        XCTAssertEqual(normalTabController.contentBlockingAssetSummary.globalRuleListCount, 1)
+        XCTAssertEqual(normalTabController.contentBlockingAssetSummary.updateRuleCount, 1)
+    }
+
+    func testContentBlockingSummaryPublisherEmitsCurrentAndReplacementSummaries() async throws {
+        let service = SumiContentBlockingService(policy: .disabled)
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: service
+        )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+        let disabledSummary = normalTabController.contentBlockingAssetSummary
+        let replacementPolicy = SumiContentBlockingPolicy.enabled(ruleLists: [
+            Self.validRuleListDefinition(name: "SumiParityPublisherRules")
+        ])
+
+        let summaries = await withCheckedContinuation { continuation in
+            var observedSummaries = [SumiNormalTabContentBlockingAssetSummary]()
+            var cancellable: AnyCancellable?
+            cancellable = normalTabController.contentBlockingAssetSummaryPublisher.sink { summary in
+                observedSummaries.append(summary)
+                if observedSummaries.count == 1 {
+                    Task { @MainActor in
+                        service.setPolicy(replacementPolicy)
+                    }
+                } else if observedSummaries.count == 2 {
+                    continuation.resume(returning: observedSummaries)
+                    cancellable?.cancel()
+                }
+            }
+        }
+
+        XCTAssertEqual(summaries[0], disabledSummary)
+        XCTAssertEqual(summaries[1].globalRuleListCount, 1)
+        XCTAssertEqual(summaries[1].updateRuleCount, 1)
+        XCTAssertTrue(summaries[1].isContentBlockingFeatureEnabled)
+    }
+
+    func testCleanupAfterInstalledContentBlockingAssetsIsIdempotentAndPreservesCurrentVisibleSummary() async throws {
+        let service = SumiContentBlockingService(
+            policy: .enabled(ruleLists: [
+                Self.validRuleListDefinition(name: "SumiParityCleanupRules")
+            ])
+        )
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: service
+        )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+        let installedSummary = normalTabController.contentBlockingAssetSummary
+
+        normalTabController.cleanUpBeforeClosing()
+        normalTabController.cleanUpBeforeClosing()
+
+        XCTAssertTrue(controller.userScripts.isEmpty)
+        XCTAssertEqual(normalTabController.contentBlockingAssetSummary, installedSummary)
+
+        service.setPolicy(.disabled)
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+
+        XCTAssertTrue(controller.userScripts.isEmpty)
+        XCTAssertTrue(normalTabController.contentBlockingAssetSummary.isInstalled)
+        XCTAssertEqual(normalTabController.contentBlockingAssetSummary.globalRuleListCount, 1)
+        XCTAssertEqual(normalTabController.contentBlockingAssetSummary.updateRuleCount, 1)
+        XCTAssertFalse(normalTabController.contentBlockingAssetSummary.isContentBlockingFeatureEnabled)
     }
 
     func testCleanupIsIdempotentAndPreventsLaterScriptReplacement() async throws {
@@ -259,6 +396,43 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         in controller: WKUserContentController
     ) -> Int {
         controller.userScripts.filter { $0.source.contains(marker) }.count
+    }
+
+    private static func validRuleListDefinition(name: String) -> SumiContentRuleListDefinition {
+        SumiContentRuleListDefinition(
+            name: "\(name)-\(UUID().uuidString)",
+            encodedContentRuleList: """
+            [
+              {
+                "trigger": {
+                  "url-filter": ".*sumi-parity-blocked\\\\.example/.*"
+                },
+                "action": {
+                  "type": "block"
+                }
+              }
+            ]
+            """
+        )
+    }
+
+    private func waitForContentBlockingSummary(
+        on controller: SumiNormalTabUserContentControlling,
+        where predicate: @escaping (SumiNormalTabContentBlockingAssetSummary) -> Bool
+    ) async -> SumiNormalTabContentBlockingAssetSummary {
+        let currentSummary = controller.contentBlockingAssetSummary
+        if currentSummary.isInstalled, predicate(currentSummary) {
+            return currentSummary
+        }
+
+        return await withCheckedContinuation { continuation in
+            var cancellable: AnyCancellable?
+            cancellable = controller.contentBlockingAssetSummaryPublisher.sink { summary in
+                guard predicate(summary) else { return }
+                continuation.resume(returning: summary)
+                cancellable?.cancel()
+            }
+        }
     }
 
     private func makeWebView(userContentController: WKUserContentController) -> WKWebView {
