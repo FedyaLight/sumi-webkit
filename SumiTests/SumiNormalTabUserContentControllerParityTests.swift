@@ -22,7 +22,7 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
 
         await normalTabController.waitForContentBlockingAssetsInstalled()
 
-        XCTAssertTrue(controller.sumiUsesNormalTabBrowserServicesKitUserContentController)
+        XCTAssertTrue(controller.sumiUsesNormalTabSumiUserContentController)
         XCTAssertTrue(normalTabController.wkUserContentController === controller)
         XCTAssertTrue(normalTabController.normalTabUserScriptsProvider === provider)
         XCTAssertTrue(controller.sumiNormalTabUserScriptsProvider === provider)
@@ -55,7 +55,7 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         ])
         await normalTabController.replaceNormalTabUserScripts(with: provider)
 
-        XCTAssertTrue(controller.sumiUsesNormalTabBrowserServicesKitUserContentController)
+        XCTAssertTrue(controller.sumiUsesNormalTabSumiUserContentController)
         XCTAssertTrue(normalTabController.normalTabUserScriptsProvider === provider)
         XCTAssertEqual(normalTabController.contentBlockingAssetSummary, initialSummary)
         XCTAssertEqual(controller.userScripts.count, provider.userScripts.count)
@@ -277,12 +277,12 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
 
         let webView = makeWebView(userContentController: controller)
         firstScript.onMessage = { message in
-            XCTAssertEqual(message.messageName, context)
+            XCTAssertEqual(message.name, context)
             XCTAssertTrue(message.webView === webView)
             firstDelivered.fulfill()
         }
         secondScript.onMessage = { message in
-            XCTAssertEqual(message.messageName, context)
+            XCTAssertEqual(message.name, context)
             XCTAssertTrue(message.webView === webView)
             secondDelivered.fulfill()
         }
@@ -311,7 +311,7 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         let webView = makeWebView(userContentController: controller)
         let delivered = expectation(description: "reply handler delivered original message")
         replyScript.onReply = { message in
-            XCTAssertEqual(message.messageName, context)
+            XCTAssertEqual(message.name, context)
             XCTAssertTrue(message.webView === webView)
             XCTAssertEqual(message.frameInfo.securityOrigin.host, "example.com")
             delivered.fulfill()

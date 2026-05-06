@@ -39,7 +39,7 @@ final class SumiUserScriptMessageHandlerRegistry {
             _ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage
         ) {
-            guard let box = registeredMessageHandlers[message.messageName],
+            guard let box = registeredMessageHandlers[message.name],
                   let handler = box.handler
             else {
                 return
@@ -52,7 +52,7 @@ final class SumiUserScriptMessageHandlerRegistry {
             _ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage
         ) async -> (Any?, String?) {
-            guard let box = registeredMessageHandlers[message.messageName],
+            guard let box = registeredMessageHandlers[message.name],
                   let handler = box.handler
             else {
                 return (nil, "Script message handler is unavailable.")

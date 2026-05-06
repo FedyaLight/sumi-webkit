@@ -47,7 +47,7 @@ extension WKUserContentController {
     }
 
     @MainActor
-    var sumiUsesNormalTabBrowserServicesKitUserContentController: Bool {
+    var sumiUsesNormalTabSumiUserContentController: Bool {
         get {
             (objc_getAssociatedObject(self, &SumiNormalTabAssociatedKeys.marker) as? Bool) == true
         }
@@ -63,6 +63,6 @@ extension WKUserContentController {
 
     @MainActor
     var sumiNormalTabUserContentController: SumiNormalTabUserContentControlling? {
-        sumiNormalTabUserContentControllerBridge ?? (self as? SumiNormalTabUserContentControlling)
+        self as? SumiNormalTabUserContentControlling
     }
 }
