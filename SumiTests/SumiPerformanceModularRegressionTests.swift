@@ -615,7 +615,8 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             pageViewModelSource,
             historyManagerSource,
             providerSource,
-            try Self.source(named: "Sumi/History/SumiHistoryMenu.swift"),
+            try Self.source(named: "App/SumiCommands.swift"),
+            try Self.source(named: "App/SumiHistoryCommands.swift"),
             try Self.source(named: "Sumi/Services/SumiBrowsingDataCleanupService.swift"),
         ].joined(separator: "\n")
 

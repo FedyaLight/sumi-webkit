@@ -78,6 +78,13 @@ struct SumiCommands: Commands {
 
     @CommandsBuilder
     private var secondaryCommandMenus: some Commands {
+        SumiHistoryCommands(
+            browserManager: browserManager,
+            shortcutManager: shortcutManager
+        )
+
+        SumiBookmarksCommands(browserManager: browserManager)
+
         CommandMenu("Extensions") {
             Button("Install Extension...") {
                 browserManager.showExtensionInstallDialog()

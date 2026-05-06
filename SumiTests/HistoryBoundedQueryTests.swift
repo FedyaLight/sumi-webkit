@@ -202,7 +202,8 @@ final class HistoryBoundedQueryTests: XCTestCase {
             paths: [
                 "Sumi/Managers/SearchManager/SearchManager.swift",
                 "Sumi/History/HistoryPageViewModel.swift",
-                "Sumi/History/SumiHistoryMenu.swift",
+                "App/SumiCommands.swift",
+                "App/SumiHistoryCommands.swift",
                 "Sumi/Services/SumiBrowsingDataCleanupService.swift",
                 "Sumi/Managers/History/HistoryManager.swift",
             ]
