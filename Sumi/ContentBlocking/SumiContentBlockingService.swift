@@ -3,7 +3,6 @@ import Combine
 import ContentBlocking
 import CryptoKit
 import Foundation
-import PrivacyConfig
 import TrackerRadarKit
 @preconcurrency import WebKit
 
@@ -439,7 +438,7 @@ final class SumiContentBlockingService {
     }
 
     private func rule(for definition: SumiContentRuleListDefinition) async throws -> ContentBlockerRulesManager.Rules {
-        let rulesIdentifier = ContentBlockerRulesIdentifier(
+        let rulesIdentifier = SumiContentBlockerRulesIdentifier(
             name: definition.name,
             tdsEtag: definition.contentHash,
             tempListId: nil,
@@ -466,7 +465,7 @@ final class SumiContentBlockingService {
             name: definition.name,
             rulesList: ruleList,
             etag: definition.contentHash,
-            identifier: rulesIdentifier
+            identifier: Self.browserServicesKitIdentifier(for: rulesIdentifier)
         )
         compiledRulesByIdentifier[storeIdentifier] = rules
         return rules
@@ -494,50 +493,16 @@ final class SumiContentBlockingService {
         )
     }
 
-}
-
-final class SumiContentBlockingPrivacyConfigurationManager: PrivacyConfigurationManaging {
-    private let lock = NSLock()
-    private var configuration: SumiContentBlockingPrivacyConfiguration
-
-    init(isContentBlockingEnabled: Bool) {
-        configuration = SumiContentBlockingPrivacyConfiguration(
-            isContentBlockingEnabled: isContentBlockingEnabled
+    private static func browserServicesKitIdentifier(
+        for identifier: SumiContentBlockerRulesIdentifier
+    ) -> ContentBlockerRulesIdentifier {
+        ContentBlockerRulesIdentifier(
+            name: identifier.name,
+            tdsEtag: identifier.tdsEtag,
+            tempListId: identifier.tempListId,
+            allowListId: identifier.allowListId,
+            unprotectedSitesHash: identifier.unprotectedSitesHash
         )
     }
 
-    var privacyConfig: PrivacyConfiguration {
-        lock.lock()
-        let configuration = configuration
-        lock.unlock()
-        return configuration
-    }
-
-    func setContentBlockingEnabled(_ isEnabled: Bool) {
-        lock.lock()
-        let current = configuration
-        guard current.isContentBlockingEnabled != isEnabled else {
-            lock.unlock()
-            return
-        }
-        configuration = SumiContentBlockingPrivacyConfiguration(isContentBlockingEnabled: isEnabled)
-        lock.unlock()
-    }
-}
-
-struct SumiContentBlockingPrivacyConfiguration: PrivacyConfiguration {
-    let isContentBlockingEnabled: Bool
-
-    func isEnabled(featureKey: PrivacyFeature, defaultValue: Bool) -> Bool {
-        _ = defaultValue
-        return featureKey == .contentBlocking ? isContentBlockingEnabled : false
-    }
-
-    func isSubfeatureEnabled(
-        _ subfeature: any PrivacySubfeature,
-        defaultValue: Bool
-    ) -> Bool {
-        _ = subfeature
-        return defaultValue
-    }
 }

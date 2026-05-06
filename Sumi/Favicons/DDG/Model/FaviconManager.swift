@@ -23,7 +23,6 @@ import Common
 import CoreImage
 import os.log
 import Persistence
-import PrivacyConfig
 import UserScript
 import WebKit
 
@@ -71,7 +70,7 @@ final class FaviconManager: FaviconManagement {
         cacheType: CacheType,
         bookmarkManager: BookmarkManager,
         fireproofDomains: FireproofDomains,
-        privacyConfigurationManager: PrivacyConfigurationManaging,
+        privacyConfigurationManager: any SumiPrivacyConfigurationManaging,
         imageCache: ((FaviconStoring) -> FaviconImageCaching)? = nil,
         referenceCache: ((FaviconStoring) -> FaviconReferenceCaching)? = nil
     ) {

@@ -19,7 +19,6 @@
 import Common
 import Foundation
 import OSLog
-import PrivacyConfig
 import WebKit
 
 /// Downloads favicons using WKDownload to avoid App Transport Security restrictions on HTTP URLs
@@ -36,10 +35,10 @@ final class FaviconDownloader: NSObject {
     private static nonisolated let maxFaviconSize: Int64 = 1024 * 1024
 
     private var pendingDownloads: [WKDownload: FaviconDownloadTask] = [:]
-    private let privacyConfigurationManager: PrivacyConfigurationManaging
+    private let privacyConfigurationManager: any SumiPrivacyConfigurationManaging
     private lazy var faviconURLSession = URLSession(configuration: .ephemeral)
 
-    init(privacyConfigurationManager: PrivacyConfigurationManaging) {
+    init(privacyConfigurationManager: any SumiPrivacyConfigurationManaging) {
         self.privacyConfigurationManager = privacyConfigurationManager
         super.init()
     }
@@ -48,7 +47,7 @@ final class FaviconDownloader: NSObject {
     func download(from url: URL, using webView: WKWebView?) async throws -> Data {
         try Task.checkCancellation()
 
-        guard privacyConfigurationManager.privacyConfig.isSubfeatureEnabled(MacOSBrowserConfigSubfeature.faviconWKDownload, defaultValue: true) else {
+        guard privacyConfigurationManager.sumiPrivacyConfig.isSubfeatureEnabled(SumiBrowserConfigSubfeature.faviconWKDownload, defaultValue: true) else {
             return try await faviconURLSession.data(from: url).0
         }
         return try await downloadUsingWKDownload(from: url, using: webView)
