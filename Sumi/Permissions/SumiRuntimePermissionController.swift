@@ -316,7 +316,7 @@ final class SumiRuntimePermissionObservation {
         cancellation = nil
     }
 
-    deinit {
+    isolated deinit {
         cancellation?()
     }
 }

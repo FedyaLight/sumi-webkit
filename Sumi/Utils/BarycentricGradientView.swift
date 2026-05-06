@@ -7,7 +7,7 @@ import AppKit
 // GPU shader-based gradient using barycentric interpolation across up to 3 colors.
 // - Supports 1, 2, and 3 color schemes.
 // - Smoothly animates activation between counts (1<->2<->3) in Metal.
-struct BarycentricGradientView: View, Animatable {
+struct BarycentricGradientView: View, @MainActor Animatable {
     var gradient: SpaceGradient
     var primaryNodeID: UUID? = nil
 
@@ -20,14 +20,6 @@ struct BarycentricGradientView: View, Animatable {
         get { gradient.animatableData }
         set {
             gradient.animatableData = newValue
-            // Update activation progress when gradient changes
-            let currentCount = max(1, min(3, gradient.sortedNodes.count))
-            if currentCount != previousCount {
-                activationProgress = 0.0
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    activationProgress = 1.0
-                }
-            }
         }
     }
 
