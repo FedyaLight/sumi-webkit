@@ -1,4 +1,3 @@
-import BrowserServicesKit
 import SwiftData
 import WebKit
 import XCTest
@@ -203,12 +202,12 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         tab.setupWebView()
 
         let webView = try XCTUnwrap(tab.existingWebView)
-        let controller = try XCTUnwrap(webView.configuration.userContentController as? UserContentController)
-        await controller.awaitContentBlockingAssetsInstalled()
+        let controller = try XCTUnwrap(webView.configuration.userContentController.sumiNormalTabUserContentController)
+        await controller.waitForContentBlockingAssetsInstalled()
         let provider = try XCTUnwrap(webView.configuration.userContentController.sumiNormalTabUserScriptsProvider)
         let sources = provider.userScripts.map(\.source).joined(separator: "\n")
 
-        XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
+        XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 0)
         XCTAssertTrue(sources.contains("sumiLinkInteraction_\(tab.id.uuidString)"))
         XCTAssertTrue(sources.contains("sumiIdentity_\(tab.id.uuidString)"))
         XCTAssertTrue(sources.contains("sumiTabSuspension_\(tab.id.uuidString)"))
@@ -280,12 +279,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         for surface in surfaces {
             let configuration = browserConfiguration.auxiliaryWebViewConfiguration(surface: surface)
 
-            XCTAssertFalse(configuration.userContentController is UserContentController, surface.rawValue)
-            XCTAssertFalse(
-                configuration.userContentController
-                    .sumiUsesNormalTabBrowserServicesKitUserContentController,
-                surface.rawValue
-            )
+            XCTAssertNil(configuration.userContentController.sumiNormalTabUserContentController, surface.rawValue)
             XCTAssertNil(configuration.userContentController.sumiNormalTabUserScriptsProvider, surface.rawValue)
             XCTAssertTrue(configuration.userContentController.userScripts.isEmpty, surface.rawValue)
             XCTAssertNil(configuration.webExtensionController, surface.rawValue)

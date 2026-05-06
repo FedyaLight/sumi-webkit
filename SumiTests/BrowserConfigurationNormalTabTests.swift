@@ -1,4 +1,3 @@
-import BrowserServicesKit
 import SwiftData
 import TrackerRadarKit
 import WebKit
@@ -8,7 +7,7 @@ import XCTest
 
 @MainActor
 final class BrowserConfigurationNormalTabTests: XCTestCase {
-    func testNormalTabConfigurationUsesBSKControllerAndProfileStore() async throws {
+    func testNormalTabConfigurationUsesSumiNormalTabControllerAndProfileStore() async throws {
         let browserConfiguration = BrowserConfiguration()
         let profile = Profile(name: "Default")
         let configuration = browserConfiguration.normalTabWebViewConfiguration(
@@ -16,15 +15,9 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             url: URL(string: "https://example.com")
         )
 
-        XCTAssertTrue(
-            configuration.userContentController
-                .sumiUsesNormalTabBrowserServicesKitUserContentController
-        )
-        XCTAssertNotNil(configuration.userContentController.sumiNormalTabUserScriptsProvider)
+        let controller = try XCTUnwrap(configuration.userContentController.sumiNormalTabUserContentController)
         XCTAssertTrue(configuration.sumiIsNormalTabWebViewConfiguration)
         XCTAssertTrue(configuration.websiteDataStore === profile.dataStore)
-
-        let controller = try XCTUnwrap(configuration.userContentController.sumiNormalTabUserContentController)
         XCTAssertTrue(controller.wkUserContentController === configuration.userContentController)
         XCTAssertNotNil(controller.normalTabUserScriptsProvider)
 
@@ -256,10 +249,10 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
         enabledTab.setupWebView()
         let enabledController = try XCTUnwrap(
-            enabledTab.existingWebView?.configuration.userContentController as? UserContentController
+            enabledTab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
         )
-        await enabledController.awaitContentBlockingAssetsInstalled()
-        try await waitForAssets(on: enabledController) { $0.globalRuleLists.count == 1 }
+        await enabledController.waitForContentBlockingAssetsInstalled()
+        try await waitForAssets(on: enabledController) { $0.globalRuleListCount == 1 }
 
         XCTAssertEqual(probe.settingsCount, 1)
         XCTAssertEqual(probe.dataStoreCount, 1)
@@ -273,11 +266,11 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
         disabledTab.setupWebView()
         let disabledController = try XCTUnwrap(
-            disabledTab.existingWebView?.configuration.userContentController as? UserContentController
+            disabledTab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
         )
-        await disabledController.awaitContentBlockingAssetsInstalled()
+        await disabledController.waitForContentBlockingAssetsInstalled()
 
-        XCTAssertEqual(disabledController.contentBlockingAssets?.globalRuleLists.count, 0)
+        XCTAssertEqual(disabledController.contentBlockingAssetSummary.globalRuleListCount, 0)
         XCTAssertEqual(probe.serviceCount, 1)
     }
 
@@ -313,11 +306,11 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
         tab.setupWebView()
         let controller = try XCTUnwrap(
-            tab.existingWebView?.configuration.userContentController as? UserContentController
+            tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
         )
-        await controller.awaitContentBlockingAssetsInstalled()
+        await controller.waitForContentBlockingAssetsInstalled()
 
-        XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
+        XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 0)
         XCTAssertEqual(probe.settingsCount, 1)
         XCTAssertEqual(probe.dataStoreCount, 0)
         XCTAssertEqual(probe.serviceCount, 0)
@@ -371,10 +364,10 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         tab.setupWebView()
         let originalWebView = try XCTUnwrap(tab.existingWebView)
         let originalController = try XCTUnwrap(
-            originalWebView.configuration.userContentController as? UserContentController
+            originalWebView.configuration.userContentController.sumiNormalTabUserContentController
         )
-        await originalController.awaitContentBlockingAssetsInstalled()
-        try await waitForAssets(on: originalController) { $0.globalRuleLists.count == 1 }
+        await originalController.waitForContentBlockingAssetsInstalled()
+        try await waitForAssets(on: originalController) { $0.globalRuleListCount == 1 }
 
         settings.setSiteOverride(.disabled, for: tab.url)
         tab.markTrackingProtectionReloadRequiredIfNeeded(afterChangingOverrideFor: tab.url)
@@ -391,10 +384,10 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let rebuiltWebView = try XCTUnwrap(tab.existingWebView)
         XCTAssertFalse(rebuiltWebView === originalWebView)
         let rebuiltController = try XCTUnwrap(
-            rebuiltWebView.configuration.userContentController as? UserContentController
+            rebuiltWebView.configuration.userContentController.sumiNormalTabUserContentController
         )
-        await rebuiltController.awaitContentBlockingAssetsInstalled()
-        XCTAssertEqual(rebuiltController.contentBlockingAssets?.globalRuleLists.count, 0)
+        await rebuiltController.waitForContentBlockingAssetsInstalled()
+        XCTAssertEqual(rebuiltController.contentBlockingAssetSummary.globalRuleListCount, 0)
 
         tab.clearTrackingProtectionReloadRequirementIfResolved(for: tab.url)
         XCTAssertFalse(tab.isTrackingProtectionReloadRequired)
@@ -435,10 +428,10 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
         tab.setupWebView()
         let controller = try XCTUnwrap(
-            tab.existingWebView?.configuration.userContentController as? UserContentController
+            tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
         )
-        await controller.awaitContentBlockingAssetsInstalled()
-        try await waitForAssets(on: controller) { $0.globalRuleLists.count == 1 }
+        await controller.waitForContentBlockingAssetsInstalled()
+        try await waitForAssets(on: controller) { $0.globalRuleListCount == 1 }
 
         let otherURL = URL(string: "https://www.other.example/path")!
         settings.setSiteOverride(.disabled, for: otherURL)
@@ -510,10 +503,10 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
         tab.setupWebView()
         let controller = try XCTUnwrap(
-            tab.existingWebView?.configuration.userContentController as? UserContentController
+            tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
         )
-        await controller.awaitContentBlockingAssetsInstalled()
-        try await waitForAssets(on: controller) { $0.globalRuleLists.count == 1 }
+        await controller.waitForContentBlockingAssetsInstalled()
+        try await waitForAssets(on: controller) { $0.globalRuleListCount == 1 }
 
         let activeDataSet = try dataStore.loadActiveDataSet()
         XCTAssertEqual(activeDataSet.trackerData.trackers.keys.sorted(), ["updated-normal-manual.example"])
@@ -559,8 +552,8 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             userScriptsProvider: scriptsProvider
         )
 
-        let controller = try XCTUnwrap(configuration.userContentController as? UserContentController)
-        await controller.awaitContentBlockingAssetsInstalled()
+        let controller = try XCTUnwrap(configuration.userContentController.sumiNormalTabUserContentController)
+        await controller.waitForContentBlockingAssetsInstalled()
 
         let sources = configuration.userContentController.userScripts.map(\.source)
         XCTAssertFalse(sources.contains { $0.contains(templateMarker) })
@@ -719,11 +712,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         ]
 
         for configuration in configurations {
-            XCTAssertFalse(configuration.userContentController is UserContentController)
-            XCTAssertFalse(
-                configuration.userContentController
-                    .sumiUsesNormalTabBrowserServicesKitUserContentController
-            )
+            XCTAssertNil(configuration.userContentController.sumiNormalTabUserContentController)
             XCTAssertNil(configuration.userContentController.sumiNormalTabUserScriptsProvider)
             XCTAssertTrue(configuration.userContentController.userScripts.isEmpty)
             XCTAssertNil(configuration.webExtensionController)
@@ -771,11 +760,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             surface: .extensionOptions
         )
 
-        XCTAssertFalse(configuration.userContentController is UserContentController)
-        XCTAssertFalse(
-            configuration.userContentController
-                .sumiUsesNormalTabBrowserServicesKitUserContentController
-        )
+        XCTAssertNil(configuration.userContentController.sumiNormalTabUserContentController)
         XCTAssertNil(configuration.userContentController.sumiNormalTabUserScriptsProvider)
         XCTAssertTrue(configuration.userContentController.userScripts.isEmpty)
     }
@@ -1170,18 +1155,19 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
     @discardableResult
     private func waitForAssets(
-        on controller: UserContentController,
-        where predicate: @escaping (UserContentController.ContentBlockingAssets) -> Bool
-    ) async throws -> UserContentController.ContentBlockingAssets {
+        on controller: SumiNormalTabUserContentControlling,
+        where predicate: @escaping (SumiNormalTabContentBlockingAssetSummary) -> Bool
+    ) async throws -> SumiNormalTabContentBlockingAssetSummary {
         let deadline = Date().addingTimeInterval(5)
         while Date() < deadline {
-            if let assets = controller.contentBlockingAssets, predicate(assets) {
-                return assets
+            let summary = controller.contentBlockingAssetSummary
+            if summary.isInstalled, predicate(summary) {
+                return summary
             }
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         XCTFail("Timed out waiting for normal-tab content-blocking assets")
-        return try XCTUnwrap(controller.contentBlockingAssets)
+        return controller.contentBlockingAssetSummary
     }
 
     private static func source(named relativePath: String) throws -> String {

@@ -1,4 +1,3 @@
-import BrowserServicesKit
 import Foundation
 import WebKit
 import XCTest
@@ -12,9 +11,10 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         let scriptsProvider = SumiNormalTabUserScripts(
             managedUserScripts: firstTab.normalTabCoreUserScripts() + secondTab.normalTabCoreUserScripts()
         )
-        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
             scriptsProvider: scriptsProvider
         )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = controller
         let webView = WKWebView(
@@ -22,7 +22,7 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
             configuration: configuration
         )
 
-        await controller.awaitContentBlockingAssetsInstalled()
+        await normalTabController.waitForContentBlockingAssetsInstalled()
         try await loadBlankDocument(into: webView)
 
         let firstDelivered = expectation(description: "first tab message delivered")
@@ -57,9 +57,10 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         let scriptsProvider = SumiNormalTabUserScripts(
             managedUserScripts: tab.normalTabCoreUserScripts()
         )
-        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
             scriptsProvider: scriptsProvider
         )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = controller
         let webView = WKWebView(
@@ -67,10 +68,10 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
             configuration: configuration
         )
 
-        await controller.awaitContentBlockingAssetsInstalled()
+        await normalTabController.waitForContentBlockingAssetsInstalled()
         try await loadBlankDocument(into: webView)
 
-        controller.cleanUpBeforeClosing()
+        normalTabController.cleanUpBeforeClosing()
 
         let removedHandlerDidNotFire = expectation(description: "removed handler stays detached")
         removedHandlerDidNotFire.isInverted = true
@@ -160,9 +161,10 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         let scriptsProvider = SumiNormalTabUserScripts(
             managedUserScripts: firstTab.normalTabCoreUserScripts() + secondTab.normalTabCoreUserScripts()
         )
-        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
             scriptsProvider: scriptsProvider
         )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = controller
         let webView = WKWebView(
@@ -170,7 +172,7 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
             configuration: configuration
         )
 
-        await controller.awaitContentBlockingAssetsInstalled()
+        await normalTabController.waitForContentBlockingAssetsInstalled()
         try await loadBlankDocument(into: webView)
 
         try await postTabSuspensionCanBeSuspended(
@@ -252,16 +254,17 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         let scriptsProvider = SumiNormalTabUserScripts(
             managedUserScripts: tab.normalTabCoreUserScripts()
         )
-        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
             scriptsProvider: scriptsProvider
         )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = controller
         let webView = WKWebView(
             frame: CGRect(x: 0, y: 0, width: 800, height: 600),
             configuration: configuration
         )
-        await controller.awaitContentBlockingAssetsInstalled()
+        await normalTabController.waitForContentBlockingAssetsInstalled()
         try await loadBlankDocument(into: webView)
         return webView
     }
