@@ -171,6 +171,7 @@ protocol SumiNormalTabUserContentControlling: AnyObject {
     var contentBlockingAssetSummary: SumiNormalTabContentBlockingAssetSummary { get }
 
     func waitForContentBlockingAssetsInstalled() async
+    func cleanUpBeforeClosing()
 }
 
 @MainActor
