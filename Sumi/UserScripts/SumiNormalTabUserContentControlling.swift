@@ -63,6 +63,6 @@ extension WKUserContentController {
 
     @MainActor
     var sumiNormalTabUserContentController: SumiNormalTabUserContentControlling? {
-        self as? SumiNormalTabUserContentControlling
+        sumiNormalTabUserContentControllerBridge ?? (self as? SumiNormalTabUserContentControlling)
     }
 }
