@@ -33,8 +33,7 @@ final class SumiNormalTabUserScripts: UserScriptsProvider {
         var scripts: [WKUserScript] = []
         scripts.reserveCapacity(userScripts.count)
         for userScript in userScripts {
-            let script = await userScript.makeWKUserScript()
-            scripts.append(script.wkUserScript)
+            scripts.append(SumiDDGUserScriptBuilder.makeWKUserScript(from: userScript))
         }
         return scripts
     }
