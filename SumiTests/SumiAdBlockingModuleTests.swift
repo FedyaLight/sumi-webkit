@@ -1,4 +1,3 @@
-import BrowserServicesKit
 import WebKit
 import XCTest
 
@@ -172,10 +171,10 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         tab.setupWebView()
 
         let webView = try XCTUnwrap(tab.existingWebView)
-        let controller = try XCTUnwrap(webView.configuration.userContentController as? UserContentController)
-        await controller.awaitContentBlockingAssetsInstalled()
+        let controller = try XCTUnwrap(webView.configuration.userContentController.sumiNormalTabUserContentController)
+        await controller.waitForContentBlockingAssetsInstalled()
 
-        XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
+        XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 0)
         XCTAssertEqual(module.normalTabDecision(for: tab.url).assets, .empty)
         assertNoAdBlockingScriptsOrHandlers(in: webView.configuration.userContentController)
         XCTAssertFalse(module.hasLoadedRuntime)
@@ -202,11 +201,11 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         tab.setupWebView()
 
         let webView = try XCTUnwrap(tab.existingWebView)
-        let controller = try XCTUnwrap(webView.configuration.userContentController as? UserContentController)
-        await controller.awaitContentBlockingAssetsInstalled()
+        let controller = try XCTUnwrap(webView.configuration.userContentController.sumiNormalTabUserContentController)
+        await controller.waitForContentBlockingAssetsInstalled()
 
         XCTAssertEqual(module.status, .enabledButEngineUnavailable)
-        XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
+        XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 0)
         XCTAssertEqual(module.normalTabDecision(for: tab.url).assets, .empty)
         assertNoAdBlockingScriptsOrHandlers(in: webView.configuration.userContentController)
         XCTAssertFalse(module.hasLoadedRuntime)
@@ -222,11 +221,7 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         ]
 
         for configuration in configurations {
-            XCTAssertFalse(configuration.userContentController is UserContentController)
-            XCTAssertFalse(
-                configuration.userContentController
-                    .sumiUsesNormalTabBrowserServicesKitUserContentController
-            )
+            XCTAssertNil(configuration.userContentController.sumiNormalTabUserContentController)
             XCTAssertNil(configuration.userContentController.sumiNormalTabUserScriptsProvider)
             XCTAssertTrue(configuration.userContentController.userScripts.isEmpty)
             assertNoAdBlockingScriptsOrHandlers(in: configuration.userContentController)
@@ -266,13 +261,13 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         tab.setupWebView()
 
         let controller = try XCTUnwrap(
-            tab.existingWebView?.configuration.userContentController as? UserContentController
+            tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
         )
-        await controller.awaitContentBlockingAssetsInstalled()
-        try await waitForAssets(on: controller) { $0.globalRuleLists.count == 1 }
+        await controller.waitForContentBlockingAssetsInstalled()
+        try await waitForAssets(on: controller) { $0.globalRuleListCount == 1 }
 
         XCTAssertFalse(adBlockingModule.isEnabled)
-        XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 1)
+        XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 1)
     }
 
     func testTrackingProtectionDisabledAdBlockingEnabledShellAttachesNoRules() async throws {
@@ -296,18 +291,18 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         tab.setupWebView()
 
         let controller = try XCTUnwrap(
-            tab.existingWebView?.configuration.userContentController as? UserContentController
+            tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
         )
-        await controller.awaitContentBlockingAssetsInstalled()
+        await controller.waitForContentBlockingAssetsInstalled()
 
         XCTAssertFalse(registry.isEnabled(.trackingProtection))
         XCTAssertEqual(adBlockingModule.status, .enabledButEngineUnavailable)
-        XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
+        XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 0)
         XCTAssertEqual(
             tab.trackingProtectionAppliedAttachmentState,
             SumiTrackingProtectionAttachmentState(siteHost: "example.com", isEnabled: false)
         )
-        assertNoAdBlockingScriptsOrHandlers(in: controller)
+        assertNoAdBlockingScriptsOrHandlers(in: controller.wkUserContentController)
     }
 
     func testAdBlockingToggleDoesNotAffectTrackingProtectionSiteOverrides() {
@@ -473,18 +468,19 @@ final class SumiAdBlockingModuleTests: XCTestCase {
 
     @discardableResult
     private func waitForAssets(
-        on controller: UserContentController,
-        where predicate: @escaping (UserContentController.ContentBlockingAssets) -> Bool
-    ) async throws -> UserContentController.ContentBlockingAssets {
+        on controller: SumiNormalTabUserContentControlling,
+        where predicate: @escaping (SumiNormalTabContentBlockingAssetSummary) -> Bool
+    ) async throws -> SumiNormalTabContentBlockingAssetSummary {
         let deadline = Date().addingTimeInterval(5)
         while Date() < deadline {
-            if let assets = controller.contentBlockingAssets, predicate(assets) {
-                return assets
+            let summary = controller.contentBlockingAssetSummary
+            if summary.isInstalled, predicate(summary) {
+                return summary
             }
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         XCTFail("Timed out waiting for content-blocking assets")
-        return try XCTUnwrap(controller.contentBlockingAssets)
+        return controller.contentBlockingAssetSummary
     }
 
     private static func source(named relativePath: String) throws -> String {

@@ -1,6 +1,4 @@
-import BrowserServicesKit
 import Combine
-import ContentBlocking
 import WebKit
 import XCTest
 
@@ -9,14 +7,15 @@ import XCTest
 @MainActor
 final class SumiContentBlockingInfrastructureTests: XCTestCase {
     func testDefaultFactoryInstallsDisabledAssetsWithoutContentBlockingService() async throws {
-        let controller = SumiNormalTabUserContentControllerFactory.makeController()
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController()
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
 
-        await controller.awaitContentBlockingAssetsInstalled()
+        await normalTabController.waitForContentBlockingAssetsInstalled()
 
-        XCTAssertTrue(controller.contentBlockingAssetsInstalled)
-        XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
-        XCTAssertFalse(controller.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking))
-        XCTAssertTrue(controller.sumiUsesNormalTabBrowserServicesKitUserContentController)
+        let summary = normalTabController.contentBlockingAssetSummary
+        XCTAssertTrue(summary.isInstalled)
+        XCTAssertEqual(summary.globalRuleListCount, 0)
+        XCTAssertFalse(summary.isContentBlockingFeatureEnabled)
         XCTAssertFalse(controller.userScripts.isEmpty)
     }
 
@@ -25,32 +24,35 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
         let assetSource = SumiNormalTabContentBlockingAssetSource.disabledEmpty(
             scriptsProvider: scriptsProvider
         )
-        let controller = UserContentController(
-            assetsPublisher: assetSource.assetsPublisher,
-            privacyConfigurationManager: assetSource.privacyConfigurationManager
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            scriptsProvider: scriptsProvider
         )
-        let delegate = SumiNormalTabUserContentControllerDelegate()
-        controller.delegate = delegate
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
 
-        await controller.awaitContentBlockingAssetsInstalled()
+        await normalTabController.waitForContentBlockingAssetsInstalled()
 
-        XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
+        let summary = normalTabController.contentBlockingAssetSummary
+        XCTAssertTrue(summary.isInstalled)
+        XCTAssertEqual(summary.globalRuleListCount, 0)
+        XCTAssertFalse(summary.isContentBlockingFeatureEnabled)
         XCTAssertFalse(assetSource.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking))
         XCTAssertTrue(scriptsProvider.userScripts.isEmpty == false)
     }
 
-    func testDefaultPolicyInstallsNoGlobalRuleListsThroughBSKController() async throws {
+    func testDefaultPolicyInstallsNoGlobalRuleListsThroughNormalTabController() async throws {
         let service = SumiContentBlockingService(policy: .disabled)
-        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
             contentBlockingService: service
         )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
 
-        await controller.awaitContentBlockingAssetsInstalled()
+        await normalTabController.waitForContentBlockingAssetsInstalled()
 
-        XCTAssertTrue(controller.contentBlockingAssetsInstalled)
-        XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
+        let summary = normalTabController.contentBlockingAssetSummary
+        XCTAssertTrue(summary.isInstalled)
+        XCTAssertEqual(summary.globalRuleListCount, 0)
         XCTAssertFalse(service.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking))
-        XCTAssertTrue(controller.sumiUsesNormalTabBrowserServicesKitUserContentController)
+        XCTAssertFalse(summary.isContentBlockingFeatureEnabled)
         XCTAssertFalse(controller.userScripts.isEmpty)
     }
 
@@ -58,16 +60,19 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
         let service = SumiContentBlockingService(
             policy: .enabled(ruleLists: [Self.validRuleListDefinition()])
         )
-        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
             contentBlockingService: service
         )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
 
-        await controller.awaitContentBlockingAssetsInstalled()
+        await normalTabController.waitForContentBlockingAssetsInstalled()
 
-        let assets = try XCTUnwrap(controller.contentBlockingAssets)
-        XCTAssertEqual(assets.globalRuleLists.count, 1)
-        XCTAssertEqual(assets.updateEvent.rules.count, 1)
+        let summary = normalTabController.contentBlockingAssetSummary
+        XCTAssertTrue(summary.isInstalled)
+        XCTAssertEqual(summary.globalRuleListCount, 1)
+        XCTAssertEqual(summary.updateRuleCount, 1)
         XCTAssertTrue(service.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking))
+        XCTAssertTrue(summary.isContentBlockingFeatureEnabled)
     }
 
     func testInvalidRuleDataFailsSafelyWithoutAttachingRules() async throws {
@@ -79,30 +84,34 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
                 )
             ])
         )
-        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
             contentBlockingService: service
         )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
 
-        await controller.awaitContentBlockingAssetsInstalled()
+        await normalTabController.waitForContentBlockingAssetsInstalled()
 
-        XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
+        let summary = normalTabController.contentBlockingAssetSummary
+        XCTAssertEqual(summary.globalRuleListCount, 0)
         XCTAssertFalse(service.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking))
+        XCTAssertFalse(summary.isContentBlockingFeatureEnabled)
     }
 
-    func testPolicyUpdateReplacesRuleListsOnExistingBSKController() async throws {
+    func testPolicyUpdateReplacesRuleListsOnExistingNormalTabController() async throws {
         let service = SumiContentBlockingService(policy: .disabled)
-        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
             contentBlockingService: service
         )
-        await controller.awaitContentBlockingAssetsInstalled()
-        XCTAssertEqual(controller.contentBlockingAssets?.globalRuleLists.count, 0)
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+        XCTAssertEqual(normalTabController.contentBlockingAssetSummary.globalRuleListCount, 0)
 
         service.setPolicy(.enabled(ruleLists: [Self.validRuleListDefinition()]))
-        let enabledRuleListCount = await Self.waitForAssetRuleListCount(on: controller) { $0 == 1 }
+        let enabledRuleListCount = await Self.waitForAssetRuleListCount(on: normalTabController) { $0 == 1 }
         XCTAssertEqual(enabledRuleListCount, 1)
 
         service.setPolicy(.disabled)
-        let disabledRuleListCount = await Self.waitForAssetRuleListCount(on: controller) { $0 == 0 }
+        let disabledRuleListCount = await Self.waitForAssetRuleListCount(on: normalTabController) { $0 == 0 }
         XCTAssertEqual(disabledRuleListCount, 0)
     }
 
@@ -113,23 +122,24 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
             compiler: compiler
         )
 
-        let firstController = SumiNormalTabUserContentControllerFactory.makeController(
+        let firstController: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
             contentBlockingService: service
         )
-        await firstController.awaitContentBlockingAssetsInstalled()
+        let firstNormalTabController = try XCTUnwrap(firstController.sumiNormalTabUserContentController)
+        await firstNormalTabController.waitForContentBlockingAssetsInstalled()
         XCTAssertEqual(compiler.compileCount, 1)
 
-        let secondController = SumiNormalTabUserContentControllerFactory.makeController(
+        let secondController: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
             contentBlockingService: service
         )
-        await secondController.awaitContentBlockingAssetsInstalled()
+        let secondNormalTabController = try XCTUnwrap(secondController.sumiNormalTabUserContentController)
+        await secondNormalTabController.waitForContentBlockingAssetsInstalled()
         XCTAssertEqual(compiler.compileCount, 1)
 
         let replacementProvider = SumiNormalTabUserScripts(
             managedUserScripts: [TestContentBlockingProviderUserScript(source: "window.__sumiReplacementScript = true;")]
         )
-        let normalTabController = try XCTUnwrap(firstController.sumiNormalTabUserContentController)
-        await normalTabController.replaceNormalTabUserScripts(with: replacementProvider)
+        await firstNormalTabController.replaceNormalTabUserScripts(with: replacementProvider)
         XCTAssertEqual(compiler.compileCount, 1)
     }
 
@@ -139,12 +149,13 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
             contentBlockingUserScripts: [TestContentBlockingProviderUserScript(source: marker)]
         )
         let service = SumiContentBlockingService(policy: .disabled)
-        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
             scriptsProvider: provider,
             contentBlockingService: service
         )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
 
-        await controller.awaitContentBlockingAssetsInstalled()
+        await normalTabController.waitForContentBlockingAssetsInstalled()
 
         XCTAssertTrue(controller.userScripts.contains { $0.source.contains(marker) })
         XCTAssertTrue(controller.sumiNormalTabUserScriptsProvider === provider)
@@ -215,21 +226,18 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
     }
 
     private static func waitForAssetRuleListCount(
-        on controller: UserContentController,
+        on controller: SumiNormalTabUserContentControlling,
         where predicate: @escaping (Int) -> Bool
     ) async -> Int {
-        if let assets = controller.contentBlockingAssets {
-            let count = assets.globalRuleLists.count
-            if predicate(count) {
-                return count
-            }
+        let currentCount = controller.contentBlockingAssetSummary.globalRuleListCount
+        if predicate(currentCount) {
+            return currentCount
         }
 
         return await withCheckedContinuation { continuation in
             var cancellable: AnyCancellable?
-            cancellable = controller.$contentBlockingAssets.sink { assets in
-                guard let assets else { return }
-                let count = assets.globalRuleLists.count
+            cancellable = controller.contentBlockingAssetSummaryPublisher.sink { summary in
+                let count = summary.globalRuleListCount
                 guard predicate(count) else { return }
                 continuation.resume(returning: count)
                 cancellable?.cancel()

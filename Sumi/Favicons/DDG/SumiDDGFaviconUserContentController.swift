@@ -162,6 +162,8 @@ struct SumiNormalTabContentBlockingAssetSource {
 struct SumiNormalTabContentBlockingAssetSummary: Equatable {
     let isInstalled: Bool
     let globalRuleListCount: Int
+    let updateRuleCount: Int
+    let isContentBlockingFeatureEnabled: Bool
 }
 
 @MainActor
@@ -169,6 +171,9 @@ protocol SumiNormalTabUserContentControlling: AnyObject {
     var wkUserContentController: WKUserContentController { get }
     var normalTabUserScriptsProvider: SumiNormalTabUserScripts? { get }
     var contentBlockingAssetSummary: SumiNormalTabContentBlockingAssetSummary { get }
+#if DEBUG
+    var contentBlockingAssetSummaryPublisher: AnyPublisher<SumiNormalTabContentBlockingAssetSummary, Never> { get }
+#endif
 
     func replaceNormalTabUserScripts(with provider: SumiNormalTabUserScripts) async
     func waitForContentBlockingAssetsInstalled() async
@@ -248,9 +253,27 @@ extension UserContentController: SumiNormalTabUserContentControlling {
     var contentBlockingAssetSummary: SumiNormalTabContentBlockingAssetSummary {
         SumiNormalTabContentBlockingAssetSummary(
             isInstalled: contentBlockingAssetsInstalled,
-            globalRuleListCount: contentBlockingAssets?.globalRuleLists.count ?? 0
+            globalRuleListCount: contentBlockingAssets?.globalRuleLists.count ?? 0,
+            updateRuleCount: contentBlockingAssets?.updateEvent.rules.count ?? 0,
+            isContentBlockingFeatureEnabled: privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking)
         )
     }
+
+#if DEBUG
+    var contentBlockingAssetSummaryPublisher: AnyPublisher<SumiNormalTabContentBlockingAssetSummary, Never> {
+        $contentBlockingAssets
+            .compactMap { [weak self] assets -> SumiNormalTabContentBlockingAssetSummary? in
+                guard let self, let assets else { return nil }
+                return SumiNormalTabContentBlockingAssetSummary(
+                    isInstalled: true,
+                    globalRuleListCount: assets.globalRuleLists.count,
+                    updateRuleCount: assets.updateEvent.rules.count,
+                    isContentBlockingFeatureEnabled: self.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking)
+                )
+            }
+            .eraseToAnyPublisher()
+    }
+#endif
 
     func replaceNormalTabUserScripts(with provider: SumiNormalTabUserScripts) async {
         await replaceUserScripts(with: provider)
