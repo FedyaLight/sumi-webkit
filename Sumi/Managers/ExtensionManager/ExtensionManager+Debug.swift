@@ -3,6 +3,7 @@ import Foundation
 import WebKit
 
 @available(macOS 15.5, *)
+@MainActor
 private final class ExtensionManagerDebugRegistry {
     private static let lock = NSLock()
     private static var hooksByManagerID: [ObjectIdentifier: ExtensionManager.TestHooks] = [:]
@@ -55,7 +56,7 @@ extension ExtensionManager {
         }
     }
 
-    nonisolated func clearDebugState() {
+    func clearDebugState() {
         ExtensionManagerDebugRegistry.clearHooks(for: ObjectIdentifier(self))
     }
 }
