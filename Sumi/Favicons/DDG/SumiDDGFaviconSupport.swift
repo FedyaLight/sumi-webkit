@@ -1,4 +1,3 @@
-import Common
 import Foundation
 import os.log
 import WebKit
@@ -213,7 +212,7 @@ private func executeDDGFaviconBrokerAction(
         do {
             _ = try await handler(params, original)
         } catch {
-            Logger.general.error("UserScriptMessaging: unhandled exception \(error.localizedDescription, privacy: .public)")
+            Logger.sumiGeneral.error("UserScriptMessaging: unhandled exception \(error.localizedDescription, privacy: .public)")
         }
         return "{}"
 
@@ -307,7 +306,7 @@ private struct SumiDDGFaviconMessageParams: Sendable {
             return
         }
 
-        guard let faviconsPayload: SumiDDGFaviconUserScript.FaviconsFoundPayload = DecodableHelper.decode(from: params) else {
+        guard let faviconsPayload: SumiDDGFaviconUserScript.FaviconsFoundPayload = SumiDecodableHelper.decode(from: params) else {
             self.documentUrl = nil
             self.favicons = []
             return

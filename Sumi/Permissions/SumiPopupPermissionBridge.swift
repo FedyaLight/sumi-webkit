@@ -1,4 +1,3 @@
-import Common
 import Foundation
 import WebKit
 
@@ -63,7 +62,7 @@ final class SumiPopupPermissionBridge {
             )
         }
 
-        guard request.targetURL?.navigationalScheme != .javascript else {
+        guard request.targetURL?.sumiNavigationalScheme != .javascript else {
             return block(
                 request,
                 tabContext: tabContext,
@@ -168,7 +167,7 @@ final class SumiPopupPermissionBridge {
             )
         }
 
-        guard request.targetURL?.navigationalScheme != .javascript else {
+        guard request.targetURL?.sumiNavigationalScheme != .javascript else {
             return block(
                 request,
                 tabContext: tabContext,

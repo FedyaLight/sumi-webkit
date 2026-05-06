@@ -249,7 +249,7 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
         }
 
         let canOpenLinkInCurrentTab: Bool = {
-            let navigatingToAnotherDomain = navigationAction.url.host != targetFrame.url.host && !targetFrame.url.isEmpty
+            let navigatingToAnotherDomain = navigationAction.url.host != targetFrame.url.host && !targetFrame.url.sumiIsEmpty
             let navigatingAwayFromPinnedTab = tab.isPinned && navigatingToAnotherDomain && navigationAction.isForMainFrame
             return !navigatingAwayFromPinnedTab
         }()
@@ -320,7 +320,7 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
               let browserManager = tab.browserManager
         else { return nil }
 
-        if navigationAction.request.url?.navigationalScheme == .javascript {
+        if navigationAction.request.url?.sumiNavigationalScheme == .javascript {
             return nil
         }
         if policy.isPopup,

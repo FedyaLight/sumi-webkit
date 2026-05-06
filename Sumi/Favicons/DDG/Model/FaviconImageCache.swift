@@ -18,7 +18,6 @@
 
 import Foundation
 import Combine
-import Common
 import os.log
 
 protocol FaviconImageCaching {
@@ -141,7 +140,7 @@ final class FaviconImageCache: FaviconImageCaching {
             guard let host = favicon.documentUrl.host else {
                 return false
             }
-            return favicon.dateCreated < Date.monthAgo &&
+            return favicon.dateCreated < Date.sumiMonthAgo &&
                 !fireproofDomains.isFireproof(fireproofDomain: host) &&
                 !bookmarkedHosts.contains(host)
         }

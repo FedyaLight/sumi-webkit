@@ -18,7 +18,6 @@
 
 import Foundation
 import Combine
-import Common
 import os.log
 
 protocol FaviconReferenceCaching {
@@ -184,7 +183,7 @@ final class FaviconReferenceCache: FaviconReferenceCaching {
         // Remove host references
         await removeHostReferences(filter: { hostReference in
             let host = hostReference.host
-            return hostReference.dateCreated < Date.monthAgo &&
+            return hostReference.dateCreated < Date.sumiMonthAgo &&
                 !fireproofDomains.isFireproof(fireproofDomain: host) &&
                 !bookmarkedHosts.contains(host)
         }).value
@@ -193,7 +192,7 @@ final class FaviconReferenceCache: FaviconReferenceCaching {
             guard let host = urlReference.documentUrl.host else {
                 return false
             }
-            return urlReference.dateCreated < Date.monthAgo &&
+            return urlReference.dateCreated < Date.sumiMonthAgo &&
                 !fireproofDomains.isFireproof(fireproofDomain: host) &&
                 !bookmarkedHosts.contains(host)
         }).value
