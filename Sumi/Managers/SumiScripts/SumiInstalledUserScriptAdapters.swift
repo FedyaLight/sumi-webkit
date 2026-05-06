@@ -1,4 +1,6 @@
 import Foundation
+import Common
+import os.log
 import UserScript
 import WebKit
 
@@ -6,11 +8,104 @@ private enum SumiInstalledUserScriptFeature {
     static let gm = "gm"
 }
 
+private enum SumiInstalledUserScriptJSONValue: Sendable {
+    case null
+    case bool(Bool)
+    case int(Int)
+    case double(Double)
+    case string(String)
+    case array([SumiInstalledUserScriptJSONValue])
+    case object([String: SumiInstalledUserScriptJSONValue])
+
+    init(foundationObject value: Any?) {
+        switch value {
+        case nil, is NSNull:
+            self = .null
+        case let value as Bool:
+            self = .bool(value)
+        case let value as Int:
+            self = .int(value)
+        case let value as Double:
+            self = Self.number(from: value)
+        case let value as Float:
+            self = Self.number(from: Double(value))
+        case let value as NSNumber:
+            if CFGetTypeID(value) == CFBooleanGetTypeID() {
+                self = .bool(value.boolValue)
+            } else {
+                self = Self.number(from: value.doubleValue)
+            }
+        case let value as String:
+            self = .string(value)
+        case let value as [Any]:
+            self = .array(value.map(SumiInstalledUserScriptJSONValue.init(foundationObject:)))
+        case let value as [String: Any]:
+            self = .object(value.mapValues(SumiInstalledUserScriptJSONValue.init(foundationObject:)))
+        default:
+            self = .string(String(describing: value!))
+        }
+    }
+
+    private static func number(from value: Double) -> SumiInstalledUserScriptJSONValue {
+        if value.isFinite,
+           value >= Double(Int.min),
+           value <= Double(Int.max),
+           value.rounded() == value {
+            return .int(Int(value))
+        }
+        return .double(value)
+    }
+
+    var foundationObject: Any {
+        switch self {
+        case .null:
+            return NSNull()
+        case .bool(let value):
+            return value
+        case .int(let value):
+            return value
+        case .double(let value):
+            return value
+        case .string(let value):
+            return value
+        case .array(let values):
+            return values.map(\.foundationObject)
+        case .object(let values):
+            return values.mapValues(\.foundationObject)
+        }
+    }
+}
+
+private struct SumiInstalledUserScriptMessageParams: Sendable {
+    let callbackId: String
+    let args: [String: SumiInstalledUserScriptJSONValue]
+
+    init(from params: Any) {
+        if let params = params as? SumiInstalledUserScriptMessageParams {
+            self = params
+            return
+        }
+
+        let dictionary = params as? [String: Any] ?? [:]
+        self.callbackId = dictionary["callbackId"] as? String ?? ""
+        let args = dictionary["args"] as? [String: Any] ?? [:]
+        self.args = args.mapValues(SumiInstalledUserScriptJSONValue.init(foundationObject:))
+    }
+
+    var foundationArgs: [String: Any] {
+        args.mapValues(\.foundationObject)
+    }
+}
+
 private struct SumiGMMessagePayload {
     let callbackId: String
     let args: [String: Any]
 
     static func decode(from params: Any) -> SumiGMMessagePayload? {
+        if let params = params as? SumiInstalledUserScriptMessageParams {
+            return SumiGMMessagePayload(callbackId: params.callbackId, args: params.foundationArgs)
+        }
+
         guard let dictionary = params as? [String: Any] else { return nil }
         let callbackId = dictionary["callbackId"] as? String ?? ""
         let args = dictionary["args"] as? [String: Any] ?? [:]
@@ -100,7 +195,7 @@ final class SumiInstalledUserScriptAdapter: NSObject, UserScript, @MainActor Use
     ) async -> (Any?, String?) {
         let action = broker.messageHandlerFor(message)
         do {
-            let json = try await broker.execute(action: action, original: message)
+            let json = try await executeInstalledUserScriptBrokerAction(action, original: message)
             return (json, nil)
         } catch {
             return (nil, error.localizedDescription)
@@ -110,6 +205,104 @@ final class SumiInstalledUserScriptAdapter: NSObject, UserScript, @MainActor Use
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         _ = userContentController
         _ = message
+    }
+}
+
+@MainActor
+private func executeInstalledUserScriptBrokerAction(
+    _ action: UserScriptMessageBroker.Action,
+    original: WKScriptMessage
+) async throws -> String {
+    switch action {
+    case .notify(let handler, let params):
+        let params = SumiInstalledUserScriptMessageParams(from: params)
+        do {
+            _ = try await handler(params, original)
+        } catch {
+            Logger.general.error("UserScriptMessaging: unhandled exception \(error.localizedDescription, privacy: .public)")
+        }
+        return "{}"
+
+    case .respond(let handler, let request):
+        let params = SumiInstalledUserScriptMessageParams(from: request.params)
+        do {
+            guard let result = try await handler(params, original) else {
+                return SumiInstalledUserScriptMessageErrorResponse(
+                    request: request,
+                    message: "could not access encodable result"
+                ).toJSON()
+            }
+
+            return SumiInstalledUserScriptMessageResponse(request: request, result: result).toJSON()
+                ?? SumiInstalledUserScriptMessageErrorResponse(
+                    request: request,
+                    message: "could not convert result to json"
+                ).toJSON()
+        } catch {
+            return SumiInstalledUserScriptMessageErrorResponse(
+                request: request,
+                message: error.localizedDescription
+            ).toJSON()
+        }
+
+    case .error(let error):
+        throw NSError(
+            domain: "UserScriptMessaging",
+            code: 0,
+            userInfo: [NSLocalizedDescriptionKey: error.localizedDescription]
+        )
+    }
+}
+
+private struct SumiInstalledUserScriptMessageResponse: Encodable {
+    let request: RequestMessage
+    let result: Encodable
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(request.context, forKey: .context)
+        try container.encode(request.featureName, forKey: .featureName)
+        try container.encode(request.id, forKey: .id)
+        try result.encode(to: container.superEncoder(forKey: .result))
+    }
+
+    func toJSON() -> String? {
+        guard let jsonData = try? JSONEncoder().encode(self) else { return nil }
+        return String(data: jsonData, encoding: .utf8)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case context
+        case featureName
+        case id
+        case result
+    }
+}
+
+private struct SumiInstalledUserScriptMessageErrorResponse: Encodable {
+    let context: String
+    let featureName: String
+    let id: String
+    private let error: MessageError
+
+    init(request: RequestMessage, message: String) {
+        self.context = request.context
+        self.featureName = request.featureName
+        self.id = request.id
+        self.error = MessageError(message: message)
+    }
+
+    func toJSON() -> String {
+        guard let jsonData = try? JSONEncoder().encode(self),
+              let jsonString = String(data: jsonData, encoding: .utf8)
+        else {
+            return #"{"error":{"message":"could not convert result to json"}}"#
+        }
+        return jsonString
+    }
+
+    private struct MessageError: Encodable {
+        let message: String
     }
 }
 

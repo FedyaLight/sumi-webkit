@@ -10,6 +10,7 @@ import Observation
 import SwiftUI
 
 @Observable
+@MainActor
 class SearchManager {
     var suggestions: [SearchSuggestion] = []
     var isLoading: Bool = false
@@ -68,10 +69,7 @@ class SearchManager {
     
     func setTabManager(_ tabManager: TabManager?) {
         self.tabManager = tabManager
-        // Hop to MainActor to update profile context safely
-        Task { @MainActor in
-            self.updateProfileContext()
-        }
+        updateProfileContext()
     }
     
     func setHistoryManager(_ historyManager: HistoryManager?) {
@@ -288,38 +286,42 @@ class SearchManager {
             return
         }
         
-        searchTask = session.dataTask(with: url) { [weak self] data, _, error in
-            DispatchQueue.main.async {
+        searchTask = session.dataTask(with: url) { data, _, error in
+            var webSuggestionTexts: [String]?
+            if let data = data, error == nil {
+                do {
+                    let jsonArray = try JSONSerialization.jsonObject(with: data) as? [Any]
+                    if let jsonArray,
+                       jsonArray.count >= 2,
+                       let suggestionsArray = Self.parseGoogleSuggestions(from: jsonArray[1]),
+                       suggestionsArray.isEmpty == false {
+                        webSuggestionTexts = Array(suggestionsArray.prefix(5))
+                    } else {
+                        RuntimeDiagnostics.emit("Invalid JSON response format")
+                        webSuggestionTexts = nil
+                    }
+                } catch {
+                    RuntimeDiagnostics.emit("JSON parsing error: \(error.localizedDescription)")
+                    webSuggestionTexts = nil
+                }
+            } else {
+                RuntimeDiagnostics.emit("Search suggestions error: \(error?.localizedDescription ?? "Unknown error")")
+                webSuggestionTexts = nil
+            }
+
+            Task { @MainActor [weak self] in
                 guard let self else { return }
                 guard generation == self.activeWebSuggestionGeneration else { return }
 
                 self.isLoading = false
-                
-                guard let data = data,
-                      error == nil else {
-                    RuntimeDiagnostics.emit("Search suggestions error: \(error?.localizedDescription ?? "Unknown error")")
-                    return
-                }
-                
-                do {
-                    guard let jsonArray = try JSONSerialization.jsonObject(with: data) as? [Any],
-                          jsonArray.count >= 2,
-                          let suggestionsArray = self.parseGoogleSuggestions(from: jsonArray[1]),
-                          suggestionsArray.isEmpty == false else {
-                        RuntimeDiagnostics.emit("Invalid JSON response format")
-                        return
-                    }
 
-                    let limitedWebSuggestions = Array(suggestionsArray.prefix(5))
-                    self.storeCachedWebSuggestions(limitedWebSuggestions, for: query)
+                if let webSuggestionTexts {
+                    self.storeCachedWebSuggestions(webSuggestionTexts, for: query)
                     let combinedSuggestions = self.combineSuggestions(
                         prependTabSuggestions,
-                        withWebSuggestionTexts: limitedWebSuggestions
+                        withWebSuggestionTexts: webSuggestionTexts
                     )
                     self.updateSuggestionsIfNeeded(combinedSuggestions)
-                    
-                } catch {
-                    RuntimeDiagnostics.emit("JSON parsing error: \(error.localizedDescription)")
                 }
             }
         }
@@ -327,7 +329,7 @@ class SearchManager {
         searchTask?.resume()
     }
 
-    private func parseGoogleSuggestions(from payload: Any) -> [String]? {
+    private static func parseGoogleSuggestions(from payload: Any) -> [String]? {
         if let suggestions = payload as? [String] {
             return suggestions
         }

@@ -180,9 +180,9 @@ extension Tab {
         else { return }
 
         provider.replaceManagedUserScripts(normalTabManagedUserScripts(for: targetURL))
-        await PerformanceTrace.withInterval("Tab.replaceNormalTabUserScripts") {
-            await controller.replaceUserScripts(with: provider)
-        }
+        let signpostState = PerformanceTrace.beginInterval("Tab.replaceNormalTabUserScripts")
+        defer { PerformanceTrace.endInterval("Tab.replaceNormalTabUserScripts", signpostState) }
+        await controller.replaceUserScripts(with: provider)
     }
 
     func cancelPendingMainFrameNavigation() {
@@ -313,9 +313,9 @@ extension Tab {
         if !isPopupHost && _existingWebView == nil {
             if let controller = _webView?.configuration.userContentController as? UserContentController {
                 Task { @MainActor [weak self] in
-                    await PerformanceTrace.withInterval("ContentBlocking.assetsInstallWait") {
-                        await controller.awaitContentBlockingAssetsInstalled()
-                    }
+                    let signpostState = PerformanceTrace.beginInterval("ContentBlocking.assetsInstallWait")
+                    await controller.awaitContentBlockingAssetsInstalled()
+                    PerformanceTrace.endInterval("ContentBlocking.assetsInstallWait", signpostState)
                     guard let self, self._existingWebView == nil else { return }
                     self.loadURL(self.url)
                 }

@@ -70,7 +70,9 @@ private enum CollapsedSidebarPanelAnimation {
     static let revealDuration: TimeInterval = 0.25
     static let hideDuration: TimeInterval = 0.15
     static let contentOffsetAnimationKey = "sumi.collapsedSidebarPanel.contentOffset"
-    static let hideTimingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1.0)
+    static var hideTimingFunction: CAMediaTimingFunction {
+        CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1.0)
+    }
     static let revealProgress: [CGFloat] = [
         0, 0.002748, 0.010544, 0.022757, 0.038804, 0.058151,
         0.080308, 0.104828, 0.131301, 0.159358, 0.188662,

@@ -637,16 +637,20 @@ extension Notification.Name {
 }
 
 // MARK: - Environment Key
-private struct SumiSettingsServiceKey: EnvironmentKey {
-    @MainActor
+private struct SumiSettingsServiceKey: @MainActor EnvironmentKey {
     static var defaultValue: SumiSettingsService {
-        // This should never be called since we always inject from SumiApp
-        // But EnvironmentKey protocol requires a default value
-        return SumiSettingsService()
+        // SwiftUI's EnvironmentKey.defaultValue witness is synchronous and
+        // nonisolated even though all app access to this key is UI/main-actor
+        // bound. Keep the fallback construction on the main actor without
+        // making SumiSettingsService Sendable or eager.
+        MainActor.assumeIsolated {
+            SumiSettingsService()
+        }
     }
 }
 
 extension EnvironmentValues {
+    @MainActor
     var sumiSettings: SumiSettingsService {
         get { self[SumiSettingsServiceKey.self] }
         set { self[SumiSettingsServiceKey.self] = newValue }

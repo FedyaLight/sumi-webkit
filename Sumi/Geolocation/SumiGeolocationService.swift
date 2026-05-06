@@ -43,11 +43,9 @@ final class SumiGeolocationService: NSObject, SumiGeolocationServicing, @preconc
         self.locationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
     }
 
-    deinit {
-        Task { @MainActor [locationManager] in
-            locationManager.stopUpdatingLocation()
-            locationManager.setDelegate(nil)
-        }
+    isolated deinit {
+        locationManager.stopUpdatingLocation()
+        locationManager.setDelegate(nil)
     }
 
     func startUpdatingLocation(

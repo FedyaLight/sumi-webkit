@@ -6,6 +6,38 @@
 import AppKit
 import SwiftUI
 
+private final class SumiZenBundledIconCache: @unchecked Sendable {
+    // All dictionary/set mutation is serialized by `lock`. Cached NSImages are
+    // configured before insertion and then treated as read-only render assets.
+    private let lock = NSLock()
+    private var images: [String: NSImage] = [:]
+    private var bundledFolderNames: Set<String>?
+
+    func image(forKey key: String) -> NSImage? {
+        lock.lock()
+        defer { lock.unlock() }
+        return images[key]
+    }
+
+    func storeImage(_ image: NSImage, forKey key: String) {
+        lock.lock()
+        images[key] = image
+        lock.unlock()
+    }
+
+    func folderNames() -> Set<String>? {
+        lock.lock()
+        defer { lock.unlock() }
+        return bundledFolderNames
+    }
+
+    func storeFolderNames(_ names: Set<String>) {
+        lock.lock()
+        bundledFolderNames = names
+        lock.unlock()
+    }
+}
+
 enum SumiZenFolderIconCatalog {
     static let folderValuePrefix = "zen:"
     private static let bundledFolderManifest: [String] = [
@@ -146,8 +178,7 @@ enum SumiZenFolderIconCatalog {
         .deletingLastPathComponent()
     private static let projectSourceRoot = workspaceSourceRoot
         .deletingLastPathComponent()
-    private static var imageCache: [String: NSImage] = [:]
-    private static var bundledFolderNameCache: Set<String>?
+    private static let cache = SumiZenBundledIconCache()
 
     static func normalizedFolderIconValue(_ rawValue: String?) -> String {
         let trimmed = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -167,12 +198,12 @@ enum SumiZenFolderIconCatalog {
     }
 
     static func bundledFolderIconNames() -> [String] {
-        if let cached = bundledFolderNameCache {
+        if let cached = cache.folderNames() {
             return cached.sorted()
         }
 
         let resolvedNames = resolveBundledFolderIconNames()
-        bundledFolderNameCache = Set(resolvedNames)
+        cache.storeFolderNames(Set(resolvedNames))
         return resolvedNames
     }
 
@@ -270,7 +301,7 @@ enum SumiZenFolderIconCatalog {
         allowedExtensions: [String],
         useCache: Bool
     ) -> NSImage? {
-        if useCache, let cached = imageCache[key] {
+        if useCache, let cached = cache.image(forKey: key) {
             return cached
         }
         guard let url = resourceURL(
@@ -284,7 +315,7 @@ enum SumiZenFolderIconCatalog {
         }
         loadedImage.isTemplate = true
         if useCache {
-            imageCache[key] = loadedImage
+            cache.storeImage(loadedImage, forKey: key)
         }
         return loadedImage
     }
@@ -385,13 +416,13 @@ enum SumiZenFolderIconCatalog {
 
     private static func isKnownBundledFolderIconName(_ name: String) -> Bool {
         guard !name.isEmpty else { return false }
-        if let cached = bundledFolderNameCache {
+        if let cached = cache.folderNames() {
             return cached.contains(name)
         }
 
         let resolvedNames = resolveBundledFolderIconNames()
         let resolvedSet = Set(resolvedNames)
-        bundledFolderNameCache = resolvedSet
+        cache.storeFolderNames(resolvedSet)
         return resolvedSet.contains(name)
     }
 }

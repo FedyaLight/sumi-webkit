@@ -31,6 +31,7 @@ extension SidebarSwipeCaptureSurface {
             super.init()
         }
 
+        @MainActor
         func observeScrollWheel(
             _ event: NSEvent,
             in view: CaptureView

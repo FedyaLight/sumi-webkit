@@ -26,6 +26,7 @@ protocol FaviconImageCaching {
     @MainActor
     var loaded: Bool { get }
 
+    @MainActor
     func load() async throws
 
     @MainActor
@@ -56,18 +57,19 @@ protocol FaviconImageCaching {
 
 final class FaviconImageCache: FaviconImageCaching {
 
-    private let storing: FaviconStoring
+    private let storing: FaviconImageCacheStorage
 
     @MainActor
     private var entries = [URL: Favicon]()
 
     init(faviconStoring: FaviconStoring) {
-        storing = faviconStoring
+        storing = FaviconImageCacheStorage(storing: faviconStoring)
     }
 
     @MainActor
     private(set) var loaded = false
 
+    @MainActor
     func load() async throws {
         let favicons: [Favicon]
         do {
@@ -78,12 +80,10 @@ final class FaviconImageCache: FaviconImageCaching {
             throw error
         }
 
-        await MainActor.run {
-            for favicon in favicons {
-                entries[favicon.url] = favicon
-            }
-            loaded = true
+        for favicon in favicons {
+            entries[favicon.url] = favicon
         }
+        loaded = true
     }
 
     func insert(_ favicons: [Favicon]) {
@@ -99,10 +99,12 @@ final class FaviconImageCache: FaviconImageCaching {
             entries[favicon.url] = favicon
         }
 
+        let storing = storing
+
         Task {
             do {
-                _ = await self.removeFaviconsFromStore(oldFavicons)
-                try await self.storing.save(favicons)
+                _ = await storing.removeFavicons(oldFavicons)
+                try await storing.save(favicons)
                 Logger.favicons.debug("Favicon saved successfully. URL: \(favicons.map(\.url.absoluteString).description)")
                 await MainActor.run {
                     NotificationCenter.default.post(name: .faviconCacheUpdated, object: nil)
@@ -182,10 +184,30 @@ final class FaviconImageCache: FaviconImageCaching {
         let faviconsToRemove = entries.values.filter(isRemoved)
         faviconsToRemove.forEach { entries[$0.url] = nil }
 
-        return await removeFaviconsFromStore(faviconsToRemove)
+        return await storing.removeFavicons(faviconsToRemove)
+    }
+}
+
+// `FaviconStore` serializes access through its private Core Data context queue;
+// this wrapper lets cache tasks keep that storage lifetime without capturing the
+// main-actor cache object.
+private final class FaviconImageCacheStorage: @unchecked Sendable {
+
+    private let storing: FaviconStoring
+
+    init(storing: FaviconStoring) {
+        self.storing = storing
     }
 
-    private func removeFaviconsFromStore(_ favicons: [Favicon]) async -> Result<Void, Error> {
+    func loadFavicons() async throws -> [Favicon] {
+        try await storing.loadFavicons()
+    }
+
+    func save(_ favicons: [Favicon]) async throws {
+        try await storing.save(favicons)
+    }
+
+    func removeFavicons(_ favicons: [Favicon]) async -> Result<Void, Error> {
         guard !favicons.isEmpty else { return .success(()) }
 
         do {

@@ -140,9 +140,10 @@ final class SumiScriptsManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] notification in
+            let snapshot = UserScriptRuntimeErrorNotificationSnapshot(notification: notification)
             Task { @MainActor in
                 guard let self else { return }
-                self.recordRuntimeError(from: notification)
+                self.recordRuntimeError(from: snapshot)
             }
         }
 
@@ -324,19 +325,18 @@ final class SumiScriptsManager: ObservableObject {
         runtimeErrors.removeAll()
     }
 
-    private func recordRuntimeError(from notification: Notification) {
+    private func recordRuntimeError(from snapshot: UserScriptRuntimeErrorNotificationSnapshot) {
         guard isEnabled else { return }
-        let info = notification.userInfo ?? [:]
-        let message = info["message"] as? String ?? ""
+        let message = snapshot.message
         guard UserScriptRuntimeErrorLogFilter.shouldRecord(message: message) else { return }
         let entry = UserScriptRuntimeErrorEntry(
             id: UUID(),
             date: Date(),
-            scriptFilename: info["scriptFilename"] as? String ?? "unknown",
-            kind: info["kind"] as? String ?? "error",
+            scriptFilename: snapshot.scriptFilename,
+            kind: snapshot.kind,
             message: message,
-            location: info["location"] as? String ?? "",
-            stack: info["stack"] as? String ?? ""
+            location: snapshot.location,
+            stack: snapshot.stack
         )
         runtimeErrors.insert(entry, at: 0)
         if runtimeErrors.count > Self.runtimeErrorLimit {
@@ -454,6 +454,23 @@ struct UserScriptRuntimeErrorEntry: Identifiable, Hashable {
     let message: String
     let location: String
     let stack: String
+}
+
+private struct UserScriptRuntimeErrorNotificationSnapshot: Sendable {
+    let scriptFilename: String
+    let kind: String
+    let message: String
+    let location: String
+    let stack: String
+
+    init(notification: Notification) {
+        let info = notification.userInfo ?? [:]
+        self.scriptFilename = info["scriptFilename"] as? String ?? "unknown"
+        self.kind = info["kind"] as? String ?? "error"
+        self.message = info["message"] as? String ?? ""
+        self.location = info["location"] as? String ?? ""
+        self.stack = info["stack"] as? String ?? ""
+    }
 }
 
 // MARK: - SumiScriptsTabHandler

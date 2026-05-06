@@ -1,4 +1,6 @@
 import Foundation
+import Common
+import os.log
 import UserScript
 import WebKit
 
@@ -243,16 +245,110 @@ final class SumiWebNotificationUserScript: NSObject, UserScript, @MainActor User
     ) async -> (Any?, String?) {
         let action = broker.messageHandlerFor(message)
         do {
-            let json = try await broker.execute(action: action, original: message)
+            let json = try await executeBrokerAction(action, original: message)
             return (json, nil)
         } catch {
             return (nil, error.localizedDescription)
         }
     }
 
+    private func executeBrokerAction(_ action: UserScriptMessageBroker.Action, original: WKScriptMessage) async throws -> String {
+        switch action {
+        case .notify(let handler, let params):
+            let params = SumiWebNotificationMessageParams(from: params)
+            do {
+                _ = try await handler(params, original)
+            } catch {
+                Logger.general.error("UserScriptMessaging: unhandled exception \(error.localizedDescription, privacy: .public)")
+            }
+            return "{}"
+
+        case .respond(let handler, let request):
+            let params = SumiWebNotificationMessageParams(from: request.params)
+            do {
+                guard let result = try await handler(params, original) else {
+                    return SumiWebNotificationMessageErrorResponse(
+                        request: request,
+                        message: "could not access encodable result"
+                    ).toJSON()
+                }
+
+                return SumiWebNotificationMessageResponse(request: request, result: result).toJSON()
+                    ?? SumiWebNotificationMessageErrorResponse(
+                        request: request,
+                        message: "could not convert result to json"
+                    ).toJSON()
+            } catch {
+                return SumiWebNotificationMessageErrorResponse(
+                    request: request,
+                    message: error.localizedDescription
+                ).toJSON()
+            }
+
+        case .error(let error):
+            throw NSError(
+                domain: "UserScriptMessaging",
+                code: 0,
+                userInfo: [NSLocalizedDescriptionKey: error.localizedDescription]
+            )
+        }
+    }
+
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         _ = userContentController
         _ = message
+    }
+}
+
+private struct SumiWebNotificationMessageResponse: Encodable {
+    let request: RequestMessage
+    let result: Encodable
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(request.context, forKey: .context)
+        try container.encode(request.featureName, forKey: .featureName)
+        try container.encode(request.id, forKey: .id)
+        try result.encode(to: container.superEncoder(forKey: .result))
+    }
+
+    func toJSON() -> String? {
+        guard let jsonData = try? JSONEncoder().encode(self) else { return nil }
+        return String(data: jsonData, encoding: .utf8)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case context
+        case featureName
+        case id
+        case result
+    }
+}
+
+private struct SumiWebNotificationMessageErrorResponse: Encodable {
+    let context: String
+    let featureName: String
+    let id: String
+    private let error: MessageError
+
+    init(request: RequestMessage, message: String) {
+        self.context = request.context
+        self.featureName = request.featureName
+        self.id = request.id
+        self.error = MessageError(message: message)
+    }
+
+    func toJSON() -> String {
+        guard let jsonData = try? JSONEncoder().encode(self),
+              let jsonString = String(data: jsonData, encoding: .utf8)
+        else {
+            return #"{"error":{"message":"could not convert result to json"}}"#
+        }
+        return jsonString
+    }
+
+    private struct MessageError: Encodable {
+        let message: String
     }
 }
 
@@ -359,6 +455,38 @@ private final class SumiWebNotificationSubfeature: NSObject, @MainActor Subfeatu
     }
 }
 
+private struct SumiWebNotificationMessageParams: Sendable {
+    let id: String?
+    let title: String?
+    let body: String?
+    let optionsBody: String?
+    let icon: String?
+    let image: String?
+    let tag: String?
+    let silent: Bool?
+    let identifier: String?
+
+    init(from params: Any) {
+        if let params = params as? SumiWebNotificationMessageParams {
+            self = params
+            return
+        }
+
+        let dictionary = params as? [String: Any] ?? [:]
+        let options = dictionary["options"] as? [String: Any] ?? [:]
+
+        self.id = dictionary["id"] as? String
+        self.title = dictionary["title"] as? String
+        self.body = dictionary["body"] as? String
+        self.optionsBody = options["body"] as? String
+        self.icon = options["icon"] as? String
+        self.image = options["image"] as? String
+        self.tag = options["tag"] as? String
+        self.silent = options["silent"] as? Bool
+        self.identifier = dictionary["identifier"] as? String
+    }
+}
+
 private struct SumiWebNotificationMessagePayload {
     let id: String
     let title: String
@@ -370,20 +498,19 @@ private struct SumiWebNotificationMessagePayload {
     let identifier: SumiNotificationIdentifier?
 
     static func decode(from params: Any) -> SumiWebNotificationMessagePayload {
-        let dictionary = params as? [String: Any] ?? [:]
-        let options = dictionary["options"] as? [String: Any] ?? [:]
-        let id = dictionary["id"] as? String ?? UUID().uuidString
-        let title = dictionary["title"] as? String ?? ""
-        let body = options["body"] as? String ?? dictionary["body"] as? String ?? ""
+        let params = SumiWebNotificationMessageParams(from: params)
+        let id = params.id ?? UUID().uuidString
+        let title = params.title ?? ""
+        let body = params.optionsBody ?? params.body ?? ""
         return SumiWebNotificationMessagePayload(
             id: id,
             title: title,
             body: body,
-            iconURL: url(options["icon"] as? String),
-            imageURL: url(options["image"] as? String),
-            tag: nonEmpty(options["tag"] as? String),
-            isSilent: options["silent"] as? Bool ?? false,
-            identifier: nonEmpty(dictionary["identifier"] as? String).map {
+            iconURL: url(params.icon),
+            imageURL: url(params.image),
+            tag: nonEmpty(params.tag),
+            isSilent: params.silent ?? false,
+            identifier: nonEmpty(params.identifier).map {
                 SumiNotificationIdentifier(rawValue: $0)
             }
         )

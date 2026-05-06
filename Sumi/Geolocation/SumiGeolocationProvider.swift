@@ -40,7 +40,7 @@ final class SumiGeolocationProviderObservation {
         cancellation = nil
     }
 
-    deinit {
+    isolated deinit {
         cancellation?()
     }
 }
@@ -91,7 +91,7 @@ final class SumiGeolocationProvider: NSObject, SumiGeolocationProviding {
         installProviderCallbacks()
     }
 
-    deinit {
+    isolated deinit {
         manager.clearProvider()
         providerCallbacks?.deinitialize(count: 1)
         providerCallbacks?.deallocate()
@@ -418,11 +418,11 @@ private func sumiGeolocationProviderStartUpdating(
     clientInfo: UnsafeRawPointer?
 ) {
     guard let clientInfo else { return }
+    let provider = Unmanaged<SumiGeolocationProvider>
+        .fromOpaque(clientInfo)
+        .takeUnretainedValue()
     Task { @MainActor in
-        Unmanaged<SumiGeolocationProvider>
-            .fromOpaque(clientInfo)
-            .takeUnretainedValue()
-            .webKitDidStartUpdatingLocation()
+        provider.webKitDidStartUpdatingLocation()
     }
 }
 
@@ -431,11 +431,11 @@ private func sumiGeolocationProviderStopUpdating(
     clientInfo: UnsafeRawPointer?
 ) {
     guard let clientInfo else { return }
+    let provider = Unmanaged<SumiGeolocationProvider>
+        .fromOpaque(clientInfo)
+        .takeUnretainedValue()
     Task { @MainActor in
-        Unmanaged<SumiGeolocationProvider>
-            .fromOpaque(clientInfo)
-            .takeUnretainedValue()
-            .webKitDidStopUpdatingLocation()
+        provider.webKitDidStopUpdatingLocation()
     }
 }
 
@@ -445,10 +445,10 @@ private func sumiGeolocationProviderSetEnableHighAccuracy(
     clientInfo: UnsafeRawPointer?
 ) {
     guard let clientInfo else { return }
+    let provider = Unmanaged<SumiGeolocationProvider>
+        .fromOpaque(clientInfo)
+        .takeUnretainedValue()
     Task { @MainActor in
-        Unmanaged<SumiGeolocationProvider>
-            .fromOpaque(clientInfo)
-            .takeUnretainedValue()
-            .webKitDidSetEnableHighAccuracy(enabled)
+        provider.webKitDidSetEnableHighAccuracy(enabled)
     }
 }

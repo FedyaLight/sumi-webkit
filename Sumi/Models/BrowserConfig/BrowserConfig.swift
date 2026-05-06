@@ -271,7 +271,12 @@ final class SumiWebKitProcessPoolContext {
 }
 
 private enum BrowserConfigurationAssociatedKeys {
-    static var isNormalTabWebViewConfiguration: UInt8 = 0
+    private static let isNormalTabWebViewConfigurationStorage =
+        StaticString("Sumi.BrowserConfiguration.isNormalTabWebViewConfiguration")
+
+    static var isNormalTabWebViewConfiguration: UnsafeRawPointer {
+        UnsafeRawPointer(isNormalTabWebViewConfigurationStorage.utf8Start)
+    }
 }
 
 extension WKWebViewConfiguration {
@@ -279,13 +284,13 @@ extension WKWebViewConfiguration {
         get {
             (objc_getAssociatedObject(
                 self,
-                &BrowserConfigurationAssociatedKeys.isNormalTabWebViewConfiguration
+                BrowserConfigurationAssociatedKeys.isNormalTabWebViewConfiguration
             ) as? Bool) == true
         }
         set {
             objc_setAssociatedObject(
                 self,
-                &BrowserConfigurationAssociatedKeys.isNormalTabWebViewConfiguration,
+                BrowserConfigurationAssociatedKeys.isNormalTabWebViewConfiguration,
                 newValue,
                 .OBJC_ASSOCIATION_RETAIN_NONATOMIC
             )
