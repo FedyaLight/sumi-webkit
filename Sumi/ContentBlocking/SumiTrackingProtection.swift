@@ -1,5 +1,4 @@
 import Combine
-import Common
 import CryptoKit
 import Foundation
 @preconcurrency import TrackerRadarKit
@@ -61,10 +60,10 @@ struct SumiTrackingProtectionPolicy: Equatable, Sendable {
 }
 
 struct SumiTrackingProtectionSiteNormalizer {
-    private let tld: TLD
+    private let registrableDomainResolver: any SumiRegistrableDomainResolving
 
-    init(tld: TLD = TLD()) {
-        self.tld = tld
+    init(registrableDomainResolver: any SumiRegistrableDomainResolving = SumiRegistrableDomainResolver()) {
+        self.registrableDomainResolver = registrableDomainResolver
     }
 
     func normalizedHost(for url: URL?) -> String? {
@@ -90,7 +89,7 @@ struct SumiTrackingProtectionSiteNormalizer {
             .trimmingCharacters(in: CharacterSet(charactersIn: "."))
             .lowercased()
         guard !host.isEmpty else { return nil }
-        return tld.eTLDplus1(host) ?? host
+        return registrableDomainResolver.registrableDomain(forHost: host) ?? host
     }
 }
 
@@ -114,9 +113,12 @@ final class SumiTrackingProtectionSettings: ObservableObject {
         changesSubject.eraseToAnyPublisher()
     }
 
-    init(userDefaults: UserDefaults = .standard, tld: TLD = TLD()) {
+    init(
+        userDefaults: UserDefaults = .standard,
+        registrableDomainResolver: any SumiRegistrableDomainResolving = SumiRegistrableDomainResolver()
+    ) {
         self.userDefaults = userDefaults
-        self.siteNormalizer = SumiTrackingProtectionSiteNormalizer(tld: tld)
+        self.siteNormalizer = SumiTrackingProtectionSiteNormalizer(registrableDomainResolver: registrableDomainResolver)
 
         if let rawMode = userDefaults.string(forKey: DefaultsKey.globalMode),
            let mode = SumiTrackingProtectionGlobalMode(rawValue: rawMode) {
