@@ -39,6 +39,7 @@ struct SidebarDDGHoverBridge: NSViewRepresentable {
         coordinator.scheduleLifecycleReconcile(from: view)
     }
 
+    @MainActor
     final class Coordinator {
         private var isHovered: Binding<Bool>?
         private weak var view: SidebarDDGHoverTrackingView?

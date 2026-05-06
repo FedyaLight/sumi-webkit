@@ -262,7 +262,7 @@ final class SidebarContextMenuController {
         self.transientSessionCoordinator = transientSessionCoordinator
     }
 
-    deinit {
+    isolated deinit {
         let center = NotificationCenter.default
         windowObservers.forEach(center.removeObserver)
         if let menuEndTrackingObserver {
@@ -548,24 +548,24 @@ final class SidebarContextMenuController {
         activeRootMenu = menu
 
         let center = NotificationCenter.default
+        let observedMenuID = ObjectIdentifier(menu)
         menuEndTrackingObserver = center.addObserver(
             forName: NSMenu.didEndTrackingNotification,
             object: menu,
             queue: .main
         ) { [weak self] notification in
-            guard let menu = notification.object as? NSMenu else { return }
+            guard let notifiedMenu = notification.object as AnyObject?,
+                  ObjectIdentifier(notifiedMenu) == observedMenuID
+            else { return }
             Task { @MainActor [weak self] in
-                self?.handleMenuDidEndTracking(menu, sessionID: sessionID)
+                self?.handleMenuDidEndTracking(sessionID: sessionID)
             }
         }
     }
 
-    private func handleMenuDidEndTracking(
-        _ menu: NSMenu,
-        sessionID: UUID
-    ) {
+    private func handleMenuDidEndTracking(sessionID: UUID) {
         guard activeSessionID == sessionID,
-              activeRootMenu === menu
+              activeRootMenu != nil
         else { return }
 
         finalizeMenuSession(
