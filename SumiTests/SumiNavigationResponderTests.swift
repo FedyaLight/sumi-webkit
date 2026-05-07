@@ -1234,6 +1234,138 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertNil(responsePolicy)
     }
 
+    func testSumiNavigationResponderAdapterMapsNilAuthResultToNext() async {
+        let target = SumiNavigationAuthProbeResponder(decision: .next)
+        let adapter = SumiNavigationResponderAdapter(target: target)
+
+        let disposition = await adapter.didReceive(makeAuthenticationChallenge(), for: nil)
+
+        XCTAssertNil(disposition)
+        XCTAssertEqual(target.callCount, 1)
+        XCTAssertEqual(target.observedProtectionSpaceHosts, ["auth.example"])
+    }
+
+    func testSumiNavigationResponderAdapterMapsAuthDispositions() async {
+        let credential = URLCredential(user: "sumi", password: "secret", persistence: .forSession)
+        let cases: [(SumiAuthChallengeDisposition, AuthChallengeDisposition)] = [
+            (.credential(credential), .credential(credential)),
+            (.cancel, .cancel),
+            (.rejectProtectionSpace, .rejectProtectionSpace),
+        ]
+
+        for (sumiDisposition, expectedDisposition) in cases {
+            let target = SumiNavigationAuthProbeResponder(decision: sumiDisposition)
+            let adapter = SumiNavigationResponderAdapter(target: target)
+
+            let disposition = await adapter.didReceive(makeAuthenticationChallenge(), for: nil)
+
+            XCTAssertAuthDisposition(disposition, expectedDisposition)
+            XCTAssertEqual(target.callCount, 1)
+        }
+    }
+
+    func testSumiNavigationResponderAdapterMapsSameDocumentNavigationType() {
+        let target = SumiSameDocumentNavigationProbeResponder()
+        let adapter = SumiNavigationResponderAdapter(target: target)
+        let navigation = mainFrameNavigation(receiving: navigationAction(
+            url: URL(string: "https://example.com/page#section")!,
+            navigationType: .sameDocumentNavigation(.anchorNavigation)
+        ))
+
+        for type in SumiSameDocumentNavigationType.allCases {
+            adapter.navigation(
+                navigation,
+                didSameDocumentNavigationOf: WKSameDocumentNavigationType(type)
+            )
+        }
+
+        XCTAssertEqual(target.observedTypes, SumiSameDocumentNavigationType.allCases)
+    }
+
+    func testSumiNavigationCompletionCallbacksBroadcastInAdapterOrderAndIgnoreNonConformingTargets() {
+        let recorder = SumiNavigationAdapterOrderRecorder()
+        let first = SumiNavigationCompletionProbeResponder(name: "first", recorder: recorder)
+        let nonCompletion = SumiNavigationAdapterProbeResponder(name: "policy-only")
+        let second = SumiNavigationCompletionProbeResponder(name: "second", recorder: recorder)
+        let responders = [first, nonCompletion, second].map(SumiNavigationResponderAdapter.init(target:))
+        let navigation = mainFrameNavigation(receiving: navigationAction(
+            url: URL(string: "https://example.com/completion")!,
+            navigationType: .linkActivated(isMiddleClick: false)
+        ))
+
+        for responder in responders {
+            responder.navigationDidFinish(navigation)
+        }
+        for responder in responders {
+            responder.navigation(navigation, didFailWith: WKError(.unknown))
+        }
+
+        XCTAssertEqual(
+            recorder.snapshot(),
+            ["first.finish", "second.finish", "first.fail", "second.fail"]
+        )
+    }
+
+    func testWeakSumiNavigationCompletionAdapterIgnoresDeallocatedTarget() {
+        let recorder = SumiNavigationAdapterOrderRecorder()
+        var target: SumiNavigationCompletionProbeResponder? = SumiNavigationCompletionProbeResponder(
+            name: "temporary",
+            recorder: recorder
+        )
+        weak var weakTarget = target
+        let adapter = SumiNavigationResponderAdapter(target: target!)
+        let navigation = mainFrameNavigation(receiving: navigationAction(
+            url: URL(string: "https://example.com/deallocated-completion")!,
+            navigationType: .linkActivated(isMiddleClick: false)
+        ))
+
+        target = nil
+
+        XCTAssertNil(weakTarget)
+        adapter.navigationDidFinish(navigation)
+        adapter.navigation(navigation, didFailWith: WKError(.unknown))
+        XCTAssertEqual(recorder.snapshot(), [])
+    }
+
+    func testSumiNavigationDownloadAdapterMapsActionAndResponseCallbacks() throws {
+        let target = SumiNavigationDownloadProbeResponder()
+        let adapter = SumiNavigationResponderAdapter(target: target)
+        let actionDownload = SumiWebKitDownloadMock(
+            originalRequest: URLRequest(url: URL(string: "https://example.com/action-original.zip")!)
+        )
+        let responseDownload = SumiWebKitDownloadMock(
+            originalRequest: URLRequest(url: URL(string: "https://example.com/response-original.zip")!)
+        )
+        let action = navigationAction(
+            url: URL(string: "https://example.com/action.zip")!,
+            navigationType: .linkActivated(isMiddleClick: false),
+            shouldDownload: true
+        )
+        let httpResponse = try XCTUnwrap(HTTPURLResponse(
+            url: URL(string: "https://example.com/response.zip")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Disposition": "attachment; filename=response.zip"]
+        ))
+        let response = NavigationResponse(
+            response: httpResponse,
+            isForMainFrame: true,
+            canShowMIMEType: false,
+            mainFrameNavigation: mainFrameNavigation(receiving: action)
+        )
+
+        adapter.navigationAction(action, didBecome: actionDownload)
+        adapter.navigationResponse(response, didBecome: responseDownload)
+
+        XCTAssertEqual(target.actionDownloads.map(\.action.url), [URL(string: "https://example.com/action.zip")!])
+        XCTAssertEqual(target.actionDownloads.first?.action.shouldDownload, true)
+        XCTAssertEqual(target.actionDownloads.first?.download.originalRequest?.url, URL(string: "https://example.com/action-original.zip")!)
+        XCTAssertEqual(target.responseDownloads.map(\.response.url), [URL(string: "https://example.com/response.zip")!])
+        XCTAssertEqual(target.responseDownloads.first?.response.shouldDownload, true)
+        XCTAssertEqual(target.responseDownloads.first?.response.httpResponse?.statusCode, 200)
+        XCTAssertEqual(target.responseDownloads.first?.download.originalRequest?.url, URL(string: "https://example.com/response-original.zip")!)
+    }
+
     func testScriptAttachmentResponderAdapterAwaitsNormalTabScriptReplacementBeforeNextResponder() async throws {
         let tab = Tab(url: URL(string: "https://initial.example")!)
         let profile = Profile(name: "Script Adapter")
@@ -1752,6 +1884,42 @@ private func XCTAssertActionPolicy(
     }
 }
 
+private func XCTAssertAuthDisposition(
+    _ actual: AuthChallengeDisposition?,
+    _ expected: AuthChallengeDisposition,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) {
+    switch (actual, expected) {
+    case (.some(.credential(let actualCredential)), .credential(let expectedCredential)):
+        XCTAssertEqual(actualCredential.user, expectedCredential.user, file: file, line: line)
+        XCTAssertEqual(actualCredential.password, expectedCredential.password, file: file, line: line)
+        XCTAssertEqual(actualCredential.persistence, expectedCredential.persistence, file: file, line: line)
+    case (.some(.cancel), .cancel),
+        (.some(.rejectProtectionSpace), .rejectProtectionSpace):
+        break
+    default:
+        XCTFail("Expected \(expected), got \(String(describing: actual))", file: file, line: line)
+    }
+}
+
+private func makeAuthenticationChallenge() -> URLAuthenticationChallenge {
+    URLAuthenticationChallenge(
+        protectionSpace: URLProtectionSpace(
+            host: "auth.example",
+            port: 443,
+            protocol: "https",
+            realm: "SumiNavigationResponderTests",
+            authenticationMethod: NSURLAuthenticationMethodHTTPBasic
+        ),
+        proposedCredential: nil,
+        previousFailureCount: 0,
+        failureResponse: nil,
+        error: nil,
+        sender: SumiURLAuthenticationChallengeSenderMock()
+    )
+}
+
 private extension NavigationActionPolicy {
     var isCancel: Bool {
         if case .cancel = self { return true }
@@ -1941,6 +2109,10 @@ private final class SumiNavigationAdapterOrderRecorder {
         events
     }
 
+    func appendSync(_ event: String) {
+        events.append(event)
+    }
+
     func removeAll() {
         events.removeAll()
     }
@@ -2020,6 +2192,111 @@ private final class SumiNavigationAdapterProbeResponder: SumiNavigationActionRes
         observedResponses.append(navigationResponse)
         await recorder?.append(name)
         return responseDecision
+    }
+}
+
+@MainActor
+private final class SumiNavigationAuthProbeResponder: SumiNavigationAuthChallengeResponding {
+    private let decision: SumiAuthChallengeDisposition?
+    private(set) var callCount = 0
+    private(set) var observedProtectionSpaceHosts: [String] = []
+
+    init(decision: SumiAuthChallengeDisposition?) {
+        self.decision = decision
+    }
+
+    func didReceive(_ authenticationChallenge: URLAuthenticationChallenge) async -> SumiAuthChallengeDisposition? {
+        callCount += 1
+        observedProtectionSpaceHosts.append(authenticationChallenge.protectionSpace.host)
+        return decision
+    }
+}
+
+@MainActor
+private final class SumiSameDocumentNavigationProbeResponder: SumiSameDocumentNavigationResponding {
+    private(set) var observedTypes: [SumiSameDocumentNavigationType] = []
+
+    func navigationDidSameDocumentNavigation(type: SumiSameDocumentNavigationType) {
+        observedTypes.append(type)
+    }
+}
+
+@MainActor
+private final class SumiNavigationCompletionProbeResponder: SumiNavigationCompletionResponding {
+    private let name: String
+    private let recorder: SumiNavigationAdapterOrderRecorder
+
+    init(name: String, recorder: SumiNavigationAdapterOrderRecorder) {
+        self.name = name
+        self.recorder = recorder
+    }
+
+    func navigationDidFinish() {
+        recorder.appendSync("\(name).finish")
+    }
+
+    func navigationDidFail() {
+        recorder.appendSync("\(name).fail")
+    }
+}
+
+@MainActor
+private final class SumiNavigationDownloadProbeResponder: SumiNavigationDownloadResponding {
+    private(set) var actionDownloads: [(action: SumiNavigationAction, download: SumiNavigationDownload)] = []
+    private(set) var responseDownloads: [(response: SumiNavigationResponse, download: SumiNavigationDownload)] = []
+
+    func navigationAction(_ navigationAction: SumiNavigationAction, didBecome download: SumiNavigationDownload) {
+        actionDownloads.append((navigationAction, download))
+    }
+
+    func navigationResponse(_ navigationResponse: SumiNavigationResponse, didBecome download: SumiNavigationDownload) {
+        responseDownloads.append((navigationResponse, download))
+    }
+}
+
+private final class SumiWebKitDownloadMock: NSObject, WebKitDownload {
+    let originalRequest: URLRequest?
+    let originatingWebView: WKWebView?
+    let targetWebView: WKWebView?
+    weak var delegate: WKDownloadDelegate?
+    private(set) var cancelCount = 0
+
+    init(
+        originalRequest: URLRequest?,
+        originatingWebView: WKWebView? = nil,
+        targetWebView: WKWebView? = nil
+    ) {
+        self.originalRequest = originalRequest
+        self.originatingWebView = originatingWebView
+        self.targetWebView = targetWebView
+    }
+
+    func cancel(_ completionHandler: ((Data?) -> Void)?) {
+        cancelCount += 1
+        completionHandler?(nil)
+    }
+}
+
+private final class SumiURLAuthenticationChallengeSenderMock: NSObject, URLAuthenticationChallengeSender {
+    func use(_ credential: URLCredential, for challenge: URLAuthenticationChallenge) {
+        _ = credential
+        _ = challenge
+    }
+
+    func continueWithoutCredential(for challenge: URLAuthenticationChallenge) {
+        _ = challenge
+    }
+
+    func cancel(_ challenge: URLAuthenticationChallenge) {
+        _ = challenge
+    }
+
+    func performDefaultHandling(for challenge: URLAuthenticationChallenge) {
+        _ = challenge
+    }
+
+    func rejectProtectionSpaceAndContinue(with challenge: URLAuthenticationChallenge) {
+        _ = challenge
     }
 }
 

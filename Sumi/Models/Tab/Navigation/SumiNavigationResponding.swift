@@ -51,3 +51,27 @@ protocol SumiNavigationCompletionResponding: AnyObject {
     func navigationDidFinish()
     func navigationDidFail()
 }
+
+@MainActor
+protocol SumiNavigationAuthChallengeResponding: AnyObject {
+    func didReceive(_ authenticationChallenge: URLAuthenticationChallenge) async -> SumiAuthChallengeDisposition?
+}
+
+@MainActor
+protocol SumiSameDocumentNavigationResponding: AnyObject {
+    func navigationDidSameDocumentNavigation(type: SumiSameDocumentNavigationType)
+}
+
+@MainActor
+protocol SumiNavigationDownloadResponding: AnyObject {
+    func navigationAction(_ navigationAction: SumiNavigationAction, didBecome download: SumiNavigationDownload)
+    func navigationResponse(_ navigationResponse: SumiNavigationResponse, didBecome download: SumiNavigationDownload)
+}
+
+protocol SumiNavigationDownload: AnyObject {
+    var originalRequest: URLRequest? { get }
+    var originatingWebView: WKWebView? { get }
+    var targetWebView: WKWebView? { get }
+    var delegate: WKDownloadDelegate? { get set }
+    func cancel(_ completionHandler: ((Data?) -> Void)?)
+}
