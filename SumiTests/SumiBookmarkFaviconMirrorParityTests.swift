@@ -227,14 +227,13 @@ final class SumiBookmarkFaviconMirrorParityTests: XCTestCase {
             ),
         ])
 
-        let fetcher = BookmarksFaviconsFetcher(
+        let fetchScheduler = SumiDDGBookmarkFaviconFetchScheduler(
             database: database,
             stateStore: stateStore,
             fetcher: faviconFetcher,
             faviconStore: { faviconStore },
-            errorEvents: nil
         )
-        mirror.attach(fetcher: fetcher)
+        mirror.attach(fetchScheduler: fetchScheduler)
 
         wait(for: [didStoreIDs], timeout: 2.0)
 
