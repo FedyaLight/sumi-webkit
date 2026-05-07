@@ -129,6 +129,136 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertEqual(pin.launchURL, tab.url)
     }
 
+    func testDisplayedRegularTabDropIntoSpacePinnedPreservesTabAsLiveShortcut() throws {
+        let harness = try makeLiveWindowHarness()
+        let tabManager = harness.tabManager
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let tab = tabManager.createNewTab(url: "https://example.com/live-pin", in: space)
+        harness.windowState.currentSpaceId = space.id
+        harness.windowState.currentProfileId = profileId
+        harness.windowState.currentTabId = tab.id
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileId,
+            sourceZone: .spaceRegular(space.id),
+            item: dragItem(tab)
+        )
+
+        let didMove = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .tab(tab),
+                scope: scope,
+                fromContainer: .spaceRegular(space.id),
+                toContainer: .spacePinned(space.id),
+                toIndex: 0
+            )
+        )
+
+        XCTAssertTrue(didMove)
+        XCTAssertTrue(tabManager.tabsBySpace[space.id]?.isEmpty ?? false)
+        let pin = try XCTUnwrap(tabManager.spacePinnedPins(for: space.id).first)
+        let liveTab = try XCTUnwrap(tabManager.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
+        XCTAssertTrue(liveTab === tab)
+        XCTAssertEqual(liveTab.shortcutPinId, pin.id)
+        XCTAssertEqual(liveTab.shortcutPinRole, .spacePinned)
+        XCTAssertTrue(liveTab.isShortcutLiveInstance)
+        XCTAssertEqual(liveTab.spaceId, space.id)
+        XCTAssertNil(liveTab.folderId)
+        XCTAssertEqual(harness.windowState.currentTabId, tab.id)
+        XCTAssertEqual(harness.windowState.currentShortcutPinId, pin.id)
+        XCTAssertEqual(harness.windowState.currentShortcutPinRole, .spacePinned)
+    }
+
+    func testDisplayedRegularTabDropIntoFolderPreservesTabAsLiveShortcut() throws {
+        let harness = try makeLiveWindowHarness()
+        let tabManager = harness.tabManager
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let tab = tabManager.createNewTab(url: "https://example.com/live-folder", in: space)
+        harness.windowState.currentSpaceId = space.id
+        harness.windowState.currentProfileId = profileId
+        harness.windowState.currentTabId = tab.id
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileId,
+            sourceZone: .spaceRegular(space.id),
+            item: dragItem(tab)
+        )
+
+        let didMove = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .tab(tab),
+                scope: scope,
+                fromContainer: .spaceRegular(space.id),
+                toContainer: .folder(folder.id),
+                toIndex: 0
+            )
+        )
+
+        XCTAssertTrue(didMove)
+        XCTAssertTrue(tabManager.tabsBySpace[space.id]?.isEmpty ?? false)
+        let pin = try XCTUnwrap(tabManager.folderPinnedPins(for: folder.id, in: space.id).first)
+        let liveTab = try XCTUnwrap(tabManager.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
+        XCTAssertTrue(liveTab === tab)
+        XCTAssertEqual(liveTab.shortcutPinId, pin.id)
+        XCTAssertEqual(liveTab.shortcutPinRole, .spacePinned)
+        XCTAssertTrue(liveTab.isShortcutLiveInstance)
+        XCTAssertEqual(liveTab.spaceId, space.id)
+        XCTAssertEqual(liveTab.folderId, folder.id)
+        XCTAssertEqual(harness.windowState.currentTabId, tab.id)
+        XCTAssertEqual(harness.windowState.currentShortcutPinId, pin.id)
+        XCTAssertEqual(harness.windowState.currentShortcutPinRole, .spacePinned)
+    }
+
+    func testDisplayedRegularTabDropIntoEssentialsPreservesTabAsLiveShortcut() throws {
+        let harness = try makeLiveWindowHarness()
+        let tabManager = harness.tabManager
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let tab = tabManager.createNewTab(url: "https://example.com/live-essential", in: space)
+        harness.windowState.currentSpaceId = space.id
+        harness.windowState.currentProfileId = profileId
+        harness.windowState.currentTabId = tab.id
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileId,
+            sourceZone: .spaceRegular(space.id),
+            item: dragItem(tab)
+        )
+
+        let didMove = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .tab(tab),
+                scope: scope,
+                fromContainer: .spaceRegular(space.id),
+                toContainer: .essentials,
+                toIndex: 0
+            )
+        )
+
+        XCTAssertTrue(didMove)
+        XCTAssertTrue(tabManager.tabsBySpace[space.id]?.isEmpty ?? false)
+        let pin = try XCTUnwrap(tabManager.essentialPins(for: profileId).first)
+        let liveTab = try XCTUnwrap(tabManager.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
+        XCTAssertTrue(liveTab === tab)
+        XCTAssertEqual(liveTab.shortcutPinId, pin.id)
+        XCTAssertEqual(liveTab.shortcutPinRole, .essential)
+        XCTAssertTrue(liveTab.isShortcutLiveInstance)
+        XCTAssertNil(liveTab.spaceId)
+        XCTAssertNil(liveTab.folderId)
+        XCTAssertEqual(harness.windowState.currentTabId, tab.id)
+        XCTAssertEqual(harness.windowState.currentShortcutPinId, pin.id)
+        XCTAssertEqual(harness.windowState.currentShortcutPinRole, .essential)
+    }
+
+    func testNonDisplayedRegularTabDropIntoShortcutSectionsCreatesLauncherWithoutLiveTab() throws {
+        try assertNonDisplayedRegularTabConversionCreatesLauncherOnly(target: .spacePinned)
+        try assertNonDisplayedRegularTabConversionCreatesLauncherOnly(target: .folder)
+        try assertNonDisplayedRegularTabConversionCreatesLauncherOnly(target: .essentials)
+    }
+
     func testSpacePinnedReorderMovesLauncherWithinSameSpace() throws {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
@@ -742,6 +872,30 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertFalse(converted.isShortcutLiveInstance)
     }
 
+    func testSpacePinnedWithLiveShortcutDropIntoRegularReusesLiveTabAndClearsBinding() throws {
+        try assertLiveLauncherDropIntoRegularReusesLiveTab(source: .spacePinned)
+    }
+
+    func testFolderChildWithLiveShortcutDropIntoRegularReusesLiveTabAndClearsBinding() throws {
+        try assertLiveLauncherDropIntoRegularReusesLiveTab(source: .folder)
+    }
+
+    func testEssentialWithLiveShortcutDropIntoRegularReusesLiveTabAndClearsBinding() throws {
+        try assertLiveLauncherDropIntoRegularReusesLiveTab(source: .essentials)
+    }
+
+    func testLauncherWithoutLiveShortcutDropIntoRegularCreatesNewRegularTab() throws {
+        try assertLauncherWithoutLiveShortcutDropIntoRegularCreatesNewTab(source: .spacePinned)
+        try assertLauncherWithoutLiveShortcutDropIntoRegularCreatesNewTab(source: .folder)
+        try assertLauncherWithoutLiveShortcutDropIntoRegularCreatesNewTab(source: .essentials)
+    }
+
+    func testMovingLiveLauncherBetweenShortcutSectionsPreservesLiveBinding() throws {
+        try assertLiveLauncherMovePreservesBinding(source: .spacePinned, destination: .folder)
+        try assertLiveLauncherMovePreservesBinding(source: .folder, destination: .essentials)
+        try assertLiveLauncherMovePreservesBinding(source: .essentials, destination: .spacePinned)
+    }
+
     func testWrongProfileScopeIsRejectedEvenWhenSpaceMatches() throws {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
@@ -863,6 +1017,32 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         return TabManager(context: container.mainContext, loadPersistedState: false)
     }
 
+    private func makeLiveWindowHarness() throws -> LiveWindowHarness {
+        let container = try ModelContainer(
+            for: SumiStartupPersistence.schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        let browserManager = BrowserManager()
+        let tabManager = TabManager(
+            browserManager: browserManager,
+            context: container.mainContext,
+            loadPersistedState: false
+        )
+        let windowRegistry = WindowRegistry()
+        let windowState = BrowserWindowState()
+        windowState.tabManager = tabManager
+        browserManager.tabManager = tabManager
+        browserManager.windowRegistry = windowRegistry
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+        return LiveWindowHarness(
+            browserManager: browserManager,
+            tabManager: tabManager,
+            windowRegistry: windowRegistry,
+            windowState: windowState
+        )
+    }
+
     private func makeScope(
         spaceId: UUID,
         profileId: UUID,
@@ -964,4 +1144,286 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     private func topLevelPinnedItemIDs(_ tabManager: TabManager, in spaceId: UUID) -> [UUID] {
         tabManager.topLevelSpacePinnedItems(for: spaceId).map(\.id)
     }
+
+    private func assertNonDisplayedRegularTabConversionCreatesLauncherOnly(
+        target: ShortcutSectionTarget
+    ) throws {
+        let harness = try makeLiveWindowHarness()
+        let tabManager = harness.tabManager
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let tab = tabManager.createNewTab(url: "https://example.com/non-displayed-\(target.pathComponent)", in: space)
+        harness.windowState.currentSpaceId = space.id
+        harness.windowState.currentProfileId = profileId
+        harness.windowState.currentTabId = nil
+        let targetContainer = dragContainer(for: target, space: space, folder: folder)
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileId,
+            sourceZone: .spaceRegular(space.id),
+            item: dragItem(tab)
+        )
+
+        let didMove = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .tab(tab),
+                scope: scope,
+                fromContainer: .spaceRegular(space.id),
+                toContainer: targetContainer,
+                toIndex: 0
+            )
+        )
+
+        XCTAssertTrue(didMove)
+        XCTAssertTrue(tabManager.tabsBySpace[space.id]?.isEmpty ?? false)
+        XCTAssertNil(tabManager.tab(for: tab.id))
+        let pin = try XCTUnwrap(shortcutPin(for: target, tabManager: tabManager, profileId: profileId, space: space, folder: folder))
+        XCTAssertEqual(pin.launchURL, tab.url)
+        XCTAssertNil(tabManager.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
+    }
+
+    private func assertLiveLauncherDropIntoRegularReusesLiveTab(
+        source: ShortcutSectionTarget
+    ) throws {
+        let harness = try makeLiveWindowHarness()
+        let tabManager = harness.tabManager
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let pin = try makePin(
+            source,
+            tabManager: tabManager,
+            space: space,
+            folderId: folder.id,
+            profileId: profileId,
+            url: "https://example.com/live-\(source.pathComponent)"
+        )
+        let liveTab = tabManager.activateShortcutPin(pin, in: harness.windowState.id, currentSpaceId: space.id)
+        harness.windowState.currentSpaceId = space.id
+        harness.windowState.currentProfileId = profileId
+        harness.windowState.currentTabId = liveTab.id
+        harness.windowState.currentShortcutPinId = pin.id
+        harness.windowState.currentShortcutPinRole = pin.role
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileId,
+            sourceZone: source.dropZone(spaceId: space.id, folderId: folder.id),
+            item: dragItem(pin)
+        )
+
+        let didMove = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .pin(pin),
+                scope: scope,
+                fromContainer: dragContainer(for: source, space: space, folder: folder),
+                toContainer: .spaceRegular(space.id),
+                toIndex: 0
+            )
+        )
+
+        XCTAssertTrue(didMove)
+        XCTAssertNil(shortcutPin(for: source, tabManager: tabManager, profileId: profileId, space: space, folder: folder))
+        XCTAssertNil(tabManager.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
+        let converted = try XCTUnwrap(tabManager.tabsBySpace[space.id]?.first)
+        XCTAssertTrue(converted === liveTab)
+        XCTAssertEqual(converted.id, liveTab.id)
+        XCTAssertNil(converted.shortcutPinId)
+        XCTAssertNil(converted.shortcutPinRole)
+        XCTAssertFalse(converted.isShortcutLiveInstance)
+        XCTAssertEqual(converted.spaceId, space.id)
+        XCTAssertNil(converted.folderId)
+        XCTAssertEqual(harness.windowState.currentTabId, liveTab.id)
+        XCTAssertNil(harness.windowState.currentShortcutPinId)
+        XCTAssertNil(harness.windowState.currentShortcutPinRole)
+        XCTAssertEqual(harness.windowState.activeTabForSpace[space.id], liveTab.id)
+    }
+
+    private func assertLauncherWithoutLiveShortcutDropIntoRegularCreatesNewTab(
+        source: ShortcutSectionTarget
+    ) throws {
+        let harness = try makeLiveWindowHarness()
+        let tabManager = harness.tabManager
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let pin = try makePin(
+            source,
+            tabManager: tabManager,
+            space: space,
+            folderId: folder.id,
+            profileId: profileId,
+            url: "https://example.com/no-live-\(source.pathComponent)"
+        )
+        harness.windowState.currentSpaceId = space.id
+        harness.windowState.currentProfileId = profileId
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileId,
+            sourceZone: source.dropZone(spaceId: space.id, folderId: folder.id),
+            item: dragItem(pin)
+        )
+
+        let didMove = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .pin(pin),
+                scope: scope,
+                fromContainer: dragContainer(for: source, space: space, folder: folder),
+                toContainer: .spaceRegular(space.id),
+                toIndex: 0
+            )
+        )
+
+        XCTAssertTrue(didMove)
+        XCTAssertNil(shortcutPin(for: source, tabManager: tabManager, profileId: profileId, space: space, folder: folder))
+        XCTAssertNil(tabManager.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
+        let converted = try XCTUnwrap(tabManager.tabsBySpace[space.id]?.first)
+        XCTAssertNotEqual(converted.id, pin.id)
+        XCTAssertEqual(converted.url, pin.launchURL)
+        XCTAssertNil(converted.shortcutPinId)
+        XCTAssertFalse(converted.isShortcutLiveInstance)
+        XCTAssertEqual(converted.spaceId, space.id)
+        XCTAssertNil(converted.folderId)
+    }
+
+    private func assertLiveLauncherMovePreservesBinding(
+        source: ShortcutSectionTarget,
+        destination: ShortcutSectionTarget
+    ) throws {
+        let harness = try makeLiveWindowHarness()
+        let tabManager = harness.tabManager
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let sourceFolder = tabManager.createFolder(for: space.id, name: "Source")
+        let destinationFolder = tabManager.createFolder(for: space.id, name: "Destination")
+        let pin = try makePin(
+            source,
+            tabManager: tabManager,
+            space: space,
+            folderId: sourceFolder.id,
+            profileId: profileId,
+            url: "https://example.com/move-\(source.pathComponent)-\(destination.pathComponent)"
+        )
+        let liveTab = tabManager.activateShortcutPin(pin, in: harness.windowState.id, currentSpaceId: space.id)
+        harness.windowState.currentSpaceId = space.id
+        harness.windowState.currentProfileId = profileId
+        harness.windowState.currentTabId = liveTab.id
+        harness.windowState.currentShortcutPinId = pin.id
+        harness.windowState.currentShortcutPinRole = pin.role
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileId,
+            sourceZone: source.dropZone(spaceId: space.id, folderId: sourceFolder.id),
+            item: dragItem(pin)
+        )
+
+        let didMove = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .pin(pin),
+                scope: scope,
+                fromContainer: dragContainer(for: source, space: space, folder: sourceFolder),
+                toContainer: dragContainer(for: destination, space: space, folder: destinationFolder),
+                toIndex: 0
+            )
+        )
+
+        XCTAssertTrue(didMove)
+        let movedPin = try XCTUnwrap(shortcutPin(for: destination, tabManager: tabManager, profileId: profileId, space: space, folder: destinationFolder))
+        XCTAssertEqual(movedPin.id, pin.id)
+        let movedLiveTab = try XCTUnwrap(tabManager.shortcutLiveTab(for: movedPin.id, in: harness.windowState.id))
+        XCTAssertTrue(movedLiveTab === liveTab)
+        XCTAssertEqual(movedLiveTab.shortcutPinId, movedPin.id)
+        XCTAssertEqual(movedLiveTab.shortcutPinRole, movedPin.role)
+        XCTAssertTrue(movedLiveTab.isShortcutLiveInstance)
+        XCTAssertEqual(movedLiveTab.spaceId, movedPin.spaceId)
+        XCTAssertEqual(movedLiveTab.folderId, movedPin.folderId)
+        XCTAssertEqual(harness.windowState.currentTabId, liveTab.id)
+        XCTAssertEqual(harness.windowState.currentShortcutPinId, movedPin.id)
+        XCTAssertEqual(harness.windowState.currentShortcutPinRole, movedPin.role)
+    }
+
+    private func makePin(
+        _ target: ShortcutSectionTarget,
+        tabManager: TabManager,
+        space: Space,
+        folderId: UUID,
+        profileId: UUID,
+        url: String
+    ) throws -> ShortcutPin {
+        switch target {
+        case .spacePinned:
+            return try makeSpacePinnedPin(tabManager, in: space, url: url, index: 0)
+        case .folder:
+            return try makeFolderPin(tabManager, in: space, folderId: folderId, url: url, index: 0)
+        case .essentials:
+            return try makeEssentialPin(tabManager, in: space, profileId: profileId, url: url, index: 0)
+        }
+    }
+
+    private func dragContainer(
+        for target: ShortcutSectionTarget,
+        space: Space,
+        folder: TabFolder
+    ) -> TabDragManager.DragContainer {
+        switch target {
+        case .spacePinned:
+            return .spacePinned(space.id)
+        case .folder:
+            return .folder(folder.id)
+        case .essentials:
+            return .essentials
+        }
+    }
+
+    private func shortcutPin(
+        for target: ShortcutSectionTarget,
+        tabManager: TabManager,
+        profileId: UUID,
+        space: Space,
+        folder: TabFolder
+    ) -> ShortcutPin? {
+        switch target {
+        case .spacePinned:
+            return tabManager.spacePinnedPins(for: space.id).first { $0.folderId == nil }
+        case .folder:
+            return tabManager.folderPinnedPins(for: folder.id, in: space.id).first
+        case .essentials:
+            return tabManager.essentialPins(for: profileId).first
+        }
+    }
+}
+
+private enum ShortcutSectionTarget: Equatable {
+    case spacePinned
+    case folder
+    case essentials
+
+    var pathComponent: String {
+        switch self {
+        case .spacePinned:
+            return "space-pinned"
+        case .folder:
+            return "folder"
+        case .essentials:
+            return "essentials"
+        }
+    }
+
+    func dropZone(spaceId: UUID, folderId: UUID) -> DropZoneID {
+        switch self {
+        case .spacePinned:
+            return .spacePinned(spaceId)
+        case .folder:
+            return .folder(folderId)
+        case .essentials:
+            return .essentials
+        }
+    }
+}
+
+private struct LiveWindowHarness {
+    let browserManager: BrowserManager
+    let tabManager: TabManager
+    let windowRegistry: WindowRegistry
+    let windowState: BrowserWindowState
 }
