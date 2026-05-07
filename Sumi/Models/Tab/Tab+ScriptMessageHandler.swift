@@ -1,6 +1,5 @@
 import AppKit
 import Foundation
-import Navigation
 import os.log
 import WebKit
 
@@ -31,11 +30,6 @@ extension Tab {
     }
 
     func navigationModifierFlags(from navigationAction: WKNavigationAction) -> NSEvent.ModifierFlags {
-        let flags = navigationAction.modifierFlags.intersection([.command, .option, .control, .shift])
-        return resolvedNavigationModifierFlags(actionFlags: flags)
-    }
-
-    func navigationModifierFlags(from navigationAction: NavigationAction) -> NSEvent.ModifierFlags {
         let flags = navigationAction.modifierFlags.intersection([.command, .option, .control, .shift])
         return resolvedNavigationModifierFlags(actionFlags: flags)
     }

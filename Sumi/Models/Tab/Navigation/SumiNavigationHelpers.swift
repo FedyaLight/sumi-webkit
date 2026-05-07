@@ -1,36 +1,6 @@
 import AppKit
 import Foundation
-import Navigation
 import WebKit
-
-extension CustomNavigationType {
-    static var sumiUserEnteredURL: CustomNavigationType {
-        SumiCustomNavigationType.userEnteredURL.navigationCustomNavigationType
-    }
-
-    static var sumiUserRequestedPageDownload: CustomNavigationType {
-        SumiCustomNavigationType.userRequestedPageDownload.navigationCustomNavigationType
-    }
-}
-
-extension NavigationAction {
-    var sumiIsUserEnteredURL: Bool {
-        if case .other = navigationType,
-           case .user = request.attribution {
-            return true
-        } else if case .custom(.sumiUserEnteredURL) = navigationType {
-            return true
-        }
-        return false
-    }
-
-    var sumiIsCustom: Bool {
-        if case .custom = navigationType {
-            return true
-        }
-        return false
-    }
-}
 
 extension URL {
     var sumiIsExternalSchemeLink: Bool {

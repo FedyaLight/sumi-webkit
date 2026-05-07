@@ -174,6 +174,25 @@ extension SumiNavigationType {
     }
 }
 
+extension NavigationAction {
+    var sumiIsUserEnteredURL: Bool {
+        if case .other = navigationType,
+           case .user = request.attribution {
+            return true
+        } else if case .custom(.sumiUserEnteredURL) = navigationType {
+            return true
+        }
+        return false
+    }
+
+    var sumiIsCustom: Bool {
+        if case .custom = navigationType {
+            return true
+        }
+        return false
+    }
+}
+
 extension SumiNavigationRedirectAction {
     init(_ action: NavigationAction) {
         self.init(
@@ -227,7 +246,7 @@ extension SumiNavigationAction {
 
     @MainActor
     init(webKitNavigationAction navigationAction: WKNavigationAction) {
-        let sourceFrame = navigationAction.safeSourceFrame.map(SumiNavigationFrameInfo.init(webKitFrame:))
+        let sourceFrame = navigationAction.sumiWebKitSafeSourceFrame.map(SumiNavigationFrameInfo.init(webKitFrame:))
         let targetFrame = navigationAction.targetFrame.map(SumiNavigationFrameInfo.init(webKitFrame:))
         self.init(
             request: navigationAction.request,

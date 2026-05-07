@@ -1,5 +1,4 @@
 import Foundation
-import Navigation
 
 enum SumiExternalSchemeClassification: String, Codable, Equatable, Sendable {
     case directUserActivated
@@ -130,17 +129,6 @@ struct SumiExternalSchemePermissionRequest: Sendable {
             return userActivation.isUserActivated ? .redirectChainUserActivated : .redirectChainBackground
         }
         return userActivation.isUserActivated ? .directUserActivated : .scriptOrBackground
-    }
-
-    @MainActor
-    static func fromNavigationAction(
-        _ navigationAction: NavigationAction,
-        userActivation: SumiExternalSchemeUserActivationState? = nil
-    ) -> SumiExternalSchemePermissionRequest {
-        fromSumiNavigationAction(
-            SumiNavigationAction(navigationAction),
-            userActivation: userActivation
-        )
     }
 
     static func fromSumiNavigationAction(

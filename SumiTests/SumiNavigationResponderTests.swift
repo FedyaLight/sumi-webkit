@@ -260,8 +260,8 @@ final class SumiNavigationResponderTests: XCTestCase {
             sourceSecurityOrigin: SumiSecurityOrigin(protocol: "https", host: "request.example", port: 0)
         )
 
-        let request = SumiPopupPermissionRequest.fromNavigationAction(
-            action,
+        let request = SumiPopupPermissionRequest.fromSumiNavigationAction(
+            SumiNavigationAction(action),
             activationState: .navigationAction
         )
 
@@ -382,8 +382,8 @@ final class SumiNavigationResponderTests: XCTestCase {
             isMainFrame: false
         )
 
-        let request = SumiPopupPermissionRequest.fromNavigationAction(
-            action,
+        let request = SumiPopupPermissionRequest.fromSumiNavigationAction(
+            SumiNavigationAction(action),
             activationState: .navigationAction
         )
 
@@ -403,7 +403,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             isMainFrame: false
         )
 
-        let request = SumiExternalSchemePermissionRequest.fromNavigationAction(action)
+        let request = SumiExternalSchemePermissionRequest.fromSumiNavigationAction(SumiNavigationAction(action))
 
         XCTAssertEqual(request.requestingOrigin.identity, "https://request.example:8443")
         XCTAssertEqual(request.userActivation, .navigationAction)
@@ -426,8 +426,8 @@ final class SumiNavigationResponderTests: XCTestCase {
             navigationActionUserInitiated: action.isUserInitiated
         )
 
-        let request = SumiPopupPermissionRequest.fromNavigationAction(
-            action,
+        let request = SumiPopupPermissionRequest.fromSumiNavigationAction(
+            SumiNavigationAction(action),
             activationState: activationState
         )
 
@@ -459,8 +459,8 @@ final class SumiNavigationResponderTests: XCTestCase {
             modifierFlags: []
         )
 
-        let request = SumiPopupPermissionRequest.fromNavigationAction(
-            action,
+        let request = SumiPopupPermissionRequest.fromSumiNavigationAction(
+            SumiNavigationAction(action),
             activationState: .navigationAction
         )
 
@@ -482,7 +482,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             isUserInitiated: false
         )
 
-        let request = SumiExternalSchemePermissionRequest.fromNavigationAction(action)
+        let request = SumiExternalSchemePermissionRequest.fromSumiNavigationAction(SumiNavigationAction(action))
 
         XCTAssertEqual(request.targetURL, URL(string: "mailto:test@example.com")!)
         XCTAssertEqual(request.requestingOrigin.identity, "https://redirect.example")
@@ -509,7 +509,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             redirectHistory: [initialAction]
         )
 
-        let request = SumiExternalSchemePermissionRequest.fromNavigationAction(action)
+        let request = SumiExternalSchemePermissionRequest.fromSumiNavigationAction(SumiNavigationAction(action))
 
         XCTAssertEqual(action.redirectHistory?.map(\.url), [URL(string: "https://source.example/start")!])
         XCTAssertFalse(action.navigationType.isLinkActivated)
@@ -547,7 +547,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             mainFrameNavigation: mainFrameNavigation
         )
 
-        let request = SumiExternalSchemePermissionRequest.fromNavigationAction(action)
+        let request = SumiExternalSchemePermissionRequest.fromSumiNavigationAction(SumiNavigationAction(action))
 
         XCTAssertEqual(action.mainFrameNavigation?.navigationAction.redirectHistory?.map(\.url), [URL(string: "https://source.example/start")!])
         XCTAssertFalse(action.navigationType.isLinkActivated)
@@ -568,7 +568,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             isUserInitiated: true
         )
 
-        let request = SumiExternalSchemePermissionRequest.fromNavigationAction(action)
+        let request = SumiExternalSchemePermissionRequest.fromSumiNavigationAction(SumiNavigationAction(action))
 
         XCTAssertFalse(action.navigationType.isLinkActivated)
         XCTAssertTrue(action.isUserInitiated)

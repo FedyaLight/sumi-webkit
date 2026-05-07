@@ -31,7 +31,7 @@ extension SumiNavigationFrameInfo {
         self.init(
             securityOrigin: SumiSecurityOrigin(webKitSecurityOrigin: frame.securityOrigin),
             isMainFrame: frame.isMainFrame,
-            url: frame.safeRequest?.url,
+            url: frame.sumiWebKitRequestURL,
             handle: nil
         )
     }

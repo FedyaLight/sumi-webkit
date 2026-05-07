@@ -51,6 +51,16 @@ extension SumiCustomNavigationType {
     static let userRequestedPageDownload = SumiCustomNavigationType(rawValue: "userRequestedPageDownload")
 }
 
+extension CustomNavigationType {
+    static var sumiUserEnteredURL: CustomNavigationType {
+        SumiCustomNavigationType.userEnteredURL.navigationCustomNavigationType
+    }
+
+    static var sumiUserRequestedPageDownload: CustomNavigationType {
+        SumiCustomNavigationType.userRequestedPageDownload.navigationCustomNavigationType
+    }
+}
+
 extension SumiNavigationActionPolicy {
     init(_ policy: NavigationActionPolicy) {
         switch policy {
