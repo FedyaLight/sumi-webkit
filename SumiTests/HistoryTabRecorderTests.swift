@@ -75,6 +75,30 @@ final class HistoryTabRecorderTests: XCTestCase {
         XCTAssertEqual(visits.map(\.url), [pushURL, anchorURL, baseURL])
     }
 
+    func testSameDocumentNavigationWithMissingTypeDoesNotRecordHistoryVisit() async throws {
+        let harness = try makeHarness()
+        let baseURL = URL(string: "https://example.com/page")!
+        let unknownSameDocumentURL = URL(string: "https://example.com/page#unknown")!
+
+        harness.tab.historyRecorder.didCommitMainFrameNavigation(
+            to: baseURL,
+            kind: .regular,
+            tab: harness.tab
+        )
+        try await waitForVisitCount(1, harness: harness)
+
+        harness.tab.historyRecorder.didSameDocumentNavigation(
+            to: unknownSameDocumentURL,
+            type: nil,
+            tab: harness.tab
+        )
+        try await settleHistoryTasks()
+
+        let visits = try await visits(in: harness.store, profileId: harness.profile.id)
+        XCTAssertEqual(visits.map(\.url), [baseURL])
+        XCTAssertEqual(harness.tab.historyRecorder.localVisitIDs.count, 1)
+    }
+
     func testTitleUpdateMutatesExistingEntry() async throws {
         let harness = try makeHarness()
         let url = URL(string: "https://example.com/title")!

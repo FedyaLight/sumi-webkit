@@ -247,6 +247,71 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertEqual(origin.detail, "missing-navigation-frame-origin")
     }
 
+    func testWebKitGeolocationRequestFailsClosedWhenFrameSafeRequestIsMissing() {
+        let frame = SumiWKFrameInfoMock(
+            isMainFrame: false,
+            request: nil,
+            securityOrigin: SumiWKSecurityOriginMock.new(url: URL(string: "https://geo.example/frame")!),
+            webView: WKWebView(frame: .zero)
+        ).frameInfo
+
+        let request = SumiWebKitGeolocationRequest(id: "missing-frame-request", frame: frame)
+
+        XCTAssertEqual(request.requestingOrigin.kind, .invalid)
+        XCTAssertEqual(request.requestingOrigin.detail, "missing-webkit-geolocation-frame-url")
+        XCTAssertFalse(request.isMainFrame)
+    }
+
+    func testPopupRequestFromWKNavigationActionPreservesSourceFrameOriginWhenSafeRequestIsMissing() {
+        let sourceFrame = SumiWKFrameInfoMock(
+            isMainFrame: false,
+            request: nil,
+            securityOrigin: SumiWKSecurityOriginMock.new(url: URL(string: "https://request.example:8443/frame")!),
+            webView: WKWebView(frame: .zero)
+        ).frameInfo
+        let action = SumiWKNavigationActionMock(
+            sourceFrame: sourceFrame,
+            targetFrame: nil,
+            navigationType: .linkActivated,
+            request: URLRequest(url: URL(string: "https://popup.example/window")!)
+        ).navigationAction
+
+        let request = SumiPopupPermissionRequest.fromWKNavigationAction(
+            action,
+            path: .navigationResponderTargetFrame,
+            activationState: .navigationAction,
+            isExtensionOriginated: false
+        )
+
+        XCTAssertEqual(request.targetURL, URL(string: "https://popup.example/window")!)
+        XCTAssertNil(request.sourceURL)
+        XCTAssertEqual(request.requestingOrigin.identity, "https://request.example:8443")
+        XCTAssertFalse(request.isMainFrame)
+        XCTAssertEqual(request.navigationActionMetadata["targetFrameIsMainFrame"], "nil")
+    }
+
+    func testPopupRequestFromWKNavigationActionFailsClosedWhenSourceFrameIsMissing() {
+        let action = SumiWKNavigationActionMock(
+            sourceFrame: nil,
+            targetFrame: nil,
+            navigationType: .other,
+            request: URLRequest(url: URL(string: "https://popup.example/window")!)
+        ).navigationAction
+
+        let request = SumiPopupPermissionRequest.fromWKNavigationAction(
+            action,
+            path: .navigationResponderTargetFrame,
+            activationState: .none,
+            isExtensionOriginated: false
+        )
+
+        XCTAssertEqual(request.targetURL, URL(string: "https://popup.example/window")!)
+        XCTAssertNil(request.sourceURL)
+        XCTAssertEqual(request.requestingOrigin.kind, .invalid)
+        XCTAssertEqual(request.requestingOrigin.detail, "missing-url")
+        XCTAssertTrue(request.isMainFrame)
+    }
+
     func testPopupRequestPreservesPortedNavigationSourceFrameOriginAndFrameFlag() {
         let sourceURL = URL(string: "https://request.example:8443/frame")!
         let action = navigationAction(
@@ -956,6 +1021,85 @@ private extension NavigationActionPolicy {
 private extension NavigationPreferences {
     static var `default`: NavigationPreferences {
         NavigationPreferences(userAgent: nil, preferences: WKWebpagePreferences())
+    }
+}
+
+private final class SumiWKNavigationActionMock: NSObject {
+    @objc var sourceFrame: WKFrameInfo?
+    @objc var targetFrame: WKFrameInfo?
+    @objc var navigationType: WKNavigationType
+    @objc var request: URLRequest
+    @objc var shouldPerformDownload = false
+    @objc var modifierFlags: NSEvent.ModifierFlags = []
+    @objc var buttonNumber = 0
+    @objc var isUserInitiated = false
+    @objc var mainFrameNavigation: Any?
+
+    init(
+        sourceFrame: WKFrameInfo?,
+        targetFrame: WKFrameInfo?,
+        navigationType: WKNavigationType,
+        request: URLRequest
+    ) {
+        self.sourceFrame = sourceFrame
+        self.targetFrame = targetFrame
+        self.navigationType = navigationType
+        self.request = request
+    }
+
+    var navigationAction: WKNavigationAction {
+        withUnsafePointer(to: self) {
+            $0.withMemoryRebound(to: WKNavigationAction.self, capacity: 1) { $0 }
+        }.pointee
+    }
+}
+
+private final class SumiWKFrameInfoMock: NSObject {
+    @objc var isMainFrame: Bool
+    @objc var request: URLRequest?
+    @objc var securityOrigin: WKSecurityOrigin
+    @objc weak var webView: WKWebView?
+
+    init(
+        isMainFrame: Bool,
+        request: URLRequest?,
+        securityOrigin: WKSecurityOrigin,
+        webView: WKWebView?
+    ) {
+        self.isMainFrame = isMainFrame
+        self.request = request
+        self.securityOrigin = securityOrigin
+        self.webView = webView
+    }
+
+    var frameInfo: WKFrameInfo {
+        withUnsafePointer(to: self) {
+            $0.withMemoryRebound(to: WKFrameInfo.self, capacity: 1) { $0 }
+        }.pointee
+    }
+}
+
+@objc
+private final class SumiWKSecurityOriginMock: WKSecurityOrigin {
+    private var mockedProtocol = ""
+    private var mockedHost = ""
+    private var mockedPort = 0
+
+    override var `protocol`: String { mockedProtocol }
+    override var host: String { mockedHost }
+    override var port: Int { mockedPort }
+
+    private func setURL(_ url: URL) {
+        mockedProtocol = url.scheme ?? ""
+        mockedHost = url.host ?? ""
+        mockedPort = url.port ?? 0
+    }
+
+    static func new(url: URL) -> SumiWKSecurityOriginMock {
+        let mock = perform(NSSelectorFromString("alloc"))
+            .takeUnretainedValue() as! SumiWKSecurityOriginMock
+        mock.setURL(url)
+        return mock
     }
 }
 
