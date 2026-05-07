@@ -783,7 +783,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             ".strong(installNavigationAdapter)",
             ".strong(popupHandling)",
             ".strong(externalSchemeAdapter)",
-            ".strong(downloads)",
+            ".strong(downloadsAdapter)",
             ".strong(scriptAttachmentAdapter)",
             ".strong(autoplayPolicyAdapter)",
             ".strong(lifecycle)",
@@ -1359,10 +1359,12 @@ final class SumiNavigationResponderTests: XCTestCase {
 
         XCTAssertEqual(target.actionDownloads.map(\.action.url), [URL(string: "https://example.com/action.zip")!])
         XCTAssertEqual(target.actionDownloads.first?.action.shouldDownload, true)
+        XCTAssertNil(target.actionDownloads.first?.download.response)
         XCTAssertEqual(target.actionDownloads.first?.download.originalRequest?.url, URL(string: "https://example.com/action-original.zip")!)
         XCTAssertEqual(target.responseDownloads.map(\.response.url), [URL(string: "https://example.com/response.zip")!])
         XCTAssertEqual(target.responseDownloads.first?.response.shouldDownload, true)
         XCTAssertEqual(target.responseDownloads.first?.response.httpResponse?.statusCode, 200)
+        XCTAssertEqual(target.responseDownloads.first?.download.response?.url, URL(string: "https://example.com/response.zip")!)
         XCTAssertEqual(target.responseDownloads.first?.download.originalRequest?.url, URL(string: "https://example.com/response-original.zip")!)
     }
 
@@ -1409,9 +1411,10 @@ final class SumiNavigationResponderTests: XCTestCase {
     func testDownloadResponderRequestsDownloadForDownloadNavigationAction() async {
         let tab = Tab(url: URL(string: "https://example.com")!)
         let responder = SumiDownloadsNavigationResponder(tab: tab, downloadManager: nil)
+        let adapter = SumiNavigationResponderAdapter(target: responder)
         var preferences = NavigationPreferences.default
 
-        let policy = await responder.decidePolicy(
+        let policy = await adapter.decidePolicy(
             for: navigationAction(
                 url: URL(string: "https://example.com/file.zip")!,
                 navigationType: .linkActivated(isMiddleClick: false),
@@ -1426,9 +1429,10 @@ final class SumiNavigationResponderTests: XCTestCase {
     func testDownloadResponderContinuesForRegularNavigationAction() async {
         let tab = Tab(url: URL(string: "https://example.com")!)
         let responder = SumiDownloadsNavigationResponder(tab: tab, downloadManager: nil)
+        let adapter = SumiNavigationResponderAdapter(target: responder)
         var preferences = NavigationPreferences.default
 
-        let policy = await responder.decidePolicy(
+        let policy = await adapter.decidePolicy(
             for: navigationAction(
                 url: URL(string: "https://example.com/page")!,
                 navigationType: .linkActivated(isMiddleClick: false)
@@ -1442,6 +1446,7 @@ final class SumiNavigationResponderTests: XCTestCase {
     func testDownloadResponderRequestsDownloadForUnshowableResponse() async {
         let tab = Tab(url: URL(string: "https://example.com")!)
         let responder = SumiDownloadsNavigationResponder(tab: tab, downloadManager: nil)
+        let adapter = SumiNavigationResponderAdapter(target: responder)
         let response = URLResponse(
             url: URL(string: "https://example.com/file.bin")!,
             mimeType: "application/octet-stream",
@@ -1449,7 +1454,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             textEncodingName: nil
         )
 
-        let policy = await responder.decidePolicy(
+        let policy = await adapter.decidePolicy(
             for: NavigationResponse(
                 response: response,
                 isForMainFrame: true,
@@ -1464,6 +1469,7 @@ final class SumiNavigationResponderTests: XCTestCase {
     func testDownloadResponderCancelsSessionRestorationCacheDownloadResponse() async {
         let tab = Tab(url: URL(string: "https://example.com")!)
         let responder = SumiDownloadsNavigationResponder(tab: tab, downloadManager: nil)
+        let adapter = SumiNavigationResponderAdapter(target: responder)
         var preferences = NavigationPreferences.default
         let action = navigationAction(
             url: URL(string: "https://example.com/restored-file.bin")!,
@@ -1472,10 +1478,10 @@ final class SumiNavigationResponderTests: XCTestCase {
             isUserInitiated: false
         )
 
-        _ = await responder.decidePolicy(for: action, preferences: &preferences)
+        _ = await adapter.decidePolicy(for: action, preferences: &preferences)
         let navigation = mainFrameNavigation(receiving: action)
 
-        let policy = await responder.decidePolicy(
+        let policy = await adapter.decidePolicy(
             for: NavigationResponse(
                 response: URLResponse(
                     url: URL(string: "https://example.com/restored-file.bin")!,
