@@ -53,14 +53,15 @@ final class SumiDownloadsNavigationResponder: NavigationResponder {
             PerformanceTrace.endInterval("NavigationPolicy.downloadResponseResponder", signpostState)
         }
 
-        let firstNavigationAction = navigationResponse.mainFrameNavigation?.redirectHistory.first
-            ?? navigationResponse.mainFrameNavigation?.navigationAction
+        let response = SumiNavigationResponse(navigationResponse)
+        let firstNavigationAction = response.mainFrameNavigation?.redirectHistory.first
+            ?? response.mainFrameNavigation?.navigationAction
 
-        guard navigationResponse.httpResponse?.isSuccessful != false,
-              !navigationResponse.url.hasDirectoryPath,
-              !navigationResponse.canShowMIMEType || navigationResponse.shouldDownload
-                || (navigationResponse.mainFrameNavigation?.redirectHistory.last
-                    ?? navigationResponse.mainFrameNavigation?.navigationAction)?.navigationType == .custom(.sumiUserRequestedPageDownload)
+        guard response.isHTTPStatusSuccessful != false,
+              !response.url.hasDirectoryPath,
+              !response.canShowMIMEType || response.shouldDownload
+                || (response.mainFrameNavigation?.redirectHistory.last
+                    ?? response.mainFrameNavigation?.navigationAction)?.navigationType == .custom(.userRequestedPageDownload)
         else {
             return .next
         }

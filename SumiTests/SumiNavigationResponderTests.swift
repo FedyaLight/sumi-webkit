@@ -772,6 +772,69 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertNil(nextAuthDisposition)
     }
 
+    func testSumiNavigationResponseAdapterCopiesURLResponseMetadata() {
+        let url = URL(string: "https://example.com/report.pdf")!
+        let response = NavigationResponse(
+            response: URLResponse(
+                url: url,
+                mimeType: "application/pdf",
+                expectedContentLength: 1024,
+                textEncodingName: nil
+            ),
+            isForMainFrame: true,
+            canShowMIMEType: true,
+            mainFrameNavigation: nil
+        )
+
+        let value = SumiNavigationResponse(response)
+
+        XCTAssertEqual(value.url, url)
+        XCTAssertTrue(value.isForMainFrame)
+        XCTAssertTrue(value.canShowMIMEType)
+        XCTAssertFalse(value.shouldDownload)
+        XCTAssertNil(value.httpResponse)
+        XCTAssertNil(value.isHTTPStatusSuccessful)
+        XCTAssertEqual(value.mimeType, "application/pdf")
+        XCTAssertNil(value.mainFrameNavigation)
+    }
+
+    func testSumiNavigationResponseAdapterCopiesHTTPAndMainFrameNavigationMetadata() throws {
+        let initialAction = navigationAction(
+            url: URL(string: "https://example.com/start")!,
+            navigationType: .linkActivated(isMiddleClick: false),
+            requestCachePolicy: .returnCacheDataElseLoad
+        )
+        let finalAction = navigationAction(
+            url: URL(string: "https://example.com/file.bin")!,
+            navigationType: .custom(CustomNavigationType(.userRequestedPageDownload)),
+            redirectHistory: [initialAction]
+        )
+        let navigation = mainFrameNavigation(receiving: finalAction)
+        let httpResponse = try XCTUnwrap(HTTPURLResponse(
+            url: URL(string: "https://example.com/file.bin")!,
+            statusCode: 404,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Disposition": "attachment; filename=file.bin"]
+        ))
+        let response = NavigationResponse(
+            response: httpResponse,
+            isForMainFrame: false,
+            canShowMIMEType: true,
+            mainFrameNavigation: navigation
+        )
+
+        let value = SumiNavigationResponse(response)
+
+        XCTAssertEqual(value.url, httpResponse.url)
+        XCTAssertFalse(value.isForMainFrame)
+        XCTAssertTrue(value.canShowMIMEType)
+        XCTAssertTrue(value.shouldDownload)
+        XCTAssertEqual(value.httpResponse?.statusCode, 404)
+        XCTAssertEqual(value.isHTTPStatusSuccessful, false)
+        XCTAssertEqual(value.mainFrameNavigation?.redirectHistory.first?.request.cachePolicy, .returnCacheDataElseLoad)
+        XCTAssertEqual(value.mainFrameNavigation?.navigationAction.navigationType, .custom(.userRequestedPageDownload))
+    }
+
     func testActionResponderChainStopsAtFirstPolicyDecisionForAllowCancelDownload() async {
         let cases: [(SumiNavigationActionPolicy, String)] = [
             (.allow, "allow"),
