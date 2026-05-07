@@ -319,11 +319,12 @@ final class SidebarDragState: ObservableObject {
 
     private func mutateGeometryStore(
         for generation: Int,
-        _ mutate: (inout SidebarRuntimeGeometryStore) -> Void
+        _ mutate: (inout SidebarRuntimeGeometryStore) -> Bool
     ) {
         if generation == activeGeometryGeneration {
-            mutate(&activeGeometryStore)
-            publishActiveGeometryStore()
+            if mutate(&activeGeometryStore) {
+                publishActiveGeometryStore()
+            }
             return
         }
 
@@ -331,37 +332,49 @@ final class SidebarDragState: ObservableObject {
         if pendingGeometryStore == nil {
             pendingGeometryStore = SidebarRuntimeGeometryStore()
         }
-        mutate(&pendingGeometryStore!)
-        promotePendingGeometryIfReady()
+        if mutate(&pendingGeometryStore!) {
+            promotePendingGeometryIfReady()
+        }
     }
 
+    @discardableResult
     private func upsertPageGeometry(
         spaceId: UUID,
         profileId: UUID?,
         frame: CGRect,
         renderMode: SidebarPageGeometryRenderMode,
         in store: inout SidebarRuntimeGeometryStore
-    ) {
+    ) -> Bool {
         let key = SidebarPageGeometryKey(spaceId: spaceId, profileId: profileId)
-        if renderMode == .interactive {
-            store.pageGeometryByKey = store.pageGeometryByKey.filter { existingKey, metrics in
-                existingKey == key || metrics.renderMode != .interactive
-            }
-        }
-        store.pageGeometryByKey[key] = SidebarPageGeometryMetrics(
+        let metrics = SidebarPageGeometryMetrics(
             spaceId: spaceId,
             profileId: profileId,
             frame: frame,
             renderMode: renderMode
         )
+        var updatedGeometry = store.pageGeometryByKey
+        if renderMode == .interactive {
+            updatedGeometry = updatedGeometry.filter { existingKey, metrics in
+                existingKey == key || metrics.renderMode != .interactive
+            }
+        }
+        updatedGeometry[key] = metrics
+
+        guard store.pageGeometryByKey != updatedGeometry else { return false }
+        store.pageGeometryByKey = updatedGeometry
+        return true
     }
 
+    @discardableResult
     private func removePageGeometry(
         spaceId: UUID,
         profileId: UUID?,
         from store: inout SidebarRuntimeGeometryStore
-    ) {
-        store.pageGeometryByKey[SidebarPageGeometryKey(spaceId: spaceId, profileId: profileId)] = nil
+    ) -> Bool {
+        let key = SidebarPageGeometryKey(spaceId: spaceId, profileId: profileId)
+        guard store.pageGeometryByKey[key] != nil else { return false }
+        store.pageGeometryByKey[key] = nil
+        return true
     }
 
     private func promotePendingGeometryIfReady() {
@@ -692,7 +705,7 @@ final class SidebarDragState: ObservableObject {
         guard renderMode == .interactive else { return }
         mutateGeometryStore(for: generation) { store in
             if let frame {
-                upsertPageGeometry(
+                return upsertPageGeometry(
                     spaceId: spaceId,
                     profileId: profileId,
                     frame: frame,
@@ -700,7 +713,7 @@ final class SidebarDragState: ObservableObject {
                     in: &store
                 )
             } else {
-                removePageGeometry(
+                return removePageGeometry(
                     spaceId: spaceId,
                     profileId: profileId,
                     from: &store
@@ -718,9 +731,13 @@ final class SidebarDragState: ObservableObject {
         mutateGeometryStore(for: generation) { store in
             let key = SidebarSectionGeometryKey(spaceId: spaceId, section: section)
             if let frame {
+                guard store.sectionFramesBySpace[key] != frame else { return false }
                 store.sectionFramesBySpace[key] = frame
+                return true
             } else {
+                guard store.sectionFramesBySpace[key] != nil else { return false }
                 store.sectionFramesBySpace[key] = nil
+                return true
             }
         }
     }
@@ -738,7 +755,7 @@ final class SidebarDragState: ObservableObject {
     ) {
         mutateGeometryStore(for: generation) { store in
             guard isActive, let frame else {
-                guard var target = store.folderDropTargets[folderId] else { return }
+                guard var target = store.folderDropTargets[folderId] else { return false }
                 switch region {
                 case .header:
                     target.headerFrame = nil
@@ -749,10 +766,12 @@ final class SidebarDragState: ObservableObject {
                 }
                 if target.headerFrame == nil && target.bodyFrame == nil && target.afterFrame == nil {
                     store.folderDropTargets[folderId] = nil
+                    return true
                 } else {
+                    guard store.folderDropTargets[folderId] != target else { return false }
                     store.folderDropTargets[folderId] = target
+                    return true
                 }
-                return
             }
 
             var target = store.folderDropTargets[folderId] ?? SidebarFolderDropTargetMetrics(
@@ -774,7 +793,9 @@ final class SidebarDragState: ObservableObject {
             case .after:
                 target.afterFrame = frame
             }
+            guard store.folderDropTargets[folderId] != target else { return false }
             store.folderDropTargets[folderId] = target
+            return true
         }
     }
 
@@ -788,16 +809,20 @@ final class SidebarDragState: ObservableObject {
     ) {
         mutateGeometryStore(for: generation) { store in
             guard isActive, let frame else {
+                guard store.topLevelPinnedItemTargets[itemId] != nil else { return false }
                 store.topLevelPinnedItemTargets[itemId] = nil
-                return
+                return true
             }
 
-            store.topLevelPinnedItemTargets[itemId] = SidebarTopLevelPinnedItemMetrics(
+            let target = SidebarTopLevelPinnedItemMetrics(
                 itemId: itemId,
                 spaceId: spaceId,
                 topLevelIndex: topLevelIndex,
                 frame: frame
             )
+            guard store.topLevelPinnedItemTargets[itemId] != target else { return false }
+            store.topLevelPinnedItemTargets[itemId] = target
+            return true
         }
     }
 
@@ -811,16 +836,20 @@ final class SidebarDragState: ObservableObject {
     ) {
         mutateGeometryStore(for: generation) { store in
             guard isActive, let frame else {
+                guard store.folderChildDropTargets[childId] != nil else { return false }
                 store.folderChildDropTargets[childId] = nil
-                return
+                return true
             }
 
-            store.folderChildDropTargets[childId] = SidebarFolderChildDropTargetMetrics(
+            let target = SidebarFolderChildDropTargetMetrics(
                 childId: childId,
                 folderId: folderId,
                 index: index,
                 frame: frame
             )
+            guard store.folderChildDropTargets[childId] != target else { return false }
+            store.folderChildDropTargets[childId] = target
+            return true
         }
     }
 
@@ -832,12 +861,17 @@ final class SidebarDragState: ObservableObject {
     ) {
         mutateGeometryStore(for: generation) { store in
             if let frame {
-                store.regularListHitTargets[spaceId] = SidebarRegularListHitMetrics(
+                let target = SidebarRegularListHitMetrics(
                     frame: frame,
                     itemCount: itemCount
                 )
+                guard store.regularListHitTargets[spaceId] != target else { return false }
+                store.regularListHitTargets[spaceId] = target
+                return true
             } else {
+                guard store.regularListHitTargets[spaceId] != nil else { return false }
                 store.regularListHitTargets[spaceId] = nil
+                return true
             }
         }
     }
@@ -862,11 +896,12 @@ final class SidebarDragState: ObservableObject {
     ) {
         mutateGeometryStore(for: generation) { store in
             guard let frame, let dropFrame else {
+                guard store.essentialsLayoutMetricsBySpace[spaceId] != nil else { return false }
                 store.essentialsLayoutMetricsBySpace[spaceId] = nil
-                return
+                return true
             }
 
-            store.essentialsLayoutMetricsBySpace[spaceId] = makeEssentialsLayoutMetrics(
+            let metrics = makeEssentialsLayoutMetrics(
                 profileId: profileId,
                 frame: frame,
                 dropFrame: dropFrame,
@@ -882,6 +917,9 @@ final class SidebarDragState: ObservableObject {
                 visibleRowCount: visibleRowCount,
                 maxDropRowCount: maxDropRowCount
             )
+            guard store.essentialsLayoutMetricsBySpace[spaceId] != metrics else { return false }
+            store.essentialsLayoutMetricsBySpace[spaceId] = metrics
+            return true
         }
     }
 }
