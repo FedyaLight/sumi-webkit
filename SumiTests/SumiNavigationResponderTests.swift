@@ -614,9 +614,10 @@ final class SumiNavigationResponderTests: XCTestCase {
                 store: harness.adapter,
                 profile: profile
             )
+            let adapter = SumiNavigationResponderAdapter(target: responder)
             var preferences = NavigationPreferences.default
 
-            let decision = await responder.decidePolicy(
+            let decision = await adapter.decidePolicy(
                 for: navigationAction(
                     url: url,
                     navigationType: .linkActivated(isMiddleClick: false)
@@ -637,9 +638,10 @@ final class SumiNavigationResponderTests: XCTestCase {
             store: harness.adapter,
             profile: profile
         )
+        let adapter = SumiNavigationResponderAdapter(target: responder)
         var preferences = NavigationPreferences.default
 
-        let decision = await responder.decidePolicy(
+        let decision = await adapter.decidePolicy(
             for: navigationAction(
                 url: URL(string: "https://video.example/watch")!,
                 navigationType: .linkActivated(isMiddleClick: false)
@@ -659,10 +661,11 @@ final class SumiNavigationResponderTests: XCTestCase {
             store: harness.adapter,
             profile: profile
         )
+        let adapter = SumiNavigationResponderAdapter(target: responder)
         var nonMainPreferences = NavigationPreferences.default
         var filePreferences = NavigationPreferences.default
 
-        _ = await responder.decidePolicy(
+        _ = await adapter.decidePolicy(
             for: navigationAction(
                 url: URL(string: "https://video.example/embed")!,
                 navigationType: .other,
@@ -670,7 +673,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             ),
             preferences: &nonMainPreferences
         )
-        _ = await responder.decidePolicy(
+        _ = await adapter.decidePolicy(
             for: navigationAction(
                 url: URL(fileURLWithPath: "/tmp/autoplay.html"),
                 navigationType: .other
@@ -694,9 +697,10 @@ final class SumiNavigationResponderTests: XCTestCase {
             store: harness.adapter,
             profile: profileB
         )
+        let adapter = SumiNavigationResponderAdapter(target: responder)
         var preferences = NavigationPreferences.default
 
-        _ = await responder.decidePolicy(
+        _ = await adapter.decidePolicy(
             for: navigationAction(
                 url: url,
                 navigationType: .linkActivated(isMiddleClick: false)
@@ -708,7 +712,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertEqual(preferences.autoplayPolicy, .allow)
     }
 
-    func testAutoplayPolicyResponderIsRegisteredBeforeLifecycleResponder() throws {
+    func testAutoplayPolicyResponderIsRegisteredInOriginalResponderOrder() throws {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -719,9 +723,21 @@ final class SumiNavigationResponderTests: XCTestCase {
             encoding: .utf8
         )
 
-        let autoplayIndex = try XCTUnwrap(source.range(of: ".strong(autoplayPolicy)")?.lowerBound)
-        let lifecycleIndex = try XCTUnwrap(source.range(of: ".strong(lifecycle)")?.lowerBound)
-        XCTAssertLessThan(autoplayIndex, lifecycleIndex)
+        let tokens = [
+            ".strong(installNavigationAdapter)",
+            ".strong(popupHandling)",
+            ".strong(externalScheme)",
+            ".strong(downloads)",
+            ".strong(scriptAttachment)",
+            ".strong(autoplayPolicyAdapter)",
+            ".strong(lifecycle)",
+            ".weak(tab.findInPage)",
+        ]
+        let indices = try tokens.map { token in
+            try XCTUnwrap(source.range(of: token)?.lowerBound, "Missing \(token)")
+        }
+
+        XCTAssertEqual(indices, indices.sorted())
     }
 
     func testSumiNavigationValueAdaptersRoundTripSimpleValues() {
@@ -1042,6 +1058,8 @@ final class SumiNavigationResponderTests: XCTestCase {
             preferences.userAgent = "SumiNavigationAdapterParity/1"
             preferences.contentMode = .desktop
             preferences.javaScriptEnabled = false
+            preferences.mustApplyAutoplayPolicy = true
+            preferences.autoplayPolicy = .deny
         }
         let decider = SumiNavigationAdapterProbeResponder(name: "decider", actionDecision: .allow)
         let adapters = [mutator, decider].map(SumiNavigationResponderAdapter.init(target:))
@@ -1060,6 +1078,10 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertEqual(decider.observedPreferences.first?.userAgent, "SumiNavigationAdapterParity/1")
         XCTAssertEqual(decider.observedPreferences.first?.contentMode, .desktop)
         XCTAssertEqual(decider.observedPreferences.first?.javaScriptEnabled, false)
+        XCTAssertEqual(decider.observedPreferences.first?.mustApplyAutoplayPolicy, true)
+        XCTAssertEqual(decider.observedPreferences.first?.autoplayPolicy, .deny)
+        XCTAssertTrue(preferences.mustApplyAutoplayPolicy)
+        XCTAssertEqual(preferences.autoplayPolicy, .deny)
 
         let appliedPreferences = preferences.applying(to: WKWebpagePreferences())
         XCTAssertEqual(appliedPreferences.preferredContentMode, .desktop)
