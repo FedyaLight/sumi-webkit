@@ -34,7 +34,9 @@ private extension SumiNavigationPreferences {
         self.init(
             userAgent: preferences.userAgent,
             contentMode: preferences.contentMode,
-            javaScriptEnabled: preferences.javaScriptEnabled
+            javaScriptEnabled: preferences.javaScriptEnabled,
+            autoplayPolicy: preferences.autoplayPolicy.flatMap { SumiWebsiteAutoplayPolicy(rawValue: $0.rawValue) },
+            mustApplyAutoplayPolicy: preferences.mustApplyAutoplayPolicy
         )
     }
 }
@@ -44,5 +46,7 @@ private extension NavigationPreferences {
         userAgent = preferences.userAgent
         contentMode = preferences.contentMode
         javaScriptEnabled = preferences.javaScriptEnabled
+        autoplayPolicy = preferences.autoplayPolicy.flatMap { _WKWebsiteAutoplayPolicy(rawValue: $0.rawValue) }
+        mustApplyAutoplayPolicy = preferences.mustApplyAutoplayPolicy
     }
 }

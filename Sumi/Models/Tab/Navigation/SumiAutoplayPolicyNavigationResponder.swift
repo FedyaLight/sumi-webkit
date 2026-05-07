@@ -1,9 +1,7 @@
 import Foundation
-import Navigation
-import WebKit
 
 @MainActor
-final class SumiAutoplayPolicyNavigationResponder: NavigationResponder {
+final class SumiAutoplayPolicyNavigationResponder: SumiNavigationActionResponding {
     private weak var tab: Tab?
     private let autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter
     private let profileProvider: @MainActor (Tab) -> Profile?
@@ -19,17 +17,18 @@ final class SumiAutoplayPolicyNavigationResponder: NavigationResponder {
     }
 
     func decidePolicy(
-        for navigationAction: NavigationAction,
-        preferences: inout NavigationPreferences
-    ) async -> NavigationActionPolicy? {
+        for navigationAction: SumiNavigationAction,
+        preferences: inout SumiNavigationPreferences
+    ) async -> SumiNavigationActionPolicy? {
         guard navigationAction.isForMainFrame,
-              navigationAction.url.isSumiAutoplayPolicyEligibleWebURL,
+              let url = navigationAction.url,
+              url.isSumiAutoplayPolicyEligibleWebURL,
               let tab,
               let profile = profileProvider(tab)
         else { return .next }
 
         let policy = autoplayPolicyStore.effectivePolicy(
-            for: navigationAction.url,
+            for: url,
             profile: profile
         )
         preferences.mustApplyAutoplayPolicy = true
@@ -40,7 +39,7 @@ final class SumiAutoplayPolicyNavigationResponder: NavigationResponder {
 }
 
 extension SumiAutoplayPolicy {
-    var navigationAutoplayPolicy: _WKWebsiteAutoplayPolicy {
+    var navigationAutoplayPolicy: SumiWebsiteAutoplayPolicy {
         switch self {
         case .default, .allowAll:
             return .allow
