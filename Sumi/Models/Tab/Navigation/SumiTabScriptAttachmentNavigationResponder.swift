@@ -1,9 +1,8 @@
 import Foundation
-import Navigation
 import WebKit
 
 @MainActor
-final class SumiTabScriptAttachmentNavigationResponder: NavigationResponder {
+final class SumiTabScriptAttachmentNavigationResponder: SumiNavigationActionWebViewResponding {
     private weak var tab: Tab?
 
     init(tab: Tab) {
@@ -11,9 +10,10 @@ final class SumiTabScriptAttachmentNavigationResponder: NavigationResponder {
     }
 
     func decidePolicy(
-        for navigationAction: NavigationAction,
-        preferences _: inout NavigationPreferences
-    ) async -> NavigationActionPolicy? {
+        for navigationAction: SumiNavigationAction,
+        webView: WKWebView?,
+        preferences _: inout SumiNavigationPreferences
+    ) async -> SumiNavigationActionPolicy? {
         let signpostState = PerformanceTrace.beginInterval("NavigationPolicy.scriptAttachmentResponder")
         defer {
             PerformanceTrace.endInterval("NavigationPolicy.scriptAttachmentResponder", signpostState)
@@ -21,7 +21,7 @@ final class SumiTabScriptAttachmentNavigationResponder: NavigationResponder {
 
         guard navigationAction.isForMainFrame,
               let tab,
-              let webView = navigationAction.targetFrame?.webView ?? navigationAction.sourceFrame.webView
+              let webView
         else { return .next }
 
         await tab.replaceNormalTabUserScripts(

@@ -1,4 +1,5 @@
 import Navigation
+import WebKit
 
 @MainActor
 final class SumiNavigationResponderAdapter: NavigationResponder {
@@ -14,10 +15,20 @@ final class SumiNavigationResponderAdapter: NavigationResponder {
     ) async -> NavigationActionPolicy? {
         guard let responder = target as? any SumiNavigationActionResponding else { return .next }
         var sumiPreferences = SumiNavigationPreferences(preferences)
-        let decision = await responder.decidePolicy(
-            for: SumiNavigationAction(navigationAction),
-            preferences: &sumiPreferences
-        )
+        let sumiAction = SumiNavigationAction(navigationAction)
+        let decision: SumiNavigationActionPolicy?
+        if let responder = responder as? any SumiNavigationActionWebViewResponding {
+            decision = await responder.decidePolicy(
+                for: sumiAction,
+                webView: webView(for: navigationAction),
+                preferences: &sumiPreferences
+            )
+        } else {
+            decision = await responder.decidePolicy(
+                for: sumiAction,
+                preferences: &sumiPreferences
+            )
+        }
         preferences.apply(sumiPreferences)
         return decision?.navigationActionPolicy
     }
@@ -26,6 +37,10 @@ final class SumiNavigationResponderAdapter: NavigationResponder {
         guard let responder = target as? any SumiNavigationResponseResponding else { return .next }
         let decision = await responder.decidePolicy(for: SumiNavigationResponse(navigationResponse))
         return decision?.navigationResponsePolicy
+    }
+
+    private func webView(for navigationAction: NavigationAction) -> WKWebView? {
+        navigationAction.targetFrame?.webView ?? navigationAction.sourceFrame.webView
     }
 }
 
