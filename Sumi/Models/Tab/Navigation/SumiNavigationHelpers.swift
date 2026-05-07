@@ -5,11 +5,11 @@ import WebKit
 
 extension CustomNavigationType {
     static var sumiUserEnteredURL: CustomNavigationType {
-        CustomNavigationType(rawValue: "userEnteredUrl")
+        SumiCustomNavigationType.userEnteredURL.navigationCustomNavigationType
     }
 
     static var sumiUserRequestedPageDownload: CustomNavigationType {
-        CustomNavigationType(rawValue: "userRequestedPageDownload")
+        SumiCustomNavigationType.userRequestedPageDownload.navigationCustomNavigationType
     }
 }
 
