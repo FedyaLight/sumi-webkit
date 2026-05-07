@@ -230,14 +230,28 @@ struct SumiPopupPermissionRequest: Sendable {
         activationState: SumiPopupUserActivationState,
         isExtensionOriginated: Bool
     ) -> SumiPopupPermissionRequest {
-        let sourceFrame = navigationAction.safeSourceFrame.map(SumiNavigationFrameInfo.init(webKitFrame:))
-        let targetURL = navigationAction.request.url
-        let sourceURL = sourceFrame?.url
+        fromSumiNavigationAction(
+            SumiNavigationAction(webKitNavigationAction: navigationAction),
+            path: path,
+            activationState: activationState,
+            isExtensionOriginated: isExtensionOriginated
+        )
+    }
+
+    static func fromSumiNavigationAction(
+        _ navigationAction: SumiNavigationAction,
+        path: SumiPopupPermissionPath,
+        activationState: SumiPopupUserActivationState,
+        isExtensionOriginated: Bool
+    ) -> SumiPopupPermissionRequest {
+        let sourceFrame = navigationAction.sourceFrame
+        let targetURL = navigationAction.url
+        let sourceURL = navigationAction.sourceURL
         let requestingOrigin = sourceFrame.map { permissionOrigin(from: $0.securityOrigin) }
             ?? SumiPermissionOrigin(url: sourceURL)
         var metadata: [String: String] = [
             "path": path.rawValue,
-            "navigationType": "\(navigationAction.navigationType.rawValue)",
+            "navigationType": navigationAction.navigationTypeDescription,
             "activation": activationState.metadataValue,
             "isExtensionOriginated": String(isExtensionOriginated),
         ]
@@ -261,14 +275,25 @@ struct SumiPopupPermissionRequest: Sendable {
         )
     }
 
+    @MainActor
     static func fromNavigationAction(
         _ navigationAction: NavigationAction,
         activationState: SumiPopupUserActivationState
     ) -> SumiPopupPermissionRequest {
-        let sourceFrame = SumiNavigationFrameInfo(navigationFrame: navigationAction.sourceFrame)
+        fromSumiNavigationAction(
+            SumiNavigationAction(navigationAction),
+            activationState: activationState
+        )
+    }
+
+    static func fromSumiNavigationAction(
+        _ navigationAction: SumiNavigationAction,
+        activationState: SumiPopupUserActivationState
+    ) -> SumiPopupPermissionRequest {
+        let sourceFrame = navigationAction.sourceFrame
         var metadata: [String: String] = [
             "path": SumiPopupPermissionPath.navigationResponderTargetFrame.rawValue,
-            "navigationType": navigationAction.navigationType.debugDescription,
+            "navigationType": navigationAction.navigationTypeDescription,
             "activation": activationState.metadataValue,
             "isTargetingNewWindow": String(navigationAction.isTargetingNewWindow),
             "isForMainFrame": String(navigationAction.isForMainFrame),
@@ -276,10 +301,11 @@ struct SumiPopupPermissionRequest: Sendable {
         metadata["modifierFlags"] = "\(navigationAction.modifierFlags.rawValue)"
         return SumiPopupPermissionRequest(
             targetURL: navigationAction.url,
-            sourceURL: sourceFrame.url,
-            requestingOrigin: permissionOrigin(from: sourceFrame.securityOrigin),
+            sourceURL: navigationAction.sourceURL,
+            requestingOrigin: sourceFrame.map { permissionOrigin(from: $0.securityOrigin) }
+                ?? SumiPermissionOrigin(url: navigationAction.sourceURL),
             userActivation: activationState,
-            isMainFrame: sourceFrame.isMainFrame,
+            isMainFrame: sourceFrame?.isMainFrame ?? true,
             navigationActionMetadata: metadata
         )
     }

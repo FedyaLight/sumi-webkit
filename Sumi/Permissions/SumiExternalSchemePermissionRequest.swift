@@ -137,36 +137,44 @@ struct SumiExternalSchemePermissionRequest: Sendable {
         _ navigationAction: NavigationAction,
         userActivation: SumiExternalSchemeUserActivationState? = nil
     ) -> SumiExternalSchemePermissionRequest {
-        let sourceFrame = SumiNavigationFrameInfo(navigationFrame: navigationAction.sourceFrame)
+        fromSumiNavigationAction(
+            SumiNavigationAction(navigationAction),
+            userActivation: userActivation
+        )
+    }
+
+    static func fromSumiNavigationAction(
+        _ navigationAction: SumiNavigationAction,
+        userActivation: SumiExternalSchemeUserActivationState? = nil
+    ) -> SumiExternalSchemePermissionRequest {
+        let sourceFrame = navigationAction.sourceFrame
         let targetURL = navigationAction.url
-        let isRedirectChain = navigationAction.redirectHistory?.isEmpty == false
-            || navigationAction.mainFrameNavigation?.navigationAction.redirectHistory?.isEmpty == false
+        let isRedirectChain = !navigationAction.redirectHistory.isEmpty
+            || navigationAction.mainFrameNavigation?.redirectHistory.isEmpty == false
             || navigationAction.navigationType.isRedirect
         let resolvedActivation = userActivation ?? userActivationState(from: navigationAction)
 
         return SumiExternalSchemePermissionRequest(
             targetURL: targetURL,
-            requestingOrigin: permissionOrigin(from: sourceFrame.securityOrigin),
+            requestingOrigin: sourceFrame.map { permissionOrigin(from: $0.securityOrigin) }
+                ?? SumiPermissionOrigin(url: navigationAction.sourceURL),
             userActivation: resolvedActivation,
-            isMainFrame: sourceFrame.isMainFrame,
+            isMainFrame: sourceFrame?.isMainFrame ?? true,
             isRedirectChain: isRedirectChain
         )
     }
 
-    @MainActor
     static func userActivationState(
-        from navigationAction: NavigationAction
+        from navigationAction: SumiNavigationAction
     ) -> SumiExternalSchemeUserActivationState {
-        if navigationAction.sumiIsUserEnteredURL {
+        if navigationAction.isUserEnteredURL {
             return .userEntered
         }
         if navigationAction.isUserInitiated || navigationAction.navigationType.isLinkActivated {
             return .navigationAction
         }
-        if let initialRedirectAction = initialRedirectAction(for: navigationAction),
-           initialRedirectAction.isUserInitiated
-                || initialRedirectAction.navigationType.isLinkActivated
-                || initialRedirectAction.sumiIsUserEnteredURL {
+        if let initialRedirectAction = navigationAction.redirectInitialAction,
+           initialRedirectAction.isUserActivated {
             return .redirectChain
         }
         return .none
@@ -232,10 +240,4 @@ struct SumiExternalSchemePermissionRequest: Sendable {
         origin.permissionOrigin(missingReason: "missing-navigation-external-scheme-security-origin")
     }
 
-    @MainActor
-    private static func initialRedirectAction(for navigationAction: NavigationAction) -> NavigationAction? {
-        navigationAction.redirectHistory?.first
-            ?? navigationAction.mainFrameNavigation?.navigationAction.redirectHistory?.first
-            ?? navigationAction.mainFrameNavigation?.navigationAction
-    }
 }
