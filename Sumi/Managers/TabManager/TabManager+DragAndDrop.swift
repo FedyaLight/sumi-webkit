@@ -139,33 +139,48 @@ extension TabManager {
             return false
         }
 
-        if let folder = operation.folder {
+        let plan = SidebarDragOperationPlanner.plan(
+            operation: operation,
+            shortcutPin: { shortcutPin(by: $0) }
+        )
+
+        switch plan.kind {
+        case .folderHeaderReorder(let folder, _),
+             .folderHeaderUnsupported(let folder):
             return handleFolderDragOperation(folder, operation: operation)
-        }
 
-        if let pin = operation.pin {
+        case .launcher(let pin, _):
             return handleShortcutDragOperation(pin, operation: operation)
+
+        case .regularTab(let tab, let regularOperation):
+            return executeRegularTabSidebarDragOperation(
+                regularOperation,
+                tab: tab,
+                operation: operation
+            )
+
+        case .unsupported:
+            return false
         }
+    }
 
-        guard let tab = operation.tab else { return false }
-
-        if let shortcutId = tab.shortcutPinId,
-           let pin = shortcutPin(by: shortcutId) {
-            return handleShortcutDragOperation(pin, operation: operation)
-        }
-
+    private func executeRegularTabSidebarDragOperation(
+        _ regularOperation: SidebarRegularTabDragOperationKind,
+        tab: Tab,
+        operation: DragOperation
+    ) -> Bool {
         var didMutate = false
-        switch (operation.fromContainer, operation.toContainer) {
-        case (.essentials, .essentials):
+        switch regularOperation {
+        case .reorder where operation.toContainer == .essentials:
             didMutate = reorderGlobalPinnedTabs(tab, to: operation.toIndex)
 
-        case (.spacePinned(let fromSpaceId), .spacePinned(let toSpaceId)) where fromSpaceId == toSpaceId:
-            didMutate = reorderSpacePinnedTabs(tab, in: toSpaceId, to: operation.toIndex)
+        case .reorder(let spaceId) where operation.toContainer == .spacePinned(spaceId):
+            didMutate = reorderSpacePinnedTabs(tab, in: spaceId, to: operation.toIndex)
 
-        case (.spaceRegular(let fromSpaceId), .spaceRegular(let toSpaceId)) where fromSpaceId == toSpaceId:
-            didMutate = reorderRegularTabs(tab, in: toSpaceId, to: operation.toIndex)
+        case .reorder(let spaceId) where operation.toContainer == .spaceRegular(spaceId):
+            didMutate = reorderRegularTabs(tab, in: spaceId, to: operation.toIndex)
 
-        case (.spaceRegular, .spacePinned(let targetSpaceId)):
+        case .moveToPinned(let targetSpaceId) where operation.fromContainer == .spaceRegular(operation.scope.spaceId):
             didMutate = convertTabToShortcutPin(
                 tab,
                 role: .spacePinned,
@@ -175,10 +190,12 @@ extension TabManager {
                 at: operation.toIndex
             ) != nil
 
-        case (.spacePinned, .spaceRegular(let targetSpaceId)):
+        case .moveToRegular(let targetSpaceId) where operation.fromContainer == .spacePinned(operation.scope.spaceId):
             didMutate = moveTabIntoRegularSection(tab, spaceId: targetSpaceId, index: operation.toIndex)
 
-        case (.spaceRegular, .essentials), (.spacePinned, .essentials):
+        case .moveToEssentials
+            where operation.fromContainer == .spaceRegular(operation.scope.spaceId)
+                || operation.fromContainer == .spacePinned(operation.scope.spaceId):
             guard let profileId = resolvedEssentialsProfileId(for: operation) else { return false }
             didMutate = convertTabToShortcutPin(
                 tab,
@@ -189,10 +206,10 @@ extension TabManager {
                 at: operation.toIndex
             ) != nil
 
-        case (.essentials, .spaceRegular(let spaceId)):
+        case .moveToRegular(let spaceId) where operation.fromContainer == .essentials:
             didMutate = moveTabIntoRegularSection(tab, spaceId: spaceId, index: operation.toIndex)
 
-        case (.essentials, .spacePinned(let spaceId)):
+        case .moveToPinned(let spaceId) where operation.fromContainer == .essentials:
             didMutate = convertTabToShortcutPin(
                 tab,
                 role: .spacePinned,
@@ -202,8 +219,9 @@ extension TabManager {
                 at: operation.toIndex
             ) != nil
 
-        case (.folder(let fromFolderId), .folder(let toFolderId)):
+        case .moveToFolder(let toFolderId) where isFolderContainer(operation.fromContainer):
             guard let spaceId = tab.spaceId else { return false }
+            guard case .folder(let fromFolderId) = operation.fromContainer else { return false }
             let targetFolderId = fromFolderId == toFolderId ? fromFolderId : toFolderId
             didMutate = convertTabToShortcutPin(
                 tab,
@@ -215,7 +233,7 @@ extension TabManager {
                 openTargetFolder: false
             ) != nil
 
-        case (.folder, .essentials):
+        case .moveToEssentials where isFolderContainer(operation.fromContainer):
             guard let profileId = resolvedEssentialsProfileId(for: operation) else { return false }
             didMutate = convertTabToShortcutPin(
                 tab,
@@ -226,7 +244,7 @@ extension TabManager {
                 at: operation.toIndex
             ) != nil
 
-        case (.folder, .spacePinned(let spaceId)):
+        case .moveToPinned(let spaceId) where isFolderContainer(operation.fromContainer):
             didMutate = convertTabToShortcutPin(
                 tab,
                 role: .spacePinned,
@@ -236,10 +254,11 @@ extension TabManager {
                 at: operation.toIndex
             ) != nil
 
-        case (.folder, .spaceRegular(let spaceId)):
+        case .moveToRegular(let spaceId) where isFolderContainer(operation.fromContainer):
             didMutate = moveTabIntoRegularSection(tab, spaceId: spaceId, index: operation.toIndex)
 
-        case (.spaceRegular(let spaceId), .folder(let toFolderId)):
+        case .moveToFolder(let toFolderId) where operation.fromContainer == .spaceRegular(operation.scope.spaceId):
+            guard case .spaceRegular(let spaceId) = operation.fromContainer else { return false }
             guard let targetSpaceId = folderSpaceId(for: toFolderId), targetSpaceId == spaceId else {
                 return false
             }
@@ -253,7 +272,8 @@ extension TabManager {
                 openTargetFolder: false
             ) != nil
 
-        case (.spacePinned(let spaceId), .folder(let toFolderId)):
+        case .moveToFolder(let toFolderId) where operation.fromContainer == .spacePinned(operation.scope.spaceId):
+            guard case .spacePinned(let spaceId) = operation.fromContainer else { return false }
             guard let targetSpaceId = folderSpaceId(for: toFolderId), targetSpaceId == spaceId else {
                 return false
             }
@@ -267,11 +287,12 @@ extension TabManager {
                 openTargetFolder: false
             ) != nil
 
-        case (.essentials, .folder),
-             (.spacePinned, .spacePinned),
-             (.spaceRegular, .spaceRegular),
-             (.none, _),
-             (_, .none):
+        case .unsupported,
+             .reorder,
+             .moveToPinned,
+             .moveToFolder,
+             .moveToEssentials,
+             .moveToRegular:
             RuntimeDiagnostics.emit("⚠️ Invalid drag operation: \(operation)")
             return false
         }
@@ -280,6 +301,13 @@ extension TabManager {
             dissolveActiveSplitIfNeeded(for: tab)
         }
         return didMutate
+    }
+
+    private func isFolderContainer(_ container: TabDragManager.DragContainer) -> Bool {
+        if case .folder = container {
+            return true
+        }
+        return false
     }
 
     func alphabetizeFolderPins(_ folderId: UUID, in spaceId: UUID) {

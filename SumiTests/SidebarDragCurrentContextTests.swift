@@ -299,6 +299,340 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertEqual(tabManager.folders(for: space.id).map(\.index), [0, 1])
     }
 
+    func testSpacePinnedDropIntoFolderPreservesLauncherAndMovesOwnership() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let existingFolderPin = try makeFolderPin(
+            tabManager,
+            in: space,
+            folderId: folder.id,
+            url: "https://example.com/existing-folder",
+            index: 0
+        )
+        let pin = try makeSpacePinnedPin(
+            tabManager,
+            in: space,
+            url: "https://example.com/pinned",
+            index: 1
+        )
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileId,
+            sourceZone: .spacePinned(space.id),
+            item: dragItem(pin)
+        )
+
+        let didMove = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .pin(pin),
+                scope: scope,
+                fromContainer: .spacePinned(space.id),
+                toContainer: .folder(folder.id),
+                toIndex: 0
+            )
+        )
+
+        XCTAssertTrue(didMove)
+        XCTAssertEqual(topLevelPinnedItemIDs(tabManager, in: space.id), [folder.id])
+        let folderPins = tabManager.folderPinnedPins(for: folder.id, in: space.id)
+        XCTAssertEqual(folderPins.map(\.id), [pin.id, existingFolderPin.id])
+        let moved = try XCTUnwrap(folderPins.first)
+        XCTAssertEqual(moved.role, .spacePinned)
+        XCTAssertEqual(moved.spaceId, space.id)
+        XCTAssertEqual(moved.folderId, folder.id)
+        XCTAssertEqual(moved.launchURL, pin.launchURL)
+        XCTAssertTrue(tabManager.tabsBySpace[space.id]?.isEmpty ?? false)
+    }
+
+    func testSpacePinnedDropIntoEssentialsPreservesLauncherAndMovesOwnership() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let existingEssential = try makeEssentialPin(
+            tabManager,
+            in: space,
+            profileId: profileId,
+            url: "https://example.com/existing-essential",
+            index: 0
+        )
+        let pin = try makeSpacePinnedPin(
+            tabManager,
+            in: space,
+            url: "https://example.com/pinned",
+            index: 0
+        )
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileId,
+            sourceZone: .spacePinned(space.id),
+            item: dragItem(pin)
+        )
+
+        let didMove = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .pin(pin),
+                scope: scope,
+                fromContainer: .spacePinned(space.id),
+                toContainer: .essentials,
+                toIndex: 0
+            )
+        )
+
+        XCTAssertTrue(didMove)
+        XCTAssertTrue(tabManager.spacePinnedPins(for: space.id).isEmpty)
+        let essentials = tabManager.essentialPins(for: profileId)
+        XCTAssertEqual(essentials.map(\.id), [pin.id, existingEssential.id])
+        let moved = try XCTUnwrap(essentials.first)
+        XCTAssertEqual(moved.role, .essential)
+        XCTAssertEqual(moved.profileId, profileId)
+        XCTAssertNil(moved.spaceId)
+        XCTAssertNil(moved.folderId)
+        XCTAssertEqual(moved.launchURL, pin.launchURL)
+        XCTAssertTrue(tabManager.tabsBySpace[space.id]?.isEmpty ?? false)
+    }
+
+    func testFolderChildDropIntoSpacePinnedPreservesLauncherAndMovesOwnership() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let pin = try makeFolderPin(
+            tabManager,
+            in: space,
+            folderId: folder.id,
+            url: "https://example.com/folder-child",
+            index: 0
+        )
+        let existingTopLevelPin = try makeSpacePinnedPin(
+            tabManager,
+            in: space,
+            url: "https://example.com/top-level",
+            index: 1
+        )
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileId,
+            sourceZone: .folder(folder.id),
+            item: dragItem(pin)
+        )
+
+        let didMove = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .pin(pin),
+                scope: scope,
+                fromContainer: .folder(folder.id),
+                toContainer: .spacePinned(space.id),
+                toIndex: 1
+            )
+        )
+
+        XCTAssertTrue(didMove)
+        XCTAssertTrue(tabManager.folderPinnedPins(for: folder.id, in: space.id).isEmpty)
+        XCTAssertEqual(topLevelPinnedItemIDs(tabManager, in: space.id), [folder.id, pin.id, existingTopLevelPin.id])
+        let moved = try XCTUnwrap(tabManager.spacePinnedPins(for: space.id).first { $0.id == pin.id })
+        XCTAssertEqual(moved.role, .spacePinned)
+        XCTAssertEqual(moved.spaceId, space.id)
+        XCTAssertNil(moved.folderId)
+        XCTAssertEqual(moved.launchURL, pin.launchURL)
+        XCTAssertTrue(tabManager.tabsBySpace[space.id]?.isEmpty ?? false)
+    }
+
+    func testFolderChildDropIntoEssentialsPreservesLauncherAndMovesOwnership() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let existingEssential = try makeEssentialPin(
+            tabManager,
+            in: space,
+            profileId: profileId,
+            url: "https://example.com/existing-essential",
+            index: 0
+        )
+        let pin = try makeFolderPin(
+            tabManager,
+            in: space,
+            folderId: folder.id,
+            url: "https://example.com/folder-child",
+            index: 0
+        )
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileId,
+            sourceZone: .folder(folder.id),
+            item: dragItem(pin)
+        )
+
+        let didMove = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .pin(pin),
+                scope: scope,
+                fromContainer: .folder(folder.id),
+                toContainer: .essentials,
+                toIndex: 1
+            )
+        )
+
+        XCTAssertTrue(didMove)
+        XCTAssertTrue(tabManager.folderPinnedPins(for: folder.id, in: space.id).isEmpty)
+        let essentials = tabManager.essentialPins(for: profileId)
+        XCTAssertEqual(essentials.map(\.id), [existingEssential.id, pin.id])
+        let moved = try XCTUnwrap(essentials.first { $0.id == pin.id })
+        XCTAssertEqual(moved.role, .essential)
+        XCTAssertEqual(moved.profileId, profileId)
+        XCTAssertNil(moved.spaceId)
+        XCTAssertNil(moved.folderId)
+        XCTAssertEqual(moved.launchURL, pin.launchURL)
+        XCTAssertTrue(tabManager.tabsBySpace[space.id]?.isEmpty ?? false)
+    }
+
+    func testEssentialDropIntoSpacePinnedPreservesLauncherAndMovesOwnership() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let existingTopLevelPin = try makeSpacePinnedPin(
+            tabManager,
+            in: space,
+            url: "https://example.com/top-level",
+            index: 1
+        )
+        let pin = try makeEssentialPin(
+            tabManager,
+            in: space,
+            profileId: profileId,
+            url: "https://example.com/essential",
+            index: 0
+        )
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileId,
+            sourceZone: .essentials,
+            item: dragItem(pin)
+        )
+
+        let didMove = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .pin(pin),
+                scope: scope,
+                fromContainer: .essentials,
+                toContainer: .spacePinned(space.id),
+                toIndex: 1
+            )
+        )
+
+        XCTAssertTrue(didMove)
+        XCTAssertTrue(tabManager.essentialPins(for: profileId).isEmpty)
+        XCTAssertEqual(topLevelPinnedItemIDs(tabManager, in: space.id), [folder.id, pin.id, existingTopLevelPin.id])
+        let moved = try XCTUnwrap(tabManager.spacePinnedPins(for: space.id).first { $0.id == pin.id })
+        XCTAssertEqual(moved.role, .spacePinned)
+        XCTAssertEqual(moved.spaceId, space.id)
+        XCTAssertNil(moved.profileId)
+        XCTAssertNil(moved.folderId)
+        XCTAssertEqual(moved.launchURL, pin.launchURL)
+        XCTAssertTrue(tabManager.tabsBySpace[space.id]?.isEmpty ?? false)
+    }
+
+    func testEssentialDropIntoFolderPreservesLauncherAndMovesOwnership() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let existingFolderPin = try makeFolderPin(
+            tabManager,
+            in: space,
+            folderId: folder.id,
+            url: "https://example.com/existing-folder",
+            index: 0
+        )
+        let pin = try makeEssentialPin(
+            tabManager,
+            in: space,
+            profileId: profileId,
+            url: "https://example.com/essential",
+            index: 0
+        )
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileId,
+            sourceZone: .essentials,
+            item: dragItem(pin)
+        )
+
+        let didMove = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .pin(pin),
+                scope: scope,
+                fromContainer: .essentials,
+                toContainer: .folder(folder.id),
+                toIndex: 1
+            )
+        )
+
+        XCTAssertTrue(didMove)
+        XCTAssertTrue(tabManager.essentialPins(for: profileId).isEmpty)
+        let folderPins = tabManager.folderPinnedPins(for: folder.id, in: space.id)
+        XCTAssertEqual(folderPins.map(\.id), [existingFolderPin.id, pin.id])
+        let moved = try XCTUnwrap(folderPins.first { $0.id == pin.id })
+        XCTAssertEqual(moved.role, .spacePinned)
+        XCTAssertEqual(moved.spaceId, space.id)
+        XCTAssertNil(moved.profileId)
+        XCTAssertEqual(moved.folderId, folder.id)
+        XCTAssertEqual(moved.launchURL, pin.launchURL)
+        XCTAssertTrue(tabManager.tabsBySpace[space.id]?.isEmpty ?? false)
+    }
+
+    func testFolderChildDropIntoDifferentFolderPreservesLauncherAndMovesOwnership() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let sourceFolder = tabManager.createFolder(for: space.id, name: "Source")
+        let targetFolder = tabManager.createFolder(for: space.id, name: "Target")
+        let pin = try makeFolderPin(
+            tabManager,
+            in: space,
+            folderId: sourceFolder.id,
+            url: "https://example.com/source-child",
+            index: 0
+        )
+        let existingTargetPin = try makeFolderPin(
+            tabManager,
+            in: space,
+            folderId: targetFolder.id,
+            url: "https://example.com/target-child",
+            index: 0
+        )
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileId,
+            sourceZone: .folder(sourceFolder.id),
+            item: dragItem(pin)
+        )
+
+        let didMove = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .pin(pin),
+                scope: scope,
+                fromContainer: .folder(sourceFolder.id),
+                toContainer: .folder(targetFolder.id),
+                toIndex: 0
+            )
+        )
+
+        XCTAssertTrue(didMove)
+        XCTAssertTrue(tabManager.folderPinnedPins(for: sourceFolder.id, in: space.id).isEmpty)
+        let targetPins = tabManager.folderPinnedPins(for: targetFolder.id, in: space.id)
+        XCTAssertEqual(targetPins.map(\.id), [pin.id, existingTargetPin.id])
+        let moved = try XCTUnwrap(targetPins.first)
+        XCTAssertEqual(moved.role, .spacePinned)
+        XCTAssertEqual(moved.spaceId, space.id)
+        XCTAssertEqual(moved.folderId, targetFolder.id)
+        XCTAssertEqual(moved.launchURL, pin.launchURL)
+        XCTAssertTrue(tabManager.tabsBySpace[space.id]?.isEmpty ?? false)
+    }
+
     func testSpacePinnedDropIntoRegularCreatesRegularTabAndRemovesLauncherOwnership() throws {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
