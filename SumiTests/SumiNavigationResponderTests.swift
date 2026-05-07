@@ -351,6 +351,171 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertFalse(request.isMainFrame)
     }
 
+    func testPopupRequestFromNavigationActionPreservesNewWindowMainFrameAndModifierMetadata() {
+        let sourceURL = URL(string: "https://request.example/page")!
+        let action = navigationAction(
+            url: URL(string: "https://popup.example/window")!,
+            navigationType: .linkActivated(isMiddleClick: false),
+            sourceURL: sourceURL,
+            sourceSecurityOrigin: SumiSecurityOrigin(protocol: "https", host: "request.example", port: 0),
+            isTargetingNewWindow: true,
+            modifierFlags: [.command, .shift]
+        )
+        let activationState = SumiPopupUserActivationTracker().activationState(
+            webKitUserInitiated: nil,
+            navigationActionUserInitiated: action.isUserInitiated
+        )
+
+        let request = SumiPopupPermissionRequest.fromNavigationAction(
+            action,
+            activationState: activationState
+        )
+
+        XCTAssertEqual(request.targetURL, URL(string: "https://popup.example/window")!)
+        XCTAssertEqual(request.sourceURL, sourceURL)
+        XCTAssertEqual(request.requestingOrigin.identity, "https://request.example")
+        XCTAssertTrue(request.isMainFrame)
+        XCTAssertTrue(request.isUserActivated)
+        XCTAssertEqual(request.classification, .directUserActivated)
+        XCTAssertEqual(request.navigationActionMetadata["path"], SumiPopupPermissionPath.navigationResponderTargetFrame.rawValue)
+        XCTAssertEqual(request.navigationActionMetadata["navigationType"], "linkActivated")
+        XCTAssertEqual(request.navigationActionMetadata["activation"], "navigation-action")
+        XCTAssertEqual(request.navigationActionMetadata["isTargetingNewWindow"], "true")
+        XCTAssertEqual(request.navigationActionMetadata["isForMainFrame"], "false")
+        XCTAssertEqual(
+            request.navigationActionMetadata["modifierFlags"],
+            "\(NSEvent.ModifierFlags([.command, .shift]).rawValue)"
+        )
+    }
+
+    func testPopupRequestFromNavigationActionPreservesMainFrameTargetMetadata() {
+        let sourceURL = URL(string: "https://request.example/page")!
+        let action = navigationAction(
+            url: URL(string: "https://destination.example/main")!,
+            navigationType: .linkActivated(isMiddleClick: false),
+            sourceURL: sourceURL,
+            sourceSecurityOrigin: SumiSecurityOrigin(protocol: "https", host: "request.example", port: 0),
+            targetFrameIsMainFrame: true,
+            modifierFlags: []
+        )
+
+        let request = SumiPopupPermissionRequest.fromNavigationAction(
+            action,
+            activationState: .navigationAction
+        )
+
+        XCTAssertEqual(request.targetURL, URL(string: "https://destination.example/main")!)
+        XCTAssertEqual(request.sourceURL, sourceURL)
+        XCTAssertEqual(request.requestingOrigin.identity, "https://request.example")
+        XCTAssertTrue(request.isMainFrame)
+        XCTAssertEqual(request.navigationActionMetadata["isTargetingNewWindow"], "false")
+        XCTAssertEqual(request.navigationActionMetadata["isForMainFrame"], "true")
+        XCTAssertEqual(request.navigationActionMetadata["modifierFlags"], "0")
+    }
+
+    func testExternalSchemeRequestClassifiesNavigationTypeRedirectWithoutHistoryAsBackgroundRedirectChain() {
+        let action = navigationAction(
+            url: URL(string: "mailto:test@example.com")!,
+            navigationType: .redirect(.server),
+            sourceURL: URL(string: "https://redirect.example/page")!,
+            sourceSecurityOrigin: SumiSecurityOrigin(protocol: "https", host: "redirect.example", port: 0),
+            isUserInitiated: false
+        )
+
+        let request = SumiExternalSchemePermissionRequest.fromNavigationAction(action)
+
+        XCTAssertEqual(request.targetURL, URL(string: "mailto:test@example.com")!)
+        XCTAssertEqual(request.requestingOrigin.identity, "https://redirect.example")
+        XCTAssertEqual(request.userActivation, .none)
+        XCTAssertFalse(request.isUserActivated)
+        XCTAssertEqual(request.classification, .redirectChainBackground)
+        XCTAssertTrue(action.navigationType.isRedirect)
+    }
+
+    func testExternalSchemeRequestUsesRedirectHistoryInitialUserActivationForRedirectChain() {
+        let initialAction = navigationAction(
+            url: URL(string: "https://source.example/start")!,
+            navigationType: .linkActivated(isMiddleClick: false),
+            sourceURL: URL(string: "https://source.example/page")!,
+            sourceSecurityOrigin: SumiSecurityOrigin(protocol: "https", host: "source.example", port: 0),
+            isUserInitiated: true
+        )
+        let action = navigationAction(
+            url: URL(string: "mailto:test@example.com")!,
+            navigationType: .other,
+            sourceURL: URL(string: "https://source.example/redirected")!,
+            sourceSecurityOrigin: SumiSecurityOrigin(protocol: "https", host: "source.example", port: 0),
+            isUserInitiated: false,
+            redirectHistory: [initialAction]
+        )
+
+        let request = SumiExternalSchemePermissionRequest.fromNavigationAction(action)
+
+        XCTAssertEqual(action.redirectHistory?.map(\.url), [URL(string: "https://source.example/start")!])
+        XCTAssertFalse(action.navigationType.isLinkActivated)
+        XCTAssertFalse(action.isUserInitiated)
+        XCTAssertEqual(request.userActivation, .redirectChain)
+        XCTAssertTrue(request.isUserActivated)
+        XCTAssertEqual(request.classification, .redirectChainUserActivated)
+    }
+
+    func testExternalSchemeRequestUsesMainFrameNavigationRedirectHistoryForSubframeExternalRedirect() {
+        let initialAction = navigationAction(
+            url: URL(string: "https://source.example/start")!,
+            navigationType: .linkActivated(isMiddleClick: false),
+            sourceURL: URL(string: "https://source.example/page")!,
+            sourceSecurityOrigin: SumiSecurityOrigin(protocol: "https", host: "source.example", port: 0),
+            isUserInitiated: true
+        )
+        let mainFrameAction = navigationAction(
+            url: URL(string: "https://source.example/landing")!,
+            navigationType: .redirect(.server),
+            sourceURL: URL(string: "https://source.example/start")!,
+            sourceSecurityOrigin: SumiSecurityOrigin(protocol: "https", host: "source.example", port: 0),
+            isUserInitiated: false,
+            redirectHistory: [initialAction]
+        )
+        let mainFrameNavigation = mainFrameNavigation(receiving: mainFrameAction)
+        let action = navigationAction(
+            url: URL(string: "mailto:test@example.com")!,
+            navigationType: .other,
+            sourceURL: URL(string: "https://frame.example/embed")!,
+            sourceSecurityOrigin: SumiSecurityOrigin(protocol: "https", host: "frame.example", port: 0),
+            isUserInitiated: false,
+            isMainFrame: false,
+            targetFrameIsMainFrame: false,
+            mainFrameNavigation: mainFrameNavigation
+        )
+
+        let request = SumiExternalSchemePermissionRequest.fromNavigationAction(action)
+
+        XCTAssertEqual(action.mainFrameNavigation?.navigationAction.redirectHistory?.map(\.url), [URL(string: "https://source.example/start")!])
+        XCTAssertFalse(action.navigationType.isLinkActivated)
+        XCTAssertFalse(action.isUserInitiated)
+        XCTAssertFalse(action.isForMainFrame)
+        XCTAssertEqual(request.requestingOrigin.identity, "https://frame.example")
+        XCTAssertFalse(request.isMainFrame)
+        XCTAssertEqual(request.userActivation, .redirectChain)
+        XCTAssertEqual(request.classification, .redirectChainUserActivated)
+    }
+
+    func testExternalSchemeRequestTreatsUserInitiatedOtherNavigationAsDirectActivation() {
+        let action = navigationAction(
+            url: URL(string: "mailto:test@example.com")!,
+            navigationType: .other,
+            sourceURL: URL(string: "https://source.example/page")!,
+            sourceSecurityOrigin: SumiSecurityOrigin(protocol: "https", host: "source.example", port: 0),
+            isUserInitiated: true
+        )
+
+        let request = SumiExternalSchemePermissionRequest.fromNavigationAction(action)
+
+        XCTAssertFalse(action.navigationType.isLinkActivated)
+        XCTAssertTrue(action.isUserInitiated)
+        XCTAssertEqual(request.userActivation, .navigationAction)
+        XCTAssertEqual(request.classification, .directUserActivated)
+    }
+
     func testExternalSchemeResponderSourceRoutesThroughBridgeBeforeAppOpen() throws {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -861,7 +1026,12 @@ final class SumiNavigationResponderTests: XCTestCase {
         sourceURL: URL? = nil,
         sourceSecurityOrigin: SumiSecurityOrigin? = nil,
         isUserInitiated: Bool = true,
-        isMainFrame: Bool = true
+        isMainFrame: Bool = true,
+        targetFrameIsMainFrame: Bool? = nil,
+        isTargetingNewWindow: Bool = false,
+        redirectHistory: [NavigationAction]? = nil,
+        mainFrameNavigation: Navigation? = nil,
+        modifierFlags: NSEvent.ModifierFlags = []
     ) -> NavigationAction {
         let webView = webView ?? WKWebView(frame: .zero)
         let frameURL = sourceURL ?? url
@@ -876,18 +1046,26 @@ final class SumiNavigationResponderTests: XCTestCase {
             isMainFrame: isMainFrame,
             url: frameURL
         )
+        let targetFrame = isTargetingNewWindow ? nil : securityOrigin.navigationFrameInfo(
+            webView: webView,
+            handle: FrameHandle(rawValue: UInt64(2))!,
+            isMainFrame: targetFrameIsMainFrame ?? isMainFrame,
+            url: frameURL
+        )
         let request = URLRequest(url: url, cachePolicy: requestCachePolicy)
-        return NavigationAction(
+        var action = NavigationAction(
             request: request,
             navigationType: navigationType,
             currentHistoryItemIdentity: nil,
-            redirectHistory: nil,
+            redirectHistory: redirectHistory,
             isUserInitiated: isUserInitiated,
             sourceFrame: frame,
-            targetFrame: frame,
+            targetFrame: targetFrame,
             shouldDownload: shouldDownload,
-            mainFrameNavigation: nil
+            mainFrameNavigation: mainFrameNavigation
         )
+        action.modifierFlags = modifierFlags
+        return action
     }
 
     private func mainFrameNavigation(receiving action: NavigationAction) -> Navigation {
