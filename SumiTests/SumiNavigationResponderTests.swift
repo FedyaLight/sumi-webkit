@@ -215,21 +215,24 @@ final class SumiNavigationResponderTests: XCTestCase {
     func testNavigationFrameInfoBridgePreservesSourceOriginPortForPermissionOrigin() {
         let webView = WKWebView(frame: .zero)
         let sourceURL = URL(string: "https://request.example:8443/frame")!
+        let handle = FrameHandle(rawValue: UInt64(2))!
         let frame = SumiSecurityOrigin(protocol: "https", host: "request.example", port: 8443)
             .navigationFrameInfo(
                 webView: webView,
-                handle: FrameHandle(rawValue: UInt64(2))!,
+                handle: handle,
                 isMainFrame: false,
                 url: sourceURL
             )
+        let sumiFrame = SumiNavigationFrameInfo(navigationFrame: frame)
 
-        let origin = SumiSecurityOrigin(navigationFrame: frame)
+        let origin = SumiSecurityOrigin(navigationFrame: sumiFrame)
             .permissionOrigin(missingReason: "missing-navigation-frame-origin")
 
         XCTAssertEqual(origin.kind, .web)
         XCTAssertEqual(origin.identity, "https://request.example:8443")
-        XCTAssertEqual(frame.url, sourceURL)
-        XCTAssertFalse(frame.isMainFrame)
+        XCTAssertEqual(sumiFrame.url, sourceURL)
+        XCTAssertFalse(sumiFrame.isMainFrame)
+        XCTAssertEqual(sumiFrame.handle?.frameID, handle.frameID)
     }
 
     func testNavigationFrameInfoBridgeFailsClosedForEmptySecurityOrigin() {
@@ -239,8 +242,9 @@ final class SumiNavigationResponderTests: XCTestCase {
             isMainFrame: true,
             url: URL(string: "about:blank")!
         )
+        let sumiFrame = SumiNavigationFrameInfo(navigationFrame: frame)
 
-        let origin = SumiSecurityOrigin(navigationFrame: frame)
+        let origin = SumiSecurityOrigin(navigationFrame: sumiFrame)
             .permissionOrigin(missingReason: "missing-navigation-frame-origin")
 
         XCTAssertEqual(origin.kind, .invalid)

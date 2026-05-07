@@ -1,5 +1,4 @@
 import Foundation
-import Navigation
 import WebKit
 
 struct SumiWebKitGeolocationRequest: Sendable {
@@ -12,12 +11,12 @@ struct SumiWebKitGeolocationRequest: Sendable {
         id: String = UUID().uuidString,
         frame: WKFrameInfo
     ) {
-        let frameURL = frame.safeRequest?.url
+        let frameInfo = SumiNavigationFrameInfo(webKitFrame: frame)
         self.init(
             id: id,
-            requestingOrigin: frameURL.map(SumiPermissionOrigin.init(url:))
+            requestingOrigin: frameInfo.url.map(SumiPermissionOrigin.init(url:))
                 ?? .invalid(reason: "missing-webkit-geolocation-frame-url"),
-            isMainFrame: frame.isMainFrame
+            isMainFrame: frameInfo.isMainFrame
         )
     }
 
@@ -28,10 +27,11 @@ struct SumiWebKitGeolocationRequest: Sendable {
         origin: WKSecurityOrigin,
         frame: WKFrameInfo
     ) {
+        let frameInfo = SumiNavigationFrameInfo(webKitFrame: frame)
         self.init(
             id: id,
             requestingOrigin: Self.permissionOrigin(from: origin),
-            isMainFrame: frame.isMainFrame
+            isMainFrame: frameInfo.isMainFrame
         )
     }
 

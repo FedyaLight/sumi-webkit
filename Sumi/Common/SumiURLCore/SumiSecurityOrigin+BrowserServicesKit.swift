@@ -1,9 +1,49 @@
 import Navigation
 import WebKit
 
-extension SumiSecurityOrigin {
+extension SumiFrameHandle {
+    init(_ handle: FrameHandle) {
+        self.init(frameID: handle.frameID)
+    }
+
+    var navigationFrameHandle: FrameHandle? {
+        FrameHandle(rawValue: frameID)
+    }
+}
+
+extension SumiNavigationFrameInfo {
     init(navigationFrame frame: FrameInfo) {
         let origin = frame.securityOrigin
+        self.init(
+            securityOrigin: SumiSecurityOrigin(
+                protocol: origin.`protocol`,
+                host: origin.host,
+                port: origin.port
+            ),
+            isMainFrame: frame.isMainFrame,
+            url: frame.url,
+            handle: SumiFrameHandle(frame.handle)
+        )
+    }
+
+    @MainActor
+    init(webKitFrame frame: WKFrameInfo) {
+        self.init(
+            securityOrigin: SumiSecurityOrigin(webKitSecurityOrigin: frame.securityOrigin),
+            isMainFrame: frame.isMainFrame,
+            url: frame.safeRequest?.url,
+            handle: nil
+        )
+    }
+}
+
+extension SumiSecurityOrigin {
+    init(navigationFrame frame: FrameInfo) {
+        self = SumiNavigationFrameInfo(navigationFrame: frame).securityOrigin
+    }
+
+    @MainActor
+    init(webKitSecurityOrigin origin: WKSecurityOrigin) {
         self.init(protocol: origin.`protocol`, host: origin.host, port: origin.port)
     }
 
