@@ -209,7 +209,7 @@ final class SumiBookmarkFaviconMirrorParityTests: XCTestCase {
         let didStoreIDs = expectation(description: "Fetcher state was initialized")
         let stateStore = RecordingBookmarksFaviconsFetcherStateStore(didStoreIDs: didStoreIDs)
         let faviconFetcher = RecordingFaviconFetcher()
-        let faviconStore = StubBookmarksFaviconStore()
+        let faviconStore = StubSumiFaviconStore()
 
         let database = try makeCoreDataDatabase(
             name: "Bookmarks_V6",
@@ -240,6 +240,25 @@ final class SumiBookmarkFaviconMirrorParityTests: XCTestCase {
         XCTAssertEqual(stateStore.storedBookmarkIDs, [expectedMirrorID])
         XCTAssertEqual(faviconFetcher.fetchCount, 0)
         XCTAssertFalse(fetcherStateFileExists(in: directory))
+    }
+
+    func testDDGBookmarkFaviconStoreAdapterForwardsToSumiStorage() async throws {
+        let storage = RecordingSumiFaviconStore()
+        let adapter = SumiDDGBookmarkFaviconStoringAdapter(storage: storage)
+        let imageData = Data([0x01, 0x02, 0x03])
+        let faviconURL = try XCTUnwrap(URL(string: "https://assets.example/favicon.ico"))
+        let documentURL = try XCTUnwrap(URL(string: "https://adapter.example/start"))
+
+        storage.hasFaviconResult = true
+
+        XCTAssertTrue(adapter.hasFavicon(for: "adapter.example"))
+
+        try await adapter.storeFavicon(imageData, with: faviconURL, for: documentURL)
+
+        XCTAssertEqual(storage.queriedDomains, ["adapter.example"])
+        XCTAssertEqual(storage.storedImageData, imageData)
+        XCTAssertEqual(storage.storedFaviconURL, faviconURL)
+        XCTAssertEqual(storage.storedDocumentURL, documentURL)
     }
 
     private func temporaryDirectory(named name: String) throws -> URL {
@@ -383,12 +402,32 @@ private final class RecordingFaviconFetcher: FaviconFetching {
 }
 
 @MainActor
-private final class StubBookmarksFaviconStore: Bookmarks.FaviconStoring {
+private final class StubSumiFaviconStore: SumiFaviconStoring {
     func hasFavicon(for domain: String) -> Bool {
         false
     }
 
     func storeFavicon(_ imageData: Data, with url: URL?, for documentURL: URL) async throws {}
+}
+
+@MainActor
+private final class RecordingSumiFaviconStore: SumiFaviconStoring {
+    var hasFaviconResult = false
+    private(set) var queriedDomains = [String]()
+    private(set) var storedImageData: Data?
+    private(set) var storedFaviconURL: URL?
+    private(set) var storedDocumentURL: URL?
+
+    func hasFavicon(for domain: String) -> Bool {
+        queriedDomains.append(domain)
+        return hasFaviconResult
+    }
+
+    func storeFavicon(_ imageData: Data, with url: URL?, for documentURL: URL) async throws {
+        storedImageData = imageData
+        storedFaviconURL = url
+        storedDocumentURL = documentURL
+    }
 }
 
 final class SumiBookmarkFaviconStoreParityTests: XCTestCase {

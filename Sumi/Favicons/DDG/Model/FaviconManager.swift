@@ -16,7 +16,6 @@
 //  limitations under the License.
 //
 
-import Bookmarks
 import Cocoa
 import Combine
 import CoreImage
@@ -446,7 +445,7 @@ private final class FaviconManagerRecoveryStorage: @unchecked Sendable {
 }
 
 @MainActor
-extension FaviconManager: Bookmarks.FaviconStoring {
+extension FaviconManager: SumiFaviconStoring {
 
     func hasFavicon(for domain: String) -> Bool {
         guard let url = SumiFaviconLookupKey.documentURL(for: domain),
