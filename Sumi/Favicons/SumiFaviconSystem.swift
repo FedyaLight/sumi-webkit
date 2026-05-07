@@ -2,7 +2,6 @@ import AppKit
 import Bookmarks
 import CoreData
 import Foundation
-import Persistence
 import WebKit
 
 enum SumiFaviconLookupKey {
@@ -75,13 +74,13 @@ private enum SumiFaviconPersistence {
 
 @MainActor
 final class SumiBookmarkMirrorManager: BookmarkManager {
-    private let database: CoreDataDatabase
+    private let database: any SumiCoreDataDatabase
     private var fetchScheduler: (any SumiBookmarkFaviconFetchScheduling)?
     nonisolated private static let mirrorPrefix = "sumi-favicon-mirror-"
     nonisolated private static let realBookmarkPrefix = "sumi-real-bookmark-"
     private var didInitializeFetcherState = false
 
-    init(database: CoreDataDatabase) {
+    init(database: any SumiCoreDataDatabase) {
         self.database = database
         prepareFolderStructureIfNeeded()
     }
@@ -275,9 +274,9 @@ final class SumiFaviconSystem {
     let bookmarkMirror: any SumiFaviconMirrorSyncing
     let fireproofDomains: FireproofDomains
 
-    private let faviconDatabase: CoreDataDatabase
-    private let bookmarkDatabase: CoreDataDatabase
-    private let fireproofDatabase: CoreDataDatabase
+    private let faviconDatabase: SumiDDGCoreDataDatabase
+    private let bookmarkDatabase: SumiDDGCoreDataDatabase
+    private let fireproofDatabase: SumiDDGCoreDataDatabase
 
     private init() {
         let rootDirectoryURL = SumiFaviconPersistence.directory(named: "Favicons/DDGBackend-v2")
@@ -361,14 +360,14 @@ final class SumiFaviconSystem {
         directory: URL,
         modelName: String,
         bundle: Bundle
-    ) -> CoreDataDatabase {
+    ) -> SumiDDGCoreDataDatabase {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         FaviconValueTransformers.register()
         guard let model = Self.loadModel(named: modelName, preferredBundle: bundle) else {
             fatalError("Failed to load Core Data model \(modelName)")
         }
 
-        let database = CoreDataDatabase(name: name, containerLocation: directory, model: model)
+        let database = SumiDDGCoreDataDatabase(name: name, containerLocation: directory, model: model)
         database.loadStore()
         return database
     }
@@ -381,7 +380,7 @@ final class SumiFaviconSystem {
             .values
 
         for bundle in bundles {
-            if let model = CoreDataDatabase.loadModel(from: bundle, named: modelName) {
+            if let model = SumiDDGCoreDataDatabase.loadModel(from: bundle, named: modelName) {
                 return model
             }
         }

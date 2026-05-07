@@ -1,7 +1,6 @@
 import CoreData
 import XCTest
 
-import Persistence
 @testable import Sumi
 
 final class SumiFireproofCoreDataStoreParityTests: XCTestCase {
@@ -162,9 +161,9 @@ final class SumiFireproofCoreDataStoreParityTests: XCTestCase {
         return defaults
     }
 
-    private func makeFireproofDatabase(directory: URL) throws -> CoreDataDatabase {
+    private func makeFireproofDatabase(directory: URL) throws -> SumiDDGCoreDataDatabase {
         let model = try XCTUnwrap(loadModel(named: "FireproofDomains"))
-        let database = CoreDataDatabase(name: "Permissions", containerLocation: directory, model: model)
+        let database = SumiDDGCoreDataDatabase(name: "Permissions", containerLocation: directory, model: model)
         var loadError: Error?
         database.loadStore { _, error in
             loadError = error
@@ -185,7 +184,7 @@ final class SumiFireproofCoreDataStoreParityTests: XCTestCase {
             .values
 
         for bundle in bundles {
-            if let model = CoreDataDatabase.loadModel(from: bundle, named: modelName) {
+            if let model = SumiDDGCoreDataDatabase.loadModel(from: bundle, named: modelName) {
                 return model
             }
         }

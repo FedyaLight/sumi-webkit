@@ -1,14 +1,13 @@
 import Bookmarks
 import Foundation
-import Persistence
 
 @MainActor
 final class SumiDDGBookmarkFaviconMirror: SumiFaviconMirrorSyncing {
-    private let database: CoreDataDatabase
+    private let database: SumiDDGCoreDataDatabase
     private let mirrorManager: SumiBookmarkMirrorManager
     private var fetchScheduler: SumiDDGBookmarkFaviconFetchScheduler?
 
-    init(database: CoreDataDatabase) {
+    init(database: SumiDDGCoreDataDatabase) {
         self.database = database
         self.mirrorManager = SumiBookmarkMirrorManager(database: database)
     }
@@ -75,7 +74,7 @@ final class SumiDDGBookmarkFaviconFetchScheduler: SumiBookmarkFaviconFetchSchedu
     private let fetcher: BookmarksFaviconsFetcher
 
     init(
-        database: CoreDataDatabase,
+        database: SumiDDGCoreDataDatabase,
         stateStore: BookmarksFaviconsFetcherStateStoring,
         fetcher: FaviconFetching,
         faviconStore: @escaping @MainActor () async -> any SumiFaviconStoring
@@ -83,7 +82,7 @@ final class SumiDDGBookmarkFaviconFetchScheduler: SumiBookmarkFaviconFetchSchedu
         self.stateStore = stateStore
         self.faviconFetcher = fetcher
         self.fetcher = BookmarksFaviconsFetcher(
-            database: database,
+            database: database.ddgDatabase,
             stateStore: stateStore,
             fetcher: fetcher,
             faviconStore: {

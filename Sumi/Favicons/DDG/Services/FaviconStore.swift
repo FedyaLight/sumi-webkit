@@ -19,7 +19,6 @@
 import Cocoa
 import CoreData
 import Combine
-import Persistence
 import os.log
 
 enum FaviconValueTransformers {
@@ -82,7 +81,7 @@ final class FaviconStore: FaviconStoring {
 
     private let context: NSManagedObjectContext
 
-    init(database: CoreDataDatabase) {
+    init(database: any SumiCoreDataDatabase) {
         context = database.makeContext(concurrencyType: .privateQueueConcurrencyType, name: "Favicons")
     }
 
