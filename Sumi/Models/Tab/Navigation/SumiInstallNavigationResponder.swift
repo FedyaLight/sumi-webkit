@@ -1,8 +1,7 @@
 import Foundation
-import Navigation
 
 @MainActor
-final class SumiInstallNavigationResponder: NavigationResponder {
+final class SumiInstallNavigationResponder: SumiNavigationActionResponding, SumiNavigationResponseResponding {
     private weak var tab: Tab?
 
     init(tab: Tab) {
@@ -10,30 +9,30 @@ final class SumiInstallNavigationResponder: NavigationResponder {
     }
 
     func decidePolicy(
-        for navigationAction: NavigationAction,
-        preferences _: inout NavigationPreferences
-    ) async -> NavigationActionPolicy? {
+        for navigationAction: SumiNavigationAction,
+        preferences _: inout SumiNavigationPreferences
+    ) async -> SumiNavigationActionPolicy? {
         let signpostState = PerformanceTrace.beginInterval("NavigationPolicy.installResponder")
         defer {
             PerformanceTrace.endInterval("NavigationPolicy.installResponder", signpostState)
         }
 
-        guard navigationAction.isForMainFrame,
-              tab?.browserManager?.userscriptsModule.interceptInstallNavigationIfNeeded(navigationAction.url) == true
+        guard let url = navigationAction.url,
+              navigationAction.isForMainFrame,
+              tab?.browserManager?.userscriptsModule.interceptInstallNavigationIfNeeded(url) == true
         else { return .next }
 
         return .cancel
     }
 
-    func decidePolicy(for navigationResponse: NavigationResponse) async -> NavigationResponsePolicy? {
+    func decidePolicy(for navigationResponse: SumiNavigationResponse) async -> SumiNavigationResponsePolicy? {
         let signpostState = PerformanceTrace.beginInterval("NavigationPolicy.installResponseResponder")
         defer {
             PerformanceTrace.endInterval("NavigationPolicy.installResponseResponder", signpostState)
         }
 
-        let response = SumiNavigationResponse(navigationResponse)
-        guard response.isForMainFrame,
-              tab?.browserManager?.userscriptsModule.interceptInstallNavigationIfNeeded(response.url) == true
+        guard navigationResponse.isForMainFrame,
+              tab?.browserManager?.userscriptsModule.interceptInstallNavigationIfNeeded(navigationResponse.url) == true
         else { return .next }
 
         return .cancel
