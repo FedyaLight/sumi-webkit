@@ -518,6 +518,113 @@ final class SumiBookmarkFaviconStoreParityTests: XCTestCase {
         XCTAssertEqual(urlReferences.first?.documentUrl, documentURL)
     }
 
+    func testFaviconDatabaseContextsShareCoordinatorAndTemporaryStoreURL() throws {
+        let directory = try temporaryDirectory(named: "SumiFaviconCoordinatorParity")
+        let database = try makeCoreDataDatabase(
+            name: "Favicons",
+            directory: directory,
+            modelName: "Favicons",
+            preferredBundles: [.main]
+        )
+
+        let firstContext = database.makeContext(
+            concurrencyType: .privateQueueConcurrencyType,
+            name: "SumiFaviconCoordinatorParityFirst"
+        )
+        let secondContext = database.makeContext(
+            concurrencyType: .privateQueueConcurrencyType,
+            name: "SumiFaviconCoordinatorParitySecond"
+        )
+
+        let firstCoordinator = try XCTUnwrap(firstContext.persistentStoreCoordinator)
+        let secondCoordinator = try XCTUnwrap(secondContext.persistentStoreCoordinator)
+        let storeURL = try XCTUnwrap(firstCoordinator.persistentStores.first?.url)
+
+        XCTAssertTrue(firstCoordinator === secondCoordinator)
+        XCTAssertEqual(firstContext.name, "SumiFaviconCoordinatorParityFirst")
+        XCTAssertEqual(secondContext.name, "SumiFaviconCoordinatorParitySecond")
+        XCTAssertEqual(storeURL.standardizedFileURL, directory.appendingPathComponent("Favicons.sqlite").standardizedFileURL)
+        XCTAssertTrue(storeURL.path.hasPrefix(directory.path))
+        XCTAssertFalse(storeURL.path.hasPrefix(applicationSupportDirectory().path))
+    }
+
+    func testFaviconStoreClearAllBatchDeleteMergesCurrentContextAndSurvivesReopen() async throws {
+        let directory = try temporaryDirectory(named: "SumiFaviconClearAllParity")
+        let faviconURL = try XCTUnwrap(URL(string: "https://assets.example/favicon.ico"))
+        let documentURL = try XCTUnwrap(URL(string: "https://clear-all.example/start"))
+        let dateCreated = try XCTUnwrap(DateComponents(
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0),
+            year: 2026,
+            month: 2,
+            day: 3,
+            hour: 4,
+            minute: 5,
+            second: 6
+        ).date)
+        let database = try makeCoreDataDatabase(
+            name: "Favicons",
+            directory: directory,
+            modelName: "Favicons",
+            preferredBundles: [.main]
+        )
+        let store = FaviconStore(database: database)
+
+        try await store.save([
+            Favicon(
+                identifier: try XCTUnwrap(UUID(uuidString: "dddddddd-eeee-ffff-aaaa-bbbbbbbbbbbb")),
+                url: faviconURL,
+                image: nil,
+                relation: .favicon,
+                documentUrl: documentURL,
+                dateCreated: dateCreated
+            ),
+        ])
+        try await store.save(hostReference: FaviconHostReference(
+            identifier: try XCTUnwrap(UUID(uuidString: "eeeeeeee-ffff-aaaa-bbbb-cccccccccccc")),
+            smallFaviconUrl: faviconURL,
+            mediumFaviconUrl: nil,
+            host: "clear-all.example",
+            documentUrl: documentURL,
+            dateCreated: dateCreated
+        ))
+        try await store.save(urlReference: FaviconUrlReference(
+            identifier: try XCTUnwrap(UUID(uuidString: "ffffffff-aaaa-bbbb-cccc-dddddddddddd")),
+            smallFaviconUrl: faviconURL,
+            mediumFaviconUrl: nil,
+            documentUrl: documentURL,
+            dateCreated: dateCreated
+        ))
+
+        let faviconsBeforeDelete = try await store.loadFavicons()
+        XCTAssertEqual(faviconsBeforeDelete.count, 1)
+        let referencesBeforeDelete = try await store.loadFaviconReferences()
+        XCTAssertEqual(referencesBeforeDelete.0.count, 1)
+        XCTAssertEqual(referencesBeforeDelete.1.count, 1)
+
+        try await store.clearAll()
+
+        let faviconsAfterDelete = try await store.loadFavicons()
+        XCTAssertTrue(faviconsAfterDelete.isEmpty)
+        let referencesAfterDelete = try await store.loadFaviconReferences()
+        XCTAssertTrue(referencesAfterDelete.0.isEmpty)
+        XCTAssertTrue(referencesAfterDelete.1.isEmpty)
+
+        let reopenedDatabase = try makeCoreDataDatabase(
+            name: "Favicons",
+            directory: directory,
+            modelName: "Favicons",
+            preferredBundles: [.main]
+        )
+        let reopenedStore = FaviconStore(database: reopenedDatabase)
+
+        let reopenedFavicons = try await reopenedStore.loadFavicons()
+        XCTAssertTrue(reopenedFavicons.isEmpty)
+        let reopenedReferences = try await reopenedStore.loadFaviconReferences()
+        XCTAssertTrue(reopenedReferences.0.isEmpty)
+        XCTAssertTrue(reopenedReferences.1.isEmpty)
+    }
+
     private func temporaryDirectory(named name: String) throws -> URL {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("\(name)-\(UUID().uuidString)", isDirectory: true)
@@ -562,5 +669,9 @@ final class SumiBookmarkFaviconStoreParityTests: XCTestCase {
             }
         }
         return nil
+    }
+
+    private func applicationSupportDirectory() -> URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
     }
 }
