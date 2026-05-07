@@ -933,6 +933,229 @@ final class SumiNavigationResponderTests: XCTestCase {
         }
     }
 
+    func testSumiNavigationResponderAdapterMapsNilActionAndResponseResultsToNext() async {
+        let target = SumiNavigationAdapterProbeResponder(
+            name: "next",
+            actionDecision: .next,
+            responseDecision: .next
+        )
+        let adapter = SumiNavigationResponderAdapter(target: target)
+        var preferences = NavigationPreferences.default
+
+        let actionPolicy = await adapter.decidePolicy(
+            for: navigationAction(
+                url: URL(string: "https://example.com/next")!,
+                navigationType: .linkActivated(isMiddleClick: false)
+            ),
+            preferences: &preferences
+        )
+        let responsePolicy = await adapter.decidePolicy(
+            for: NavigationResponse(
+                response: URLResponse(
+                    url: URL(string: "https://example.com/next")!,
+                    mimeType: "text/html",
+                    expectedContentLength: 32,
+                    textEncodingName: nil
+                ),
+                isForMainFrame: true,
+                canShowMIMEType: true,
+                mainFrameNavigation: nil
+            )
+        )
+
+        XCTAssertNil(actionPolicy)
+        XCTAssertNil(responsePolicy)
+        XCTAssertEqual(target.actionCallCount, 1)
+        XCTAssertEqual(target.responseCallCount, 1)
+    }
+
+    func testSumiNavigationResponderAdapterStopsAtFirstMappedActionPolicyForAllowCancelDownload() async {
+        let cases: [(SumiNavigationActionPolicy, String)] = [
+            (.allow, "allow"),
+            (.cancel, "cancel"),
+            (.download, "download"),
+        ]
+
+        for (expectedPolicy, caseName) in cases {
+            let first = SumiNavigationAdapterProbeResponder(name: "\(caseName)-first", actionDecision: .next)
+            let decider = SumiNavigationAdapterProbeResponder(name: "\(caseName)-decider", actionDecision: expectedPolicy)
+            let skipped = SumiNavigationAdapterProbeResponder(name: "\(caseName)-skipped", actionDecision: .cancel)
+            let adapters = [first, decider, skipped].map(SumiNavigationResponderAdapter.init(target:))
+            var preferences = NavigationPreferences.default
+
+            let policy = await evaluateActionPolicy(
+                with: adapters,
+                action: navigationAction(
+                    url: URL(string: "https://example.com/adapter/action/\(caseName)")!,
+                    navigationType: .linkActivated(isMiddleClick: false)
+                ),
+                preferences: &preferences
+            )
+
+            XCTAssertEqual(policy?.sumiNavigationActionPolicy, expectedPolicy)
+            XCTAssertEqual(first.actionCallCount, 1)
+            XCTAssertEqual(decider.actionCallCount, 1)
+            XCTAssertEqual(skipped.actionCallCount, 0)
+            XCTAssertEqual(decider.observedActions.first?.url, URL(string: "https://example.com/adapter/action/\(caseName)")!)
+        }
+    }
+
+    func testSumiNavigationResponderAdapterStopsAtFirstMappedResponsePolicyForAllowCancelDownload() async {
+        let response = NavigationResponse(
+            response: URLResponse(
+                url: URL(string: "https://example.com/adapter/response/file.bin")!,
+                mimeType: "application/octet-stream",
+                expectedContentLength: 128,
+                textEncodingName: nil
+            ),
+            isForMainFrame: true,
+            canShowMIMEType: false,
+            mainFrameNavigation: nil
+        )
+        let cases: [(SumiNavigationResponsePolicy, String)] = [
+            (.allow, "allow"),
+            (.cancel, "cancel"),
+            (.download, "download"),
+        ]
+
+        for (expectedPolicy, caseName) in cases {
+            let first = SumiNavigationAdapterProbeResponder(name: "\(caseName)-first", responseDecision: .next)
+            let decider = SumiNavigationAdapterProbeResponder(name: "\(caseName)-decider", responseDecision: expectedPolicy)
+            let skipped = SumiNavigationAdapterProbeResponder(name: "\(caseName)-skipped", responseDecision: .cancel)
+            let adapters = [first, decider, skipped].map(SumiNavigationResponderAdapter.init(target:))
+
+            let policy = await evaluateResponsePolicy(
+                with: adapters,
+                response: response
+            )
+
+            XCTAssertEqual(policy?.sumiNavigationResponsePolicy, expectedPolicy)
+            XCTAssertEqual(first.responseCallCount, 1)
+            XCTAssertEqual(decider.responseCallCount, 1)
+            XCTAssertEqual(skipped.responseCallCount, 0)
+            XCTAssertEqual(decider.observedResponses.first?.url, URL(string: "https://example.com/adapter/response/file.bin")!)
+        }
+    }
+
+    func testSumiNavigationResponderAdapterCarriesPreferencesMutatedByContinuingActionResponder() async {
+        let mutator = SumiNavigationAdapterProbeResponder(name: "mutator", actionDecision: .next) { preferences in
+            preferences.userAgent = "SumiNavigationAdapterParity/1"
+            preferences.contentMode = .desktop
+            preferences.javaScriptEnabled = false
+        }
+        let decider = SumiNavigationAdapterProbeResponder(name: "decider", actionDecision: .allow)
+        let adapters = [mutator, decider].map(SumiNavigationResponderAdapter.init(target:))
+        var preferences = NavigationPreferences.default
+
+        let policy = await evaluateActionPolicy(
+            with: adapters,
+            action: navigationAction(
+                url: URL(string: "https://example.com/adapter/preferences")!,
+                navigationType: .linkActivated(isMiddleClick: false)
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertActionPolicy(policy, .allow)
+        XCTAssertEqual(decider.observedPreferences.first?.userAgent, "SumiNavigationAdapterParity/1")
+        XCTAssertEqual(decider.observedPreferences.first?.contentMode, .desktop)
+        XCTAssertEqual(decider.observedPreferences.first?.javaScriptEnabled, false)
+
+        let appliedPreferences = preferences.applying(to: WKWebpagePreferences())
+        XCTAssertEqual(appliedPreferences.preferredContentMode, .desktop)
+        XCTAssertFalse(appliedPreferences.allowsContentJavaScript)
+    }
+
+    func testSumiNavigationResponderAdapterAwaitsAsyncRespondersInRegistrationOrder() async {
+        let recorder = SumiNavigationAdapterOrderRecorder()
+        let actionResponders = [
+            SumiNavigationAdapterProbeResponder(name: "action-first", actionDecision: .next, recorder: recorder),
+            SumiNavigationAdapterProbeResponder(name: "action-second", actionDecision: .next, recorder: recorder),
+            SumiNavigationAdapterProbeResponder(name: "action-third", actionDecision: .allow, recorder: recorder),
+        ]
+        var preferences = NavigationPreferences.default
+
+        let actionPolicy = await evaluateActionPolicy(
+            with: actionResponders.map(SumiNavigationResponderAdapter.init(target:)),
+            action: navigationAction(
+                url: URL(string: "https://example.com/adapter/async-action")!,
+                navigationType: .other
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertActionPolicy(actionPolicy, .allow)
+        let actionEvents = recorder.snapshot()
+        XCTAssertEqual(
+            actionEvents,
+            ["action-first", "action-second", "action-third"]
+        )
+
+        recorder.removeAll()
+        let responseResponders = [
+            SumiNavigationAdapterProbeResponder(name: "response-first", responseDecision: .next, recorder: recorder),
+            SumiNavigationAdapterProbeResponder(name: "response-second", responseDecision: .download, recorder: recorder),
+        ]
+        let responsePolicy = await evaluateResponsePolicy(
+            with: responseResponders.map(SumiNavigationResponderAdapter.init(target:)),
+            response: NavigationResponse(
+                response: URLResponse(
+                    url: URL(string: "https://example.com/adapter/async-response")!,
+                    mimeType: "application/octet-stream",
+                    expectedContentLength: 64,
+                    textEncodingName: nil
+                ),
+                isForMainFrame: true,
+                canShowMIMEType: false,
+                mainFrameNavigation: nil
+            )
+        )
+
+        XCTAssertEqual(responsePolicy?.sumiNavigationResponsePolicy, .download)
+        let responseEvents = recorder.snapshot()
+        XCTAssertEqual(
+            responseEvents,
+            ["response-first", "response-second"]
+        )
+    }
+
+    func testWeakSumiNavigationResponderAdapterDoesNotRetainTargetAndContinues() async {
+        var target: SumiNavigationAdapterProbeResponder? = SumiNavigationAdapterProbeResponder(
+            name: "temporary",
+            actionDecision: .cancel,
+            responseDecision: .download
+        )
+        weak var weakTarget = target
+        let adapter = SumiNavigationResponderAdapter(target: target!)
+        var preferences = NavigationPreferences.default
+
+        target = nil
+
+        XCTAssertNil(weakTarget)
+        let actionPolicy = await adapter.decidePolicy(
+            for: navigationAction(
+                url: URL(string: "https://example.com/adapter/deallocated")!,
+                navigationType: .other
+            ),
+            preferences: &preferences
+        )
+        let responsePolicy = await adapter.decidePolicy(
+            for: NavigationResponse(
+                response: URLResponse(
+                    url: URL(string: "https://example.com/adapter/deallocated")!,
+                    mimeType: "text/html",
+                    expectedContentLength: 16,
+                    textEncodingName: nil
+                ),
+                isForMainFrame: true,
+                canShowMIMEType: true,
+                mainFrameNavigation: nil
+            )
+        )
+        XCTAssertNil(actionPolicy)
+        XCTAssertNil(responsePolicy)
+    }
+
     func testDownloadResponderRequestsDownloadForDownloadNavigationAction() async {
         let tab = Tab(url: URL(string: "https://example.com")!)
         let responder = SumiDownloadsNavigationResponder(tab: tab, downloadManager: nil)
@@ -1261,7 +1484,7 @@ final class SumiNavigationResponderTests: XCTestCase {
     }
 
     private func evaluateActionPolicy(
-        with responders: [ActionPolicyProbeResponder],
+        with responders: [any NavigationResponder & AnyObject],
         action: NavigationAction,
         preferences: inout NavigationPreferences
     ) async -> NavigationActionPolicy? {
@@ -1276,7 +1499,7 @@ final class SumiNavigationResponderTests: XCTestCase {
     }
 
     private func evaluateResponsePolicy(
-        with responders: [ResponsePolicyProbeResponder],
+        with responders: [any NavigationResponder & AnyObject],
         response: NavigationResponse
     ) async -> NavigationResponsePolicy? {
         var chain = ResponderChain()
@@ -1521,6 +1744,82 @@ private final class ResponsePolicyProbeResponder: NavigationResponder {
         callCount += 1
         observedResponses.append(navigationResponse)
         return decision
+    }
+}
+
+@MainActor
+private final class SumiNavigationAdapterOrderRecorder {
+    private var events: [String] = []
+
+    func append(_ event: String) async {
+        events.append(event)
+    }
+
+    func snapshot() -> [String] {
+        events
+    }
+
+    func removeAll() {
+        events.removeAll()
+    }
+}
+
+@MainActor
+private final class SumiNavigationAdapterProbeResponder: SumiNavigationActionResponding, SumiNavigationResponseResponding {
+    private let name: String
+    private let actionDecision: SumiNavigationActionPolicy?
+    private let responseDecision: SumiNavigationResponsePolicy?
+    private let recorder: SumiNavigationAdapterOrderRecorder?
+    private let mutatePreferences: ((inout SumiNavigationPreferences) -> Void)?
+    private(set) var actionCallCount = 0
+    private(set) var responseCallCount = 0
+    private(set) var observedActions: [SumiNavigationAction] = []
+    private(set) var observedResponses: [SumiNavigationResponse] = []
+    private(set) var observedPreferences: [SumiNavigationPreferences] = []
+
+    init(
+        name: String,
+        actionDecision: SumiNavigationActionPolicy? = nil,
+        responseDecision: SumiNavigationResponsePolicy? = nil,
+        recorder: SumiNavigationAdapterOrderRecorder? = nil,
+        mutatePreferences: ((inout SumiNavigationPreferences) -> Void)? = nil
+    ) {
+        self.name = name
+        self.actionDecision = actionDecision
+        self.responseDecision = responseDecision
+        self.recorder = recorder
+        self.mutatePreferences = mutatePreferences
+    }
+
+    init(
+        name: String,
+        actionDecision: SumiNavigationActionPolicy?,
+        mutatePreferences: @escaping (inout SumiNavigationPreferences) -> Void
+    ) {
+        self.name = name
+        self.actionDecision = actionDecision
+        self.responseDecision = nil
+        self.recorder = nil
+        self.mutatePreferences = mutatePreferences
+    }
+
+    func decidePolicy(
+        for navigationAction: SumiNavigationAction,
+        preferences: inout SumiNavigationPreferences
+    ) async -> SumiNavigationActionPolicy? {
+        actionCallCount += 1
+        observedActions.append(navigationAction)
+        observedPreferences.append(preferences)
+        await recorder?.append(name)
+        mutatePreferences?(&preferences)
+        return actionDecision
+    }
+
+    func decidePolicy(for navigationResponse: SumiNavigationResponse) async -> SumiNavigationResponsePolicy? {
+        responseCallCount += 1
+        observedResponses.append(navigationResponse)
+        await recorder?.append(name)
+        return responseDecision
     }
 }
 
