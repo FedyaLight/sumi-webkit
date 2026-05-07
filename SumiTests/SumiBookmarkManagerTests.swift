@@ -168,6 +168,120 @@ final class SumiBookmarkManagerTests: XCTestCase {
         }
     }
 
+    func testPersistentStoreReopenPreservesBootstrapStructureIDsAndManualOrdering() throws {
+        let directory = try temporaryDirectory(named: "SumiBookmarkPersistenceParity")
+        let firstFolderID: String
+        let nestedFolderID: String
+        let rootBookmarkID: String
+        let nestedBookmarkIDs: [String]
+
+        do {
+            let database = SumiBookmarkDatabase(directory: directory)
+            XCTAssertEqual(
+                try bootstrapFolderIDs(in: database),
+                BookmarkEntity.Constants.favoriteFoldersIDs.union([BookmarkEntity.Constants.rootFolderID])
+            )
+
+            let manager = SumiBookmarkManager(database: database, syncFavicons: false)
+            let folder = try manager.createFolder(title: "Engineering")
+            let nested = try manager.createFolder(title: "Specs", parentID: folder.id)
+            let firstNestedBookmark = try manager.createBookmark(
+                url: try XCTUnwrap(URL(string: "https://docs.example/spec-a")),
+                title: "Spec A",
+                folderID: nested.id
+            )
+            let secondNestedBookmark = try manager.createBookmark(
+                url: try XCTUnwrap(URL(string: "https://docs.example/spec-b")),
+                title: "Spec B",
+                folderID: nested.id
+            )
+            let rootBookmark = try manager.createBookmark(
+                url: try XCTUnwrap(URL(string: "https://root.example")),
+                title: "Root Link"
+            )
+
+            firstFolderID = folder.id
+            nestedFolderID = nested.id
+            rootBookmarkID = rootBookmark.id
+            nestedBookmarkIDs = [firstNestedBookmark.id, secondNestedBookmark.id]
+
+            let snapshot = manager.snapshot()
+            XCTAssertEqual(snapshot.root.children.map(\.id), [firstFolderID, rootBookmarkID])
+            XCTAssertEqual(snapshot.entitiesByID[nestedFolderID]?.children.map(\.id), nestedBookmarkIDs)
+            XCTAssertEqual(snapshot.entitiesByID[nestedFolderID]?.parentID, firstFolderID)
+        }
+
+        let reopenedDatabase = SumiBookmarkDatabase(directory: directory)
+        let reopenedManager = SumiBookmarkManager(database: reopenedDatabase, syncFavicons: false)
+        let reopenedSnapshot = reopenedManager.snapshot()
+
+        XCTAssertTrue(
+            try bootstrapFolderIDs(in: reopenedDatabase)
+                .isSuperset(of: BookmarkEntity.Constants.favoriteFoldersIDs.union([BookmarkEntity.Constants.rootFolderID]))
+        )
+        XCTAssertEqual(reopenedSnapshot.root.id, BookmarkEntity.Constants.rootFolderID)
+        XCTAssertEqual(reopenedSnapshot.root.children.map(\.id), [firstFolderID, rootBookmarkID])
+        XCTAssertEqual(reopenedSnapshot.entitiesByID[firstFolderID]?.title, "Engineering")
+        XCTAssertEqual(reopenedSnapshot.entitiesByID[nestedFolderID]?.parentID, firstFolderID)
+        XCTAssertEqual(reopenedSnapshot.entitiesByID[nestedFolderID]?.children.map(\.id), nestedBookmarkIDs)
+        XCTAssertEqual(reopenedManager.bookmark(for: try XCTUnwrap(URL(string: "http://root.example/")))?.id, rootBookmarkID)
+        XCTAssertEqual(reopenedSnapshot.root.childBookmarkCount, 3)
+    }
+
+    func testMoveOrderingAndDeletionSurviveStoreReopen() throws {
+        let directory = try temporaryDirectory(named: "SumiBookmarkMoveOrderingParity")
+        let folderAID: String
+        let folderBID: String
+        let firstBookmarkID: String
+        let secondBookmarkID: String
+
+        do {
+            let manager = makeManager(directory: directory)
+            let folderA = try manager.createFolder(title: "Folder A")
+            let folderB = try manager.createFolder(title: "Folder B")
+            let first = try manager.createBookmark(
+                url: try XCTUnwrap(URL(string: "https://move.example/one")),
+                title: "One",
+                folderID: folderA.id
+            )
+            let second = try manager.createBookmark(
+                url: try XCTUnwrap(URL(string: "https://move.example/two")),
+                title: "Two",
+                folderID: folderA.id
+            )
+            let deleted = try manager.createBookmark(
+                url: try XCTUnwrap(URL(string: "https://move.example/deleted")),
+                title: "Deleted",
+                folderID: folderB.id
+            )
+
+            try manager.moveEntities(ids: [second.id], toParentID: folderB.id, atIndex: 0)
+            try manager.moveEntities(ids: [folderA.id], toParentID: nil, atIndex: 1)
+            try manager.removeBookmark(id: deleted.id)
+
+            folderAID = folderA.id
+            folderBID = folderB.id
+            firstBookmarkID = first.id
+            secondBookmarkID = second.id
+
+            let snapshot = manager.snapshot()
+            XCTAssertEqual(snapshot.root.children.map(\.id), [folderBID, folderAID])
+            XCTAssertEqual(snapshot.entitiesByID[folderAID]?.children.map(\.id), [firstBookmarkID])
+            XCTAssertEqual(snapshot.entitiesByID[folderBID]?.children.map(\.id), [secondBookmarkID])
+            XCTAssertNil(snapshot.entitiesByID[deleted.id])
+        }
+
+        let reopenedManager = makeManager(directory: directory)
+        let reopenedSnapshot = reopenedManager.snapshot()
+
+        XCTAssertEqual(reopenedSnapshot.root.children.map(\.id), [folderBID, folderAID])
+        XCTAssertEqual(reopenedSnapshot.entitiesByID[folderAID]?.children.map(\.id), [firstBookmarkID])
+        XCTAssertEqual(reopenedSnapshot.entitiesByID[folderBID]?.children.map(\.id), [secondBookmarkID])
+        XCTAssertEqual(reopenedSnapshot.entitiesByID[firstBookmarkID]?.parentID, folderAID)
+        XCTAssertEqual(reopenedSnapshot.entitiesByID[secondBookmarkID]?.parentID, folderBID)
+        XCTAssertNil(reopenedManager.bookmark(for: try XCTUnwrap(URL(string: "https://move.example/deleted"))))
+    }
+
     func testImportSkipsURLVariantDuplicatesAndExportPreservesFolders() throws {
         let manager = makeManager()
         let nodes: [BookmarkOrFolder] = [
@@ -207,5 +321,40 @@ final class SumiBookmarkManagerTests: XCTestCase {
             database: SumiBookmarkDatabase(directory: directory),
             syncFavicons: false
         )
+    }
+
+    private func makeManager(directory: URL) -> SumiBookmarkManager {
+        SumiBookmarkManager(
+            database: SumiBookmarkDatabase(directory: directory),
+            syncFavicons: false
+        )
+    }
+
+    private func temporaryDirectory(named name: String) throws -> URL {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("\(name)-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        temporaryDirectories.append(directory)
+        return directory
+    }
+
+    private func bootstrapFolderIDs(in database: SumiBookmarkDatabase) throws -> Set<String> {
+        let context = database.makeContext(
+            concurrencyType: .privateQueueConcurrencyType,
+            name: "SumiBookmarkBootstrapParityRead"
+        )
+        var result = Result<Set<String>, Error>.success([])
+        context.performAndWait {
+            do {
+                let request = BookmarkEntity.fetchRequest()
+                request.predicate = NSPredicate(format: "%K == YES", #keyPath(BookmarkEntity.isFolder))
+                request.returnsObjectsAsFaults = false
+                let folders = try context.fetch(request)
+                result = .success(Set(folders.compactMap(\.uuid)))
+            } catch {
+                result = .failure(error)
+            }
+        }
+        return try result.get()
     }
 }
