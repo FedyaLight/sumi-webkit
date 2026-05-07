@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import Navigation
 import WebKit
 
 @available(macOS 15.5, *)
@@ -163,7 +162,7 @@ extension ExtensionManager {
             return
         }
 
-        let sourceURL = message.frameInfo.safeRequest?.url
+        let sourceURL = message.frameInfo.sumiWebKitRequestURL
         let sourceOrigin = Self.originString(for: sourceURL)
         let webViewID = ObjectIdentifier(webView)
         let requestID = UUID()
@@ -246,7 +245,7 @@ extension ExtensionManager {
                 return
             }
 
-            let sourceURL = message.frameInfo.safeRequest?.url
+            let sourceURL = message.frameInfo.sumiWebKitRequestURL
             let sourceOrigin = Self.originString(for: sourceURL)
             guard let validation = validateExternallyConnectableNativeConnectOpenTarget(
                 extensionId: extensionId,
@@ -808,7 +807,7 @@ extension ExtensionManager {
         )
 
         let sourceOrigin: String
-        if let url = frameInfo.safeRequest?.url {
+        if let url = frameInfo.sumiWebKitRequestURL {
             sourceOrigin = Self.originString(for: url) ?? url.absoluteString
         } else {
             sourceOrigin = ""
@@ -847,7 +846,7 @@ extension ExtensionManager {
                     "bridgeMessage": message ?? NSNull(),
                     "extensionId": extensionId,
                     "senderOrigin": sourceOrigin,
-                    "senderURL": frameInfo.safeRequest?.url?.absoluteString ?? NSNull(),
+                    "senderURL": frameInfo.sumiWebKitRequestURL?.absoluteString ?? NSNull(),
                     "isMainFrame": frameInfo.isMainFrame,
                 ],
                 in: frameInfo,

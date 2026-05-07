@@ -1,6 +1,5 @@
 import AppKit
 import Foundation
-import Navigation
 import WebKit
 
 enum SumiPopupPermissionPath: String, Codable, Equatable, Sendable {
@@ -272,17 +271,6 @@ struct SumiPopupPermissionRequest: Sendable {
             classification: isExtensionOriginated ? .internalOrBrowserOwned : nil,
             isMainFrame: sourceFrame?.isMainFrame ?? true,
             navigationActionMetadata: metadata
-        )
-    }
-
-    @MainActor
-    static func fromNavigationAction(
-        _ navigationAction: NavigationAction,
-        activationState: SumiPopupUserActivationState
-    ) -> SumiPopupPermissionRequest {
-        fromSumiNavigationAction(
-            SumiNavigationAction(navigationAction),
-            activationState: activationState
         )
     }
 

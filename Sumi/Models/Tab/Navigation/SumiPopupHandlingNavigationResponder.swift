@@ -41,7 +41,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
               let browserManager = tab.browserManager
         else { return nil }
 
-        let sourceURL = navigationAction.safeSourceFrame?.safeRequest?.url
+        let sourceURL = navigationAction.sumiWebKitSourceURL
         let requestURL = navigationAction.request.url
         let isExtensionOriginated = Tab.isExtensionOriginatedPopupNavigation(
             sourceURL: sourceURL,
@@ -132,7 +132,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
               let browserManager = tab.browserManager
         else { return nil }
 
-        let sourceURL = navigationAction.safeSourceFrame?.safeRequest?.url
+        let sourceURL = navigationAction.sumiWebKitSourceURL
         let requestURL = navigationAction.request.url
         let isExtensionOriginated = Tab.isExtensionOriginatedPopupNavigation(
             sourceURL: sourceURL,
