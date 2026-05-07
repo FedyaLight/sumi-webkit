@@ -34,7 +34,9 @@ struct SidebarDDGHoverBridge: NSViewRepresentable {
         coordinator.updateBinding($isHovered)
         coordinator.attach(view)
         coordinator.performViewUpdate {
-            view.setHoverTrackingEnabled(isEnabled)
+            if view.isHoverTrackingEnabled != isEnabled {
+                view.setHoverTrackingEnabled(isEnabled)
+            }
         }
         coordinator.scheduleLifecycleReconcile(from: view)
     }
@@ -136,6 +138,10 @@ final class SidebarDDGHoverTrackingView: NSView, Hoverable {
     private var hoverTrackingEnabled = true
     private var lastReportedHover = false
     private var lastDeliveredHoverEventTimestamp = -Double.infinity
+
+    var isHoverTrackingEnabled: Bool {
+        hoverTrackingEnabled
+    }
 
     var currentEffectiveHover: Bool {
         hoverTrackingEnabled && isMouseOver
