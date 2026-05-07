@@ -1,3 +1,4 @@
+import CoreData
 import XCTest
 
 import Bookmarks
@@ -228,6 +229,79 @@ final class SumiBookmarkManagerTests: XCTestCase {
         XCTAssertEqual(reopenedSnapshot.root.childBookmarkCount, 3)
     }
 
+    func testBookmarkDatabaseContextsShareCoordinatorAndTemporaryStoreURL() throws {
+        let directory = try temporaryDirectory(named: "SumiBookmarkCoordinatorParity")
+        let database = SumiBookmarkDatabase(directory: directory)
+
+        let firstContext = database.makeContext(
+            concurrencyType: .privateQueueConcurrencyType,
+            name: "SumiBookmarkCoordinatorParityFirst"
+        )
+        let secondContext = database.makeContext(
+            concurrencyType: .privateQueueConcurrencyType,
+            name: "SumiBookmarkCoordinatorParitySecond"
+        )
+
+        let firstCoordinator = try XCTUnwrap(firstContext.persistentStoreCoordinator)
+        let secondCoordinator = try XCTUnwrap(secondContext.persistentStoreCoordinator)
+        let storeURL = try XCTUnwrap(firstCoordinator.persistentStores.first?.url)
+
+        XCTAssertTrue(firstCoordinator === secondCoordinator)
+        XCTAssertEqual(firstContext.name, "SumiBookmarkCoordinatorParityFirst")
+        XCTAssertEqual(secondContext.name, "SumiBookmarkCoordinatorParitySecond")
+        XCTAssertEqual(storeURL.standardizedFileURL, directory.appendingPathComponent("SumiBookmarks.sqlite").standardizedFileURL)
+        XCTAssertTrue(storeURL.path.hasPrefix(directory.path))
+        XCTAssertFalse(storeURL.path.hasPrefix(applicationSupportDirectory().path))
+    }
+
+    func testBookmarkContextSavePostsSynchronousDidSaveNotificationFromSavingContext() throws {
+        let directory = try temporaryDirectory(named: "SumiBookmarkSaveNotificationParity")
+        let database = SumiBookmarkDatabase(directory: directory)
+        let context = database.makeContext(
+            concurrencyType: .privateQueueConcurrencyType,
+            name: "SumiBookmarkSaveNotificationParityWriter"
+        )
+        var observedContextName: String?
+        var observedInsertedBookmarkUUIDs = Set<String>()
+        var observedOnMainThread: Bool?
+        let token = NotificationCenter.default.addObserver(
+            forName: .NSManagedObjectContextDidSave,
+            object: context,
+            queue: nil
+        ) { notification in
+            observedContextName = (notification.object as? NSManagedObjectContext)?.name
+            observedOnMainThread = Thread.isMainThread
+            let insertedObjects = notification.userInfo?[NSInsertedObjectsKey] as? Set<NSManagedObject> ?? []
+            observedInsertedBookmarkUUIDs = Set(insertedObjects.compactMap { ($0 as? BookmarkEntity)?.uuid })
+        }
+        defer {
+            NotificationCenter.default.removeObserver(token)
+        }
+
+        var saveResult = Result<Void, Error>.success(())
+        context.performAndWait {
+            do {
+                let rootFolder = try XCTUnwrap(BookmarkUtils.fetchRootFolder(context))
+                let bookmark = BookmarkEntity.makeBookmark(
+                    title: "Save Observer",
+                    url: "https://save-observer.example",
+                    parent: rootFolder,
+                    context: context
+                )
+                bookmark.uuid = "sumi-save-observer-parity"
+                try context.save()
+                saveResult = .success(())
+            } catch {
+                saveResult = .failure(error)
+            }
+        }
+        try saveResult.get()
+
+        XCTAssertEqual(observedContextName, "SumiBookmarkSaveNotificationParityWriter")
+        XCTAssertEqual(observedInsertedBookmarkUUIDs, ["sumi-save-observer-parity"])
+        XCTAssertEqual(observedOnMainThread, true)
+    }
+
     func testMoveOrderingAndDeletionSurviveStoreReopen() throws {
         let directory = try temporaryDirectory(named: "SumiBookmarkMoveOrderingParity")
         let folderAID: String
@@ -356,5 +430,9 @@ final class SumiBookmarkManagerTests: XCTestCase {
             }
         }
         return try result.get()
+    }
+
+    private func applicationSupportDirectory() -> URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
     }
 }
