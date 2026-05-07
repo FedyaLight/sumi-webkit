@@ -1,6 +1,130 @@
 import Foundation
 
 @MainActor
+enum SidebarDragOperationContextValidator {
+    typealias FolderSpaceResolver = (UUID) -> UUID?
+    typealias ShortcutPinResolver = (UUID) -> ShortcutPin?
+
+    static func validate(
+        operation: DragOperation,
+        spaceProfileId: UUID?,
+        folderSpaceId: FolderSpaceResolver,
+        shortcutPin: ShortcutPinResolver
+    ) -> Bool {
+        operation.fromContainer == operation.scope.sourceContainer
+            && scopeProfileMatchesSpace(operation.scope, spaceProfileId: spaceProfileId)
+            && operationPayloadMatchesScope(operation, shortcutPin: shortcutPin)
+            && sidebarContainer(operation.fromContainer, isIn: operation.scope, folderSpaceId: folderSpaceId)
+            && sidebarContainer(operation.toContainer, isIn: operation.scope, folderSpaceId: folderSpaceId)
+            && payloadOwnershipMatchesSource(
+                operation,
+                folderSpaceId: folderSpaceId,
+                shortcutPin: shortcutPin
+            )
+    }
+
+    private static func scopeProfileMatchesSpace(
+        _ scope: SidebarDragScope,
+        spaceProfileId: UUID?
+    ) -> Bool {
+        guard let spaceProfileId,
+              let scopeProfileId = scope.profileId else {
+            return true
+        }
+        return spaceProfileId == scopeProfileId
+    }
+
+    private static func operationPayloadMatchesScope(
+        _ operation: DragOperation,
+        shortcutPin: ShortcutPinResolver
+    ) -> Bool {
+        switch (operation.scope.sourceItemKind, operation.payload) {
+        case (.folder, .folder(let folder)):
+            return folder.id == operation.scope.sourceItemId
+        case (.folder, _):
+            return false
+        case (.tab, .pin(let pin)):
+            return pin.id == operation.scope.sourceItemId
+        case (.tab, .tab(let tab)):
+            return tab.id == operation.scope.sourceItemId
+                || tab.shortcutPinId == operation.scope.sourceItemId
+                || shortcutPin(operation.scope.sourceItemId)?.id == tab.shortcutPinId
+        case (.tab, .folder):
+            return false
+        }
+    }
+
+    private static func sidebarContainer(
+        _ container: TabDragManager.DragContainer,
+        isIn scope: SidebarDragScope,
+        folderSpaceId: FolderSpaceResolver
+    ) -> Bool {
+        switch container {
+        case .none:
+            return false
+        case .essentials:
+            return scope.profileId != nil
+        case .spacePinned(let spaceId),
+             .spaceRegular(let spaceId):
+            return spaceId == scope.spaceId
+        case .folder(let folderId):
+            return folderSpaceId(folderId) == scope.spaceId
+        }
+    }
+
+    private static func payloadOwnershipMatchesSource(
+        _ operation: DragOperation,
+        folderSpaceId: FolderSpaceResolver,
+        shortcutPin: ShortcutPinResolver
+    ) -> Bool {
+        switch operation.payload {
+        case .folder(let folder):
+            guard case .spacePinned(let spaceId) = operation.fromContainer else {
+                return false
+            }
+            return folder.spaceId == operation.scope.spaceId
+                && folder.spaceId == spaceId
+
+        case .pin(let pin):
+            return shortcutPinMatchesSource(pin, operation: operation, folderSpaceId: folderSpaceId)
+
+        case .tab(let tab):
+            if let shortcutId = tab.shortcutPinId,
+               let pin = shortcutPin(shortcutId) {
+                return shortcutPinMatchesSource(pin, operation: operation, folderSpaceId: folderSpaceId)
+            }
+
+            guard case .spaceRegular(let spaceId) = operation.fromContainer else {
+                return false
+            }
+            return tab.spaceId == operation.scope.spaceId
+                && tab.spaceId == spaceId
+        }
+    }
+
+    private static func shortcutPinMatchesSource(
+        _ pin: ShortcutPin,
+        operation: DragOperation,
+        folderSpaceId: FolderSpaceResolver
+    ) -> Bool {
+        switch (pin.role, operation.fromContainer) {
+        case (.essential, .essentials):
+            return pin.profileId == operation.scope.profileId
+        case (.spacePinned, .spacePinned(let spaceId)):
+            return pin.spaceId == operation.scope.spaceId
+                && pin.spaceId == spaceId
+                && pin.folderId == nil
+        case (.spacePinned, .folder(let folderId)):
+            return pin.spaceId == operation.scope.spaceId
+                && pin.folderId == folderId
+                && folderSpaceId(folderId) == operation.scope.spaceId
+        default:
+            return false
+        }
+    }
+}
+
+@MainActor
 extension TabManager {
     @discardableResult
     func performSidebarDragOperation(_ operation: DragOperation) -> Bool {
@@ -306,102 +430,18 @@ extension TabManager {
     }
 
     private func validateSidebarDragOperation(_ operation: DragOperation) -> Bool {
-        guard operation.fromContainer == operation.scope.sourceContainer,
-              scopeProfileMatchesSpace(operation.scope),
-              operationPayloadMatchesScope(operation),
-              sidebarContainer(operation.fromContainer, isIn: operation.scope),
-              sidebarContainer(operation.toContainer, isIn: operation.scope),
-              payloadOwnershipMatchesSource(operation)
-        else {
+        let isCurrentContext = SidebarDragOperationContextValidator.validate(
+            operation: operation,
+            spaceProfileId: spaces.first(where: { $0.id == operation.scope.spaceId })?.profileId,
+            folderSpaceId: { folderSpaceId(for: $0) },
+            shortcutPin: { shortcutPin(by: $0) }
+        )
+        guard isCurrentContext else {
             RuntimeDiagnostics.emit("⚠️ Rejected sidebar drag outside current context: \(operation)")
             return false
         }
 
         return true
-    }
-
-    private func scopeProfileMatchesSpace(_ scope: SidebarDragScope) -> Bool {
-        guard let spaceProfileId = spaces.first(where: { $0.id == scope.spaceId })?.profileId,
-              let scopeProfileId = scope.profileId else {
-            return true
-        }
-        return spaceProfileId == scopeProfileId
-    }
-
-    private func operationPayloadMatchesScope(_ operation: DragOperation) -> Bool {
-        switch (operation.scope.sourceItemKind, operation.payload) {
-        case (.folder, .folder(let folder)):
-            return folder.id == operation.scope.sourceItemId
-        case (.folder, _):
-            return false
-        case (.tab, .pin(let pin)):
-            return pin.id == operation.scope.sourceItemId
-        case (.tab, .tab(let tab)):
-            return tab.id == operation.scope.sourceItemId
-                || tab.shortcutPinId == operation.scope.sourceItemId
-        case (.tab, .folder):
-            return false
-        }
-    }
-
-    private func sidebarContainer(
-        _ container: TabDragManager.DragContainer,
-        isIn scope: SidebarDragScope
-    ) -> Bool {
-        switch container {
-        case .none:
-            return false
-        case .essentials:
-            return scope.profileId != nil
-        case .spacePinned(let spaceId),
-             .spaceRegular(let spaceId):
-            return spaceId == scope.spaceId
-        case .folder(let folderId):
-            return folderSpaceId(for: folderId) == scope.spaceId
-        }
-    }
-
-    private func payloadOwnershipMatchesSource(_ operation: DragOperation) -> Bool {
-        switch operation.payload {
-        case .folder(let folder):
-            guard case .spacePinned(let spaceId) = operation.fromContainer else {
-                return false
-            }
-            return folder.spaceId == operation.scope.spaceId
-                && folder.spaceId == spaceId
-
-        case .pin(let pin):
-            return shortcutPinMatchesSource(pin, operation: operation)
-
-        case .tab(let tab):
-            if let shortcutId = tab.shortcutPinId,
-               let pin = shortcutPin(by: shortcutId) {
-                return shortcutPinMatchesSource(pin, operation: operation)
-            }
-
-            guard case .spaceRegular(let spaceId) = operation.fromContainer else {
-                return false
-            }
-            return tab.spaceId == operation.scope.spaceId
-                && tab.spaceId == spaceId
-        }
-    }
-
-    private func shortcutPinMatchesSource(_ pin: ShortcutPin, operation: DragOperation) -> Bool {
-        switch (pin.role, operation.fromContainer) {
-        case (.essential, .essentials):
-            return pin.profileId == operation.scope.profileId
-        case (.spacePinned, .spacePinned(let spaceId)):
-            return pin.spaceId == operation.scope.spaceId
-                && pin.spaceId == spaceId
-                && pin.folderId == nil
-        case (.spacePinned, .folder(let folderId)):
-            return pin.spaceId == operation.scope.spaceId
-                && pin.folderId == folderId
-                && folderSpaceId(for: folderId) == operation.scope.spaceId
-        default:
-            return false
-        }
     }
 
     private func moveTabBetweenSpaces(
