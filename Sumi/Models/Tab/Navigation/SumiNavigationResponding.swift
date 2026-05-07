@@ -1,4 +1,13 @@
+import Foundation
 import WebKit
+
+struct SumiNavigationContext {
+    let action: SumiNavigationAction?
+    let url: URL?
+    let isCurrent: Bool?
+    let isMainFrame: Bool?
+    let webView: WKWebView?
+}
 
 enum SumiWebsiteAutoplayPolicy: UInt, Equatable {
     case `default`
@@ -49,22 +58,75 @@ protocol SumiNavigationResponseResponding: AnyObject {
 @MainActor
 protocol SumiNavigationCompletionResponding: AnyObject {
     func navigationDidFinish()
+    func navigationDidFinish(_ context: SumiNavigationContext?)
     func navigationDidFail()
+    func navigationDidFail(_ error: WKError, context: SumiNavigationContext?)
+}
+
+extension SumiNavigationCompletionResponding {
+    func navigationDidFinish(_ context: SumiNavigationContext?) {
+        navigationDidFinish()
+    }
+
+    func navigationDidFail(_ error: WKError, context: SumiNavigationContext?) {
+        navigationDidFail()
+    }
 }
 
 @MainActor
 protocol SumiNavigationStartResponding: AnyObject {
+    func navigationWillStart(_ context: SumiNavigationContext)
     func navigationDidStart()
+    func navigationDidStart(_ context: SumiNavigationContext)
+}
+
+extension SumiNavigationStartResponding {
+    func navigationWillStart(_ context: SumiNavigationContext) {}
+
+    func navigationDidStart(_ context: SumiNavigationContext) {
+        navigationDidStart()
+    }
+}
+
+@MainActor
+protocol SumiNavigationCommitResponding: AnyObject {
+    func navigationDidCommit(_ context: SumiNavigationContext)
 }
 
 @MainActor
 protocol SumiNavigationAuthChallengeResponding: AnyObject {
     func didReceive(_ authenticationChallenge: URLAuthenticationChallenge) async -> SumiAuthChallengeDisposition?
+    func didReceive(
+        _ authenticationChallenge: URLAuthenticationChallenge,
+        context: SumiNavigationContext?
+    ) async -> SumiAuthChallengeDisposition?
+}
+
+extension SumiNavigationAuthChallengeResponding {
+    func didReceive(
+        _ authenticationChallenge: URLAuthenticationChallenge,
+        context: SumiNavigationContext?
+    ) async -> SumiAuthChallengeDisposition? {
+        await didReceive(authenticationChallenge)
+    }
 }
 
 @MainActor
 protocol SumiSameDocumentNavigationResponding: AnyObject {
     func navigationDidSameDocumentNavigation(type: SumiSameDocumentNavigationType)
+    func navigationDidSameDocumentNavigation(
+        type: SumiSameDocumentNavigationType,
+        context: SumiNavigationContext?
+    )
+}
+
+extension SumiSameDocumentNavigationResponding {
+    func navigationDidSameDocumentNavigation(
+        type: SumiSameDocumentNavigationType,
+        context: SumiNavigationContext?
+    ) {
+        navigationDidSameDocumentNavigation(type: type)
+    }
 }
 
 @MainActor

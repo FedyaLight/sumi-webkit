@@ -10,6 +10,7 @@ final class SumiTabNavigationDelegateBundle {
 
     private let installNavigation: SumiInstallNavigationResponder
     private let installNavigationAdapter: SumiNavigationResponderAdapter
+    private let popupHandlingAdapter: SumiNavigationResponderAdapter
     private let externalScheme: SumiExternalSchemeNavigationResponder
     private let externalSchemeAdapter: SumiNavigationResponderAdapter
     private let downloads: SumiDownloadsNavigationResponder
@@ -19,6 +20,7 @@ final class SumiTabNavigationDelegateBundle {
     private let autoplayPolicy: SumiAutoplayPolicyNavigationResponder
     private let autoplayPolicyAdapter: SumiNavigationResponderAdapter
     private let lifecycle: SumiTabLifecycleNavigationResponder
+    private let lifecycleAdapter: SumiNavigationResponderAdapter
     private let findInPageAdapter: SumiNavigationResponderAdapter
 
     init(tab: Tab) {
@@ -26,6 +28,7 @@ final class SumiTabNavigationDelegateBundle {
         self.installNavigation = SumiInstallNavigationResponder(tab: tab)
         self.installNavigationAdapter = SumiNavigationResponderAdapter(target: installNavigation)
         self.popupHandling = SumiPopupHandlingNavigationResponder(tab: tab)
+        self.popupHandlingAdapter = SumiNavigationResponderAdapter(target: popupHandling)
         self.externalScheme = SumiExternalSchemeNavigationResponder(
             tab: tab,
             permissionBridge: tab.browserManager?.externalSchemePermissionBridge
@@ -38,16 +41,17 @@ final class SumiTabNavigationDelegateBundle {
         self.autoplayPolicy = SumiAutoplayPolicyNavigationResponder(tab: tab)
         self.autoplayPolicyAdapter = SumiNavigationResponderAdapter(target: autoplayPolicy)
         self.lifecycle = SumiTabLifecycleNavigationResponder(tab: tab)
+        self.lifecycleAdapter = SumiNavigationResponderAdapter(target: lifecycle)
         self.findInPageAdapter = SumiNavigationResponderAdapter(target: tab.findInPage)
 
         distributedNavigationDelegate.setResponders(
             .strong(installNavigationAdapter),
-            .strong(popupHandling),
+            .strong(popupHandlingAdapter),
             .strong(externalSchemeAdapter),
             .strong(downloadsAdapter),
             .strong(scriptAttachmentAdapter),
             .strong(autoplayPolicyAdapter),
-            .strong(lifecycle),
+            .strong(lifecycleAdapter),
             .strong(findInPageAdapter)
         )
     }
