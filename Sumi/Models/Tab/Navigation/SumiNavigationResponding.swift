@@ -45,3 +45,9 @@ extension SumiNavigationActionWebViewResponding {
 protocol SumiNavigationResponseResponding: AnyObject {
     func decidePolicy(for navigationResponse: SumiNavigationResponse) async -> SumiNavigationResponsePolicy?
 }
+
+@MainActor
+protocol SumiNavigationCompletionResponding: AnyObject {
+    func navigationDidFinish()
+    func navigationDidFail()
+}

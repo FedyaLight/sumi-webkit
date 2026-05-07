@@ -39,6 +39,16 @@ final class SumiNavigationResponderAdapter: NavigationResponder {
         return decision?.navigationResponsePolicy
     }
 
+    func navigationDidFinish(_: Navigation) {
+        guard let responder = target as? any SumiNavigationCompletionResponding else { return }
+        responder.navigationDidFinish()
+    }
+
+    func navigation(_: Navigation, didFailWith error: WKError) {
+        guard let responder = target as? any SumiNavigationCompletionResponding else { return }
+        responder.navigationDidFail()
+    }
+
     private func webView(for navigationAction: NavigationAction) -> WKWebView? {
         navigationAction.targetFrame?.webView ?? navigationAction.sourceFrame.webView
     }

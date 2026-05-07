@@ -1,10 +1,9 @@
 import AppKit
 import Foundation
-import Navigation
 import WebKit
 
 @MainActor
-final class SumiExternalSchemeNavigationResponder: NavigationResponder {
+final class SumiExternalSchemeNavigationResponder: SumiNavigationActionWebViewResponding, SumiNavigationCompletionResponding {
     typealias TabContextProvider = @MainActor (WKWebView) -> SumiExternalSchemePermissionTabContext?
 
     private weak var tab: Tab?
@@ -23,27 +22,28 @@ final class SumiExternalSchemeNavigationResponder: NavigationResponder {
     }
 
     func decidePolicy(
-        for navigationAction: NavigationAction,
-        preferences _: inout NavigationPreferences
-    ) async -> NavigationActionPolicy? {
+        for navigationAction: SumiNavigationAction,
+        webView: WKWebView?,
+        preferences _: inout SumiNavigationPreferences
+    ) async -> SumiNavigationActionPolicy? {
         let signpostState = PerformanceTrace.beginInterval("NavigationPolicy.externalSchemeResponder")
         defer {
             PerformanceTrace.endInterval("NavigationPolicy.externalSchemeResponder", signpostState)
         }
 
-        let externalURL = navigationAction.url
-        guard externalURL.sumiIsExternalSchemeLink,
+        guard let externalURL = navigationAction.url,
+              externalURL.sumiIsExternalSchemeLink,
               SumiExternalSchemePermissionRequest.isValidExternalSchemeURL(externalURL)
         else {
             if navigationAction.isForMainFrame,
-               navigationAction.redirectHistory?.isEmpty == false {
+               !navigationAction.redirectHistory.isEmpty {
                 shouldCloseTabOnExternalAppOpen = false
             }
             return .next
         }
 
-        if let mainFrameNavigationAction = navigationAction.mainFrameNavigation?.navigationAction,
-           (mainFrameNavigationAction.redirectHistory?.first ?? mainFrameNavigationAction).sumiIsUserEnteredURL {
+        if let mainFrameNavigation = navigationAction.mainFrameNavigation,
+           (mainFrameNavigation.redirectHistory.first ?? mainFrameNavigation.navigationAction).isUserEnteredURL {
             shouldCloseTabOnExternalAppOpen = false
         }
 
@@ -53,7 +53,7 @@ final class SumiExternalSchemeNavigationResponder: NavigationResponder {
             }
         }
 
-        let initialRequest = navigationAction.mainFrameNavigation?.navigationAction.redirectHistory?.first?.request
+        let initialRequest = navigationAction.mainFrameNavigation?.redirectHistory.first?.request
             ?? navigationAction.mainFrameNavigation?.navigationAction.request
             ?? navigationAction.request
         if [.returnCacheDataElseLoad, .returnCacheDataDontLoad].contains(initialRequest.cachePolicy) {
@@ -62,13 +62,13 @@ final class SumiExternalSchemeNavigationResponder: NavigationResponder {
 
         guard let tab,
               let bridge = permissionBridge ?? tab.browserManager?.externalSchemePermissionBridge,
-              let webView = navigationAction.targetFrame?.webView ?? navigationAction.sourceFrame.webView,
+              let webView,
               let tabContext = tabContextProvider?(webView) ?? tab.externalSchemePermissionTabContext(for: webView)
         else {
             return .cancel
         }
 
-        let request = SumiExternalSchemePermissionRequest.fromNavigationAction(navigationAction)
+        let request = SumiExternalSchemePermissionRequest.fromSumiNavigationAction(navigationAction)
         let result = await bridge.evaluate(
             request,
             tabContext: tabContext,
@@ -85,11 +85,11 @@ final class SumiExternalSchemeNavigationResponder: NavigationResponder {
         return .cancel
     }
 
-    func navigationDidFinish(_: Navigation) {
+    func navigationDidFinish() {
         shouldCloseTabOnExternalAppOpen = false
     }
 
-    func navigation(_: Navigation, didFailWith error: WKError) {
+    func navigationDidFail() {
         shouldCloseTabOnExternalAppOpen = false
     }
 }

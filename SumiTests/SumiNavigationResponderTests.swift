@@ -111,11 +111,12 @@ final class SumiNavigationResponderTests: XCTestCase {
             permissionBridge: bridge,
             tabContextProvider: { _ in navigationExternalTabContext() }
         )
+        let adapter = SumiNavigationResponderAdapter(target: responder)
         let mailURL = URL(string: "mailto:test@example.com")!
         let webView = WKWebView(frame: .zero)
         var preferences = NavigationPreferences.default
 
-        let policy = await responder.decidePolicy(
+        let policy = await adapter.decidePolicy(
             for: navigationAction(
                 url: mailURL,
                 navigationType: .linkActivated(isMiddleClick: false),
@@ -145,10 +146,11 @@ final class SumiNavigationResponderTests: XCTestCase {
             permissionBridge: bridge,
             tabContextProvider: { _ in navigationExternalTabContext() }
         )
+        let adapter = SumiNavigationResponderAdapter(target: responder)
         let webView = WKWebView(frame: .zero)
         var preferences = NavigationPreferences.default
 
-        let policy = await responder.decidePolicy(
+        let policy = await adapter.decidePolicy(
             for: navigationAction(
                 url: URL(string: "unknown-scheme://payload")!,
                 navigationType: .linkActivated(isMiddleClick: false),
@@ -178,10 +180,11 @@ final class SumiNavigationResponderTests: XCTestCase {
             permissionBridge: bridge,
             tabContextProvider: { _ in navigationExternalTabContext() }
         )
+        let adapter = SumiNavigationResponderAdapter(target: responder)
         let webView = WKWebView(frame: .zero)
         var preferences = NavigationPreferences.default
 
-        _ = await responder.decidePolicy(
+        _ = await adapter.decidePolicy(
             for: navigationAction(
                 url: URL(string: "mailto:test@example.com")!,
                 navigationType: .linkActivated(isMiddleClick: false),
@@ -194,6 +197,59 @@ final class SumiNavigationResponderTests: XCTestCase {
 
         let contexts = await coordinator.recordedContexts()
         XCTAssertEqual(contexts.first?.requestingOrigin.identity, "https://request.example")
+    }
+
+    func testExternalSchemeResponderAdapterClosesInitialExternalAppOpenThroughSameWebViewClosePath() async {
+        let tab = Tab(url: URL(string: "https://example.com")!)
+        let resolver = NavigationExternalSchemeFakeResolver(handlerSchemes: ["mailto"])
+        let bridge = SumiExternalSchemePermissionBridge(
+            coordinator: NavigationExternalSchemeFakeCoordinator(
+                decision: navigationExternalCoordinatorDecision(.granted, reason: "stored-allow")
+            ),
+            appResolver: resolver,
+            now: { Date(timeIntervalSince1970: 1_800_000_000) }
+        )
+        let responder = SumiExternalSchemeNavigationResponder(
+            tab: tab,
+            permissionBridge: bridge,
+            tabContextProvider: { _ in navigationExternalTabContext() }
+        )
+        let adapter = SumiNavigationResponderAdapter(target: responder)
+        let webView = SumiNavigationClosingTrackingWebView(frame: .zero)
+        var preferences = NavigationPreferences.default
+
+        let policy = await adapter.decidePolicy(
+            for: navigationAction(
+                url: URL(string: "mailto:test@example.com")!,
+                navigationType: .linkActivated(isMiddleClick: false),
+                webView: webView,
+                sourceURL: URL(string: "https://request.example/page")!,
+                sourceSecurityOrigin: SumiSecurityOrigin(protocol: "https", host: "request.example", port: 0)
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertTrue(policy?.isCancel == true)
+        XCTAssertEqual(resolver.openedURLs, [URL(string: "mailto:test@example.com")!])
+        XCTAssertEqual(webView.closeScriptEvaluations, 1)
+    }
+
+    func testExternalSchemeResponderAdapterDoesNotCloseAfterNavigationFinishOrFail() async {
+        let finishedWebView = SumiNavigationClosingTrackingWebView(frame: .zero)
+        let failedWebView = SumiNavigationClosingTrackingWebView(frame: .zero)
+
+        await assertExternalSchemeOpenDoesNotCloseAfterCompletion(
+            webView: finishedWebView,
+            complete: { adapter, navigation in
+                adapter.navigationDidFinish(navigation)
+            }
+        )
+        await assertExternalSchemeOpenDoesNotCloseAfterCompletion(
+            webView: failedWebView,
+            complete: { adapter, navigation in
+                adapter.navigation(navigation, didFailWith: WKError(.unknown))
+            }
+        )
     }
 
     func testPopupRequestDerivesPermissionOriginFromNavigationSecurityOrigin() {
@@ -591,7 +647,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             encoding: .utf8
         )
 
-        XCTAssertTrue(responderSource.contains("SumiExternalSchemePermissionRequest.fromNavigationAction"))
+        XCTAssertTrue(responderSource.contains("SumiExternalSchemePermissionRequest.fromSumiNavigationAction"))
         XCTAssertTrue(responderSource.contains("bridge.evaluate("))
         XCTAssertTrue(responderSource.contains("return .cancel"))
         XCTAssertFalse(responderSource.contains("NSWorkspace.shared.open"))
@@ -726,7 +782,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         let tokens = [
             ".strong(installNavigationAdapter)",
             ".strong(popupHandling)",
-            ".strong(externalScheme)",
+            ".strong(externalSchemeAdapter)",
             ".strong(downloads)",
             ".strong(scriptAttachmentAdapter)",
             ".strong(autoplayPolicyAdapter)",
@@ -1628,6 +1684,52 @@ final class SumiNavigationResponderTests: XCTestCase {
         }
         return event
     }
+
+    private func assertExternalSchemeOpenDoesNotCloseAfterCompletion(
+        webView: SumiNavigationClosingTrackingWebView,
+        complete: (SumiNavigationResponderAdapter, Navigation) -> Void,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        let tab = Tab(url: URL(string: "https://example.com")!)
+        let resolver = NavigationExternalSchemeFakeResolver(handlerSchemes: ["mailto"])
+        let bridge = SumiExternalSchemePermissionBridge(
+            coordinator: NavigationExternalSchemeFakeCoordinator(
+                decision: navigationExternalCoordinatorDecision(.granted, reason: "stored-allow")
+            ),
+            appResolver: resolver,
+            now: { Date(timeIntervalSince1970: 1_800_000_000) }
+        )
+        let responder = SumiExternalSchemeNavigationResponder(
+            tab: tab,
+            permissionBridge: bridge,
+            tabContextProvider: { _ in navigationExternalTabContext() }
+        )
+        let adapter = SumiNavigationResponderAdapter(target: responder)
+        let navigation = mainFrameNavigation(receiving: navigationAction(
+            url: URL(string: "https://request.example/page")!,
+            navigationType: .linkActivated(isMiddleClick: false),
+            webView: webView
+        ))
+        var preferences = NavigationPreferences.default
+
+        complete(adapter, navigation)
+
+        let policy = await adapter.decidePolicy(
+            for: navigationAction(
+                url: URL(string: "mailto:test@example.com")!,
+                navigationType: .linkActivated(isMiddleClick: false),
+                webView: webView,
+                sourceURL: URL(string: "https://request.example/page")!,
+                sourceSecurityOrigin: SumiSecurityOrigin(protocol: "https", host: "request.example", port: 0)
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertTrue(policy?.isCancel == true, file: file, line: line)
+        XCTAssertEqual(resolver.openedURLs, [URL(string: "mailto:test@example.com")!], file: file, line: line)
+        XCTAssertEqual(webView.closeScriptEvaluations, 0, file: file, line: line)
+    }
 }
 
 private func XCTAssertActionPolicy(
@@ -1677,6 +1779,24 @@ private extension SumiAuthChallengeDisposition {
 private extension NavigationPreferences {
     static var `default`: NavigationPreferences {
         NavigationPreferences(userAgent: nil, preferences: WKWebpagePreferences())
+    }
+}
+
+@MainActor
+private final class SumiNavigationClosingTrackingWebView: WKWebView {
+    private(set) var closeScriptEvaluations = 0
+
+    override func evaluateJavaScript(
+        _ javaScriptString: String,
+        completionHandler: ((Any?, (any Error)?) -> Void)? = nil
+    ) {
+        if javaScriptString == "window.close()" {
+            closeScriptEvaluations += 1
+            completionHandler?(nil, nil)
+            return
+        }
+
+        super.evaluateJavaScript(javaScriptString, completionHandler: completionHandler)
     }
 }
 
