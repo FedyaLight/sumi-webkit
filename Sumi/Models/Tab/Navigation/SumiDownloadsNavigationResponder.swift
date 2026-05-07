@@ -1,10 +1,9 @@
 import AppKit
 import Foundation
-import Navigation
 import WebKit
 
 @MainActor
-final class SumiDownloadsNavigationResponder: NavigationResponder {
+final class SumiDownloadsNavigationResponder: SumiNavigationActionResponding, SumiNavigationResponseResponding, SumiNavigationDownloadResponding {
     private weak var tab: Tab?
     private weak var downloadManager: DownloadManager?
     private var isRestoringSessionState = false
@@ -15,9 +14,9 @@ final class SumiDownloadsNavigationResponder: NavigationResponder {
     }
 
     func decidePolicy(
-        for navigationAction: NavigationAction,
-        preferences _: inout NavigationPreferences
-    ) async -> NavigationActionPolicy? {
+        for navigationAction: SumiNavigationAction,
+        preferences _: inout SumiNavigationPreferences
+    ) async -> SumiNavigationActionPolicy? {
         let signpostState = PerformanceTrace.beginInterval("NavigationPolicy.downloadActionResponder")
         defer {
             PerformanceTrace.endInterval("NavigationPolicy.downloadActionResponder", signpostState)
@@ -34,7 +33,8 @@ final class SumiDownloadsNavigationResponder: NavigationResponder {
             isRestoringSessionState = false
         }
 
-        let modifierFlags = tab?.navigationModifierFlags(from: navigationAction)
+        let actionModifierFlags = navigationAction.modifierFlags.intersection([.command, .option, .control, .shift])
+        let modifierFlags = tab?.resolvedNavigationModifierFlags(actionFlags: actionModifierFlags)
             ?? navigationAction.modifierFlags
         let optionDownloadRequested = navigationAction.navigationType.isLinkActivated
             && modifierFlags.contains(.option)
@@ -47,13 +47,12 @@ final class SumiDownloadsNavigationResponder: NavigationResponder {
         return .next
     }
 
-    func decidePolicy(for navigationResponse: NavigationResponse) async -> NavigationResponsePolicy? {
+    func decidePolicy(for response: SumiNavigationResponse) async -> SumiNavigationResponsePolicy? {
         let signpostState = PerformanceTrace.beginInterval("NavigationPolicy.downloadResponseResponder")
         defer {
             PerformanceTrace.endInterval("NavigationPolicy.downloadResponseResponder", signpostState)
         }
 
-        let response = SumiNavigationResponse(navigationResponse)
         let firstNavigationAction = response.mainFrameNavigation?.redirectHistory.first
             ?? response.mainFrameNavigation?.navigationAction
 
@@ -75,26 +74,27 @@ final class SumiDownloadsNavigationResponder: NavigationResponder {
         return .download
     }
 
-    func navigationAction(_ navigationAction: NavigationAction, didBecome download: WebKitDownload) {
-        enqueueDownload(download, originalURL: navigationAction.url, response: nil, requestURL: navigationAction.request.url)
+    func navigationAction(_ navigationAction: SumiNavigationAction, didBecome download: SumiNavigationDownload) {
+        guard let originalURL = navigationAction.url else { return }
+        enqueueDownload(download, originalURL: originalURL, response: nil, requestURL: navigationAction.request.url)
     }
 
-    func navigationResponse(_ navigationResponse: NavigationResponse, didBecome download: WebKitDownload) {
+    func navigationResponse(_ navigationResponse: SumiNavigationResponse, didBecome download: SumiNavigationDownload) {
         enqueueDownload(
             download,
             originalURL: navigationResponse.url,
-            response: navigationResponse.response,
-            requestURL: navigationResponse.response.url
+            response: download.response,
+            requestURL: download.response?.url
         )
     }
 
     private func enqueueDownload(
-        _ download: WebKitDownload,
+        _ download: SumiNavigationDownload,
         originalURL: URL,
         response: URLResponse?,
         requestURL: URL?
     ) {
-        guard let wkDownload = download as? WKDownload,
+        guard let wkDownload = download.webKitDownload,
               let downloadManager
         else { return }
 
@@ -131,5 +131,24 @@ final class SumiDownloadsNavigationResponder: NavigationResponder {
         let windowRect = webView.convert(sourceRect, to: nil)
         let globalRect = window.convertToScreen(windowRect)
         return dockScreen.convertFromGlobalScreenCoordinates(globalRect)
+    }
+}
+
+private extension SumiNavigationAction {
+    var sumiIsUserEnteredURL: Bool {
+        if case .other = navigationType,
+           case .user = request.attribution {
+            return true
+        } else if case .custom(.userEnteredURL) = navigationType {
+            return true
+        }
+        return false
+    }
+
+    var sumiIsCustom: Bool {
+        if case .custom = navigationType {
+            return true
+        }
+        return false
     }
 }

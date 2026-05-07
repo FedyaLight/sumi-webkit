@@ -70,7 +70,10 @@ final class SumiNavigationResponderAdapter: NavigationResponder {
 
     func navigationResponse(_ navigationResponse: NavigationResponse, didBecome download: WebKitDownload) {
         guard let responder = target as? any SumiNavigationDownloadResponding else { return }
-        responder.navigationResponse(SumiNavigationResponse(navigationResponse), didBecome: SumiWebKitNavigationDownload(download))
+        responder.navigationResponse(
+            SumiNavigationResponse(navigationResponse),
+            didBecome: SumiWebKitNavigationDownload(download, response: navigationResponse.response)
+        )
     }
 
     private func webView(for navigationAction: NavigationAction) -> WKWebView? {
@@ -80,9 +83,15 @@ final class SumiNavigationResponderAdapter: NavigationResponder {
 
 private final class SumiWebKitNavigationDownload: SumiNavigationDownload {
     private let download: WebKitDownload
+    let response: URLResponse?
 
-    init(_ download: WebKitDownload) {
+    init(_ download: WebKitDownload, response: URLResponse? = nil) {
         self.download = download
+        self.response = response
+    }
+
+    var webKitDownload: WKDownload? {
+        download as? WKDownload
     }
 
     var originalRequest: URLRequest? {

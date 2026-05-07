@@ -69,6 +69,8 @@ protocol SumiNavigationDownloadResponding: AnyObject {
 }
 
 protocol SumiNavigationDownload: AnyObject {
+    var webKitDownload: WKDownload? { get }
+    var response: URLResponse? { get }
     var originalRequest: URLRequest? { get }
     var originatingWebView: WKWebView? { get }
     var targetWebView: WKWebView? { get }
