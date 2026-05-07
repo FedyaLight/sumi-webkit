@@ -1,31 +1,36 @@
 import Foundation
-import Navigation
 import WebKit
 
 @MainActor
-final class SumiTabLifecycleNavigationResponder: NavigationResponder {
+final class SumiTabLifecycleNavigationResponder:
+    SumiNavigationStartResponding,
+    SumiNavigationResponseResponding,
+    SumiNavigationCommitResponding,
+    SumiNavigationCompletionResponding,
+    SumiSameDocumentNavigationResponding,
+    SumiNavigationAuthChallengeResponding {
     private weak var tab: Tab?
 
     init(tab: Tab) {
         self.tab = tab
     }
 
-    func willStart(_ navigation: Navigation) {
+    func navigationWillStart(_ context: SumiNavigationContext) {
         guard let tab,
-              navigation.navigationAction.isForMainFrame,
-              let webView = webView(for: navigation)
+              context.isMainFrame == true,
+              let webView = context.webView
         else { return }
 
-        if navigation.navigationAction.navigationType.isBackForward {
+        if context.action?.navigationType.isBackForward == true {
             tab.beginBackForwardNavigationTracking(on: webView)
         } else {
-            tab.handleNormalTabPermissionNavigation(to: navigation.request.url)
+            tab.handleNormalTabPermissionNavigation(to: context.url)
             tab.markRegularMainFrameNavigation(on: webView)
         }
         tab.resetPageSuspensionRuntimeState()
         tab.browserManager?.tabSuspensionService.resetRevisitProtection(for: tab)
 
-        if let url = navigation.request.url {
+        if let url = context.url {
             tab.browserManager?.extensionsModule.prepareWebViewForExtensionRuntime(
                 webView,
                 currentURL: url,
@@ -34,10 +39,12 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
         }
     }
 
-    func didStart(_ navigation: Navigation) {
+    func navigationDidStart() {}
+
+    func navigationDidStart(_ context: SumiNavigationContext) {
         guard let tab,
-              navigation.navigationAction.isForMainFrame,
-              let webView = webView(for: navigation)
+              context.isMainFrame == true,
+              let webView = context.webView
         else { return }
 
         tab.loadingState = .didStartProvisionalNavigation
@@ -55,8 +62,7 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
         }
     }
 
-    func decidePolicy(for navigationResponse: NavigationResponse) async -> NavigationResponsePolicy? {
-        let response = SumiNavigationResponse(navigationResponse)
+    func decidePolicy(for response: SumiNavigationResponse) async -> SumiNavigationResponsePolicy? {
         guard let tab,
               response.isForMainFrame
         else { return .next }
@@ -66,10 +72,10 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
         return .next
     }
 
-    func didCommit(_ navigation: Navigation) {
+    func navigationDidCommit(_ context: SumiNavigationContext) {
         guard let tab,
-              navigation.navigationAction.isForMainFrame,
-              let webView = webView(for: navigation)
+              context.isMainFrame == true,
+              let webView = context.webView
         else { return }
 
         tab.loadingState = .didCommit
@@ -105,10 +111,12 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
         )
     }
 
-    func navigationDidFinish(_ navigation: Navigation) {
+    func navigationDidFinish() {}
+
+    func navigationDidFinish(_ context: SumiNavigationContext?) {
         guard let tab,
-              navigation.navigationAction.isForMainFrame,
-              let webView = webView(for: navigation)
+              context?.isMainFrame == true,
+              let webView = context?.webView
         else { return }
 
         tab.loadingState = .didFinish
@@ -141,16 +149,21 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
         tab.browserManager?.enforceSiteDataPolicyAfterNavigation(for: tab)
     }
 
-    func navigation(_ navigation: Navigation, didSameDocumentNavigationOf navigationType: WKSameDocumentNavigationType) {
+    func navigationDidSameDocumentNavigation(type: SumiSameDocumentNavigationType) {}
+
+    func navigationDidSameDocumentNavigation(
+        type navigationType: SumiSameDocumentNavigationType,
+        context: SumiNavigationContext?
+    ) {
         guard let tab,
-              let webView = webView(for: navigation),
+              let webView = context?.webView,
               let newURL = webView.url
         else { return }
 
         tab.handleSameDocumentNavigation(to: newURL)
         tab.historyRecorder.didSameDocumentNavigation(
             to: newURL,
-            type: navigationType.sumiSameDocumentNavigationType,
+            type: navigationType,
             tab: tab
         )
         if tab.pendingMainFrameNavigationKind == .backForward {
@@ -164,13 +177,16 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
         tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.URL])
     }
 
-    func navigation(_ navigation: Navigation, didFailWith error: WKError) {
+    func navigationDidFail() {}
+
+    func navigationDidFail(_ error: WKError, context: SumiNavigationContext?) {
         guard let tab,
-              navigation.navigationAction.isForMainFrame
+              context?.isMainFrame == true
         else { return }
 
-        let webView = webView(for: navigation)
-        if navigation.navigationAction.navigationType.isBackForward {
+        let webView = context?.webView
+        let isBackForwardNavigation = context?.action?.navigationType.isBackForward == true
+        if isBackForwardNavigation {
             tab.finishBackForwardNavigationTracking(using: webView)
         }
 
@@ -183,10 +199,10 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
             return
         }
 
-        guard navigation.isCurrent else { return }
+        guard context?.isCurrent == true else { return }
 
         tab.loadingState = .didFail(error)
-        if !navigation.navigationAction.navigationType.isBackForward {
+        if !isBackForwardNavigation {
             tab.finishBackForwardNavigationTracking(using: webView)
         }
         tab.updateNavigationState()
@@ -195,9 +211,13 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
 
     func didReceive(
         _ authenticationChallenge: URLAuthenticationChallenge,
-        for _: Navigation?
-    ) async -> AuthChallengeDisposition? {
-        await sumiAuthChallengeDisposition(for: authenticationChallenge)?.navigationAuthChallengeDisposition
+        context _: SumiNavigationContext?
+    ) async -> SumiAuthChallengeDisposition? {
+        await sumiAuthChallengeDisposition(for: authenticationChallenge)
+    }
+
+    func didReceive(_ authenticationChallenge: URLAuthenticationChallenge) async -> SumiAuthChallengeDisposition? {
+        await didReceive(authenticationChallenge, context: nil)
     }
 
     private func sumiAuthChallengeDisposition(
@@ -229,11 +249,6 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
                 continuation.resume(returning: .next)
             }
         }
-    }
-
-    private func webView(for navigation: Navigation) -> WKWebView? {
-        navigation.navigationAction.targetFrame?.webView
-            ?? navigation.navigationAction.sourceFrame.webView
     }
 }
 

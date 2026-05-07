@@ -41,31 +41,47 @@ final class SumiNavigationResponderAdapter: NavigationResponder {
 
     func didReceive(
         _ authenticationChallenge: URLAuthenticationChallenge,
-        for _: Navigation?
+        for navigation: Navigation?
     ) async -> AuthChallengeDisposition? {
         guard let responder = target as? any SumiNavigationAuthChallengeResponding else { return .next }
-        let decision = await responder.didReceive(authenticationChallenge)
+        let decision = await responder.didReceive(
+            authenticationChallenge,
+            context: navigation.map(SumiNavigationContext.init)
+        )
         return decision?.navigationAuthChallengeDisposition
     }
 
-    func didStart(_: Navigation) {
+    func willStart(_ navigation: Navigation) {
         guard let responder = target as? any SumiNavigationStartResponding else { return }
-        responder.navigationDidStart()
+        responder.navigationWillStart(SumiNavigationContext(navigation))
     }
 
-    func navigationDidFinish(_: Navigation) {
+    func didStart(_ navigation: Navigation) {
+        guard let responder = target as? any SumiNavigationStartResponding else { return }
+        responder.navigationDidStart(SumiNavigationContext(navigation))
+    }
+
+    func didCommit(_ navigation: Navigation) {
+        guard let responder = target as? any SumiNavigationCommitResponding else { return }
+        responder.navigationDidCommit(SumiNavigationContext(navigation))
+    }
+
+    func navigationDidFinish(_ navigation: Navigation) {
         guard let responder = target as? any SumiNavigationCompletionResponding else { return }
-        responder.navigationDidFinish()
+        responder.navigationDidFinish(SumiNavigationContext(navigation))
     }
 
-    func navigation(_: Navigation, didFailWith error: WKError) {
+    func navigation(_ navigation: Navigation, didFailWith error: WKError) {
         guard let responder = target as? any SumiNavigationCompletionResponding else { return }
-        responder.navigationDidFail()
+        responder.navigationDidFail(error, context: SumiNavigationContext(navigation))
     }
 
-    func navigation(_: Navigation, didSameDocumentNavigationOf navigationType: WKSameDocumentNavigationType) {
+    func navigation(_ navigation: Navigation, didSameDocumentNavigationOf navigationType: WKSameDocumentNavigationType) {
         guard let responder = target as? any SumiSameDocumentNavigationResponding else { return }
-        responder.navigationDidSameDocumentNavigation(type: navigationType.sumiSameDocumentNavigationType)
+        responder.navigationDidSameDocumentNavigation(
+            type: navigationType.sumiSameDocumentNavigationType,
+            context: SumiNavigationContext(navigation)
+        )
     }
 
     func navigationAction(_ navigationAction: NavigationAction, didBecome download: WebKitDownload) {
@@ -83,6 +99,20 @@ final class SumiNavigationResponderAdapter: NavigationResponder {
 
     private func webView(for navigationAction: NavigationAction) -> WKWebView? {
         navigationAction.targetFrame?.webView ?? navigationAction.sourceFrame.webView
+    }
+}
+
+private extension SumiNavigationContext {
+    @MainActor
+    init(_ navigation: Navigation) {
+        let action = SumiNavigationAction(navigation.navigationAction)
+        self.init(
+            action: action,
+            url: navigation.request.url,
+            isCurrent: navigation.isCurrent,
+            isMainFrame: navigation.navigationAction.isForMainFrame,
+            webView: navigation.navigationAction.targetFrame?.webView ?? navigation.navigationAction.sourceFrame.webView
+        )
     }
 }
 

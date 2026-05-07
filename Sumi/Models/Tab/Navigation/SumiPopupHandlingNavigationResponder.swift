@@ -1,10 +1,9 @@
 import AppKit
 import Foundation
-import Navigation
 import WebKit
 
 @MainActor
-final class SumiPopupHandlingNavigationResponder: NavigationResponder {
+final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewResponding, SumiNavigationStartResponding {
     private struct PendingNewWindow {
         let policy: SumiNewWindowPolicy
     }
@@ -213,14 +212,17 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
         )
     }
 
-    func willStart(_: Navigation) {
+    func navigationWillStart(_: SumiNavigationContext) {
         onNewWindow = nil
     }
 
+    func navigationDidStart() {}
+
     func decidePolicy(
-        for navigationAction: NavigationAction,
-        preferences _: inout NavigationPreferences
-    ) async -> NavigationActionPolicy? {
+        for navigationAction: SumiNavigationAction,
+        webView targetWebView: WKWebView?,
+        preferences _: inout SumiNavigationPreferences
+    ) async -> SumiNavigationActionPolicy? {
         let signpostState = PerformanceTrace.beginInterval("NavigationPolicy.popupResponder")
         defer {
             PerformanceTrace.endInterval("NavigationPolicy.popupResponder", signpostState)
@@ -230,25 +232,28 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
               let browserManager = tab.browserManager
         else { return .next }
 
-        if tab.isPopupHost, isSumiInternalURL(navigationAction.url) {
+        if let url = navigationAction.url,
+           tab.isPopupHost,
+           isSumiInternalURL(url) {
             return .cancel
         }
 
         guard let targetFrame = navigationAction.targetFrame else { return .next }
+        guard let url = navigationAction.url else { return .next }
 
         let isLinkActivated = !navigationAction.isTargetingNewWindow
             && (navigationAction.navigationType.isLinkActivated
                 || (navigationAction.navigationType == .other && navigationAction.isUserInitiated))
         guard isLinkActivated else { return .next }
 
-        let modifierFlags = tab.navigationModifierFlags(from: navigationAction)
+        let modifierFlags = navigationModifierFlags(from: navigationAction, tab: tab)
         if tab.isGlanceTriggerActive(modifierFlags) {
-            tab.openURLInGlance(navigationAction.url)
+            tab.openURLInGlance(url)
             return .cancel
         }
 
         let canOpenLinkInCurrentTab: Bool = {
-            let navigatingToAnotherDomain = navigationAction.url.host != targetFrame.url.host && !targetFrame.url.sumiIsEmpty
+            let navigatingToAnotherDomain = url.host != targetFrame.url?.host && !(targetFrame.url?.sumiIsEmpty ?? true)
             let navigatingAwayFromPinnedTab = tab.isPinned && navigatingToAnotherDomain && navigationAction.isForMainFrame
             return !navigatingAwayFromPinnedTab
         }()
@@ -264,8 +269,7 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
         case .currentTab:
             return .next
         case .newTab, .newWindow:
-            let url = navigationAction.url
-            guard let targetWebView = targetFrame.webView,
+            guard let targetWebView,
                   let tabContext = tab.popupPermissionTabContext(for: targetWebView)
             else {
                 return .cancel
@@ -274,7 +278,7 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
                 webKitUserInitiated: nil,
                 navigationActionUserInitiated: navigationAction.isUserInitiated
             )
-            let request = SumiPopupPermissionRequest.fromNavigationAction(
+            let request = SumiPopupPermissionRequest.fromSumiNavigationAction(
                 navigationAction,
                 activationState: activationState
             )
@@ -298,6 +302,14 @@ final class SumiPopupHandlingNavigationResponder: NavigationResponder {
             targetWebView.sumiLoadInNewWindow(url)
             return .cancel
         }
+    }
+
+    private func navigationModifierFlags(
+        from navigationAction: SumiNavigationAction,
+        tab: Tab
+    ) -> NSEvent.ModifierFlags {
+        let flags = navigationAction.modifierFlags.intersection([.command, .option, .control, .shift])
+        return tab.resolvedNavigationModifierFlags(actionFlags: flags)
     }
 
     private func newWindowPolicy(for navigationAction: WKNavigationAction) -> PendingNewWindow? {

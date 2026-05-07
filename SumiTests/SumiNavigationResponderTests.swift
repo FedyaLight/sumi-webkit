@@ -781,12 +781,12 @@ final class SumiNavigationResponderTests: XCTestCase {
 
         let tokens = [
             ".strong(installNavigationAdapter)",
-            ".strong(popupHandling)",
+            ".strong(popupHandlingAdapter)",
             ".strong(externalSchemeAdapter)",
             ".strong(downloadsAdapter)",
             ".strong(scriptAttachmentAdapter)",
             ".strong(autoplayPolicyAdapter)",
-            ".strong(lifecycle)",
+            ".strong(lifecycleAdapter)",
             ".strong(findInPageAdapter)",
         ]
         let indices = try tokens.map { token in
@@ -794,6 +794,9 @@ final class SumiNavigationResponderTests: XCTestCase {
         }
 
         XCTAssertEqual(indices, indices.sorted())
+        XCTAssertTrue(source.contains("let popupHandling: SumiPopupHandlingNavigationResponder"))
+        XCTAssertTrue(source.contains("self.popupHandlingAdapter = SumiNavigationResponderAdapter(target: popupHandling)"))
+        XCTAssertTrue(source.contains("self.lifecycleAdapter = SumiNavigationResponderAdapter(target: lifecycle)"))
         XCTAssertTrue(source.contains("self.findInPageAdapter = SumiNavigationResponderAdapter(target: tab.findInPage)"))
     }
 
@@ -874,8 +877,9 @@ final class SumiNavigationResponderTests: XCTestCase {
     func testTabLifecycleResponsePolicyUpdatesPDFDisplayStateOnlyForMainFrameResponses() async {
         let tab = Tab(url: URL(string: "https://example.com/start")!)
         let responder = SumiTabLifecycleNavigationResponder(tab: tab)
+        let adapter = SumiNavigationResponderAdapter(target: responder)
 
-        let pdfPolicy = await responder.decidePolicy(
+        let pdfPolicy = await adapter.decidePolicy(
             for: NavigationResponse(
                 response: URLResponse(
                     url: URL(string: "https://example.com/report.pdf")!,
@@ -892,7 +896,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertNil(pdfPolicy)
         XCTAssertTrue(tab.isDisplayingPDFDocument)
 
-        let subframePolicy = await responder.decidePolicy(
+        let subframePolicy = await adapter.decidePolicy(
             for: NavigationResponse(
                 response: URLResponse(
                     url: URL(string: "https://cdn.example.com/embed.html")!,
@@ -909,7 +913,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertNil(subframePolicy)
         XCTAssertTrue(tab.isDisplayingPDFDocument)
 
-        let htmlPolicy = await responder.decidePolicy(
+        let htmlPolicy = await adapter.decidePolicy(
             for: NavigationResponse(
                 response: URLResponse(
                     url: URL(string: "https://example.com/page")!,
@@ -1300,6 +1304,8 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertNil(disposition)
         XCTAssertEqual(target.callCount, 1)
         XCTAssertEqual(target.observedProtectionSpaceHosts, ["auth.example"])
+        XCTAssertEqual(target.observedContexts.count, 1)
+        XCTAssertNil(target.observedContexts.first ?? nil)
     }
 
     func testSumiNavigationResponderAdapterMapsNonAuthTargetToNext() async {
@@ -1329,6 +1335,22 @@ final class SumiNavigationResponderTests: XCTestCase {
         }
     }
 
+    func testSumiNavigationResponderAdapterPassesAuthNavigationContextWhenAvailable() async {
+        let target = SumiNavigationAuthProbeResponder(decision: .next)
+        let adapter = SumiNavigationResponderAdapter(target: target)
+        let navigation = mainFrameNavigation(receiving: navigationAction(
+            url: URL(string: "https://example.com/auth")!,
+            navigationType: .linkActivated(isMiddleClick: false)
+        ))
+
+        _ = await adapter.didReceive(makeAuthenticationChallenge(), for: navigation)
+
+        XCTAssertEqual(target.callCount, 1)
+        XCTAssertEqual(target.observedContexts.count, 1)
+        XCTAssertEqual(target.observedContexts.first??.url, URL(string: "https://example.com/auth")!)
+        XCTAssertEqual(target.observedContexts.first??.isMainFrame, true)
+    }
+
     func testSumiNavigationResponderAdapterMapsSameDocumentNavigationType() {
         let target = SumiSameDocumentNavigationProbeResponder()
         let adapter = SumiNavigationResponderAdapter(target: target)
@@ -1345,6 +1367,39 @@ final class SumiNavigationResponderTests: XCTestCase {
         }
 
         XCTAssertEqual(target.observedTypes, SumiSameDocumentNavigationType.allCases)
+    }
+
+    func testSumiNavigationResponderAdapterPassesLifecycleNavigationContext() {
+        let webView = WKWebView(frame: .zero)
+        let target = SumiNavigationLifecycleContextProbeResponder()
+        let adapter = SumiNavigationResponderAdapter(target: target)
+        let navigation = mainFrameNavigation(
+            receiving: navigationAction(
+                url: URL(string: "https://example.com/context")!,
+                navigationType: .backForward(distance: -1),
+                webView: webView
+            ),
+            isCurrent: true
+        )
+        let failure = WKError(.webContentProcessTerminated)
+
+        adapter.willStart(navigation)
+        adapter.didStart(navigation)
+        adapter.didCommit(navigation)
+        adapter.navigationDidFinish(navigation)
+        adapter.navigation(navigation, didFailWith: failure)
+        adapter.navigation(navigation, didSameDocumentNavigationOf: .sessionStatePop)
+
+        XCTAssertEqual(
+            target.events,
+            ["willStart", "didStart", "didCommit", "finish", "fail", "sameDocument.sessionStatePop"]
+        )
+        XCTAssertEqual(target.contexts.map { $0.url }, Array(repeating: URL(string: "https://example.com/context")!, count: 6))
+        XCTAssertEqual(target.contexts.map { $0.isCurrent }, Array(repeating: true, count: 6))
+        XCTAssertEqual(target.contexts.map { $0.isMainFrame }, Array(repeating: true, count: 6))
+        XCTAssertEqual(target.contexts.map { $0.action?.navigationType.isBackForward }, Array(repeating: true, count: 6))
+        XCTAssertTrue(target.contexts.allSatisfy { $0.webView === webView })
+        XCTAssertEqual(target.failErrors.map(\.code), [.webContentProcessTerminated])
     }
 
     func testSumiNavigationResponderAdapterForwardsSameDocumentCallbacksInAdapterOrderAndIgnoresNonConformingTargets() {
@@ -1381,6 +1436,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         adapter.didStart(navigation)
 
         XCTAssertEqual(target.startCallCount, 1)
+        XCTAssertEqual(target.startContexts.first?.url, URL(string: "https://example.com/start")!)
     }
 
     func testSumiNavigationResponderAdapterForwardsLifecycleStartInAdapterOrderAndIgnoresNonConformingTargets() {
@@ -1483,6 +1539,9 @@ final class SumiNavigationResponderTests: XCTestCase {
             recorder.snapshot(),
             ["first.finish", "second.finish", "first.fail", "second.fail"]
         )
+        XCTAssertEqual(first.finishContexts.first?.url, URL(string: "https://example.com/completion")!)
+        XCTAssertEqual(first.failContexts.first?.url, URL(string: "https://example.com/completion")!)
+        XCTAssertEqual(first.failErrors.map(\.code), [.unknown])
     }
 
     func testWeakSumiNavigationCompletionAdapterIgnoresDeallocatedTarget() {
@@ -1781,7 +1840,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         )
         let asyncStart = try XCTUnwrap(source.range(of: "func createWebViewAsync(")?.lowerBound)
         let syncStart = try XCTUnwrap(source.range(of: "private func createWebViewSynchronously(", range: asyncStart..<source.endIndex)?.lowerBound)
-        let policyStart = try XCTUnwrap(source.range(of: "func willStart", range: syncStart..<source.endIndex)?.lowerBound)
+        let policyStart = try XCTUnwrap(source.range(of: "func navigationWillStart", range: syncStart..<source.endIndex)?.lowerBound)
         let createWebViewSources = [
             String(source[asyncStart..<syncStart]),
             String(source[syncStart..<policyStart]),
@@ -1807,10 +1866,11 @@ final class SumiNavigationResponderTests: XCTestCase {
         tab.sumiSettings = settings
         tab.setClickModifierFlags([.option])
         let responder = SumiPopupHandlingNavigationResponder(tab: tab)
+        let adapter = SumiNavigationResponderAdapter(target: responder)
         let targetURL = URL(string: "https://destination.example/page")!
         var preferences = NavigationPreferences.default
 
-        let policy = await responder.decidePolicy(
+        let policy = await adapter.decidePolicy(
             for: navigationAction(
                 url: targetURL,
                 navigationType: .linkActivated(isMiddleClick: false),
@@ -1832,10 +1892,11 @@ final class SumiNavigationResponderTests: XCTestCase {
         tab.sumiSettings = settings
         tab.setClickModifierFlags([.command])
         let responder = SumiPopupHandlingNavigationResponder(tab: tab)
+        let adapter = SumiNavigationResponderAdapter(target: responder)
         let targetURL = URL(string: "https://destination.example/page")!
         var preferences = NavigationPreferences.default
 
-        _ = await responder.decidePolicy(
+        _ = await adapter.decidePolicy(
             for: navigationAction(
                 url: targetURL,
                 navigationType: .linkActivated(isMiddleClick: false),
@@ -1907,12 +1968,12 @@ final class SumiNavigationResponderTests: XCTestCase {
         return action
     }
 
-    private func mainFrameNavigation(receiving action: NavigationAction) -> Navigation {
+    private func mainFrameNavigation(receiving action: NavigationAction, isCurrent: Bool = false) -> Navigation {
         let navigation = Navigation(
             identity: NavigationIdentity(nil),
             responders: ResponderChain(),
             state: .expected(nil),
-            isCurrent: false
+            isCurrent: isCurrent
         )
         navigation.navigationActionReceived(action)
         return navigation
@@ -2385,14 +2446,23 @@ private final class SumiNavigationAuthProbeResponder: SumiNavigationAuthChalleng
     private let decision: SumiAuthChallengeDisposition?
     private(set) var callCount = 0
     private(set) var observedProtectionSpaceHosts: [String] = []
+    private(set) var observedContexts: [SumiNavigationContext?] = []
 
     init(decision: SumiAuthChallengeDisposition?) {
         self.decision = decision
     }
 
     func didReceive(_ authenticationChallenge: URLAuthenticationChallenge) async -> SumiAuthChallengeDisposition? {
+        await didReceive(authenticationChallenge, context: nil)
+    }
+
+    func didReceive(
+        _ authenticationChallenge: URLAuthenticationChallenge,
+        context: SumiNavigationContext?
+    ) async -> SumiAuthChallengeDisposition? {
         callCount += 1
         observedProtectionSpaceHosts.append(authenticationChallenge.protectionSpace.host)
+        observedContexts.append(context)
         return decision
     }
 }
@@ -2409,6 +2479,13 @@ private final class SumiSameDocumentNavigationProbeResponder: SumiSameDocumentNa
     }
 
     func navigationDidSameDocumentNavigation(type: SumiSameDocumentNavigationType) {
+        navigationDidSameDocumentNavigation(type: type, context: nil)
+    }
+
+    func navigationDidSameDocumentNavigation(
+        type: SumiSameDocumentNavigationType,
+        context _: SumiNavigationContext?
+    ) {
         observedTypes.append(type)
         if let name {
             recorder?.appendSync("\(name).sameDocument.\(type)")
@@ -2421,14 +2498,31 @@ private final class SumiNavigationStartProbeResponder: SumiNavigationStartRespon
     private let name: String?
     private let recorder: SumiNavigationAdapterOrderRecorder?
     private(set) var startCallCount = 0
+    private(set) var willStartContexts: [SumiNavigationContext] = []
+    private(set) var startContexts: [SumiNavigationContext] = []
 
     init(name: String? = nil, recorder: SumiNavigationAdapterOrderRecorder? = nil) {
         self.name = name
         self.recorder = recorder
     }
 
+    func navigationWillStart(_ context: SumiNavigationContext) {
+        willStartContexts.append(context)
+        if let name {
+            recorder?.appendSync("\(name).willStart")
+        }
+    }
+
     func navigationDidStart() {
         startCallCount += 1
+        if let name {
+            recorder?.appendSync("\(name).start")
+        }
+    }
+
+    func navigationDidStart(_ context: SumiNavigationContext) {
+        startCallCount += 1
+        startContexts.append(context)
         if let name {
             recorder?.appendSync("\(name).start")
         }
@@ -2439,6 +2533,9 @@ private final class SumiNavigationStartProbeResponder: SumiNavigationStartRespon
 private final class SumiNavigationCompletionProbeResponder: SumiNavigationCompletionResponding {
     private let name: String
     private let recorder: SumiNavigationAdapterOrderRecorder
+    private(set) var finishContexts: [SumiNavigationContext] = []
+    private(set) var failContexts: [SumiNavigationContext] = []
+    private(set) var failErrors: [WKError] = []
 
     init(name: String, recorder: SumiNavigationAdapterOrderRecorder) {
         self.name = name
@@ -2449,8 +2546,83 @@ private final class SumiNavigationCompletionProbeResponder: SumiNavigationComple
         recorder.appendSync("\(name).finish")
     }
 
+    func navigationDidFinish(_ context: SumiNavigationContext?) {
+        if let context {
+            finishContexts.append(context)
+        }
+        recorder.appendSync("\(name).finish")
+    }
+
     func navigationDidFail() {
         recorder.appendSync("\(name).fail")
+    }
+
+    func navigationDidFail(_ error: WKError, context: SumiNavigationContext?) {
+        if let context {
+            failContexts.append(context)
+        }
+        failErrors.append(error)
+        recorder.appendSync("\(name).fail")
+    }
+}
+
+@MainActor
+private final class SumiNavigationLifecycleContextProbeResponder:
+    SumiNavigationStartResponding,
+    SumiNavigationCommitResponding,
+    SumiNavigationCompletionResponding,
+    SumiSameDocumentNavigationResponding {
+
+    private(set) var events: [String] = []
+    private(set) var contexts: [SumiNavigationContext] = []
+    private(set) var failErrors: [WKError] = []
+
+    func navigationWillStart(_ context: SumiNavigationContext) {
+        events.append("willStart")
+        contexts.append(context)
+    }
+
+    func navigationDidStart() {}
+
+    func navigationDidStart(_ context: SumiNavigationContext) {
+        events.append("didStart")
+        contexts.append(context)
+    }
+
+    func navigationDidCommit(_ context: SumiNavigationContext) {
+        events.append("didCommit")
+        contexts.append(context)
+    }
+
+    func navigationDidFinish() {}
+
+    func navigationDidFinish(_ context: SumiNavigationContext?) {
+        events.append("finish")
+        if let context {
+            contexts.append(context)
+        }
+    }
+
+    func navigationDidFail() {}
+
+    func navigationDidFail(_ error: WKError, context: SumiNavigationContext?) {
+        events.append("fail")
+        failErrors.append(error)
+        if let context {
+            contexts.append(context)
+        }
+    }
+
+    func navigationDidSameDocumentNavigation(type: SumiSameDocumentNavigationType) {}
+
+    func navigationDidSameDocumentNavigation(
+        type: SumiSameDocumentNavigationType,
+        context: SumiNavigationContext?
+    ) {
+        events.append("sameDocument.\(type)")
+        if let context {
+            contexts.append(context)
+        }
     }
 }
 
