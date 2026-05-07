@@ -39,6 +39,15 @@ final class SumiNavigationResponderAdapter: NavigationResponder {
         return decision?.navigationResponsePolicy
     }
 
+    func didReceive(
+        _ authenticationChallenge: URLAuthenticationChallenge,
+        for _: Navigation?
+    ) async -> AuthChallengeDisposition? {
+        guard let responder = target as? any SumiNavigationAuthChallengeResponding else { return .next }
+        let decision = await responder.didReceive(authenticationChallenge)
+        return decision?.navigationAuthChallengeDisposition
+    }
+
     func navigationDidFinish(_: Navigation) {
         guard let responder = target as? any SumiNavigationCompletionResponding else { return }
         responder.navigationDidFinish()
@@ -49,8 +58,52 @@ final class SumiNavigationResponderAdapter: NavigationResponder {
         responder.navigationDidFail()
     }
 
+    func navigation(_: Navigation, didSameDocumentNavigationOf navigationType: WKSameDocumentNavigationType) {
+        guard let responder = target as? any SumiSameDocumentNavigationResponding else { return }
+        responder.navigationDidSameDocumentNavigation(type: navigationType.sumiSameDocumentNavigationType)
+    }
+
+    func navigationAction(_ navigationAction: NavigationAction, didBecome download: WebKitDownload) {
+        guard let responder = target as? any SumiNavigationDownloadResponding else { return }
+        responder.navigationAction(SumiNavigationAction(navigationAction), didBecome: SumiWebKitNavigationDownload(download))
+    }
+
+    func navigationResponse(_ navigationResponse: NavigationResponse, didBecome download: WebKitDownload) {
+        guard let responder = target as? any SumiNavigationDownloadResponding else { return }
+        responder.navigationResponse(SumiNavigationResponse(navigationResponse), didBecome: SumiWebKitNavigationDownload(download))
+    }
+
     private func webView(for navigationAction: NavigationAction) -> WKWebView? {
         navigationAction.targetFrame?.webView ?? navigationAction.sourceFrame.webView
+    }
+}
+
+private final class SumiWebKitNavigationDownload: SumiNavigationDownload {
+    private let download: WebKitDownload
+
+    init(_ download: WebKitDownload) {
+        self.download = download
+    }
+
+    var originalRequest: URLRequest? {
+        download.originalRequest
+    }
+
+    var originatingWebView: WKWebView? {
+        download.originatingWebView
+    }
+
+    var targetWebView: WKWebView? {
+        download.targetWebView
+    }
+
+    var delegate: WKDownloadDelegate? {
+        get { download.delegate }
+        set { download.delegate = newValue }
+    }
+
+    func cancel(_ completionHandler: ((Data?) -> Void)?) {
+        download.cancel(completionHandler)
     }
 }
 
