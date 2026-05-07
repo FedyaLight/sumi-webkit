@@ -240,6 +240,13 @@ final class SidebarDDGHoverTests: XCTestCase {
         XCTAssertFalse(source.contains("HoverTrackingArea.updateTrackingAreas"))
     }
 
+    func testHoverBridgeSkipsUnchangedTrackingEnabledUpdates() throws {
+        let source = try Self.source(named: "Sumi/Components/Sidebar/SidebarDDGHover.swift")
+
+        XCTAssertTrue(source.contains("if view.isHoverTrackingEnabled != isEnabled"))
+        XCTAssertTrue(source.contains("view.setHoverTrackingEnabled(isEnabled)"))
+    }
+
     func testMigratedSidebarHoverDoesNotUseGlobalHoverOrDelayedHoverPatterns() throws {
         let sourceByPath = try Self.sidebarHoverSourceByPath()
         let sidebarBridgeSource = try XCTUnwrap(sourceByPath["Sumi/Components/Sidebar/SidebarDDGHover.swift"])
