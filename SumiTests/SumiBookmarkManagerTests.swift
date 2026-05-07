@@ -284,7 +284,7 @@ final class SumiBookmarkManagerTests: XCTestCase {
 
     func testImportSkipsURLVariantDuplicatesAndExportPreservesFolders() throws {
         let manager = makeManager()
-        let nodes: [BookmarkOrFolder] = [
+        let nodes: [SumiBookmarkImportNode] = [
             .folder(
                 name: "Imported",
                 children: [

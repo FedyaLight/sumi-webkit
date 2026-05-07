@@ -1,5 +1,4 @@
 import AppKit
-import Bookmarks
 import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
@@ -163,7 +162,7 @@ extension BrowserManager {
     }
 
     func importBookmarksFromMenu() {
-        let detectedSources = BookmarkImportSource.detectedBrowserSources()
+        let detectedSources = SumiBookmarkImportSource.detectedBrowserSources()
         guard !detectedSources.isEmpty else {
             importBookmarksFromHTMLFile()
             return
@@ -306,7 +305,7 @@ extension BrowserManager {
         else { return }
 
         importBookmarks(
-            from: BookmarkImportSource(
+            from: SumiBookmarkImportSource(
                 id: "html-\(fileURL.path)",
                 title: fileURL.lastPathComponent,
                 fileURL: fileURL,
@@ -315,7 +314,7 @@ extension BrowserManager {
         )
     }
 
-    private func importBookmarks(from source: BookmarkImportSource) {
+    private func importBookmarks(from source: SumiBookmarkImportSource) {
         do {
             let nodes = try source.readBookmarks()
             let summary = try bookmarkManager.importBookmarks(nodes)
@@ -332,7 +331,7 @@ extension BrowserManager {
         }
     }
 
-    private func importUnreadableSafariBookmarks(source: BookmarkImportSource, originalError: Error) {
+    private func importUnreadableSafariBookmarks(source: SumiBookmarkImportSource, originalError: Error) {
         let panel = NSOpenPanel()
         panel.message = "Choose \(source.title)'s Bookmarks.plist file."
         panel.canChooseDirectories = false
@@ -346,7 +345,7 @@ extension BrowserManager {
             return
         }
 
-        let replacement = BookmarkImportSource(
+        let replacement = SumiBookmarkImportSource(
             id: "\(source.id)-manual",
             title: source.title,
             fileURL: fileURL,
@@ -361,12 +360,6 @@ extension BrowserManager {
         alert.informativeText = message
         alert.addButton(withTitle: "OK")
         alert.runModal()
-    }
-}
-
-private extension BookmarksImportSummary {
-    var message: String {
-        "\(successful) imported, \(duplicates) duplicate, \(failed) failed."
     }
 }
 

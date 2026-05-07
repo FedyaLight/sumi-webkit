@@ -260,7 +260,11 @@ final class SumiDDGBookmarkRepository: SumiBookmarkRepository, @unchecked Sendab
             acceptsURL: acceptsURL,
             urlKeys: urlKeys
         )
-        return try importer.importBookmarks(bookmarks, parent: parent)
+        let summary = try importer.importBookmarks(
+            bookmarks.map(\.ddgBookmarkOrFolder),
+            parent: parent
+        )
+        return SumiBookmarksImportSummary(ddgImportSummary: summary)
     }
 
     func exportBookmarksHTML(to destination: URL) throws {

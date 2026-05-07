@@ -1,7 +1,6 @@
 import SQLite3
 import XCTest
 
-import Bookmarks
 @testable import Sumi
 
 final class SumiBookmarkImportExportTests: XCTestCase {
@@ -29,7 +28,7 @@ final class SumiBookmarkImportExportTests: XCTestCase {
         </DL><p>
         """.write(to: fileURL, atomically: true, encoding: .utf8)
 
-        let nodes = try BookmarkImportSource(id: "html", title: "HTML", fileURL: fileURL, kind: .html).readBookmarks()
+        let nodes = try SumiBookmarkImportSource(id: "html", title: "HTML", fileURL: fileURL, kind: .html).readBookmarks()
 
         XCTAssertEqual(nodes.count, 1)
         XCTAssertEqual(nodes.first?.name, "Docs")
@@ -64,7 +63,12 @@ final class SumiBookmarkImportExportTests: XCTestCase {
         }
         """.write(to: fileURL, atomically: true, encoding: .utf8)
 
-        let nodes = try BookmarkImportSource(id: "chromium", title: "Chromium", fileURL: fileURL, kind: .chromiumJSON).readBookmarks()
+        let nodes = try SumiBookmarkImportSource(
+            id: "chromium",
+            title: "Chromium",
+            fileURL: fileURL,
+            kind: .chromiumJSON
+        ).readBookmarks()
 
         XCTAssertEqual(nodes.map(\.name), ["Bookmarks Bar", "Other"])
         XCTAssertEqual(nodes.first?.children?.first?.name, "Toolbar")
@@ -101,7 +105,12 @@ final class SumiBookmarkImportExportTests: XCTestCase {
         let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
         try data.write(to: fileURL)
 
-        let nodes = try BookmarkImportSource(id: "safari", title: "Safari", fileURL: fileURL, kind: .safariPlist).readBookmarks()
+        let nodes = try SumiBookmarkImportSource(
+            id: "safari",
+            title: "Safari",
+            fileURL: fileURL,
+            kind: .safariPlist
+        ).readBookmarks()
 
         XCTAssertEqual(nodes.count, 1)
         XCTAssertEqual(nodes.first?.name, "Bookmarks Menu")
@@ -112,7 +121,12 @@ final class SumiBookmarkImportExportTests: XCTestCase {
         let fileURL = try temporaryFile(named: "places.sqlite")
         try createFirefoxFixture(at: fileURL)
 
-        let nodes = try BookmarkImportSource(id: "firefox", title: "Firefox", fileURL: fileURL, kind: .firefoxSQLite).readBookmarks()
+        let nodes = try SumiBookmarkImportSource(
+            id: "firefox",
+            title: "Firefox",
+            fileURL: fileURL,
+            kind: .firefoxSQLite
+        ).readBookmarks()
 
         XCTAssertEqual(nodes.count, 1)
         XCTAssertEqual(nodes.first?.name, "Bookmarks Menu")
@@ -138,7 +152,7 @@ final class SumiBookmarkImportExportTests: XCTestCase {
         </DL><p>
         """.write(to: sourceURL, atomically: true, encoding: .utf8)
 
-        let importedNodes = try BookmarkImportSource(
+        let importedNodes = try SumiBookmarkImportSource(
             id: "source-html",
             title: "Source HTML",
             fileURL: sourceURL,
@@ -148,7 +162,7 @@ final class SumiBookmarkImportExportTests: XCTestCase {
 
         let firstSummary = try firstManager.importBookmarks(importedNodes)
 
-        XCTAssertEqual(firstSummary, BookmarksImportSummary(successful: 4, duplicates: 0, failed: 0))
+        XCTAssertEqual(firstSummary, SumiBookmarksImportSummary(successful: 4, duplicates: 0, failed: 0))
         XCTAssertEqual(bookmarkOutline(in: firstManager), [
             "folder:Engineering",
             "  bookmark:Docs Home|https://docs.example/start",
@@ -158,7 +172,7 @@ final class SumiBookmarkImportExportTests: XCTestCase {
 
         let exportURL = try temporaryFile(named: "exported-bookmarks.html")
         try firstManager.exportBookmarksHTML(to: exportURL)
-        let reimportedNodes = try BookmarkImportSource(
+        let reimportedNodes = try SumiBookmarkImportSource(
             id: "round-trip-html",
             title: "Round Trip HTML",
             fileURL: exportURL,
