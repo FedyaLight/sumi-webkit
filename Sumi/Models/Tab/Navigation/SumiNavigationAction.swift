@@ -90,6 +90,10 @@ struct SumiNavigationRedirectHistory: Equatable {
     var first: SumiNavigationRedirectAction? {
         actions.first
     }
+
+    var last: SumiNavigationRedirectAction? {
+        actions.last
+    }
 }
 
 struct SumiNavigationMainFrameNavigation: Equatable {

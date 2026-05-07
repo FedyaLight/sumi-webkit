@@ -56,12 +56,13 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
     }
 
     func decidePolicy(for navigationResponse: NavigationResponse) async -> NavigationResponsePolicy? {
+        let response = SumiNavigationResponse(navigationResponse)
         guard let tab,
-              navigationResponse.isForMainFrame
+              response.isForMainFrame
         else { return .next }
 
         tab.isDisplayingPDFDocument =
-            navigationResponse.response.mimeType?.lowercased() == "application/pdf"
+            response.mimeType?.lowercased() == "application/pdf"
         return .next
     }
 

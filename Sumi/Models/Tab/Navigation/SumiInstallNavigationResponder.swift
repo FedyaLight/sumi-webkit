@@ -31,8 +31,9 @@ final class SumiInstallNavigationResponder: NavigationResponder {
             PerformanceTrace.endInterval("NavigationPolicy.installResponseResponder", signpostState)
         }
 
-        guard navigationResponse.isForMainFrame,
-              tab?.browserManager?.userscriptsModule.interceptInstallNavigationIfNeeded(navigationResponse.url) == true
+        let response = SumiNavigationResponse(navigationResponse)
+        guard response.isForMainFrame,
+              tab?.browserManager?.userscriptsModule.interceptInstallNavigationIfNeeded(response.url) == true
         else { return .next }
 
         return .cancel

@@ -119,6 +119,21 @@ extension NavigationResponsePolicy {
     }
 }
 
+extension SumiNavigationResponse {
+    @MainActor
+    init(_ navigationResponse: NavigationResponse) {
+        self.init(
+            url: navigationResponse.url,
+            isForMainFrame: navigationResponse.isForMainFrame,
+            canShowMIMEType: navigationResponse.canShowMIMEType,
+            shouldDownload: navigationResponse.shouldDownload,
+            httpResponse: navigationResponse.httpResponse,
+            mimeType: navigationResponse.response.mimeType,
+            mainFrameNavigation: navigationResponse.mainFrameNavigation.map(SumiNavigationMainFrameNavigation.init)
+        )
+    }
+}
+
 extension SumiAuthChallengeDisposition {
     init(_ disposition: AuthChallengeDisposition) {
         switch disposition {
