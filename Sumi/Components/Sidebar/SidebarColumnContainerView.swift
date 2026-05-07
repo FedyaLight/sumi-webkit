@@ -171,10 +171,18 @@ private enum SidebarColumnBackgroundClickPolicy {
 }
 
 enum SidebarColumnPaintlessChrome {
+    @MainActor
     static func configure(_ view: NSView) {
-        view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.clear.cgColor
-        view.layer?.isOpaque = false
+        let clearBackground = NSColor.clear.cgColor
+        if !view.wantsLayer {
+            view.wantsLayer = true
+        }
+        if view.layer?.backgroundColor != clearBackground {
+            view.layer?.backgroundColor = clearBackground
+        }
+        if view.layer?.isOpaque != false {
+            view.layer?.isOpaque = false
+        }
     }
 }
 
