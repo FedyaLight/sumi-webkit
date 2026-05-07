@@ -728,7 +728,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             ".strong(popupHandling)",
             ".strong(externalScheme)",
             ".strong(downloads)",
-            ".strong(scriptAttachment)",
+            ".strong(scriptAttachmentAdapter)",
             ".strong(autoplayPolicyAdapter)",
             ".strong(lifecycle)",
             ".weak(tab.findInPage)",
@@ -1176,6 +1176,46 @@ final class SumiNavigationResponderTests: XCTestCase {
         )
         XCTAssertNil(actionPolicy)
         XCTAssertNil(responsePolicy)
+    }
+
+    func testScriptAttachmentResponderAdapterAwaitsNormalTabScriptReplacementBeforeNextResponder() async throws {
+        let tab = Tab(url: URL(string: "https://initial.example")!)
+        let profile = Profile(name: "Script Adapter")
+        let scriptsProvider = SumiNormalTabUserScripts(
+            managedUserScripts: [
+                SumiNavigationTestUserScript(source: "window.__sumiNavigationSeedScript = true;"),
+            ]
+        )
+        let configuration = BrowserConfiguration().normalTabWebViewConfiguration(
+            for: profile,
+            url: URL(string: "https://initial.example")!,
+            userScriptsProvider: scriptsProvider
+        )
+        let controller = try XCTUnwrap(configuration.userContentController.sumiNormalTabUserContentController)
+        XCTAssertTrue(controller.normalTabUserScriptsProvider === scriptsProvider)
+
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        let scriptAttachment = SumiTabScriptAttachmentNavigationResponder(tab: tab)
+        let observer = SumiScriptAttachmentTimingProbeResponder(scriptsProvider: scriptsProvider)
+        let responders = [
+            SumiNavigationResponderAdapter(target: scriptAttachment),
+            SumiNavigationResponderAdapter(target: observer),
+        ]
+        var preferences = NavigationPreferences.default
+
+        let policy = await evaluateActionPolicy(
+            with: responders,
+            action: navigationAction(
+                url: URL(string: "https://target.example")!,
+                navigationType: .linkActivated(isMiddleClick: false),
+                webView: webView
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertActionPolicy(policy, .allow)
+        XCTAssertEqual(scriptsProvider.scriptsRevision, 1)
+        XCTAssertEqual(observer.observedScriptRevisions, [1])
     }
 
     func testDownloadResponderRequestsDownloadForDownloadNavigationAction() async {
@@ -1787,6 +1827,24 @@ private final class SumiNavigationAdapterOrderRecorder {
 }
 
 @MainActor
+private final class SumiScriptAttachmentTimingProbeResponder: SumiNavigationActionResponding {
+    private let scriptsProvider: SumiNormalTabUserScripts
+    private(set) var observedScriptRevisions: [Int] = []
+
+    init(scriptsProvider: SumiNormalTabUserScripts) {
+        self.scriptsProvider = scriptsProvider
+    }
+
+    func decidePolicy(
+        for _: SumiNavigationAction,
+        preferences _: inout SumiNavigationPreferences
+    ) async -> SumiNavigationActionPolicy? {
+        observedScriptRevisions.append(scriptsProvider.scriptsRevision)
+        return .allow
+    }
+}
+
+@MainActor
 private final class SumiNavigationAdapterProbeResponder: SumiNavigationActionResponding, SumiNavigationResponseResponding {
     private let name: String
     private let actionDecision: SumiNavigationActionPolicy?
@@ -1909,6 +1967,24 @@ private final class FailingSchemeHandler: NSObject, WKURLSchemeHandler {
     }
 
     func webView(_: WKWebView, stop _: WKURLSchemeTask) {}
+}
+
+private final class SumiNavigationTestUserScript: NSObject, SumiUserScript {
+    let source: String
+    let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
+    let forMainFrameOnly = true
+    let requiresRunInPageContentWorld = false
+    let messageNames: [String] = []
+
+    init(source: String) {
+        self.source = source
+        super.init()
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        _ = userContentController
+        _ = message
+    }
 }
 
 @MainActor
