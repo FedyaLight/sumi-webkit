@@ -137,6 +137,7 @@ struct SumiExternalSchemePermissionRequest: Sendable {
         _ navigationAction: NavigationAction,
         userActivation: SumiExternalSchemeUserActivationState? = nil
     ) -> SumiExternalSchemePermissionRequest {
+        let sourceFrame = SumiNavigationFrameInfo(navigationFrame: navigationAction.sourceFrame)
         let targetURL = navigationAction.url
         let isRedirectChain = navigationAction.redirectHistory?.isEmpty == false
             || navigationAction.mainFrameNavigation?.navigationAction.redirectHistory?.isEmpty == false
@@ -145,9 +146,9 @@ struct SumiExternalSchemePermissionRequest: Sendable {
 
         return SumiExternalSchemePermissionRequest(
             targetURL: targetURL,
-            requestingOrigin: permissionOrigin(from: SumiSecurityOrigin(navigationFrame: navigationAction.sourceFrame)),
+            requestingOrigin: permissionOrigin(from: sourceFrame.securityOrigin),
             userActivation: resolvedActivation,
-            isMainFrame: navigationAction.sourceFrame.isMainFrame,
+            isMainFrame: sourceFrame.isMainFrame,
             isRedirectChain: isRedirectChain
         )
     }
