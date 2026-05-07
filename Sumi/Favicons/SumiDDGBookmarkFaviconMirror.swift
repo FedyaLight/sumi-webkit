@@ -15,7 +15,7 @@ final class SumiDDGBookmarkFaviconMirror: SumiFaviconMirrorSyncing {
 
     func attachDDGFetcher(
         applicationSupportURL: URL,
-        faviconStore: @escaping @MainActor () async -> Bookmarks.FaviconStoring
+        faviconStore: @escaping @MainActor () async -> any SumiFaviconStoring
     ) throws {
         let stateStore = try BookmarksFaviconsFetcherStateStore(applicationSupportURL: applicationSupportURL)
         attachDDGFetcher(
@@ -28,7 +28,7 @@ final class SumiDDGBookmarkFaviconMirror: SumiFaviconMirrorSyncing {
     func attachDDGFetcher(
         stateStore: BookmarksFaviconsFetcherStateStoring,
         fetcher: FaviconFetching,
-        faviconStore: @escaping @MainActor () async -> Bookmarks.FaviconStoring
+        faviconStore: @escaping @MainActor () async -> any SumiFaviconStoring
     ) {
         attach(
             fetchScheduler: SumiDDGBookmarkFaviconFetchScheduler(
@@ -78,7 +78,7 @@ final class SumiDDGBookmarkFaviconFetchScheduler: SumiBookmarkFaviconFetchSchedu
         database: CoreDataDatabase,
         stateStore: BookmarksFaviconsFetcherStateStoring,
         fetcher: FaviconFetching,
-        faviconStore: @escaping @MainActor () async -> Bookmarks.FaviconStoring
+        faviconStore: @escaping @MainActor () async -> any SumiFaviconStoring
     ) {
         self.stateStore = stateStore
         self.faviconFetcher = fetcher
@@ -86,7 +86,10 @@ final class SumiDDGBookmarkFaviconFetchScheduler: SumiBookmarkFaviconFetchSchedu
             database: database,
             stateStore: stateStore,
             fetcher: fetcher,
-            faviconStore: faviconStore,
+            faviconStore: {
+                let storage = await faviconStore()
+                return SumiDDGBookmarkFaviconStoringAdapter(storage: storage)
+            },
             errorEvents: nil
         )
     }
