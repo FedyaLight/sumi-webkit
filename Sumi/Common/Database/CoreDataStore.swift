@@ -18,7 +18,6 @@
 
 import CoreData
 import Foundation
-import Persistence
 
 extension NSManagedObject {
     class func entityClassName() -> String {
@@ -60,7 +59,7 @@ internal class CoreDataStore<ManagedObject: ValueRepresentableManagedObject> {
         return newContext
     }
 
-    convenience init(database: CoreDataDatabase?, tableName: String) {
+    convenience init(database: (any SumiCoreDataDatabase)?, tableName: String) {
         self.init(context: database?.makeContext(concurrencyType: .privateQueueConcurrencyType, name: tableName))
     }
 

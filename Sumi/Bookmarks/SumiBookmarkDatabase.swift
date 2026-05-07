@@ -1,10 +1,9 @@
 import Bookmarks
 import CoreData
 import Foundation
-import Persistence
 
 final class SumiBookmarkDatabase {
-    private let database: CoreDataDatabase
+    private let database: any SumiCoreDataDatabase
 
     init(directory: URL? = nil) {
         let directory = directory ?? Self.defaultDirectoryURL()
@@ -12,7 +11,7 @@ final class SumiBookmarkDatabase {
             fatalError("Failed to load BookmarksModel")
         }
 
-        database = CoreDataDatabase(
+        database = SumiDDGCoreDataDatabase(
             name: "SumiBookmarks",
             containerLocation: directory,
             model: model
@@ -95,7 +94,7 @@ final class SumiBookmarkDatabase {
 
         var seen = Set<String>()
         for bundle in candidateBundles where seen.insert(bundle.bundleURL.path).inserted {
-            if let model = CoreDataDatabase.loadModel(from: bundle, named: "BookmarksModel") {
+            if let model = SumiDDGCoreDataDatabase.loadModel(from: bundle, named: "BookmarksModel") {
                 return model
             }
         }

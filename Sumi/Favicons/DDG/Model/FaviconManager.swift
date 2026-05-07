@@ -20,7 +20,6 @@ import Cocoa
 import Combine
 import CoreImage
 import os.log
-import Persistence
 import WebKit
 
 @MainActor
@@ -46,7 +45,7 @@ protocol FaviconManagement: AnyObject {
 final class FaviconManager: FaviconManagement {
 
     enum CacheType {
-        case standard(_ database: CoreDataDatabase)
+        case standard(_ database: any SumiCoreDataDatabase)
         case inMemory
     }
 

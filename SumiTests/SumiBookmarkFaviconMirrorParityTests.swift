@@ -2,7 +2,6 @@ import CoreData
 import XCTest
 
 import Bookmarks
-import Persistence
 @testable import Sumi
 
 @MainActor
@@ -274,12 +273,12 @@ final class SumiBookmarkFaviconMirrorParityTests: XCTestCase {
         directory: URL,
         modelName: String,
         preferredBundles: [Bundle]
-    ) throws -> CoreDataDatabase {
+    ) throws -> SumiDDGCoreDataDatabase {
         if modelName == "Favicons" {
             FaviconValueTransformers.register()
         }
         let model = try XCTUnwrap(loadModel(named: modelName, preferredBundles: preferredBundles))
-        let database = CoreDataDatabase(name: name, containerLocation: directory, model: model)
+        let database = SumiDDGCoreDataDatabase(name: name, containerLocation: directory, model: model)
         var loadError: Error?
         database.loadStore { _, error in
             loadError = error
@@ -300,14 +299,14 @@ final class SumiBookmarkFaviconMirrorParityTests: XCTestCase {
             .values
 
         for bundle in bundles {
-            if let model = CoreDataDatabase.loadModel(from: bundle, named: modelName) {
+            if let model = SumiDDGCoreDataDatabase.loadModel(from: bundle, named: modelName) {
                 return model
             }
         }
         return nil
     }
 
-    private func fetchBookmarkMirrorRecords(in database: CoreDataDatabase) throws -> [BookmarkMirrorRecord] {
+    private func fetchBookmarkMirrorRecords(in database: any SumiCoreDataDatabase) throws -> [BookmarkMirrorRecord] {
         let context = database.makeContext(
             concurrencyType: .privateQueueConcurrencyType,
             name: "SumiBookmarkFaviconMirrorParityRead"
@@ -638,12 +637,12 @@ final class SumiBookmarkFaviconStoreParityTests: XCTestCase {
         directory: URL,
         modelName: String,
         preferredBundles: [Bundle]
-    ) throws -> CoreDataDatabase {
+    ) throws -> SumiDDGCoreDataDatabase {
         if modelName == "Favicons" {
             FaviconValueTransformers.register()
         }
         let model = try XCTUnwrap(loadModel(named: modelName, preferredBundles: preferredBundles))
-        let database = CoreDataDatabase(name: name, containerLocation: directory, model: model)
+        let database = SumiDDGCoreDataDatabase(name: name, containerLocation: directory, model: model)
         var loadError: Error?
         database.loadStore { _, error in
             loadError = error
@@ -664,7 +663,7 @@ final class SumiBookmarkFaviconStoreParityTests: XCTestCase {
             .values
 
         for bundle in bundles {
-            if let model = CoreDataDatabase.loadModel(from: bundle, named: modelName) {
+            if let model = SumiDDGCoreDataDatabase.loadModel(from: bundle, named: modelName) {
                 return model
             }
         }
