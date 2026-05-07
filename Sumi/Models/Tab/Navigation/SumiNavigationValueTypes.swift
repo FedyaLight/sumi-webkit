@@ -1,0 +1,194 @@
+import Foundation
+import Navigation
+
+enum SumiNavigationActionPolicy: Equatable, Sendable, CaseIterable {
+    case allow
+    case cancel
+    case download
+}
+
+extension SumiNavigationActionPolicy? {
+    static let next = SumiNavigationActionPolicy?.none
+}
+
+enum SumiNavigationResponsePolicy: String, Equatable, Sendable, CaseIterable {
+    case allow
+    case cancel
+    case download
+}
+
+extension SumiNavigationResponsePolicy? {
+    static let next = SumiNavigationResponsePolicy?.none
+}
+
+enum SumiAuthChallengeDisposition {
+    case credential(URLCredential)
+    case cancel
+    case rejectProtectionSpace
+}
+
+extension SumiAuthChallengeDisposition? {
+    static let next = SumiAuthChallengeDisposition?.none
+}
+
+enum SumiSameDocumentNavigationType: Int, Equatable, Sendable, CaseIterable {
+    case anchorNavigation = 0
+    case sessionStatePush
+    case sessionStateReplace
+    case sessionStatePop
+}
+
+struct SumiCustomNavigationType: RawRepresentable, Equatable, Hashable, Sendable {
+    var rawValue: String
+
+    init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+}
+
+extension SumiCustomNavigationType {
+    static let userEnteredURL = SumiCustomNavigationType(rawValue: "userEnteredUrl")
+    static let userRequestedPageDownload = SumiCustomNavigationType(rawValue: "userRequestedPageDownload")
+}
+
+extension SumiNavigationActionPolicy {
+    init(_ policy: NavigationActionPolicy) {
+        switch policy {
+        case .allow:
+            self = .allow
+        case .cancel:
+            self = .cancel
+        case .download:
+            self = .download
+        }
+    }
+
+    var navigationActionPolicy: NavigationActionPolicy {
+        switch self {
+        case .allow:
+            return .allow
+        case .cancel:
+            return .cancel
+        case .download:
+            return .download
+        }
+    }
+}
+
+extension NavigationActionPolicy {
+    init(_ policy: SumiNavigationActionPolicy) {
+        self = policy.navigationActionPolicy
+    }
+
+    var sumiNavigationActionPolicy: SumiNavigationActionPolicy {
+        SumiNavigationActionPolicy(self)
+    }
+}
+
+extension SumiNavigationResponsePolicy {
+    init(_ policy: NavigationResponsePolicy) {
+        switch policy {
+        case .allow:
+            self = .allow
+        case .cancel:
+            self = .cancel
+        case .download:
+            self = .download
+        }
+    }
+
+    var navigationResponsePolicy: NavigationResponsePolicy {
+        switch self {
+        case .allow:
+            return .allow
+        case .cancel:
+            return .cancel
+        case .download:
+            return .download
+        }
+    }
+}
+
+extension NavigationResponsePolicy {
+    init(_ policy: SumiNavigationResponsePolicy) {
+        self = policy.navigationResponsePolicy
+    }
+
+    var sumiNavigationResponsePolicy: SumiNavigationResponsePolicy {
+        SumiNavigationResponsePolicy(self)
+    }
+}
+
+extension SumiAuthChallengeDisposition {
+    init(_ disposition: AuthChallengeDisposition) {
+        switch disposition {
+        case .credential(let credential):
+            self = .credential(credential)
+        case .cancel:
+            self = .cancel
+        case .rejectProtectionSpace:
+            self = .rejectProtectionSpace
+        }
+    }
+
+    var navigationAuthChallengeDisposition: AuthChallengeDisposition {
+        switch self {
+        case .credential(let credential):
+            return .credential(credential)
+        case .cancel:
+            return .cancel
+        case .rejectProtectionSpace:
+            return .rejectProtectionSpace
+        }
+    }
+}
+
+extension AuthChallengeDisposition {
+    init(_ disposition: SumiAuthChallengeDisposition) {
+        self = disposition.navigationAuthChallengeDisposition
+    }
+
+    var sumiAuthChallengeDisposition: SumiAuthChallengeDisposition {
+        SumiAuthChallengeDisposition(self)
+    }
+}
+
+extension SumiSameDocumentNavigationType {
+    init(_ navigationType: WKSameDocumentNavigationType) {
+        self = Self(rawValue: navigationType.rawValue) ?? .anchorNavigation
+    }
+
+    var navigationSameDocumentNavigationType: WKSameDocumentNavigationType {
+        WKSameDocumentNavigationType(rawValue: rawValue) ?? .anchorNavigation
+    }
+}
+
+extension WKSameDocumentNavigationType {
+    init(_ navigationType: SumiSameDocumentNavigationType) {
+        self = navigationType.navigationSameDocumentNavigationType
+    }
+
+    var sumiSameDocumentNavigationType: SumiSameDocumentNavigationType {
+        SumiSameDocumentNavigationType(self)
+    }
+}
+
+extension SumiCustomNavigationType {
+    init(_ navigationType: CustomNavigationType) {
+        self.init(rawValue: navigationType.rawValue)
+    }
+
+    var navigationCustomNavigationType: CustomNavigationType {
+        CustomNavigationType(rawValue: rawValue)
+    }
+}
+
+extension CustomNavigationType {
+    init(_ navigationType: SumiCustomNavigationType) {
+        self = navigationType.navigationCustomNavigationType
+    }
+
+    var sumiCustomNavigationType: SumiCustomNavigationType {
+        SumiCustomNavigationType(self)
+    }
+}

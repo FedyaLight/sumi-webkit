@@ -660,8 +660,56 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertLessThan(autoplayIndex, lifecycleIndex)
     }
 
+    func testSumiNavigationValueAdaptersRoundTripSimpleValues() {
+        XCTAssertEqual(
+            SumiNavigationActionPolicy.allCases.map { NavigationActionPolicy($0).sumiNavigationActionPolicy },
+            SumiNavigationActionPolicy.allCases
+        )
+        XCTAssertEqual(
+            SumiNavigationResponsePolicy.allCases.map { NavigationResponsePolicy($0).sumiNavigationResponsePolicy },
+            SumiNavigationResponsePolicy.allCases
+        )
+        XCTAssertEqual(
+            SumiSameDocumentNavigationType.allCases.map { WKSameDocumentNavigationType($0).sumiSameDocumentNavigationType },
+            SumiSameDocumentNavigationType.allCases
+        )
+
+        let customType = SumiCustomNavigationType(rawValue: "sumi-test-custom-navigation")
+        XCTAssertEqual(CustomNavigationType(customType).sumiCustomNavigationType, customType)
+        XCTAssertEqual(
+            SumiCustomNavigationType.userRequestedPageDownload.navigationCustomNavigationType.sumiCustomNavigationType,
+            .userRequestedPageDownload
+        )
+
+        let credential = URLCredential(user: "sumi", password: "secret", persistence: .forSession)
+        let credentialRoundTrip = AuthChallengeDisposition
+            .credential(credential)
+            .sumiAuthChallengeDisposition
+            .navigationAuthChallengeDisposition
+        guard case .credential(let roundTripCredential) = credentialRoundTrip else {
+            return XCTFail("Expected credential auth challenge disposition")
+        }
+        XCTAssertEqual(roundTripCredential.user, credential.user)
+        XCTAssertEqual(roundTripCredential.password, credential.password)
+        XCTAssertEqual(SumiAuthChallengeDisposition.cancel.navigationAuthChallengeDisposition.sumiAuthChallengeDisposition.isCancel, true)
+        XCTAssertEqual(
+            SumiAuthChallengeDisposition.rejectProtectionSpace
+                .navigationAuthChallengeDisposition
+                .sumiAuthChallengeDisposition
+                .isRejectProtectionSpace,
+            true
+        )
+
+        let nextActionPolicy: SumiNavigationActionPolicy? = .next
+        let nextResponsePolicy: SumiNavigationResponsePolicy? = .next
+        let nextAuthDisposition: SumiAuthChallengeDisposition? = .next
+        XCTAssertNil(nextActionPolicy)
+        XCTAssertNil(nextResponsePolicy)
+        XCTAssertNil(nextAuthDisposition)
+    }
+
     func testActionResponderChainStopsAtFirstPolicyDecisionForAllowCancelDownload() async {
-        let cases: [(NavigationActionPolicy, String)] = [
+        let cases: [(SumiNavigationActionPolicy, String)] = [
             (.allow, "allow"),
             (.cancel, "cancel"),
             (.download, "download"),
@@ -669,7 +717,10 @@ final class SumiNavigationResponderTests: XCTestCase {
 
         for (expectedPolicy, caseName) in cases {
             let first = ActionPolicyProbeResponder(name: "\(caseName)-first", decision: .next)
-            let decider = ActionPolicyProbeResponder(name: "\(caseName)-decider", decision: expectedPolicy)
+            let decider = ActionPolicyProbeResponder(
+                name: "\(caseName)-decider",
+                decision: expectedPolicy.navigationActionPolicy
+            )
             let skipped = ActionPolicyProbeResponder(name: "\(caseName)-skipped", decision: .allow)
             var preferences = NavigationPreferences.default
 
@@ -682,7 +733,7 @@ final class SumiNavigationResponderTests: XCTestCase {
                 preferences: &preferences
             )
 
-            XCTAssertActionPolicy(policy, expectedPolicy)
+            XCTAssertEqual(policy?.sumiNavigationActionPolicy, expectedPolicy)
             XCTAssertEqual(first.callCount, 1)
             XCTAssertEqual(decider.callCount, 1)
             XCTAssertEqual(skipped.callCount, 0)
@@ -729,7 +780,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             canShowMIMEType: false,
             mainFrameNavigation: nil
         )
-        let cases: [(NavigationResponsePolicy, String)] = [
+        let cases: [(SumiNavigationResponsePolicy, String)] = [
             (.allow, "allow"),
             (.cancel, "cancel"),
             (.download, "download"),
@@ -737,7 +788,10 @@ final class SumiNavigationResponderTests: XCTestCase {
 
         for (expectedPolicy, caseName) in cases {
             let first = ResponsePolicyProbeResponder(name: "\(caseName)-first", decision: .next)
-            let decider = ResponsePolicyProbeResponder(name: "\(caseName)-decider", decision: expectedPolicy)
+            let decider = ResponsePolicyProbeResponder(
+                name: "\(caseName)-decider",
+                decision: expectedPolicy.navigationResponsePolicy
+            )
             let skipped = ResponsePolicyProbeResponder(name: "\(caseName)-skipped", decision: .allow)
 
             let policy = await evaluateResponsePolicy(
@@ -745,7 +799,7 @@ final class SumiNavigationResponderTests: XCTestCase {
                 response: response
             )
 
-            XCTAssertEqual(policy, expectedPolicy)
+            XCTAssertEqual(policy?.sumiNavigationResponsePolicy, expectedPolicy)
             XCTAssertEqual(first.callCount, 1)
             XCTAssertEqual(decider.callCount, 1)
             XCTAssertEqual(skipped.callCount, 0)
@@ -1192,6 +1246,18 @@ private extension NavigationActionPolicy {
 
     var isDownload: Bool {
         if case .download = self { return true }
+        return false
+    }
+}
+
+private extension SumiAuthChallengeDisposition {
+    var isCancel: Bool {
+        if case .cancel = self { return true }
+        return false
+    }
+
+    var isRejectProtectionSpace: Bool {
+        if case .rejectProtectionSpace = self { return true }
         return false
     }
 }

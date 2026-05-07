@@ -1,7 +1,6 @@
 import Combine
 import AppKit
 import Foundation
-import Navigation
 import ObjectiveC.runtime
 import OSLog
 import WebKit
@@ -192,7 +191,7 @@ final class HistoryTabRecorder {
         addVisit(url: url, tab: tab)
     }
 
-    func didSameDocumentNavigation(to url: URL, type: WKSameDocumentNavigationType?, tab: Tab) {
+    func didSameDocumentNavigation(to url: URL, type: SumiSameDocumentNavigationType?, tab: Tab) {
         currentURL = url
         guard shouldCapture(url: url, tab: tab) else { return }
         guard type == .anchorNavigation || type == .sessionStatePush else { return }

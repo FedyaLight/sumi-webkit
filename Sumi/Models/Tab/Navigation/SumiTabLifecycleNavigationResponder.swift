@@ -147,7 +147,11 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
         else { return }
 
         tab.handleSameDocumentNavigation(to: newURL)
-        tab.historyRecorder.didSameDocumentNavigation(to: newURL, type: navigationType, tab: tab)
+        tab.historyRecorder.didSameDocumentNavigation(
+            to: newURL,
+            type: navigationType.sumiSameDocumentNavigationType,
+            tab: tab
+        )
         if tab.pendingMainFrameNavigationKind == .backForward {
             tab.scheduleBackForwardSameDocumentSettle(using: webView)
         } else {
@@ -192,6 +196,12 @@ final class SumiTabLifecycleNavigationResponder: NavigationResponder {
         _ authenticationChallenge: URLAuthenticationChallenge,
         for _: Navigation?
     ) async -> AuthChallengeDisposition? {
+        await sumiAuthChallengeDisposition(for: authenticationChallenge)?.navigationAuthChallengeDisposition
+    }
+
+    private func sumiAuthChallengeDisposition(
+        for authenticationChallenge: URLAuthenticationChallenge
+    ) async -> SumiAuthChallengeDisposition? {
         guard let tab,
               let authenticationManager = tab.browserManager?.authenticationManager
         else { return .next }
