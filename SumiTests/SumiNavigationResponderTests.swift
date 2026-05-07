@@ -871,6 +871,62 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertNil(value.mainFrameNavigation)
     }
 
+    func testTabLifecycleResponsePolicyUpdatesPDFDisplayStateOnlyForMainFrameResponses() async {
+        let tab = Tab(url: URL(string: "https://example.com/start")!)
+        let responder = SumiTabLifecycleNavigationResponder(tab: tab)
+
+        let pdfPolicy = await responder.decidePolicy(
+            for: NavigationResponse(
+                response: URLResponse(
+                    url: URL(string: "https://example.com/report.pdf")!,
+                    mimeType: "application/pdf",
+                    expectedContentLength: 1024,
+                    textEncodingName: nil
+                ),
+                isForMainFrame: true,
+                canShowMIMEType: true,
+                mainFrameNavigation: nil
+            )
+        )
+
+        XCTAssertNil(pdfPolicy)
+        XCTAssertTrue(tab.isDisplayingPDFDocument)
+
+        let subframePolicy = await responder.decidePolicy(
+            for: NavigationResponse(
+                response: URLResponse(
+                    url: URL(string: "https://cdn.example.com/embed.html")!,
+                    mimeType: "text/html",
+                    expectedContentLength: 128,
+                    textEncodingName: nil
+                ),
+                isForMainFrame: false,
+                canShowMIMEType: true,
+                mainFrameNavigation: nil
+            )
+        )
+
+        XCTAssertNil(subframePolicy)
+        XCTAssertTrue(tab.isDisplayingPDFDocument)
+
+        let htmlPolicy = await responder.decidePolicy(
+            for: NavigationResponse(
+                response: URLResponse(
+                    url: URL(string: "https://example.com/page")!,
+                    mimeType: "text/html",
+                    expectedContentLength: 256,
+                    textEncodingName: nil
+                ),
+                isForMainFrame: true,
+                canShowMIMEType: true,
+                mainFrameNavigation: nil
+            )
+        )
+
+        XCTAssertNil(htmlPolicy)
+        XCTAssertFalse(tab.isDisplayingPDFDocument)
+    }
+
     func testSumiNavigationResponseAdapterCopiesHTTPAndMainFrameNavigationMetadata() throws {
         let initialAction = navigationAction(
             url: URL(string: "https://example.com/start")!,
@@ -1246,6 +1302,14 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertEqual(target.observedProtectionSpaceHosts, ["auth.example"])
     }
 
+    func testSumiNavigationResponderAdapterMapsNonAuthTargetToNext() async {
+        let adapter = SumiNavigationResponderAdapter(target: NSObject())
+
+        let disposition = await adapter.didReceive(makeAuthenticationChallenge(), for: nil)
+
+        XCTAssertNil(disposition)
+    }
+
     func testSumiNavigationResponderAdapterMapsAuthDispositions() async {
         let credential = URLCredential(user: "sumi", password: "secret", persistence: .forSession)
         let cases: [(SumiAuthChallengeDisposition, AuthChallengeDisposition)] = [
@@ -1283,6 +1347,29 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertEqual(target.observedTypes, SumiSameDocumentNavigationType.allCases)
     }
 
+    func testSumiNavigationResponderAdapterForwardsSameDocumentCallbacksInAdapterOrderAndIgnoresNonConformingTargets() {
+        let recorder = SumiNavigationAdapterOrderRecorder()
+        let first = SumiSameDocumentNavigationProbeResponder(name: "first", recorder: recorder)
+        let nonSameDocument = SumiNavigationAdapterProbeResponder(name: "policy-only")
+        let second = SumiSameDocumentNavigationProbeResponder(name: "second", recorder: recorder)
+        let responders = [first, nonSameDocument, second].map(SumiNavigationResponderAdapter.init(target:))
+        let navigation = mainFrameNavigation(receiving: navigationAction(
+            url: URL(string: "https://example.com/page#push")!,
+            navigationType: .sameDocumentNavigation(.sessionStatePush)
+        ))
+
+        for responder in responders {
+            responder.navigation(navigation, didSameDocumentNavigationOf: .sessionStatePush)
+        }
+
+        XCTAssertEqual(
+            recorder.snapshot(),
+            ["first.sameDocument.sessionStatePush", "second.sameDocument.sessionStatePush"]
+        )
+        XCTAssertEqual(first.observedTypes, [.sessionStatePush])
+        XCTAssertEqual(second.observedTypes, [.sessionStatePush])
+    }
+
     func testSumiNavigationResponderAdapterForwardsLifecycleStart() {
         let target = SumiNavigationStartProbeResponder()
         let adapter = SumiNavigationResponderAdapter(target: target)
@@ -1294,6 +1381,26 @@ final class SumiNavigationResponderTests: XCTestCase {
         adapter.didStart(navigation)
 
         XCTAssertEqual(target.startCallCount, 1)
+    }
+
+    func testSumiNavigationResponderAdapterForwardsLifecycleStartInAdapterOrderAndIgnoresNonConformingTargets() {
+        let recorder = SumiNavigationAdapterOrderRecorder()
+        let first = SumiNavigationStartProbeResponder(name: "first", recorder: recorder)
+        let nonStart = SumiNavigationAdapterProbeResponder(name: "policy-only")
+        let second = SumiNavigationStartProbeResponder(name: "second", recorder: recorder)
+        let responders = [first, nonStart, second].map(SumiNavigationResponderAdapter.init(target:))
+        let navigation = mainFrameNavigation(receiving: navigationAction(
+            url: URL(string: "https://example.com/ordered-start")!,
+            navigationType: .linkActivated(isMiddleClick: false)
+        ))
+
+        for responder in responders {
+            responder.didStart(navigation)
+        }
+
+        XCTAssertEqual(recorder.snapshot(), ["first.start", "second.start"])
+        XCTAssertEqual(first.startCallCount, 1)
+        XCTAssertEqual(second.startCallCount, 1)
     }
 
     func testWeakSumiNavigationStartAdapterIgnoresDeallocatedTarget() {
@@ -2292,19 +2399,39 @@ private final class SumiNavigationAuthProbeResponder: SumiNavigationAuthChalleng
 
 @MainActor
 private final class SumiSameDocumentNavigationProbeResponder: SumiSameDocumentNavigationResponding {
+    private let name: String?
+    private let recorder: SumiNavigationAdapterOrderRecorder?
     private(set) var observedTypes: [SumiSameDocumentNavigationType] = []
+
+    init(name: String? = nil, recorder: SumiNavigationAdapterOrderRecorder? = nil) {
+        self.name = name
+        self.recorder = recorder
+    }
 
     func navigationDidSameDocumentNavigation(type: SumiSameDocumentNavigationType) {
         observedTypes.append(type)
+        if let name {
+            recorder?.appendSync("\(name).sameDocument.\(type)")
+        }
     }
 }
 
 @MainActor
 private final class SumiNavigationStartProbeResponder: SumiNavigationStartResponding {
+    private let name: String?
+    private let recorder: SumiNavigationAdapterOrderRecorder?
     private(set) var startCallCount = 0
+
+    init(name: String? = nil, recorder: SumiNavigationAdapterOrderRecorder? = nil) {
+        self.name = name
+        self.recorder = recorder
+    }
 
     func navigationDidStart() {
         startCallCount += 1
+        if let name {
+            recorder?.appendSync("\(name).start")
+        }
     }
 }
 
