@@ -520,6 +520,66 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertEqual(request.classification, .directUserActivated)
     }
 
+    func testSumiNavigationActionAdapterPreservesUsedNavigationMetadata() {
+        let initialAction = navigationAction(
+            url: URL(string: "https://source.example/start")!,
+            navigationType: .linkActivated(isMiddleClick: true),
+            sourceURL: URL(string: "https://source.example/page")!,
+            isUserInitiated: true
+        )
+        let action = navigationAction(
+            url: URL(string: "mailto:test@example.com")!,
+            navigationType: .redirect(.server),
+            sourceURL: URL(string: "https://frame.example/embed")!,
+            sourceSecurityOrigin: SumiSecurityOrigin(protocol: "https", host: "frame.example", port: 8443),
+            isUserInitiated: false,
+            isMainFrame: false,
+            targetFrameIsMainFrame: false,
+            redirectHistory: [initialAction],
+            modifierFlags: [.option]
+        )
+
+        let sumiAction = SumiNavigationAction(action)
+
+        XCTAssertEqual(sumiAction.url, URL(string: "mailto:test@example.com")!)
+        XCTAssertEqual(sumiAction.sourceURL, URL(string: "https://frame.example/embed")!)
+        XCTAssertEqual(sumiAction.sourceFrame?.securityOrigin.host, "frame.example")
+        XCTAssertEqual(sumiAction.sourceFrame?.securityOrigin.port, 8443)
+        XCTAssertFalse(sumiAction.isForMainFrame)
+        XCTAssertFalse(sumiAction.isTargetingNewWindow)
+        XCTAssertFalse(sumiAction.isUserInitiated)
+        XCTAssertTrue(sumiAction.navigationType.isRedirect)
+        XCTAssertEqual(sumiAction.navigationTypeDescription, "redirect(server)")
+        XCTAssertEqual(sumiAction.redirectHistory.first?.url, URL(string: "https://source.example/start")!)
+        XCTAssertTrue(sumiAction.redirectInitialAction?.isUserActivated == true)
+        XCTAssertTrue(sumiAction.modifierFlags.contains(.option))
+    }
+
+    func testSumiNavigationActionWKAdapterPreservesSafeSourceFrameOriginWhenRequestIsMissing() {
+        let sourceFrame = SumiWKFrameInfoMock(
+            isMainFrame: false,
+            request: nil,
+            securityOrigin: SumiWKSecurityOriginMock.new(url: URL(string: "https://request.example:8443/frame")!),
+            webView: WKWebView(frame: .zero)
+        ).frameInfo
+        let action = SumiWKNavigationActionMock(
+            sourceFrame: sourceFrame,
+            targetFrame: nil,
+            navigationType: .linkActivated,
+            request: URLRequest(url: URL(string: "https://popup.example/window")!)
+        ).navigationAction
+
+        let sumiAction = SumiNavigationAction(webKitNavigationAction: action)
+
+        XCTAssertEqual(sumiAction.url, URL(string: "https://popup.example/window")!)
+        XCTAssertNil(sumiAction.sourceURL)
+        XCTAssertEqual(sumiAction.sourceFrame?.securityOrigin.host, "request.example")
+        XCTAssertEqual(sumiAction.sourceFrame?.securityOrigin.port, 8443)
+        XCTAssertFalse(sumiAction.sourceFrame?.isMainFrame ?? true)
+        XCTAssertTrue(sumiAction.isTargetingNewWindow)
+        XCTAssertEqual(sumiAction.navigationTypeDescription, "\(WKNavigationType.linkActivated.rawValue)")
+    }
+
     func testExternalSchemeResponderSourceRoutesThroughBridgeBeforeAppOpen() throws {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
