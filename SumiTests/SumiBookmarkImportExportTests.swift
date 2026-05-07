@@ -119,12 +119,92 @@ final class SumiBookmarkImportExportTests: XCTestCase {
         XCTAssertEqual(nodes.first?.children?.first?.name, "Mozilla")
     }
 
+    @MainActor
+    func testHTMLImportExportRoundTripPreservesSummaryAndNestedStructure() throws {
+        let sourceURL = try temporaryFile(named: "source-bookmarks.html")
+        try """
+        <!DOCTYPE NETSCAPE-Bookmark-file-1>
+        <TITLE>Bookmarks</TITLE>
+        <H1>Bookmarks</H1>
+        <DL><p>
+            <DT><H3>Engineering</H3>
+            <DL><p>
+                <DT><A HREF="https://docs.example/start">Docs Home</A>
+                <DT><H3>Specs</H3>
+                <DL><p>
+                    <DT><A HREF="https://docs.example/spec-a">Spec A</A>
+                </DL><p>
+            </DL><p>
+        </DL><p>
+        """.write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let importedNodes = try BookmarkImportSource(
+            id: "source-html",
+            title: "Source HTML",
+            fileURL: sourceURL,
+            kind: .html
+        ).readBookmarks()
+        let firstManager = try makeBookmarkManager()
+
+        let firstSummary = try firstManager.importBookmarks(importedNodes)
+
+        XCTAssertEqual(firstSummary, BookmarksImportSummary(successful: 4, duplicates: 0, failed: 0))
+        XCTAssertEqual(bookmarkOutline(in: firstManager), [
+            "folder:Engineering",
+            "  bookmark:Docs Home|https://docs.example/start",
+            "  folder:Specs",
+            "    bookmark:Spec A|https://docs.example/spec-a",
+        ])
+
+        let exportURL = try temporaryFile(named: "exported-bookmarks.html")
+        try firstManager.exportBookmarksHTML(to: exportURL)
+        let reimportedNodes = try BookmarkImportSource(
+            id: "round-trip-html",
+            title: "Round Trip HTML",
+            fileURL: exportURL,
+            kind: .html
+        ).readBookmarks()
+        let secondManager = try makeBookmarkManager()
+
+        let secondSummary = try secondManager.importBookmarks(reimportedNodes)
+
+        XCTAssertEqual(secondSummary, firstSummary)
+        XCTAssertEqual(bookmarkOutline(in: secondManager), bookmarkOutline(in: firstManager))
+    }
+
     private func temporaryFile(named name: String) throws -> URL {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("SumiBookmarkImportExportTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         temporaryDirectories.append(directory)
         return directory.appendingPathComponent(name)
+    }
+
+    @MainActor
+    private func makeBookmarkManager() throws -> SumiBookmarkManager {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("SumiBookmarkImportExportManager-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        temporaryDirectories.append(directory)
+        return SumiBookmarkManager(
+            database: SumiBookmarkDatabase(directory: directory),
+            syncFavicons: false
+        )
+    }
+
+    @MainActor
+    private func bookmarkOutline(in manager: SumiBookmarkManager) -> [String] {
+        func lines(for entity: SumiBookmarkEntity, depth: Int) -> [String] {
+            entity.children.flatMap { child -> [String] in
+                let prefix = String(repeating: "  ", count: depth)
+                if child.isFolder {
+                    return ["\(prefix)folder:\(child.title)"] + lines(for: child, depth: depth + 1)
+                }
+                return ["\(prefix)bookmark:\(child.title)|\(child.displayURL)"]
+            }
+        }
+
+        return lines(for: manager.snapshot().root, depth: 0)
     }
 
     private func createFirefoxFixture(at fileURL: URL) throws {
