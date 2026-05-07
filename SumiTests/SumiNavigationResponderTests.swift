@@ -787,13 +787,14 @@ final class SumiNavigationResponderTests: XCTestCase {
             ".strong(scriptAttachmentAdapter)",
             ".strong(autoplayPolicyAdapter)",
             ".strong(lifecycle)",
-            ".weak(tab.findInPage)",
+            ".strong(findInPageAdapter)",
         ]
         let indices = try tokens.map { token in
             try XCTUnwrap(source.range(of: token)?.lowerBound, "Missing \(token)")
         }
 
         XCTAssertEqual(indices, indices.sorted())
+        XCTAssertTrue(source.contains("self.findInPageAdapter = SumiNavigationResponderAdapter(target: tab.findInPage)"))
     }
 
     func testSumiNavigationValueAdaptersRoundTripSimpleValues() {
@@ -1280,6 +1281,77 @@ final class SumiNavigationResponderTests: XCTestCase {
         }
 
         XCTAssertEqual(target.observedTypes, SumiSameDocumentNavigationType.allCases)
+    }
+
+    func testSumiNavigationResponderAdapterForwardsLifecycleStart() {
+        let target = SumiNavigationStartProbeResponder()
+        let adapter = SumiNavigationResponderAdapter(target: target)
+        let navigation = mainFrameNavigation(receiving: navigationAction(
+            url: URL(string: "https://example.com/start")!,
+            navigationType: .linkActivated(isMiddleClick: false)
+        ))
+
+        adapter.didStart(navigation)
+
+        XCTAssertEqual(target.startCallCount, 1)
+    }
+
+    func testWeakSumiNavigationStartAdapterIgnoresDeallocatedTarget() {
+        var target: SumiNavigationStartProbeResponder? = SumiNavigationStartProbeResponder()
+        weak var weakTarget = target
+        let adapter = SumiNavigationResponderAdapter(target: target!)
+        let navigation = mainFrameNavigation(receiving: navigationAction(
+            url: URL(string: "https://example.com/deallocated-start")!,
+            navigationType: .linkActivated(isMiddleClick: false)
+        ))
+
+        target = nil
+
+        XCTAssertNil(weakTarget)
+        adapter.didStart(navigation)
+    }
+
+    func testFindInPageResponderClosesOnSumiNavigationStart() {
+        let findInPage = FindInPageTabExtension()
+        findInPage.model.show()
+
+        findInPage.navigationDidStart()
+
+        XCTAssertFalse(findInPage.model.isVisible)
+    }
+
+    func testFindInPageResponderClosesOnlyForSumiPushAndPopSameDocumentNavigation() {
+        let findInPage = FindInPageTabExtension()
+
+        findInPage.model.show()
+        findInPage.navigationDidSameDocumentNavigation(type: .anchorNavigation)
+        XCTAssertTrue(findInPage.model.isVisible)
+
+        findInPage.navigationDidSameDocumentNavigation(type: .sessionStateReplace)
+        XCTAssertTrue(findInPage.model.isVisible)
+
+        findInPage.navigationDidSameDocumentNavigation(type: .sessionStatePush)
+        XCTAssertFalse(findInPage.model.isVisible)
+
+        findInPage.model.show()
+        findInPage.navigationDidSameDocumentNavigation(type: .sessionStatePop)
+        XCTAssertFalse(findInPage.model.isVisible)
+    }
+
+    func testWeakFindInPageAdapterDoesNotRetainTarget() {
+        var findInPage: FindInPageTabExtension? = FindInPageTabExtension()
+        weak var weakFindInPage = findInPage
+        let adapter = SumiNavigationResponderAdapter(target: findInPage!)
+        let navigation = mainFrameNavigation(receiving: navigationAction(
+            url: URL(string: "https://example.com/deallocated-find")!,
+            navigationType: .linkActivated(isMiddleClick: false)
+        ))
+
+        findInPage = nil
+
+        XCTAssertNil(weakFindInPage)
+        adapter.didStart(navigation)
+        adapter.navigation(navigation, didSameDocumentNavigationOf: .sessionStatePush)
     }
 
     func testSumiNavigationCompletionCallbacksBroadcastInAdapterOrderAndIgnoreNonConformingTargets() {
@@ -2224,6 +2296,15 @@ private final class SumiSameDocumentNavigationProbeResponder: SumiSameDocumentNa
 
     func navigationDidSameDocumentNavigation(type: SumiSameDocumentNavigationType) {
         observedTypes.append(type)
+    }
+}
+
+@MainActor
+private final class SumiNavigationStartProbeResponder: SumiNavigationStartResponding {
+    private(set) var startCallCount = 0
+
+    func navigationDidStart() {
+        startCallCount += 1
     }
 }
 

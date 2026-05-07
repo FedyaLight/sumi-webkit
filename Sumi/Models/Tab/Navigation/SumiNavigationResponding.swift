@@ -53,6 +53,11 @@ protocol SumiNavigationCompletionResponding: AnyObject {
 }
 
 @MainActor
+protocol SumiNavigationStartResponding: AnyObject {
+    func navigationDidStart()
+}
+
+@MainActor
 protocol SumiNavigationAuthChallengeResponding: AnyObject {
     func didReceive(_ authenticationChallenge: URLAuthenticationChallenge) async -> SumiAuthChallengeDisposition?
 }

@@ -48,6 +48,11 @@ final class SumiNavigationResponderAdapter: NavigationResponder {
         return decision?.navigationAuthChallengeDisposition
     }
 
+    func didStart(_: Navigation) {
+        guard let responder = target as? any SumiNavigationStartResponding else { return }
+        responder.navigationDidStart()
+    }
+
     func navigationDidFinish(_: Navigation) {
         guard let responder = target as? any SumiNavigationCompletionResponding else { return }
         responder.navigationDidFinish()

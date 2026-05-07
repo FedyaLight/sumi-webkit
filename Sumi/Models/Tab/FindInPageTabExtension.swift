@@ -18,11 +18,11 @@
 
 import Combine
 import Foundation
-import Navigation
 import UniformTypeIdentifiers
+import WebKit
 
 @MainActor
-final class FindInPageTabExtension: NavigationResponder {
+final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocumentNavigationResponding {
 
     let model = FindInPageModel()
     private weak var webView: FocusableWKWebView?
@@ -193,11 +193,11 @@ final class FindInPageTabExtension: NavigationResponder {
         }
     }
 
-    func didStart(_ navigation: Navigation) {
+    func navigationDidStart() {
         close()
     }
 
-    func navigation(_ navigation: Navigation, didSameDocumentNavigationOf navigationType: WKSameDocumentNavigationType) {
+    func navigationDidSameDocumentNavigation(type navigationType: SumiSameDocumentNavigationType) {
         if navigationType == .sessionStatePush || navigationType == .sessionStatePop {
             close()
         }
