@@ -144,18 +144,29 @@ extension TabManager {
             shortcutPin: { shortcutPin(by: $0) }
         )
 
+        return executeSidebarDragPlan(plan, operation: operation)
+    }
+
+    private func executeSidebarDragPlan(
+        _ plan: SidebarDragOperationPlan,
+        operation: DragOperation
+    ) -> Bool {
         switch plan.kind {
         case .folderHeaderReorder(let folder, _),
              .folderHeaderUnsupported(let folder):
-            return handleFolderDragOperation(folder, operation: operation)
+            return executeFolderHeaderDragPlan(folder, operation: operation)
 
-        case .launcher(let pin, _):
-            return handleShortcutDragOperation(pin, operation: operation)
+        case .launcher(let pin, let launcherOperation):
+            return executeLauncherDragPlan(
+                pin,
+                launcherOperation: launcherOperation,
+                operation: operation
+            )
 
         case .regularTab(let tab, let regularOperation):
-            return executeRegularTabSidebarDragOperation(
-                regularOperation,
-                tab: tab,
+            return executeRegularTabDragPlan(
+                tab,
+                regularOperation: regularOperation,
                 operation: operation
             )
 
@@ -164,9 +175,24 @@ extension TabManager {
         }
     }
 
-    private func executeRegularTabSidebarDragOperation(
-        _ regularOperation: SidebarRegularTabDragOperationKind,
-        tab: Tab,
+    private func executeFolderHeaderDragPlan(
+        _ folder: TabFolder,
+        operation: DragOperation
+    ) -> Bool {
+        handleFolderDragOperation(folder, operation: operation)
+    }
+
+    private func executeLauncherDragPlan(
+        _ pin: ShortcutPin,
+        launcherOperation _: SidebarLauncherDragOperationKind,
+        operation: DragOperation
+    ) -> Bool {
+        handleShortcutDragOperation(pin, operation: operation)
+    }
+
+    private func executeRegularTabDragPlan(
+        _ tab: Tab,
+        regularOperation: SidebarRegularTabDragOperationKind,
         operation: DragOperation
     ) -> Bool {
         var didMutate = false
