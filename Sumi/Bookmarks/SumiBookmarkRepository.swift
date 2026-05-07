@@ -1,8 +1,4 @@
-import Bookmarks
 import Foundation
-
-typealias SumiBookmarkImportNode = BookmarkOrFolder
-typealias SumiBookmarksImportSummary = BookmarksImportSummary
 
 @MainActor
 protocol SumiBookmarkRepository: AnyObject, Sendable {
