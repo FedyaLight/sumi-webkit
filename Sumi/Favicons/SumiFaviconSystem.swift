@@ -43,19 +43,6 @@ protocol BookmarkManager: AnyObject {
     func allHosts() -> Set<String>
 }
 
-private final class SumiBookmarksFaviconFetchTrigger: @unchecked Sendable {
-    private let fetcher: BookmarksFaviconsFetcher
-
-    init(fetcher: BookmarksFaviconsFetcher) {
-        self.fetcher = fetcher
-    }
-
-    func startFetching() async {
-        // BookmarksFaviconsFetcher serializes bookmark favicon state work through its operation queue.
-        await fetcher.startFetching()
-    }
-}
-
 private enum SumiFaviconPersistence {
     static func rootDirectoryURL() -> URL {
         if RuntimeDiagnostics.isRunningTests {
@@ -89,8 +76,7 @@ private enum SumiFaviconPersistence {
 @MainActor
 final class SumiBookmarkMirrorManager: BookmarkManager {
     private let database: CoreDataDatabase
-    private weak var faviconsFetcher: BookmarksFaviconsFetcher?
-    private var faviconFetchTrigger: SumiBookmarksFaviconFetchTrigger?
+    private var fetchScheduler: (any SumiBookmarkFaviconFetchScheduling)?
     nonisolated private static let mirrorPrefix = "sumi-favicon-mirror-"
     nonisolated private static let realBookmarkPrefix = "sumi-real-bookmark-"
     private var didInitializeFetcherState = false
@@ -100,11 +86,14 @@ final class SumiBookmarkMirrorManager: BookmarkManager {
         prepareFolderStructureIfNeeded()
     }
 
-    func attach(fetcher: BookmarksFaviconsFetcher) {
-        faviconsFetcher = fetcher
-        faviconFetchTrigger = SumiBookmarksFaviconFetchTrigger(fetcher: fetcher)
+    func attach(fetchScheduler: any SumiBookmarkFaviconFetchScheduling) {
+        self.fetchScheduler = fetchScheduler
+        initializeFetcherState()
+    }
+
+    func initializeFetcherState() {
         guard !didInitializeFetcherState else { return }
-        fetcher.initializeFetcherState()
+        fetchScheduler?.initializeFetcherState()
         didInitializeFetcherState = true
     }
 
@@ -146,12 +135,15 @@ final class SumiBookmarkMirrorManager: BookmarkManager {
         contextName: String
     ) {
         let context = database.makeContext(concurrencyType: .privateQueueConcurrencyType, name: contextName)
-        var modifiedIDs = Set<String>()
-        var deletedIDs = Set<String>()
 
-        context.performAndWait {
+        let (modifiedIDs, deletedIDs) = context.performAndWait {
+            var modifiedIDs = Set<String>()
+            var deletedIDs = Set<String>()
+
             BookmarkUtils.prepareFoldersStructure(in: context)
-            guard let rootFolder = BookmarkUtils.fetchRootFolder(context) else { return }
+            guard let rootFolder = BookmarkUtils.fetchRootFolder(context) else {
+                return (modifiedIDs, deletedIDs)
+            }
 
             let existingMirrorBookmarks = Self.fetchMirrorBookmarks(in: context, prefix: prefix)
             let existingPairs: [(String, BookmarkEntity)] = existingMirrorBookmarks.compactMap { bookmark in
@@ -192,28 +184,28 @@ final class SumiBookmarkMirrorManager: BookmarkManager {
                 }
             }
 
-            guard context.hasChanges else { return }
+            guard context.hasChanges else { return (modifiedIDs, deletedIDs) }
             try? context.save()
+            return (modifiedIDs, deletedIDs)
         }
 
-        guard let faviconsFetcher else { return }
+        guard let fetchScheduler else { return }
         if !didInitializeFetcherState {
-            faviconsFetcher.initializeFetcherState()
+            fetchScheduler.initializeFetcherState()
             didInitializeFetcherState = true
         }
         if !modifiedIDs.isEmpty || !deletedIDs.isEmpty {
-            faviconsFetcher.updateBookmarkIDs(modified: modifiedIDs, deleted: deletedIDs)
-            guard let faviconFetchTrigger else { return }
+            fetchScheduler.updateBookmarkIDs(modified: modifiedIDs, deleted: deletedIDs)
             Task {
-                await faviconFetchTrigger.startFetching()
+                await fetchScheduler.startFetching()
             }
         }
     }
 
     func allHosts() -> Set<String> {
         let context = database.makeContext(concurrencyType: .privateQueueConcurrencyType, name: "SumiFaviconBookmarksHosts")
-        var hosts = Set<String>()
-        context.performAndWait {
+        return context.performAndWait {
+            var hosts = Set<String>()
             for bookmark in Self.fetchMirrorBookmarks(in: context, prefixes: [Self.mirrorPrefix, Self.realBookmarkPrefix]) {
                 guard let urlString = bookmark.url,
                       let url = URL(string: urlString),
@@ -223,8 +215,8 @@ final class SumiBookmarkMirrorManager: BookmarkManager {
                 }
                 hosts.insert(host)
             }
+            return hosts
         }
-        return hosts
     }
 
     private func prepareFolderStructureIfNeeded() {
@@ -280,13 +272,12 @@ final class SumiFaviconSystem {
     static let shared = SumiFaviconSystem()
 
     let manager: FaviconManager
-    let bookmarkMirror: SumiBookmarkMirrorManager
+    let bookmarkMirror: any SumiFaviconMirrorSyncing
     let fireproofDomains: FireproofDomains
 
     private let faviconDatabase: CoreDataDatabase
     private let bookmarkDatabase: CoreDataDatabase
     private let fireproofDatabase: CoreDataDatabase
-    private let bookmarksFaviconsFetcher: BookmarksFaviconsFetcher
 
     private init() {
         let rootDirectoryURL = SumiFaviconPersistence.directory(named: "Favicons/DDGBackend-v2")
@@ -313,35 +304,26 @@ final class SumiFaviconSystem {
             bundle: .main
         )
 
-        bookmarkMirror = SumiBookmarkMirrorManager(
-            database: bookmarkDatabase
-        )
+        let ddgBookmarkMirror = SumiDDGBookmarkFaviconMirror(database: bookmarkDatabase)
         fireproofDomains = FireproofDomains(
             store: FireproofDomainsStore(database: fireproofDatabase, tableName: "FireproofDomains"),
             registrableDomainResolver: SumiRegistrableDomainResolver()
         )
         manager = FaviconManager(
             cacheType: .standard(faviconDatabase),
-            bookmarkManager: bookmarkMirror,
+            bookmarkManager: ddgBookmarkMirror,
             fireproofDomains: fireproofDomains,
             privacyConfigurationManager: privacyConfigurationManager
         )
-
-        let stateStore: BookmarksFaviconsFetcherStateStore
         do {
-            stateStore = try BookmarksFaviconsFetcherStateStore(applicationSupportURL: rootDirectoryURL)
+            try ddgBookmarkMirror.attachDDGFetcher(
+                applicationSupportURL: rootDirectoryURL,
+                faviconStore: { [manager] in manager }
+            )
         } catch {
-            fatalError("Failed to initialize favicon bookmark mirror state store: \(error)")
+            fatalError("Failed to initialize favicon bookmark mirror fetcher: \(error)")
         }
-
-        bookmarksFaviconsFetcher = BookmarksFaviconsFetcher(
-            database: bookmarkDatabase,
-            stateStore: stateStore,
-            fetcher: FaviconFetcher(),
-            faviconStore: { [manager] in manager },
-            errorEvents: nil
-        )
-        bookmarkMirror.attach(fetcher: bookmarksFaviconsFetcher)
+        bookmarkMirror = ddgBookmarkMirror
     }
 
     func syncShortcutPins(_ pins: [ShortcutPin]) {
