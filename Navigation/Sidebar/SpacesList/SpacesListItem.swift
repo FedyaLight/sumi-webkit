@@ -13,6 +13,7 @@ struct SpacesListItem: View {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.controlSize) private var controlSize
 
     let space: Space
     let isActive: Bool
@@ -43,20 +44,31 @@ struct SpacesListItem: View {
     }
 
     var body: some View {
-        Button {
-            onSelect()
-        } label: {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(
+                    themeContext
+                        .tokens(settings: sumiSettings)
+                        .primaryText
+                        .opacity(displayIsHovering ? hoverBackgroundOpacity : 0)
+                )
+
             spaceIcon
                 .opacity(isActive ? 1.0 : 0.7)
                 .frame(maxWidth: .infinity)
-
         }
-        .labelStyle(.iconOnly)
-        .buttonStyle(SpaceListItemButtonStyle(isHovering: displayIsHovering))
+        .frame(height: spaceListItemSize)
+        .frame(maxWidth: spaceListItemSize)
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .layoutPriority(2)
         .layoutPriority(isActive ? 1 : 0)
         .opacity(isFaded ? 0.3 : 1.0)
         .accessibilityIdentifier("space-icon-\(space.id.uuidString)")
+        .accessibilityLabel(space.name)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction {
+            onSelect()
+        }
         .sidebarDDGHover($isHovered)
         .onChange(of: displayIsHovering) { _, hovering in
             onHoverChange?(hovering)
@@ -116,6 +128,21 @@ struct SpacesListItem: View {
             isHovered,
             freezesHoverState: windowState.sidebarInteractionState.freezesSidebarHoverState
         )
+    }
+
+    private var hoverBackgroundOpacity: Double {
+        themeContext.chromeColorScheme == .dark ? 0.2 : 0.1
+    }
+
+    private var spaceListItemSize: CGFloat {
+        switch controlSize {
+        case .mini: 24
+        case .small: 28
+        case .regular: 32
+        case .large: 40
+        case .extraLarge: 48
+        @unknown default: 32
+        }
     }
 
     // MARK: - Context Menu

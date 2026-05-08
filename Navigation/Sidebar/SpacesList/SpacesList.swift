@@ -103,10 +103,7 @@ struct SpacesList: View {
                 .environmentObject(browserManager)
                 .environment(windowState)
                 .background(SpaceReorderItemFrameReporter(spaceId: space.id))
-                .simultaneousGesture(
-                    spaceReorderGesture(for: space, spaces: spaces),
-                    including: canReorderSpaces ? .gesture : .none
-                )
+                .gesture(spaceInteractionGesture(for: space, spaces: spaces))
                 .id(space.id)
                 .transition(.asymmetric(
                     insertion: .scale.combined(with: .opacity),
@@ -154,9 +151,10 @@ struct SpacesList: View {
         }
     }
 
-    private func spaceReorderGesture(for space: Space, spaces: [Space]) -> some Gesture {
+    private func spaceInteractionGesture(for space: Space, spaces: [Space]) -> some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .named(SpaceReorderCoordinateSpace.name))
             .onChanged { value in
+                guard canReorderSpaces else { return }
                 let didBeginDrag = reorderState.update(
                     spaceId: space.id,
                     location: value.location,
@@ -168,7 +166,14 @@ struct SpacesList: View {
                     windowState.sidebarInteractionState.syncSidebarItemDrag(true)
                 }
             }
-            .onEnded { _ in
+            .onEnded { value in
+                guard canReorderSpaces else {
+                    if Self.dragDistance(value) < SpaceReorderDragState.dragThreshold {
+                        onSelectSpace(space)
+                    }
+                    return
+                }
+
                 let wasDragging = reorderState.isDragging
                 let drop = reorderState.finish(orderedSpaceIds: spaces.map(\.id))
                 if wasDragging {
@@ -179,8 +184,14 @@ struct SpacesList: View {
                         spaceId: drop.spaceId,
                         to: drop.targetIndex
                     )
+                } else if !wasDragging {
+                    onSelectSpace(space)
                 }
             }
+    }
+
+    private static func dragDistance(_ value: DragGesture.Value) -> CGFloat {
+        hypot(value.translation.width, value.translation.height)
     }
 
     @ViewBuilder
