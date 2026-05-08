@@ -147,6 +147,7 @@ final class CollapsedSidebarPanelRootView: SidebarColumnBaseContainerView {
 }
 
 private enum SidebarColumnBackgroundClickPolicy {
+    @MainActor
     static func shouldHandleWindowZoom(
         event: NSEvent,
         in containerView: NSView,
@@ -187,6 +188,7 @@ enum SidebarColumnPaintlessChrome {
 }
 
 private extension NSView {
+    @MainActor
     func nearestAncestor<T: NSView>(of type: T.Type) -> T? {
         var current: NSView? = self
         while let view = current {

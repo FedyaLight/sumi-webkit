@@ -21,6 +21,7 @@ func sidebarViewDebugDescription(_ view: NSView?) -> String {
     return sidebarObjectDebugDescription(view)
 }
 
+@MainActor
 func sidebarHostedSidebarRoot(from view: NSView?) -> NSView? {
     var current = view
     while let candidate = current {
