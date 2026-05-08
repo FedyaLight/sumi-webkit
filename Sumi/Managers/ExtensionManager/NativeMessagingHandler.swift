@@ -941,16 +941,18 @@ final class NativeMessagingHandler: NSObject {
     ) {
         let sessionID = ObjectIdentifier(session)
         DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + responseTimeout) { [weak self] in
-            self?.completeSingleShot(
-                sessionID: sessionID,
-                responsePayload: nil,
-                error: NSError(
-                    domain: "NativeMessaging",
-                    code: 4,
-                    userInfo: [NSLocalizedDescriptionKey: "Native host response timed out"]
-                ),
-                completion: completion
-            )
+            Task { @MainActor [weak self] in
+                self?.completeSingleShot(
+                    sessionID: sessionID,
+                    responsePayload: nil,
+                    error: NSError(
+                        domain: "NativeMessaging",
+                        code: 4,
+                        userInfo: [NSLocalizedDescriptionKey: "Native host response timed out"]
+                    ),
+                    completion: completion
+                )
+            }
         }
     }
 
