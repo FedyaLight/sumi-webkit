@@ -43,6 +43,31 @@ private struct NativeMessagingStartCompletion: @unchecked Sendable {
 }
 
 @available(macOS 15.5, *)
+private struct NativeMessagingWriteCompletion: @unchecked Sendable {
+    // One-shot by PendingWrite lifecycle. Delivery remains synchronous from
+    // NativeMessagingProcessSession.stateQueue; this wrapper does not own a
+    // queue or change completion timing.
+    //
+    // The completion may be invoked immediately for send validation,
+    // closed-session, and queue-full paths, or later from write, close, cancel,
+    // and failure paths.
+    //
+    // Sendability boundary: the wrapper is immutable after construction, has no
+    // internal mutation, and is invoked only while queue-confined on stateQueue.
+    // Existing process-session tests cover valid send, cancel pending write,
+    // oversized queue-full, and already-closed send delivery.
+    private let completion: ((Error?) -> Void)?
+
+    init(_ completion: ((Error?) -> Void)?) {
+        self.completion = completion
+    }
+
+    func complete(_ error: Error?) {
+        completion?(error)
+    }
+}
+
+@available(macOS 15.5, *)
 final class NativeMessagingProcessSession: @unchecked Sendable {
     // Sendability boundary: public entry points may be called from any queue,
     // but process, pipe, DispatchSource, pending-write, output-buffer, and close
@@ -58,7 +83,7 @@ final class NativeMessagingProcessSession: @unchecked Sendable {
     private struct PendingWrite {
         var data: Data
         var offset: Int
-        let completion: ((Error?) -> Void)?
+        let completion: NativeMessagingWriteCompletion
     }
 
     private static let readChunkSize = 64 * 1024
@@ -130,11 +155,12 @@ final class NativeMessagingProcessSession: @unchecked Sendable {
         let frameResult = Result {
             try Self.frame(for: message)
         }
+        let writeCompletion = NativeMessagingWriteCompletion(completion)
 
         stateQueue.async { [weak self] in
             guard let self else { return }
             guard self.isClosed == false else {
-                completion?(Self.error(
+                writeCompletion.complete(Self.error(
                     code: 6,
                     message: "Native messaging session is closed"
                 ))
@@ -146,14 +172,14 @@ final class NativeMessagingProcessSession: @unchecked Sendable {
             case .success(let preparedFrame):
                 frame = preparedFrame
             case .failure(let error):
-                completion?(error)
+                writeCompletion.complete(error)
                 return
             }
 
             guard self.pendingWrites.count < Self.maximumQueuedWriteCount,
                   self.queuedWriteBytes + frame.count <= Self.maximumQueuedWriteBytes
             else {
-                completion?(Self.error(
+                writeCompletion.complete(Self.error(
                     code: 7,
                     message: "Native messaging write queue is full"
                 ))
@@ -161,7 +187,7 @@ final class NativeMessagingProcessSession: @unchecked Sendable {
             }
 
             self.pendingWrites.append(
-                PendingWrite(data: frame, offset: 0, completion: completion)
+                PendingWrite(data: frame, offset: 0, completion: writeCompletion)
             )
             self.queuedWriteBytes += frame.count
             self.resumeWriteSourceIfNeeded()
@@ -394,7 +420,7 @@ final class NativeMessagingProcessSession: @unchecked Sendable {
 
                 if entry.offset == entry.data.count {
                     let completion = pendingWrites.removeFirst().completion
-                    completion?(nil)
+                    completion.complete(nil)
                 }
                 continue
             }
@@ -548,7 +574,7 @@ final class NativeMessagingProcessSession: @unchecked Sendable {
         outputBuffer.removeAll()
         processExitStatus = nil
 
-        completions.forEach { $0?(writeError) }
+        completions.forEach { $0.complete(writeError) }
 
         if notify {
             onClose(reason)
@@ -561,7 +587,7 @@ final class NativeMessagingProcessSession: @unchecked Sendable {
         let completions = pendingWrites.map(\.completion)
         pendingWrites.removeAll()
         queuedWriteBytes = 0
-        completions.forEach { $0?(error) }
+        completions.forEach { $0.complete(error) }
     }
 
     private func closeHandlesAfterLaunchFailure() {
