@@ -175,7 +175,7 @@ final class SumiWebKitDownloadTask: NSObject, WKDownloadDelegate {
     func download(
         _: WKDownload,
         didReceive _: URLAuthenticationChallenge,
-        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+        completionHandler: @escaping @MainActor @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
         completionHandler(.performDefaultHandling, nil)
     }

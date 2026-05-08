@@ -78,7 +78,7 @@ extension Tab: WKUIDelegate {
         _ webView: WKWebView,
         runJavaScriptAlertPanelWithMessage message: String,
         initiatedByFrame frame: WKFrameInfo,
-        completionHandler: @escaping () -> Void
+        completionHandler: @escaping @MainActor @Sendable () -> Void
     ) {
         let alert = NSAlert()
         alert.messageText = "JavaScript Alert"
@@ -97,7 +97,7 @@ extension Tab: WKUIDelegate {
         _ webView: WKWebView,
         runJavaScriptConfirmPanelWithMessage message: String,
         initiatedByFrame frame: WKFrameInfo,
-        completionHandler: @escaping (Bool) -> Void
+        completionHandler: @escaping @MainActor @Sendable (Bool) -> Void
     ) {
         let alert = NSAlert()
         alert.messageText = "JavaScript Confirm"
@@ -118,7 +118,7 @@ extension Tab: WKUIDelegate {
         runJavaScriptTextInputPanelWithPrompt prompt: String,
         defaultText: String?,
         initiatedByFrame frame: WKFrameInfo,
-        completionHandler: @escaping (String?) -> Void
+        completionHandler: @escaping @MainActor @Sendable (String?) -> Void
     ) {
         let alert = NSAlert()
         alert.messageText = "JavaScript Prompt"
@@ -144,7 +144,7 @@ extension Tab: WKUIDelegate {
         _ webView: WKWebView,
         runOpenPanelWith parameters: WKOpenPanelParameters,
         initiatedByFrame frame: WKFrameInfo,
-        completionHandler: @escaping ([URL]?) -> Void
+        completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void
     ) {
         guard let browserManager,
               let tabContext = filePickerTabContext(for: webView)
