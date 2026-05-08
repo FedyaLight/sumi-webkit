@@ -15,7 +15,7 @@ struct SpaceReorderDrop: Equatable {
 }
 
 struct SpaceReorderDragState: Equatable {
-    private static let dragThreshold: CGFloat = 6
+    static let dragThreshold: CGFloat = 6
     private static let markerWidth: CGFloat = 2
     private static let markerHorizontalInset: CGFloat = 3
 
