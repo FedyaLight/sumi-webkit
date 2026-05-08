@@ -5,6 +5,56 @@ import XCTest
 
 @MainActor
 final class BrowserWindowChromeTests: XCTestCase {
+    func testBrowserChromeGeometryDefaultsPreserveViewportCornerMetrics() {
+        let geometry = BrowserChromeGeometry()
+
+        XCTAssertEqual(BrowserChromeGeometry.defaultOuterRadius, 7)
+        XCTAssertEqual(BrowserChromeGeometry.elementSeparation, 8)
+        XCTAssertEqual(BrowserChromeGeometry.minimumContentRadius, 5)
+        XCTAssertEqual(geometry.outerRadius, 7)
+        XCTAssertEqual(geometry.elementSeparation, 8)
+        XCTAssertEqual(geometry.contentRadius, 5)
+    }
+
+    func testBrowserChromeGeometryDerivesContentRadiusFromOuterRadiusAndSeparation() {
+        let geometry = BrowserChromeGeometry(outerRadius: 14)
+
+        XCTAssertEqual(geometry.outerRadius, 14)
+        XCTAssertEqual(geometry.elementSeparation, 8)
+        XCTAssertEqual(geometry.contentRadius, 10)
+    }
+
+    func testBrowserChromeGeometryClampsContentRadiusToMinimum() {
+        let geometry = BrowserChromeGeometry(outerRadius: 2)
+
+        XCTAssertEqual(geometry.outerRadius, 2)
+        XCTAssertEqual(geometry.contentRadius, 5)
+    }
+
+    func testBrowserChromeGeometrySettingsUseDefaultOuterRadiusForSentinelBorderRadius() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        settings.themeBorderRadius = -1
+        let geometry = BrowserChromeGeometry(settings: settings)
+
+        XCTAssertEqual(geometry.outerRadius, 7)
+        XCTAssertEqual(geometry.contentRadius, 5)
+    }
+
+    func testBrowserChromeGeometrySettingsUseCustomBorderRadiusAsOuterRadius() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        settings.themeBorderRadius = 18
+        let geometry = BrowserChromeGeometry(settings: settings)
+
+        XCTAssertEqual(geometry.outerRadius, 18)
+        XCTAssertEqual(geometry.contentRadius, 14)
+    }
+
     private func assertMinimumWindowConstraints(
         _ window: NSWindow,
         file: StaticString = #filePath,
