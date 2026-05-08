@@ -7,13 +7,52 @@ import XCTest
 final class BrowserWindowChromeTests: XCTestCase {
     func testBrowserChromeGeometryDefaultsPreserveViewportCornerMetrics() {
         let geometry = BrowserChromeGeometry()
+        let expectedMetrics = BrowserChromeGeometry.CornerMetrics.default
 
-        XCTAssertEqual(BrowserChromeGeometry.defaultOuterRadius, 7)
-        XCTAssertEqual(BrowserChromeGeometry.elementSeparation, 8)
-        XCTAssertEqual(BrowserChromeGeometry.minimumContentRadius, 5)
+        XCTAssertEqual(BrowserChromeGeometry.defaultOuterRadius, expectedMetrics.defaultOuterRadius)
+        XCTAssertEqual(BrowserChromeGeometry.elementSeparation, expectedMetrics.elementSeparation)
+        XCTAssertEqual(BrowserChromeGeometry.minimumContentRadius, expectedMetrics.minimumContentRadius)
+        XCTAssertEqual(geometry.outerRadius, expectedMetrics.defaultOuterRadius)
+        XCTAssertEqual(geometry.elementSeparation, expectedMetrics.elementSeparation)
+        XCTAssertEqual(
+            geometry.contentRadius,
+            expectedMetrics.contentRadius(
+                outerRadius: expectedMetrics.defaultOuterRadius,
+                elementSeparation: expectedMetrics.elementSeparation
+            )
+        )
+    }
+
+    func testBrowserChromeGeometrySequoiaFallbackPreservesViewportCornerMetrics() {
+        let metrics = BrowserChromeGeometry.CornerMetrics.platformDefault(isMacOSTahoeOrNewer: false)
+        let geometry = BrowserChromeGeometry(
+            outerRadius: metrics.defaultOuterRadius,
+            elementSeparation: metrics.elementSeparation,
+            cornerMetrics: metrics
+        )
+
+        XCTAssertEqual(metrics.defaultOuterRadius, 7)
+        XCTAssertEqual(metrics.elementSeparation, 8)
+        XCTAssertEqual(metrics.minimumContentRadius, 5)
         XCTAssertEqual(geometry.outerRadius, 7)
         XCTAssertEqual(geometry.elementSeparation, 8)
         XCTAssertEqual(geometry.contentRadius, 5)
+    }
+
+    func testBrowserChromeGeometryTahoeFallbackUsesConservativeViewportCornerMetrics() {
+        let metrics = BrowserChromeGeometry.CornerMetrics.platformDefault(isMacOSTahoeOrNewer: true)
+        let geometry = BrowserChromeGeometry(
+            outerRadius: metrics.defaultOuterRadius,
+            elementSeparation: metrics.elementSeparation,
+            cornerMetrics: metrics
+        )
+
+        XCTAssertEqual(metrics.defaultOuterRadius, 14)
+        XCTAssertEqual(metrics.elementSeparation, 8)
+        XCTAssertEqual(metrics.minimumContentRadius, 5)
+        XCTAssertEqual(geometry.outerRadius, 14)
+        XCTAssertEqual(geometry.elementSeparation, 8)
+        XCTAssertEqual(geometry.contentRadius, 10)
     }
 
     func testBrowserChromeGeometryDerivesContentRadiusFromOuterRadiusAndSeparation() {
@@ -38,9 +77,16 @@ final class BrowserWindowChromeTests: XCTestCase {
         let settings = SumiSettingsService(userDefaults: harness.defaults)
         settings.themeBorderRadius = -1
         let geometry = BrowserChromeGeometry(settings: settings)
+        let expectedMetrics = BrowserChromeGeometry.CornerMetrics.default
 
-        XCTAssertEqual(geometry.outerRadius, 7)
-        XCTAssertEqual(geometry.contentRadius, 5)
+        XCTAssertEqual(geometry.outerRadius, expectedMetrics.defaultOuterRadius)
+        XCTAssertEqual(
+            geometry.contentRadius,
+            expectedMetrics.contentRadius(
+                outerRadius: expectedMetrics.defaultOuterRadius,
+                elementSeparation: expectedMetrics.elementSeparation
+            )
+        )
     }
 
     func testBrowserChromeGeometrySettingsUseCustomBorderRadiusAsOuterRadius() {
@@ -52,6 +98,21 @@ final class BrowserWindowChromeTests: XCTestCase {
         let geometry = BrowserChromeGeometry(settings: settings)
 
         XCTAssertEqual(geometry.outerRadius, 18)
+        XCTAssertEqual(geometry.contentRadius, 14)
+    }
+
+    func testBrowserChromeGeometryCustomBorderRadiusOverridesTahoePlatformDefault() {
+        let metrics = BrowserChromeGeometry.CornerMetrics.platformDefault(isMacOSTahoeOrNewer: true)
+        let customOuterRadius = metrics.outerRadius(themeBorderRadius: 18)
+        let geometry = BrowserChromeGeometry(
+            outerRadius: customOuterRadius,
+            elementSeparation: metrics.elementSeparation,
+            cornerMetrics: metrics
+        )
+
+        XCTAssertEqual(customOuterRadius, 18)
+        XCTAssertEqual(geometry.outerRadius, 18)
+        XCTAssertEqual(geometry.elementSeparation, 8)
         XCTAssertEqual(geometry.contentRadius, 14)
     }
 
