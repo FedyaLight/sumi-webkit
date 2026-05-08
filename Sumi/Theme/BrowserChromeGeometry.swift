@@ -1,10 +1,19 @@
 import CoreGraphics
 
 struct BrowserChromeGeometry: Equatable {
-    /// Central seam for future manually calibrated adaptive browser viewport radii.
-    /// This intentionally uses no system/private API and adds no macOS 26 numeric fallback yet.
+    /// Central seam for manually calibrated browser viewport radii.
+    ///
+    /// No private API is used here: platform values are conservative calibrated
+    /// fallbacks, not claimed system window radii. Future visual tuning belongs
+    /// in this metrics seam so viewport/cutout consumers stay unchanged.
     struct CornerMetrics: Equatable {
-        static let `default` = CornerMetrics()
+        static var `default`: CornerMetrics {
+            platformDefault(isMacOSTahoeOrNewer: isMacOSTahoeOrNewer)
+        }
+
+        static let sequoiaFallback = CornerMetrics()
+        // macOS 26 Tahoe: conservative visual preset, not a probed system radius.
+        static let tahoeFallback = CornerMetrics(defaultOuterRadius: 14)
 
         let elementSeparation: CGFloat
         let defaultOuterRadius: CGFloat
@@ -20,11 +29,27 @@ struct BrowserChromeGeometry: Equatable {
             self.minimumContentRadius = minimumContentRadius
         }
 
+        static func platformDefault(isMacOSTahoeOrNewer: Bool) -> CornerMetrics {
+            isMacOSTahoeOrNewer ? tahoeFallback : sequoiaFallback
+        }
+
+        func outerRadius(themeBorderRadius: Int) -> CGFloat {
+            themeBorderRadius == -1 ? defaultOuterRadius : CGFloat(themeBorderRadius)
+        }
+
         func contentRadius(outerRadius: CGFloat, elementSeparation: CGFloat) -> CGFloat {
             max(
                 minimumContentRadius,
                 outerRadius - elementSeparation / 2
             )
+        }
+
+        private static var isMacOSTahoeOrNewer: Bool {
+            if #available(macOS 26.0, *) {
+                return true
+            } else {
+                return false
+            }
         }
     }
 
@@ -53,7 +78,7 @@ struct BrowserChromeGeometry: Equatable {
     init(settings: SumiSettingsService) {
         let cornerMetrics = CornerMetrics.default
         self.init(
-            outerRadius: settings.resolvedCornerRadius(cornerMetrics.defaultOuterRadius),
+            outerRadius: cornerMetrics.outerRadius(themeBorderRadius: settings.themeBorderRadius),
             elementSeparation: cornerMetrics.elementSeparation,
             cornerMetrics: cornerMetrics
         )
