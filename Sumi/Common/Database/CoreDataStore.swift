@@ -75,63 +75,42 @@ internal class CoreDataStore<ManagedObject: ValueRepresentableManagedObject> {
                       into initialResult: Result,
                       _ accumulate: (inout Result, IDValueTuple) throws -> Void) throws -> Result {
 
-        var result = initialResult
-        var coreDataError: Error?
-
-        guard let context = readContext else { return result }
-        context.performAndWait {
+        guard let context = readContext else { return initialResult }
+        return try context.performAndWait {
             let fetchRequest = NSFetchRequest<ManagedObject>(entityName: ManagedObject.entityClassName())
             fetchRequest.predicate = predicate
             fetchRequest.sortDescriptors = sortDescriptors
             fetchRequest.returnsObjectsAsFaults = false
 
-            do {
-                result = try context.fetch(fetchRequest).reduce(into: result) { result, managedObject in
-                    guard let value = managedObject.valueRepresentation() else { return }
-                    try accumulate(&result, (managedObject.objectID, value))
-                }
-            } catch {
-                coreDataError = error
+            return try context.fetch(fetchRequest).reduce(into: initialResult) { result, managedObject in
+                guard let value = managedObject.valueRepresentation() else { return }
+                try accumulate(&result, (managedObject.objectID, value))
             }
         }
-
-        if let coreDataError = coreDataError {
-            throw coreDataError
-        }
-
-        return result
     }
 
     func add<S: Sequence>(_ values: S) throws -> [(value: Value, id: NSManagedObjectID)] where S.Element == Value {
         guard let context = writeContext() else { return [] }
 
-        var result: Result<[(Value, NSManagedObjectID)], Error> = .success([])
-
-        context.performAndWait { [context] in
+        return try context.performAndWait { [context] in
             let entityName = ManagedObject.entityClassName()
             var added = [(Value, NSManagedObject)]()
             added.reserveCapacity(values.underestimatedCount)
 
-            do {
-                for value in values {
-                    guard let managedObject = NSEntityDescription
-                            .insertNewObject(forEntityName: entityName, into: context) as? ManagedObject
-                    else {
-                        result = .failure(CoreDataStoreError.invalidManagedObject)
-                        return
-                    }
-
-                    try managedObject.update(with: value)
-                    added.append((value, managedObject))
+            for value in values {
+                guard let managedObject = NSEntityDescription
+                        .insertNewObject(forEntityName: entityName, into: context) as? ManagedObject
+                else {
+                    throw CoreDataStoreError.invalidManagedObject
                 }
 
-                try context.save()
-                result = .success(added.map { ($0, $1.objectID) })
-            } catch {
-                result = .failure(error)
+                try managedObject.update(with: value)
+                added.append((value, managedObject))
             }
+
+            try context.save()
+            return added.map { ($0, $1.objectID) }
         }
-        return try result.get()
     }
 
     func remove(objectWithId id: NSManagedObjectID, completionHandler: (@Sendable (Error?) -> Void)?) {
