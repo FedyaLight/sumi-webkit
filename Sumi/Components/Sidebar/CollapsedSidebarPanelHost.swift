@@ -38,12 +38,14 @@ enum CollapsedSidebarPanelFrameResolver {
         sidebarPosition.shellEdge.isLeft ? -sidebarWidth : sidebarWidth
     }
 
+    @MainActor
     static func parentContentScreenFrame(in parentWindow: NSWindow) -> NSRect? {
         guard let contentView = parentWindow.contentView else { return nil }
         let contentWindowFrame = contentView.convert(contentView.bounds, to: nil)
         return parentWindow.convertToScreen(contentWindowFrame)
     }
 
+    @MainActor
     static func panelFrame(
         in parentWindow: NSWindow,
         sidebarWidth: CGFloat,
@@ -61,6 +63,7 @@ enum CollapsedSidebarPanelFrameResolver {
 }
 
 enum CollapsedSidebarDragPreviewOverlayFrameResolver {
+    @MainActor
     static func overlayFrame(in parentWindow: NSWindow) -> NSRect? {
         CollapsedSidebarPanelFrameResolver.parentContentScreenFrame(in: parentWindow)
     }
