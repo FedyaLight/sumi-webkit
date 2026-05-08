@@ -65,7 +65,6 @@ final class FaviconManager: FaviconManagement {
     init(
         cacheType: CacheType,
         bookmarkManager: BookmarkManager,
-        fireproofDomains: FireproofDomains,
         privacyConfigurationManager: any SumiPrivacyConfigurationManaging,
         imageCache: ((FaviconStoring) -> FaviconImageCaching)? = nil,
         referenceCache: ((FaviconStoring) -> FaviconReferenceCaching)? = nil
@@ -83,14 +82,14 @@ final class FaviconManager: FaviconManagement {
         self.referenceCache = referenceCache?(store) ?? FaviconReferenceCache(faviconStoring: store)
 
         Task {
-            await loadFaviconsRecoveringIfNeeded(fireproofDomains)
+            await loadFaviconsRecoveringIfNeeded()
         }
     }
 
     @MainActor
-    private func loadFaviconsRecoveringIfNeeded(_ fireproofDomains: FireproofDomains) async {
+    private func loadFaviconsRecoveringIfNeeded() async {
         do {
-            try await loadFavicons(fireproofDomains)
+            try await loadFavicons()
         } catch {
             Logger.favicons.error("Favicon cache load failed, resetting store: \(error.localizedDescription)")
 
@@ -104,7 +103,7 @@ final class FaviconManager: FaviconManagement {
             referenceCache.clearAllInMemory(markLoaded: true)
 
             do {
-                try await loadFavicons(fireproofDomains)
+                try await loadFavicons()
             } catch {
                 Logger.favicons.error("Favicon cache reload after reset failed: \(error.localizedDescription)")
                 faviconsLoaded = true
@@ -113,11 +112,11 @@ final class FaviconManager: FaviconManagement {
     }
 
     @MainActor
-    private func loadFavicons(_ fireproofDomains: FireproofDomains) async throws {
+    private func loadFavicons() async throws {
         try await imageCache.load()
-        await imageCache.cleanOld(except: fireproofDomains, bookmarkManager: bookmarkManager)
+        await imageCache.cleanOld(bookmarkManager: bookmarkManager)
         try await referenceCache.load()
-        await referenceCache.cleanOld(except: fireproofDomains, bookmarkManager: bookmarkManager)
+        await referenceCache.cleanOld(bookmarkManager: bookmarkManager)
         faviconsLoaded = true
     }
 
@@ -263,9 +262,9 @@ final class FaviconManager: FaviconManagement {
     // MARK: - Burning
 
     @MainActor
-    func burn(except fireproofDomains: FireproofDomains, bookmarkManager: BookmarkManager, savedLogins: Set<String> = []) async -> Result<Void, Error> {
-        await referenceCache.burn(except: fireproofDomains, bookmarkManager: bookmarkManager, savedLogins: savedLogins)
-        return await imageCache.burn(except: fireproofDomains, bookmarkManager: bookmarkManager, savedLogins: savedLogins)
+    func burn(bookmarkManager: BookmarkManager, savedLogins: Set<String> = []) async -> Result<Void, Error> {
+        await referenceCache.burn(bookmarkManager: bookmarkManager, savedLogins: savedLogins)
+        return await imageCache.burn(bookmarkManager: bookmarkManager, savedLogins: savedLogins)
     }
 
     @MainActor

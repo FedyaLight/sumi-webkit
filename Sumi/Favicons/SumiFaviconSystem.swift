@@ -272,11 +272,9 @@ final class SumiFaviconSystem {
 
     let manager: FaviconManager
     let bookmarkMirror: any SumiFaviconMirrorSyncing
-    let fireproofDomains: FireproofDomains
 
     private let faviconDatabase: SumiDDGCoreDataDatabase
     private let bookmarkDatabase: SumiDDGCoreDataDatabase
-    private let fireproofDatabase: SumiDDGCoreDataDatabase
 
     private init() {
         let rootDirectoryURL = SumiFaviconPersistence.directory(named: "Favicons/DDGBackend-v2")
@@ -296,22 +294,11 @@ final class SumiFaviconSystem {
             modelName: "BookmarksModel",
             bundle: Bundle(for: BookmarkEntity.self)
         )
-        fireproofDatabase = Self.makeDatabase(
-            name: "Permissions",
-            directory: rootDirectoryURL.appendingPathComponent("Fireproof", isDirectory: true),
-            modelName: "FireproofDomains",
-            bundle: .main
-        )
 
         let ddgBookmarkMirror = SumiDDGBookmarkFaviconMirror(database: bookmarkDatabase)
-        fireproofDomains = FireproofDomains(
-            store: FireproofDomainsStore(database: fireproofDatabase, tableName: "FireproofDomains"),
-            registrableDomainResolver: SumiRegistrableDomainResolver()
-        )
         manager = FaviconManager(
             cacheType: .standard(faviconDatabase),
             bookmarkManager: ddgBookmarkMirror,
-            fireproofDomains: fireproofDomains,
             privacyConfigurationManager: privacyConfigurationManager
         )
         do {
@@ -335,7 +322,6 @@ final class SumiFaviconSystem {
 
     func burnAfterHistoryClear(savedLogins: Set<String>) async {
         _ = await manager.burn(
-            except: fireproofDomains,
             bookmarkManager: bookmarkMirror,
             savedLogins: savedLogins
         )
