@@ -635,6 +635,7 @@ struct CommandPaletteView: View {
 }
 
 enum CommandPaletteOutsideClickRouting {
+    @MainActor
     static func monitorResult(
         for event: NSEvent,
         isPaletteVisible: Bool,
@@ -662,6 +663,7 @@ enum CommandPaletteOutsideClickRouting {
         return event
     }
 
+    @MainActor
     static func isEventInsideCard(_ event: NSEvent, cardView: NSView?) -> Bool {
         guard let cardView,
               let eventWindow = event.window ?? NSApp.window(withWindowNumber: event.windowNumber),
@@ -675,6 +677,7 @@ enum CommandPaletteOutsideClickRouting {
         return true
     }
 
+    @MainActor
     static func isLocationInsideCard(
         _ locationInWindow: NSPoint,
         eventWindow: NSWindow,
@@ -687,6 +690,7 @@ enum CommandPaletteOutsideClickRouting {
         return isLocationInsideCard(locationInWindow, cardView: cardView)
     }
 
+    @MainActor
     static func isLocationInsideCard(
         _ locationInWindow: NSPoint,
         cardView: NSView?
