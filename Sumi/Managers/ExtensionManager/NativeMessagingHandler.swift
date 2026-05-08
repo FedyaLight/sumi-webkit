@@ -24,6 +24,10 @@ struct NativeMessagingHostManifest {
 
 @available(macOS 15.5, *)
 final class NativeMessagingProcessSession {
+    // Ownership model: public entry points may be called from any queue, but
+    // process, pipe, DispatchSource, pending-write, output-buffer, and close
+    // state are owned by stateQueue. Methods with "Locked" in their name and
+    // DispatchSource/Process callbacks must already be running on stateQueue.
     enum CloseReason {
         case cancelled
         case endOfFile
@@ -143,12 +147,19 @@ final class NativeMessagingProcessSession {
     }
 
     func cancel(notify: Bool = true) {
-        stateQueue.async {
+        let cancelWorkItem = DispatchWorkItem {
             self.closeLocked(.cancelled, notify: notify)
         }
+        stateQueue.async(execute: cancelWorkItem)
+    }
+
+    private func preconditionOnStateQueue() {
+        dispatchPrecondition(condition: .onQueue(stateQueue))
     }
 
     private func startLocked() throws {
+        preconditionOnStateQueue()
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: manifest.path)
 
@@ -184,6 +195,8 @@ final class NativeMessagingProcessSession {
     }
 
     private func configureSources() {
+        preconditionOnStateQueue()
+
         guard let stdoutHandle, let stderrHandle, let stdinHandle else {
             return
         }
@@ -226,6 +239,8 @@ final class NativeMessagingProcessSession {
     }
 
     private func resumeWriteSourceIfNeeded() {
+        preconditionOnStateQueue()
+
         guard let stdinWriteSource, isWriteSourceResumed == false else {
             return
         }
@@ -234,6 +249,8 @@ final class NativeMessagingProcessSession {
     }
 
     private func suspendWriteSourceIfNeeded() {
+        preconditionOnStateQueue()
+
         guard let stdinWriteSource,
               isWriteSourceResumed,
               pendingWrites.isEmpty,
@@ -246,6 +263,8 @@ final class NativeMessagingProcessSession {
     }
 
     private func readAvailableOutput() {
+        preconditionOnStateQueue()
+
         guard isClosed == false,
               let stdoutHandle
         else { return }
@@ -288,6 +307,8 @@ final class NativeMessagingProcessSession {
     }
 
     private func drainAvailableErrorOutput() {
+        preconditionOnStateQueue()
+
         guard isClosed == false,
               let stderrHandle
         else { return }
@@ -327,6 +348,8 @@ final class NativeMessagingProcessSession {
     }
 
     private func writeAvailableInput() {
+        preconditionOnStateQueue()
+
         guard isClosed == false,
               let stdinHandle
         else { return }
@@ -382,6 +405,8 @@ final class NativeMessagingProcessSession {
     }
 
     private func parseOutputBuffer() {
+        preconditionOnStateQueue()
+
         while outputBuffer.count >= 4 {
             let length = Self.decodeLength(from: outputBuffer)
             guard length <= Self.maximumInboundMessageSize else {
@@ -414,6 +439,8 @@ final class NativeMessagingProcessSession {
     }
 
     fileprivate func handleProcessExit(status: Int32) {
+        preconditionOnStateQueue()
+
         guard isClosed == false else { return }
 
         processExitStatus = status
@@ -424,6 +451,8 @@ final class NativeMessagingProcessSession {
     }
 
     private func drainOutputAfterProcessExit(status: Int32, deadline: Date) {
+        preconditionOnStateQueue()
+
         readAvailableOutput()
         guard isClosed == false,
               processExitStatus == status
@@ -450,6 +479,8 @@ final class NativeMessagingProcessSession {
     }
 
     private func closeForOutputEndLocked() {
+        preconditionOnStateQueue()
+
         guard outputBuffer.isEmpty else {
             closeLocked(.error(Self.error(
                 code: 3,
@@ -462,6 +493,8 @@ final class NativeMessagingProcessSession {
     }
 
     private func closeLocked(_ reason: CloseReason, notify: Bool) {
+        preconditionOnStateQueue()
+
         guard isClosed == false else { return }
 
         isClosed = true
@@ -501,6 +534,8 @@ final class NativeMessagingProcessSession {
     }
 
     private func failPendingWrites(_ error: Error) {
+        preconditionOnStateQueue()
+
         let completions = pendingWrites.map(\.completion)
         pendingWrites.removeAll()
         queuedWriteBytes = 0
@@ -508,6 +543,8 @@ final class NativeMessagingProcessSession {
     }
 
     private func closeHandlesAfterLaunchFailure() {
+        preconditionOnStateQueue()
+
         if let stdoutReadSource {
             stdoutReadSource.resume()
             stdoutReadSource.cancel()
@@ -537,16 +574,22 @@ final class NativeMessagingProcessSession {
     }
 
     private func closeStdinHandle() {
+        preconditionOnStateQueue()
+
         try? stdinHandle?.close()
         stdinHandle = nil
     }
 
     private func closeStdoutHandle() {
+        preconditionOnStateQueue()
+
         try? stdoutHandle?.close()
         stdoutHandle = nil
     }
 
     private func closeStderrHandle() {
+        preconditionOnStateQueue()
+
         try? stderrHandle?.close()
         stderrHandle = nil
     }
