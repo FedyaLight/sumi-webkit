@@ -7,6 +7,7 @@ final class TransientChromePanelWindow: NSPanel {
 }
 
 enum TransientChromePanelConfiguration {
+    @MainActor
     static func makePanel() -> TransientChromePanelWindow {
         let panel = TransientChromePanelWindow(
             contentRect: .zero,
@@ -36,6 +37,7 @@ enum TransientChromePanelConfiguration {
         return panel
     }
 
+    @MainActor
     static func configure(_ panel: TransientChromePanelWindow, for parentWindow: NSWindow) {
         panel.level = parentWindow.level
         panel.appearance = parentWindow.effectiveAppearance
@@ -45,12 +47,14 @@ enum TransientChromePanelConfiguration {
 }
 
 enum TransientChromePanelFrameResolver {
+    @MainActor
     static func parentContentScreenFrame(in parentWindow: NSWindow) -> NSRect? {
         guard let contentView = parentWindow.contentView else { return nil }
         let contentWindowFrame = contentView.convert(contentView.bounds, to: nil)
         return parentWindow.convertToScreen(contentWindowFrame)
     }
 
+    @MainActor
     static func anchorScreenFrame(_ anchorView: NSView, fallbackWindow: NSWindow?) -> NSRect? {
         guard let window = anchorView.window ?? fallbackWindow else { return nil }
         if !anchorView.bounds.isEmpty {
@@ -60,6 +64,7 @@ enum TransientChromePanelFrameResolver {
         return parentContentScreenFrame(in: window)
     }
 
+    @MainActor
     static func topStripFrame(
         in anchorView: NSView,
         fallbackWindow: NSWindow?,
