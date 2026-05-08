@@ -100,8 +100,8 @@ final class FaviconManager: FaviconManagement {
                 Logger.favicons.error("Favicon store reset failed: \(error.localizedDescription)")
             }
 
-            await imageCache.clearAllInMemory(markLoaded: true)
-            await referenceCache.clearAllInMemory(markLoaded: true)
+            imageCache.clearAllInMemory(markLoaded: true)
+            referenceCache.clearAllInMemory(markLoaded: true)
 
             do {
                 try await loadFavicons(fireproofDomains)

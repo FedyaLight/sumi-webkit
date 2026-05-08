@@ -183,7 +183,7 @@ struct GlanceWebView: NSViewRepresentable {
         func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
-            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+            decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
         ) {
             // Let normal navigation proceed within the glance
             decisionHandler(.allow)
@@ -196,7 +196,7 @@ struct GlanceWebView: NSViewRepresentable {
             _ webView: WKWebView,
             runOpenPanelWith parameters: WKOpenPanelParameters,
             initiatedByFrame frame: WKFrameInfo,
-            completionHandler: @escaping ([URL]?) -> Void
+            completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void
         ) {
 
             let openPanel = NSOpenPanel()
