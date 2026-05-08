@@ -23,9 +23,9 @@ struct NativeMessagingHostManifest {
 }
 
 @available(macOS 15.5, *)
-final class NativeMessagingProcessSession {
-    // Ownership model: public entry points may be called from any queue, but
-    // process, pipe, DispatchSource, pending-write, output-buffer, and close
+final class NativeMessagingProcessSession: @unchecked Sendable {
+    // Sendability boundary: public entry points may be called from any queue,
+    // but process, pipe, DispatchSource, pending-write, output-buffer, and close
     // state are owned by stateQueue. Methods with "Locked" in their name and
     // DispatchSource/Process callbacks must already be running on stateQueue.
     enum CloseReason {
