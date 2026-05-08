@@ -27,6 +27,7 @@ struct SumiNavigationHistoryMenuItem {
         self.isCurrent = isCurrent
     }
 
+    @MainActor
     init(backForwardItem: WKBackForwardListItem, isCurrent: Bool) {
         self.init(
             url: backForwardItem.url,
@@ -41,8 +42,8 @@ struct SumiNavigationHistoryMenuItem {
     }
 }
 
-@MainActor
 enum SumiNavigationHistoryMenuModel {
+    @MainActor
     static func items(
         direction: SumiNavigationHistoryDirection,
         tab: Tab?,
@@ -79,6 +80,7 @@ enum SumiNavigationHistoryMenuModel {
         }
     }
 
+    @MainActor
     static func navigate(
         to item: SumiNavigationHistoryMenuItem,
         tab: Tab?,
@@ -119,6 +121,7 @@ enum SumiNavigationHistoryMenuModel {
     }
 
     @discardableResult
+    @MainActor
     static func openURLIfModifiedClick(
         _ url: URL?,
         browserManager: BrowserManager?,
@@ -152,6 +155,7 @@ enum SumiNavigationHistoryMenuModel {
         }
     }
 
+    @MainActor
     private static func currentItem(
         tab: Tab?,
         webView: WKWebView?
@@ -176,6 +180,7 @@ enum SumiNavigationHistoryMenuModel {
         )
     }
 
+    @MainActor
     private static func openURL(
         _ url: URL,
         inNewTabSelected selected: Bool,
