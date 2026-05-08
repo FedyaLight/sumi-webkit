@@ -11,7 +11,7 @@ import OSLog
 import WebKit
 
 @available(macOS 15.5, *)
-private struct NativeMessagingHostManifest {
+struct NativeMessagingHostManifest {
     let path: String
 
     init?(jsonObject: [String: Any]) {
@@ -23,7 +23,7 @@ private struct NativeMessagingHostManifest {
 }
 
 @available(macOS 15.5, *)
-private final class NativeMessagingProcessSession {
+final class NativeMessagingProcessSession {
     enum CloseReason {
         case cancelled
         case endOfFile
