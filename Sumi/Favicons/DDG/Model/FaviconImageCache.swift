@@ -41,10 +41,10 @@ protocol FaviconImageCaching {
     func getFavicons(with urls: some Sequence<URL>) -> [Favicon]?
 
     @MainActor
-    func cleanOld(except fireproofDomains: FireproofDomains, bookmarkManager: BookmarkManager) async
+    func cleanOld(bookmarkManager: BookmarkManager) async
 
     @MainActor
-    func burn(except fireproofDomains: FireproofDomains, bookmarkManager: BookmarkManager, savedLogins: Set<String>) async -> Result<Void, Error>
+    func burn(bookmarkManager: BookmarkManager, savedLogins: Set<String>) async -> Result<Void, Error>
 
     @MainActor
     func burnDomains(_ baseDomains: Set<String>,
@@ -134,30 +134,26 @@ final class FaviconImageCache: FaviconImageCaching {
 
     // MARK: - Clean
 
-    func cleanOld(except fireproofDomains: FireproofDomains, bookmarkManager: BookmarkManager) async {
+    func cleanOld(bookmarkManager: BookmarkManager) async {
         let bookmarkedHosts = bookmarkManager.allHosts()
         _ = await removeFavicons { favicon in
             guard let host = favicon.documentUrl.host else {
                 return false
             }
             return favicon.dateCreated < Date.sumiMonthAgo &&
-                !fireproofDomains.isFireproof(fireproofDomain: host) &&
                 !bookmarkedHosts.contains(host)
         }
     }
 
     // MARK: - Burning
 
-    func burn(except fireproofDomains: FireproofDomains, bookmarkManager: BookmarkManager, savedLogins: Set<String>) async -> Result<Void, Error> {
+    func burn(bookmarkManager: BookmarkManager, savedLogins: Set<String>) async -> Result<Void, Error> {
         let bookmarkedHosts = bookmarkManager.allHosts()
         return await removeFavicons { favicon in
             guard let host = favicon.documentUrl.host else {
                 return false
             }
-            return !(fireproofDomains.isFireproof(fireproofDomain: host) ||
-                     bookmarkedHosts.contains(host) ||
-                     savedLogins.contains(host)
-            )
+            return !(bookmarkedHosts.contains(host) || savedLogins.contains(host))
         }
     }
 

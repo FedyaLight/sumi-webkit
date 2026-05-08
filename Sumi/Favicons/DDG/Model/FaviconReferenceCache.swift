@@ -48,9 +48,9 @@ protocol FaviconReferenceCaching {
     func getFaviconUrl(for host: String, sizeCategory: Favicon.SizeCategory) -> URL?
 
     @MainActor
-    func cleanOld(except fireproofDomains: FireproofDomains, bookmarkManager: BookmarkManager) async
+    func cleanOld(bookmarkManager: BookmarkManager) async
     @MainActor
-    func burn(except fireproofDomains: FireproofDomains, bookmarkManager: BookmarkManager, savedLogins: Set<String>) async
+    func burn(bookmarkManager: BookmarkManager, savedLogins: Set<String>) async
     @MainActor
     func burnDomains(_ baseDomains: Set<String>, exceptBookmarks bookmarkManager: BookmarkManager, exceptSavedLogins logins: Set<String>, exceptHistoryDomains history: Set<String>, registrableDomainResolver: any SumiRegistrableDomainResolving) async
 }
@@ -178,13 +178,12 @@ final class FaviconReferenceCache: FaviconReferenceCaching {
 
     // MARK: - Clean
 
-    func cleanOld(except fireproofDomains: FireproofDomains, bookmarkManager: BookmarkManager) async {
+    func cleanOld(bookmarkManager: BookmarkManager) async {
         let bookmarkedHosts = bookmarkManager.allHosts()
         // Remove host references
         await removeHostReferences(filter: { hostReference in
             let host = hostReference.host
             return hostReference.dateCreated < Date.sumiMonthAgo &&
-                !fireproofDomains.isFireproof(fireproofDomain: host) &&
                 !bookmarkedHosts.contains(host)
         }).value
         // Remove URL references
@@ -193,19 +192,16 @@ final class FaviconReferenceCache: FaviconReferenceCaching {
                 return false
             }
             return urlReference.dateCreated < Date.sumiMonthAgo &&
-                !fireproofDomains.isFireproof(fireproofDomain: host) &&
                 !bookmarkedHosts.contains(host)
         }).value
     }
 
     // MARK: - Burning
 
-    func burn(except fireproofDomains: FireproofDomains, bookmarkManager: BookmarkManager, savedLogins: Set<String>) async {
+    func burn(bookmarkManager: BookmarkManager, savedLogins: Set<String>) async {
         let bookmarkedHosts = bookmarkManager.allHosts()
         func isHostApproved(host: String) -> Bool {
-            return fireproofDomains.isFireproof(fireproofDomain: host) ||
-                bookmarkedHosts.contains(host) ||
-                savedLogins.contains(host)
+            return bookmarkedHosts.contains(host) || savedLogins.contains(host)
         }
 
         // Remove host references

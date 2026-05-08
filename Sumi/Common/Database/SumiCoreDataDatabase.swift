@@ -1,6 +1,12 @@
 import CoreData
 import Foundation
 
+extension NSManagedObject {
+    class func entityClassName() -> String {
+        String(describing: self)
+    }
+}
+
 protocol SumiCoreDataDatabase: AnyObject {
     var name: String { get }
     var containerLocation: URL { get }
