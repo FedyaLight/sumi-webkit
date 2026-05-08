@@ -11,6 +11,7 @@ enum SumiUserAgent {
         return "Version/\(safariVersion) Safari/\(webKitVersion)"
     }()
 
+    @MainActor
     static func apply(to webView: WKWebView) {
         // DuckDuckGo relies on the default WKWebView user agent and appends only
         // the Safari/WebKit suffix through WKWebViewConfiguration.
