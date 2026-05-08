@@ -23,6 +23,26 @@ struct NativeMessagingHostManifest {
 }
 
 @available(macOS 15.5, *)
+private struct NativeMessagingStartCompletion: @unchecked Sendable {
+    // One-shot by NativeMessagingProcessSession.start API convention. Delivery
+    // remains synchronous from NativeMessagingProcessSession.stateQueue; this
+    // wrapper does not own a queue or change completion timing.
+    //
+    // Sendability boundary: the wrapper is immutable after construction, has no
+    // internal mutation, and is invoked only while queue-confined on stateQueue.
+    // Existing process-session tests cover start success and failure delivery.
+    private let completion: (Result<Void, Error>) -> Void
+
+    init(_ completion: @escaping (Result<Void, Error>) -> Void) {
+        self.completion = completion
+    }
+
+    func complete(_ result: Result<Void, Error>) {
+        completion(result)
+    }
+}
+
+@available(macOS 15.5, *)
 final class NativeMessagingProcessSession: @unchecked Sendable {
     // Sendability boundary: public entry points may be called from any queue,
     // but process, pipe, DispatchSource, pending-write, output-buffer, and close
@@ -88,15 +108,17 @@ final class NativeMessagingProcessSession: @unchecked Sendable {
     }
 
     func start(completion: @escaping (Result<Void, Error>) -> Void) {
+        let startCompletion = NativeMessagingStartCompletion(completion)
+
         stateQueue.async { [weak self] in
             guard let self else { return }
 
             do {
                 try self.startLocked()
-                completion(.success(()))
+                startCompletion.complete(.success(()))
             } catch {
                 self.closeHandlesAfterLaunchFailure()
-                completion(.failure(error))
+                startCompletion.complete(.failure(error))
             }
         }
     }
