@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 private enum CommandPalettePanelFrameResolver {
+    @MainActor
     static func panelFrame(in parentWindow: NSWindow) -> NSRect? {
         guard let contentFrame = TransientChromePanelFrameResolver.parentContentScreenFrame(
             in: parentWindow
