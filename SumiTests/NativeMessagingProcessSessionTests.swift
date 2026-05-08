@@ -126,6 +126,49 @@ final class NativeMessagingProcessSessionTests: XCTestCase {
         }
     }
 
+    func testSendAfterCancelCompletesOnceWithClosedSessionError() throws {
+        let hostURL = try makePythonHost(body: "time.sleep(2)")
+        let write = expectation(description: "write completion")
+        write.expectedFulfillmentCount = 1
+        write.assertForOverFulfill = true
+        let close = expectation(description: "close")
+        close.expectedFulfillmentCount = 1
+        close.assertForOverFulfill = true
+        var events: [String] = []
+        var writeErrors: [Error?] = []
+        var closeReasons: [NativeMessagingProcessSession.CloseReason] = []
+        let session = makeSession(
+            hostURL: hostURL,
+            onClose: { reason in
+                closeReasons.append(reason)
+                events.append("close")
+                close.fulfill()
+            }
+        )
+
+        try start(session)
+        session.cancel()
+        session.send(["payload": "after-cancel"]) { error in
+            writeErrors.append(error)
+            events.append("write")
+            write.fulfill()
+        }
+        session.cancel()
+
+        wait(for: [close, write], timeout: Self.processTimeout)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+
+        XCTAssertEqual(events, ["close", "write"])
+        XCTAssertEqual(writeErrors.count, 1)
+        let error = try XCTUnwrap(writeErrors[0] as NSError?)
+        XCTAssertEqual(error.domain, "NativeMessaging")
+        XCTAssertEqual(error.code, 6)
+        XCTAssertEqual(closeReasons.count, 1)
+        guard case .cancelled = closeReasons[0] else {
+            return XCTFail("Expected cancellation close reason")
+        }
+    }
+
     func testProcessExitClosesSessionOnce() throws {
         let hostURL = try makePythonHost(body: "sys.exit(0)")
         let close = expectation(description: "close")
