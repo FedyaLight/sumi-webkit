@@ -17,6 +17,7 @@ enum SidebarDragLocationMapper {
         )
     }
 
+    @MainActor
     static func swiftUIGlobalPoint(
         fromWindowPoint windowPoint: CGPoint,
         in window: NSWindow
@@ -27,6 +28,7 @@ enum SidebarDragLocationMapper {
         )
     }
 
+    @MainActor
     static func swiftUIGlobalPoint(
         fromWindowPoint windowPoint: CGPoint,
         in view: NSView
@@ -35,6 +37,7 @@ enum SidebarDragLocationMapper {
         return swiftUIGlobalPoint(fromWindowPoint: windowPoint, in: window)
     }
 
+    @MainActor
     static func swiftUIPreviewPoint(
         fromWindowPoint windowPoint: CGPoint,
         in window: NSWindow
@@ -54,6 +57,7 @@ enum SidebarDragLocationMapper {
         )
     }
 
+    @MainActor
     static func swiftUIPreviewPoint(
         fromWindowPoint windowPoint: CGPoint,
         in view: NSView
@@ -62,6 +66,7 @@ enum SidebarDragLocationMapper {
         return swiftUIPreviewPoint(fromWindowPoint: windowPoint, in: window)
     }
 
+    @MainActor
     static func swiftUIPreviewPoint(
         fromLocalPoint localPoint: CGPoint,
         in view: NSView
@@ -71,6 +76,7 @@ enum SidebarDragLocationMapper {
         return swiftUIPreviewPoint(fromWindowPoint: windowPoint, in: window)
     }
 
+    @MainActor
     static func swiftUIGlobalPoint(
         fromLocalPoint localPoint: CGPoint,
         in view: NSView
@@ -87,6 +93,7 @@ enum SidebarDragLocationMapper {
         currentMouseScreenPoint ?? callbackScreenPoint
     }
 
+    @MainActor
     static func sourceLocationsFromScreenPoint(
         callbackScreenPoint: NSPoint,
         in view: NSView,
@@ -104,6 +111,7 @@ enum SidebarDragLocationMapper {
         )
     }
 
+    @MainActor
     private static func swiftUITopBoundaryY(in window: NSWindow) -> CGFloat {
         // Sidebar geometry is reported with SwiftUI `.global`, whose vertical origin is the hosting
         // content view, not AppKit's `contentLayoutRect`. Using `contentLayoutRect.maxY` subtracts
@@ -111,10 +119,12 @@ enum SidebarDragLocationMapper {
         swiftUIFullContentBoundaryY(in: window)
     }
 
+    @MainActor
     private static func swiftUIFullContentBoundaryY(in window: NSWindow) -> CGFloat {
         window.contentView?.bounds.height ?? window.frame.height
     }
 
+    @MainActor
     private static func previewCoordinateWindow(for window: NSWindow) -> NSWindow {
         window.parent ?? window
     }
