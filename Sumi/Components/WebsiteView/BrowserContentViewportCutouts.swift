@@ -36,10 +36,12 @@ struct BrowserContentViewportCutoutBackground: Equatable {
         )
     }
 
+    @MainActor
     func draw(in view: NSView) {
         drawSampledChromeBackground(in: view)
     }
 
+    @MainActor
     private func drawSampledChromeBackground(in view: NSView) {
         let referenceView = view.window?.contentView ?? view.superview ?? view
         let referenceBounds = referenceView.bounds
