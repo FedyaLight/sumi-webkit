@@ -8,6 +8,7 @@ import Foundation
 //
 import SwiftUI
 
+@MainActor
 func zoomCurrentWindow() {
     if let window = NSApp.keyWindow {
         window.zoom(nil)
