@@ -116,11 +116,11 @@ extension FaviconDownloader: FaviconDownloading {}
 
 extension FaviconDownloader: WKNavigationDelegate {
 
-    nonisolated func webView(
+    func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
         preferences: WKWebpagePreferences,
-        decisionHandler: @escaping (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
+        decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
     ) {
         // We're only using this WebView for downloads, not navigation
         decisionHandler(.cancel, preferences)
