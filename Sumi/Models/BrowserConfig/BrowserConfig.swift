@@ -81,6 +81,8 @@ class BrowserConfiguration {
     private func makeBaseWebViewConfiguration() -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
         webKitProcessPoolContext.apply(to: config)
+        config.applicationNameForUserAgent =
+            SumiUserAgent.safariCompatibleApplicationNameForUserAgent
         config.writingToolsBehavior = .none
 
         // Match Nook: the shared template configuration uses the default store.
