@@ -22,10 +22,22 @@ import UniformTypeIdentifiers
 import WebKit
 
 @MainActor
+protocol FindInPageWebView: AnyObject {
+    var mimeType: String? { get async }
+
+    func collapseSelectionToStart() async throws
+    func deselectAll() async throws
+    func find(_ string: String, with options: _WKFindOptions, maxCount: UInt) async -> FocusableWKWebView.FindResult
+    func clearFindInPageState()
+}
+
+extension FocusableWKWebView: FindInPageWebView {}
+
+@MainActor
 final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocumentNavigationResponding {
 
     let model = FindInPageModel()
-    private weak var webView: FocusableWKWebView?
+    private weak var webView: (any FindInPageWebView)?
     private var cancellable: AnyCancellable?
 
     private(set) var isActive = false
@@ -35,7 +47,7 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
         static let maxMatches: UInt = 1000
     }
 
-    func show(with webView: FocusableWKWebView) {
+    func show(with webView: any FindInPageWebView) {
         self.webView = webView
 
         if cancellable == nil {
