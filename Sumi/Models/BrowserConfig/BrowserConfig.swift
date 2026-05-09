@@ -109,11 +109,6 @@ class BrowserConfiguration {
         // Enable background media playback
         config.allowsAirPlayForMediaPlayback = true
 
-        // Safari parity: match Nook's application UA token so WebKit client hints
-        // and UA-based code paths stay aligned between the two browsers.
-        config.applicationNameForUserAgent =
-            SumiUserAgent.duckDuckGoApplicationNameForUserAgent
-        
         config.preferences.setValue(
             RuntimeDiagnostics.isDeveloperInspectionEnabled,
             forKey: "developerExtrasEnabled"
