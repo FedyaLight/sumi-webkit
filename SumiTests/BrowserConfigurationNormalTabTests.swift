@@ -20,6 +20,10 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertTrue(configuration.websiteDataStore === profile.dataStore)
         XCTAssertTrue(controller.wkUserContentController === configuration.userContentController)
         XCTAssertNotNil(controller.normalTabUserScriptsProvider)
+        XCTAssertEqual(
+            configuration.applicationNameForUserAgent,
+            "Version/26.0 Safari/605.1.15"
+        )
 
         await controller.waitForContentBlockingAssetsInstalled()
 
