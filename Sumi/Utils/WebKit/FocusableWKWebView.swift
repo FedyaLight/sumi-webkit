@@ -275,6 +275,7 @@ struct _WKFindOptions: OptionSet {
     static let wrapAround = Self(rawValue: 1 << 4)
     static let showOverlay = Self(rawValue: 1 << 5)
     static let showFindIndicator = Self(rawValue: 1 << 6)
+    static let showHighlight = Self(rawValue: 1 << 7)
     static let noIndexChange = Self(rawValue: 1 << 8)
     static let determineMatchIndex = Self(rawValue: 1 << 9)
 }
