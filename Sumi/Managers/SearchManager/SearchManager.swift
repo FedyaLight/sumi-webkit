@@ -329,7 +329,7 @@ class SearchManager {
         searchTask?.resume()
     }
 
-    private static func parseGoogleSuggestions(from payload: Any) -> [String]? {
+    nonisolated private static func parseGoogleSuggestions(from payload: Any) -> [String]? {
         if let suggestions = payload as? [String] {
             return suggestions
         }
