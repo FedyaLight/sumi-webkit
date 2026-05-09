@@ -4,11 +4,8 @@ import XCTest
 
 @MainActor
 final class SumiUserAgentTests: XCTestCase {
-    func testSharedBrowserConfigurationUsesDuckDuckGoApplicationNameToken() {
-        XCTAssertEqual(
-            BrowserConfiguration.shared.webViewConfiguration.applicationNameForUserAgent,
-            SumiUserAgent.duckDuckGoApplicationNameForUserAgent
-        )
+    func testSharedBrowserConfigurationLeavesApplicationNameForUserAgentNil() {
+        XCTAssertNil(BrowserConfiguration.shared.webViewConfiguration.applicationNameForUserAgent)
     }
 
     func testApplyResetsCustomUserAgentOverride() {
