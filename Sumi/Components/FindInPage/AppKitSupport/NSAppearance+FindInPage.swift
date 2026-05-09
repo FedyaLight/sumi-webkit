@@ -9,6 +9,7 @@ import AppKit
 
 extension NSAppearance {
     /// Match DuckDuckGo’s `NSAppearance.withAppAppearance` behavior for asset catalog / layer colors.
+    @MainActor
     static func sumi_findWithAppAppearance(_ body: () -> Void) {
         NSApp.effectiveAppearance.performAsCurrentDrawingAppearance(body)
     }
