@@ -36,10 +36,15 @@ final class FocusRingView: NSView {
     private let backgroundLayer = CALayer()
 
     private var stroke = false
+    private var didConfigureAfterNibLoad = false
 
     override func awakeFromNib() {
         super.awakeFromNib()
+    }
 
+    func configureAfterNibLoadIfNeeded() {
+        guard !didConfigureAfterNibLoad else { return }
+        didConfigureAfterNibLoad = true
         wantsLayer = true
 
         addSublayers()

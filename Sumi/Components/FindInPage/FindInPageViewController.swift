@@ -64,6 +64,8 @@ final class FindInPageViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        configureAppKitViewsAfterNibLoad()
+
         textField.placeholderString = Copy.placeholder
         textField.delegate = self
 
@@ -80,6 +82,13 @@ final class FindInPageViewController: NSViewController {
         statusField.setAccessibilityRole(.textField)
 
         applyChromeColors(nil)
+    }
+
+    private func configureAppKitViewsAfterNibLoad() {
+        focusRingView.configureAfterNibLoadIfNeeded()
+        for case let hover as MouseOverButton in [closeButton, nextButton, previousButton] {
+            hover.configureAfterNibLoadIfNeeded()
+        }
     }
 
     override func viewWillAppear() {
