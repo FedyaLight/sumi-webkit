@@ -14,6 +14,7 @@ struct ExternallyConnectablePolicy {
     let matchPatternStrings: [String]
     let matchPatterns: [WKWebExtension.MatchPattern]
 
+    @MainActor
     var normalizedHostnames: [String] {
         Array(
             Set(
@@ -25,6 +26,7 @@ struct ExternallyConnectablePolicy {
         ).sorted()
     }
 
+    @MainActor
     func matches(url: URL?) -> Bool {
         guard let url else { return false }
         return matchPatterns.contains { $0.matches(url) }
