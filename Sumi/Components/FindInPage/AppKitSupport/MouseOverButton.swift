@@ -33,6 +33,7 @@ class MouseOverButton: NSButton, Hoverable {
     @IBOutlet weak var delegate: MouseOverButtonDelegate?
 
     private var hoverBackgroundLayer: CALayer?
+    private var didCaptureNormalTintColorAfterNibLoad = false
 
     @IBInspectable dynamic var backgroundColor: NSColor?
     @IBInspectable dynamic var mouseOverColor: NSColor?
@@ -108,8 +109,10 @@ class MouseOverButton: NSButton, Hoverable {
         clipsToBounds = true
     }
 
-    override func awakeFromNib() {
-        normalTintColor = self.contentTintColor
+    func configureAfterNibLoadIfNeeded() {
+        guard !didCaptureNormalTintColorAfterNibLoad else { return }
+        didCaptureNormalTintColorAfterNibLoad = true
+        normalTintColor = contentTintColor
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
