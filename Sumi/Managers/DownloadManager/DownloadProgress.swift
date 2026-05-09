@@ -16,6 +16,7 @@ final class DownloadProgress: Progress, @unchecked Sendable {
         configureDefaults()
     }
 
+    @MainActor
     init(download: WKDownload) {
         super.init(parent: nil, userInfo: nil)
         configureDefaults()
