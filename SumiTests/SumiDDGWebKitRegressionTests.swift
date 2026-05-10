@@ -137,6 +137,50 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertEqual(webView.trackingAreas.filter { $0 === trackingArea }.count, 1)
     }
 
+    func testFocusableWebViewPrivateFindResumesDelegateCallback() async throws {
+        let webView = FocusableWKWebView(
+            frame: NSRect(x: 0, y: 0, width: 640, height: 480),
+            configuration: WKWebViewConfiguration()
+        )
+        let window = NSWindow(
+            contentRect: webView.frame,
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = webView
+        window.makeKeyAndOrderFront(nil)
+        defer { window.orderOut(nil) }
+
+        try await loadHTML(
+            """
+            <!doctype html>
+            <html>
+            <body>
+                <p>needle</p>
+                <p>Needle</p>
+                <p>needle</p>
+            </body>
+            </html>
+            """,
+            into: webView
+        )
+
+        let resultRecorder = FindResultRecorder()
+        let didFind = expectation(description: "private find delegate callback resumed")
+        Task { @MainActor in
+            resultRecorder.result = await webView.find(
+                "needle",
+                with: [.caseInsensitive, .wrapAround, .showFindIndicator, .showOverlay],
+                maxCount: 1000
+            )
+            didFind.fulfill()
+        }
+
+        await fulfillment(of: [didFind], timeout: 3)
+        XCTAssertEqual(resultRecorder.result, .found(matches: 3))
+    }
+
     func testWebViewContainerLayoutDoesNotReparentDisplayedContent() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -254,6 +298,35 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
 
         let violations = forbiddenTokens.filter { featureSource.contains($0) }
         XCTAssertTrue(violations.isEmpty, violations.joined(separator: "\n"))
+    }
+
+    private func loadHTML(_ html: String, into webView: WKWebView) async throws {
+        let didFinish = expectation(description: "find test page loaded")
+        let delegate = FindNavigationDelegateBox {
+            didFinish.fulfill()
+        }
+
+        webView.navigationDelegate = delegate
+        webView.loadHTMLString(html, baseURL: URL(string: "https://example.com"))
+        await fulfillment(of: [didFinish], timeout: 5)
+        webView.navigationDelegate = nil
+    }
+}
+
+@MainActor
+private final class FindResultRecorder {
+    var result: FocusableWKWebView.FindResult?
+}
+
+private final class FindNavigationDelegateBox: NSObject, WKNavigationDelegate {
+    private let onFinish: () -> Void
+
+    init(onFinish: @escaping () -> Void) {
+        self.onFinish = onFinish
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        onFinish()
     }
 }
 
