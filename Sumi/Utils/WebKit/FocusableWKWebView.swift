@@ -13,7 +13,14 @@ enum SumiWebViewInteractionEvent {
 }
 
 @MainActor
+@objc(Sumi_FocusableWKWebView)
 final class FocusableWKWebView: WKWebView {
+    enum FindResult: Error, Equatable, Sendable {
+        case found(matches: UInt?)
+        case notFound
+        case cancelled
+    }
+
     /// Local kill switch for the DDG-style control-click workaround (not user-facing).
     static var isControlClickFixEnabled: Bool = true
 
@@ -28,6 +35,7 @@ final class FocusableWKWebView: WKWebView {
 
     weak var owningTab: Tab?
     let interactionEventsPublisher = PassthroughSubject<SumiWebViewInteractionEvent, Never>()
+    private var findInPageCompletionHandler: ((FindResult) -> Void)?
 
     override init(frame: CGRect, configuration: WKWebViewConfiguration) {
         _ = Self.swizzleImmediateActionAnimationControllerOnce
@@ -281,37 +289,6 @@ struct _WKFindOptions: OptionSet {
 }
 
 extension FocusableWKWebView {
-    enum FindResult: Error, Equatable, Sendable {
-        case found(matches: UInt?)
-        case notFound
-        case cancelled
-    }
-
-    private struct AssociatedKeys {
-        static let findCompletionHandler: UInt8 = 0
-
-        static var findCompletionHandlerPointer: UnsafeRawPointer {
-            withUnsafePointer(to: findCompletionHandler) { UnsafeRawPointer($0) }
-        }
-    }
-
-    private var findInPageCompletionHandler: ((FindResult) -> Void)? {
-        get {
-            objc_getAssociatedObject(
-                self,
-                AssociatedKeys.findCompletionHandlerPointer
-            ) as? ((FindResult) -> Void)
-        }
-        set {
-            objc_setAssociatedObject(
-                self,
-                AssociatedKeys.findCompletionHandlerPointer,
-                newValue,
-                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
-            )
-        }
-    }
-
     @MainActor
     var mimeType: String? {
         get async {

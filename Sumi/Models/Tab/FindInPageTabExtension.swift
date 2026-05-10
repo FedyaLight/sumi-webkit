@@ -62,18 +62,15 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
                 }
         }
 
-        // Capture visibility before flipping `isVisible` so repeat-open logic matches the old `showFindInPage` path.
-        let alreadyVisible = model.isVisible
-        if !alreadyVisible {
-            model.show()
-        }
-
         Task { @MainActor in
-            await showFindInPage(alreadyVisible: alreadyVisible)
+            await showFindInPage()
         }
     }
 
-    private func showFindInPage(alreadyVisible: Bool) async {
+    private func showFindInPage() async {
+        let alreadyVisible = model.isVisible
+        model.show()
+
         guard !alreadyVisible else {
             guard !model.text.isEmpty,
                   !isPdf else { return }

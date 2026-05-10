@@ -76,6 +76,29 @@ final class FindManagerTests: XCTestCase {
         XCTAssertFalse(webView.findRawOptions.contains { $0 & _WKFindOptions.showHighlight.rawValue != 0 })
     }
 
+    func testActiveTextChangeKeepsCurrentMatchUsingDuckDuckGoOptions() async throws {
+        let webView = RecordingFindInPageWebView()
+        webView.results = [.found(matches: 6), .found(matches: 6), .found(matches: 4)]
+        let findInPage = FindInPageTabExtension()
+        findInPage.model.find("test")
+        findInPage.show(with: webView)
+        try await webView.waitForFindCallCount(2)
+
+        webView.events.removeAll()
+        findInPage.model.find("testing")
+
+        try await webView.waitForFindCallCount(1)
+        XCTAssertEqual(
+            webView.events,
+            [
+                .collapseSelectionToStart,
+                .find("testing", rawOptions: 369, maxCount: 1000),
+            ]
+        )
+        XCTAssertEqual(findInPage.model.currentSelection, 1)
+        XCTAssertEqual(findInPage.model.matchesFound, 4)
+    }
+
     func testShowFindBarWithoutTabKeepsManagerHidden() {
         let manager = FindManager()
 
