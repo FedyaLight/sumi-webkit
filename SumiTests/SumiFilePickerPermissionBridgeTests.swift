@@ -146,7 +146,7 @@ final class SumiFilePickerPermissionBridgeTests: XCTestCase {
         let presenter = FilePickerFakePanelPresenter()
         let bridge = makeBridge(presenter: presenter)
         let expectation = XCTestExpectation(description: "File picker generation mismatch")
-        var currentPageId = "tab-a:1"
+        let currentPageId = FilePickerCurrentPageID("tab-a:1")
         var results: [[URL]?] = []
         let webView = WKWebView()
 
@@ -154,13 +154,13 @@ final class SumiFilePickerPermissionBridgeTests: XCTestCase {
             filePickerRequest(userActivation: .directWebKit),
             tabContext: tabContext(),
             webView: webView,
-            currentPageId: { currentPageId }
+            currentPageId: { currentPageId.value }
         ) { urls in
             results.append(urls)
             expectation.fulfill()
         }
         await waitUntilPresenterReceivesRequest(presenter)
-        currentPageId = "tab-a:2"
+        currentPageId.value = "tab-a:2"
         presenter.complete(.selected([fileURL("late.txt")]))
 
         await fulfillment(of: [expectation], timeout: 1)
@@ -347,6 +347,15 @@ final class SumiFilePickerPermissionBridgeTests: XCTestCase {
             contentsOf: repoRoot.appendingPathComponent(relativePath),
             encoding: .utf8
         )
+    }
+}
+
+@MainActor
+private final class FilePickerCurrentPageID {
+    var value: String
+
+    init(_ value: String) {
+        self.value = value
     }
 }
 

@@ -308,11 +308,12 @@ final class SumiNavigationResponderTests: XCTestCase {
     }
 
     func testWebKitGeolocationRequestFailsClosedWhenFrameSafeRequestIsMissing() {
+        let webView = WKWebView(frame: .zero)
         let frame = SumiWKFrameInfoMock(
             isMainFrame: false,
             request: nil,
             securityOrigin: SumiWKSecurityOriginMock.new(url: URL(string: "https://geo.example/frame")!),
-            webView: WKWebView(frame: .zero)
+            webView: webView
         ).frameInfo
 
         let request = SumiWebKitGeolocationRequest(id: "missing-frame-request", frame: frame)
@@ -323,11 +324,12 @@ final class SumiNavigationResponderTests: XCTestCase {
     }
 
     func testPopupRequestFromWKNavigationActionPreservesSourceFrameOriginWhenSafeRequestIsMissing() {
+        let webView = WKWebView(frame: .zero)
         let sourceFrame = SumiWKFrameInfoMock(
             isMainFrame: false,
             request: nil,
             securityOrigin: SumiWKSecurityOriginMock.new(url: URL(string: "https://request.example:8443/frame")!),
-            webView: WKWebView(frame: .zero)
+            webView: webView
         ).frameInfo
         let action = SumiWKNavigationActionMock(
             sourceFrame: sourceFrame,
@@ -612,11 +614,12 @@ final class SumiNavigationResponderTests: XCTestCase {
     }
 
     func testSumiNavigationActionWKAdapterPreservesSafeSourceFrameOriginWhenRequestIsMissing() {
+        let webView = WKWebView(frame: .zero)
         let sourceFrame = SumiWKFrameInfoMock(
             isMainFrame: false,
             request: nil,
             securityOrigin: SumiWKSecurityOriginMock.new(url: URL(string: "https://request.example:8443/frame")!),
-            webView: WKWebView(frame: .zero)
+            webView: webView
         ).frameInfo
         let action = SumiWKNavigationActionMock(
             sourceFrame: sourceFrame,
@@ -1264,13 +1267,13 @@ final class SumiNavigationResponderTests: XCTestCase {
             actionDecision: .cancel,
             responseDecision: .download
         )
-        weak var weakTarget = target
+        let weakTarget = WeakTestReference(target)
         let adapter = SumiNavigationResponderAdapter(target: target!)
         var preferences = NavigationPreferences.default
 
         target = nil
 
-        XCTAssertNil(weakTarget)
+        XCTAssertNil(weakTarget.value)
         let actionPolicy = await adapter.decidePolicy(
             for: navigationAction(
                 url: URL(string: "https://example.com/adapter/deallocated")!,
@@ -1461,7 +1464,7 @@ final class SumiNavigationResponderTests: XCTestCase {
 
     func testWeakSumiNavigationStartAdapterIgnoresDeallocatedTarget() {
         var target: SumiNavigationStartProbeResponder? = SumiNavigationStartProbeResponder()
-        weak var weakTarget = target
+        let weakTarget = WeakTestReference(target)
         let adapter = SumiNavigationResponderAdapter(target: target!)
         let navigation = mainFrameNavigation(receiving: navigationAction(
             url: URL(string: "https://example.com/deallocated-start")!,
@@ -1470,7 +1473,7 @@ final class SumiNavigationResponderTests: XCTestCase {
 
         target = nil
 
-        XCTAssertNil(weakTarget)
+        XCTAssertNil(weakTarget.value)
         adapter.didStart(navigation)
     }
 
@@ -1503,7 +1506,7 @@ final class SumiNavigationResponderTests: XCTestCase {
 
     func testWeakFindInPageAdapterDoesNotRetainTarget() {
         var findInPage: FindInPageTabExtension? = FindInPageTabExtension()
-        weak var weakFindInPage = findInPage
+        let weakFindInPage = WeakTestReference(findInPage)
         let adapter = SumiNavigationResponderAdapter(target: findInPage!)
         let navigation = mainFrameNavigation(receiving: navigationAction(
             url: URL(string: "https://example.com/deallocated-find")!,
@@ -1512,7 +1515,7 @@ final class SumiNavigationResponderTests: XCTestCase {
 
         findInPage = nil
 
-        XCTAssertNil(weakFindInPage)
+        XCTAssertNil(weakFindInPage.value)
         adapter.didStart(navigation)
         adapter.navigation(navigation, didSameDocumentNavigationOf: .sessionStatePush)
     }
@@ -1550,7 +1553,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             name: "temporary",
             recorder: recorder
         )
-        weak var weakTarget = target
+        let weakTarget = WeakTestReference(target)
         let adapter = SumiNavigationResponderAdapter(target: target!)
         let navigation = mainFrameNavigation(receiving: navigationAction(
             url: URL(string: "https://example.com/deallocated-completion")!,
@@ -1559,7 +1562,7 @@ final class SumiNavigationResponderTests: XCTestCase {
 
         target = nil
 
-        XCTAssertNil(weakTarget)
+        XCTAssertNil(weakTarget.value)
         adapter.navigationDidFinish(navigation)
         adapter.navigation(navigation, didFailWith: WKError(.unknown))
         XCTAssertEqual(recorder.snapshot(), [])
@@ -2190,6 +2193,7 @@ private extension SumiAuthChallengeDisposition {
     }
 }
 
+@MainActor
 private extension NavigationPreferences {
     static var `default`: NavigationPreferences {
         NavigationPreferences(userAgent: nil, preferences: WKWebpagePreferences())
@@ -2202,7 +2206,7 @@ private final class SumiNavigationClosingTrackingWebView: WKWebView {
 
     override func evaluateJavaScript(
         _ javaScriptString: String,
-        completionHandler: ((Any?, (any Error)?) -> Void)? = nil
+        completionHandler: (@MainActor @Sendable (Any?, (any Error)?) -> Void)? = nil
     ) {
         if javaScriptString == "window.close()" {
             closeScriptEvaluations += 1
@@ -2211,6 +2215,14 @@ private final class SumiNavigationClosingTrackingWebView: WKWebView {
         }
 
         super.evaluateJavaScript(javaScriptString, completionHandler: completionHandler)
+    }
+}
+
+private final class WeakTestReference<Value: AnyObject> {
+    weak var value: Value?
+
+    init(_ value: Value?) {
+        self.value = value
     }
 }
 
