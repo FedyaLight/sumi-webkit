@@ -8,12 +8,12 @@ import Bookmarks
 final class SumiBookmarkFaviconMirrorParityTests: XCTestCase {
     private var temporaryDirectories: [URL] = []
 
-    override func tearDown() {
+    override func tearDown() async throws {
         for directory in temporaryDirectories {
             try? FileManager.default.removeItem(at: directory)
         }
         temporaryDirectories.removeAll()
-        super.tearDown()
+        try await super.tearDown()
     }
 
     func testBookmarkMirrorPersistsSyntheticIDsURLsAndHostsAcrossReopen() throws {
@@ -311,29 +311,23 @@ final class SumiBookmarkFaviconMirrorParityTests: XCTestCase {
             concurrencyType: .privateQueueConcurrencyType,
             name: "SumiBookmarkFaviconMirrorParityRead"
         )
-        var result = Result<[BookmarkMirrorRecord], Error>.success([])
-        context.performAndWait {
-            do {
-                let request = BookmarkEntity.fetchRequest()
-                request.predicate = NSCompoundPredicate(orPredicateWithSubpredicates: [
-                    NSPredicate(format: "%K BEGINSWITH %@", #keyPath(BookmarkEntity.uuid), "sumi-favicon-mirror-"),
-                    NSPredicate(format: "%K BEGINSWITH %@", #keyPath(BookmarkEntity.uuid), "sumi-real-bookmark-"),
-                ])
-                request.sortDescriptors = [NSSortDescriptor(key: #keyPath(BookmarkEntity.uuid), ascending: true)]
-                request.returnsObjectsAsFaults = false
-                result = .success(try context.fetch(request).map {
-                    BookmarkMirrorRecord(
-                        uuid: $0.uuid ?? "",
-                        title: $0.title ?? "",
-                        url: $0.url ?? "",
-                        parentID: $0.parent?.uuid
-                    )
-                })
-            } catch {
-                result = .failure(error)
+        return try context.performAndWait {
+            let request = BookmarkEntity.fetchRequest()
+            request.predicate = NSCompoundPredicate(orPredicateWithSubpredicates: [
+                NSPredicate(format: "%K BEGINSWITH %@", #keyPath(BookmarkEntity.uuid), "sumi-favicon-mirror-"),
+                NSPredicate(format: "%K BEGINSWITH %@", #keyPath(BookmarkEntity.uuid), "sumi-real-bookmark-"),
+            ])
+            request.sortDescriptors = [NSSortDescriptor(key: #keyPath(BookmarkEntity.uuid), ascending: true)]
+            request.returnsObjectsAsFaults = false
+            return try context.fetch(request).map {
+                BookmarkMirrorRecord(
+                    uuid: $0.uuid ?? "",
+                    title: $0.title ?? "",
+                    url: $0.url ?? "",
+                    parentID: $0.parent?.uuid
+                )
             }
         }
-        return try result.get()
     }
 
     private func fetcherStateFileExists(in directory: URL) -> Bool {

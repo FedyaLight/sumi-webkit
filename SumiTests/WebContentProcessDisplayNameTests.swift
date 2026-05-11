@@ -3,6 +3,7 @@ import XCTest
 
 @testable import Sumi
 
+@MainActor
 final class WebContentProcessDisplayNameTests: XCTestCase {
     func testAuxiliarySurfaceDisplayNameMapping() {
         XCTAssertEqual(

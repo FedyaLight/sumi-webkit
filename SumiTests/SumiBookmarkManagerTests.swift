@@ -1,4 +1,5 @@
 import CoreData
+import Synchronization
 import XCTest
 
 import Bookmarks
@@ -8,12 +9,12 @@ import Bookmarks
 final class SumiBookmarkManagerTests: XCTestCase {
     private var temporaryDirectories: [URL] = []
 
-    override func tearDown() {
+    override func tearDown() async throws {
         for directory in temporaryDirectories {
             try? FileManager.default.removeItem(at: directory)
         }
         temporaryDirectories.removeAll()
-        super.tearDown()
+        try await super.tearDown()
     }
 
     func testCreateBookmarkIsFoundByDDGStyleURLVariants() throws {
@@ -261,45 +262,41 @@ final class SumiBookmarkManagerTests: XCTestCase {
             concurrencyType: .privateQueueConcurrencyType,
             name: "SumiBookmarkSaveNotificationParityWriter"
         )
-        var observedContextName: String?
-        var observedInsertedBookmarkUUIDs = Set<String>()
-        var observedOnMainThread: Bool?
+        let observer = Mutex(BookmarkSaveNotificationSnapshot())
         let token = NotificationCenter.default.addObserver(
             forName: .NSManagedObjectContextDidSave,
             object: context,
             queue: nil
         ) { notification in
-            observedContextName = (notification.object as? NSManagedObjectContext)?.name
-            observedOnMainThread = Thread.isMainThread
             let insertedObjects = notification.userInfo?[NSInsertedObjectsKey] as? Set<NSManagedObject> ?? []
-            observedInsertedBookmarkUUIDs = Set(insertedObjects.compactMap { ($0 as? BookmarkEntity)?.uuid })
+            observer.withLock {
+                $0 = BookmarkSaveNotificationSnapshot(
+                    contextName: (notification.object as? NSManagedObjectContext)?.name,
+                    insertedBookmarkUUIDs: Set(insertedObjects.compactMap { ($0 as? BookmarkEntity)?.uuid }),
+                    isMainThread: Thread.isMainThread
+                )
+            }
         }
         defer {
             NotificationCenter.default.removeObserver(token)
         }
 
-        var saveResult = Result<Void, Error>.success(())
-        context.performAndWait {
-            do {
-                let rootFolder = try XCTUnwrap(BookmarkUtils.fetchRootFolder(context))
-                let bookmark = BookmarkEntity.makeBookmark(
-                    title: "Save Observer",
-                    url: "https://save-observer.example",
-                    parent: rootFolder,
-                    context: context
-                )
-                bookmark.uuid = "sumi-save-observer-parity"
-                try context.save()
-                saveResult = .success(())
-            } catch {
-                saveResult = .failure(error)
-            }
+        try context.performAndWait {
+            let rootFolder = try XCTUnwrap(BookmarkUtils.fetchRootFolder(context))
+            let bookmark = BookmarkEntity.makeBookmark(
+                title: "Save Observer",
+                url: "https://save-observer.example",
+                parent: rootFolder,
+                context: context
+            )
+            bookmark.uuid = "sumi-save-observer-parity"
+            try context.save()
         }
-        try saveResult.get()
 
-        XCTAssertEqual(observedContextName, "SumiBookmarkSaveNotificationParityWriter")
-        XCTAssertEqual(observedInsertedBookmarkUUIDs, ["sumi-save-observer-parity"])
-        XCTAssertEqual(observedOnMainThread, true)
+        let observed = observer.withLock { $0 }
+        XCTAssertEqual(observed.contextName, "SumiBookmarkSaveNotificationParityWriter")
+        XCTAssertEqual(observed.insertedBookmarkUUIDs, ["sumi-save-observer-parity"])
+        XCTAssertEqual(observed.isMainThread, true)
     }
 
     func testMoveOrderingAndDeletionSurviveStoreReopen() throws {
@@ -417,22 +414,22 @@ final class SumiBookmarkManagerTests: XCTestCase {
             concurrencyType: .privateQueueConcurrencyType,
             name: "SumiBookmarkBootstrapParityRead"
         )
-        var result = Result<Set<String>, Error>.success([])
-        context.performAndWait {
-            do {
-                let request = BookmarkEntity.fetchRequest()
-                request.predicate = NSPredicate(format: "%K == YES", #keyPath(BookmarkEntity.isFolder))
-                request.returnsObjectsAsFaults = false
-                let folders = try context.fetch(request)
-                result = .success(Set(folders.compactMap(\.uuid)))
-            } catch {
-                result = .failure(error)
-            }
+        return try context.performAndWait {
+            let request = BookmarkEntity.fetchRequest()
+            request.predicate = NSPredicate(format: "%K == YES", #keyPath(BookmarkEntity.isFolder))
+            request.returnsObjectsAsFaults = false
+            let folders = try context.fetch(request)
+            return Set(folders.compactMap(\.uuid))
         }
-        return try result.get()
     }
 
     private func applicationSupportDirectory() -> URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
     }
+}
+
+private struct BookmarkSaveNotificationSnapshot: Sendable {
+    var contextName: String?
+    var insertedBookmarkUUIDs = Set<String>()
+    var isMainThread: Bool?
 }

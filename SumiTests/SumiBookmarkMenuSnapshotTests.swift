@@ -6,12 +6,12 @@ import XCTest
 final class SumiBookmarkMenuSnapshotTests: XCTestCase {
     private var temporaryDirectories: [URL] = []
 
-    override func tearDown() {
+    override func tearDown() async throws {
         for directory in temporaryDirectories {
             try? FileManager.default.removeItem(at: directory)
         }
         temporaryDirectories.removeAll()
-        super.tearDown()
+        try await super.tearDown()
     }
 
     func testBookmarkSnapshotProvidesManualMenuTree() throws {
