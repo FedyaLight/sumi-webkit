@@ -99,6 +99,40 @@ final class FindManagerTests: XCTestCase {
         XCTAssertEqual(findInPage.model.matchesFound, 4)
     }
 
+    func testPageInteractionSwitchesOverlayToHighlightWithoutChangingSelection() async throws {
+        let webView = RecordingFindInPageWebView()
+        webView.results = [.found(matches: 6), .found(matches: 6), .found(matches: 6), .found(matches: 6)]
+        let findInPage = FindInPageTabExtension()
+        findInPage.model.find("test")
+        findInPage.show(with: webView)
+        try await webView.waitForFindCallCount(2)
+
+        webView.events.removeAll()
+        findInPage.pageInteractionWillBegin()
+        try await webView.waitForFindCallCount(1)
+
+        XCTAssertEqual(
+            webView.events,
+            [
+                .clearFindInPageState,
+                .find("test", rawOptions: 401, maxCount: 1000),
+            ]
+        )
+        XCTAssertEqual(findInPage.model.currentSelection, 1)
+        XCTAssertTrue(webView.findRawOptions.allSatisfy { $0 & _WKFindOptions.showHighlight.rawValue != 0 })
+        XCTAssertTrue(webView.findRawOptions.allSatisfy { $0 & _WKFindOptions.showOverlay.rawValue == 0 })
+        XCTAssertTrue(webView.findRawOptions.allSatisfy { $0 & _WKFindOptions.showFindIndicator.rawValue == 0 })
+
+        webView.events.removeAll()
+        findInPage.pageInteractionWillBegin()
+        XCTAssertTrue(webView.events.isEmpty)
+
+        findInPage.findNext()
+        try await webView.waitForFindCallCount(1)
+        XCTAssertEqual(webView.events, [.find("test", rawOptions: 113, maxCount: 1000)])
+        XCTAssertFalse(webView.findRawOptions.contains { $0 & _WKFindOptions.showHighlight.rawValue != 0 })
+    }
+
     func testShowFindBarWithoutTabKeepsManagerHidden() {
         let manager = FindManager()
 

@@ -42,6 +42,13 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
 
     private(set) var isActive = false
     private var isPdf = false
+    private var presentationMode: FindPresentationMode = .overlay
+    private var presentationGeneration: UInt = 0
+
+    private enum FindPresentationMode {
+        case overlay
+        case pageInteractionHighlight
+    }
 
     private enum Constants {
         static let maxMatches: UInt = 1000
@@ -72,6 +79,7 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
         model.show()
 
         guard !alreadyVisible else {
+            resetOverlayPresentation()
             guard !model.text.isEmpty,
                   !isPdf else { return }
 
@@ -89,6 +97,7 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
     private func reset() async {
         model.update(currentSelection: nil, matchesFound: nil)
         isActive = false
+        resetOverlayPresentation()
 
         webView?.clearFindInPageState()
         try? await webView?.deselectAll()
@@ -100,6 +109,8 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
             await reset()
             return
         }
+
+        resetOverlayPresentation()
 
         var options = _WKFindOptions.showOverlay
 
@@ -120,17 +131,25 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
         await find(string, with: options)
     }
 
-    private func find(_ string: String, with options: _WKFindOptions = []) async {
+    private func find(
+        _ string: String,
+        with options: _WKFindOptions = [],
+        collapseSelectionForNoIndexChange: Bool = true,
+        showsFindIndicator: Bool = true
+    ) async {
         guard !string.isEmpty else {
             await reset()
             return
         }
 
-        if options.contains(.noIndexChange) {
+        if collapseSelectionForNoIndexChange, options.contains(.noIndexChange) {
             try? await webView?.collapseSelectionToStart()
         }
 
-        var options = options.union([.caseInsensitive, .wrapAround, .showFindIndicator])
+        var options = options.union([.caseInsensitive, .wrapAround])
+        if showsFindIndicator {
+            options.insert(.showFindIndicator)
+        }
         if !self.isActive {
             options.remove(.showOverlay)
         }
@@ -185,10 +204,12 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
         cancellable = nil
         webView?.clearFindInPageState()
         isActive = false
+        resetOverlayPresentation()
     }
 
     func findNext() {
         guard !model.text.isEmpty else { return }
+        resetOverlayPresentation()
         Task { @MainActor [isActive] in
             await find(model.text, with: model.isVisible ? .showOverlay : [])
             await doItOneMoreTimeForPdf(with: model.text, oldValue: (isActive ? model.text : ""))
@@ -197,9 +218,45 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
 
     func findPrevious() {
         guard !model.text.isEmpty else { return }
+        resetOverlayPresentation()
         Task { @MainActor in
             await find(model.text, with: model.isVisible ? [.showOverlay, .backwards] : [.backwards])
         }
+    }
+
+    func pageInteractionWillBegin() {
+        guard model.isVisible,
+              isActive,
+              !model.text.isEmpty,
+              model.matchesFound != 0,
+              presentationMode != .pageInteractionHighlight
+        else { return }
+
+        presentationMode = .pageInteractionHighlight
+        presentationGeneration &+= 1
+        let generation = presentationGeneration
+
+        webView?.clearFindInPageState()
+
+        Task { @MainActor [weak self] in
+            guard let self,
+                  self.presentationMode == .pageInteractionHighlight,
+                  self.presentationGeneration == generation
+            else { return }
+
+            await self.find(
+                self.model.text,
+                with: [.noIndexChange, .showHighlight],
+                collapseSelectionForNoIndexChange: false,
+                showsFindIndicator: false
+            )
+        }
+    }
+
+    private func resetOverlayPresentation() {
+        guard presentationMode != .overlay else { return }
+        presentationMode = .overlay
+        presentationGeneration &+= 1
     }
 
     func navigationDidStart() {
