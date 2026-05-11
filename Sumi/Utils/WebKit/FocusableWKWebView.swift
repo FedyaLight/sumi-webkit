@@ -32,6 +32,7 @@ final class FocusableWKWebView: WKWebView {
 
     private var webKitMouseTrackingLoadSheddingObserver: NSKeyValueObservation?
     private var webKitMouseTrackingArea: NSTrackingArea?
+    private var findInPageInteractionTrackingArea: NSTrackingArea?
 
     weak var owningTab: Tab?
     let interactionEventsPublisher = PassthroughSubject<SumiWebViewInteractionEvent, Never>()
@@ -112,6 +113,26 @@ final class FocusableWKWebView: WKWebView {
         super.addTrackingArea(trackingArea)
     }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        refreshFindInPageInteractionTrackingArea()
+    }
+
+    private func refreshFindInPageInteractionTrackingArea() {
+        if let findInPageInteractionTrackingArea {
+            removeTrackingArea(findInPageInteractionTrackingArea)
+        }
+
+        let trackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [.activeInKeyWindow, .inVisibleRect, .mouseEnteredAndExited, .mouseMoved, .cursorUpdate],
+            owner: self,
+            userInfo: nil
+        )
+        findInPageInteractionTrackingArea = trackingArea
+        addTrackingArea(trackingArea)
+    }
+
     override func mouseDown(with event: NSEvent) {
         owningTab?.setClickModifierFlags(event.modifierFlags)
         owningTab?.recordPopupUserActivation(event, kind: "mouseDown")
@@ -145,9 +166,25 @@ final class FocusableWKWebView: WKWebView {
     }
 
     private func performDefaultMouseDownBehavior(with event: NSEvent) {
+        owningTab?.findInPage.pageInteractionWillBegin()
         super.mouseDown(with: event)
         owningTab?.activate()
         interactionEventsPublisher.send(.mouseDown(event))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        owningTab?.findInPage.pageInteractionWillBegin()
+        super.mouseMoved(with: event)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        owningTab?.findInPage.pageInteractionWillBegin()
+        super.mouseEntered(with: event)
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        owningTab?.findInPage.pageInteractionWillBegin()
+        super.cursorUpdate(with: event)
     }
 
     /// DDG-style gate: left primary click + control + allowlisted host + kill switch.
