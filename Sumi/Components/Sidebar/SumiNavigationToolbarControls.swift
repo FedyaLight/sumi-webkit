@@ -250,6 +250,7 @@ final class SumiNavigationToolbarControlsView: NSStackView {
 
 final class SumiNavigationLongPressButton: MouseOverButton {
     private var menuTimer: Timer?
+    private var mouseUpEventSnapshot: SumiNavigationMouseUpEventSnapshot?
 
     override func rightMouseDown(with event: NSEvent) {
         guard let menu else {
@@ -263,8 +264,7 @@ final class SumiNavigationLongPressButton: MouseOverButton {
     }
 
     override func mouseDown(with event: NSEvent) {
-        menuTimer?.invalidate()
-        menuTimer = nil
+        resetMenuTimer()
 
         guard menu != nil else {
             super.mouseDown(with: event)
@@ -273,20 +273,28 @@ final class SumiNavigationLongPressButton: MouseOverButton {
 
         isMouseDown = true
 
-        let mouseUpEventSnapshot = SumiNavigationMouseUpEventSnapshot(event: event)
-        let timer = Timer(timeInterval: 0.3, repeats: false) { [weak self, mouseUpEventSnapshot] _ in
-            self?.displayInstalledMenu()
-            guard let mouseUpEvent = mouseUpEventSnapshot.makeEvent() else { return }
-            self?.window?.postEvent(mouseUpEvent, atStart: true)
-        }
+        mouseUpEventSnapshot = SumiNavigationMouseUpEventSnapshot(event: event)
+        let timer = Timer(
+            timeInterval: 0.3,
+            target: self,
+            selector: #selector(longPressTimerFired(_:)),
+            userInfo: nil,
+            repeats: false
+        )
         menuTimer = timer
         RunLoop.current.add(timer, forMode: .eventTracking)
 
         trackMouseEvents(previousEvent: event)
 
-        menuTimer?.invalidate()
-        menuTimer = nil
+        resetMenuTimer()
         isMouseDown = false
+    }
+
+    @objc private func longPressTimerFired(_ timer: Timer) {
+        let mouseUpEventSnapshot = mouseUpEventSnapshot
+        displayInstalledMenu()
+        guard let mouseUpEvent = mouseUpEventSnapshot?.makeEvent() else { return }
+        window?.postEvent(mouseUpEvent, atStart: true)
     }
 
     private func trackMouseEvents(previousEvent: NSEvent) {
@@ -324,14 +332,19 @@ final class SumiNavigationLongPressButton: MouseOverButton {
     }
 
     private func displayMenu(_ menu: NSMenu) {
-        menuTimer?.invalidate()
-        menuTimer = nil
+        resetMenuTimer()
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: bounds.height + 4), in: self)
     }
 
     private func displayInstalledMenu() {
         guard let menu else { return }
         displayMenu(menu)
+    }
+
+    private func resetMenuTimer() {
+        menuTimer?.invalidate()
+        menuTimer = nil
+        mouseUpEventSnapshot = nil
     }
 }
 
