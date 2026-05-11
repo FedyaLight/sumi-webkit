@@ -115,7 +115,7 @@ enum SumiNewWindowPolicy: Equatable {
     case popup(origin: NSPoint?, size: NSSize?)
     case window(active: Bool)
 
-    init(
+    @MainActor init(
         _ windowFeatures: WKWindowFeatures,
         linkOpenBehavior: SumiLinkOpenBehavior,
         preferTabsToWindows: Bool = true
