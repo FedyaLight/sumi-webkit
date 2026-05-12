@@ -8,7 +8,6 @@ scan_paths=(
   "Sumi/Models"
   "Sumi/Components"
   "Sumi/Favicons/DDG/SumiDDGFaviconSupport.swift"
-  "Vendor/DDG/BrowserServicesKit/Sources/BrowserServicesKit/ContentScopeScript/UserContentController.swift"
 )
 
 failed=0
@@ -16,8 +15,6 @@ failed=0
 is_allowed() {
   local line="$1"
   case "$line" in
-    # BSK controller owns deterministic cleanup and the private per-script removal fallback.
-    Vendor/DDG/BrowserServicesKit/Sources/BrowserServicesKit/ContentScopeScript/UserContentController.swift:*removeAllUserScripts*) return 0 ;;
     # Favicon transport observes bounded <link rel=icon> changes and posts a small typed payload.
     Sumi/Favicons/DDG/SumiDDGFaviconSupport.swift:*MutationObserver*) return 0 ;;
     Sumi/Favicons/DDG/SumiDDGFaviconSupport.swift:*setTimeout*) return 0 ;;

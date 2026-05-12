@@ -9,40 +9,17 @@ let package = Package(
         .macOS("11.4")
     ],
     products: [
-        .library(name: "BrowserServicesKit", targets: ["BrowserServicesKit"]),
         .library(name: "Bookmarks", targets: ["Bookmarks"]),
         .library(name: "Common", targets: ["Common"]),
         .library(name: "Navigation", targets: ["Navigation"]),
         .library(name: "Persistence", targets: ["Persistence"]),
         .library(name: "PrivacyConfig", targets: ["PrivacyConfig"]),
-        .library(name: "UserScript", targets: ["UserScript"]),
     ],
     dependencies: [
         .package(url: "https://github.com/duckduckgo/TrackerRadarKit.git", exact: "3.1.0"),
         .package(path: "../URLPredictor"),
     ],
     targets: [
-        .target(
-            name: "BrowserServicesKit",
-            dependencies: [
-                "Persistence",
-                "PrivacyConfig",
-                "TrackerRadarKit",
-                "Common",
-                "UserScript",
-                "ContentBlocking",
-                "Navigation"
-            ],
-            exclude: [
-                "ContentBlocking"
-            ],
-            resources: [
-                .copy("../../PrivacyInfo.xcprivacy")
-            ],
-            swiftSettings: [
-                .define("DEBUG", .when(configuration: .debug))
-            ]
-        ),
         .target(
             name: "Bookmarks",
             dependencies: [
@@ -109,15 +86,6 @@ let package = Package(
                 "Common",
                 "ContentBlocking",
                 "Persistence",
-            ],
-            swiftSettings: [
-                .define("DEBUG", .when(configuration: .debug))
-            ]
-        ),
-        .target(
-            name: "UserScript",
-            dependencies: [
-                "Common",
             ],
             swiftSettings: [
                 .define("DEBUG", .when(configuration: .debug))
