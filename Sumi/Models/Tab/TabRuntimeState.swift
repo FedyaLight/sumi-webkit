@@ -102,8 +102,7 @@ final class TabNavigationRuntime {
     var pendingBackForwardNavigationContext: TabBackForwardNavigationContext?
     var pendingBackForwardSettleTask: Task<Void, Never>?
     var isFreezingNavigationStateDuringBackForwardGesture = false
-    let observedWebViews = NSHashTable<AnyObject>.weakObjects()
-    var titleObservations: [ObjectIdentifier: NSKeyValueObservation] = [:]
+    let navigationStateController = TabNavigationStateController()
     let historyRecorder = HistoryTabRecorder()
     let navigationDelegateBundles = NSMapTable<WKWebView, SumiTabNavigationDelegateBundle>.weakToStrongObjects()
 }
