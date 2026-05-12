@@ -97,6 +97,33 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
         XCTAssertFalse(summary.isContentBlockingFeatureEnabled)
     }
 
+    func testInvalidReplacementPolicyPreservesPreviouslyInstalledRuleLists() async throws {
+        let compiler = CountingContentRuleListCompiler()
+        let service = SumiContentBlockingService(
+            policy: .enabled(ruleLists: [Self.validRuleListDefinition()]),
+            compiler: compiler
+        )
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: service
+        )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+        XCTAssertEqual(normalTabController.contentBlockingAssetSummary.globalRuleListCount, 1)
+
+        service.setPolicy(.enabled(ruleLists: [
+            SumiContentRuleListDefinition(
+                name: "SumiInvalidReplacementRuleList-\(UUID().uuidString)",
+                encodedContentRuleList: "{]"
+            )
+        ]))
+        try await waitForCompilerFailure(compiler)
+
+        let summary = normalTabController.contentBlockingAssetSummary
+        XCTAssertEqual(summary.globalRuleListCount, 1)
+        XCTAssertTrue(summary.isContentBlockingFeatureEnabled)
+        XCTAssertTrue(service.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking))
+    }
+
     func testPolicyUpdateReplacesRuleListsOnExistingNormalTabController() async throws {
         let service = SumiContentBlockingService(policy: .disabled)
         let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
@@ -244,12 +271,26 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
             }
         }
     }
+
+    private func waitForCompilerFailure(
+        _ compiler: CountingContentRuleListCompiler
+    ) async throws {
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            if compiler.failureCount > 0 {
+                return
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTFail("Timed out waiting for invalid replacement rule compilation to fail")
+    }
 }
 
 @MainActor
 private final class CountingContentRuleListCompiler: SumiContentRuleListCompiling {
     private let wrapped = SumiWKContentRuleListCompiler()
     private(set) var compileCount = 0
+    private(set) var failureCount = 0
 
     func lookUpContentRuleList(forIdentifier identifier: String) async -> WKContentRuleList? {
         await wrapped.lookUpContentRuleList(forIdentifier: identifier)
@@ -260,10 +301,15 @@ private final class CountingContentRuleListCompiler: SumiContentRuleListCompilin
         encodedContentRuleList: String
     ) async throws -> WKContentRuleList {
         compileCount += 1
-        return try await wrapped.compileContentRuleList(
-            forIdentifier: identifier,
-            encodedContentRuleList: encodedContentRuleList
-        )
+        do {
+            return try await wrapped.compileContentRuleList(
+                forIdentifier: identifier,
+                encodedContentRuleList: encodedContentRuleList
+            )
+        } catch {
+            failureCount += 1
+            throw error
+        }
     }
 }
 
