@@ -22,15 +22,6 @@ Design goals stay **simple, fast, and deliberately anti-bloat**—fewer nested s
 
 Release packaging targets **GitHub Releases** as a notarized DMG. Maintainer-facing material (release steps, CI notes, performance profiling workflow) lives under `docs/` in a full maintainer checkout; that directory is **gitignored** here and is not part of the public GitHub tree.
 
-## Requirements
-
-| Component | Version / target | Notes |
-| --- | --- | --- |
-| macOS | 15.7+ | Deployment target for the app and test targets. |
-| Swift toolchain | 6.3.1 | Current development toolchain. The Xcode project uses Swift language mode 6.0. |
-| Xcode | 26.x recommended | Use a toolchain that ships Swift 6.3.1 or newer. |
-| Web engine | WebKit | Uses the system WebKit framework on macOS. |
-
 ## Acknowledgments
 
 - **Zen Browser** informs the **workspace / vertical-tab mental model** and the overall “sidebar-first, low chrome” posture Sumi chases—especially how Essentials-style pinning coexists with dense tab lists.
