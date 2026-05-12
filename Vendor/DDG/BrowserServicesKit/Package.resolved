@@ -1,24 +1,6 @@
 {
-  "originHash" : "e1ec6fa7c4ccd0591f6f90cb2bc90fe1fc16f076f6e3b74be62297e5273f07a1",
+  "originHash" : "8441381c51273a557c22233d16acf6acc18a044b5a643bf5adc5804aac32fc0f",
   "pins" : [
-    {
-      "identity" : "content-scope-scripts",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/duckduckgo/content-scope-scripts.git",
-      "state" : {
-        "revision" : "6595e3346449830cac79de569554c8a0adc5852b",
-        "version" : "14.2.0"
-      }
-    },
-    {
-      "identity" : "punycodeswift",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/gumob/PunycodeSwift.git",
-      "state" : {
-        "revision" : "30a462bdb4398ea835a3585472229e0d74b36ba5",
-        "version" : "3.0.0"
-      }
-    },
     {
       "identity" : "trackerradarkit",
       "kind" : "remoteSourceControl",
