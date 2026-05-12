@@ -6,7 +6,7 @@ This document describes how the native Sumi userscript runtime is wired into the
 
 The runtime is owned by `SumiUserscriptsModule`, which is attached to `BrowserManager` but does not construct `SumiScriptsManager` until `SumiModuleRegistry.isEnabled(.userScripts)` is true and a userscript feature actually needs the manager. While disabled there is no manager, store watcher, installed-script adapter, pending install/update work, GM bridge, or Sumi `UserScript` contribution for future normal-tab navigations.
 
-Normal tabs do not mutate `WKUserContentController` directly. They build one `SumiNormalTabUserScripts` provider and install it through the Prompt 03 BrowserServicesKit `UserContentController`.
+Normal tabs do not mutate `WKUserContentController` directly. They build one `SumiNormalTabUserScripts` provider and install it through Sumi's normal-tab user-content controller adapter.
 
 ### Lifecycle
 
@@ -22,7 +22,7 @@ Tab setup / normal-tab navigation
           -> UserScriptInjector.makeUserScripts(...)
           -> SumiInstalledUserScriptAdapter / SumiInstalledUserStyleAdapter
           -> UserScriptGMBridge behind a SumiUserScriptMessageBroker
-  -> BSK UserContentController installs WKUserScripts and weak broker handlers
+  -> Sumi normal-tab user-content controller installs WKUserScripts and weak broker handlers
 ```
 
 Remote `.user.js` navigation is intercepted through `SumiUserscriptsModule`; disabled module state returns no interception and constructs no userscript runtime.
@@ -40,7 +40,7 @@ provider.replaceManagedUserScripts(normalTabManagedUserScripts(for: targetURL))
 await controller.replaceUserScripts(with: provider)
 ```
 
-That BSK replacement path removes only BSK-installed scripts/handlers and then installs the new provider output. Sumi does not run a document-idle `evaluateJavaScript` injection loop and does not use a production `removeAllUserScripts` preservation workaround for userscripts.
+That replacement path removes only Sumi-installed scripts/handlers and then installs the new provider output. Sumi does not run a document-idle `evaluateJavaScript` injection loop and does not use a production `removeAllUserScripts` preservation workaround for userscripts.
 
 ## Broker Boundaries
 
@@ -53,7 +53,7 @@ Each script or feature owns its own `SumiUserScriptMessageBroker` context:
 | `sumiIdentity_<tab.uuid>` | Page identity request bridge. |
 | `sumiExternallyConnectableRuntime` | WebExtension externally-connectable page bridge. |
 
-Payload parsing stays local to the subfeature. Malformed payloads return no side effects, unknown methods are ignored by the broker, and handler lifetime is tied to the BSK user content controller.
+Payload parsing stays local to the subfeature. Malformed payloads return no side effects, unknown methods are ignored by the broker, and handler lifetime is tied to the Sumi normal-tab user-content controller.
 
 ## GM Compatibility
 
@@ -86,5 +86,5 @@ After integration, verify:
 3. GM APIs route through the per-script `sumiGM_<uuid>` broker.
 4. Disabling SumiScripts stops returning installed-script adapters for future normal-tab navigations.
 5. Editing a `.user.js` file reloads store state and affects the next provider replacement.
-6. BSK controller cleanup removes script-message handlers when a WebView/configuration is released.
+6. Sumi normal-tab controller cleanup removes script-message handlers when a WebView/configuration is released.
 7. `scripts/check_userscript_hot_paths.sh` passes.
