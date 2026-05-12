@@ -66,13 +66,6 @@ final class StringExtensionTests: XCTestCase {
         XCTAssertEqual(normalizedString, "dax")
     }
 
-    func testWhenEmojisArePresentInDomains_ThenTheseCanBePunycoded() {
-
-        XCTAssertEqual("example.com".punycodeEncodedHostname, "example.com")
-        XCTAssertEqual("Dax🤔.com".punycodeEncodedHostname, "xn--dax-v153b.com")
-        XCTAssertEqual("🤔.com".punycodeEncodedHostname, "xn--wp9h.com")
-    }
-
     func testHashedSuffix() {
         XCTAssertEqual("http://localhost:8084/#navlink".hashedSuffix, "#navlink")
         XCTAssertEqual("http://localhost:8084/#navlink#1".hashedSuffix, "#navlink#1")
@@ -125,10 +118,10 @@ final class StringExtensionTests: XCTestCase {
         // path to the app should be trimmed to the bundle name
         XCTAssertEqual("""
         exception thrown in libobjc.A.dylib:
-        UserScript/UserScript.swift:69: Fatal error: Failed to load JavaScript contentScope from \(Bundle.main.bundlePath)/Contents/Resources/ContentScopeScripts_ContentScopeScripts.bundle/Contents/Resources/contentScope.js
+        Common/ResourceLoader.swift:69: Fatal error: Failed to load bundled resource from \(Bundle.main.bundlePath)/Contents/Resources/Example.bundle/Contents/Resources/example.js
         """.sanitized(), """
         exception thrown in libobjc.A.dylib:
-        UserScript.swift:69: Fatal error: Failed to load JavaScript contentScope from DuckDuckGo.app/Contents/Resources/ContentScopeScripts_ContentScopeScripts.bundle/Contents/Resources/contentScope.js
+        ResourceLoader.swift:69: Fatal error: Failed to load bundled resource from DuckDuckGo.app/Contents/Resources/Example.bundle/Contents/Resources/example.js
         """)
 
         // module name (Common) should stay

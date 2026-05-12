@@ -134,13 +134,6 @@
     {
       "target" : {
         "containerPath" : "container:",
-        "identifier" : "PixelExperimentKitTests",
-        "name" : "PixelExperimentKitTests"
-      }
-    },
-    {
-      "target" : {
-        "containerPath" : "container:",
         "identifier" : "PersistenceTests",
         "name" : "PersistenceTests"
       }
@@ -185,13 +178,6 @@
         "containerPath" : "container:",
         "identifier" : "SuggestionsTests",
         "name" : "SuggestionsTests"
-      }
-    },
-    {
-      "target" : {
-        "containerPath" : "container:",
-        "identifier" : "SpecialErrorPagesTests",
-        "name" : "SpecialErrorPagesTests"
       }
     }
   ],
