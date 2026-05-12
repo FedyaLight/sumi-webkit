@@ -370,12 +370,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     // MARK: - Link Hover Callback
     var onLinkHover: ((String?) -> Void)? = nil
 
-    private var navigationStateObservedWebViews: NSHashTable<AnyObject> {
-        navigationRuntime.observedWebViews
-    }
-    private var titleObservations: [ObjectIdentifier: NSKeyValueObservation] {
-        get { navigationRuntime.titleObservations }
-        set { navigationRuntime.titleObservations = newValue }
+    private var navigationStateController: TabNavigationStateController {
+        navigationRuntime.navigationStateController
     }
 
     func prepareExtensionRuntimeGeneration(_ generation: UInt64) {
@@ -595,6 +591,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         self.index = index
         self.browserManager = browserManager
         super.init()
+        navigationStateController.delegate = self
         self._existingWebView = existingWebView
 
         applyCachedFaviconOrPlaceholder(for: url)
@@ -1135,33 +1132,12 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     /// Set up KVO observers for navigation state properties
     func setupNavigationStateObservers(for webView: WKWebView) {
-        if !navigationStateObservedWebViews.contains(webView) {
-            webView.addObserver(
-                self, forKeyPath: "canGoBack", options: [.new], context: nil)
-            webView.addObserver(
-                self, forKeyPath: "canGoForward", options: [.new], context: nil)
-            titleObservations[ObjectIdentifier(webView)] = webView.observe(\.title) { [weak self] webView, _ in
-                Task { @MainActor [weak self, weak webView] in
-                    guard let self, let webView else { return }
-                    guard self.titleObservations[ObjectIdentifier(webView)] != nil else { return }
-                    self.updateTitle(from: webView)
-                }
-            }
-            // NOTE: URL observer removed - it was firing during setup and overwriting
-            // restored URLs. URL updates are handled by didCommit/didFinish delegates.
-            navigationStateObservedWebViews.add(webView)
-        }
+        navigationStateController.observe(webView)
     }
 
     /// Remove KVO observers for navigation state properties
     func removeNavigationStateObservers(from webView: WKWebView) {
-        if navigationStateObservedWebViews.contains(webView) {
-            webView.removeObserver(self, forKeyPath: "canGoBack")
-            webView.removeObserver(self, forKeyPath: "canGoForward")
-            titleObservations.removeValue(forKey: ObjectIdentifier(webView))?.invalidate()
-            // NOTE: URL observer removed - see setupNavigationStateObservers
-            navigationStateObservedWebViews.remove(webView)
-        }
+        navigationStateController.remove(webView)
     }
 
     /// MEMORY LEAK FIX: Comprehensive WebView cleanup to prevent memory leaks
@@ -1211,30 +1187,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         _webView = nil
 
         RuntimeDiagnostics.debug("Completed WebView cleanup for '\(name)'.", category: "Tab")
-    }
-
-    public override func observeValue(
-        forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?,
-        context: UnsafeMutableRawPointer?
-    ) {
-        if keyPath == "canGoBack" || keyPath == "canGoForward" {
-            // WKWebView navigation KVO is installed and removed from Tab's main-actor
-            // AppKit/WebKit ownership path, and these callbacks are expected on the
-            // same main event thread. Keep this bridge synchronous so back/forward
-            // controls update in the same KVO delivery turn.
-            precondition(
-                Thread.isMainThread,
-                "WKWebView back/forward KVO must be delivered on the main thread"
-            )
-            MainActor.assumeIsolated {
-                updateNavigationState()
-            }
-        } else if keyPath == "URL" {
-            // URL observer disabled - was causing restored URLs to be overwritten
-            // URL updates are handled by didCommit/didFinish navigation delegates
-        } else {
-            super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
-        }
     }
 
     func activate() {
