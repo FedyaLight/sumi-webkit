@@ -1218,8 +1218,17 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         context: UnsafeMutableRawPointer?
     ) {
         if keyPath == "canGoBack" || keyPath == "canGoForward" {
-            // Real-time navigation state updates from KVO observers
-            updateNavigationState()
+            // WKWebView navigation KVO is installed and removed from Tab's main-actor
+            // AppKit/WebKit ownership path, and these callbacks are expected on the
+            // same main event thread. Keep this bridge synchronous so back/forward
+            // controls update in the same KVO delivery turn.
+            precondition(
+                Thread.isMainThread,
+                "WKWebView back/forward KVO must be delivered on the main thread"
+            )
+            MainActor.assumeIsolated {
+                updateNavigationState()
+            }
         } else if keyPath == "URL" {
             // URL observer disabled - was causing restored URLs to be overwritten
             // URL updates are handled by didCommit/didFinish navigation delegates
