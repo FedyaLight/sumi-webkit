@@ -69,8 +69,6 @@ final class SumiDDGBookmarkFaviconMirror: SumiFaviconMirrorSyncing {
 }
 
 final class SumiDDGBookmarkFaviconFetchScheduler: SumiBookmarkFaviconFetchScheduling, @unchecked Sendable {
-    private let stateStore: BookmarksFaviconsFetcherStateStoring
-    private let faviconFetcher: FaviconFetching
     private let fetcher: BookmarksFaviconsFetcher
 
     init(
@@ -79,8 +77,6 @@ final class SumiDDGBookmarkFaviconFetchScheduler: SumiBookmarkFaviconFetchSchedu
         fetcher: FaviconFetching,
         faviconStore: @escaping @MainActor () async -> any SumiFaviconStoring
     ) {
-        self.stateStore = stateStore
-        self.faviconFetcher = fetcher
         self.fetcher = BookmarksFaviconsFetcher(
             database: database.ddgDatabase,
             stateStore: stateStore,

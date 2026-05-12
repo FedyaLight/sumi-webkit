@@ -55,10 +55,6 @@ extension CustomNavigationType {
     static var sumiUserEnteredURL: CustomNavigationType {
         SumiCustomNavigationType.userEnteredURL.navigationCustomNavigationType
     }
-
-    static var sumiUserRequestedPageDownload: CustomNavigationType {
-        SumiCustomNavigationType.userRequestedPageDownload.navigationCustomNavigationType
-    }
 }
 
 extension SumiNavigationActionPolicy {
@@ -82,16 +78,6 @@ extension SumiNavigationActionPolicy {
         case .download:
             return .download
         }
-    }
-}
-
-extension NavigationActionPolicy {
-    init(_ policy: SumiNavigationActionPolicy) {
-        self = policy.navigationActionPolicy
-    }
-
-    var sumiNavigationActionPolicy: SumiNavigationActionPolicy {
-        SumiNavigationActionPolicy(self)
     }
 }
 
@@ -119,16 +105,6 @@ extension SumiNavigationResponsePolicy {
     }
 }
 
-extension NavigationResponsePolicy {
-    init(_ policy: SumiNavigationResponsePolicy) {
-        self = policy.navigationResponsePolicy
-    }
-
-    var sumiNavigationResponsePolicy: SumiNavigationResponsePolicy {
-        SumiNavigationResponsePolicy(self)
-    }
-}
-
 extension SumiNavigationResponse {
     @MainActor
     init(_ navigationResponse: NavigationResponse) {
@@ -145,17 +121,6 @@ extension SumiNavigationResponse {
 }
 
 extension SumiAuthChallengeDisposition {
-    init(_ disposition: AuthChallengeDisposition) {
-        switch disposition {
-        case .credential(let credential):
-            self = .credential(credential)
-        case .cancel:
-            self = .cancel
-        case .rejectProtectionSpace:
-            self = .rejectProtectionSpace
-        }
-    }
-
     var navigationAuthChallengeDisposition: AuthChallengeDisposition {
         switch self {
         case .credential(let credential):
@@ -168,31 +133,13 @@ extension SumiAuthChallengeDisposition {
     }
 }
 
-extension AuthChallengeDisposition {
-    init(_ disposition: SumiAuthChallengeDisposition) {
-        self = disposition.navigationAuthChallengeDisposition
-    }
-
-    var sumiAuthChallengeDisposition: SumiAuthChallengeDisposition {
-        SumiAuthChallengeDisposition(self)
-    }
-}
-
 extension SumiSameDocumentNavigationType {
     init(_ navigationType: WKSameDocumentNavigationType) {
         self = Self(rawValue: navigationType.rawValue) ?? .anchorNavigation
     }
-
-    var navigationSameDocumentNavigationType: WKSameDocumentNavigationType {
-        WKSameDocumentNavigationType(rawValue: rawValue) ?? .anchorNavigation
-    }
 }
 
 extension WKSameDocumentNavigationType {
-    init(_ navigationType: SumiSameDocumentNavigationType) {
-        self = navigationType.navigationSameDocumentNavigationType
-    }
-
     var sumiSameDocumentNavigationType: SumiSameDocumentNavigationType {
         SumiSameDocumentNavigationType(self)
     }
@@ -205,15 +152,5 @@ extension SumiCustomNavigationType {
 
     var navigationCustomNavigationType: CustomNavigationType {
         CustomNavigationType(rawValue: rawValue)
-    }
-}
-
-extension CustomNavigationType {
-    init(_ navigationType: SumiCustomNavigationType) {
-        self = navigationType.navigationCustomNavigationType
-    }
-
-    var sumiCustomNavigationType: SumiCustomNavigationType {
-        SumiCustomNavigationType(self)
     }
 }
