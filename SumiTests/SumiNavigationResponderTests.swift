@@ -803,44 +803,29 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertTrue(source.contains("self.findInPageAdapter = SumiNavigationResponderAdapter(target: tab.findInPage)"))
     }
 
-    func testSumiNavigationValueAdaptersRoundTripSimpleValues() {
+    func testSumiNavigationValueAdaptersMapProductDirections() {
+        XCTAssertEqual(SumiNavigationActionPolicy.allCases.map(\.navigationActionPolicy), [.allow, .cancel, .download])
+        XCTAssertEqual(SumiNavigationResponsePolicy.allCases.map(\.navigationResponsePolicy), [.allow, .cancel, .download])
         XCTAssertEqual(
-            SumiNavigationActionPolicy.allCases.map { NavigationActionPolicy($0).sumiNavigationActionPolicy },
-            SumiNavigationActionPolicy.allCases
-        )
-        XCTAssertEqual(
-            SumiNavigationResponsePolicy.allCases.map { NavigationResponsePolicy($0).sumiNavigationResponsePolicy },
-            SumiNavigationResponsePolicy.allCases
-        )
-        XCTAssertEqual(
-            SumiSameDocumentNavigationType.allCases.map { WKSameDocumentNavigationType($0).sumiSameDocumentNavigationType },
+            (0...3).map { WKSameDocumentNavigationType(rawValue: $0)!.sumiSameDocumentNavigationType },
             SumiSameDocumentNavigationType.allCases
         )
-
-        let customType = SumiCustomNavigationType(rawValue: "sumi-test-custom-navigation")
-        XCTAssertEqual(CustomNavigationType(customType).sumiCustomNavigationType, customType)
         XCTAssertEqual(
-            SumiCustomNavigationType.userRequestedPageDownload.navigationCustomNavigationType.sumiCustomNavigationType,
-            .userRequestedPageDownload
+            SumiCustomNavigationType.userRequestedPageDownload.navigationCustomNavigationType.rawValue,
+            "userRequestedPageDownload"
         )
 
         let credential = URLCredential(user: "sumi", password: "secret", persistence: .forSession)
-        let credentialRoundTrip = AuthChallengeDisposition
-            .credential(credential)
-            .sumiAuthChallengeDisposition
-            .navigationAuthChallengeDisposition
-        guard case .credential(let roundTripCredential) = credentialRoundTrip else {
+        let credentialDisposition = SumiAuthChallengeDisposition.credential(credential).navigationAuthChallengeDisposition
+        guard case .credential(let mappedCredential) = credentialDisposition else {
             return XCTFail("Expected credential auth challenge disposition")
         }
-        XCTAssertEqual(roundTripCredential.user, credential.user)
-        XCTAssertEqual(roundTripCredential.password, credential.password)
-        XCTAssertEqual(SumiAuthChallengeDisposition.cancel.navigationAuthChallengeDisposition.sumiAuthChallengeDisposition.isCancel, true)
-        XCTAssertEqual(
-            SumiAuthChallengeDisposition.rejectProtectionSpace
-                .navigationAuthChallengeDisposition
-                .sumiAuthChallengeDisposition
-                .isRejectProtectionSpace,
-            true
+        XCTAssertEqual(mappedCredential.user, credential.user)
+        XCTAssertEqual(mappedCredential.password, credential.password)
+        XCTAssertAuthDisposition(SumiAuthChallengeDisposition.cancel.navigationAuthChallengeDisposition, .cancel)
+        XCTAssertAuthDisposition(
+            SumiAuthChallengeDisposition.rejectProtectionSpace.navigationAuthChallengeDisposition,
+            .rejectProtectionSpace
         )
 
         let nextActionPolicy: SumiNavigationActionPolicy? = .next
@@ -942,7 +927,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         )
         let finalAction = navigationAction(
             url: URL(string: "https://example.com/file.bin")!,
-            navigationType: .custom(CustomNavigationType(.userRequestedPageDownload)),
+            navigationType: .custom(SumiCustomNavigationType.userRequestedPageDownload.navigationCustomNavigationType),
             redirectHistory: [initialAction]
         )
         let navigation = mainFrameNavigation(receiving: finalAction)
@@ -996,7 +981,7 @@ final class SumiNavigationResponderTests: XCTestCase {
                 preferences: &preferences
             )
 
-            XCTAssertEqual(policy?.sumiNavigationActionPolicy, expectedPolicy)
+            XCTAssertEqual(policy, expectedPolicy.navigationActionPolicy)
             XCTAssertEqual(first.callCount, 1)
             XCTAssertEqual(decider.callCount, 1)
             XCTAssertEqual(skipped.callCount, 0)
@@ -1062,7 +1047,7 @@ final class SumiNavigationResponderTests: XCTestCase {
                 response: response
             )
 
-            XCTAssertEqual(policy?.sumiNavigationResponsePolicy, expectedPolicy)
+            XCTAssertEqual(policy, expectedPolicy.navigationResponsePolicy)
             XCTAssertEqual(first.callCount, 1)
             XCTAssertEqual(decider.callCount, 1)
             XCTAssertEqual(skipped.callCount, 0)
@@ -1128,7 +1113,7 @@ final class SumiNavigationResponderTests: XCTestCase {
                 preferences: &preferences
             )
 
-            XCTAssertEqual(policy?.sumiNavigationActionPolicy, expectedPolicy)
+            XCTAssertEqual(policy, expectedPolicy.navigationActionPolicy)
             XCTAssertEqual(first.actionCallCount, 1)
             XCTAssertEqual(decider.actionCallCount, 1)
             XCTAssertEqual(skipped.actionCallCount, 0)
@@ -1165,7 +1150,7 @@ final class SumiNavigationResponderTests: XCTestCase {
                 response: response
             )
 
-            XCTAssertEqual(policy?.sumiNavigationResponsePolicy, expectedPolicy)
+            XCTAssertEqual(policy, expectedPolicy.navigationResponsePolicy)
             XCTAssertEqual(first.responseCallCount, 1)
             XCTAssertEqual(decider.responseCallCount, 1)
             XCTAssertEqual(skipped.responseCallCount, 0)
@@ -1253,7 +1238,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(responsePolicy?.sumiNavigationResponsePolicy, .download)
+        XCTAssertEqual(responsePolicy, SumiNavigationResponsePolicy.download.navigationResponsePolicy)
         let responseEvents = recorder.snapshot()
         XCTAssertEqual(
             responseEvents,
@@ -1365,7 +1350,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         for type in SumiSameDocumentNavigationType.allCases {
             adapter.navigation(
                 navigation,
-                didSameDocumentNavigationOf: WKSameDocumentNavigationType(type)
+                didSameDocumentNavigationOf: WKSameDocumentNavigationType(rawValue: type.rawValue)!
             )
         }
 
