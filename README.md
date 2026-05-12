@@ -2,7 +2,7 @@
   <img width="230" height="230" src="./assets/icon.png" alt="Sumi Logo">
   <h1><b>Sumi</b></h1>
   <p>
-    Sumi is a native macOS browser built on WebKit and SwiftUI—organized around vertical tabs,
+    Sumi is a native macOS browser built on WebKit and SwiftUI, organized around vertical tabs,
     spaces, and profiles so browsing stays structured without heavy chrome.
     <br>
   </p>
@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-15.7+-blue" alt="macOS 15.7+"></a>
-  <a href="https://swift.org/"><img src="https://img.shields.io/badge/Swift-5.0-orange" alt="Swift 5.0"></a>
+  <a href="https://swift.org/"><img src="https://img.shields.io/badge/Swift-6.3.1-orange" alt="Swift 6.3.1"></a>
   <a href="https://www.gnu.org/licenses/gpl-3.0.html"><img src="https://img.shields.io/badge/License-GPL--3.0-green" alt="GPL-3.0"></a>
 </p>
 
@@ -21,6 +21,15 @@ This tree is primarily a **development and testbed** checkout: debugging is ongo
 Design goals stay **simple, fast, and deliberately anti-bloat**—fewer nested surfaces than mainstream browsers, with keyboard-first shortcuts and a lightweight chrome footprint where we can keep it.
 
 Release packaging targets **GitHub Releases** as a notarized DMG. Maintainer-facing material (release steps, CI notes, performance profiling workflow) lives under `docs/` in a full maintainer checkout; that directory is **gitignored** here and is not part of the public GitHub tree.
+
+## Requirements
+
+| Component | Version / target | Notes |
+| --- | --- | --- |
+| macOS | 15.7+ | Deployment target for the app and test targets. |
+| Swift toolchain | 6.3.1 | Current development toolchain. The Xcode project uses Swift language mode 6.0. |
+| Xcode | 26.x recommended | Use a toolchain that ships Swift 6.3.1 or newer. |
+| Web engine | WebKit | Uses the system WebKit framework on macOS. |
 
 ## Acknowledgments
 
