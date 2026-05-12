@@ -216,6 +216,10 @@ enum SumiZenFolderIconCatalog {
             return directNames.sorted()
         }
 
+        if useBundledResourcesOnly {
+            return bundledFolderManifest
+        }
+
         guard let bundleRoot = Bundle.main.resourceURL else {
             return bundledFolderManifest
         }
@@ -264,6 +268,9 @@ enum SumiZenFolderIconCatalog {
         if let bundleURL = Bundle.main.resourceURL?.appendingPathComponent(folderIconResourceSubdirectory, isDirectory: true) {
             candidates.append(bundleURL)
         }
+        guard !useBundledResourcesOnly else {
+            return candidates
+        }
         candidates.append(sourceResourceRoot.appendingPathComponent(folderIconResourceSubdirectory, isDirectory: true))
         candidates.append(
             workspaceSourceRoot
@@ -281,6 +288,9 @@ enum SumiZenFolderIconCatalog {
         if let bundleURL = Bundle.main.resourceURL?.appendingPathComponent(chromeIconResourceSubdirectory, isDirectory: true) {
             candidates.append(bundleURL)
         }
+        guard !useBundledResourcesOnly else {
+            return candidates
+        }
         candidates.append(sourceResourceRoot.appendingPathComponent(chromeIconResourceSubdirectory, isDirectory: true))
         candidates.append(
             workspaceSourceRoot
@@ -291,6 +301,13 @@ enum SumiZenFolderIconCatalog {
                 .appendingPathComponent("references/Zen/src/browser/themes/shared/zen-icons/nucleo", isDirectory: true)
         )
         return candidates
+    }
+
+    private static var useBundledResourcesOnly: Bool {
+        let env = ProcessInfo.processInfo.environment
+        if env["SUMI_TEST_RESOURCE_ISOLATION"] == "1" { return true }
+        if env["XCTestConfigurationFilePath"] != nil { return true }
+        return false
     }
 
     private static func image(
