@@ -7,7 +7,6 @@
 //
 
 import AppKit
-import AppIntents
 import Carbon
 import OSLog
 import SwiftUI

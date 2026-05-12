@@ -166,20 +166,14 @@ final class CollapsedSidebarPanelController {
             panel.contentViewController = sidebarController
         }
 
-        let shouldKeepVisibleContentForHideAnimation = presentationContext.mode == .collapsedHidden
-            && (isPanelRevealed || panel.isVisible || isPanelAttached)
-        if shouldKeepVisibleContentForHideAnimation {
-            sidebarController.setCollapsedPanelHitTestingEnabled(false)
-        } else {
-            sidebarController.updateHostedSidebar(
-                root: root,
-                width: width,
-                contextMenuController: contextMenuController,
-                capturesPanelBackgroundPointerEvents: presentationContext.capturesPanelBackgroundPointerEvents,
-                isCollapsedPanelHitTestingEnabled: presentationContext.mode == .collapsedVisible,
-                onPointerDown: onPointerDown
-            )
-        }
+        sidebarController.updateHostedSidebar(
+            root: root,
+            width: width,
+            contextMenuController: contextMenuController,
+            capturesPanelBackgroundPointerEvents: presentationContext.capturesPanelBackgroundPointerEvents,
+            isCollapsedPanelHitTestingEnabled: presentationContext.mode == .collapsedVisible,
+            onPointerDown: onPointerDown
+        )
 
         if presentationContext.mode == .collapsedVisible {
             reveal(panel, in: parentWindow)
@@ -751,6 +745,7 @@ final class CollapsedSidebarPanelController {
         else { return }
 
         sidebarController.setCollapsedPanelHitTestingEnabled(false)
+        sidebarController.teardownSidebarHosting()
         hideAndDetach(panelWindow)
     }
 
