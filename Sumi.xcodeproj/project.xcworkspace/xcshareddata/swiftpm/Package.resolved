@@ -2,15 +2,6 @@
   "originHash" : "57609a0d0859f4ac7d8d980469e3175da7105713a1d3cd06f05bb2dd1f1b27b2",
   "pins" : [
     {
-      "identity" : "punycodeswift",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/gumob/PunycodeSwift.git",
-      "state" : {
-        "revision" : "30a462bdb4398ea835a3585472229e0d74b36ba5",
-        "version" : "3.0.0"
-      }
-    },
-    {
       "identity" : "trackerradarkit",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/duckduckgo/TrackerRadarKit.git",

@@ -19,7 +19,6 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/duckduckgo/TrackerRadarKit.git", exact: "3.1.0"),
-        .package(url: "https://github.com/gumob/PunycodeSwift.git", exact: "3.0.0"),
         .package(path: "../URLPredictor"),
     ],
     targets: [
@@ -60,7 +59,6 @@ let package = Package(
         .target(
             name: "Common",
             dependencies: [
-                .product(name: "Punycode", package: "PunycodeSwift"),
                 .product(name: "URLPredictor", package: "URLPredictor"),
             ],
             swiftSettings: [
