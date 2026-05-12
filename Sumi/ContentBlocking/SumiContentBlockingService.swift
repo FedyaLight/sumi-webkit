@@ -1,7 +1,6 @@
 import Combine
 import CryptoKit
 import Foundation
-import TrackerRadarKit
 import WebKit
 
 struct SumiContentRuleListDefinition: Equatable, Sendable {

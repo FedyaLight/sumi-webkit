@@ -264,7 +264,25 @@ struct SumiTrackingProtectionDataMetadata: Equatable, Sendable {
 }
 
 struct SumiTrackerDataSet {
-    let trackerData: TrackerData
+    private let trackerData: TrackerData
+
+    init(trackerData: TrackerData) {
+        self.trackerData = trackerData
+    }
+
+    var trackerDomains: [String] {
+        trackerData.trackers.keys.sorted()
+    }
+
+    @MainActor
+    func ruleLists(
+        for policy: SumiTrackingProtectionPolicy
+    ) throws -> [SumiContentRuleListDefinition] {
+        try SumiEmbeddedDDGTrackerDataRuleSource.ruleLists(
+            for: policy,
+            trackerData: trackerData
+        )
+    }
 }
 
 protocol SumiBundledTrackerDataProviding: Sendable {
@@ -533,7 +551,7 @@ final class SumiEmbeddedDDGTrackerDataRuleSource: SumiTrackingProtectionRuleProv
     func ruleLists(for policy: SumiTrackingProtectionPolicy) throws -> [SumiContentRuleListDefinition] {
         guard policy.requiresRuleList else { return [] }
         let dataSet = try dataStore.loadActiveDataSet()
-        return try Self.ruleLists(for: policy, trackerData: dataSet.trackerData)
+        return try dataSet.ruleLists(for: policy)
     }
 
     static func ruleLists(

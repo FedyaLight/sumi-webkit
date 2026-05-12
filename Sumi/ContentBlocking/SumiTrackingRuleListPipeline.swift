@@ -1,6 +1,5 @@
 import Combine
 import Foundation
-import TrackerRadarKit
 
 struct SumiTrackingRuleListSet: Equatable, Sendable {
     let trackerDataSet: [SumiContentRuleListDefinition]
@@ -99,13 +98,10 @@ final class SumiTrackingRuleListProvider: SumiContentRuleListSetProviding {
 
     func stagedRuleListSet(
         for policy: SumiTrackingProtectionPolicy,
-        trackerData: TrackerData,
+        dataSet: SumiTrackerDataSet,
         profileId: UUID?
     ) throws -> SumiTrackingRuleListSet {
-        let trackerDataSet = try trackingRuleLists(
-            for: policy,
-            trackerData: trackerData
-        )
+        let trackerDataSet = try dataSet.ruleLists(for: policy)
         let siteDataCookieBlocking = try siteDataRuleSource?.ruleLists(
             profileId: profileId
         ) ?? []
@@ -118,19 +114,9 @@ final class SumiTrackingRuleListProvider: SumiContentRuleListSetProviding {
 
     func validationRuleLists(
         for policy: SumiTrackingProtectionPolicy,
-        trackerData: TrackerData
+        dataSet: SumiTrackerDataSet
     ) throws -> [SumiContentRuleListDefinition] {
-        try trackingRuleLists(for: policy, trackerData: trackerData)
-    }
-
-    private func trackingRuleLists(
-        for policy: SumiTrackingProtectionPolicy,
-        trackerData: TrackerData
-    ) throws -> [SumiContentRuleListDefinition] {
-        try SumiEmbeddedDDGTrackerDataRuleSource.ruleLists(
-            for: policy,
-            trackerData: trackerData
-        )
+        try dataSet.ruleLists(for: policy)
     }
 }
 
@@ -166,13 +152,13 @@ final class SumiTrackingContentBlockingAssets {
     ) async throws -> SumiPreparedContentBlockingUpdate {
         let validationRuleLists = try ruleListProvider.validationRuleLists(
             for: validationPolicy,
-            trackerData: dataSet.trackerData
+            dataSet: dataSet
         )
         try await contentBlockingService.validateRuleLists(validationRuleLists)
 
         let activeRuleListSet = try ruleListProvider.stagedRuleListSet(
             for: activePolicy,
-            trackerData: dataSet.trackerData,
+            dataSet: dataSet,
             profileId: nil
         )
         return try await contentBlockingService.prepareRuleListUpdate(

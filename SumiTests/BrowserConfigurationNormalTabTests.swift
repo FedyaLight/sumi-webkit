@@ -1,7 +1,9 @@
+import Foundation
 import SwiftData
 import TrackerRadarKit
 import WebKit
 import XCTest
+import os
 
 @testable import Sumi
 
@@ -141,6 +143,154 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertEqual(probe.settingsCount, 0)
         XCTAssertEqual(probe.dataStoreCount, 0)
         XCTAssertEqual(probe.serviceCount, 0)
+    }
+
+    func testTrackingProtectionOptionalOffPathDoesNoTrackerWork() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        let probe = NormalTabTrackingRuntimeProbe()
+        let bundledProvider = SpyBundledTrackerDataProvider(
+            data: Data("{\"this\":\"would fail TrackerData decoding\"}".utf8)
+        )
+        var assetsFactoryCount = 0
+        var updaterFactoryCount = 0
+        let module = SumiTrackingProtectionModule(
+            moduleRegistry: registry,
+            settingsFactory: {
+                probe.settingsCount += 1
+                return SumiTrackingProtectionSettings(userDefaults: harness.defaults)
+            },
+            dataStoreFactory: {
+                probe.dataStoreCount += 1
+                return SumiTrackingProtectionDataStore(
+                    userDefaults: harness.defaults,
+                    storageDirectory: FileManager.default.temporaryDirectory
+                        .appendingPathComponent("SumiOptionalTrackingOff-\(UUID().uuidString)", isDirectory: true),
+                    bundledProvider: bundledProvider
+                )
+            },
+            contentBlockingAssetsFactory: { settings, dataStore in
+                assetsFactoryCount += 1
+                let ruleSource = SpyTrackingProtectionRuleSource()
+                let provider = SumiTrackingRuleListProvider(
+                    settings: settings,
+                    dataStore: dataStore,
+                    trackingRuleSource: ruleSource
+                )
+                return SumiTrackingContentBlockingAssets(
+                    ruleListProvider: provider,
+                    contentBlockingService: SumiContentBlockingService(
+                        policy: .disabled,
+                        compiler: SumiWKContentRuleListCompiler(),
+                        ruleListProvider: provider
+                    )
+                )
+            }
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            trackingProtectionModule: module
+        )
+
+        let decision = module.normalTabContentBlockingDecision(
+            for: URL(string: "https://example.com/tracking-off")
+        )
+        XCTAssertFalse(decision.effectivePolicy.isEnabled)
+        XCTAssertNil(decision.contentBlockingService)
+
+        let updateResult = await module.updateTrackerDataManually {
+            updaterFactoryCount += 1
+            return SumiTrackerDataUpdater(fetch: { request in
+                (
+                    Data(),
+                    HTTPURLResponse(
+                        url: request.url!,
+                        statusCode: 500,
+                        httpVersion: nil,
+                        headerFields: nil
+                    )!
+                )
+            })
+        }
+
+        guard case .disabled = updateResult else {
+            return XCTFail("Expected disabled manual update result, got \(updateResult)")
+        }
+
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/tracking-off-tab",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        tab.setupWebView()
+        let controller = try XCTUnwrap(
+            tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        await controller.waitForContentBlockingAssetsInstalled()
+
+        XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 0)
+        XCTAssertFalse(controller.contentBlockingAssetSummary.isContentBlockingFeatureEnabled)
+        XCTAssertEqual(probe.settingsCount, 0)
+        XCTAssertEqual(probe.dataStoreCount, 0)
+        XCTAssertEqual(probe.serviceCount, 0)
+        XCTAssertEqual(assetsFactoryCount, 0)
+        XCTAssertEqual(updaterFactoryCount, 0)
+        XCTAssertEqual(bundledProvider.embeddedDataCallCount, 0)
+    }
+
+    func testTrackingProtectionPolicyOffDoesNotCreateRuleAssetsOrLoadTrackerData() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.trackingProtection)
+        let settings = SumiTrackingProtectionSettings(userDefaults: harness.defaults)
+        let bundledProvider = SpyBundledTrackerDataProvider(
+            data: Data("{\"this\":\"would fail TrackerData decoding\"}".utf8)
+        )
+        let probe = NormalTabTrackingRuntimeProbe()
+        var assetsFactoryCount = 0
+        let module = SumiTrackingProtectionModule(
+            moduleRegistry: registry,
+            settingsFactory: {
+                probe.settingsCount += 1
+                return settings
+            },
+            dataStoreFactory: {
+                probe.dataStoreCount += 1
+                return SumiTrackingProtectionDataStore(
+                    userDefaults: harness.defaults,
+                    storageDirectory: FileManager.default.temporaryDirectory
+                        .appendingPathComponent("SumiPolicyTrackingOff-\(UUID().uuidString)", isDirectory: true),
+                    bundledProvider: bundledProvider
+                )
+            },
+            contentBlockingAssetsFactory: { settings, dataStore in
+                assetsFactoryCount += 1
+                let provider = SumiTrackingRuleListProvider(
+                    settings: settings,
+                    dataStore: dataStore,
+                    trackingRuleSource: SpyTrackingProtectionRuleSource()
+                )
+                return SumiTrackingContentBlockingAssets(ruleListProvider: provider)
+            }
+        )
+
+        let decision = module.normalTabContentBlockingDecision(
+            for: URL(string: "https://example.com/policy-off")
+        )
+
+        XCTAssertFalse(decision.effectivePolicy.isEnabled)
+        XCTAssertNil(decision.contentBlockingService)
+        XCTAssertEqual(probe.settingsCount, 1)
+        XCTAssertEqual(probe.dataStoreCount, 0)
+        XCTAssertEqual(probe.serviceCount, 0)
+        XCTAssertEqual(assetsFactoryCount, 0)
+        XCTAssertEqual(bundledProvider.embeddedDataCallCount, 0)
     }
 
     func testTabNormalWebViewCreationWithUserscriptsDisabledDoesNotInitializeUserscriptsRuntime() async throws {
@@ -513,7 +663,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         try await waitForAssets(on: controller) { $0.globalRuleListCount == 1 }
 
         let activeDataSet = try dataStore.loadActiveDataSet()
-        XCTAssertEqual(activeDataSet.trackerData.trackers.keys.sorted(), ["updated-normal-manual.example"])
+        XCTAssertEqual(activeDataSet.trackerDomains, ["updated-normal-manual.example"])
         XCTAssertEqual(dataStore.downloadedETag, "\"updated-normal-manual\"")
     }
 
@@ -1195,6 +1345,41 @@ private final class NormalTabTrackingRuntimeProbe {
     var settingsCount = 0
     var dataStoreCount = 0
     var serviceCount = 0
+}
+
+private struct SpyBundledTrackerDataProvider: SumiBundledTrackerDataProviding {
+    let embeddedDataEtag = "\"spy-tracker-data\""
+
+    private let data: Data
+    private let embeddedDataCalls = OSAllocatedUnfairLock(initialState: 0)
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    var embeddedDataCallCount: Int {
+        embeddedDataCalls.withLock { $0 }
+    }
+
+    func embeddedData() throws -> Data {
+        embeddedDataCalls.withLock {
+            $0 += 1
+        }
+        return data
+    }
+}
+
+@MainActor
+private final class SpyTrackingProtectionRuleSource: SumiTrackingProtectionRuleProviding {
+    private(set) var ruleListCallCount = 0
+
+    func ruleLists(
+        for policy: SumiTrackingProtectionPolicy
+    ) throws -> [SumiContentRuleListDefinition] {
+        ruleListCallCount += 1
+        XCTFail("Tracking rule source should not be called while tracking protection is disabled")
+        return []
+    }
 }
 
 private final class NormalTabUserscriptsRuntimeProbe {
