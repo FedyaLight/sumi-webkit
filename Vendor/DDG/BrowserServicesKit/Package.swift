@@ -20,14 +20,12 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/duckduckgo/TrackerRadarKit.git", exact: "3.1.0"),
         .package(url: "https://github.com/gumob/PunycodeSwift.git", exact: "3.0.0"),
-        .package(url: "https://github.com/duckduckgo/content-scope-scripts.git", exact: "14.2.0"),
         .package(path: "../URLPredictor"),
     ],
     targets: [
         .target(
             name: "BrowserServicesKit",
             dependencies: [
-                .product(name: "ContentScopeScripts", package: "content-scope-scripts"),
                 "Persistence",
                 "PrivacyConfig",
                 "TrackerRadarKit",
