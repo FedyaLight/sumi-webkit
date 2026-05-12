@@ -137,7 +137,7 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertEqual(SidebarChromeMetrics.navigationIconSize, 14)
     }
 
-    func testBrowserTrafficLightSourceUsesCanonicalCustomComponent() throws {
+    func testBrowserTrafficLightSourceUsesSidebarHostedStandardButtons() throws {
         let controlsSource = try Self.source(named: "Sumi/Components/Window/BrowserWindowTrafficLights.swift")
         let windowSource = try Self.source(named: "Sumi/Components/Window/SumiBrowserWindow.swift")
         let windowViewSource = try Self.source(named: "App/Window/WindowView.swift")
@@ -145,16 +145,14 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         let panelHostSource = try Self.source(named: "Sumi/Components/Sidebar/CollapsedSidebarPanelHost.swift")
 
         XCTAssertTrue(controlsSource.contains("struct BrowserWindowTrafficLights: View"))
+        XCTAssertTrue(controlsSource.contains("NSViewRepresentable"))
+        XCTAssertTrue(controlsSource.contains("NSWindow.standardWindowButton("))
         XCTAssertTrue(controlsSource.contains("struct BrowserWindowTrafficLightActionProvider"))
         XCTAssertTrue(controlsSource.contains("enum BrowserWindowTrafficLightAction"))
         XCTAssertTrue(controlsSource.contains("parentWindow") == false)
-        XCTAssertTrue(controlsSource.contains("targetWindow.close()") || controlsSource.contains("$0.close()"))
-        XCTAssertTrue(
-            controlsSource.contains("targetWindow.miniaturizeFromCustomBrowserChrome()")
-                || controlsSource.contains("$0.miniaturizeFromCustomBrowserChrome()")
-        )
-        XCTAssertTrue(controlsSource.contains("targetWindow.toggleFullScreen(nil)") || controlsSource.contains("$0.toggleFullScreen(nil)"))
-        XCTAssertTrue(controlsSource.contains("BrowserWindowTrafficLightMirroredZoomGlyph"))
+        XCTAssertTrue(controlsSource.contains("targetWindow?.performClose(sender)"))
+        XCTAssertTrue(controlsSource.contains("targetWindow?.miniaturize(sender)"))
+        XCTAssertTrue(controlsSource.contains("targetWindow?.toggleFullScreen(sender)"))
         XCTAssertTrue(controlsSource.contains(BrowserWindowControlsAccessibilityIdentifiers.closeButton))
         XCTAssertTrue(controlsSource.contains(BrowserWindowControlsAccessibilityIdentifiers.minimizeButton))
         XCTAssertTrue(controlsSource.contains(BrowserWindowControlsAccessibilityIdentifiers.zoomButton))
@@ -170,7 +168,10 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertFalse(controlsSource.contains("BrowserWindowTrafficLightProxyAction"))
         XCTAssertFalse(controlsSource.contains("BrowserWindowTrafficLightPlaceholderCluster"))
         XCTAssertFalse(controlsSource.contains("BrowserWindowNativeTrafficLightVisibilityBridge"))
-        XCTAssertFalse(controlsSource.contains("standardWindowButton"))
+        XCTAssertFalse(controlsSource.contains("BrowserWindowTrafficLightPalette"))
+        XCTAssertFalse(controlsSource.contains("BrowserWindowTrafficLightButtonStyle"))
+        XCTAssertFalse(controlsSource.contains("BrowserWindowTrafficLightActionHitTarget"))
+        XCTAssertFalse(controlsSource.contains("BrowserWindowTrafficLightMirroredZoomGlyph"))
         XCTAssertFalse(windowViewSource.contains("BrowserWindowNativeTrafficLightVisibilityBridge"))
         XCTAssertFalse(windowViewSource.contains("trafficLightRenderState"))
         XCTAssertFalse(sidebarHeaderSource.contains("BrowserWindowTrafficLightProxyCluster"))
@@ -185,8 +186,8 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         Self.assertNoNativeTrafficLightReparenting(in: panelHostSource, file: "CollapsedSidebarPanelHost.swift")
     }
 
-    func testTrafficLightActionProviderRoutesToTargetBrowserWindow() {
-        let window = TrackingTrafficLightWindow(
+    func testTrafficLightActionProviderEnablesAvailableWindowActions() {
+        let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: NSSize(width: 320, height: 240)),
             styleMask: SumiBrowserChromeConfiguration.requiredStyleMask,
             backing: .buffered,
@@ -194,16 +195,12 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         )
         let provider = BrowserWindowTrafficLightActionProvider.browserWindow(window)
 
-        provider.perform(.close)
-        provider.perform(.minimize)
-        provider.perform(.zoom)
-
-        XCTAssertTrue(window.didClose)
-        XCTAssertTrue(window.didMiniaturize)
-        XCTAssertTrue(window.didToggleFullScreen)
+        XCTAssertTrue(provider.isEnabled(.close))
+        XCTAssertTrue(provider.isEnabled(.minimize))
+        XCTAssertTrue(provider.isEnabled(.zoom))
     }
 
-    func testTrafficLightActionProviderUsesWindowStyleMaskAvailability() {
+    func testTrafficLightActionProviderDisablesUnavailableWindowActions() {
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: NSSize(width: 320, height: 240)),
             styleMask: [.titled, .closable],
@@ -215,20 +212,6 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertTrue(provider.isEnabled(.close))
         XCTAssertFalse(provider.isEnabled(.minimize))
         XCTAssertFalse(provider.isEnabled(.zoom))
-    }
-
-    func testTrafficLightActionProviderKeepsPaletteColoredWhenWindowIsNotKey() {
-        let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: NSSize(width: 320, height: 240)),
-            styleMask: SumiBrowserChromeConfiguration.requiredStyleMask,
-            backing: .buffered,
-            defer: false
-        )
-        let provider = BrowserWindowTrafficLightActionProvider.browserWindow(window)
-
-        XCTAssertFalse(window.isKeyWindow)
-        XCTAssertFalse(window.isMainWindow)
-        XCTAssertTrue(provider.drawsActivePalette)
     }
 
     func testNativeBrowserButtonsAreHiddenWhileMiniWindowNativePathIsIsolated() throws {
@@ -274,12 +257,12 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         for file in removedFiles {
             XCTAssertFalse(
                 FileManager.default.fileExists(atPath: Self.repoRoot.appendingPathComponent(file).path),
-                "\(file) should not return with custom browser traffic lights."
+                "\(file) should not return with legacy browser traffic-light files."
             )
         }
     }
 
-    func testCollapsedLeftPanelUsesSameCustomTrafficLightsAndSinglePanelGeometry() throws {
+    func testCollapsedLeftPanelUsesSameSidebarHostedTrafficLightsAndSinglePanelGeometry() throws {
         let headerSource = try Self.source(named: "Navigation/Sidebar/SidebarHeader.swift")
         let panelHostSource = try Self.source(named: "Sumi/Components/Sidebar/CollapsedSidebarPanelHost.swift")
         let windowViewSource = try Self.source(named: "App/Window/WindowView.swift")
@@ -346,21 +329,4 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         }
     }
 
-    private final class TrackingTrafficLightWindow: NSWindow {
-        var didClose = false
-        var didMiniaturize = false
-        var didToggleFullScreen = false
-
-        override func close() {
-            didClose = true
-        }
-
-        override func miniaturize(_ sender: Any?) {
-            didMiniaturize = true
-        }
-
-        override func toggleFullScreen(_ sender: Any?) {
-            didToggleFullScreen = true
-        }
-    }
 }

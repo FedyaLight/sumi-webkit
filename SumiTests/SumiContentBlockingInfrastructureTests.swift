@@ -170,6 +170,56 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
         XCTAssertEqual(compiler.compileCount, 1)
     }
 
+    func testPolicyUpdateRemovesPreviousCompiledRuleListForSameName() async throws {
+        let compiler = CountingContentRuleListCompiler()
+        let catalog = InMemoryCompiledRuleListCatalog()
+        let ruleListName = "SumiReplacementCleanupRuleList-\(UUID().uuidString)"
+        let firstDefinition = Self.validRuleListDefinition(
+            name: ruleListName,
+            blockedHost: "first-cleanup.example"
+        )
+        let secondDefinition = Self.validRuleListDefinition(
+            name: ruleListName,
+            blockedHost: "second-cleanup.example"
+        )
+        let firstIdentifier = Self.storeIdentifier(for: firstDefinition)
+        let service = SumiContentBlockingService(
+            policy: .enabled(ruleLists: [firstDefinition]),
+            compiler: compiler,
+            compiledRuleListCatalog: catalog
+        )
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: service
+        )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+        XCTAssertFalse(compiler.removedIdentifiers.contains(firstIdentifier))
+
+        service.setPolicy(.enabled(ruleLists: [secondDefinition]))
+        let enabledRuleListCount = await Self.waitForAssetRuleListCount(on: normalTabController) { $0 == 1 }
+        XCTAssertEqual(enabledRuleListCount, 1)
+
+        try await waitForRemovedIdentifier(firstIdentifier, in: compiler)
+    }
+
+    func testValidationRemovesTransientCompiledRuleList() async throws {
+        let compiler = CountingContentRuleListCompiler()
+        let service = SumiContentBlockingService(
+            policy: .disabled,
+            compiler: compiler,
+            compiledRuleListCatalog: InMemoryCompiledRuleListCatalog()
+        )
+        let definition = Self.validRuleListDefinition(
+            name: "SumiValidationCleanupRuleList-\(UUID().uuidString)",
+            blockedHost: "validation-cleanup.example"
+        )
+        let identifier = Self.storeIdentifier(for: definition)
+
+        try await service.validateRuleLists([definition])
+
+        try await waitForRemovedIdentifier(identifier, in: compiler)
+    }
+
     func testContentBlockingUserScriptsUseNormalProviderPath() async throws {
         let marker = "window.__sumiContentBlockingProviderScript = true;"
         let provider = SumiNormalTabUserScripts(
@@ -205,13 +255,23 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
     }
 
     private static func validRuleListDefinition() -> SumiContentRuleListDefinition {
-        SumiContentRuleListDefinition(
+        validRuleListDefinition(
             name: "SumiTestRuleList-\(UUID().uuidString)",
+            blockedHost: "blocked.example"
+        )
+    }
+
+    private static func validRuleListDefinition(
+        name: String,
+        blockedHost: String
+    ) -> SumiContentRuleListDefinition {
+        SumiContentRuleListDefinition(
+            name: name,
             encodedContentRuleList: """
             [
               {
                 "trigger": {
-                  "url-filter": ".*blocked\\\\.example/.*"
+                  "url-filter": ".*\(blockedHost.replacingOccurrences(of: ".", with: "\\\\."))/.*"
                 },
                 "action": {
                   "type": "block"
@@ -220,6 +280,18 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
             ]
             """
         )
+    }
+
+    private static func storeIdentifier(
+        for definition: SumiContentRuleListDefinition
+    ) -> String {
+        SumiContentBlockerRulesIdentifier(
+            name: definition.name,
+            tdsEtag: definition.contentHash,
+            tempListId: nil,
+            allowListId: nil,
+            unprotectedSitesHash: nil
+        ).stringValue
     }
 
     private static func source(named relativePath: String) throws -> String {
@@ -284,6 +356,20 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
         }
         XCTFail("Timed out waiting for invalid replacement rule compilation to fail")
     }
+
+    private func waitForRemovedIdentifier(
+        _ identifier: String,
+        in compiler: CountingContentRuleListCompiler
+    ) async throws {
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            if compiler.removedIdentifiers.contains(identifier) {
+                return
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTFail("Timed out waiting for compiled rule list removal: \(identifier)")
+    }
 }
 
 @MainActor
@@ -291,6 +377,7 @@ private final class CountingContentRuleListCompiler: SumiContentRuleListCompilin
     private let wrapped = SumiWKContentRuleListCompiler()
     private(set) var compileCount = 0
     private(set) var failureCount = 0
+    private(set) var removedIdentifiers: [String] = []
 
     func lookUpContentRuleList(forIdentifier identifier: String) async -> WKContentRuleList? {
         await wrapped.lookUpContentRuleList(forIdentifier: identifier)
@@ -309,6 +396,54 @@ private final class CountingContentRuleListCompiler: SumiContentRuleListCompilin
         } catch {
             failureCount += 1
             throw error
+        }
+    }
+
+    func removeContentRuleList(forIdentifier identifier: String) async {
+        removedIdentifiers.append(identifier)
+        await wrapped.removeContentRuleList(forIdentifier: identifier)
+    }
+}
+
+@MainActor
+private final class InMemoryCompiledRuleListCatalog: SumiCompiledContentRuleListCataloging {
+    private var identifiersByName: [String: Set<String>] = [:]
+
+    func staleIdentifiers(
+        replacing previousRules: [SumiContentBlockerRules],
+        with activeRules: [SumiContentBlockerRules]
+    ) -> [String] {
+        let previousIdentifiersByName = Self.identifiersByName(for: previousRules)
+        let activeIdentifiersByName = Self.identifiersByName(for: activeRules)
+        let namesToSweep = Set(previousIdentifiersByName.keys).union(activeIdentifiersByName.keys)
+        var staleIdentifiers = Set<String>()
+
+        for name in namesToSweep {
+            let activeIdentifiers = activeIdentifiersByName[name] ?? []
+            var knownIdentifiers = identifiersByName[name] ?? []
+            knownIdentifiers.formUnion(previousIdentifiersByName[name] ?? [])
+            staleIdentifiers.formUnion(knownIdentifiers.subtracting(activeIdentifiers))
+            identifiersByName[name] = activeIdentifiers.isEmpty ? nil : activeIdentifiers
+        }
+
+        return Array(staleIdentifiers)
+    }
+
+    func forgetIdentifiers(_ identifiers: [String]) {
+        let identifiersToForget = Set(identifiers)
+        for name in Array(identifiersByName.keys) {
+            identifiersByName[name]?.subtract(identifiersToForget)
+            if identifiersByName[name]?.isEmpty == true {
+                identifiersByName.removeValue(forKey: name)
+            }
+        }
+    }
+
+    private static func identifiersByName(
+        for rules: [SumiContentBlockerRules]
+    ) -> [String: Set<String>] {
+        rules.reduce(into: [:]) { result, rules in
+            result[rules.identifier.name, default: []].insert(rules.identifier.stringValue)
         }
     }
 }
