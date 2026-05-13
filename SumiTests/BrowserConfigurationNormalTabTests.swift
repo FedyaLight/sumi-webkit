@@ -954,6 +954,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let blockedScripts = [
             "__sumiDDGFaviconTransportInstalled",
             "__sumiTabSuspension",
+            SumiTransientChromeInteractionShieldUserScript.sourceMarker,
             "SUMI_USER_SCRIPT_RUNTIME",
             "SUMI_EC_PAGE_BRIDGE:",
             UserScriptInjector.userScriptMarker,
@@ -989,6 +990,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         for blockedMarker in [
             "__sumiDDGFaviconTransportInstalled",
             "__sumiTabSuspension",
+            SumiTransientChromeInteractionShieldUserScript.sourceMarker,
             "SUMI_USER_SCRIPT_RUNTIME",
             "SUMI_EC_PAGE_BRIDGE:",
             UserScriptInjector.userScriptMarker,

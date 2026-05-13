@@ -90,18 +90,6 @@ struct CommandPaletteView: View {
         let textFieldFont = Font.system(size: 13, weight: .semibold)
 
         ZStack {
-            if isVisible {
-                MouseEventShieldView(
-                    onClick: {
-                        windowState.window?.makeFirstResponder(nil)
-                        isSearchFocused = false
-                        commandPalette.close(preserveDraft: true)
-                    }
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .ignoresSafeArea()
-            }
-
             VStack {
                 Spacer()
                 HStack {
@@ -271,6 +259,11 @@ struct CommandPaletteView: View {
                         .padding(10)
                         .frame(maxWidth: .infinity)
                         .frame(width: effectiveCommandPaletteWidth)
+                        .background {
+                            if isVisible {
+                                MouseEventShieldView(suppressesUnderlyingWebContentHover: true)
+                            }
+                        }
                         .background(tokens.commandPaletteBackground)
                         .clipShape(.rect(cornerRadius: 26))
                         .overlay {

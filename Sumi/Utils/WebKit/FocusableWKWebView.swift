@@ -33,6 +33,9 @@ final class FocusableWKWebView: WKWebView {
     private var webKitMouseTrackingLoadSheddingObserver: NSKeyValueObservation?
     private var webKitMouseTrackingArea: NSTrackingArea?
     private var findInPageInteractionTrackingArea: NSTrackingArea?
+    private var isWebKitMouseTrackingLoadSheddingActive = false
+    private var isTransientChromeMouseTrackingSuppressed = false
+    private var isTransientChromeInteractionShieldApplied = false
 
     weak var owningTab: Tab?
     let interactionEventsPublisher = PassthroughSubject<SumiWebViewInteractionEvent, Never>()
@@ -61,10 +64,10 @@ final class FocusableWKWebView: WKWebView {
         }
 
         installWebKitMouseTrackingLoadShedding(for: trackingArea)
-        if !trackingAreas.contains(trackingArea) {
+        if !shouldSuspendWebKitMouseTracking, !trackingAreas.contains(trackingArea) {
             super.addTrackingArea(trackingArea)
         }
-        scheduleWebKitMouseTrackingLoadSheddingRefresh(for: trackingArea)
+        scheduleWebKitMouseTrackingRefresh(for: trackingArea)
     }
 
     private func installWebKitMouseTrackingLoadShedding(for trackingArea: NSTrackingArea) {
@@ -82,31 +85,35 @@ final class FocusableWKWebView: WKWebView {
                       let trackingArea = self.webKitMouseTrackingArea,
                       ObjectIdentifier(trackingArea) == trackingAreaID
                 else { return }
-                self.updateWebKitMouseTrackingArea(trackingArea, isLoading: isLoading)
+                self.isWebKitMouseTrackingLoadSheddingActive = isLoading
+                self.updateWebKitMouseTrackingArea(trackingArea)
             }
         }
     }
 
-    private func scheduleWebKitMouseTrackingLoadSheddingRefresh(for trackingArea: NSTrackingArea) {
+    private func scheduleWebKitMouseTrackingRefresh(for trackingArea: NSTrackingArea) {
         let trackingAreaID = ObjectIdentifier(trackingArea)
         Task { @MainActor [weak self, trackingAreaID] in
             guard let self,
                   let trackingArea = self.webKitMouseTrackingArea,
                   ObjectIdentifier(trackingArea) == trackingAreaID
             else { return }
-            let currentIsLoading = self.isLoading
-            self.updateWebKitMouseTrackingArea(trackingArea, isLoading: currentIsLoading)
+            self.updateWebKitMouseTrackingArea(trackingArea)
         }
     }
 
-    private func updateWebKitMouseTrackingArea(_ trackingArea: NSTrackingArea, isLoading: Bool) {
-        if isLoading {
+    private func updateWebKitMouseTrackingArea(_ trackingArea: NSTrackingArea) {
+        if shouldSuspendWebKitMouseTracking {
             guard trackingAreas.contains(trackingArea) else { return }
             removeTrackingArea(trackingArea)
         } else {
             guard !trackingAreas.contains(trackingArea) else { return }
             superAddTrackingArea(trackingArea)
         }
+    }
+
+    private var shouldSuspendWebKitMouseTracking: Bool {
+        isWebKitMouseTrackingLoadSheddingActive || isTransientChromeMouseTrackingSuppressed
     }
 
     private func superAddTrackingArea(_ trackingArea: NSTrackingArea) {
@@ -123,6 +130,11 @@ final class FocusableWKWebView: WKWebView {
             removeTrackingArea(findInPageInteractionTrackingArea)
         }
 
+        guard !isTransientChromeMouseTrackingSuppressed else {
+            self.findInPageInteractionTrackingArea = nil
+            return
+        }
+
         let trackingArea = NSTrackingArea(
             rect: .zero,
             options: [.activeInKeyWindow, .inVisibleRect, .mouseEnteredAndExited, .mouseMoved, .cursorUpdate],
@@ -131,6 +143,57 @@ final class FocusableWKWebView: WKWebView {
         )
         findInPageInteractionTrackingArea = trackingArea
         addTrackingArea(trackingArea)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        let shouldSuppress = window.map(WebContentMouseTrackingShield.isActive(in:)) ?? false
+        setTransientChromeMouseTrackingSuppressed(shouldSuppress)
+    }
+
+    func setTransientChromeMouseTrackingSuppressed(
+        _ isSuppressed: Bool,
+        shieldRects: [SumiTransientChromeInteractionShieldRect] = []
+    ) {
+        setTransientChromeInteractionShieldApplied(isSuppressed, shieldRects: shieldRects)
+
+        guard isTransientChromeMouseTrackingSuppressed != isSuppressed else { return }
+
+        isTransientChromeMouseTrackingSuppressed = isSuppressed
+        if let trackingArea = webKitMouseTrackingArea {
+            updateWebKitMouseTrackingArea(trackingArea)
+        }
+        refreshFindInPageInteractionTrackingArea()
+
+        if isSuppressed {
+            owningTab?.onLinkHover?(nil)
+            NSCursor.arrow.set()
+        }
+    }
+
+    private func setTransientChromeInteractionShieldApplied(
+        _ isApplied: Bool,
+        shieldRects: [SumiTransientChromeInteractionShieldRect]
+    ) {
+        guard isTransientChromeInteractionShieldApplied != isApplied || isApplied else { return }
+
+        isTransientChromeInteractionShieldApplied = isApplied
+        let script = SumiTransientChromeInteractionShieldUserScript.makeSetActiveSource(
+            isApplied,
+            clientPoint: currentClientPointForPageInteractionShield(),
+            rects: shieldRects
+        )
+        evaluateJavaScript(script, completionHandler: nil)
+    }
+
+    private func currentClientPointForPageInteractionShield() -> CGPoint? {
+        guard let window else { return nil }
+
+        let locationInView = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        guard bounds.contains(locationInView) else { return nil }
+
+        let clientY = isFlipped ? locationInView.y : bounds.height - locationInView.y
+        return CGPoint(x: locationInView.x, y: clientY)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -173,16 +236,28 @@ final class FocusableWKWebView: WKWebView {
     }
 
     override func mouseMoved(with event: NSEvent) {
+        guard !isTransientChromeMouseTrackingSuppressed else {
+            NSCursor.arrow.set()
+            return
+        }
         owningTab?.findInPage.pageInteractionWillBegin()
         super.mouseMoved(with: event)
     }
 
     override func mouseEntered(with event: NSEvent) {
+        guard !isTransientChromeMouseTrackingSuppressed else {
+            NSCursor.arrow.set()
+            return
+        }
         owningTab?.findInPage.pageInteractionWillBegin()
         super.mouseEntered(with: event)
     }
 
     override func cursorUpdate(with event: NSEvent) {
+        guard !isTransientChromeMouseTrackingSuppressed else {
+            NSCursor.arrow.set()
+            return
+        }
         owningTab?.findInPage.pageInteractionWillBegin()
         super.cursorUpdate(with: event)
     }

@@ -294,6 +294,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let sourceConfiguration = WKWebViewConfiguration()
         for marker in [
             "__sumiTabSuspension",
+            SumiTransientChromeInteractionShieldUserScript.sourceMarker,
             "sumiLinkInteraction_",
             "sumiIdentity_",
             "SUMI_USER_SCRIPT_RUNTIME",

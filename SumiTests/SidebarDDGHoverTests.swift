@@ -88,19 +88,18 @@ final class SidebarDDGHoverTests: XCTestCase {
         ))
     }
 
-    func testTransientChromePanelsShareParentWindowObserverSource() throws {
-        let sharedSource = try Self.source(named: "Sumi/Components/Window/TransientChromePanel.swift")
-        let commandSource = try Self.source(named: "Sumi/Components/Window/CommandPalettePanelHost.swift")
-        let findSource = try Self.source(named: "Sumi/Components/FindInPage/FindInPagePanelHost.swift")
+    func testTransientChromeStaysInBrowserWindowResponderChain() throws {
+        let commandSource = try Self.source(named: "Sumi/Components/Window/CommandPaletteChromeHost.swift")
+        let findSource = try Self.source(named: "Sumi/Components/FindInPage/FindInPageChromeHost.swift")
 
-        XCTAssertTrue(sharedSource.contains("final class TransientChromeParentWindowObserver"))
-        XCTAssertTrue(sharedSource.contains("NSWindow.willBeginSheetNotification"))
-        XCTAssertTrue(sharedSource.contains("NSWindow.didEndSheetNotification"))
-        XCTAssertTrue(sharedSource.contains("NSView.frameDidChangeNotification"))
-        XCTAssertTrue(commandSource.contains("parentObserver.bind"))
-        XCTAssertTrue(findSource.contains("parentObserver.bind"))
-        XCTAssertFalse(commandSource.contains("observedContentView"))
-        XCTAssertFalse(findSource.contains("observedContentView"))
+        XCTAssertTrue(commandSource.contains("struct CommandPaletteChromeHost: View"))
+        XCTAssertTrue(findSource.contains("struct FindInPageChromeHost: View"))
+        XCTAssertFalse(commandSource.contains("NSPanel"))
+        XCTAssertFalse(findSource.contains("NSPanel"))
+        XCTAssertFalse(commandSource.contains("makeKey"))
+        XCTAssertFalse(findSource.contains("makeKey"))
+        XCTAssertFalse(commandSource.contains("NSViewRepresentable"))
+        XCTAssertFalse(findSource.contains("NSViewRepresentable"))
     }
 
     func testTransientChromeZIndexesUseNamedConstants() throws {

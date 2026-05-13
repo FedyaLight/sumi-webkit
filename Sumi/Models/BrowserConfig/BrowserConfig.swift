@@ -58,6 +58,7 @@ class BrowserConfiguration {
     private static let auxiliaryFilteredUserScriptMarkers = [
         "__sumiDDGFaviconTransportInstalled",
         "__sumiTabSuspension",
+        SumiTransientChromeInteractionShieldUserScript.sourceMarker,
         "SUMI_USER_SCRIPT_RUNTIME",
         "SUMI_EC_PAGE_BRIDGE:",
         "data-sumi-userscript",
