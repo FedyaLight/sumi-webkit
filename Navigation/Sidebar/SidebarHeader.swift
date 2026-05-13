@@ -80,7 +80,6 @@ struct SidebarHeader: View {
 struct SidebarWindowControlsView: View {
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
-    @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
     @Environment(\.sumiSettings) private var sumiSettings
     @State private var isBrowserWindowFullScreen = false
 
@@ -125,7 +124,7 @@ struct SidebarWindowControlsView: View {
     }
 
     private var shouldRenderTrafficLightsInSidebarHeader: Bool {
-        sidebarPresentationContext.mode != .collapsedHidden && isBrowserWindowFullScreen == false
+        isBrowserWindowFullScreen == false
     }
 
     private func toggleSidebar() {

@@ -33,7 +33,7 @@ enum HoverSidebarCompactMetrics {
     static let keepOpenHysteresis: CGFloat = 0
     static let verticalBoundsSlack: CGFloat = 7
     static let revealAnimationDuration: TimeInterval = 0.25
-    static let hideAnimationDuration: TimeInterval = 0.15
+    static let hideAnimationDuration: TimeInterval = 0.25
     static let keepHoverDuration: TimeInterval = 0.15
 }
 

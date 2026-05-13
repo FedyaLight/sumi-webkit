@@ -43,13 +43,11 @@ struct SidebarColumnHostedRootView: View {
                 backgroundThemeContext
                     .tokens(settings: environmentContext.sumiSettings)
                     .windowBackground
-                    .opacity(presentationContext.mode == .collapsedVisible ? 1 : 0)
                 SpaceGradientBackgroundView(surface: .toolbarChrome)
                     .environmentObject(environmentContext.browserManager)
                     .environment(environmentContext.windowState)
                     .environment(\.sumiSettings, environmentContext.sumiSettings)
                     .environment(\.resolvedThemeContext, backgroundThemeContext)
-                    .opacity(presentationContext.mode == .collapsedVisible ? 1 : 0)
             }
         }
     }
