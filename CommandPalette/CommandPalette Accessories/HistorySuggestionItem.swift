@@ -43,6 +43,8 @@ struct HistorySuggestionItem: View {
                 Text("-")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(colors.urlColor)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                 
                 Text(entry.displayURL)
                     .font(.system(size: 13, weight: .semibold))

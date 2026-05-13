@@ -32,6 +32,28 @@ final class SidebarDDGHoverTests: XCTestCase {
         XCTAssertFalse(source.contains("CommandPaletteChromeMetrics"))
     }
 
+    func testCommandPaletteUsesWindowLevelHostForStableSidebarIndependentPosition() throws {
+        let source = try Self.source(named: "App/Window/WindowView.swift")
+        let webContentStart = try XCTUnwrap(source.range(of: "private func WebContent()"))
+        let webContentBody = String(source[webContentStart.lowerBound...])
+
+        XCTAssertTrue(source.contains("WindowTransientChromeZIndex.commandPalette"))
+        XCTAssertTrue(source.contains("CommandPaletteChromeHost"))
+        XCTAssertFalse(webContentBody.contains("CommandPaletteChromeHost"))
+    }
+
+    func testCommandPaletteInputAffordancesMatchZenFloatingUrlbar() throws {
+        let source = try Self.source(named: "CommandPalette/CommandPaletteView.swift")
+
+        XCTAssertTrue(source.contains(".tint(tokens.primaryText)"))
+        XCTAssertTrue(source.contains(".lineLimit(1)"))
+        XCTAssertTrue(source.contains("focusSearchField(selectAll: false)"))
+        XCTAssertTrue(source.contains("triggerSearchModeAnimation"))
+        XCTAssertTrue(source.contains("CommandPaletteSearchModeGlowView"))
+        XCTAssertTrue(source.contains("ScrollView(.vertical)"))
+        XCTAssertTrue(source.contains("suggestionsMaxHeight"))
+    }
+
     func testCommandPaletteOutsideClickMonitorUsesPassThroughRouting() throws {
         let source = try Self.source(named: "CommandPalette/CommandPaletteView.swift")
         let monitorStart = try XCTUnwrap(source.range(of: "private func installOutsideClickMonitorIfNeeded()"))

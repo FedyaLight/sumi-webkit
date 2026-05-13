@@ -72,6 +72,22 @@ struct WindowView: View {
                 }
             }
 
+            // Command palette is full-window chrome so its floating position is stable in both
+            // docked and collapsed sidebar layouts.
+            chromeThemeScope {
+                CommandPaletteChromeHost(
+                    browserManager: browserManager,
+                    windowState: windowState,
+                    commandPalette: commandPalette,
+                    sumiSettings: sumiSettings,
+                    resolvedThemeContext: resolvedThemeContext,
+                    colorScheme: globalColorScheme,
+                    isPresented: commandPalette.isVisible && !transientChromeModalSuppressed
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .zIndex(WindowTransientChromeZIndex.commandPalette)
+            }
+
             chromeThemeScope {
                 DialogView()
                     .zIndex(WindowTransientChromeZIndex.dialog)
@@ -368,19 +384,6 @@ struct WindowView: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .zIndex(WindowTransientChromeZIndex.findInPage)
-
-            // Command palette is same-window chrome; a key NSPanel would make the browser traffic lights inactive.
-            CommandPaletteChromeHost(
-                browserManager: browserManager,
-                windowState: windowState,
-                commandPalette: commandPalette,
-                sumiSettings: sumiSettings,
-                resolvedThemeContext: resolvedThemeContext,
-                colorScheme: globalColorScheme,
-                isPresented: commandPalette.isVisible && !transientChromeModalSuppressed
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .zIndex(WindowTransientChromeZIndex.commandPalette)
         }
         .padding(.bottom, BrowserChromeGeometry.elementSeparation)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
