@@ -317,8 +317,8 @@ struct WindowView: View {
                     .zIndex(2000)
             }
 
-            // Find-in-page is hosted in a child panel over the web column so WebKit cursor tracking below it is cut off.
-            FindInPagePanelHost(
+            // Find-in-page stays in the browser window's responder chain so window controls keep active appearance.
+            FindInPageChromeHost(
                 browserManager: browserManager,
                 findManager: browserManager.findManager,
                 windowRegistry: windowRegistry,
@@ -328,11 +328,10 @@ struct WindowView: View {
                 colorScheme: globalColorScheme
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .allowsHitTesting(false)
             .zIndex(WindowTransientChromeZIndex.findInPage)
 
-            // Command palette uses a small child panel centered in the browser window, leaving uncovered sidebar areas interactive.
-            CommandPalettePanelHost(
+            // Command palette is same-window chrome; a key NSPanel would make the browser traffic lights inactive.
+            CommandPaletteChromeHost(
                 browserManager: browserManager,
                 windowState: windowState,
                 commandPalette: commandPalette,
@@ -342,7 +341,6 @@ struct WindowView: View {
                 isPresented: commandPalette.isVisible && !transientChromeModalSuppressed
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .allowsHitTesting(false)
             .zIndex(WindowTransientChromeZIndex.commandPalette)
         }
         .padding(.bottom, BrowserChromeGeometry.elementSeparation)

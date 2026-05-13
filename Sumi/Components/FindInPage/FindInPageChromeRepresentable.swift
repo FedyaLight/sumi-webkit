@@ -40,18 +40,21 @@ struct FindInPageChromeHitTestingWrapper: View {
     var body: some View {
         if shouldMountFindChrome {
             ZStack(alignment: .top) {
-                MouseEventShieldView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
                 HStack(spacing: 0) {
                     Spacer(minLength: 0)
-                    FindInPageChromeRepresentable(
-                        findManager: findManager,
-                        windowStateID: windowStateID,
-                        themeContext: themeContext,
-                        keepsChromeMounted: keepsChromeMounted,
-                        isInteractive: isInteractive
-                    )
+                    ZStack {
+                        MouseEventShieldView(
+                            isInteractive: isInteractive,
+                            suppressesUnderlyingWebContentHover: true
+                        )
+                        FindInPageChromeRepresentable(
+                            findManager: findManager,
+                            windowStateID: windowStateID,
+                            themeContext: themeContext,
+                            keepsChromeMounted: keepsChromeMounted,
+                            isInteractive: isInteractive
+                        )
+                    }
                     .frame(width: 400, height: 48)
                     .shadow(
                         color: .black.opacity(colorScheme == .dark ? 0.38 : 0.15),

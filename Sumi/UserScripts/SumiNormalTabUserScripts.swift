@@ -3,6 +3,7 @@ import WebKit
 @MainActor
 final class SumiNormalTabUserScripts: SumiUserScriptsProvider {
     let faviconScripts = SumiDDGFaviconUserScripts()
+    private let transientChromeInteractionShieldUserScript = SumiTransientChromeInteractionShieldUserScript()
     private var contentBlockingUserScripts: [SumiUserScript]
     private var managedUserScripts: [SumiUserScript]
     private(set) var scriptsRevision = 0
@@ -16,7 +17,7 @@ final class SumiNormalTabUserScripts: SumiUserScriptsProvider {
     }
 
     var userScripts: [SumiUserScript] {
-        contentBlockingUserScripts + faviconScripts.userScripts + managedUserScripts
+        [transientChromeInteractionShieldUserScript] + contentBlockingUserScripts + faviconScripts.userScripts + managedUserScripts
     }
 
     func replaceManagedUserScripts(_ userScripts: [SumiUserScript]) {
