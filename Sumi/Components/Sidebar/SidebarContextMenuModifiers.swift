@@ -39,23 +39,24 @@ private struct SidebarAppKitItemModifier: ViewModifier {
                 )
             }
 
-            SidebarAppKitItemBridge(
-                content: content,
-                controller: windowState.sidebarContextMenuController,
-                configuration: SidebarAppKitItemConfiguration(
-                    isInteractionEnabled: effectiveInteractionEnabled,
-                    menu: menu,
-                    dragSource: dragSource,
-                    dragScope: dragScope,
-                    primaryAction: primaryAction,
-                    onMiddleClick: onMiddleClick,
-                    sourceID: sourceID,
-                    presentationMode: presentationContext.mode
+            content.overlay {
+                SidebarAppKitItemOverlay(
+                    controller: windowState.sidebarContextMenuController,
+                    configuration: SidebarAppKitItemConfiguration(
+                        isInteractionEnabled: effectiveInteractionEnabled,
+                        menu: menu,
+                        dragSource: dragSource,
+                        dragScope: dragScope,
+                        primaryAction: primaryAction,
+                        onMiddleClick: onMiddleClick,
+                        sourceID: sourceID,
+                        presentationMode: presentationContext.mode
+                    )
                 )
-            )
+            }
         case .leanDockedContextMenu:
             content.overlay {
-                SumiAppKitContextMenuBridge(
+                SumiAppKitContextMenuOverlay(
                     controller: windowState.sidebarContextMenuController,
                     isEnabled: menu.isEnabled,
                     entries: menu.entries,
@@ -82,17 +83,58 @@ private struct SidebarAppKitPrimaryActionModifier: ViewModifier {
             let primaryAction: (() -> Void)? = isEnabled ? action : nil
             let effectiveInteractionEnabled = isInteractionEnabled
                 && presentationContext.allowsInteractiveWork
-            SidebarAppKitItemBridge(
-                content: content,
-                controller: windowState.sidebarContextMenuController,
-                configuration: SidebarAppKitItemConfiguration(
-                    isInteractionEnabled: effectiveInteractionEnabled,
-                    primaryAction: primaryAction,
-                    presentationMode: presentationContext.mode
+            content.overlay {
+                SidebarAppKitItemOverlay(
+                    controller: windowState.sidebarContextMenuController,
+                    configuration: SidebarAppKitItemConfiguration(
+                        isInteractionEnabled: effectiveInteractionEnabled,
+                        primaryAction: primaryAction,
+                        presentationMode: presentationContext.mode
+                    )
                 )
-            )
+            }
         } else {
             content
+        }
+    }
+}
+
+private struct SidebarAppKitItemOverlay: View {
+    let controller: SidebarContextMenuController
+    let configuration: SidebarAppKitItemConfiguration
+
+    var body: some View {
+        GeometryReader { proxy in
+            SidebarAppKitItemBridge(
+                controller: controller,
+                configuration: configuration
+            )
+            .frame(
+                width: max(proxy.size.width, 0),
+                height: max(proxy.size.height, 0)
+            )
+        }
+    }
+}
+
+private struct SumiAppKitContextMenuOverlay: View {
+    let controller: SidebarContextMenuController
+    let isEnabled: Bool
+    let entries: () -> [SidebarContextMenuEntry]
+    let onMenuVisibilityChanged: (Bool) -> Void
+
+    var body: some View {
+        GeometryReader { proxy in
+            SumiAppKitContextMenuBridge(
+                controller: controller,
+                isEnabled: isEnabled,
+                entries: entries,
+                onMenuVisibilityChanged: onMenuVisibilityChanged
+            )
+            .frame(
+                width: max(proxy.size.width, 0),
+                height: max(proxy.size.height, 0)
+            )
         }
     }
 }
@@ -113,7 +155,7 @@ private struct SumiAppKitContextMenuModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content.overlay {
-            SumiAppKitContextMenuBridge(
+            SumiAppKitContextMenuOverlay(
                 controller: windowState.sidebarContextMenuController,
                 isEnabled: isEnabled && presentationContext.allowsInteractiveWork,
                 entries: entries,

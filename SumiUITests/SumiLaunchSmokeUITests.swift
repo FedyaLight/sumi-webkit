@@ -315,8 +315,8 @@ final class SumiLaunchSmokeUITests: XCTestCase {
         XCTAssertLessThan(blackRatio, 0.35)
     }
 
-    func testVisibleSidebarContextMenuCanBeReopenedAfterDismiss() {
-        let app = launchApp()
+    func testVisibleSidebarContextMenuCanBeReopenedAfterDismiss() throws {
+        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -329,8 +329,8 @@ final class SumiLaunchSmokeUITests: XCTestCase {
         openSidebarContextMenu(on: spaceIcon, expectedMenuItem: "Space Settings", app: app)
     }
 
-    func testCollapsedHoverSidebarContextMenuCanBeReopenedAfterDismiss() {
-        let app = launchApp()
+    func testCollapsedHoverSidebarContextMenuCanBeReopenedAfterDismiss() throws {
+        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))

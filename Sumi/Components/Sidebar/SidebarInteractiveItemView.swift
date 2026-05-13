@@ -4,7 +4,6 @@
 //
 
 import AppKit
-import SwiftUI
 
 enum SidebarUITestDragMarker {
     private static let argumentPrefix = "--uitest-sidebar-drag-marker="
@@ -96,7 +95,6 @@ enum SidebarUITestDragMarker {
 }
 @MainActor
 final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransientInteractionDisarmable {
-    private let hostingView = NSHostingView(rootView: AnyView(EmptyView()))
     private let dragThreshold: CGFloat = 3
 
     weak var contextMenuController: SidebarContextMenuController? {
@@ -108,6 +106,8 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
     }
 
     private(set) var isInteractive = true
+    private var isConfigurationInteractionEnabled = true
+    private var isTransientInteractionEnabled = true
     private var itemConfiguration = SidebarAppKitItemConfiguration()
     private var mouseDownEvent: NSEvent?
     private var mouseDownPoint: CGPoint?
@@ -117,14 +117,6 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(hostingView)
-        NSLayoutConstraint.activate([
-            hostingView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            hostingView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            hostingView.topAnchor.constraint(equalTo: topAnchor),
-            hostingView.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
     }
 
     @available(*, unavailable)
@@ -137,6 +129,14 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
 
     override var acceptsFirstResponder: Bool {
         true
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
+    }
+
+    override var isOpaque: Bool {
+        false
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
@@ -155,14 +155,15 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         super.viewWillMove(toWindow: newWindow)
     }
 
-    func update(rootView: AnyView, configuration: SidebarAppKitItemConfiguration) {
-        hostingView.rootView = rootView
+    func update(configuration: SidebarAppKitItemConfiguration) {
         itemConfiguration = configuration
+        isConfigurationInteractionEnabled = configuration.isInteractionEnabled
+        isTransientInteractionEnabled = true
         identifier = configuration.sourceID.map { NSUserInterfaceItemIdentifier($0) }
         if !configuration.supportsPrimaryMouseTracking {
             resetMouseState()
         }
-        setTransientInteractionEnabled(true)
+        applyEffectiveInteractionEnabled()
         SidebarUITestDragMarker.recordEvent(
             "bridgeUpdate",
             dragItemID: itemConfiguration.dragSource?.item.tabId,
@@ -190,7 +191,7 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         if captures {
             return self
         }
-        return super.hitTest(point)
+        return nil
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -343,15 +344,23 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
     }
 
     func setTransientInteractionEnabled(_ isEnabled: Bool) {
-        guard isInteractive != isEnabled else { return }
+        guard isTransientInteractionEnabled != isEnabled else { return }
+        isTransientInteractionEnabled = isEnabled
+        applyEffectiveInteractionEnabled()
+    }
 
-        if !isEnabled,
+    private func applyEffectiveInteractionEnabled() {
+        let effectiveInteractionEnabled = isConfigurationInteractionEnabled
+            && isTransientInteractionEnabled
+        guard isInteractive != effectiveInteractionEnabled else { return }
+
+        if !effectiveInteractionEnabled,
            didStartDrag,
            !shouldPreserveSharedDragStateOnTeardown {
             SidebarDragState.shared.resetInteractionState()
         }
 
-        isInteractive = isEnabled
+        isInteractive = effectiveInteractionEnabled
         resetMouseState()
     }
 

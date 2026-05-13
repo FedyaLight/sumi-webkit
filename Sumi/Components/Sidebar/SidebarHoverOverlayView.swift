@@ -180,7 +180,7 @@ struct SidebarHoverOverlayView: View {
             SidebarDragState.shared.requestGeometryRefresh()
         }
         .onAppear {
-            hoverManager.retainOverlayHostWhileCollapsed()
+            hoverManager.deferOverlayHostRetentionWhileCollapsed()
             retainOverlayHostIfPinned()
         }
         .onChange(of: pinnedInteractionRequestsHostRetention) { _, isPinned in

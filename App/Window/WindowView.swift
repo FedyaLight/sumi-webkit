@@ -131,6 +131,7 @@ struct WindowView: View {
         }
         // Lifecycle management
         .onAppear {
+            windowState.window?.hideNativeStandardWindowButtonsForBrowserChrome()
             hoverSidebarManager.sidebarPosition = sumiSettings.sidebarPosition
             hoverSidebarManager.attach(browserManager: browserManager, windowState: windowState)
             hoverSidebarManager.windowRegistry = windowRegistry
@@ -139,6 +140,8 @@ struct WindowView: View {
         }
         .onChange(of: windowState.isSidebarVisible) { _, _ in
             Task { @MainActor in
+                await Task.yield()
+                windowState.window?.hideNativeStandardWindowButtonsForBrowserChrome()
                 hoverSidebarManager.refreshMonitoring()
                 revealCollapsedSidebarForPinnedTransientIfNeeded()
             }

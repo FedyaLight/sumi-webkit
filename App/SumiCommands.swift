@@ -74,6 +74,8 @@ struct SumiCommands: Commands {
             }
             .keyboardShortcut(",", modifiers: .command)
         }
+
+        CommandGroup(replacing: .saveItem) {}
     }
 
     @CommandsBuilder

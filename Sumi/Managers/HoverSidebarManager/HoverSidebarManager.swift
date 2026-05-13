@@ -173,7 +173,7 @@ final class HoverSidebarManager: ObservableObject {
             return
         }
 
-        retainOverlayHostWhileCollapsed()
+        deferOverlayHostRetentionWhileCollapsed()
         installMonitorsIfNeeded()
     }
 
@@ -327,6 +327,23 @@ final class HoverSidebarManager: ObservableObject {
         prewarmOverlayHost()
     }
 
+    func deferOverlayHostRetentionWhileCollapsed() {
+        overlayHostPrewarmGeneration &+= 1
+        let generation = overlayHostPrewarmGeneration
+
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self,
+                  generation == self.overlayHostPrewarmGeneration,
+                  self.shouldRetainOverlayHostForCollapsedActiveWindow()
+            else {
+                return
+            }
+
+            self.prewarmOverlayHost()
+        }
+    }
+
     func releaseOverlayHostForMemoryPressure() {
         overlayVisibilityGeneration &+= 1
         overlayHostPrewarmGeneration &+= 1
@@ -375,6 +392,20 @@ final class HoverSidebarManager: ObservableObject {
         if !isOverlayHostPrewarmed {
             isOverlayHostPrewarmed = true
         }
+    }
+
+    private func shouldRetainOverlayHostForCollapsedActiveWindow() -> Bool {
+        guard isActive,
+              let registry = windowRegistry,
+              let hostedWindowId,
+              registry.activeWindowId == hostedWindowId,
+              let hostedState = registry.windows[hostedWindowId],
+              hostedState.isSidebarVisible == false
+        else {
+            return false
+        }
+
+        return true
     }
 
     private func releaseOverlayHostWhenInactive(after delay: TimeInterval) {
