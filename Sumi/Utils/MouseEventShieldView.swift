@@ -44,12 +44,12 @@ final class MouseEventShieldNSView: NSView, SidebarTransientInteractionDisarmabl
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        updateUnderlyingWebContentHoverSuppression()
+        updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: true)
     }
 
     override func layout() {
         super.layout()
-        updateUnderlyingWebContentHoverSuppression()
+        updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: true)
     }
 
     override func updateTrackingAreas() {
@@ -68,7 +68,7 @@ final class MouseEventShieldNSView: NSView, SidebarTransientInteractionDisarmabl
         if let trackingArea {
             addTrackingArea(trackingArea)
         }
-        updateUnderlyingWebContentHoverSuppression()
+        updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: true)
     }
 
     override func resetCursorRects() {
@@ -94,13 +94,13 @@ final class MouseEventShieldNSView: NSView, SidebarTransientInteractionDisarmabl
 
     override func mouseMoved(with event: NSEvent) {
         guard isInteractive else { return }
-        updateUnderlyingWebContentHoverSuppression()
+        updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: false)
         NSCursor.arrow.set()
     }
 
     override func mouseEntered(with event: NSEvent) {
         guard isInteractive else { return }
-        updateUnderlyingWebContentHoverSuppression()
+        updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: false)
         NSCursor.arrow.set()
     }
 
@@ -121,7 +121,7 @@ final class MouseEventShieldNSView: NSView, SidebarTransientInteractionDisarmabl
         self.onClick = onClick
         self.suppressesUnderlyingWebContentHover = suppressesUnderlyingWebContentHover
         setTransientInteractionEnabled(isInteractive)
-        updateUnderlyingWebContentHoverSuppression()
+        updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: true)
     }
 
     func setTransientInteractionEnabled(_ isEnabled: Bool) {
@@ -143,7 +143,7 @@ final class MouseEventShieldNSView: NSView, SidebarTransientInteractionDisarmabl
         if isEnabled {
             updateTrackingAreas()
         }
-        updateUnderlyingWebContentHoverSuppression()
+        updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: true)
     }
 
     private func clearTrackingArea() {
@@ -153,7 +153,7 @@ final class MouseEventShieldNSView: NSView, SidebarTransientInteractionDisarmabl
         }
     }
 
-    private func updateUnderlyingWebContentHoverSuppression() {
+    private func updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: Bool) {
         guard isInteractive,
               suppressesUnderlyingWebContentHover,
               let window
@@ -163,12 +163,18 @@ final class MouseEventShieldNSView: NSView, SidebarTransientInteractionDisarmabl
         }
 
         let location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
-        setUnderlyingWebContentHoverSuppressed(bounds.contains(location))
+        setUnderlyingWebContentHoverSuppressed(
+            bounds.contains(location),
+            refreshIfUnchanged: refreshIfAlreadySuppressed
+        )
     }
 
-    private func setUnderlyingWebContentHoverSuppressed(_ isSuppressed: Bool) {
+    private func setUnderlyingWebContentHoverSuppressed(
+        _ isSuppressed: Bool,
+        refreshIfUnchanged: Bool = false
+    ) {
         guard isSuppressingUnderlyingWebContentHover != isSuppressed else {
-            if isSuppressed {
+            if isSuppressed, refreshIfUnchanged {
                 WebContentMouseTrackingShield.refresh(for: self)
             }
             return

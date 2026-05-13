@@ -142,7 +142,7 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         let windowSource = try Self.source(named: "Sumi/Components/Window/SumiBrowserWindow.swift")
         let windowViewSource = try Self.source(named: "App/Window/WindowView.swift")
         let sidebarHeaderSource = try Self.source(named: "Navigation/Sidebar/SidebarHeader.swift")
-        let panelHostSource = try Self.source(named: "Sumi/Components/Sidebar/CollapsedSidebarPanelHost.swift")
+        let collapsedOverlaySource = try Self.source(named: "Sumi/Components/Sidebar/CollapsedSidebarOverlayHost.swift")
 
         XCTAssertTrue(controlsSource.contains("struct BrowserWindowTrafficLights: View"))
         XCTAssertTrue(controlsSource.contains("NSViewRepresentable"))
@@ -162,7 +162,8 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertFalse(windowViewSource.contains("shouldRenderParentBrowserTrafficLights"))
         XCTAssertFalse(windowViewSource.contains("BrowserWindowTrafficLights("))
         XCTAssertTrue(windowSource.contains("hideNativeStandardWindowButtonsForBrowserChrome()"))
-        XCTAssertTrue(panelHostSource.contains("CollapsedSidebarPanelWindow"))
+        XCTAssertTrue(collapsedOverlaySource.contains("CollapsedSidebarOverlayHost"))
+        XCTAssertFalse(collapsedOverlaySource.contains("NSPanel"))
 
         XCTAssertFalse(controlsSource.contains("BrowserWindowTrafficLightProxyCluster"))
         XCTAssertFalse(controlsSource.contains("BrowserWindowTrafficLightProxyAction"))
@@ -177,13 +178,13 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertFalse(sidebarHeaderSource.contains("BrowserWindowTrafficLightProxyCluster"))
         XCTAssertFalse(sidebarHeaderSource.contains("BrowserWindowTrafficLightPlaceholderCluster"))
         XCTAssertFalse(sidebarHeaderSource.contains("standardWindowButton"))
-        XCTAssertFalse(panelHostSource.contains("standardWindowButton"))
+        XCTAssertFalse(collapsedOverlaySource.contains("standardWindowButton"))
 
         Self.assertNoNativeTrafficLightReparenting(in: controlsSource, file: "BrowserWindowTrafficLights.swift")
         Self.assertNoNativeTrafficLightReparenting(in: windowSource, file: "SumiBrowserWindow.swift")
         Self.assertNoNativeTrafficLightReparenting(in: windowViewSource, file: "WindowView.swift")
         Self.assertNoNativeTrafficLightReparenting(in: sidebarHeaderSource, file: "SidebarHeader.swift")
-        Self.assertNoNativeTrafficLightReparenting(in: panelHostSource, file: "CollapsedSidebarPanelHost.swift")
+        Self.assertNoNativeTrafficLightReparenting(in: collapsedOverlaySource, file: "CollapsedSidebarOverlayHost.swift")
     }
 
     func testTrafficLightActionProviderEnablesAvailableWindowActions() {
@@ -262,26 +263,27 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         }
     }
 
-    func testCollapsedLeftPanelUsesSameSidebarHostedTrafficLightsAndSinglePanelGeometry() throws {
+    func testCollapsedOverlayUsesSameSidebarHostedTrafficLightsAndWindowLocalGeometry() throws {
         let headerSource = try Self.source(named: "Navigation/Sidebar/SidebarHeader.swift")
-        let panelHostSource = try Self.source(named: "Sumi/Components/Sidebar/CollapsedSidebarPanelHost.swift")
+        let collapsedOverlaySource = try Self.source(named: "Sumi/Components/Sidebar/CollapsedSidebarOverlayHost.swift")
         let windowViewSource = try Self.source(named: "App/Window/WindowView.swift")
 
         XCTAssertTrue(headerSource.contains("BrowserWindowTrafficLights("))
         XCTAssertTrue(headerSource.contains(".browserWindow(windowState.window)"))
         XCTAssertTrue(headerSource.contains("isBrowserWindowFullScreen == false"))
-        XCTAssertTrue(panelHostSource.contains("CollapsedSidebarPanelFrameResolver.panelFrame("))
-        XCTAssertTrue(panelHostSource.contains("width: width"))
-        XCTAssertTrue(panelHostSource.contains("height: parentContentScreenFrame.height"))
+        XCTAssertTrue(collapsedOverlaySource.contains("CollapsedSidebarOverlayHost"))
+        XCTAssertTrue(collapsedOverlaySource.contains("presentationContext.sidebarWidth"))
+        XCTAssertTrue(collapsedOverlaySource.contains("WebContentHoverShieldSensorView()"))
         XCTAssertFalse(windowViewSource.contains("collapsedLeftSidebarPanelVisible"))
         XCTAssertFalse(windowViewSource.contains("!dockedLeftSidebarVisible && !collapsedLeftSidebarPanelVisible"))
         XCTAssertFalse(windowViewSource.contains("BrowserWindowTrafficLights("))
 
-        XCTAssertFalse(panelHostSource.contains("TrafficLightReserved"))
-        XCTAssertFalse(panelHostSource.contains("trafficLightReserved"))
-        XCTAssertFalse(panelHostSource.range(of: #"split.*panel"#, options: .regularExpression) != nil)
-        XCTAssertFalse(panelHostSource.range(of: #"accessory.*panel"#, options: .regularExpression) != nil)
-        XCTAssertFalse(panelHostSource.contains("standardWindowButton"))
+        XCTAssertFalse(collapsedOverlaySource.contains("TrafficLightReserved"))
+        XCTAssertFalse(collapsedOverlaySource.contains("trafficLightReserved"))
+        XCTAssertFalse(collapsedOverlaySource.range(of: #"split.*panel"#, options: .regularExpression) != nil)
+        XCTAssertFalse(collapsedOverlaySource.range(of: #"accessory.*panel"#, options: .regularExpression) != nil)
+        XCTAssertFalse(collapsedOverlaySource.contains("standardWindowButton"))
+        XCTAssertFalse(collapsedOverlaySource.contains("NSPanel"))
     }
 
     func testRightCollapsedSidebarUsesSameSidebarEmbeddedTrafficLights() throws {

@@ -10,14 +10,10 @@ final class SidebarColumnViewController: NSViewController {
     private var hostingController: NSViewController?
     private var widthConstraint: NSLayoutConstraint?
     private weak var registeredRecoveryAnchor: NSView?
-    private let usesCollapsedPanelRoot: Bool
+    private let usesCollapsedOverlayRoot: Bool
 
-    var collapsedPanelAnimatedContentView: NSView? {
-        hostingController?.view
-    }
-
-    init(usesCollapsedPanelRoot: Bool = false) {
-        self.usesCollapsedPanelRoot = usesCollapsedPanelRoot
+    init(usesCollapsedOverlayRoot: Bool = false) {
+        self.usesCollapsedOverlayRoot = usesCollapsedOverlayRoot
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -27,8 +23,8 @@ final class SidebarColumnViewController: NSViewController {
     }
 
     override func loadView() {
-        let containerView: SidebarColumnBaseContainerView = usesCollapsedPanelRoot
-            ? CollapsedSidebarPanelRootView()
+        let containerView: SidebarColumnBaseContainerView = usesCollapsedOverlayRoot
+            ? CollapsedSidebarOverlayRootView()
             : SidebarColumnContainerView()
         containerView.onWindowChanged = { [weak self] window in
             Task { @MainActor [weak self] in
@@ -44,8 +40,8 @@ final class SidebarColumnViewController: NSViewController {
         root: Content,
         width: CGFloat,
         contextMenuController: SidebarContextMenuController? = nil,
-        capturesPanelBackgroundPointerEvents: Bool = false,
-        isCollapsedPanelHitTestingEnabled: Bool = false,
+        capturesOverlayBackgroundPointerEvents: Bool = false,
+        isCollapsedOverlayHitTestingEnabled: Bool = false,
         onPointerDown: (() -> Void)? = nil
     ) {
         let previousHostedSidebarView = hostingController?.view
@@ -53,9 +49,9 @@ final class SidebarColumnViewController: NSViewController {
         containerView?.contextMenuController = contextMenuController
         containerView?.onPointerDown = onPointerDown
         (view as? SidebarColumnContainerView)?
-            .capturesPanelBackgroundPointerEvents = capturesPanelBackgroundPointerEvents
-        (view as? CollapsedSidebarPanelRootView)?
-            .isPanelHitTestingEnabled = isCollapsedPanelHitTestingEnabled
+            .capturesOverlayBackgroundPointerEvents = capturesOverlayBackgroundPointerEvents
+        (view as? CollapsedSidebarOverlayRootView)?
+            .isOverlayHitTestingEnabled = isCollapsedOverlayHitTestingEnabled
 
         if let hostingController = hostingController as? SidebarHostingController<Content> {
             hostingController.rootView = root
@@ -97,19 +93,14 @@ final class SidebarColumnViewController: NSViewController {
         syncRecoveryAnchor(window: view.window)
     }
 
-    func setCollapsedPanelHitTestingEnabled(_ isEnabled: Bool) {
-        (view as? CollapsedSidebarPanelRootView)?
-            .isPanelHitTestingEnabled = isEnabled
-    }
-
     func teardownSidebarHosting() {
         unregisterRecoveryAnchor()
         let containerView = view as? SidebarColumnBaseContainerView
         containerView?.hostedSidebarView = nil
         containerView?.contextMenuController = nil
         containerView?.onPointerDown = nil
-        (view as? SidebarColumnContainerView)?.capturesPanelBackgroundPointerEvents = false
-        (view as? CollapsedSidebarPanelRootView)?.isPanelHitTestingEnabled = false
+        (view as? SidebarColumnContainerView)?.capturesOverlayBackgroundPointerEvents = false
+        (view as? CollapsedSidebarOverlayRootView)?.isOverlayHitTestingEnabled = false
         widthConstraint?.isActive = false
         widthConstraint = nil
         removeHostingControllerIfNeeded()

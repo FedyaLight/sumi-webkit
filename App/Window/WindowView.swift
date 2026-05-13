@@ -29,7 +29,6 @@ struct WindowView: View {
     @Environment(CommandPalette.self) private var commandPalette
     @Environment(\.sumiSettings) var sumiSettings
     @StateObject private var hoverSidebarManager = HoverSidebarManager()
-    @ObservedObject private var sidebarDragState = SidebarDragState.shared
     /// Bumps when system/window effective appearance changes so `globalColorScheme` refreshes while in auto mode.
     @State private var effectiveAppearanceRevision: UInt = 0
 
@@ -84,18 +83,13 @@ struct WindowView: View {
                 }
             }
 
-            if SidebarDragVisualSurfacePolicy.shouldRenderParentWindowFloatingPreview(
-                isSidebarVisible: windowState.isSidebarVisible,
-                isCollapsedOverlayRevealed: sidebarHoverOverlayRevealed
-            ) {
-                chromeThemeScope {
-                    SidebarFloatingDragPreview()
-                        .environmentObject(browserManager)
-                        .environment(windowState)
-                        .environment(\.sumiSettings, sumiSettings)
-                        .zIndex(WindowTransientChromeZIndex.sidebarDragPreview)
-                        .allowsHitTesting(false)
-                }
+            chromeThemeScope {
+                SidebarFloatingDragPreview()
+                    .environmentObject(browserManager)
+                    .environment(windowState)
+                    .environment(\.sumiSettings, sumiSettings)
+                    .zIndex(WindowTransientChromeZIndex.sidebarDragPreview)
+                    .allowsHitTesting(false)
             }
 
         }
@@ -213,32 +207,6 @@ struct WindowView: View {
     }
 
     // MARK: - Layout Components
-
-    private var sidebarHoverOverlayRevealed: Bool {
-        SidebarHoverOverlayRevealPolicy.isOverlayRevealed(
-            isOverlayVisible: hoverSidebarManager.isOverlayVisible,
-            transientUIPinsHoverSidebar: transientUIPinsHoverSidebar,
-            sidebarDragPinsHoverSidebar: sidebarDragPinsHoverSidebar
-        )
-    }
-
-    private var transientUIPinsHoverSidebar: Bool {
-        SidebarHoverOverlayTransientPinningPolicy.shouldPinHoverSidebar(
-            transientWindowID: windowState.sidebarTransientSessionCoordinator.currentPresentationWindowID,
-            currentWindowID: windowState.id,
-            isSidebarVisible: windowState.isSidebarVisible
-        )
-    }
-
-    private var sidebarDragPinsHoverSidebar: Bool {
-        SidebarHoverOverlayDragPinningPolicy.shouldPinHoverSidebar(
-            activeWindowID: windowRegistry.activeWindowId,
-            currentWindowID: windowState.id,
-            isSidebarVisible: windowState.isSidebarVisible,
-            isDragging: sidebarDragState.isDragging,
-            isInternalDragSession: sidebarDragState.isInternalDragSession
-        )
-    }
 
     private func revealCollapsedSidebarForPinnedTransientIfNeeded() {
         guard !windowState.isSidebarVisible,

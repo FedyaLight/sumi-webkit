@@ -1,38 +1,6 @@
 import AppKit
 import SwiftUI
 
-enum SidebarDragPreviewPresentationSurface: Equatable {
-    case parentWindowOverlay
-    case collapsedPanelOverlayWindow
-}
-
-enum SidebarDragVisualSurfacePolicy {
-    static func floatingPreviewSurface(
-        for presentationContext: SidebarPresentationContext
-    ) -> SidebarDragPreviewPresentationSurface {
-        presentationContext.mode == .collapsedVisible
-            ? .collapsedPanelOverlayWindow
-            : .parentWindowOverlay
-    }
-
-    static func shouldRenderParentWindowFloatingPreview(
-        isSidebarVisible: Bool,
-        isCollapsedOverlayRevealed: Bool
-    ) -> Bool {
-        isSidebarVisible || isCollapsedOverlayRevealed == false
-    }
-
-    static func shouldPresentCollapsedPanelPreviewOverlay(
-        presentationContext: SidebarPresentationContext,
-        isDragging: Bool,
-        isInternalDragGeometryArmed: Bool = false
-    ) -> Bool {
-        (isDragging || isInternalDragGeometryArmed)
-            && floatingPreviewSurface(for: presentationContext) == .collapsedPanelOverlayWindow
-    }
-
-}
-
 enum SidebarFloatingDragPreviewPolicy {
     static func resolvedPreviewKind(
         baseKind: SidebarDragPreviewKind?,
@@ -91,34 +59,38 @@ struct SidebarFloatingDragPreview: View {
     @Environment(BrowserWindowState.self) private var windowState
 
     var body: some View {
-        GeometryReader { geo in
-            if let previewModel = dragState.previewModel,
-               let dragLocation = dragState.previewDragLocation ?? dragState.dragLocation {
-                let previewKind = SidebarFloatingDragPreviewPolicy.resolvedPreviewKind(
-                    model: previewModel,
-                    hoveredSlot: dragState.hoveredSlot
-                )
-                let size = resolvedSize(for: previewKind, model: previewModel)
-                let anchor = previewModel.anchorOffset(in: size)
+        Group {
+            if shouldRenderPreview {
+                GeometryReader { geo in
+                    if let previewModel = dragState.previewModel,
+                       let dragLocation = currentDragLocation {
+                        let previewKind = SidebarFloatingDragPreviewPolicy.resolvedPreviewKind(
+                            model: previewModel,
+                            hoveredSlot: dragState.hoveredSlot
+                        )
+                        let size = resolvedSize(for: previewKind, model: previewModel)
+                        let anchor = previewModel.anchorOffset(in: size)
 
-                previewContent(kind: previewKind, model: previewModel, size: size)
-                    .frame(width: size.width, height: size.height)
-                    .position(
-                        x: (dragLocation.x - geo.frame(in: .global).minX) - anchor.x + (size.width / 2),
-                        y: (dragLocation.y - geo.frame(in: .global).minY) - anchor.y + (size.height / 2)
-                    )
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                    .animation(.easeInOut(duration: 0.15), value: previewKind)
-                    .animation(.easeInOut(duration: 0.15), value: size)
-                    .animation(.easeInOut(duration: 0.15), value: dragState.hoveredSlot)
-            } else if let asset = currentAsset,
-                      let dragLocation = dragState.previewDragLocation ?? dragState.dragLocation {
-                fallbackImagePreview(asset: asset)
-                    .position(
-                        x: (dragLocation.x - geo.frame(in: .global).minX) - asset.anchorOffset.x + (asset.size.width / 2),
-                        y: (dragLocation.y - geo.frame(in: .global).minY) - asset.anchorOffset.y + (asset.size.height / 2)
-                    )
-                    .animation(.easeInOut(duration: 0.12), value: currentPreviewKind)
+                        previewContent(kind: previewKind, model: previewModel, size: size)
+                            .frame(width: size.width, height: size.height)
+                            .position(
+                                x: (dragLocation.x - geo.frame(in: .global).minX) - anchor.x + (size.width / 2),
+                                y: (dragLocation.y - geo.frame(in: .global).minY) - anchor.y + (size.height / 2)
+                            )
+                            .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                            .animation(.easeInOut(duration: 0.15), value: previewKind)
+                            .animation(.easeInOut(duration: 0.15), value: size)
+                            .animation(.easeInOut(duration: 0.15), value: dragState.hoveredSlot)
+                    } else if let asset = currentAsset,
+                              let dragLocation = currentDragLocation {
+                        fallbackImagePreview(asset: asset)
+                            .position(
+                                x: (dragLocation.x - geo.frame(in: .global).minX) - asset.anchorOffset.x + (asset.size.width / 2),
+                                y: (dragLocation.y - geo.frame(in: .global).minY) - asset.anchorOffset.y + (asset.size.height / 2)
+                            )
+                            .animation(.easeInOut(duration: 0.12), value: currentPreviewKind)
+                    }
+                }
             }
         }
         .allowsHitTesting(false)
@@ -262,6 +234,14 @@ struct SidebarFloatingDragPreview: View {
     private var currentAsset: SidebarDragPreviewAsset? {
         guard let currentPreviewKind else { return nil }
         return dragState.previewAssets[currentPreviewKind]
+    }
+
+    private var currentDragLocation: CGPoint? {
+        dragState.previewDragLocation ?? dragState.dragLocation
+    }
+
+    private var shouldRenderPreview: Bool {
+        currentDragLocation != nil && (dragState.previewModel != nil || currentAsset != nil)
     }
 
     private var currentPreviewKind: SidebarDragPreviewKind? {

@@ -43,7 +43,7 @@ struct SidebarPresentationContext: Equatable {
         mode == .docked
     }
 
-    var capturesPanelBackgroundPointerEvents: Bool {
+    var capturesOverlayBackgroundPointerEvents: Bool {
         mode == .collapsedVisible
     }
 
