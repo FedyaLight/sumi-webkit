@@ -9,14 +9,34 @@ import Foundation
 import Observation
 import SwiftUI
 
+@MainActor
+protocol SearchSuggestionDataProviding {
+    func data(for query: String) async throws -> Data
+}
+
+@MainActor
+struct GoogleSearchSuggestionDataProvider: SearchSuggestionDataProviding {
+    func data(for query: String) async throws -> Data {
+        let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let urlString = "https://suggestqueries.google.com/complete/search?client=safari&q=\(encodedQuery)"
+
+        guard let url = URL(string: urlString) else {
+            throw URLError(.badURL)
+        }
+
+        let (data, _) = try await URLSession.shared.data(from: url)
+        return data
+    }
+}
+
 @Observable
 @MainActor
 class SearchManager {
     var suggestions: [SearchSuggestion] = []
     var isLoading: Bool = false
     
-    private let session = URLSession.shared
-    private var searchTask: URLSessionDataTask?
+    private let suggestionDataProvider: SearchSuggestionDataProviding
+    private var webSuggestionTask: Task<Void, Never>?
     private var historySuggestionTask: Task<Void, Never>?
     private weak var tabManager: TabManager?
     private weak var historyManager: HistoryManager?
@@ -28,6 +48,10 @@ class SearchManager {
     private let maxCachedWebSuggestionQueries = 24
     // Zen inherits Firefox's browser.urlbar.maxRichResults default.
     private let maxVisibleSuggestions = 10
+
+    init(suggestionDataProvider: SearchSuggestionDataProviding = GoogleSearchSuggestionDataProvider()) {
+        self.suggestionDataProvider = suggestionDataProvider
+    }
     
     struct SearchSuggestion: Identifiable, Equatable {
         let id = UUID()
@@ -88,7 +112,7 @@ class SearchManager {
     
     @MainActor func searchSuggestions(for query: String) {
         // Cancel previous request
-        searchTask?.cancel()
+        webSuggestionTask?.cancel()
         historySuggestionTask?.cancel()
         webSuggestionRequestGeneration &+= 1
         activeWebSuggestionGeneration = webSuggestionRequestGeneration
@@ -279,19 +303,14 @@ class SearchManager {
         generation: UInt64
     ) {
         isLoading = true
-        
-        let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let urlString = "https://suggestqueries.google.com/complete/search?client=safari&q=\(encodedQuery)"
         let maxWebSuggestionCount = maxVisibleSuggestions
-        
-        guard let url = URL(string: urlString) else {
-            isLoading = false
-            return
-        }
-        
-        searchTask = session.dataTask(with: url) { data, _, error in
+
+        webSuggestionTask = Task { @MainActor [weak self] in
+            guard let self else { return }
             var webSuggestionTexts: [String]?
-            if let data = data, error == nil {
+            do {
+                let data = try await self.suggestionDataProvider.data(for: query)
+                guard !Task.isCancelled else { return }
                 do {
                     let jsonArray = try JSONSerialization.jsonObject(with: data) as? [Any]
                     if let jsonArray,
@@ -307,29 +326,25 @@ class SearchManager {
                     RuntimeDiagnostics.emit("JSON parsing error: \(error.localizedDescription)")
                     webSuggestionTexts = nil
                 }
-            } else {
-                RuntimeDiagnostics.emit("Search suggestions error: \(error?.localizedDescription ?? "Unknown error")")
+            } catch {
+                guard !Task.isCancelled else { return }
+                RuntimeDiagnostics.emit("Search suggestions error: \(error.localizedDescription)")
                 webSuggestionTexts = nil
             }
 
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                guard generation == self.activeWebSuggestionGeneration else { return }
+            guard generation == self.activeWebSuggestionGeneration else { return }
 
-                self.isLoading = false
+            self.isLoading = false
 
-                if let webSuggestionTexts {
-                    self.storeCachedWebSuggestions(webSuggestionTexts, for: query)
-                    let combinedSuggestions = self.combineSuggestions(
-                        prependTabSuggestions,
-                        withWebSuggestionTexts: webSuggestionTexts
-                    )
-                    self.updateSuggestionsIfNeeded(combinedSuggestions)
-                }
+            if let webSuggestionTexts {
+                self.storeCachedWebSuggestions(webSuggestionTexts, for: query)
+                let combinedSuggestions = self.combineSuggestions(
+                    prependTabSuggestions,
+                    withWebSuggestionTexts: webSuggestionTexts
+                )
+                self.updateSuggestionsIfNeeded(combinedSuggestions)
             }
         }
-        
-        searchTask?.resume()
     }
 
     nonisolated private static func parseGoogleSuggestions(from payload: Any) -> [String]? {
@@ -419,7 +434,7 @@ class SearchManager {
     
     
     func clearSuggestions() {
-        searchTask?.cancel()
+        webSuggestionTask?.cancel()
         historySuggestionTask?.cancel()
         webSuggestionRequestGeneration &+= 1
         activeWebSuggestionGeneration = webSuggestionRequestGeneration

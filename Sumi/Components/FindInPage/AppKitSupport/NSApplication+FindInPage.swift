@@ -8,10 +8,14 @@
 import AppKit
 
 extension NSApplication {
-    var sumi_findIsReturnOrEnterPressed: Bool {
+    var sumi_chromeIsReturnOrEnterPressed: Bool {
         guard let event = currentEvent,
               case .keyDown = event.type
         else { return false }
         return event.keyCode == 36 || event.keyCode == 76
+    }
+
+    var sumi_findIsReturnOrEnterPressed: Bool {
+        sumi_chromeIsReturnOrEnterPressed
     }
 }

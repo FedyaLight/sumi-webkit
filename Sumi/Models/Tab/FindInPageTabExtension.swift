@@ -42,9 +42,19 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
 
     private(set) var isActive = false
     private var isPdf = false
+    private var searchGeneration: UInt64 = 0
 
     private enum Constants {
         static let maxMatches: UInt = 1000
+    }
+
+    private func nextSearchGeneration() -> UInt64 {
+        searchGeneration &+= 1
+        return searchGeneration
+    }
+
+    private func isCurrentSearchGeneration(_ generation: UInt64) -> Bool {
+        generation == searchGeneration && model.isVisible
     }
 
     func show(with webView: any FindInPageWebView) {
@@ -56,18 +66,21 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
                 .debounce(for: 0.2, scheduler: RunLoop.main)
                 .scan((old: "", new: model.text)) { ($0.new, $1) }
                 .sink { [weak self] change in
+                    guard let self else { return }
+                    let generation = self.nextSearchGeneration()
                     Task { @MainActor in
-                        await self?.textDidChange(from: change.old, to: change.new)
+                        await self.textDidChange(from: change.old, to: change.new, generation: generation)
                     }
                 }
         }
 
+        let generation = nextSearchGeneration()
         Task { @MainActor in
-            await showFindInPage()
+            await showFindInPage(generation: generation)
         }
     }
 
-    private func showFindInPage() async {
+    private func showFindInPage(generation: UInt64) async {
         let alreadyVisible = model.isVisible
         model.show()
 
@@ -75,15 +88,20 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
             guard !model.text.isEmpty,
                   !isPdf else { return }
 
-            await find(model.text, with: [.noIndexChange, .determineMatchIndex, .showOverlay])
+            await find(
+                model.text,
+                with: [.noIndexChange, .determineMatchIndex, .showOverlay],
+                generation: generation
+            )
             return
         }
 
         await reset()
+        guard isCurrentSearchGeneration(generation) else { return }
         guard !model.text.isEmpty else { return }
 
-        await find(model.text, with: .showOverlay)
-        await doItOneMoreTimeForPdf(with: model.text)
+        await find(model.text, with: .showOverlay, generation: generation)
+        await doItOneMoreTimeForPdf(with: model.text, generation: generation)
     }
 
     private func reset() async {
@@ -95,7 +113,7 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
         self.isPdf = (await webView?.mimeType == UTType.pdf.preferredMIMEType)
     }
 
-    private func textDidChange(from oldValue: String, to string: String) async {
+    private func textDidChange(from oldValue: String, to string: String, generation: UInt64) async {
         guard !string.isEmpty else {
             await reset()
             return
@@ -107,22 +125,24 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
             options.insert(.noIndexChange)
         }
 
-        await find(string, with: options)
-        await doItOneMoreTimeForPdf(with: string, oldValue: oldValue)
+        await find(string, with: options, generation: generation)
+        await doItOneMoreTimeForPdf(with: string, oldValue: oldValue, generation: generation)
     }
 
     private func doItOneMoreTimeForPdf(
         with string: String,
         options: _WKFindOptions = .noIndexChange,
-        oldValue: String? = nil
+        oldValue: String? = nil,
+        generation: UInt64
     ) async {
         guard isPdf, oldValue != string else { return }
-        await find(string, with: options)
+        await find(string, with: options, generation: generation)
     }
 
     private func find(
         _ string: String,
-        with options: _WKFindOptions = []
+        with options: _WKFindOptions = [],
+        generation: UInt64
     ) async {
         guard !string.isEmpty else {
             await reset()
@@ -139,6 +159,7 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
         }
 
         let result = await webView?.find(string, with: options, maxCount: Constants.maxMatches)
+        guard isCurrentSearchGeneration(generation) else { return }
 
         switch result {
         case .found(matches: let matchesFound):
@@ -154,7 +175,7 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
                       !isPdf else { break }
 
                 webView?.clearFindInPageState()
-                await find(string, with: [.noIndexChange, .showOverlay])
+                await find(string, with: [.noIndexChange, .showOverlay], generation: generation)
             }
 
         case .notFound:
@@ -184,6 +205,7 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
 
     func close() {
         guard model.isVisible else { return }
+        _ = nextSearchGeneration()
         model.close()
         cancellable = nil
         webView?.clearFindInPageState()
@@ -192,16 +214,26 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
 
     func findNext() {
         guard !model.text.isEmpty else { return }
+        let generation = nextSearchGeneration()
         Task { @MainActor [isActive] in
-            await find(model.text, with: model.isVisible ? .showOverlay : [])
-            await doItOneMoreTimeForPdf(with: model.text, oldValue: (isActive ? model.text : ""))
+            await find(model.text, with: model.isVisible ? .showOverlay : [], generation: generation)
+            await doItOneMoreTimeForPdf(
+                with: model.text,
+                oldValue: (isActive ? model.text : ""),
+                generation: generation
+            )
         }
     }
 
     func findPrevious() {
         guard !model.text.isEmpty else { return }
+        let generation = nextSearchGeneration()
         Task { @MainActor in
-            await find(model.text, with: model.isVisible ? [.showOverlay, .backwards] : [.backwards])
+            await find(
+                model.text,
+                with: model.isVisible ? [.showOverlay, .backwards] : [.backwards],
+                generation: generation
+            )
         }
     }
 

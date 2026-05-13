@@ -34,7 +34,7 @@ final class HoverTrackingArea: NSTrackingArea {
         let trackingArea = HoverTrackingArea(owner: view)
         view.addTrackingArea(trackingArea)
 
-        view.isMouseOver = view.sumi_findIsMouseLocationInsideBounds()
+        view.isMouseOver = view.sumi_chromeIsMouseLocationInsideBounds()
         trackingArea.updateLayer(animated: false)
     }
 
@@ -131,7 +131,7 @@ final class HoverTrackingArea: NSTrackingArea {
         layer.cornerRadius = view.cornerRadius
         layer.frame = view.bounds.insetBy(dx: view.backgroundInset.x, dy: view.backgroundInset.y)
 
-        NSAppearance.sumi_findWithAppAppearance {
+        NSAppearance.sumi_chromeWithAppAppearance {
             NSAnimationContext.runAnimationGroup { context in
                 context.allowsImplicitAnimation = true
                 if !animated || view.isMouseDown || view.isMouseOver && !view.mustAnimateOnMouseOver {
@@ -201,18 +201,18 @@ final class HoverTrackingArea: NSTrackingArea {
         guard let view else { return }
 
         if view.isMouseOver,
-           view.window?.isKeyWindow != true || view.sumi_findIsMouseLocationInsideBounds() != true,
+           view.window?.isKeyWindow != true || view.sumi_chromeIsMouseLocationInsideBounds() != true,
            let event = NSApp.currentEvent {
 
             mouseExited(event)
         } else {
-            updateLayer(animated: !view.isMouseDown && !view.sumi_findIsMouseLocationInsideBounds())
+            updateLayer(animated: !view.isMouseDown && !view.sumi_chromeIsMouseLocationInsideBounds())
         }
     }
 
     private func viewWindowDidChange() {
         guard let view else { return }
-        view.isMouseOver = view.sumi_findIsMouseLocationInsideBounds()
+        view.isMouseOver = view.sumi_chromeIsMouseLocationInsideBounds()
         updateLayer(animated: false)
     }
 }

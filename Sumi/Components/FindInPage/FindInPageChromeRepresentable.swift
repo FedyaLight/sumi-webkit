@@ -311,7 +311,7 @@ struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
                 context.coordinator.lastAppliedFocusGeneration = generation
                 findVC.makeMeFirstResponder()
                 // One deferred retry: representable can update before the NSView is in a window or first responder commits.
-                if container.view.window == nil || !findVC.textField.sumi_findIsFirstResponder {
+                if container.view.window == nil || !findVC.textField.sumi_chromeIsFirstResponder {
                     let containerView = container.view
                     DispatchQueue.main.async { [weak findVC, weak containerView] in
                         guard let findVC, containerView?.window != nil else { return }

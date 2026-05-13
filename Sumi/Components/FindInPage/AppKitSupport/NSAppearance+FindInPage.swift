@@ -10,7 +10,12 @@ import AppKit
 extension NSAppearance {
     /// Match DuckDuckGo’s `NSAppearance.withAppAppearance` behavior for asset catalog / layer colors.
     @MainActor
-    static func sumi_findWithAppAppearance(_ body: () -> Void) {
+    static func sumi_chromeWithAppAppearance(_ body: () -> Void) {
         NSApp.effectiveAppearance.performAsCurrentDrawingAppearance(body)
+    }
+
+    @MainActor
+    static func sumi_findWithAppAppearance(_ body: () -> Void) {
+        sumi_chromeWithAppAppearance(body)
     }
 }

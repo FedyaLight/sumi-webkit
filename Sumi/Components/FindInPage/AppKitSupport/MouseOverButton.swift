@@ -182,7 +182,7 @@ class MouseOverButton: NSButton, Hoverable {
     }
 
     func updateTintColor() {
-        NSAppearance.sumi_findWithAppAppearance {
+        NSAppearance.sumi_chromeWithAppAppearance {
             self.contentTintColor = currentTintColor()
         }
     }

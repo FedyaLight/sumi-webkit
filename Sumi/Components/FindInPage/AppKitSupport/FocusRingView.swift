@@ -49,7 +49,7 @@ final class FocusRingView: NSView {
 
         addSublayers()
         layoutSublayers()
-        sumi_findApplyAssetColors()
+        sumi_chromeApplyAssetColors()
     }
 
     override func layout() {
@@ -103,14 +103,14 @@ final class FocusRingView: NSView {
         shadowLayer.opacity = stroke ? 0.4 : 0
         strokeLayer.opacity = stroke ? 1.0 : 0
 
-        NSAppearance.sumi_findWithAppAppearance {
+        NSAppearance.sumi_chromeWithAppAppearance {
             backgroundLayer.backgroundColor = stroke ? strokedBackgroundColor?.cgColor : unstrokedBackgroundColor?.cgColor
             shadowLayer.backgroundColor = shadowColor?.cgColor
             strokeLayer.backgroundColor = strokeColor?.cgColor
         }
     }
 
-    func sumi_findApplyAssetColors() {
+    func sumi_chromeApplyAssetColors() {
         strokedBackgroundColor = NSColor(named: "FindInPageFocusedBackgroundColor", bundle: .main)
         unstrokedBackgroundColor = NSColor(named: "FindInPageBackgroundColor", bundle: .main)
         strokeColor = .controlAccentColor
@@ -119,11 +119,19 @@ final class FocusRingView: NSView {
         refreshLayerColors()
     }
 
-    func sumi_findApplyChromePaint(_ paint: FindInPageChromePaint) {
+    func sumi_chromeApplyChromePaint(_ paint: FindInPageChromePaint) {
         strokedBackgroundColor = paint.fieldFocused
         unstrokedBackgroundColor = paint.fieldUnfocused
         strokeColor = paint.accentStroke
         shadowColor = paint.accentShadow
         refreshLayerColors()
+    }
+
+    func sumi_findApplyAssetColors() {
+        sumi_chromeApplyAssetColors()
+    }
+
+    func sumi_findApplyChromePaint(_ paint: FindInPageChromePaint) {
+        sumi_chromeApplyChromePaint(paint)
     }
 }

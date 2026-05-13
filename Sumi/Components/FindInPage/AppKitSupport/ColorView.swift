@@ -39,7 +39,7 @@ class ColorView: DraggingDestinationView {
     }
 
     private func updateBackgroundColor() {
-        NSAppearance.sumi_findWithAppAppearance {
+        NSAppearance.sumi_chromeWithAppAppearance {
             layer?.backgroundColor = backgroundColor?.cgColor
         }
     }
@@ -62,7 +62,7 @@ class ColorView: DraggingDestinationView {
     }
 
     private func updateBorderColor() {
-        NSAppearance.sumi_findWithAppAppearance {
+        NSAppearance.sumi_chromeWithAppAppearance {
             layer?.borderColor = borderColor?.cgColor
         }
     }
@@ -89,7 +89,7 @@ class ColorView: DraggingDestinationView {
 
     override func updateLayer() {
         super.updateLayer()
-        NSAppearance.sumi_findWithAppAppearance {
+        NSAppearance.sumi_chromeWithAppAppearance {
             layer?.backgroundColor = backgroundColor?.cgColor
             layer?.borderColor = borderColor?.cgColor
         }

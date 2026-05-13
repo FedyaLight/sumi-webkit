@@ -200,10 +200,48 @@ private struct BrowserWindowStandardTrafficLightCluster: NSViewRepresentable {
 }
 
 @MainActor
+private final class BrowserWindowTrafficLightActivationObserver {
+    private var observerTokens: [NSObjectProtocol] = []
+
+    init(onChange: @escaping @MainActor () -> Void) {
+        let notificationCenter = NotificationCenter.default
+        let windowNotifications: [Notification.Name] = [
+            NSWindow.didBecomeKeyNotification,
+            NSWindow.didResignKeyNotification,
+            NSWindow.didBecomeMainNotification,
+            NSWindow.didResignMainNotification,
+        ]
+        let applicationNotifications: [Notification.Name] = [
+            NSApplication.didBecomeActiveNotification,
+            NSApplication.didResignActiveNotification,
+        ]
+
+        observerTokens = (windowNotifications + applicationNotifications).map { notificationName in
+            notificationCenter.addObserver(
+                forName: notificationName,
+                object: nil,
+                queue: .main
+            ) { _ in
+                MainActor.assumeIsolated {
+                    onChange()
+                }
+            }
+        }
+    }
+
+    isolated deinit {
+        for token in observerTokens {
+            NotificationCenter.default.removeObserver(token)
+        }
+    }
+}
+
+@MainActor
 private final class BrowserWindowStandardTrafficLightClusterView: NSView {
     private var buttonsByAction: [BrowserWindowTrafficLightAction: NSButton] = [:]
     private let glyphOverlayView = BrowserWindowTrafficLightGlyphOverlayView()
     private var trackingArea: NSTrackingArea?
+    private var activationObserver: BrowserWindowTrafficLightActivationObserver?
     private var actionProvider: BrowserWindowTrafficLightActionProvider?
     private var isClusterVisible = false
     private var hostingWindowDrawsActiveControls = false {
@@ -232,11 +270,9 @@ private final class BrowserWindowStandardTrafficLightClusterView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
-        observeWindowActivationStateChanges()
-    }
-
-    deinit {
-        NotificationCenter.default.removeObserver(self)
+        activationObserver = BrowserWindowTrafficLightActivationObserver { [weak self] in
+            self?.refreshHostingWindowActivationState()
+        }
     }
 
     @available(*, unavailable)
@@ -417,43 +453,6 @@ private final class BrowserWindowStandardTrafficLightClusterView: NSView {
             overlayActions.remove(pressedAction)
         }
         glyphOverlayView.enabledActions = overlayActions
-    }
-
-    private func observeWindowActivationStateChanges() {
-        let notificationCenter = NotificationCenter.default
-        [
-            NSWindow.didBecomeKeyNotification,
-            NSWindow.didResignKeyNotification,
-            NSWindow.didBecomeMainNotification,
-            NSWindow.didResignMainNotification,
-        ].forEach { notificationName in
-            notificationCenter.addObserver(
-                self,
-                selector: #selector(handleWindowActivationStateChange(_:)),
-                name: notificationName,
-                object: nil
-            )
-        }
-        notificationCenter.addObserver(
-            self,
-            selector: #selector(handleApplicationActivationStateChange),
-            name: NSApplication.didBecomeActiveNotification,
-            object: nil
-        )
-        notificationCenter.addObserver(
-            self,
-            selector: #selector(handleApplicationActivationStateChange),
-            name: NSApplication.didResignActiveNotification,
-            object: nil
-        )
-    }
-
-    @objc private func handleWindowActivationStateChange(_ notification: Notification) {
-        refreshHostingWindowActivationState()
-    }
-
-    @objc private func handleApplicationActivationStateChange() {
-        refreshHostingWindowActivationState()
     }
 
     private func refreshHostingWindowActivationState() {
