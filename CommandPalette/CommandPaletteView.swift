@@ -297,7 +297,10 @@ struct CommandPaletteView: View {
                         .scaleEffect(searchModeScale)
                         .background {
                             if isVisible {
-                                MouseEventShieldView(suppressesUnderlyingWebContentHover: true)
+                                MouseEventShieldView(
+                                    suppressesUnderlyingWebContentHover: true,
+                                    cursorPolicy: .none
+                                )
                             }
                         }
                         .background(tokens.commandPaletteBackground)

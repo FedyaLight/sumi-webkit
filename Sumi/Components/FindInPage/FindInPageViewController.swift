@@ -64,6 +64,57 @@ private final class FindInPageBackgroundView: ColorView {
     }
 }
 
+private final class FindInPageFieldEditor: NSTextView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        isFieldEditor = true
+        drawsBackground = false
+    }
+
+    override init(frame frameRect: NSRect, textContainer container: NSTextContainer?) {
+        super.init(frame: frameRect, textContainer: container)
+        isFieldEditor = true
+        drawsBackground = false
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        isFieldEditor = true
+        drawsBackground = false
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        let cursorRect = bounds.intersection(visibleRect)
+        guard cursorRect.width > 0, cursorRect.height > 0 else { return }
+        addCursorRect(cursorRect, cursor: .iBeam)
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        super.cursorUpdate(with: event)
+        NSCursor.iBeam.set()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        refreshIBeamCursorIfMouseInside()
+    }
+
+    func refreshIBeamCursorIfMouseInside() {
+        window?.invalidateCursorRects(for: self)
+        guard sumi_chromeIsMouseLocationInsideBounds() else { return }
+        NSCursor.iBeam.set()
+    }
+}
+
+private final class FindInPageTextFieldCell: NSTextFieldCell {
+    private let findFieldEditor = FindInPageFieldEditor(frame: .zero)
+
+    override func fieldEditor(for controlView: NSView) -> NSTextView? {
+        findFieldEditor
+    }
+}
+
 private final class FindInPageTextField: NSTextField {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
@@ -133,10 +184,13 @@ final class FindInPageViewController: NSViewController {
         backgroundView.interceptClickEvents = true
 
         let textField = FindInPageTextField()
+        textField.cell = FindInPageTextFieldCell(textCell: "")
         textField.translatesAutoresizingMaskIntoConstraints = false
         textField.isBordered = false
         textField.isBezeled = false
         textField.drawsBackground = false
+        textField.isEditable = true
+        textField.isSelectable = true
         textField.focusRingType = .none
         textField.font = .systemFont(ofSize: 14)
         textField.lineBreakMode = .byClipping
@@ -417,6 +471,9 @@ final class FindInPageViewController: NSViewController {
 
         backgroundView.invalidateTextActivationCursorRects()
         textField.window?.invalidateCursorRects(for: textField)
+        if let editor = textField.currentEditor() as? FindInPageFieldEditor {
+            editor.refreshIBeamCursorIfMouseInside()
+        }
     }
 
     /// When `paint` is `nil`, uses catalog assets (e.g. before the first SwiftUI theme sync).
@@ -486,6 +543,9 @@ extension FindInPageViewController: NSTextFieldDelegate {
 
     func controlTextDidBeginEditing(_ obj: Notification) {
         updateView(firstResponder: true)
+        let fieldEditor = obj.userInfo?["NSFieldEditor"] as? FindInPageFieldEditor
+            ?? textField.currentEditor() as? FindInPageFieldEditor
+        fieldEditor?.refreshIBeamCursorIfMouseInside()
     }
 
     func controlTextDidEndEditing(_ obj: Notification) {

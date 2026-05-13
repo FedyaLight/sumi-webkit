@@ -1,11 +1,17 @@
 import AppKit
 import SwiftUI
 
+enum MouseEventShieldCursorPolicy {
+    case none
+    case arrow
+}
+
 @MainActor
 final class MouseEventShieldNSView: NSView, SidebarTransientInteractionDisarmable {
     var onClick: (() -> Void)?
     private var trackingArea: NSTrackingArea?
     private(set) var isInteractive: Bool = true
+    private var cursorPolicy: MouseEventShieldCursorPolicy = .arrow
     private var suppressesUnderlyingWebContentHover = false
     private var isSuppressingUnderlyingWebContentHover = false
 
@@ -73,7 +79,7 @@ final class MouseEventShieldNSView: NSView, SidebarTransientInteractionDisarmabl
 
     override func resetCursorRects() {
         super.resetCursorRects()
-        guard isInteractive else { return }
+        guard isInteractive, cursorPolicy == .arrow else { return }
         addCursorRect(bounds, cursor: .arrow)
     }
 
@@ -95,13 +101,13 @@ final class MouseEventShieldNSView: NSView, SidebarTransientInteractionDisarmabl
     override func mouseMoved(with event: NSEvent) {
         guard isInteractive else { return }
         updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: false)
-        NSCursor.arrow.set()
+        setCursorIfNeeded()
     }
 
     override func mouseEntered(with event: NSEvent) {
         guard isInteractive else { return }
         updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: false)
-        NSCursor.arrow.set()
+        setCursorIfNeeded()
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -116,10 +122,12 @@ final class MouseEventShieldNSView: NSView, SidebarTransientInteractionDisarmabl
     func update(
         onClick: (() -> Void)?,
         isInteractive: Bool,
-        suppressesUnderlyingWebContentHover: Bool
+        suppressesUnderlyingWebContentHover: Bool,
+        cursorPolicy: MouseEventShieldCursorPolicy
     ) {
         self.onClick = onClick
         self.suppressesUnderlyingWebContentHover = suppressesUnderlyingWebContentHover
+        updateCursorPolicy(cursorPolicy)
         setTransientInteractionEnabled(isInteractive)
         updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: true)
     }
@@ -151,6 +159,21 @@ final class MouseEventShieldNSView: NSView, SidebarTransientInteractionDisarmabl
             removeTrackingArea(trackingArea)
             self.trackingArea = nil
         }
+    }
+
+    private func updateCursorPolicy(_ cursorPolicy: MouseEventShieldCursorPolicy) {
+        guard self.cursorPolicy != cursorPolicy else { return }
+        self.cursorPolicy = cursorPolicy
+        window?.invalidateCursorRects(for: self)
+        setCursorIfNeeded()
+    }
+
+    private func setCursorIfNeeded() {
+        guard cursorPolicy == .arrow,
+              isInteractive,
+              sumi_chromeIsMouseLocationInsideBounds()
+        else { return }
+        NSCursor.arrow.set()
     }
 
     private func updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: Bool) {
@@ -188,6 +211,7 @@ struct MouseEventShieldView: NSViewRepresentable {
     var onClick: (() -> Void)? = nil
     var isInteractive: Bool = true
     var suppressesUnderlyingWebContentHover: Bool = false
+    var cursorPolicy: MouseEventShieldCursorPolicy = .arrow
     var handle: SidebarTransientInteractionHandle? = nil
 
     func makeNSView(context: Context) -> NSView {
@@ -195,7 +219,8 @@ struct MouseEventShieldView: NSViewRepresentable {
         view.update(
             onClick: onClick,
             isInteractive: isInteractive,
-            suppressesUnderlyingWebContentHover: suppressesUnderlyingWebContentHover
+            suppressesUnderlyingWebContentHover: suppressesUnderlyingWebContentHover,
+            cursorPolicy: cursorPolicy
         )
         handle?.attach(view)
         return view
@@ -206,7 +231,8 @@ struct MouseEventShieldView: NSViewRepresentable {
         shield.update(
             onClick: onClick,
             isInteractive: isInteractive,
-            suppressesUnderlyingWebContentHover: suppressesUnderlyingWebContentHover
+            suppressesUnderlyingWebContentHover: suppressesUnderlyingWebContentHover,
+            cursorPolicy: cursorPolicy
         )
         handle?.attach(shield)
     }
