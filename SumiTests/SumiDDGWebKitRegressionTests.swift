@@ -159,7 +159,8 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         )
 
         XCTAssertTrue(viewControllerSource.contains("private final class FindInPageTextField: NSTextField"))
-        XCTAssertTrue(viewControllerSource.contains("addCursorRect(cursorRect, cursor: .iBeam)"))
+        XCTAssertTrue(viewControllerSource.contains("sumi_chromeAddCursorRect(bounds, cursor: .iBeam)"))
+        XCTAssertTrue(viewControllerSource.contains("sumi_chromeAddCursorRect(textActivationRect, cursor: .iBeam)"))
         XCTAssertTrue(representableSource.contains("private final class FindInPageChromeContainerView: NSView"))
         XCTAssertTrue(representableSource.contains("WebContentMouseTrackingShield.setActive(isShielding, for: self)"))
         XCTAssertTrue(representableSource.contains("FindInPageChromeContainerView(frame:"))
@@ -204,8 +205,10 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         )
         XCTAssertTrue(viewControllerSource.contains("private final class FindInPageFieldEditor: NSTextView"))
         XCTAssertTrue(viewControllerSource.contains("override func resetCursorRects()"))
-        XCTAssertTrue(viewControllerSource.contains("NSCursor.iBeam.set()"))
-        XCTAssertTrue(viewControllerSource.contains("refreshIBeamCursorIfMouseInside()"))
+        XCTAssertTrue(viewControllerSource.contains("ChromeCursorKind.iBeam.set()"))
+        XCTAssertTrue(viewControllerSource.contains("func setIBeamCursorIfMouseInside()"))
+        XCTAssertTrue(viewControllerSource.contains("func invalidateIBeamCursorRects()"))
+        XCTAssertFalse(viewControllerSource.contains("refreshIBeamCursorIfMouseInside()"))
     }
 
     func testCommandPaletteHoverShieldDoesNotOwnCursor() throws {
