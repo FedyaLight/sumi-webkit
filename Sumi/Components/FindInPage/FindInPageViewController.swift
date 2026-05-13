@@ -95,13 +95,13 @@ final class FindInPageViewController: NSViewController {
         }
     }
 
-    @IBOutlet private weak var backgroundView: FindInPageBackgroundView!
-    @IBOutlet weak var closeButton: NSButton!
-    @IBOutlet weak var textField: NSTextField!
-    @IBOutlet weak var focusRingView: FocusRingView!
-    @IBOutlet weak var statusField: NSTextField!
-    @IBOutlet weak var nextButton: NSButton!
-    @IBOutlet weak var previousButton: NSButton!
+    private weak var backgroundView: FindInPageBackgroundView!
+    weak var closeButton: NSButton!
+    weak var textField: NSTextField!
+    weak var focusRingView: FocusRingView!
+    weak var statusField: NSTextField!
+    weak var nextButton: NSButton!
+    weak var previousButton: NSButton!
 
     private var statusPillView: ColorView?
     private weak var textActivationBoundaryView: NSView?
@@ -313,7 +313,7 @@ final class FindInPageViewController: NSViewController {
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-        guard NSApp.sumi_findIsReturnOrEnterPressed,
+        guard NSApp.sumi_chromeIsReturnOrEnterPressed,
               var modifiers = NSApp.currentEvent?.modifierFlags.intersection(.deviceIndependentFlagsMask)
         else {
             return false
@@ -332,10 +332,10 @@ final class FindInPageViewController: NSViewController {
     }
 
     func makeMeFirstResponder() {
-        if textField.sumi_findIsFirstResponder {
+        if textField.sumi_chromeIsFirstResponder {
             textField.currentEditor()?.selectAll(nil)
         } else {
-            textField.sumi_findMakeMeFirstResponder()
+            textField.sumi_chromeMakeMeFirstResponder()
         }
     }
 
@@ -423,7 +423,7 @@ final class FindInPageViewController: NSViewController {
     func applyChromeColors(_ paint: FindInPageChromePaint?) {
         if let paint {
             backgroundView.backgroundColor = paint.shellBackground
-            focusRingView.sumi_findApplyChromePaint(paint)
+            focusRingView.sumi_chromeApplyChromePaint(paint)
             textField.textColor = paint.primaryText
             statusField.textColor = paint.secondaryText
             let font = textField.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
@@ -453,7 +453,7 @@ final class FindInPageViewController: NSViewController {
 
     private func applyChromeColorsFromAssets() {
         backgroundView.backgroundColor = NSColor(named: "FindInPageBackgroundColor", bundle: .main) ?? .quaternaryLabelColor
-        focusRingView.sumi_findApplyAssetColors()
+        focusRingView.sumi_chromeApplyAssetColors()
         textField.textColor = .labelColor
         statusField.textColor = .secondaryLabelColor
         for case let hover as MouseOverButton in [closeButton, nextButton, previousButton] {
@@ -471,7 +471,7 @@ final class FindInPageViewController: NSViewController {
     }
 
     private func syncFocusRingWithFirstResponderIfNeeded() {
-        let focused = textField.sumi_findIsFirstResponder
+        let focused = textField.sumi_chromeIsFirstResponder
         guard focused != lastSyncedFocusRingStroke else { return }
         lastSyncedFocusRingStroke = focused
         updateView(firstResponder: focused)

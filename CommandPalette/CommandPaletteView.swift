@@ -71,8 +71,8 @@ struct CommandPaletteView: View {
     @State private var searchModeGlow: CommandPaletteSearchModeGlow?
     @State private var searchModeGlowProgress: CGFloat = 1
     @State private var paletteCardView: NSView?
-    @State private var outsideClickMonitor: Any?
-    @State private var searchDebounceTask: Task<Void, Never>?
+    @State private var outsideClickMonitor = ChromeLocalEventMonitor()
+    @State private var searchDebouncer = MainActorDebouncedTask()
 
     private var siteSearchMatch: SiteSearchEntry? {
         guard activeSiteSearch == nil else { return nil }
@@ -367,7 +367,7 @@ struct CommandPaletteView: View {
             handleVisibilityChanged(newVisible)
         }
         .onDisappear {
-            searchDebounceTask?.cancel()
+            searchDebouncer.cancel()
             removeOutsideClickMonitor()
         }
         .onChange(of: browserManager.currentProfile?.id) { _, _ in
@@ -412,17 +412,14 @@ struct CommandPaletteView: View {
     }
 
     private func scheduleSearchSuggestions(for query: String) {
-        searchDebounceTask?.cancel()
-
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else {
+            searchDebouncer.cancel()
             searchManager.clearSuggestions()
             return
         }
 
-        searchDebounceTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 160_000_000)
-            guard !Task.isCancelled else { return }
+        searchDebouncer.schedule(delayNanoseconds: 160_000_000) {
             searchManager.searchSuggestions(for: trimmedQuery)
         }
     }
@@ -440,7 +437,7 @@ struct CommandPaletteView: View {
                 focusSearchField(selectAll: true)
             }
         } else {
-            searchDebounceTask?.cancel()
+            searchDebouncer.cancel()
             removeOutsideClickMonitor()
             isSearchFocused = false
             searchManager.clearSuggestions()
@@ -752,8 +749,8 @@ struct CommandPaletteView: View {
     }
 
     private func installOutsideClickMonitorIfNeeded() {
-        guard outsideClickMonitor == nil else { return }
-        outsideClickMonitor = NSEvent.addLocalMonitorForEvents(
+        guard !outsideClickMonitor.isInstalled else { return }
+        outsideClickMonitor.install(
             matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
         ) { event in
             CommandPaletteOutsideClickRouting.monitorResult(
@@ -772,9 +769,7 @@ struct CommandPaletteView: View {
     }
 
     private func removeOutsideClickMonitor() {
-        guard let outsideClickMonitor else { return }
-        NSEvent.removeMonitor(outsideClickMonitor)
-        self.outsideClickMonitor = nil
+        outsideClickMonitor.remove()
     }
 
 }

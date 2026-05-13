@@ -9,7 +9,7 @@ import AppKit
 
 extension NSView {
 
-    func sumi_findVisibleRectClampedToBounds() -> NSRect {
+    func sumi_chromeVisibleRectClampedToBounds() -> NSRect {
         var visibleRect = self.visibleRect
 
         guard !clipsToBounds, let superview else { return visibleRect }
@@ -27,28 +27,48 @@ extension NSView {
         return visibleRect
     }
 
-    func sumi_findWithMouseLocationInViewCoordinates<T>(_ point: NSPoint? = nil, body: (NSPoint) -> T?) -> T? {
+    func sumi_chromeWithMouseLocationInViewCoordinates<T>(_ point: NSPoint? = nil, body: (NSPoint) -> T?) -> T? {
         guard let window else { return nil }
         let mouseLocation = point ?? window.mouseLocationOutsideOfEventStream
         let locationInView = convert(mouseLocation, from: nil)
         return body(locationInView)
     }
 
-    func sumi_findMouseLocationInsideBounds(_ point: NSPoint? = nil) -> NSPoint? {
-        sumi_findWithMouseLocationInViewCoordinates(point) { locationInView in
-            guard self.sumi_findVisibleRectClampedToBounds().contains(locationInView) else { return nil }
+    func sumi_chromeMouseLocationInsideBounds(_ point: NSPoint? = nil) -> NSPoint? {
+        sumi_chromeWithMouseLocationInViewCoordinates(point) { locationInView in
+            guard self.sumi_chromeVisibleRectClampedToBounds().contains(locationInView) else { return nil }
             return locationInView
         }
     }
 
-    func sumi_findIsMouseLocationInsideBounds(_ point: NSPoint? = nil) -> Bool {
-        sumi_findMouseLocationInsideBounds(point) != nil
+    func sumi_chromeIsMouseLocationInsideBounds(_ point: NSPoint? = nil) -> Bool {
+        sumi_chromeMouseLocationInsideBounds(point) != nil
     }
 
-    func sumi_findMakeMeFirstResponder() {
+    func sumi_chromeMakeMeFirstResponder() {
         guard let window else { return }
         guard window.firstResponder !== (self as? NSControl)?.currentEditor() ?? self else { return }
 
         window.makeFirstResponder(self)
+    }
+
+    func sumi_findVisibleRectClampedToBounds() -> NSRect {
+        sumi_chromeVisibleRectClampedToBounds()
+    }
+
+    func sumi_findWithMouseLocationInViewCoordinates<T>(_ point: NSPoint? = nil, body: (NSPoint) -> T?) -> T? {
+        sumi_chromeWithMouseLocationInViewCoordinates(point, body: body)
+    }
+
+    func sumi_findMouseLocationInsideBounds(_ point: NSPoint? = nil) -> NSPoint? {
+        sumi_chromeMouseLocationInsideBounds(point)
+    }
+
+    func sumi_findIsMouseLocationInsideBounds(_ point: NSPoint? = nil) -> Bool {
+        sumi_chromeIsMouseLocationInsideBounds(point)
+    }
+
+    func sumi_findMakeMeFirstResponder() {
+        sumi_chromeMakeMeFirstResponder()
     }
 }

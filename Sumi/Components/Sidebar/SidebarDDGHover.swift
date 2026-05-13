@@ -301,7 +301,7 @@ final class SidebarDDGHoverTrackingView: NSView, Hoverable {
         guard let window else { return false }
         let mouseLocation = mouseLocationInWindow ?? window.mouseLocationOutsideOfEventStream
         let localPoint = convert(mouseLocation, from: nil)
-        return sumi_findVisibleRectClampedToBounds().contains(localPoint)
+        return sumi_chromeVisibleRectClampedToBounds().contains(localPoint)
     }
 }
 

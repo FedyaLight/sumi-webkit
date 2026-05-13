@@ -8,7 +8,11 @@
 import AppKit
 
 extension NSTextField {
-    var sumi_findIsFirstResponder: Bool {
+    var sumi_chromeIsFirstResponder: Bool {
         window?.firstResponder === currentEditor()
+    }
+
+    var sumi_findIsFirstResponder: Bool {
+        sumi_chromeIsFirstResponder
     }
 }
