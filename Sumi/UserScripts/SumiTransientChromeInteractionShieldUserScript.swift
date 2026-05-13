@@ -1,7 +1,7 @@
 import Foundation
 import WebKit
 
-struct SumiTransientChromeInteractionShieldRect {
+struct SumiTransientChromeInteractionShieldRect: Equatable {
     var x: CGFloat
     var y: CGFloat
     var width: CGFloat
@@ -173,12 +173,13 @@ final class SumiTransientChromeInteractionShieldUserScript: NSObject, SumiUserSc
 
             function applyRects(rects) {
                 activeRects.length = 0;
-                (Array.isArray(rects) ? rects : []).forEach(function(rect, index) {
+                (Array.isArray(rects) ? rects : []).forEach(function(rect) {
                     const normalized = normalizeRect(rect);
                     if (!normalized) { return; }
 
+                    const shieldIndex = activeRects.length;
                     activeRects.push(normalized);
-                    const shieldElement = ensureShieldElement(index);
+                    const shieldElement = ensureShieldElement(shieldIndex);
                     Object.assign(shieldElement.style, {
                         left: normalized.left + "px",
                         top: normalized.top + "px",
@@ -246,19 +247,17 @@ final class SumiTransientChromeInteractionShieldUserScript: NSObject, SumiUserSc
                 nextActive = !!nextActive;
 
                 if (nextActive) {
+                    const clampedPoint = clampPoint(point);
+                    const previousTarget = clampedPoint ? document.elementFromPoint(clampedPoint.clientX, clampedPoint.clientY) : null;
+
                     applyRects(rects);
                     if (activeRects.length === 0) {
                         setActive(false, null, []);
                         return;
                     }
 
-                    const clampedPoint = clampPoint(point);
-                    const previousTarget = clampedPoint ? document.elementFromPoint(clampedPoint.clientX, clampedPoint.clientY) : null;
-                    const shield = shieldElements.find(function(element) {
-                        return element && clampedPoint && pointIsInsideActiveRect(clampedPoint.clientX, clampedPoint.clientY);
-                    }) || shieldElements[0] || null;
                     if (!active && clampedPoint && pointIsInsideActiveRect(clampedPoint.clientX, clampedPoint.clientY)) {
-                        dispatchExitEvents(previousTarget, shield, clampedPoint);
+                        dispatchExitEvents(previousTarget, shieldElements[0] || null, clampedPoint);
                     }
                     if (!active) {
                         active = true;

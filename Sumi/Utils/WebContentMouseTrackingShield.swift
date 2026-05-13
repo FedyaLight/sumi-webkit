@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 @MainActor
 enum WebContentMouseTrackingShield {
@@ -166,5 +167,102 @@ enum WebContentMouseTrackingShield {
                 height: clippedRect.height
             )
         }
+    }
+}
+
+@MainActor
+private final class WebContentHoverShieldSensorNSView: NSView {
+    private var trackingArea: NSTrackingArea?
+    private var isShielding = false
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil {
+            setShielding(false)
+        }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateShielding(refreshIfAlreadyShielding: true)
+    }
+
+    override func layout() {
+        super.layout()
+        updateShielding(refreshIfAlreadyShielding: true)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+            self.trackingArea = nil
+        }
+
+        let trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .inVisibleRect, .mouseEnteredAndExited, .mouseMoved],
+            owner: self,
+            userInfo: nil
+        )
+        self.trackingArea = trackingArea
+        addTrackingArea(trackingArea)
+        updateShielding(refreshIfAlreadyShielding: true)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        updateShielding(refreshIfAlreadyShielding: false)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        updateShielding(refreshIfAlreadyShielding: false)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        setShielding(false)
+    }
+
+    private func updateShielding(refreshIfAlreadyShielding: Bool) {
+        guard let window else {
+            setShielding(false)
+            return
+        }
+
+        let location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        setShielding(bounds.contains(location), refreshIfUnchanged: refreshIfAlreadyShielding)
+    }
+
+    private func setShielding(
+        _ isShielding: Bool,
+        refreshIfUnchanged: Bool = false
+    ) {
+        guard self.isShielding != isShielding else {
+            if isShielding, refreshIfUnchanged {
+                WebContentMouseTrackingShield.refresh(for: self)
+            }
+            return
+        }
+
+        self.isShielding = isShielding
+        WebContentMouseTrackingShield.setActive(isShielding, for: self)
+    }
+}
+
+struct WebContentHoverShieldSensorView: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = WebContentHoverShieldSensorNSView(frame: .zero)
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.clear.cgColor
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: ()) {
+        WebContentMouseTrackingShield.unregister(nsView)
     }
 }

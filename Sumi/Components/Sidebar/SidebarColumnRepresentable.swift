@@ -93,7 +93,7 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
     var presentationContext: SidebarPresentationContext
 
     func makeNSViewController(context: Context) -> SidebarColumnViewController {
-        SidebarColumnViewController(usesCollapsedPanelRoot: presentationContext.isCollapsedOverlay)
+        SidebarColumnViewController(usesCollapsedOverlayRoot: presentationContext.isCollapsedOverlay)
     }
 
     func updateNSViewController(_ controller: SidebarColumnViewController, context: Context) {
@@ -111,8 +111,8 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
             root: root,
             width: presentationContext.sidebarWidth,
             contextMenuController: windowState.sidebarContextMenuController,
-            capturesPanelBackgroundPointerEvents: presentationContext.capturesPanelBackgroundPointerEvents,
-            isCollapsedPanelHitTestingEnabled: presentationContext.mode == .collapsedVisible,
+            capturesOverlayBackgroundPointerEvents: presentationContext.capturesOverlayBackgroundPointerEvents,
+            isCollapsedOverlayHitTestingEnabled: presentationContext.mode == .collapsedVisible,
             onPointerDown: { [weak browserManager] in
                 browserManager?.dismissWorkspaceThemePickerIfNeededCommitting()
             }

@@ -62,7 +62,7 @@ class SidebarColumnBaseContainerView: NSView {
 }
 
 final class SidebarColumnContainerView: SidebarColumnBaseContainerView {
-    var capturesPanelBackgroundPointerEvents = false
+    var capturesOverlayBackgroundPointerEvents = false
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
@@ -73,7 +73,7 @@ final class SidebarColumnContainerView: SidebarColumnBaseContainerView {
             hostedSidebarView: hostedSidebarView,
             contextMenuController: contextMenuController,
             eventType: window?.currentEvent?.type,
-            capturesPanelBackgroundPointerEvents: capturesPanelBackgroundPointerEvents
+            capturesOverlayBackgroundPointerEvents: capturesOverlayBackgroundPointerEvents
         )
     }
 
@@ -95,8 +95,8 @@ final class SidebarColumnContainerView: SidebarColumnBaseContainerView {
     }
 }
 
-final class CollapsedSidebarPanelRootView: SidebarColumnBaseContainerView {
-    var isPanelHitTestingEnabled = false
+final class CollapsedSidebarOverlayRootView: SidebarColumnBaseContainerView {
+    var isOverlayHitTestingEnabled = false
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         let localPoint: NSPoint
@@ -108,7 +108,7 @@ final class CollapsedSidebarPanelRootView: SidebarColumnBaseContainerView {
             localPoint = point
         }
 
-        guard isPanelHitTestingEnabled,
+        guard isOverlayHitTestingEnabled,
               !isHidden,
               alphaValue > 0.01,
               bounds.contains(localPoint)
@@ -125,14 +125,14 @@ final class CollapsedSidebarPanelRootView: SidebarColumnBaseContainerView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard let parentWindow = window?.parent else {
+        guard let targetWindow = window else {
             super.mouseDown(with: event)
             return
         }
 
         if event.clickCount == 2 {
             onPointerDown?()
-            parentWindow.performZoom(nil)
+            targetWindow.performZoom(nil)
             return
         }
 
@@ -142,7 +142,7 @@ final class CollapsedSidebarPanelRootView: SidebarColumnBaseContainerView {
         }
 
         onPointerDown?()
-        parentWindow.performDrag(with: event)
+        targetWindow.performDrag(with: event)
     }
 }
 

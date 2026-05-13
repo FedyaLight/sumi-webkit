@@ -36,6 +36,7 @@ final class FocusableWKWebView: WKWebView {
     private var isWebKitMouseTrackingLoadSheddingActive = false
     private var isTransientChromeMouseTrackingSuppressed = false
     private var isTransientChromeInteractionShieldApplied = false
+    private var transientChromeInteractionShieldRects: [SumiTransientChromeInteractionShieldRect] = []
 
     weak var owningTab: Tab?
     let interactionEventsPublisher = PassthroughSubject<SumiWebViewInteractionEvent, Never>()
@@ -175,13 +176,17 @@ final class FocusableWKWebView: WKWebView {
         _ isApplied: Bool,
         shieldRects: [SumiTransientChromeInteractionShieldRect]
     ) {
-        guard isTransientChromeInteractionShieldApplied != isApplied || isApplied else { return }
+        let activeShieldRects = isApplied ? shieldRects : []
+        guard isTransientChromeInteractionShieldApplied != isApplied ||
+              transientChromeInteractionShieldRects != activeShieldRects
+        else { return }
 
         isTransientChromeInteractionShieldApplied = isApplied
+        transientChromeInteractionShieldRects = activeShieldRects
         let script = SumiTransientChromeInteractionShieldUserScript.makeSetActiveSource(
             isApplied,
             clientPoint: currentClientPointForPageInteractionShield(),
-            rects: shieldRects
+            rects: activeShieldRects
         )
         evaluateJavaScript(script, completionHandler: nil)
     }

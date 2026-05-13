@@ -9,7 +9,7 @@ enum SidebarColumnHitTestRouting {
         hostedSidebarView: NSView?,
         contextMenuController: SidebarContextMenuController?,
         eventType: NSEvent.EventType?,
-        capturesPanelBackgroundPointerEvents: Bool = false
+        capturesOverlayBackgroundPointerEvents: Bool = false
     ) -> NSView? {
         if eventType == .leftMouseDragged || eventType == .leftMouseUp,
            let owner = contextMenuController?.primaryMouseTrackingOwner(in: containerView.window)
@@ -31,7 +31,7 @@ enum SidebarColumnHitTestRouting {
         }
 
         guard eventType == .leftMouseDown || eventType == .rightMouseDown else {
-            return capturesPanelBackgroundPointerEvents ? (originalHit ?? containerView) : originalHit
+            return capturesOverlayBackgroundPointerEvents ? (originalHit ?? containerView) : originalHit
         }
 
         let windowPoint = containerView.convert(point, to: nil)
@@ -152,7 +152,7 @@ enum SidebarColumnHitTestRouting {
             return containerView
         }
 
-        if capturesPanelBackgroundPointerEvents {
+        if capturesOverlayBackgroundPointerEvents {
             return originalHit ?? containerView
         }
 

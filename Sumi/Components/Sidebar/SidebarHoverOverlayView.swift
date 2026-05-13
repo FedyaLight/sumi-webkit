@@ -167,7 +167,7 @@ struct SidebarHoverOverlayView: View {
                             NSCursor.arrow.set()
                         }
 
-                    collapsedPanelHost
+                    collapsedOverlayHost
                 }
                 .frame(
                     maxWidth: .infinity,
@@ -190,8 +190,8 @@ struct SidebarHoverOverlayView: View {
         }
     }
 
-    private var collapsedPanelHost: some View {
-        CollapsedSidebarPanelHost(
+    private var collapsedOverlayHost: some View {
+        CollapsedSidebarOverlayHost(
             browserManager: browserManager,
             windowState: windowState,
             windowRegistry: windowRegistry,
@@ -202,13 +202,9 @@ struct SidebarHoverOverlayView: View {
             presentationContext: presentationContext,
             isHostRequested: shouldMountCollapsedSidebarHost
         )
-        .id("collapsed-sidebar-panel-host")
-        .transaction { transaction in
-            transaction.disablesAnimations = true
-        }
-        .frame(width: 0, height: 0)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        .id("collapsed-sidebar-overlay-host")
+        .frame(width: overlayBaseSidebarWidth)
+        .frame(maxHeight: .infinity)
     }
 
     private func retainOverlayHostIfPinned() {
