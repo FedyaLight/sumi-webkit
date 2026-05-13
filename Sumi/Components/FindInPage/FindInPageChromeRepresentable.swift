@@ -26,6 +26,110 @@ struct FindChromePaintSignature: Equatable {
     var settingsBits: Int
 }
 
+@MainActor
+private final class FindInPageChromeContainerView: NSView {
+    private var hoverShieldTrackingArea: NSTrackingArea?
+    private var isHoverShieldEnabled = false
+    private var isShieldingWebContentHover = false
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil {
+            setShieldingWebContentHover(false)
+            WebContentMouseTrackingShield.unregister(self)
+        }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateShielding(refreshIfAlreadyShielding: true)
+    }
+
+    override func layout() {
+        super.layout()
+        updateShielding(refreshIfAlreadyShielding: true)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        clearHoverShieldTrackingArea()
+
+        guard isHoverShieldEnabled else { return }
+
+        let trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .inVisibleRect, .mouseEnteredAndExited, .mouseMoved],
+            owner: self,
+            userInfo: nil
+        )
+        hoverShieldTrackingArea = trackingArea
+        addTrackingArea(trackingArea)
+        updateShielding(refreshIfAlreadyShielding: true)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        updateShielding(refreshIfAlreadyShielding: false)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        updateShielding(refreshIfAlreadyShielding: false)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        setShieldingWebContentHover(false)
+    }
+
+    func setHoverShieldEnabled(_ isEnabled: Bool) {
+        guard isHoverShieldEnabled != isEnabled else {
+            updateShielding(refreshIfAlreadyShielding: true)
+            return
+        }
+
+        isHoverShieldEnabled = isEnabled
+        if isEnabled {
+            updateTrackingAreas()
+        } else {
+            clearHoverShieldTrackingArea()
+            setShieldingWebContentHover(false)
+            WebContentMouseTrackingShield.unregister(self)
+        }
+    }
+
+    private func clearHoverShieldTrackingArea() {
+        if let hoverShieldTrackingArea {
+            removeTrackingArea(hoverShieldTrackingArea)
+            self.hoverShieldTrackingArea = nil
+        }
+    }
+
+    private func updateShielding(refreshIfAlreadyShielding: Bool) {
+        guard isHoverShieldEnabled,
+              let window
+        else {
+            setShieldingWebContentHover(false)
+            return
+        }
+
+        let location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        setShieldingWebContentHover(bounds.contains(location), refreshIfUnchanged: refreshIfAlreadyShielding)
+    }
+
+    private func setShieldingWebContentHover(
+        _ isShielding: Bool,
+        refreshIfUnchanged: Bool = false
+    ) {
+        guard isShieldingWebContentHover != isShielding else {
+            if isShielding, refreshIfUnchanged {
+                WebContentMouseTrackingShield.refresh(for: self)
+            }
+            return
+        }
+
+        isShieldingWebContentHover = isShielding
+        WebContentMouseTrackingShield.setActive(isShielding, for: self)
+    }
+}
+
 /// Mounts find chrome only while the active window needs it or while the transient panel is dismissing.
 /// During dismissal the AppKit host stays alive for animation, while hit testing/focus are disabled.
 struct FindInPageChromeHitTestingWrapper: View {
@@ -60,19 +164,13 @@ struct FindInPageChromeHitTestingWrapper: View {
         Group {
             if shouldMountFindChrome {
                 ZStack(alignment: .top) {
-                    ZStack {
-                        FindInPageChromeRepresentable(
-                            findManager: findManager,
-                            windowStateID: windowStateID,
-                            themeContext: themeContext,
-                            keepsChromeMounted: shouldKeepRepresentableRendered,
-                            isInteractive: isRepresentableInteractive
-                        )
-                        .frame(width: FindInPageChromeLayout.panelWidth, height: FindInPageChromeLayout.panelHeight)
-
-                        WebContentHoverShieldSensorView()
-                            .frame(width: FindInPageChromeLayout.panelWidth, height: FindInPageChromeLayout.panelHeight)
-                    }
+                    FindInPageChromeRepresentable(
+                        findManager: findManager,
+                        windowStateID: windowStateID,
+                        themeContext: themeContext,
+                        keepsChromeMounted: shouldKeepRepresentableRendered,
+                        isInteractive: isRepresentableInteractive
+                    )
                     .frame(width: FindInPageChromeLayout.panelWidth, height: FindInPageChromeLayout.panelHeight)
                     .shadow(
                         color: .black.opacity(colorScheme == .dark ? 0.42 : 0.18),
@@ -134,6 +232,12 @@ struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
 
     func makeNSViewController(context: Context) -> NSViewController {
         let container = NSViewController()
+        container.view = FindInPageChromeContainerView(frame: NSRect(
+            x: 0,
+            y: 0,
+            width: FindInPageChromeLayout.panelWidth,
+            height: FindInPageChromeLayout.panelHeight
+        ))
         let findVC = FindInPageViewController.create()
         findVC.delegate = context.coordinator
         context.coordinator.findViewController = findVC
@@ -157,6 +261,8 @@ struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
     }
 
     static func dismantleNSViewController(_ nsViewController: NSViewController, coordinator: Coordinator) {
+        (nsViewController.view as? FindInPageChromeContainerView)?.setHoverShieldEnabled(false)
+
         guard let window = nsViewController.view.window,
               let responder = window.firstResponder as? NSView,
               responder.isDescendant(of: nsViewController.view) else { return }
@@ -184,6 +290,7 @@ struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
 
         findVC.view.isHidden = !shouldRender
         container.view.isHidden = !shouldRender
+        (container.view as? FindInPageChromeContainerView)?.setHoverShieldEnabled(visible && isInteractive)
 
         let signature = FindChromePaintSignature(
             theme: themeContext,

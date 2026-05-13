@@ -160,7 +160,10 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
 
         XCTAssertTrue(viewControllerSource.contains("private final class FindInPageTextField: NSTextField"))
         XCTAssertTrue(viewControllerSource.contains("addCursorRect(cursorRect, cursor: .iBeam)"))
-        XCTAssertTrue(representableSource.contains("WebContentHoverShieldSensorView()"))
+        XCTAssertTrue(representableSource.contains("private final class FindInPageChromeContainerView: NSView"))
+        XCTAssertTrue(representableSource.contains("WebContentMouseTrackingShield.setActive(isShielding, for: self)"))
+        XCTAssertTrue(representableSource.contains("FindInPageChromeContainerView(frame:"))
+        XCTAssertFalse(representableSource.contains("WebContentHoverShieldSensorView()"))
         XCTAssertFalse(viewControllerSource.contains("FindInPageTextActivationView"))
         XCTAssertFalse(viewControllerSource.contains("NSEvent.mouseEvent("))
     }
