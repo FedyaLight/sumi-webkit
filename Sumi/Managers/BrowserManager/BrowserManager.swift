@@ -645,7 +645,7 @@ class BrowserManager: ObservableObject {
     }
 
     func toggleSidebar() {
-        if let windowState = windowRegistry?.activeWindow {
+        if let windowState = sidebarToggleTargetWindowState() {
             toggleSidebar(for: windowState)
         } else {
             savedSidebarVisibility.toggle()
@@ -653,13 +653,41 @@ class BrowserManager: ObservableObject {
     }
 
     func toggleSidebar(for windowState: BrowserWindowState) {
-        withAnimation(.easeInOut(duration: 0.1)) {
-            windowState.isSidebarVisible.toggle()
-            // Width stays the same whether visible or hidden
-        }
+        windowState.isSidebarVisible.toggle()
+        // Width stays the same whether visible or hidden.
         savedSidebarVisibility = windowState.isSidebarVisible
         savedSidebarWidth = windowState.savedSidebarWidth
-        persistWindowSession(for: windowState)
+        schedulePersistWindowSession(for: windowState, delayNanoseconds: 150_000_000)
+    }
+
+    private func sidebarToggleTargetWindowState() -> BrowserWindowState? {
+        if let activeWindow = windowRegistry?.activeWindow {
+            return activeWindow
+        }
+
+        guard let windowRegistry else {
+            return nil
+        }
+
+        if let keyWindow = NSApp.keyWindow,
+           let keyWindowState = windowRegistry.allWindows.first(where: { windowState in
+               guard let browserWindow = windowState.window else { return false }
+               if browserWindow === keyWindow {
+                   return true
+               }
+               return browserWindow.childWindows?.contains(where: { $0 === keyWindow }) == true
+           }) {
+            windowRegistry.setActive(keyWindowState)
+            return keyWindowState
+        }
+
+        if windowRegistry.allWindows.count == 1,
+           let onlyWindow = windowRegistry.allWindows.first {
+            windowRegistry.setActive(onlyWindow)
+            return onlyWindow
+        }
+
+        return nil
     }
 
     // MARK: - Sidebar width access for overlays

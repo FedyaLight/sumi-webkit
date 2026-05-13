@@ -187,6 +187,7 @@ enum SidebarItemInputRoutingReason: Equatable {
     case middleClick
     case primaryMouseTracking
     case leftMouseDownMenu
+    case rightMouseDownMenu
     case appKitRecovery
     case unavailableLeanContextMenu
 }
@@ -230,7 +231,7 @@ enum SidebarItemInputRouting {
             return .appKitOwner(.leftMouseDownMenu)
         }
         if menu.triggers == .rightClick {
-            return .leanDockedContextMenu
+            return .appKitOwner(.rightMouseDownMenu)
         }
         return .appKitOwner(.unavailableLeanContextMenu)
     }

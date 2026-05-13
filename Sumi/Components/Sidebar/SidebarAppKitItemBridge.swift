@@ -6,15 +6,14 @@
 import AppKit
 import SwiftUI
 
-struct SidebarAppKitItemBridge<Content: View>: NSViewRepresentable {
-    let content: Content
+struct SidebarAppKitItemBridge: NSViewRepresentable {
     let controller: SidebarContextMenuController
     let configuration: SidebarAppKitItemConfiguration
 
     func makeNSView(context: Context) -> SidebarInteractiveItemView {
         let view = SidebarInteractiveItemView(frame: .zero)
         view.contextMenuController = controller
-        view.update(rootView: AnyView(content), configuration: configuration)
+        view.update(configuration: configuration)
         SidebarUITestDragMarker.recordEvent(
             "bridgeMake",
             dragItemID: configuration.dragSource?.item.tabId,
@@ -28,7 +27,22 @@ struct SidebarAppKitItemBridge<Content: View>: NSViewRepresentable {
 
     func updateNSView(_ nsView: SidebarInteractiveItemView, context: Context) {
         nsView.contextMenuController = controller
-        nsView.update(rootView: AnyView(content), configuration: configuration)
+        nsView.update(configuration: configuration)
+    }
+
+    func sizeThatFits(
+        _ proposal: ProposedViewSize,
+        nsView: SidebarInteractiveItemView,
+        context: Context
+    ) -> CGSize? {
+        let width = proposal.width ?? nsView.bounds.width
+        let height = proposal.height ?? nsView.bounds.height
+
+        guard width.isFinite, height.isFinite else {
+            return .zero
+        }
+
+        return CGSize(width: max(width, 0), height: max(height, 0))
     }
 
     static func dismantleNSView(_ nsView: SidebarInteractiveItemView, coordinator: ()) {
@@ -73,6 +87,14 @@ final class SumiAppKitContextMenuHostView: NSView {
     var onMenuVisibilityChanged: (Bool) -> Void = { _ in }
 
     override var acceptsFirstResponder: Bool {
+        false
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
+    }
+
+    override var isOpaque: Bool {
         false
     }
 
@@ -154,6 +176,21 @@ struct SumiAppKitContextMenuBridge: NSViewRepresentable {
 
     func updateNSView(_ nsView: SumiAppKitContextMenuHostView, context: Context) {
         update(nsView)
+    }
+
+    func sizeThatFits(
+        _ proposal: ProposedViewSize,
+        nsView: SumiAppKitContextMenuHostView,
+        context: Context
+    ) -> CGSize? {
+        let width = proposal.width ?? nsView.bounds.width
+        let height = proposal.height ?? nsView.bounds.height
+
+        guard width.isFinite, height.isFinite else {
+            return .zero
+        }
+
+        return CGSize(width: max(width, 0), height: max(height, 0))
     }
 
     static func dismantleNSView(_ nsView: SumiAppKitContextMenuHostView, coordinator: ()) {
