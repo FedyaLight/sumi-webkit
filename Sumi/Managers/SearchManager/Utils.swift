@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import URLPredictor
 
 func normalizeURL(_ input: String, queryTemplate: String) -> String {
   let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -19,6 +20,11 @@ func normalizeURL(_ input: String, queryTemplate: String) -> String {
     return trimmed
   }
 
+  if let decision = try? Classifier.classify(input: trimmed),
+     case .navigate(let url) = decision {
+    return url.absoluteString
+  }
+
   if trimmed.contains(".") && !trimmed.contains(" ") {
     return "https://\(trimmed)"
   }
@@ -30,6 +36,11 @@ func normalizeURL(_ input: String, queryTemplate: String) -> String {
 
 func isLikelyURL(_ text: String) -> Bool {
   let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+  if let decision = try? Classifier.classify(input: trimmed),
+     case .navigate = decision {
+    return true
+  }
+
   return trimmed.contains(".") &&
     (trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") ||
       trimmed.contains(".com") || trimmed.contains(".org") ||

@@ -26,6 +26,8 @@ class SearchManager {
     private var cachedWebSuggestions: [String: [String]] = [:]
     private var cachedWebSuggestionOrder: [String] = []
     private let maxCachedWebSuggestionQueries = 24
+    // Zen inherits Firefox's browser.urlbar.maxRichResults default.
+    private let maxVisibleSuggestions = 10
     
     struct SearchSuggestion: Identifiable, Equatable {
         let id = UUID()
@@ -268,7 +270,7 @@ class SearchManager {
             allSuggestions.append(SearchSuggestion(text: query, type: .url))
         }
 
-        return Array(allSuggestions.prefix(5))
+        return Array(allSuggestions.prefix(maxVisibleSuggestions))
     }
     
     private func fetchWebSuggestions(
@@ -280,6 +282,7 @@ class SearchManager {
         
         let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         let urlString = "https://suggestqueries.google.com/complete/search?client=safari&q=\(encodedQuery)"
+        let maxWebSuggestionCount = maxVisibleSuggestions
         
         guard let url = URL(string: urlString) else {
             isLoading = false
@@ -295,7 +298,7 @@ class SearchManager {
                        jsonArray.count >= 2,
                        let suggestionsArray = Self.parseGoogleSuggestions(from: jsonArray[1]),
                        suggestionsArray.isEmpty == false {
-                        webSuggestionTexts = Array(suggestionsArray.prefix(5))
+                        webSuggestionTexts = Array(suggestionsArray.prefix(maxWebSuggestionCount))
                     } else {
                         RuntimeDiagnostics.emit("Invalid JSON response format")
                         webSuggestionTexts = nil
@@ -359,12 +362,12 @@ class SearchManager {
             if !combinedSuggestions.contains(suggestion) {
                 combinedSuggestions.append(suggestion)
             }
-            if combinedSuggestions.count >= 5 {
+            if combinedSuggestions.count >= maxVisibleSuggestions {
                 break
             }
         }
 
-        return Array(combinedSuggestions.prefix(5))
+        return Array(combinedSuggestions.prefix(maxVisibleSuggestions))
     }
 
     private func storeCachedWebSuggestions(_ suggestions: [String], for query: String) {
