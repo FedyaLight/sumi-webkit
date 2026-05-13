@@ -32,7 +32,6 @@ final class FocusableWKWebView: WKWebView {
 
     private var webKitMouseTrackingLoadSheddingObserver: NSKeyValueObservation?
     private var webKitMouseTrackingArea: NSTrackingArea?
-    private var findInPageInteractionTrackingArea: NSTrackingArea?
     private var isWebKitMouseTrackingLoadSheddingActive = false
     private var isTransientChromeMouseTrackingSuppressed = false
     private var isTransientChromeInteractionShieldApplied = false
@@ -121,31 +120,6 @@ final class FocusableWKWebView: WKWebView {
         super.addTrackingArea(trackingArea)
     }
 
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        refreshFindInPageInteractionTrackingArea()
-    }
-
-    private func refreshFindInPageInteractionTrackingArea() {
-        if let findInPageInteractionTrackingArea {
-            removeTrackingArea(findInPageInteractionTrackingArea)
-        }
-
-        guard !isTransientChromeMouseTrackingSuppressed else {
-            self.findInPageInteractionTrackingArea = nil
-            return
-        }
-
-        let trackingArea = NSTrackingArea(
-            rect: .zero,
-            options: [.activeInKeyWindow, .inVisibleRect, .mouseEnteredAndExited, .mouseMoved, .cursorUpdate],
-            owner: self,
-            userInfo: nil
-        )
-        findInPageInteractionTrackingArea = trackingArea
-        addTrackingArea(trackingArea)
-    }
-
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         let shouldSuppress = window.map(WebContentMouseTrackingShield.isActive(in:)) ?? false
@@ -164,11 +138,9 @@ final class FocusableWKWebView: WKWebView {
         if let trackingArea = webKitMouseTrackingArea {
             updateWebKitMouseTrackingArea(trackingArea)
         }
-        refreshFindInPageInteractionTrackingArea()
 
         if isSuppressed {
             owningTab?.onLinkHover?(nil)
-            NSCursor.arrow.set()
         }
     }
 
@@ -234,7 +206,6 @@ final class FocusableWKWebView: WKWebView {
     }
 
     private func performDefaultMouseDownBehavior(with event: NSEvent) {
-        owningTab?.findInPage.pageInteractionWillBegin()
         super.mouseDown(with: event)
         owningTab?.activate()
         interactionEventsPublisher.send(.mouseDown(event))
@@ -242,28 +213,22 @@ final class FocusableWKWebView: WKWebView {
 
     override func mouseMoved(with event: NSEvent) {
         guard !isTransientChromeMouseTrackingSuppressed else {
-            NSCursor.arrow.set()
             return
         }
-        owningTab?.findInPage.pageInteractionWillBegin()
         super.mouseMoved(with: event)
     }
 
     override func mouseEntered(with event: NSEvent) {
         guard !isTransientChromeMouseTrackingSuppressed else {
-            NSCursor.arrow.set()
             return
         }
-        owningTab?.findInPage.pageInteractionWillBegin()
         super.mouseEntered(with: event)
     }
 
     override func cursorUpdate(with event: NSEvent) {
         guard !isTransientChromeMouseTrackingSuppressed else {
-            NSCursor.arrow.set()
             return
         }
-        owningTab?.findInPage.pageInteractionWillBegin()
         super.cursorUpdate(with: event)
     }
 
@@ -396,6 +361,8 @@ struct _WKFindOptions: OptionSet {
     let rawValue: UInt
 
     static let caseInsensitive = Self(rawValue: 1 << 0)
+    static let atWordStarts = Self(rawValue: 1 << 1)
+    static let treatMedialCapitalAsWordStart = Self(rawValue: 1 << 2)
     static let backwards = Self(rawValue: 1 << 3)
     static let wrapAround = Self(rawValue: 1 << 4)
     static let showOverlay = Self(rawValue: 1 << 5)

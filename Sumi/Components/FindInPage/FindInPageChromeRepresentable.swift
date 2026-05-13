@@ -8,17 +8,22 @@ import SwiftUI
 
 /// Shared layout for find-in-page chrome and its transient panel strip.
 enum FindInPageChromeLayout {
-    /// Top padding (8) + representable (48) plus bottom inset so SwiftUI `.shadow` is not clipped by the panel.
-    static let stripHeight: CGFloat = 92
+    /// Top padding + representable height plus bottom inset so SwiftUI `.shadow` is not clipped by the panel.
+    static let stripHeight: CGFloat = 80
+    static let panelWidth: CGFloat = 340
+    static let panelHeight: CGFloat = 44
+    static let topInset: CGFloat = 24
+    static let trailingInset: CGFloat = 14
+}
+
+private enum FindInPageChromeAnimation {
+    static let duration: TimeInterval = 0.18
+    static let presentation = Animation.easeOut(duration: 0.18)
 }
 
 struct FindChromePaintSignature: Equatable {
     var theme: ResolvedThemeContext
     var settingsBits: Int
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.theme == rhs.theme && lhs.settingsBits == rhs.settingsBits
-    }
 }
 
 /// Mounts find chrome only while the active window needs it or while the transient panel is dismissing.
@@ -27,6 +32,8 @@ struct FindInPageChromeHitTestingWrapper: View {
     @ObservedObject var findManager: FindManager
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.colorScheme) private var colorScheme
+    @State private var keepsChromeMountedForDismissal = false
+    @State private var dismissalGeneration: UInt = 0
     let windowStateID: UUID
     let themeContext: ResolvedThemeContext
     let keepsChromeMounted: Bool
@@ -34,50 +41,84 @@ struct FindInPageChromeHitTestingWrapper: View {
 
     private var shouldMountFindChrome: Bool {
         windowRegistry.activeWindow?.id == windowStateID
-            && (findManager.isFindBarVisible || keepsChromeMounted)
+            && (findManager.isFindBarVisible || keepsChromeMounted || keepsChromeMountedForDismissal)
+    }
+
+    private var shouldKeepRepresentableRendered: Bool {
+        keepsChromeMounted || keepsChromeMountedForDismissal
+    }
+
+    private var isRepresentableInteractive: Bool {
+        isInteractive && findManager.isFindBarVisible
+    }
+
+    private var isChromePresented: Bool {
+        windowRegistry.activeWindow?.id == windowStateID && findManager.isFindBarVisible
     }
 
     var body: some View {
-        if shouldMountFindChrome {
-            ZStack(alignment: .top) {
-                HStack(spacing: 0) {
-                    Spacer(minLength: 0)
+        Group {
+            if shouldMountFindChrome {
+                ZStack(alignment: .top) {
                     ZStack {
-                        MouseEventShieldView(
-                            isInteractive: isInteractive,
-                            suppressesUnderlyingWebContentHover: true
-                        )
                         FindInPageChromeRepresentable(
                             findManager: findManager,
                             windowStateID: windowStateID,
                             themeContext: themeContext,
-                            keepsChromeMounted: keepsChromeMounted,
-                            isInteractive: isInteractive
+                            keepsChromeMounted: shouldKeepRepresentableRendered,
+                            isInteractive: isRepresentableInteractive
                         )
+                        .frame(width: FindInPageChromeLayout.panelWidth, height: FindInPageChromeLayout.panelHeight)
+
+                        WebContentHoverShieldSensorView()
+                            .frame(width: FindInPageChromeLayout.panelWidth, height: FindInPageChromeLayout.panelHeight)
                     }
-                    .frame(width: 400, height: 48)
+                    .frame(width: FindInPageChromeLayout.panelWidth, height: FindInPageChromeLayout.panelHeight)
                     .shadow(
-                        color: .black.opacity(colorScheme == .dark ? 0.38 : 0.15),
+                        color: .black.opacity(colorScheme == .dark ? 0.42 : 0.18),
                         radius: 12,
                         x: 0,
                         y: 4
                     )
-                    Spacer(minLength: 0)
+                    .opacity(isChromePresented ? 1 : 0)
+                    .offset(y: isChromePresented ? 0 : -FindInPageChromeLayout.panelHeight)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.top, FindInPageChromeLayout.topInset)
+                    .padding(.trailing, FindInPageChromeLayout.trailingInset)
                 }
-                .padding(.top, 8)
+                .frame(height: FindInPageChromeLayout.stripHeight, alignment: .top)
+                .frame(maxWidth: .infinity, alignment: .top)
+                .allowsHitTesting(isRepresentableInteractive)
+                .transition(.asymmetric(
+                    insertion: .move(edge: .top).combined(with: .opacity),
+                    removal: .move(edge: .top).combined(with: .opacity)
+                ))
+            } else {
+                Color.clear
+                    .frame(width: 0, height: 0)
+                    .allowsHitTesting(false)
             }
-            .frame(height: FindInPageChromeLayout.stripHeight, alignment: .top)
-            .frame(maxWidth: .infinity, alignment: .top)
-            .allowsHitTesting(isInteractive)
-        } else {
-            Color.clear
-                .frame(width: 0, height: 0)
-                .allowsHitTesting(false)
+        }
+        .animation(FindInPageChromeAnimation.presentation, value: shouldMountFindChrome)
+        .animation(FindInPageChromeAnimation.presentation, value: isChromePresented)
+        .onChange(of: findManager.isFindBarVisible) { wasVisible, isVisible in
+            if isVisible {
+                dismissalGeneration &+= 1
+                keepsChromeMountedForDismissal = false
+            } else if wasVisible && windowRegistry.activeWindow?.id == windowStateID {
+                dismissalGeneration &+= 1
+                let generation = dismissalGeneration
+                keepsChromeMountedForDismissal = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + FindInPageChromeAnimation.duration) {
+                    guard dismissalGeneration == generation else { return }
+                    keepsChromeMountedForDismissal = false
+                }
+            }
         }
     }
 }
 
-/// Hosts DuckDuckGo-style `FindInPageViewController` in the top browser chrome (400×40, centered).
+/// Hosts `FindInPageViewController` in the top-right browser chrome.
 struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
     @ObservedObject var findManager: FindManager
     @Environment(WindowRegistry.self) private var windowRegistry
@@ -105,10 +146,10 @@ struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
         container.view.setContentCompressionResistancePriority(.required, for: .vertical)
 
         NSLayoutConstraint.activate([
-            findVC.view.widthAnchor.constraint(equalToConstant: 400),
-            findVC.view.heightAnchor.constraint(equalToConstant: 40),
+            findVC.view.widthAnchor.constraint(equalToConstant: FindInPageChromeLayout.panelWidth),
+            findVC.view.heightAnchor.constraint(equalToConstant: FindInPageChromeLayout.panelHeight),
             findVC.view.centerXAnchor.constraint(equalTo: container.view.centerXAnchor),
-            findVC.view.topAnchor.constraint(equalTo: container.view.topAnchor, constant: 8),
+            findVC.view.topAnchor.constraint(equalTo: container.view.topAnchor),
             container.view.bottomAnchor.constraint(equalTo: findVC.view.bottomAnchor),
         ])
 
@@ -164,7 +205,9 @@ struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
                 findVC.makeMeFirstResponder()
                 // One deferred retry: representable can update before the NSView is in a window or first responder commits.
                 if container.view.window == nil || !findVC.textField.sumi_findIsFirstResponder {
-                    DispatchQueue.main.async {
+                    let containerView = container.view
+                    DispatchQueue.main.async { [weak findVC, weak containerView] in
+                        guard let findVC, containerView?.window != nil else { return }
                         findVC.makeMeFirstResponder()
                     }
                 }

@@ -32,6 +32,7 @@ struct FindInPageChromeHost: View {
         .environment(\.sumiSettings, sumiSettings)
         .environment(\.resolvedThemeContext, resolvedThemeContext)
         .environment(\.colorScheme, colorScheme)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         .allowsHitTesting(shouldPresent)
     }
 }
