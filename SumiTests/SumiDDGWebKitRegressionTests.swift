@@ -114,8 +114,55 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertTrue(webViewSource.contains("guard !trackingAreas.contains(trackingArea)"))
         XCTAssertTrue(webViewSource.contains("removeTrackingArea(trackingArea)"))
         XCTAssertTrue(webViewSource.contains("superAddTrackingArea(trackingArea)"))
+        XCTAssertFalse(webViewSource.contains("findInPageInteractionTrackingArea"))
+        XCTAssertFalse(webViewSource.contains("refreshFindInPageInteractionTrackingArea"))
+        XCTAssertFalse(webViewSource.contains("pageInteractionWillBegin"))
         XCTAssertFalse(webViewSource.contains("_ignoresMouseMoveEvents"))
         XCTAssertFalse(webViewSource.contains("ignoresMouseMoveEvents"))
+    }
+
+    func testTransientChromeMouseTrackingSuppressionDoesNotOwnCursor() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Utils/WebKit/FocusableWKWebView.swift"
+            ),
+            encoding: .utf8
+        )
+        let start = try XCTUnwrap(source.range(of: "final class FocusableWKWebView"))
+            .lowerBound
+        let end = try XCTUnwrap(source.range(of: "@MainActor\nextension WKWebView"))
+            .lowerBound
+        let webViewSource = String(source[start..<end])
+
+        XCTAssertTrue(webViewSource.contains("setTransientChromeMouseTrackingSuppressed"))
+        XCTAssertFalse(webViewSource.contains("NSCursor.arrow.set()"))
+    }
+
+    func testFindChromeUsesNativeCursorRectsInsteadOfTextActivationOverlay() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let viewControllerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Components/FindInPage/FindInPageViewController.swift"
+            ),
+            encoding: .utf8
+        )
+        let representableSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Components/FindInPage/FindInPageChromeRepresentable.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(viewControllerSource.contains("private final class FindInPageTextField: NSTextField"))
+        XCTAssertTrue(viewControllerSource.contains("addCursorRect(cursorRect, cursor: .iBeam)"))
+        XCTAssertTrue(representableSource.contains("WebContentHoverShieldSensorView()"))
+        XCTAssertFalse(viewControllerSource.contains("FindInPageTextActivationView"))
+        XCTAssertFalse(viewControllerSource.contains("NSEvent.mouseEvent("))
     }
 
     func testFocusableWebViewDoesNotDuplicateWebKitMouseTrackingObserverArea() {
