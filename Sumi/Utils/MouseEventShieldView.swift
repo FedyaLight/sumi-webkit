@@ -169,11 +169,8 @@ final class MouseEventShieldNSView: NSView, SidebarTransientInteractionDisarmabl
     }
 
     private func setCursorIfNeeded() {
-        guard cursorPolicy == .arrow,
-              isInteractive,
-              sumi_chromeIsMouseLocationInsideBounds()
-        else { return }
-        NSCursor.arrow.set()
+        guard isInteractive, cursorPolicy == .arrow else { return }
+        sumi_chromeSetCursorIfMouseInside(.arrow)
     }
 
     private func updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: Bool) {

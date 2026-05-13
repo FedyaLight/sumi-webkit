@@ -130,3 +130,20 @@ extension View {
         chromeCursor(.arrow)
     }
 }
+
+extension NSView {
+    @MainActor
+    func sumi_chromeAddCursorRect(_ rect: NSRect, cursor: ChromeCursorKind) {
+        let cursorRect = rect.intersection(visibleRect)
+        guard cursorRect.width > 0, cursorRect.height > 0 else { return }
+        addCursorRect(cursorRect, cursor: cursor.cursor)
+    }
+
+    @MainActor
+    @discardableResult
+    func sumi_chromeSetCursorIfMouseInside(_ cursor: ChromeCursorKind) -> Bool {
+        guard sumi_chromeIsMouseLocationInsideBounds() else { return false }
+        cursor.set()
+        return true
+    }
+}

@@ -43,9 +43,7 @@ private final class FindInPageBackgroundView: ColorView {
 
     override func resetCursorRects() {
         super.resetCursorRects()
-        let cursorRect = textActivationRect.intersection(visibleRect)
-        guard cursorRect.width > 0, cursorRect.height > 0 else { return }
-        addCursorRect(cursorRect, cursor: .iBeam)
+        sumi_chromeAddCursorRect(textActivationRect, cursor: .iBeam)
     }
 
     func invalidateTextActivationCursorRects() {
@@ -85,25 +83,25 @@ private final class FindInPageFieldEditor: NSTextView {
 
     override func resetCursorRects() {
         super.resetCursorRects()
-        let cursorRect = bounds.intersection(visibleRect)
-        guard cursorRect.width > 0, cursorRect.height > 0 else { return }
-        addCursorRect(cursorRect, cursor: .iBeam)
+        sumi_chromeAddCursorRect(bounds, cursor: .iBeam)
     }
 
     override func cursorUpdate(with event: NSEvent) {
         super.cursorUpdate(with: event)
-        NSCursor.iBeam.set()
+        ChromeCursorKind.iBeam.set()
     }
 
     override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
-        refreshIBeamCursorIfMouseInside()
+        setIBeamCursorIfMouseInside()
     }
 
-    func refreshIBeamCursorIfMouseInside() {
+    func invalidateIBeamCursorRects() {
         window?.invalidateCursorRects(for: self)
-        guard sumi_chromeIsMouseLocationInsideBounds() else { return }
-        NSCursor.iBeam.set()
+    }
+
+    func setIBeamCursorIfMouseInside() {
+        sumi_chromeSetCursorIfMouseInside(.iBeam)
     }
 }
 
@@ -122,9 +120,7 @@ private final class FindInPageTextField: NSTextField {
 
     override func resetCursorRects() {
         super.resetCursorRects()
-        let cursorRect = bounds.intersection(visibleRect)
-        guard cursorRect.width > 0, cursorRect.height > 0 else { return }
-        addCursorRect(cursorRect, cursor: .iBeam)
+        sumi_chromeAddCursorRect(bounds, cursor: .iBeam)
     }
 }
 
@@ -472,7 +468,8 @@ final class FindInPageViewController: NSViewController {
         backgroundView.invalidateTextActivationCursorRects()
         textField.window?.invalidateCursorRects(for: textField)
         if let editor = textField.currentEditor() as? FindInPageFieldEditor {
-            editor.refreshIBeamCursorIfMouseInside()
+            editor.invalidateIBeamCursorRects()
+            editor.setIBeamCursorIfMouseInside()
         }
     }
 
@@ -545,7 +542,8 @@ extension FindInPageViewController: NSTextFieldDelegate {
         updateView(firstResponder: true)
         let fieldEditor = obj.userInfo?["NSFieldEditor"] as? FindInPageFieldEditor
             ?? textField.currentEditor() as? FindInPageFieldEditor
-        fieldEditor?.refreshIBeamCursorIfMouseInside()
+        fieldEditor?.invalidateIBeamCursorRects()
+        fieldEditor?.setIBeamCursorIfMouseInside()
     }
 
     func controlTextDidEndEditing(_ obj: Notification) {
