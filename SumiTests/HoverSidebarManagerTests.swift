@@ -151,7 +151,7 @@ final class HoverSidebarManagerTests: XCTestCase {
         windowRegistry.setActive(hostedWindow)
 
         manager.start()
-        await drainMainQueue()
+        await waitForPrewarmedHost(manager)
 
         XCTAssertTrue(manager.isOverlayHostPrewarmed)
 
@@ -192,7 +192,7 @@ final class HoverSidebarManagerTests: XCTestCase {
         windowRegistry.setActive(hostedWindow)
 
         manager.start()
-        await drainMainQueue()
+        await waitForPrewarmedHost(manager)
 
         XCTAssertTrue(manager.isOverlayHostPrewarmed)
 
@@ -274,7 +274,7 @@ final class HoverSidebarManagerTests: XCTestCase {
         windowRegistry.setActive(windowState)
 
         manager.start()
-        await Task.yield()
+        await waitForPrewarmedHost(manager)
 
         XCTAssertEqual(
             recorder.localMasks,
@@ -314,7 +314,7 @@ final class HoverSidebarManagerTests: XCTestCase {
         windowRegistry.setActive(otherWindow)
 
         manager.start()
-        await Task.yield()
+        await drainMainQueue()
 
         XCTAssertTrue(recorder.localMasks.isEmpty)
         XCTAssertEqual(recorder.removedMonitorCount, 0)
@@ -325,6 +325,16 @@ final class HoverSidebarManagerTests: XCTestCase {
 private func drainMainQueue() async {
     await Task.yield()
     await Task.yield()
+}
+
+@MainActor
+private func waitForPrewarmedHost(_ manager: HoverSidebarManager) async {
+    for _ in 0..<10 {
+        if manager.isOverlayHostPrewarmed {
+            return
+        }
+        await drainMainQueue()
+    }
 }
 
 private func sleep(milliseconds: UInt64) async {

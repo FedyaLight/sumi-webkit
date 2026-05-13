@@ -29,6 +29,9 @@ struct WindowView: View {
     @Environment(CommandPalette.self) private var commandPalette
     @Environment(\.sumiSettings) var sumiSettings
     @StateObject private var hoverSidebarManager = HoverSidebarManager()
+    @State private var shouldRenderDockedSidebar = false
+    @State private var dockedSidebarLayoutProgress: CGFloat = 0
+    @State private var dockedSidebarLayoutGeneration: UInt64 = 0
     /// Bumps when system/window effective appearance changes so `globalColorScheme` refreshes while in auto mode.
     @State private var effectiveAppearanceRevision: UInt = 0
 
@@ -58,7 +61,7 @@ struct WindowView: View {
             SidebarWebViewStack()
 
             // Collapsed hover-reveal sidebar overlay. Docked sidebar is a real layout column.
-            if !windowState.isSidebarVisible {
+            if shouldRenderCollapsedSidebarOverlay {
                 chromeThemeScope {
                     SidebarHoverOverlayView(
                         resolvedThemeContext: sidebarResolvedThemeContext,
@@ -132,13 +135,15 @@ struct WindowView: View {
         // Lifecycle management
         .onAppear {
             windowState.window?.hideNativeStandardWindowButtonsForBrowserChrome()
+            syncDockedSidebarLayout(isVisible: windowState.isSidebarVisible, animated: false)
             hoverSidebarManager.sidebarPosition = sumiSettings.sidebarPosition
             hoverSidebarManager.attach(browserManager: browserManager, windowState: windowState)
             hoverSidebarManager.windowRegistry = windowRegistry
             hoverSidebarManager.start()
             revealCollapsedSidebarForPinnedTransientIfNeeded()
         }
-        .onChange(of: windowState.isSidebarVisible) { _, _ in
+        .onChange(of: windowState.isSidebarVisible) { _, isVisible in
+            syncDockedSidebarLayout(isVisible: isVisible, animated: true)
             Task { @MainActor in
                 await Task.yield()
                 windowState.window?.hideNativeStandardWindowButtonsForBrowserChrome()
@@ -209,6 +214,10 @@ struct WindowView: View {
         .environment(\.colorScheme, globalColorScheme)
     }
 
+    private var shouldRenderCollapsedSidebarOverlay: Bool {
+        !windowState.isSidebarVisible && !shouldRenderDockedSidebar
+    }
+
     // MARK: - Layout Components
 
     private func revealCollapsedSidebarForPinnedTransientIfNeeded() {
@@ -238,28 +247,41 @@ struct WindowView: View {
         let elementSeparation = BrowserChromeGeometry.elementSeparation
         let sidebarPosition = sumiSettings.sidebarPosition
         let shellEdge = sidebarPosition.shellEdge
+        let rendersDockedSidebar = sidebarVisible || shouldRenderDockedSidebar
+        let layoutProgress = sidebarVisible && !shouldRenderDockedSidebar && dockedSidebarLayoutProgress == 0
+            ? 1
+            : dockedSidebarLayoutProgress
+        let leftLayoutProgress = rendersDockedSidebar && shellEdge.isLeft ? layoutProgress : 0
+        let rightLayoutProgress = rendersDockedSidebar && shellEdge.isRight ? layoutProgress : 0
         
         HStack(spacing: 0) {
-            if sidebarVisible && shellEdge.isLeft {
-                SidebarDockedColumn(sidebarPosition: sidebarPosition)
+            if rendersDockedSidebar && shellEdge.isLeft {
+                SidebarDockedColumn(
+                    sidebarPosition: sidebarPosition,
+                    layoutProgress: layoutProgress
+                )
             }
 
             WebContent()
 
-            if sidebarVisible && shellEdge.isRight {
-                SidebarDockedColumn(sidebarPosition: sidebarPosition)
+            if rendersDockedSidebar && shellEdge.isRight {
+                SidebarDockedColumn(
+                    sidebarPosition: sidebarPosition,
+                    layoutProgress: layoutProgress
+                )
             }
         }
-        .padding(.leading, sidebarVisible && shellEdge.isLeft ? 0 : elementSeparation)
-        .padding(.trailing, sidebarVisible && shellEdge.isRight ? 0 : elementSeparation)
+        .padding(.leading, elementSeparation * (1 - leftLayoutProgress))
+        .padding(.trailing, elementSeparation * (1 - rightLayoutProgress))
     }
 
     @ViewBuilder
-    private func SidebarDockedColumn(sidebarPosition: SidebarPosition) -> some View {
+    private func SidebarDockedColumn(sidebarPosition: SidebarPosition, layoutProgress: CGFloat) -> some View {
         let presentationContext = SidebarPresentationContext.docked(
             sidebarWidth: windowState.sidebarWidth,
             sidebarPosition: sidebarPosition
         )
+        let layoutWidth = presentationContext.sidebarWidth * layoutProgress
 
         SidebarColumnRepresentable(
             browserManager: browserManager,
@@ -274,7 +296,53 @@ struct WindowView: View {
         .id("docked-sidebar-column")
         .frame(width: presentationContext.sidebarWidth)
         .frame(maxHeight: .infinity)
+        .opacity(min(max(layoutProgress * 2, 0), 1))
+        .frame(width: max(layoutWidth, 0), alignment: presentationContext.shellEdge.overlayAlignment)
+        .clipped()
         .alwaysArrowCursor()
+    }
+
+    private func syncDockedSidebarLayout(isVisible: Bool, animated: Bool) {
+        dockedSidebarLayoutGeneration &+= 1
+        let generation = dockedSidebarLayoutGeneration
+        let animation = CollapsedSidebarOverlayAnimation.dockedLayoutAnimation(isShowing: isVisible)
+
+        if isVisible {
+            shouldRenderDockedSidebar = true
+            if animated {
+                withAnimation(animation) {
+                    dockedSidebarLayoutProgress = 1
+                }
+            } else {
+                dockedSidebarLayoutProgress = 1
+            }
+            return
+        }
+
+        if animated {
+            shouldRenderDockedSidebar = true
+            let startingProgress = dockedSidebarLayoutProgress
+            if startingProgress <= 0 {
+                dockedSidebarLayoutProgress = 1
+            }
+
+            withAnimation(animation) {
+                dockedSidebarLayoutProgress = 0
+            }
+
+            Task { @MainActor in
+                try? await Task.sleep(
+                    nanoseconds: UInt64(CollapsedSidebarOverlayAnimation.dockedLayoutUnmountDelay * 1_000_000_000)
+                )
+                guard generation == dockedSidebarLayoutGeneration,
+                      !windowState.isSidebarVisible
+                else { return }
+                shouldRenderDockedSidebar = false
+            }
+        } else {
+            dockedSidebarLayoutProgress = 0
+            shouldRenderDockedSidebar = false
+        }
     }
 
     @ViewBuilder
