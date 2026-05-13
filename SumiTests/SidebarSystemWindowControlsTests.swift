@@ -233,9 +233,9 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertFalse(windowSource.contains("prepareNativeStandardWindowButtonForSystemMiniaturize"))
         XCTAssertTrue(bridgeSource.contains("window.hideNativeStandardWindowButtonsForBrowserChrome()"))
         XCTAssertFalse(windowSource.contains("syncNativeStandardWindowButtonsForBrowserChrome"))
-        XCTAssertFalse(windowSource.contains("setNativeStandardWindowButtonsForBrowserChromeVisible"))
+        XCTAssertTrue(windowSource.contains("setNativeStandardWindowButtonsForBrowserFullScreenChromeVisible"))
         XCTAssertFalse(windowSource.contains("alignNativeStandardWindowButtonsForBrowserChrome"))
-        XCTAssertFalse(bridgeSource.contains("setNativeStandardWindowButtonsForBrowserChromeVisible"))
+        XCTAssertFalse(bridgeSource.contains("setNativeStandardWindowButtonsForBrowserFullScreenChromeVisible"))
 
         XCTAssertTrue(miniWindowToolbarSource.contains("BrowserWindowNativeTrafficLightSpacer()"))
         XCTAssertTrue(windowSource.contains("func configureNativeStandardWindowButtonsForMiniWindowChrome("))
@@ -269,6 +269,7 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
 
         XCTAssertTrue(headerSource.contains("BrowserWindowTrafficLights("))
         XCTAssertTrue(headerSource.contains(".browserWindow(windowState.window)"))
+        XCTAssertTrue(headerSource.contains("isBrowserWindowFullScreen == false"))
         XCTAssertTrue(panelHostSource.contains("CollapsedSidebarPanelFrameResolver.panelFrame("))
         XCTAssertTrue(panelHostSource.contains("width: width"))
         XCTAssertTrue(panelHostSource.contains("height: parentContentScreenFrame.height"))

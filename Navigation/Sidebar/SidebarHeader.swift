@@ -5,6 +5,7 @@
 //  Created by Aether on 15/11/2025.
 //
 
+import AppKit
 import SwiftUI
 
 /// Header section of the sidebar (window controls, navigation buttons, URL bar)
@@ -81,6 +82,7 @@ struct SidebarWindowControlsView: View {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
     @Environment(\.sumiSettings) private var sumiSettings
+    @State private var isBrowserWindowFullScreen = false
 
     var body: some View {
         HStack(spacing: SidebarChromeMetrics.controlSpacing) {
@@ -98,6 +100,19 @@ struct SidebarWindowControlsView: View {
                 .sidebarAppKitPrimaryAction(action: toggleSidebar)
             }
         }
+        .onAppear(perform: syncFullScreenWindowControls)
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) {
+            handleFullScreenNotification($0)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) {
+            handleFullScreenNotification($0)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) {
+            handleFullScreenNotification($0)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) {
+            handleFullScreenNotification($0)
+        }
     }
 
     @ViewBuilder
@@ -110,10 +125,39 @@ struct SidebarWindowControlsView: View {
     }
 
     private var shouldRenderTrafficLightsInSidebarHeader: Bool {
-        sidebarPresentationContext.mode != .collapsedHidden
+        sidebarPresentationContext.mode != .collapsedHidden && isBrowserWindowFullScreen == false
     }
 
     private func toggleSidebar() {
         browserManager.toggleSidebar(for: windowState)
+    }
+
+    private func handleFullScreenNotification(_ notification: Notification) {
+        guard let notificationWindow = notification.object as? NSWindow,
+              notificationWindow === windowState.window
+        else { return }
+
+        switch notification.name {
+        case NSWindow.willEnterFullScreenNotification, NSWindow.didEnterFullScreenNotification:
+            isBrowserWindowFullScreen = true
+            syncNativeWindowButtonsForCurrentFullScreenState()
+        case NSWindow.willExitFullScreenNotification:
+            notificationWindow.setNativeStandardWindowButtonsForBrowserFullScreenChromeVisible(false)
+        case NSWindow.didExitFullScreenNotification:
+            isBrowserWindowFullScreen = false
+            syncNativeWindowButtonsForCurrentFullScreenState()
+        default:
+            isBrowserWindowFullScreen = notificationWindow.styleMask.contains(.fullScreen)
+            syncNativeWindowButtonsForCurrentFullScreenState()
+        }
+    }
+
+    private func syncFullScreenWindowControls() {
+        isBrowserWindowFullScreen = windowState.window?.styleMask.contains(.fullScreen) == true
+        syncNativeWindowButtonsForCurrentFullScreenState()
+    }
+
+    private func syncNativeWindowButtonsForCurrentFullScreenState() {
+        windowState.window?.setNativeStandardWindowButtonsForBrowserFullScreenChromeVisible(isBrowserWindowFullScreen)
     }
 }
