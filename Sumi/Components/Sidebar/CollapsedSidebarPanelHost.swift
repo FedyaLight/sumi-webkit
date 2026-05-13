@@ -5,6 +5,8 @@ import SwiftUI
 final class CollapsedSidebarPanelWindow: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+    override var isKeyWindow: Bool { super.isKeyWindow || parent?.isKeyWindow == true }
+    override var isMainWindow: Bool { super.isMainWindow || parent?.isMainWindow == true }
 }
 
 final class CollapsedSidebarDragPreviewOverlayWindow: NSPanel {
@@ -645,7 +647,11 @@ final class CollapsedSidebarPanelController {
         }
 
         attachedParentWindow = parentWindow
-        panel.orderFront(nil)
+        if parentWindow.isKeyWindow || parentWindow.isMainWindow {
+            panel.makeKeyAndOrderFront(nil)
+        } else {
+            panel.orderFront(nil)
+        }
         syncFrame()
     }
 
@@ -709,6 +715,9 @@ final class CollapsedSidebarPanelController {
         }
 
         if attachedParentWindow.childWindows?.contains(panelWindow) == true {
+            if panelWindow.isKeyWindow, attachedParentWindow.canBecomeKey {
+                attachedParentWindow.makeKey()
+            }
             attachedParentWindow.removeChildWindow(panelWindow)
         }
         self.attachedParentWindow = nil
