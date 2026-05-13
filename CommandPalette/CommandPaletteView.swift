@@ -18,6 +18,24 @@ enum CommandPaletteLayoutPolicy {
     static let inputRowHeight: CGFloat = 22
     static let inputRowVerticalPadding: CGFloat = 5
     static let suggestionsMaxHeight: CGFloat = 260
+    static let suggestionsVisibleRowLimit = 5
+    static let suggestionRowMinHeight: CGFloat = 32
+    static let suggestionRowHorizontalPadding: CGFloat = 8
+    static let suggestionRowVerticalPadding: CGFloat = 10
+    static let suggestionRowSpacing: CGFloat = 0
+
+    static var suggestionRowHeight: CGFloat {
+        suggestionRowMinHeight + suggestionRowVerticalPadding * 2
+    }
+
+    static func suggestionsHeight(for count: Int) -> CGFloat {
+        guard count > 0 else { return 0 }
+        guard count <= suggestionsVisibleRowLimit else { return suggestionsMaxHeight }
+        let visibleCount = count
+        let rowHeights = CGFloat(visibleCount) * suggestionRowHeight
+        let spacings = CGFloat(max(visibleCount - 1, 0)) * suggestionRowSpacing
+        return min(suggestionsMaxHeight, rowHeights + spacings)
+    }
 
     static var panelHeight: CGFloat {
         contentHeight + verticalVignetteOutset * 2
@@ -266,6 +284,9 @@ struct CommandPaletteView: View {
                                     hoveredIndex: $hoveredSuggestionIndex,
                                     onSelect: { suggestion in
                                         selectSuggestion(suggestion)
+                                    },
+                                    onDeleteHistoryEntry: { entry in
+                                        deleteHistoryEntry(entry)
                                     }
                                 )
                             }
@@ -485,20 +506,35 @@ struct CommandPaletteView: View {
         @Binding var selectedIndex: Int
         @Binding var hoveredIndex: Int?
         let onSelect: (SearchManager.SearchSuggestion) -> Void
+        let onDeleteHistoryEntry: (HistoryListItem) -> Void
 
         var body: some View {
+            let selectedBackground = tokens.accent.opacity(0.58)
+            let selectedForeground = ThemeContrastResolver.preferredForeground(on: tokens.accent)
+            let selectedChipBackground = selectedForeground.opacity(0.88)
+            let selectedChipForeground = ThemeContrastResolver.preferredForeground(on: selectedForeground)
+            let shouldScroll = suggestions.count > CommandPaletteLayoutPolicy.suggestionsVisibleRowLimit
+
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
-                    LazyVStack(spacing: 5) {
+                    LazyVStack(spacing: CommandPaletteLayoutPolicy.suggestionRowSpacing) {
                         ForEach(suggestions.indices, id: \.self) { index in
                             let suggestion = suggestions[index]
+                            let isSelected = selectedIndex == index
                             let isHovered = hoveredIndex == index
-                            row(for: suggestion, isSelected: selectedIndex == index)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 11)
+                            row(
+                                for: suggestion,
+                                isSelected: isSelected,
+                                selectedForeground: selectedForeground,
+                                selectedChipBackground: selectedChipBackground,
+                                selectedChipForeground: selectedChipForeground
+                            )
+                                .frame(minHeight: CommandPaletteLayoutPolicy.suggestionRowMinHeight)
+                                .padding(.horizontal, CommandPaletteLayoutPolicy.suggestionRowHorizontalPadding)
+                                .padding(.vertical, CommandPaletteLayoutPolicy.suggestionRowVerticalPadding)
                                 .background(
-                                    selectedIndex == index
-                                            ? tokens.commandPaletteRowSelected
+                                    isSelected
+                                            ? selectedBackground
                                             : isHovered
                                             ? tokens.commandPaletteRowHover
                                             : .clear
@@ -527,8 +563,8 @@ struct CommandPaletteView: View {
                         }
                     }
                 }
-                .scrollIndicators(.hidden)
-                .frame(maxHeight: CommandPaletteLayoutPolicy.suggestionsMaxHeight)
+                .scrollIndicators(shouldScroll ? .visible : .hidden)
+                .frame(height: CommandPaletteLayoutPolicy.suggestionsHeight(for: suggestions.count))
                 .onChange(of: selectedIndex) { _, newIndex in
                     guard newIndex >= 0 else { return }
                     withAnimation(.easeInOut(duration: 0.12)) {
@@ -541,25 +577,62 @@ struct CommandPaletteView: View {
         @ViewBuilder
         private func row(
             for suggestion: SearchManager.SearchSuggestion,
-            isSelected: Bool
+            isSelected: Bool,
+            selectedForeground: Color,
+            selectedChipBackground: Color,
+            selectedChipForeground: Color
         ) -> some View {
             switch suggestion.type {
             case .tab(let tab):
-                TabSuggestionItem(tab: tab, isSelected: isSelected)
+                TabSuggestionItem(
+                    tab: tab,
+                    isSelected: isSelected,
+                    selectedForeground: selectedForeground,
+                    selectedChipBackground: selectedChipBackground,
+                    selectedChipForeground: selectedChipForeground
+                )
             case .history(let entry):
-                HistorySuggestionItem(entry: entry, isSelected: isSelected)
+                HistorySuggestionItem(
+                    entry: entry,
+                    isSelected: isSelected,
+                    selectedForeground: selectedForeground,
+                    onDelete: entry.visitID == nil ? nil : {
+                        onDeleteHistoryEntry(entry)
+                    }
+                )
             case .url:
                 GenericSuggestionItem(
                     icon: Image(systemName: "link"),
                     text: suggestion.text,
-                    isSelected: isSelected
+                    actionLabel: "Open URL",
+                    isSelected: isSelected,
+                    selectedForeground: selectedForeground,
+                    selectedChipBackground: selectedChipBackground,
+                    selectedChipForeground: selectedChipForeground
                 )
             case .search:
                 GenericSuggestionItem(
                     icon: Image(systemName: "magnifyingglass"),
                     text: suggestion.text,
-                    isSelected: isSelected
+                    isSelected: isSelected,
+                    selectedForeground: selectedForeground,
+                    selectedChipBackground: selectedChipBackground,
+                    selectedChipForeground: selectedChipForeground
                 )
+            }
+        }
+    }
+
+    private func deleteHistoryEntry(_ entry: HistoryListItem) {
+        guard let visitID = entry.visitID else { return }
+
+        Task { @MainActor in
+            await browserManager.historyManager.delete(query: .visits([visitID]))
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                searchManager.clearSuggestions()
+            } else {
+                searchManager.searchSuggestions(for: trimmed)
             }
         }
     }

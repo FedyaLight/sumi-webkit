@@ -51,7 +51,36 @@ final class SidebarDDGHoverTests: XCTestCase {
         XCTAssertTrue(source.contains("triggerSearchModeAnimation"))
         XCTAssertTrue(source.contains("CommandPaletteSearchModeGlowView"))
         XCTAssertTrue(source.contains("ScrollView(.vertical)"))
+        XCTAssertTrue(source.contains(".scrollIndicators(shouldScroll ? .visible : .hidden)"))
         XCTAssertTrue(source.contains("suggestionsMaxHeight"))
+        XCTAssertTrue(source.contains("suggestionsVisibleRowLimit = 5"))
+        XCTAssertTrue(source.contains("selectedBackground = tokens.accent.opacity"))
+        XCTAssertTrue(source.contains("deleteHistoryEntry"))
+        XCTAssertFalse(source.contains("NSAlert"))
+
+        let searchManagerSource = try Self.source(named: "Sumi/Managers/SearchManager/SearchManager.swift")
+        XCTAssertTrue(searchManagerSource.contains("maxVisibleSuggestions = 10"))
+        XCTAssertTrue(searchManagerSource.contains("suggestionsArray.prefix(maxWebSuggestionCount)"))
+
+        let searchUtilsSource = try Self.source(named: "Sumi/Managers/SearchManager/Utils.swift")
+        XCTAssertTrue(searchUtilsSource.contains("import URLPredictor"))
+        XCTAssertTrue(searchUtilsSource.contains("Classifier.classify"))
+
+        let historyRowSource = try Self.source(named: "CommandPalette/CommandPalette Accessories/HistorySuggestionItem.swift")
+        XCTAssertTrue(historyRowSource.contains("isDeleteConfirming"))
+        XCTAssertTrue(historyRowSource.contains("isDeleteHovered"))
+        XCTAssertTrue(historyRowSource.contains("Text(\"Delete\")"))
+        XCTAssertTrue(historyRowSource.contains("CommandPaletteFaviconContainer"))
+    }
+
+    func testCommandPaletteSuggestionHeightAdaptsBeforeZenScrollLimit() {
+        XCTAssertEqual(CommandPaletteLayoutPolicy.suggestionsVisibleRowLimit, 5)
+        XCTAssertEqual(CommandPaletteLayoutPolicy.suggestionsHeight(for: 0), 0)
+        XCTAssertEqual(CommandPaletteLayoutPolicy.suggestionsHeight(for: 2), 104)
+        XCTAssertEqual(
+            CommandPaletteLayoutPolicy.suggestionsHeight(for: 6),
+            CommandPaletteLayoutPolicy.suggestionsMaxHeight
+        )
     }
 
     func testCommandPaletteOutsideClickMonitorUsesPassThroughRouting() throws {

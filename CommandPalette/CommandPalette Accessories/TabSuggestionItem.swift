@@ -10,31 +10,35 @@ import SwiftUI
 struct TabSuggestionItem: View {
     @ObservedObject var tab: Tab
     var isSelected: Bool = false
+    var selectedForeground: Color? = nil
+    var selectedChipBackground: Color? = nil
+    var selectedChipForeground: Color? = nil
     
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     
     var body: some View {
         let tokens = themeContext.tokens(settings: sumiSettings)
+        let foreground = isSelected ? (selectedForeground ?? tokens.primaryText) : tokens.secondaryText
+        let chipBackground = isSelected ? (selectedChipBackground ?? tokens.commandPaletteChipBackground) : tokens.commandPaletteChipBackground
+        let chipForeground = isSelected ? (selectedChipForeground ?? tokens.primaryText) : tokens.tertiaryText
         
         HStack(alignment: .center, spacing: 0) {
             HStack(spacing: 9) {
-                ZStack {
+                CommandPaletteFaviconContainer {
                     tab.favicon
                         .resizable()
                         .scaledToFit()
-                        .foregroundStyle(isSelected ? tokens.primaryText : tokens.secondaryText)
-                        .frame(width: 14, height: 14)
+                        .foregroundStyle(foreground)
+                        .frame(
+                            width: CommandPaletteSuggestionMetrics.faviconImageSize,
+                            height: CommandPaletteSuggestionMetrics.faviconImageSize
+                        )
                 }
-                .frame(width: 24, height: 24)
-                .background(isSelected ? tokens.commandPaletteChipBackground : .clear)
-                .clipShape(
-                    RoundedRectangle(cornerRadius: 4)
-                )
                 SumiTabTitleLabel(
                     title: tab.name,
                     font: .systemFont(ofSize: 13, weight: .semibold),
-                    textColor: isSelected ? tokens.primaryText : tokens.secondaryText,
+                    textColor: foreground,
                     animated: false
                 )
             }
@@ -42,20 +46,18 @@ struct TabSuggestionItem: View {
             HStack(spacing: 10) {
                 Text("Switch to Tab")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(isSelected ? tokens.secondaryText : tokens.tertiaryText)
+                    .foregroundStyle(isSelected ? foreground.opacity(0.86) : tokens.tertiaryText)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                 ZStack {
                     Image(systemName: "arrow.right")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(
-                            isSelected ? tokens.primaryText : tokens.secondaryText
-                        )
+                        .foregroundStyle(isSelected ? chipForeground : tokens.secondaryText)
                         .frame(width: 16, height: 16)
                 }
                 .frame(width: 24, height: 24)
-                .background(tokens.commandPaletteChipBackground)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .background(chipBackground)
+                .clipShape(CommandPaletteSuggestionMetrics.controlShape)
 
             }
         }
