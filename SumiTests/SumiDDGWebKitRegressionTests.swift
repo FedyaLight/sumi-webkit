@@ -168,6 +168,69 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(viewControllerSource.contains("NSEvent.mouseEvent("))
     }
 
+    func testFindChromeFocusedTextFieldUsesIBeamFieldEditor() throws {
+        let viewController = FindInPageViewController.create()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: FindInPageChromeLayout.panelWidth, height: FindInPageChromeLayout.panelHeight),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = viewController.view
+        defer {
+            window.close()
+            window.contentView = nil
+        }
+
+        window.makeKeyAndOrderFront(nil)
+        XCTAssertTrue(window.makeFirstResponder(viewController.textField))
+        viewController.textField.selectText(nil)
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+
+        let editor = try XCTUnwrap(viewController.textField.currentEditor())
+        XCTAssertTrue(window.firstResponder === editor)
+        XCTAssertTrue(editor.isFieldEditor)
+        XCTAssertTrue(String(describing: type(of: editor)).contains("FindInPageFieldEditor"))
+
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let viewControllerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Components/FindInPage/FindInPageViewController.swift"
+            ),
+            encoding: .utf8
+        )
+        XCTAssertTrue(viewControllerSource.contains("private final class FindInPageFieldEditor: NSTextView"))
+        XCTAssertTrue(viewControllerSource.contains("override func resetCursorRects()"))
+        XCTAssertTrue(viewControllerSource.contains("NSCursor.iBeam.set()"))
+        XCTAssertTrue(viewControllerSource.contains("refreshIBeamCursorIfMouseInside()"))
+    }
+
+    func testCommandPaletteHoverShieldDoesNotOwnCursor() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let commandPaletteSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "CommandPalette/CommandPaletteView.swift"
+            ),
+            encoding: .utf8
+        )
+        let mouseShieldSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Utils/MouseEventShieldView.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(commandPaletteSource.contains("cursorPolicy: .none"))
+        XCTAssertTrue(mouseShieldSource.contains("enum MouseEventShieldCursorPolicy"))
+        XCTAssertTrue(mouseShieldSource.contains("guard isInteractive, cursorPolicy == .arrow else { return }"))
+        XCTAssertTrue(mouseShieldSource.contains("private func setCursorIfNeeded()"))
+    }
+
     func testFocusableWebViewDoesNotDuplicateWebKitMouseTrackingObserverArea() {
         let webView = FocusableWKWebView(
             frame: NSRect(x: 0, y: 0, width: 320, height: 240),
