@@ -15,6 +15,9 @@ enum CommandPaletteLayoutPolicy {
     static let horizontalVignetteOutset: CGFloat = 56
     static let verticalVignetteOutset: CGFloat = 72
     static let contentHeight: CGFloat = 328
+    static let inputRowHeight: CGFloat = 22
+    static let inputRowVerticalPadding: CGFloat = 5
+    static let suggestionsMaxHeight: CGFloat = 260
 
     static var panelHeight: CGFloat {
         contentHeight + verticalVignetteOutset * 2
@@ -46,6 +49,9 @@ struct CommandPaletteView: View {
     @State private var selectedSuggestionIndex: Int = -1
     @State private var hoveredSuggestionIndex: Int? = nil
     @State private var activeSiteSearch: SiteSearchEntry? = nil
+    @State private var searchModeScale: CGFloat = 1
+    @State private var searchModeGlow: CommandPaletteSearchModeGlow?
+    @State private var searchModeGlowProgress: CGFloat = 1
     @State private var paletteCardView: NSView?
     @State private var outsideClickMonitor: Any?
     @State private var searchDebounceTask: Task<Void, Never>?
@@ -121,6 +127,8 @@ struct CommandPaletteView: View {
                                         )
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 4)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
                                         .background(site.color)
                                         .clipShape(Capsule())
                                         .transition(
@@ -143,14 +151,12 @@ struct CommandPaletteView: View {
                                             .textFieldStyle(.plain)
                                             .font(textFieldFont)
                                             .foregroundStyle(tokens.primaryText)
-                                            .tint(tokens.accent)
+                                            .tint(tokens.primaryText)
+                                            .lineLimit(1)
                                             .focused($isSearchFocused)
                                             .onKeyPress(.tab) {
                                                 if let match = siteSearchMatch, activeSiteSearch == nil {
-                                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                                                        activeSiteSearch = match
-                                                    }
-                                                    text = ""
+                                                    enterSiteSearch(match)
                                                     return .handled
                                                 }
                                                 return .ignored
@@ -210,6 +216,8 @@ struct CommandPaletteView: View {
                                             Text("Search \(match.name)")
                                                 .font(textFieldFont)
                                                 .foregroundStyle(tokens.secondaryText)
+                                                .lineLimit(1)
+                                                .truncationMode(.tail)
 
                                             Text("Tab")
                                                 .font(.system(size: 11, weight: .semibold))
@@ -232,10 +240,16 @@ struct CommandPaletteView: View {
                                         )
                                     }
                                 }
+                                .frame(maxWidth: .infinity, minHeight: 20, maxHeight: 20)
                             }
                             .animation(.spring(response: 0.35, dampingFraction: 0.75), value: activeSiteSearch != nil)
-                            .padding(.vertical, 8)
+                            .frame(height: CommandPaletteLayoutPolicy.inputRowHeight)
+                            .padding(.vertical, CommandPaletteLayoutPolicy.inputRowVerticalPadding)
                             .padding(.horizontal, 8)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                focusSearchField(selectAll: false)
+                            }
 
                             if !visibleSuggestions.isEmpty {
                                 RoundedRectangle(cornerRadius: 100)
@@ -259,6 +273,7 @@ struct CommandPaletteView: View {
                         .padding(10)
                         .frame(maxWidth: .infinity)
                         .frame(width: effectiveCommandPaletteWidth)
+                        .scaleEffect(searchModeScale)
                         .background {
                             if isVisible {
                                 MouseEventShieldView(suppressesUnderlyingWebContentHover: true)
@@ -274,6 +289,15 @@ struct CommandPaletteView: View {
                                     ),
                                     lineWidth: accessibilityReduceTransparency ? 1.15 : 1
                                 )
+                        }
+                        .overlay {
+                            if let glow = searchModeGlow {
+                                CommandPaletteSearchModeGlowView(
+                                    glow: glow,
+                                    progress: searchModeGlowProgress
+                                )
+                                    .allowsHitTesting(false)
+                            }
                         }
                         .modifier(
                             CommandPaletteLocalVignetteModifier(
@@ -344,7 +368,7 @@ struct CommandPaletteView: View {
             if isVisible {
                 text = newValue
                 DispatchQueue.main.async {
-                    isSearchFocused = true
+                    focusSearchField(selectAll: false)
                 }
             }
         }
@@ -392,14 +416,7 @@ struct CommandPaletteView: View {
             text = commandPalette.prefilledText
 
             DispatchQueue.main.async {
-                isSearchFocused = true
-                DispatchQueue.main.async {
-                    NSApplication.shared.sendAction(
-                        #selector(NSText.selectAll(_:)),
-                        to: nil,
-                        from: nil
-                    )
-                }
+                focusSearchField(selectAll: true)
             }
         } else {
             searchDebounceTask?.cancel()
@@ -408,7 +425,56 @@ struct CommandPaletteView: View {
             searchManager.clearSuggestions()
             text = ""
             activeSiteSearch = nil
+            searchModeScale = 1
+            searchModeGlow = nil
+            searchModeGlowProgress = 1
             selectedSuggestionIndex = -1
+        }
+    }
+
+    private func focusSearchField(selectAll: Bool) {
+        isSearchFocused = true
+        guard selectAll else { return }
+        DispatchQueue.main.async {
+            NSApplication.shared.sendAction(
+                #selector(NSText.selectAll(_:)),
+                to: nil,
+                from: nil
+            )
+        }
+    }
+
+    private func enterSiteSearch(_ site: SiteSearchEntry) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+            activeSiteSearch = site
+        }
+        text = ""
+        triggerSearchModeAnimation(color: site.color)
+    }
+
+    private func triggerSearchModeAnimation(color: Color) {
+        let glow = CommandPaletteSearchModeGlow(color: color)
+        searchModeGlow = glow
+        searchModeGlowProgress = 0
+        searchModeScale = 1
+
+        withAnimation(.easeOut(duration: 0.125)) {
+            searchModeScale = 0.98
+        }
+        withAnimation(.easeOut(duration: 1)) {
+            searchModeGlowProgress = 1
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 125_000_000)
+            withAnimation(.easeOut(duration: 0.125)) {
+                searchModeScale = 1
+            }
+
+            try? await Task.sleep(nanoseconds: 875_000_000)
+            if searchModeGlow?.id == glow.id {
+                searchModeGlow = nil
+            }
         }
     }
 
@@ -421,40 +487,53 @@ struct CommandPaletteView: View {
         let onSelect: (SearchManager.SearchSuggestion) -> Void
 
         var body: some View {
-            LazyVStack(spacing: 5) {
-                ForEach(suggestions.indices, id: \.self) { index in
-                    let suggestion = suggestions[index]
-                    let isHovered = hoveredIndex == index
-                    row(for: suggestion, isSelected: selectedIndex == index)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 11)
-                        .background(
-                            selectedIndex == index
-                                    ? tokens.commandPaletteRowSelected
-                                    : isHovered
-                                    ? tokens.commandPaletteRowHover
-                                    : .clear
-                        )
-                        .clipShape(
-                            RoundedRectangle(cornerRadius: 6)
-                        )
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(
-                            selectedIndex == index
-                                ? tokens.primaryText
-                                : tokens.secondaryText
-                        )
-                        .contentShape(RoundedRectangle(cornerRadius: 6))
-                        .onHover { hovering in
-                            withAnimation(.easeInOut(duration: 0.12)) {
-                                if hovering {
-                                    hoveredIndex = index
-                                } else {
-                                    hoveredIndex = nil
+            ScrollViewReader { proxy in
+                ScrollView(.vertical) {
+                    LazyVStack(spacing: 5) {
+                        ForEach(suggestions.indices, id: \.self) { index in
+                            let suggestion = suggestions[index]
+                            let isHovered = hoveredIndex == index
+                            row(for: suggestion, isSelected: selectedIndex == index)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 11)
+                                .background(
+                                    selectedIndex == index
+                                            ? tokens.commandPaletteRowSelected
+                                            : isHovered
+                                            ? tokens.commandPaletteRowHover
+                                            : .clear
+                                )
+                                .clipShape(
+                                    RoundedRectangle(cornerRadius: 6)
+                                )
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(
+                                    selectedIndex == index
+                                        ? tokens.primaryText
+                                        : tokens.secondaryText
+                                )
+                                .contentShape(RoundedRectangle(cornerRadius: 6))
+                                .id(index)
+                                .onHover { hovering in
+                                    withAnimation(.easeInOut(duration: 0.12)) {
+                                        if hovering {
+                                            hoveredIndex = index
+                                        } else {
+                                            hoveredIndex = nil
+                                        }
+                                    }
                                 }
-                            }
+                                .onTapGesture { onSelect(suggestion) }
                         }
-                        .onTapGesture { onSelect(suggestion) }
+                    }
+                }
+                .scrollIndicators(.hidden)
+                .frame(maxHeight: CommandPaletteLayoutPolicy.suggestionsMaxHeight)
+                .onChange(of: selectedIndex) { _, newIndex in
+                    guard newIndex >= 0 else { return }
+                    withAnimation(.easeInOut(duration: 0.12)) {
+                        proxy.scrollTo(newIndex, anchor: .center)
+                    }
                 }
             }
         }
@@ -715,6 +794,28 @@ private struct CommandPaletteCardBoundsReader: NSViewRepresentable {
         DispatchQueue.main.async {
             onResolve(nsView)
         }
+    }
+}
+
+private struct CommandPaletteSearchModeGlow: Identifiable {
+    let id = UUID()
+    let color: Color
+}
+
+private struct CommandPaletteSearchModeGlowView: View {
+    let glow: CommandPaletteSearchModeGlow
+    let progress: CGFloat
+
+    var body: some View {
+        let remainingOpacity = max(0, min(1, Double(1 - progress)))
+        RoundedRectangle(cornerRadius: 26, style: .continuous)
+            .stroke(glow.color.opacity(0.34 * remainingOpacity), lineWidth: 1)
+            .shadow(
+                color: glow.color.opacity(0.58 * remainingOpacity),
+                radius: 18 + 92 * progress
+            )
+            .padding(-1)
+            .id(glow.id)
     }
 }
 

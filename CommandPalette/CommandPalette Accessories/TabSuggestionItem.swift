@@ -43,6 +43,8 @@ struct TabSuggestionItem: View {
                 Text("Switch to Tab")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(isSelected ? tokens.secondaryText : tokens.tertiaryText)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                 ZStack {
                     Image(systemName: "arrow.right")
                         .font(.system(size: 13, weight: .semibold))
