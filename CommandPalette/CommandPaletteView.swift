@@ -72,6 +72,11 @@ struct CommandPaletteView: View {
     @State private var paletteCardView: NSView?
     @State private var outsideClickMonitor = ChromeLocalEventMonitor()
     @State private var searchDebouncer = MainActorDebouncedTask()
+    @State private var suppressNextTextSearch = false
+    @State private var isSuggestionPreviewActive = false
+    @State private var suggestionPreviewRestorationText: String?
+    @State private var searchFocusRequestID = 0
+    @State private var searchFocusSelectAll = false
 
     private var siteSearchMatch: SiteSearchEntry? {
         guard activeSiteSearch == nil else { return nil }
@@ -174,66 +179,64 @@ struct CommandPaletteView: View {
                                                 .foregroundStyle(tokens.secondaryText)
                                                 .allowsHitTesting(false)
                                         }
-                                        TextField("", text: $text)
-                                            .accessibilityIdentifier("floating-urlbar-input")
-                                            .accessibilityLabel("Search")
-                                            .textFieldStyle(.plain)
-                                            .font(textFieldFont)
-                                            .foregroundStyle(tokens.primaryText)
-                                            .tint(tokens.primaryText)
-                                            .lineLimit(1)
-                                            .focused($isSearchFocused)
-                                            .onKeyPress(.tab) {
+                                        CommandPaletteInlineCompletionTextField(
+                                            text: $text,
+                                            isFocused: $isSearchFocused,
+                                            placeholder: "",
+                                            font: .systemFont(ofSize: 13, weight: .semibold),
+                                            primaryColor: NSColor(tokens.primaryText),
+                                            hidesCaret: isSuggestionPreviewActive,
+                                            movesInsertionPointToEnd: isSuggestionPreviewActive,
+                                            focusRequestID: searchFocusRequestID,
+                                            focusSelectAll: searchFocusSelectAll,
+                                            onBeginEditing: {
+                                                commitSuggestionPreviewForEditing()
+                                            },
+                                            onTab: {
+                                                if isSuggestionPreviewActive {
+                                                    commitSuggestionPreviewForEditing()
+                                                    return true
+                                                }
                                                 if let match = siteSearchMatch, activeSiteSearch == nil {
                                                     enterSiteSearch(match)
-                                                    return .handled
+                                                    return true
                                                 }
-                                                return .ignored
-                                            }
-                                            .onKeyPress(.return) {
+                                                return false
+                                            },
+                                            onReturn: {
                                                 handleReturn()
-                                                return .handled
-                                            }
-                                            .onKeyPress(.upArrow) {
-                                                navigateSuggestions(direction: -1)
-                                                return .handled
-                                            }
-                                            .onKeyPress(.downArrow) {
-                                                navigateSuggestions(direction: 1)
-                                                return .handled
-                                            }
-                                            .onKeyPress(.escape) {
+                                            },
+                                            onMoveSelection: { direction in
+                                                navigateSuggestions(direction: direction)
+                                            },
+                                            onEscape: {
                                                 if activeSiteSearch != nil {
                                                     withAnimation(.smooth(duration: 0.25)) {
                                                         activeSiteSearch = nil
                                                     }
-                                                    return .handled
+                                                } else {
+                                                    browserManager.dismissFloatingURLBar(in: windowState, preserveDraft: true)
                                                 }
-                                                browserManager.dismissFloatingURLBar(in: windowState, preserveDraft: true)
-                                                return .handled
-                                            }
-                                            .onKeyPress(.delete) {
-                                                if activeSiteSearch != nil && text.isEmpty {
-                                                    withAnimation(.smooth(duration: 0.25)) {
-                                                        activeSiteSearch = nil
-                                                    }
-                                                    return .handled
+                                            },
+                                            onDeleteAtEmptySiteSearch: {
+                                                guard activeSiteSearch != nil && text.isEmpty else { return false }
+                                                withAnimation(.smooth(duration: 0.25)) {
+                                                    activeSiteSearch = nil
                                                 }
-                                                return .ignored
+                                                return true
                                             }
-                                            .onKeyPress(characters: CharacterSet(charactersIn: "\u{7F}")) { _ in
-                                                if activeSiteSearch != nil && text.isEmpty {
-                                                    withAnimation(.smooth(duration: 0.25)) {
-                                                        activeSiteSearch = nil
-                                                    }
-                                                    return .handled
-                                                }
-                                                return .ignored
-                                            }
+                                        )
+                                            .accessibilityIdentifier("floating-urlbar-input")
+                                            .accessibilityLabel("Search")
                                             .onChange(of: text) { _, newValue in
                                                 // Defer palette / window session writes so `BrowserWindowState` is not mutated during SwiftUI view updates.
                                                 Task { @MainActor in
                                                     browserManager.updateFloatingURLBarDraft(in: windowState, text: newValue)
+                                                    guard !suppressNextTextSearch else {
+                                                        suppressNextTextSearch = false
+                                                        return
+                                                    }
+                                                    commitSuggestionPreviewForEditing()
                                                     scheduleSearchSuggestions(for: newValue)
                                                     selectedSuggestionIndex = -1
                                                 }
@@ -401,11 +404,9 @@ struct CommandPaletteView: View {
         }
         .animation(.easeInOut(duration: 0.15), value: selectedSuggestionIndex)
         .onChange(of: windowState.commandPaletteDraftText) { _, newValue in
-            if isVisible {
+            if isVisible, newValue != text {
                 text = newValue
-                DispatchQueue.main.async {
-                    focusSearchField(selectAll: false)
-                }
+                focusSearchField(selectAll: false)
             }
         }
         .onChange(of: sumiSettings.commandPaletteEmptyStateMode) { _, _ in
@@ -454,7 +455,7 @@ struct CommandPaletteView: View {
             refreshEmptyStateSuggestionsIfNeeded()
 
             DispatchQueue.main.async {
-                focusSearchField(selectAll: true)
+                focusSearchField(selectAll: !text.isEmpty)
             }
         } else {
             searchDebouncer.cancel()
@@ -467,6 +468,9 @@ struct CommandPaletteView: View {
             searchModeGlow = nil
             searchModeGlowProgress = 1
             selectedSuggestionIndex = -1
+            isSuggestionPreviewActive = false
+            suggestionPreviewRestorationText = nil
+            suppressNextTextSearch = false
         }
     }
 
@@ -488,14 +492,8 @@ struct CommandPaletteView: View {
 
     private func focusSearchField(selectAll: Bool) {
         isSearchFocused = true
-        guard selectAll else { return }
-        DispatchQueue.main.async {
-            NSApplication.shared.sendAction(
-                #selector(NSText.selectAll(_:)),
-                to: nil,
-                from: nil
-            )
-        }
+        searchFocusSelectAll = selectAll
+        searchFocusRequestID &+= 1
     }
 
     private func enterSiteSearch(_ site: SiteSearchEntry) {
@@ -586,12 +584,10 @@ struct CommandPaletteView: View {
                                 .contentShape(RoundedRectangle(cornerRadius: 6))
                                 .id(index)
                                 .onHover { hovering in
-                                    withAnimation(.easeInOut(duration: 0.12)) {
-                                        if hovering {
-                                            hoveredIndex = index
-                                        } else {
-                                            hoveredIndex = nil
-                                        }
+                                    if hovering {
+                                        hoveredIndex = index
+                                    } else {
+                                        hoveredIndex = nil
                                     }
                                 }
                                 .onTapGesture { onSelect(suggestion) }
@@ -690,6 +686,26 @@ struct CommandPaletteView: View {
         }
     }
 
+    private func completionText(for suggestion: SearchManager.SearchSuggestion) -> String {
+        switch suggestion.type {
+        case .search:
+            return suggestion.text
+        case .url:
+            return suggestion.text
+        case .history(let entry):
+            return entry.url.absoluteString
+        case .bookmark(let bookmark):
+            return bookmark.url.absoluteString
+        case .tab(let tab):
+            return tab.url.absoluteString
+        }
+    }
+
+    private func commitSuggestionPreviewForEditing() {
+        isSuggestionPreviewActive = false
+        suggestionPreviewRestorationText = nil
+    }
+
     private func handleReturn() {
         if let site = activeSiteSearch {
             let query: String
@@ -755,11 +771,37 @@ struct CommandPaletteView: View {
 
     private func navigateSuggestions(direction: Int) {
         let maxIndex = visibleSuggestions.count - 1
+        guard maxIndex >= 0 else {
+            selectedSuggestionIndex = -1
+            isSuggestionPreviewActive = false
+            suggestionPreviewRestorationText = nil
+            return
+        }
 
+        let oldIndex = selectedSuggestionIndex
+        let newIndex: Int
         if direction > 0 {
-            selectedSuggestionIndex = min(selectedSuggestionIndex + 1, maxIndex)
+            newIndex = min(selectedSuggestionIndex + 1, maxIndex)
         } else {
-            selectedSuggestionIndex = max(selectedSuggestionIndex - 1, -1)
+            newIndex = max(selectedSuggestionIndex - 1, -1)
+        }
+
+        guard newIndex != oldIndex else { return }
+
+        if oldIndex == -1, suggestionPreviewRestorationText == nil {
+            suggestionPreviewRestorationText = text
+        }
+
+        selectedSuggestionIndex = newIndex
+        suppressNextTextSearch = true
+
+        if newIndex == -1 {
+            text = suggestionPreviewRestorationText ?? text
+            isSuggestionPreviewActive = false
+            suggestionPreviewRestorationText = nil
+        } else {
+            text = completionText(for: visibleSuggestions[newIndex])
+            isSuggestionPreviewActive = true
         }
     }
 
@@ -787,6 +829,299 @@ struct CommandPaletteView: View {
         outsideClickMonitor.remove()
     }
 
+}
+
+private struct CommandPaletteInlineCompletionTextField: NSViewRepresentable {
+    @Binding var text: String
+    var isFocused: FocusState<Bool>.Binding
+    let placeholder: String
+    let font: NSFont
+    let primaryColor: NSColor
+    let hidesCaret: Bool
+    let movesInsertionPointToEnd: Bool
+    let focusRequestID: Int
+    let focusSelectAll: Bool
+    let onBeginEditing: () -> Void
+    let onTab: () -> Bool
+    let onReturn: () -> Void
+    let onMoveSelection: (Int) -> Void
+    let onEscape: () -> Void
+    let onDeleteAtEmptySiteSearch: () -> Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    func makeNSView(context: Context) -> CommandPaletteInlineCompletionTextFieldView {
+        let view = CommandPaletteInlineCompletionTextFieldView()
+        view.textField.delegate = context.coordinator
+        view.textField.onBeginEditing = onBeginEditing
+        context.coordinator.configure(
+            onBeginEditing: onBeginEditing,
+            onTab: onTab,
+            onReturn: onReturn,
+            onMoveSelection: onMoveSelection,
+            onEscape: onEscape,
+            onDeleteAtEmptySiteSearch: onDeleteAtEmptySiteSearch
+        )
+        update(view, context: context)
+        return view
+    }
+
+    func updateNSView(_ nsView: CommandPaletteInlineCompletionTextFieldView, context: Context) {
+        nsView.textField.delegate = context.coordinator
+        nsView.textField.onBeginEditing = onBeginEditing
+        context.coordinator.configure(
+            onBeginEditing: onBeginEditing,
+            onTab: onTab,
+            onReturn: onReturn,
+            onMoveSelection: onMoveSelection,
+            onEscape: onEscape,
+            onDeleteAtEmptySiteSearch: onDeleteAtEmptySiteSearch
+        )
+        update(nsView, context: context)
+    }
+
+    private func update(_ nsView: CommandPaletteInlineCompletionTextFieldView, context _: Context) {
+        nsView.configure(
+            text: text,
+            placeholder: placeholder,
+            font: font,
+            primaryColor: primaryColor,
+            hidesCaret: hidesCaret,
+            movesInsertionPointToEnd: movesInsertionPointToEnd
+        )
+
+        nsView.wantsTextFocus = isFocused.wrappedValue
+        nsView.handleFocusRequest(id: focusRequestID, selectAll: focusSelectAll)
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        @Binding private var text: String
+        private var onBeginEditing: () -> Void = {}
+        private var onTab: () -> Bool = { false }
+        private var onReturn: () -> Void = {}
+        private var onMoveSelection: (Int) -> Void = { _ in }
+        private var onEscape: () -> Void = {}
+        private var onDeleteAtEmptySiteSearch: () -> Bool = { false }
+
+        init(text: Binding<String>) {
+            _text = text
+        }
+
+        func configure(
+            onBeginEditing: @escaping () -> Void,
+            onTab: @escaping () -> Bool,
+            onReturn: @escaping () -> Void,
+            onMoveSelection: @escaping (Int) -> Void,
+            onEscape: @escaping () -> Void,
+            onDeleteAtEmptySiteSearch: @escaping () -> Bool
+        ) {
+            self.onBeginEditing = onBeginEditing
+            self.onTab = onTab
+            self.onReturn = onReturn
+            self.onMoveSelection = onMoveSelection
+            self.onEscape = onEscape
+            self.onDeleteAtEmptySiteSearch = onDeleteAtEmptySiteSearch
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let textField = notification.object as? NSTextField else { return }
+            onBeginEditing()
+            text = textField.stringValue
+        }
+
+        func control(
+            _: NSControl,
+            textView _: NSTextView,
+            doCommandBy commandSelector: Selector
+        ) -> Bool {
+            switch commandSelector {
+            case #selector(NSResponder.moveUp(_:)):
+                onMoveSelection(-1)
+                return true
+            case #selector(NSResponder.moveDown(_:)):
+                onMoveSelection(1)
+                return true
+            case #selector(NSResponder.moveRight(_:)):
+                onBeginEditing()
+                return false
+            case #selector(NSResponder.moveLeft(_:)):
+                onBeginEditing()
+                return false
+            case #selector(NSResponder.insertTab(_:)):
+                return onTab()
+            case #selector(NSResponder.insertNewline(_:)):
+                onReturn()
+                return true
+            case #selector(NSResponder.cancelOperation(_:)):
+                onEscape()
+                return true
+            case #selector(NSResponder.deleteBackward(_:)),
+                 #selector(NSResponder.deleteForward(_:)):
+                return onDeleteAtEmptySiteSearch()
+            default:
+                return false
+            }
+        }
+    }
+}
+
+private final class CommandPaletteInlineCompletionTextFieldView: NSView {
+    let textField = CommandPaletteInlineCompletionNSTextField()
+    var wantsTextFocus = false
+    private var handledFocusRequestID = 0
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setup()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        focusTextFieldIfNeeded()
+    }
+
+    private func setup() {
+        wantsLayer = true
+        layer?.masksToBounds = true
+
+        textField.translatesAutoresizingMaskIntoConstraints = false
+        textField.isBordered = false
+        textField.isBezeled = false
+        textField.drawsBackground = false
+        textField.focusRingType = .none
+        textField.lineBreakMode = .byClipping
+        textField.maximumNumberOfLines = 1
+        textField.usesSingleLineMode = true
+        textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        textField.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        addSubview(textField)
+
+        NSLayoutConstraint.activate([
+            textField.leadingAnchor.constraint(equalTo: leadingAnchor),
+            textField.trailingAnchor.constraint(equalTo: trailingAnchor),
+            textField.centerYAnchor.constraint(equalTo: centerYAnchor),
+            textField.heightAnchor.constraint(equalTo: heightAnchor)
+        ])
+    }
+
+    func configure(
+        text: String,
+        placeholder: String,
+        font: NSFont,
+        primaryColor: NSColor,
+        hidesCaret: Bool,
+        movesInsertionPointToEnd: Bool
+    ) {
+        textField.font = font
+        textField.textColor = primaryColor
+        textField.normalTextColor = primaryColor
+        textField.placeholderString = placeholder
+        textField.hidesCaret = hidesCaret
+
+        textField.applyText(text, moveInsertionPointToEnd: movesInsertionPointToEnd)
+    }
+
+    func focusTextFieldIfNeeded() {
+        guard wantsTextFocus, let window else { return }
+        if window.firstResponder !== textField,
+           window.firstResponder !== textField.currentEditor()
+        {
+            window.makeFirstResponder(textField)
+        }
+    }
+
+    func handleFocusRequest(id: Int, selectAll: Bool) {
+        guard id != handledFocusRequestID else { return }
+        handledFocusRequestID = id
+        focusTextField(selectAll: selectAll, remainingRetries: 4)
+    }
+
+    private func focusTextField(selectAll: Bool, remainingRetries: Int) {
+        guard remainingRetries >= 0 else { return }
+        guard let window else {
+            DispatchQueue.main.async { [weak self] in
+                self?.focusTextField(selectAll: selectAll, remainingRetries: remainingRetries - 1)
+            }
+            return
+        }
+
+        window.makeFirstResponder(textField)
+        if selectAll {
+            textField.selectText(nil)
+        }
+
+        if window.firstResponder !== textField.currentEditor(),
+           window.firstResponder !== textField
+        {
+            DispatchQueue.main.async { [weak self] in
+                self?.focusTextField(selectAll: selectAll, remainingRetries: remainingRetries - 1)
+            }
+        }
+    }
+}
+
+private final class CommandPaletteInlineCompletionNSTextField: NSTextField {
+    var onBeginEditing: (() -> Void)?
+    var normalTextColor: NSColor = .labelColor
+    private let caretColor: NSColor = .systemBlue
+    var hidesCaret: Bool = false {
+        didSet {
+            updateFieldEditorCaret()
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onBeginEditing?()
+        hidesCaret = false
+        textColor = normalTextColor
+        moveInsertionPointToEnd()
+        super.mouseDown(with: event)
+        updateFieldEditorCaret()
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let result = super.becomeFirstResponder()
+        updateFieldEditorCaret()
+        return result
+    }
+
+    private func updateFieldEditorCaret() {
+        guard let editor = currentEditor() as? NSTextView else { return }
+        editor.insertionPointColor = hidesCaret ? .clear : caretColor
+    }
+
+    func applyText(_ text: String, moveInsertionPointToEnd: Bool) {
+        if let editor = currentEditor() as? NSTextView {
+            if editor.string != text {
+                editor.string = text
+            }
+            stringValue = text
+            if moveInsertionPointToEnd {
+                let end = (text as NSString).length
+                editor.setSelectedRange(NSRange(location: end, length: 0))
+            }
+            updateFieldEditorCaret()
+            return
+        }
+
+        if stringValue != text {
+            stringValue = text
+        }
+    }
+
+    private func moveInsertionPointToEnd() {
+        guard let editor = currentEditor() as? NSTextView else { return }
+        let end = (editor.string as NSString).length
+        editor.setSelectedRange(NSRange(location: end, length: 0))
+    }
 }
 
 enum CommandPaletteOutsideClickRouting {

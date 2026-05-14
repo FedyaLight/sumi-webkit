@@ -55,7 +55,6 @@ struct HistorySuggestionItem: View {
                 deleteControl(onDelete: onDelete)
                     .fixedSize(horizontal: true, vertical: false)
                     .layoutPriority(1)
-                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -84,28 +83,37 @@ struct HistorySuggestionItem: View {
     private func deleteControl(onDelete: @escaping () -> Void) -> some View {
         ZStack(alignment: .trailing) {
             if isDeleteConfirming {
-                Button {
-                    onDelete()
-                    isDeleteConfirming = false
-                } label: {
-                    Text("Delete")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color.white)
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .padding(.horizontal, 9)
-                        .frame(height: 24)
-                        .background(colors.confirmDeleteBackground)
-                        .clipShape(CommandPaletteSuggestionMetrics.controlShape)
+                HStack(spacing: 4) {
+                    Button {
+                        isDeleteConfirming = false
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(colors.deleteButtonColor(isHovered: false))
+                            .frame(width: 24, height: 24)
+                            .background(colors.deleteButtonBackground(isHovered: false))
+                            .clipShape(CommandPaletteSuggestionMetrics.controlShape)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Cancel history deletion")
+
+                    Button {
+                        onDelete()
+                        isDeleteConfirming = false
+                    } label: {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(Color.white)
+                            .frame(width: 24, height: 24)
+                            .background(colors.confirmDeleteBackground)
+                            .clipShape(CommandPaletteSuggestionMetrics.controlShape)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Confirm history deletion")
                 }
-                .buttonStyle(.plain)
-                .help("Confirm history deletion")
-                .transition(.opacity.combined(with: .scale(scale: 0.96)))
             } else {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.12)) {
-                        isDeleteConfirming = true
-                    }
+                    isDeleteConfirming = true
                 } label: {
                     Image(systemName: "trash")
                         .font(.system(size: 11, weight: .semibold))
@@ -117,16 +125,11 @@ struct HistorySuggestionItem: View {
                 .buttonStyle(.plain)
                 .help("Delete history entry")
                 .onHover { hovering in
-                    withAnimation(.easeInOut(duration: 0.12)) {
-                        isDeleteHovered = hovering
-                    }
+                    isDeleteHovered = hovering
                 }
-                .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
         }
         .frame(width: 58, alignment: .trailing)
-        .animation(.easeInOut(duration: 0.12), value: isDeleteConfirming)
-        .animation(.easeInOut(duration: 0.12), value: isDeleteVisible)
     }
 
     private var historyLine: some View {
@@ -310,6 +313,10 @@ private final class CommandPaletteHistoryLineNSView: NSView {
 
     private func applyTrailingFadeMask() {
         guard let layer else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
         layer.masksToBounds = true
         let mask: CAGradientLayer
         if let existing = layer.mask as? CAGradientLayer {
