@@ -156,6 +156,9 @@ extension SpaceView {
               hoveredSpaceId == space.id else {
             return nil
         }
+        guard dragState.projectionFolderDropIntent == .none else {
+            return nil
+        }
         if let projectionDragItemId = dragState.projectionDragItemId,
            dragState.shouldHideCommittedCrossContainerPlaceholder(
                 into: .spacePinned(space.id),

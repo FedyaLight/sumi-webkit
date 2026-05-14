@@ -362,7 +362,7 @@ struct TabFolderView: View {
             folderHeader
             folderBodyContainer
         }
-        .overlay(alignment: .bottom) {
+        .background(alignment: .bottom) {
             folderAfterDropTarget
         }
     }
@@ -461,6 +461,10 @@ struct TabFolderView: View {
                 .frame(height: height)
                 .frame(maxWidth: .infinity)
                 .offset(y: height / 2)
+                .transaction { transaction in
+                    transaction.animation = nil
+                    transaction.disablesAnimations = true
+                }
                 .sidebarFolderDropGeometry(
                     folderId: folder.id,
                     spaceId: space.id,
@@ -496,14 +500,6 @@ struct TabFolderView: View {
             .padding(.leading, folderInsertionGuideLeading)
             .padding(.trailing, SidebarRowLayout.trailingInset)
             .offset(y: centerY - SidebarInsertionGuide.visualCenterY)
-    }
-
-    private var folderHeaderContainGuide: some View {
-        SidebarInsertionGuide()
-            .padding(.leading, SidebarRowLayout.leadingInset + SidebarRowLayout.folderTitleLeading)
-            .padding(.trailing, SidebarRowLayout.trailingInset)
-            .offset(y: SidebarInsertionGuide.visualCenterY)
-            .allowsHitTesting(false)
     }
 
     private var folderHeader: some View {
@@ -564,6 +560,7 @@ struct TabFolderView: View {
         .frame(height: SidebarRowLayout.rowHeight)
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
+        .geometryGroup()
         .background(alignment: .center) {
             if isFolderDropHighlighted {
                 Rectangle()
@@ -576,11 +573,6 @@ struct TabFolderView: View {
                 .fill(displayIsHovering ? tokens.sidebarRowHover : Color.clear)
         )
         .contentShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(alignment: .bottomLeading) {
-            if isFolderContainTargeted && (!folder.isOpen || folderItems.isEmpty) {
-                folderHeaderContainGuide
-            }
-        }
         .sidebarDDGHover($isFolderHeaderHovered, isEnabled: isInteractive)
     }
 
