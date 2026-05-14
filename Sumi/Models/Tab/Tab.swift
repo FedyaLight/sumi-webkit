@@ -165,6 +165,11 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         }
     }
 
+    func beginLoadingPresentationIfNeeded() {
+        guard !loadingState.isLoading else { return }
+        loadingState = .didStartProvisionalNavigation
+    }
+
     @Published var canGoBack: Bool = false
     @Published var canGoForward: Bool = false
 
@@ -654,7 +659,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     func loadURL(_ newURL: URL) {
         self.url = newURL
-        loadingState = .didStartProvisionalNavigation
+        beginLoadingPresentationIfNeeded()
 
         guard _webView != nil else {
             setupWebView()

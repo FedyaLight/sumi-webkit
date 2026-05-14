@@ -126,6 +126,10 @@ final class SumiTabTitleViewTests: XCTestCase {
             accuracy: 0.001
         )
         XCTAssertEqual(animation.duration, SumiTabTitleAnimation.loadingShimmerCycleDuration, accuracy: 0.001)
+        let positionAnimation = try XCTUnwrap(animation as? CABasicAnimation)
+        XCTAssertEqual(positionAnimation.keyPath, "position.x")
+        XCTAssertEqual(positionAnimation.fromValue as? CGFloat, -72)
+        XCTAssertEqual(positionAnimation.toValue as? CGFloat, 272)
     }
 
     func testTitleViewStopsLoadingShimmerAnimation() throws {

@@ -39,15 +39,13 @@ final class SumiTabLifecycleNavigationResponder:
         }
     }
 
-    func navigationDidStart() {}
-
     func navigationDidStart(_ context: SumiNavigationContext) {
         guard let tab,
               context.isMainFrame == true,
               let webView = context.webView
         else { return }
 
-        tab.loadingState = .didStartProvisionalNavigation
+        tab.beginLoadingPresentationIfNeeded()
         tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.loading])
 
         if let newURL = webView.url {
@@ -111,8 +109,6 @@ final class SumiTabLifecycleNavigationResponder:
         )
     }
 
-    func navigationDidFinish() {}
-
     func navigationDidFinish(_ context: SumiNavigationContext?) {
         guard let tab,
               context?.isMainFrame == true,
@@ -149,8 +145,6 @@ final class SumiTabLifecycleNavigationResponder:
         tab.browserManager?.enforceSiteDataPolicyAfterNavigation(for: tab)
     }
 
-    func navigationDidSameDocumentNavigation(type: SumiSameDocumentNavigationType) {}
-
     func navigationDidSameDocumentNavigation(
         type navigationType: SumiSameDocumentNavigationType,
         context: SumiNavigationContext?
@@ -176,8 +170,6 @@ final class SumiTabLifecycleNavigationResponder:
 
         tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.URL])
     }
-
-    func navigationDidFail() {}
 
     func navigationDidFail(_ error: WKError, context: SumiNavigationContext?) {
         guard let tab,

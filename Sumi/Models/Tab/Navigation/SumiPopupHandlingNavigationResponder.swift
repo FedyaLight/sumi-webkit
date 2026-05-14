@@ -216,8 +216,6 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
         onNewWindow = nil
     }
 
-    func navigationDidStart() {}
-
     func decidePolicy(
         for navigationAction: SumiNavigationAction,
         webView targetWebView: WKWebView?,

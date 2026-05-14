@@ -84,7 +84,7 @@ enum SumiTabTitleAnimation {
     static let slidingInLastX = CGFloat(0)
 
     static let loadingShimmerKey = "loadingTitleShimmer"
-    static let loadingShimmerCycleDuration: TimeInterval = 1.36
+    static let loadingShimmerCycleDuration: TimeInterval = 1.2
     static let loadingShimmerMinimumBandWidth = CGFloat(96)
     static let loadingShimmerMaximumBandWidth = CGFloat(180)
     static let loadingShimmerRelativeBandWidth = CGFloat(0.72)
@@ -336,47 +336,21 @@ private extension SumiTabTitleView {
             NSColor.clear.cgColor
         ]
         mask.locations = [0, 0.22, 0.5, 0.78, 1]
-        mask.opacity = 0
+        mask.opacity = 1
 
         CATransaction.commit()
     }
 
-    func buildLoadingShimmerAnimation() -> CAAnimationGroup {
+    func buildLoadingShimmerAnimation() -> CABasicAnimation {
         let bandWidth = loadingShimmerBandWidth
-        let position = CAKeyframeAnimation(keyPath: "position.x")
-        position.values = [
-            -bandWidth / 2,
-            -bandWidth * 0.12,
-            bounds.width * 0.58,
-            bounds.width + bandWidth * 0.18,
-            bounds.width + bandWidth / 2,
-            bounds.width + bandWidth / 2
-        ]
-        position.keyTimes = [0, 0.08, 0.32, 0.48, 0.52, 1]
-        position.timingFunctions = [
-            CAMediaTimingFunction(name: .easeInEaseOut),
-            CAMediaTimingFunction(controlPoints: 0.16, 0, 0.10, 1),
-            CAMediaTimingFunction(name: .easeOut),
-            CAMediaTimingFunction(name: .easeOut),
-            CAMediaTimingFunction(name: .linear)
-        ]
-
-        let opacity = CAKeyframeAnimation(keyPath: "opacity")
-        opacity.values = [0, 1, 1, 0, 0]
-        opacity.keyTimes = [0, 0.08, 0.38, 0.52, 1]
-        opacity.timingFunctions = [
-            CAMediaTimingFunction(name: .easeIn),
-            CAMediaTimingFunction(name: .linear),
-            CAMediaTimingFunction(name: .easeOut),
-            CAMediaTimingFunction(name: .linear)
-        ]
-
-        let group = CAAnimationGroup()
-        group.animations = [position, opacity]
-        group.duration = SumiTabTitleAnimation.loadingShimmerCycleDuration
-        group.repeatCount = .infinity
-        group.isRemovedOnCompletion = false
-        return group
+        let animation = CABasicAnimation(keyPath: "position.x")
+        animation.fromValue = -bandWidth / 2
+        animation.toValue = bounds.width + bandWidth / 2
+        animation.duration = SumiTabTitleAnimation.loadingShimmerCycleDuration
+        animation.timingFunction = CAMediaTimingFunction(name: .linear)
+        animation.repeatCount = .infinity
+        animation.isRemovedOnCompletion = false
+        return animation
     }
 
     var loadingShimmerBandWidth: CGFloat {
