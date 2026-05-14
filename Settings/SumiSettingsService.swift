@@ -30,6 +30,7 @@ class SumiSettingsService {
     private let tabListNewTabButtonPositionKey = "settings.tabListNewTabButtonPosition"
     private let showLinkStatusBarKey = "settings.showLinkStatusBar"
     private let siteSearchEntriesKey = "settings.siteSearchEntries"
+    private let commandPaletteEmptyStateModeKey = "settings.commandPalette.emptyStateMode"
     private let didFinishOnboardingKey = "settings.didFinishOnboarding"
     private let tabLayoutKey = "settings.tabLayout"
     private let customSearchEnginesKey = "settings.customSearchEngines"
@@ -172,6 +173,12 @@ class SumiSettingsService {
             }
         }
     }
+
+    var commandPaletteEmptyStateMode: CommandPaletteEmptyStateMode {
+        didSet {
+            userDefaults.set(commandPaletteEmptyStateMode.rawValue, forKey: commandPaletteEmptyStateModeKey)
+        }
+    }
     
     var tabLayout: TabLayout {
         didSet {
@@ -243,6 +250,7 @@ class SumiSettingsService {
             showNewTabButtonInTabListKey: true,
             tabListNewTabButtonPositionKey: TabListNewTabButtonPosition.bottom.rawValue,
             showLinkStatusBarKey: true,
+            commandPaletteEmptyStateModeKey: CommandPaletteEmptyStateMode.compact.rawValue,
             didFinishOnboardingKey: true,
             tabLayoutKey: TabLayout.sidebar.rawValue,
             memoryModeKey: SumiMemoryMode.balanced.rawValue,
@@ -332,6 +340,9 @@ class SumiSettingsService {
         } else {
             self.siteSearchEntries = SiteSearchEntry.defaultSites
         }
+        self.commandPaletteEmptyStateMode = CommandPaletteEmptyStateMode(
+            rawValue: userDefaults.string(forKey: commandPaletteEmptyStateModeKey) ?? CommandPaletteEmptyStateMode.compact.rawValue
+        ) ?? .compact
 
         enforceSumiChromeDefaults()
     }
@@ -423,6 +434,20 @@ class SumiSettingsService {
         }
         if !didFinishOnboarding {
             didFinishOnboarding = true
+        }
+    }
+}
+
+enum CommandPaletteEmptyStateMode: String, CaseIterable, Identifiable, Codable, Sendable {
+    case compact
+    case topLinks
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .compact: return "Compact"
+        case .topLinks: return "Top Links"
         }
     }
 }

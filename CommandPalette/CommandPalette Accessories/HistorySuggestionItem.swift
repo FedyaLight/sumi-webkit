@@ -11,6 +11,7 @@ import SwiftUI
 struct HistorySuggestionItem: View {
     let entry: HistoryListItem
     var isSelected: Bool = false
+    var isHovered: Bool = false
     var selectedForeground: Color? = nil
     var onDelete: (() -> Void)? = nil
     
@@ -28,6 +29,10 @@ struct HistorySuggestionItem: View {
             selectedForeground: selectedForeground
         )
     }
+
+    private var isDeleteVisible: Bool {
+        isHovered || isDeleteConfirming
+    }
     
     var body: some View {
         HStack(alignment: .center, spacing: 9) {
@@ -43,18 +48,27 @@ struct HistorySuggestionItem: View {
             }
             
             historyLine
-                .layoutPriority(1)
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(0)
 
-            if let onDelete {
+            if let onDelete, isDeleteVisible {
                 deleteControl(onDelete: onDelete)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .layoutPriority(1)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
             }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .clipped()
         .task(id: entry.url) {
             await fetchFavicon(for: entry.url)
         }
         .onChange(of: entry.id) { _, _ in
             isDeleteConfirming = false
+            isDeleteHovered = false
+        }
+        .onChange(of: isHovered) { _, newValue in
+            guard !newValue, !isDeleteConfirming else { return }
             isDeleteHovered = false
         }
     }
@@ -112,6 +126,7 @@ struct HistorySuggestionItem: View {
         }
         .frame(width: 58, alignment: .trailing)
         .animation(.easeInOut(duration: 0.12), value: isDeleteConfirming)
+        .animation(.easeInOut(duration: 0.12), value: isDeleteVisible)
     }
 
     private var historyLine: some View {
@@ -155,9 +170,9 @@ private struct CommandPaletteHistoryLineText: View {
             titleColor: titleColor,
             urlColor: urlColor,
             font: .systemFont(ofSize: 13, weight: .semibold),
-            fadeWidth: 30
+            fadeWidth: 42
         )
-        .frame(maxWidth: .infinity, minHeight: 17, maxHeight: 17, alignment: .leading)
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 17, maxHeight: 17, alignment: .leading)
         .clipped()
     }
 }
@@ -264,6 +279,7 @@ private final class CommandPaletteHistoryLineNSView: NSView {
 
     private func setup() {
         wantsLayer = true
+        layer?.masksToBounds = true
         textField.wantsLayer = true
         textField.isEditable = false
         textField.isSelectable = false
@@ -294,6 +310,7 @@ private final class CommandPaletteHistoryLineNSView: NSView {
 
     private func applyTrailingFadeMask() {
         guard let layer else { return }
+        layer.masksToBounds = true
         let mask: CAGradientLayer
         if let existing = layer.mask as? CAGradientLayer {
             mask = existing

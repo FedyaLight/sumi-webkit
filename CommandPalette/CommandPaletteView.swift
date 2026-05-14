@@ -96,6 +96,18 @@ struct CommandPaletteView: View {
         return "Search..."
     }
 
+    private var isShowingEmptyTopLinks: Bool {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && activeSiteSearch == nil
+            && sumiSettings.commandPaletteEmptyStateMode == .topLinks
+            && !visibleSuggestions.isEmpty
+    }
+
+    private var shouldUseFixedSuggestionsHeight: Bool {
+        isShowingEmptyTopLinks
+            || (!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !visibleSuggestions.isEmpty)
+    }
+
     var body: some View {
         GeometryReader { proxy in
             commandPaletteBody(
@@ -280,6 +292,7 @@ struct CommandPaletteView: View {
                                 CommandPaletteSuggestionsListView(
                                     tokens: tokens,
                                     suggestions: visibleSuggestions,
+                                    usesFixedHeight: shouldUseFixedSuggestionsHeight,
                                     selectedIndex: $selectedSuggestionIndex,
                                     hoveredIndex: $hoveredSuggestionIndex,
                                     onSelect: { suggestion in
@@ -396,6 +409,9 @@ struct CommandPaletteView: View {
                 }
             }
         }
+        .onChange(of: sumiSettings.commandPaletteEmptyStateMode) { _, _ in
+            refreshEmptyStateSuggestionsIfNeeded()
+        }
     }
 
     private func availableWindowWidth(from layoutWidth: CGFloat) -> CGFloat {
@@ -418,7 +434,7 @@ struct CommandPaletteView: View {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else {
             searchDebouncer.cancel()
-            searchManager.clearSuggestions()
+            refreshEmptyStateSuggestionsIfNeeded()
             return
         }
 
@@ -432,9 +448,11 @@ struct CommandPaletteView: View {
             installOutsideClickMonitorIfNeeded()
             searchManager.setTabManager(browserManager.tabManager)
             searchManager.setHistoryManager(browserManager.historyManager)
+            searchManager.setBookmarkManager(browserManager.bookmarkManager)
             searchManager.updateProfileContext()
 
             text = commandPalette.prefilledText
+            refreshEmptyStateSuggestionsIfNeeded()
 
             DispatchQueue.main.async {
                 focusSearchField(selectAll: true)
@@ -450,6 +468,22 @@ struct CommandPaletteView: View {
             searchModeGlow = nil
             searchModeGlowProgress = 1
             selectedSuggestionIndex = -1
+        }
+    }
+
+    private func refreshEmptyStateSuggestionsIfNeeded() {
+        guard commandPalette.isVisible,
+              activeSiteSearch == nil,
+              text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+
+        searchDebouncer.cancel()
+        if sumiSettings.commandPaletteEmptyStateMode == .topLinks {
+            searchManager.showTopLinkSuggestions(
+                limit: CommandPaletteLayoutPolicy.suggestionsVisibleRowLimit
+            )
+        } else {
+            searchManager.clearSuggestions()
         }
     }
 
@@ -503,6 +537,7 @@ struct CommandPaletteView: View {
     private struct CommandPaletteSuggestionsListView: View {
         let tokens: ChromeThemeTokens
         let suggestions: [SearchManager.SearchSuggestion]
+        let usesFixedHeight: Bool
         @Binding var selectedIndex: Int
         @Binding var hoveredIndex: Int?
         let onSelect: (SearchManager.SearchSuggestion) -> Void
@@ -525,6 +560,7 @@ struct CommandPaletteView: View {
                             row(
                                 for: suggestion,
                                 isSelected: isSelected,
+                                isHovered: isHovered,
                                 selectedForeground: selectedForeground,
                                 selectedChipBackground: selectedChipBackground,
                                 selectedChipForeground: selectedChipForeground
@@ -564,7 +600,11 @@ struct CommandPaletteView: View {
                     }
                 }
                 .scrollIndicators(shouldScroll ? .visible : .hidden)
-                .frame(height: CommandPaletteLayoutPolicy.suggestionsHeight(for: suggestions.count))
+                .frame(
+                    height: usesFixedHeight
+                        ? CommandPaletteLayoutPolicy.suggestionsMaxHeight
+                        : CommandPaletteLayoutPolicy.suggestionsHeight(for: suggestions.count)
+                )
                 .onChange(of: selectedIndex) { _, newIndex in
                     guard newIndex >= 0 else { return }
                     withAnimation(.easeInOut(duration: 0.12)) {
@@ -578,6 +618,7 @@ struct CommandPaletteView: View {
         private func row(
             for suggestion: SearchManager.SearchSuggestion,
             isSelected: Bool,
+            isHovered: Bool,
             selectedForeground: Color,
             selectedChipBackground: Color,
             selectedChipForeground: Color
@@ -595,10 +636,21 @@ struct CommandPaletteView: View {
                 HistorySuggestionItem(
                     entry: entry,
                     isSelected: isSelected,
+                    isHovered: isHovered,
                     selectedForeground: selectedForeground,
-                    onDelete: entry.visitID == nil ? nil : {
+                    onDelete: {
                         onDeleteHistoryEntry(entry)
                     }
+                )
+            case .bookmark(let bookmark):
+                GenericSuggestionItem(
+                    icon: Image(systemName: "bookmark.fill"),
+                    text: bookmark.title,
+                    actionLabel: "Open Bookmark",
+                    isSelected: isSelected,
+                    selectedForeground: selectedForeground,
+                    selectedChipBackground: selectedChipBackground,
+                    selectedChipForeground: selectedChipForeground
                 )
             case .url:
                 GenericSuggestionItem(
@@ -624,13 +676,15 @@ struct CommandPaletteView: View {
     }
 
     private func deleteHistoryEntry(_ entry: HistoryListItem) {
-        guard let visitID = entry.visitID else { return }
-
         Task { @MainActor in
-            await browserManager.historyManager.delete(query: .visits([visitID]))
+            if let visitID = entry.visitID {
+                await browserManager.historyManager.delete(query: .visits([visitID]))
+            } else {
+                await browserManager.historyManager.delete(query: .domainFilter([entry.siteDomain ?? entry.domain]))
+            }
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty {
-                searchManager.clearSuggestions()
+                refreshEmptyStateSuggestionsIfNeeded()
             } else {
                 searchManager.searchSuggestions(for: trimmed)
             }
@@ -708,6 +762,22 @@ struct CommandPaletteView: View {
                 browserManager.createNewTab(in: windowState, url: historyEntry.url.absoluteString)
                 RuntimeDiagnostics.debug(
                     "Created new tab from history in window \(windowState.id)",
+                    category: "CommandPalette"
+                )
+            }
+        case .bookmark(let bookmark):
+            if commandPalette.shouldNavigateCurrentTab
+                && browserManager.currentTab(for: windowState) != nil
+            {
+                browserManager.currentTab(for: windowState)?.loadURL(bookmark.url.absoluteString)
+                RuntimeDiagnostics.debug(
+                    "Navigated current tab to bookmark URL: \(bookmark.url)",
+                    category: "CommandPalette"
+                )
+            } else {
+                browserManager.createNewTab(in: windowState, url: bookmark.url.absoluteString)
+                RuntimeDiagnostics.debug(
+                    "Created new tab from bookmark in window \(windowState.id)",
                     category: "CommandPalette"
                 )
             }
