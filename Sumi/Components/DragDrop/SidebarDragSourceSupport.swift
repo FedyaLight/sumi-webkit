@@ -152,6 +152,10 @@ enum SidebarDragPreviewSessionFactory {
         }
 
         insert(previewKind)
+        if previewKind != .folderRow {
+            insert(.row)
+            insert(.essentialsTile)
+        }
 
         return assets
     }

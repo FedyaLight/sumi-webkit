@@ -582,10 +582,6 @@ struct TabFolderView: View {
             }
         }
         .sidebarDDGHover($isFolderHeaderHovered, isEnabled: isInteractive)
-        .sidebarZenPressEffect(
-            sourceID: folderHeaderSourceID,
-            isEnabled: isInteractive && !isRenaming
-        )
     }
 
     @ViewBuilder

@@ -2,6 +2,8 @@ import AppKit
 import SwiftUI
 
 enum SidebarFloatingDragPreviewPolicy {
+    static let transformAnimation = Animation.easeInOut(duration: 0.15)
+
     static func resolvedPreviewKind(
         baseKind: SidebarDragPreviewKind?,
         hoveredSlot: DropZoneSlot,
@@ -78,9 +80,9 @@ struct SidebarFloatingDragPreview: View {
                                 y: (dragLocation.y - geo.frame(in: .global).minY) - anchor.y + (size.height / 2)
                             )
                             .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                            .animation(.easeInOut(duration: 0.15), value: previewKind)
-                            .animation(.easeInOut(duration: 0.15), value: size)
-                            .animation(.easeInOut(duration: 0.15), value: dragState.hoveredSlot)
+                            .animation(SidebarFloatingDragPreviewPolicy.transformAnimation, value: previewKind)
+                            .animation(SidebarFloatingDragPreviewPolicy.transformAnimation, value: size)
+                            .animation(SidebarFloatingDragPreviewPolicy.transformAnimation, value: dragState.hoveredSlot)
                     } else if let asset = currentAsset,
                               let dragLocation = currentDragLocation {
                         fallbackImagePreview(asset: asset)
@@ -88,7 +90,7 @@ struct SidebarFloatingDragPreview: View {
                                 x: (dragLocation.x - geo.frame(in: .global).minX) - asset.anchorOffset.x + (asset.size.width / 2),
                                 y: (dragLocation.y - geo.frame(in: .global).minY) - asset.anchorOffset.y + (asset.size.height / 2)
                             )
-                            .animation(.easeInOut(duration: 0.12), value: currentPreviewKind)
+                            .animation(SidebarFloatingDragPreviewPolicy.transformAnimation, value: currentPreviewKind)
                     }
                 }
             }
@@ -142,7 +144,8 @@ struct SidebarFloatingDragPreview: View {
             .opacity(kind == .folderRow ? 1 : 0)
             .scaleEffect(kind == .folderRow ? 1 : 0.97)
         }
-        .animation(.easeInOut(duration: 0.15), value: kind)
+        .geometryGroup()
+        .animation(SidebarFloatingDragPreviewPolicy.transformAnimation, value: kind)
     }
 
     private func resolvedSize(
@@ -241,7 +244,6 @@ struct SidebarFloatingDragPreview: View {
     }
 
     private var shouldRenderPreview: Bool {
-        guard !dragState.isInternalDragSession else { return false }
         return currentDragLocation != nil && (dragState.previewModel != nil || currentAsset != nil)
     }
 

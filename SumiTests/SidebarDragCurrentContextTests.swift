@@ -1,3 +1,4 @@
+import AppKit
 import SwiftData
 import XCTest
 
@@ -26,7 +27,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
     }
 
-    func testDragPreviewSessionRendersOnlyPrimaryNativeAsset() {
+    func testLauncherDragPreviewSessionRendersRowAndEssentialsAssets() {
         let session = SidebarDragPreviewSessionFactory.make(
             configuration: SidebarDragSourceConfiguration(
                 item: SumiDragItem(
@@ -42,7 +43,55 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         let renderedKinds = session.map { Set($0.previewAssets.keys) } ?? Set<SidebarDragPreviewKind>()
-        XCTAssertEqual(renderedKinds, [.essentialsTile])
+        XCTAssertEqual(renderedKinds, [.essentialsTile, .row])
+    }
+
+    func testFolderDragPreviewSessionKeepsFolderOnlyAsset() {
+        let session = SidebarDragPreviewSessionFactory.make(
+            configuration: SidebarDragSourceConfiguration(
+                item: SumiDragItem.folder(folderId: UUID(), title: "Folder"),
+                sourceZone: .spacePinned(UUID()),
+                previewKind: .folderRow
+            ),
+            sourceSize: CGSize(width: 220, height: 36),
+            sourceOffsetFromBottomLeading: CGPoint(x: 18, y: 18)
+        )
+
+        let renderedKinds = session.map { Set($0.previewAssets.keys) } ?? Set<SidebarDragPreviewKind>()
+        XCTAssertEqual(renderedKinds, [.folderRow])
+    }
+
+    func testLauncherPreviewPolicyTransformsRowIntoEssentialsTileOnEssentialsHover() {
+        let assets: [SidebarDragPreviewKind: SidebarDragPreviewAsset] = [
+            .row: emptyPreviewAsset(size: CGSize(width: 220, height: 36)),
+            .essentialsTile: emptyPreviewAsset(size: CGSize(width: 132, height: 56)),
+        ]
+
+        XCTAssertEqual(
+            SidebarFloatingDragPreviewPolicy.resolvedPreviewKind(
+                baseKind: .row,
+                hoveredSlot: .essentials(slot: 0),
+                previewAssets: assets
+            ),
+            .essentialsTile
+        )
+    }
+
+    func testLauncherPreviewPolicyTransformsEssentialsTileIntoRowOnPinnedHover() {
+        let spaceId = UUID()
+        let assets: [SidebarDragPreviewKind: SidebarDragPreviewAsset] = [
+            .row: emptyPreviewAsset(size: CGSize(width: 220, height: 36)),
+            .essentialsTile: emptyPreviewAsset(size: CGSize(width: 132, height: 56)),
+        ]
+
+        XCTAssertEqual(
+            SidebarFloatingDragPreviewPolicy.resolvedPreviewKind(
+                baseKind: .essentialsTile,
+                hoveredSlot: .spacePinned(spaceId: spaceId, slot: 0),
+                previewAssets: assets
+            ),
+            .row
+        )
     }
 
     func testRegularToLauncherDropCommitSuppressesStaleProjectionPlaceholder() throws {
@@ -1530,6 +1579,14 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         case .essentials:
             return try makeEssentialPin(tabManager, in: space, profileId: profileId, url: url, index: 0)
         }
+    }
+
+    private func emptyPreviewAsset(size: CGSize) -> SidebarDragPreviewAsset {
+        SidebarDragPreviewAsset(
+            image: NSImage(size: size),
+            size: size,
+            anchorOffset: CGPoint(x: size.width / 2, y: size.height / 2)
+        )
     }
 
     private func dragContainer(
