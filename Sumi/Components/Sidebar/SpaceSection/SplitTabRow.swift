@@ -109,7 +109,7 @@ private struct SplitHalfTab: View {
                     isEnabled: isAppKitInteractionEnabled
                 ),
                 primaryAction: onActivate,
-                sourceID: "space-split-tab-\(tab.id.uuidString)",
+                sourceID: rowSourceID,
                 entries: { contextMenuEntries }
             )
 
@@ -126,6 +126,11 @@ private struct SplitHalfTab: View {
         }
         .background(backgroundColor)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .sidebarZenPressEffect(
+            sourceID: rowSourceID,
+            kind: .split,
+            isEnabled: isAppKitInteractionEnabled
+        )
         .shadow(
             color: (isSplitActiveSide || isActive) ? tokens.sidebarSelectionShadow : .clear,
             radius: (isSplitActiveSide || isActive) ? 2 : 0,
@@ -135,6 +140,10 @@ private struct SplitHalfTab: View {
 
     private var isActive: Bool {
         browserManager.currentTab(for: windowState)?.id == tab.id
+    }
+
+    private var rowSourceID: String {
+        "space-split-tab-\(tab.id.uuidString)"
     }
 
     private var backgroundColor: Color {
@@ -184,8 +193,13 @@ private struct SplitHalfTab: View {
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 6))
         }
-        .buttonStyle(PlainButtonStyle())
+        .buttonStyle(
+            SidebarZenActionButtonStyle(
+                isEnabled: displayIsHovering && !freezesHoverState
+            )
+        )
         .opacity(displayIsHovering ? 1 : 0)
+        .sidebarZenActionOpacity(displayIsHovering)
         .allowsHitTesting(displayIsHovering && !freezesHoverState)
         .accessibilityHidden(!displayIsHovering)
         .sidebarDDGHover($isCloseHovered, isEnabled: displayIsHovering && isAppKitInteractionEnabled)

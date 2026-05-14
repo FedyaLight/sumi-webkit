@@ -185,7 +185,11 @@ private struct ShortcutSidebarRowChrome: View {
                 Button(action: onResetToLaunchURL) {
                     resetLeadingButtonContent
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(
+                    SidebarZenActionButtonStyle(
+                        isEnabled: dragIsEnabled && !freezesHoverState
+                    )
+                )
                 .sidebarDDGHover($isResetHovered, isEnabled: dragIsEnabled)
                 .accessibilityIdentifier(resetActionAccessibilityID ?? "shortcut-sidebar-reset")
                 .accessibilityLabel("Back to pinned URL")
@@ -256,6 +260,7 @@ private struct ShortcutSidebarRowChrome: View {
         .accessibilityIdentifier(accessibilityID ?? "shortcut-sidebar-row")
         .accessibilityValue(runtimeAffordance.isSelected ? "selected" : "not selected")
         .sidebarDDGHover($isRowHovered, isEnabled: dragIsEnabled)
+        .sidebarZenPressEffect(sourceID: rowSourceID, isEnabled: dragIsEnabled)
         .onAppear {
             recordShortcutSidebarMarker("shortcutRowAppear")
         }
@@ -278,7 +283,7 @@ private struct ShortcutSidebarRowChrome: View {
             isInteractionEnabled: dragIsEnabled,
             dragSource: dragSourceConfiguration,
             primaryAction: action,
-            sourceID: accessibilityID ?? "shortcut-sidebar-row",
+            sourceID: rowSourceID,
             entries: { contextMenuEntries(toggleLauncherIconPicker) }
         )
         .onChange(of: emojiManager.committedEmoji) { _, newValue in
@@ -459,8 +464,13 @@ private struct ShortcutSidebarRowChrome: View {
                 .background(displayIsActionHovering ? actionBackground : Color.clear)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(
+            SidebarZenActionButtonStyle(
+                isEnabled: showsActionButton && !freezesHoverState
+            )
+        )
         .opacity(showsActionButton ? 1 : 0)
+        .sidebarZenActionOpacity(showsActionButton)
         .allowsHitTesting(showsActionButton && !freezesHoverState)
         .accessibilityHidden(!showsActionButton)
         .sidebarDDGHover($isActionHovered, isEnabled: showsActionButton && dragIsEnabled)
@@ -479,6 +489,10 @@ private struct ShortcutSidebarRowChrome: View {
             return tokens.sidebarRowHover
         }
         return .clear
+    }
+
+    private var rowSourceID: String {
+        accessibilityID ?? "shortcut-sidebar-row"
     }
 
     private var actionBackground: Color {
@@ -738,7 +752,12 @@ private struct LauncherAudioButton: View {
                     .frame(width: 22, height: 22)
                     .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(
+                    SidebarZenActionButtonStyle(
+                        isEnabled: isAppKitInteractionEnabled
+                            && !windowState.sidebarInteractionState.freezesSidebarHoverState
+                    )
+                )
                 .frame(width: 22, height: 22)
                 .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .sidebarDDGHover($isHovering, isEnabled: isAppKitInteractionEnabled)

@@ -48,8 +48,17 @@ extension SpaceView {
         )
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .sidebarDDGHover($isNewTabHovered, isEnabled: isInteractive)
+        .sidebarZenPressEffect(sourceID: newTabRowSourceID, isEnabled: isInteractive)
         .accessibilityIdentifier("space-new-tab-\(space.id.uuidString)")
-        .sidebarAppKitPrimaryAction(isEnabled: isInteractive, action: openNewTabFloatingBar)
+        .sidebarAppKitPrimaryAction(
+            isInteractionEnabled: isInteractive,
+            sourceID: newTabRowSourceID,
+            action: openNewTabFloatingBar
+        )
+    }
+
+    private var newTabRowSourceID: String {
+        "space-new-tab-\(space.id.uuidString)"
     }
 
     private var displayIsNewTabHovered: Bool {
@@ -122,7 +131,10 @@ extension SpaceView {
                 regularTabsContent
             }
         }
-        .animation(isInteractive ? .easeInOut(duration: 0.15) : nil, value: tabs.count)
+        .animation(
+            isInteractive ? .easeOut(duration: SidebarRowMotionMetrics.openDuration) : nil,
+            value: tabs.count
+        )
     }
 
     private var regularTabsContent: some View {
@@ -226,7 +238,7 @@ extension SpaceView {
                 : 1
         )
         .id(tab.id)
-        .transition(.move(edge: .top).combined(with: .opacity))
+        .sidebarZenRowLifecycleTransition(isEnabled: isInteractive)
         .accessibilityIdentifier("space-regular-tab-\(tab.id.uuidString)")
         .accessibilityValue(windowState.currentTabId == tab.id ? "selected" : "not selected")
     }

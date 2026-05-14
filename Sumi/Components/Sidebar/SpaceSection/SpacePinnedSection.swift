@@ -274,7 +274,6 @@ extension SpaceView {
             generation: dragState.sidebarGeometryGeneration,
             isActive: isInteractive
         )
-        .transition(.opacity.animation(.easeInOut(duration: 0.12)))
     }
 
     private func pinnedShortcutView(_ pin: ShortcutPin, topLevelPinnedIndex: Int) -> some View {
@@ -310,7 +309,6 @@ extension SpaceView {
             generation: dragState.sidebarGeometryGeneration,
             isActive: isInteractive
         )
-        .transition(.move(edge: .top).combined(with: .opacity))
     }
 
     private func pinnedShortcutContextMenuEntries(

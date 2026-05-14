@@ -4,6 +4,7 @@
 //
 
 import AppKit
+import SwiftUI
 
 enum SidebarUITestDragMarker {
     private static let argumentPrefix = "--uitest-sidebar-drag-marker="
@@ -114,6 +115,7 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
     private var mouseDownCanStartDrag = false
     private var didStartDrag = false
     private var isTrackingDragGesture = false
+    private var trackedPressedSourceID: String?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -227,13 +229,13 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
             mouseDownCanStartDrag = capturesDrag
             didStartDrag = false
             isTrackingDragGesture = true
+            beginPressTracking()
             if capturesDrag {
                 SidebarDragState.shared.armInternalDragGeometry(
                     scope: itemConfiguration.dragScope
                 )
             }
             contextMenuController?.beginPrimaryMouseTracking(self)
-            trackPrimaryMouseEventsIfNeeded(after: event)
             return
         }
 
@@ -286,7 +288,7 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
             RuntimeDiagnostics.emit(
                 "🧭 Sidebar primary click activated owner=\(String(describing: type(of: self)))"
             )
-            primaryAction?()
+            performPrimaryAction(primaryAction)
         }
     }
 
@@ -523,6 +525,7 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         ) else { return }
 
         didStartDrag = true
+        endPressTracking()
         let dragLocation = SidebarDragLocationMapper.swiftUIGlobalPoint(
             fromLocalPoint: point,
             in: self
@@ -610,6 +613,7 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         mouseDownCanStartDrag = false
         didStartDrag = false
         isTrackingDragGesture = false
+        endPressTracking()
         if shouldCancelArmedGeometry {
             SidebarDragState.shared.cancelArmedDragGeometry()
         }
@@ -626,49 +630,6 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         }
     }
 
-    private func trackPrimaryMouseEventsIfNeeded(after event: NSEvent) {
-        guard event.timestamp > 0,
-              let trackingWindow = window,
-              event.windowNumber == trackingWindow.windowNumber,
-              contextMenuController?.interactionState.isContextMenuPresented != true
-        else {
-            return
-        }
-
-        RuntimeDiagnostics.emit(
-            "🧭 Sidebar primary tracking loop started owner=\(String(describing: type(of: self))) window=\(trackingWindow.windowNumber)"
-        )
-        trackingWindow.trackEvents(
-            matching: [.leftMouseDragged, .leftMouseUp],
-            timeout: NSEvent.foreverDuration,
-            mode: .eventTracking
-        ) { [weak self, weak trackingWindow] trackedEvent, stop in
-            guard let self,
-                  let trackingWindow,
-                  self.window === trackingWindow,
-                  self.superview != nil,
-                  self.isTrackingDragGesture,
-                  let trackedEvent
-            else {
-                stop.pointee = true
-                return
-            }
-
-            switch trackedEvent.type {
-            case .leftMouseDragged:
-                self.mouseDragged(with: trackedEvent)
-                if self.didStartDrag {
-                    stop.pointee = true
-                }
-            case .leftMouseUp:
-                self.mouseUp(with: trackedEvent)
-                stop.pointee = true
-            default:
-                break
-            }
-        }
-    }
-
     private func logLeftMouseCapture(
         point: NSPoint,
         capturesPrimaryAction: Bool,
@@ -677,6 +638,30 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         RuntimeDiagnostics.emit(
             "🧭 Sidebar left-click capture owner=\(recoveryDebugDescription) point=\(Int(point.x)),\(Int(point.y)) inputEnabled=\(itemConfiguration.isInteractionEnabled) primaryAction=\(itemConfiguration.primaryAction != nil) dragEnabled=\(itemConfiguration.dragSource?.isEnabled == true) capturesPrimary=\(capturesPrimaryAction) capturesDrag=\(capturesDrag) activeKinds=\(contextMenuController?.interactionState.activeKindsDescription ?? "unknown")"
         )
+    }
+
+    private func beginPressTracking() {
+        guard let sourceID = itemConfiguration.sourceID else { return }
+        trackedPressedSourceID = sourceID
+        itemConfiguration.interactionState?.beginPressedSource(sourceID)
+    }
+
+    private func endPressTracking() {
+        guard let sourceID = trackedPressedSourceID else { return }
+        trackedPressedSourceID = nil
+        itemConfiguration.interactionState?.endPressedSource(sourceID)
+    }
+
+    private func performPrimaryAction(_ primaryAction: (() -> Void)?) {
+        guard let primaryAction else { return }
+        if itemConfiguration.suppressesPrimaryActionAnimation {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            transaction.animation = nil
+            withTransaction(transaction, primaryAction)
+            return
+        }
+        primaryAction()
     }
 
     var recoveryMetadata: SidebarInteractiveOwnerRecoveryMetadata {

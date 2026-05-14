@@ -11,6 +11,7 @@ import SwiftUI
 final class SidebarInteractionState {
     private var activeSessionTokenIDsByKind: [SidebarTransientUIKind: Set<UUID>] = [:]
     private var dragTokenID: UUID?
+    private(set) var activePressedSourceID: String?
 
     var isContextMenuPresented: Bool {
         isKindActive(.contextMenu)
@@ -33,6 +34,19 @@ final class SidebarInteractionState {
         return values.isEmpty ? "none" : values.joined(separator: ",")
     }
 
+    func beginPressedSource(_ sourceID: String?) {
+        guard let sourceID else { return }
+        activePressedSourceID = sourceID
+    }
+
+    func endPressedSource(_ sourceID: String?) {
+        guard activePressedSourceID != nil else { return }
+        if let sourceID, activePressedSourceID != sourceID {
+            return
+        }
+        activePressedSourceID = nil
+    }
+
     func beginSession(kind: SidebarTransientUIKind, tokenID: UUID) {
         var tokens = activeSessionTokenIDsByKind[kind] ?? []
         tokens.insert(tokenID)
@@ -52,6 +66,7 @@ final class SidebarInteractionState {
     func syncSidebarItemDrag(_ isDragging: Bool) {
         if isDragging {
             guard dragTokenID == nil else { return }
+            activePressedSourceID = nil
             let tokenID = UUID()
             dragTokenID = tokenID
             beginSession(kind: .drag, tokenID: tokenID)
@@ -69,6 +84,9 @@ final class SidebarInteractionState {
            activeSessionTokenIDsByKind[.drag]?.contains(dragTokenID) != true
         {
             self.dragTokenID = nil
+        }
+        if freezesSidebarHoverState {
+            activePressedSourceID = nil
         }
     }
 

@@ -168,12 +168,14 @@ struct SidebarContextMenuLeafConfiguration {
 
 struct SidebarAppKitItemConfiguration {
     var isInteractionEnabled: Bool = true
+    var interactionState: SidebarInteractionState? = nil
     var menu: SidebarContextMenuLeafConfiguration? = nil
     var dragSource: SidebarDragSourceConfiguration? = nil
     var dragScope: SidebarDragScope? = nil
     var primaryAction: (() -> Void)? = nil
     var onMiddleClick: (() -> Void)? = nil
     var sourceID: String? = nil
+    var suppressesPrimaryActionAnimation: Bool = false
     var presentationMode: SidebarPresentationMode = .docked
 
     var surfaceKind: SidebarContextMenuSurfaceKind {

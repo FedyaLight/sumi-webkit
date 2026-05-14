@@ -70,7 +70,11 @@ struct SpaceTab: View {
                         .frame(width: 22, height: 22)
                         .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
-                    .buttonStyle(PlainButtonStyle())
+                    .buttonStyle(
+                        SidebarZenActionButtonStyle(
+                            isEnabled: isAppKitInteractionEnabled && !freezesHoverState
+                        )
+                    )
                     .frame(width: 22, height: 22)
                     .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .sidebarDDGHover($isSpeakerHovered, isEnabled: isAppKitInteractionEnabled)
@@ -141,6 +145,10 @@ struct SpaceTab: View {
         .accessibilityIdentifier("tab-row-\(tab.id.uuidString)")
         .accessibilityValue(isCurrentTab ? "selected" : "not selected")
         .sidebarDDGHover($isRowHovered, isEnabled: isAppKitInteractionEnabled)
+        .sidebarZenPressEffect(
+            sourceID: rowSourceID,
+            isEnabled: isAppKitInteractionEnabled && !tab.isRenaming
+        )
         .background(
             Group {
                 if tab.isRenaming {
@@ -161,7 +169,7 @@ struct SpaceTab: View {
                 }
                 action()
             },
-            sourceID: "tab-row-\(tab.id.uuidString)",
+            sourceID: rowSourceID,
             entries: { contextMenuEntries }
         )
         .task(id: tab.url) {
@@ -172,6 +180,10 @@ struct SpaceTab: View {
 
     private var isActive: Bool {
         return browserManager.currentTab(for: windowState)?.id == tab.id
+    }
+
+    private var rowSourceID: String {
+        "tab-row-\(tab.id.uuidString)"
     }
     
     private var isCurrentTab: Bool {
@@ -290,8 +302,13 @@ struct SpaceTab: View {
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 6))
         }
-        .buttonStyle(PlainButtonStyle())
+        .buttonStyle(
+            SidebarZenActionButtonStyle(
+                isEnabled: showsCloseButton && !freezesHoverState
+            )
+        )
         .opacity(showsCloseButton ? 1 : 0)
+        .sidebarZenActionOpacity(showsCloseButton)
         .allowsHitTesting(showsCloseButton && !freezesHoverState)
         .accessibilityHidden(!showsCloseButton)
         .sidebarDDGHover($isCloseHovered, isEnabled: showsCloseButton && isAppKitInteractionEnabled)
