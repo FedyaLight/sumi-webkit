@@ -33,6 +33,7 @@ final class TabFolderService {
         guard let folder = tabManager.folder(by: folderId) else { return }
         folder.name = newName
         tabManager.markFoldersStructurallyDirty(for: folder.spaceId)
+        tabManager.requestStructuralPublish()
         tabManager.scheduleStructuralPersistence()
     }
 
@@ -42,7 +43,27 @@ final class TabFolderService {
 
         folder.icon = SumiZenFolderIconCatalog.normalizedFolderIconValue(trimmedIcon)
         tabManager.markFoldersStructurallyDirty(for: folder.spaceId)
+        tabManager.requestStructuralPublish()
         tabManager.scheduleStructuralPersistence()
+    }
+
+    func setFolder(_ folderId: UUID, open isOpen: Bool) {
+        tabManager.withStructuralUpdateTransaction {
+            guard let folder = tabManager.folder(by: folderId),
+                  folder.isOpen != isOpen else {
+                return
+            }
+
+            folder.isOpen = isOpen
+            tabManager.markFoldersStructurallyDirty(for: folder.spaceId)
+            tabManager.requestStructuralPublish()
+            tabManager.scheduleStructuralPersistence()
+        }
+    }
+
+    func toggleFolderOpenState(_ folderId: UUID) {
+        guard let folder = tabManager.folder(by: folderId) else { return }
+        setFolder(folderId, open: !folder.isOpen)
     }
 
     func deleteFolder(_ folderId: UUID) {
@@ -102,18 +123,21 @@ final class TabFolderService {
     }
 
     func setAllFolders(open isOpen: Bool, in spaceId: UUID) {
-        let folders = tabManager.foldersBySpace[spaceId] ?? []
-        guard folders.isEmpty == false else { return }
+        tabManager.withStructuralUpdateTransaction {
+            let folders = tabManager.foldersBySpace[spaceId] ?? []
+            guard folders.isEmpty == false else { return }
 
-        var didChange = false
-        for folder in folders where folder.isOpen != isOpen {
-            folder.isOpen = isOpen
-            didChange = true
-        }
+            var didChange = false
+            for folder in folders where folder.isOpen != isOpen {
+                folder.isOpen = isOpen
+                didChange = true
+            }
 
-        if didChange {
-            tabManager.markFoldersStructurallyDirty(for: spaceId)
-            tabManager.scheduleStructuralPersistence()
+            if didChange {
+                tabManager.markFoldersStructurallyDirty(for: spaceId)
+                tabManager.requestStructuralPublish()
+                tabManager.scheduleStructuralPersistence()
+            }
         }
     }
 

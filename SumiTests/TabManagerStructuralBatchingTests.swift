@@ -91,6 +91,19 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         XCTAssertEqual(tabManager.tab(for: convertedTab.id)?.id, convertedTab.id)
     }
 
+    func testTogglingFolderOpenStatePublishesOnce() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let recorder = StructuralEventRecorder(tabManager: tabManager)
+        let space = tabManager.createSpace(name: "Workspace")
+        let folder = tabManager.createFolder(for: space.id, name: "Folder")
+        recorder.reset()
+
+        tabManager.toggleFolderOpenState(folder.id)
+
+        XCTAssertTrue(folder.isOpen)
+        XCTAssertEqual(recorder.count, 1)
+    }
+
     private func makeInMemoryTabManager() throws -> TabManager {
         let container = try ModelContainer(
             for: SumiStartupPersistence.schema,

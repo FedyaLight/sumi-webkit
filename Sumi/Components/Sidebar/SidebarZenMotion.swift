@@ -98,6 +98,15 @@ private struct SidebarZenRowLifecycleTransitionModifier: ViewModifier {
     }
 }
 
+private struct SidebarZenCompositeLifecycleTransitionModifier: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let isEnabled: Bool
+
+    func body(content: Content) -> some View {
+        content.transition(isEnabled && !reduceMotion ? .zenSidebarCompositeLifecycle : .identity)
+    }
+}
+
 private struct SidebarZenActionOpacityModifier: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let isVisible: Bool
@@ -185,6 +194,13 @@ extension AnyTransition {
             .animation(.smooth(duration: SidebarRowMotionMetrics.closeDuration))
         )
     }
+
+    static var zenSidebarCompositeLifecycle: AnyTransition {
+        .asymmetric(
+            insertion: .opacity.animation(.smooth(duration: SidebarRowMotionMetrics.openDuration)),
+            removal: .opacity.animation(.smooth(duration: SidebarRowMotionMetrics.closeDuration))
+        )
+    }
 }
 
 extension View {
@@ -204,6 +220,10 @@ extension View {
 
     func sidebarZenRowLifecycleTransition(isEnabled: Bool = true) -> some View {
         modifier(SidebarZenRowLifecycleTransitionModifier(isEnabled: isEnabled))
+    }
+
+    func sidebarZenCompositeLifecycleTransition(isEnabled: Bool = true) -> some View {
+        modifier(SidebarZenCompositeLifecycleTransitionModifier(isEnabled: isEnabled))
     }
 
     func sidebarZenActionOpacity(_ isVisible: Bool) -> some View {

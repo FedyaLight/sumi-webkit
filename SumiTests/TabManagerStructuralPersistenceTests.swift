@@ -77,6 +77,23 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         XCTAssertTrue(storedPin.isSpacePinned)
     }
 
+    func testFolderOpenStatePersistence() async throws {
+        let container = try makeInMemoryContainer()
+        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let space = tabManager.createSpace(name: "Pinned", profileId: UUID())
+        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+
+        tabManager.setFolder(folder.id, open: true)
+        try await waitForStore(in: container) { context in
+            try fetchFolder(folder.id, in: context)?.isOpen == true
+        }
+
+        tabManager.setFolder(folder.id, open: false)
+        try await waitForStore(in: container) { context in
+            try fetchFolder(folder.id, in: context)?.isOpen == false
+        }
+    }
+
     func testIncrementalSpaceMembershipAndOrderPersistence() async throws {
         let container = try makeInMemoryContainer()
         let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
