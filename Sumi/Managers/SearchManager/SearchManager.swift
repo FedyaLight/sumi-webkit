@@ -336,6 +336,13 @@ class SearchManager {
             }
         }
 
+        appendURLMatchedHistorySuggestions(
+            from: historyEntries,
+            query: query,
+            suggestions: &suggestions,
+            seenKeys: &seenKeys
+        )
+
         if let directURLSuggestion = directURLSuggestion(for: query) {
             let directKey = deduplicationKey(for: directURLSuggestion)
             if !seenKeys.contains(directKey) {
@@ -349,6 +356,69 @@ class SearchManager {
         }
 
         return suggestions
+    }
+
+    private func appendURLMatchedHistorySuggestions(
+        from historyEntries: [HistoryListItem],
+        query: String,
+        suggestions: inout [SearchSuggestion],
+        seenKeys: inout Set<String>
+    ) {
+        let searchQuery = SearchTextQuery(query)
+        guard !searchQuery.isEmpty else { return }
+
+        let urlMatches = historyEntries
+            .filter { historyEntryMatchesURL($0, query: searchQuery) }
+            .sorted { lhs, rhs in
+                let lhsRoot = lhs.url.path.isEmpty || lhs.url.path == "/"
+                let rhsRoot = rhs.url.path.isEmpty || rhs.url.path == "/"
+                if lhsRoot != rhsRoot {
+                    return !lhsRoot && rhsRoot
+                }
+
+                let lhsAggregate = lhs.isSiteAggregate
+                let rhsAggregate = rhs.isSiteAggregate
+                if lhsAggregate != rhsAggregate {
+                    return !lhsAggregate && rhsAggregate
+                }
+
+                return (lhs.visitedAt ?? .distantPast) > (rhs.visitedAt ?? .distantPast)
+            }
+
+        for entry in urlMatches {
+            let suggestion = SearchSuggestion(text: entry.displayTitle, type: .history(entry))
+            let key = deduplicationKey(for: suggestion)
+            guard seenKeys.insert(key).inserted else { continue }
+
+            if suggestions.count < maxVisibleSuggestions {
+                suggestions.append(suggestion)
+                continue
+            }
+
+            guard let replacementIndex = suggestions.lastIndex(where: { !isLocalNavigationSuggestion($0) }) else {
+                seenKeys.remove(key)
+                continue
+            }
+
+            let removed = suggestions[replacementIndex]
+            seenKeys.remove(deduplicationKey(for: removed))
+            suggestions[replacementIndex] = suggestion
+        }
+    }
+
+    private func historyEntryMatchesURL(_ entry: HistoryListItem, query: SearchTextQuery) -> Bool {
+        query.matches(entry.url.absoluteString)
+            || query.matches(entry.domain)
+            || (entry.siteDomain.map(query.matches) ?? false)
+    }
+
+    private func isLocalNavigationSuggestion(_ suggestion: SearchSuggestion) -> Bool {
+        switch suggestion.type {
+        case .history, .bookmark, .tab:
+            return true
+        case .search, .url:
+            return false
+        }
     }
 
     private func deduplicationKey(for suggestion: SearchSuggestion) -> String {
