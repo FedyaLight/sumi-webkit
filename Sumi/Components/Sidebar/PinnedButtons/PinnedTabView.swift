@@ -65,8 +65,13 @@ struct PinnedTabView: View {
                                         .fill(backgroundColor.opacity(displayIsActionHovering ? 1 : 0.92))
                                 )
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(
+                            SidebarZenActionButtonStyle(
+                                isEnabled: shouldShowActionButton && !freezesHoverState
+                            )
+                        )
                         .opacity(shouldShowActionButton ? 1 : 0)
+                        .sidebarZenActionOpacity(shouldShowActionButton)
                         .allowsHitTesting(shouldShowActionButton && !freezesHoverState)
                         .accessibilityHidden(!shouldShowActionButton)
                         .accessibilityIdentifier(actionAccessibilityID ?? "pinned-tile-action")
@@ -111,12 +116,13 @@ struct PinnedTabView: View {
         .accessibilityIdentifier(accessibilityID ?? "pinned-tile")
         .accessibilityValue(presentationState.isSelected ? "selected" : "not selected")
         .sidebarDDGHover($isTileHovered, isEnabled: isAppKitInteractionEnabled)
+        .sidebarZenPressEffect(sourceID: tileSourceID, isEnabled: isAppKitInteractionEnabled)
         .sidebarAppKitContextMenu(
             isInteractionEnabled: isAppKitInteractionEnabled,
             dragSource: dragSourceConfiguration,
             primaryAction: action,
             onMiddleClick: supportsMiddleClickUnload ? onUnload : nil,
-            sourceID: accessibilityID ?? "pinned-tile",
+            sourceID: tileSourceID,
             entries: { contextMenuEntries }
         )
         .shadow(
@@ -137,6 +143,10 @@ struct PinnedTabView: View {
         case .idle:
             return tokens.pinnedIdleBackground
         }
+    }
+
+    private var tileSourceID: String {
+        accessibilityID ?? "pinned-tile"
     }
 
     private var backgroundState: TileBackgroundState {
@@ -406,7 +416,12 @@ private struct PinnedTileAudioButton: View {
                         )
                         .id(tab.audioState.isMuted)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(
+                    SidebarZenActionButtonStyle(
+                        isEnabled: isAppKitInteractionEnabled
+                            && !windowState.sidebarInteractionState.freezesSidebarHoverState
+                    )
+                )
                 .sidebarDDGHover($isHovering, isEnabled: isAppKitInteractionEnabled)
                 .accessibilityIdentifier(accessibilityID ?? "pinned-tile-audio")
                 .sidebarAppKitPrimaryAction(

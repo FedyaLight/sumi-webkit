@@ -449,7 +449,7 @@ struct TabFolderView: View {
                 guard !isRenaming else { return }
                 toggleFolderOpenState()
             },
-            sourceID: "folder-header-\(folder.id.uuidString)",
+            sourceID: folderHeaderSourceID,
             entries: {
                 folderHeaderContextMenuEntries()
             }
@@ -487,6 +487,10 @@ struct TabFolderView: View {
             }
         }
         .sidebarDDGHover($isFolderHeaderHovered, isEnabled: isInteractive)
+        .sidebarZenPressEffect(
+            sourceID: folderHeaderSourceID,
+            isEnabled: isInteractive && !isRenaming
+        )
     }
 
     @ViewBuilder
@@ -766,6 +770,10 @@ struct TabFolderView: View {
         )
     }
 
+    private var folderHeaderSourceID: String {
+        "folder-header-\(folder.id.uuidString)"
+    }
+
     private func alphabetizeTabs() {
         withAnimation(Self.zenFolderContentAnimation) {
             browserManager.tabManager.alphabetizeFolderPins(folder.id, in: space.id)
@@ -773,10 +781,7 @@ struct TabFolderView: View {
     }
 
     private var folderContentRowTransition: AnyTransition {
-        .asymmetric(
-            insertion: .opacity.combined(with: .move(edge: .top)),
-            removal: .opacity.combined(with: .move(edge: .top))
-        )
+        isInteractive ? .zenSidebarRowLifecycle : .identity
     }
 
     private func toggleFolderOpenState() {

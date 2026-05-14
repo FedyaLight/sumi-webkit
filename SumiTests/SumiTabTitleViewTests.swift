@@ -39,6 +39,11 @@ final class SumiTabTitleViewTests: XCTestCase {
         )
     }
 
+    func testSidebarTitleLineBoxHeightMatchesZenParityMetric() {
+        XCTAssertEqual(SidebarRowLayout.titleLineBoxHeight, 16)
+        XCTAssertEqual(SidebarRowLayout.titleHeight, SidebarRowLayout.titleLineBoxHeight)
+    }
+
     func testTitleViewAnimatesPreviousAndCurrentTitleDuringTransition() throws {
         let view = makeView(width: 200)
         view.apply(
