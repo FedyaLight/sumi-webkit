@@ -80,6 +80,22 @@ final class SidebarDDGHoverTests: XCTestCase {
         XCTAssertEqual(FloatingBarLayoutPolicy.suggestionsHeight(for: 0), 0)
         XCTAssertEqual(FloatingBarLayoutPolicy.suggestionsHeight(for: 2), 104)
         XCTAssertEqual(
+            FloatingBarLayoutPolicy.suggestionLayoutCount(
+                visibleCount: 5,
+                committedCount: 2,
+                isWaitingForSuggestions: true
+            ),
+            2
+        )
+        XCTAssertEqual(
+            FloatingBarLayoutPolicy.suggestionLayoutCount(
+                visibleCount: 5,
+                committedCount: 2,
+                isWaitingForSuggestions: false
+            ),
+            5
+        )
+        XCTAssertEqual(
             FloatingBarLayoutPolicy.suggestionsHeight(for: 6),
             FloatingBarLayoutPolicy.suggestionsMaxHeight
         )

@@ -23,6 +23,7 @@ enum FloatingBarLayoutPolicy {
     static let suggestionRowHorizontalPadding: CGFloat = 8
     static let suggestionRowVerticalPadding: CGFloat = 10
     static let suggestionRowSpacing: CGFloat = 0
+    static let suggestionHeightAnimation = Animation.easeInOut(duration: 0.15)
 
     static var suggestionRowHeight: CGFloat {
         suggestionRowMinHeight + suggestionRowVerticalPadding * 2
@@ -35,6 +36,14 @@ enum FloatingBarLayoutPolicy {
         let rowHeights = CGFloat(visibleCount) * suggestionRowHeight
         let spacings = CGFloat(max(visibleCount - 1, 0)) * suggestionRowSpacing
         return min(suggestionsMaxHeight, rowHeights + spacings)
+    }
+
+    static func suggestionLayoutCount(
+        visibleCount: Int,
+        committedCount: Int,
+        isWaitingForSuggestions: Bool
+    ) -> Int {
+        isWaitingForSuggestions ? committedCount : visibleCount
     }
 
     static var panelHeight: CGFloat {
@@ -73,6 +82,8 @@ struct FloatingBarView: View {
     @State private var outsideClickMonitor = ChromeLocalEventMonitor()
     @State private var searchDebouncer = MainActorDebouncedTask()
     @State private var suppressNextTextSearch = false
+    @State private var isWaitingForSearchDebounce = false
+    @State private var committedSuggestionLayoutCount = 0
     @State private var isSuggestionPreviewActive = false
     @State private var suggestionPreviewRestorationText: String?
     @State private var searchFocusRequestID = 0
@@ -107,9 +118,24 @@ struct FloatingBarView: View {
             && !visibleSuggestions.isEmpty
     }
 
-    private var shouldUseFixedSuggestionsHeight: Bool {
-        isShowingEmptyTopLinks
-            || (!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !visibleSuggestions.isEmpty)
+    private var isWaitingForSuggestions: Bool {
+        isWaitingForSearchDebounce || searchManager.isLoadingSuggestions
+    }
+
+    private var shouldReserveSuggestionsHeight: Bool {
+        isWaitingForSuggestions
+    }
+
+    private var suggestionLayoutCount: Int {
+        FloatingBarLayoutPolicy.suggestionLayoutCount(
+            visibleCount: visibleSuggestions.count,
+            committedCount: committedSuggestionLayoutCount,
+            isWaitingForSuggestions: shouldReserveSuggestionsHeight
+        )
+    }
+
+    private var shouldShowSuggestionsPanel: Bool {
+        suggestionLayoutCount > 0 || (!shouldReserveSuggestionsHeight && !visibleSuggestions.isEmpty)
     }
 
     var body: some View {
@@ -283,18 +309,18 @@ struct FloatingBarView: View {
                                 focusSearchField(selectAll: false)
                             }
 
-                            if !visibleSuggestions.isEmpty {
+                            if shouldShowSuggestionsPanel {
                                 RoundedRectangle(cornerRadius: 100)
                                     .fill(tokens.separator.opacity(0.9))
                                     .frame(height: 0.5)
                                     .frame(maxWidth: .infinity)
                             }
 
-                            if !visibleSuggestions.isEmpty {
+                            if shouldShowSuggestionsPanel {
                                 FloatingBarSuggestionsListView(
                                     tokens: tokens,
                                     suggestions: visibleSuggestions,
-                                    usesFixedHeight: shouldUseFixedSuggestionsHeight,
+                                    layoutSuggestionCount: suggestionLayoutCount,
                                     selectedIndex: $selectedSuggestionIndex,
                                     hoveredIndex: $hoveredSuggestionIndex,
                                     onSelect: { suggestion in
@@ -354,7 +380,11 @@ struct FloatingBarView: View {
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("floating-bar")
                         .animation(
-                            .easeInOut(duration: 0.15),
+                            FloatingBarLayoutPolicy.suggestionHeightAnimation,
+                            value: suggestionLayoutCount
+                        )
+                        .animation(
+                            FloatingBarLayoutPolicy.suggestionHeightAnimation,
                             value: searchManager.suggestions.count
                         )
                         .padding(.horizontal, FloatingBarLayoutPolicy.horizontalVignetteOutset)
@@ -401,6 +431,15 @@ struct FloatingBarView: View {
             } else if selectedSuggestionIndex >= count {
                 selectedSuggestionIndex = count - 1
             }
+            commitSuggestionLayoutCountIfReady()
+        }
+        .onChange(of: searchManager.isLoadingSuggestions) { _, isLoading in
+            if !isLoading {
+                commitSuggestionLayoutCount()
+            }
+        }
+        .onChange(of: activeSiteSearch != nil) { _, _ in
+            commitSuggestionLayoutCountIfReady()
         }
         .animation(.easeInOut(duration: 0.15), value: selectedSuggestionIndex)
         .onChange(of: windowState.floatingBarDraftText) { _, newValue in
@@ -434,11 +473,14 @@ struct FloatingBarView: View {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else {
             searchDebouncer.cancel()
+            isWaitingForSearchDebounce = false
             refreshEmptyStateSuggestionsIfNeeded()
             return
         }
 
+        isWaitingForSearchDebounce = true
         searchDebouncer.schedule(delayNanoseconds: 160_000_000) {
+            isWaitingForSearchDebounce = false
             searchManager.searchSuggestions(for: trimmedQuery)
         }
     }
@@ -459,6 +501,7 @@ struct FloatingBarView: View {
             }
         } else {
             searchDebouncer.cancel()
+            isWaitingForSearchDebounce = false
             removeOutsideClickMonitor()
             isSearchFocused = false
             searchManager.clearSuggestions()
@@ -468,6 +511,7 @@ struct FloatingBarView: View {
             searchModeGlow = nil
             searchModeGlowProgress = 1
             selectedSuggestionIndex = -1
+            committedSuggestionLayoutCount = 0
             isSuggestionPreviewActive = false
             suggestionPreviewRestorationText = nil
             suppressNextTextSearch = false
@@ -481,12 +525,29 @@ struct FloatingBarView: View {
         else { return }
 
         searchDebouncer.cancel()
+        isWaitingForSearchDebounce = false
         if sumiSettings.floatingBarEmptyStateMode == .topLinks {
             searchManager.showTopLinkSuggestions(
                 limit: FloatingBarLayoutPolicy.suggestionsVisibleRowLimit
             )
         } else {
             searchManager.clearSuggestions()
+            withAnimation(FloatingBarLayoutPolicy.suggestionHeightAnimation) {
+                committedSuggestionLayoutCount = 0
+            }
+        }
+    }
+
+    private func commitSuggestionLayoutCountIfReady() {
+        guard !isWaitingForSuggestions else { return }
+        commitSuggestionLayoutCount()
+    }
+
+    private func commitSuggestionLayoutCount() {
+        let nextCount = visibleSuggestions.count
+        guard committedSuggestionLayoutCount != nextCount else { return }
+        withAnimation(FloatingBarLayoutPolicy.suggestionHeightAnimation) {
+            committedSuggestionLayoutCount = nextCount
         }
     }
 
@@ -534,7 +595,7 @@ struct FloatingBarView: View {
     private struct FloatingBarSuggestionsListView: View {
         let tokens: ChromeThemeTokens
         let suggestions: [SearchManager.SearchSuggestion]
-        let usesFixedHeight: Bool
+        let layoutSuggestionCount: Int
         @Binding var selectedIndex: Int
         @Binding var hoveredIndex: Int?
         let onSelect: (SearchManager.SearchSuggestion) -> Void
@@ -596,9 +657,11 @@ struct FloatingBarView: View {
                 }
                 .scrollIndicators(shouldScroll ? .visible : .hidden)
                 .frame(
-                    height: usesFixedHeight
-                        ? FloatingBarLayoutPolicy.suggestionsMaxHeight
-                        : FloatingBarLayoutPolicy.suggestionsHeight(for: suggestions.count)
+                    height: FloatingBarLayoutPolicy.suggestionsHeight(for: layoutSuggestionCount)
+                )
+                .animation(
+                    FloatingBarLayoutPolicy.suggestionHeightAnimation,
+                    value: layoutSuggestionCount
                 )
                 .onChange(of: selectedIndex) { _, newIndex in
                     guard newIndex >= 0 else { return }
