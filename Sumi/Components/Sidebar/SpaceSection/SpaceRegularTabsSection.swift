@@ -160,6 +160,16 @@ extension SpaceView {
         regularDisplayItems(currentTabs: tabs).count
     }
 
+    private var regularTabsUsesLazyRowStack: Bool {
+        isInteractive
+            && !dragState.isDragging
+            && !dragState.isDropProjectionActive
+            && !dragState.isCompletingDrop
+            && regularGapHeights.isEmpty
+            && regularInsertedTabHeights.isEmpty
+            && regularDeferredRemovalGapIdsByTabId.isEmpty
+    }
+
     private var regularTabsListInner: some View {
         Group {
             if !tabs.isEmpty || regularTabsUsesProjectedDropLayout {
@@ -173,7 +183,7 @@ extension SpaceView {
     }
 
     private var regularTabsContent: some View {
-        VStack(spacing: 2) {
+        Group {
             let currentTabs = tabs
             let split = splitManager
             let windowId = windowState.id
@@ -203,34 +213,36 @@ extension SpaceView {
         let firstIdx = min(leftIdx, rightIdx)
         let secondIdx = max(leftIdx, rightIdx)
 
-        return ForEach(Array(currentTabs.enumerated()), id: \.element.id) { pair in
-            let (idx, tab) = pair
-            if idx == firstIdx {
-                VStack(spacing: 2) {
-                    let left = currentTabs[leftIdx]
-                    let right = currentTabs[rightIdx]
+        return regularTabsRowStack {
+            ForEach(Array(currentTabs.enumerated()), id: \.element.id) { pair in
+                let (idx, tab) = pair
+                if idx == firstIdx {
+                    VStack(spacing: 2) {
+                        let left = currentTabs[leftIdx]
+                        let right = currentTabs[rightIdx]
 
-                    SplitTabRow(
-                        left: left,
-                        right: right,
-                        spaceId: space.id,
-                        isAppKitInteractionEnabled: isInteractive,
-                        contextMenuEntries: regularTabContextMenuEntries,
-                        onActivate: onActivateTab,
-                        onClose: closeRegularTab
-                    )
-                    .environmentObject(browserManager)
+                        SplitTabRow(
+                            left: left,
+                            right: right,
+                            spaceId: space.id,
+                            isAppKitInteractionEnabled: isInteractive,
+                            contextMenuEntries: regularTabContextMenuEntries,
+                            onActivate: onActivateTab,
+                            onClose: closeRegularTab
+                        )
+                        .environmentObject(browserManager)
+                    }
+                } else if idx == secondIdx {
+                    EmptyView()
+                } else {
+                    regularTabView(tab)
                 }
-            } else if idx == secondIdx {
-                EmptyView()
-            } else {
-                regularTabView(tab)
             }
         }
     }
 
     private func regularTabsView(currentTabs: [Tab]) -> some View {
-        return VStack(spacing: 2) {
+        return regularTabsRowStack {
             let tabById = Dictionary(uniqueKeysWithValues: currentTabs.map { ($0.id, $0) })
             ForEach(regularDisplayItems(currentTabs: currentTabs), id: \.self) { item in
                 switch item {
@@ -246,6 +258,21 @@ extension SpaceView {
         .overlay(alignment: .topLeading) {
             if !regularTabsUsesProjectedDropLayout {
                 regularDropGuideOverlay(itemCount: currentTabs.count)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func regularTabsRowStack<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        if regularTabsUsesLazyRowStack {
+            LazyVStack(alignment: .leading, spacing: 2) {
+                content()
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 2) {
+                content()
             }
         }
     }
