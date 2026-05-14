@@ -52,7 +52,7 @@ extension URLBarView {
         _ = browserManager.zoomStateRevision
         return URLBarZoomButtonVisibility.shouldShow(
             hasURL: isZoomButtonURLAvailable(for: tab),
-            isEditing: windowState.isCommandPaletteVisible,
+            isEditing: windowState.isFloatingBarVisible,
             isPopoverPresented: isZoomPopoverPresented,
             isDefaultZoom: browserManager.zoomManager.isDefaultZoom(for: tab.id)
         )
@@ -189,7 +189,7 @@ private struct URLBarZoomPopoverView: View {
             .padding(.trailing, 16)
         }
         .frame(height: 48)
-        .background(tokens.commandPaletteBackground)
+        .background(tokens.floatingBarBackground)
         .onHover(perform: onMouseOverChange)
     }
 }

@@ -27,7 +27,7 @@ extension SpaceView {
     }
 
     private var newTabRow: some View {
-        Button(action: openNewTabCommandPalette) {
+        Button(action: openNewTabFloatingBar) {
             HStack(spacing: 8) {
                 Image(systemName: "plus")
                 Text("New Tab")
@@ -49,7 +49,7 @@ extension SpaceView {
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .sidebarDDGHover($isNewTabHovered, isEnabled: isInteractive)
         .accessibilityIdentifier("space-new-tab-\(space.id.uuidString)")
-        .sidebarAppKitPrimaryAction(isEnabled: isInteractive, action: openNewTabCommandPalette)
+        .sidebarAppKitPrimaryAction(isEnabled: isInteractive, action: openNewTabFloatingBar)
     }
 
     private var displayIsNewTabHovered: Bool {
@@ -59,9 +59,9 @@ extension SpaceView {
         )
     }
 
-    private func openNewTabCommandPalette() {
+    private func openNewTabFloatingBar() {
         guard isInteractive else { return }
-        browserManager.showNewTabPalette(in: windowState)
+        browserManager.showNewTabFloatingBar(in: windowState)
     }
 
     private var topNewTabButtonSection: some View {

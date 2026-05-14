@@ -36,14 +36,14 @@ struct HistorySuggestionItem: View {
     
     var body: some View {
         HStack(alignment: .center, spacing: 9) {
-            CommandPaletteFaviconContainer {
+            FloatingBarFaviconContainer {
                 faviconImage
                     .resizable()
                     .scaledToFit()
                     .foregroundStyle(colors.faviconColor)
                     .frame(
-                        width: CommandPaletteSuggestionMetrics.faviconImageSize,
-                        height: CommandPaletteSuggestionMetrics.faviconImageSize
+                        width: FloatingBarSuggestionMetrics.faviconImageSize,
+                        height: FloatingBarSuggestionMetrics.faviconImageSize
                     )
             }
             
@@ -92,7 +92,7 @@ struct HistorySuggestionItem: View {
                             .foregroundStyle(colors.deleteButtonColor(isHovered: false))
                             .frame(width: 24, height: 24)
                             .background(colors.deleteButtonBackground(isHovered: false))
-                            .clipShape(CommandPaletteSuggestionMetrics.controlShape)
+                            .clipShape(FloatingBarSuggestionMetrics.controlShape)
                     }
                     .buttonStyle(.plain)
                     .help("Cancel history deletion")
@@ -106,7 +106,7 @@ struct HistorySuggestionItem: View {
                             .foregroundStyle(Color.white)
                             .frame(width: 24, height: 24)
                             .background(colors.confirmDeleteBackground)
-                            .clipShape(CommandPaletteSuggestionMetrics.controlShape)
+                            .clipShape(FloatingBarSuggestionMetrics.controlShape)
                     }
                     .buttonStyle(.plain)
                     .help("Confirm history deletion")
@@ -120,7 +120,7 @@ struct HistorySuggestionItem: View {
                         .foregroundStyle(colors.deleteButtonColor(isHovered: isDeleteHovered))
                         .frame(width: 24, height: 24)
                         .background(colors.deleteButtonBackground(isHovered: isDeleteHovered))
-                        .clipShape(CommandPaletteSuggestionMetrics.controlShape)
+                        .clipShape(FloatingBarSuggestionMetrics.controlShape)
                 }
                 .buttonStyle(.plain)
                 .help("Delete history entry")
@@ -133,7 +133,7 @@ struct HistorySuggestionItem: View {
     }
 
     private var historyLine: some View {
-        CommandPaletteHistoryLineText(
+        FloatingBarHistoryLineText(
             title: entry.displayTitle,
             url: entry.displayURL,
             titleColor: colors.titleColor,
@@ -160,14 +160,14 @@ struct HistorySuggestionItem: View {
     }
 }
 
-private struct CommandPaletteHistoryLineText: View {
+private struct FloatingBarHistoryLineText: View {
     let title: String
     let url: String
     let titleColor: Color
     let urlColor: Color
 
     var body: some View {
-        CommandPaletteHistoryLineRepresentable(
+        FloatingBarHistoryLineRepresentable(
             title: title,
             url: url,
             titleColor: titleColor,
@@ -180,7 +180,7 @@ private struct CommandPaletteHistoryLineText: View {
     }
 }
 
-private struct CommandPaletteHistoryLineRepresentable: NSViewRepresentable {
+private struct FloatingBarHistoryLineRepresentable: NSViewRepresentable {
     let title: String
     let url: String
     let titleColor: Color
@@ -188,8 +188,8 @@ private struct CommandPaletteHistoryLineRepresentable: NSViewRepresentable {
     let font: NSFont
     let fadeWidth: CGFloat
 
-    func makeNSView(context _: Context) -> CommandPaletteHistoryLineNSView {
-        let view = CommandPaletteHistoryLineNSView()
+    func makeNSView(context _: Context) -> FloatingBarHistoryLineNSView {
+        let view = FloatingBarHistoryLineNSView()
         view.setContentHuggingPriority(.defaultLow, for: .horizontal)
         view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return view
@@ -197,13 +197,13 @@ private struct CommandPaletteHistoryLineRepresentable: NSViewRepresentable {
 
     func sizeThatFits(
         _ proposal: ProposedViewSize,
-        nsView _: CommandPaletteHistoryLineNSView,
+        nsView _: FloatingBarHistoryLineNSView,
         context _: Context
     ) -> CGSize? {
         CGSize(width: proposal.width ?? 0, height: 17)
     }
 
-    func updateNSView(_ nsView: CommandPaletteHistoryLineNSView, context _: Context) {
+    func updateNSView(_ nsView: FloatingBarHistoryLineNSView, context _: Context) {
         nsView.apply(
             title: title,
             url: url,
@@ -215,7 +215,7 @@ private struct CommandPaletteHistoryLineRepresentable: NSViewRepresentable {
     }
 }
 
-private final class CommandPaletteHistoryLineNSView: NSView {
+private final class FloatingBarHistoryLineNSView: NSView {
     private let textField = NSTextField()
     private var fadeWidth: CGFloat = 30
 
@@ -336,7 +336,7 @@ private final class CommandPaletteHistoryLineNSView: NSView {
     }
 }
 
-// MARK: - Colors from chrome tokens (palette list uses command-palette row + chip tokens)
+// MARK: - Colors from chrome tokens (floating bar row + chip tokens)
 private struct ColorConfig {
     let tokens: ChromeThemeTokens
     let isSelected: Bool
@@ -375,7 +375,7 @@ private struct ColorConfig {
         if isHovered {
             return Color.red.opacity(0.14)
         }
-        return isSelected ? .clear : tokens.commandPaletteChipBackground.opacity(0.72)
+        return isSelected ? .clear : tokens.floatingBarChipBackground.opacity(0.72)
     }
 
     var confirmDeleteBackground: Color {

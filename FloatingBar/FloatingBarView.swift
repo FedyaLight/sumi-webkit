@@ -1,5 +1,5 @@
 //
-//  CommandPaletteView.swift
+//  FloatingBarView.swift
 //  Sumi
 //
 //  Created by Maciek Bagiński on 28/07/2025.
@@ -8,7 +8,7 @@
 import AppKit
 import SwiftUI
 
-enum CommandPaletteLayoutPolicy {
+enum FloatingBarLayoutPolicy {
     static let idealWidth: CGFloat = 765
     static let horizontalPadding: CGFloat = 10
     static let minimumWidth: CGFloat = 200
@@ -53,7 +53,7 @@ enum CommandPaletteLayoutPolicy {
     }
 }
 
-struct CommandPaletteView: View {
+struct FloatingBarView: View {
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
     @State private var searchManager = SearchManager()
@@ -67,9 +67,9 @@ struct CommandPaletteView: View {
     @State private var hoveredSuggestionIndex: Int? = nil
     @State private var activeSiteSearch: SiteSearchEntry? = nil
     @State private var searchModeScale: CGFloat = 1
-    @State private var searchModeGlow: CommandPaletteSearchModeGlow?
+    @State private var searchModeGlow: FloatingBarSearchModeGlow?
     @State private var searchModeGlowProgress: CGFloat = 1
-    @State private var paletteCardView: NSView?
+    @State private var floatingBarCardView: NSView?
     @State private var outsideClickMonitor = ChromeLocalEventMonitor()
     @State private var searchDebouncer = MainActorDebouncedTask()
     @State private var suppressNextTextSearch = false
@@ -103,7 +103,7 @@ struct CommandPaletteView: View {
     private var isShowingEmptyTopLinks: Bool {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && activeSiteSearch == nil
-            && sumiSettings.commandPaletteEmptyStateMode == .topLinks
+            && sumiSettings.floatingBarEmptyStateMode == .topLinks
             && !visibleSuggestions.isEmpty
     }
 
@@ -114,8 +114,8 @@ struct CommandPaletteView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            commandPaletteBody(
-                effectiveCommandPaletteWidth: CommandPaletteLayoutPolicy.effectiveWidth(
+            floatingBarBody(
+                effectiveFloatingBarWidth: FloatingBarLayoutPolicy.effectiveWidth(
                     availableWindowWidth: availableWindowWidth(from: proxy.size.width)
                 )
             )
@@ -123,8 +123,8 @@ struct CommandPaletteView: View {
     }
 
     @ViewBuilder
-    private func commandPaletteBody(effectiveCommandPaletteWidth: CGFloat) -> some View {
-        let isVisible = windowState.isCommandPaletteVisible
+    private func floatingBarBody(effectiveFloatingBarWidth: CGFloat) -> some View {
+        let isVisible = windowState.isFloatingBarVisible
         let tokens = self.tokens
         let urlBarPlaceholder = urlBarPlaceholderString
         let textFieldFont = Font.system(size: 13, weight: .semibold)
@@ -179,10 +179,9 @@ struct CommandPaletteView: View {
                                                 .foregroundStyle(tokens.secondaryText)
                                                 .allowsHitTesting(false)
                                         }
-                                        CommandPaletteInlineCompletionTextField(
+                                        FloatingBarInlineCompletionTextField(
                                             text: $text,
                                             isFocused: $isSearchFocused,
-                                            placeholder: "",
                                             font: .systemFont(ofSize: 13, weight: .semibold),
                                             primaryColor: NSColor(tokens.primaryText),
                                             hidesCaret: isSuggestionPreviewActive,
@@ -215,7 +214,7 @@ struct CommandPaletteView: View {
                                                         activeSiteSearch = nil
                                                     }
                                                 } else {
-                                                    browserManager.dismissFloatingURLBar(in: windowState, preserveDraft: true)
+                                                    browserManager.dismissFloatingBar(in: windowState, preserveDraft: true)
                                                 }
                                             },
                                             onDeleteAtEmptySiteSearch: {
@@ -226,12 +225,13 @@ struct CommandPaletteView: View {
                                                 return true
                                             }
                                         )
-                                            .accessibilityIdentifier("floating-urlbar-input")
+                                            .tint(tokens.primaryText)
+                                            .accessibilityIdentifier("floating-bar-input")
                                             .accessibilityLabel("Search")
                                             .onChange(of: text) { _, newValue in
-                                                // Defer palette / window session writes so `BrowserWindowState` is not mutated during SwiftUI view updates.
+                                                // Defer floating bar / window session writes so `BrowserWindowState` is not mutated during SwiftUI view updates.
                                                 Task { @MainActor in
-                                                    browserManager.updateFloatingURLBarDraft(in: windowState, text: newValue)
+                                                    browserManager.updateFloatingBarDraft(in: windowState, text: newValue)
                                                     guard !suppressNextTextSearch else {
                                                         suppressNextTextSearch = false
                                                         return
@@ -258,7 +258,7 @@ struct CommandPaletteView: View {
                                                 .padding(.vertical, 2)
                                                 .background(
                                                     RoundedRectangle(cornerRadius: 4)
-                                                        .fill(tokens.commandPaletteChipBackground)
+                                                        .fill(tokens.floatingBarChipBackground)
                                                 )
                                                 .overlay(
                                                     RoundedRectangle(cornerRadius: 4)
@@ -275,8 +275,8 @@ struct CommandPaletteView: View {
                                 .frame(maxWidth: .infinity, minHeight: 20, maxHeight: 20)
                             }
                             .animation(.spring(response: 0.35, dampingFraction: 0.75), value: activeSiteSearch != nil)
-                            .frame(height: CommandPaletteLayoutPolicy.inputRowHeight)
-                            .padding(.vertical, CommandPaletteLayoutPolicy.inputRowVerticalPadding)
+                            .frame(height: FloatingBarLayoutPolicy.inputRowHeight)
+                            .padding(.vertical, FloatingBarLayoutPolicy.inputRowVerticalPadding)
                             .padding(.horizontal, 8)
                             .contentShape(Rectangle())
                             .onTapGesture {
@@ -291,7 +291,7 @@ struct CommandPaletteView: View {
                             }
 
                             if !visibleSuggestions.isEmpty {
-                                CommandPaletteSuggestionsListView(
+                                FloatingBarSuggestionsListView(
                                     tokens: tokens,
                                     suggestions: visibleSuggestions,
                                     usesFixedHeight: shouldUseFixedSuggestionsHeight,
@@ -308,7 +308,7 @@ struct CommandPaletteView: View {
                         }
                         .padding(10)
                         .frame(maxWidth: .infinity)
-                        .frame(width: effectiveCommandPaletteWidth)
+                        .frame(width: effectiveFloatingBarWidth)
                         .scaleEffect(searchModeScale)
                         .background {
                             if isVisible {
@@ -318,7 +318,7 @@ struct CommandPaletteView: View {
                                 )
                             }
                         }
-                        .background(tokens.commandPaletteBackground)
+                        .background(tokens.floatingBarBackground)
                         .clipShape(.rect(cornerRadius: 26))
                         .overlay {
                             RoundedRectangle(cornerRadius: 26, style: .continuous)
@@ -331,7 +331,7 @@ struct CommandPaletteView: View {
                         }
                         .overlay {
                             if let glow = searchModeGlow {
-                                CommandPaletteSearchModeGlowView(
+                                FloatingBarSearchModeGlowView(
                                     glow: glow,
                                     progress: searchModeGlowProgress
                                 )
@@ -339,33 +339,33 @@ struct CommandPaletteView: View {
                             }
                         }
                         .modifier(
-                            CommandPaletteLocalVignetteModifier(
+                            FloatingBarLocalVignetteModifier(
                                 chromeScheme: themeContext.targetChromeColorScheme,
                                 reduceTransparency: accessibilityReduceTransparency
                             )
                         )
                         .background(
-                            CommandPaletteCardBoundsReader { view in
-                                if paletteCardView !== view {
-                                    paletteCardView = view
+                            FloatingBarCardBoundsReader { view in
+                                if floatingBarCardView !== view {
+                                    floatingBarCardView = view
                                 }
                             }
                         )
                         .accessibilityElement(children: .contain)
-                        .accessibilityIdentifier("floating-urlbar")
+                        .accessibilityIdentifier("floating-bar")
                         .animation(
                             .easeInOut(duration: 0.15),
                             value: searchManager.suggestions.count
                         )
-                        .padding(.horizontal, CommandPaletteLayoutPolicy.horizontalVignetteOutset)
-                        .padding(.vertical, CommandPaletteLayoutPolicy.verticalVignetteOutset)
+                        .padding(.horizontal, FloatingBarLayoutPolicy.horizontalVignetteOutset)
+                        .padding(.vertical, FloatingBarLayoutPolicy.verticalVignetteOutset)
                         Spacer()
                     }
                     .frame(
-                        width: effectiveCommandPaletteWidth
-                            + CommandPaletteLayoutPolicy.horizontalVignetteOutset * 2,
-                        height: CommandPaletteLayoutPolicy.contentHeight
-                            + CommandPaletteLayoutPolicy.verticalVignetteOutset * 2
+                        width: effectiveFloatingBarWidth
+                            + FloatingBarLayoutPolicy.horizontalVignetteOutset * 2,
+                        height: FloatingBarLayoutPolicy.contentHeight
+                            + FloatingBarLayoutPolicy.verticalVignetteOutset * 2
                     )
 
                     Spacer()
@@ -377,11 +377,11 @@ struct CommandPaletteView: View {
         .allowsHitTesting(isVisible)
         .opacity(isVisible ? 1.0 : 0.0)
         .onAppear {
-            if windowState.isCommandPaletteVisible {
+            if windowState.isFloatingBarVisible {
                 handleVisibilityChanged(true)
             }
         }
-        .onChange(of: windowState.isCommandPaletteVisible) { _, newVisible in
+        .onChange(of: windowState.isFloatingBarVisible) { _, newVisible in
             handleVisibilityChanged(newVisible)
         }
         .onDisappear {
@@ -389,7 +389,7 @@ struct CommandPaletteView: View {
             removeOutsideClickMonitor()
         }
         .onChange(of: browserManager.currentProfile?.id) { _, _ in
-            if windowState.isCommandPaletteVisible {
+            if windowState.isFloatingBarVisible {
                 searchManager.updateProfileContext()
                 searchManager.clearSuggestions()
             }
@@ -403,13 +403,13 @@ struct CommandPaletteView: View {
             }
         }
         .animation(.easeInOut(duration: 0.15), value: selectedSuggestionIndex)
-        .onChange(of: windowState.commandPaletteDraftText) { _, newValue in
+        .onChange(of: windowState.floatingBarDraftText) { _, newValue in
             if isVisible, newValue != text {
                 text = newValue
                 focusSearchField(selectAll: false)
             }
         }
-        .onChange(of: sumiSettings.commandPaletteEmptyStateMode) { _, _ in
+        .onChange(of: sumiSettings.floatingBarEmptyStateMode) { _, _ in
             refreshEmptyStateSuggestionsIfNeeded()
         }
     }
@@ -451,7 +451,7 @@ struct CommandPaletteView: View {
             searchManager.setBookmarkManager(browserManager.bookmarkManager)
             searchManager.updateProfileContext()
 
-            text = windowState.commandPaletteDraftText
+            text = windowState.floatingBarDraftText
             refreshEmptyStateSuggestionsIfNeeded()
 
             DispatchQueue.main.async {
@@ -475,15 +475,15 @@ struct CommandPaletteView: View {
     }
 
     private func refreshEmptyStateSuggestionsIfNeeded() {
-        guard windowState.isCommandPaletteVisible,
+        guard windowState.isFloatingBarVisible,
               activeSiteSearch == nil,
               text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return }
 
         searchDebouncer.cancel()
-        if sumiSettings.commandPaletteEmptyStateMode == .topLinks {
+        if sumiSettings.floatingBarEmptyStateMode == .topLinks {
             searchManager.showTopLinkSuggestions(
-                limit: CommandPaletteLayoutPolicy.suggestionsVisibleRowLimit
+                limit: FloatingBarLayoutPolicy.suggestionsVisibleRowLimit
             )
         } else {
             searchManager.clearSuggestions()
@@ -505,7 +505,7 @@ struct CommandPaletteView: View {
     }
 
     private func triggerSearchModeAnimation(color: Color) {
-        let glow = CommandPaletteSearchModeGlow(color: color)
+        let glow = FloatingBarSearchModeGlow(color: color)
         searchModeGlow = glow
         searchModeGlowProgress = 0
         searchModeScale = 1
@@ -531,7 +531,7 @@ struct CommandPaletteView: View {
     }
 
     // MARK: - Suggestions List Subview
-    private struct CommandPaletteSuggestionsListView: View {
+    private struct FloatingBarSuggestionsListView: View {
         let tokens: ChromeThemeTokens
         let suggestions: [SearchManager.SearchSuggestion]
         let usesFixedHeight: Bool
@@ -545,11 +545,11 @@ struct CommandPaletteView: View {
             let selectedForeground = ThemeContrastResolver.preferredForeground(on: tokens.accent)
             let selectedChipBackground = selectedForeground.opacity(0.88)
             let selectedChipForeground = ThemeContrastResolver.preferredForeground(on: selectedForeground)
-            let shouldScroll = suggestions.count > CommandPaletteLayoutPolicy.suggestionsVisibleRowLimit
+            let shouldScroll = suggestions.count > FloatingBarLayoutPolicy.suggestionsVisibleRowLimit
 
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
-                    LazyVStack(spacing: CommandPaletteLayoutPolicy.suggestionRowSpacing) {
+                    LazyVStack(spacing: FloatingBarLayoutPolicy.suggestionRowSpacing) {
                         ForEach(suggestions.indices, id: \.self) { index in
                             let suggestion = suggestions[index]
                             let isSelected = selectedIndex == index
@@ -562,14 +562,14 @@ struct CommandPaletteView: View {
                                 selectedChipBackground: selectedChipBackground,
                                 selectedChipForeground: selectedChipForeground
                             )
-                                .frame(minHeight: CommandPaletteLayoutPolicy.suggestionRowMinHeight)
-                                .padding(.horizontal, CommandPaletteLayoutPolicy.suggestionRowHorizontalPadding)
-                                .padding(.vertical, CommandPaletteLayoutPolicy.suggestionRowVerticalPadding)
+                                .frame(minHeight: FloatingBarLayoutPolicy.suggestionRowMinHeight)
+                                .padding(.horizontal, FloatingBarLayoutPolicy.suggestionRowHorizontalPadding)
+                                .padding(.vertical, FloatingBarLayoutPolicy.suggestionRowVerticalPadding)
                                 .background(
                                     isSelected
                                             ? selectedBackground
                                             : isHovered
-                                            ? tokens.commandPaletteRowHover
+                                            ? tokens.floatingBarRowHover
                                             : .clear
                                 )
                                 .clipShape(
@@ -597,8 +597,8 @@ struct CommandPaletteView: View {
                 .scrollIndicators(shouldScroll ? .visible : .hidden)
                 .frame(
                     height: usesFixedHeight
-                        ? CommandPaletteLayoutPolicy.suggestionsMaxHeight
-                        : CommandPaletteLayoutPolicy.suggestionsHeight(for: suggestions.count)
+                        ? FloatingBarLayoutPolicy.suggestionsMaxHeight
+                        : FloatingBarLayoutPolicy.suggestionsHeight(for: suggestions.count)
                 )
                 .onChange(of: selectedIndex) { _, newIndex in
                     guard newIndex >= 0 else { return }
@@ -716,7 +716,7 @@ struct CommandPaletteView: View {
             }
             guard !query.isEmpty else { return }
             let navigateURL = resolvedSiteSearchURL(site: site, query: query).absoluteString
-            if windowState.commandPaletteDraftNavigatesCurrentTab
+            if windowState.floatingBarDraftNavigatesCurrentTab
                 && browserManager.currentTab(for: windowState) != nil
             {
                 browserManager.currentTab(for: windowState)?.loadURL(navigateURL)
@@ -726,7 +726,7 @@ struct CommandPaletteView: View {
             text = ""
             activeSiteSearch = nil
             selectedSuggestionIndex = -1
-            browserManager.dismissFloatingURLBar(in: windowState, preserveDraft: false)
+            browserManager.dismissFloatingBar(in: windowState, preserveDraft: false)
             return
         }
 
@@ -749,11 +749,11 @@ struct CommandPaletteView: View {
 
     private func selectSuggestion(_ suggestion: SearchManager.SearchSuggestion)
     {
-        browserManager.openFloatingURLBarSuggestion(suggestion, in: windowState)
+        browserManager.openFloatingBarSuggestion(suggestion, in: windowState)
         text = ""
         activeSiteSearch = nil
         selectedSuggestionIndex = -1
-        browserManager.dismissFloatingURLBar(in: windowState, preserveDraft: false)
+        browserManager.dismissFloatingBar(in: windowState, preserveDraft: false)
     }
 
     private func resolvedSiteSearchURL(site: SiteSearchEntry, query: String) -> URL {
@@ -810,16 +810,16 @@ struct CommandPaletteView: View {
         outsideClickMonitor.install(
             matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
         ) { event in
-            CommandPaletteOutsideClickRouting.monitorResult(
+            FloatingBarOutsideClickRouting.monitorResult(
                 for: event,
-                isPaletteVisible: windowState.isCommandPaletteVisible,
-                cardView: paletteCardView
+                isFloatingBarVisible: windowState.isFloatingBarVisible,
+                cardView: floatingBarCardView
             ) {
                 // Close asynchronously and return the original event so sidebar/browser chrome handles this click.
                 DispatchQueue.main.async {
                     windowState.window?.makeFirstResponder(nil)
                     isSearchFocused = false
-                    browserManager.dismissFloatingURLBar(in: windowState, preserveDraft: true)
+                    browserManager.dismissFloatingBar(in: windowState, preserveDraft: true)
                 }
             }
         }
@@ -831,10 +831,9 @@ struct CommandPaletteView: View {
 
 }
 
-private struct CommandPaletteInlineCompletionTextField: NSViewRepresentable {
+private struct FloatingBarInlineCompletionTextField: NSViewRepresentable {
     @Binding var text: String
     var isFocused: FocusState<Bool>.Binding
-    let placeholder: String
     let font: NSFont
     let primaryColor: NSColor
     let hidesCaret: Bool
@@ -852,8 +851,8 @@ private struct CommandPaletteInlineCompletionTextField: NSViewRepresentable {
         Coordinator(text: $text)
     }
 
-    func makeNSView(context: Context) -> CommandPaletteInlineCompletionTextFieldView {
-        let view = CommandPaletteInlineCompletionTextFieldView()
+    func makeNSView(context: Context) -> FloatingBarInlineCompletionTextFieldView {
+        let view = FloatingBarInlineCompletionTextFieldView()
         view.textField.delegate = context.coordinator
         view.textField.onBeginEditing = onBeginEditing
         context.coordinator.configure(
@@ -868,7 +867,7 @@ private struct CommandPaletteInlineCompletionTextField: NSViewRepresentable {
         return view
     }
 
-    func updateNSView(_ nsView: CommandPaletteInlineCompletionTextFieldView, context: Context) {
+    func updateNSView(_ nsView: FloatingBarInlineCompletionTextFieldView, context: Context) {
         nsView.textField.delegate = context.coordinator
         nsView.textField.onBeginEditing = onBeginEditing
         context.coordinator.configure(
@@ -882,10 +881,9 @@ private struct CommandPaletteInlineCompletionTextField: NSViewRepresentable {
         update(nsView, context: context)
     }
 
-    private func update(_ nsView: CommandPaletteInlineCompletionTextFieldView, context _: Context) {
+    private func update(_ nsView: FloatingBarInlineCompletionTextFieldView, context _: Context) {
         nsView.configure(
             text: text,
-            placeholder: placeholder,
             font: font,
             primaryColor: primaryColor,
             hidesCaret: hidesCaret,
@@ -967,8 +965,8 @@ private struct CommandPaletteInlineCompletionTextField: NSViewRepresentable {
     }
 }
 
-private final class CommandPaletteInlineCompletionTextFieldView: NSView {
-    let textField = CommandPaletteInlineCompletionNSTextField()
+private final class FloatingBarInlineCompletionTextFieldView: NSView {
+    let textField = FloatingBarInlineCompletionNSTextField()
     var wantsTextFocus = false
     private var handledFocusRequestID = 0
 
@@ -1014,7 +1012,6 @@ private final class CommandPaletteInlineCompletionTextFieldView: NSView {
 
     func configure(
         text: String,
-        placeholder: String,
         font: NSFont,
         primaryColor: NSColor,
         hidesCaret: Bool,
@@ -1023,7 +1020,6 @@ private final class CommandPaletteInlineCompletionTextFieldView: NSView {
         textField.font = font
         textField.textColor = primaryColor
         textField.normalTextColor = primaryColor
-        textField.placeholderString = placeholder
         textField.hidesCaret = hidesCaret
 
         textField.applyText(text, moveInsertionPointToEnd: movesInsertionPointToEnd)
@@ -1068,7 +1064,7 @@ private final class CommandPaletteInlineCompletionTextFieldView: NSView {
     }
 }
 
-private final class CommandPaletteInlineCompletionNSTextField: NSTextField {
+private final class FloatingBarInlineCompletionNSTextField: NSTextField {
     var onBeginEditing: (() -> Void)?
     var normalTextColor: NSColor = .labelColor
     private let caretColor: NSColor = .systemBlue
@@ -1124,17 +1120,17 @@ private final class CommandPaletteInlineCompletionNSTextField: NSTextField {
     }
 }
 
-enum CommandPaletteOutsideClickRouting {
+enum FloatingBarOutsideClickRouting {
     @MainActor
     static func monitorResult(
         for event: NSEvent,
-        isPaletteVisible: Bool,
+        isFloatingBarVisible: Bool,
         cardView: NSView?,
         onOutsideClick: () -> Void
     ) -> NSEvent? {
         monitorResult(
             for: event,
-            isPaletteVisible: isPaletteVisible,
+            isFloatingBarVisible: isFloatingBarVisible,
             isEventInsideCard: isEventInsideCard(event, cardView: cardView),
             onOutsideClick: onOutsideClick
         )
@@ -1142,11 +1138,11 @@ enum CommandPaletteOutsideClickRouting {
 
     static func monitorResult(
         for event: NSEvent,
-        isPaletteVisible: Bool,
+        isFloatingBarVisible: Bool,
         isEventInsideCard: Bool,
         onOutsideClick: () -> Void
     ) -> NSEvent? {
-        guard isPaletteVisible else { return event }
+        guard isFloatingBarVisible else { return event }
         guard !isEventInsideCard else { return event }
 
         onOutsideClick()
@@ -1191,17 +1187,17 @@ enum CommandPaletteOutsideClickRouting {
     }
 }
 
-private final class CommandPaletteCardBoundsProbeView: NSView {
+private final class FloatingBarCardBoundsProbeView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
     }
 }
 
-private struct CommandPaletteCardBoundsReader: NSViewRepresentable {
+private struct FloatingBarCardBoundsReader: NSViewRepresentable {
     let onResolve: (NSView) -> Void
 
     func makeNSView(context: Context) -> NSView {
-        let view = CommandPaletteCardBoundsProbeView()
+        let view = FloatingBarCardBoundsProbeView()
         DispatchQueue.main.async {
             onResolve(view)
         }
@@ -1215,13 +1211,13 @@ private struct CommandPaletteCardBoundsReader: NSViewRepresentable {
     }
 }
 
-private struct CommandPaletteSearchModeGlow: Identifiable {
+private struct FloatingBarSearchModeGlow: Identifiable {
     let id = UUID()
     let color: Color
 }
 
-private struct CommandPaletteSearchModeGlowView: View {
-    let glow: CommandPaletteSearchModeGlow
+private struct FloatingBarSearchModeGlowView: View {
+    let glow: FloatingBarSearchModeGlow
     let progress: CGFloat
 
     var body: some View {
@@ -1240,7 +1236,7 @@ private struct CommandPaletteSearchModeGlowView: View {
 // MARK: - Local vignette (Zen-like, not full-page dim)
 
 /// Soft shadows only in a band around the card; page corners stay bright (no window-wide scrim).
-private struct CommandPaletteLocalVignetteModifier: ViewModifier {
+private struct FloatingBarLocalVignetteModifier: ViewModifier {
     let chromeScheme: ColorScheme
     let reduceTransparency: Bool
 

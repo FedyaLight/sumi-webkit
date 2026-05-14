@@ -204,14 +204,14 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
                 activeShortcutPinId: nil,
                 activeShortcutPinRole: nil,
                 isShowingEmptyState: true,
-                commandPaletteReason: .emptySpace,
+                floatingBarReason: .emptySpace,
                 activeTabsBySpace: [],
                 activeShortcutsBySpace: [],
                 sidebarWidth: sidebarWidth,
                 savedSidebarWidth: sidebarWidth,
                 sidebarContentWidth: sidebarWidth - Double(BrowserWindowState.sidebarHorizontalPadding),
                 isSidebarVisible: true,
-                urlBarDraft: URLBarDraftState(text: "", navigateCurrentTab: false),
+                floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false),
                 splitSession: nil
             )
         )

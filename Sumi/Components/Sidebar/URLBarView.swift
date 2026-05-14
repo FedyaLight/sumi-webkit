@@ -114,7 +114,7 @@ struct URLBarView: View {
             .onTapGesture {
                 guard !isZoomButtonHovering else { return }
                 let currentURL = currentTab?.url.absoluteString ?? ""
-                browserManager.focusFloatingURLBar(
+                browserManager.focusFloatingBar(
                     in: windowState,
                     prefill: currentURL,
                     navigateCurrentTab: true

@@ -146,7 +146,7 @@ enum StartupWorkspaceThemeResolver {
 
 @MainActor
 class BrowserManager: ObservableObject {
-    static let lastWindowSessionKey = "sumi.windowSession.last.v2"
+    static let lastWindowSessionKey = "sumi.windowSession.last.v3"
     @Published var zoomStateRevision: Int = 0
     @Published var zoomPopoverRequest: ZoomPopoverRequest?
     @Published var bookmarkEditorPresentationRequest: SumiBookmarkEditorPresentationRequest?
@@ -703,68 +703,68 @@ class BrowserManager: ObservableObject {
     }
 
 
-    func focusFloatingURLBarForActiveWindow(
+    func focusFloatingBarForActiveWindow(
         prefill: String = "",
         navigateCurrentTab: Bool = false
     ) {
         guard let activeWindow = windowRegistry?.activeWindow else { return }
-        focusFloatingURLBar(
+        focusFloatingBar(
             in: activeWindow,
             prefill: prefill,
             navigateCurrentTab: navigateCurrentTab
         )
     }
 
-    func focusFloatingURLBar(
+    func focusFloatingBar(
         in windowState: BrowserWindowState,
         prefill: String = "",
         navigateCurrentTab: Bool = false
     ) {
         let shouldOverrideDraft = !prefill.isEmpty
-            || windowState.commandPaletteDraftText.isEmpty
+            || windowState.floatingBarDraftText.isEmpty
             || navigateCurrentTab
         if shouldOverrideDraft {
-            windowState.commandPaletteDraftText = prefill
-            windowState.commandPaletteDraftNavigatesCurrentTab = navigateCurrentTab
+            windowState.floatingBarDraftText = prefill
+            windowState.floatingBarDraftNavigatesCurrentTab = navigateCurrentTab
         }
-        windowState.commandPalettePresentationReason = .keyboard
-        windowState.isCommandPaletteVisible = true
+        windowState.floatingBarPresentationReason = .keyboard
+        windowState.isFloatingBarVisible = true
         dismissWorkspaceThemePickerIfNeededDiscarding()
         persistWindowSession(for: windowState)
     }
 
-    func showNewTabPalette(in windowState: BrowserWindowState) {
-        windowState.commandPaletteDraftText = ""
-        windowState.commandPaletteDraftNavigatesCurrentTab = false
-        windowState.commandPalettePresentationReason = .emptySpace
-        windowState.isCommandPaletteVisible = true
+    func showNewTabFloatingBar(in windowState: BrowserWindowState) {
+        windowState.floatingBarDraftText = ""
+        windowState.floatingBarDraftNavigatesCurrentTab = false
+        windowState.floatingBarPresentationReason = .emptySpace
+        windowState.isFloatingBarVisible = true
         dismissWorkspaceThemePickerIfNeededDiscarding()
         persistWindowSession(for: windowState)
     }
 
-    func updateFloatingURLBarDraft(
+    func updateFloatingBarDraft(
         in windowState: BrowserWindowState,
         text: String
     ) {
-        guard windowState.commandPaletteDraftText != text else { return }
-        windowState.commandPaletteDraftText = text
+        guard windowState.floatingBarDraftText != text else { return }
+        windowState.floatingBarDraftText = text
         schedulePersistWindowSession(for: windowState)
     }
 
-    func dismissFloatingURLBar(
+    func dismissFloatingBar(
         in windowState: BrowserWindowState,
         preserveDraft: Bool
     ) {
-        windowState.commandPalettePresentationReason = .none
-        windowState.isCommandPaletteVisible = false
+        windowState.floatingBarPresentationReason = .none
+        windowState.isFloatingBarVisible = false
         if !preserveDraft {
-            windowState.commandPaletteDraftText = ""
-            windowState.commandPaletteDraftNavigatesCurrentTab = false
+            windowState.floatingBarDraftText = ""
+            windowState.floatingBarDraftNavigatesCurrentTab = false
         }
         persistWindowSession(for: windowState)
     }
 
-    func openFloatingURLBarSuggestion(
+    func openFloatingBarSuggestion(
         _ suggestion: SearchManager.SearchSuggestion,
         in windowState: BrowserWindowState
     ) {
@@ -773,48 +773,48 @@ class BrowserManager: ObservableObject {
             selectTab(existingTab, in: windowState)
             RuntimeDiagnostics.debug(
                 "Switched to existing tab: \(existingTab.name)",
-                category: "CommandPalette"
+                category: "FloatingBar"
             )
         case .history(let historyEntry):
-            if windowState.commandPaletteDraftNavigatesCurrentTab,
+            if windowState.floatingBarDraftNavigatesCurrentTab,
                currentTab(for: windowState) != nil
             {
                 currentTab(for: windowState)?.loadURL(historyEntry.url.absoluteString)
                 RuntimeDiagnostics.debug(
                     "Navigated current tab to history URL: \(historyEntry.url)",
-                    category: "CommandPalette"
+                    category: "FloatingBar"
                 )
             } else {
                 createNewTab(in: windowState, url: historyEntry.url.absoluteString)
                 RuntimeDiagnostics.debug(
                     "Created new tab from history in window \(windowState.id)",
-                    category: "CommandPalette"
+                    category: "FloatingBar"
                 )
             }
         case .bookmark(let bookmark):
-            if windowState.commandPaletteDraftNavigatesCurrentTab,
+            if windowState.floatingBarDraftNavigatesCurrentTab,
                currentTab(for: windowState) != nil
             {
                 currentTab(for: windowState)?.loadURL(bookmark.url.absoluteString)
                 RuntimeDiagnostics.debug(
                     "Navigated current tab to bookmark URL: \(bookmark.url)",
-                    category: "CommandPalette"
+                    category: "FloatingBar"
                 )
             } else {
                 createNewTab(in: windowState, url: bookmark.url.absoluteString)
                 RuntimeDiagnostics.debug(
                     "Created new tab from bookmark in window \(windowState.id)",
-                    category: "CommandPalette"
+                    category: "FloatingBar"
                 )
             }
         case .url, .search:
-            if windowState.commandPaletteDraftNavigatesCurrentTab,
+            if windowState.floatingBarDraftNavigatesCurrentTab,
                currentTab(for: windowState) != nil
             {
                 currentTab(for: windowState)?.navigateToURL(suggestion.text)
                 RuntimeDiagnostics.debug(
                     "Navigated current tab to: \(suggestion.text)",
-                    category: "CommandPalette"
+                    category: "FloatingBar"
                 )
             } else {
                 let template = sumiSettings?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
@@ -822,35 +822,35 @@ class BrowserManager: ObservableObject {
                 createNewTab(in: windowState, url: resolved)
                 RuntimeDiagnostics.debug(
                     "Created new tab in window \(windowState.id)",
-                    category: "CommandPalette"
+                    category: "FloatingBar"
                 )
             }
         }
     }
 
-    private func dismissCommandPaletteAfterSelection(in windowState: BrowserWindowState) {
-        let preserveDraft = windowState.commandPalettePresentationReason != .emptySpace
-        dismissFloatingURLBar(in: windowState, preserveDraft: preserveDraft)
+    private func dismissFloatingBarAfterSelection(in windowState: BrowserWindowState) {
+        let preserveDraft = windowState.floatingBarPresentationReason != .emptySpace
+        dismissFloatingBar(in: windowState, preserveDraft: preserveDraft)
     }
 
     private func clearEmptyStatePresentationIfNeeded(in windowState: BrowserWindowState) {
         guard windowState.isShowingEmptyState
-            || windowState.commandPalettePresentationReason == .emptySpace
+            || windowState.floatingBarPresentationReason == .emptySpace
         else { return }
 
         windowState.isShowingEmptyState = false
-        dismissFloatingURLBar(in: windowState, preserveDraft: false)
+        dismissFloatingBar(in: windowState, preserveDraft: false)
     }
 
-    func sanitizeCommandPaletteState(in windowState: BrowserWindowState) {
+    func sanitizeFloatingBarState(in windowState: BrowserWindowState) {
         if hasValidCurrentSelection(in: windowState) {
             clearEmptyStatePresentationIfNeeded(in: windowState)
         } else if windowState.isShowingEmptyState {
-            if windowState.commandPalettePresentationReason == .none {
-                windowState.commandPalettePresentationReason = .emptySpace
+            if windowState.floatingBarPresentationReason == .none {
+                windowState.floatingBarPresentationReason = .emptySpace
             }
         } else {
-            windowState.commandPalettePresentationReason = .none
+            windowState.floatingBarPresentationReason = .none
         }
     }
 
@@ -1221,7 +1221,7 @@ class BrowserManager: ObservableObject {
 
     func closeCurrentTab() {
         if let activeWindow = windowRegistry?.activeWindow,
-            activeWindow.isCommandPaletteVisible
+            activeWindow.isFloatingBarVisible
         {
             return
         }
@@ -1514,7 +1514,7 @@ class BrowserManager: ObservableObject {
 
         SumiNativeNowPlayingController.shared.handleTabActivated(tab.id)
         tab.noteSuspensionAccess()
-        dismissCommandPaletteAfterSelection(in: windowState)
+        dismissFloatingBarAfterSelection(in: windowState)
         splitManager.updateActiveSide(for: tab.id, in: windowState.id)
 
         syncWindowSpaceContext(in: windowState, animateTheme: updateTheme)
@@ -2208,7 +2208,7 @@ class BrowserManager: ObservableObject {
         findManager.updateCurrentTab(nil)
         refreshCompositor(for: windowState)
         persistWindowSession(for: windowState)
-        showNewTabPalette(in: windowState)
+        showNewTabFloatingBar(in: windowState)
     }
 
     private func updateProfileRuntimeStates(activeWindowState: BrowserWindowState? = nil) {

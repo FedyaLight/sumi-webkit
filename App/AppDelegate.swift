@@ -13,7 +13,7 @@ import UserNotifications
 ///
 /// Key responsibilities:
 /// - **URL Handling**: Opens external URLs (e.g., from other apps, custom URL schemes)
-/// - **Mouse Button Events**: Maps mouse buttons 2/3/4 to command palette, back, and forward
+/// - **Mouse Button Events**: Maps mouse buttons 2/3/4 to floating bar, back, and forward
 /// - **App Termination**: Coordinates graceful shutdown with data persistence
 ///
 /// Quit path: `applicationShouldTerminate` confirms with AppKit when needed, then schedules persistence +
@@ -88,7 +88,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// Sets up global mouse button event monitoring for extra physical mouse buttons
     ///
     /// Many mice have extra buttons beyond left/right click. This maps them to browser actions:
-    /// - **Button 2** (middle click/scroll wheel button): Open command palette
+    /// - **Button 2** (middle click/scroll wheel button): Open floating bar
     /// - **Button 3** (typically a side button labeled "Back"): Navigate back in history
     /// - **Button 4** (typically a side button labeled "Forward"): Navigate forward in history
     ///
@@ -106,7 +106,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 switch event.buttonNumber {
                 case 2:  // Middle mouse button
                     if let activeWindow = registry.activeWindow {
-                        commandRouter.focusFloatingURLBar(
+                        commandRouter.focusFloatingBar(
                             in: activeWindow,
                             prefill: "",
                             navigateCurrentTab: false

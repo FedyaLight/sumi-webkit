@@ -212,7 +212,7 @@ private struct ShortcutLinkEditorIcon: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(tokens.commandPaletteChipBackground)
+                .fill(tokens.floatingBarChipBackground)
 
             icon
                 .frame(width: 22, height: 22)
@@ -302,7 +302,7 @@ private struct ShortcutLinkEditorField: View {
             }
             .padding(.horizontal, 12)
             .frame(height: 40)
-            .background(tokens.commandPaletteChipBackground)
+            .background(tokens.floatingBarChipBackground)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)

@@ -118,7 +118,7 @@ private struct SumiPermissionRuntimeControlRow: View {
     private var icon: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(tokens.commandPaletteBackground.opacity(0.8))
+                .fill(tokens.floatingBarBackground.opacity(0.8))
 
             SumiZenChromeIcon(
                 iconName: control.iconName,

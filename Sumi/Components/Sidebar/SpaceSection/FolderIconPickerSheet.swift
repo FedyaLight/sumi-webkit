@@ -103,7 +103,7 @@ struct FolderIconPickerSheet: View {
         }
         .padding(16)
         .frame(width: 360, height: 320)
-        .background(tokens.commandPaletteBackground)
+        .background(tokens.floatingBarBackground)
         .accessibilityIdentifier("folder-icon-picker-sheet")
     }
 }

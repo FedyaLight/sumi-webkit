@@ -5,13 +5,13 @@ enum SplitOrientation: String, Codable, Hashable {
     case vertical
 }
 
-enum CommandPalettePresentationReason: String, Codable, Equatable, Hashable {
+enum FloatingBarPresentationReason: String, Codable, Equatable, Hashable {
     case none
     case emptySpace
     case keyboard
 }
 
-struct URLBarDraftState: Codable, Equatable, Hashable {
+struct FloatingBarDraftState: Codable, Equatable, Hashable {
     var text: String
     var navigateCurrentTab: Bool
 }
@@ -41,13 +41,13 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
     var activeShortcutPinId: UUID?
     var activeShortcutPinRole: ShortcutPinRole?
     var isShowingEmptyState: Bool
-    var commandPaletteReason: CommandPalettePresentationReason?
+    var floatingBarReason: FloatingBarPresentationReason?
     var activeTabsBySpace: [SpaceTabSelectionSnapshot]
     var activeShortcutsBySpace: [SpaceShortcutSelectionSnapshot]?
     var sidebarWidth: Double
     var savedSidebarWidth: Double
     var sidebarContentWidth: Double
     var isSidebarVisible: Bool
-    var urlBarDraft: URLBarDraftState
+    var floatingBarDraft: FloatingBarDraftState
     var splitSession: SplitSessionSnapshot?
 }

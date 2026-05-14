@@ -59,7 +59,6 @@ enum SidebarColumnHostedRoot {
         browserManager: BrowserManager,
         windowState: BrowserWindowState,
         windowRegistry: WindowRegistry,
-        commandPalette: CommandPalette,
         sumiSettings: SumiSettingsService,
         resolvedThemeContext: ResolvedThemeContext,
         chromeBackgroundResolvedThemeContext: ResolvedThemeContext,
@@ -70,7 +69,6 @@ enum SidebarColumnHostedRoot {
                 browserManager: browserManager,
                 windowState: windowState,
                 windowRegistry: windowRegistry,
-                commandPalette: commandPalette,
                 sumiSettings: sumiSettings,
                 resolvedThemeContext: resolvedThemeContext,
                 chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext
@@ -84,7 +82,6 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
     @ObservedObject var browserManager: BrowserManager
     var windowState: BrowserWindowState
     var windowRegistry: WindowRegistry
-    var commandPalette: CommandPalette
     var sumiSettings: SumiSettingsService
     var resolvedThemeContext: ResolvedThemeContext
     var chromeBackgroundResolvedThemeContext: ResolvedThemeContext
@@ -99,7 +96,6 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
             browserManager: browserManager,
             windowState: windowState,
             windowRegistry: windowRegistry,
-            commandPalette: commandPalette,
             sumiSettings: sumiSettings,
             resolvedThemeContext: resolvedThemeContext,
             chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext,

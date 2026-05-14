@@ -33,7 +33,6 @@ struct DuckDuckGoSearchSuggestionDataProvider: SearchSuggestionDataProviding {
 @MainActor
 class SearchManager {
     var suggestions: [SearchSuggestion] = []
-    var isLoading: Bool = false
     
     private let suggestionDataProvider: SearchSuggestionDataProviding
     private var webSuggestionTask: Task<Void, Never>?
@@ -84,20 +83,6 @@ class SearchManager {
         }
     }
 
-    private struct RankedTabSuggestion {
-        let tab: Tab
-        let text: String
-        let nameMatches: Bool
-        let nameLength: Int
-    }
-
-    private struct RankedHistorySuggestion {
-        let entry: HistoryListItem
-        let text: String
-        let titleMatches: Bool
-        let visitedAt: Date?
-    }
-    
     func setTabManager(_ tabManager: TabManager?) {
         self.tabManager = tabManager
         updateProfileContext()
@@ -145,7 +130,6 @@ class SearchManager {
         
         // Clear suggestions if query is empty
         guard !normalizedQuery.isEmpty else {
-            isLoading = false
             if !suggestions.isEmpty {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     suggestions = []
@@ -191,7 +175,6 @@ class SearchManager {
                 )
                 let combinedSuggestions = self.makeSuggestions(from: combinedResult, query: normalizedQuery, historyEntries: historyEntries)
                 self.updateSuggestionsIfNeeded(combinedSuggestions)
-                self.isLoading = false
                 return
             }
 
@@ -271,8 +254,6 @@ class SearchManager {
         tabItems: [SumiSuggestionEngine.TabItem],
         generation: UInt64
     ) {
-        isLoading = true
-
         webSuggestionTask = Task { @MainActor [weak self] in
             guard let self else { return }
             var webSuggestionItems: [SumiSuggestionEngine.APISuggestion]?
@@ -292,8 +273,6 @@ class SearchManager {
             }
 
             guard generation == self.activeWebSuggestionGeneration else { return }
-
-            self.isLoading = false
 
             if let webSuggestionItems {
                 self.storeCachedWebSuggestions(webSuggestionItems, for: query)
@@ -584,6 +563,5 @@ class SearchManager {
                 suggestions = []
             }
         }
-        isLoading = false
     }
 }

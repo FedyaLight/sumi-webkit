@@ -77,7 +77,7 @@ final class ShortcutActionDispatcher {
                 browserManager.expandAllFoldersInSidebar()
             case .focusAddressBar:
                 let currentURL = browserManager.currentTabForActiveWindow()?.url.absoluteString ?? ""
-                browserManager.focusFloatingURLBarForActiveWindow(
+                browserManager.focusFloatingBarForActiveWindow(
                     prefill: currentURL,
                     navigateCurrentTab: true
                 )

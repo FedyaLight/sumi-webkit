@@ -12,8 +12,8 @@ import SwiftUI
 /// Relative stacking for full-window transient chrome (higher draws above lower).
 private enum WindowTransientChromeZIndex {
     static let findInPage: Double = 3_500
-    static let commandPalette: Double = 9_000
-    /// Glance preview: above palette, below blocking dialogs.
+    static let floatingBar: Double = 9_000
+    /// Glance preview: above floating bar, below blocking dialogs.
     static let glance: Double = 10_000
     /// Modal dialogs (quit, settings paths, etc.) must stay above app chrome.
     static let dialog: Double = 11_000
@@ -26,7 +26,6 @@ struct WindowView: View {
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
-    @Environment(CommandPalette.self) private var commandPalette
     @Environment(\.sumiSettings) var sumiSettings
     @StateObject private var hoverSidebarManager = HoverSidebarManager()
     @State private var shouldRenderDockedSidebar = false
@@ -72,20 +71,19 @@ struct WindowView: View {
                 }
             }
 
-            // Command palette is full-window chrome so its floating position is stable in both
+            // Floating bar is full-window chrome so its floating position is stable in both
             // docked and collapsed sidebar layouts.
             chromeThemeScope {
-                CommandPaletteChromeHost(
+                FloatingBarChromeHost(
                     browserManager: browserManager,
                     windowState: windowState,
-                    commandPalette: commandPalette,
                     sumiSettings: sumiSettings,
                     resolvedThemeContext: resolvedThemeContext,
                     colorScheme: globalColorScheme,
-                    isPresented: windowState.isCommandPaletteVisible && !transientChromeModalSuppressed
+                    isPresented: windowState.isFloatingBarVisible && !transientChromeModalSuppressed
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .zIndex(WindowTransientChromeZIndex.commandPalette)
+                .zIndex(WindowTransientChromeZIndex.floatingBar)
             }
 
             chromeThemeScope {
@@ -303,7 +301,6 @@ struct WindowView: View {
             browserManager: browserManager,
             windowState: windowState,
             windowRegistry: windowRegistry,
-            commandPalette: commandPalette,
             sumiSettings: sumiSettings,
             resolvedThemeContext: sidebarResolvedThemeContext,
             chromeBackgroundResolvedThemeContext: resolvedThemeContext,

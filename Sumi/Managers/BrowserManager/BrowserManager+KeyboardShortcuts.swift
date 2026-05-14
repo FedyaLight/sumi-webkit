@@ -17,19 +17,7 @@ extension BrowserManager {
             return
         }
 
-        if activeWindow.isCommandPaletteVisible,
-           activeWindow.commandPalettePresentationReason == .emptySpace
-        {
-            showNewTabPalette(in: activeWindow)
-            return
-        }
-
-        if currentTab(for: activeWindow)?.representsSumiEmptySurface == true {
-            showNewTabPalette(in: activeWindow)
-            return
-        }
-
-        showNewTabPalette(in: activeWindow)
+        showNewTabFloatingBar(in: activeWindow)
     }
 
     func selectNextTabInActiveWindow() {

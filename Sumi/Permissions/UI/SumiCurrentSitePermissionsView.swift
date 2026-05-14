@@ -430,7 +430,7 @@ private struct SumiCurrentSitePermissionRowView: View {
     private var icon: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(tokens.commandPaletteBackground.opacity(0.8))
+                .fill(tokens.floatingBarBackground.opacity(0.8))
 
             SumiZenChromeIcon(
                 iconName: row.iconName,
@@ -460,7 +460,7 @@ private struct SumiCurrentSitePermissionRowView: View {
             .foregroundStyle(tokens.primaryText)
             .padding(.horizontal, 7)
             .frame(height: 24)
-            .background(tokens.commandPaletteBackground.opacity(0.95))
+            .background(tokens.floatingBarBackground.opacity(0.95))
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
         .menuStyle(.button)

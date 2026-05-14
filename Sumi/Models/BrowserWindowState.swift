@@ -76,8 +76,8 @@ class BrowserWindowState {
     /// Suppresses global selection fallbacks until this window's persisted startup selection is resolved.
     var isAwaitingInitialSessionResolution: Bool
 
-    /// Why the floating command palette / URL bar is currently being presented.
-    var commandPalettePresentationReason: CommandPalettePresentationReason = .none
+    /// Why the floating bar is currently being presented.
+    var floatingBarPresentationReason: FloatingBarPresentationReason = .none
 
     /// Unified owner for all window-local chrome theme state.
     var windowThemeState: WindowThemeState = .init()
@@ -122,14 +122,14 @@ class BrowserWindowState {
     /// Whether the downloads popover is visible in this window.
     var isDownloadsPopoverPresented: Bool = false
 
-    /// Whether the command palette is visible in this window
-    var isCommandPaletteVisible: Bool = false
+    /// Whether the floating bar is visible in this window
+    var isFloatingBarVisible: Bool = false
 
-    /// Preserved text draft for the floating URL bar / command palette
-    var commandPaletteDraftText: String = ""
+    /// Preserved text draft for the floating bar.
+    var floatingBarDraftText: String = ""
 
     /// Whether the preserved draft targets the current tab on submit
-    var commandPaletteDraftNavigatesCurrentTab: Bool = false
+    var floatingBarDraftNavigatesCurrentTab: Bool = false
 
     /// Frame of the URL bar within this window
     var urlBarFrame: CGRect = .zero

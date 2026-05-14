@@ -150,7 +150,7 @@ extension BrowserManager {
             windowState.recentRegularTabIdsBySpace.removeAll()
             windowState.selectedShortcutPinForSpace.removeAll()
             windowState.isShowingEmptyState = windowState.id == selectedWindow.id
-            windowState.commandPalettePresentationReason =
+            windowState.floatingBarPresentationReason =
                 windowState.id == selectedWindow.id ? .emptySpace : .none
             windowState.currentSpaceId = fallbackSpaceId
             windowState.currentProfileId = fallbackSpaceId.flatMap { space(for: $0)?.profileId }

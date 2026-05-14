@@ -22,7 +22,7 @@ struct SplitCardView: View {
     }
 
     private var backgroundColor: Color {
-        themeContext.tokens(settings: sumiSettings).commandPaletteBackground
+        themeContext.tokens(settings: sumiSettings).floatingBarBackground
     }
     
     var body: some View {

@@ -19,7 +19,7 @@ struct FindInPageChromePaint {
 
     @MainActor
     static func resolve(tokens: ChromeThemeTokens) -> FindInPageChromePaint {
-        let shell = tokens.commandPaletteBackground
+        let shell = tokens.floatingBarBackground
         let fieldIdle = shell.overlaying(tokens.fieldBackground)
         let fieldActive = shell.overlaying(tokens.fieldBackgroundHover)
         let accent = tokens.accent

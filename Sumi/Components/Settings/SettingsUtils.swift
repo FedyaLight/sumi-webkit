@@ -37,7 +37,7 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
                 group: .browser,
                 keywords: [
                     "quit", "url", "glance", "search", "engine",
-                    "site search", "command palette"
+                    "site search", "floating bar"
                 ]
             )
         case .startup:

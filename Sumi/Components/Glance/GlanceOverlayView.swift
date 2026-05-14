@@ -32,7 +32,7 @@ struct GlanceOverlayView: View {
                     .zIndex(1000)
             } else {
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(tokens.commandPaletteBackground)
+                    .fill(tokens.floatingBarBackground)
                     .frame(width: 600, height: 400)
                     .zIndex(1000)
             }
@@ -65,7 +65,7 @@ struct GlanceOverlayView: View {
             let frame = calculateLayout(geometry: geometry)
 
             ZStack {
-                tokens.commandPaletteBackground
+                tokens.floatingBarBackground
 
                 webViewContainer()
                     .frame(width: frame.width, height: frame.height)
@@ -92,7 +92,7 @@ struct GlanceOverlayView: View {
                 webView
                     .allowsHitTesting(true)
             } else {
-                tokens.commandPaletteBackground
+                tokens.floatingBarBackground
             }
         }
         .allowsHitTesting(true)

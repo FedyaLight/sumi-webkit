@@ -240,10 +240,10 @@ private struct ThemeChromePalette {
     let buttonPrimaryText: Color
     let buttonSecondaryBackground: Color
     let windowBackground: Color
-    let commandPaletteBackground: Color
-    let commandPaletteChipBackground: Color
-    let commandPaletteRowSelected: Color
-    let commandPaletteRowHover: Color
+    let floatingBarBackground: Color
+    let floatingBarChipBackground: Color
+    let floatingBarRowSelected: Color
+    let floatingBarRowHover: Color
 
     static func make(
         scheme: ColorScheme,
@@ -275,10 +275,10 @@ private struct ThemeChromePalette {
             elementBackground: fieldBackground,
             scheme: scheme
         )
-        let commandPaletteBackground = ThemeChromeRecipeBuilder.commandPaletteSolidBackground(scheme: scheme)
-        let commandPaletteChipBackground = ThemeChromeRecipeBuilder.commandPaletteChipBackground(scheme: scheme)
-        let commandPaletteRowSelected = ThemeChromeRecipeBuilder.commandPaletteRowSelected(scheme: scheme)
-        let commandPaletteRowHover = ThemeChromeRecipeBuilder.commandPaletteRowHover(scheme: scheme)
+        let floatingBarBackground = ThemeChromeRecipeBuilder.floatingBarSolidBackground(scheme: scheme)
+        let floatingBarChipBackground = ThemeChromeRecipeBuilder.floatingBarChipBackground(scheme: scheme)
+        let floatingBarRowSelected = ThemeChromeRecipeBuilder.floatingBarRowSelected(scheme: scheme)
+        let floatingBarRowHover = ThemeChromeRecipeBuilder.floatingBarRowHover(scheme: scheme)
         let sidebarRowActive: Color = {
             switch scheme {
             case .light:
@@ -357,10 +357,10 @@ private struct ThemeChromePalette {
                     return background
                 }
             }(),
-            commandPaletteBackground: commandPaletteBackground,
-            commandPaletteChipBackground: commandPaletteChipBackground,
-            commandPaletteRowSelected: commandPaletteRowSelected,
-            commandPaletteRowHover: commandPaletteRowHover
+            floatingBarBackground: floatingBarBackground,
+            floatingBarChipBackground: floatingBarChipBackground,
+            floatingBarRowSelected: floatingBarRowSelected,
+            floatingBarRowHover: floatingBarRowHover
         )
     }
 
@@ -397,10 +397,10 @@ private struct ThemeChromePalette {
             buttonPrimaryText: mix(buttonPrimaryText, other.buttonPrimaryText),
             buttonSecondaryBackground: mix(buttonSecondaryBackground, other.buttonSecondaryBackground),
             windowBackground: mix(windowBackground, other.windowBackground),
-            commandPaletteBackground: mix(commandPaletteBackground, other.commandPaletteBackground),
-            commandPaletteChipBackground: mix(commandPaletteChipBackground, other.commandPaletteChipBackground),
-            commandPaletteRowSelected: mix(commandPaletteRowSelected, other.commandPaletteRowSelected),
-            commandPaletteRowHover: mix(commandPaletteRowHover, other.commandPaletteRowHover)
+            floatingBarBackground: mix(floatingBarBackground, other.floatingBarBackground),
+            floatingBarChipBackground: mix(floatingBarChipBackground, other.floatingBarChipBackground),
+            floatingBarRowSelected: mix(floatingBarRowSelected, other.floatingBarRowSelected),
+            floatingBarRowHover: mix(floatingBarRowHover, other.floatingBarRowHover)
         )
     }
 
@@ -431,10 +431,10 @@ private struct ThemeChromePalette {
             buttonPrimaryText: buttonPrimaryText,
             buttonSecondaryBackground: buttonSecondaryBackground,
             windowBackground: windowBackground,
-            commandPaletteBackground: commandPaletteBackground,
-            commandPaletteChipBackground: commandPaletteChipBackground,
-            commandPaletteRowSelected: commandPaletteRowSelected,
-            commandPaletteRowHover: commandPaletteRowHover
+            floatingBarBackground: floatingBarBackground,
+            floatingBarChipBackground: floatingBarChipBackground,
+            floatingBarRowSelected: floatingBarRowSelected,
+            floatingBarRowHover: floatingBarRowHover
         )
     }
 }
@@ -564,7 +564,7 @@ enum ThemeChromeRecipeBuilder {
         return elementBackground.overlaying(overlay)
     }
 
-    static func commandPaletteSolidBackground(scheme: ColorScheme) -> Color {
+    static func floatingBarSolidBackground(scheme: ColorScheme) -> Color {
         switch scheme {
         case .light:
             return Color.white
@@ -575,7 +575,7 @@ enum ThemeChromeRecipeBuilder {
         }
     }
 
-    static func commandPaletteChipBackground(scheme: ColorScheme) -> Color {
+    static func floatingBarChipBackground(scheme: ColorScheme) -> Color {
         switch scheme {
         case .light:
             return Color.black.opacity(0.06)
@@ -586,7 +586,7 @@ enum ThemeChromeRecipeBuilder {
         }
     }
 
-    static func commandPaletteRowSelected(scheme: ColorScheme) -> Color {
+    static func floatingBarRowSelected(scheme: ColorScheme) -> Color {
         switch scheme {
         case .light:
             return Color.black.opacity(0.08)
@@ -597,7 +597,7 @@ enum ThemeChromeRecipeBuilder {
         }
     }
 
-    static func commandPaletteRowHover(scheme: ColorScheme) -> Color {
+    static func floatingBarRowHover(scheme: ColorScheme) -> Color {
         switch scheme {
         case .light:
             return Color.black.opacity(0.05)

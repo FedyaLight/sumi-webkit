@@ -674,7 +674,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             Self.combinedSwiftSource(in: "Settings"),
             Self.combinedSwiftSource(in: "Navigation"),
             Self.combinedSwiftSource(in: "UI"),
-            Self.combinedSwiftSource(in: "CommandPalette"),
+            Self.combinedSwiftSource(in: "FloatingBar"),
         ].joined(separator: "\n")
         assertSourceExcludes(
             productionSources,
