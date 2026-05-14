@@ -64,9 +64,13 @@ protocol SumiNavigationCompletionResponding: AnyObject {
 }
 
 extension SumiNavigationCompletionResponding {
+    func navigationDidFinish() {}
+
     func navigationDidFinish(_ context: SumiNavigationContext?) {
         navigationDidFinish()
     }
+
+    func navigationDidFail() {}
 
     func navigationDidFail(_ error: WKError, context: SumiNavigationContext?) {
         navigationDidFail()
@@ -82,6 +86,8 @@ protocol SumiNavigationStartResponding: AnyObject {
 
 extension SumiNavigationStartResponding {
     func navigationWillStart(_ context: SumiNavigationContext) {}
+
+    func navigationDidStart() {}
 
     func navigationDidStart(_ context: SumiNavigationContext) {
         navigationDidStart()
@@ -121,6 +127,8 @@ protocol SumiSameDocumentNavigationResponding: AnyObject {
 }
 
 extension SumiSameDocumentNavigationResponding {
+    func navigationDidSameDocumentNavigation(type: SumiSameDocumentNavigationType) {}
+
     func navigationDidSameDocumentNavigation(
         type: SumiSameDocumentNavigationType,
         context: SumiNavigationContext?

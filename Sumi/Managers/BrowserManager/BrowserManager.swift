@@ -1633,6 +1633,10 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         loadPolicy: TabSelectionLoadPolicy
     ) {
+        if tab.isUnloaded {
+            tab.beginLoadingPresentationIfNeeded()
+        }
+
         switch loadPolicy {
         case .immediate:
             compositorManager.loadTab(tab)

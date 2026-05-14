@@ -26,7 +26,7 @@ extension Tab {
     }
 
     func refresh() {
-        loadingState = .didStartProvisionalNavigation
+        beginLoadingPresentationIfNeeded()
         let targetURL = _webView?.url ?? url
         let rebuiltWebView = rebuildNormalWebViewForTrackingProtectionIfNeeded(
             targetURL: targetURL,

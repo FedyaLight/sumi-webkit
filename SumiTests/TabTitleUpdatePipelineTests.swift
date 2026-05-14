@@ -178,4 +178,45 @@ final class TabTitleUpdatePipelineTests: XCTestCase {
             )
         )
     }
+
+    func testDeferredForegroundURLTabStartsLoadingPresentationImmediately() {
+        let (browserManager, windowState) = makeBrowserSelectionHarness()
+
+        let tab = browserManager.openNewTab(
+            url: "https://example.com",
+            context: .foreground(windowState: windowState, loadPolicy: .deferred)
+        )
+
+        XCTAssertEqual(windowState.currentTabId, tab.id)
+        XCTAssertTrue(tab.loadingState.isLoading)
+    }
+
+    func testDeferredEmptyNewTabDoesNotStartLoadingPresentation() {
+        let (browserManager, windowState) = makeBrowserSelectionHarness()
+
+        let tab = browserManager.openNewTab(
+            context: .foreground(windowState: windowState, loadPolicy: .deferred)
+        )
+
+        XCTAssertEqual(windowState.currentTabId, tab.id)
+        XCTAssertFalse(tab.loadingState.isLoading)
+    }
+
+    private func makeBrowserSelectionHarness() -> (BrowserManager, BrowserWindowState) {
+        let browserManager = BrowserManager()
+        let windowRegistry = WindowRegistry()
+        let windowState = BrowserWindowState()
+        let space = Space(name: "Primary")
+
+        browserManager.windowRegistry = windowRegistry
+        browserManager.tabManager.spaces = [space]
+        browserManager.tabManager.currentSpace = space
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentSpaceId = space.id
+
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+
+        return (browserManager, windowState)
+    }
 }
