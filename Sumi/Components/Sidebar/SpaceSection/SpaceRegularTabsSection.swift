@@ -315,15 +315,12 @@ extension SpaceView {
         HStack(spacing: 8) {
             regularInsertedTabPreviewIcon(tab)
 
-            SumiTabTitleLabel(
+            RegularInsertedTabPreviewTitle(
                 title: tab.name,
-                font: .systemFont(ofSize: 13, weight: .medium),
-                textColor: tokens.primaryText,
+                color: tokens.primaryText,
                 trailingFadePadding: SidebarHoverChrome.trailingFadePadding(
                     showsTrailingAction: windowState.currentTabId == tab.id
-                ),
-                animated: false,
-                isLoading: false
+                )
             )
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             .textSelection(.disabled)
@@ -823,5 +820,64 @@ extension SpaceView {
             height: 1
         )
         picker.show(relativeTo: anchor, of: contentView, preferredEdge: .minY)
+    }
+}
+
+private struct RegularInsertedTabPreviewTitle: View {
+    let title: String
+    let color: Color
+    let trailingFadePadding: CGFloat
+
+    private let fadeWidth: CGFloat = 32
+
+    var body: some View {
+        GeometryReader { proxy in
+            Text(title)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .allowsTightening(false)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
+                .clipped()
+                .mask(
+                    RegularInsertedTabPreviewTitleFadeMask(
+                        fadeWidth: fadeWidth,
+                        trailingPadding: trailingFadePadding
+                    )
+                )
+        }
+        .frame(height: SidebarRowLayout.titleHeight, alignment: .center)
+        .accessibilityLabel(title)
+    }
+}
+
+private struct RegularInsertedTabPreviewTitleFadeMask: View {
+    let fadeWidth: CGFloat
+    let trailingPadding: CGFloat
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            let availableWidth = max(width - trailingPadding, 0)
+            let safeFadeWidth = min(fadeWidth, availableWidth)
+            let start = width > 0
+                ? (width - (trailingPadding + safeFadeWidth)) / width
+                : 1
+            let end = width > 0
+                ? (width - trailingPadding) / width
+                : 1
+
+            LinearGradient(
+                stops: [
+                    .init(color: .white, location: 0),
+                    .init(color: .white, location: max(0, min(start, 1))),
+                    .init(color: .clear, location: max(0, min(end, 1))),
+                    .init(color: .clear, location: 1)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        }
     }
 }

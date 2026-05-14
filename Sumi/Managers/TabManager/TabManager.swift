@@ -813,6 +813,14 @@ class TabManager: ObservableObject {
         folderService.updateFolderIcon(folderId, icon: icon)
     }
 
+    func setFolder(_ folderId: UUID, open isOpen: Bool) {
+        folderService.setFolder(folderId, open: isOpen)
+    }
+
+    func toggleFolderOpenState(_ folderId: UUID) {
+        folderService.toggleFolderOpenState(folderId)
+    }
+
     func deleteFolder(_ folderId: UUID) {
         folderService.deleteFolder(folderId)
     }
@@ -822,15 +830,7 @@ class TabManager: ObservableObject {
     }
 
     func openFolderIfNeeded(_ folderId: UUID) {
-        for (_, folders) in foldersBySpace {
-            if let folder = folders.first(where: { $0.id == folderId }) {
-                if !folder.isOpen {
-                    folder.isOpen = true
-                    markFoldersStructurallyDirty(for: folder.spaceId)
-                }
-                return
-            }
-        }
+        folderService.setFolder(folderId, open: true)
     }
 
     func setAllFolders(open isOpen: Bool, in spaceId: UUID) {

@@ -27,6 +27,7 @@ struct TabFolderView: View {
 
     @ObservedObject var folder: TabFolder
     let space: Space
+    let shortcutPins: [ShortcutPin]
     let renderMode: SpaceViewRenderMode
     let topLevelPinnedIndex: Int?
     let onDelete: () -> Void
@@ -55,12 +56,8 @@ struct TabFolderView: View {
         renderMode.isInteractive
     }
 
-    private var launcherProjection: TabManager.SpaceLauncherProjection {
-        browserManager.tabManager.launcherProjection(for: space.id, in: windowState.id)
-    }
-
     private var shortcutPinsInFolder: [ShortcutPin] {
-        launcherProjection.folderPins[folder.id] ?? []
+        shortcutPins
     }
 
     private var folderProjectionState: SidebarFolderProjectionState {
@@ -243,18 +240,12 @@ struct TabFolderView: View {
     }
 
     private var expandedFolderContentHeight: CGFloat {
-        if folderUsesProjectedDropLayout || dragState.isDropProjectionActive {
-            return expandedFolderContentFallbackHeight
-        }
-        guard measuredExpandedFolderContentItemCount == baseFolderItems.count else {
-            return expandedFolderContentFallbackHeight
-        }
-        return max(measuredExpandedFolderContentHeight, expandedFolderContentFallbackHeight)
+        expandedFolderContentFallbackHeight
     }
 
     private var collapsedFolderContentHeight: CGFloat {
         guard hasCollapsedProjectionForLayout else { return 0 }
-        return max(measuredCollapsedFolderContentHeight, collapsedFolderContentFallbackHeight)
+        return collapsedFolderContentFallbackHeight
     }
 
     private var folderBodyTargetHeight: CGFloat {
@@ -665,7 +656,6 @@ struct TabFolderView: View {
                                 generation: dragState.sidebarGeometryGeneration,
                                 isActive: isInteractive && reportsGeometry && reportsFolderChildGeometry
                             )
-                            .transition(folderContentRowTransition)
                     }
                 case .placeholder:
                     folderDropGap
@@ -744,7 +734,6 @@ struct TabFolderView: View {
                 ? 0.001
                 : 1
         )
-        .sidebarZenRowLifecycleTransition(isEnabled: isInteractive)
     }
 
     private func folderShortcutContextMenuEntries(
@@ -906,13 +895,9 @@ struct TabFolderView: View {
         }
     }
 
-    private var folderContentRowTransition: AnyTransition {
-        isInteractive && !dragState.isCompletingDrop ? .zenSidebarRowLifecycle : .identity
-    }
-
     private func toggleFolderOpenState() {
         withAnimation(Self.zenFolderContentAnimation) {
-            folder.isOpen.toggle()
+            browserManager.tabManager.toggleFolderOpenState(folder.id)
         }
     }
 

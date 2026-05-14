@@ -359,6 +359,7 @@ extension SpaceView {
         TabFolderView(
             folder: folder,
             space: space,
+            shortcutPins: launcherProjection?.folderPins[folder.id] ?? [],
             renderMode: renderMode,
             topLevelPinnedIndex: topLevelPinnedIndex,
             onDelete: { deleteFolder(folder) },
@@ -373,7 +374,7 @@ extension SpaceView {
             generation: dragState.sidebarGeometryGeneration,
             isActive: isInteractive
         )
-        .sidebarZenRowLifecycleTransition(isEnabled: isInteractive)
+        .sidebarZenCompositeLifecycleTransition(isEnabled: isInteractive)
     }
 
     private func pinnedShortcutView(_ pin: ShortcutPin, topLevelPinnedIndex: Int) -> some View {
