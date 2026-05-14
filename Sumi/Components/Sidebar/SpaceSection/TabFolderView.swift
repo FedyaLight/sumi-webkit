@@ -555,7 +555,7 @@ struct TabFolderView: View {
         .geometryGroup()
         .background(alignment: .center) {
             if isFolderDropHighlighted {
-                Rectangle()
+                RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(12), style: .continuous)
                     .fill(tokens.sidebarRowHover)
                     .padding(.horizontal, -folderDragHighlightHorizontalBleed)
             }
@@ -564,7 +564,8 @@ struct TabFolderView: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(displayIsHovering ? tokens.sidebarRowHover : Color.clear)
         )
-        .contentShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(12), style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(12), style: .continuous))
         .sidebarDDGHover($isFolderHeaderHovered, isEnabled: isInteractive)
     }
 
