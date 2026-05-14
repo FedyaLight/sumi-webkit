@@ -419,12 +419,12 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
             pasteboardWriter: configuration.item.pasteboardItem(scope: dragScope)
         )
         let frame = NSRect(
-            x: resolvedAnchorPoint.x - previewSession.primaryAsset.anchorOffset.x,
-            y: resolvedAnchorPoint.y - previewSession.primaryAsset.anchorOffset.y,
-            width: previewSession.primaryAsset.size.width,
-            height: previewSession.primaryAsset.size.height
+            x: resolvedAnchorPoint.x,
+            y: resolvedAnchorPoint.y,
+            width: 1,
+            height: 1
         )
-        dragItem.setDraggingFrame(frame, contents: previewSession.primaryAsset.image)
+        dragItem.setDraggingFrame(frame, contents: Self.transparentDragImage)
 
         let session = beginDraggingSession(with: [dragItem], event: sessionEvent, source: self)
         session.animatesToStartingPositionsOnCancelOrFail = true
@@ -534,6 +534,12 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         return "dragKey"
     }
 
+}
+
+private extension SidebarInteractiveItemView {
+    static let transparentDragImage: NSImage = {
+        NSImage(size: NSSize(width: 1, height: 1))
+    }()
 }
 
 private struct SidebarAppKitItemBridgeUpdateSignature: Equatable {

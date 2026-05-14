@@ -433,7 +433,6 @@ private struct ShortcutSidebarRowChrome: View {
             )
         )
         .opacity(showsActionButton ? 1 : 0)
-        .sidebarZenActionOpacity(showsActionButton)
         .allowsHitTesting(showsActionButton && !freezesHoverState)
         .accessibilityHidden(!showsActionButton)
         .sidebarDDGHover($isActionHovered, isEnabled: showsActionButton && dragIsEnabled)
@@ -481,10 +480,7 @@ private struct ShortcutSidebarRowChrome: View {
     }
 
     private var showsActionButton: Bool {
-        SidebarHoverChrome.showsTrailingAction(
-            isHovered: displayIsHovering,
-            isSelected: runtimeAffordance.isSelected
-        )
+        displayIsHovering
     }
 
     private var freezesHoverState: Bool {
