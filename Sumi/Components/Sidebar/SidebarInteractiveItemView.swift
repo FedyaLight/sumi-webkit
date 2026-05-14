@@ -408,6 +408,7 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
             previewModel: previewSession.previewModel,
             scope: dragScope
         )
+        itemConfiguration.interactionState?.syncSidebarItemDrag(true)
         SidebarDragState.shared.flushDeferredGeometryForDragStart()
         updateInternalDragState(
             at: dragLocation,

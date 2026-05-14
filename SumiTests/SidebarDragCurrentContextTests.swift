@@ -5,6 +5,87 @@ import XCTest
 
 @MainActor
 final class SidebarDragCurrentContextTests: XCTestCase {
+    func testEssentialsNativeDragPreviewUsesActualSourceTileSize() {
+        let sourceSize = CGSize(width: 132, height: 56)
+        let descriptor = SumiNativeDragPreviewDescriptor(
+            item: SumiDragItem(
+                tabId: UUID(),
+                title: "Essential",
+                urlString: "https://example.com"
+            ),
+            previewIcon: nil,
+            sourceZone: .essentials,
+            sourceSize: sourceSize,
+            sourceOffsetFromBottomLeading: CGPoint(x: 24, y: 20),
+            pinnedConfig: .large
+        )
+
+        XCTAssertEqual(
+            SumiNativeDragImageFactory.shared.size(for: .essentialsTile, descriptor: descriptor),
+            sourceSize
+        )
+    }
+
+    func testDragPreviewSessionRendersOnlyPrimaryNativeAsset() {
+        let session = SidebarDragPreviewSessionFactory.make(
+            configuration: SidebarDragSourceConfiguration(
+                item: SumiDragItem(
+                    tabId: UUID(),
+                    title: "Pinned",
+                    urlString: "https://example.com"
+                ),
+                sourceZone: .essentials,
+                previewKind: .essentialsTile
+            ),
+            sourceSize: CGSize(width: 132, height: 56),
+            sourceOffsetFromBottomLeading: CGPoint(x: 18, y: 18)
+        )
+
+        let renderedKinds = session.map { Set($0.previewAssets.keys) } ?? Set<SidebarDragPreviewKind>()
+        XCTAssertEqual(renderedKinds, [.essentialsTile])
+    }
+
+    func testRegularToLauncherDropCommitSuppressesStaleProjectionPlaceholder() throws {
+        let state = SidebarDragState()
+        let spaceId = UUID()
+        let profileId = UUID()
+        let draggedItemId = UUID()
+        state.isDragging = true
+        state.activeDragItemId = draggedItemId
+        state.activeDragScope = try makeScope(
+            spaceId: spaceId,
+            profileId: profileId,
+            sourceZone: .spaceRegular(spaceId),
+            item: SumiDragItem(
+                tabId: draggedItemId,
+                title: "Regular",
+                urlString: "https://example.com"
+            )
+        )
+        state.hoveredSlot = .spacePinned(spaceId: spaceId, slot: 0)
+
+        state.beginDropCommit()
+
+        XCTAssertTrue(
+            state.shouldHideCommittedCrossContainerPlaceholder(
+                into: .spacePinned(spaceId),
+                targetAlreadyContainsDraggedItem: false
+            )
+        )
+        XCTAssertTrue(
+            state.shouldHideCommittedCrossContainerPlaceholder(
+                into: .essentials,
+                targetAlreadyContainsDraggedItem: false
+            )
+        )
+        XCTAssertFalse(
+            state.shouldHideCommittedCrossContainerPlaceholder(
+                into: .spaceRegular(spaceId),
+                targetAlreadyContainsDraggedItem: false
+            )
+        )
+    }
+
     func testRegularTabReorderStaysInsideCurrentSpace() throws {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
@@ -251,6 +332,97 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertEqual(harness.windowState.currentTabId, tab.id)
         XCTAssertEqual(harness.windowState.currentShortcutPinId, pin.id)
         XCTAssertEqual(harness.windowState.currentShortcutPinRole, .essential)
+    }
+
+    func testSplitVisibleRegularTabDropIntoSpacePinnedPreservesLiveInstanceAndSplit() throws {
+        let harness = try makeLiveWindowHarness()
+        let tabManager = harness.tabManager
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let currentTab = tabManager.createNewTab(url: "https://example.com/current", in: space)
+        let draggedTab = tabManager.createNewTab(url: "https://example.com/split-pin", in: space, activate: false)
+        harness.windowState.currentSpaceId = space.id
+        harness.windowState.currentProfileId = profileId
+        harness.windowState.currentTabId = currentTab.id
+        var splitState = SplitViewManager.WindowSplitState()
+        splitState.isSplit = true
+        splitState.leftTabId = currentTab.id
+        splitState.rightTabId = draggedTab.id
+        harness.browserManager.splitManager.setSplitState(splitState, for: harness.windowState.id)
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileId,
+            sourceZone: .spaceRegular(space.id),
+            item: dragItem(draggedTab)
+        )
+
+        let didMove = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .tab(draggedTab),
+                scope: scope,
+                fromContainer: .spaceRegular(space.id),
+                toContainer: .spacePinned(space.id),
+                toIndex: 0
+            )
+        )
+
+        XCTAssertTrue(didMove)
+        XCTAssertEqual(tabManager.tabsBySpace[space.id]?.map(\.id), [currentTab.id])
+        let pin = try XCTUnwrap(tabManager.spacePinnedPins(for: space.id).first)
+        let liveTab = try XCTUnwrap(tabManager.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
+        XCTAssertTrue(liveTab === draggedTab)
+        XCTAssertTrue(liveTab.isShortcutLiveInstance)
+        XCTAssertEqual(liveTab.shortcutPinId, pin.id)
+        XCTAssertEqual(liveTab.shortcutPinRole, .spacePinned)
+        XCTAssertTrue(harness.browserManager.splitManager.isSplit(for: harness.windowState.id))
+        XCTAssertEqual(harness.browserManager.splitManager.leftTabId(for: harness.windowState.id), currentTab.id)
+        XCTAssertEqual(harness.browserManager.splitManager.rightTabId(for: harness.windowState.id), draggedTab.id)
+    }
+
+    func testSplitVisibleRegularTabDropIntoEssentialsPreservesLiveInstanceAndSplit() throws {
+        let harness = try makeLiveWindowHarness()
+        let tabManager = harness.tabManager
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let currentTab = tabManager.createNewTab(url: "https://example.com/current", in: space)
+        let draggedTab = tabManager.createNewTab(url: "https://example.com/split-essential", in: space, activate: false)
+        harness.windowState.currentSpaceId = space.id
+        harness.windowState.currentProfileId = profileId
+        harness.windowState.currentTabId = currentTab.id
+        var splitState = SplitViewManager.WindowSplitState()
+        splitState.isSplit = true
+        splitState.leftTabId = currentTab.id
+        splitState.rightTabId = draggedTab.id
+        harness.browserManager.splitManager.setSplitState(splitState, for: harness.windowState.id)
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileId,
+            sourceZone: .spaceRegular(space.id),
+            item: dragItem(draggedTab)
+        )
+
+        let didMove = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .tab(draggedTab),
+                scope: scope,
+                fromContainer: .spaceRegular(space.id),
+                toContainer: .essentials,
+                toIndex: 0
+            )
+        )
+
+        XCTAssertTrue(didMove)
+        XCTAssertEqual(tabManager.tabsBySpace[space.id]?.map(\.id), [currentTab.id])
+        let pin = try XCTUnwrap(tabManager.essentialPins(for: profileId).first)
+        let liveTab = try XCTUnwrap(tabManager.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
+        XCTAssertTrue(liveTab === draggedTab)
+        XCTAssertTrue(liveTab.isShortcutLiveInstance)
+        XCTAssertEqual(liveTab.shortcutPinId, pin.id)
+        XCTAssertEqual(liveTab.shortcutPinRole, .essential)
+        XCTAssertNil(liveTab.spaceId)
+        XCTAssertTrue(harness.browserManager.splitManager.isSplit(for: harness.windowState.id))
+        XCTAssertEqual(harness.browserManager.splitManager.leftTabId(for: harness.windowState.id), currentTab.id)
+        XCTAssertEqual(harness.browserManager.splitManager.rightTabId(for: harness.windowState.id), draggedTab.id)
     }
 
     func testNonDisplayedRegularTabDropIntoShortcutSectionsCreatesLauncherWithoutLiveTab() throws {

@@ -82,6 +82,11 @@ final class SumiNativeDragImageFactory {
     func size(for style: SumiNativeDragPreviewStyle, descriptor: SumiNativeDragPreviewDescriptor) -> CGSize {
         switch style {
         case .essentialsTile:
+            if descriptor.sourceZone == .essentials,
+               descriptor.sourceSize.width > 0,
+               descriptor.sourceSize.height > 0 {
+                return descriptor.sourceSize
+            }
             return CGSize(
                 width: descriptor.pinnedConfig.minWidth,
                 height: descriptor.pinnedConfig.height

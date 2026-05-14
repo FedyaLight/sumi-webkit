@@ -407,13 +407,27 @@ extension TabManager {
 
     func windowIdDisplaying(tabId: UUID) -> UUID? {
         guard let windows = browserManager?.windowRegistry?.windows else { return nil }
+        let splitManager = browserManager?.splitManager
+
+        func windowDisplaysTab(_ windowId: UUID, _ windowState: BrowserWindowState) -> Bool {
+            if windowState.currentTabId == tabId {
+                return true
+            }
+
+            guard let splitManager else { return false }
+            return splitManager.leftTabId(for: windowId) == tabId
+                || splitManager.rightTabId(for: windowId) == tabId
+        }
 
         if let activeWindowId = browserManager?.windowRegistry?.activeWindow?.id,
-           windows[activeWindowId]?.currentTabId == tabId {
+           let activeWindow = windows[activeWindowId],
+           windowDisplaysTab(activeWindowId, activeWindow) {
             return activeWindowId
         }
 
-        return windows.first(where: { $0.value.currentTabId == tabId })?.key
+        return windows.first(where: { windowId, windowState in
+            windowDisplaysTab(windowId, windowState)
+        })?.key
     }
 
     func removeFromCurrentContainer(_ tab: Tab) {

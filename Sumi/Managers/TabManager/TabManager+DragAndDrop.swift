@@ -541,6 +541,7 @@ extension TabManager {
     }
 
     private func dissolveActiveSplitIfNeeded(for tab: Tab) {
+        guard !tab.isShortcutLiveInstance else { return }
         guard let splitManager = browserManager?.splitManager,
               let browserManager,
               let windows = browserManager.windowRegistry?.windows else {

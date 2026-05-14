@@ -153,13 +153,6 @@ enum SidebarDragPreviewSessionFactory {
 
         insert(previewKind)
 
-        if descriptor.item.kind == .tab {
-            insert(.essentialsTile)
-            if previewKind != .row {
-                insert(.row)
-            }
-        }
-
         return assets
     }
 }
