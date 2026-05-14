@@ -33,9 +33,7 @@ struct GenericSuggestionItem: View {
         let chipForeground = isSelected ? (selectedChipForeground ?? tokens.primaryText) : tokens.tertiaryText
 
         HStack(alignment: .center, spacing: 12) {
-            FloatingBarFaviconContainer(
-                background: isSelected ? chipBackground.opacity(0.9) : .clear
-            ) {
+            FloatingBarFaviconContainer {
                 icon
                     .resizable()
                     .scaledToFit()

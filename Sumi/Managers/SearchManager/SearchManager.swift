@@ -33,6 +33,7 @@ struct DuckDuckGoSearchSuggestionDataProvider: SearchSuggestionDataProviding {
 @MainActor
 class SearchManager {
     var suggestions: [SearchSuggestion] = []
+    var isLoadingSuggestions = false
     
     private let suggestionDataProvider: SearchSuggestionDataProviding
     private var webSuggestionTask: Task<Void, Never>?
@@ -98,6 +99,7 @@ class SearchManager {
 
     func showTopLinkSuggestions(limit: Int = 5) {
         historySuggestionTask?.cancel()
+        isLoadingSuggestions = true
         historySuggestionTask = Task { @MainActor [weak self] in
             guard let self else { return }
             let topLinks = await self.topLinkSuggestions(limit: limit)
@@ -106,6 +108,7 @@ class SearchManager {
                 self.clearSuggestions()
             } else {
                 self.updateSuggestionsIfNeeded(topLinks)
+                self.isLoadingSuggestions = false
             }
         }
     }
@@ -122,6 +125,7 @@ class SearchManager {
         // Cancel previous request
         webSuggestionTask?.cancel()
         historySuggestionTask?.cancel()
+        isLoadingSuggestions = true
         webSuggestionRequestGeneration &+= 1
         activeWebSuggestionGeneration = webSuggestionRequestGeneration
         let generation = activeWebSuggestionGeneration
@@ -130,6 +134,7 @@ class SearchManager {
         
         // Clear suggestions if query is empty
         guard !normalizedQuery.isEmpty else {
+            isLoadingSuggestions = false
             if !suggestions.isEmpty {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     suggestions = []
@@ -175,6 +180,7 @@ class SearchManager {
                 )
                 let combinedSuggestions = self.makeSuggestions(from: combinedResult, query: normalizedQuery, historyEntries: historyEntries)
                 self.updateSuggestionsIfNeeded(combinedSuggestions)
+                self.isLoadingSuggestions = false
                 return
             }
 
@@ -286,6 +292,7 @@ class SearchManager {
                 let combinedSuggestions = self.makeSuggestions(from: result, query: query, historyEntries: historyEntries)
                 self.updateSuggestionsIfNeeded(combinedSuggestions)
             }
+            self.isLoadingSuggestions = false
         }
     }
 
@@ -556,6 +563,7 @@ class SearchManager {
     func clearSuggestions() {
         webSuggestionTask?.cancel()
         historySuggestionTask?.cancel()
+        isLoadingSuggestions = false
         webSuggestionRequestGeneration &+= 1
         activeWebSuggestionGeneration = webSuggestionRequestGeneration
         if !suggestions.isEmpty {
