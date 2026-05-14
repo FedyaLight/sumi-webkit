@@ -33,8 +33,8 @@ final class SidebarDragState: ObservableObject {
     @Published var previewModel: SidebarDragPreviewModel? = nil
     @Published var isInternalDragSession: Bool = false
     @Published var activeDragScope: SidebarDragScope? = nil
-    @Published private(set) var isInternalDragGeometryArmed: Bool = false
-    @Published private(set) var armedDragScope: SidebarDragScope? = nil
+    private(set) var isInternalDragGeometryArmed: Bool = false
+    private(set) var armedDragScope: SidebarDragScope? = nil
     
     // For Zen's auto workspace switch
     @Published var isHoveringNearEdge: Bool = false

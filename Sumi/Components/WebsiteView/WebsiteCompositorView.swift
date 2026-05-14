@@ -493,6 +493,49 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
     var contentViewportCutoutBackground: BrowserContentViewportCutoutBackground
     let windowState: BrowserWindowState
 
+    final class Coordinator {
+        var hoveredLink: Binding<String?>
+
+        private var pendingHoveredLink: String?
+        private var hasPendingHoveredLink = false
+        private var isHoveredLinkUpdateScheduled = false
+
+        init(hoveredLink: Binding<String?>) {
+            self.hoveredLink = hoveredLink
+        }
+
+        @MainActor
+        func setHoveredLink(_ link: String?) {
+            guard hoveredLink.wrappedValue != link || hasPendingHoveredLink else { return }
+
+            pendingHoveredLink = link
+            hasPendingHoveredLink = true
+
+            guard !isHoveredLinkUpdateScheduled else { return }
+            isHoveredLinkUpdateScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                self?.flushPendingHoveredLink()
+            }
+        }
+
+        @MainActor
+        private func flushPendingHoveredLink() {
+            isHoveredLinkUpdateScheduled = false
+            guard hasPendingHoveredLink else { return }
+
+            let link = pendingHoveredLink
+            pendingHoveredLink = nil
+            hasPendingHoveredLink = false
+
+            guard hoveredLink.wrappedValue != link else { return }
+            hoveredLink.wrappedValue = link
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(hoveredLink: $hoveredLink)
+    }
+
     func makeNSViewController(context: Context) -> WindowWebContentController {
         WindowWebContentController(
             browserManager: browserManager,
@@ -504,10 +547,10 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
     }
 
     func updateNSViewController(_ controller: WindowWebContentController, context: Context) {
-        let hoveredLinkBinding = $hoveredLink
+        context.coordinator.hoveredLink = $hoveredLink
         controller.update(
             displayState: makeDisplayState(),
-            hoveredLinkHandler: { hoveredLinkBinding.wrappedValue = $0 },
+            hoveredLinkHandler: { context.coordinator.setHoveredLink($0) },
             chromeGeometry: chromeGeometry,
             contentViewportCutoutBackground: contentViewportCutoutBackground
         )
