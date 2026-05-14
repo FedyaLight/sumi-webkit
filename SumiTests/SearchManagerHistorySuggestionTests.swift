@@ -206,6 +206,35 @@ final class SearchManagerHistorySuggestionTests: XCTestCase {
         harness.searchManager.clearSuggestions()
     }
 
+    func testHistorySuggestionsIncludeVisitedPagesMatchedByURL() async throws {
+        let harness = try makeHarness(
+            suggestionPayload: """
+            [{"phrase":"youtube music","is_nav":false},{"phrase":"youtube shorts","is_nav":false},{"phrase":"youtube studio","is_nav":false},{"phrase":"youtube tv","is_nav":false}]
+            """
+        )
+        let referenceDate = Date()
+        try await recordVisit(
+            url: URL(string: "https://www.youtube.com/")!,
+            title: "YouTube",
+            at: referenceDate,
+            harness: harness
+        )
+        try await recordVisit(
+            url: URL(string: "https://www.youtube.com/watch?v=abc123")!,
+            title: "A watched video with unrelated title",
+            at: referenceDate.addingTimeInterval(1),
+            harness: harness
+        )
+
+        harness.searchManager.searchSuggestions(for: "youtube")
+        let suggestions = await waitForSuggestions(in: harness.searchManager) {
+            $0.contains { $0.text == "A watched video with unrelated title" && $0.isHistorySuggestion }
+        }
+
+        XCTAssertTrue(suggestions.contains { $0.text == "A watched video with unrelated title" && $0.isHistorySuggestion })
+        harness.searchManager.clearSuggestions()
+    }
+
     func testTopLinkSuggestionsIncludeBookmarksWithoutQuery() async throws {
         let bookmarkManager = makeBookmarkManager()
         let bookmark = try bookmarkManager.createBookmark(
