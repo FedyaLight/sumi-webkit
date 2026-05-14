@@ -1401,7 +1401,6 @@ struct SpacesSideBarView: View {
     @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
-    @Environment(CommandPalette.self) var commandPalette
 
     @State private var isSidebarHovered: Bool = false
     @State private var transitionState = SpaceSidebarTransitionState()
@@ -2258,7 +2257,6 @@ struct SpacesSideBarView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .environmentObject(browserManager)
         .environment(windowState)
-        .environment(commandPalette)
         .environmentObject(browserManager.splitManager)
         .id(space.id)
     }

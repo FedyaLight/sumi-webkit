@@ -4,52 +4,52 @@ import XCTest
 
 @MainActor
 final class SidebarDDGHoverTests: XCTestCase {
-    func testCommandPaletteLayoutPolicyCapsWideWindowsAndShrinksNarrowWindows() {
+    func testFloatingBarLayoutPolicyCapsWideWindowsAndShrinksNarrowWindows() {
         XCTAssertEqual(
-            CommandPaletteLayoutPolicy.effectiveWidth(availableWindowWidth: 1_200),
+            FloatingBarLayoutPolicy.effectiveWidth(availableWindowWidth: 1_200),
             765
         )
         XCTAssertEqual(
-            CommandPaletteLayoutPolicy.effectiveWidth(availableWindowWidth: 785),
+            FloatingBarLayoutPolicy.effectiveWidth(availableWindowWidth: 785),
             765
         )
         XCTAssertEqual(
-            CommandPaletteLayoutPolicy.effectiveWidth(availableWindowWidth: 600),
+            FloatingBarLayoutPolicy.effectiveWidth(availableWindowWidth: 600),
             580
         )
         XCTAssertEqual(
-            CommandPaletteLayoutPolicy.effectiveWidth(availableWindowWidth: 120),
+            FloatingBarLayoutPolicy.effectiveWidth(availableWindowWidth: 120),
             200
         )
     }
 
-    func testCommandPaletteViewDoesNotReadGlobalKeyWindowForLayout() throws {
-        let source = try Self.source(named: "CommandPalette/CommandPaletteView.swift")
+    func testFloatingBarViewDoesNotReadGlobalKeyWindowForLayout() throws {
+        let source = try Self.source(named: "FloatingBar/FloatingBarView.swift")
 
-        XCTAssertTrue(source.contains("CommandPaletteLayoutPolicy"))
+        XCTAssertTrue(source.contains("FloatingBarLayoutPolicy"))
         XCTAssertTrue(source.contains("GeometryReader"))
         XCTAssertFalse(source.contains("keyWindow"))
-        XCTAssertFalse(source.contains("CommandPaletteChromeMetrics"))
+        XCTAssertFalse(source.contains("FloatingBarChromeMetrics"))
     }
 
-    func testCommandPaletteUsesWindowLevelHostForStableSidebarIndependentPosition() throws {
+    func testFloatingBarUsesWindowLevelHostForStableSidebarIndependentPosition() throws {
         let source = try Self.source(named: "App/Window/WindowView.swift")
         let webContentStart = try XCTUnwrap(source.range(of: "private func WebContent()"))
         let webContentBody = String(source[webContentStart.lowerBound...])
 
-        XCTAssertTrue(source.contains("WindowTransientChromeZIndex.commandPalette"))
-        XCTAssertTrue(source.contains("CommandPaletteChromeHost"))
-        XCTAssertFalse(webContentBody.contains("CommandPaletteChromeHost"))
+        XCTAssertTrue(source.contains("WindowTransientChromeZIndex.floatingBar"))
+        XCTAssertTrue(source.contains("FloatingBarChromeHost"))
+        XCTAssertFalse(webContentBody.contains("FloatingBarChromeHost"))
     }
 
-    func testCommandPaletteInputAffordancesMatchZenFloatingUrlbar() throws {
-        let source = try Self.source(named: "CommandPalette/CommandPaletteView.swift")
+    func testFloatingBarInputAffordancesMatchZenFloatingUrlbar() throws {
+        let source = try Self.source(named: "FloatingBar/FloatingBarView.swift")
 
         XCTAssertTrue(source.contains(".tint(tokens.primaryText)"))
         XCTAssertTrue(source.contains(".lineLimit(1)"))
         XCTAssertTrue(source.contains("focusSearchField(selectAll: false)"))
         XCTAssertTrue(source.contains("triggerSearchModeAnimation"))
-        XCTAssertTrue(source.contains("CommandPaletteSearchModeGlowView"))
+        XCTAssertTrue(source.contains("FloatingBarSearchModeGlowView"))
         XCTAssertTrue(source.contains("ScrollView(.vertical)"))
         XCTAssertTrue(source.contains(".scrollIndicators(shouldScroll ? .visible : .hidden)"))
         XCTAssertTrue(source.contains("suggestionsMaxHeight"))
@@ -68,41 +68,41 @@ final class SidebarDDGHoverTests: XCTestCase {
         XCTAssertTrue(searchUtilsSource.contains("import URLPredictor"))
         XCTAssertTrue(searchUtilsSource.contains("Classifier.classify"))
 
-        let historyRowSource = try Self.source(named: "CommandPalette/CommandPalette Accessories/HistorySuggestionItem.swift")
+        let historyRowSource = try Self.source(named: "FloatingBar/FloatingBar Accessories/HistorySuggestionItem.swift")
         XCTAssertTrue(historyRowSource.contains("isDeleteConfirming"))
         XCTAssertTrue(historyRowSource.contains("isDeleteHovered"))
-        XCTAssertTrue(historyRowSource.contains("Text(\"Delete\")"))
-        XCTAssertTrue(historyRowSource.contains("CommandPaletteFaviconContainer"))
+        XCTAssertTrue(historyRowSource.contains("Image(systemName: \"trash\")"))
+        XCTAssertTrue(historyRowSource.contains("FloatingBarFaviconContainer"))
     }
 
-    func testCommandPaletteSuggestionHeightAdaptsBeforeZenScrollLimit() {
-        XCTAssertEqual(CommandPaletteLayoutPolicy.suggestionsVisibleRowLimit, 5)
-        XCTAssertEqual(CommandPaletteLayoutPolicy.suggestionsHeight(for: 0), 0)
-        XCTAssertEqual(CommandPaletteLayoutPolicy.suggestionsHeight(for: 2), 104)
+    func testFloatingBarSuggestionHeightAdaptsBeforeZenScrollLimit() {
+        XCTAssertEqual(FloatingBarLayoutPolicy.suggestionsVisibleRowLimit, 5)
+        XCTAssertEqual(FloatingBarLayoutPolicy.suggestionsHeight(for: 0), 0)
+        XCTAssertEqual(FloatingBarLayoutPolicy.suggestionsHeight(for: 2), 104)
         XCTAssertEqual(
-            CommandPaletteLayoutPolicy.suggestionsHeight(for: 6),
-            CommandPaletteLayoutPolicy.suggestionsMaxHeight
+            FloatingBarLayoutPolicy.suggestionsHeight(for: 6),
+            FloatingBarLayoutPolicy.suggestionsMaxHeight
         )
     }
 
-    func testCommandPaletteOutsideClickMonitorUsesPassThroughRouting() throws {
-        let source = try Self.source(named: "CommandPalette/CommandPaletteView.swift")
+    func testFloatingBarOutsideClickMonitorUsesPassThroughRouting() throws {
+        let source = try Self.source(named: "FloatingBar/FloatingBarView.swift")
         let monitorStart = try XCTUnwrap(source.range(of: "private func installOutsideClickMonitorIfNeeded()"))
         let monitorEnd = try XCTUnwrap(source[monitorStart.lowerBound...].range(of: "private func removeOutsideClickMonitor()"))
         let monitorBody = String(source[monitorStart.lowerBound..<monitorEnd.lowerBound])
 
-        XCTAssertTrue(monitorBody.contains("CommandPaletteOutsideClickRouting.monitorResult"))
+        XCTAssertTrue(monitorBody.contains("FloatingBarOutsideClickRouting.monitorResult"))
         XCTAssertFalse(monitorBody.contains("return nil"))
         XCTAssertTrue(source.contains("cardView.window === eventWindow"))
     }
 
-    func testCommandPaletteOutsideClickRoutingKeepsInsideCardEvent() throws {
+    func testFloatingBarOutsideClickRoutingKeepsInsideCardEvent() throws {
         let event = try Self.mouseDownEvent()
         var closeCount = 0
 
-        let result = CommandPaletteOutsideClickRouting.monitorResult(
+        let result = FloatingBarOutsideClickRouting.monitorResult(
             for: event,
-            isPaletteVisible: true,
+            isFloatingBarVisible: true,
             isEventInsideCard: true
         ) {
             closeCount += 1
@@ -112,13 +112,13 @@ final class SidebarDDGHoverTests: XCTestCase {
         XCTAssertEqual(closeCount, 0)
     }
 
-    func testCommandPaletteOutsideClickRoutingClosesOutsideCardAndPreservesEvent() throws {
+    func testFloatingBarOutsideClickRoutingClosesOutsideCardAndPreservesEvent() throws {
         let event = try Self.mouseDownEvent()
         var closeCount = 0
 
-        let result = CommandPaletteOutsideClickRouting.monitorResult(
+        let result = FloatingBarOutsideClickRouting.monitorResult(
             for: event,
-            isPaletteVisible: true,
+            isFloatingBarVisible: true,
             isEventInsideCard: false
         ) {
             closeCount += 1
@@ -128,24 +128,24 @@ final class SidebarDDGHoverTests: XCTestCase {
         XCTAssertEqual(closeCount, 1)
     }
 
-    func testCommandPaletteCardHitDetectionSeparatesInsideAndOutsideGeometry() {
-        let cardView = Self.makePaletteCardView()
+    func testFloatingBarCardHitDetectionSeparatesInsideAndOutsideGeometry() {
+        let cardView = Self.makeFloatingBarCardView()
 
-        XCTAssertTrue(CommandPaletteOutsideClickRouting.isLocationInsideCard(
+        XCTAssertTrue(FloatingBarOutsideClickRouting.isLocationInsideCard(
             NSPoint(x: 32, y: 32),
             cardView: cardView
         ))
-        XCTAssertFalse(CommandPaletteOutsideClickRouting.isLocationInsideCard(
+        XCTAssertFalse(FloatingBarOutsideClickRouting.isLocationInsideCard(
             NSPoint(x: 180, y: 90),
             cardView: cardView
         ))
     }
 
     func testTransientChromeStaysInBrowserWindowResponderChain() throws {
-        let commandSource = try Self.source(named: "Sumi/Components/Window/CommandPaletteChromeHost.swift")
+        let commandSource = try Self.source(named: "Sumi/Components/Window/FloatingBarChromeHost.swift")
         let findSource = try Self.source(named: "Sumi/Components/FindInPage/FindInPageChromeHost.swift")
 
-        XCTAssertTrue(commandSource.contains("struct CommandPaletteChromeHost: View"))
+        XCTAssertTrue(commandSource.contains("struct FloatingBarChromeHost: View"))
         XCTAssertTrue(findSource.contains("struct FindInPageChromeHost: View"))
         XCTAssertFalse(commandSource.contains("NSPanel"))
         XCTAssertFalse(findSource.contains("NSPanel"))
@@ -368,7 +368,7 @@ final class SidebarDDGHoverTests: XCTestCase {
         return url
     }
 
-    private static func makePaletteCardView() -> NSView {
+    private static func makeFloatingBarCardView() -> NSView {
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 140))
         let view = NSView(frame: NSRect(x: 20, y: 20, width: 100, height: 60))
         container.addSubview(view)

@@ -20,19 +20,19 @@ struct TabSuggestionItem: View {
     var body: some View {
         let tokens = themeContext.tokens(settings: sumiSettings)
         let foreground = isSelected ? (selectedForeground ?? tokens.primaryText) : tokens.secondaryText
-        let chipBackground = isSelected ? (selectedChipBackground ?? tokens.commandPaletteChipBackground) : tokens.commandPaletteChipBackground
+        let chipBackground = isSelected ? (selectedChipBackground ?? tokens.floatingBarChipBackground) : tokens.floatingBarChipBackground
         let chipForeground = isSelected ? (selectedChipForeground ?? tokens.primaryText) : tokens.tertiaryText
         
         HStack(alignment: .center, spacing: 0) {
             HStack(spacing: 9) {
-                CommandPaletteFaviconContainer {
+                FloatingBarFaviconContainer {
                     tab.favicon
                         .resizable()
                         .scaledToFit()
                         .foregroundStyle(foreground)
                         .frame(
-                            width: CommandPaletteSuggestionMetrics.faviconImageSize,
-                            height: CommandPaletteSuggestionMetrics.faviconImageSize
+                            width: FloatingBarSuggestionMetrics.faviconImageSize,
+                            height: FloatingBarSuggestionMetrics.faviconImageSize
                         )
                 }
                 SumiTabTitleLabel(
@@ -57,7 +57,7 @@ struct TabSuggestionItem: View {
                 }
                 .frame(width: 24, height: 24)
                 .background(chipBackground)
-                .clipShape(CommandPaletteSuggestionMetrics.controlShape)
+                .clipShape(FloatingBarSuggestionMetrics.controlShape)
 
             }
         }

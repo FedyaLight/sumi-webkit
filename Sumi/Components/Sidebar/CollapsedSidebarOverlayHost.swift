@@ -91,7 +91,6 @@ struct CollapsedSidebarOverlayHost: View {
     @ObservedObject var browserManager: BrowserManager
     var windowState: BrowserWindowState
     var windowRegistry: WindowRegistry
-    var commandPalette: CommandPalette
     var sumiSettings: SumiSettingsService
     var resolvedThemeContext: ResolvedThemeContext
     var chromeBackgroundResolvedThemeContext: ResolvedThemeContext
@@ -115,7 +114,6 @@ struct CollapsedSidebarOverlayHost: View {
                     browserManager: browserManager,
                     windowState: windowState,
                     windowRegistry: windowRegistry,
-                    commandPalette: commandPalette,
                     sumiSettings: sumiSettings,
                     resolvedThemeContext: resolvedThemeContext,
                     chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext,

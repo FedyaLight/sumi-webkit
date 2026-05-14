@@ -5,8 +5,8 @@ import XCTest
 
 @MainActor
 final class ThemeChromeRecipeBuilderTests: XCTestCase {
-    func testCommandPaletteSolidBackgroundLightIsOpaqueWhite() {
-        let color = ThemeChromeRecipeBuilder.commandPaletteSolidBackground(scheme: .light)
+    func testFloatingBarSolidBackgroundLightIsOpaqueWhite() {
+        let color = ThemeChromeRecipeBuilder.floatingBarSolidBackground(scheme: .light)
         let c = color.sRGBComponents
         XCTAssertEqual(c.red, 1, accuracy: 0.02)
         XCTAssertEqual(c.green, 1, accuracy: 0.02)
@@ -14,8 +14,8 @@ final class ThemeChromeRecipeBuilderTests: XCTestCase {
         XCTAssertEqual(c.alpha, 1, accuracy: 0.02)
     }
 
-    func testCommandPaletteSolidBackgroundDarkMatchesCanonicalHex() {
-        let color = ThemeChromeRecipeBuilder.commandPaletteSolidBackground(scheme: .dark)
+    func testFloatingBarSolidBackgroundDarkMatchesCanonicalHex() {
+        let color = ThemeChromeRecipeBuilder.floatingBarSolidBackground(scheme: .dark)
         let expected = Color(hex: "1C1C1E")
         let a = color.sRGBComponents
         let b = expected.sRGBComponents
@@ -57,7 +57,7 @@ final class ThemeChromeRecipeBuilderTests: XCTestCase {
         )
     }
 
-    func testCommandPaletteTokenUsesSolidBackgroundInDarkRecipe() {
+    func testFloatingBarTokenUsesSolidBackgroundInDarkRecipe() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
 
@@ -70,8 +70,8 @@ final class ThemeChromeRecipeBuilderTests: XCTestCase {
         context.transitionProgress = 1.0
 
         let tokens = context.tokens(settings: settings)
-        let token = tokens.commandPaletteBackground.sRGBComponents
-        let expected = ThemeChromeRecipeBuilder.commandPaletteSolidBackground(scheme: .dark).sRGBComponents
+        let token = tokens.floatingBarBackground.sRGBComponents
+        let expected = ThemeChromeRecipeBuilder.floatingBarSolidBackground(scheme: .dark).sRGBComponents
         XCTAssertEqual(token.red, expected.red, accuracy: 0.02)
         XCTAssertEqual(token.green, expected.green, accuracy: 0.02)
         XCTAssertEqual(token.blue, expected.blue, accuracy: 0.02)

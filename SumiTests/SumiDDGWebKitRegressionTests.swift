@@ -211,13 +211,13 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(viewControllerSource.contains("refreshIBeamCursorIfMouseInside()"))
     }
 
-    func testCommandPaletteHoverShieldDoesNotOwnCursor() throws {
+    func testFloatingBarHoverShieldDoesNotOwnCursor() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let commandPaletteSource = try String(
+        let floatingBarSource = try String(
             contentsOf: repositoryRoot.appendingPathComponent(
-                "CommandPalette/CommandPaletteView.swift"
+                "FloatingBar/FloatingBarView.swift"
             ),
             encoding: .utf8
         )
@@ -228,7 +228,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             encoding: .utf8
         )
 
-        XCTAssertTrue(commandPaletteSource.contains("cursorPolicy: .none"))
+        XCTAssertTrue(floatingBarSource.contains("cursorPolicy: .none"))
         XCTAssertTrue(mouseShieldSource.contains("enum MouseEventShieldCursorPolicy"))
         XCTAssertTrue(mouseShieldSource.contains("guard isInteractive, cursorPolicy == .arrow else { return }"))
         XCTAssertTrue(mouseShieldSource.contains("private func setCursorIfNeeded()"))

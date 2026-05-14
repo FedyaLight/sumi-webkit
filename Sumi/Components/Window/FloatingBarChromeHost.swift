@@ -1,9 +1,8 @@
 import SwiftUI
 
-struct CommandPaletteChromeHost: View {
+struct FloatingBarChromeHost: View {
     @ObservedObject var browserManager: BrowserManager
     var windowState: BrowserWindowState
-    var commandPalette: CommandPalette
     var sumiSettings: SumiSettingsService
     var resolvedThemeContext: ResolvedThemeContext
     var colorScheme: ColorScheme
@@ -12,10 +11,9 @@ struct CommandPaletteChromeHost: View {
     var body: some View {
         Group {
             if isPresented {
-                CommandPaletteView()
+                FloatingBarView()
                     .environmentObject(browserManager)
                     .environment(windowState)
-                    .environment(commandPalette)
                     .environment(\.sumiSettings, sumiSettings)
                     .environment(\.resolvedThemeContext, resolvedThemeContext)
                     .environment(\.colorScheme, colorScheme)

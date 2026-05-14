@@ -256,7 +256,7 @@ class KeyboardShortcutManager {
 
     private func shouldBypassShortcutRouting(keyWindow: NSWindow) -> Bool {
         if let state = browserWindowState(containing: keyWindow),
-           state.isCommandPaletteVisible {
+           state.isFloatingBarVisible {
             return true
         }
         if browserManager?.dialogManager.isVisible == true {

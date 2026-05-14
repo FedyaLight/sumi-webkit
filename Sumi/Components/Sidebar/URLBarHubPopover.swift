@@ -370,7 +370,7 @@ struct URLBarHubPopover: View {
                 .transition(modeTransition)
         }
         .frame(width: containerWidth)
-        .background(tokens.commandPaletteBackground)
+        .background(tokens.floatingBarBackground)
         .clipped()
         .animation(Self.modeAnimation, value: containerWidth)
         .onAppear {
@@ -1127,7 +1127,7 @@ private struct URLBarSiteDataDeleteConfirmationView: View {
             }
             .padding(18)
             .frame(maxWidth: 330)
-            .background(tokens.commandPaletteBackground)
+            .background(tokens.floatingBarBackground)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)

@@ -45,14 +45,13 @@
 			);
 			target = 7F8340FB2E37F39400674A5D /* Sumi */;
 		};
-		2D0834BF2EC8CE1300C302AC /* Exceptions for "CommandPalette" folder in "Sumi" target */ = {
+		2D0834BF2EC8CE1300C302AC /* Exceptions for "FloatingBar" folder in "Sumi" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				"CommandPalette Accessories/GenericSuggestionItem.swift",
-				"CommandPalette Accessories/HistorySuggestionItem.swift",
-				"CommandPalette Accessories/TabSuggestionItem.swift",
-				CommandPalette.swift,
-				CommandPaletteView.swift,
+				"FloatingBar Accessories/GenericSuggestionItem.swift",
+				"FloatingBar Accessories/HistorySuggestionItem.swift",
+				"FloatingBar Accessories/TabSuggestionItem.swift",
+				FloatingBarView.swift,
 			);
 			target = 7F8340FB2E37F39400674A5D /* Sumi */;
 		};
@@ -98,12 +97,12 @@
 			path = App;
 			sourceTree = "<group>";
 		};
-		2D0834BE2EC8CE0C00C302AC /* CommandPalette */ = {
+		2D0834BE2EC8CE0C00C302AC /* FloatingBar */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				2D0834BF2EC8CE1300C302AC /* Exceptions for "CommandPalette" folder in "Sumi" target */,
+				2D0834BF2EC8CE1300C302AC /* Exceptions for "FloatingBar" folder in "Sumi" target */,
 			);
-			path = CommandPalette;
+			path = FloatingBar;
 			sourceTree = "<group>";
 		};
 		2D0834C72EC8D90400C302AC /* Settings */ = {
@@ -163,7 +162,7 @@
 				2C8925332E88DFF9002236DC /* SumiUITests */,
 				2D0834C72EC8D90400C302AC /* Settings */,
 				2D0834CF2EC8E0AD00C302AC /* Navigation */,
-				2D0834BE2EC8CE0C00C302AC /* CommandPalette */,
+				2D0834BE2EC8CE0C00C302AC /* FloatingBar */,
 				7F8340FD2E37F39400674A5D /* Products */,
 				564997D02E9B125200D89F78 /* UI */,
 				2CAC4D282E82457B00870189 /* Sumi */,

@@ -7,7 +7,7 @@
 
 import SwiftUI
 
-enum CommandPaletteSuggestionMetrics {
+enum FloatingBarSuggestionMetrics {
     static let iconContainerSize: CGFloat = 24
     static let symbolIconSize: CGFloat = 14
     static let faviconImageSize: CGFloat = 18
@@ -29,24 +29,24 @@ struct GenericSuggestionItem: View {
     var body: some View {
         let tokens = themeContext.tokens(settings: sumiSettings)
         let foreground = isSelected ? (selectedForeground ?? tokens.primaryText) : tokens.secondaryText
-        let chipBackground = isSelected ? (selectedChipBackground ?? tokens.commandPaletteChipBackground) : tokens.commandPaletteChipBackground
+        let chipBackground = isSelected ? (selectedChipBackground ?? tokens.floatingBarChipBackground) : tokens.floatingBarChipBackground
         let chipForeground = isSelected ? (selectedChipForeground ?? tokens.primaryText) : tokens.tertiaryText
 
         HStack(alignment: .center, spacing: 12) {
-            CommandPaletteFaviconContainer(
+            FloatingBarFaviconContainer(
                 background: isSelected ? chipBackground.opacity(0.9) : .clear
             ) {
                 icon
                     .resizable()
                     .scaledToFit()
                     .frame(
-                        width: CommandPaletteSuggestionMetrics.symbolIconSize,
-                        height: CommandPaletteSuggestionMetrics.symbolIconSize
+                        width: FloatingBarSuggestionMetrics.symbolIconSize,
+                        height: FloatingBarSuggestionMetrics.symbolIconSize
                     )
                     .foregroundStyle(foreground)
             }
 
-            CommandPaletteFadingText(
+            FloatingBarFadingText(
                 text: text,
                 foreground: foreground
             )
@@ -60,14 +60,14 @@ struct GenericSuggestionItem: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
                     .background(chipBackground)
-                    .clipShape(CommandPaletteSuggestionMetrics.controlShape)
+                    .clipShape(FloatingBarSuggestionMetrics.controlShape)
             }
         }
         .frame(maxWidth: .infinity)
     }
 }
 
-struct CommandPaletteFaviconContainer<Content: View>: View {
+struct FloatingBarFaviconContainer<Content: View>: View {
     var background: Color = .clear
     @ViewBuilder var content: Content
 
@@ -77,25 +77,25 @@ struct CommandPaletteFaviconContainer<Content: View>: View {
                 .clipShape(iconShape)
         }
         .frame(
-            width: CommandPaletteSuggestionMetrics.iconContainerSize,
-            height: CommandPaletteSuggestionMetrics.iconContainerSize
+            width: FloatingBarSuggestionMetrics.iconContainerSize,
+            height: FloatingBarSuggestionMetrics.iconContainerSize
         )
         .background(background)
         .clipShape(iconShape)
     }
 
     private var iconShape: RoundedRectangle {
-        CommandPaletteSuggestionMetrics.controlShape
+        FloatingBarSuggestionMetrics.controlShape
     }
 }
 
-extension CommandPaletteSuggestionMetrics {
+extension FloatingBarSuggestionMetrics {
     static var controlShape: RoundedRectangle {
         RoundedRectangle(cornerRadius: iconCornerRadius, style: .continuous)
     }
 }
 
-struct CommandPaletteFadingText: View {
+struct FloatingBarFadingText: View {
     let text: String
     var foreground: Color
     var font: Font = .system(size: 13, weight: .semibold)
@@ -110,13 +110,13 @@ struct CommandPaletteFadingText: View {
             .fixedSize(horizontal: true, vertical: false)
             .frame(maxWidth: .infinity, alignment: .leading)
             .clipped()
-            .mask(CommandPaletteTrailingFadeMask(fadeWidth: fadeWidth))
+            .mask(FloatingBarTrailingFadeMask(fadeWidth: fadeWidth))
             .frame(height: height)
             .accessibilityLabel(text)
     }
 }
 
-struct CommandPaletteTrailingFadeMask: View {
+struct FloatingBarTrailingFadeMask: View {
     let fadeWidth: CGFloat
 
     var body: some View {

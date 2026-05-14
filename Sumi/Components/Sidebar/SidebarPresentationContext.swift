@@ -5,7 +5,6 @@ struct SidebarHostEnvironmentContext {
     let browserManager: BrowserManager
     let windowState: BrowserWindowState
     let windowRegistry: WindowRegistry
-    let commandPalette: CommandPalette
     let sumiSettings: SumiSettingsService
     let resolvedThemeContext: ResolvedThemeContext
     let chromeBackgroundResolvedThemeContext: ResolvedThemeContext
@@ -118,7 +117,6 @@ extension View {
             .environmentObject(context.browserManager.extensionSurfaceStore)
             .environment(context.windowState)
             .environment(context.windowRegistry)
-            .environment(context.commandPalette)
             .environment(\.sumiSettings, context.sumiSettings)
             .environment(\.resolvedThemeContext, context.resolvedThemeContext)
     }

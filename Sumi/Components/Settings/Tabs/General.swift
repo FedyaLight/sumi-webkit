@@ -86,11 +86,11 @@ struct SettingsGeneralTab: View {
                 SettingsDivider()
 
                 SettingsRow(
-                    title: "Command palette empty state",
+                    title: "Floating bar empty state",
                     subtitle: "Choose what appears before you start typing."
                 ) {
-                    Picker("", selection: $settings.commandPaletteEmptyStateMode) {
-                        ForEach(CommandPaletteEmptyStateMode.allCases) { mode in
+                    Picker("", selection: $settings.floatingBarEmptyStateMode) {
+                        ForEach(FloatingBarEmptyStateMode.allCases) { mode in
                             Text(mode.title).tag(mode)
                         }
                     }
@@ -101,7 +101,7 @@ struct SettingsGeneralTab: View {
 
             SettingsSection(
                 title: "Site Search",
-                subtitle: "Type a site prefix in the command palette, then press Tab to search that site."
+                subtitle: "Type a site prefix in the floating bar, then press Tab to search that site."
             ) {
                 if sumiSettings.siteSearchEntries.isEmpty {
                     SettingsEmptyState(

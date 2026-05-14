@@ -49,7 +49,7 @@ final class LastSessionWindowsStoreTests: XCTestCase {
                 activeShortcutPinId: nil,
                 activeShortcutPinRole: nil,
                 isShowingEmptyState: false,
-                commandPaletteReason: nil,
+                floatingBarReason: nil,
                 activeTabsBySpace: [],
                 activeShortcutsBySpace: [],
                 sidebarWidth: Double(BrowserWindowState.sidebarDefaultWidth),
@@ -58,7 +58,7 @@ final class LastSessionWindowsStoreTests: XCTestCase {
                     for: BrowserWindowState.sidebarDefaultWidth
                 )),
                 isSidebarVisible: true,
-                urlBarDraft: URLBarDraftState(text: "", navigateCurrentTab: false),
+                floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false),
                 splitSession: nil
             )
         )

@@ -92,7 +92,7 @@ protocol WindowSessionServiceDelegate: AnyObject {
         persistSelection: Bool
     )
     func showEmptyState(in windowState: BrowserWindowState)
-    func sanitizeCommandPaletteState(in windowState: BrowserWindowState)
+    func sanitizeFloatingBarState(in windowState: BrowserWindowState)
     func syncShortcutSelectionState(for windowState: BrowserWindowState)
     func commitWorkspaceTheme(_ theme: WorkspaceTheme, for windowState: BrowserWindowState)
     func space(for spaceId: UUID?) -> Space?
@@ -282,7 +282,7 @@ final class WindowSessionService {
             windowState.isShowingEmptyState = true
         }
 
-        delegate.sanitizeCommandPaletteState(in: windowState)
+        delegate.sanitizeFloatingBarState(in: windowState)
         delegate.syncShortcutSelectionState(for: windowState)
 
         syncWorkspaceThemeAfterSessionRestore(
@@ -453,9 +453,9 @@ final class WindowSessionService {
         windowState.currentShortcutPinId = snapshot.activeShortcutPinId
         windowState.currentShortcutPinRole = snapshot.activeShortcutPinRole
         windowState.isShowingEmptyState = snapshot.isShowingEmptyState
-        windowState.commandPalettePresentationReason =
+        windowState.floatingBarPresentationReason =
             snapshot.isShowingEmptyState
-            ? (snapshot.commandPaletteReason ?? .emptySpace)
+            ? (snapshot.floatingBarReason ?? .emptySpace)
             : .none
         windowState.activeTabForSpace = Dictionary(
             uniqueKeysWithValues: snapshot.activeTabsBySpace.map { ($0.spaceId, $0.tabId) }
@@ -470,10 +470,10 @@ final class WindowSessionService {
         windowState.sidebarContentWidth = BrowserWindowState.sidebarContentWidth(for: restoredSidebarWidth)
         windowState.isSidebarVisible = snapshot.isSidebarVisible
         windowState.isDownloadsPopoverPresented = false
-        windowState.commandPaletteDraftText = snapshot.urlBarDraft.text
-        windowState.commandPaletteDraftNavigatesCurrentTab = snapshot.urlBarDraft.navigateCurrentTab
+        windowState.floatingBarDraftText = snapshot.floatingBarDraft.text
+        windowState.floatingBarDraftNavigatesCurrentTab = snapshot.floatingBarDraft.navigateCurrentTab
         delegate.splitManager.restoreSession(snapshot.splitSession, for: windowState.id)
-        delegate.sanitizeCommandPaletteState(in: windowState)
+        delegate.sanitizeFloatingBarState(in: windowState)
     }
 
     func makeWindowSessionSnapshot(
@@ -487,7 +487,7 @@ final class WindowSessionService {
             activeShortcutPinId: windowState.currentShortcutPinId,
             activeShortcutPinRole: windowState.currentShortcutPinRole,
             isShowingEmptyState: windowState.isShowingEmptyState,
-            commandPaletteReason: windowState.commandPalettePresentationReason,
+            floatingBarReason: windowState.floatingBarPresentationReason,
             activeTabsBySpace: windowState.activeTabForSpace.map {
                 SpaceTabSelectionSnapshot(spaceId: $0.key, tabId: $0.value)
             },
@@ -498,9 +498,9 @@ final class WindowSessionService {
             savedSidebarWidth: Double(windowState.savedSidebarWidth),
             sidebarContentWidth: Double(windowState.sidebarContentWidth),
             isSidebarVisible: windowState.isSidebarVisible,
-            urlBarDraft: URLBarDraftState(
-                text: windowState.commandPaletteDraftText,
-                navigateCurrentTab: windowState.commandPaletteDraftNavigatesCurrentTab
+            floatingBarDraft: FloatingBarDraftState(
+                text: windowState.floatingBarDraftText,
+                navigateCurrentTab: windowState.floatingBarDraftNavigatesCurrentTab
             ),
             splitSession: delegate.splitManager.snapshot(for: windowState.id)
         )

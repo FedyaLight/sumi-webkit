@@ -76,7 +76,6 @@ struct SidebarHoverOverlayView: View {
     @ObservedObject private var dragState = SidebarDragState.shared
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
-    @Environment(CommandPalette.self) private var commandPalette
     @Environment(\.sumiSettings) private var sumiSettings
 
     /// Keep the hover sidebar on-screen while any sidebar transient UI is alive in compact mode.
@@ -195,7 +194,6 @@ struct SidebarHoverOverlayView: View {
             browserManager: browserManager,
             windowState: windowState,
             windowRegistry: windowRegistry,
-            commandPalette: commandPalette,
             sumiSettings: sumiSettings,
             resolvedThemeContext: resolvedThemeContext,
             chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext,

@@ -4,7 +4,7 @@ import WebKit
 
 @MainActor
 protocol BrowserCommandRouting: AnyObject {
-    func focusFloatingURLBar(
+    func focusFloatingBar(
         in windowState: BrowserWindowState,
         prefill: String,
         navigateCurrentTab: Bool

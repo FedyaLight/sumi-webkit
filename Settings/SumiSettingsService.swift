@@ -29,7 +29,7 @@ class SumiSettingsService {
     private let tabListNewTabButtonPositionKey = "settings.tabListNewTabButtonPosition"
     private let showLinkStatusBarKey = "settings.showLinkStatusBar"
     private let siteSearchEntriesKey = "settings.siteSearchEntries"
-    private let commandPaletteEmptyStateModeKey = "settings.commandPalette.emptyStateMode"
+    private let floatingBarEmptyStateModeKey = "settings.floatingBar.emptyStateMode"
     private let didFinishOnboardingKey = "settings.didFinishOnboarding"
     private let customSearchEnginesKey = "settings.customSearchEngines"
     private let memoryModeKey = "settings.memoryMode"
@@ -162,9 +162,9 @@ class SumiSettingsService {
         }
     }
 
-    var commandPaletteEmptyStateMode: CommandPaletteEmptyStateMode {
+    var floatingBarEmptyStateMode: FloatingBarEmptyStateMode {
         didSet {
-            userDefaults.set(commandPaletteEmptyStateMode.rawValue, forKey: commandPaletteEmptyStateModeKey)
+            userDefaults.set(floatingBarEmptyStateMode.rawValue, forKey: floatingBarEmptyStateModeKey)
         }
     }
     
@@ -231,7 +231,7 @@ class SumiSettingsService {
             showNewTabButtonInTabListKey: true,
             tabListNewTabButtonPositionKey: TabListNewTabButtonPosition.bottom.rawValue,
             showLinkStatusBarKey: true,
-            commandPaletteEmptyStateModeKey: CommandPaletteEmptyStateMode.compact.rawValue,
+            floatingBarEmptyStateModeKey: FloatingBarEmptyStateMode.compact.rawValue,
             didFinishOnboardingKey: true,
             memoryModeKey: SumiMemoryMode.balanced.rawValue,
             memorySaverCustomDeactivationDelayKey: SumiMemorySaverCustomDelay.defaultDelay,
@@ -318,8 +318,8 @@ class SumiSettingsService {
         } else {
             self.siteSearchEntries = SiteSearchEntry.defaultSites
         }
-        self.commandPaletteEmptyStateMode = CommandPaletteEmptyStateMode(
-            rawValue: userDefaults.string(forKey: commandPaletteEmptyStateModeKey) ?? CommandPaletteEmptyStateMode.compact.rawValue
+        self.floatingBarEmptyStateMode = FloatingBarEmptyStateMode(
+            rawValue: userDefaults.string(forKey: floatingBarEmptyStateModeKey) ?? FloatingBarEmptyStateMode.compact.rawValue
         ) ?? .compact
 
         enforceSumiChromeDefaults()
@@ -410,7 +410,7 @@ class SumiSettingsService {
     }
 }
 
-enum CommandPaletteEmptyStateMode: String, CaseIterable, Identifiable, Codable, Sendable {
+enum FloatingBarEmptyStateMode: String, CaseIterable, Identifiable, Codable, Sendable {
     case compact
     case topLinks
 

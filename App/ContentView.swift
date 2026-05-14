@@ -12,7 +12,6 @@ struct ContentView: View {
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(WindowRegistry.self) private var windowRegistry
     @State private var defaultWindowState: BrowserWindowState
-    @State private var commandPalette = CommandPalette()
     
     private let providedWindowState: BrowserWindowState?
     
@@ -36,7 +35,6 @@ struct ContentView: View {
     var body: some View {
         WindowView()
             .environment(windowState)
-            .environment(commandPalette)
             .background(BrowserWindowBridge(windowState: windowState, windowRegistry: windowRegistry))
             .frame(
                 minWidth: SumiBrowserWindowShellConfiguration.minimumContentSize.width,

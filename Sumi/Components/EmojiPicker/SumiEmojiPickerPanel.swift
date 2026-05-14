@@ -139,7 +139,7 @@ private struct SumiEmojiSearchField: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 34)
-        .background(tokens.commandPaletteChipBackground)
+        .background(tokens.floatingBarChipBackground)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)

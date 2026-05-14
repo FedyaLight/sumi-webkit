@@ -576,7 +576,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
                 collapsedSidebar: false,
                 dismissTransient: Self.dismissShortcutLinkEditor
             )
-            assertNewTabButtonOpensCommandPalette(
+            assertNewTabButtonOpensFloatingBar(
                 fixture: fixture,
                 app: app,
                 window: window,
@@ -593,7 +593,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
                 collapsedSidebar: false,
                 dismissTransient: Self.dismissFolderIconPicker
             )
-            assertNewTabButtonOpensCommandPalette(
+            assertNewTabButtonOpensFloatingBar(
                 fixture: fixture,
                 app: app,
                 window: window,
@@ -669,7 +669,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
                 collapsedSidebar: true,
                 dismissTransient: Self.dismissShortcutLinkEditor
             )
-            assertNewTabButtonOpensCommandPalette(
+            assertNewTabButtonOpensFloatingBar(
                 fixture: fixture,
                 app: app,
                 window: window,
@@ -686,7 +686,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
                 collapsedSidebar: true,
                 dismissTransient: Self.dismissFolderIconPicker
             )
-            assertNewTabButtonOpensCommandPalette(
+            assertNewTabButtonOpensFloatingBar(
                 fixture: fixture,
                 app: app,
                 window: window,
@@ -1362,7 +1362,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
             file: file,
             line: line
         )
-        assertNewTabButtonOpensCommandPalette(
+        assertNewTabButtonOpensFloatingBar(
             fixture: fixture,
             app: app,
             window: window,
@@ -1373,7 +1373,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
     }
 
     @MainActor
-    private func assertNewTabButtonOpensCommandPalette(
+    private func assertNewTabButtonOpensFloatingBar(
         fixture: PersonalSidebarFixture,
         app: XCUIApplication,
         window: XCUIElement,
@@ -1392,13 +1392,13 @@ final class SumiLaunchSmokeUITests: XCTestCase {
 
         newTabButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
         XCTAssertTrue(
-            waitForCommandPalette(in: app, timeout: 2),
-            "New Tab button did not open the floating URL bar",
+            waitForFloatingBar(in: app, timeout: 2),
+            "New Tab button did not open the floating bar",
             file: file,
             line: line
         )
         app.typeKey(.escape, modifierFlags: [])
-        _ = waitForNonExistence(element(withIdentifier: "floating-urlbar", in: app), timeout: 2)
+        _ = waitForNonExistence(element(withIdentifier: "floating-bar", in: app), timeout: 2)
     }
 
     @MainActor
@@ -1566,22 +1566,22 @@ final class SumiLaunchSmokeUITests: XCTestCase {
     }
 
     @MainActor
-    private func waitForCommandPalette(
+    private func waitForFloatingBar(
         in app: XCUIApplication,
         timeout: TimeInterval
     ) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if element(withIdentifier: "floating-urlbar", in: app).exists
-                || element(withIdentifier: "floating-urlbar-input", in: app).exists
+            if element(withIdentifier: "floating-bar", in: app).exists
+                || element(withIdentifier: "floating-bar-input", in: app).exists
             {
                 return true
             }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
 
-        return element(withIdentifier: "floating-urlbar", in: app).exists
-            || element(withIdentifier: "floating-urlbar-input", in: app).exists
+        return element(withIdentifier: "floating-bar", in: app).exists
+            || element(withIdentifier: "floating-bar-input", in: app).exists
     }
 
     @MainActor
@@ -3555,7 +3555,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
             "savedSidebarWidth": 250.0,
             "sidebarContentWidth": 234.0,
             "isSidebarVisible": true,
-            "urlBarDraft": [
+            "floatingBarDraft": [
                 "text": "",
                 "navigateCurrentTab": false
             ]
@@ -3574,7 +3574,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
         let preferencesURL = preferencesDirectory
             .appendingPathComponent("com.sumi.browser.plist", isDirectory: false)
         let plist: [String: Any] = [
-            "sumi.windowSession.last.v2": windowSessionSnapshotData
+            "sumi.windowSession.last.v3": windowSessionSnapshotData
         ]
         let plistData = try PropertyListSerialization.data(
             fromPropertyList: plist,

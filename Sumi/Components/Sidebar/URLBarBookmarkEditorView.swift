@@ -56,7 +56,7 @@ struct URLBarBookmarkEditorView: View {
         .padding(.horizontal, 22)
         .padding(.top, 22)
         .padding(.bottom, 18)
-        .background(tokens.commandPaletteBackground)
+        .background(tokens.floatingBarBackground)
     }
 
     private var header: some View {
@@ -85,7 +85,7 @@ struct URLBarBookmarkEditorView: View {
     private var faviconBadge: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(tokens.commandPaletteChipBackground)
+                .fill(tokens.floatingBarChipBackground)
                 .overlay {
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
                         .stroke(tokens.separator.opacity(0.5), lineWidth: 1)

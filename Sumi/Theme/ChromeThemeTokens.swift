@@ -27,12 +27,12 @@ struct ChromeThemeTokens {
     let buttonPrimaryText: Color
     let buttonSecondaryBackground: Color
     let windowBackground: Color
-    /// Opaque floating surface (command palette, URL hub/identity popovers, theme picker, modal glance cards). Flat white / near-black.
-    let commandPaletteBackground: Color
+    /// Opaque floating surface (floating bar, URL hub/identity popovers, theme picker, modal glance cards). Flat white / near-black.
+    let floatingBarBackground: Color
     /// Secondary fills inside the palette (e.g. “Tab” chip, favicon wells).
-    let commandPaletteChipBackground: Color
-    let commandPaletteRowSelected: Color
-    let commandPaletteRowHover: Color
+    let floatingBarChipBackground: Color
+    let floatingBarRowSelected: Color
+    let floatingBarRowHover: Color
 }
 
 private struct ChromeThemeTokenRecipeKey: Equatable {
