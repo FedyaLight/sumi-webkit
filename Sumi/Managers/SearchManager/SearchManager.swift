@@ -319,12 +319,17 @@ class SearchManager {
         let bookmarksByURL = Dictionary(grouping: bookmarkManager?.allBookmarks() ?? [], by: { $0.url.absoluteString })
 
         var suggestions: [SearchSuggestion] = []
+        var seenKeys = Set<String>()
         for item in result.all {
             guard let suggestion = searchSuggestion(
                 from: item,
                 historyByURL: historyByURL,
                 bookmarksByURL: bookmarksByURL
-            ), !suggestions.contains(suggestion) else { continue }
+            ) else { continue }
+
+            let key = deduplicationKey(for: suggestion)
+            guard seenKeys.insert(key).inserted else { continue }
+
             suggestions.append(suggestion)
             if suggestions.count >= maxVisibleSuggestions {
                 break
@@ -332,15 +337,36 @@ class SearchManager {
         }
 
         if let directURLSuggestion = directURLSuggestion(for: query) {
-            if !suggestions.contains(directURLSuggestion) {
+            let directKey = deduplicationKey(for: directURLSuggestion)
+            if !seenKeys.contains(directKey) {
                 if suggestions.count >= maxVisibleSuggestions {
-                    suggestions.removeLast()
+                    let removed = suggestions.removeLast()
+                    seenKeys.remove(deduplicationKey(for: removed))
                 }
+                seenKeys.insert(directKey)
                 suggestions.append(directURLSuggestion)
             }
         }
 
         return suggestions
+    }
+
+    private func deduplicationKey(for suggestion: SearchSuggestion) -> String {
+        switch suggestion.type {
+        case .search:
+            return "search:\(suggestion.text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
+        case .url:
+            guard let url = URL(string: normalizeURL(suggestion.text, queryTemplate: SearchProvider.duckDuckGo.queryTemplate)) else {
+                return "url:\(suggestion.text.lowercased())"
+            }
+            return "url:\(topLinkDeduplicationKey(for: url).lowercased())"
+        case .history(let entry):
+            return "url:\(topLinkDeduplicationKey(for: entry.url).lowercased())"
+        case .bookmark(let bookmark):
+            return "url:\(topLinkDeduplicationKey(for: bookmark.url).lowercased())"
+        case .tab(let tab):
+            return "url:\(topLinkDeduplicationKey(for: tab.url).lowercased())"
+        }
     }
 
     private func directURLSuggestion(for query: String) -> SearchSuggestion? {
