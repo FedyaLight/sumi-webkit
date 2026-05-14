@@ -55,8 +55,7 @@ final class SplitDropCaptureView: NSView {
     }
 
     private func commonInit() {
-        // Accept plain text drags (UUID string for a Tab)
-        registerForDraggedTypes([.sumiTabItem, .string])
+        registerForDraggedTypes([.sumiSidebarDragPayload])
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? { 
@@ -101,13 +100,7 @@ final class SplitDropCaptureView: NSView {
             return false
         }
         let pb = sender.draggingPasteboard
-        // Try to read SumiDragItem first, fall back to plain string UUID
-        let tabId: UUID? = {
-            if let item = SumiDragItem.fromPasteboard(pb) { return item.tabId }
-            if let idString = pb.string(forType: .string) { return UUID(uuidString: idString) }
-            return nil
-        }()
-        guard let id = tabId else {
+        guard let id = SidebarDropCoordinator.draggedItem(from: pb)?.tabId else {
             // Invalid payload; clear any lingering drag UI state
             endDrag()
             sm.updateDragLocation(nil, for: windowId)

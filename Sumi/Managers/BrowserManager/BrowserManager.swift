@@ -1894,12 +1894,6 @@ class BrowserManager: ObservableObject {
     func validateWindowStates() {
         for (_, windowState) in windowRegistry?.windows ?? [:] {
             var needsUpdate = false
-            recordSidebarSelectionMarker(
-                "validateWindowState",
-                windowState: windowState,
-                details: "phase=begin hasValidCurrentSelection=\(hasValidCurrentSelection(in: windowState))"
-            )
-
             // Check if current tab still exists
             if let currentTabId = windowState.currentTabId {
                 if tabManager.tab(for: currentTabId) == nil {
@@ -1967,11 +1961,6 @@ class BrowserManager: ObservableObject {
                 refreshCompositor(for: windowState)
                 persistWindowSession(for: windowState)
             }
-            recordSidebarSelectionMarker(
-                "validateWindowState",
-                windowState: windowState,
-                details: "phase=end needsUpdate=\(needsUpdate) hasValidCurrentSelection=\(hasValidCurrentSelection(in: windowState))"
-            )
         }
 
         // Note: No need to clean up tab display owners since they're no longer used
@@ -2060,41 +2049,12 @@ class BrowserManager: ObservableObject {
         )
     }
 
-    private func recordSidebarSelectionMarker(
-        _ name: String,
-        windowState: BrowserWindowState,
-        details: String
-    ) {
-        let currentTab = windowState.currentTabId.flatMap { tabManager.tab(for: $0) }
-        let resolvedPinId = windowState.currentShortcutPinId ?? currentTab?.shortcutPinId
-        let sourceID = resolvedPinId.map { "space-pinned-shortcut-\($0.uuidString)" }
-        let liveShortcutSummary = tabManager.liveShortcutTabs(in: windowState.id)
-            .map { tab in
-                "\(tab.id.uuidString):\(tab.shortcutPinId?.uuidString ?? "nil"):\(tab.isShortcutLiveInstance)"
-            }
-            .joined(separator: ",")
-        SidebarUITestDragMarker.recordEvent(
-            name,
-            dragItemID: resolvedPinId,
-            ownerDescription: "BrowserManager",
-            sourceID: sourceID,
-            details: "window=\(windowState.id.uuidString) currentSpace=\(windowState.currentSpaceId?.uuidString ?? "nil") currentTab=\(windowState.currentTabId?.uuidString ?? "nil") currentShortcutPin=\(windowState.currentShortcutPinId?.uuidString ?? "nil") currentShortcutRole=\(windowState.currentShortcutPinRole?.rawValue ?? "nil") emptyState=\(windowState.isShowingEmptyState) liveShortcutTabs=[\(liveShortcutSummary)] \(details)"
-        )
-    }
-
     func syncShortcutSelectionState(for windowState: BrowserWindowState) {
-        let previousShortcutPinId = windowState.currentShortcutPinId
-        let previousShortcutRole = windowState.currentShortcutPinRole
         guard let currentTabId = windowState.currentTabId else {
             if !windowState.isShowingEmptyState {
                 windowState.currentShortcutPinId = nil
                 windowState.currentShortcutPinRole = nil
             }
-            recordSidebarSelectionMarker(
-                "syncShortcutSelectionState",
-                windowState: windowState,
-                details: "phase=noCurrentTab previousShortcutPin=\(previousShortcutPinId?.uuidString ?? "nil") previousShortcutRole=\(previousShortcutRole?.rawValue ?? "nil")"
-            )
             return
         }
 
@@ -2107,11 +2067,6 @@ class BrowserManager: ObservableObject {
             windowState.currentShortcutPinId = nil
             windowState.currentShortcutPinRole = nil
         }
-        recordSidebarSelectionMarker(
-            "syncShortcutSelectionState",
-            windowState: windowState,
-            details: "phase=resolved currentTab=\(currentTabId.uuidString) previousShortcutPin=\(previousShortcutPinId?.uuidString ?? "nil") previousShortcutRole=\(previousShortcutRole?.rawValue ?? "nil")"
-        )
     }
 
     private func closeShortcutLiveTab(_ tab: Tab, in windowState: BrowserWindowState) {

@@ -14,7 +14,6 @@ struct ShortcutSidebarRow: View {
     var dragSourceZone: DropZoneID? = nil
     var dragHasTrailingActionExclusion: Bool = true
     var dragIsEnabled: Bool = true
-    var debugRenderMode: String = "unspecified"
     var onLauncherIconSelected: ((String) -> Void)? = nil
     let onResetToLaunchURL: (() -> Void)?
     let onUnload: () -> Void
@@ -32,7 +31,6 @@ struct ShortcutSidebarRow: View {
                     dragSourceZone: dragSourceZone,
                     dragHasTrailingActionExclusion: dragHasTrailingActionExclusion,
                     dragIsEnabled: dragIsEnabled,
-                    debugRenderMode: debugRenderMode,
                     onLauncherIconSelected: onLauncherIconSelected,
                     onResetToLaunchURL: onResetToLaunchURL,
                     onUnload: onUnload,
@@ -47,7 +45,6 @@ struct ShortcutSidebarRow: View {
                     dragSourceZone: dragSourceZone,
                     dragHasTrailingActionExclusion: dragHasTrailingActionExclusion,
                     dragIsEnabled: dragIsEnabled,
-                    debugRenderMode: debugRenderMode,
                     onLauncherIconSelected: onLauncherIconSelected,
                     onResetToLaunchURL: onResetToLaunchURL,
                     onUnload: onUnload,
@@ -67,7 +64,6 @@ private struct ShortcutSidebarLiveRowContent: View {
     var dragSourceZone: DropZoneID?
     var dragHasTrailingActionExclusion: Bool
     var dragIsEnabled: Bool
-    var debugRenderMode: String
     var onLauncherIconSelected: ((String) -> Void)?
     let onResetToLaunchURL: (() -> Void)?
     let onUnload: () -> Void
@@ -96,7 +92,6 @@ private struct ShortcutSidebarLiveRowContent: View {
             dragSourceZone: dragSourceZone,
             dragHasTrailingActionExclusion: dragHasTrailingActionExclusion,
             dragIsEnabled: dragIsEnabled,
-            debugRenderMode: debugRenderMode,
             onLauncherIconSelected: onLauncherIconSelected,
             onResetToLaunchURL: onResetToLaunchURL,
             onUnload: onUnload,
@@ -113,7 +108,6 @@ private struct ShortcutSidebarStoredRowContent: View {
     var dragSourceZone: DropZoneID?
     var dragHasTrailingActionExclusion: Bool
     var dragIsEnabled: Bool
-    var debugRenderMode: String
     var onLauncherIconSelected: ((String) -> Void)?
     let onResetToLaunchURL: (() -> Void)?
     let onUnload: () -> Void
@@ -139,7 +133,6 @@ private struct ShortcutSidebarStoredRowContent: View {
             dragSourceZone: dragSourceZone,
             dragHasTrailingActionExclusion: dragHasTrailingActionExclusion,
             dragIsEnabled: dragIsEnabled,
-            debugRenderMode: debugRenderMode,
             onLauncherIconSelected: onLauncherIconSelected,
             onResetToLaunchURL: onResetToLaunchURL,
             onUnload: onUnload,
@@ -161,7 +154,6 @@ private struct ShortcutSidebarRowChrome: View {
     var dragSourceZone: DropZoneID? = nil
     var dragHasTrailingActionExclusion: Bool = true
     var dragIsEnabled: Bool = true
-    var debugRenderMode: String = "unspecified"
     var onLauncherIconSelected: ((String) -> Void)? = nil
     let onResetToLaunchURL: (() -> Void)?
     let onUnload: () -> Void
@@ -170,7 +162,6 @@ private struct ShortcutSidebarRowChrome: View {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
-    @State private var markerInstanceID = UUID()
     @State private var isRowHovered = false
     @State private var isActionHovered = false
     @State private var isResetHovered = false
@@ -261,21 +252,6 @@ private struct ShortcutSidebarRowChrome: View {
         .accessibilityValue(runtimeAffordance.isSelected ? "selected" : "not selected")
         .sidebarDDGHover($isRowHovered, isEnabled: dragIsEnabled)
         .sidebarZenPressEffect(sourceID: rowSourceID, isEnabled: dragIsEnabled)
-        .onAppear {
-            recordShortcutSidebarMarker("shortcutRowAppear")
-        }
-        .onDisappear {
-            recordShortcutSidebarMarker("shortcutRowDisappear")
-        }
-        .onChange(of: liveTab?.id) { _, _ in
-            recordShortcutSidebarMarker("shortcutRowLiveTabChange")
-        }
-        .onChange(of: runtimeAffordance.usesResetLeadingAction) { _, _ in
-            recordShortcutSidebarMarker("shortcutRowResetAffordanceChange")
-        }
-        .onChange(of: runtimeAffordance.isSelected) { _, _ in
-            recordShortcutSidebarMarker("shortcutRowSelectionChange")
-        }
         .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { _ in
             faviconCacheRefreshID = UUID()
         }
@@ -298,19 +274,6 @@ private struct ShortcutSidebarRowChrome: View {
             color: runtimeAffordance.isSelected ? tokens.sidebarSelectionShadow : .clear,
             radius: runtimeAffordance.isSelected ? 2 : 0,
             y: runtimeAffordance.isSelected ? 1 : 0
-        )
-    }
-
-    private func recordShortcutSidebarMarker(_ name: String) {
-        let sourceID = accessibilityID ?? "shortcut-sidebar-row"
-        let mode = liveTab == nil ? "stored" : "live"
-        SidebarUITestDragMarker.recordEvent(
-            name,
-            dragItemID: pin.id,
-            ownerDescription: "ShortcutSidebarRowChrome{instance=\(markerInstanceID.uuidString)}",
-            sourceID: sourceID,
-            viewDescription: "swiftui:\(markerInstanceID.uuidString)",
-            details: "source=\(sourceID) pin=\(pin.id.uuidString) liveTab=\(liveTab?.id.uuidString ?? "nil") mode=\(mode) renderMode=\(debugRenderMode) dragIsEnabled=\(dragIsEnabled) resetLeading=\(runtimeAffordance.usesResetLeadingAction) selected=\(runtimeAffordance.isSelected) window=\(windowState.id.uuidString)"
         )
     }
 

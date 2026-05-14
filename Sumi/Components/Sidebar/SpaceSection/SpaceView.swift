@@ -81,5 +81,11 @@ struct SpaceView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .contentShape(Rectangle())
         .coordinateSpace(name: "SpaceViewCoordinateSpace")
+        .transaction { transaction in
+            if dragState.isCompletingDrop {
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
+        }
     }
 }

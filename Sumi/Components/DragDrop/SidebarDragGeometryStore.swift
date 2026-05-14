@@ -117,7 +117,7 @@ struct SidebarEssentialsDropSlotMetrics: Equatable {
 
 struct SidebarEssentialsPreviewState: Equatable {
     var expandedDropRowCount: Int
-    var ghostSlot: Int?
+    var gapSlot: Int?
 }
 
 struct SidebarRuntimeGeometryStore {

@@ -1412,21 +1412,6 @@ struct SpacesSideBarView: View {
     var body: some View {
         sidebarContent
             .contentShape(Rectangle())
-            .onAppear {
-                recordUITestSidebarState(reason: "appear")
-            }
-            .onChange(of: availableSpaces.map(\.id)) { _, _ in
-                recordUITestSidebarState(reason: "spacesChanged")
-            }
-            .onChange(of: windowState.currentSpaceId) { _, _ in
-                recordUITestSidebarState(reason: "currentSpaceChanged")
-            }
-            .onChange(of: windowState.isSidebarVisible) { _, _ in
-                recordUITestSidebarState(reason: "sidebarVisibilityChanged")
-            }
-            .onChange(of: transitionState) { _, _ in
-                recordUITestSidebarState(reason: "transitionStateChanged")
-            }
             .onDisappear {
                 cancelLocalSpaceTransitionIfNeeded(cancelTheme: true)
             }
@@ -1450,30 +1435,6 @@ struct SpacesSideBarView: View {
                         .allowsHitTesting(allowsSidebarInteractiveWork)
                 }
             }
-    }
-
-    private func recordUITestSidebarState(reason: String) {
-        SidebarUITestDragMarker.recordEvent(
-            "startupSidebarView",
-            dragItemID: nil,
-            ownerDescription: "SpacesSideBarView",
-            details: "reason=\(reason) spaces=\(availableSpaces.count) currentSpace=\(windowState.currentSpaceId?.uuidString ?? "nil") currentTab=\(windowState.currentTabId?.uuidString ?? "nil") currentShortcutPin=\(windowState.currentShortcutPinId?.uuidString ?? "nil") sidebarVisible=\(windowState.isSidebarVisible) presentationMode=\(String(describing: sidebarPresentationContext.mode)) transitionPhase=\(transitionState.phase) transitionTrigger=\(transitionState.trigger.map(String.init(describing:)) ?? "nil") transitionSource=\(transitionState.sourceSpaceId?.uuidString ?? "nil") transitionDestination=\(transitionState.destinationSpaceId?.uuidString ?? "nil") transitionProgress=\(String(format: "%.3f", transitionState.progress))"
-        )
-    }
-
-    private func recordSidebarPageRenderMode(
-        reason: String,
-        space: Space,
-        profileId: UUID?,
-        pageRenderMode: SidebarPageRenderMode,
-        inputRecoveryGeneration: UInt64
-    ) {
-        SidebarUITestDragMarker.recordEvent(
-            "sidebarPageRenderMode",
-            dragItemID: nil,
-            ownerDescription: "SpacesSideBarView",
-            details: "reason=\(reason) space=\(space.id.uuidString) profile=\(profileId?.uuidString ?? "nil") pageRenderMode=\(pageRenderMode.debugDescription) inputRecoveryGeneration=\(inputRecoveryGeneration) transitionPhase=\(transitionState.phase) transitionTrigger=\(transitionState.trigger.map(String.init(describing:)) ?? "nil") transitionSource=\(transitionState.sourceSpaceId?.uuidString ?? "nil") transitionDestination=\(transitionState.destinationSpaceId?.uuidString ?? "nil") transitionProgress=\(String(format: "%.3f", transitionState.progress)) currentSpace=\(windowState.currentSpaceId?.uuidString ?? "nil") currentTab=\(windowState.currentTabId?.uuidString ?? "nil") currentShortcutPin=\(windowState.currentShortcutPinId?.uuidString ?? "nil")"
-        )
     }
 
     private var mainSidebarContent: some View {
@@ -2303,24 +2264,6 @@ struct SpacesSideBarView: View {
                 recoveryGeneration: inputRecoveryGeneration
             )
         )
-        .onAppear {
-            recordSidebarPageRenderMode(
-                reason: "appear",
-                space: space,
-                profileId: pageProfileId,
-                pageRenderMode: pageRenderMode,
-                inputRecoveryGeneration: inputRecoveryGeneration
-            )
-        }
-        .onChange(of: windowState.sidebarInputRecoveryGeneration) { _, _ in
-            recordSidebarPageRenderMode(
-                reason: "inputRecoveryGenerationChanged",
-                space: space,
-                profileId: pageProfileId,
-                pageRenderMode: pageRenderMode,
-                inputRecoveryGeneration: inputRecoveryGeneration
-            )
-        }
     }
 
     @ViewBuilder

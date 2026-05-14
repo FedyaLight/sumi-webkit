@@ -14,15 +14,6 @@ enum SidebarColumnHitTestRouting {
         if eventType == .leftMouseDragged || eventType == .leftMouseUp,
            let owner = contextMenuController?.primaryMouseTrackingOwner(in: containerView.window)
         {
-            logRoute(
-                eventType: eventType,
-                originalHit: originalHit,
-                originalOwner: owner,
-                owner: owner,
-                hostedSidebarView: hostedSidebarView,
-                decision: "primary-tracking-owner",
-                usedBackgroundMenu: false
-            )
             return owner
         }
 
@@ -69,43 +60,16 @@ enum SidebarColumnHitTestRouting {
                     eventType: eventType
                 )
                 if originalOwnerPriority >= ownerPriority {
-                    logRoute(
-                        eventType: eventType,
-                        originalHit: originalHit,
-                        originalOwner: originalOwner,
-                        owner: originalOwner,
-                        hostedSidebarView: hostedSidebarView,
-                        decision: "original-hit-owner",
-                        usedBackgroundMenu: false
-                    )
                     return originalOwner
                 }
             }
 
-            logRoute(
-                eventType: eventType,
-                originalHit: originalHit,
-                originalOwner: originalOwner,
-                owner: owner,
-                hostedSidebarView: hostedSidebarView,
-                decision: originalOwner === owner ? "original-hit-owner" : "registry-owner",
-                usedBackgroundMenu: false
-            )
             return owner
         }
 
         if let originalOwner,
            originalOwnerPriority != nil
         {
-            logRoute(
-                eventType: eventType,
-                originalHit: originalHit,
-                originalOwner: originalOwner,
-                owner: originalOwner,
-                hostedSidebarView: hostedSidebarView,
-                decision: "original-hit-owner",
-                usedBackgroundMenu: false
-            )
             return originalOwner
         }
 
@@ -118,15 +82,6 @@ enum SidebarColumnHitTestRouting {
         if let originalOwner {
             let ownerPoint = originalOwner.convert(windowPoint, from: nil)
             if originalOwner.shouldCaptureInteraction(at: ownerPoint, eventType: eventType) {
-                logRoute(
-                    eventType: eventType,
-                    originalHit: originalHit,
-                    originalOwner: originalOwner,
-                    owner: originalOwner,
-                    hostedSidebarView: hostedSidebarView,
-                    decision: "background-fallback-owner",
-                    usedBackgroundMenu: false
-                )
                 return originalOwner
             }
         }
@@ -140,15 +95,6 @@ enum SidebarColumnHitTestRouting {
         if let originalHit,
            originalHit === hostedSidebarView || originalHit.isDescendant(of: hostedSidebarView)
         {
-            logRoute(
-                eventType: eventType,
-                originalHit: originalHit,
-                originalOwner: originalOwner,
-                owner: nil,
-                hostedSidebarView: hostedSidebarView,
-                decision: "background-menu",
-                usedBackgroundMenu: true
-            )
             return containerView
         }
 
@@ -157,39 +103,6 @@ enum SidebarColumnHitTestRouting {
         }
 
         return originalHit
-    }
-
-    private static func logRoute(
-        eventType: NSEvent.EventType?,
-        originalHit: NSView?,
-        originalOwner: SidebarInteractiveItemView?,
-        owner: SidebarInteractiveItemView?,
-        hostedSidebarView: NSView?,
-        decision: String,
-        usedBackgroundMenu: Bool
-    ) {
-        let ownerSource = owner?.sourceID ?? "nil"
-        let originalOwnerSource = originalOwner?.sourceID ?? "nil"
-        let hostedRootDescription = sidebarViewDebugDescription(hostedSidebarView)
-        let ownerRootDescription = sidebarViewDebugDescription(sidebarHostedSidebarRoot(from: owner))
-        let originalOwnerRootDescription = sidebarViewDebugDescription(
-            sidebarHostedSidebarRoot(from: originalOwner)
-        )
-        let ownerInHostedRoot = hostedSidebarView.map { owner?.isDescendant(of: $0) == true } ?? false
-        let originalOwnerInHostedRoot = hostedSidebarView.map {
-            originalOwner?.isDescendant(of: $0) == true
-        } ?? false
-        RuntimeDiagnostics.emit {
-            "🧭 Sidebar column hit-test event=\(eventType.map(String.init(describing:)) ?? "nil") decision=\(decision) hit=\(originalHit.map { String(describing: type(of: $0)) } ?? "nil") originalOwner=\(originalOwner?.recoveryDebugDescription ?? "nil") owner=\(owner?.recoveryDebugDescription ?? "nil") hostedRoot=\(hostedRootDescription) originalOwnerRoot=\(originalOwnerRootDescription) ownerRoot=\(ownerRootDescription) originalOwnerInHostedRoot=\(originalOwnerInHostedRoot) ownerInHostedRoot=\(ownerInHostedRoot) background=\(usedBackgroundMenu)"
-        }
-        SidebarUITestDragMarker.recordEvent(
-            "route",
-            dragItemID: owner?.recoveryMetadata.dragItemID ?? originalOwner?.recoveryMetadata.dragItemID,
-            ownerDescription: owner?.recoveryDebugDescription ?? originalOwner?.recoveryDebugDescription ?? "nil",
-            sourceID: owner?.sourceID ?? originalOwner?.sourceID,
-            viewDescription: owner?.debugViewDescription ?? originalOwner?.debugViewDescription,
-            details: "event=\(eventType.map(String.init(describing:)) ?? "nil") decision=\(decision) originalHit=\(originalHit.map { String(describing: type(of: $0)) } ?? "nil") originalOwner=\(originalOwner?.recoveryDebugDescription ?? "nil") owner=\(owner?.recoveryDebugDescription ?? "nil") originalOwnerSource=\(originalOwnerSource) ownerSource=\(ownerSource) originalOwnerView=\(originalOwner?.debugViewDescription ?? "nil") ownerView=\(owner?.debugViewDescription ?? "nil") hostedRoot=\(hostedRootDescription) originalOwnerRoot=\(originalOwnerRootDescription) ownerRoot=\(ownerRootDescription) originalOwnerInHostedRoot=\(originalOwnerInHostedRoot) ownerInHostedRoot=\(ownerInHostedRoot) background=\(usedBackgroundMenu)"
-        )
     }
 }
 
