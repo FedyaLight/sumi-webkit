@@ -184,8 +184,7 @@ struct SumiCommands: Commands {
             Divider()
             Button("Open Command Bar") {
                 let currentURL = browserManager.currentTabForActiveWindow()?.url.absoluteString ?? ""
-                browserManager.openCommandPaletteForActiveWindow(
-                    reason: .keyboard,
+                browserManager.focusFloatingURLBarForActiveWindow(
                     prefill: currentURL,
                     navigateCurrentTab: true
                 )

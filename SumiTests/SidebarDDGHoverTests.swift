@@ -60,7 +60,9 @@ final class SidebarDDGHoverTests: XCTestCase {
 
         let searchManagerSource = try Self.source(named: "Sumi/Managers/SearchManager/SearchManager.swift")
         XCTAssertTrue(searchManagerSource.contains("maxVisibleSuggestions = 10"))
-        XCTAssertTrue(searchManagerSource.contains("suggestionsArray.prefix(maxWebSuggestionCount)"))
+        let suggestionEngineSource = try Self.source(named: "Sumi/Managers/SearchManager/SumiSuggestionEngine.swift")
+        XCTAssertTrue(suggestionEngineSource.contains("maximumNumberOfSuggestions = 12"))
+        XCTAssertTrue(suggestionEngineSource.contains("duckDuckGoSuggestions(from: apiSuggestions"))
 
         let searchUtilsSource = try Self.source(named: "Sumi/Managers/SearchManager/Utils.swift")
         XCTAssertTrue(searchUtilsSource.contains("import URLPredictor"))

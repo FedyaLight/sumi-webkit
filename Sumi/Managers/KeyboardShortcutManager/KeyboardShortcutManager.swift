@@ -42,7 +42,6 @@ class KeyboardShortcutManager {
 
     private let store: KeyboardShortcutStore
     private let validator: ShortcutValidator
-    private let hiddenActions = DefaultKeyboardShortcuts.hiddenActions
     private let systemOwnedShortcuts: Set<KeyCombination> = [
         KeyCombination(key: ",", modifiers: [.command]),
         KeyCombination(key: "h", modifiers: [.command]),
@@ -81,7 +80,6 @@ class KeyboardShortcutManager {
 
     var shortcuts: [KeyboardShortcut] {
         Array(shortcutsByAction.values)
-            .filter { !hiddenActions.contains($0.action) }
             .sorted {
                 if $0.action.category != $1.action.category {
                     return $0.action.category.rawValue < $1.action.category.rawValue

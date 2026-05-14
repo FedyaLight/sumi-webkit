@@ -703,49 +703,55 @@ class BrowserManager: ObservableObject {
     }
 
 
-    func toggleTopBarAddressView() {
-        let currentURL = currentTabForActiveWindow()?.url.absoluteString ?? ""
-        openCommandPaletteForActiveWindow(
-            reason: .keyboard,
-            prefill: currentURL,
-            navigateCurrentTab: true
-        )
-    }
-
-    func openCommandPaletteForActiveWindow(
-        reason: CommandPalettePresentationReason,
+    func focusFloatingURLBarForActiveWindow(
         prefill: String = "",
         navigateCurrentTab: Bool = false
     ) {
         guard let activeWindow = windowRegistry?.activeWindow else { return }
-        openCommandPalette(
+        focusFloatingURLBar(
             in: activeWindow,
-            reason: reason,
             prefill: prefill,
             navigateCurrentTab: navigateCurrentTab
         )
     }
 
-    func openCommandPalette(
+    func focusFloatingURLBar(
         in windowState: BrowserWindowState,
-        reason: CommandPalettePresentationReason,
         prefill: String = "",
         navigateCurrentTab: Bool = false
     ) {
-        if reason == .emptySpace {
-            windowState.commandPaletteDraftText = ""
-            windowState.commandPaletteDraftNavigatesCurrentTab = false
-            windowState.commandPalette?.clearDraft()
+        let shouldOverrideDraft = !prefill.isEmpty
+            || windowState.commandPaletteDraftText.isEmpty
+            || navigateCurrentTab
+        if shouldOverrideDraft {
+            windowState.commandPaletteDraftText = prefill
+            windowState.commandPaletteDraftNavigatesCurrentTab = navigateCurrentTab
         }
-        windowState.commandPalettePresentationReason = reason
+        windowState.commandPalettePresentationReason = .keyboard
         windowState.isCommandPaletteVisible = true
-        windowState.commandPalette?.open(
-            prefill: prefill,
-            navigateCurrentTab: navigateCurrentTab
-        )
+        dismissWorkspaceThemePickerIfNeededDiscarding()
+        persistWindowSession(for: windowState)
     }
 
-    private func dismissCommandPalette(
+    func showNewTabPalette(in windowState: BrowserWindowState) {
+        windowState.commandPaletteDraftText = ""
+        windowState.commandPaletteDraftNavigatesCurrentTab = false
+        windowState.commandPalettePresentationReason = .emptySpace
+        windowState.isCommandPaletteVisible = true
+        dismissWorkspaceThemePickerIfNeededDiscarding()
+        persistWindowSession(for: windowState)
+    }
+
+    func updateFloatingURLBarDraft(
+        in windowState: BrowserWindowState,
+        text: String
+    ) {
+        guard windowState.commandPaletteDraftText != text else { return }
+        windowState.commandPaletteDraftText = text
+        schedulePersistWindowSession(for: windowState)
+    }
+
+    func dismissFloatingURLBar(
         in windowState: BrowserWindowState,
         preserveDraft: Bool
     ) {
@@ -755,12 +761,76 @@ class BrowserManager: ObservableObject {
             windowState.commandPaletteDraftText = ""
             windowState.commandPaletteDraftNavigatesCurrentTab = false
         }
-        windowState.commandPalette?.close(preserveDraft: preserveDraft)
+        persistWindowSession(for: windowState)
+    }
+
+    func openFloatingURLBarSuggestion(
+        _ suggestion: SearchManager.SearchSuggestion,
+        in windowState: BrowserWindowState
+    ) {
+        switch suggestion.type {
+        case .tab(let existingTab):
+            selectTab(existingTab, in: windowState)
+            RuntimeDiagnostics.debug(
+                "Switched to existing tab: \(existingTab.name)",
+                category: "CommandPalette"
+            )
+        case .history(let historyEntry):
+            if windowState.commandPaletteDraftNavigatesCurrentTab,
+               currentTab(for: windowState) != nil
+            {
+                currentTab(for: windowState)?.loadURL(historyEntry.url.absoluteString)
+                RuntimeDiagnostics.debug(
+                    "Navigated current tab to history URL: \(historyEntry.url)",
+                    category: "CommandPalette"
+                )
+            } else {
+                createNewTab(in: windowState, url: historyEntry.url.absoluteString)
+                RuntimeDiagnostics.debug(
+                    "Created new tab from history in window \(windowState.id)",
+                    category: "CommandPalette"
+                )
+            }
+        case .bookmark(let bookmark):
+            if windowState.commandPaletteDraftNavigatesCurrentTab,
+               currentTab(for: windowState) != nil
+            {
+                currentTab(for: windowState)?.loadURL(bookmark.url.absoluteString)
+                RuntimeDiagnostics.debug(
+                    "Navigated current tab to bookmark URL: \(bookmark.url)",
+                    category: "CommandPalette"
+                )
+            } else {
+                createNewTab(in: windowState, url: bookmark.url.absoluteString)
+                RuntimeDiagnostics.debug(
+                    "Created new tab from bookmark in window \(windowState.id)",
+                    category: "CommandPalette"
+                )
+            }
+        case .url, .search:
+            if windowState.commandPaletteDraftNavigatesCurrentTab,
+               currentTab(for: windowState) != nil
+            {
+                currentTab(for: windowState)?.navigateToURL(suggestion.text)
+                RuntimeDiagnostics.debug(
+                    "Navigated current tab to: \(suggestion.text)",
+                    category: "CommandPalette"
+                )
+            } else {
+                let template = sumiSettings?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
+                let resolved = normalizeURL(suggestion.text, queryTemplate: template)
+                createNewTab(in: windowState, url: resolved)
+                RuntimeDiagnostics.debug(
+                    "Created new tab in window \(windowState.id)",
+                    category: "CommandPalette"
+                )
+            }
+        }
     }
 
     private func dismissCommandPaletteAfterSelection(in windowState: BrowserWindowState) {
         let preserveDraft = windowState.commandPalettePresentationReason != .emptySpace
-        dismissCommandPalette(in: windowState, preserveDraft: preserveDraft)
+        dismissFloatingURLBar(in: windowState, preserveDraft: preserveDraft)
     }
 
     private func clearEmptyStatePresentationIfNeeded(in windowState: BrowserWindowState) {
@@ -769,7 +839,7 @@ class BrowserManager: ObservableObject {
         else { return }
 
         windowState.isShowingEmptyState = false
-        dismissCommandPalette(in: windowState, preserveDraft: false)
+        dismissFloatingURLBar(in: windowState, preserveDraft: false)
     }
 
     func sanitizeCommandPaletteState(in windowState: BrowserWindowState) {
@@ -2138,7 +2208,7 @@ class BrowserManager: ObservableObject {
         findManager.updateCurrentTab(nil)
         refreshCompositor(for: windowState)
         persistWindowSession(for: windowState)
-        openCommandPalette(in: windowState, reason: .emptySpace)
+        showNewTabPalette(in: windowState)
     }
 
     private func updateProfileRuntimeStates(activeWindowState: BrowserWindowState? = nil) {

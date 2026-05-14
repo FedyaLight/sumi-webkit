@@ -56,7 +56,6 @@ enum CommandPaletteLayoutPolicy {
 struct CommandPaletteView: View {
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
-    @Environment(CommandPalette.self) private var commandPalette
     @State private var searchManager = SearchManager()
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
@@ -120,7 +119,7 @@ struct CommandPaletteView: View {
 
     @ViewBuilder
     private func commandPaletteBody(effectiveCommandPaletteWidth: CGFloat) -> some View {
-        let isVisible = commandPalette.isVisible
+        let isVisible = windowState.isCommandPaletteVisible
         let tokens = self.tokens
         let urlBarPlaceholder = urlBarPlaceholderString
         let textFieldFont = Font.system(size: 13, weight: .semibold)
@@ -210,7 +209,7 @@ struct CommandPaletteView: View {
                                                     }
                                                     return .handled
                                                 }
-                                                commandPalette.close(preserveDraft: true)
+                                                browserManager.dismissFloatingURLBar(in: windowState, preserveDraft: true)
                                                 return .handled
                                             }
                                             .onKeyPress(.delete) {
@@ -234,7 +233,7 @@ struct CommandPaletteView: View {
                                             .onChange(of: text) { _, newValue in
                                                 // Defer palette / window session writes so `BrowserWindowState` is not mutated during SwiftUI view updates.
                                                 Task { @MainActor in
-                                                    commandPalette.updateDraft(text: newValue)
+                                                    browserManager.updateFloatingURLBarDraft(in: windowState, text: newValue)
                                                     scheduleSearchSuggestions(for: newValue)
                                                     selectedSuggestionIndex = -1
                                                 }
@@ -375,11 +374,11 @@ struct CommandPaletteView: View {
         .allowsHitTesting(isVisible)
         .opacity(isVisible ? 1.0 : 0.0)
         .onAppear {
-            if commandPalette.isVisible {
+            if windowState.isCommandPaletteVisible {
                 handleVisibilityChanged(true)
             }
         }
-        .onChange(of: commandPalette.isVisible) { _, newVisible in
+        .onChange(of: windowState.isCommandPaletteVisible) { _, newVisible in
             handleVisibilityChanged(newVisible)
         }
         .onDisappear {
@@ -387,7 +386,7 @@ struct CommandPaletteView: View {
             removeOutsideClickMonitor()
         }
         .onChange(of: browserManager.currentProfile?.id) { _, _ in
-            if commandPalette.isVisible {
+            if windowState.isCommandPaletteVisible {
                 searchManager.updateProfileContext()
                 searchManager.clearSuggestions()
             }
@@ -401,7 +400,7 @@ struct CommandPaletteView: View {
             }
         }
         .animation(.easeInOut(duration: 0.15), value: selectedSuggestionIndex)
-        .onChange(of: commandPalette.prefilledText) { _, newValue in
+        .onChange(of: windowState.commandPaletteDraftText) { _, newValue in
             if isVisible {
                 text = newValue
                 DispatchQueue.main.async {
@@ -451,7 +450,7 @@ struct CommandPaletteView: View {
             searchManager.setBookmarkManager(browserManager.bookmarkManager)
             searchManager.updateProfileContext()
 
-            text = commandPalette.prefilledText
+            text = windowState.commandPaletteDraftText
             refreshEmptyStateSuggestionsIfNeeded()
 
             DispatchQueue.main.async {
@@ -472,7 +471,7 @@ struct CommandPaletteView: View {
     }
 
     private func refreshEmptyStateSuggestionsIfNeeded() {
-        guard commandPalette.isVisible,
+        guard windowState.isCommandPaletteVisible,
               activeSiteSearch == nil,
               text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return }
@@ -700,14 +699,8 @@ struct CommandPaletteView: View {
                 query = text
             }
             guard !query.isEmpty else { return }
-            let navigateURL: String
-            if let url = site.searchURL(for: query) {
-                navigateURL = url.absoluteString
-            } else {
-                // Fallback: search on the site's domain directly
-                navigateURL = "https://\(site.domain)/search?q=\(query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query)"
-            }
-            if commandPalette.shouldNavigateCurrentTab
+            let navigateURL = resolvedSiteSearchURL(site: site, query: query).absoluteString
+            if windowState.commandPaletteDraftNavigatesCurrentTab
                 && browserManager.currentTab(for: windowState) != nil
             {
                 browserManager.currentTab(for: windowState)?.loadURL(navigateURL)
@@ -717,7 +710,7 @@ struct CommandPaletteView: View {
             text = ""
             activeSiteSearch = nil
             selectedSuggestionIndex = -1
-            commandPalette.close(preserveDraft: false)
+            browserManager.dismissFloatingURLBar(in: windowState, preserveDraft: false)
             return
         }
 
@@ -740,75 +733,24 @@ struct CommandPaletteView: View {
 
     private func selectSuggestion(_ suggestion: SearchManager.SearchSuggestion)
     {
-        switch suggestion.type {
-        case .tab(let existingTab):
-            browserManager.selectTab(existingTab, in: windowState)
-            RuntimeDiagnostics.debug(
-                "Switched to existing tab: \(existingTab.name)",
-                category: "CommandPalette"
-            )
-        case .history(let historyEntry):
-            if commandPalette.shouldNavigateCurrentTab
-                && browserManager.currentTab(for: windowState) != nil
-            {
-                browserManager.currentTab(for: windowState)?.loadURL(
-                    historyEntry.url.absoluteString
-                )
-                RuntimeDiagnostics.debug(
-                    "Navigated current tab to history URL: \(historyEntry.url)",
-                    category: "CommandPalette"
-                )
-            } else {
-                browserManager.createNewTab(in: windowState, url: historyEntry.url.absoluteString)
-                RuntimeDiagnostics.debug(
-                    "Created new tab from history in window \(windowState.id)",
-                    category: "CommandPalette"
-                )
-            }
-        case .bookmark(let bookmark):
-            if commandPalette.shouldNavigateCurrentTab
-                && browserManager.currentTab(for: windowState) != nil
-            {
-                browserManager.currentTab(for: windowState)?.loadURL(bookmark.url.absoluteString)
-                RuntimeDiagnostics.debug(
-                    "Navigated current tab to bookmark URL: \(bookmark.url)",
-                    category: "CommandPalette"
-                )
-            } else {
-                browserManager.createNewTab(in: windowState, url: bookmark.url.absoluteString)
-                RuntimeDiagnostics.debug(
-                    "Created new tab from bookmark in window \(windowState.id)",
-                    category: "CommandPalette"
-                )
-            }
-        case .url, .search:
-            if commandPalette.shouldNavigateCurrentTab
-                && browserManager.currentTab(for: windowState) != nil
-            {
-                browserManager.currentTab(for: windowState)?.navigateToURL(
-                    suggestion.text
-                )
-                RuntimeDiagnostics.debug(
-                    "Navigated current tab to: \(suggestion.text)",
-                    category: "CommandPalette"
-                )
-            } else {
-                // Normalize the URL/search query first, then create the tab with
-                // the correct URL so the webview loads it directly without a race.
-                let template = browserManager.sumiSettings?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
-                let resolved = normalizeURL(suggestion.text, queryTemplate: template)
-                browserManager.createNewTab(in: windowState, url: resolved)
-                RuntimeDiagnostics.debug(
-                    "Created new tab in window \(windowState.id)",
-                    category: "CommandPalette"
-                )
-            }
-        }
-
+        browserManager.openFloatingURLBarSuggestion(suggestion, in: windowState)
         text = ""
         activeSiteSearch = nil
         selectedSuggestionIndex = -1
-        commandPalette.close(preserveDraft: false)
+        browserManager.dismissFloatingURLBar(in: windowState, preserveDraft: false)
+    }
+
+    private func resolvedSiteSearchURL(site: SiteSearchEntry, query: String) -> URL {
+        if let url = site.searchURL(for: query) {
+            return url
+        }
+
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = site.domain
+        components.path = "/search"
+        components.queryItems = [URLQueryItem(name: "q", value: query)]
+        return components.url ?? URL(string: "https://\(site.domain)")!
     }
 
     private func navigateSuggestions(direction: Int) {
@@ -828,14 +770,14 @@ struct CommandPaletteView: View {
         ) { event in
             CommandPaletteOutsideClickRouting.monitorResult(
                 for: event,
-                isPaletteVisible: commandPalette.isVisible,
+                isPaletteVisible: windowState.isCommandPaletteVisible,
                 cardView: paletteCardView
             ) {
                 // Close asynchronously and return the original event so sidebar/browser chrome handles this click.
                 DispatchQueue.main.async {
                     windowState.window?.makeFirstResponder(nil)
                     isSearchFocused = false
-                    commandPalette.close(preserveDraft: true)
+                    browserManager.dismissFloatingURLBar(in: windowState, preserveDraft: true)
                 }
             }
         }

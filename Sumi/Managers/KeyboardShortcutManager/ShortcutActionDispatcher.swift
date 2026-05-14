@@ -55,8 +55,6 @@ final class ShortcutActionDispatcher {
                 browserManager.selectLastTabInActiveWindow()
             case .duplicateTab:
                 browserManager.duplicateCurrentTab()
-            case .toggleTopBarAddressView:
-                browserManager.toggleTopBarAddressView()
             case .nextSpace:
                 browserManager.selectNextSpaceInActiveWindow()
             case .previousSpace:
@@ -79,8 +77,7 @@ final class ShortcutActionDispatcher {
                 browserManager.expandAllFoldersInSidebar()
             case .focusAddressBar:
                 let currentURL = browserManager.currentTabForActiveWindow()?.url.absoluteString ?? ""
-                browserManager.openCommandPaletteForActiveWindow(
-                    reason: .keyboard,
+                browserManager.focusFloatingURLBarForActiveWindow(
                     prefill: currentURL,
                     navigateCurrentTab: true
                 )

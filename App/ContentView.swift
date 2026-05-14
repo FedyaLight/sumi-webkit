@@ -45,33 +45,10 @@ struct ContentView: View {
             .onAppear {
                 // Set TabManager reference for computed properties
                 windowState.tabManager = browserManager.tabManager
-                // Set CommandPalette reference for global shortcuts
-                windowState.commandPalette = commandPalette
-                commandPalette.restore(
-                    draftText: windowState.commandPaletteDraftText,
-                    navigateCurrentTab: windowState.commandPaletteDraftNavigatesCurrentTab
-                )
-                let palette = commandPalette
-                commandPalette.onStateChange = { [weak palette] changeKind in
-                    guard let palette else { return }
-                    windowState.isCommandPaletteVisible = palette.isVisible
-                    windowState.commandPaletteDraftText = palette.prefilledText
-                    windowState.commandPaletteDraftNavigatesCurrentTab = palette.shouldNavigateCurrentTab
-                    switch changeKind {
-                    case .draft:
-                        browserManager.schedulePersistWindowSession(for: windowState)
-                    case .session:
-                        if palette.isVisible {
-                            browserManager.dismissWorkspaceThemePickerIfNeededDiscarding()
-                        }
-                        browserManager.persistWindowSession(for: windowState)
-                    }
-                }
                 // Register this window state with the registry
                 windowRegistry.register(windowState)
             }
             .onDisappear {
-                commandPalette.onStateChange = nil
                 browserManager.persistWindowSession(for: windowState)
                 // Unregister this window state when the window closes
                 windowRegistry.unregister(windowState.id)
