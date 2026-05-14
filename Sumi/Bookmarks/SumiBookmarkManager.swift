@@ -79,6 +79,12 @@ final class SumiBookmarkManager: ObservableObject {
         foldersCache
     }
 
+    func allBookmarks() -> [SumiBookmark] {
+        Array(bookmarksByID.values).sorted {
+            $0.title.localizedStandardCompare($1.title) == .orderedAscending
+        }
+    }
+
     func snapshot(sortMode: SumiBookmarkSortMode = .manual) -> SumiBookmarksSnapshot {
         repository.snapshot(sortMode: sortMode)
     }

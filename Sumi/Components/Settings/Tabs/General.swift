@@ -82,6 +82,21 @@ struct SettingsGeneralTab: View {
                         customEnginePendingRemoval = selected
                     }
                 }
+
+                SettingsDivider()
+
+                SettingsRow(
+                    title: "Command palette empty state",
+                    subtitle: "Choose what appears before you start typing."
+                ) {
+                    Picker("", selection: $settings.commandPaletteEmptyStateMode) {
+                        ForEach(CommandPaletteEmptyStateMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 160)
+                }
             }
 
             SettingsSection(

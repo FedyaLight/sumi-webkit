@@ -200,20 +200,41 @@ actor HistoryStore {
 
         let ctx = ModelContext(container)
         ctx.autosaveEnabled = false
-        let needle = searchTerm?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let query = searchTerm.map(SearchTextQuery.init)
         let sites = try allSiteRecords(in: ctx, profileId: profileId)
             .values
             .sorted { $0.domain < $1.domain }
         let startOffset = max(0, offset)
         let matchingSites = sites.filter { site in
-            guard let needle, !needle.isEmpty else { return true }
-            return siteMatches(site, needle: needle)
+            guard let query, !query.isEmpty else { return true }
+            return siteMatches(site, query: query)
         }
         let page = Array(matchingSites.dropFirst(startOffset).prefix(limit + 1))
         return HistorySitePage(
             sites: Array(page.prefix(limit)),
             nextOffset: startOffset + min(page.count, limit),
             hasMore: page.count > limit
+        )
+    }
+
+    func fetchTopSites(
+        profileId: UUID?,
+        limit: Int
+    ) throws -> [HistorySiteRecord] {
+        guard limit > 0 else { return [] }
+
+        let ctx = ModelContext(container)
+        ctx.autosaveEnabled = false
+        return Array(
+            try allSiteRecords(in: ctx, profileId: profileId)
+                .values
+                .sorted {
+                    if $0.visitCount != $1.visitCount {
+                        return $0.visitCount > $1.visitCount
+                    }
+                    return $0.domain.localizedStandardCompare($1.domain) == .orderedAscending
+                }
+                .prefix(limit)
         )
     }
 
@@ -766,12 +787,12 @@ actor HistoryStore {
         case .timeRange(let start, let end):
             return start..<end ~= visit.visitedAt
         case .searchTerm(let term):
-            let needle = term.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            guard !needle.isEmpty else { return true }
-            return visit.title.lowercased().contains(needle)
-                || visit.url.absoluteString.lowercased().contains(needle)
-                || visit.domain.lowercased().contains(needle)
-                || (visit.siteDomain?.lowercased().contains(needle) ?? false)
+            let query = SearchTextQuery(term)
+            guard !query.isEmpty else { return true }
+            return query.matches(visit.title)
+                || query.matches(visit.url.absoluteString)
+                || query.matches(visit.domain)
+                || (visit.siteDomain.map(query.matches) ?? false)
         case .domainFilter(let domains):
             guard !domains.isEmpty else { return true }
             return domains.contains(visit.siteDomain ?? visit.domain)
@@ -788,10 +809,10 @@ actor HistoryStore {
         return "\(dayKey)|\(record.url.absoluteString)"
     }
 
-    private func siteMatches(_ site: HistorySiteRecord, needle: String) -> Bool {
-        site.title.lowercased().contains(needle)
-            || site.url.absoluteString.lowercased().contains(needle)
-            || site.domain.lowercased().contains(needle)
+    private func siteMatches(_ site: HistorySiteRecord, query: SearchTextQuery) -> Bool {
+        query.matches(site.title)
+            || query.matches(site.url.absoluteString)
+            || query.matches(site.domain)
     }
 
     private func comparePreferredEntries(

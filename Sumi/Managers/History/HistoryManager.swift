@@ -162,6 +162,10 @@ final class HistoryManager: ObservableObject {
         await dataProvider.searchSuggestions(matching: query, limit: limit)
     }
 
+    func topVisitedSites(limit: Int = HistoryStore.defaultRecentMenuLimit) async -> [HistoryListItem] {
+        await dataProvider.topVisitedSites(limit: limit)
+    }
+
     func historyPage(
         query: HistoryQuery,
         searchTerm: String? = nil,

@@ -15,10 +15,10 @@ protocol SearchSuggestionDataProviding {
 }
 
 @MainActor
-struct GoogleSearchSuggestionDataProvider: SearchSuggestionDataProviding {
+struct DuckDuckGoSearchSuggestionDataProvider: SearchSuggestionDataProviding {
     func data(for query: String) async throws -> Data {
         let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let urlString = "https://suggestqueries.google.com/complete/search?client=safari&q=\(encodedQuery)"
+        let urlString = "https://duckduckgo.com/ac/?q=\(encodedQuery)&is_nav=1"
 
         guard let url = URL(string: urlString) else {
             throw URLError(.badURL)
@@ -40,16 +40,18 @@ class SearchManager {
     private var historySuggestionTask: Task<Void, Never>?
     private weak var tabManager: TabManager?
     private weak var historyManager: HistoryManager?
+    private weak var bookmarkManager: SumiBookmarkManager?
     private var currentProfileId: UUID?
     private var webSuggestionRequestGeneration: UInt64 = 0
     private var activeWebSuggestionGeneration: UInt64 = 0
-    private var cachedWebSuggestions: [String: [String]] = [:]
+    private var cachedWebSuggestions: [String: [SumiSuggestionEngine.APISuggestion]] = [:]
     private var cachedWebSuggestionOrder: [String] = []
     private let maxCachedWebSuggestionQueries = 24
+    private let suggestionEngine = SumiSuggestionEngine()
     // Zen inherits Firefox's browser.urlbar.maxRichResults default.
     private let maxVisibleSuggestions = 10
 
-    init(suggestionDataProvider: SearchSuggestionDataProviding = GoogleSearchSuggestionDataProvider()) {
+    init(suggestionDataProvider: SearchSuggestionDataProviding = DuckDuckGoSearchSuggestionDataProvider()) {
         self.suggestionDataProvider = suggestionDataProvider
     }
     
@@ -63,6 +65,7 @@ class SearchManager {
             case url
             case tab(Tab)
             case history(HistoryListItem)
+            case bookmark(SumiBookmark)
         }
         
         static func == (lhs: SearchSuggestion, rhs: SearchSuggestion) -> Bool {
@@ -73,6 +76,8 @@ class SearchManager {
                 return lhs.text == rhs.text && lhsTab.id == rhsTab.id
             case (.history(let lhsHistory), .history(let rhsHistory)):
                 return lhs.text == rhs.text && lhsHistory.id == rhsHistory.id
+            case (.bookmark(let lhsBookmark), .bookmark(let rhsBookmark)):
+                return lhs.text == rhs.text && lhsBookmark.id == rhsBookmark.id
             default:
                 return false
             }
@@ -100,6 +105,24 @@ class SearchManager {
     
     func setHistoryManager(_ historyManager: HistoryManager?) {
         self.historyManager = historyManager
+    }
+
+    func setBookmarkManager(_ bookmarkManager: SumiBookmarkManager?) {
+        self.bookmarkManager = bookmarkManager
+    }
+
+    func showTopLinkSuggestions(limit: Int = 5) {
+        historySuggestionTask?.cancel()
+        historySuggestionTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let topLinks = await self.topLinkSuggestions(limit: limit)
+            guard !Task.isCancelled else { return }
+            if topLinks.isEmpty {
+                self.clearSuggestions()
+            } else {
+                self.updateSuggestionsIfNeeded(topLinks)
+            }
+        }
     }
 
     @MainActor func updateProfileContext() {
@@ -131,41 +154,42 @@ class SearchManager {
             return
         }
         
-        // Search tabs first
-        let tabSuggestions = searchTabs(for: normalizedQuery)
-
-        let immediateSuggestions = makeLocalSuggestions(
-            tabSuggestions: tabSuggestions,
-            historySuggestions: [],
-            query: normalizedQuery
-        )
-
-        if !immediateSuggestions.isEmpty {
-            updateSuggestionsIfNeeded(immediateSuggestions)
+        if let directURLSuggestion = directURLSuggestion(for: normalizedQuery) {
+            updateSuggestionsIfNeeded([directURLSuggestion])
         }
+
+        let tabItems = currentTabSuggestionItems()
+        let bookmarkItems = currentBookmarkSuggestionItems()
 
         historySuggestionTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            let historySuggestions = await self.searchHistory(for: normalizedQuery)
+            let historyEntries = await self.searchHistoryEntries(for: normalizedQuery)
             guard !Task.isCancelled,
                   generation == self.activeWebSuggestionGeneration
             else { return }
 
-            let allSuggestions = self.makeLocalSuggestions(
-                tabSuggestions: tabSuggestions,
-                historySuggestions: historySuggestions,
-                query: normalizedQuery
+            let localResult = self.suggestionEngine.result(
+                for: normalizedQuery,
+                history: historyEntries.map(Self.historyItem),
+                bookmarks: bookmarkItems,
+                openTabs: tabItems,
+                apiSuggestions: []
             )
+            let localSuggestions = self.makeSuggestions(from: localResult, query: normalizedQuery, historyEntries: historyEntries)
 
-            if !allSuggestions.isEmpty {
-                self.updateSuggestionsIfNeeded(allSuggestions)
+            if !localSuggestions.isEmpty {
+                self.updateSuggestionsIfNeeded(localSuggestions)
             }
 
             if let cachedSuggestions = self.cachedWebSuggestions[normalizedQuery] {
-                let combinedSuggestions = self.combineSuggestions(
-                    allSuggestions,
-                    withWebSuggestionTexts: cachedSuggestions
+                let combinedResult = self.suggestionEngine.result(
+                    for: normalizedQuery,
+                    history: historyEntries.map(Self.historyItem),
+                    bookmarks: bookmarkItems,
+                    openTabs: tabItems,
+                    apiSuggestions: cachedSuggestions
                 )
+                let combinedSuggestions = self.makeSuggestions(from: combinedResult, query: normalizedQuery, historyEntries: historyEntries)
                 self.updateSuggestionsIfNeeded(combinedSuggestions)
                 self.isLoading = false
                 return
@@ -173,219 +197,240 @@ class SearchManager {
 
             self.fetchWebSuggestions(
                 for: normalizedQuery,
-                prependTabSuggestions: allSuggestions,
+                historyEntries: historyEntries,
+                bookmarkItems: bookmarkItems,
+                tabItems: tabItems,
                 generation: generation
             )
         }
     }
-    
-    @MainActor private func searchTabs(for query: String) -> [SearchSuggestion] {
+
+    @MainActor private func currentTabSuggestionItems() -> [SumiSuggestionEngine.TabItem] {
         guard let tabManager else { return [] }
 
-        let lowercaseQuery = query.lowercased()
-        var matchingTabs: [RankedTabSuggestion] = []
-        // Use TabManager's profile-aware access (handles fallback internally)
-        let allTabs: [Tab] = tabManager.allTabsForCurrentProfile()
-
-        for tab in allTabs {
-            let nameMatches = tab.name.lowercased().contains(lowercaseQuery)
-            let isMatch: Bool
-
-            if nameMatches {
-                isMatch = true
-            } else {
-                let urlMatches = tab.url.absoluteString.lowercased().contains(lowercaseQuery)
-                let hostMatches = tab.url.host?.lowercased().contains(lowercaseQuery) ?? false
-                isMatch = urlMatches || hostMatches
-            }
-
-            guard isMatch else { continue }
-
-            matchingTabs.append(
-                RankedTabSuggestion(
-                    tab: tab,
-                    text: tab.name,
-                    nameMatches: nameMatches,
-                    nameLength: tab.name.count
-                )
-            )
+        return tabManager.allTabsForCurrentProfile().map {
+            SumiSuggestionEngine.TabItem(id: $0.id, url: $0.url, title: $0.name)
         }
-
-        // Sort by relevance: name matches first, then shorter tab names.
-        let sortedTabs = matchingTabs.sorted { lhs, rhs -> Bool in
-            if lhs.nameMatches != rhs.nameMatches {
-                return lhs.nameMatches
-            }
-            return lhs.nameLength < rhs.nameLength
-        }
-
-        return Array(
-            sortedTabs.prefix(3).map { ranked in
-                SearchSuggestion(
-                    text: ranked.text,
-                    type: .tab(ranked.tab)
-                )
-            }
-        ) // Limit to 3 tab suggestions
     }
 
-    @MainActor private func searchHistory(for query: String) async -> [SearchSuggestion] {
+    @MainActor private func currentBookmarkSuggestionItems() -> [SumiSuggestionEngine.BookmarkItem] {
+        guard let bookmarkManager else { return [] }
+
+        return bookmarkManager.allBookmarks().map {
+            SumiSuggestionEngine.BookmarkItem(url: $0.url, title: $0.title, isFavorite: false)
+        }
+    }
+
+    @MainActor private func searchHistoryEntries(for query: String) async -> [HistoryListItem] {
         guard let historyManager else { return [] }
 
-        let lowercaseQuery = query.lowercased()
-        let historyEntries = await historyManager.searchSuggestions(matching: query, limit: 20)
+        async let visitMatches = historyManager.searchSuggestions(matching: query, limit: 100)
+        async let siteMatches = historyManager.historyPage(
+            query: .rangeFilter(.allSites),
+            searchTerm: query,
+            limit: 100
+        ).items
 
-        var matchingHistory: [RankedHistorySuggestion] = []
-
-        for entry in historyEntries {
-            let titleMatches = entry.title.lowercased().contains(lowercaseQuery)
-            let isMatch: Bool
-
-            if titleMatches {
-                isMatch = true
-            } else {
-                let urlMatches = entry.url.absoluteString.lowercased().contains(lowercaseQuery)
-                let hostMatches = entry.url.host?.lowercased().contains(lowercaseQuery) ?? false
-                isMatch = urlMatches || hostMatches
-            }
-
-            guard isMatch else { continue }
-
-            matchingHistory.append(
-                RankedHistorySuggestion(
-                    entry: entry,
-                    text: entry.displayTitle,
-                    titleMatches: titleMatches,
-                    visitedAt: entry.visitedAt
-                )
-            )
-        }
-
-        // Sort by relevance: title matches first, then by recency.
-        let sortedHistory = matchingHistory.sorted { lhs, rhs -> Bool in
-            if lhs.titleMatches != rhs.titleMatches {
-                return lhs.titleMatches
-            }
-            return (lhs.visitedAt ?? .distantPast) > (rhs.visitedAt ?? .distantPast)
-        }
-
-        return sortedHistory.map { ranked in
-            SearchSuggestion(
-                text: ranked.text,
-                type: .history(ranked.entry)
-            )
-        }
+        return mergeHistorySuggestionItems(
+            siteMatches: await siteMatches,
+            visitMatches: await visitMatches
+        )
     }
 
-    private func makeLocalSuggestions(
-        tabSuggestions: [SearchSuggestion],
-        historySuggestions: [SearchSuggestion],
-        query: String
-    ) -> [SearchSuggestion] {
-        var allSuggestions: [SearchSuggestion] = []
+    private func mergeHistorySuggestionItems(
+        siteMatches: [HistoryListItem],
+        visitMatches: [HistoryListItem]
+    ) -> [HistoryListItem] {
+        var merged: [HistoryListItem] = []
+        var seen = Set<String>()
 
-        let maxTabSuggestions = 2
-        allSuggestions.append(contentsOf: tabSuggestions.prefix(maxTabSuggestions))
-
-        let maxHistorySuggestions = 2
-        allSuggestions.append(contentsOf: historySuggestions.prefix(maxHistorySuggestions))
-
-        if isLikelyURL(query) {
-            allSuggestions.append(SearchSuggestion(text: query, type: .url))
+        func append(_ item: HistoryListItem) {
+            let key = topLinkDeduplicationKey(for: item.url)
+            guard seen.insert(key).inserted else { return }
+            merged.append(item)
         }
 
-        return Array(allSuggestions.prefix(maxVisibleSuggestions))
+        siteMatches.forEach(append)
+        visitMatches.forEach(append)
+        return merged
+    }
+
+    private static func historyItem(_ entry: HistoryListItem) -> SumiSuggestionEngine.HistoryItem {
+        SumiSuggestionEngine.HistoryItem(
+            url: entry.url,
+            title: entry.displayTitle,
+            visitCount: entry.visitCount,
+            failedToLoad: false
+        )
     }
     
     private func fetchWebSuggestions(
         for query: String,
-        prependTabSuggestions: [SearchSuggestion],
+        historyEntries: [HistoryListItem],
+        bookmarkItems: [SumiSuggestionEngine.BookmarkItem],
+        tabItems: [SumiSuggestionEngine.TabItem],
         generation: UInt64
     ) {
         isLoading = true
-        let maxWebSuggestionCount = maxVisibleSuggestions
 
         webSuggestionTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            var webSuggestionTexts: [String]?
+            var webSuggestionItems: [SumiSuggestionEngine.APISuggestion]?
             do {
                 let data = try await self.suggestionDataProvider.data(for: query)
                 guard !Task.isCancelled else { return }
                 do {
-                    let jsonArray = try JSONSerialization.jsonObject(with: data) as? [Any]
-                    if let jsonArray,
-                       jsonArray.count >= 2,
-                       let suggestionsArray = Self.parseGoogleSuggestions(from: jsonArray[1]),
-                       suggestionsArray.isEmpty == false {
-                        webSuggestionTexts = Array(suggestionsArray.prefix(maxWebSuggestionCount))
-                    } else {
-                        RuntimeDiagnostics.emit("Invalid JSON response format")
-                        webSuggestionTexts = nil
-                    }
+                    webSuggestionItems = try JSONDecoder().decode([SumiSuggestionEngine.APISuggestion].self, from: data)
                 } catch {
                     RuntimeDiagnostics.emit("JSON parsing error: \(error.localizedDescription)")
-                    webSuggestionTexts = nil
+                    webSuggestionItems = nil
                 }
             } catch {
                 guard !Task.isCancelled else { return }
                 RuntimeDiagnostics.emit("Search suggestions error: \(error.localizedDescription)")
-                webSuggestionTexts = nil
+                webSuggestionItems = nil
             }
 
             guard generation == self.activeWebSuggestionGeneration else { return }
 
             self.isLoading = false
 
-            if let webSuggestionTexts {
-                self.storeCachedWebSuggestions(webSuggestionTexts, for: query)
-                let combinedSuggestions = self.combineSuggestions(
-                    prependTabSuggestions,
-                    withWebSuggestionTexts: webSuggestionTexts
+            if let webSuggestionItems {
+                self.storeCachedWebSuggestions(webSuggestionItems, for: query)
+                let result = self.suggestionEngine.result(
+                    for: query,
+                    history: historyEntries.map(Self.historyItem),
+                    bookmarks: bookmarkItems,
+                    openTabs: tabItems,
+                    apiSuggestions: webSuggestionItems
                 )
+                let combinedSuggestions = self.makeSuggestions(from: result, query: query, historyEntries: historyEntries)
                 self.updateSuggestionsIfNeeded(combinedSuggestions)
             }
         }
     }
 
-    nonisolated private static func parseGoogleSuggestions(from payload: Any) -> [String]? {
-        if let suggestions = payload as? [String] {
-            return suggestions
-        }
-
-        guard let entries = payload as? [[Any]] else {
-            return nil
-        }
-
-        let suggestions = entries.compactMap { entry in
-            entry.first as? String
-        }
-
-        return suggestions.isEmpty ? nil : suggestions
-    }
-
-    private func combineSuggestions(
-        _ baseSuggestions: [SearchSuggestion],
-        withWebSuggestionTexts webSuggestionTexts: [String]
+    private func makeSuggestions(
+        from result: SumiSuggestionEngine.Result,
+        query: String,
+        historyEntries: [HistoryListItem]
     ) -> [SearchSuggestion] {
-        var combinedSuggestions = baseSuggestions
+        let historyByURL = Dictionary(grouping: historyEntries, by: { $0.url.absoluteString })
+        let bookmarksByURL = Dictionary(grouping: bookmarkManager?.allBookmarks() ?? [], by: { $0.url.absoluteString })
 
-        for suggestionText in webSuggestionTexts {
-            let suggestion = SearchSuggestion(
-                text: suggestionText,
-                type: isLikelyURL(suggestionText) == true ? .url : .search
-            )
-            if !combinedSuggestions.contains(suggestion) {
-                combinedSuggestions.append(suggestion)
-            }
-            if combinedSuggestions.count >= maxVisibleSuggestions {
+        var suggestions: [SearchSuggestion] = []
+        for item in result.all {
+            guard let suggestion = searchSuggestion(
+                from: item,
+                historyByURL: historyByURL,
+                bookmarksByURL: bookmarksByURL
+            ), !suggestions.contains(suggestion) else { continue }
+            suggestions.append(suggestion)
+            if suggestions.count >= maxVisibleSuggestions {
                 break
             }
         }
 
-        return Array(combinedSuggestions.prefix(maxVisibleSuggestions))
+        if let directURLSuggestion = directURLSuggestion(for: query) {
+            if !suggestions.contains(directURLSuggestion) {
+                if suggestions.count >= maxVisibleSuggestions {
+                    suggestions.removeLast()
+                }
+                suggestions.append(directURLSuggestion)
+            }
+        }
+
+        return suggestions
     }
 
-    private func storeCachedWebSuggestions(_ suggestions: [String], for query: String) {
+    private func directURLSuggestion(for query: String) -> SearchSuggestion? {
+        guard isLikelyURL(query) else { return nil }
+        let normalizedURL = normalizeURL(query, queryTemplate: SearchProvider.duckDuckGo.queryTemplate)
+        return SearchSuggestion(text: normalizedURL, type: .url)
+    }
+
+    private func topLinkSuggestions(limit: Int) async -> [SearchSuggestion] {
+        var suggestions: [SearchSuggestion] = []
+        var seenURLs = Set<String>()
+
+        func append(_ suggestion: SearchSuggestion, url: URL) {
+            guard suggestions.count < limit else { return }
+            let key = topLinkDeduplicationKey(for: url)
+            guard seenURLs.insert(key).inserted else { return }
+            suggestions.append(suggestion)
+        }
+
+        let topSites = await historyManager?.topVisitedSites(limit: max(limit, 1)) ?? []
+
+        for entry in topSites {
+            append(SearchSuggestion(text: entry.displayTitle, type: .history(entry)), url: entry.url)
+        }
+
+        let bookmarks = bookmarkManager?.allBookmarks() ?? []
+        for bookmark in bookmarks {
+            append(SearchSuggestion(text: bookmark.title, type: .bookmark(bookmark)), url: bookmark.url)
+        }
+
+        let tabs = tabManager?.allTabsForCurrentProfile() ?? []
+        for tab in tabs {
+            append(SearchSuggestion(text: tab.name, type: .tab(tab)), url: tab.url)
+        }
+
+        return suggestions
+    }
+
+    private func topLinkDeduplicationKey(for url: URL) -> String {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url.absoluteString
+        }
+        components.scheme = nil
+        components.user = nil
+        components.password = nil
+        components.fragment = nil
+        if components.path == "/" {
+            components.path = ""
+        }
+        return components.string ?? url.absoluteString
+    }
+
+    private func searchSuggestion(
+        from item: SumiSuggestionEngine.Item,
+        historyByURL: [String: [HistoryListItem]],
+        bookmarksByURL: [String: [SumiBookmark]]
+    ) -> SearchSuggestion? {
+        switch item {
+        case .phrase(let phrase):
+            return SearchSuggestion(text: phrase, type: .search)
+        case .website(let url):
+            return SearchSuggestion(text: url.absoluteString, type: .url)
+        case .bookmark(let title, let url, _, _):
+            if let bookmark = bookmarksByURL[url.absoluteString]?.first {
+                return SearchSuggestion(text: title, type: .bookmark(bookmark))
+            }
+            return SearchSuggestion(text: url.absoluteString, type: .url)
+        case .history(_, let url, _):
+            if let history = historyByURL[url.absoluteString]?.first {
+                return SearchSuggestion(text: history.displayTitle, type: .history(history))
+            }
+            return SearchSuggestion(text: url.absoluteString, type: .url)
+        case .openTab(_, let url, let tabId, _):
+            guard let tab = tabForSuggestion(id: tabId, url: url) else {
+                return SearchSuggestion(text: url.absoluteString, type: .url)
+            }
+            return SearchSuggestion(text: tab.name, type: .tab(tab))
+        }
+    }
+
+    private func tabForSuggestion(id: UUID?, url: URL) -> Tab? {
+        guard let tabManager else { return nil }
+        let tabs = tabManager.allTabsForCurrentProfile()
+        if let id, let tab = tabs.first(where: { $0.id == id }) {
+            return tab
+        }
+        return tabs.first { $0.url == url }
+    }
+
+    private func storeCachedWebSuggestions(_ suggestions: [SumiSuggestionEngine.APISuggestion], for query: String) {
         cachedWebSuggestions[query] = suggestions
         cachedWebSuggestionOrder.removeAll { $0 == query }
         cachedWebSuggestionOrder.append(query)

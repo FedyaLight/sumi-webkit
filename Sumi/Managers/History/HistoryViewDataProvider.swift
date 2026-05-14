@@ -206,6 +206,19 @@ final class HistoryViewDataProvider {
         }
     }
 
+    func topVisitedSites(limit: Int) async -> [HistoryListItem] {
+        do {
+            let records = try await store.fetchTopSites(
+                profileId: currentProfileIdProvider(),
+                limit: limit
+            )
+            return records.map(makeSiteItem)
+        } catch {
+            RuntimeDiagnostics.emit("Error loading top visited sites: \(error)")
+            return []
+        }
+    }
+
     private func historyPage(
         for query: HistoryQuery,
         limit: Int,
