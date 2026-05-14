@@ -82,7 +82,7 @@ struct WindowView: View {
                     sumiSettings: sumiSettings,
                     resolvedThemeContext: resolvedThemeContext,
                     colorScheme: globalColorScheme,
-                    isPresented: commandPalette.isVisible && !transientChromeModalSuppressed
+                    isPresented: windowState.isCommandPaletteVisible && !transientChromeModalSuppressed
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .zIndex(WindowTransientChromeZIndex.commandPalette)

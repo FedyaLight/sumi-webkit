@@ -4,9 +4,8 @@ import WebKit
 
 @MainActor
 protocol BrowserCommandRouting: AnyObject {
-    func openCommandPalette(
+    func focusFloatingURLBar(
         in windowState: BrowserWindowState,
-        reason: CommandPalettePresentationReason,
         prefill: String,
         navigateCurrentTab: Bool
     )

@@ -21,7 +21,6 @@ enum ShortcutAction: String, CaseIterable, Hashable, Codable {
     case goToTab8 = "go_to_tab_8"
     case goToLastTab = "go_to_last_tab"
     case duplicateTab = "duplicate_tab"
-    case toggleTopBarAddressView = "toggle_top_bar_address_view"
 
     case nextSpace = "next_space"
     case previousSpace = "previous_space"
@@ -67,7 +66,6 @@ enum ShortcutAction: String, CaseIterable, Hashable, Codable {
         case .goToTab8: return "Go to Tab 8"
         case .goToLastTab: return "Go to Last Tab"
         case .duplicateTab: return "Duplicate Tab"
-        case .toggleTopBarAddressView: return "Focus Sidebar URL Bar"
         case .nextSpace: return "Next Space"
         case .previousSpace: return "Previous Space"
         case .newWindow: return "New Window"
@@ -95,7 +93,7 @@ enum ShortcutAction: String, CaseIterable, Hashable, Codable {
         switch self {
         case .goBack, .goForward, .refresh, .clearCookiesAndRefresh, .focusAddressBar, .findInPage, .hardReload:
             return .navigation
-        case .newTab, .closeTab, .undoCloseTab, .nextTab, .previousTab, .goToTab1, .goToTab2, .goToTab3, .goToTab4, .goToTab5, .goToTab6, .goToTab7, .goToTab8, .goToLastTab, .duplicateTab, .toggleTopBarAddressView:
+        case .newTab, .closeTab, .undoCloseTab, .nextTab, .previousTab, .goToTab1, .goToTab2, .goToTab3, .goToTab4, .goToTab5, .goToTab6, .goToTab7, .goToTab8, .goToLastTab, .duplicateTab:
             return .tabs
         case .nextSpace, .previousSpace, .customizeSpaceGradient:
             return .spaces

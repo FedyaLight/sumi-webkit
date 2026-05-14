@@ -80,6 +80,29 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertEqual(browserManager.currentTab(for: windowState)?.id, fallbackTab.id)
     }
 
+    func testSetupWindowStateRestoresEmptyStateFloatingURLBarDraft() throws {
+        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let spaceId = UUID()
+        let sessionKey = try seedWindowSession(
+            currentSpaceId: spaceId,
+            isShowingEmptyState: true,
+            commandPaletteReason: nil,
+            urlBarDraft: URLBarDraftState(text: "restored draft", navigateCurrentTab: true)
+        )
+        defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
+
+        let service = WindowSessionService(lastWindowSessionKey: sessionKey)
+        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        let windowState = BrowserWindowState(awaitsInitialSessionResolution: true)
+
+        service.setupWindowState(windowState, delegate: delegate)
+
+        XCTAssertTrue(windowState.isShowingEmptyState)
+        XCTAssertEqual(windowState.commandPalettePresentationReason, .emptySpace)
+        XCTAssertEqual(windowState.commandPaletteDraftText, "restored draft")
+        XCTAssertTrue(windowState.commandPaletteDraftNavigatesCurrentTab)
+    }
+
     func testActiveEssentialShortcutSurvivesPreloadSetupAndMaterializesAfterTabLoad() throws {
         let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
         let space = Space(id: UUID(), name: "Primary")
@@ -236,7 +259,10 @@ final class WindowSessionServiceTests: XCTestCase {
         currentTabId: UUID? = nil,
         activeShortcutPinId: UUID? = nil,
         activeShortcutPinRole: ShortcutPinRole? = nil,
-        activeShortcutsBySpace: [SpaceShortcutSelectionSnapshot] = []
+        activeShortcutsBySpace: [SpaceShortcutSelectionSnapshot] = [],
+        isShowingEmptyState: Bool = false,
+        commandPaletteReason: CommandPalettePresentationReason? = nil,
+        urlBarDraft: URLBarDraftState = URLBarDraftState(text: "", navigateCurrentTab: false)
     ) throws -> String {
         let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
         let snapshot = WindowSessionSnapshot(
@@ -245,8 +271,8 @@ final class WindowSessionServiceTests: XCTestCase {
             currentProfileId: nil,
             activeShortcutPinId: activeShortcutPinId,
             activeShortcutPinRole: activeShortcutPinRole,
-            isShowingEmptyState: false,
-            commandPaletteReason: nil,
+            isShowingEmptyState: isShowingEmptyState,
+            commandPaletteReason: commandPaletteReason,
             activeTabsBySpace: [],
             activeShortcutsBySpace: activeShortcutsBySpace,
             sidebarWidth: Double(BrowserWindowState.sidebarDefaultWidth),
@@ -255,7 +281,7 @@ final class WindowSessionServiceTests: XCTestCase {
                 for: BrowserWindowState.sidebarDefaultWidth
             )),
             isSidebarVisible: true,
-            urlBarDraft: URLBarDraftState(text: "", navigateCurrentTab: false),
+            urlBarDraft: urlBarDraft,
             splitSession: nil
         )
         UserDefaults.standard.set(try JSONEncoder().encode(snapshot), forKey: sessionKey)

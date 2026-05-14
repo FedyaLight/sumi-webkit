@@ -162,9 +162,6 @@ class BrowserWindowState {
     /// Set by BrowserManager during window registration
     weak var tabManager: TabManager?
 
-    /// Reference to this window's CommandPalette for global shortcuts
-    weak var commandPalette: CommandPalette?
-
     // MARK: - Incognito/Ephemeral State
     
     /// Whether this window is an incognito/private browsing window

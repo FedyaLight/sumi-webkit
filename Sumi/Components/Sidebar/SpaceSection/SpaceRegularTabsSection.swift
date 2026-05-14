@@ -61,7 +61,7 @@ extension SpaceView {
 
     private func openNewTabCommandPalette() {
         guard isInteractive else { return }
-        browserManager.openCommandPalette(in: windowState, reason: .keyboard)
+        browserManager.showNewTabPalette(in: windowState)
     }
 
     private var topNewTabButtonSection: some View {

@@ -106,9 +106,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 switch event.buttonNumber {
                 case 2:  // Middle mouse button
                     if let activeWindow = registry.activeWindow {
-                        commandRouter.openCommandPalette(
+                        commandRouter.focusFloatingURLBar(
                             in: activeWindow,
-                            reason: .keyboard,
                             prefill: "",
                             navigateCurrentTab: false
                         )

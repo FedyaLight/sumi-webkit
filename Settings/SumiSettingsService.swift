@@ -23,7 +23,6 @@ class SumiSettingsService {
     private let askBeforeQuitKey = "settings.askBeforeQuit"
     private let sidebarPositionKey = "settings.sidebarPosition"
     private let sidebarCompactSpacesKey = "settings.sidebarCompactSpaces"
-    private let topBarAddressViewKey = "settings.topBarAddressView"
     private let glanceEnabledKey = "settings.glanceEnabled"
     private let showSidebarToggleButtonKey = "settings.showSidebarToggleButton"
     private let showNewTabButtonInTabListKey = "settings.showNewTabButtonInTabList"
@@ -32,7 +31,6 @@ class SumiSettingsService {
     private let siteSearchEntriesKey = "settings.siteSearchEntries"
     private let commandPaletteEmptyStateModeKey = "settings.commandPalette.emptyStateMode"
     private let didFinishOnboardingKey = "settings.didFinishOnboarding"
-    private let tabLayoutKey = "settings.tabLayout"
     private let customSearchEnginesKey = "settings.customSearchEngines"
     private let memoryModeKey = "settings.memoryMode"
     private let memorySaverCustomDeactivationDelayKey = "settings.memorySaver.customDeactivationDelay"
@@ -126,16 +124,6 @@ class SumiSettingsService {
         }
     }
     
-    var topBarAddressView: Bool {
-        didSet {
-            if topBarAddressView {
-                topBarAddressView = false
-                return
-            }
-            userDefaults.set(topBarAddressView, forKey: topBarAddressViewKey)
-        }
-    }
-
     var glanceEnabled: Bool {
         didSet {
             userDefaults.set(glanceEnabled, forKey: glanceEnabledKey)
@@ -180,12 +168,6 @@ class SumiSettingsService {
         }
     }
     
-    var tabLayout: TabLayout {
-        didSet {
-            userDefaults.set(tabLayout.rawValue, forKey: tabLayoutKey)
-        }
-    }
-
     var didFinishOnboarding: Bool {
         didSet {
             userDefaults.set(didFinishOnboarding, forKey: didFinishOnboardingKey)
@@ -244,7 +226,6 @@ class SumiSettingsService {
             askBeforeQuitKey: true,
             sidebarPositionKey: SidebarPosition.left.rawValue,
             sidebarCompactSpacesKey: false,
-            topBarAddressViewKey: false,
             glanceEnabledKey: true,
             showSidebarToggleButtonKey: true,
             showNewTabButtonInTabListKey: true,
@@ -252,7 +233,6 @@ class SumiSettingsService {
             showLinkStatusBarKey: true,
             commandPaletteEmptyStateModeKey: CommandPaletteEmptyStateMode.compact.rawValue,
             didFinishOnboardingKey: true,
-            tabLayoutKey: TabLayout.sidebar.rawValue,
             memoryModeKey: SumiMemoryMode.balanced.rawValue,
             memorySaverCustomDeactivationDelayKey: SumiMemorySaverCustomDelay.defaultDelay,
             startupModeKey: SumiStartupMode.restorePreviousSession.rawValue,
@@ -286,7 +266,6 @@ class SumiSettingsService {
         self.askBeforeQuit = userDefaults.bool(forKey: askBeforeQuitKey)
         self.sidebarPosition = SidebarPosition(rawValue: userDefaults.string(forKey: sidebarPositionKey) ?? "left") ?? SidebarPosition.left
         self.sidebarCompactSpaces = userDefaults.bool(forKey: sidebarCompactSpacesKey)
-        self.topBarAddressView = userDefaults.bool(forKey: topBarAddressViewKey)
         if userDefaults.object(forKey: glanceEnabledKey) == nil {
             self.glanceEnabled = true
         } else {
@@ -306,7 +285,6 @@ class SumiSettingsService {
             rawValue: userDefaults.string(forKey: tabListNewTabButtonPositionKey) ?? TabListNewTabButtonPosition.bottom.rawValue
         ) ?? .bottom
         self.showLinkStatusBar = userDefaults.bool(forKey: showLinkStatusBarKey)
-        self.tabLayout = TabLayout(rawValue: userDefaults.string(forKey: tabLayoutKey) ?? TabLayout.sidebar.rawValue) ?? .sidebar
         self.didFinishOnboarding = userDefaults.bool(forKey: didFinishOnboardingKey)
         let storedMemoryMode = userDefaults.string(forKey: memoryModeKey)
         let resolvedMemoryMode = SumiMemoryMode.persistedValue(storedMemoryMode)
@@ -426,12 +404,6 @@ class SumiSettingsService {
     }
 
     private func enforceSumiChromeDefaults() {
-        if topBarAddressView {
-            topBarAddressView = false
-        }
-        if tabLayout != .sidebar {
-            tabLayout = .sidebar
-        }
         if !didFinishOnboarding {
             didFinishOnboarding = true
         }
@@ -680,12 +652,4 @@ extension EnvironmentValues {
         get { self[SumiSettingsServiceKey.self] }
         set { self[SumiSettingsServiceKey.self] = newValue }
     }
-}
-// MARK: - Tab Layout
-
-enum TabLayout: String, CaseIterable, Identifiable {
-    case sidebar
-    case topOfWindow
-
-    var id: String { rawValue }
 }

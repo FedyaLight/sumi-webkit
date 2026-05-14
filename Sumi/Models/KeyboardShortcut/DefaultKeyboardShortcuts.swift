@@ -1,8 +1,6 @@
 import Foundation
 
 enum DefaultKeyboardShortcuts {
-    static let hiddenActions: Set<ShortcutAction> = [.toggleTopBarAddressView]
-
     static let shortcuts: [KeyboardShortcut] = [
         KeyboardShortcut(action: .goBack, keyCombination: KeyCombination(key: "[", modifiers: [.command])),
         KeyboardShortcut(action: .goForward, keyCombination: KeyCombination(key: "]", modifiers: [.command])),

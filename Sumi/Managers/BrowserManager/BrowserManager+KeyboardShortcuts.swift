@@ -20,16 +20,16 @@ extension BrowserManager {
         if activeWindow.isCommandPaletteVisible,
            activeWindow.commandPalettePresentationReason == .emptySpace
         {
-            openCommandPalette(in: activeWindow, reason: .emptySpace)
+            showNewTabPalette(in: activeWindow)
             return
         }
 
         if currentTab(for: activeWindow)?.representsSumiEmptySurface == true {
-            openCommandPalette(in: activeWindow, reason: .emptySpace)
+            showNewTabPalette(in: activeWindow)
             return
         }
 
-        openCommandPalette(in: activeWindow, reason: .emptySpace)
+        showNewTabPalette(in: activeWindow)
     }
 
     func selectNextTabInActiveWindow() {
