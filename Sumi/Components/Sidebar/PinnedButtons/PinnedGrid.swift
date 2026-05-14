@@ -68,6 +68,10 @@ private struct SidebarEssentialsDisplayRow {
     var stableID: Int {
         startSlot
     }
+
+    var layoutSignature: [String] {
+        cells.map(\.stableID)
+    }
 }
 
 @MainActor
@@ -408,6 +412,7 @@ struct PinnedGrid: View {
             maxDropRowCount: maxDropRowCount,
             configuration: pinnedTabsConfiguration
         )
+        let displayLayoutSignature = displayRows.flatMap { $0.layoutSignature }
         let dropSlotFrames = resolvedDropSlotFrames(
             for: projectedLayout,
             revealTileSize: revealTileSize,
@@ -457,6 +462,7 @@ struct PinnedGrid: View {
                 .animation(shouldAnimate ? .easeInOut(duration: 0.18) : nil, value: projectedLayout.visualColumnSignature)
                 .animation(shouldAnimate ? .easeInOut(duration: 0.18) : nil, value: projectedLayout.projectedItemCount)
                 .animation(shouldAnimate ? .easeInOut(duration: 0.18) : nil, value: previewState?.expandedDropRowCount)
+                .animation(shouldAnimate ? SidebarDropMotion.gap : nil, value: displayLayoutSignature)
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
