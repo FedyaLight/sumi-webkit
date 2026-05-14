@@ -10,16 +10,15 @@ enum SidebarRowMotionMetrics {
     static let pressCancelDistance: CGFloat = 3
     static let pressDuration: Double = 0.20
     static let splitPressDuration: Double = 0.10
-    static let openDuration: Double = 0.12
-    static let closeDuration: Double = 0.10
+    static let openDuration: Double = 0.14
+    static let closeDuration: Double = 0.14
     static let actionFadeDuration: Double = 0.10
-    static let openScale: CGFloat = 0.95
-    static let closeScale: CGFloat = 0.95
-    static let titleBlurRadius: CGFloat = 1
 }
 
 enum SidebarDropMotion {
     static let gap = Animation.interactiveSpring(response: 0.22, dampingFraction: 0.86)
+    static let contentLayoutDuration: Double = 0.18
+    static let contentLayout = Animation.smooth(duration: contentLayoutDuration)
 }
 
 enum SidebarZenPressKind {
@@ -81,15 +80,11 @@ private struct SidebarZenPressEffectModifier: ViewModifier {
 
 private struct SidebarZenRowLifecycleModifier: ViewModifier {
     let isCollapsed: Bool
-    let scale: CGFloat
-    let blurRadius: CGFloat
 
     func body(content: Content) -> some View {
         content
             .frame(height: isCollapsed ? 0 : SidebarRowLayout.rowHeight, alignment: .top)
             .opacity(isCollapsed ? 0 : 1)
-            .scaleEffect(isCollapsed ? scale : 1, anchor: .top)
-            .blur(radius: isCollapsed ? blurRadius : 0)
             .clipped()
     }
 }
@@ -172,30 +167,22 @@ extension AnyTransition {
         .asymmetric(
             insertion: .modifier(
                 active: SidebarZenRowLifecycleModifier(
-                    isCollapsed: true,
-                    scale: SidebarRowMotionMetrics.openScale,
-                    blurRadius: SidebarRowMotionMetrics.titleBlurRadius
+                    isCollapsed: true
                 ),
                 identity: SidebarZenRowLifecycleModifier(
-                    isCollapsed: false,
-                    scale: 1,
-                    blurRadius: 0
+                    isCollapsed: false
                 )
             )
-            .animation(.easeOut(duration: SidebarRowMotionMetrics.openDuration)),
+            .animation(.smooth(duration: SidebarRowMotionMetrics.openDuration)),
             removal: .modifier(
                 active: SidebarZenRowLifecycleModifier(
-                    isCollapsed: true,
-                    scale: SidebarRowMotionMetrics.closeScale,
-                    blurRadius: 0
+                    isCollapsed: true
                 ),
                 identity: SidebarZenRowLifecycleModifier(
-                    isCollapsed: false,
-                    scale: 1,
-                    blurRadius: 0
+                    isCollapsed: false
                 )
             )
-            .animation(.easeOut(duration: SidebarRowMotionMetrics.closeDuration))
+            .animation(.smooth(duration: SidebarRowMotionMetrics.closeDuration))
         )
     }
 }

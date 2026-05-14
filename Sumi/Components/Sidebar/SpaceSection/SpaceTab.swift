@@ -16,6 +16,7 @@ struct SpaceTab: View {
     var onClose: () -> Void
     var onMute: () -> Void
     var contextMenuEntries: [SidebarContextMenuEntry] = []
+    var fetchesVisiblePresentation: Bool = true
     @FocusState private var isTextFieldFocused: Bool
     @State private var isRowHovered = false
     @State private var isCloseHovered = false
@@ -173,6 +174,7 @@ struct SpaceTab: View {
             entries: { contextMenuEntries }
         )
         .task(id: tab.url) {
+            guard fetchesVisiblePresentation else { return }
             await tab.fetchFaviconForVisiblePresentation()
         }
         .shadow(color: isActive ? shadowColor : Color.clear, radius: isActive ? 2 : 0, y: 1.5)

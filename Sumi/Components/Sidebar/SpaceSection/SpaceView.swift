@@ -23,6 +23,11 @@ enum SpaceViewRenderMode {
     }
 }
 
+enum RegularTabRenderedItem: Hashable {
+    case tab(UUID)
+    case gap(UUID)
+}
+
 struct SpaceView: View {
     let space: Space
     let renderMode: SpaceViewRenderMode
@@ -40,7 +45,13 @@ struct SpaceView: View {
     @State var deferredScrollStateMutation = SidebarDeferredStateMutation<CGRect>()
     @State var deferredContentHeightMutation = SidebarDeferredStateMutation<CGFloat>()
     @State var isNewTabHovered = false
+    @State var regularRenderedTabItems: [RegularTabRenderedItem] = []
+    @State var regularGapHeights: [UUID: CGFloat] = [:]
+    @State var regularInsertedTabHeights: [UUID: CGFloat] = [:]
+    @State var regularDeferredRemovalGapIdsByTabId: [UUID: UUID] = [:]
+    @State var regularLayoutAnimationGeneration = 0
     @Environment(\.resolvedThemeContext) var themeContext
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     let onActivateTab: (Tab) -> Void
     let onCloseTab: (Tab) -> Void
