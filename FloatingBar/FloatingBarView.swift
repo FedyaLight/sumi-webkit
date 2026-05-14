@@ -779,17 +779,23 @@ struct FloatingBarView: View {
             }
             guard !query.isEmpty else { return }
             let navigateURL = resolvedSiteSearchURL(site: site, query: query).absoluteString
-            if windowState.floatingBarDraftNavigatesCurrentTab
+            let navigatesCurrentTab = windowState.floatingBarDraftNavigatesCurrentTab
                 && browserManager.currentTab(for: windowState) != nil
-            {
-                browserManager.currentTab(for: windowState)?.loadURL(navigateURL)
-            } else {
-                browserManager.createNewTab(in: windowState, url: navigateURL)
-            }
             text = ""
             activeSiteSearch = nil
             selectedSuggestionIndex = -1
             browserManager.dismissFloatingBar(in: windowState, preserveDraft: false)
+            DispatchQueue.main.async {
+                if navigatesCurrentTab,
+                   let currentTab = browserManager.currentTab(for: windowState) {
+                    currentTab.loadURL(navigateURL)
+                } else {
+                    browserManager.createNewTabAfterSidebarInsertion(
+                        in: windowState,
+                        url: navigateURL
+                    )
+                }
+            }
             return
         }
 
@@ -812,11 +818,13 @@ struct FloatingBarView: View {
 
     private func selectSuggestion(_ suggestion: SearchManager.SearchSuggestion)
     {
-        browserManager.openFloatingBarSuggestion(suggestion, in: windowState)
         text = ""
         activeSiteSearch = nil
         selectedSuggestionIndex = -1
         browserManager.dismissFloatingBar(in: windowState, preserveDraft: false)
+        DispatchQueue.main.async {
+            browserManager.openFloatingBarSuggestion(suggestion, in: windowState)
+        }
     }
 
     private func resolvedSiteSearchURL(site: SiteSearchEntry, query: String) -> URL {

@@ -330,6 +330,7 @@ struct PinnedGrid: View {
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     init(
         width: CGFloat,
         spaceId: UUID? = nil,
@@ -367,10 +368,15 @@ struct PinnedGrid: View {
                 spaceId: geometrySpaceId,
                 profileId: effectiveProfileId
             )
-        let shouldAnimate = animateLayout
+        let shouldAnimateDropLayout = animateLayout
             && (windowRegistry.activeWindow?.id == windowState.id)
             && !browserManager.isTransitioningProfile
+            && !reduceMotion
             && dragState.shouldAnimateDropLayout
+        let shouldAnimateContentLayout = animateLayout
+            && (windowRegistry.activeWindow?.id == windowState.id)
+            && !browserManager.isTransitioningProfile
+            && !reduceMotion
 
         let showsRevealGap = items.isEmpty
             && dragState.isDragging
@@ -459,10 +465,11 @@ struct PinnedGrid: View {
                 }
                 .contentShape(Rectangle())
                 .fixedSize(horizontal: false, vertical: true)
-                .animation(shouldAnimate ? .easeInOut(duration: 0.18) : nil, value: projectedLayout.visualColumnSignature)
-                .animation(shouldAnimate ? .easeInOut(duration: 0.18) : nil, value: projectedLayout.projectedItemCount)
-                .animation(shouldAnimate ? .easeInOut(duration: 0.18) : nil, value: previewState?.expandedDropRowCount)
-                .animation(shouldAnimate ? SidebarDropMotion.gap : nil, value: displayLayoutSignature)
+                .animation(shouldAnimateContentLayout ? SidebarDropMotion.contentLayout : nil, value: items.map(\.id))
+                .animation(shouldAnimateContentLayout ? SidebarDropMotion.contentLayout : nil, value: projectedLayout.visualColumnSignature)
+                .animation(shouldAnimateContentLayout ? SidebarDropMotion.contentLayout : nil, value: projectedLayout.projectedItemCount)
+                .animation(shouldAnimateDropLayout ? .easeInOut(duration: 0.18) : nil, value: previewState?.expandedDropRowCount)
+                .animation(shouldAnimateDropLayout ? SidebarDropMotion.gap : nil, value: displayLayoutSignature)
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -521,7 +528,7 @@ struct PinnedGrid: View {
             onActivate: { activate(pin) },
             onClose: { closeIfActive(pin) },
             onUnload: { unload(pin) },
-            onRemovePin: { browserManager.tabManager.removeFromEssentials(pin) },
+            onRemovePin: { removeFromEssentials(pin) },
             onUnpinToRegular: { moveToRegularTabs(pin) },
             onSplitRight: { openInSplit(pin, side: .right) },
             onSplitLeft: { openInSplit(pin, side: .left) },
@@ -537,6 +544,11 @@ struct PinnedGrid: View {
                 : 1
         )
         .environmentObject(browserManager)
+        .transition(
+            reduceMotion
+                ? .identity
+                : .scale(scale: 0.96, anchor: .center).combined(with: .opacity)
+        )
     }
 
     @ViewBuilder
@@ -604,7 +616,28 @@ struct PinnedGrid: View {
             windowState.currentSpaceId.flatMap({ id in browserManager.tabManager.spaces.first(where: { $0.id == id }) })
             ?? browserManager.tabManager.currentSpace
         else { return }
-        browserManager.tabManager.convertShortcutPinToRegularTab(pin, in: targetSpace.id)
+        mutateContentLayout {
+            browserManager.tabManager.convertShortcutPinToRegularTab(pin, in: targetSpace.id)
+        }
+    }
+
+    private func removeFromEssentials(_ pin: ShortcutPin) {
+        mutateContentLayout {
+            browserManager.tabManager.removeFromEssentials(pin)
+        }
+    }
+
+    private func mutateContentLayout(_ update: () -> Void) {
+        guard animateLayout,
+              windowRegistry.activeWindow?.id == windowState.id,
+              !browserManager.isTransitioningProfile,
+              !reduceMotion,
+              !dragState.isCompletingDrop else {
+            update()
+            return
+        }
+
+        withAnimation(SidebarDropMotion.contentLayout, update)
     }
 
     private var geometrySpaceId: UUID {

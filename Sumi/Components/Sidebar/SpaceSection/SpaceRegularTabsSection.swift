@@ -11,6 +11,8 @@ private enum RegularExternalDropGapPlacement: Equatable {
     case bottom
 }
 
+private let regularDragProjectionGapId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+
 extension SpaceView {
     private var showsNewTabButtonInList: Bool {
         sumiSettings.showNewTabButtonInTabList
@@ -118,6 +120,12 @@ extension SpaceView {
 
             regularTabsDragSpacer
         }
+        .onAppear {
+            syncRegularRenderedTabsWithoutAnimation(to: tabs.map(\.id))
+        }
+        .onChange(of: tabs.map(\.id)) { oldValue, newValue in
+            animateRegularRenderedTabsChange(from: oldValue, to: newValue)
+        }
         .sidebarSectionGeometry(
             for: .spaceRegular,
             spaceId: space.id,
@@ -149,7 +157,7 @@ extension SpaceView {
     }
 
     private var regularTabsRenderedRowCount: Int {
-        regularProjectedItems(currentTabs: tabs).count
+        regularDisplayItems(currentTabs: tabs).count
     }
 
     private var regularTabsListInner: some View {
@@ -209,7 +217,7 @@ extension SpaceView {
                         isAppKitInteractionEnabled: isInteractive,
                         contextMenuEntries: regularTabContextMenuEntries,
                         onActivate: onActivateTab,
-                        onClose: onCloseTab
+                        onClose: closeRegularTab
                     )
                     .environmentObject(browserManager)
                 }
@@ -222,24 +230,332 @@ extension SpaceView {
     }
 
     private func regularTabsView(currentTabs: [Tab]) -> some View {
-        return LazyVStack(spacing: 2) {
+        return VStack(spacing: 2) {
             let tabById = Dictionary(uniqueKeysWithValues: currentTabs.map { ($0.id, $0) })
-            ForEach(regularProjectedItems(currentTabs: currentTabs), id: \.self) { item in
+            ForEach(regularDisplayItems(currentTabs: currentTabs), id: \.self) { item in
                 switch item {
-                case .item(let tabId):
+                case .tab(let tabId):
                     if let tab = tabById[tabId] {
-                        VStack(spacing: 0) {
-                            regularTabView(tab)
-                        }
+                        regularRenderedTabView(tab)
                     }
-                case .placeholder:
-                    regularDropGap
+                case .gap(let gapId):
+                    regularLayoutGap(gapId)
                 }
             }
         }
         .overlay(alignment: .topLeading) {
             if !regularTabsUsesProjectedDropLayout {
                 regularDropGuideOverlay(itemCount: currentTabs.count)
+            }
+        }
+    }
+
+    private func regularDisplayItems(currentTabs: [Tab]) -> [RegularTabRenderedItem] {
+        if regularTabsUsesProjectedDropLayout {
+            return regularProjectedItems(currentTabs: currentTabs).map { item in
+                switch item {
+                case .item(let tabId):
+                    return .tab(tabId)
+                case .placeholder:
+                    return .gap(regularDragProjectionGapId)
+                }
+            }
+        }
+
+        let currentTabIds = currentTabs.map(\.id)
+        guard !regularRenderedTabItems.isEmpty else {
+            return currentTabIds.map(RegularTabRenderedItem.tab)
+        }
+
+        return regularRenderedTabItems.compactMap { item in
+            switch item {
+            case .tab(let tabId):
+                return currentTabIds.contains(tabId) ? item : nil
+            case .gap:
+                return item
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func regularRenderedTabView(_ tab: Tab) -> some View {
+        if let height = regularInsertedTabHeights[tab.id] {
+            let progress = regularInsertedTabProgress(for: height)
+
+            regularInsertedTabPreview(tab, progress: progress)
+                .frame(height: height, alignment: .top)
+                .frame(maxWidth: .infinity)
+                .clipped()
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        } else {
+            VStack(spacing: 0) {
+                regularTabView(tab)
+            }
+        }
+    }
+
+    private func regularInsertedTabProgress(for height: CGFloat) -> CGFloat {
+        guard SidebarRowLayout.rowHeight > 0 else { return 1 }
+        return min(max(height / SidebarRowLayout.rowHeight, 0), 1)
+    }
+
+    private func regularLayoutGap(_ gapId: UUID) -> some View {
+        let height = regularGapHeights[gapId] ?? SidebarRowLayout.rowHeight
+
+        return Color.clear
+            .frame(height: height, alignment: .top)
+            .frame(maxWidth: .infinity)
+            .clipped()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    private func regularInsertedTabPreview(_ tab: Tab, progress: CGFloat) -> some View {
+        HStack(spacing: 8) {
+            regularInsertedTabPreviewIcon(tab)
+
+            SumiTabTitleLabel(
+                title: tab.name,
+                font: .systemFont(ofSize: 13, weight: .medium),
+                textColor: tokens.primaryText,
+                trailingFadePadding: SidebarHoverChrome.trailingFadePadding(
+                    showsTrailingAction: windowState.currentTabId == tab.id
+                ),
+                animated: false,
+                isLoading: false
+            )
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            .textSelection(.disabled)
+
+            Image(systemName: "xmark")
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundStyle(tokens.primaryText)
+                .frame(
+                    width: SidebarRowLayout.trailingActionSize,
+                    height: SidebarRowLayout.trailingActionSize
+                )
+                .opacity(windowState.currentTabId == tab.id ? 1 : 0)
+        }
+        .padding(.leading, SidebarRowLayout.leadingInset)
+        .padding(.trailing, SidebarRowLayout.trailingInset)
+        .frame(height: SidebarRowLayout.rowHeight)
+        .frame(minWidth: 0, maxWidth: .infinity)
+        .background(windowState.currentTabId == tab.id ? tokens.sidebarRowActive : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .offset(y: -4 * (1 - progress))
+    }
+
+    @ViewBuilder
+    private func regularInsertedTabPreviewIcon(_ tab: Tab) -> some View {
+        if tab.usesChromeThemedTemplateFavicon {
+            Image(systemName: regularInsertedTabPreviewSystemImageName(for: tab))
+                .font(.system(size: SidebarRowLayout.faviconSize * 0.78, weight: .medium))
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(tokens.primaryText)
+                .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
+        } else {
+            tab.favicon
+                .resizable()
+                .scaledToFit()
+                .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+    }
+
+    private func regularInsertedTabPreviewSystemImageName(for tab: Tab) -> String {
+        if tab.representsSumiSettingsSurface {
+            return SumiSurface.settingsTabFaviconSystemImageName
+        }
+        if tab.representsSumiHistorySurface {
+            return SumiSurface.historyTabFaviconSystemImageName
+        }
+        if tab.representsSumiBookmarksSurface {
+            return SumiSurface.bookmarksTabFaviconSystemImageName
+        }
+        return "globe"
+    }
+
+    private func syncRegularRenderedTabsWithoutAnimation(to tabIds: [UUID]) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        transaction.animation = nil
+        withTransaction(transaction) {
+            regularRenderedTabItems = tabIds.map(RegularTabRenderedItem.tab)
+            regularGapHeights.removeAll()
+            regularInsertedTabHeights.removeAll()
+            regularDeferredRemovalGapIdsByTabId.removeAll()
+            regularLayoutAnimationGeneration += 1
+        }
+    }
+
+    private func animateRegularRenderedTabsChange(from oldIds: [UUID], to newIds: [UUID]) {
+        guard let animation = sidebarContentMutationAnimation else {
+            syncRegularRenderedTabsWithoutAnimation(to: newIds)
+            return
+        }
+
+        if let insertedId = newIds.first(where: { !oldIds.contains($0) }) {
+            animateRegularInsertion(insertedId: insertedId, newIds: newIds, animation: animation)
+            return
+        }
+
+        if let removedId = oldIds.first(where: { !newIds.contains($0) }),
+           let removalIndex = oldIds.firstIndex(of: removedId) {
+            if let gapId = regularDeferredRemovalGapIdsByTabId[removedId] {
+                completeDeferredRegularRemoval(removedId: removedId, gapId: gapId, newIds: newIds)
+                return
+            }
+            animateRegularRemoval(removalIndex: removalIndex, newIds: newIds, animation: animation)
+            return
+        }
+
+        withAnimation(animation) {
+            regularRenderedTabItems = newIds.map(RegularTabRenderedItem.tab)
+        }
+    }
+
+    private func animateRegularInsertion(
+        insertedId: UUID,
+        newIds: [UUID],
+        animation: Animation
+    ) {
+        let finalItems = newIds.map(RegularTabRenderedItem.tab)
+        let generation = regularLayoutAnimationGeneration + 1
+
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        transaction.animation = nil
+        withTransaction(transaction) {
+            regularLayoutAnimationGeneration = generation
+            regularRenderedTabItems = finalItems
+            regularInsertedTabHeights[insertedId] = 0
+        }
+
+        DispatchQueue.main.async {
+            withAnimation(animation) {
+                regularInsertedTabHeights[insertedId] = SidebarRowLayout.rowHeight
+            }
+        }
+
+        completeRegularInsertionAnimation(generation: generation, finalItems: finalItems, insertedId: insertedId)
+    }
+
+    private func animateRegularRemoval(
+        removalIndex: Int,
+        newIds: [UUID],
+        animation: Animation
+    ) {
+        let gapId = UUID()
+        let finalItems = newIds.map(RegularTabRenderedItem.tab)
+        var stagedItems = finalItems
+        stagedItems.insert(.gap(gapId), at: min(removalIndex, stagedItems.count))
+        let generation = regularLayoutAnimationGeneration + 1
+
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        transaction.animation = nil
+        withTransaction(transaction) {
+            regularLayoutAnimationGeneration = generation
+            regularRenderedTabItems = stagedItems
+            regularGapHeights[gapId] = SidebarRowLayout.rowHeight
+        }
+
+        DispatchQueue.main.async {
+            withAnimation(animation) {
+                regularGapHeights[gapId] = 0
+            }
+        }
+
+        completeRegularRemovalAnimation(generation: generation, finalItems: finalItems, gapId: gapId)
+    }
+
+    @discardableResult
+    private func animateRegularDeferredRemoval(_ tab: Tab, animation: Animation) -> Bool {
+        let currentIds = tabs.map(\.id)
+        guard currentIds.contains(tab.id) else {
+            return false
+        }
+        guard regularDeferredRemovalGapIdsByTabId[tab.id] == nil else {
+            return true
+        }
+
+        let gapId = UUID()
+        let stagedItems = currentIds.map { tabId -> RegularTabRenderedItem in
+            tabId == tab.id ? .gap(gapId) : .tab(tabId)
+        }
+        let generation = regularLayoutAnimationGeneration + 1
+
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        transaction.animation = nil
+        withTransaction(transaction) {
+            regularLayoutAnimationGeneration = generation
+            regularRenderedTabItems = stagedItems
+            regularGapHeights[gapId] = SidebarRowLayout.rowHeight
+            regularDeferredRemovalGapIdsByTabId[tab.id] = gapId
+        }
+
+        DispatchQueue.main.async {
+            withAnimation(animation) {
+                regularGapHeights[gapId] = 0
+            }
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + SidebarDropMotion.contentLayoutDuration) {
+            guard regularDeferredRemovalGapIdsByTabId[tab.id] == gapId else { return }
+            onCloseTab(tab)
+        }
+
+        return true
+    }
+
+    private func completeDeferredRegularRemoval(
+        removedId: UUID,
+        gapId: UUID,
+        newIds: [UUID]
+    ) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        transaction.animation = nil
+        withTransaction(transaction) {
+            regularRenderedTabItems = newIds.map(RegularTabRenderedItem.tab)
+            regularGapHeights.removeValue(forKey: gapId)
+            regularDeferredRemovalGapIdsByTabId.removeValue(forKey: removedId)
+            regularLayoutAnimationGeneration += 1
+        }
+    }
+
+    private func completeRegularInsertionAnimation(
+        generation: Int,
+        finalItems: [RegularTabRenderedItem],
+        insertedId: UUID
+    ) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + SidebarDropMotion.contentLayoutDuration) {
+            guard regularLayoutAnimationGeneration == generation else { return }
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            transaction.animation = nil
+            withTransaction(transaction) {
+                regularRenderedTabItems = finalItems
+                regularInsertedTabHeights.removeValue(forKey: insertedId)
+            }
+        }
+    }
+
+    private func completeRegularRemovalAnimation(
+        generation: Int,
+        finalItems: [RegularTabRenderedItem],
+        gapId: UUID
+    ) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + SidebarDropMotion.contentLayoutDuration) {
+            guard regularLayoutAnimationGeneration == generation else { return }
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            transaction.animation = nil
+            withTransaction(transaction) {
+                regularRenderedTabItems = finalItems
+                regularGapHeights.removeValue(forKey: gapId)
             }
         }
     }
@@ -352,7 +668,7 @@ extension SpaceView {
             ),
             isAppKitInteractionEnabled: isInteractive,
             action: { handleUserTabActivation(tab) },
-            onClose: { onCloseTab(tab) },
+            onClose: { closeRegularTab(tab) },
             onMute: { onMuteTab(tab) },
             contextMenuEntries: regularTabContextMenuEntries(tab)
         )
@@ -361,10 +677,18 @@ extension SpaceView {
                 ? 0.001
                 : 1
         )
-        .id(tab.id)
-        .sidebarZenRowLifecycleTransition(isEnabled: isInteractive)
         .accessibilityIdentifier("space-regular-tab-\(tab.id.uuidString)")
         .accessibilityValue(windowState.currentTabId == tab.id ? "selected" : "not selected")
+    }
+
+    private func closeRegularTab(_ tab: Tab) {
+        if let animation = sidebarContentMutationAnimation {
+            if !animateRegularDeferredRemoval(tab, animation: animation) {
+                onCloseTab(tab)
+            }
+        } else {
+            onCloseTab(tab)
+        }
     }
 
     private func regularTabContextMenuEntries(_ tab: Tab) -> [SidebarContextMenuEntry] {
@@ -413,7 +737,7 @@ extension SpaceView {
                 onPinToSpace: { browserManager.tabManager.pinTabToSpace(tab, spaceId: space.id) },
                 onPinGlobally: { onPinTab(tab) },
                 onCloseAllBelow: { browserManager.tabManager.closeAllTabsBelow(tab) },
-                onClose: { onCloseTab(tab) }
+                onClose: { closeRegularTab(tab) }
             )
         )
     }

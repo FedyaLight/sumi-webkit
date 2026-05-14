@@ -10,6 +10,12 @@ extension SpaceView {
         isInteractive ? .easeInOut(duration: 0.14) : nil
     }
 
+    var sidebarContentMutationAnimation: Animation? {
+        isInteractive && !reduceMotion && !dragState.isCompletingDrop
+            ? SidebarDropMotion.contentLayout
+            : nil
+    }
+
     @ViewBuilder
     func dropLine(isFolder: Bool = false) -> some View {
         SidebarInsertionGuide()

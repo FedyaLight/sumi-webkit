@@ -785,7 +785,10 @@ class BrowserManager: ObservableObject {
                     category: "FloatingBar"
                 )
             } else {
-                createNewTab(in: windowState, url: historyEntry.url.absoluteString)
+                createNewTabAfterSidebarInsertion(
+                    in: windowState,
+                    url: historyEntry.url.absoluteString
+                )
                 RuntimeDiagnostics.debug(
                     "Created new tab from history in window \(windowState.id)",
                     category: "FloatingBar"
@@ -801,7 +804,10 @@ class BrowserManager: ObservableObject {
                     category: "FloatingBar"
                 )
             } else {
-                createNewTab(in: windowState, url: bookmark.url.absoluteString)
+                createNewTabAfterSidebarInsertion(
+                    in: windowState,
+                    url: bookmark.url.absoluteString
+                )
                 RuntimeDiagnostics.debug(
                     "Created new tab from bookmark in window \(windowState.id)",
                     category: "FloatingBar"
@@ -819,7 +825,7 @@ class BrowserManager: ObservableObject {
             } else {
                 let template = sumiSettings?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
                 let resolved = normalizeURL(suggestion.text, queryTemplate: template)
-                createNewTab(in: windowState, url: resolved)
+                createNewTabAfterSidebarInsertion(in: windowState, url: resolved)
                 RuntimeDiagnostics.debug(
                     "Created new tab in window \(windowState.id)",
                     category: "FloatingBar"
@@ -829,6 +835,9 @@ class BrowserManager: ObservableObject {
     }
 
     private func dismissFloatingBarAfterSelection(in windowState: BrowserWindowState) {
+        guard windowState.isFloatingBarVisible || windowState.floatingBarPresentationReason != .none else {
+            return
+        }
         let preserveDraft = windowState.floatingBarPresentationReason != .emptySpace
         dismissFloatingBar(in: windowState, preserveDraft: preserveDraft)
     }
@@ -927,6 +936,35 @@ class BrowserManager: ObservableObject {
             url: url,
             context: .foreground(windowState: windowState)
         )
+    }
+
+    @discardableResult
+    func createNewTabAfterSidebarInsertion(
+        in windowState: BrowserWindowState,
+        url: String = SumiSurface.emptyTabURL.absoluteString
+    ) -> Tab {
+        guard !windowState.isIncognito else {
+            return openNewTab(
+                url: url,
+                context: .foreground(windowState: windowState)
+            )
+        }
+
+        let targetSpace = resolvedTabOpenSpace(
+            for: .foreground(windowState: windowState)
+        )
+        let newTab = tabManager.createNewTab(
+            url: url,
+            in: targetSpace,
+            activate: false
+        )
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + SidebarDropMotion.contentLayoutDuration) { [weak self, weak newTab] in
+            guard let self, let newTab, self.tabManager.tab(for: newTab.id) != nil else { return }
+            self.selectTab(newTab, in: windowState, loadPolicy: .deferred)
+        }
+
+        return newTab
     }
 
     @discardableResult

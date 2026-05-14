@@ -244,6 +244,7 @@ extension SpaceView {
         .animation(isInteractive ? .easeInOut(duration: 0.25) : nil, value: hasSpacePinnedContent)
         .animation(isInteractive ? .easeInOut(duration: 0.18) : nil, value: showsEmptyPinnedDropPlaceholder)
         .animation(isInteractive ? .easeInOut(duration: 0.2) : nil, value: pinnedEmptyDropShowsRowPreview)
+        .animation(sidebarContentMutationAnimation, value: spacePinnedItems)
         .transaction { transaction in
             if dragState.isCompletingDrop {
                 transaction.animation = nil
@@ -293,6 +294,7 @@ extension SpaceView {
             isInteractive && dragState.shouldAnimateDropLayout ? SidebarDropMotion.gap : nil,
             value: projectedSpacePinnedItems
         )
+        .animation(sidebarContentMutationAnimation, value: spacePinnedItems)
         .padding(.bottom, 8) // Add padding to act as drag tail for spacePinned
     }
 
@@ -371,6 +373,7 @@ extension SpaceView {
             generation: dragState.sidebarGeometryGeneration,
             isActive: isInteractive
         )
+        .sidebarZenRowLifecycleTransition(isEnabled: isInteractive)
     }
 
     private func pinnedShortcutView(_ pin: ShortcutPin, topLevelPinnedIndex: Int) -> some View {
@@ -391,7 +394,7 @@ extension SpaceView {
             },
             onResetToLaunchURL: { resetShortcutPin(pin) },
             onUnload: { unloadShortcutPin(pin) },
-            onRemove: { browserManager.tabManager.removeShortcutPin(pin) }
+            onRemove: { removeShortcutPin(pin) }
         )
         .opacity(
             dragState.isDragging && dragState.activeDragItemId == pin.id
@@ -405,6 +408,7 @@ extension SpaceView {
             generation: dragState.sidebarGeometryGeneration,
             isActive: isInteractive
         )
+        .sidebarZenRowLifecycleTransition(isEnabled: isInteractive)
     }
 
     private func pinnedShortcutContextMenuEntries(
@@ -430,8 +434,8 @@ extension SpaceView {
                         source: windowState.resolveSidebarPresentationSource()
                     )
                 },
-                onUnpin: { browserManager.tabManager.removeShortcutPin(pin) },
-                onMoveToRegularTabs: { browserManager.tabManager.convertShortcutPinToRegularTab(pin, in: space.id) },
+                onUnpin: { removeShortcutPin(pin) },
+                onMoveToRegularTabs: { moveShortcutPinToRegularTabs(pin) },
                 onPinGlobally: { pinShortcutGlobally(pin) },
                 onCloseCurrentPage: { closeShortcutPinIfActive(pin) }
             )
@@ -485,7 +489,33 @@ extension SpaceView {
     // MARK: - Folder Management
 
     private func deleteFolder(_ folder: TabFolder) {
-        browserManager.tabManager.deleteFolder(folder.id)
+        if let animation = sidebarContentMutationAnimation {
+            withAnimation(animation) {
+                browserManager.tabManager.deleteFolder(folder.id)
+            }
+        } else {
+            browserManager.tabManager.deleteFolder(folder.id)
+        }
+    }
+
+    private func removeShortcutPin(_ pin: ShortcutPin) {
+        if let animation = sidebarContentMutationAnimation {
+            withAnimation(animation) {
+                browserManager.tabManager.removeShortcutPin(pin)
+            }
+        } else {
+            browserManager.tabManager.removeShortcutPin(pin)
+        }
+    }
+
+    private func moveShortcutPinToRegularTabs(_ pin: ShortcutPin) {
+        if let animation = sidebarContentMutationAnimation {
+            withAnimation(animation) {
+                browserManager.tabManager.convertShortcutPinToRegularTab(pin, in: space.id)
+            }
+        } else {
+            browserManager.tabManager.convertShortcutPinToRegularTab(pin, in: space.id)
+        }
     }
 
     private func addTabToFolder(_ folder: TabFolder) {

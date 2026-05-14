@@ -48,6 +48,7 @@ struct TabFolderView: View {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var dragState = SidebarDragState.shared
 
     private var isInteractive: Bool {
@@ -269,7 +270,7 @@ struct TabFolderView: View {
     }
 
     private var folderLayoutAnimation: Animation? {
-        isInteractive && dragState.shouldAnimateDropLayout ? Self.zenFolderContentAnimation : nil
+        isInteractive && !reduceMotion && !dragState.isCompletingDrop ? Self.zenFolderContentAnimation : nil
     }
 
     private var folderHasActiveSelection: Bool {
@@ -736,13 +737,14 @@ struct TabFolderView: View {
             },
             onResetToLaunchURL: { resetShortcutPin(pin) },
             onUnload: { unloadShortcutPin(pin) },
-            onRemove: { browserManager.tabManager.removeShortcutPin(pin) }
+            onRemove: { removeShortcutPin(pin) }
         )
         .opacity(
             dragState.isDragging && dragState.activeDragItemId == pin.id
                 ? 0.001
                 : 1
         )
+        .sidebarZenRowLifecycleTransition(isEnabled: isInteractive)
     }
 
     private func folderShortcutContextMenuEntries(
@@ -768,8 +770,8 @@ struct TabFolderView: View {
                         source: windowState.resolveSidebarPresentationSource()
                     )
                 },
-                onUnpin: { browserManager.tabManager.removeShortcutPin(pin) },
-                onMoveToRegularTabs: { browserManager.tabManager.convertShortcutPinToRegularTab(pin, in: space.id) },
+                onUnpin: { removeShortcutPin(pin) },
+                onMoveToRegularTabs: { moveShortcutPinToRegularTabs(pin) },
                 onPinGlobally: nil,
                 onCloseCurrentPage: { closeShortcutPinIfActive(pin) }
             )
@@ -1011,6 +1013,26 @@ struct TabFolderView: View {
         guard let current = browserManager.tabManager.selectedShortcutLiveTab(for: pin.id, in: windowState)
         else { return }
         browserManager.closeTab(current, in: windowState)
+    }
+
+    private func removeShortcutPin(_ pin: ShortcutPin) {
+        mutateFolderContent {
+            browserManager.tabManager.removeShortcutPin(pin)
+        }
+    }
+
+    private func moveShortcutPinToRegularTabs(_ pin: ShortcutPin) {
+        mutateFolderContent {
+            browserManager.tabManager.convertShortcutPinToRegularTab(pin, in: space.id)
+        }
+    }
+
+    private func mutateFolderContent(_ update: () -> Void) {
+        if let animation = folderLayoutAnimation {
+            withAnimation(animation, update)
+        } else {
+            update()
+        }
     }
 
     private func unloadShortcutPin(_ pin: ShortcutPin) {
