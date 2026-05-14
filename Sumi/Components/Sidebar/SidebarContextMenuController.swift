@@ -231,6 +231,23 @@ private extension NSView {
     }
 }
 
+enum SidebarContextMenuPopupReturnPolicy {
+    static func finalizationReason(
+        didBecomeVisible: Bool,
+        didClose: Bool
+    ) -> String? {
+        if didClose {
+            return "popup-return-after-close"
+        }
+
+        if !didBecomeVisible {
+            return "popup-return-before-open"
+        }
+
+        return nil
+    }
+}
+
 @MainActor
 final class SidebarContextMenuController {
     let interactionState: SidebarInteractionState
@@ -242,7 +259,7 @@ final class SidebarContextMenuController {
     private weak var activePrimaryMouseTrackingOwner: SidebarInteractiveItemView?
     private weak var observedWindow: NSWindow?
     private var windowObservers: [NSObjectProtocol] = []
-    private weak var activeRootMenu: NSMenu?
+    private var activeRootMenu: NSMenu?
     private var menuEndTrackingObserver: NSObjectProtocol?
 
     private var activeSessionID: UUID?
@@ -446,16 +463,7 @@ final class SidebarContextMenuController {
 
         builder.forceCloseLifecycleIfNeeded()
 
-        // If AppKit never opened the menu, `didEndTracking` will not arrive and the
-        // eager session must still unwind immediately.
-        if activeSessionID == sessionID,
-           !activeSessionDidBecomeVisible
-        {
-            finalizeMenuSession(
-                sessionID: sessionID,
-                reason: "popup-return-before-open"
-            )
-        }
+        finalizeReturnedMenuSessionIfNeeded(sessionID: sessionID)
     }
 
     @discardableResult
@@ -571,6 +579,19 @@ final class SidebarContextMenuController {
         finalizeMenuSession(
             sessionID: sessionID,
             reason: "didEndTracking"
+        )
+    }
+
+    private func finalizeReturnedMenuSessionIfNeeded(sessionID: UUID) {
+        guard activeSessionID == sessionID else { return }
+        guard let reason = SidebarContextMenuPopupReturnPolicy.finalizationReason(
+            didBecomeVisible: activeSessionDidBecomeVisible,
+            didClose: activeSessionDidClose
+        ) else { return }
+
+        finalizeMenuSession(
+            sessionID: sessionID,
+            reason: reason
         )
     }
 
