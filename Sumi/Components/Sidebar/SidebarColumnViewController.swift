@@ -44,7 +44,6 @@ final class SidebarColumnViewController: NSViewController {
         isCollapsedOverlayHitTestingEnabled: Bool = false,
         onPointerDown: (() -> Void)? = nil
     ) {
-        let previousHostedSidebarView = hostingController?.view
         let containerView = view as? SidebarColumnBaseContainerView
         containerView?.contextMenuController = contextMenuController
         containerView?.onPointerDown = onPointerDown
@@ -82,13 +81,6 @@ final class SidebarColumnViewController: NSViewController {
         }
 
         containerView?.hostedSidebarView = hostingController?.view
-        SidebarUITestDragMarker.recordEvent(
-            "hostedSidebarUpdate",
-            dragItemID: nil,
-            ownerDescription: "nil",
-            viewDescription: sidebarViewDebugDescription(hostingController?.view),
-            details: "reusedHostedRoot=\(previousHostedSidebarView === hostingController?.view) previousHostedRoot=\(sidebarViewDebugDescription(previousHostedSidebarView)) hostedRoot=\(sidebarViewDebugDescription(hostingController?.view)) controller=\(sidebarObjectDebugDescription(hostingController)) width=\(Int(width))"
-        )
 
         syncRecoveryAnchor(window: view.window)
     }

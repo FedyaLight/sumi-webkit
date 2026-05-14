@@ -212,7 +212,6 @@ final class SidebarTransientSessionCoordinator {
     private struct SessionRecord {
         let token: SidebarTransientSessionToken
         let source: SidebarTransientPresentationSource
-        let path: String
         var handles: [SidebarTransientInteractionHandle]
     }
 
@@ -258,9 +257,6 @@ final class SidebarTransientSessionCoordinator {
         pendingPresentationSource = capturePresentationSource(ownerView: ownerView)
         pendingCleanupScheduled = false
         pendingMenuActionRecoveryTier = .soft
-        RuntimeDiagnostics.emit {
-            "🧭 Sidebar transient source prepared window=\(windowID.uuidString) owner=\(ownerDebugDescription(from: pendingPresentationSource?.originOwnerView, metadata: pendingPresentationSource?.interactiveOwnerRecoveryMetadata))"
-        }
     }
 
     func preparedPresentationSource(
@@ -336,7 +332,7 @@ final class SidebarTransientSessionCoordinator {
     }
 
     func beginMenuActionDispatch(
-        path: String,
+        path _: String,
         classification: SidebarContextMenuActionClassification
     ) {
         pendingMenuActionCount += 1
@@ -345,9 +341,6 @@ final class SidebarTransientSessionCoordinator {
             pendingMenuActionRecoveryTier,
             classification.recoveryTier
         )
-        RuntimeDiagnostics.emit {
-            "🧭 Sidebar transient menu action begin window=\(windowID.uuidString) path=\(path) classification=\(classification.rawValue) pending=\(pendingMenuActionCount) tier=\(pendingMenuActionRecoveryTier)"
-        }
     }
 
     func finishMenuActionDispatch(
@@ -365,10 +358,7 @@ final class SidebarTransientSessionCoordinator {
                 self.pendingMenuActionRecoveryTier,
                 classification.recoveryTier
             )
-            RuntimeDiagnostics.emit {
-                "🧭 Sidebar transient menu action drained window=\(self.windowID.uuidString) path=\(path) classification=\(classification.rawValue) pending=\(self.pendingMenuActionCount) tier=\(self.pendingMenuActionRecoveryTier)"
-            }
-            self.scheduleFinalRecoveryIfPossible(reason: "menu-action-drain:\(path)")
+            self.scheduleFinalRecoveryIfPossible()
             if self.pendingMenuActionCount == 0 {
                 self.pendingMenuActionRecoveryTier = .soft
             }
@@ -383,12 +373,8 @@ final class SidebarTransientSessionCoordinator {
         sessionOrder.removeAll { $0 == token.id }
         interactionState.endSession(kind: token.kind, tokenID: token.id)
 
-        RuntimeDiagnostics.emit {
-            "🧭 Sidebar transient end [\(token.kind.rawValue)] window=\(record.source.windowID.uuidString) path=\(record.path)"
-        }
-
         record.handles.forEach { $0.disarm() }
-        reconcileInteractionState(reason: "end:\(reason):\(token.kind.rawValue)")
+        reconcileInteractionState()
         queueFinalRecovery(
             for: record.source,
             reason: "\(reason):\(token.kind.rawValue)",
@@ -404,7 +390,7 @@ final class SidebarTransientSessionCoordinator {
     private func register(
         token: SidebarTransientSessionToken,
         source: SidebarTransientPresentationSource,
-        path: String,
+        path _: String,
         handles: [SidebarTransientInteractionHandle],
         preservePendingSource: Bool
     ) {
@@ -413,7 +399,6 @@ final class SidebarTransientSessionCoordinator {
         sessions[token.id] = SessionRecord(
             token: token,
             source: source,
-            path: path,
             handles: handles
         )
         sessionOrder.removeAll { $0 == token.id }
@@ -423,27 +408,16 @@ final class SidebarTransientSessionCoordinator {
             pendingPresentationSource = nil
         }
         pendingCleanupScheduled = false
-        reconcileInteractionState(reason: "begin:\(path):\(token.kind.rawValue)")
-
-        RuntimeDiagnostics.emit {
-            "🧭 Sidebar transient begin [\(token.kind.rawValue)] window=\(source.windowID.uuidString) path=\(path) owner=\(ownerDebugDescription(from: source.originOwnerView, metadata: source.interactiveOwnerRecoveryMetadata))"
-        }
+        reconcileInteractionState()
     }
 
-    private func reconcileInteractionState(reason: String) {
+    private func reconcileInteractionState() {
         var activeTokenIDsByKind: [SidebarTransientUIKind: Set<UUID>] = [:]
         for record in sessions.values {
             activeTokenIDsByKind[record.token.kind, default: []].insert(record.token.id)
         }
 
-        let before = interactionState.activeKindsDescription
         interactionState.reconcileSessions(activeTokenIDsByKind)
-        let after = interactionState.activeKindsDescription
-        if before != after {
-            RuntimeDiagnostics.emit {
-                "🧭 Sidebar transient interaction reconciled window=\(windowID.uuidString) reason=\(reason) before=\(before) after=\(after)"
-            }
-        }
     }
 
     private func capturePresentationSource(
@@ -497,13 +471,10 @@ final class SidebarTransientSessionCoordinator {
             )
         }
 
-        RuntimeDiagnostics.emit {
-            "🧭 Sidebar transient queued recovery window=\(source.windowID.uuidString) tier=\(tier) reason=\(reason)"
-        }
-        scheduleFinalRecoveryIfPossible(reason: reason)
+        scheduleFinalRecoveryIfPossible()
     }
 
-    private func scheduleFinalRecoveryIfPossible(reason: String) {
+    private func scheduleFinalRecoveryIfPossible() {
         guard !pendingFinalRecoveryScheduled else { return }
         pendingFinalRecoveryScheduled = true
 
@@ -514,12 +485,7 @@ final class SidebarTransientSessionCoordinator {
                 guard let self else { return }
                 self.pendingFinalRecoveryScheduled = false
 
-                guard self.canRunFinalRecovery else {
-                    RuntimeDiagnostics.emit {
-                        "🧭 Sidebar transient final recovery blocked window=\(self.windowID.uuidString) reason=\(reason) activePinned=\(self.activePinnedSessionRecords.count) pendingActions=\(self.pendingMenuActionCount)"
-                    }
-                    return
-                }
+                guard self.canRunFinalRecovery else { return }
 
                 let recoveries = Array(self.pendingRecoveriesByWindowID.values)
                 self.pendingRecoveriesByWindowID.removeAll()
@@ -544,13 +510,7 @@ final class SidebarTransientSessionCoordinator {
 
     private func performFinalRecovery(_ recovery: PendingRecovery) {
         let source = recovery.source
-        let reason = recovery.reasons.joined(separator: ",")
-        reconcileInteractionState(reason: "final-recovery:\(reason)")
-        if !interactionState.allowsSidebarDragSourceHitTesting {
-            RuntimeDiagnostics.emit {
-                "⚠️ Sidebar transient final recovery blocked drag-source hit-testing window=\(source.windowID.uuidString) activeKinds=\(interactionState.activeKindsDescription) reason=\(reason)"
-            }
-        }
+        reconcileInteractionState()
 
         let window = source.window
         sidebarRecoveryCoordinator.recover(in: window)
@@ -565,13 +525,6 @@ final class SidebarTransientSessionCoordinator {
         {
             effectiveTier = .hardRehydrate
             hardRehydrateReason = .ownerUnresolvedAfterSoftRecovery
-            RuntimeDiagnostics.emit {
-                "⚠️ Sidebar transient soft recovery escalated to hard window=\(source.windowID.uuidString) reason=\(reason) source=\(source.interactiveOwnerRecoveryMetadata?.description ?? "none") resolved=\(recoveryResult.resolvedOwnerDescription ?? "nil") recoveredCount=\(recoveryResult.recoveredOwnerCount)"
-            }
-        }
-
-        RuntimeDiagnostics.emit {
-            "🧭 Sidebar transient final recovery window=\(source.windowID.uuidString) tier=\(effectiveTier) reason=\(reason) source=\(source.interactiveOwnerRecoveryMetadata?.description ?? "none") sourceResolved=\(recoveryResult.sourceOwnerResolved) recoveredCount=\(recoveryResult.recoveredOwnerCount) resolvedOwner=\(recoveryResult.resolvedOwnerDescription ?? "nil") resolution=\(recoveryResult.resolutionReason ?? "none")"
         }
 
         if effectiveTier.requiresSidebarInputRehydrate {
@@ -617,16 +570,10 @@ final class SidebarTransientSessionCoordinator {
         if let previousFirstResponder = validPreviousFirstResponder(source.previousFirstResponder, in: window),
            window.makeFirstResponder(previousFirstResponder)
         {
-            RuntimeDiagnostics.emit {
-                "🧭 Sidebar transient responder restored window=\(source.windowID.uuidString) responder=\(String(describing: type(of: previousFirstResponder)))"
-            }
             return
         }
 
         _ = window.makeFirstResponder(nil)
-        RuntimeDiagnostics.emit {
-            "🧭 Sidebar transient responder reset window=\(source.windowID.uuidString)"
-        }
     }
 
     private func validPreviousFirstResponder(
@@ -642,14 +589,4 @@ final class SidebarTransientSessionCoordinator {
         return responder
     }
 
-    private func ownerDebugDescription(
-        from view: NSView?,
-        metadata: SidebarInteractiveOwnerRecoveryMetadata? = nil
-    ) -> String {
-        if let metadata {
-            return metadata.description
-        }
-        guard let view else { return "nil" }
-        return String(describing: type(of: view))
-    }
 }

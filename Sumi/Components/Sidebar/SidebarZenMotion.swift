@@ -18,6 +18,10 @@ enum SidebarRowMotionMetrics {
     static let titleBlurRadius: CGFloat = 1
 }
 
+enum SidebarDropMotion {
+    static let gap = Animation.interactiveSpring(response: 0.22, dampingFraction: 0.86)
+}
+
 enum SidebarZenPressKind {
     case row
     case split

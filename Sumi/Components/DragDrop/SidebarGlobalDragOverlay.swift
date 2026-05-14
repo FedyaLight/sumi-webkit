@@ -20,12 +20,33 @@ struct SidebarGlobalDragOverlay: NSViewRepresentable {
 }
 
 class SidebarDragNSView: NSView {
+    private struct DragContext {
+        let pasteboardChangeCount: Int
+        let draggedItem: SumiDragItem?
+        let scope: SidebarDragScope?
+        let hasDroppedURL: Bool
+
+        var dragOperation: NSDragOperation {
+            draggedItem == nil ? .copy : .move
+        }
+
+        var canResolveDrop: Bool {
+            draggedItem != nil || hasDroppedURL
+        }
+    }
+
     weak var browserManager: BrowserManager?
     var windowState: BrowserWindowState?
+    private var cachedDragContext: DragContext?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        registerForDraggedTypes([.string, .URL, .fileURL, NSPasteboard.PasteboardType.sumiTabItem])
+        registerForDraggedTypes([
+            .string,
+            .URL,
+            .fileURL,
+            NSPasteboard.PasteboardType.sumiSidebarDragPayload
+        ])
     }
 
     required init?(coder: NSCoder) {
@@ -38,8 +59,11 @@ class SidebarDragNSView: NSView {
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         let state = SidebarDragState.shared
-        if let item = SumiDragItem.fromPasteboard(sender.draggingPasteboard) {
-            guard validatedScope(for: item) != nil else {
+        cachedDragContext = nil
+        let context = dragContext(for: sender)
+
+        if let item = context.draggedItem {
+            guard context.scope != nil else {
                 state.clearHoverState()
                 return []
             }
@@ -49,24 +73,24 @@ class SidebarDragNSView: NSView {
                 state.beginExternalDragSession(itemId: item.tabId)
             }
         } else if !state.isInternalDragSession {
-            guard sender.draggingPasteboard.sumiDroppedURL != nil else {
+            guard context.hasDroppedURL else {
                 state.resetInteractionState()
                 return []
             }
             state.beginExternalDragSession(itemId: nil)
         }
         return updateDragSlot(sender: sender)
-            ? dragOperation(for: sender.draggingPasteboard)
+            ? context.dragOperation
             : []
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard SumiDragItem.fromPasteboard(sender.draggingPasteboard) != nil
-                || sender.draggingPasteboard.sumiDroppedURL != nil else {
+        let context = dragContext(for: sender)
+        guard context.canResolveDrop else {
             return []
         }
         return updateDragSlot(sender: sender)
-            ? dragOperation(for: sender.draggingPasteboard)
+            ? context.dragOperation
             : []
     }
 
@@ -77,60 +101,43 @@ class SidebarDragNSView: NSView {
         } else {
             state.resetInteractionState()
         }
+        cachedDragContext = nil
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         let state = SidebarDragState.shared
-        let draggedItem = SumiDragItem.fromPasteboard(sender.draggingPasteboard)
-        let resolution = resolveDropResolution(sender: sender, draggedItem: draggedItem)
+        let resolution = resolveDropResolution(sender: sender)
 
         defer {
-            state.resetInteractionState()
+            runWithoutDropAnimations {
+                state.resetInteractionState()
+            }
+            cachedDragContext = nil
         }
 
         guard let resolution,
               resolution.slot != .empty,
               let browserManager = browserManager else { return false }
-        
-        // Sumi Drag Resolution
-        if let draggedItem {
-            guard let scope = validatedScope(for: draggedItem) else { return false }
-            guard let payload = browserManager.tabManager.resolveSidebarDragPayload(for: draggedItem) else { return false }
-            
-            let operation = DragOperation(
-                payload: payload,
-                scope: scope,
-                fromContainer: scope.sourceContainer,
-                toContainer: resolution.slot.asDragContainer,
-                toIndex: resolution.slot.visualIndex
-            )
-            
-            var accepted = false
-            withAnimation(.easeInOut(duration: 0.18)) {
-                accepted = browserManager.tabManager.performSidebarDragOperation(operation)
-            }
-            return accepted
-        }
-
-        if let droppedURL = sender.draggingPasteboard.sumiDroppedURL,
-           let windowState {
-            return browserManager.openDroppedURL(
-                droppedURL,
-                in: windowState,
-                at: resolution.slot
+        state.beginDropCommit()
+        return runWithoutDropAnimations {
+            SidebarDropCoordinator.performDrop(
+                pasteboard: sender.draggingPasteboard,
+                resolution: resolution,
+                browserManager: browserManager,
+                windowState: windowState,
+                dragState: state
             )
         }
-
-        return false
     }
 
-    private func dragOperation(for pasteboard: NSPasteboard) -> NSDragOperation {
-        SumiDragItem.fromPasteboard(pasteboard) == nil ? .copy : .move
+    private func runWithoutDropAnimations<T>(_ operation: () -> T) -> T {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        return withTransaction(transaction, operation)
     }
 
     private func updateDragSlot(sender: NSDraggingInfo) -> Bool {
-        let draggedItem = SumiDragItem.fromPasteboard(sender.draggingPasteboard)
-        guard let resolution = resolveDropResolution(sender: sender, draggedItem: draggedItem) else {
+        guard let resolution = resolveDropResolution(sender: sender) else {
             return false
         }
         return resolution.slot != .empty
@@ -138,24 +145,46 @@ class SidebarDragNSView: NSView {
 
     @discardableResult
     private func resolveDropResolution(
-        sender: NSDraggingInfo,
-        draggedItem: SumiDragItem?
+        sender: NSDraggingInfo
     ) -> SidebarDropResolution? {
         guard let swiftUILocation = resolvedSwiftUILocation(for: sender) else { return nil }
         let previewLocation = resolvedSwiftUIPreviewLocation(for: sender)
-        let state = SidebarDragState.shared
-        let scope = draggedItem.flatMap { validatedScope(for: $0) }
-        if draggedItem != nil, scope == nil {
-            state.clearHoverState()
-            return nil
-        }
-        return SidebarDropResolver.updateState(
-            location: swiftUILocation,
+        let context = dragContext(for: sender)
+        return SidebarDropCoordinator.resolveDropResolution(
+            pasteboard: sender.draggingPasteboard,
+            swiftUILocation: swiftUILocation,
             previewLocation: previewLocation,
-            state: state,
-            draggedItem: draggedItem,
-            scope: scope
+            dragState: SidebarDragState.shared,
+            windowState: windowState,
+            draggedItem: context.draggedItem,
+            scope: context.scope
         )
+    }
+
+    private func dragContext(for sender: NSDraggingInfo) -> DragContext {
+        let pasteboard = sender.draggingPasteboard
+        if let cachedDragContext,
+           cachedDragContext.pasteboardChangeCount == pasteboard.changeCount {
+            return cachedDragContext
+        }
+
+        let item = SidebarDropCoordinator.draggedItem(from: pasteboard)
+        let scope = item.flatMap {
+            SidebarDropCoordinator.validatedScope(
+                for: $0,
+                pasteboard: pasteboard,
+                dragState: SidebarDragState.shared,
+                windowState: windowState
+            )
+        }
+        let context = DragContext(
+            pasteboardChangeCount: pasteboard.changeCount,
+            draggedItem: item,
+            scope: scope,
+            hasDroppedURL: item == nil && pasteboard.sumiDroppedURL != nil
+        )
+        cachedDragContext = context
+        return context
     }
 
     private func resolvedSwiftUILocation(for sender: NSDraggingInfo) -> CGPoint? {
@@ -172,17 +201,4 @@ class SidebarDragNSView: NSView {
         )
     }
 
-    private func validatedScope(for item: SumiDragItem) -> SidebarDragScope? {
-        let state = SidebarDragState.shared
-        guard let scope = state.activeDragScope,
-              scope.sourceItemId == item.tabId,
-              scope.sourceItemKind == item.kind,
-              scope.matches(windowId: windowState?.id),
-              scope.spaceId == windowState?.currentSpaceId,
-              scope.matches(profileId: windowState?.currentProfileId)
-        else {
-            return nil
-        }
-        return scope
-    }
 }

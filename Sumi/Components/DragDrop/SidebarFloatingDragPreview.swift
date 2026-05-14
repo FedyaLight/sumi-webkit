@@ -241,7 +241,8 @@ struct SidebarFloatingDragPreview: View {
     }
 
     private var shouldRenderPreview: Bool {
-        currentDragLocation != nil && (dragState.previewModel != nil || currentAsset != nil)
+        guard !dragState.isInternalDragSession else { return false }
+        return currentDragLocation != nil && (dragState.previewModel != nil || currentAsset != nil)
     }
 
     private var currentPreviewKind: SidebarDragPreviewKind? {

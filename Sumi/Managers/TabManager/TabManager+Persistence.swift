@@ -769,12 +769,6 @@ extension TabManager {
         }
 
         markInitialDataLoadStarted()
-        SidebarUITestDragMarker.recordEvent(
-            "startupLoadBegin",
-            dragItemID: nil,
-            ownerDescription: "TabManager.loadFromStore",
-            details: "storeLoadStarted=true"
-        )
         defer {
             markInitialDataLoadFinished()
             startupRestoreTask = nil
@@ -803,12 +797,6 @@ extension TabManager {
             return true
         } catch {
             RuntimeDiagnostics.debug("SwiftData load error: \(String(describing: error))", category: "TabManager")
-            SidebarUITestDragMarker.recordEvent(
-                "startupLoadFailed",
-                dragItemID: nil,
-                ownerDescription: "TabManager.loadFromStore",
-                details: "error=\(String(describing: error))"
-            )
             return false
         }
     }
@@ -935,12 +923,6 @@ extension TabManager {
         RuntimeDiagnostics.debug(
             "Current Space: \(currentSpace?.name ?? "None"), Tab: \(currentTab?.name ?? "None")",
             category: "TabManager"
-        )
-        SidebarUITestDragMarker.recordEvent(
-            "startupLoadComplete",
-            dragItemID: nil,
-            ownerDescription: "TabManager.loadFromStore",
-            details: "spaces=\(spaces.count) currentSpace=\(currentSpace?.id.uuidString ?? "nil") currentTab=\(currentTab?.id.uuidString ?? "nil") currentProfile=\(browserManager?.currentProfile?.id.uuidString ?? "nil") pinnedProfiles=\(pinnedByProfile.count) spacePinnedGroups=\(spacePinnedShortcuts.count)"
         )
 
         if let browserManager, let currentSpace {

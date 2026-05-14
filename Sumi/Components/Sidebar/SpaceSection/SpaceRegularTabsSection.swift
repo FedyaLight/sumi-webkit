@@ -6,6 +6,11 @@
 import AppKit
 import SwiftUI
 
+private enum RegularExternalDropGapPlacement: Equatable {
+    case top
+    case bottom
+}
+
 extension SpaceView {
     private var showsNewTabButtonInList: Bool {
         sumiSettings.showNewTabButtonInTabList
@@ -84,6 +89,10 @@ extension SpaceView {
 
     var regularTabsSection: some View {
         VStack(spacing: 0) {
+            if regularExternalDropGapPlacement == .top {
+                regularDropGap
+            }
+
             SpaceSeparator(space: space, isHovering: $isSidebarHovered) {
                 browserManager.tabManager.clearRegularTabs(for: space.id)
             }
@@ -96,6 +105,10 @@ extension SpaceView {
                 }
 
                 regularTabsListHitRegion
+
+                if regularExternalDropGapPlacement == .bottom {
+                    regularDropGap
+                }
 
                 if showsBottomNewTabButton {
                     bottomNewTabButtonSection
@@ -111,6 +124,16 @@ extension SpaceView {
             generation: dragState.sidebarGeometryGeneration,
             isEnabled: isInteractive
         )
+        .animation(
+            isInteractive && dragState.shouldAnimateDropLayout ? SidebarDropMotion.gap : nil,
+            value: regularExternalDropGapPlacement
+        )
+        .transaction { transaction in
+            if dragState.isCompletingDrop {
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
+        }
     }
 
     private var regularTabsListHitRegion: some View {
@@ -119,21 +142,25 @@ extension SpaceView {
         }
         .sidebarRegularListHitGeometry(
             for: space.id,
-            itemCount: tabs.count,
+            itemCount: regularTabsRenderedRowCount,
             generation: dragState.sidebarGeometryGeneration,
             isEnabled: isInteractive
         )
     }
 
+    private var regularTabsRenderedRowCount: Int {
+        regularProjectedItems(currentTabs: tabs).count
+    }
+
     private var regularTabsListInner: some View {
         Group {
-            if !tabs.isEmpty {
+            if !tabs.isEmpty || regularTabsUsesProjectedDropLayout {
                 regularTabsContent
             }
         }
         .animation(
-            isInteractive ? .easeOut(duration: SidebarRowMotionMetrics.openDuration) : nil,
-            value: tabs.count
+            isInteractive && dragState.shouldAnimateDropLayout ? SidebarDropMotion.gap : nil,
+            value: regularProjectedItems(currentTabs: tabs)
         )
     }
 
@@ -196,18 +223,115 @@ extension SpaceView {
 
     private func regularTabsView(currentTabs: [Tab]) -> some View {
         return LazyVStack(spacing: 2) {
-            ForEach(Array(currentTabs.enumerated()), id: \.element.id) { index, tab in
-                VStack(spacing: 0) {
-                    regularTabView(tab)
+            let tabById = Dictionary(uniqueKeysWithValues: currentTabs.map { ($0.id, $0) })
+            ForEach(regularProjectedItems(currentTabs: currentTabs), id: \.self) { item in
+                switch item {
+                case .item(let tabId):
+                    if let tab = tabById[tabId] {
+                        VStack(spacing: 0) {
+                            regularTabView(tab)
+                        }
+                    }
+                case .placeholder:
+                    regularDropGap
                 }
             }
         }
         .overlay(alignment: .topLeading) {
-            regularDropGuideOverlay(itemCount: currentTabs.count)
+            if !regularTabsUsesProjectedDropLayout {
+                regularDropGuideOverlay(itemCount: currentTabs.count)
+            }
         }
     }
 
+    private func regularProjectedItems(currentTabs: [Tab]) -> [ProjectedItem<UUID>] {
+        let sourceId = regularProjectedSourceId(in: currentTabs)
+        let projectedInsertionIndex = regularProjectedInsertionIndex()
+        return SidebarDropProjection.projectedItems(
+            itemIDs: currentTabs.map(\.id),
+            removesSourceID: sourceId,
+            insertsPlaceholderAt: projectedInsertionIndex
+        )
+    }
 
+    private var regularTabsUsesProjectedDropLayout: Bool {
+        regularProjectedSourceId(in: tabs) != nil || regularProjectedInsertionIndex() != nil
+    }
+
+    private func regularProjectedSourceId(in currentTabs: [Tab]) -> UUID? {
+        guard dragState.isDropProjectionActive,
+              dragState.projectionDragScope?.sourceContainer == .spaceRegular(space.id),
+              let projectionDragItemId = dragState.projectionDragItemId,
+              currentTabs.contains(where: { $0.id == projectionDragItemId }) else {
+            return nil
+        }
+        return projectionDragItemId
+    }
+
+    private func regularProjectedInsertionIndex() -> Int? {
+        guard dragState.isDropProjectionActive,
+              case .spaceRegular(let hoveredSpaceId, let slot) = dragState.projectionHoveredSlot,
+              hoveredSpaceId == space.id,
+              regularExternalDropGapPlacement == nil else {
+            return nil
+        }
+        if shouldSuppressRegularCommitGapForExternalShortcutSource {
+            return nil
+        }
+        if let projectionDragItemId = dragState.projectionDragItemId,
+           dragState.shouldHideCommittedCrossContainerPlaceholder(
+                into: .spaceRegular(space.id),
+                targetAlreadyContainsDraggedItem: tabs.contains { $0.id == projectionDragItemId }
+           ) {
+            return nil
+        }
+        return slot
+    }
+
+    private var shouldSuppressRegularCommitGapForExternalShortcutSource: Bool {
+        guard dragState.isCompletingDrop,
+              let sourceContainer = dragState.projectionDragScope?.sourceContainer,
+              sourceContainer != .spaceRegular(space.id) else {
+            return false
+        }
+
+        switch sourceContainer {
+        case .essentials, .spacePinned, .folder:
+            return true
+        case .spaceRegular, .none:
+            return false
+        }
+    }
+
+    private var regularExternalDropGapPlacement: RegularExternalDropGapPlacement? {
+        guard dragState.isDragging,
+              case .spaceRegular(let hoveredSpaceId, let slot) = dragState.hoveredSlot,
+              hoveredSpaceId == space.id,
+              let location = dragState.dragLocation,
+              let listMetrics = dragState.regularListHitTargets[space.id] else {
+            return nil
+        }
+
+        if slot == 0, location.y < listMetrics.frame.minY {
+            return .top
+        }
+
+        if showsBottomNewTabButton,
+           location.y > listMetrics.frame.maxY {
+            return .bottom
+        }
+
+        return nil
+    }
+
+    private var regularDropGap: some View {
+        Color.clear
+            .frame(height: SidebarRowLayout.rowHeight)
+            .frame(maxWidth: .infinity)
+            .allowsHitTesting(false)
+            .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .center)))
+            .accessibilityHidden(true)
+    }
 
     private func regularTabView(_ tab: Tab) -> some View {
         SpaceTab(

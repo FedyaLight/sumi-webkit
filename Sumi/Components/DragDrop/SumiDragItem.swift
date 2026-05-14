@@ -7,7 +7,7 @@ import Foundation
 import AppKit
 
 extension NSPasteboard.PasteboardType {
-    static let sumiTabItem = NSPasteboard.PasteboardType("com.sumi.tab-drag-item")
+    static let sumiSidebarDragPayload = NSPasteboard.PasteboardType("com.sumi.sidebar-drag-payload")
 }
 
 extension NSPasteboard {
@@ -105,6 +105,71 @@ struct SidebarDragScope: Equatable {
     }
 }
 
+struct SidebarDragPasteboardPayload: Codable, Equatable {
+    static let currentSchemaVersion = 1
+
+    let schemaVersion: Int
+    let item: SumiDragItem
+    let sourceWindowId: UUID?
+    let sourceSpaceId: UUID
+    let sourceProfileId: UUID?
+    let sourceContainer: TabDragManager.DragContainer
+    let sourceItemId: UUID
+    let sourceItemKind: SumiDragItemKind
+
+    init(
+        item: SumiDragItem,
+        scope: SidebarDragScope
+    ) {
+        self.schemaVersion = Self.currentSchemaVersion
+        self.item = item
+        self.sourceWindowId = scope.windowId
+        self.sourceSpaceId = scope.spaceId
+        self.sourceProfileId = scope.profileId
+        self.sourceContainer = scope.sourceContainer
+        self.sourceItemId = scope.sourceItemId
+        self.sourceItemKind = scope.sourceItemKind
+    }
+
+    var scope: SidebarDragScope {
+        SidebarDragScope(
+            windowId: sourceWindowId,
+            spaceId: sourceSpaceId,
+            profileId: sourceProfileId,
+            sourceContainer: sourceContainer,
+            sourceItemId: sourceItemId,
+            sourceItemKind: sourceItemKind
+        )
+    }
+
+    static func fromPasteboard(_ pasteboard: NSPasteboard) -> SidebarDragPasteboardPayload? {
+        guard let data = pasteboard.data(forType: .sumiSidebarDragPayload),
+              let payload = try? JSONDecoder().decode(SidebarDragPasteboardPayload.self, from: data),
+              payload.schemaVersion == currentSchemaVersion else {
+            return nil
+        }
+        return payload
+    }
+}
+
+extension SidebarDragScope {
+    init(
+        windowId: UUID?,
+        spaceId: UUID,
+        profileId: UUID?,
+        sourceContainer: TabDragManager.DragContainer,
+        sourceItemId: UUID,
+        sourceItemKind: SumiDragItemKind
+    ) {
+        self.windowId = windowId
+        self.spaceId = spaceId
+        self.profileId = profileId
+        self.sourceContainer = sourceContainer
+        self.sourceItemId = sourceItemId
+        self.sourceItemKind = sourceItemKind
+    }
+}
+
 // MARK: - Drag Item
 
 enum SumiDragItemKind: String, Codable, Equatable {
@@ -131,20 +196,17 @@ struct SumiDragItem: Codable, Equatable {
 }
 
 extension SumiDragItem {
-    func pasteboardItem() -> NSPasteboardItem {
+    func pasteboardItem(scope: SidebarDragScope) -> NSPasteboardItem {
         let item = NSPasteboardItem()
         do {
-            let data = try JSONEncoder().encode(self)
-            item.setData(data, forType: .sumiTabItem)
+            let payload = SidebarDragPasteboardPayload(item: self, scope: scope)
+            let data = try JSONEncoder().encode(payload)
+            item.setData(data, forType: .sumiSidebarDragPayload)
         } catch {
-            RuntimeDiagnostics.emit("SumiDragItem encoding failed: \(error)")
+            RuntimeDiagnostics.emit("SidebarDragPasteboardPayload encoding failed: \(error)")
         }
+
         item.setString(tabId.uuidString, forType: .string)
         return item
-    }
-
-    static func fromPasteboard(_ pasteboard: NSPasteboard) -> SumiDragItem? {
-        guard let data = pasteboard.data(forType: .sumiTabItem) else { return nil }
-        return try? JSONDecoder().decode(SumiDragItem.self, from: data)
     }
 }

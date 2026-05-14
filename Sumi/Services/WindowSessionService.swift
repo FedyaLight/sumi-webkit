@@ -433,12 +433,6 @@ final class WindowSessionService {
         lastPersistedWindowSessionData = data
 
         apply(snapshot: snapshot, to: windowState, delegate: delegate)
-        SidebarUITestDragMarker.recordEvent(
-            "startupSessionRestore",
-            dragItemID: nil,
-            ownerDescription: "WindowSessionService.restoreWindowSession",
-            details: "window=\(windowState.id.uuidString) currentSpace=\(snapshot.currentSpaceId?.uuidString ?? "nil") currentProfile=\(snapshot.currentProfileId?.uuidString ?? "nil") currentTab=\(snapshot.currentTabId?.uuidString ?? "nil") emptyState=\(snapshot.isShowingEmptyState) sidebarVisible=\(snapshot.isSidebarVisible)"
-        )
         return true
     }
 

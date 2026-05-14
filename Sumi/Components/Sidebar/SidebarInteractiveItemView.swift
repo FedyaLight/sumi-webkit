@@ -6,94 +6,6 @@
 import AppKit
 import SwiftUI
 
-enum SidebarUITestDragMarker {
-    private static let argumentPrefix = "--uitest-sidebar-drag-marker="
-
-    static var markerURL: URL? {
-        #if DEBUG
-        ProcessInfo.processInfo.arguments.lazy.compactMap { argument -> URL? in
-            guard argument.hasPrefix(argumentPrefix) else { return nil }
-            let path = String(argument.dropFirst(argumentPrefix.count))
-            guard path.isEmpty == false else { return nil }
-            return URL(fileURLWithPath: path)
-        }.first
-        #else
-        nil
-        #endif
-    }
-
-    static func recordDragStart(
-        itemID: UUID,
-        sourceDescription: @autoclosure () -> String,
-        ownerDescription: @autoclosure () -> String,
-        sourceID: @autoclosure () -> String? = nil,
-        viewDescription: @autoclosure () -> String? = nil
-    ) {
-        #if DEBUG
-            append(
-                [
-                    "event=startDrag",
-                    "item=\(itemID.uuidString)",
-                    "sourceID=\(sourceID() ?? "nil")",
-                    "source=\(sourceDescription())",
-                    "view=\(viewDescription() ?? "nil")",
-                    "owner=\(ownerDescription())",
-                    "timestamp=\(Date().timeIntervalSince1970)",
-                ]
-            )
-        #else
-            _ = itemID
-            _ = sourceDescription
-            _ = ownerDescription
-            _ = sourceID
-            _ = viewDescription
-        #endif
-    }
-
-    static func recordEvent(
-        _ name: String,
-        dragItemID: UUID?,
-        ownerDescription: String,
-        sourceID: String? = nil,
-        viewDescription: String? = nil,
-        details: @autoclosure () -> String
-    ) {
-        #if DEBUG
-            append(
-                [
-                    "event=\(name)",
-                    "dragItem=\(dragItemID?.uuidString ?? "nil")",
-                    "sourceID=\(sourceID ?? "nil")",
-                    "view=\(viewDescription ?? "nil")",
-                    "owner=\(ownerDescription)",
-                    "details=\(details())",
-                    "timestamp=\(Date().timeIntervalSince1970)",
-                ]
-            )
-        #else
-            _ = name
-            _ = dragItemID
-            _ = ownerDescription
-            _ = sourceID
-            _ = viewDescription
-            _ = details
-        #endif
-    }
-
-    private static func append(_ fields: [String]) {
-        guard let markerURL else { return }
-        let message = fields.joined(separator: " ") + "\n"
-        if let data = message.data(using: .utf8),
-           let handle = try? FileHandle(forWritingTo: markerURL)
-        {
-            _ = try? handle.seekToEnd()
-            _ = try? handle.write(contentsOf: data)
-            _ = try? handle.close()
-            return
-        }
-        try? message.write(to: markerURL, atomically: true, encoding: String.Encoding.utf8)
-    }
-}
 @MainActor
 final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransientInteractionDisarmable {
     private let dragThreshold: CGFloat = 3
@@ -158,7 +70,11 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
     }
 
     func update(configuration: SidebarAppKitItemConfiguration) {
+        let previousSignature = itemConfiguration.bridgeUpdateSignature
+        let nextSignature = configuration.bridgeUpdateSignature
         itemConfiguration = configuration
+        guard previousSignature != nextSignature else { return }
+
         isConfigurationInteractionEnabled = configuration.isInteractionEnabled
         isTransientInteractionEnabled = true
         identifier = configuration.sourceID.map { NSUserInterfaceItemIdentifier($0) }
@@ -166,30 +82,12 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
             resetMouseState()
         }
         applyEffectiveInteractionEnabled()
-        SidebarUITestDragMarker.recordEvent(
-            "bridgeUpdate",
-            dragItemID: itemConfiguration.dragSource?.item.tabId,
-            ownerDescription: recoveryDebugDescription,
-            sourceID: itemConfiguration.sourceID,
-            viewDescription: debugViewDescription,
-            details: "source=\(itemConfiguration.sourceID ?? "nil") surface=\(sidebarContextMenuSurfaceDebugDescription(itemConfiguration.surfaceKind)) mode=\(sidebarPresentationModeDebugDescription(itemConfiguration.presentationMode)) interactive=\(isInteractive) inputEnabled=\(itemConfiguration.isInteractionEnabled) view=\(debugViewDescription) hostedRoot=\(hostedSidebarRootDebugDescription) controller=\(contextMenuControllerDebugDescription)"
-        )
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard isInteractive, bounds.contains(point) else { return nil }
         let eventType = window?.currentEvent?.type
         let captures = shouldCaptureInteraction(at: point, eventType: eventType)
-        if eventType == .leftMouseDown || eventType == .rightMouseDown {
-            SidebarUITestDragMarker.recordEvent(
-                "hitTest",
-                dragItemID: itemConfiguration.dragSource?.item.tabId,
-                ownerDescription: recoveryDebugDescription,
-                sourceID: itemConfiguration.sourceID,
-                viewDescription: debugViewDescription,
-                details: "source=\(itemConfiguration.sourceID ?? "nil") event=\(eventType.map(String.init(describing:)) ?? "nil") point=\(Int(point.x)),\(Int(point.y)) captures=\(captures) view=\(debugViewDescription) hostedRoot=\(hostedSidebarRootDebugDescription)"
-            )
-        }
         if captures {
             return self
         }
@@ -199,28 +97,12 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         if shouldPresentMenu(trigger: .leftMouseDown, at: point) {
-            RuntimeDiagnostics.emit(
-                "🧭 Sidebar mouseDown presenting menu owner=\(recoveryDebugDescription) trigger=leftMouseDown point=\(Int(point.x)),\(Int(point.y))"
-            )
             presentContextMenu(trigger: .leftMouseDown, event: event)
             return
         }
 
         let capturesPrimaryAction = shouldCapturePrimaryAction(at: point)
         let capturesDrag = shouldCaptureDrag(at: point)
-        SidebarUITestDragMarker.recordEvent(
-            "mouseDown",
-            dragItemID: itemConfiguration.dragSource?.item.tabId,
-            ownerDescription: recoveryDebugDescription,
-            sourceID: itemConfiguration.sourceID,
-            viewDescription: debugViewDescription,
-            details: "source=\(itemConfiguration.sourceID ?? "nil") point=\(Int(point.x)),\(Int(point.y)) capturesPrimary=\(capturesPrimaryAction) capturesDrag=\(capturesDrag) allowsHitTesting=\(allowsTransientDragSourceHitTesting) activeKinds=\(contextMenuController?.interactionState.activeKindsDescription ?? "unknown") mode=\(sidebarPresentationModeDebugDescription(itemConfiguration.presentationMode)) surface=\(sidebarContextMenuSurfaceDebugDescription(itemConfiguration.surfaceKind)) view=\(debugViewDescription) hostedRoot=\(hostedSidebarRootDebugDescription) controller=\(contextMenuControllerDebugDescription)"
-        )
-        logLeftMouseCapture(
-            point: point,
-            capturesPrimaryAction: capturesPrimaryAction,
-            capturesDrag: capturesDrag
-        )
 
         if capturesPrimaryAction || capturesDrag {
             window?.makeFirstResponder(self)
@@ -255,18 +137,7 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
 
         let point = convert(event.locationInWindow, from: nil)
         let distance = hypot(point.x - mouseDownPoint.x, point.y - mouseDownPoint.y)
-        SidebarUITestDragMarker.recordEvent(
-            "mouseDragged",
-            dragItemID: itemConfiguration.dragSource?.item.tabId,
-            ownerDescription: recoveryDebugDescription,
-            sourceID: itemConfiguration.sourceID,
-            viewDescription: debugViewDescription,
-            details: "source=\(itemConfiguration.sourceID ?? "nil") distance=\(String(format: "%.2f", distance)) canStart=\(mouseDownCanStartDrag) allowsHitTesting=\(allowsTransientDragSourceHitTesting) activeKinds=\(contextMenuController?.interactionState.activeKindsDescription ?? "unknown") view=\(debugViewDescription) hostedRoot=\(hostedSidebarRootDebugDescription)"
-        )
         guard distance >= dragThreshold else { return }
-        RuntimeDiagnostics.emit(
-            "🧭 Sidebar mouseDragged starting drag owner=\(recoveryDebugDescription) distance=\(String(format: "%.2f", distance))"
-        )
         startDrag(
             with: event,
             sessionEvent: mouseDownEvent ?? event,
@@ -285,9 +156,6 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         let shouldInvokePrimaryAction = !didStartDrag && shouldCapturePrimaryAction(at: point)
         resetMouseState()
         if shouldInvokePrimaryAction {
-            RuntimeDiagnostics.emit(
-                "🧭 Sidebar primary click activated owner=\(String(describing: type(of: self)))"
-            )
             performPrimaryAction(primaryAction)
         }
     }
@@ -488,10 +356,6 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
     ) {
         guard let menu = itemConfiguration.menu else { return }
 
-        RuntimeDiagnostics.emit(
-            "🧭 Sidebar present context menu owner=\(recoveryDebugDescription) trigger=\(String(describing: trigger))"
-        )
-
         contextMenuController?.presentMenu(
             SidebarContextMenuResolvedTarget(
                 entries: menu.entries(),
@@ -511,7 +375,8 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         guard let configuration = itemConfiguration.dragSource,
               isInteractive,
               configuration.isEnabled,
-              allowsTransientDragSourceHitTesting
+              allowsTransientDragSourceHitTesting,
+              let dragScope = itemConfiguration.dragScope
         else {
             return
         }
@@ -541,32 +406,24 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
             previewKind: configuration.previewKind,
             previewAssets: previewSession.previewAssets,
             previewModel: previewSession.previewModel,
-            scope: itemConfiguration.dragScope
+            scope: dragScope
         )
         SidebarDragState.shared.flushDeferredGeometryForDragStart()
-        RuntimeDiagnostics.emit(
-            "🧭 Sidebar drag started owner=\(recoveryDebugDescription) item=\(configuration.item.tabId.uuidString) source=\(sidebarDropZoneDebugDescription(configuration.sourceZone)) isDragging=\(SidebarDragState.shared.isDragging)"
-        )
-        SidebarUITestDragMarker.recordDragStart(
-            itemID: configuration.item.tabId,
-            sourceDescription: sidebarDropZoneDebugDescription(configuration.sourceZone),
-            ownerDescription: recoveryDebugDescription,
-            sourceID: itemConfiguration.sourceID,
-            viewDescription: debugViewDescription
-        )
         updateInternalDragState(
             at: dragLocation,
             previewLocation: previewLocation
         )
 
-        let dragItem = NSDraggingItem(pasteboardWriter: configuration.item.pasteboardItem())
+        let dragItem = NSDraggingItem(
+            pasteboardWriter: configuration.item.pasteboardItem(scope: dragScope)
+        )
         let frame = NSRect(
             x: resolvedAnchorPoint.x - previewSession.primaryAsset.anchorOffset.x,
             y: resolvedAnchorPoint.y - previewSession.primaryAsset.anchorOffset.y,
             width: previewSession.primaryAsset.size.width,
             height: previewSession.primaryAsset.size.height
         )
-        dragItem.setDraggingFrame(frame, contents: transparentImage(size: previewSession.primaryAsset.size))
+        dragItem.setDraggingFrame(frame, contents: previewSession.primaryAsset.image)
 
         let session = beginDraggingSession(with: [dragItem], event: sessionEvent, source: self)
         session.animatesToStartingPositionsOnCancelOrFail = true
@@ -602,11 +459,6 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
     }
 
     private func resetMouseState() {
-        let hadMouseState = mouseDownEvent != nil
-            || mouseDownPoint != nil
-            || mouseDownCanStartDrag
-            || didStartDrag
-            || isTrackingDragGesture
         let shouldCancelArmedGeometry = !didStartDrag
         mouseDownEvent = nil
         mouseDownPoint = nil
@@ -618,26 +470,6 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
             SidebarDragState.shared.cancelArmedDragGeometry()
         }
         contextMenuController?.endPrimaryMouseTracking(self)
-        if hadMouseState {
-            SidebarUITestDragMarker.recordEvent(
-                "resetMouseState",
-                dragItemID: itemConfiguration.dragSource?.item.tabId,
-                ownerDescription: recoveryDebugDescription,
-                sourceID: itemConfiguration.sourceID,
-                viewDescription: debugViewDescription,
-                details: "source=\(itemConfiguration.sourceID ?? "nil") interactive=\(isInteractive) allowsHitTesting=\(allowsTransientDragSourceHitTesting) activeKinds=\(contextMenuController?.interactionState.activeKindsDescription ?? "unknown") view=\(debugViewDescription) hostedRoot=\(hostedSidebarRootDebugDescription) controller=\(contextMenuControllerDebugDescription)"
-            )
-        }
-    }
-
-    private func logLeftMouseCapture(
-        point: NSPoint,
-        capturesPrimaryAction: Bool,
-        capturesDrag: Bool
-    ) {
-        RuntimeDiagnostics.emit(
-            "🧭 Sidebar left-click capture owner=\(recoveryDebugDescription) point=\(Int(point.x)),\(Int(point.y)) inputEnabled=\(itemConfiguration.isInteractionEnabled) primaryAction=\(itemConfiguration.primaryAction != nil) dragEnabled=\(itemConfiguration.dragSource?.isEnabled == true) capturesPrimary=\(capturesPrimaryAction) capturesDrag=\(capturesDrag) activeKinds=\(contextMenuController?.interactionState.activeKindsDescription ?? "unknown")"
-        )
     }
 
     private func beginPressTracking() {
@@ -677,18 +509,6 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         itemConfiguration.sourceID
     }
 
-    var debugViewDescription: String {
-        sidebarViewDebugDescription(self)
-    }
-
-    var hostedSidebarRootDebugDescription: String {
-        sidebarViewDebugDescription(sidebarHostedSidebarRoot(from: self))
-    }
-
-    var contextMenuControllerDebugDescription: String {
-        sidebarObjectDebugDescription(contextMenuController)
-    }
-
     var recoveryDebugDescription: String {
         let sourceID = itemConfiguration.sourceID ?? "nil"
         let surface = sidebarContextMenuSurfaceDebugDescription(itemConfiguration.surfaceKind)
@@ -715,16 +535,46 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
 
 }
 
+private struct SidebarAppKitItemBridgeUpdateSignature: Equatable {
+    let isInteractionEnabled: Bool
+    let menuIsEnabled: Bool?
+    let menuSurfaceKind: SidebarContextMenuSurfaceKind
+    let menuTriggersRawValue: Int?
+    let dragItem: SumiDragItem?
+    let dragSourceZone: DropZoneID?
+    let dragPreviewKind: SidebarDragPreviewKind?
+    let dragIsEnabled: Bool?
+    let dragScope: SidebarDragScope?
+    let hasPrimaryAction: Bool
+    let hasMiddleClick: Bool
+    let sourceID: String?
+    let suppressesPrimaryActionAnimation: Bool
+    let presentationMode: SidebarPresentationMode
+    let supportsPrimaryMouseTracking: Bool
+}
+
 private extension SidebarAppKitItemConfiguration {
+    var bridgeUpdateSignature: SidebarAppKitItemBridgeUpdateSignature {
+        SidebarAppKitItemBridgeUpdateSignature(
+            isInteractionEnabled: isInteractionEnabled,
+            menuIsEnabled: menu?.isEnabled,
+            menuSurfaceKind: surfaceKind,
+            menuTriggersRawValue: menu?.triggers.rawValue,
+            dragItem: dragSource?.item,
+            dragSourceZone: dragSource?.sourceZone,
+            dragPreviewKind: dragSource?.previewKind,
+            dragIsEnabled: dragSource?.isEnabled,
+            dragScope: dragScope,
+            hasPrimaryAction: primaryAction != nil,
+            hasMiddleClick: onMiddleClick != nil,
+            sourceID: sourceID,
+            suppressesPrimaryActionAnimation: suppressesPrimaryActionAnimation,
+            presentationMode: presentationMode,
+            supportsPrimaryMouseTracking: supportsPrimaryMouseTracking
+        )
+    }
+
     var supportsPrimaryMouseTracking: Bool {
         primaryAction != nil || dragSource?.isEnabled == true || dragSource?.onActivate != nil
     }
-}
-private func transparentImage(size: CGSize) -> NSImage {
-    let image = NSImage(size: size)
-    image.lockFocus()
-    NSColor.clear.setFill()
-    NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
-    image.unlockFocus()
-    return image
 }

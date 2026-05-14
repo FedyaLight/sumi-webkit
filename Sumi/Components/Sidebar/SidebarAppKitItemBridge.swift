@@ -14,14 +14,6 @@ struct SidebarAppKitItemBridge: NSViewRepresentable {
         let view = SidebarInteractiveItemView(frame: .zero)
         view.contextMenuController = controller
         view.update(configuration: configuration)
-        SidebarUITestDragMarker.recordEvent(
-            "bridgeMake",
-            dragItemID: configuration.dragSource?.item.tabId,
-            ownerDescription: view.recoveryDebugDescription,
-            sourceID: configuration.sourceID,
-            viewDescription: view.debugViewDescription,
-            details: "source=\(configuration.sourceID ?? "nil") inputEnabled=\(configuration.isInteractionEnabled) view=\(view.debugViewDescription) hostedRoot=\(view.hostedSidebarRootDebugDescription) controller=\(view.contextMenuControllerDebugDescription)"
-        )
         return view
     }
 
@@ -46,14 +38,6 @@ struct SidebarAppKitItemBridge: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ nsView: SidebarInteractiveItemView, coordinator: ()) {
-        SidebarUITestDragMarker.recordEvent(
-            "bridgeDismantle",
-            dragItemID: nsView.recoveryMetadata.dragItemID,
-            ownerDescription: nsView.recoveryDebugDescription,
-            sourceID: nsView.sourceID,
-            viewDescription: nsView.debugViewDescription,
-            details: "source=\(nsView.identifier?.rawValue ?? "nil") view=\(nsView.debugViewDescription) hostedRoot=\(nsView.hostedSidebarRootDebugDescription) controller=\(nsView.contextMenuControllerDebugDescription)"
-        )
         nsView.prepareForDismantle()
     }
 }

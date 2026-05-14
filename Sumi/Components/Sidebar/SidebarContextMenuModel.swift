@@ -10,31 +10,6 @@ enum SidebarContextMenuRole {
     case destructive
 }
 
-func sidebarObjectDebugDescription(_ object: AnyObject?) -> String {
-    guard let object else { return "nil" }
-    let pointer = Unmanaged.passUnretained(object).toOpaque()
-    return "\(String(describing: type(of: object)))@\(pointer)"
-}
-
-func sidebarViewDebugDescription(_ view: NSView?) -> String {
-    guard let view else { return "nil" }
-    return sidebarObjectDebugDescription(view)
-}
-
-@MainActor
-func sidebarHostedSidebarRoot(from view: NSView?) -> NSView? {
-    var current = view
-    while let candidate = current {
-        if let superview = candidate.superview,
-           String(describing: type(of: superview)) == "SidebarColumnContainerView"
-        {
-            return candidate
-        }
-        current = candidate.superview
-    }
-    return nil
-}
-
 enum SidebarContextMenuActionClassification: String {
     case presentationOnly
     case stateMutationNonStructural

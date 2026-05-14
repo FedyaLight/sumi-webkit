@@ -376,25 +376,16 @@ final class SidebarContextMenuController {
             in: window,
             sourceMetadata: sourceMetadata
         )
-        RuntimeDiagnostics.emit(
-            "🧭 Sidebar interactive owners recovered window=\(window.map { "\($0.windowNumber)" } ?? "nil") expected=\(sourceMetadata?.description ?? "none") count=\(result.recoveredOwnerCount) sourceResolved=\(result.sourceOwnerResolved) resolvedOwner=\(result.resolvedOwnerDescription ?? "nil") resolution=\(result.resolutionReason ?? "none")"
-        )
         return result
     }
 
     func beginPrimaryMouseTracking(_ ownerView: SidebarInteractiveItemView) {
         activePrimaryMouseTrackingOwner = ownerView
-        RuntimeDiagnostics.emit(
-            "🧭 Sidebar primary tracking began owner=\(ownerView.recoveryDebugDescription) window=\(ownerView.window.map { "\($0.windowNumber)" } ?? "nil")"
-        )
     }
 
     func endPrimaryMouseTracking(_ ownerView: SidebarInteractiveItemView) {
         guard activePrimaryMouseTrackingOwner === ownerView else { return }
         activePrimaryMouseTrackingOwner = nil
-        RuntimeDiagnostics.emit(
-            "🧭 Sidebar primary tracking ended owner=\(ownerView.recoveryDebugDescription)"
-        )
     }
 
     func primaryMouseTrackingOwner(in window: NSWindow?) -> SidebarInteractiveItemView? {
@@ -538,9 +529,6 @@ final class SidebarContextMenuController {
             path: "SidebarContextMenuController.startMenuSession",
             preservePendingSource: true
         )
-        RuntimeDiagnostics.emit(
-            "🧭 Sidebar context menu session started id=\(sessionID.uuidString) owner=\(activeOwnerViewDebugDescription)"
-        )
     }
 
     private func markMenuVisible(sessionID: UUID) {
@@ -550,9 +538,6 @@ final class SidebarContextMenuController {
         else { return }
 
         activeSessionDidBecomeVisible = true
-        RuntimeDiagnostics.emit(
-            "🧭 Sidebar context menu session became visible id=\(sessionID.uuidString) owner=\(activeOwnerViewDebugDescription)"
-        )
     }
 
     private func markMenuClosed(sessionID: UUID) {
@@ -561,9 +546,6 @@ final class SidebarContextMenuController {
         guard !activeSessionDidClose else { return }
 
         activeSessionDidClose = true
-        RuntimeDiagnostics.emit(
-            "🧭 Sidebar context menu session closed id=\(sessionID.uuidString) owner=\(activeOwnerViewDebugDescription)"
-        )
     }
 
     private func observeMenuEndTracking(
@@ -615,7 +597,7 @@ final class SidebarContextMenuController {
 
     private func finalizeMenuSession(
         sessionID: UUID,
-        reason: String
+        reason _: String
     ) {
         guard activeSessionID == sessionID else { return }
 
@@ -633,31 +615,17 @@ final class SidebarContextMenuController {
             )
         }
 
-        RuntimeDiagnostics.emit(
-            "🧭 Sidebar context menu session finalized id=\(sessionID.uuidString) reason=\(reason) visible=\(activeSessionDidBecomeVisible) closed=\(activeSessionDidClose) owner=\(activeOwnerViewDebugDescription)"
-        )
         clearActiveSession()
-    }
-
-    private var activeOwnerViewDebugDescription: String {
-        guard let activeOwnerView else { return "nil" }
-        if let ownerView = activeOwnerView as? SidebarInteractiveItemView {
-            return ownerView.recoveryDebugDescription
-        }
-        return String(describing: type(of: activeOwnerView))
     }
 
     private func scheduleDeferredMenuVisibilityCallbacks(
         _ visibilityChanged: @escaping (Bool) -> Void,
-        sessionID: UUID
+        sessionID _: UUID
     ) {
         // Never mutate SwiftUI row state from NSMenu's tracking loop. AppKit returns
         // from popUp before this runs, so rows can clean up hover visuals without
         // tearing down the menu owner while the menu still tracks events.
         DispatchQueue.main.async {
-            RuntimeDiagnostics.emit(
-                "🧭 Sidebar context menu visibility callbacks deferred id=\(sessionID.uuidString)"
-            )
             visibilityChanged(true)
             visibilityChanged(false)
         }

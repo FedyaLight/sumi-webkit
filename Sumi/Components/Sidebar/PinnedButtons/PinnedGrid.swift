@@ -45,14 +45,29 @@ struct SidebarEssentialsProjectedLayout {
 
 private enum SidebarEssentialsDisplayCell {
     case pin(ShortcutPin)
-    case ghost
-    case spacer
+    case gap(Int)
+    case spacer(Int)
+
+    var stableID: String {
+        switch self {
+        case .pin(let pin):
+            return "pin-\(pin.id.uuidString)"
+        case .gap(let slot):
+            return "gap-\(slot)"
+        case .spacer(let id):
+            return "spacer-\(id)"
+        }
+    }
 }
 
 private struct SidebarEssentialsDisplayRow {
     let cells: [SidebarEssentialsDisplayCell]
     let tileSize: CGSize
     let startSlot: Int
+
+    var stableID: Int {
+        startSlot
+    }
 }
 
 @MainActor
@@ -120,17 +135,16 @@ enum SidebarEssentialsProjectionPolicy {
         let safeVisibleItemCount = max(visibleItemCount, 0)
         guard canAcceptDrop else { return min(safeVisibleItemCount, maxItems) }
 
-        let isDraggingExistingEssential = dragState.activeDragItemId.map { itemIDs.contains($0) } ?? false
+        let isDraggingExistingEssential = dragState.projectionDragItemId.map { itemIDs.contains($0) } ?? false
         let isHoveringEssentials = {
-            guard dragState.isDragging,
-                  case .essentials = dragState.hoveredSlot,
-                  dragState.previewAssets[.essentialsTile] != nil else {
+            guard dragState.isDropProjectionActive,
+                  case .essentials = dragState.projectionHoveredSlot else {
                 return false
             }
             return true
         }()
 
-        let emptyStorePlaceholderActive = dragState.isDragging
+        let emptyStorePlaceholderActive = dragState.isDropProjectionActive
             && canAcceptDrop
             && itemIDs.isEmpty
             && safeVisibleItemCount == 0
@@ -173,21 +187,20 @@ enum SidebarEssentialsProjectionPolicy {
         from items: [ShortcutPin],
         dragState: SidebarDragState
     ) -> [ShortcutPin?] {
-        guard let activeDragItemId = dragState.activeDragItemId else {
+        guard let projectionDragItemId = dragState.projectionDragItemId else {
             return items.map { Optional($0) }
         }
 
-        let isReorderingInsideEssentials: Bool = {
-            guard dragState.isDragging,
-                  case .essentials = dragState.hoveredSlot,
-                  dragState.previewAssets[.essentialsTile] != nil else {
+        let isDraggingExistingEssential: Bool = {
+            guard dragState.isDropProjectionActive,
+                  dragState.projectionDragScope?.sourceContainer == .essentials else {
                 return false
             }
-            return true
+            return items.contains { $0.id == projectionDragItemId }
         }()
 
         return items.compactMap { item -> ShortcutPin? in
-            if item.id == activeDragItemId, isReorderingInsideEssentials {
+            if item.id == projectionDragItemId, isDraggingExistingEssential {
                 return nil
             }
             return item
@@ -202,7 +215,15 @@ enum SidebarEssentialsProjectionPolicy {
     ) -> [ShortcutPin?] {
         var layoutItems = items
 
-        guard dragState.isDragging, canAcceptDrop else {
+        guard dragState.isDropProjectionActive, canAcceptDrop else {
+            return layoutItems
+        }
+
+        if let projectionDragItemId = dragState.projectionDragItemId,
+           dragState.shouldHideCommittedCrossContainerPlaceholder(
+                into: .essentials,
+                targetAlreadyContainsDraggedItem: items.contains { $0?.id == projectionDragItemId }
+           ) {
             return layoutItems
         }
 
@@ -213,8 +234,7 @@ enum SidebarEssentialsProjectionPolicy {
             return layoutItems
         }
 
-        guard case .essentials(let slot) = dragState.hoveredSlot,
-              dragState.previewAssets[.essentialsTile] != nil else {
+        guard case .essentials(let slot) = dragState.projectionHoveredSlot else {
             return layoutItems
         }
 
@@ -346,12 +366,13 @@ struct PinnedGrid: View {
         let shouldAnimate = animateLayout
             && (windowRegistry.activeWindow?.id == windowState.id)
             && !browserManager.isTransitioningProfile
+            && dragState.shouldAnimateDropLayout
 
-        let showsRevealGhost = items.isEmpty
+        let showsRevealGap = items.isEmpty
             && dragState.isDragging
             && projectedLayout.canAcceptDrop
         let revealTileSize = projectedLayout.rows.first?.tileSize ?? projectedLayout.tileSize
-        let revealHeight = showsRevealGhost
+        let revealHeight = showsRevealGap
             ? revealTileSize.height
             : Self.collapsedRevealHeight
         let visibleRowCount = max(projectedLayout.visibleRowCount, items.isEmpty ? 0 : 1)
@@ -397,20 +418,8 @@ struct PinnedGrid: View {
         ZStack(alignment: .topLeading) {
             if items.isEmpty {
                 VStack(spacing: 0) {
-                    if showsRevealGhost {
-                        Group {
-                            if essentialsEmptyDropShowsLivePreview {
-                                renderGhostPlaceholder(
-                                    tileSize: revealTileSize
-                                )
-                            } else {
-                                SidebarEssentialsEmptyDropDashPlaceholder(size: revealTileSize)
-                            }
-                        }
-                        .animation(
-                            shouldAnimate ? .easeInOut(duration: 0.2) : nil,
-                            value: essentialsEmptyDropShowsLivePreview
-                        )
+                    if showsRevealGap {
+                        SidebarEssentialsEmptyDropDashPlaceholder(size: revealTileSize)
                     } else {
                         Color.clear
                             .frame(height: Self.collapsedRevealHeight)
@@ -420,9 +429,9 @@ struct PinnedGrid: View {
                 .frame(height: revealHeight, alignment: .top)
             } else {
                 VStack(spacing: pinnedTabsConfiguration.gridSpacing) {
-                    ForEach(Array(displayRows.enumerated()), id: \.offset) { _, row in
+                    ForEach(displayRows, id: \.stableID) { row in
                         HStack(spacing: pinnedTabsConfiguration.gridSpacing) {
-                            ForEach(Array(row.cells.enumerated()), id: \.offset) { _, cell in
+                            ForEach(row.cells, id: \.stableID) { cell in
                                 switch cell {
                                 case .pin(let pin):
                                     renderTile(
@@ -430,11 +439,11 @@ struct PinnedGrid: View {
                                         configuration: pinnedTabsConfiguration,
                                         tileSize: row.tileSize
                                     )
-                                case .ghost:
-                                    renderGhostPlaceholder(
+                                case .gap:
+                                    renderDropGap(
                                         tileSize: row.tileSize
                                     )
-                                case .spacer:
+                                case .spacer(_):
                                     Color.clear
                                         .frame(width: row.tileSize.width, height: row.tileSize.height)
                                 }
@@ -476,6 +485,12 @@ struct PinnedGrid: View {
             generation: dragState.sidebarGeometryGeneration,
             isEnabled: reportsDetailedGeometry
         )
+        .transaction { transaction in
+            if dragState.isCompletingDrop {
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
+        }
         .allowsHitTesting(!browserManager.isTransitioningProfile)
     }
 
@@ -519,41 +534,13 @@ struct PinnedGrid: View {
     }
 
     @ViewBuilder
-    private func renderGhostPlaceholder(
+    private func renderDropGap(
         tileSize: CGSize
     ) -> some View {
-        Group {
-            if let draggedId = dragState.activeDragItemId,
-               let proxyTab = browserManager.tabManager.resolveDragTab(for: draggedId) {
-                PinnedTabView(
-                    tabIcon: proxyTab.favicon,
-                    presentationState: .launcherOnly,
-                    liveTab: nil,
-                    dragSourceConfiguration: SidebarDragSourceConfiguration(
-                        item: SumiDragItem(
-                            tabId: proxyTab.id,
-                            title: proxyTab.name,
-                            urlString: proxyTab.url.absoluteString
-                        ),
-                        sourceZone: .essentials,
-                        previewKind: .essentialsTile,
-                        previewIcon: proxyTab.favicon,
-                        isEnabled: false
-                    ),
-                    accessibilityID: "ghost-placeholder",
-                    isAppKitInteractionEnabled: false,
-                    contextMenuEntries: [],
-                    action: {},
-                    onUnload: {}
-                )
-                .opacity(0.8)
-                .scaleEffect(0.98)
-                .allowsHitTesting(false)
-            } else {
-                Color.clear
-            }
-        }
+        Color.clear
         .frame(width: tileSize.width, height: tileSize.height)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     @ObservedObject private var dragState = SidebarDragState.shared
@@ -622,27 +609,6 @@ struct PinnedGrid: View {
             ?? UUID()
     }
 
-    /// True when the drag cursor is over this page’s Essentials drop target.
-    private var isActiveEssentialsHoverForThisGrid: Bool {
-        guard dragState.isDragging,
-              let location = dragState.dragLocation,
-              let page = dragState.hoveredInteractivePage(at: location),
-              page.spaceId == geometrySpaceId
-        else { return false }
-        if case .essentials = dragState.hoveredSlot { return true }
-        return false
-    }
-
-    private var essentialsEmptyGhostHasRenderableContent: Bool {
-        guard let draggedId = dragState.activeDragItemId else { return false }
-        return browserManager.tabManager.resolveDragTab(for: draggedId) != nil
-    }
-
-    /// Dash placeholder until hover; then show the real tile ghost when a tab preview exists.
-    private var essentialsEmptyDropShowsLivePreview: Bool {
-        isActiveEssentialsHoverForThisGrid && essentialsEmptyGhostHasRenderableContent
-    }
-
     private func projectedContentHeight(
         for layout: SidebarEssentialsProjectedLayout,
         configuration: PinnedTabsConfiguration
@@ -681,7 +647,7 @@ struct PinnedGrid: View {
         }
         return SidebarEssentialsPreviewState(
             expandedDropRowCount: min(previewState.expandedDropRowCount, maxDropRowCount),
-            ghostSlot: previewState.ghostSlot
+            gapSlot: previewState.gapSlot
         )
     }
 
@@ -692,11 +658,11 @@ struct PinnedGrid: View {
         configuration: PinnedTabsConfiguration
     ) -> [SidebarEssentialsDisplayRow] {
         var rows = layout.rows.map { row in
-            let cells = row.items.map { item in
+            let cells = row.items.enumerated().map { offset, item in
                 if let item {
                     return SidebarEssentialsDisplayCell.pin(item)
                 }
-                return .ghost
+                return .gap(row.startSlot + offset)
             }
 
             return SidebarEssentialsDisplayRow(
@@ -719,19 +685,16 @@ struct PinnedGrid: View {
             let rowIndex = rows.count
             let rowStart = rowIndex * columns
             let rowEnd = rowStart + columns
-            var cells = [SidebarEssentialsDisplayCell.spacer]
+            var cells = [SidebarEssentialsDisplayCell.spacer(rowStart)]
             var visualColumnCount = 1
 
-            if let ghostSlot = previewState.ghostSlot,
-               ghostSlot >= rowStart,
-               ghostSlot < rowEnd {
-                let localSlot = ghostSlot - rowStart
+            if let gapSlot = previewState.gapSlot,
+               gapSlot >= rowStart,
+               gapSlot < rowEnd {
+                let localSlot = gapSlot - rowStart
                 visualColumnCount = max(1, min(localSlot + 1, columns))
-                cells = Array(
-                    repeating: SidebarEssentialsDisplayCell.spacer,
-                    count: visualColumnCount
-                )
-                cells[localSlot] = .ghost
+                cells = (0..<visualColumnCount).map { SidebarEssentialsDisplayCell.spacer(rowStart + $0) }
+                cells[localSlot] = .gap(gapSlot)
             }
 
             let tileSize = SidebarEssentialsProjectionPolicy.visualTileSize(

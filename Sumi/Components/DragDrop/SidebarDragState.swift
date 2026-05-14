@@ -33,6 +33,11 @@ final class SidebarDragState: ObservableObject {
     @Published var previewModel: SidebarDragPreviewModel? = nil
     @Published var isInternalDragSession: Bool = false
     @Published var activeDragScope: SidebarDragScope? = nil
+    @Published private(set) var isCompletingDrop: Bool = false
+    private var completingDropItemId: UUID?
+    private var completingDropScope: SidebarDragScope?
+    private var completingDropSlot: DropZoneSlot = .empty
+    private var completingDropFolderIntent: FolderDropIntent = .none
     private(set) var isInternalDragGeometryArmed: Bool = false
     private(set) var armedDragScope: SidebarDragScope? = nil
     
@@ -57,6 +62,42 @@ final class SidebarDragState: ObservableObject {
     private var isDeferredGeometryMutationFlushScheduled = false
     
     init() {}
+
+    var shouldAnimateDropLayout: Bool {
+        isDragging && !isCompletingDrop
+    }
+
+    var isDropProjectionActive: Bool {
+        isDragging || isCompletingDrop
+    }
+
+    var projectionDragItemId: UUID? {
+        activeDragItemId ?? completingDropItemId
+    }
+
+    var projectionDragScope: SidebarDragScope? {
+        activeDragScope ?? completingDropScope
+    }
+
+    var projectionHoveredSlot: DropZoneSlot {
+        hoveredSlot != .empty ? hoveredSlot : completingDropSlot
+    }
+
+    var projectionFolderDropIntent: FolderDropIntent {
+        folderDropIntent != .none ? folderDropIntent : completingDropFolderIntent
+    }
+
+    func shouldHideCommittedCrossContainerPlaceholder(
+        into targetContainer: TabDragManager.DragContainer,
+        targetAlreadyContainsDraggedItem: Bool
+    ) -> Bool {
+        guard isCompletingDrop,
+              targetAlreadyContainsDraggedItem,
+              let sourceContainer = projectionDragScope?.sourceContainer else {
+            return false
+        }
+        return sourceContainer != targetContainer
+    }
 
     private static func resolvedMetricsRowCount(
         for height: CGFloat,
@@ -413,6 +454,14 @@ final class SidebarDragState: ObservableObject {
     private func clearEssentialsPreviewState() {
         essentialsPreviewStateBySpace = [:]
     }
+
+    func beginDropCommit() {
+        completingDropItemId = activeDragItemId
+        completingDropScope = activeDragScope
+        completingDropSlot = hoveredSlot
+        completingDropFolderIntent = folderDropIntent
+        isCompletingDrop = true
+    }
     
     func resetInteractionState() {
         isDragging = false
@@ -425,11 +474,26 @@ final class SidebarDragState: ObservableObject {
         previewModel = nil
         isInternalDragSession = false
         activeDragScope = nil
+        if isCompletingDrop {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                self?.finishDropCommitProjection()
+            }
+        } else {
+            finishDropCommitProjection()
+        }
         isInternalDragGeometryArmed = false
         armedDragScope = nil
         isHoveringNearEdge = false
         clearEssentialsPreviewState()
         requestGeometryRefresh()
+    }
+
+    private func finishDropCommitProjection() {
+        isCompletingDrop = false
+        completingDropItemId = nil
+        completingDropScope = nil
+        completingDropSlot = .empty
+        completingDropFolderIntent = .none
     }
 
     func beginPendingGeometryEpoch(
@@ -569,7 +633,6 @@ final class SidebarDragState: ObservableObject {
         resolution: DropZoneSlot
     ) {
         guard isDragging,
-              previewAssets[.essentialsTile] != nil,
               let hoveredPage = hoveredInteractivePage(at: location, matching: activeDragScope),
               let metrics = essentialsLayoutMetricsBySpace[hoveredPage.spaceId],
               activeDragScope?.matches(profileId: metrics.profileId) != false,
@@ -594,7 +657,7 @@ final class SidebarDragState: ObservableObject {
         essentialsPreviewStateBySpace = [
             hoveredPage.spaceId: SidebarEssentialsPreviewState(
                 expandedDropRowCount: metrics.maxDropRowCount,
-                ghostSlot: slot
+                gapSlot: slot
             )
         ]
     }

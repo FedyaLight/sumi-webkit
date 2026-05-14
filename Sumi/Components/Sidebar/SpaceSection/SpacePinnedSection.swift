@@ -18,6 +18,12 @@ private enum SpacePinnedListItem: Hashable {
     }
 }
 
+private struct SpacePinnedDisplayEntry: Identifiable {
+    let item: ProjectedItem<SpacePinnedListItem>
+    let dropIndex: Int
+    let id: String
+}
+
 extension SpaceView {
     private var launcherProjection: TabManager.SpaceLauncherProjection? {
         guard windowState.isIncognito == false else { return nil }
@@ -91,6 +97,73 @@ extension SpaceView {
             }
         }
         .map(\.1)
+    }
+
+    private var projectedSpacePinnedItems: [ProjectedItem<SpacePinnedListItem>] {
+        SidebarDropProjection.projectedItems(
+            itemIDs: spacePinnedItems,
+            removesSourceID: spacePinnedProjectedSourceItem,
+            insertsPlaceholderAt: spacePinnedProjectedInsertionIndex
+        )
+    }
+
+    private var projectedSpacePinnedDisplayEntries: [SpacePinnedDisplayEntry] {
+        var itemCount = 0
+        return projectedSpacePinnedItems.map { item in
+            let entry = SpacePinnedDisplayEntry(
+                item: item,
+                dropIndex: itemCount,
+                id: projectedSpacePinnedDisplayID(for: item, placeholderIndex: itemCount)
+            )
+            if case .item = item {
+                itemCount += 1
+            }
+            return entry
+        }
+    }
+
+    private func projectedSpacePinnedDisplayID(
+        for item: ProjectedItem<SpacePinnedListItem>,
+        placeholderIndex: Int
+    ) -> String {
+        switch item {
+        case .item(let listItem):
+            return "item-\(listItem.id.uuidString)"
+        case .placeholder:
+            if let projectionDragItemId = dragState.projectionDragItemId {
+                return "item-\(projectionDragItemId.uuidString)"
+            }
+            return "placeholder-\(placeholderIndex)"
+        }
+    }
+
+    private var spacePinnedUsesProjectedDropLayout: Bool {
+        spacePinnedProjectedSourceItem != nil || spacePinnedProjectedInsertionIndex != nil
+    }
+
+    private var spacePinnedProjectedSourceItem: SpacePinnedListItem? {
+        guard dragState.isDropProjectionActive,
+              dragState.projectionDragScope?.sourceContainer == .spacePinned(space.id),
+              let projectionDragItemId = dragState.projectionDragItemId else {
+            return nil
+        }
+        return spacePinnedItems.first { $0.id == projectionDragItemId }
+    }
+
+    private var spacePinnedProjectedInsertionIndex: Int? {
+        guard dragState.isDropProjectionActive,
+              case .spacePinned(let hoveredSpaceId, let slot) = dragState.projectionHoveredSlot,
+              hoveredSpaceId == space.id else {
+            return nil
+        }
+        if let projectionDragItemId = dragState.projectionDragItemId,
+           dragState.shouldHideCommittedCrossContainerPlaceholder(
+                into: .spacePinned(space.id),
+                targetAlreadyContainsDraggedItem: spacePinnedItems.contains { $0.id == projectionDragItemId }
+           ) {
+            return nil
+        }
+        return slot
     }
 
     /// Uses `DialogManager` instead of SwiftUI `.sheet` so presenting after `NSMenu` does not trip
@@ -168,6 +241,12 @@ extension SpaceView {
         .animation(isInteractive ? .easeInOut(duration: 0.25) : nil, value: hasSpacePinnedContent)
         .animation(isInteractive ? .easeInOut(duration: 0.18) : nil, value: showsEmptyPinnedDropPlaceholder)
         .animation(isInteractive ? .easeInOut(duration: 0.2) : nil, value: pinnedEmptyDropShowsRowPreview)
+        .transaction { transaction in
+            if dragState.isCompletingDrop {
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
+        }
         .sidebarSectionGeometry(
             for: .spacePinned,
             spaceId: space.id,
@@ -177,35 +256,50 @@ extension SpaceView {
     }
 
     private var pinnedTabsList: some View {
-        let allItems = spacePinnedItems
+        let allItems = projectedSpacePinnedDisplayEntries
         
         return VStack(spacing: 0) {
             Color.clear
                 .frame(height: dropGuideEdgeAllowance)
                 .allowsHitTesting(false)
 
-            ForEach(Array(allItems.enumerated()), id: \.element.id) { sourceIndex, item in
+            ForEach(allItems) { entry in
                 VStack(spacing: 0) {
-                    switch item {
-                    case .folder(let folderId):
+                    switch entry.item {
+                    case .item(.folder(let folderId)):
                         if let folder = folders.first(where: { $0.id == folderId }) {
-                            mixedFolderView(folder, topLevelPinnedIndex: sourceIndex)
+                            mixedFolderView(folder, topLevelPinnedIndex: entry.dropIndex)
                         }
-                    case .shortcut(let pinId):
+                    case .item(.shortcut(let pinId)):
                         if let pin = topLevelPinnedPins.first(where: { $0.id == pinId }) {
-                            pinnedShortcutView(pin, topLevelPinnedIndex: sourceIndex)
+                            pinnedShortcutView(pin, topLevelPinnedIndex: entry.dropIndex)
                         }
+                    case .placeholder:
+                        pinnedDropGap
                     }
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .topLeading) {
-            spacePinnedDropGuideOverlay
+            if !spacePinnedUsesProjectedDropLayout {
+                spacePinnedDropGuideOverlay
+            }
         }
-        .animation(isInteractive ? .easeInOut(duration: 0.25) : nil, value: folders.count)
-        .animation(isInteractive ? .easeInOut(duration: 0.25) : nil, value: spacePinnedItems.count)
+        .animation(
+            isInteractive && dragState.shouldAnimateDropLayout ? SidebarDropMotion.gap : nil,
+            value: projectedSpacePinnedItems
+        )
         .padding(.bottom, 8) // Add padding to act as drag tail for spacePinned
+    }
+
+    private var pinnedDropGap: some View {
+        Color.clear
+            .frame(height: SidebarRowLayout.rowHeight)
+            .frame(maxWidth: .infinity)
+            .allowsHitTesting(false)
+            .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .center)))
+            .accessibilityHidden(true)
     }
 
     private var pinnedRevealStrip: some View {
@@ -289,7 +383,6 @@ extension SpaceView {
             dragSourceZone: .spacePinned(space.id),
             dragHasTrailingActionExclusion: true,
             dragIsEnabled: isInteractive,
-            debugRenderMode: renderMode.debugDescription,
             onLauncherIconSelected: { newIconAsset in
                 _ = browserManager.tabManager.updateShortcutPin(pin, iconAsset: newIconAsset)
             },
@@ -446,25 +539,10 @@ extension SpaceView {
     private func resetShortcutPin(_ pin: ShortcutPin) {
         let modifiers = NSApp.currentEvent?.modifierFlags ?? []
         let preserveCurrentPage = modifiers.contains(.command) || modifiers.contains(.control)
-        let sourceID = "space-pinned-shortcut-\(pin.id.uuidString)"
-        SidebarUITestDragMarker.recordEvent(
-            "resetShortcutAction",
-            dragItemID: pin.id,
-            ownerDescription: "SpaceView.resetShortcutPin",
-            sourceID: sourceID,
-            details: "phase=before pin=\(pin.id.uuidString) liveTab=\(activeShortcutTab(for: pin)?.id.uuidString ?? "nil") currentSpace=\(windowState.currentSpaceId?.uuidString ?? "nil") currentTab=\(windowState.currentTabId?.uuidString ?? "nil") currentShortcutPin=\(windowState.currentShortcutPinId?.uuidString ?? "nil") sidebarVisible=\(windowState.isSidebarVisible) preserveCurrentPage=\(preserveCurrentPage)"
-        )
         _ = browserManager.tabManager.resetShortcutPinToLaunchURL(
             pin,
             in: windowState,
             preserveCurrentPage: preserveCurrentPage
-        )
-        SidebarUITestDragMarker.recordEvent(
-            "resetShortcutAction",
-            dragItemID: pin.id,
-            ownerDescription: "SpaceView.resetShortcutPin",
-            sourceID: sourceID,
-            details: "phase=after pin=\(pin.id.uuidString) liveTab=\(activeShortcutTab(for: pin)?.id.uuidString ?? "nil") currentSpace=\(windowState.currentSpaceId?.uuidString ?? "nil") currentTab=\(windowState.currentTabId?.uuidString ?? "nil") currentShortcutPin=\(windowState.currentShortcutPinId?.uuidString ?? "nil") sidebarVisible=\(windowState.isSidebarVisible)"
         )
     }
 

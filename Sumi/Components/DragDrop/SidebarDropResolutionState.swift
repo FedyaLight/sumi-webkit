@@ -46,6 +46,7 @@ struct SidebarDropResolution: Equatable {
 enum SidebarDropResolver {
     private static let rowStride: CGFloat = SidebarRowLayout.rowHeight
     private static let folderHeaderTopLevelBeforeBandHeight: CGFloat = 10
+    private static let spacePinnedTopEdgeDropAllowance: CGFloat = SidebarRowLayout.rowHeight
 
     static func resolve(
         location: CGPoint,
@@ -156,7 +157,10 @@ enum SidebarDropResolver {
     ) -> SidebarDropResolution? {
         guard let hoveredPage,
               let pinnedFrame = state.sectionFrame(for: .spacePinned, in: hoveredPage.spaceId),
-              pinnedFrame.contains(location) else {
+              spacePinnedHitFrame(
+                pinnedFrame: pinnedFrame,
+                hoveredPage: hoveredPage
+              ).contains(location) else {
             return nil
         }
 
@@ -197,6 +201,22 @@ enum SidebarDropResolver {
             ),
             folderIntent: .none,
             activeHoveredFolderId: nil
+        )
+    }
+
+    private static func spacePinnedHitFrame(
+        pinnedFrame: CGRect,
+        hoveredPage: SidebarPageGeometryMetrics
+    ) -> CGRect {
+        let topY = max(
+            hoveredPage.frame.minY,
+            pinnedFrame.minY - spacePinnedTopEdgeDropAllowance
+        )
+        return CGRect(
+            x: pinnedFrame.minX,
+            y: topY,
+            width: pinnedFrame.width,
+            height: max(0, pinnedFrame.maxY - topY)
         )
     }
 
@@ -367,7 +387,7 @@ enum SidebarDropResolver {
         let localY = max(0, location.y - frame.minY)
         let rowContentHeight = CGFloat(target.childCount) * rowStride
         guard localY <= rowContentHeight else {
-            return topLevelPinnedResolution(for: target, slot: target.topLevelIndex + 1)
+            return insertIntoFolderResolution(for: target, index: target.childCount)
         }
 
         let safeIndex = midpointSlotIndex(localY: localY, itemCount: target.childCount)
@@ -404,7 +424,7 @@ enum SidebarDropResolver {
         }
 
         if location.y > lastChild.frame.maxY {
-            return topLevelPinnedResolution(for: target, slot: target.topLevelIndex + 1)
+            return insertIntoFolderResolution(for: target, index: target.childCount)
         }
 
         return nil
@@ -538,7 +558,7 @@ enum SidebarDropResolver {
         }
 
         if location.y < metrics.frame.minY {
-            return .empty
+            return .spaceRegular(spaceId: spaceId, slot: 0)
         }
 
         guard metrics.itemCount > 0 else {
