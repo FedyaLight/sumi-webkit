@@ -16,45 +16,57 @@ struct SpaceReorderDrop: Equatable {
 
 struct SpaceReorderDragState: Equatable {
     static let dragThreshold: CGFloat = 6
-    private static let markerWidth: CGFloat = 2
-    private static let markerHorizontalInset: CGFloat = 3
 
     var draggedSpaceId: UUID?
     var startLocation: CGPoint = .zero
     var currentLocation: CGPoint = .zero
     var hasCrossedDragThreshold = false
     var itemFrames: [UUID: CGRect] = [:]
-    var targetInsertionIndex: Int?
-    var visualInsertionIndex: Int?
+    var dragStartItemFrames: [UUID: CGRect] = [:]
+    var dragStartOrderedSpaceIds: [UUID] = []
+    var visualOrder: [UUID]?
+    var dragGrabOffsetX: CGFloat = 0
     var suppressedClickSpaceId: UUID?
 
     var isDragging: Bool {
         draggedSpaceId != nil && hasCrossedDragThreshold
     }
 
+    var isTrackingDrag: Bool {
+        draggedSpaceId != nil
+    }
+
     mutating func updateItemFrames(_ frames: [UUID: CGRect]) {
         itemFrames = frames
     }
 
-    mutating func begin(spaceId: UUID, location: CGPoint) {
+    mutating func begin(spaceId: UUID, location: CGPoint, orderedSpaceIds: [UUID]) {
         guard draggedSpaceId == nil else { return }
         draggedSpaceId = spaceId
         startLocation = location
         currentLocation = location
         hasCrossedDragThreshold = false
-        targetInsertionIndex = nil
-        visualInsertionIndex = nil
+        dragStartItemFrames = itemFrames
+        dragStartOrderedSpaceIds = orderedSpaceIds
+        visualOrder = nil
+        if let frame = itemFrames[spaceId], frame.isNull == false {
+            dragGrabOffsetX = location.x - frame.midX
+        } else {
+            dragGrabOffsetX = 0
+        }
     }
 
     mutating func update(
         spaceId: UUID,
         location: CGPoint,
         orderedSpaceIds: [UUID]
-    ) -> Bool {
+    ) -> (didBeginDrag: Bool, didReorder: Bool) {
         if draggedSpaceId == nil {
-            begin(spaceId: spaceId, location: location)
+            begin(spaceId: spaceId, location: location, orderedSpaceIds: orderedSpaceIds)
         }
-        guard draggedSpaceId == spaceId else { return false }
+        guard draggedSpaceId == spaceId else {
+            return (false, false)
+        }
 
         currentLocation = location
         let crossedBefore = hasCrossedDragThreshold
@@ -62,39 +74,46 @@ struct SpaceReorderDragState: Equatable {
            distance(from: startLocation, to: location) >= Self.dragThreshold
         {
             hasCrossedDragThreshold = true
+            visualOrder = orderedSpaceIds
         }
 
-        guard hasCrossedDragThreshold else { return false }
-        updateInsertionIndices(orderedSpaceIds: orderedSpaceIds)
-        return !crossedBefore
+        guard hasCrossedDragThreshold else {
+            return (false, false)
+        }
+
+        let didReorder = updateVisualOrder(fallbackOrderedSpaceIds: orderedSpaceIds)
+        return (!crossedBefore, didReorder)
     }
 
-    mutating func finish(orderedSpaceIds: [UUID]) -> SpaceReorderDrop? {
+    mutating func finish() -> SpaceReorderDrop? {
         defer {
             draggedSpaceId = nil
             hasCrossedDragThreshold = false
-            targetInsertionIndex = nil
-            visualInsertionIndex = nil
+            dragStartItemFrames = [:]
+            dragStartOrderedSpaceIds = []
+            visualOrder = nil
+            dragGrabOffsetX = 0
         }
 
         guard hasCrossedDragThreshold,
               let draggedSpaceId,
-              orderedSpaceIds.contains(draggedSpaceId)
+              let visualOrder,
+              let targetIndex = visualOrder.firstIndex(of: draggedSpaceId)
         else {
             return nil
         }
 
         suppressedClickSpaceId = draggedSpaceId
-        updateInsertionIndices(orderedSpaceIds: orderedSpaceIds)
-        guard let targetInsertionIndex else { return nil }
-        return SpaceReorderDrop(spaceId: draggedSpaceId, targetIndex: targetInsertionIndex)
+        return SpaceReorderDrop(spaceId: draggedSpaceId, targetIndex: targetIndex)
     }
 
     mutating func reset() {
         draggedSpaceId = nil
         hasCrossedDragThreshold = false
-        targetInsertionIndex = nil
-        visualInsertionIndex = nil
+        dragStartItemFrames = [:]
+        dragStartOrderedSpaceIds = []
+        visualOrder = nil
+        dragGrabOffsetX = 0
     }
 
     mutating func consumeSuppressedClick(for spaceId: UUID) -> Bool {
@@ -103,66 +122,87 @@ struct SpaceReorderDragState: Equatable {
         return true
     }
 
-    func markerFrame(orderedSpaceIds: [UUID]) -> CGRect? {
-        guard isDragging,
-              let visualInsertionIndex,
-              let firstFrame = orderedFrames(orderedSpaceIds: orderedSpaceIds).first?.frame
+    func hidesInlineSpace(_ spaceId: UUID) -> Bool {
+        isTrackingDrag && draggedSpaceId == spaceId
+    }
+
+    func draggedOverlayFrame() -> CGRect? {
+        guard let draggedSpaceId,
+              let frame = itemFrames[draggedSpaceId],
+              frame.isNull == false
         else {
             return nil
         }
 
-        let frames = orderedFrames(orderedSpaceIds: orderedSpaceIds)
-        guard !frames.isEmpty else { return nil }
-
-        let markerX: CGFloat
-        if visualInsertionIndex <= 0 {
-            markerX = frames[0].frame.minX - Self.markerHorizontalInset
-        } else if visualInsertionIndex >= frames.count {
-            markerX = frames[frames.count - 1].frame.maxX + Self.markerHorizontalInset
-        } else {
-            let previousFrame = frames[visualInsertionIndex - 1].frame
-            let nextFrame = frames[visualInsertionIndex].frame
-            markerX = (previousFrame.maxX + nextFrame.minX) / 2
-        }
-
-        let height = min(max(firstFrame.height - 8, 16), 24)
+        let centerX = draggedOverlayCenterX()
         return CGRect(
-            x: markerX - (Self.markerWidth / 2),
-            y: firstFrame.midY - (height / 2),
-            width: Self.markerWidth,
-            height: height
+            x: centerX - (frame.width / 2),
+            y: frame.minY,
+            width: frame.width,
+            height: frame.height
         )
     }
 
-    private mutating func updateInsertionIndices(orderedSpaceIds: [UUID]) {
-        guard let draggedSpaceId,
-              let sourceIndex = orderedSpaceIds.firstIndex(of: draggedSpaceId),
-              let insertionSlot = visualInsertionSlot(orderedSpaceIds: orderedSpaceIds)
-        else {
-            targetInsertionIndex = nil
-            visualInsertionIndex = nil
-            return
+    private mutating func updateVisualOrder(fallbackOrderedSpaceIds: [UUID]) -> Bool {
+        guard let draggedSpaceId else {
+            return false
         }
 
-        visualInsertionIndex = insertionSlot
-        targetInsertionIndex = sourceIndex < insertionSlot ? insertionSlot - 1 : insertionSlot
+        let currentOrder = dragStartOrderedSpaceIds.isEmpty ? fallbackOrderedSpaceIds : dragStartOrderedSpaceIds
+        var nextOrder = currentOrder.filter { $0 != draggedSpaceId }
+        guard nextOrder.count == currentOrder.count - 1 else {
+            return false
+        }
+
+        let draggedCenterX = draggedCenterX(orderedSpaceIds: currentOrder, usesFrozenGeometry: true)
+        let targetIndex = insertionIndex(
+            draggedCenterX: draggedCenterX,
+            orderedSpaceIdsWithoutDraggedSpace: nextOrder
+        )
+        nextOrder.insert(draggedSpaceId, at: targetIndex)
+
+        guard nextOrder != visualOrder else { return false }
+        visualOrder = nextOrder
+        return true
     }
 
-    private func visualInsertionSlot(orderedSpaceIds: [UUID]) -> Int? {
-        let frames = orderedFrames(orderedSpaceIds: orderedSpaceIds)
-        guard !frames.isEmpty else { return nil }
-
-        for (index, item) in frames.enumerated() where currentLocation.x < item.frame.midX {
-            return index
+    private func insertionIndex(
+        draggedCenterX: CGFloat,
+        orderedSpaceIdsWithoutDraggedSpace: [UUID]
+    ) -> Int {
+        var targetIndex = 0
+        for id in orderedSpaceIdsWithoutDraggedSpace {
+            guard let frame = stableFrame(for: id), frame.isNull == false else { continue }
+            if draggedCenterX > frame.midX {
+                targetIndex += 1
+            }
         }
-        return frames.count
+        return targetIndex
     }
 
-    private func orderedFrames(orderedSpaceIds: [UUID]) -> [(id: UUID, frame: CGRect)] {
-        orderedSpaceIds.compactMap { id in
-            guard let frame = itemFrames[id], frame.isNull == false else { return nil }
-            return (id, frame)
+    private func draggedCenterX(orderedSpaceIds: [UUID], usesFrozenGeometry: Bool) -> CGFloat {
+        let centers = orderedSpaceIds.compactMap { id -> CGFloat? in
+            let frame = usesFrozenGeometry ? stableFrame(for: id) : itemFrames[id]
+            guard let frame, frame.isNull == false else { return nil }
+            return frame.midX
         }
+        guard let minCenter = centers.min(), let maxCenter = centers.max() else {
+            return currentLocation.x - dragGrabOffsetX
+        }
+
+        return clampedDraggedCenterX(minCenter: minCenter, maxCenter: maxCenter)
+    }
+
+    private func draggedOverlayCenterX() -> CGFloat {
+        currentLocation.x - dragGrabOffsetX
+    }
+
+    private func clampedDraggedCenterX(minCenter: CGFloat, maxCenter: CGFloat) -> CGFloat {
+        min(max(draggedOverlayCenterX(), minCenter - 0.5), maxCenter + 0.5)
+    }
+
+    private func stableFrame(for spaceId: UUID) -> CGRect? {
+        dragStartItemFrames[spaceId] ?? itemFrames[spaceId]
     }
 
     private func distance(from start: CGPoint, to end: CGPoint) -> CGFloat {

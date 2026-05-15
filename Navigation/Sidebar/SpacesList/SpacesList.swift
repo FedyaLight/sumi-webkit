@@ -42,6 +42,17 @@ struct SpacesList: View {
         return browserManager.tabManager.spaces
     }
 
+    private var displayedSpaces: [Space] {
+        guard let visualOrder = reorderState.visualOrder else {
+            return visibleSpaces
+        }
+
+        let spacesById = Dictionary(uniqueKeysWithValues: visibleSpaces.map { ($0.id, $0) })
+        let orderedSpaces = visualOrder.compactMap { spacesById[$0] }
+        let orderedIds = Set(orderedSpaces.map(\.id))
+        return orderedSpaces + visibleSpaces.filter { !orderedIds.contains($0.id) }
+    }
+
     var body: some View {
         Color.clear
             .onGeometryChange(for: CGFloat.self) { proxy in
@@ -53,9 +64,8 @@ struct SpacesList: View {
                 }
             }
             .overlay {
-                spacesContent(spaces: visibleSpaces)
+                spacesContent(spaces: displayedSpaces)
             }
-            .coordinateSpace(name: SpaceReorderCoordinateSpace.name)
             .onPreferenceChange(SpaceReorderItemFramePreferenceKey.self) { frames in
                 reorderState.updateItemFrames(frames)
             }
@@ -72,7 +82,7 @@ struct SpacesList: View {
                 reorderState.reset()
             }
             .animation(.easeInOut(duration: 0.3), value: visibleSpaces.count)
-            .animation(.easeInOut(duration: 0.3), value: visibleSpaces.map(\.id))
+            .animation(.interactiveSpring(duration: 0.22, extraBounce: 0.05), value: displayedSpaces.map(\.id))
     }
 
     private var previewTextColor: Color {
@@ -90,7 +100,7 @@ struct SpacesList: View {
                     space: space,
                     isActive: visualSelectedSpaceId == space.id,
                     compact: layoutMode == .compact,
-                    isFaded: reorderState.draggedSpaceId == space.id && reorderState.isDragging,
+                    isFaded: false,
                     onSelect: {
                         guard !reorderState.isDragging else { return }
                         guard !reorderState.consumeSuppressedClick(for: space.id) else { return }
@@ -104,8 +114,9 @@ struct SpacesList: View {
                 .environment(windowState)
                 .background(SpaceReorderItemFrameReporter(spaceId: space.id))
                 .gesture(spaceInteractionGesture(for: space, spaces: spaces))
+                .opacity(reorderState.hidesInlineSpace(space.id) ? 0 : 1)
                 .id(space.id)
-                .transition(.asymmetric(
+                .transition(reorderState.isDragging ? .identity : .asymmetric(
                     insertion: .scale.combined(with: .opacity),
                     removal: .scale.combined(with: .opacity)
                 ))
@@ -117,6 +128,7 @@ struct SpacesList: View {
                 }
             }
         }
+        .coordinateSpace(name: SpaceReorderCoordinateSpace.name)
         .onHover { hovering in
             isHoveringList = hovering
             if !hovering {
@@ -128,7 +140,7 @@ struct SpacesList: View {
             spacePreviewOverlay(spaces: spaces)
         }
         .overlay(alignment: .topLeading) {
-            spaceDropMarker(spaces: spaces)
+            draggedSpaceOverlay(spaces: spaces)
         }
     }
 
@@ -155,11 +167,13 @@ struct SpacesList: View {
         DragGesture(minimumDistance: 0, coordinateSpace: .named(SpaceReorderCoordinateSpace.name))
             .onChanged { value in
                 guard canReorderSpaces else { return }
-                let didBeginDrag = reorderState.update(
+                let result = reorderState.update(
                     spaceId: space.id,
                     location: value.location,
                     orderedSpaceIds: spaces.map(\.id)
                 )
+
+                let didBeginDrag = result.didBeginDrag
                 if didBeginDrag {
                     showPreview = false
                     hoveredSpaceId = nil
@@ -175,7 +189,7 @@ struct SpacesList: View {
                 }
 
                 let wasDragging = reorderState.isDragging
-                let drop = reorderState.finish(orderedSpaceIds: spaces.map(\.id))
+                let drop = reorderState.finish()
                 if wasDragging {
                     windowState.sidebarInteractionState.syncSidebarItemDrag(false)
                 }
@@ -195,6 +209,30 @@ struct SpacesList: View {
     }
 
     @ViewBuilder
+    private func draggedSpaceOverlay(spaces: [Space]) -> some View {
+        if let draggedSpaceId = reorderState.draggedSpaceId,
+           let draggedSpace = spaces.first(where: { $0.id == draggedSpaceId }),
+           let frame = reorderState.draggedOverlayFrame()
+        {
+            SpacesListItem(
+                space: draggedSpace,
+                isActive: visualSelectedSpaceId == draggedSpace.id,
+                compact: layoutMode == .compact,
+                isFaded: false,
+                onSelect: {},
+                onHoverChange: nil
+            )
+            .environmentObject(browserManager)
+            .environment(windowState)
+            .frame(width: frame.width, height: frame.height)
+            .offset(x: frame.minX, y: frame.minY)
+            .allowsHitTesting(false)
+            .animation(nil, value: reorderState.currentLocation.x)
+            .zIndex(2)
+        }
+    }
+
+    @ViewBuilder
     private func spacePreviewOverlay(spaces: [Space]) -> some View {
         if showPreview,
            let hoveredId = hoveredSpaceId,
@@ -209,17 +247,6 @@ struct SpacesList: View {
                 .id(hoveredSpace.id)
                 .transition(.blur.animation(.smooth(duration: 0.2)))
                 .offset(y: -20)
-        }
-    }
-
-    @ViewBuilder
-    private func spaceDropMarker(spaces: [Space]) -> some View {
-        if let markerFrame = reorderState.markerFrame(orderedSpaceIds: spaces.map(\.id)) {
-            Capsule()
-                .fill(previewTextColor.opacity(0.9))
-                .frame(width: markerFrame.width, height: markerFrame.height)
-                .offset(x: markerFrame.minX, y: markerFrame.minY)
-                .allowsHitTesting(false)
         }
     }
 
