@@ -754,6 +754,27 @@ class TabManager: ObservableObject {
         return pin.role == .spacePinned
     }
 
+    func regularChildInsertionIndex(openedFrom sourceTab: Tab?, in targetSpace: Space?) -> Int? {
+        guard let sourceTab, let targetSpace else { return nil }
+
+        if sourceTab.isPinned
+            || sourceTab.isSpacePinned
+            || sourceTab.shortcutPinRole != nil
+            || isGlobalPinned(sourceTab)
+            || isSpacePinned(sourceTab)
+        {
+            return 0
+        }
+
+        guard sourceTab.spaceId == targetSpace.id,
+              let sourceIndex = tabsBySpace[targetSpace.id]?.firstIndex(where: { $0.id == sourceTab.id })
+        else {
+            return nil
+        }
+
+        return sourceIndex + 1
+    }
+
     /// Create a new regular tab duplicating the source tab's URL/name and insert near an anchor tab.
     /// - Parameters:
     ///   - source: The tab to duplicate (pinned/space-pinned or regular).
@@ -855,9 +876,7 @@ class TabManager: ObservableObject {
                 RuntimeDiagnostics.debug("Skipping addTab for '\(tab.name)' because no spaceId was resolved.", category: "TabManager")
                 return
             }
-            var arr = tabsBySpace[sid] ?? []
-            arr.append(tab)
-            setTabs(arr, for: sid)
+            insertRegularTab(tab, in: sid, at: nil)
         
             // Load the tab in compositor if it's the current tab
             if tab.id == currentTab?.id {
@@ -867,6 +886,20 @@ class TabManager: ObservableObject {
             RuntimeDiagnostics.debug("Added regular tab '\(tab.name)' to space \(sid.uuidString).", category: "TabManager")
             scheduleStructuralPersistence()
         }
+    }
+
+    private func insertRegularTab(_ tab: Tab, in spaceId: UUID, at insertionIndex: Int?) {
+        var arr = tabsBySpace[spaceId] ?? []
+        let safeIndex = insertionIndex.map { max(0, min($0, arr.count)) } ?? arr.count
+        tab.spaceId = spaceId
+        tab.isPinned = false
+        tab.isSpacePinned = false
+        tab.folderId = nil
+        arr.insert(tab, at: safeIndex)
+        for (index, existingTab) in arr.enumerated() {
+            existingTab.index = index
+        }
+        setTabs(arr, for: spaceId)
     }
 
     func removeTab(_ id: UUID) {
@@ -1206,7 +1239,8 @@ class TabManager: ObservableObject {
     func createPopupTab(
         in space: Space? = nil,
         activate: Bool = true,
-        webViewConfigurationOverride: WKWebViewConfiguration? = nil
+        webViewConfigurationOverride: WKWebViewConfiguration? = nil,
+        regularInsertionIndex: Int? = nil
     ) -> Tab {
         return withStructuralUpdateTransaction {
             let targetSpace: Space? = space ?? currentSpace ?? ensureDefaultSpaceIfNeeded()
@@ -1221,7 +1255,8 @@ class TabManager: ObservableObject {
             }
             let sid = targetSpace?.id
             let existingTabs = sid.flatMap { tabsBySpace[$0] } ?? []
-            let nextIndex = (existingTabs.map { $0.index }.max() ?? -1) + 1
+            let resolvedIndex = regularInsertionIndex.map { max(0, min($0, existingTabs.count)) }
+                ?? ((existingTabs.map { $0.index }.max() ?? -1) + 1)
 
             guard let blankURL = URL(string: "about:blank") else {
                 preconditionFailure("TabManager: invalid about:blank URL")
@@ -1231,14 +1266,20 @@ class TabManager: ObservableObject {
                 name: "New Tab",
                 favicon: "globe",
                 spaceId: sid,
-                index: nextIndex,
+                index: resolvedIndex,
                 browserManager: browserManager
             )
             newTab.isPopupHost = true
             if let webViewConfigurationOverride {
                 newTab.applyWebViewConfigurationOverride(webViewConfigurationOverride)
             }
-            addTab(newTab)
+            if let sid {
+                attach(newTab)
+                insertRegularTab(newTab, in: sid, at: resolvedIndex)
+            } else {
+                addTab(newTab)
+            }
+            scheduleStructuralPersistence()
             if activate {
                 setActiveTab(newTab)
             }
