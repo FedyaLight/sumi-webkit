@@ -18,3 +18,11 @@ Brave's `adblock` crate from `brave/adblock-rust`.
 This notice does not make the entire Sumi Adblock module MPL-2.0. Sumi remains
 GPL-3.0, with the vendored/used Brave `adblock` crate component governed by
 MPL-2.0 as applicable.
+
+## Adblock filter-list registry
+
+Sumi's native Adblock registry stores upstream filter-list metadata and URLs.
+The application does not vendor those third-party list contents; selected lists
+are fetched from their upstream maintainers at update time. Those fetched list
+contents may have their own licenses, terms, and notices from the upstream list
+projects.

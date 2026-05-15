@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-enum AdblockCompiledRuleGroupKind: String, CaseIterable, Hashable, Sendable {
+enum AdblockCompiledRuleGroupKind: String, Codable, CaseIterable, Hashable, Sendable {
     case network
     case nativeCosmeticCSS
 }
