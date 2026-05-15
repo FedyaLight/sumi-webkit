@@ -4,6 +4,7 @@ import SwiftUI
 struct SidebarColumnHostedRootView: View {
     let environmentContext: SidebarHostEnvironmentContext
     let presentationContext: SidebarPresentationContext
+    @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
 
     var body: some View {
         SpacesSideBarView()
@@ -36,20 +37,59 @@ struct SidebarColumnHostedRootView: View {
 
     @ViewBuilder
     private var collapsedSidebarChromeBackground: some View {
-        if presentationContext.isCollapsedOverlay {
-            let backgroundThemeContext = environmentContext.chromeBackgroundResolvedThemeContext
-
-            ZStack {
-                backgroundThemeContext
-                    .tokens(settings: environmentContext.sumiSettings)
-                    .windowBackground
-                SpaceGradientBackgroundView(surface: .toolbarChrome)
-                    .environmentObject(environmentContext.browserManager)
-                    .environment(environmentContext.windowState)
-                    .environment(\.sumiSettings, environmentContext.sumiSettings)
-                    .environment(\.resolvedThemeContext, backgroundThemeContext)
-            }
+        if presentationContext.mode == .docked {
+            dockedSidebarChromeBackground
+        } else if environmentContext.chromeBackgroundResolvedThemeContext.rendersCustomChromeTheme {
+            SpaceGradientBackgroundView(
+                surface: .toolbarChrome,
+                nativeMaterialRole: .collapsedSidebar,
+                gradientFieldSize: resolvedGradientFieldSize,
+                viewport: sidebarGradientViewport
+            )
+            .environmentObject(environmentContext.browserManager)
+            .environment(environmentContext.windowState)
+            .environment(\.sumiSettings, environmentContext.sumiSettings)
+            .environment(\.resolvedThemeContext, environmentContext.chromeBackgroundResolvedThemeContext)
+        } else if accessibilityReduceTransparency {
+            chromeTokens.windowBackground
+        } else {
+            NativeChromeMaterialBackground(role: .collapsedSidebar)
         }
+    }
+
+    @ViewBuilder
+    private var dockedSidebarChromeBackground: some View {
+        if environmentContext.chromeBackgroundResolvedThemeContext.rendersCustomChromeTheme {
+            Color.clear
+        } else if accessibilityReduceTransparency {
+            chromeTokens.windowBackground
+        } else {
+            Color.clear
+        }
+    }
+
+    private var chromeTokens: ChromeThemeTokens {
+        environmentContext.chromeBackgroundResolvedThemeContext.tokens(settings: environmentContext.sumiSettings)
+    }
+
+    private var resolvedGradientFieldSize: CGSize? {
+        let measuredSize = environmentContext.windowChromeSize
+        guard measuredSize.width > 0, measuredSize.height > 0 else {
+            return nil
+        }
+        return measuredSize
+    }
+
+    private var sidebarGradientViewport: SpaceGradientViewport {
+        let fieldWidth = max(resolvedGradientFieldSize?.width ?? presentationContext.sidebarWidth, 1)
+        let viewportWidth = min(max(presentationContext.sidebarWidth / fieldWidth, 0), 1)
+        let originX = presentationContext.shellEdge.isLeft
+            ? 0
+            : max(1 - viewportWidth, 0)
+        return SpaceGradientViewport(
+            origin: UnitPoint(x: originX, y: 0),
+            size: CGSize(width: viewportWidth, height: 1)
+        )
     }
 }
 
@@ -62,6 +102,7 @@ enum SidebarColumnHostedRoot {
         sumiSettings: SumiSettingsService,
         resolvedThemeContext: ResolvedThemeContext,
         chromeBackgroundResolvedThemeContext: ResolvedThemeContext,
+        windowChromeSize: CGSize,
         presentationContext: SidebarPresentationContext
     ) -> SidebarColumnHostedRootView {
         SidebarColumnHostedRootView(
@@ -71,7 +112,8 @@ enum SidebarColumnHostedRoot {
                 windowRegistry: windowRegistry,
                 sumiSettings: sumiSettings,
                 resolvedThemeContext: resolvedThemeContext,
-                chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext
+                chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext,
+                windowChromeSize: windowChromeSize
             ),
             presentationContext: presentationContext
         )
@@ -85,6 +127,7 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
     var sumiSettings: SumiSettingsService
     var resolvedThemeContext: ResolvedThemeContext
     var chromeBackgroundResolvedThemeContext: ResolvedThemeContext
+    var windowChromeSize: CGSize
     var presentationContext: SidebarPresentationContext
 
     func makeNSViewController(context: Context) -> SidebarColumnViewController {
@@ -99,6 +142,7 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
             sumiSettings: sumiSettings,
             resolvedThemeContext: resolvedThemeContext,
             chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext,
+            windowChromeSize: windowChromeSize,
             presentationContext: presentationContext
         )
         controller.updateHostedSidebar(

@@ -8,6 +8,7 @@ struct SidebarHostEnvironmentContext {
     let sumiSettings: SumiSettingsService
     let resolvedThemeContext: ResolvedThemeContext
     let chromeBackgroundResolvedThemeContext: ResolvedThemeContext
+    let windowChromeSize: CGSize
 }
 
 enum SidebarPresentationMode: Equatable {

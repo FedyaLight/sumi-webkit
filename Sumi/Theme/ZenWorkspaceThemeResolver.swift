@@ -24,6 +24,7 @@ enum ZenWorkspaceThemeResolver {
         let primaryRGB = primaryRGBComponents(for: theme, settings: settings)
         let hasWorkspaceColors = !theme.gradientTheme.normalizedColors.isEmpty
         let usesWorkspaceExplicitScheme = hasWorkspaceColors
+            && theme.gradientTheme.usesCustomChromeTheme
             && theme.usesExplicitColorScheme
             && !settings.themeUseSystemColors
             && !isIncognito

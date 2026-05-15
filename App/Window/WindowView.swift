@@ -35,11 +35,14 @@ struct WindowView: View {
     @State private var effectiveAppearanceRevision: UInt = 0
 
     var body: some View {
-        ZStack {
-            chromeThemeScope {
-                WindowBackground()
-            }
-            .sumiAppKitContextMenu(entries: {
+        GeometryReader { windowProxy in
+            let windowChromeSize = windowProxy.size
+
+            ZStack {
+                chromeThemeScope {
+                    WindowBackground()
+                }
+                .sumiAppKitContextMenu(entries: {
                 [
                     .action(
                         SidebarContextMenuAction(
@@ -57,24 +60,25 @@ struct WindowView: View {
                 ]
             })
 
-            SidebarWebViewStack()
+                SidebarWebViewStack(windowChromeSize: windowChromeSize)
 
             // Collapsed hover-reveal sidebar overlay. Docked sidebar is a real layout column.
-            if shouldRenderCollapsedSidebarOverlay {
-                chromeThemeScope {
-                    SidebarHoverOverlayView(
-                        resolvedThemeContext: sidebarResolvedThemeContext,
-                        chromeBackgroundResolvedThemeContext: resolvedThemeContext
-                    )
-                        .environmentObject(hoverSidebarManager)
-                        .environment(windowState)
+                if shouldRenderCollapsedSidebarOverlay {
+                    chromeThemeScope {
+                        SidebarHoverOverlayView(
+                            resolvedThemeContext: sidebarResolvedThemeContext,
+                            chromeBackgroundResolvedThemeContext: resolvedThemeContext,
+                            windowChromeSize: windowChromeSize
+                        )
+                            .environmentObject(hoverSidebarManager)
+                            .environment(windowState)
+                    }
                 }
-            }
 
             // Floating bar is full-window chrome so its floating position is stable in both
             // docked and collapsed sidebar layouts.
-            chromeThemeScope {
-                FloatingBarChromeHost(
+                chromeThemeScope {
+                    FloatingBarChromeHost(
                     browserManager: browserManager,
                     windowState: windowState,
                     sumiSettings: sumiSettings,
@@ -86,22 +90,22 @@ struct WindowView: View {
                 .zIndex(WindowTransientChromeZIndex.floatingBar)
             }
 
-            chromeThemeScope {
-                DialogView()
+                chromeThemeScope {
+                    DialogView()
                     .zIndex(WindowTransientChromeZIndex.dialog)
             }
 
             // Glance overlay for external link previews
-            if browserManager.glanceManager.isActive || browserManager.glanceManager.currentSession != nil {
-                chromeThemeScope {
-                    GlanceOverlayView()
+                if browserManager.glanceManager.isActive || browserManager.glanceManager.currentSession != nil {
+                    chromeThemeScope {
+                        GlanceOverlayView()
                         .environmentObject(browserManager.glanceManager)
                         .zIndex(WindowTransientChromeZIndex.glance)
                 }
             }
 
-            chromeThemeScope {
-                SidebarFloatingDragPreview()
+                chromeThemeScope {
+                    SidebarFloatingDragPreview()
                     .environmentObject(browserManager)
                     .environment(windowState)
                     .environment(\.sumiSettings, sumiSettings)
@@ -109,6 +113,7 @@ struct WindowView: View {
                     .allowsHitTesting(false)
             }
 
+            }
         }
         // System notification toasts - top trailing corner
         .overlay(alignment: .topTrailing) {
@@ -250,13 +255,16 @@ struct WindowView: View {
 
     @ViewBuilder
     private func WindowBackground() -> some View {
-        SpaceGradientBackgroundView(surface: .toolbarChrome)
+        SpaceGradientBackgroundView(
+            surface: .toolbarChrome,
+            nativeMaterialRole: .nativeGlassChrome
+        )
         .backgroundDraggable()
         .environment(windowState)
     }
 
     @ViewBuilder
-    private func SidebarWebViewStack() -> some View {
+    private func SidebarWebViewStack(windowChromeSize: CGSize) -> some View {
         let sidebarVisible = windowState.isSidebarVisible
         let elementSeparation = BrowserChromeGeometry.elementSeparation
         let sidebarPosition = sumiSettings.sidebarPosition
@@ -272,7 +280,8 @@ struct WindowView: View {
             if rendersDockedSidebar && shellEdge.isLeft {
                 SidebarDockedColumn(
                     sidebarPosition: sidebarPosition,
-                    layoutProgress: layoutProgress
+                    layoutProgress: layoutProgress,
+                    windowChromeSize: windowChromeSize
                 )
             }
 
@@ -281,7 +290,8 @@ struct WindowView: View {
             if rendersDockedSidebar && shellEdge.isRight {
                 SidebarDockedColumn(
                     sidebarPosition: sidebarPosition,
-                    layoutProgress: layoutProgress
+                    layoutProgress: layoutProgress,
+                    windowChromeSize: windowChromeSize
                 )
             }
         }
@@ -290,7 +300,11 @@ struct WindowView: View {
     }
 
     @ViewBuilder
-    private func SidebarDockedColumn(sidebarPosition: SidebarPosition, layoutProgress: CGFloat) -> some View {
+    private func SidebarDockedColumn(
+        sidebarPosition: SidebarPosition,
+        layoutProgress: CGFloat,
+        windowChromeSize: CGSize
+    ) -> some View {
         let presentationContext = SidebarPresentationContext.docked(
             sidebarWidth: windowState.sidebarWidth,
             sidebarPosition: sidebarPosition
@@ -304,6 +318,7 @@ struct WindowView: View {
             sumiSettings: sumiSettings,
             resolvedThemeContext: sidebarResolvedThemeContext,
             chromeBackgroundResolvedThemeContext: resolvedThemeContext,
+            windowChromeSize: windowChromeSize,
             presentationContext: presentationContext
         )
         .id("docked-sidebar-column")
@@ -318,11 +333,14 @@ struct WindowView: View {
     private func syncDockedSidebarLayout(isVisible: Bool, animated: Bool) {
         dockedSidebarLayoutGeneration &+= 1
         let generation = dockedSidebarLayoutGeneration
-        let animation = CollapsedSidebarOverlayAnimation.dockedLayoutAnimation(isShowing: isVisible)
+        let animation = SidebarMotionPolicy.dockedLayoutAnimation(
+            for: SidebarMotionPolicy.currentMode(reduceMotion: reduceMotion),
+            isShowing: isVisible
+        )
 
         if isVisible {
             shouldRenderDockedSidebar = true
-            if animated {
+            if animated, let animation {
                 withAnimation(animation) {
                     dockedSidebarLayoutProgress = 1
                 }
@@ -332,21 +350,16 @@ struct WindowView: View {
             return
         }
 
-        if animated {
+        if animated, let animation {
             shouldRenderDockedSidebar = true
             let startingProgress = dockedSidebarLayoutProgress
             if startingProgress <= 0 {
                 dockedSidebarLayoutProgress = 1
             }
 
-            withAnimation(animation) {
+            withAnimation(animation, completionCriteria: .logicallyComplete) {
                 dockedSidebarLayoutProgress = 0
-            }
-
-            Task { @MainActor in
-                try? await Task.sleep(
-                    nanoseconds: UInt64(CollapsedSidebarOverlayAnimation.dockedLayoutUnmountDelay * 1_000_000_000)
-                )
+            } completion: {
                 guard generation == dockedSidebarLayoutGeneration,
                       !windowState.isSidebarVisible
                 else { return }
@@ -405,6 +418,8 @@ struct WindowView: View {
             return .dark
         }
     }
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var resolvedThemeContext: ResolvedThemeContext {
         windowState.resolvedThemeContext(

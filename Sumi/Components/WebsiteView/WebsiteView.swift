@@ -136,7 +136,11 @@ struct WebsiteView: View {
     }
 
     private var contentViewportCutoutBackground: BrowserContentViewportCutoutBackground {
-        BrowserContentViewportCutoutBackground(
+        if !themeContext.rendersCustomChromeTheme {
+            return .solid(opaqueNSColor(from: themeContext.tokens(settings: sumiSettings).windowBackground))
+        }
+
+        return BrowserContentViewportCutoutBackground(
             baseColor: opaqueNSColor(from: themeContext.tokens(settings: sumiSettings).windowBackground),
             sourceGradient: toolbarChromeGradient(for: themeContext.sourceWorkspaceTheme),
             targetGradient: toolbarChromeGradient(for: themeContext.targetWorkspaceTheme),
