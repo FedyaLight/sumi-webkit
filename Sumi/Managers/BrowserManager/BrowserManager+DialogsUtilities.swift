@@ -86,6 +86,7 @@ extension BrowserManager {
 
     func showQuitDialog() {
         requestCollapsedSidebarOverlayDismissal()
+        dismissFloatingBarForActiveWindow(preserveDraft: true)
         NSApplication.shared.terminate(nil)
     }
 

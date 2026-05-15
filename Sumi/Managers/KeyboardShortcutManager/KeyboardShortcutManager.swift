@@ -53,6 +53,11 @@ class KeyboardShortcutManager {
     private var dispatcher = ShortcutActionDispatcher()
     private var eventMonitor: EventMonitorHandle?
 
+    private enum LocalKeyRoutingResult {
+        case pass(NSEvent)
+        case consume
+    }
+
     weak var browserManager: BrowserManager? {
         didSet {
             dispatcher.browserManager = browserManager
@@ -215,6 +220,15 @@ class KeyboardShortcutManager {
         guard let keyWindow = NSApp.keyWindow else { return event }
         guard isManagedSumiBrowserWindow(keyWindow) else { return event }
 
+        if let routingResult = routeFloatingBarShortcutIfNeeded(event, keyWindow: keyWindow) {
+            switch routingResult {
+            case .pass(let event):
+                return event
+            case .consume:
+                return nil
+            }
+        }
+
         if shouldBypassShortcutRouting(keyWindow: keyWindow) {
             return event
         }
@@ -263,6 +277,38 @@ class KeyboardShortcutManager {
             return true
         }
         return false
+    }
+
+    private func routeFloatingBarShortcutIfNeeded(_ event: NSEvent, keyWindow: NSWindow) -> LocalKeyRoutingResult? {
+        guard let state = browserWindowState(containing: keyWindow),
+              state.isFloatingBarVisible
+        else { return nil }
+
+        guard let keyCombination = KeyCombination(from: event) else {
+            return .pass(event)
+        }
+
+        if systemOwnedShortcuts.contains(keyCombination) {
+            browserManager?.dismissFloatingBar(in: state, preserveDraft: true)
+            return .pass(event)
+        }
+
+        guard let action = enabledLookup[keyCombination.lookupKey] else {
+            return .pass(event)
+        }
+
+        switch action {
+        case .focusAddressBar, .newTab:
+            break
+        default:
+            browserManager?.dismissFloatingBar(in: state, preserveDraft: true)
+        }
+
+        if executeShortcut(event) {
+            return .consume
+        }
+
+        return .pass(event)
     }
 
     private func browserWindowState(containing window: NSWindow) -> BrowserWindowState? {

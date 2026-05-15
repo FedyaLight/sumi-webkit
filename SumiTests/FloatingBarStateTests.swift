@@ -47,7 +47,7 @@ final class FloatingBarStateTests: XCTestCase {
             UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey)
         }
 
-        let (browserManager, windowState, space) = makeHarness()
+        let (browserManager, _, windowState, space) = makeHarness()
         let currentTab = browserManager.openNewTab(
             url: "https://example.com/start",
             context: .foreground(windowState: windowState)
@@ -82,7 +82,7 @@ final class FloatingBarStateTests: XCTestCase {
             UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey)
         }
 
-        let (browserManager, windowState, space) = makeHarness()
+        let (browserManager, _, windowState, space) = makeHarness()
         let currentTab = browserManager.openNewTab(
             url: "https://example.com/start",
             context: .foreground(windowState: windowState)
@@ -103,7 +103,29 @@ final class FloatingBarStateTests: XCTestCase {
         XCTAssertEqual(browserManager.currentTab(for: windowState)?.id, currentTab.id)
     }
 
-    private func makeHarness() -> (BrowserManager, BrowserWindowState, Space) {
+    func testDismissFloatingBarForActiveWindowPreservesDraftWhenRequested() {
+        UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey)
+        }
+
+        let (browserManager, windowRegistry, windowState, _) = makeHarness()
+        browserManager.focusFloatingBar(
+            in: windowState,
+            prefill: "https://example.com",
+            navigateCurrentTab: true
+        )
+
+        withExtendedLifetime(windowRegistry) {
+            browserManager.dismissFloatingBarForActiveWindow(preserveDraft: true)
+        }
+
+        XCTAssertFalse(windowState.isFloatingBarVisible)
+        XCTAssertEqual(windowState.floatingBarDraftText, "https://example.com")
+        XCTAssertTrue(windowState.floatingBarDraftNavigatesCurrentTab)
+    }
+
+    private func makeHarness() -> (BrowserManager, WindowRegistry, BrowserWindowState, Space) {
         let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
         let profile = Profile(name: "Primary")
@@ -123,6 +145,6 @@ final class FloatingBarStateTests: XCTestCase {
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
-        return (browserManager, windowState, space)
+        return (browserManager, windowRegistry, windowState, space)
     }
 }
