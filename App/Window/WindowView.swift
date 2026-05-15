@@ -66,7 +66,7 @@ struct WindowView: View {
                 if shouldRenderCollapsedSidebarOverlay {
                     chromeThemeScope {
                         SidebarHoverOverlayView(
-                            resolvedThemeContext: sidebarResolvedThemeContext,
+                            resolvedThemeContext: resolvedThemeContext,
                             chromeBackgroundResolvedThemeContext: resolvedThemeContext,
                             windowChromeSize: windowChromeSize
                         )
@@ -316,7 +316,7 @@ struct WindowView: View {
             windowState: windowState,
             windowRegistry: windowRegistry,
             sumiSettings: sumiSettings,
-            resolvedThemeContext: sidebarResolvedThemeContext,
+            resolvedThemeContext: resolvedThemeContext,
             chromeBackgroundResolvedThemeContext: resolvedThemeContext,
             windowChromeSize: windowChromeSize,
             presentationContext: presentationContext
@@ -426,25 +426,6 @@ struct WindowView: View {
             global: globalColorScheme,
             settings: sumiSettings
         )
-    }
-
-    private var sidebarResolvedThemeContext: ResolvedThemeContext {
-        let context = resolvedThemeContext
-        guard windowState.isInteractiveSpaceTransition else {
-            return context
-        }
-
-        let frozenTheme = windowState.previousWorkspaceTheme ?? windowState.displayedWorkspaceTheme
-        var frozen = context
-        frozen.chromeColorScheme = context.sourceChromeColorScheme
-        frozen.sourceChromeColorScheme = context.sourceChromeColorScheme
-        frozen.targetChromeColorScheme = context.sourceChromeColorScheme
-        frozen.workspaceTheme = frozenTheme
-        frozen.sourceWorkspaceTheme = frozenTheme
-        frozen.targetWorkspaceTheme = frozenTheme
-        frozen.isInteractiveTransition = false
-        frozen.transitionProgress = 1.0
-        return frozen
     }
 
     @ViewBuilder

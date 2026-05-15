@@ -78,6 +78,56 @@ final class ThemeChromeRecipeBuilderTests: XCTestCase {
         XCTAssertEqual(token.alpha, expected.alpha, accuracy: 0.02)
     }
 
+    func testTextTokensInterpolateDuringChromeSchemeTransition() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        var context = ResolvedThemeContext.default
+        context.globalColorScheme = .light
+        context.chromeColorScheme = .light
+        context.sourceChromeColorScheme = .dark
+        context.targetChromeColorScheme = .light
+        context.transitionProgress = 0.5
+
+        let token = context.tokens(settings: settings).primaryText.sRGBComponents
+        let dark = ThemeContrastResolver.primaryText(for: .dark).sRGBComponents
+        let light = ThemeContrastResolver.primaryText(for: .light).sRGBComponents
+        let expectedRed = dark.red + ((light.red - dark.red) * 0.5)
+        let expectedAlpha = dark.alpha + ((light.alpha - dark.alpha) * 0.5)
+
+        XCTAssertEqual(token.red, expectedRed, accuracy: 0.02)
+        XCTAssertEqual(token.green, expectedRed, accuracy: 0.02)
+        XCTAssertEqual(token.blue, expectedRed, accuracy: 0.02)
+        XCTAssertEqual(token.alpha, expectedAlpha, accuracy: 0.02)
+        XCTAssertNotEqual(token.red, dark.red, accuracy: 0.02)
+        XCTAssertNotEqual(token.red, light.red, accuracy: 0.02)
+    }
+
+    func testChromeControlBackgroundTokensInterpolateDuringChromeSchemeTransition() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        var context = ResolvedThemeContext.default
+        context.globalColorScheme = .light
+        context.chromeColorScheme = .light
+        context.sourceChromeColorScheme = .dark
+        context.targetChromeColorScheme = .light
+        context.transitionProgress = 0.5
+
+        let token = context.tokens(settings: settings).chromeControlHoverBackground.sRGBComponents
+        let dark = ThemeContrastResolver.primaryText(for: .dark).opacity(0.20).sRGBComponents
+        let light = ThemeContrastResolver.primaryText(for: .light).opacity(0.10).sRGBComponents
+        let expectedRed = dark.red + ((light.red - dark.red) * 0.5)
+        let expectedAlpha = dark.alpha + ((light.alpha - dark.alpha) * 0.5)
+
+        XCTAssertEqual(token.red, expectedRed, accuracy: 0.02)
+        XCTAssertEqual(token.green, expectedRed, accuracy: 0.02)
+        XCTAssertEqual(token.blue, expectedRed, accuracy: 0.02)
+        XCTAssertEqual(token.alpha, expectedAlpha, accuracy: 0.02)
+    }
+
     func testFindInPagePaintUsesOpaqueSurfacesInLightRecipe() {
         let paint = findInPagePaint(scheme: .light)
 

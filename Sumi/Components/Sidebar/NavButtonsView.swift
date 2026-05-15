@@ -90,8 +90,7 @@ struct NavButtonsView: View {
         SumiNavigationToolbarControls(
             state: navigationControlState,
             theme: SumiNavigationToolbarTheme(
-                tokens: themeContext.tokens(settings: sumiSettings),
-                colorScheme: themeContext.chromeColorScheme
+                tokens: themeContext.tokens(settings: sumiSettings)
             ),
             browserManager: browserManager,
             windowState: windowState,
