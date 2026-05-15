@@ -105,7 +105,7 @@ final class SumiTabTitleViewTests: XCTestCase {
         XCTAssertNil(currentLayer.animation(forKey: SumiTabTitleAnimation.alphaKey))
     }
 
-    func testTitleViewStartsLoadingShimmerAnimation() throws {
+    func testTitleViewStartsLoadingAlphaWaveAnimation() throws {
         let view = makeView(width: 200)
 
         view.apply(
@@ -119,15 +119,15 @@ final class SumiTabTitleViewTests: XCTestCase {
         )
         view.layoutSubtreeIfNeeded()
 
-        let maskLayer = try XCTUnwrap(loadingShimmerMaskLayer(in: view))
-        let animation = try XCTUnwrap(maskLayer.animation(forKey: SumiTabTitleAnimation.loadingShimmerKey))
+        let maskLayer = try XCTUnwrap(loadingAlphaWaveMaskLayer(in: view))
+        let animation = try XCTUnwrap(maskLayer.animation(forKey: SumiTabTitleAnimation.loadingAlphaWaveKey))
 
         XCTAssertEqual(
             maskLayer.bounds.width,
             200,
             accuracy: 0.001
         )
-        XCTAssertEqual(animation.duration, SumiTabTitleAnimation.loadingShimmerCycleDuration, accuracy: 0.001)
+        XCTAssertEqual(animation.duration, SumiTabTitleAnimation.loadingAlphaWaveCycleDuration, accuracy: 0.001)
         let locationsAnimation = try XCTUnwrap(animation as? CABasicAnimation)
         XCTAssertEqual(locationsAnimation.keyPath, "locations")
         XCTAssertEqual(maskLayer.colors?.count, 5)
@@ -138,7 +138,7 @@ final class SumiTabTitleViewTests: XCTestCase {
         )
     }
 
-    func testTitleViewStopsLoadingShimmerAnimation() throws {
+    func testTitleViewStopsLoadingAlphaWaveAnimation() throws {
         let view = makeView(width: 200)
 
         view.apply(
@@ -151,7 +151,7 @@ final class SumiTabTitleViewTests: XCTestCase {
             isLoading: true
         )
         view.layoutSubtreeIfNeeded()
-        XCTAssertNotNil(loadingShimmerMaskLayer(in: view)?.animation(forKey: SumiTabTitleAnimation.loadingShimmerKey))
+        XCTAssertNotNil(loadingAlphaWaveMaskLayer(in: view)?.animation(forKey: SumiTabTitleAnimation.loadingAlphaWaveKey))
 
         view.apply(
             title: "Loading Title",
@@ -163,7 +163,7 @@ final class SumiTabTitleViewTests: XCTestCase {
             isLoading: false
         )
 
-        XCTAssertNil(loadingShimmerMaskLayer(in: view))
+        XCTAssertNil(loadingAlphaWaveMaskLayer(in: view))
     }
 
     func testSwiftUIHostedLabelKeepsFullWidthWithOverlaidAction() throws {
@@ -259,7 +259,7 @@ final class SumiTabTitleViewTests: XCTestCase {
         view.layer?.mask as? CAGradientLayer
     }
 
-    private func loadingShimmerMaskLayer(in view: SumiTabTitleView) -> CAGradientLayer? {
+    private func loadingAlphaWaveMaskLayer(in view: SumiTabTitleView) -> CAGradientLayer? {
         titleFields(in: view).current.layer?.mask as? CAGradientLayer
     }
 

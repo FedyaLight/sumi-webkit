@@ -83,13 +83,13 @@ enum SumiTabTitleAnimation {
     static let slidingInStartX = CGFloat(-4)
     static let slidingInLastX = CGFloat(0)
 
-    static let loadingShimmerKey = "loadingTitleShimmer"
-    static let loadingShimmerCycleDuration: TimeInterval = 1.1
-    static let loadingShimmerMinimumBandWidth = CGFloat(96)
-    static let loadingShimmerMaximumBandWidth = CGFloat(180)
-    static let loadingShimmerRelativeBandWidth = CGFloat(0.72)
-    static let loadingShimmerShoulderAlpha = CGFloat(0.55)
-    static let loadingShimmerMinimumAlpha = CGFloat(0.04)
+    static let loadingAlphaWaveKey = "loadingTitleAlphaWave"
+    static let loadingAlphaWaveCycleDuration: TimeInterval = 1.1
+    static let loadingAlphaWaveMinimumBandWidth = CGFloat(96)
+    static let loadingAlphaWaveMaximumBandWidth = CGFloat(180)
+    static let loadingAlphaWaveRelativeBandWidth = CGFloat(0.72)
+    static let loadingAlphaWaveShoulderAlpha = CGFloat(0.55)
+    static let loadingAlphaWaveMinimumAlpha = CGFloat(0.04)
 }
 
 final class SumiTabTitleView: NSView {
@@ -97,8 +97,8 @@ final class SumiTabTitleView: NSView {
     private lazy var previousTextField: NSTextField = buildTitleTextField()
     private var fadeWidth: CGFloat = 32
     private var trailingFadePadding: CGFloat = 0
-    private var isLoadingShimmerRequested = false
-    private var lastLoadingShimmerBoundsSize: CGSize = .zero
+    private var isLoadingAlphaWaveRequested = false
+    private var lastLoadingAlphaWaveBoundsSize: CGSize = .zero
 
     override var intrinsicContentSize: NSSize {
         NSSize(width: NSView.noIntrinsicMetric, height: 16)
@@ -123,8 +123,8 @@ final class SumiTabTitleView: NSView {
     override func layout() {
         super.layout()
         applyTrailingFadeMask(width: fadeWidth, trailingPadding: trailingFadePadding)
-        if isLoadingShimmerRequested {
-            startLoadingShimmerIfNeeded()
+        if isLoadingAlphaWaveRequested {
+            startLoadingAlphaWaveIfNeeded()
         }
     }
 
@@ -145,7 +145,7 @@ final class SumiTabTitleView: NSView {
         previousTextField.textColor = textColor
         applyTrailingFadeMask(width: fadeWidth, trailingPadding: trailingFadePadding)
         displayTitleIfNeeded(title: title, animated: animated)
-        updateLoadingShimmer(isLoading && title.isEmpty == false)
+        updateLoadingAlphaWave(isLoading && title.isEmpty == false)
     }
 }
 
@@ -243,19 +243,19 @@ private extension SumiTabTitleView {
 }
 
 private extension SumiTabTitleView {
-    func updateLoadingShimmer(_ isLoading: Bool) {
-        isLoadingShimmerRequested = isLoading
+    func updateLoadingAlphaWave(_ isLoading: Bool) {
+        isLoadingAlphaWaveRequested = isLoading
 
         if isLoading {
-            startLoadingShimmerIfNeeded()
+            startLoadingAlphaWaveIfNeeded()
         } else {
-            stopLoadingShimmer()
+            stopLoadingAlphaWave()
         }
     }
 
-    func startLoadingShimmerIfNeeded() {
+    func startLoadingAlphaWaveIfNeeded() {
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
-            stopLoadingShimmer()
+            stopLoadingAlphaWave()
             return
         }
 
@@ -264,26 +264,26 @@ private extension SumiTabTitleView {
         }
 
         let titleLayer = titleTextField.layer
-        let maskLayer = loadingShimmerMaskLayer(for: titleLayer)
-        guard lastLoadingShimmerBoundsSize != bounds.size
-                || maskLayer.animation(forKey: SumiTabTitleAnimation.loadingShimmerKey) == nil
+        let maskLayer = loadingAlphaWaveMaskLayer(for: titleLayer)
+        guard lastLoadingAlphaWaveBoundsSize != bounds.size
+                || maskLayer.animation(forKey: SumiTabTitleAnimation.loadingAlphaWaveKey) == nil
         else {
             return
         }
 
-        lastLoadingShimmerBoundsSize = bounds.size
-        configureLoadingShimmerMask(maskLayer)
+        lastLoadingAlphaWaveBoundsSize = bounds.size
+        configureLoadingAlphaWaveMask(maskLayer)
 
-        maskLayer.add(buildLoadingShimmerAnimation(), forKey: SumiTabTitleAnimation.loadingShimmerKey)
+        maskLayer.add(buildLoadingAlphaWaveAnimation(), forKey: SumiTabTitleAnimation.loadingAlphaWaveKey)
     }
 
-    func stopLoadingShimmer() {
-        titleTextField.layer?.mask?.removeAnimation(forKey: SumiTabTitleAnimation.loadingShimmerKey)
+    func stopLoadingAlphaWave() {
+        titleTextField.layer?.mask?.removeAnimation(forKey: SumiTabTitleAnimation.loadingAlphaWaveKey)
         titleTextField.layer?.mask = nil
-        lastLoadingShimmerBoundsSize = .zero
+        lastLoadingAlphaWaveBoundsSize = .zero
     }
 
-    func loadingShimmerMaskLayer(for layer: CALayer?) -> CAGradientLayer {
+    func loadingAlphaWaveMaskLayer(for layer: CALayer?) -> CAGradientLayer {
         if let mask = layer?.mask as? CAGradientLayer {
             return mask
         }
@@ -293,7 +293,7 @@ private extension SumiTabTitleView {
         return mask
     }
 
-    func configureLoadingShimmerMask(_ mask: CAGradientLayer) {
+    func configureLoadingAlphaWaveMask(_ mask: CAGradientLayer) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
 
@@ -302,45 +302,45 @@ private extension SumiTabTitleView {
         mask.endPoint = CGPoint(x: 1, y: 0.5)
         mask.colors = [
             NSColor.white.cgColor,
-            NSColor.white.withAlphaComponent(SumiTabTitleAnimation.loadingShimmerShoulderAlpha).cgColor,
-            NSColor.white.withAlphaComponent(SumiTabTitleAnimation.loadingShimmerMinimumAlpha).cgColor,
-            NSColor.white.withAlphaComponent(SumiTabTitleAnimation.loadingShimmerShoulderAlpha).cgColor,
+            NSColor.white.withAlphaComponent(SumiTabTitleAnimation.loadingAlphaWaveShoulderAlpha).cgColor,
+            NSColor.white.withAlphaComponent(SumiTabTitleAnimation.loadingAlphaWaveMinimumAlpha).cgColor,
+            NSColor.white.withAlphaComponent(SumiTabTitleAnimation.loadingAlphaWaveShoulderAlpha).cgColor,
             NSColor.white.cgColor
         ]
-        mask.locations = loadingShimmerLocations(centerX: -loadingShimmerRelativeHalfWidth)
+        mask.locations = loadingAlphaWaveLocations(centerX: -loadingAlphaWaveRelativeHalfWidth)
         mask.opacity = 1
 
         CATransaction.commit()
     }
 
-    func buildLoadingShimmerAnimation() -> CABasicAnimation {
+    func buildLoadingAlphaWaveAnimation() -> CABasicAnimation {
         let animation = CABasicAnimation(keyPath: "locations")
-        animation.fromValue = loadingShimmerLocations(centerX: -loadingShimmerRelativeHalfWidth)
-        animation.toValue = loadingShimmerLocations(centerX: 1 + loadingShimmerRelativeHalfWidth)
-        animation.duration = SumiTabTitleAnimation.loadingShimmerCycleDuration
+        animation.fromValue = loadingAlphaWaveLocations(centerX: -loadingAlphaWaveRelativeHalfWidth)
+        animation.toValue = loadingAlphaWaveLocations(centerX: 1 + loadingAlphaWaveRelativeHalfWidth)
+        animation.duration = SumiTabTitleAnimation.loadingAlphaWaveCycleDuration
         animation.timingFunction = CAMediaTimingFunction(name: .linear)
         animation.repeatCount = .infinity
         animation.isRemovedOnCompletion = false
         return animation
     }
 
-    var loadingShimmerBandWidth: CGFloat {
+    var loadingAlphaWaveBandWidth: CGFloat {
         min(
             max(
-                bounds.width * SumiTabTitleAnimation.loadingShimmerRelativeBandWidth,
-                SumiTabTitleAnimation.loadingShimmerMinimumBandWidth
+                bounds.width * SumiTabTitleAnimation.loadingAlphaWaveRelativeBandWidth,
+                SumiTabTitleAnimation.loadingAlphaWaveMinimumBandWidth
             ),
-            SumiTabTitleAnimation.loadingShimmerMaximumBandWidth
+            SumiTabTitleAnimation.loadingAlphaWaveMaximumBandWidth
         )
     }
 
-    var loadingShimmerRelativeHalfWidth: CGFloat {
+    var loadingAlphaWaveRelativeHalfWidth: CGFloat {
         guard bounds.width > 0 else { return 0 }
-        return (loadingShimmerBandWidth / bounds.width) / 2
+        return (loadingAlphaWaveBandWidth / bounds.width) / 2
     }
 
-    func loadingShimmerLocations(centerX: CGFloat) -> [NSNumber] {
-        let halfWidth = loadingShimmerRelativeHalfWidth
+    func loadingAlphaWaveLocations(centerX: CGFloat) -> [NSNumber] {
+        let halfWidth = loadingAlphaWaveRelativeHalfWidth
         let leadingShoulder = halfWidth * 0.56
         let trailingShoulder = halfWidth * 0.56
         return [
