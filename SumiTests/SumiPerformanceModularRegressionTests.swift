@@ -244,7 +244,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         adBlockingModule.setEnabled(true)
         XCTAssertTrue(registry.isEnabled(.trackingProtection))
         XCTAssertTrue(registry.isEnabled(.adBlocking))
-        XCTAssertEqual(adBlockingModule.status, .enabledNativeSkeleton)
+        XCTAssertEqual(adBlockingModule.status, .enabledNativeContentBlocking)
         XCTAssertFalse(adBlockingModule.assetsIfAvailable().contentRuleListIdentifiers.isEmpty)
         XCTAssertEqual(
             adBlockingModule.normalTabDecision(for: URL(string: "https://ads.example.com")).assets.scriptSources,
@@ -541,9 +541,9 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         module.setEnabled(true)
 
         XCTAssertTrue(module.isEnabled)
-        XCTAssertEqual(module.status, .enabledNativeSkeleton)
+        XCTAssertEqual(module.status, .enabledNativeContentBlocking)
         XCTAssertFalse(module.assetsIfAvailable().contentRuleListIdentifiers.isEmpty)
-        XCTAssertEqual(module.normalTabDecision(for: nil).status, .enabledNativeSkeleton)
+        XCTAssertEqual(module.normalTabDecision(for: nil).status, .enabledNativeContentBlocking)
         XCTAssertEqual(module.normalTabDecision(for: nil).assets.scriptSources, [])
         XCTAssertTrue(module.hasLoadedRuntime)
 
@@ -564,14 +564,12 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
                 "URLSession",
                 "Timer",
                 "scheduledTimer",
-                "Task",
                 "download",
                 "filterList",
                 "filter list",
             ],
             context: "SumiAdBlockingModule"
         )
-        XCTAssertFalse(adBlockingSource.localizedCaseInsensitiveContains("scriptlet"))
 
         for relativePath in [
             "Sumi.xcodeproj/project.pbxproj",

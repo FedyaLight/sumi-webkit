@@ -3,7 +3,7 @@ import Foundation
 
 enum SumiAdBlockingModuleStatus: Equatable, Sendable {
     case disabled
-    case enabledNativeSkeleton
+    case enabledNativeContentBlocking
 }
 
 enum SumiAdblockCosmeticMode: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -271,69 +271,101 @@ final class AdblockSitePolicyStore: ObservableObject {
 
 @MainActor
 final class AdblockWebKitRuleListStore {
+    static let fixtureSourceIdentifier = "SumiAdblockTinyFixture"
+
     let contentBlockingService: SumiContentBlockingService
+    private let filterCompiler: AdblockFilterCompiling
+    private let filterSource: () -> [String]
     private var settingsCancellable: AnyCancellable?
+    private var compilationGeneration = 0
+    private(set) var latestCompilationOutput: AdblockCompilationOutput?
 
     init(
         settingsStore: AdblockSettingsStore,
+        filterCompiler: AdblockFilterCompiling = AdblockRustCompiler(),
+        filterSource: @escaping () -> [String] = { AdblockWebKitRuleListStore.tinyFixtureFilters },
         compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler(),
-        compiledRuleListCatalog: SumiCompiledContentRuleListCataloging = SumiCompiledContentRuleListCatalog.shared
+        compiledRuleListCatalog: SumiCompiledContentRuleListCataloging = AdblockRetainingCompiledRuleListCatalog()
     ) {
+        self.filterCompiler = filterCompiler
+        self.filterSource = filterSource
         contentBlockingService = SumiContentBlockingService(
-            policy: .enabled(ruleLists: Self.ruleLists(for: settingsStore.cosmeticMode)),
+            policy: .disabled,
             compiler: compiler,
             compiledRuleListCatalog: compiledRuleListCatalog
         )
+        scheduleCompilation(for: settingsStore.cosmeticMode)
         settingsCancellable = settingsStore.$cosmeticMode
             .removeDuplicates()
             .dropFirst()
             .sink { [weak self] cosmeticMode in
-                self?.contentBlockingService.setPolicy(
-                    .enabled(ruleLists: Self.ruleLists(for: cosmeticMode))
-                )
+                self?.scheduleCompilation(for: cosmeticMode)
             }
     }
 
-    private static func ruleLists(for cosmeticMode: SumiAdblockCosmeticMode) -> [SumiContentRuleListDefinition] {
-        var definitions = [networkTestRuleList]
-        if cosmeticMode == .nativeCSS {
-            definitions.append(nativeCSSTestRuleList)
+    static func ruleListIdentifiers(for cosmeticMode: SumiAdblockCosmeticMode) -> [String] {
+        outputGroups(for: cosmeticMode).map { group in
+            switch group {
+            case .network:
+                return "\(fixtureSourceIdentifier).network"
+            case .nativeCosmeticCSS:
+                return "\(fixtureSourceIdentifier).native-css"
+            }
         }
-        return definitions
+        .sorted()
     }
 
-    static let networkTestRuleList = SumiContentRuleListDefinition(
-        name: "SumiAdblockSkeletonNetworkRules",
-        encodedContentRuleList: """
-        [
-          {
-            "trigger": {
-              "url-filter": ".*sumi-adblock-test-blocked\\\\.example/.*"
-            },
-            "action": {
-              "type": "block"
-            }
-          }
-        ]
-        """
-    )
+    private func scheduleCompilation(for cosmeticMode: SumiAdblockCosmeticMode) {
+        compilationGeneration += 1
+        let generation = compilationGeneration
+        let input = AdblockCompilationInput(
+            sourceIdentifier: Self.fixtureSourceIdentifier,
+            filterTexts: filterSource(),
+            selectedOutputGroups: Self.outputGroups(for: cosmeticMode)
+        )
 
-    static let nativeCSSTestRuleList = SumiContentRuleListDefinition(
-        name: "SumiAdblockSkeletonNativeCSSRules",
-        encodedContentRuleList: """
-        [
-          {
-            "trigger": {
-              "url-filter": ".*"
-            },
-            "action": {
-              "type": "css-display-none",
-              "selector": ".sumi-adblock-test-hide"
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let output = try await self.filterCompiler.compile(input)
+                guard generation == self.compilationGeneration else { return }
+                self.latestCompilationOutput = output
+                self.contentBlockingService.setPolicy(.enabled(ruleLists: output.ruleListDefinitions))
+            } catch {
+                guard generation == self.compilationGeneration else { return }
+                self.latestCompilationOutput = nil
+                self.contentBlockingService.setPolicy(.disabled)
             }
-          }
-        ]
-        """
-    )
+        }
+    }
+
+    private static func outputGroups(for cosmeticMode: SumiAdblockCosmeticMode) -> Set<AdblockCompiledRuleGroupKind> {
+        switch cosmeticMode {
+        case .off:
+            return [.network]
+        case .nativeCSS, .enhancedRuntime:
+            return [.network, .nativeCosmeticCSS]
+        }
+    }
+
+    static let tinyFixtureFilters = [
+        "||sumi-adblock-test-blocked.example^",
+        "||sumi-adblock-domain-test.example^$domain=example.com",
+        "example.com##.sumi-adblock-test-hide",
+        "example.com##+js(sumi-future-scriptlet)",
+    ]
+}
+
+@MainActor
+final class AdblockRetainingCompiledRuleListCatalog: SumiCompiledContentRuleListCataloging {
+    func staleIdentifiers(
+        replacing previousRules: [SumiContentBlockerRules],
+        with activeRules: [SumiContentBlockerRules]
+    ) -> [String] {
+        []
+    }
+
+    func forgetIdentifiers(_ identifiers: [String]) {}
 }
 
 @MainActor
@@ -367,7 +399,7 @@ final class SumiAdBlockingModule {
     }
 
     var status: SumiAdBlockingModuleStatus {
-        isEnabled ? .enabledNativeSkeleton : .disabled
+        isEnabled ? .enabledNativeContentBlocking : .disabled
     }
 
     var hasLoadedRuntime: Bool {
@@ -438,14 +470,6 @@ final class SumiAdBlockingModule {
 
     private func contentRuleListIdentifiers() -> [String] {
         guard let settings = settingsIfEnabled() else { return [] }
-        switch settings.cosmeticMode {
-        case .off, .enhancedRuntime:
-            return [AdblockWebKitRuleListStore.networkTestRuleList.name]
-        case .nativeCSS:
-            return [
-                AdblockWebKitRuleListStore.networkTestRuleList.name,
-                AdblockWebKitRuleListStore.nativeCSSTestRuleList.name,
-            ]
-        }
+        return AdblockWebKitRuleListStore.ruleListIdentifiers(for: settings.cosmeticMode)
     }
 }
