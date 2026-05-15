@@ -6,10 +6,16 @@ import WebKit
 struct SumiContentRuleListDefinition: Equatable, Sendable {
     let name: String
     let encodedContentRuleList: String
+    let storeIdentifierOverride: String?
 
-    init(name: String, encodedContentRuleList: String) {
+    init(
+        name: String,
+        encodedContentRuleList: String,
+        storeIdentifierOverride: String? = nil
+    ) {
         self.name = name
         self.encodedContentRuleList = encodedContentRuleList
+        self.storeIdentifierOverride = storeIdentifierOverride
     }
 
     var contentHash: String {
@@ -557,7 +563,7 @@ final class SumiContentBlockingService {
             allowListId: nil,
             unprotectedSitesHash: nil
         )
-        let storeIdentifier = rulesIdentifier.stringValue
+        let storeIdentifier = definition.storeIdentifierOverride ?? rulesIdentifier.stringValue
 
         if let cachedRules = compiledRulesByIdentifier[storeIdentifier] {
             return cachedRules

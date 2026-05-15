@@ -1,0 +1,346 @@
+import Foundation
+import XCTest
+
+@testable import Sumi
+
+@MainActor
+final class SumiAdblockUpdatePipelineTests: XCTestCase {
+    private var temporaryDirectories: [URL] = []
+
+    override func tearDown() async throws {
+        for directory in temporaryDirectories {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        temporaryDirectories.removeAll()
+        try await super.tearDown()
+    }
+
+    func testDownloaderPersistsConditionalRequestHeadersFromMetadata() async throws {
+        let requestRecorder = RequestRecorder()
+        let downloader = AdblockFilterListDownloader { request in
+            await requestRecorder.record(request)
+            return (
+                Data("||ads.example^".utf8),
+                HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["ETag": "\"next\"", "Last-Modified": "Tue, 14 May 2024 12:00:00 GMT"]
+                )!
+            )
+        }
+
+        _ = try await downloader.download(
+            descriptor: Self.descriptor("easylist"),
+            previousMetadata: AdblockFilterListHTTPMetadata(
+                eTag: "\"old\"",
+                lastModified: "Mon, 13 May 2024 12:00:00 GMT"
+            )
+        )
+
+        let observedRequest = await requestRecorder.recordedRequest()
+        XCTAssertEqual(observedRequest?.value(forHTTPHeaderField: "If-None-Match"), "\"old\"")
+        XCTAssertEqual(observedRequest?.value(forHTTPHeaderField: "If-Modified-Since"), "Mon, 13 May 2024 12:00:00 GMT")
+    }
+
+    func testCoordinatorDownloadsOnlySelectedListsAndWritesManifest() async throws {
+        let root = temporaryDirectory()
+        let manifestStore = AdblockUpdateManifestStore(rootDirectory: root)
+        let downloader = FakeAdblockDownloader(results: [
+            "easylist": .downloaded(Data("||ads.example^".utf8), Self.response(for: "easylist", eTag: "\"one\"")),
+        ])
+        let compiler = FakeAdblockCompiler()
+        let publisher = FakeAdblockPublisher()
+        let coordinator = Self.coordinator(
+            registry: AdblockFilterListRegistry(descriptors: [
+                Self.descriptor("easylist", defaultEnabled: true),
+                Self.descriptor("regional-de", defaultEnabled: false),
+            ]),
+            selection: SumiAdblockFilterListSelection(identifiers: ["easylist"]),
+            downloader: downloader,
+            manifestStore: manifestStore,
+            compiler: compiler,
+            publisher: publisher
+        )
+
+        let optionalManifest = try await coordinator.updateIfEnabled(reason: "manual")
+        let manifest = try XCTUnwrap(optionalManifest)
+        let requestedIdentifiers = await downloader.allRequestedIdentifiers()
+        let compileCount = await compiler.currentCompileCount()
+        let activeGenerationId = try await manifestStore.activeManifest()?.activeGenerationId
+
+        XCTAssertEqual(requestedIdentifiers, ["easylist"])
+        XCTAssertEqual(compileCount, 1)
+        XCTAssertEqual(manifest.schemaVersion, 1)
+        XCTAssertEqual(manifest.selectedFilterLists.map(\.id), ["easylist"])
+        XCTAssertTrue(manifest.webKitRuleListIdentifiers.allSatisfy(AdblockUpdateCoordinator.isAdblockGeneratedWebKitIdentifier))
+        XCTAssertEqual(activeGenerationId, manifest.activeGenerationId)
+        XCTAssertEqual(publisher.publishedManifests.count, 1)
+    }
+
+    func testNotModifiedReusesPreviousRawContent() async throws {
+        let root = temporaryDirectory()
+        let manifestStore = AdblockUpdateManifestStore(rootDirectory: root)
+        let firstDownloader = FakeAdblockDownloader(results: [
+            "easylist": .downloaded(Data("||first.example^".utf8), Self.response(for: "easylist", eTag: "\"one\"")),
+        ])
+        let compiler = FakeAdblockCompiler()
+        let publisher = FakeAdblockPublisher()
+        _ = try await Self.coordinator(
+            downloader: firstDownloader,
+            manifestStore: manifestStore,
+            compiler: compiler,
+            publisher: publisher
+        ).updateIfEnabled(reason: "manual")
+
+        let secondDownloader = FakeAdblockDownloader(results: [
+            "easylist": .notModified(Self.response(for: "easylist", statusCode: 304)),
+        ])
+        _ = try await Self.coordinator(
+            downloader: secondDownloader,
+            manifestStore: manifestStore,
+            compiler: compiler,
+            publisher: publisher
+        ).updateIfEnabled(reason: "manual")
+
+        let inputs = await compiler.inputs
+        XCTAssertEqual(inputs.count, 2)
+        XCTAssertEqual(inputs.last?.filterTexts.first, "||first.example^")
+    }
+
+    func testDisabledCoordinatorIsInert() async throws {
+        let downloader = FakeAdblockDownloader(results: [:])
+        let compiler = FakeAdblockCompiler()
+        let publisher = FakeAdblockPublisher()
+        let coordinator = Self.coordinator(
+            isEnabled: false,
+            downloader: downloader,
+            manifestStore: AdblockUpdateManifestStore(rootDirectory: temporaryDirectory()),
+            compiler: compiler,
+            publisher: publisher
+        )
+
+        let manifest = try await coordinator.updateIfEnabled(reason: "manual")
+
+        XCTAssertNil(manifest)
+        let requestedIdentifiers = await downloader.allRequestedIdentifiers()
+        let compileCount = await compiler.currentCompileCount()
+        XCTAssertTrue(requestedIdentifiers.isEmpty)
+        XCTAssertEqual(compileCount, 0)
+        XCTAssertTrue(publisher.publishedManifests.isEmpty)
+    }
+
+    func testDownloadAndCompileFailuresKeepPreviousManifest() async throws {
+        let root = temporaryDirectory()
+        let manifestStore = AdblockUpdateManifestStore(rootDirectory: root)
+        let publisher = FakeAdblockPublisher()
+        let optionalFirstManifest = try await Self.coordinator(
+            downloader: FakeAdblockDownloader(results: [
+                "easylist": .downloaded(Data("||first.example^".utf8), Self.response(for: "easylist")),
+            ]),
+            manifestStore: manifestStore,
+            compiler: FakeAdblockCompiler(),
+            publisher: publisher
+        ).updateIfEnabled(reason: "manual")
+        let firstManifest = try XCTUnwrap(optionalFirstManifest)
+
+        do {
+            _ = try await Self.coordinator(
+                downloader: FakeAdblockDownloader(results: [
+                    "easylist": .failure(AdblockUpdateDiagnostics(summary: "offline")),
+                ]),
+                manifestStore: manifestStore,
+                compiler: FakeAdblockCompiler(),
+                publisher: publisher
+            ).updateIfEnabled(reason: "manual")
+            XCTFail("Expected download failure")
+        } catch {}
+
+        let activeAfterDownloadFailure = try await manifestStore.activeManifest()?.activeGenerationId
+        XCTAssertEqual(activeAfterDownloadFailure, firstManifest.activeGenerationId)
+
+        do {
+            _ = try await Self.coordinator(
+                downloader: FakeAdblockDownloader(results: [
+                    "easylist": .downloaded(Data("||second.example^".utf8), Self.response(for: "easylist")),
+                ]),
+                manifestStore: manifestStore,
+                compiler: FakeAdblockCompiler(error: AdblockUpdateDiagnostics(summary: "compiler failed")),
+                publisher: publisher
+            ).updateIfEnabled(reason: "manual")
+            XCTFail("Expected compile failure")
+        } catch {}
+
+        let activeAfterCompileFailure = try await manifestStore.activeManifest()?.activeGenerationId
+        XCTAssertEqual(activeAfterCompileFailure, firstManifest.activeGenerationId)
+    }
+
+    private static func coordinator(
+        registry: AdblockFilterListRegistry = AdblockFilterListRegistry(descriptors: [descriptor("easylist", defaultEnabled: true)]),
+        selection: SumiAdblockFilterListSelection = SumiAdblockFilterListSelection(identifiers: ["easylist"]),
+        isEnabled: Bool = true,
+        downloader: FakeAdblockDownloader,
+        manifestStore: AdblockUpdateManifestStore,
+        compiler: FakeAdblockCompiler,
+        publisher: FakeAdblockPublisher
+    ) -> AdblockUpdateCoordinator {
+        AdblockUpdateCoordinator(
+            registry: registry,
+            selection: { selection },
+            isAdblockEnabled: { isEnabled },
+            downloader: downloader,
+            manifestStore: manifestStore,
+            filterCompiler: compiler,
+            publisher: publisher,
+            now: { Date(timeIntervalSince1970: 1_700_000_000) }
+        )
+    }
+
+    private static func descriptor(_ id: String, defaultEnabled: Bool = false) -> AdblockFilterListDescriptor {
+        AdblockFilterListDescriptor(
+            id: id,
+            displayName: id,
+            category: id.contains("regional") ? .regional : .baseAds,
+            remoteURL: URL(string: "https://filters.example/\(id).txt")!,
+            homepageURL: URL(string: "https://filters.example/"),
+            defaultEnabled: defaultEnabled,
+            localeTags: [],
+            licenseNoticeHint: "test",
+            mayContainCosmeticFilters: true,
+            isAllowedInNativeOnlyMode: true
+        )
+    }
+
+    private static func response(
+        for id: String,
+        statusCode: Int = 200,
+        eTag: String? = nil
+    ) -> HTTPURLResponse {
+        var headers = [String: String]()
+        if let eTag {
+            headers["ETag"] = eTag
+        }
+        return HTTPURLResponse(
+            url: URL(string: "https://filters.example/\(id).txt")!,
+            statusCode: statusCode,
+            httpVersion: nil,
+            headerFields: headers
+        )!
+    }
+
+    private func temporaryDirectory() -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SumiAdblockUpdatePipelineTests-\(UUID().uuidString)", isDirectory: true)
+        temporaryDirectories.append(directory)
+        return directory
+    }
+}
+
+private actor FakeAdblockDownloader: AdblockFilterListDownloading {
+    enum Result {
+        case downloaded(Data, HTTPURLResponse)
+        case notModified(HTTPURLResponse)
+        case failure(Error)
+    }
+
+    private(set) var requestedIdentifiers = [String]()
+    private let results: [String: Result]
+
+    init(results: [String: Result]) {
+        self.results = results
+    }
+
+    func allRequestedIdentifiers() -> [String] {
+        requestedIdentifiers
+    }
+
+    func download(
+        descriptor: AdblockFilterListDescriptor,
+        previousMetadata: AdblockFilterListHTTPMetadata?
+    ) async throws -> AdblockDownloadOutcome {
+        requestedIdentifiers.append(descriptor.id)
+        switch results[descriptor.id] {
+        case .downloaded(let data, let response):
+            return .downloaded(data, response)
+        case .notModified(let response):
+            return .notModified(response)
+        case .failure(let error):
+            throw error
+        case nil:
+            throw AdblockUpdateDiagnostics(summary: "unexpected list")
+        }
+    }
+}
+
+private actor FakeAdblockCompiler: AdblockFilterCompiling {
+    private(set) var inputs = [AdblockCompilationInput]()
+    private let error: Error?
+
+    init(error: Error? = nil) {
+        self.error = error
+    }
+
+    var compileCount: Int {
+        inputs.count
+    }
+
+    func currentCompileCount() -> Int {
+        inputs.count
+    }
+
+    func compile(_ input: AdblockCompilationInput) async throws -> AdblockCompilationOutput {
+        if let error {
+            throw error
+        }
+        inputs.append(input)
+        return AdblockCompilationOutput(
+            sourceIdentifier: input.sourceIdentifier,
+            groups: [
+                AdblockCompiledRuleGroup(
+                    kind: .network,
+                    name: "\(input.sourceIdentifier).network",
+                    encodedContentRuleList: "[]",
+                    convertedRuleCount: 1,
+                    contentHash: "network-hash"
+                ),
+                AdblockCompiledRuleGroup(
+                    kind: .nativeCosmeticCSS,
+                    name: "\(input.sourceIdentifier).native-css",
+                    encodedContentRuleList: "[]",
+                    convertedRuleCount: 1,
+                    contentHash: "css-hash"
+                ),
+            ],
+            diagnostics: AdblockCompilationDiagnostics(),
+            inputRuleCount: input.filterTexts.count,
+            convertedNetworkRuleCount: 1,
+            convertedNativeCosmeticRuleCount: 1,
+            unsupportedOrIgnoredRuleCount: 0,
+            contentHash: "compiled-hash"
+        )
+    }
+}
+
+private actor RequestRecorder {
+    private(set) var request: URLRequest?
+
+    func record(_ request: URLRequest) {
+        self.request = request
+    }
+
+    func recordedRequest() -> URLRequest? {
+        request
+    }
+}
+
+@MainActor
+private final class FakeAdblockPublisher: AdblockRuleListPublishing {
+    private(set) var publishedManifests = [AdblockCompiledGenerationManifest]()
+
+    func publish(
+        manifest: AdblockCompiledGenerationManifest,
+        definitions: [SumiContentRuleListDefinition]
+    ) async throws {
+        publishedManifests.append(manifest)
+    }
+}

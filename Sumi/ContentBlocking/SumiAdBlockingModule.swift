@@ -114,6 +114,7 @@ final class AdblockSettingsStore: ObservableObject {
         static let autoUpdateEnabled = "settings.adblock.autoUpdateEnabled"
         static let cosmeticMode = "settings.adblock.cosmeticMode"
         static let regionalListSelection = "settings.adblock.regionalListSelection"
+        static let filterListSelection = "settings.adblock.filterListSelection"
     }
 
     @Published var autoUpdateEnabled: Bool {
@@ -134,6 +135,15 @@ final class AdblockSettingsStore: ObservableObject {
         didSet {
             if let data = try? JSONEncoder().encode(regionalListSelection) {
                 userDefaults.set(data, forKey: DefaultsKey.regionalListSelection)
+            }
+            changesSubject.send(())
+        }
+    }
+
+    @Published var filterListSelection: SumiAdblockFilterListSelection {
+        didSet {
+            if let data = try? JSONEncoder().encode(filterListSelection) {
+                userDefaults.set(data, forKey: DefaultsKey.filterListSelection)
             }
             changesSubject.send(())
         }
@@ -161,6 +171,12 @@ final class AdblockSettingsStore: ObservableObject {
             regionalListSelection = decoded
         } else {
             regionalListSelection = .empty
+        }
+        if let data = userDefaults.data(forKey: DefaultsKey.filterListSelection),
+           let decoded = try? JSONDecoder().decode(SumiAdblockFilterListSelection.self, from: data) {
+            filterListSelection = decoded
+        } else {
+            filterListSelection = .defaultSelection
         }
     }
 }
@@ -271,80 +287,81 @@ final class AdblockSitePolicyStore: ObservableObject {
 
 @MainActor
 final class AdblockWebKitRuleListStore {
-    static let fixtureSourceIdentifier = "SumiAdblockTinyFixture"
-
     let contentBlockingService: SumiContentBlockingService
-    private let filterCompiler: AdblockFilterCompiling
-    private let filterSource: () -> [String]
+    private let manifestStore: AdblockUpdateManifestStore
+    private let ruleListProvider: AdblockManifestRuleListProvider
+    private let updateCoordinator: AdblockUpdateCoordinator
+    private let isAdblockEnabled: @Sendable () async -> Bool
     private var settingsCancellable: AnyCancellable?
-    private var compilationGeneration = 0
     private(set) var latestCompilationOutput: AdblockCompilationOutput?
 
     init(
         settingsStore: AdblockSettingsStore,
+        isAdblockEnabled: @escaping @Sendable () async -> Bool = { true },
+        registry: AdblockFilterListRegistry = AdblockFilterListRegistry(),
+        downloader: any AdblockFilterListDownloading = AdblockFilterListDownloader(),
+        manifestStore: AdblockUpdateManifestStore = AdblockUpdateManifestStore(),
         filterCompiler: AdblockFilterCompiling = AdblockRustCompiler(),
-        filterSource: @escaping () -> [String] = { AdblockWebKitRuleListStore.tinyFixtureFilters },
         compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler(),
         compiledRuleListCatalog: SumiCompiledContentRuleListCataloging = AdblockRetainingCompiledRuleListCatalog()
     ) {
-        self.filterCompiler = filterCompiler
-        self.filterSource = filterSource
+        self.manifestStore = manifestStore
+        self.isAdblockEnabled = isAdblockEnabled
+        let provider = AdblockManifestRuleListProvider(
+            manifest: nil,
+            cosmeticMode: settingsStore.cosmeticMode
+        )
+        ruleListProvider = provider
         contentBlockingService = SumiContentBlockingService(
             policy: .disabled,
             compiler: compiler,
+            ruleListProvider: provider,
             compiledRuleListCatalog: compiledRuleListCatalog
         )
-        scheduleCompilation(for: settingsStore.cosmeticMode)
+        let publisher = AdblockRuleListPublisher(
+            ruleListProvider: provider,
+            contentBlockingService: contentBlockingService
+        )
+        updateCoordinator = AdblockUpdateCoordinator(
+            registry: registry,
+            selection: { await MainActor.run { settingsStore.filterListSelection } },
+            isAdblockEnabled: isAdblockEnabled,
+            downloader: downloader,
+            manifestStore: manifestStore,
+            filterCompiler: filterCompiler,
+            publisher: publisher
+        )
+        Task { [weak self] in
+            guard let self else { return }
+            let manifest = try? await manifestStore.activeManifest()
+            await MainActor.run {
+                self.ruleListProvider.updateManifest(manifest)
+            }
+        }
         settingsCancellable = settingsStore.$cosmeticMode
             .removeDuplicates()
             .dropFirst()
             .sink { [weak self] cosmeticMode in
-                self?.scheduleCompilation(for: cosmeticMode)
+                self?.ruleListProvider.updateCosmeticMode(cosmeticMode)
             }
     }
 
     static func ruleListIdentifiers(for cosmeticMode: SumiAdblockCosmeticMode) -> [String] {
-        outputGroups(for: cosmeticMode).map { group in
-            switch group {
-            case .network:
-                return "\(fixtureSourceIdentifier).network"
-            case .nativeCosmeticCSS:
-                return "\(fixtureSourceIdentifier).native-css"
-            }
-        }
-        .sorted()
+        AdblockManifestRuleListProvider.attachedGroupKinds(for: cosmeticMode)
+            .map(\.rawValue)
+            .sorted()
     }
 
-    private func scheduleCompilation(for cosmeticMode: SumiAdblockCosmeticMode) {
-        compilationGeneration += 1
-        let generation = compilationGeneration
-        let input = AdblockCompilationInput(
-            sourceIdentifier: Self.fixtureSourceIdentifier,
-            filterTexts: filterSource(),
-            selectedOutputGroups: Self.outputGroups(for: cosmeticMode)
-        )
-
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                let output = try await self.filterCompiler.compile(input)
-                guard generation == self.compilationGeneration else { return }
-                self.latestCompilationOutput = output
-                self.contentBlockingService.setPolicy(.enabled(ruleLists: output.ruleListDefinitions))
-            } catch {
-                guard generation == self.compilationGeneration else { return }
-                self.latestCompilationOutput = nil
-                self.contentBlockingService.setPolicy(.disabled)
-            }
-        }
+    func requestManualUpdate() async throws -> AdblockCompiledGenerationManifest? {
+        guard await isAdblockEnabled() else { return nil }
+        return try await updateCoordinator.updateIfEnabled(reason: "manual")
     }
 
-    private static func outputGroups(for cosmeticMode: SumiAdblockCosmeticMode) -> Set<AdblockCompiledRuleGroupKind> {
-        switch cosmeticMode {
-        case .off:
-            return [.network]
-        case .nativeCSS, .enhancedRuntime:
-            return [.network, .nativeCosmeticCSS]
+    func requestInitialUpdateIfNeeded() {
+        guard ruleListProvider.activeManifest == nil
+        else { return }
+        Task { [weak self] in
+            _ = try? await self?.updateCoordinator.updateIfEnabled(reason: "initial")
         }
     }
 
@@ -375,7 +392,7 @@ final class SumiAdBlockingModule {
     private let moduleRegistry: SumiModuleRegistry
     private let settingsFactory: @MainActor () -> AdblockSettingsStore
     private let sitePolicyFactory: @MainActor () -> AdblockSitePolicyStore
-    private let ruleListStoreFactory: @MainActor (AdblockSettingsStore) -> AdblockWebKitRuleListStore
+    private let ruleListStoreFactory: @MainActor (AdblockSettingsStore, @escaping @Sendable () async -> Bool) -> AdblockWebKitRuleListStore
     private var cachedSettingsStore: AdblockSettingsStore?
     private var cachedSitePolicyStore: AdblockSitePolicyStore?
     private var cachedRuleListStore: AdblockWebKitRuleListStore?
@@ -384,8 +401,8 @@ final class SumiAdBlockingModule {
         moduleRegistry: SumiModuleRegistry = .shared,
         settingsFactory: @escaping @MainActor () -> AdblockSettingsStore = { .shared },
         sitePolicyFactory: @escaping @MainActor () -> AdblockSitePolicyStore = { .shared },
-        ruleListStoreFactory: @escaping @MainActor (AdblockSettingsStore) -> AdblockWebKitRuleListStore = {
-            AdblockWebKitRuleListStore(settingsStore: $0)
+        ruleListStoreFactory: @escaping @MainActor (AdblockSettingsStore, @escaping @Sendable () async -> Bool) -> AdblockWebKitRuleListStore = {
+            AdblockWebKitRuleListStore(settingsStore: $0, isAdblockEnabled: $1)
         }
     ) {
         self.moduleRegistry = moduleRegistry
@@ -463,8 +480,12 @@ final class SumiAdBlockingModule {
         if let cachedRuleListStore {
             return cachedRuleListStore
         }
-        let store = ruleListStoreFactory(settingsIfEnabled() ?? settingsFactory())
+        let settings = settingsIfEnabled() ?? settingsFactory()
+        let store = ruleListStoreFactory(settings, { [weak self] in
+            await MainActor.run { self?.isEnabled == true }
+        })
         cachedRuleListStore = store
+        store.requestInitialUpdateIfNeeded()
         return store
     }
 

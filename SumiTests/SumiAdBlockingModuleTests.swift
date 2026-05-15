@@ -120,14 +120,14 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         var didCreateRuleListStore = false
         let module = SumiAdBlockingModule(
             moduleRegistry: registry,
-            ruleListStoreFactory: { settings in
+            ruleListStoreFactory: { settings, isEnabled in
                 didCreateRuleListStore = true
-                return AdblockWebKitRuleListStore(settingsStore: settings)
+                return AdblockWebKitRuleListStore(settingsStore: settings, isAdblockEnabled: isEnabled)
             }
         )
 
-        XCTAssertEqual(module.normalTabDecision(for: URL(string: "https://example.com")).assets, .empty)
-        XCTAssertEqual(module.assetsIfAvailable(), .empty)
+        XCTAssertEqual(module.normalTabDecision(for: URL(string: "https://example.com")).assets, SumiAdBlockingAssets.empty)
+        XCTAssertEqual(module.assetsIfAvailable(), SumiAdBlockingAssets.empty)
         XCTAssertFalse(didCreateRuleListStore)
         XCTAssertFalse(module.hasLoadedRuntime)
     }
@@ -563,7 +563,6 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             "URLSession",
             "Timer",
             "scheduledTimer",
-            "download",
         ] {
             XCTAssertFalse(source.contains(forbiddenPattern), forbiddenPattern)
         }
