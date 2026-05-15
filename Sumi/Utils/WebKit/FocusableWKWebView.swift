@@ -272,6 +272,8 @@ final class FocusableWKWebView: WKWebView {
     }
 
     override var isInFullScreenMode: Bool {
+        // WebKit element fullscreen is owned by WKWebView.fullscreenState, not by
+        // AppKit's NSView fullscreen mode flag.
         sumiIsInFullscreenElementPresentation
     }
 
@@ -335,21 +337,6 @@ final class FocusableWKWebView: WKWebView {
 
 @MainActor
 extension WKWebView {
-    private enum SumiFullscreenSelector {
-        static let fullScreenPlaceholderView = NSSelectorFromString("_fullScreenPlaceholderView")
-    }
-
-    var sumiFullScreenPlaceholderView: NSView? {
-        guard responds(to: SumiFullscreenSelector.fullScreenPlaceholderView) else { return nil }
-        return value(
-            forKey: NSStringFromSelector(SumiFullscreenSelector.fullScreenPlaceholderView)
-        ) as? NSView
-    }
-
-    var sumiTabContentView: NSView {
-        sumiFullScreenPlaceholderView ?? self
-    }
-
     var sumiIsInFullscreenElementPresentation: Bool {
         fullscreenState != .notInFullscreen
     }

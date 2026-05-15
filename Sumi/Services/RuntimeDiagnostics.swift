@@ -137,6 +137,10 @@ enum RuntimeDiagnostics {
         let renderedMessage = message()
         logger(category: "BackForwardSwipe").debug("\(renderedMessage, privacy: .public)")
     }
+
+    static func protectedWebViewTrace(_ message: @autoclosure () -> String) {
+        debug(message(), category: "ProtectedWebView")
+    }
 }
 
 extension Logger {

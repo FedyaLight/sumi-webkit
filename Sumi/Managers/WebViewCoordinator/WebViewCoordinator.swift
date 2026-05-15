@@ -10,22 +10,8 @@ import Combine
 import CoreGraphics
 import Foundation
 import Observation
-import ObjectiveC.runtime
 import QuartzCore
 import WebKit
-
-private enum SumiWKFullscreenWindowControllerSelectors {
-    /// Matches `WKFullScreenWindowController` private initializer used by DuckDuckGo’s Mission Control workaround.
-    static let initWithWindowWebViewPage = NSSelectorFromString("initWithWindow:webView:page:")
-}
-
-private enum SumiFullscreenWindowControllerAssociatedKeys {
-    private static let associatedTabStorage = StaticString("Sumi.sumiFullscreenWindowController.associatedTab")
-
-    static var associatedTab: UnsafeRawPointer {
-        UnsafeRawPointer(associatedTabStorage.utf8Start)
-    }
-}
 
 enum WebViewSyncLoadPolicy {
     static func shouldLoadTarget(
@@ -70,22 +56,11 @@ enum VisibleTabPreparationPlan {
 
 @MainActor
 final class SumiWebViewContainerView: NSView {
-    /// DuckDuckGo `WebViewContainerView` parity: Mission Control `initWithWindow:webView:page:` workaround (off by default).
-    private static let missionControlFullscreenWindowReinitEnabled = false
-
-    /// DuckDuckGo: wire `WKFullScreenWindowController.nextResponder` to the embedder `NSViewController`
-    /// (`WindowWebContentController` when attached — Sumi’s analogue of `MainViewController`).
-    private static let webKitFullscreenNextResponderBridgeEnabled = true
-
     let tabID: UUID
     let webView: WKWebView
     weak var tab: Tab?
 
-    private var cancellables = Set<AnyCancellable>()
-    private var blurViewIsHiddenCancellable: AnyCancellable?
     private var viewportCornerRadius: CGFloat = 0
-    /// DDG `MainViewController` parity: fullscreen `nextResponder` target (see `WebsiteCompositorView.attach`).
-    weak var compositorContentOwner: WindowWebContentController?
 
     override var constraints: [NSLayoutConstraint] { [] }
 
@@ -109,7 +84,9 @@ final class SumiWebViewContainerView: NSView {
         webView.translatesAutoresizingMaskIntoConstraints = true
         webView.autoresizingMask = [.width, .height]
 
-        addDisplayedContent(webView.sumiTabContentView)
+        if !webView.sumiIsInFullscreenElementPresentation {
+            addDisplayedContent(webView)
+        }
         updateViewportMask()
     }
 
@@ -124,10 +101,11 @@ final class SumiWebViewContainerView: NSView {
     }
 
     func attachDisplayedContentIfNeeded() {
-        let displayedView = webView.sumiTabContentView
-        frameDisplayedContent(displayedView)
-        guard displayedView.superview !== self else { return }
-        addDisplayedContent(displayedView)
+        guard !webView.sumiIsInFullscreenElementPresentation else { return }
+
+        frameDisplayedContent(webView)
+        guard webView.superview !== self else { return }
+        addDisplayedContent(webView)
     }
 
     private func addDisplayedContent(_ displayedView: NSView) {
@@ -147,7 +125,10 @@ final class SumiWebViewContainerView: NSView {
 
     override func layout() {
         super.layout()
-        webView.sumiTabContentView.frame = bounds
+        subviews.forEach { subview in
+            subview.frame = bounds
+            subview.autoresizingMask = [.width, .height]
+        }
         updateViewportMask()
     }
 
@@ -160,63 +141,12 @@ final class SumiWebViewContainerView: NSView {
 
     override func removeFromSuperview() {
         let wasAttached = superview != nil
-        blurViewIsHiddenCancellable?.cancel()
-        blurViewIsHiddenCancellable = nil
-        cancellables.removeAll()
-        compositorContentOwner = nil
-        if wasAttached {
-            webView.sumiTabContentView.removeFromSuperview()
+        if wasAttached,
+           webView.superview === self,
+           !webView.sumiIsInFullscreenElementPresentation {
+            webView.removeFromSuperview()
         }
         super.removeFromSuperview()
-    }
-
-    override func didAddSubview(_ subview: NSView) {
-        super.didAddSubview(subview)
-        guard subview === webView.sumiTabContentView else { return }
-        guard webView.sumiTabContentView !== webView else {
-            blurViewIsHiddenCancellable?.cancel()
-            blurViewIsHiddenCancellable = nil
-            cancellables.removeAll()
-            return
-        }
-
-        subview.frame = bounds
-        subview.autoresizingMask = [.width, .height]
-
-        // DuckDuckGo `WebViewContainerView.didAddSubview`: tame `NSVisualEffectView` sizing during fullscreen placeholder.
-        if let blurView = subview.subviews.first(where: { $0 is NSVisualEffectView }),
-           blurView.frame != subview.bounds {
-            blurView.frame = subview.bounds
-            blurView.isHidden = false
-            blurViewIsHiddenCancellable?.cancel()
-            blurViewIsHiddenCancellable = blurView.publisher(for: \.isHidden)
-                .sink { [weak blurView] isHidden in
-                    if isHidden {
-                        blurView?.isHidden = false
-                    }
-                }
-        } else {
-            blurViewIsHiddenCancellable?.cancel()
-            blurViewIsHiddenCancellable = nil
-        }
-
-        cancellables.removeAll()
-
-        webView.publisher(for: \.window)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] fullScreenWindow in
-                guard let self,
-                      let fullScreenWindow,
-                      let fullScreenWindowController = fullScreenWindow.windowController,
-                      fullScreenWindowController.sumiIsWebKitFullScreenWindowController
-                else { return }
-
-                fullScreenWindowController.sumiAssociatedTab =
-                    (self.webView as? FocusableWKWebView)?.owningTab ?? self.tab
-                self.observeTabMainWindow(fullScreenWindowController: fullScreenWindowController)
-                self.observeFullScreenWindowWillExitFullScreen(fullScreenWindowController: fullScreenWindowController)
-            }
-            .store(in: &cancellables)
     }
 
     private var effectiveViewportCornerRadius: CGFloat {
@@ -279,188 +209,6 @@ final class SumiWebViewContainerView: NSView {
         return dx * dx + dy * dy <= radius * radius
     }
 
-    /// DuckDuckGo `observeTabMainWindow`: fullscreen `WKFullScreenWindowController.nextResponder` → embedder VC.
-    private func observeTabMainWindow(fullScreenWindowController: NSWindowController) {
-        guard webView !== webView.sumiTabContentView else {
-            assertionFailure("WebView tab content placeholder should be present for fullscreen menu routing")
-            return
-        }
-
-        webView.sumiTabContentView.publisher(for: \.window)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self, weak fullScreenWindowController] window in
-                guard let self,
-                      let fullScreenWindowController,
-                      let window,
-                      let mainViewController = window.windowController?.contentViewController
-                else { return }
-
-                guard Self.webKitFullscreenNextResponderBridgeEnabled else { return }
-                let nextTarget = self.compositorContentOwner ?? mainViewController
-                fullScreenWindowController.nextResponder = nextTarget
-            }
-            .store(in: &cancellables)
-    }
-
-    /// DuckDuckGo `observeFullScreenWindowWillExitFullScreen` (Mission Control controller re-init when enabled).
-    private func observeFullScreenWindowWillExitFullScreen(fullScreenWindowController: NSWindowController) {
-        guard let fullScreenWindow = fullScreenWindowController.window else { return }
-
-        NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification, object: fullScreenWindow)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self, weak fullScreenWindowController] _ in
-                guard let self else { return }
-                self.cancellables.removeAll()
-
-                let shouldReinitWindowController = Self.missionControlFullscreenWindowReinitEnabled
-                    && NSWorkspace.sumiIsMissionControlActive()
-                    && fullScreenWindowController != nil
-                    && (fullScreenWindowController?.responds(
-                        to: SumiWKFullscreenWindowControllerSelectors.initWithWindowWebViewPage
-                    ) ?? false)
-
-                guard shouldReinitWindowController,
-                      let fullScreenWindowController
-                else { return }
-
-                DispatchQueue.main.async { [weak fullScreenWindowController, weak webView = self.webView] in
-                    guard let webView,
-                          let fullScreenWindowController,
-                          let window = fullScreenWindowController.window,
-                          let pageRef = webView.sumiValue(forIvar: SumiFullscreenKey.page),
-                          let method = class_getInstanceMethod(
-                              object_getClass(fullScreenWindowController),
-                              SumiWKFullscreenWindowControllerSelectors.initWithWindowWebViewPage
-                          )
-                    else { return }
-
-                    window.close()
-                    fullScreenWindowController.window = nil
-
-                    let newWindow = type(of: window).init(
-                        contentRect: NSScreen.main?.frame ?? .zero,
-                        styleMask: window.styleMask,
-                        backing: .buffered,
-                        defer: false
-                    )
-
-                    let imp = method_getImplementation(method)
-                    typealias InitWithWindowWebViewPage = @convention(c) (
-                        NSWindowController,
-                        ObjectiveC.Selector,
-                        NSWindow,
-                        WKWebView,
-                        UnsafeRawPointer
-                    ) -> NSWindowController?
-                    let initWithWindowWebViewPage = unsafeBitCast(imp, to: InitWithWindowWebViewPage.self)
-                    _ = initWithWindowWebViewPage(
-                        fullScreenWindowController,
-                        SumiWKFullscreenWindowControllerSelectors.initWithWindowWebViewPage,
-                        newWindow,
-                        webView,
-                        pageRef
-                    )
-
-                    _ = Unmanaged.passUnretained(fullScreenWindowController).retain()
-                }
-            }
-            .store(in: &cancellables)
-    }
-
-    private enum SumiFullscreenKey {
-        static let page = "_page"
-    }
-}
-
-private extension NSObject {
-    func sumiValue(forIvar name: String) -> UnsafeRawPointer? {
-        guard let ivar = class_getInstanceVariable(object_getClass(self), name),
-              let value = object_getIvar(self, ivar)
-        else { return nil }
-        return UnsafeRawPointer(Unmanaged.passUnretained(value as AnyObject).toOpaque())
-    }
-}
-
-private extension [CFString: Any] {
-    /// DuckDuckGo `NSWorkspaceExtension` parity for `CGWindowListCopyWindowInfo` dictionaries.
-    var sumiWindowListName: String? {
-        self[kCGWindowName] as? String
-    }
-
-    var sumiWindowListOwnerName: String? {
-        self[kCGWindowOwnerName] as? String
-    }
-
-    var sumiWindowListSize: CGSize {
-        guard let bounds = self[kCGWindowBounds] as? [String: NSNumber],
-              let width = bounds["Width"]?.intValue,
-              let height = bounds["Height"]?.intValue
-        else {
-            return .zero
-        }
-        return CGSize(width: width, height: height)
-    }
-}
-
-private extension NSWorkspace {
-    /// Detect if macOS Mission Control is active — aligned with DuckDuckGo `NSWorkspace.isMissionControlActive()`.
-    static func sumiIsMissionControlActive() -> Bool {
-        guard let visibleWindows = CGWindowListCopyWindowInfo(
-            .optionOnScreenOnly,
-            CGWindowID(0)
-        ) as? [[CFString: Any]] else {
-            return false
-        }
-
-        let dockAppWindows = visibleWindows.filter { window in
-            window.sumiWindowListOwnerName == "Dock"
-        }
-        var missionControlWindows = dockAppWindows.filter { window in
-            window.sumiWindowListName?.hasPrefix("Wallpaper") != true
-        }
-        for screen in NSScreen.screens {
-            if let idx = missionControlWindows.firstIndex(where: { window in
-                window.sumiWindowListSize == screen.frame.size
-            }) {
-                missionControlWindows.remove(at: idx)
-            }
-        }
-
-        return missionControlWindows.isEmpty == false
-    }
-}
-
-private extension NSWindowController {
-    final class WeakTabReference: NSObject {
-        weak var tab: Tab?
-
-        init(tab: Tab) {
-            self.tab = tab
-        }
-    }
-
-    var sumiAssociatedTab: Tab? {
-        get {
-            (objc_getAssociatedObject(
-                self,
-                SumiFullscreenWindowControllerAssociatedKeys.associatedTab
-            ) as? WeakTabReference)?.tab
-        }
-        set {
-            objc_setAssociatedObject(
-                self,
-                SumiFullscreenWindowControllerAssociatedKeys.associatedTab,
-                newValue.map { WeakTabReference(tab: $0) },
-                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
-            )
-        }
-    }
-
-    /// WebKit’s fullscreen window controller (not Sumi’s main browser window / SwiftUI host).
-    var sumiIsWebKitFullScreenWindowController: Bool {
-        guard className.localizedCaseInsensitiveContains("FullScreen") else { return false }
-        return responds(to: SumiWKFullscreenWindowControllerSelectors.initWithWindowWebViewPage)
-    }
 }
 
 private struct HistorySwipeProtectionContext {
@@ -468,6 +216,75 @@ private struct HistorySwipeProtectionContext {
     let originURL: URL?
     let originHistoryItem: WKBackForwardListItem?
     let originHistoryURL: URL?
+}
+
+private struct FullscreenProtectionContext {
+    let windowID: UUID?
+}
+
+@MainActor
+private final class FullscreenWebViewProtection {
+    private var activeContexts: [ObjectIdentifier: FullscreenProtectionContext] = [:]
+    private var stateCancellablesByWebViewID: [ObjectIdentifier: AnyCancellable] = [:]
+
+    func hasActive(in windowID: UUID) -> Bool {
+        activeContexts.values.contains { $0.windowID == windowID }
+    }
+
+    func activeWebViewIDs(in windowID: UUID) -> [ObjectIdentifier] {
+        activeContexts.compactMap { webViewID, context in
+            context.windowID == windowID ? webViewID : nil
+        }
+    }
+
+    func isProtected(_ webViewID: ObjectIdentifier) -> Bool {
+        activeContexts[webViewID] != nil
+    }
+
+    func begin(webViewID: ObjectIdentifier, windowID: UUID?) {
+        activeContexts[webViewID] = FullscreenProtectionContext(windowID: windowID)
+    }
+
+    func finish(webViewID: ObjectIdentifier) -> FullscreenProtectionContext? {
+        activeContexts.removeValue(forKey: webViewID)
+    }
+
+    func remove(_ webViewID: ObjectIdentifier) {
+        activeContexts.removeValue(forKey: webViewID)
+        stateCancellablesByWebViewID.removeValue(forKey: webViewID)?.cancel()
+    }
+
+    func removeAll() {
+        activeContexts.removeAll()
+        stateCancellablesByWebViewID.values.forEach { $0.cancel() }
+        stateCancellablesByWebViewID.removeAll()
+    }
+
+    func installObservationIfNeeded(
+        on webView: WKWebView,
+        stateDidChange: @escaping @MainActor (WKWebView) -> Void
+    ) {
+        let webViewID = ObjectIdentifier(webView)
+        guard stateCancellablesByWebViewID[webViewID] == nil else {
+            if webView.sumiIsInFullscreenElementPresentation {
+                stateDidChange(webView)
+            }
+            return
+        }
+
+        stateCancellablesByWebViewID[webViewID] = webView
+            .publisher(for: \.fullscreenState, options: [.initial, .new])
+            .receive(on: DispatchQueue.main)
+            .sink { [weak webView] _ in
+                guard let webView else { return }
+                stateDidChange(webView)
+            }
+    }
+
+    func uninstallObservationIfUntracked(_ webView: WKWebView, isTracked: Bool) {
+        guard !isTracked else { return }
+        remove(ObjectIdentifier(webView))
+    }
 }
 
 enum CompositorPaneDestination: String, CaseIterable {
@@ -633,6 +450,9 @@ class WebViewCoordinator {
 
     @ObservationIgnored
     private var activeHistorySwipeProtections: [ObjectIdentifier: HistorySwipeProtectionContext] = [:]
+
+    @ObservationIgnored
+    private let fullscreenProtection = FullscreenWebViewProtection()
 
     @ObservationIgnored
     private var deferredProtectedWebViewCommands: [ObjectIdentifier: DeferredProtectedCommandBuffer] = [:]
@@ -838,9 +658,53 @@ class WebViewCoordinator {
         activeHistorySwipeProtections.values.contains { $0.windowID == windowId }
     }
 
+    func hasActiveFullscreen(in windowId: UUID) -> Bool {
+        fullscreenProtection.hasActive(in: windowId)
+    }
+
+    func closeActiveFullscreenMedia(in windowId: UUID) {
+        for webViewID in fullscreenProtection.activeWebViewIDs(in: windowId) {
+            guard let webView = resolveWebView(with: webViewID) else { continue }
+            webView.closeAllMediaPresentations(completionHandler: nil)
+        }
+    }
+
     func isWebViewProtectedFromCompositorMutation(_ webView: WKWebView) -> Bool {
         let webViewID = ObjectIdentifier(webView)
         return activeHistorySwipeProtections[webViewID] != nil
+            || fullscreenProtection.isProtected(webViewID)
+    }
+
+    private func beginFullscreenProtectionIfNeeded(for webView: WKWebView) {
+        guard webView.sumiIsInFullscreenElementPresentation else {
+            finishFullscreenProtectionIfNeeded(for: webView)
+            return
+        }
+
+        let webViewID = ObjectIdentifier(webView)
+        noteWeakWebView(webView)
+        let owner = trackedOwner(containing: webView)
+        fullscreenProtection.begin(
+            webViewID: webViewID,
+            windowID: owner?.windowID ?? windowId(containing: webView)
+        )
+        RuntimeDiagnostics.protectedWebViewTrace(
+            "beginFullscreenProtection webView=\(webViewID) tab=\(owner?.tabID.uuidString.prefix(8) ?? "nil") window=\(owner?.windowID.uuidString.prefix(8) ?? "nil")"
+        )
+    }
+
+    private func finishFullscreenProtectionIfNeeded(for webView: WKWebView) {
+        let webViewID = ObjectIdentifier(webView)
+        guard let context = fullscreenProtection.finish(webViewID: webViewID) else { return }
+
+        RuntimeDiagnostics.protectedWebViewTrace(
+            "finishFullscreenProtection webView=\(webViewID)"
+        )
+        flushDeferredProtectedCommands(for: webViewID)
+        if let windowID = context.windowID,
+           let windowState = browserManager?.windowRegistry?.windows[windowID] {
+            browserManager?.refreshCompositor(for: windowState)
+        }
     }
 
     func windowID(containing webView: WKWebView) -> UUID? {
@@ -848,7 +712,9 @@ class WebViewCoordinator {
     }
 
     private func flushDeferredProtectedCommands(for webViewID: ObjectIdentifier) {
-        guard activeHistorySwipeProtections[webViewID] == nil else { return }
+        guard activeHistorySwipeProtections[webViewID] == nil,
+              fullscreenProtection.isProtected(webViewID) == false
+        else { return }
         pruneInvalidDeferredProtectedCommands(reason: "flush.preflight")
         var buffer = deferredProtectedWebViewCommands.removeValue(forKey: webViewID)
         let commands = buffer?.drain() ?? []
@@ -864,7 +730,7 @@ class WebViewCoordinator {
                 )
             }
 
-            RuntimeDiagnostics.swipeTrace(
+            RuntimeDiagnostics.protectedWebViewTrace(
                 "flushDeferredCommands sourceWebView=\(webViewID) count=\(commands.count)"
             )
 
@@ -1210,6 +1076,7 @@ class WebViewCoordinator {
             recentlyVisibleTabIDsByWindow.removeAll()
             compositorContainerViews.removeAll()
             scheduledPrepareWindowIds.removeAll()
+            fullscreenProtection.removeAll()
         }
 
         RuntimeDiagnostics.debug("Completed full WebView cleanup.", category: "WebViewCoordinator")
@@ -1374,6 +1241,7 @@ class WebViewCoordinator {
             reason: reason
         ) { webViewID in
             activeHistorySwipeProtections[webViewID] != nil
+                || fullscreenProtection.isProtected(webViewID)
         }
     }
 
@@ -1408,12 +1276,12 @@ class WebViewCoordinator {
         switch outcome {
         case .enqueued:
             PerformanceTrace.emitEvent("WebViewCoordinator.enqueueDeferredProtectedCommand")
-            RuntimeDiagnostics.swipeTrace(
+            RuntimeDiagnostics.protectedWebViewTrace(
                 "enqueueDeferredCommand reason=\(reason) sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)} count=\(buffer.count)"
             )
         case .collapsed:
             PerformanceTrace.emitEvent("WebViewCoordinator.collapseDeferredProtectedCommand")
-            RuntimeDiagnostics.swipeTrace(
+            RuntimeDiagnostics.protectedWebViewTrace(
                 "collapseDeferredCommand reason=\(reason) sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)} count=\(buffer.count)"
             )
         case .droppedAtCapacity:
@@ -1429,6 +1297,29 @@ class WebViewCoordinator {
 
     private func noteWeakWebView(_ webView: WKWebView) {
         weakWebViewsByIdentifier[ObjectIdentifier(webView)] = WeakWKWebView(value: webView)
+    }
+
+    private func installFullscreenStateObservationIfNeeded(on webView: WKWebView) {
+        noteWeakWebView(webView)
+        fullscreenProtection.installObservationIfNeeded(on: webView) { [weak self] webView in
+            self?.updateFullscreenProtection(for: webView)
+        }
+    }
+
+    private func updateFullscreenProtection(for webView: WKWebView) {
+        if webView.sumiIsInFullscreenElementPresentation {
+            beginFullscreenProtectionIfNeeded(for: webView)
+        } else {
+            finishFullscreenProtectionIfNeeded(for: webView)
+        }
+    }
+
+    private func uninstallFullscreenStateObservationIfUntracked(_ webView: WKWebView) {
+        let webViewID = ObjectIdentifier(webView)
+        fullscreenProtection.uninstallObservationIfUntracked(
+            webView,
+            isTracked: webViewOwnersByIdentifier[webViewID] != nil
+        )
     }
 
     private func resolveWeakWebView(
@@ -1477,9 +1368,10 @@ class WebViewCoordinator {
         for id in staleIDs {
             weakWebViewsByIdentifier.removeValue(forKey: id)
             activeHistorySwipeProtections.removeValue(forKey: id)
+            fullscreenProtection.remove(id)
             deferredProtectedWebViewCommands.removeValue(forKey: id)
         }
-        RuntimeDiagnostics.swipeTrace(
+        RuntimeDiagnostics.protectedWebViewTrace(
             "pruneStaleWebViewBookkeeping reason=\(reason) count=\(staleIDs.count)"
         )
     }
@@ -1490,6 +1382,7 @@ class WebViewCoordinator {
         for sourceWebViewID in Array(deferredProtectedWebViewCommands.keys) {
             guard resolveWebView(with: sourceWebViewID) != nil else {
                 activeHistorySwipeProtections.removeValue(forKey: sourceWebViewID)
+                fullscreenProtection.remove(sourceWebViewID)
                 if var buffer = deferredProtectedWebViewCommands.removeValue(forKey: sourceWebViewID) {
                     for command in buffer.drain() {
                         dropDeferredProtectedCommand(
@@ -1563,7 +1456,7 @@ class WebViewCoordinator {
             return false
         }
 
-        RuntimeDiagnostics.swipeTrace(
+        RuntimeDiagnostics.protectedWebViewTrace(
             "executeDeferredCommand sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)}"
         )
 
@@ -1643,7 +1536,7 @@ class WebViewCoordinator {
         reason: String
     ) {
         PerformanceTrace.emitEvent("WebViewCoordinator.dropDeferredProtectedCommand")
-        RuntimeDiagnostics.swipeTrace(
+        RuntimeDiagnostics.protectedWebViewTrace(
             "dropDeferredCommand reason=\(reason) sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)}"
         )
     }
@@ -1736,6 +1629,7 @@ class WebViewCoordinator {
         }
         webViewsByTabAndWindow[tabId]?[windowId] = webView
         webViewOwnersByIdentifier[webViewID] = owner
+        installFullscreenStateObservationIfNeeded(on: webView)
         assertTrackingConsistency("registerTrackedWebView")
     }
 
@@ -1772,6 +1666,9 @@ class WebViewCoordinator {
            webViewOwnersByIdentifier[resolvedIdentifier] == owner
         {
             webViewOwnersByIdentifier.removeValue(forKey: resolvedIdentifier)
+        }
+        if let resolvedWebView {
+            uninstallFullscreenStateObservationIfUntracked(resolvedWebView)
         }
         if removeRecentVisibility {
             removeTabFromVisibilityHistory(owner.tabID, in: owner.windowID)
@@ -2027,7 +1924,7 @@ class WebViewCoordinator {
 
         for webView in allWebViews {
             if isWebViewProtectedFromCompositorMutation(webView) {
-                RuntimeDiagnostics.swipeTrace(
+                RuntimeDiagnostics.protectedWebViewTrace(
                     "skipSyncProtected webView=\(ObjectIdentifier(webView)) tab=\(tabId.uuidString.prefix(8))"
                 )
                 continue
@@ -2057,7 +1954,7 @@ class WebViewCoordinator {
         let allWebViews = getAllWebViews(for: tabId)
         for webView in allWebViews {
             if isWebViewProtectedFromCompositorMutation(webView) {
-                RuntimeDiagnostics.swipeTrace(
+                RuntimeDiagnostics.protectedWebViewTrace(
                     "skipReloadProtected webView=\(ObjectIdentifier(webView)) tab=\(tabId.uuidString.prefix(8))"
                 )
                 continue

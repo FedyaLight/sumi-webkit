@@ -141,80 +141,12 @@ struct WebsiteView: View {
 
     var body: some View {
         ZStack() {
-            Group {
-                if browserManager.currentTab(for: windowState) != nil {
-                    if splitManager.isSplit(for: windowState.id) == false,
-                       browserManager.currentTab(for: windowState)?.representsSumiHistorySurface == true
-                    {
-                        SumiHistoryTabRootView(
-                            browserManager: browserManager,
-                            windowState: windowState
-                        )
-                        .environmentObject(browserManager)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .browserContentSurface(
-                            geometry: chromeGeometry,
-                            background: browserContentSurfaceBackground
-                        )
-                        .allowsHitTesting(true)
-                    } else if splitManager.isSplit(for: windowState.id) == false,
-                       browserManager.currentTab(for: windowState)?.representsSumiBookmarksSurface == true
-                    {
-                        SumiBookmarksTabRootView(
-                            browserManager: browserManager,
-                            windowState: windowState
-                        )
-                        .environmentObject(browserManager)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .browserContentSurface(
-                            geometry: chromeGeometry,
-                            background: browserContentSurfaceBackground
-                        )
-                        .allowsHitTesting(true)
-                    } else if splitManager.isSplit(for: windowState.id) == false,
-                       browserManager.currentTab(for: windowState)?.representsSumiSettingsSurface == true
-                    {
-                        SumiSettingsTabRootView(
-                            browserManager: browserManager,
-                            windowState: windowState
-                        )
-                        .environmentObject(browserManager)
-                        .environmentObject(browserManager.extensionSurfaceStore)
-                        .environment(keyboardShortcutManager)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .browserContentSurface(
-                            geometry: chromeGeometry,
-                            background: browserContentSurfaceBackground
-                        )
-                        .allowsHitTesting(true)
-                    } else if splitManager.isSplit(for: windowState.id) == false,
-                              browserManager.currentTab(for: windowState)?.representsSumiEmptySurface == true
-                    {
-                        EmptyWebsiteView()
-                    } else {
-                        TabCompositorWrapper(
-                            browserManager: browserManager,
-                            webViewCoordinator: webViewCoordinator,
-                            hoveredLink: $hoveredLink,
-                            splitFraction: splitManager.dividerFraction(for: windowState.id),
-                            splitOrientation: splitManager.orientation(for: windowState.id),
-                            isSplit: splitManager.isSplit(for: windowState.id),
-                            leftId: splitManager.leftTabId(for: windowState.id),
-                            rightId: splitManager.rightTabId(for: windowState.id),
-                            isSplitDropCaptureActive: sidebarDragState.isDragging && sidebarDragState.isInternalDragSession,
-                            chromeGeometry: chromeGeometry,
-                            windowState: windowState
-                        )
-                        .coordinateSpace(name: dragCoordinateSpace)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .allowsHitTesting(true)
-                    }
-                    // Removed SwiftUI contextMenu - it intercepts ALL right-clicks
-                    // WKWebView's willOpenMenu will handle context menus for images
-                } else {
-                    EmptyWebsiteView()
-                }
-            }
+            tabCompositor
+                .allowsHitTesting(nativeSurfaceIsVisible == false)
+
+            nativeSurface
+                .id(windowState.nativeSurfaceRoutingRevision)
+
             VStack {
                 Spacer()
                 if sumiSettings.showLinkStatusBar {
@@ -243,7 +175,90 @@ struct WebsiteView: View {
             }
             
         }
-        .id(windowState.nativeSurfaceRoutingRevision)
+    }
+
+    private var nativeSurfaceIsVisible: Bool {
+        guard splitManager.isSplit(for: windowState.id) == false else { return false }
+        guard let currentTab = browserManager.currentTab(for: windowState) else { return true }
+        return currentTab.representsSumiHistorySurface
+            || currentTab.representsSumiBookmarksSurface
+            || currentTab.representsSumiSettingsSurface
+            || currentTab.representsSumiEmptySurface
+    }
+
+    private var tabCompositor: some View {
+        TabCompositorWrapper(
+            browserManager: browserManager,
+            webViewCoordinator: webViewCoordinator,
+            hoveredLink: $hoveredLink,
+            splitFraction: splitManager.dividerFraction(for: windowState.id),
+            splitOrientation: splitManager.orientation(for: windowState.id),
+            isSplit: splitManager.isSplit(for: windowState.id),
+            leftId: splitManager.leftTabId(for: windowState.id),
+            rightId: splitManager.rightTabId(for: windowState.id),
+            isSplitDropCaptureActive: sidebarDragState.isDragging && sidebarDragState.isInternalDragSession,
+            chromeGeometry: chromeGeometry,
+            windowState: windowState
+        )
+        .coordinateSpace(name: dragCoordinateSpace)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var nativeSurface: some View {
+        if let currentTab = browserManager.currentTab(for: windowState) {
+            if splitManager.isSplit(for: windowState.id) == false,
+               currentTab.representsSumiHistorySurface
+            {
+                SumiHistoryTabRootView(
+                    browserManager: browserManager,
+                    windowState: windowState
+                )
+                .environmentObject(browserManager)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .browserContentSurface(
+                    geometry: chromeGeometry,
+                    background: browserContentSurfaceBackground
+                )
+                .allowsHitTesting(true)
+            } else if splitManager.isSplit(for: windowState.id) == false,
+                      currentTab.representsSumiBookmarksSurface
+            {
+                SumiBookmarksTabRootView(
+                    browserManager: browserManager,
+                    windowState: windowState
+                )
+                .environmentObject(browserManager)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .browserContentSurface(
+                    geometry: chromeGeometry,
+                    background: browserContentSurfaceBackground
+                )
+                .allowsHitTesting(true)
+            } else if splitManager.isSplit(for: windowState.id) == false,
+                      currentTab.representsSumiSettingsSurface
+            {
+                SumiSettingsTabRootView(
+                    browserManager: browserManager,
+                    windowState: windowState
+                )
+                .environmentObject(browserManager)
+                .environmentObject(browserManager.extensionSurfaceStore)
+                .environment(keyboardShortcutManager)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .browserContentSurface(
+                    geometry: chromeGeometry,
+                    background: browserContentSurfaceBackground
+                )
+                .allowsHitTesting(true)
+            } else if splitManager.isSplit(for: windowState.id) == false,
+                      currentTab.representsSumiEmptySurface
+            {
+                EmptyWebsiteView()
+            }
+        } else {
+            EmptyWebsiteView()
+        }
     }
 
 }
