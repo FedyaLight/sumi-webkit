@@ -203,6 +203,19 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
     let previousGenerationId: String?
 }
 
+struct AdblockGenerationCleanupReport: Equatable, Sendable {
+    var removedWebKitIdentifiers: [String] = []
+    var removedFilePaths: [String] = []
+    var diagnostics: [String] = []
+}
+
+struct AdblockGenerationRollbackReport: Equatable, Sendable {
+    let rolledBack: Bool
+    let activeGenerationId: String?
+    let restoredGenerationId: String?
+    let diagnostics: [String]
+}
+
 struct AdblockUpdateDiagnostics: Error, LocalizedError, Equatable, Sendable {
     var summary: String
     var listFailures: [String: String] = [:]
@@ -293,6 +306,14 @@ actor AdblockUpdateManifestStore {
         return try JSONDecoder().decode(AdblockCompiledGenerationManifest.self, from: data)
     }
 
+    func archivedManifest(generationId: String) throws -> AdblockCompiledGenerationManifest? {
+        let url = generationDirectory(for: generationId)
+            .appendingPathComponent("manifest.json")
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        let data = try Data(contentsOf: url)
+        return try JSONDecoder().decode(AdblockCompiledGenerationManifest.self, from: data)
+    }
+
     func loadHTTPMetadata() throws -> [String: AdblockFilterListHTTPMetadata] {
         guard fileManager.fileExists(atPath: metadataURL.path) else { return [:] }
         let data = try Data(contentsOf: metadataURL)
@@ -328,11 +349,14 @@ actor AdblockUpdateManifestStore {
     func commit(
         manifest: AdblockCompiledGenerationManifest,
         httpMetadata: [String: AdblockFilterListHTTPMetadata],
-        stagedRawListURLs: [String: URL]
+        stagedRawListURLs: [String: URL],
+        stagedCompiledGroupURLs: [AdblockCompiledRuleGroupKind: URL] = [:]
     ) throws {
         try fileManager.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
         let rawDirectory = rootDirectory.appendingPathComponent("RawLists", isDirectory: true)
         try fileManager.createDirectory(at: rawDirectory, withIntermediateDirectories: true)
+        let generationDirectory = generationDirectory(for: manifest.activeGenerationId)
+        try fileManager.createDirectory(at: generationDirectory, withIntermediateDirectories: true)
 
         for (identifier, stagedURL) in stagedRawListURLs {
             let destination = rawDirectory.appendingPathComponent("\(identifier).txt")
@@ -341,8 +365,45 @@ actor AdblockUpdateManifestStore {
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        for (kind, stagedURL) in stagedCompiledGroupURLs {
+            let destination = generationDirectory.appendingPathComponent("\(kind.rawValue).json")
+            try copyReplacingItem(at: destination, withItemAt: stagedURL)
+        }
+        try atomicWrite(encoder.encode(manifest), to: generationDirectory.appendingPathComponent("manifest.json"))
         try atomicWrite(encoder.encode(httpMetadata), to: metadataURL)
         try atomicWrite(encoder.encode(manifest), to: manifestURL)
+    }
+
+    func replaceActiveManifest(_ manifest: AdblockCompiledGenerationManifest) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try atomicWrite(encoder.encode(manifest), to: manifestURL)
+    }
+
+    func archivedGenerationIds() throws -> [String] {
+        let generatedRoot = rootDirectory.appendingPathComponent("Generated", isDirectory: true)
+        guard fileManager.fileExists(atPath: generatedRoot.path) else { return [] }
+        let urls = try fileManager.contentsOfDirectory(
+            at: generatedRoot,
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]
+        )
+        return try urls.compactMap { url in
+            let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            guard values.isDirectory == true, values.isSymbolicLink != true else { return nil }
+            return url.lastPathComponent
+        }
+    }
+
+    func generationDirectoryURL(generationId: String) -> URL {
+        generationDirectory(for: generationId)
+    }
+
+    func rawListsDirectoryURL() -> URL {
+        rootDirectory.appendingPathComponent("RawLists", isDirectory: true)
+    }
+
+    func stagingDirectoryURL() -> URL {
+        rootDirectory.appendingPathComponent("Staging", isDirectory: true)
     }
 
     func removeStagingDirectory(_ url: URL) {
@@ -353,6 +414,12 @@ actor AdblockUpdateManifestStore {
         rootDirectory
             .appendingPathComponent("RawLists", isDirectory: true)
             .appendingPathComponent("\(identifier).txt")
+    }
+
+    private func generationDirectory(for generationId: String) -> URL {
+        rootDirectory
+            .appendingPathComponent("Generated", isDirectory: true)
+            .appendingPathComponent(generationId, isDirectory: true)
     }
 
     private func atomicWrite(_ data: Data, to url: URL) throws {
@@ -372,6 +439,13 @@ actor AdblockUpdateManifestStore {
         } else {
             try fileManager.moveItem(at: source, to: destination)
         }
+    }
+
+    private func copyReplacingItem(at destination: URL, withItemAt source: URL) throws {
+        if fileManager.fileExists(atPath: destination.path) {
+            try fileManager.removeItem(at: destination)
+        }
+        try fileManager.copyItem(at: source, to: destination)
     }
 
     private static func defaultRootDirectory() -> URL {
@@ -479,6 +553,201 @@ final class AdblockRuleListPublisher: AdblockRuleListPublishing {
     }
 }
 
+actor AdblockGenerationGarbageCollector {
+    private let manifestStore: AdblockUpdateManifestStore
+    private let contentRuleListStore: any SumiContentRuleListCompiling
+    private let fileManager: FileManager
+
+    init(
+        manifestStore: AdblockUpdateManifestStore,
+        contentRuleListStore: any SumiContentRuleListCompiling,
+        fileManager: FileManager = .default
+    ) {
+        self.manifestStore = manifestStore
+        self.contentRuleListStore = contentRuleListStore
+        self.fileManager = fileManager
+    }
+
+    func cleanupAfterSuccessfulUpdate() async -> AdblockGenerationCleanupReport {
+        var report = AdblockGenerationCleanupReport()
+        do {
+            guard let activeManifest = try await manifestStore.activeManifest() else { return report }
+            let previousManifest: AdblockCompiledGenerationManifest?
+            if let previousGenerationId = activeManifest.previousGenerationId {
+                previousManifest = try await manifestStore.archivedManifest(generationId: previousGenerationId)
+            } else {
+                previousManifest = nil
+            }
+            let preservedGenerationIds = Set(
+                [activeManifest.activeGenerationId, activeManifest.previousGenerationId].compactMap { $0 }
+            )
+            let preservedIdentifiers = Self.preservedWebKitIdentifiers(
+                activeManifest: activeManifest,
+                previousManifest: previousManifest
+            )
+
+            let identifiers = await contentRuleListStore.availableContentRuleListIdentifiers()
+            for identifier in identifiers
+                where identifier.hasPrefix("sumi.adblock.")
+                    && !preservedIdentifiers.contains(identifier) {
+                do {
+                    try await contentRuleListStore.removeContentRuleList(forIdentifier: identifier)
+                    report.removedWebKitIdentifiers.append(identifier)
+                } catch {
+                    report.diagnostics.append("Failed to remove WebKit rule list \(identifier): \(error.localizedDescription)")
+                }
+            }
+
+            report.removedFilePaths += await removeObsoleteGeneratedDirectories(
+                preserving: preservedGenerationIds,
+                diagnostics: &report.diagnostics
+            )
+            report.removedFilePaths += await removeObsoleteRawLists(
+                preservingListIds: Self.preservedRawListIds(
+                    activeManifest: activeManifest,
+                    previousManifest: previousManifest
+                ),
+                diagnostics: &report.diagnostics
+            )
+            report.removedFilePaths += await removeInterruptedStagingDirectories(
+                diagnostics: &report.diagnostics
+            )
+        } catch {
+            report.diagnostics.append("Cleanup failed before deletion: \(error.localizedDescription)")
+        }
+        report.removedWebKitIdentifiers.sort()
+        report.removedFilePaths.sort()
+        return report
+    }
+
+    private func removeObsoleteGeneratedDirectories(
+        preserving generationIds: Set<String>,
+        diagnostics: inout [String]
+    ) async -> [String] {
+        do {
+            let generationIdsOnDisk = try await manifestStore.archivedGenerationIds()
+            var removed = [String]()
+            for generationId in generationIdsOnDisk where !generationIds.contains(generationId) {
+                let url = await manifestStore.generationDirectoryURL(generationId: generationId)
+                if removeItemSafely(at: url, diagnostics: &diagnostics) {
+                    removed.append(url.path)
+                }
+            }
+            return removed
+        } catch {
+            diagnostics.append("Failed to enumerate generated generations: \(error.localizedDescription)")
+            return []
+        }
+    }
+
+    private func removeObsoleteRawLists(
+        preservingListIds listIds: Set<String>,
+        diagnostics: inout [String]
+    ) async -> [String] {
+        let rawDirectory = await manifestStore.rawListsDirectoryURL()
+        guard fileManager.fileExists(atPath: rawDirectory.path) else { return [] }
+        do {
+            let urls = try fileManager.contentsOfDirectory(
+                at: rawDirectory,
+                includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey]
+            )
+            var removed = [String]()
+            for url in urls where url.pathExtension == "txt" {
+                let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                guard values.isRegularFile == true || values.isSymbolicLink == true else { continue }
+                let id = url.deletingPathExtension().lastPathComponent
+                guard !listIds.contains(id) else { continue }
+                if removeItemSafely(at: url, diagnostics: &diagnostics) {
+                    removed.append(url.path)
+                }
+            }
+            return removed
+        } catch {
+            diagnostics.append("Failed to enumerate raw lists: \(error.localizedDescription)")
+            return []
+        }
+    }
+
+    private func removeInterruptedStagingDirectories(
+        diagnostics: inout [String]
+    ) async -> [String] {
+        let stagingRoot = await manifestStore.stagingDirectoryURL()
+        guard fileManager.fileExists(atPath: stagingRoot.path) else { return [] }
+        do {
+            let urls = try fileManager.contentsOfDirectory(
+                at: stagingRoot,
+                includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]
+            )
+            var removed = [String]()
+            for url in urls {
+                if removeItemSafely(at: url, diagnostics: &diagnostics) {
+                    removed.append(url.path)
+                }
+            }
+            return removed
+        } catch {
+            diagnostics.append("Failed to enumerate staging directories: \(error.localizedDescription)")
+            return []
+        }
+    }
+
+    private func removeItemSafely(at url: URL, diagnostics: inout [String]) -> Bool {
+        guard isInsideAdblockRoot(url) else {
+            diagnostics.append("Refused to delete outside Adblock root: \(url.path)")
+            return false
+        }
+        do {
+            try fileManager.removeItem(at: url)
+            return true
+        } catch CocoaError.fileNoSuchFile {
+            return true
+        } catch {
+            diagnostics.append("Failed to remove \(url.path): \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func isInsideAdblockRoot(_ url: URL) -> Bool {
+        let root = manifestStore.storageRoot.standardizedFileURL.path
+        let candidate = url.standardizedFileURL.path
+        return candidate == root || candidate.hasPrefix(root + "/")
+    }
+
+    private static func preservedWebKitIdentifiers(
+        activeManifest: AdblockCompiledGenerationManifest,
+        previousManifest: AdblockCompiledGenerationManifest?
+    ) -> Set<String> {
+        var identifiers = Set(activeManifest.webKitRuleListIdentifiers)
+        if let previousManifest {
+            identifiers.formUnion(previousManifest.webKitRuleListIdentifiers)
+        } else if let previousGenerationId = activeManifest.previousGenerationId {
+            identifiers.formUnion(webKitIdentifiers(forGenerationId: previousGenerationId))
+        }
+        return identifiers
+    }
+
+    private static func webKitIdentifiers(forGenerationId generationId: String) -> [String] {
+        guard let hash = generationId.split(separator: "-").last.map(String.init),
+              !hash.isEmpty
+        else { return [] }
+        return [
+            AdblockUpdateCoordinator.webKitIdentifier(kind: .network, generationHash: hash),
+            AdblockUpdateCoordinator.webKitIdentifier(kind: .nativeCosmeticCSS, generationHash: hash),
+        ]
+    }
+
+    private static func preservedRawListIds(
+        activeManifest: AdblockCompiledGenerationManifest,
+        previousManifest: AdblockCompiledGenerationManifest?
+    ) -> Set<String> {
+        var ids = Set(activeManifest.selectedFilterLists.map(\.id))
+        if let previousManifest {
+            ids.formUnion(previousManifest.selectedFilterLists.map(\.id))
+        }
+        return ids
+    }
+}
+
 actor AdblockUpdateCoordinator {
     private let registry: AdblockFilterListRegistry
     private let selection: @Sendable () async -> SumiAdblockFilterListSelection
@@ -487,7 +756,10 @@ actor AdblockUpdateCoordinator {
     private let manifestStore: AdblockUpdateManifestStore
     private let filterCompiler: any AdblockFilterCompiling
     private let publisher: any AdblockRuleListPublishing
+    private let contentRuleListStore: (any SumiContentRuleListCompiling)?
+    private let garbageCollector: AdblockGenerationGarbageCollector?
     private let now: @Sendable () -> Date
+    private(set) var latestCleanupReport: AdblockGenerationCleanupReport?
 
     init(
         registry: AdblockFilterListRegistry,
@@ -497,6 +769,8 @@ actor AdblockUpdateCoordinator {
         manifestStore: AdblockUpdateManifestStore,
         filterCompiler: any AdblockFilterCompiling,
         publisher: any AdblockRuleListPublishing,
+        contentRuleListStore: (any SumiContentRuleListCompiling)? = nil,
+        garbageCollector: AdblockGenerationGarbageCollector? = nil,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.registry = registry
@@ -506,7 +780,32 @@ actor AdblockUpdateCoordinator {
         self.manifestStore = manifestStore
         self.filterCompiler = filterCompiler
         self.publisher = publisher
+        self.contentRuleListStore = contentRuleListStore
+        self.garbageCollector = garbageCollector
         self.now = now
+    }
+
+    static func production(
+        registry: AdblockFilterListRegistry,
+        selection: @escaping @Sendable () async -> SumiAdblockFilterListSelection,
+        isAdblockEnabled: @escaping @Sendable () async -> Bool,
+        manifestStore: AdblockUpdateManifestStore,
+        filterCompiler: any AdblockFilterCompiling,
+        publisher: any AdblockRuleListPublishing,
+        contentRuleListStore: (any SumiContentRuleListCompiling)?,
+        garbageCollector: AdblockGenerationGarbageCollector?
+    ) -> AdblockUpdateCoordinator {
+        AdblockUpdateCoordinator(
+            registry: registry,
+            selection: selection,
+            isAdblockEnabled: isAdblockEnabled,
+            downloader: AdblockFilterListDownloader(),
+            manifestStore: manifestStore,
+            filterCompiler: filterCompiler,
+            publisher: publisher,
+            contentRuleListStore: contentRuleListStore,
+            garbageCollector: garbageCollector
+        )
     }
 
     func updateIfEnabled(reason: String) async throws -> AdblockCompiledGenerationManifest? {
@@ -615,8 +914,9 @@ actor AdblockUpdateCoordinator {
 
         var definitions = [SumiContentRuleListDefinition]()
         var groups = [AdblockCompiledGenerationManifest.Group]()
+        var stagedCompiledGroupURLs = [AdblockCompiledRuleGroupKind: URL]()
         for group in output.groups.sorted(by: { $0.kind.rawValue < $1.kind.rawValue }) {
-            _ = try await manifestStore.writeCompiledGroup(group, stagingDirectory: stagingDirectory)
+            stagedCompiledGroupURLs[group.kind] = try await manifestStore.writeCompiledGroup(group, stagingDirectory: stagingDirectory)
             let webKitIdentifier = Self.webKitIdentifier(kind: group.kind, generationHash: generationHash)
             definitions.append(
                 SumiContentRuleListDefinition(
@@ -651,9 +951,95 @@ actor AdblockUpdateCoordinator {
         try await manifestStore.commit(
             manifest: manifest,
             httpMetadata: updatedMetadata,
-            stagedRawListURLs: stagedRawURLs
+            stagedRawListURLs: stagedRawURLs,
+            stagedCompiledGroupURLs: stagedCompiledGroupURLs
         )
+        if let garbageCollector {
+            latestCleanupReport = await garbageCollector.cleanupAfterSuccessfulUpdate()
+        }
         return manifest
+    }
+
+    func rollbackIfActiveGenerationFailsSmokeCheck() async -> AdblockGenerationRollbackReport {
+        do {
+            guard let activeManifest = try await manifestStore.activeManifest() else {
+                return AdblockGenerationRollbackReport(
+                    rolledBack: false,
+                    activeGenerationId: nil,
+                    restoredGenerationId: nil,
+                    diagnostics: ["No active Adblock manifest"]
+                )
+            }
+            let activeMissingIdentifiers = await missingIdentifiers(in: activeManifest)
+            guard !activeMissingIdentifiers.isEmpty else {
+                return AdblockGenerationRollbackReport(
+                    rolledBack: false,
+                    activeGenerationId: activeManifest.activeGenerationId,
+                    restoredGenerationId: nil,
+                    diagnostics: []
+                )
+            }
+            guard let previousGenerationId = activeManifest.previousGenerationId,
+                  let previousManifest = try await manifestStore.archivedManifest(generationId: previousGenerationId)
+            else {
+                return AdblockGenerationRollbackReport(
+                    rolledBack: false,
+                    activeGenerationId: activeManifest.activeGenerationId,
+                    restoredGenerationId: nil,
+                    diagnostics: ["Active generation smoke lookup failed; no previous generation is available"]
+                )
+            }
+            let previousMissing = await missingIdentifiers(in: previousManifest)
+            guard previousMissing.isEmpty else {
+                return AdblockGenerationRollbackReport(
+                    rolledBack: false,
+                    activeGenerationId: activeManifest.activeGenerationId,
+                    restoredGenerationId: nil,
+                    diagnostics: ["Active and previous Adblock generations failed smoke lookup"]
+                )
+            }
+            try await manifestStore.replaceActiveManifest(previousManifest)
+            try await publisher.publish(
+                manifest: previousManifest,
+                definitions: Self.definitions(from: previousManifest)
+            )
+            return AdblockGenerationRollbackReport(
+                rolledBack: true,
+                activeGenerationId: activeManifest.activeGenerationId,
+                restoredGenerationId: previousManifest.activeGenerationId,
+                diagnostics: ["Rolled back after missing identifiers: \(activeMissingIdentifiers.joined(separator: ","))"]
+            )
+        } catch {
+            return AdblockGenerationRollbackReport(
+                rolledBack: false,
+                activeGenerationId: nil,
+                restoredGenerationId: nil,
+                diagnostics: ["Rollback smoke check failed: \(error.localizedDescription)"]
+            )
+        }
+    }
+
+    private func missingIdentifiers(in manifest: AdblockCompiledGenerationManifest) async -> [String] {
+        guard let contentRuleListStore else { return [] }
+        var missing = [String]()
+        for identifier in manifest.webKitRuleListIdentifiers {
+            if await contentRuleListStore.canLookUpContentRuleList(forIdentifier: identifier) == false {
+                missing.append(identifier)
+            }
+        }
+        return missing
+    }
+
+    private static func definitions(
+        from manifest: AdblockCompiledGenerationManifest
+    ) -> [SumiContentRuleListDefinition] {
+        manifest.groupedOutputs.map { group in
+            SumiContentRuleListDefinition(
+                name: group.webKitIdentifier,
+                encodedContentRuleList: "[]",
+                storeIdentifierOverride: group.webKitIdentifier
+            )
+        }
     }
 
     static func webKitIdentifier(

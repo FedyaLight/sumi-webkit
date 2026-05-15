@@ -44,15 +44,21 @@ enum SumiContentBlockingPolicy: Equatable, Sendable {
     }
 }
 
-protocol SumiContentRuleListCompiling: AnyObject {
+protocol SumiContentRuleListCompiling: AnyObject, Sendable {
     @MainActor
     func lookUpContentRuleList(forIdentifier identifier: String) async -> WKContentRuleList?
+
+    @MainActor
+    func canLookUpContentRuleList(forIdentifier identifier: String) async -> Bool
 
     @MainActor
     func compileContentRuleList(forIdentifier identifier: String, encodedContentRuleList: String) async throws -> WKContentRuleList
 
     @MainActor
-    func removeContentRuleList(forIdentifier identifier: String) async
+    func availableContentRuleListIdentifiers() async -> [String]
+
+    @MainActor
+    func removeContentRuleList(forIdentifier identifier: String) async throws
 }
 
 final class SumiWKContentRuleListCompiler: SumiContentRuleListCompiling {
@@ -63,6 +69,11 @@ final class SumiWKContentRuleListCompiler: SumiContentRuleListCompiling {
                 continuation.resume(returning: ruleList)
             }
         }
+    }
+
+    @MainActor
+    func canLookUpContentRuleList(forIdentifier identifier: String) async -> Bool {
+        await lookUpContentRuleList(forIdentifier: identifier) != nil
     }
 
     @MainActor
@@ -84,10 +95,23 @@ final class SumiWKContentRuleListCompiler: SumiContentRuleListCompiling {
     }
 
     @MainActor
-    func removeContentRuleList(forIdentifier identifier: String) async {
+    func availableContentRuleListIdentifiers() async -> [String] {
         await withCheckedContinuation { continuation in
-            WKContentRuleListStore.default().removeContentRuleList(forIdentifier: identifier) { _ in
-                continuation.resume()
+            WKContentRuleListStore.default().getAvailableContentRuleListIdentifiers { identifiers in
+                continuation.resume(returning: identifiers ?? [])
+            }
+        }
+    }
+
+    @MainActor
+    func removeContentRuleList(forIdentifier identifier: String) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            WKContentRuleListStore.default().removeContentRuleList(forIdentifier: identifier) { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
             }
         }
     }
@@ -646,7 +670,7 @@ final class SumiContentBlockingService {
 
         Task { @MainActor [compiler] in
             for identifier in uniqueIdentifiers {
-                await compiler.removeContentRuleList(forIdentifier: identifier)
+                try? await compiler.removeContentRuleList(forIdentifier: identifier)
             }
         }
     }

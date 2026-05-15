@@ -114,7 +114,7 @@ final class AdblockSettingsStore: ObservableObject {
         static let autoUpdateEnabled = "settings.adblock.autoUpdateEnabled"
         static let cosmeticMode = "settings.adblock.cosmeticMode"
         static let regionalListSelection = "settings.adblock.regionalListSelection"
-        static let filterListSelection = "settings.adblock.filterListSelection"
+        static let selectedLists = "settings.adblock.selectedLists"
     }
 
     @Published var autoUpdateEnabled: Bool {
@@ -140,10 +140,10 @@ final class AdblockSettingsStore: ObservableObject {
         }
     }
 
-    @Published var filterListSelection: SumiAdblockFilterListSelection {
+    @Published var selectedLists: SumiAdblockFilterListSelection {
         didSet {
-            if let data = try? JSONEncoder().encode(filterListSelection) {
-                userDefaults.set(data, forKey: DefaultsKey.filterListSelection)
+            if let data = try? JSONEncoder().encode(selectedLists) {
+                userDefaults.set(data, forKey: DefaultsKey.selectedLists)
             }
             changesSubject.send(())
         }
@@ -172,11 +172,11 @@ final class AdblockSettingsStore: ObservableObject {
         } else {
             regionalListSelection = .empty
         }
-        if let data = userDefaults.data(forKey: DefaultsKey.filterListSelection),
+        if let data = userDefaults.data(forKey: DefaultsKey.selectedLists),
            let decoded = try? JSONDecoder().decode(SumiAdblockFilterListSelection.self, from: data) {
-            filterListSelection = decoded
+            selectedLists = decoded
         } else {
-            filterListSelection = .defaultSelection
+            selectedLists = .defaultSelection
         }
     }
 }
@@ -299,7 +299,6 @@ final class AdblockWebKitRuleListStore {
         settingsStore: AdblockSettingsStore,
         isAdblockEnabled: @escaping @Sendable () async -> Bool = { true },
         registry: AdblockFilterListRegistry = AdblockFilterListRegistry(),
-        downloader: any AdblockFilterListDownloading = AdblockFilterListDownloader(),
         manifestStore: AdblockUpdateManifestStore = AdblockUpdateManifestStore(),
         filterCompiler: AdblockFilterCompiling = AdblockRustCompiler(),
         compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler(),
@@ -322,21 +321,27 @@ final class AdblockWebKitRuleListStore {
             ruleListProvider: provider,
             contentBlockingService: contentBlockingService
         )
-        updateCoordinator = AdblockUpdateCoordinator(
+        updateCoordinator = AdblockUpdateCoordinator.production(
             registry: registry,
-            selection: { await MainActor.run { settingsStore.filterListSelection } },
+            selection: { await MainActor.run { settingsStore.selectedLists } },
             isAdblockEnabled: isAdblockEnabled,
-            downloader: downloader,
             manifestStore: manifestStore,
             filterCompiler: filterCompiler,
-            publisher: publisher
+            publisher: publisher,
+            contentRuleListStore: compiler,
+            garbageCollector: AdblockGenerationGarbageCollector(
+                manifestStore: manifestStore,
+                contentRuleListStore: compiler
+            )
         )
         Task { [weak self] in
             guard let self else { return }
+            guard await isAdblockEnabled() else { return }
             let manifest = try? await manifestStore.activeManifest()
             await MainActor.run {
                 self.ruleListProvider.updateManifest(manifest)
             }
+            _ = await self.updateCoordinator.rollbackIfActiveGenerationFailsSmokeCheck()
         }
         settingsCancellable = settingsStore.$cosmeticMode
             .removeDuplicates()
@@ -369,7 +374,6 @@ final class AdblockWebKitRuleListStore {
         "||sumi-adblock-test-blocked.example^",
         "||sumi-adblock-domain-test.example^$domain=example.com",
         "example.com##.sumi-adblock-test-hide",
-        "example.com##+js(sumi-future-scriptlet)",
     ]
 }
 

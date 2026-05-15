@@ -409,6 +409,10 @@ private final class CountingContentRuleListCompiler: SumiContentRuleListCompilin
         await wrapped.lookUpContentRuleList(forIdentifier: identifier)
     }
 
+    func canLookUpContentRuleList(forIdentifier identifier: String) async -> Bool {
+        await wrapped.canLookUpContentRuleList(forIdentifier: identifier)
+    }
+
     func compileContentRuleList(
         forIdentifier identifier: String,
         encodedContentRuleList: String
@@ -425,9 +429,13 @@ private final class CountingContentRuleListCompiler: SumiContentRuleListCompilin
         }
     }
 
-    func removeContentRuleList(forIdentifier identifier: String) async {
+    func availableContentRuleListIdentifiers() async -> [String] {
+        await wrapped.availableContentRuleListIdentifiers()
+    }
+
+    func removeContentRuleList(forIdentifier identifier: String) async throws {
         removedIdentifiers.append(identifier)
-        await wrapped.removeContentRuleList(forIdentifier: identifier)
+        try await wrapped.removeContentRuleList(forIdentifier: identifier)
     }
 }
 

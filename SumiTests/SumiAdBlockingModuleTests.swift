@@ -157,7 +157,7 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         let output = try await compiler.compile(
             AdblockCompilationInput(
                 sourceIdentifier: "TestAdblock",
-                filterTexts: AdblockWebKitRuleListStore.tinyFixtureFilters,
+                filterTexts: Self.tinyFixtureFiltersWithUnsupportedRule,
                 selectedOutputGroups: [.network, .nativeCosmeticCSS]
             )
         )
@@ -722,6 +722,9 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         let data = Data(encoded.utf8)
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
     }
+
+    private static let tinyFixtureFiltersWithUnsupportedRule =
+        AdblockWebKitRuleListStore.tinyFixtureFilters + ["example.com##+js(sumi-future-scriptlet)"]
 }
 
 private actor CountingAdblockRustAdapter: AdblockRustAdapterInvoking {
