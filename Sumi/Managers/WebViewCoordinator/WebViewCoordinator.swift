@@ -84,8 +84,6 @@ final class SumiWebViewContainerView: NSView {
     private var cancellables = Set<AnyCancellable>()
     private var blurViewIsHiddenCancellable: AnyCancellable?
     private var viewportCornerRadius: CGFloat = 0
-    private var viewportCutoutBackground: BrowserContentViewportCutoutBackground = .solid(.clear)
-    private let viewportMaskLayer = CAShapeLayer()
     /// DDG `MainViewController` parity: fullscreen `nextResponder` target (see `WebsiteCompositorView.attach`).
     weak var compositorContentOwner: WindowWebContentController?
 
@@ -105,7 +103,6 @@ final class SumiWebViewContainerView: NSView {
         wantsLayer = true
         clipsToBounds = true
         layer?.backgroundColor = NSColor.clear.cgColor
-        layer?.masksToBounds = true
         if #available(macOS 10.15, *) {
             layer?.cornerCurve = .continuous
         }
@@ -116,21 +113,14 @@ final class SumiWebViewContainerView: NSView {
         updateViewportMask()
     }
 
-    func setBrowserContentViewport(
-        geometry: BrowserChromeGeometry,
-        cutoutBackground: BrowserContentViewportCutoutBackground
-    ) {
+    func setBrowserContentViewport(geometry: BrowserChromeGeometry) {
         let radiusChanged = abs(viewportCornerRadius - geometry.contentRadius) > 0.000_1
-        let backgroundChanged = viewportCutoutBackground != cutoutBackground
-        guard radiusChanged || backgroundChanged else { return }
+        guard radiusChanged else { return }
 
         viewportCornerRadius = geometry.contentRadius
-        viewportCutoutBackground = cutoutBackground
 
-        if radiusChanged {
-            updateViewportMask()
-            needsLayout = true
-        }
+        updateViewportMask()
+        needsLayout = true
     }
 
     func attachDisplayedContentIfNeeded() {
@@ -246,21 +236,11 @@ final class SumiWebViewContainerView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         layer.contentsScale = scale
-        layer.masksToBounds = true
+        layer.masksToBounds = radius > 0
         layer.cornerRadius = radius
         if #available(macOS 10.15, *) {
             layer.cornerCurve = .continuous
         }
-        viewportMaskLayer.contentsScale = scale
-        viewportMaskLayer.frame = bounds
-        viewportMaskLayer.fillColor = NSColor.black.cgColor
-        viewportMaskLayer.path = CGPath(
-            roundedRect: bounds,
-            cornerWidth: radius,
-            cornerHeight: radius,
-            transform: nil
-        )
-        layer.mask = radius > 0 ? viewportMaskLayer : nil
         CATransaction.commit()
     }
 
