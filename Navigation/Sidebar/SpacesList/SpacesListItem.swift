@@ -13,25 +13,24 @@ struct SpacesListItem: View {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
-    @Environment(\.controlSize) private var controlSize
 
     let space: Space
     let isActive: Bool
     let compact: Bool
     let isFaded: Bool
+    let metrics: SpaceStripMetrics
     let onSelect: () -> Void
     let onHoverChange: ((Bool) -> Void)?
 
     @StateObject private var emojiManager = EmojiPickerManager()
     @State private var isHovered = false
 
-    private let dotSize: CGFloat = 6
-
     init(
         space: Space,
         isActive: Bool,
         compact: Bool,
         isFaded: Bool,
+        metrics: SpaceStripMetrics,
         onSelect: @escaping () -> Void,
         onHoverChange: ((Bool) -> Void)? = nil
     ) {
@@ -39,13 +38,14 @@ struct SpacesListItem: View {
         self.isActive = isActive
         self.compact = compact
         self.isFaded = isFaded
+        self.metrics = metrics
         self.onSelect = onSelect
         self.onHoverChange = onHoverChange
     }
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: metrics.cornerRadius)
                 .fill(
                     themeContext
                         .tokens(settings: sumiSettings)
@@ -57,11 +57,8 @@ struct SpacesListItem: View {
                 .opacity(isActive ? 1.0 : 0.7)
                 .frame(maxWidth: .infinity)
         }
-        .frame(height: spaceListItemSize)
-        .frame(maxWidth: spaceListItemSize)
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .layoutPriority(2)
-        .layoutPriority(isActive ? 1 : 0)
+        .frame(width: metrics.slotSize, height: metrics.slotSize)
+        .contentShape(RoundedRectangle(cornerRadius: metrics.cornerRadius, style: .continuous))
         .opacity(isFaded ? 0.3 : 1.0)
         .accessibilityIdentifier("space-icon-\(space.id.uuidString)")
         .accessibilityLabel(space.name)
@@ -89,7 +86,7 @@ struct SpacesListItem: View {
             // Compact mode: show dot
             Circle()
                 .fill(iconColor)
-                .frame(width: dotSize, height: dotSize)
+                .frame(width: metrics.dotSize, height: metrics.dotSize)
         } else {
             // Normal mode: show icon or emoji
             if SumiPersistentGlyph.presentsAsEmoji(space.icon) {
@@ -134,16 +131,6 @@ struct SpacesListItem: View {
         themeContext.chromeColorScheme == .dark ? 0.2 : 0.1
     }
 
-    private var spaceListItemSize: CGFloat {
-        switch controlSize {
-        case .mini: 24
-        case .small: 28
-        case .regular: 32
-        case .large: 40
-        case .extraLarge: 48
-        @unknown default: 32
-        }
-    }
 
     // MARK: - Context Menu
 

@@ -13,6 +13,7 @@ struct SpacesList: View {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.controlSize) private var controlSize
     let visualSelectedSpaceId: UUID?
     let onSelectSpace: (Space) -> Void
     @State private var availableWidth: CGFloat = 0
@@ -22,16 +23,19 @@ struct SpacesList: View {
     @State private var isHoveringList: Bool = false
     @State private var reorderState = SpaceReorderDragState()
 
+    private var metrics: SpaceStripMetrics {
+        SpaceStripMetrics.resolve(for: controlSize)
+    }
+
     private var layoutMode: SpacesListLayoutMode {
-        let spaces = windowState.isIncognito
-            ? windowState.ephemeralSpaces
-            : browserManager.tabManager.spaces
-        if sumiSettings.sidebarCompactSpaces {
-            return .compact
-        }
-        return SpacesListLayoutMode.determine(
-            spacesCount: spaces.count,
-            availableWidth: availableWidth
+        sumiSettings.sidebarCompactSpaces ? .compact : .normal
+    }
+
+    private var stripGeometry: SpaceStripGeometry {
+        SpaceStripGeometry.make(
+            itemCount: displayedSpaces.count,
+            availableWidth: availableWidth,
+            metrics: metrics
         )
     }
 
@@ -66,9 +70,6 @@ struct SpacesList: View {
             .overlay {
                 spacesContent(spaces: displayedSpaces)
             }
-            .onPreferenceChange(SpaceReorderItemFramePreferenceKey.self) { frames in
-                reorderState.updateItemFrames(frames)
-            }
             .onChange(of: visibleSpaces.map(\.id)) { _, _ in
                 if reorderState.isDragging {
                     windowState.sidebarInteractionState.syncSidebarItemDrag(false)
@@ -94,13 +95,14 @@ struct SpacesList: View {
     }
 
     private func spacesContent(spaces: [Space]) -> some View {
-        HStack(spacing: 0) {
-            ForEach(Array(spaces.enumerated()), id: \.element.id) { index, space in
+        SpaceStripLayout(metrics: metrics) {
+            ForEach(spaces, id: \.id) { space in
                 SpacesListItem(
                     space: space,
                     isActive: visualSelectedSpaceId == space.id,
                     compact: layoutMode == .compact,
                     isFaded: false,
+                    metrics: metrics,
                     onSelect: {
                         guard !reorderState.isDragging else { return }
                         guard !reorderState.consumeSuppressedClick(for: space.id) else { return }
@@ -112,7 +114,6 @@ struct SpacesList: View {
                 )
                 .environmentObject(browserManager)
                 .environment(windowState)
-                .background(SpaceReorderItemFrameReporter(spaceId: space.id))
                 .gesture(spaceInteractionGesture(for: space, spaces: spaces))
                 .opacity(reorderState.hidesInlineSpace(space.id) ? 0 : 1)
                 .id(space.id)
@@ -120,12 +121,6 @@ struct SpacesList: View {
                     insertion: .scale.combined(with: .opacity),
                     removal: .scale.combined(with: .opacity)
                 ))
-
-                if index != spaces.count - 1 {
-                    Spacer()
-                        .frame(minWidth: 1, maxWidth: 8)
-                        .layoutPriority(-1)
-                }
             }
         }
         .coordinateSpace(name: SpaceReorderCoordinateSpace.name)
@@ -170,7 +165,8 @@ struct SpacesList: View {
                 let result = reorderState.update(
                     spaceId: space.id,
                     location: value.location,
-                    orderedSpaceIds: spaces.map(\.id)
+                    orderedSpaceIds: spaces.map(\.id),
+                    geometry: stripGeometry
                 )
 
                 let didBeginDrag = result.didBeginDrag
@@ -219,6 +215,7 @@ struct SpacesList: View {
                 isActive: visualSelectedSpaceId == draggedSpace.id,
                 compact: layoutMode == .compact,
                 isFaded: false,
+                metrics: metrics,
                 onSelect: {},
                 onHoverChange: nil
             )
@@ -255,33 +252,6 @@ struct SpacesList: View {
 // MARK: - Layout Mode
 
 enum SpacesListLayoutMode {
-    case normal    // Full icons with spacing
-    case compact   // Dots for inactive, icons for active
-
-    static func determine(spacesCount: Int, availableWidth: CGFloat) -> Self {
-        guard spacesCount > 0 else { return .normal }
-
-        // Measurements for NavButtonStyle button with default .regular control size
-        let buttonSize: CGFloat = 32.0  // NavButtonStyle .regular = 32pt
-        let minSpacing: CGFloat = 4.0
-
-        // Normal mode: all icons visible with minimum spacing
-        let normalMinWidth = (CGFloat(spacesCount) * buttonSize) + (CGFloat(spacesCount - 1) * minSpacing)
-
-        // Compact mode: 1 active icon + (n-1) dots with minimum spacing
-        let dotSize: CGFloat = 6.0
-        let totalDots = spacesCount - 1
-        let compactMinWidth = buttonSize + (CGFloat(totalDots) * dotSize) + (CGFloat(totalDots) * minSpacing)
-
-        // Choose mode: switch to compact only when normal mode would be too cramped
-        // Stay in normal as long as we have at least minimum spacing
-        if availableWidth >= normalMinWidth {
-            return .normal
-        } else if availableWidth >= compactMinWidth {
-            return .compact
-        } else {
-            // Even compact doesn't fit perfectly, but use compact anyway
-            return .compact
-        }
-    }
+    case normal
+    case compact
 }
