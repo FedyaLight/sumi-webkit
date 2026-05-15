@@ -221,11 +221,6 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
         webView targetWebView: WKWebView?,
         preferences _: inout SumiNavigationPreferences
     ) async -> SumiNavigationActionPolicy? {
-        let signpostState = PerformanceTrace.beginInterval("NavigationPolicy.popupResponder")
-        defer {
-            PerformanceTrace.endInterval("NavigationPolicy.popupResponder", signpostState)
-        }
-
         guard let tab,
               let browserManager = tab.browserManager
         else { return .next }
@@ -243,6 +238,11 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             && (navigationAction.navigationType.isLinkActivated
                 || (navigationAction.navigationType == .other && navigationAction.isUserInitiated))
         guard isLinkActivated else { return .next }
+
+        let signpostState = PerformanceTrace.beginInterval("NavigationPolicy.popupResponder")
+        defer {
+            PerformanceTrace.endInterval("NavigationPolicy.popupResponder", signpostState)
+        }
 
         let modifierFlags = navigationModifierFlags(from: navigationAction, tab: tab)
         if tab.isGlanceTriggerActive(modifierFlags) {

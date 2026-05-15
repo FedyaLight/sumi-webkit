@@ -150,6 +150,7 @@ final class SumiTabLifecycleNavigationResponder:
         context: SumiNavigationContext?
     ) {
         guard let tab,
+              context?.isCurrent == true,
               let webView = context?.webView,
               let newURL = webView.url
         else { return }

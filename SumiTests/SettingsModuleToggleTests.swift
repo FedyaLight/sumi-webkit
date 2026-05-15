@@ -32,8 +32,8 @@ final class SettingsModuleToggleTests: XCTestCase {
 
         let adBlockingCopy = copy(for: try XCTUnwrap(descriptorsByModule[.adBlocking]))
         XCTAssertTrue(adBlockingCopy.contains("separate from Tracking Protection"))
-        XCTAssertTrue(adBlockingCopy.contains("not implemented yet"))
-        XCTAssertTrue(adBlockingCopy.contains("filter lists"))
+        XCTAssertTrue(adBlockingCopy.contains("WebKit rule lists"))
+        XCTAssertTrue(adBlockingCopy.contains("schedule updates"))
 
         let extensionsCopy = copy(for: try XCTUnwrap(descriptorsByModule[.extensions]))
         XCTAssertTrue(extensionsCopy.contains("scan manifests"))
@@ -126,24 +126,24 @@ final class SettingsModuleToggleTests: XCTestCase {
         }
     }
 
-    func testAdBlockingSettingsRemainRegistryOnlyAndNoRuntimeUI() throws {
+    func testAdBlockingSettingsExposeNativeSkeletonRuntimeUI() throws {
         let privacySource = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
         let toggleSource = try Self.source(named: "Sumi/Components/Settings/SumiSettingsModuleToggles.swift")
 
         XCTAssertTrue(privacySource.contains("SumiSettingsModuleToggleGate(descriptor: .adBlocking)"))
         XCTAssertTrue(toggleSource.contains("moduleID: .adBlocking"))
-        XCTAssertTrue(toggleSource.contains("not implemented yet"))
+        XCTAssertTrue(privacySource.contains("NativeAdblockSettingsView"))
+        XCTAssertTrue(privacySource.contains("Automatic filter updates"))
+        XCTAssertTrue(privacySource.contains("Cosmetic filtering"))
+        XCTAssertTrue(privacySource.contains("Regional filters"))
 
         for source in [privacySource, toggleSource] {
-            XCTAssertFalse(source.contains("SumiAdBlockingModule"))
-            XCTAssertFalse(source.contains("sumiAdBlockingModule"))
             XCTAssertFalse(source.contains("assetsIfAvailable"))
             XCTAssertFalse(source.contains("normalTabDecision"))
             XCTAssertFalse(source.localizedCaseInsensitiveContains("stale"))
-            XCTAssertFalse(source.localizedCaseInsensitiveContains("automatic update"))
             XCTAssertFalse(source.localizedCaseInsensitiveContains("onboarding"))
             XCTAssertFalse(source.localizedCaseInsensitiveContains("diagnostics"))
-            XCTAssertFalse(source.localizedCaseInsensitiveContains("cosmetic"))
+            XCTAssertFalse(source.localizedCaseInsensitiveContains("acceptable ads"))
         }
     }
 

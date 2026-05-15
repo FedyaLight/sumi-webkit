@@ -8,6 +8,10 @@ private struct SumiTrackingProtectionModuleEnvironmentKey: EnvironmentKey {
     static let defaultValue = MainActor.assumeIsolated { SumiTrackingProtectionModule.shared }
 }
 
+private struct SumiAdBlockingModuleEnvironmentKey: EnvironmentKey {
+    static let defaultValue = MainActor.assumeIsolated { SumiAdBlockingModule.shared }
+}
+
 private struct SumiExtensionsModuleEnvironmentKey: EnvironmentKey {
     static let defaultValue = MainActor.assumeIsolated { SumiExtensionsModule.shared }
 }
@@ -25,6 +29,11 @@ extension EnvironmentValues {
     var sumiTrackingProtectionModule: SumiTrackingProtectionModule {
         get { self[SumiTrackingProtectionModuleEnvironmentKey.self] }
         set { self[SumiTrackingProtectionModuleEnvironmentKey.self] = newValue }
+    }
+
+    var sumiAdBlockingModule: SumiAdBlockingModule {
+        get { self[SumiAdBlockingModuleEnvironmentKey.self] }
+        set { self[SumiAdBlockingModuleEnvironmentKey.self] = newValue }
     }
 
     var sumiExtensionsModule: SumiExtensionsModule {
@@ -57,7 +66,7 @@ struct SumiSettingsModuleToggleDescriptor: Identifiable, Equatable {
         moduleID: .adBlocking,
         title: "Ad Blocking",
         toggleTitle: "Enable Ad Blocking",
-        detail: "Ad Blocking is separate from Tracking Protection. The ad-blocking engine is not implemented yet; while off, Sumi does not load ad-block filter lists."
+        detail: "Ad Blocking is separate from Tracking Protection. While off, Sumi does not compile WebKit rule lists, load filter lists, schedule updates, or attach runtime blocking."
     )
 
     static let extensions = SumiSettingsModuleToggleDescriptor(

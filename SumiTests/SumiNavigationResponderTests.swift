@@ -919,6 +919,41 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertFalse(tab.isDisplayingPDFDocument)
     }
 
+    func testTabLifecycleIgnoresNonCurrentSameDocumentNavigation() {
+        let initialURL = URL(string: "https://example.com/page")!
+        let sameDocumentURL = URL(string: "https://example.com/page#running")!
+        let tab = Tab(url: initialURL)
+        let responder = SumiTabLifecycleNavigationResponder(tab: tab)
+        let webView = SumiNavigationURLReportingWebView(frame: .zero)
+        webView.reportedURL = sameDocumentURL
+
+        responder.navigationDidSameDocumentNavigation(
+            type: .sessionStatePop,
+            context: SumiNavigationContext(
+                action: nil,
+                url: sameDocumentURL,
+                isCurrent: false,
+                isMainFrame: true,
+                webView: webView
+            )
+        )
+
+        XCTAssertEqual(tab.url, initialURL)
+
+        responder.navigationDidSameDocumentNavigation(
+            type: .anchorNavigation,
+            context: SumiNavigationContext(
+                action: nil,
+                url: sameDocumentURL,
+                isCurrent: true,
+                isMainFrame: true,
+                webView: webView
+            )
+        )
+
+        XCTAssertEqual(tab.url, sameDocumentURL)
+    }
+
     func testSumiNavigationResponseAdapterCopiesHTTPAndMainFrameNavigationMetadata() throws {
         let initialAction = navigationAction(
             url: URL(string: "https://example.com/start")!,
@@ -2200,6 +2235,14 @@ private final class SumiNavigationClosingTrackingWebView: WKWebView {
         }
 
         super.evaluateJavaScript(javaScriptString, completionHandler: completionHandler)
+    }
+}
+
+private final class SumiNavigationURLReportingWebView: WKWebView {
+    var reportedURL: URL?
+
+    override var url: URL? {
+        reportedURL
     }
 }
 

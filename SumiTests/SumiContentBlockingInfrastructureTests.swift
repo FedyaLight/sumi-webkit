@@ -75,6 +75,32 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
         XCTAssertTrue(summary.isContentBlockingFeatureEnabled)
     }
 
+    func testDynamicRuleProviderWaitsForInitialResolvedRulesInsteadOfPublishingEmptyPlaceholder() async throws {
+        let provider = StaticContentRuleListSetProvider(
+            ruleListSet: SumiTrackingRuleListSet(
+                trackerDataSet: [Self.validRuleListDefinition()]
+            )
+        )
+        let service = SumiContentBlockingService(
+            policy: .disabled,
+            compiler: CountingContentRuleListCompiler(),
+            ruleListProvider: provider,
+            compiledRuleListCatalog: InMemoryCompiledRuleListCatalog()
+        )
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: service
+        )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+
+        let summary = normalTabController.contentBlockingAssetSummary
+        XCTAssertTrue(summary.isInstalled)
+        XCTAssertEqual(summary.globalRuleListCount, 1)
+        XCTAssertEqual(summary.updateRuleCount, 1)
+        XCTAssertTrue(summary.isContentBlockingFeatureEnabled)
+    }
+
     func testInvalidRuleDataFailsSafelyWithoutAttachingRules() async throws {
         let service = SumiContentBlockingService(
             policy: .enabled(ruleLists: [
@@ -445,6 +471,22 @@ private final class InMemoryCompiledRuleListCatalog: SumiCompiledContentRuleList
         rules.reduce(into: [:]) { result, rules in
             result[rules.identifier.name, default: []].insert(rules.identifier.stringValue)
         }
+    }
+}
+
+@MainActor
+private final class StaticContentRuleListSetProvider: SumiContentRuleListSetProviding {
+    let changesPublisher = PassthroughSubject<Void, Never>().eraseToAnyPublisher()
+    let hasProfileSpecificRuleLists = false
+
+    private let ruleListSet: SumiTrackingRuleListSet
+
+    init(ruleListSet: SumiTrackingRuleListSet) {
+        self.ruleListSet = ruleListSet
+    }
+
+    func ruleListSet(profileId: UUID?) throws -> SumiTrackingRuleListSet {
+        ruleListSet
     }
 }
 
