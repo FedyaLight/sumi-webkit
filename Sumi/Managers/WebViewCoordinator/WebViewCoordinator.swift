@@ -305,6 +305,7 @@ private struct WeakWKWebView {
 enum DeferredWebViewCommandKey: Hashable {
     case removeWebViewFromContainers(ObjectIdentifier)
     case removeAllWebViews(UUID)
+    case removeTrackedWebView(ObjectIdentifier, UUID, UUID)
     case cleanupWindow(UUID)
     case cleanupAllWebViews
     case rebuildLiveWebViews(UUID)
@@ -316,6 +317,7 @@ enum DeferredWebViewCommandKey: Hashable {
 enum DeferredWebViewCommand {
     case removeWebViewFromContainers(webViewID: ObjectIdentifier)
     case removeAllWebViews(tabID: UUID)
+    case removeTrackedWebView(webViewID: ObjectIdentifier, tabID: UUID, windowID: UUID)
     case cleanupWindow(windowID: UUID)
     case cleanupAllWebViews
     case rebuildLiveWebViews(tabID: UUID, preferredPrimaryWindowID: UUID?)
@@ -329,6 +331,8 @@ enum DeferredWebViewCommand {
             return .removeWebViewFromContainers(webViewID)
         case .removeAllWebViews(let tabID):
             return .removeAllWebViews(tabID)
+        case .removeTrackedWebView(let webViewID, let tabID, let windowID):
+            return .removeTrackedWebView(webViewID, tabID, windowID)
         case .cleanupWindow(let windowID):
             return .cleanupWindow(windowID)
         case .cleanupAllWebViews:
@@ -350,6 +354,8 @@ enum DeferredWebViewCommand {
             return "removeWebViewFromContainers webView=\(webViewID)"
         case .removeAllWebViews(let tabID):
             return "removeAllWebViews tab=\(tabID.uuidString.prefix(8))"
+        case .removeTrackedWebView(let webViewID, let tabID, let windowID):
+            return "removeTrackedWebView tab=\(tabID.uuidString.prefix(8)) window=\(windowID.uuidString.prefix(8)) webView=\(webViewID)"
         case .cleanupWindow(let windowID):
             return "cleanupWindow window=\(windowID.uuidString.prefix(8))"
         case .cleanupAllWebViews:
@@ -669,6 +675,16 @@ class WebViewCoordinator {
         }
     }
 
+    private func closeFullscreenMediaIfNeeded(on webView: WKWebView) {
+        let webViewID = ObjectIdentifier(webView)
+        guard webView.sumiIsInFullscreenElementPresentation
+            || fullscreenProtection.isProtected(webViewID)
+        else {
+            return
+        }
+        webView.closeAllMediaPresentations(completionHandler: nil)
+    }
+
     func isWebViewProtectedFromCompositorMutation(_ webView: WKWebView) -> Bool {
         let webViewID = ObjectIdentifier(webView)
         return activeHistorySwipeProtections[webViewID] != nil
@@ -902,18 +918,53 @@ class WebViewCoordinator {
     }
 
     @discardableResult
-    func removeAllWebViews(for tab: Tab) -> Bool {
+    func removeAllWebViews(
+        for tab: Tab,
+        closeActiveFullscreenMedia: Bool = false
+    ) -> Bool {
         let currentEntries = webViewsByTabAndWindow[tab.id] ?? [:]
         let protectedCandidateWebViews = uniqueWebViews(
             Array(currentEntries.values)
                 + [tab.assignedWebView, tab.existingWebView].compactMap { $0 }
         )
         if protectedCandidateWebViews.contains(where: isWebViewProtectedFromCompositorMutation) {
-            for protectedWebView in protectedCandidateWebViews where isWebViewProtectedFromCompositorMutation(protectedWebView) {
+            let protectedTrackedIDs = Set(
+                currentEntries.values
+                    .filter { isWebViewProtectedFromCompositorMutation($0) }
+                    .map(ObjectIdentifier.init)
+            )
+            var closedMediaWebViewIDs: Set<ObjectIdentifier> = []
+
+            func closeFullscreenMediaOnce(on webView: WKWebView) {
+                guard closeActiveFullscreenMedia else { return }
+                guard closedMediaWebViewIDs.insert(ObjectIdentifier(webView)).inserted else { return }
+                closeFullscreenMediaIfNeeded(on: webView)
+            }
+
+            for (windowId, protectedWebView) in currentEntries where isWebViewProtectedFromCompositorMutation(protectedWebView) {
+                closeFullscreenMediaOnce(on: protectedWebView)
                 _ = enqueueDeferredProtectedCommand(
-                    .removeAllWebViews(tabID: tab.id),
+                    .removeTrackedWebView(
+                        webViewID: ObjectIdentifier(protectedWebView),
+                        tabID: tab.id,
+                        windowID: windowId
+                    ),
                     for: protectedWebView,
                     reason: "removeAllWebViews"
+                )
+            }
+            for protectedWebView in protectedCandidateWebViews where isWebViewProtectedFromCompositorMutation(protectedWebView) {
+                let protectedWebViewID = ObjectIdentifier(protectedWebView)
+                closeFullscreenMediaOnce(on: protectedWebView)
+
+                guard !protectedTrackedIDs.contains(protectedWebViewID) else { continue }
+                _ = enqueueDeferredProtectedCommand(
+                    .cleanupTabWebView(
+                        webViewID: protectedWebViewID,
+                        tabID: tab.id
+                    ),
+                    for: protectedWebView,
+                    reason: "removeAllWebViews.untracked"
                 )
             }
             return false
@@ -1426,6 +1477,8 @@ class WebViewCoordinator {
             return resolveWebView(with: webViewID) != nil
         case .removeAllWebViews(let tabID):
             return resolvedTab(with: tabID) != nil
+        case .removeTrackedWebView(let webViewID, _, _):
+            return resolveWebView(with: webViewID) != nil
         case .cleanupWindow(let windowID):
             return browserManager?.tabManager != nil
                 && (
@@ -1471,6 +1524,14 @@ class WebViewCoordinator {
                 return false
             }
             _ = removeAllWebViews(for: tab)
+        case .removeTrackedWebView(let webViewID, let tabID, let windowID):
+            guard let webView = resolveWebView(with: webViewID) else {
+                return false
+            }
+            cleanupTrackedWebView(
+                webView,
+                owner: TrackedWebViewOwner(tabID: tabID, windowID: windowID)
+            )
         case .cleanupWindow(let windowID):
             guard let tabManager = browserManager?.tabManager else {
                 return false
@@ -1539,6 +1600,25 @@ class WebViewCoordinator {
         RuntimeDiagnostics.protectedWebViewTrace(
             "dropDeferredCommand reason=\(reason) sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)}"
         )
+    }
+
+    private func cleanupTrackedWebView(
+        _ webView: WKWebView,
+        owner: TrackedWebViewOwner
+    ) {
+        removeWebViewFromContainers(webView)
+        _ = unregisterTrackedWebViewSlot(owner: owner, expectedWebView: webView)
+
+        if let tab = resolvedTab(with: owner.tabID) {
+            tab.cleanupCloneWebView(webView)
+            refreshPrimaryTrackedWebView(for: tab, browserManager: tab.browserManager)
+        } else {
+            performFallbackWebViewCleanup(
+                webView,
+                tabId: owner.tabID,
+                browserManager: browserManager
+            )
+        }
     }
 
     private func visibleTabIDs(

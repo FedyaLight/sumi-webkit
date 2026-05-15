@@ -923,7 +923,10 @@ class TabManager: ObservableObject {
 
             // Force unload the tab from compositor before removing
             browserManager?.compositorManager.unloadTab(tab)
-            browserManager?.webViewCoordinator?.removeAllWebViews(for: tab)
+            browserManager?.webViewCoordinator?.removeAllWebViews(
+                for: tab,
+                closeActiveFullscreenMedia: true
+            )
             detach(tab)
 
             NotificationCenter.default.post(

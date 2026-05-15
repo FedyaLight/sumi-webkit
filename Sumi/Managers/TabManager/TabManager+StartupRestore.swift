@@ -16,7 +16,10 @@ extension TabManager {
                     cancelRuntimeStatePersistence(for: tab.id)
                     tab.performComprehensiveWebViewCleanup()
                     browserManager?.compositorManager.unloadTab(tab)
-                    browserManager?.webViewCoordinator?.removeAllWebViews(for: tab)
+                    browserManager?.webViewCoordinator?.removeAllWebViews(
+                        for: tab,
+                        closeActiveFullscreenMedia: true
+                    )
                     detach(tab)
                 }
                 transientShortcutTabsByWindow.removeAll()
@@ -28,7 +31,10 @@ extension TabManager {
                 for tab in regularTabs {
                     cancelRuntimeStatePersistence(for: tab.id)
                     browserManager?.compositorManager.unloadTab(tab)
-                    browserManager?.webViewCoordinator?.removeAllWebViews(for: tab)
+                    browserManager?.webViewCoordinator?.removeAllWebViews(
+                        for: tab,
+                        closeActiveFullscreenMedia: true
+                    )
                     detach(tab)
                 }
                 setTabs([], for: space.id)
