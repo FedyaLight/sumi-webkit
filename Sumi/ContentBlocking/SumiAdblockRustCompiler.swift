@@ -67,176 +67,93 @@ protocol AdblockFilterCompiling: AnyObject, Sendable {
 }
 
 final class AdblockRustCompiler: AdblockFilterCompiling, Sendable {
-    func compile(_ input: AdblockCompilationInput) async throws -> AdblockCompilationOutput {
-        try await Task.detached(priority: .utility) {
-            try Self.compileSynchronously(input)
-        }.value
+    private let adapter: any AdblockRustAdapterInvoking
+
+    init(adapter: any AdblockRustAdapterInvoking = AdblockRustHelperExecutableAdapter()) {
+        self.adapter = adapter
     }
 
-    private static func compileSynchronously(_ input: AdblockCompilationInput) throws -> AdblockCompilationOutput {
-        var networkRules = [[String: Any]]()
-        var cosmeticRules = [[String: Any]]()
-        var diagnostics = AdblockCompilationDiagnostics()
-        let normalizedRules = input.filterTexts
-            .flatMap { $0.components(separatedBy: .newlines) }
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+    func compile(_ input: AdblockCompilationInput) async throws -> AdblockCompilationOutput {
+        let normalizedRules = Self.normalizedRules(from: input.filterTexts)
+        let adapterOutput = try await adapter.compile(normalizedRules)
+        return try Self.makeOutput(
+            input: input,
+            normalizedRules: normalizedRules,
+            adapterOutput: adapterOutput
+        )
+    }
 
-        for rule in normalizedRules {
-            if rule.hasPrefix("!") || rule.hasPrefix("[") {
-                diagnostics.ignoredRules.append(.init(rule: rule, reason: "metadata or comment"))
-                continue
-            }
-
-            do {
-                if let cosmeticRule = try cosmeticContentRule(from: rule) {
-                    if input.selectedOutputGroups.contains(.nativeCosmeticCSS) {
-                        cosmeticRules.append(cosmeticRule)
-                    }
-                    continue
-                }
-            } catch AdblockRustCompilerError.unsupportedRule(_, let reason) {
-                diagnostics.unsupportedRules.append(.init(rule: rule, reason: reason))
-                continue
-            }
-
-            if let networkRule = networkContentRule(from: rule) {
-                if input.selectedOutputGroups.contains(.network) {
-                    networkRules.append(networkRule)
-                }
-                continue
-            }
-
-            diagnostics.unsupportedRules.append(.init(rule: rule, reason: "unsupported ABP/uBO syntax for native WebKit output"))
-        }
-
+    private static func makeOutput(
+        input: AdblockCompilationInput,
+        normalizedRules: [String],
+        adapterOutput: AdblockRustAdapterOutput
+    ) throws -> AdblockCompilationOutput {
         var groups = [AdblockCompiledRuleGroup]()
+        let networkJSON = try encodedJSON(adapterOutput.network)
+        let cosmeticJSON = try encodedJSON(adapterOutput.nativeCosmeticCSS)
+        let networkBlockCount = adapterOutput.network.countActions(named: "block")
+        let nativeCosmeticCount = adapterOutput.nativeCosmeticCSS.countActions(named: "css-display-none")
+
         if input.selectedOutputGroups.contains(.network) {
-            let json = try encodedJSON(networkRules)
             groups.append(
                 AdblockCompiledRuleGroup(
                     kind: .network,
                     name: "\(input.sourceIdentifier).network",
-                    encodedContentRuleList: json,
-                    convertedRuleCount: networkRules.count,
-                    contentHash: stableHash(json)
-                )
-            )
-        }
-        if input.selectedOutputGroups.contains(.nativeCosmeticCSS) {
-            let json = try encodedJSON(cosmeticRules)
-            groups.append(
-                AdblockCompiledRuleGroup(
-                    kind: .nativeCosmeticCSS,
-                    name: "\(input.sourceIdentifier).native-css",
-                    encodedContentRuleList: json,
-                    convertedRuleCount: cosmeticRules.count,
-                    contentHash: stableHash(json)
+                    encodedContentRuleList: networkJSON,
+                    convertedRuleCount: networkBlockCount,
+                    contentHash: stableHash(networkJSON)
                 )
             )
         }
 
+        if input.selectedOutputGroups.contains(.nativeCosmeticCSS) {
+            groups.append(
+                AdblockCompiledRuleGroup(
+                    kind: .nativeCosmeticCSS,
+                    name: "\(input.sourceIdentifier).native-css",
+                    encodedContentRuleList: cosmeticJSON,
+                    convertedRuleCount: nativeCosmeticCount,
+                    contentHash: stableHash(cosmeticJSON)
+                )
+            )
+        }
+
+        let unsupportedDiagnostics = adapterOutput.unsupportedOrIgnored.map {
+            AdblockCompilationDiagnostics.Entry(rule: $0.rule, reason: $0.reason)
+        }
+        let ignoredRules = normalizedRules
+            .filter { $0.hasPrefix("!") || $0.hasPrefix("[") }
+            .map { AdblockCompilationDiagnostics.Entry(rule: $0, reason: "metadata or comment") }
+        let diagnostics = AdblockCompilationDiagnostics(
+            unsupportedRules: unsupportedDiagnostics,
+            ignoredRules: ignoredRules
+        )
         let contentHash = stableHash(groups.map(\.contentHash).joined(separator: ":"))
+
         return AdblockCompilationOutput(
             sourceIdentifier: input.sourceIdentifier,
             groups: groups,
             diagnostics: diagnostics,
             inputRuleCount: normalizedRules.count,
-            convertedNetworkRuleCount: networkRules.count,
-            convertedNativeCosmeticRuleCount: cosmeticRules.count,
+            convertedNetworkRuleCount: networkBlockCount,
+            convertedNativeCosmeticRuleCount: nativeCosmeticCount,
             unsupportedOrIgnoredRuleCount: diagnostics.unsupportedRules.count + diagnostics.ignoredRules.count,
             contentHash: contentHash
         )
     }
 
-    private static func networkContentRule(from rule: String) -> [String: Any]? {
-        let parts = rule.split(separator: "$", maxSplits: 1, omittingEmptySubsequences: false)
-        let pattern = String(parts[0])
-        guard !pattern.contains("#"), !pattern.hasPrefix("@@") else { return nil }
-
-        var trigger: [String: Any]
-        if pattern.hasPrefix("||") {
-            let hostPattern = String(pattern.dropFirst(2))
-            let host = hostPattern
-                .split { $0 == "^" || $0 == "/" || $0 == "*" }
-                .first
-                .map(String.init) ?? ""
-            guard !host.isEmpty else { return nil }
-            trigger = ["url-filter": "^[^:]+:(//)?([^/]+\\\\.)?\(escapedRegex(host))"]
-        } else {
-            trigger = ["url-filter": escapedLooseURLFilter(pattern)]
-        }
-
-        if parts.count == 2,
-           let domains = domainOptions(from: String(parts[1])) {
-            trigger["if-domain"] = domains
-        }
-
-        return [
-            "trigger": trigger,
-            "action": ["type": "block"],
-        ]
-    }
-
-    private static func cosmeticContentRule(from rule: String) throws -> [String: Any]? {
-        guard let markerRange = rule.range(of: "##") else { return nil }
-        let selector = String(rule[markerRange.upperBound...])
-        let domainPrefix = String(rule[..<markerRange.lowerBound])
-
-        guard !selector.contains("+js(") else {
-            throw AdblockRustCompilerError.unsupportedRule(rule, "scriptlet injections require future enhanced runtime cleanup")
-        }
-        guard !selector.contains(":has("), !selector.contains(":matches-path("), !selector.contains(":xpath(") else {
-            throw AdblockRustCompilerError.unsupportedRule(rule, "procedural cosmetic filters are not representable as native CSS hiding")
-        }
-        guard !selector.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-
-        var trigger: [String: Any] = ["url-filter": ".*"]
-        let domains = domainPrefix
-            .split(separator: ",")
+    private static func normalizedRules(from filterTexts: [String]) -> [String] {
+        filterTexts
+            .flatMap { $0.components(separatedBy: .newlines) }
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty && !$0.hasPrefix("~") }
-        if !domains.isEmpty {
-            trigger["if-domain"] = domains
-        }
-
-        return [
-            "trigger": trigger,
-            "action": [
-                "type": "css-display-none",
-                "selector": selector,
-            ],
-        ]
+            .filter { !$0.isEmpty }
     }
 
-    private static func domainOptions(from options: String) -> [String]? {
-        for option in options.split(separator: ",") {
-            let text = String(option)
-            guard text.hasPrefix("domain=") else { continue }
-            let domains = text.dropFirst("domain=".count)
-                .split(separator: "|")
-                .map(String.init)
-                .filter { !$0.isEmpty && !$0.hasPrefix("~") }
-                .map { "*\($0)" }
-            return domains.isEmpty ? nil : domains
-        }
-        return nil
-    }
-
-    private static func encodedJSON(_ rules: [[String: Any]]) throws -> String {
-        let data = try JSONSerialization.data(
-            withJSONObject: rules,
-            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        )
+    private static func encodedJSON(_ rules: [AdblockRustContentRule]) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        let data = try encoder.encode(rules)
         return String(decoding: data, as: UTF8.self)
-    }
-
-    private static func escapedRegex(_ value: String) -> String {
-        NSRegularExpression.escapedPattern(for: value)
-    }
-
-    private static func escapedLooseURLFilter(_ value: String) -> String {
-        ".*\(escapedRegex(value).replacingOccurrences(of: "\\*", with: ".*")).*"
     }
 
     private static func stableHash(_ value: String) -> String {
@@ -245,6 +162,159 @@ final class AdblockRustCompiler: AdblockFilterCompiling, Sendable {
     }
 }
 
+protocol AdblockRustAdapterInvoking: Sendable {
+    func compile(_ normalizedRules: [String]) async throws -> AdblockRustAdapterOutput
+}
+
+struct AdblockRustHelperExecutableAdapter: AdblockRustAdapterInvoking {
+    func compile(_ normalizedRules: [String]) async throws -> AdblockRustAdapterOutput {
+        let helperURL = try Self.helperExecutableURL()
+        return try await Task.detached(priority: .utility) {
+            try Self.runHelper(at: helperURL, normalizedRules: normalizedRules)
+        }.value
+    }
+
+    private static func runHelper(
+        at helperURL: URL,
+        normalizedRules: [String]
+    ) throws -> AdblockRustAdapterOutput {
+        let process = Process()
+        let inputPipe = Pipe()
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+
+        process.executableURL = helperURL
+        process.standardInput = inputPipe
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+
+        try process.run()
+        inputPipe.fileHandleForWriting.write(Data(normalizedRules.joined(separator: "\n").utf8))
+        try? inputPipe.fileHandleForWriting.close()
+
+        let output = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        let errorOutput = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else {
+            let stderr = String(decoding: errorOutput, as: UTF8.self)
+            throw AdblockRustCompilerError.adapterFailed(status: process.terminationStatus, stderr: stderr)
+        }
+
+        return try JSONDecoder().decode(AdblockRustAdapterOutput.self, from: output)
+    }
+
+    private static func helperExecutableURL() throws -> URL {
+        if let override = ProcessInfo.processInfo.environment["SUMI_ADBLOCK_RUST_ADAPTER"],
+           !override.isEmpty {
+            return URL(fileURLWithPath: override)
+        }
+
+        let candidateBundles = [Bundle.main, Bundle(for: BundleMarker.self)]
+        for bundle in candidateBundles {
+            if let url = bundle.url(forAuxiliaryExecutable: "sumi-adblock-rust-adapter") {
+                return url
+            }
+            if let executableURL = bundle.executableURL {
+                let adjacentURL = executableURL
+                    .deletingLastPathComponent()
+                    .appendingPathComponent("sumi-adblock-rust-adapter")
+                if FileManager.default.isExecutableFile(atPath: adjacentURL.path) {
+                    return adjacentURL
+                }
+            }
+        }
+
+        throw AdblockRustCompilerError.adapterNotFound
+    }
+
+    private final class BundleMarker {}
+}
+
+struct AdblockRustAdapterOutput: Decodable, Equatable, Sendable {
+    let network: [AdblockRustContentRule]
+    let nativeCosmeticCSS: [AdblockRustContentRule]
+    let unsupportedOrIgnored: [AdblockRustAdapterDiagnostic]
+
+    private enum CodingKeys: String, CodingKey {
+        case network
+        case nativeCosmeticCSS = "native_cosmetic_css"
+        case unsupportedOrIgnored = "unsupported_or_ignored"
+    }
+}
+
+struct AdblockRustAdapterDiagnostic: Decodable, Equatable, Sendable {
+    let rule: String
+    let reason: String
+}
+
+struct AdblockRustContentRule: Codable, Equatable, Sendable {
+    let action: JSONObject
+    let trigger: JSONObject
+}
+
+extension [AdblockRustContentRule] {
+    fileprivate func countActions(named actionName: String) -> Int {
+        filter { rule in
+            rule.action.objectValue?["type"]?.stringValue == actionName
+        }.count
+    }
+}
+
+enum JSONObject: Codable, Equatable, Sendable {
+    case string(String)
+    case bool(Bool)
+    case array([JSONObject])
+    case object([String: JSONObject])
+    case null
+
+    var stringValue: String? {
+        if case .string(let value) = self {
+            return value
+        }
+        return nil
+    }
+
+    var objectValue: [String: JSONObject]? {
+        if case .object(let value) = self {
+            return value
+        }
+        return nil
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode([JSONObject].self) {
+            self = .array(value)
+        } else {
+            self = .object(try container.decode([String: JSONObject].self))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let value):
+            try container.encode(value)
+        case .bool(let value):
+            try container.encode(value)
+        case .array(let value):
+            try container.encode(value)
+        case .object(let value):
+            try container.encode(value)
+        case .null:
+            try container.encodeNil()
+        }
+    }
+}
+
 enum AdblockRustCompilerError: Error, Equatable {
-    case unsupportedRule(String, String)
+    case adapterNotFound
+    case adapterFailed(status: Int32, stderr: String)
 }

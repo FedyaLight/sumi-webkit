@@ -572,7 +572,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         )
 
         for relativePath in [
-            "Sumi.xcodeproj/project.pbxproj",
             "Vendor/DDG/BrowserServicesKit/Package.swift",
             "Vendor/DDG/URLPredictor/Package.swift",
         ] {

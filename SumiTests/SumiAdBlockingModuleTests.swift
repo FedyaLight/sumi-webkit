@@ -132,6 +132,26 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertFalse(module.hasLoadedRuntime)
     }
 
+    func testSwiftCompilerBoundaryInvokesRustAdapter() async throws {
+        let adapter = CountingAdblockRustAdapter(output: .tinyFixture)
+        let compiler = AdblockRustCompiler(adapter: adapter)
+
+        let output = try await compiler.compile(
+            AdblockCompilationInput(
+                sourceIdentifier: "TestAdblock",
+                filterTexts: AdblockWebKitRuleListStore.tinyFixtureFilters,
+                selectedOutputGroups: [.network, .nativeCosmeticCSS]
+            )
+        )
+
+        let callCount = await adapter.callCount
+        XCTAssertEqual(callCount, 1)
+        XCTAssertEqual(output.convertedNetworkRuleCount, 2)
+        XCTAssertEqual(output.convertedNativeCosmeticRuleCount, 1)
+        XCTAssertTrue(output.groups.contains { $0.kind == .network })
+        XCTAssertTrue(output.groups.contains { $0.kind == .nativeCosmeticCSS })
+    }
+
     func testTinyFixtureCompilesIntoSeparatedWebKitJSONGroups() async throws {
         let compiler = AdblockRustCompiler()
         let output = try await compiler.compile(
@@ -148,7 +168,7 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertEqual(output.unsupportedOrIgnoredRuleCount, 1)
         XCTAssertEqual(output.groups.map(\.kind).sorted { $0.rawValue < $1.rawValue }, [.nativeCosmeticCSS, .network])
         XCTAssertEqual(output.diagnostics.unsupportedRules.count, 1)
-        XCTAssertTrue(output.diagnostics.unsupportedRules[0].reason.contains("scriptlet"))
+        XCTAssertTrue(output.diagnostics.unsupportedRules[0].reason.contains("Scriptlet"))
         XCTAssertFalse(output.contentHash.isEmpty)
 
         let networkGroup = try XCTUnwrap(output.groups.first { $0.kind == .network })
@@ -156,9 +176,10 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         let networkRules = try Self.decodedRuleList(networkGroup.encodedContentRuleList)
         let cosmeticRules = try Self.decodedRuleList(cosmeticGroup.encodedContentRuleList)
 
-        XCTAssertEqual(networkRules.count, 2)
+        let networkActionTypes = networkRules.compactMap { ($0["action"] as? [String: Any])?["type"] as? String }
+        XCTAssertEqual(networkActionTypes.filter { $0 == "block" }.count, 2)
+        XCTAssertTrue(networkActionTypes.contains("ignore-previous-rules"))
         XCTAssertEqual(cosmeticRules.count, 1)
-        XCTAssertEqual(networkRules.compactMap { ($0["action"] as? [String: Any])?["type"] as? String }, ["block", "block"])
         XCTAssertEqual((cosmeticRules[0]["action"] as? [String: Any])?["type"] as? String, "css-display-none")
         XCTAssertEqual((cosmeticRules[0]["action"] as? [String: Any])?["selector"] as? String, ".sumi-adblock-test-hide")
     }
@@ -517,6 +538,7 @@ final class SumiAdBlockingModuleTests: XCTestCase {
 
     func testAdBlockingModuleSourceHasNoRustWebExtensionUpdaterOrRuntimeScriptIntegration() throws {
         let source = try Self.source(named: "Sumi/ContentBlocking/SumiAdBlockingModule.swift")
+        let compilerSource = try Self.source(named: "Sumi/ContentBlocking/SumiAdblockRustCompiler.swift")
 
         XCTAssertTrue(source.contains("SumiAdBlockingModuleStatus"))
         XCTAssertTrue(source.contains("enabledNativeContentBlocking"))
@@ -545,6 +567,38 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         ] {
             XCTAssertFalse(source.contains(forbiddenPattern), forbiddenPattern)
         }
+
+        XCTAssertTrue(compilerSource.contains("AdblockRustHelperExecutableAdapter"))
+        XCTAssertTrue(compilerSource.contains("SUMI_ADBLOCK_RUST_ADAPTER"))
+        XCTAssertFalse(compilerSource.contains("networkContentRule(from:"))
+        XCTAssertFalse(compilerSource.contains("cosmeticContentRule(from:"))
+        XCTAssertFalse(compilerSource.contains("escapedLooseURLFilter"))
+    }
+
+    func testAdblockRustUsageIsIsolatedToCompilerBoundaryAndVendorAdapter() throws {
+        let allowedPaths: Set<String> = [
+            "Sumi/ContentBlocking/SumiAdblockRustCompiler.swift",
+            "Vendor/Brave/README.md",
+            "Vendor/Brave/AdblockRustAdapter/Cargo.toml",
+            "Vendor/Brave/AdblockRustAdapter/Cargo.lock",
+            "Vendor/Brave/AdblockRustAdapter/src/main.rs",
+            "LICENSE_NOTES.md",
+        ]
+        let output = try Self.runSourceSearch(
+            pattern: "adblock-rust|adblock::|sumi-adblock-rust-adapter|SUMI_ADBLOCK_RUST_ADAPTER"
+        )
+        let unexpected = output
+            .split(separator: "\n")
+            .map(String.init)
+            .compactMap { line -> String? in
+                guard let path = line.split(separator: ":", maxSplits: 1).first.map(String.init),
+                      !allowedPaths.contains(path),
+                      !path.hasPrefix("SumiTests/")
+                else { return nil }
+                return line
+            }
+
+        XCTAssertTrue(unexpected.isEmpty, unexpected.joined(separator: "\n"))
     }
 
     func testAuxiliarySourcesDoNotConsultAdBlockingModule() throws {
@@ -641,15 +695,82 @@ final class SumiAdBlockingModuleTests: XCTestCase {
     }
 
     private static func source(named relativePath: String) throws -> String {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let sourceURL = repoRoot.appendingPathComponent(relativePath)
+        let sourceURL = repoRoot().appendingPathComponent(relativePath)
         return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private static func repoRoot() -> URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+    }
+
+    private static func runSourceSearch(pattern: String) throws -> String {
+        let process = Process()
+        let outputPipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["rg", "-n", "--glob", "!Vendor/Brave/AdblockRustAdapter/target/**", pattern]
+        process.currentDirectoryURL = repoRoot()
+        process.standardOutput = outputPipe
+        process.standardError = Pipe()
+        try process.run()
+        let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return String(decoding: data, as: UTF8.self)
     }
 
     private static func decodedRuleList(_ encoded: String) throws -> [[String: Any]] {
         let data = Data(encoded.utf8)
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
     }
+}
+
+private actor CountingAdblockRustAdapter: AdblockRustAdapterInvoking {
+    private(set) var callCount = 0
+    private let output: AdblockRustAdapterOutput
+
+    init(output: AdblockRustAdapterOutput) {
+        self.output = output
+    }
+
+    func compile(_ normalizedRules: [String]) async throws -> AdblockRustAdapterOutput {
+        callCount += 1
+        return output
+    }
+}
+
+private extension AdblockRustAdapterOutput {
+    static let tinyFixture = AdblockRustAdapterOutput(
+        network: [
+            AdblockRustContentRule(
+                action: .object(["type": .string("block")]),
+                trigger: .object(["url-filter": .string("^[^:]+:(//)?([^/]+\\\\.)?sumi-adblock-test-blocked\\\\.example")])
+            ),
+            AdblockRustContentRule(
+                action: .object(["type": .string("block")]),
+                trigger: .object([
+                    "url-filter": .string("^[^:]+:(//)?([^/]+\\\\.)?sumi-adblock-domain-test\\\\.example"),
+                    "if-domain": .array([.string("*example.com")]),
+                ])
+            ),
+        ],
+        nativeCosmeticCSS: [
+            AdblockRustContentRule(
+                action: .object([
+                    "type": .string("css-display-none"),
+                    "selector": .string(".sumi-adblock-test-hide"),
+                ]),
+                trigger: .object([
+                    "url-filter": .string(".*"),
+                    "if-domain": .array([.string("example.com")]),
+                ])
+            ),
+        ],
+        unsupportedOrIgnored: [
+            AdblockRustAdapterDiagnostic(
+                rule: "example.com##+js(sumi-future-scriptlet)",
+                reason: "unsupported by adblock-rust content-blocking conversion: ScriptletInjectionsNotSupported"
+            ),
+        ]
+    )
 }
