@@ -9,11 +9,9 @@ final class SidebarZenMotionTests: XCTestCase {
         XCTAssertEqual(SidebarRowMotionMetrics.pressCancelDistance, 3, accuracy: 0.0001)
         XCTAssertEqual(SidebarRowMotionMetrics.pressDuration, 0.20, accuracy: 0.0001)
         XCTAssertEqual(SidebarRowMotionMetrics.splitPressDuration, 0.10, accuracy: 0.0001)
-        XCTAssertEqual(SidebarRowMotionMetrics.openDuration, 0.12, accuracy: 0.0001)
-        XCTAssertEqual(SidebarRowMotionMetrics.closeDuration, 0.10, accuracy: 0.0001)
-        XCTAssertEqual(SidebarRowMotionMetrics.openScale, 0.95, accuracy: 0.0001)
-        XCTAssertEqual(SidebarRowMotionMetrics.closeScale, 0.95, accuracy: 0.0001)
-        XCTAssertEqual(SidebarRowMotionMetrics.titleBlurRadius, 1, accuracy: 0.0001)
+        XCTAssertEqual(SidebarRowMotionMetrics.openDuration, 0.14, accuracy: 0.0001)
+        XCTAssertEqual(SidebarRowMotionMetrics.closeDuration, 0.14, accuracy: 0.0001)
+        XCTAssertEqual(SidebarRowMotionMetrics.actionFadeDuration, 0.10, accuracy: 0.0001)
     }
 
     func testSidebarInteractiveItemPublishesPressedSourceDuringPrimaryMouseDown() {
