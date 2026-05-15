@@ -818,12 +818,18 @@ struct FloatingBarView: View {
 
     private func selectSuggestion(_ suggestion: SearchManager.SearchSuggestion)
     {
+        let navigatesCurrentTab = windowState.floatingBarDraftNavigatesCurrentTab
+            && browserManager.currentTab(for: windowState) != nil
         text = ""
         activeSiteSearch = nil
         selectedSuggestionIndex = -1
         browserManager.dismissFloatingBar(in: windowState, preserveDraft: false)
         DispatchQueue.main.async {
-            browserManager.openFloatingBarSuggestion(suggestion, in: windowState)
+            browserManager.openFloatingBarSuggestion(
+                suggestion,
+                in: windowState,
+                navigatesCurrentTab: navigatesCurrentTab
+            )
         }
     }
 

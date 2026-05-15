@@ -768,6 +768,18 @@ class BrowserManager: ObservableObject {
         _ suggestion: SearchManager.SearchSuggestion,
         in windowState: BrowserWindowState
     ) {
+        openFloatingBarSuggestion(
+            suggestion,
+            in: windowState,
+            navigatesCurrentTab: windowState.floatingBarDraftNavigatesCurrentTab
+        )
+    }
+
+    func openFloatingBarSuggestion(
+        _ suggestion: SearchManager.SearchSuggestion,
+        in windowState: BrowserWindowState,
+        navigatesCurrentTab: Bool
+    ) {
         switch suggestion.type {
         case .tab(let existingTab):
             selectTab(existingTab, in: windowState)
@@ -776,7 +788,7 @@ class BrowserManager: ObservableObject {
                 category: "FloatingBar"
             )
         case .history(let historyEntry):
-            if windowState.floatingBarDraftNavigatesCurrentTab,
+            if navigatesCurrentTab,
                currentTab(for: windowState) != nil
             {
                 currentTab(for: windowState)?.loadURL(historyEntry.url.absoluteString)
@@ -795,7 +807,7 @@ class BrowserManager: ObservableObject {
                 )
             }
         case .bookmark(let bookmark):
-            if windowState.floatingBarDraftNavigatesCurrentTab,
+            if navigatesCurrentTab,
                currentTab(for: windowState) != nil
             {
                 currentTab(for: windowState)?.loadURL(bookmark.url.absoluteString)
@@ -814,7 +826,7 @@ class BrowserManager: ObservableObject {
                 )
             }
         case .url, .search:
-            if windowState.floatingBarDraftNavigatesCurrentTab,
+            if navigatesCurrentTab,
                currentTab(for: windowState) != nil
             {
                 currentTab(for: windowState)?.navigateToURL(suggestion.text)
