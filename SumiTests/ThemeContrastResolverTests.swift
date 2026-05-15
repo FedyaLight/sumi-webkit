@@ -132,25 +132,26 @@ final class ThemeContrastResolverTests: XCTestCase {
         XCTAssertEqual(lightResult, .light)
     }
 
-    func testOpacityDoesNotAffectResolvedChromeScheme() {
+    func testSubTwoPercentIntensityFallsBackToGlobalChromeScheme() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
 
         let settings = SumiSettingsService(userDefaults: harness.defaults)
         settings.themeUseSystemColors = false
 
-        let lowOpacityScheme = ThemeContrastResolver.resolvedChromeColorScheme(
-            theme: makeTheme(hex: "#E6B9D5", opacity: WorkspaceGradientTheme.minimumOpacity),
+        let nativeScheme = ThemeContrastResolver.resolvedChromeColorScheme(
+            theme: makeTheme(hex: "#E6B9D5", opacity: 0.019),
             globalWindowScheme: .dark,
             settings: settings
         )
-        let highOpacityScheme = ThemeContrastResolver.resolvedChromeColorScheme(
+        let themedScheme = ThemeContrastResolver.resolvedChromeColorScheme(
             theme: makeTheme(hex: "#E6B9D5", opacity: WorkspaceGradientTheme.maximumOpacity),
             globalWindowScheme: .dark,
             settings: settings
         )
 
-        XCTAssertEqual(lowOpacityScheme, highOpacityScheme)
+        XCTAssertEqual(nativeScheme, .dark)
+        XCTAssertEqual(themedScheme, .light)
     }
 
     func testContrastingShadeProducesReadableForegroundForDarkAccent() {

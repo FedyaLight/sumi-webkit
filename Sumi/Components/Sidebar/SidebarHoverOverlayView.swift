@@ -70,6 +70,7 @@ enum SidebarHoverOverlayMetrics {
 struct SidebarHoverOverlayView: View {
     let resolvedThemeContext: ResolvedThemeContext
     let chromeBackgroundResolvedThemeContext: ResolvedThemeContext
+    let windowChromeSize: CGSize
 
     @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject var hoverManager: HoverSidebarManager
@@ -197,6 +198,7 @@ struct SidebarHoverOverlayView: View {
             sumiSettings: sumiSettings,
             resolvedThemeContext: resolvedThemeContext,
             chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext,
+            windowChromeSize: windowChromeSize,
             presentationContext: presentationContext,
             isHostRequested: shouldMountCollapsedSidebarHost
         )

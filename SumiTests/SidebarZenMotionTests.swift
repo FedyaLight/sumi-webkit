@@ -4,14 +4,18 @@ import XCTest
 
 @MainActor
 final class SidebarZenMotionTests: XCTestCase {
-    func testSidebarRowMotionMetricsMatchZenParityValues() {
-        XCTAssertEqual(SidebarRowMotionMetrics.pressedScale, 0.98, accuracy: 0.0001)
-        XCTAssertEqual(SidebarRowMotionMetrics.pressCancelDistance, 3, accuracy: 0.0001)
-        XCTAssertEqual(SidebarRowMotionMetrics.pressDuration, 0.20, accuracy: 0.0001)
-        XCTAssertEqual(SidebarRowMotionMetrics.splitPressDuration, 0.10, accuracy: 0.0001)
-        XCTAssertEqual(SidebarRowMotionMetrics.openDuration, 0.14, accuracy: 0.0001)
-        XCTAssertEqual(SidebarRowMotionMetrics.closeDuration, 0.14, accuracy: 0.0001)
-        XCTAssertEqual(SidebarRowMotionMetrics.actionFadeDuration, 0.10, accuracy: 0.0001)
+    func testSidebarMotionPolicyUsesReducedMotionContract() {
+        XCTAssertEqual(SidebarMotionPolicy.currentMode(reduceMotion: true), .reducedMotion)
+        XCTAssertNil(SidebarMotionPolicy.dockedLayoutAnimation(for: .reducedMotion, isShowing: true))
+        XCTAssertFalse(SidebarMotionPolicy.overlayUsesTravel(for: .reducedMotion))
+        XCTAssertNil(SidebarMotionPolicy.rowLifecycleAnimation(for: .reducedMotion))
+    }
+
+    func testSidebarMotionPolicyKeepsStandardShellMotion() {
+        XCTAssertEqual(SidebarMotionPolicy.currentMode(reduceMotion: false), .standard)
+        XCTAssertNotNil(SidebarMotionPolicy.dockedLayoutAnimation(for: .standard, isShowing: true))
+        XCTAssertTrue(SidebarMotionPolicy.overlayUsesTravel(for: .standard))
+        XCTAssertNotNil(SidebarMotionPolicy.rowLifecycleAnimation(for: .standard))
     }
 
     func testSidebarInteractiveItemPublishesPressedSourceDuringPrimaryMouseDown() {

@@ -92,8 +92,8 @@ struct WorkspaceThemeColor: Identifiable, Codable, Hashable, Sendable {
 }
 
 struct WorkspaceGradientTheme: Codable, Hashable, Sendable {
-    static let minimumOpacity: Double = 0.30
-    static let maximumOpacity: Double = 0.90
+    static let minimumOpacity: Double = 0
+    static let maximumOpacity: Double = 1
     static let textureSteps: Double = 16
 
     var type: String
@@ -192,6 +192,18 @@ struct WorkspaceGradientTheme: Codable, Hashable, Sendable {
 
     mutating func updateOpacity(_ value: Double) {
         opacity = WorkspaceGradientTheme.clampOpacity(value)
+    }
+
+    static let customChromeThemeDisableThreshold: Double = 0.02
+
+    var customChromeThemeIntensity: Double {
+        opacity < WorkspaceGradientTheme.customChromeThemeDisableThreshold
+            ? 0
+            : opacity
+    }
+
+    var usesCustomChromeTheme: Bool {
+        customChromeThemeIntensity > 0
     }
 
     mutating func replaceColors(

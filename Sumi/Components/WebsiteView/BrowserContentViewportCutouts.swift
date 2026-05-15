@@ -408,7 +408,7 @@ final class BrowserContentViewportShadowView: NSView {
         guard let layer else { return }
         layer.backgroundColor = NSColor.clear.cgColor
         layer.addSublayer(shadowSurfaceLayer)
-        shadowSurfaceLayer.fillColor = NSColor.black.cgColor
+        shadowSurfaceLayer.fillColor = NSColor.clear.cgColor
         shadowSurfaceLayer.shadowColor = NSColor.black.cgColor
         shadowSurfaceLayer.shadowOpacity = Float(BrowserContentViewportVisuals.shadowOpacity)
         shadowSurfaceLayer.shadowRadius = BrowserContentViewportVisuals.shadowRadius

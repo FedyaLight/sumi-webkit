@@ -6,19 +6,14 @@
 import SwiftUI
 
 enum SidebarRowMotionMetrics {
-    static let pressedScale: CGFloat = 0.98
-    static let pressCancelDistance: CGFloat = 3
-    static let pressDuration: Double = 0.20
-    static let splitPressDuration: Double = 0.10
-    static let openDuration: Double = 0.14
-    static let closeDuration: Double = 0.14
-    static let actionFadeDuration: Double = 0.10
+    static let pressedScale = SidebarMotionPolicy.rowPressedScale
+    static let pressCancelDistance = SidebarMotionPolicy.rowPressCancelDistance
 }
 
 enum SidebarDropMotion {
-    static let gap = Animation.interactiveSpring(response: 0.22, dampingFraction: 0.86)
     static let contentLayoutDuration: Double = 0.18
-    static let contentLayout = Animation.smooth(duration: contentLayoutDuration)
+    static let gap = SidebarMotionPolicy.dragGapAnimation(for: .standard)
+    static let contentLayout = SidebarMotionPolicy.contentLayoutAnimation(for: .standard)
 }
 
 enum SidebarZenPressKind {
@@ -28,9 +23,18 @@ enum SidebarZenPressKind {
     var duration: Double {
         switch self {
         case .row:
-            SidebarRowMotionMetrics.pressDuration
+            0.20
         case .split:
-            SidebarRowMotionMetrics.splitPressDuration
+            0.10
+        }
+    }
+
+    var isSplit: Bool {
+        switch self {
+        case .row:
+            return false
+        case .split:
+            return true
         }
     }
 }
@@ -72,7 +76,10 @@ private struct SidebarZenPressEffectModifier: ViewModifier {
             return
         }
 
-        withAnimation(.easeOut(duration: kind.duration)) {
+        withAnimation(SidebarMotionPolicy.rowReleaseAnimation(
+            for: SidebarMotionPolicy.currentMode(reduceMotion: reduceMotion),
+            split: kind.isSplit
+        )) {
             visualPressed = false
         }
     }
@@ -113,7 +120,9 @@ private struct SidebarZenActionOpacityModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content.animation(
-            reduceMotion ? nil : .easeOut(duration: SidebarRowMotionMetrics.actionFadeDuration),
+            SidebarMotionPolicy.actionFadeAnimation(
+                for: SidebarMotionPolicy.currentMode(reduceMotion: reduceMotion)
+            ),
             value: isVisible
         )
     }
@@ -165,7 +174,10 @@ private struct SidebarZenActionButtonBody: View {
             return
         }
 
-        withAnimation(.easeOut(duration: SidebarRowMotionMetrics.splitPressDuration)) {
+        withAnimation(SidebarMotionPolicy.rowReleaseAnimation(
+            for: SidebarMotionPolicy.currentMode(reduceMotion: reduceMotion),
+            split: true
+        )) {
             visualPressed = false
         }
     }
@@ -182,7 +194,7 @@ extension AnyTransition {
                     isCollapsed: false
                 )
             )
-            .animation(.smooth(duration: SidebarRowMotionMetrics.openDuration)),
+            .animation(SidebarMotionPolicy.rowLifecycleAnimation(for: .standard)),
             removal: .modifier(
                 active: SidebarZenRowLifecycleModifier(
                     isCollapsed: true
@@ -191,14 +203,14 @@ extension AnyTransition {
                     isCollapsed: false
                 )
             )
-            .animation(.smooth(duration: SidebarRowMotionMetrics.closeDuration))
+            .animation(SidebarMotionPolicy.rowLifecycleAnimation(for: .standard))
         )
     }
 
     static var zenSidebarCompositeLifecycle: AnyTransition {
         .asymmetric(
-            insertion: .opacity.animation(.smooth(duration: SidebarRowMotionMetrics.openDuration)),
-            removal: .opacity.animation(.smooth(duration: SidebarRowMotionMetrics.closeDuration))
+            insertion: .opacity.animation(SidebarMotionPolicy.rowLifecycleAnimation(for: .standard)),
+            removal: .opacity.animation(SidebarMotionPolicy.rowLifecycleAnimation(for: .standard))
         )
     }
 }

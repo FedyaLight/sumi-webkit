@@ -1970,18 +1970,16 @@ struct SpacesSideBarView: View {
     }
 
     private func spaceSwitchAnimation() -> Animation {
-        .timingCurve(
-            0.16,
-            1.0,
-            0.3,
-            1.0,
-            duration: SpaceSidebarTransitionConfig.spaceSwitchAnimationDuration
-        )
+        SidebarMotionPolicy.spaceSwitchAnimation(
+            for: SidebarMotionPolicy.currentMode(reduceMotion: reduceMotion)
+        ) ?? .linear(duration: 0)
     }
 
     private var hasActiveThemeTransition: Bool {
         transitionState.hasDestination || windowState.isInteractiveSpaceTransition
     }
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private func startInteractiveThemeTransition(
         from sourceSpace: Space,

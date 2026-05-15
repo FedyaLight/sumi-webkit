@@ -11,6 +11,7 @@ import CoreGraphics
 import Foundation
 import Observation
 import ObjectiveC.runtime
+import QuartzCore
 import WebKit
 
 private enum SumiWKFullscreenWindowControllerSelectors {
@@ -84,9 +85,7 @@ final class SumiWebViewContainerView: NSView {
     private var blurViewIsHiddenCancellable: AnyCancellable?
     private var viewportCornerRadius: CGFloat = 0
     private var viewportCutoutBackground: BrowserContentViewportCutoutBackground = .solid(.clear)
-    private let cornerCutoutViews = BrowserContentViewportCorner.allCases.map {
-        BrowserContentCornerCutoutView(corner: $0)
-    }
+    private let viewportMaskLayer = CAShapeLayer()
     /// DDG `MainViewController` parity: fullscreen `nextResponder` target (see `WebsiteCompositorView.attach`).
     weak var compositorContentOwner: WindowWebContentController?
 
@@ -103,11 +102,18 @@ final class SumiWebViewContainerView: NSView {
 
     private func configure(webView: WKWebView) {
         autoresizingMask = [.width, .height]
+        wantsLayer = true
+        clipsToBounds = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.masksToBounds = true
+        if #available(macOS 10.15, *) {
+            layer?.cornerCurve = .continuous
+        }
         webView.translatesAutoresizingMaskIntoConstraints = true
         webView.autoresizingMask = [.width, .height]
 
         addDisplayedContent(webView.sumiTabContentView)
-        installCornerCutoutsIfNeeded()
+        updateViewportMask()
     }
 
     func setBrowserContentViewport(
@@ -116,20 +122,13 @@ final class SumiWebViewContainerView: NSView {
     ) {
         let radiusChanged = abs(viewportCornerRadius - geometry.contentRadius) > 0.000_1
         let backgroundChanged = viewportCutoutBackground != cutoutBackground
-        let needsCutoutInstall = cornerCutoutViews.contains { $0.superview !== self }
-        guard radiusChanged || backgroundChanged || needsCutoutInstall else { return }
+        guard radiusChanged || backgroundChanged else { return }
 
         viewportCornerRadius = geometry.contentRadius
         viewportCutoutBackground = cutoutBackground
 
-        for cutoutView in cornerCutoutViews {
-            cutoutView.cornerRadius = effectiveViewportCornerRadius
-            cutoutView.cutoutBackground = cutoutBackground
-        }
-        if needsCutoutInstall {
-            installCornerCutoutsIfNeeded()
-        }
         if radiusChanged {
+            updateViewportMask()
             needsLayout = true
         }
     }
@@ -143,11 +142,7 @@ final class SumiWebViewContainerView: NSView {
 
     private func addDisplayedContent(_ displayedView: NSView) {
         frameDisplayedContent(displayedView)
-        if let firstCutoutView = cornerCutoutViews.first(where: { $0.superview === self }) {
-            addSubview(displayedView, positioned: .below, relativeTo: firstCutoutView)
-        } else {
-            addSubview(displayedView)
-        }
+        addSubview(displayedView)
     }
 
     private func frameDisplayedContent(_ displayedView: NSView) {
@@ -163,7 +158,7 @@ final class SumiWebViewContainerView: NSView {
     override func layout() {
         super.layout()
         webView.sumiTabContentView.frame = bounds
-        layoutCornerCutouts()
+        updateViewportMask()
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -242,73 +237,31 @@ final class SumiWebViewContainerView: NSView {
         )
     }
 
-    private func installCornerCutoutsIfNeeded() {
-        for cutoutView in cornerCutoutViews where cutoutView.superview !== self {
-            cutoutView.cornerRadius = effectiveViewportCornerRadius
-            cutoutView.cutoutBackground = viewportCutoutBackground
-            addSubview(cutoutView, positioned: .above, relativeTo: nil)
-        }
-        layoutCornerCutouts()
-    }
+    private func updateViewportMask() {
+        guard let layer else { return }
 
-    private func layoutCornerCutouts() {
         let radius = effectiveViewportCornerRadius
-        guard radius > 0,
-              bounds.width > 0,
-              bounds.height > 0
-        else {
-            cornerCutoutViews.forEach { $0.isHidden = true }
-            return
-        }
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
 
-        for cutoutView in cornerCutoutViews {
-            let wasHidden = cutoutView.isHidden
-            cutoutView.isHidden = false
-            cutoutView.cornerRadius = radius
-            let newFrame = frame(for: cutoutView.corner, radius: radius)
-            if cutoutView.frame != newFrame {
-                cutoutView.frame = newFrame
-                cutoutView.needsDisplay = true
-            } else if wasHidden {
-                cutoutView.needsDisplay = true
-            }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.contentsScale = scale
+        layer.masksToBounds = true
+        layer.cornerRadius = radius
+        if #available(macOS 10.15, *) {
+            layer.cornerCurve = .continuous
         }
-    }
-
-    private func frame(
-        for corner: BrowserContentViewportCorner,
-        radius: CGFloat
-    ) -> NSRect {
-        switch corner {
-        case .topLeft:
-            NSRect(
-                x: bounds.minX,
-                y: bounds.maxY - radius,
-                width: radius,
-                height: radius
-            )
-        case .topRight:
-            NSRect(
-                x: bounds.maxX - radius,
-                y: bounds.maxY - radius,
-                width: radius,
-                height: radius
-            )
-        case .bottomLeft:
-            NSRect(
-                x: bounds.minX,
-                y: bounds.minY,
-                width: radius,
-                height: radius
-            )
-        case .bottomRight:
-            NSRect(
-                x: bounds.maxX - radius,
-                y: bounds.minY,
-                width: radius,
-                height: radius
-            )
-        }
+        viewportMaskLayer.contentsScale = scale
+        viewportMaskLayer.frame = bounds
+        viewportMaskLayer.fillColor = NSColor.black.cgColor
+        viewportMaskLayer.path = CGPath(
+            roundedRect: bounds,
+            cornerWidth: radius,
+            cornerHeight: radius,
+            transform: nil
+        )
+        layer.mask = radius > 0 ? viewportMaskLayer : nil
+        CATransaction.commit()
     }
 
     private func containsPointInsideRoundedViewport(_ point: NSPoint) -> Bool {

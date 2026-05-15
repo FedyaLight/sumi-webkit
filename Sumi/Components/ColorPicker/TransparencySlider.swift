@@ -24,6 +24,12 @@ struct TransparencySlider: View {
         SumiOpacityWaveMetrics.normalizedProgress(for: localOpacity)
     }
 
+    private var accessibilityValueLabel: String {
+        localOpacity < WorkspaceGradientTheme.customChromeThemeDisableThreshold
+            ? "Native chrome"
+            : "\(Int((localOpacity * 100).rounded())) percent theme"
+    }
+
     var body: some View {
         GeometryReader { proxy in
             let viewWidth = max(proxy.size.width, 1)
@@ -113,6 +119,8 @@ struct TransparencySlider: View {
         }
         .padding(.horizontal, 2)
         .frame(height: sliderHeight)
+        .accessibilityLabel("Chrome theme intensity")
+        .accessibilityValue(accessibilityValueLabel)
         .onAppear {
             localOpacity = clamped(gradientTheme.opacity)
             lastHapticBucket = hapticBucket(for: localOpacity)

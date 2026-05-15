@@ -5,6 +5,25 @@ import XCTest
 
 @MainActor
 final class HoverSidebarManagerTests: XCTestCase {
+    func testOverlayLifecycleUsesExplicitHostStates() async {
+        let manager = HoverSidebarManager()
+
+        XCTAssertEqual(manager.overlayHostLifecycleState, .unmounted)
+
+        manager.retainOverlayHostWhileCollapsed()
+        XCTAssertEqual(manager.overlayHostLifecycleState, .retainedHidden)
+
+        manager.requestOverlayReveal(animationDuration: 0)
+        await drainMainQueue()
+        XCTAssertEqual(manager.overlayHostLifecycleState, .visible)
+
+        manager.setOverlayVisibility(false, animationDuration: 0)
+        XCTAssertEqual(manager.overlayHostLifecycleState, .retainedHidden)
+
+        manager.releaseOverlayHostForMemoryPressure()
+        XCTAssertEqual(manager.overlayHostLifecycleState, .unmounted)
+    }
+
     func testDefaultActivationZoneMatchesZenCompactSidebarEdge() {
         let manager = HoverSidebarManager()
 

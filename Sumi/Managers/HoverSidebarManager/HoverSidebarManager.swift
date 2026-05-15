@@ -83,14 +83,27 @@ enum HoverSidebarVisibilityPolicy {
     }
 }
 
+enum HoverSidebarOverlayHostLifecycleState: Equatable {
+    case unmounted
+    case retainedHidden
+    case visible
+}
+
 /// Manages reveal/hide of the overlay sidebar when the real sidebar is collapsed.
 /// Uses a local monitor for in-app hover and drag responsiveness without global
 /// event monitoring.
 @MainActor
 final class HoverSidebarManager: ObservableObject {
     // MARK: - Published State
-    @Published var isOverlayVisible: Bool = false
-    @Published private(set) var isOverlayHostPrewarmed: Bool = false
+    @Published private(set) var overlayHostLifecycleState: HoverSidebarOverlayHostLifecycleState = .unmounted
+
+    var isOverlayVisible: Bool {
+        overlayHostLifecycleState == .visible
+    }
+
+    var isOverlayHostPrewarmed: Bool {
+        overlayHostLifecycleState != .unmounted
+    }
 
     // MARK: - Configuration
     /// Zen compact exposes `content-element-separation / 2 + 1px`, which is 5px by default.
@@ -127,7 +140,7 @@ final class HoverSidebarManager: ObservableObject {
     init(
         eventMonitors: HoverSidebarEventMonitorClient = .live(),
         mouseLocationProvider: @escaping () -> CGPoint = { NSEvent.mouseLocation },
-        inactiveHostRetentionDelay: TimeInterval = 30
+        inactiveHostRetentionDelay: TimeInterval = 2
     ) {
         self.eventMonitors = eventMonitors
         self.mouseLocationProvider = mouseLocationProvider
@@ -313,8 +326,8 @@ final class HoverSidebarManager: ObservableObject {
                   generation == self.overlayVisibilityGeneration
             else { return }
 
-            withAnimation(.easeInOut(duration: animationDuration)) {
-                self.isOverlayVisible = true
+            withAnimation(sidebarOverlayAnimation(fallbackDuration: animationDuration)) {
+                self.overlayHostLifecycleState = .visible
             }
         }
     }
@@ -348,9 +361,7 @@ final class HoverSidebarManager: ObservableObject {
         overlayVisibilityGeneration &+= 1
         overlayHostPrewarmGeneration &+= 1
         hideOverlayImmediately()
-        if isOverlayHostPrewarmed {
-            isOverlayHostPrewarmed = false
-        }
+        overlayHostLifecycleState = .unmounted
     }
 
     func setOverlayVisibility(_ isVisible: Bool, animationDuration: TimeInterval) {
@@ -363,8 +374,8 @@ final class HoverSidebarManager: ObservableObject {
 
     private func hideOverlay(animationDuration: TimeInterval) {
         overlayVisibilityGeneration &+= 1
-        withAnimation(.easeInOut(duration: animationDuration)) {
-            isOverlayVisible = false
+        withAnimation(sidebarOverlayAnimation(fallbackDuration: animationDuration)) {
+            overlayHostLifecycleState = .retainedHidden
         }
     }
 
@@ -389,8 +400,8 @@ final class HoverSidebarManager: ObservableObject {
 
     private func prewarmOverlayHost() {
         overlayHostPrewarmGeneration &+= 1
-        if !isOverlayHostPrewarmed {
-            isOverlayHostPrewarmed = true
+        if overlayHostLifecycleState == .unmounted {
+            overlayHostLifecycleState = .retainedHidden
         }
     }
 
@@ -418,25 +429,25 @@ final class HoverSidebarManager: ObservableObject {
                   !self.isOverlayVisible
             else { return }
 
-            self.isOverlayHostPrewarmed = false
+            self.overlayHostLifecycleState = .unmounted
         }
     }
 
     private func hideOverlayImmediately() {
         if isOverlayVisible {
-            isOverlayVisible = false
+            overlayHostLifecycleState = .retainedHidden
         }
+    }
+
+    private func sidebarOverlayAnimation(fallbackDuration: TimeInterval) -> Animation? {
+        SidebarMotionPolicy.overlayAnimation(for: SidebarMotionPolicy.appKitCurrentMode)
+            ?? .easeOut(duration: fallbackDuration)
     }
 
     private func resetOverlayVisibilityAndHost() {
         overlayVisibilityGeneration &+= 1
         overlayHostPrewarmGeneration &+= 1
-        if isOverlayVisible {
-            isOverlayVisible = false
-        }
-        if isOverlayHostPrewarmed {
-            isOverlayHostPrewarmed = false
-        }
+        overlayHostLifecycleState = .unmounted
     }
 
     private func uninstallMonitors() {

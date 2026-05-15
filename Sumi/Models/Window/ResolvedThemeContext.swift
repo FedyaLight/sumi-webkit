@@ -27,6 +27,23 @@ struct ResolvedThemeContext: Equatable {
         workspaceTheme.gradient
     }
 
+    var rendersCustomChromeTheme: Bool {
+        workspaceTheme.gradientTheme.usesCustomChromeTheme
+            || sourceWorkspaceTheme.gradientTheme.usesCustomChromeTheme
+            || targetWorkspaceTheme.gradientTheme.usesCustomChromeTheme
+    }
+
+    var activeCustomChromeThemeIntensity: Double {
+        workspaceTheme.gradientTheme.customChromeThemeIntensity
+    }
+
+    var sourceCustomChromeThemeIntensity: Double {
+        sourceWorkspaceTheme.gradientTheme.customChromeThemeIntensity
+    }
+
+    var targetCustomChromeThemeIntensity: Double {
+        targetWorkspaceTheme.gradientTheme.customChromeThemeIntensity
+    }
 }
 
 private struct ResolvedThemeContextKey: EnvironmentKey {
