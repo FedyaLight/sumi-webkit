@@ -764,6 +764,14 @@ class BrowserManager: ObservableObject {
         persistWindowSession(for: windowState)
     }
 
+    func dismissFloatingBarForActiveWindow(preserveDraft: Bool = true) {
+        guard let activeWindow = windowRegistry?.activeWindow,
+              activeWindow.isFloatingBarVisible
+        else { return }
+
+        dismissFloatingBar(in: activeWindow, preserveDraft: preserveDraft)
+    }
+
     func openFloatingBarSuggestion(
         _ suggestion: SearchManager.SearchSuggestion,
         in windowState: BrowserWindowState

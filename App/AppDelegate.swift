@@ -198,6 +198,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     /// Confirms user-initiated quits when enabled, then schedules best-effort persistence.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        updateHandler?.dismissFloatingBarForActiveWindow(preserveDraft: true)
         NotificationCenter.default.post(
             name: .sumiShouldHideCollapsedSidebarOverlay,
             object: sender

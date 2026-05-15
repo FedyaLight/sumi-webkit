@@ -138,6 +138,17 @@ struct FloatingBarView: View {
         suggestionLayoutCount > 0 || (!shouldReserveSuggestionsHeight && !visibleSuggestions.isEmpty)
     }
 
+    private var isTopLinksEmptyStateVisible: Bool {
+        windowState.isFloatingBarVisible
+            && activeSiteSearch == nil
+            && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && sumiSettings.floatingBarEmptyStateMode == .topLinks
+    }
+
+    private var suggestionHeightAnimation: Animation? {
+        isTopLinksEmptyStateVisible ? nil : FloatingBarLayoutPolicy.suggestionHeightAnimation
+    }
+
     var body: some View {
         GeometryReader { proxy in
             floatingBarBody(
@@ -321,6 +332,7 @@ struct FloatingBarView: View {
                                     tokens: tokens,
                                     suggestions: visibleSuggestions,
                                     layoutSuggestionCount: suggestionLayoutCount,
+                                    heightAnimation: suggestionHeightAnimation,
                                     selectedIndex: $selectedSuggestionIndex,
                                     hoveredIndex: $hoveredSuggestionIndex,
                                     onSelect: { suggestion in
@@ -380,11 +392,11 @@ struct FloatingBarView: View {
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("floating-bar")
                         .animation(
-                            FloatingBarLayoutPolicy.suggestionHeightAnimation,
+                            suggestionHeightAnimation,
                             value: suggestionLayoutCount
                         )
                         .animation(
-                            FloatingBarLayoutPolicy.suggestionHeightAnimation,
+                            suggestionHeightAnimation,
                             value: searchManager.suggestions.count
                         )
                         .padding(.horizontal, FloatingBarLayoutPolicy.horizontalVignetteOutset)
@@ -527,14 +539,16 @@ struct FloatingBarView: View {
         searchDebouncer.cancel()
         isWaitingForSearchDebounce = false
         if sumiSettings.floatingBarEmptyStateMode == .topLinks {
+            setCommittedSuggestionLayoutCount(
+                FloatingBarLayoutPolicy.suggestionsVisibleRowLimit,
+                animated: false
+            )
             searchManager.showTopLinkSuggestions(
                 limit: FloatingBarLayoutPolicy.suggestionsVisibleRowLimit
             )
         } else {
             searchManager.clearSuggestions()
-            withAnimation(FloatingBarLayoutPolicy.suggestionHeightAnimation) {
-                committedSuggestionLayoutCount = 0
-            }
+            setCommittedSuggestionLayoutCount(0, animated: true)
         }
     }
 
@@ -546,8 +560,23 @@ struct FloatingBarView: View {
     private func commitSuggestionLayoutCount() {
         let nextCount = visibleSuggestions.count
         guard committedSuggestionLayoutCount != nextCount else { return }
-        withAnimation(FloatingBarLayoutPolicy.suggestionHeightAnimation) {
-            committedSuggestionLayoutCount = nextCount
+        setCommittedSuggestionLayoutCount(
+            nextCount,
+            animated: suggestionHeightAnimation != nil
+        )
+    }
+
+    private func setCommittedSuggestionLayoutCount(_ count: Int, animated: Bool) {
+        if animated, let suggestionHeightAnimation {
+            withAnimation(suggestionHeightAnimation) {
+                committedSuggestionLayoutCount = count
+            }
+        } else {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                committedSuggestionLayoutCount = count
+            }
         }
     }
 
@@ -596,6 +625,7 @@ struct FloatingBarView: View {
         let tokens: ChromeThemeTokens
         let suggestions: [SearchManager.SearchSuggestion]
         let layoutSuggestionCount: Int
+        let heightAnimation: Animation?
         @Binding var selectedIndex: Int
         @Binding var hoveredIndex: Int?
         let onSelect: (SearchManager.SearchSuggestion) -> Void
@@ -660,7 +690,7 @@ struct FloatingBarView: View {
                     height: FloatingBarLayoutPolicy.suggestionsHeight(for: layoutSuggestionCount)
                 )
                 .animation(
-                    FloatingBarLayoutPolicy.suggestionHeightAnimation,
+                    heightAnimation,
                     value: layoutSuggestionCount
                 )
                 .onChange(of: selectedIndex) { _, newIndex in
