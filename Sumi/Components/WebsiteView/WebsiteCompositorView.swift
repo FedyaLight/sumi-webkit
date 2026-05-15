@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import WebKit
 
@@ -34,6 +35,10 @@ struct WebsiteDisplayState: Equatable {
 
 @MainActor
 final class WindowWebContentController: NSViewController {
+    // WebKit reparents the view asynchronously around element-fullscreen exit.
+    // One immediate retry plus two bounded follow-ups covers that short window.
+    private static let mediaTouchBarRecoveryRetryDelays: [TimeInterval] = [0, 0.2, 0.5]
+
     private let browserManager: BrowserManager
     private let webViewCoordinator: WebViewCoordinator
     private let windowState: BrowserWindowState
@@ -55,6 +60,7 @@ final class WindowWebContentController: NSViewController {
     private var leftPaneHost: SumiWebViewContainerView?
     private var rightPaneHost: SumiWebViewContainerView?
     private var parkedProtectedHosts: [ObjectIdentifier: SumiWebViewContainerView] = [:]
+    private var mediaTouchBarRecoveryCancellable: AnyCancellable?
 
     init(
         browserManager: BrowserManager,
@@ -77,6 +83,7 @@ final class WindowWebContentController: NSViewController {
     override func loadView() {
         view = containerView
         webViewCoordinator.setCompositorContainerView(containerView, for: windowState.id)
+        installMediaTouchBarRecoveryObservation()
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -91,6 +98,8 @@ final class WindowWebContentController: NSViewController {
         clearPane(.single)
         clearPane(.left)
         clearPane(.right)
+        mediaTouchBarRecoveryCancellable?.cancel()
+        mediaTouchBarRecoveryCancellable = nil
         webViewCoordinator.removeCompositorContainerView(for: windowState.id)
     }
 
@@ -352,6 +361,84 @@ final class WindowWebContentController: NSViewController {
         window.makeFirstResponder(host.webView)
     }
 
+    private func installMediaTouchBarRecoveryObservation() {
+        mediaTouchBarRecoveryCancellable = NotificationCenter.default
+            .publisher(for: .sumiWebViewNeedsMediaTouchBarRecovery)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] notification in
+                self?.handleMediaTouchBarRecoveryRequest(notification)
+            }
+    }
+
+    private func handleMediaTouchBarRecoveryRequest(_ notification: Notification) {
+        guard let webView = notification.object as? WKWebView,
+              let windowID = notification.userInfo?[SumiMediaTouchBarRecoveryNotificationKey.windowID] as? UUID,
+              windowID == windowState.id
+        else {
+            return
+        }
+
+        let tabID = notification.userInfo?[SumiMediaTouchBarRecoveryNotificationKey.tabID] as? UUID
+        recoverMediaTouchBarAfterWebKitReparent(tabID: tabID, webView: webView)
+        for delay in Self.mediaTouchBarRecoveryRetryDelays {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak webView] in
+                guard let webView else { return }
+                self?.recoverMediaTouchBarAfterWebKitReparent(tabID: tabID, webView: webView)
+            }
+        }
+    }
+
+    private func recoverMediaTouchBarAfterWebKitReparent(tabID: UUID?, webView: WKWebView) {
+        guard webViewCoordinator.hasActiveHistorySwipe(in: windowState.id) == false,
+              !webView.sumiIsInFullscreenElementPresentation,
+              let window = view.window,
+              window.isKeyWindow
+        else {
+            return
+        }
+
+        let currentTab = browserManager.currentTab(for: windowState)
+        guard let currentTab,
+              tabID == nil || currentTab.id == tabID
+        else {
+            return
+        }
+
+        if displayedHost(for: currentTab.id) == nil,
+           let displayState = pendingDisplayState ?? appliedDisplayState {
+            apply(displayState: displayState, currentTab: currentTab)
+            appliedDisplayState = displayState
+        }
+
+        guard let host = displayedHost(for: currentTab.id),
+              host.webView === webView
+        else {
+            return
+        }
+
+        host.attachDisplayedContentIfNeeded()
+        host.layoutSubtreeIfNeeded()
+
+        guard host.window === window,
+              webView.window === window,
+              webView.superview != nil
+        else {
+            return
+        }
+
+        resetWebKitMediaTouchBar(for: webView, in: window)
+    }
+
+    private func resetWebKitMediaTouchBar(for webView: WKWebView, in window: NSWindow) {
+        let wasFirstResponder = window.firstResponder === webView
+        webView.touchBar = nil
+        if wasFirstResponder {
+            window.makeFirstResponder(nil)
+        }
+        window.makeFirstResponder(webView)
+        webView.touchBar = nil
+    }
+
     private func setupHoverCallbacks(for tab: Tab) {
         tab.onLinkHover = { [weak self] href in
             DispatchQueue.main.async {
@@ -415,9 +502,7 @@ final class WindowWebContentController: NSViewController {
         host.frame = paneView.bounds
         host.autoresizingMask = [.width, .height]
         configureViewportStyle(on: host)
-        if !isProtected {
-            host.attachDisplayedContentIfNeeded()
-        }
+        host.attachDisplayedContentIfNeeded()
         host.isHidden = false
     }
 
@@ -434,6 +519,7 @@ final class WindowWebContentController: NSViewController {
         host.frame = paneView.bounds
         host.autoresizingMask = [.width, .height]
         configureViewportStyle(on: host)
+        host.attachDisplayedContentIfNeeded()
         host.isHidden = false
     }
 

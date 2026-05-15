@@ -19,7 +19,6 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             "attachHost(",
             "moveToCompositorContainer",
             "reconcileHostedSubviews",
-            "makeTouchBar()",
             "fullscreenStateDidChange",
             "webViewFullscreenStateDidChange",
             "setAllMediaPlaybackSuspended",
@@ -84,6 +83,84 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(webViewSource.contains("override var acceptsFirstResponder"))
         XCTAssertFalse(webViewSource.contains("NSMenuDelegate"))
         XCTAssertTrue(webViewSource.contains("swizzled_immediateActionAnimationController"))
+    }
+
+    func testMediaTouchBarRecoveryUsesDDGStyleWebKitOwnershipWithoutReplacingMediaCard() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let focusableWebViewSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Utils/WebKit/FocusableWKWebView.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(focusableWebViewSource.contains("sumiTabContentView"))
+        XCTAssertTrue(focusableWebViewSource.contains("_fullScreenPlaceholderView"))
+        XCTAssertTrue(focusableWebViewSource.contains("sumiFullscreenWindowController"))
+        XCTAssertTrue(focusableWebViewSource.contains("addMediaPlaybackControlsView"))
+        XCTAssertTrue(focusableWebViewSource.contains("_addMediaPlaybackControlsView:"))
+        XCTAssertTrue(focusableWebViewSource.contains("removeMediaPlaybackControlsView"))
+        XCTAssertTrue(focusableWebViewSource.contains("_removeMediaPlaybackControlsView"))
+        XCTAssertTrue(focusableWebViewSource.contains("AVTouchBarPlaybackControlsProvider"))
+        XCTAssertTrue(focusableWebViewSource.contains("playbackControlsController"))
+        XCTAssertFalse(focusableWebViewSource.contains("Sumi.WebKitClientMediaControls"))
+        XCTAssertFalse(focusableWebViewSource.contains("makeScrubberFallbackTouchBar"))
+        XCTAssertFalse(focusableWebViewSource.contains("mediaTimelineJavaScript"))
+        XCTAssertFalse(focusableWebViewSource.contains("elapsedLabel"))
+        XCTAssertFalse(focusableWebViewSource.contains("remainingLabel"))
+        XCTAssertFalse(focusableWebViewSource.contains("closeFullScreenWindowController"))
+        XCTAssertFalse(focusableWebViewSource.contains("sumiCloseInactiveFullscreenWindowControllerIfNeeded"))
+        XCTAssertFalse(focusableWebViewSource.contains("webViewDidAddMediaControlsManager"))
+        XCTAssertFalse(focusableWebViewSource.contains("makeSumiMediaFallbackTouchBar"))
+        XCTAssertFalse(focusableWebViewSource.contains("NSTouchBarDelegate"))
+        XCTAssertFalse(focusableWebViewSource.contains("_setWantsMediaPlaybackControlsView"))
+
+        let webViewCoordinatorSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift"
+            ),
+            encoding: .utf8
+        )
+        XCTAssertTrue(webViewCoordinatorSource.contains("sumiWebViewNeedsMediaTouchBarRecovery"))
+        XCTAssertTrue(webViewCoordinatorSource.contains("installNowPlayingSessionObservationIfNeeded"))
+        XCTAssertTrue(webViewCoordinatorSource.contains("postMediaTouchBarRecoveryRequest"))
+        XCTAssertTrue(webViewCoordinatorSource.contains("requestFullscreenMediaExit"))
+        XCTAssertTrue(webViewCoordinatorSource.contains("webView.sumiTabContentView.removeFromSuperview()"))
+        XCTAssertFalse(webViewCoordinatorSource.contains("closeAllMediaPresentations"))
+
+        let compositorSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Components/WebsiteView/WebsiteCompositorView.swift"
+            ),
+            encoding: .utf8
+        )
+        XCTAssertTrue(compositorSource.contains("recoverMediaTouchBarAfterWebKitReparent"))
+        XCTAssertTrue(compositorSource.contains("resetWebKitMediaTouchBar"))
+        XCTAssertTrue(compositorSource.contains("host.attachDisplayedContentIfNeeded()"))
+        XCTAssertFalse(compositorSource.contains("webView.sumiCloseInactiveFullscreenWindowControllerIfNeeded()"))
+        XCTAssertTrue(compositorSource.contains("webView.touchBar = nil"))
+        XCTAssertTrue(compositorSource.contains("window.makeFirstResponder(webView)"))
+
+        let audioStateSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Utils/WebKit/SumiWebViewAudioState.swift"
+            ),
+            encoding: .utf8
+        )
+        XCTAssertTrue(audioStateSource.contains("sumiHasActiveNowPlayingSession"))
+        XCTAssertTrue(audioStateSource.contains("_hasActiveNowPlayingSession"))
+
+        let mediaCardSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Components/Sidebar/MediaControls/MediaControlsView.swift"
+            ),
+            encoding: .utf8
+        )
+        XCTAssertTrue(mediaCardSource.contains("SumiBackgroundMediaCardView"))
+        XCTAssertTrue(mediaCardSource.contains("onPlayPause"))
+        XCTAssertTrue(mediaCardSource.contains("onToggleMute"))
     }
 
     func testFocusableWebViewContainsDDGMouseTrackingLoadSheddingHook() throws {
@@ -329,7 +406,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         )
         let start = try XCTUnwrap(source.range(of: "TabCompositorWrapper("))
             .lowerBound
-        let end = try XCTUnwrap(source.range(of: "// Removed SwiftUI contextMenu", range: start..<source.endIndex))
+        let end = try XCTUnwrap(source.range(of: "@ViewBuilder", range: start..<source.endIndex))
             .lowerBound
         let liveWebViewPath = String(source[start..<end])
 

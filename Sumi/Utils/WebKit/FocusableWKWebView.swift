@@ -29,13 +29,15 @@ final class FocusableWKWebView: WKWebView {
 
     private static let webKitMouseTrackingLoadSheddingEnabled = true
     private static let webKitMouseTrackingObserverClassName = "WKMouseTrackingObserver"
-
     private var webKitMouseTrackingLoadSheddingObserver: NSKeyValueObservation?
     private var webKitMouseTrackingArea: NSTrackingArea?
     private var isWebKitMouseTrackingLoadSheddingActive = false
     private var isTransientChromeMouseTrackingSuppressed = false
     private var isTransientChromeInteractionShieldApplied = false
     private var transientChromeInteractionShieldRects: [SumiTransientChromeInteractionShieldRect] = []
+    private var webKitClientMediaControlsView: NSView?
+    private var webKitClientMediaControlsTouchBar: NSTouchBar?
+    private var webKitClientMediaControlsProvider: NSObject?
 
     weak var owningTab: Tab?
     let interactionEventsPublisher = PassthroughSubject<SumiWebViewInteractionEvent, Never>()
@@ -277,6 +279,63 @@ final class FocusableWKWebView: WKWebView {
         sumiIsInFullscreenElementPresentation
     }
 
+    override func makeTouchBar() -> NSTouchBar? {
+        super.makeTouchBar() ?? makeClientMediaControlsTouchBarIfNeeded()
+    }
+
+    @objc(_addMediaPlaybackControlsView:)
+    func addMediaPlaybackControlsView(_ mediaControlsView: AnyObject) {
+        guard let controlsView = mediaControlsView as? NSView else { return }
+        webKitClientMediaControlsView = controlsView
+        clearClientMediaControlsCache()
+        touchBar = makeClientMediaControlsTouchBarIfNeeded()
+    }
+
+    @objc(_removeMediaPlaybackControlsView)
+    func removeMediaPlaybackControlsView() {
+        webKitClientMediaControlsView = nil
+        clearClientMediaControlsCache()
+        touchBar = nil
+    }
+
+    private func clearClientMediaControlsCache() {
+        webKitClientMediaControlsTouchBar = nil
+        webKitClientMediaControlsProvider = nil
+    }
+
+    private func makeClientMediaControlsTouchBarIfNeeded() -> NSTouchBar? {
+        guard let controlsView = webKitClientMediaControlsView else { return nil }
+        if let touchBar = webKitClientMediaControlsTouchBar {
+            return touchBar
+        }
+
+        // After element fullscreen WebKit asks the client to host its media controls view.
+        // Prefer rebuilding AVKit's normal provider so the post-fullscreen bar matches
+        // the pre-fullscreen WebKit-owned layout exactly.
+        guard let touchBar = makeProviderMediaControlsTouchBarIfPossible(from: controlsView) else {
+            return nil
+        }
+        webKitClientMediaControlsTouchBar = touchBar
+        return touchBar
+    }
+
+    private func makeProviderMediaControlsTouchBarIfPossible(from controlsView: NSView) -> NSTouchBar? {
+        guard let providerClass = NSClassFromString("AVTouchBarPlaybackControlsProvider") as? NSObject.Type,
+              let playbackControlsController = controlsView.value(forKey: "playbackControlsController")
+        else {
+            return nil
+        }
+
+        let provider = providerClass.init()
+        provider.setValue(playbackControlsController, forKey: "playbackControlsController")
+        guard let touchBar = provider.value(forKey: "touchBar") as? NSTouchBar else {
+            return nil
+        }
+
+        webKitClientMediaControlsProvider = provider
+        return touchBar
+    }
+
     override func mouseUp(with event: NSEvent) {
         super.mouseUp(with: event)
         let owningTab = owningTab
@@ -337,8 +396,32 @@ final class FocusableWKWebView: WKWebView {
 
 @MainActor
 extension WKWebView {
+    private enum SumiFullscreenSelector {
+        static let fullScreenPlaceholderView = NSSelectorFromString("_fullScreenPlaceholderView")
+    }
+
     var sumiIsInFullscreenElementPresentation: Bool {
         fullscreenState != .notInFullscreen
+    }
+
+    var sumiFullscreenPlaceholderView: NSView? {
+        guard responds(to: SumiFullscreenSelector.fullScreenPlaceholderView) else {
+            return nil
+        }
+        return value(forKey: NSStringFromSelector(SumiFullscreenSelector.fullScreenPlaceholderView)) as? NSView
+    }
+
+    var sumiTabContentView: NSView {
+        sumiFullscreenPlaceholderView ?? self
+    }
+
+    var sumiFullscreenWindowController: NSWindowController? {
+        guard let windowController = window?.windowController,
+              windowController.className.contains("FullScreen")
+        else {
+            return nil
+        }
+        return windowController
     }
 
 }

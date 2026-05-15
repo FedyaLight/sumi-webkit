@@ -13,6 +13,17 @@ import Observation
 import QuartzCore
 import WebKit
 
+extension Notification.Name {
+    static let sumiWebViewNeedsMediaTouchBarRecovery = Notification.Name(
+        "SumiWebViewNeedsMediaTouchBarRecovery"
+    )
+}
+
+enum SumiMediaTouchBarRecoveryNotificationKey {
+    static let tabID = "tabID"
+    static let windowID = "windowID"
+}
+
 enum WebViewSyncLoadPolicy {
     static func shouldLoadTarget(
         desiredURL: URL,
@@ -84,9 +95,7 @@ final class SumiWebViewContainerView: NSView {
         webView.translatesAutoresizingMaskIntoConstraints = true
         webView.autoresizingMask = [.width, .height]
 
-        if !webView.sumiIsInFullscreenElementPresentation {
-            addDisplayedContent(webView)
-        }
+        addDisplayedContent(webView.sumiTabContentView)
         updateViewportMask()
     }
 
@@ -101,11 +110,13 @@ final class SumiWebViewContainerView: NSView {
     }
 
     func attachDisplayedContentIfNeeded() {
-        guard !webView.sumiIsInFullscreenElementPresentation else { return }
-
-        frameDisplayedContent(webView)
-        guard webView.superview !== self else { return }
-        addDisplayedContent(webView)
+        let displayedView = webView.sumiTabContentView
+        frameDisplayedContent(displayedView)
+        for subview in subviews where subview !== displayedView {
+            subview.removeFromSuperview()
+        }
+        guard displayedView.superview !== self else { return }
+        addDisplayedContent(displayedView)
     }
 
     private func addDisplayedContent(_ displayedView: NSView) {
@@ -125,10 +136,7 @@ final class SumiWebViewContainerView: NSView {
 
     override func layout() {
         super.layout()
-        subviews.forEach { subview in
-            subview.frame = bounds
-            subview.autoresizingMask = [.width, .height]
-        }
+        webView.sumiTabContentView.frame = bounds
         updateViewportMask()
     }
 
@@ -140,12 +148,7 @@ final class SumiWebViewContainerView: NSView {
     }
 
     override func removeFromSuperview() {
-        let wasAttached = superview != nil
-        if wasAttached,
-           webView.superview === self,
-           !webView.sumiIsInFullscreenElementPresentation {
-            webView.removeFromSuperview()
-        }
+        webView.sumiTabContentView.removeFromSuperview()
         super.removeFromSuperview()
     }
 
@@ -466,6 +469,9 @@ class WebViewCoordinator {
     @ObservationIgnored
     private var weakWebViewsByIdentifier: [ObjectIdentifier: WeakWKWebView] = [:]
 
+    @ObservationIgnored
+    private var nowPlayingSessionCancellablesByWebViewID: [ObjectIdentifier: AnyCancellable] = [:]
+
     // MARK: - Compositor Container Management
 
     func setCompositorContainerView(_ view: NSView?, for windowId: UUID) {
@@ -671,7 +677,7 @@ class WebViewCoordinator {
     func closeActiveFullscreenMedia(in windowId: UUID) {
         for webViewID in fullscreenProtection.activeWebViewIDs(in: windowId) {
             guard let webView = resolveWebView(with: webViewID) else { continue }
-            webView.closeAllMediaPresentations(completionHandler: nil)
+            requestFullscreenMediaExit(on: webView)
         }
     }
 
@@ -682,7 +688,11 @@ class WebViewCoordinator {
         else {
             return
         }
-        webView.closeAllMediaPresentations(completionHandler: nil)
+        requestFullscreenMediaExit(on: webView)
+    }
+
+    private func requestFullscreenMediaExit(on webView: WKWebView) {
+        webView.sumiFullscreenWindowController?.window?.toggleFullScreen(webView)
     }
 
     func isWebViewProtectedFromCompositorMutation(_ webView: WKWebView) -> Bool {
@@ -712,6 +722,7 @@ class WebViewCoordinator {
     private func finishFullscreenProtectionIfNeeded(for webView: WKWebView) {
         let webViewID = ObjectIdentifier(webView)
         guard let context = fullscreenProtection.finish(webViewID: webViewID) else { return }
+        let owner = trackedOwner(containing: webView)
 
         RuntimeDiagnostics.protectedWebViewTrace(
             "finishFullscreenProtection webView=\(webViewID)"
@@ -721,6 +732,30 @@ class WebViewCoordinator {
            let windowState = browserManager?.windowRegistry?.windows[windowID] {
             browserManager?.refreshCompositor(for: windowState)
         }
+        postMediaTouchBarRecoveryRequest(
+            for: webView,
+            owner: owner,
+            fallbackWindowID: context.windowID
+        )
+    }
+
+    private func postMediaTouchBarRecoveryRequest(
+        for webView: WKWebView,
+        owner: TrackedWebViewOwner?,
+        fallbackWindowID: UUID?
+    ) {
+        guard let windowID = owner?.windowID ?? fallbackWindowID else { return }
+        var userInfo: [String: Any] = [
+            SumiMediaTouchBarRecoveryNotificationKey.windowID: windowID
+        ]
+        if let tabID = owner?.tabID {
+            userInfo[SumiMediaTouchBarRecoveryNotificationKey.tabID] = tabID
+        }
+        NotificationCenter.default.post(
+            name: .sumiWebViewNeedsMediaTouchBarRecovery,
+            object: webView,
+            userInfo: userInfo
+        )
     }
 
     func windowID(containing webView: WKWebView) -> UUID? {
@@ -1128,6 +1163,8 @@ class WebViewCoordinator {
             compositorContainerViews.removeAll()
             scheduledPrepareWindowIds.removeAll()
             fullscreenProtection.removeAll()
+            nowPlayingSessionCancellablesByWebViewID.values.forEach { $0.cancel() }
+            nowPlayingSessionCancellablesByWebViewID.removeAll()
         }
 
         RuntimeDiagnostics.debug("Completed full WebView cleanup.", category: "WebViewCoordinator")
@@ -1357,6 +1394,30 @@ class WebViewCoordinator {
         }
     }
 
+    private func installNowPlayingSessionObservationIfNeeded(on webView: WKWebView) {
+        let webViewID = ObjectIdentifier(webView)
+        guard nowPlayingSessionCancellablesByWebViewID[webViewID] == nil else { return }
+        // WebKit can re-establish its active playback manager after the fullscreen
+        // transition itself has completed, so keep one late recovery trigger.
+        nowPlayingSessionCancellablesByWebViewID[webViewID] = webView
+            .publisher(for: \.sumiHasActiveNowPlayingSession, options: [.new])
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak webView] hasActiveSession in
+                guard hasActiveSession,
+                      let self,
+                      let webView
+                else {
+                    return
+                }
+                self.postMediaTouchBarRecoveryRequest(
+                    for: webView,
+                    owner: self.trackedOwner(containing: webView),
+                    fallbackWindowID: self.windowId(containing: webView)
+                )
+            }
+    }
+
     private func updateFullscreenProtection(for webView: WKWebView) {
         if webView.sumiIsInFullscreenElementPresentation {
             beginFullscreenProtectionIfNeeded(for: webView)
@@ -1371,6 +1432,12 @@ class WebViewCoordinator {
             webView,
             isTracked: webViewOwnersByIdentifier[webViewID] != nil
         )
+    }
+
+    private func uninstallNowPlayingSessionObservationIfUntracked(_ webView: WKWebView) {
+        let webViewID = ObjectIdentifier(webView)
+        guard webViewOwnersByIdentifier[webViewID] == nil else { return }
+        nowPlayingSessionCancellablesByWebViewID.removeValue(forKey: webViewID)?.cancel()
     }
 
     private func resolveWeakWebView(
@@ -1710,6 +1777,7 @@ class WebViewCoordinator {
         webViewsByTabAndWindow[tabId]?[windowId] = webView
         webViewOwnersByIdentifier[webViewID] = owner
         installFullscreenStateObservationIfNeeded(on: webView)
+        installNowPlayingSessionObservationIfNeeded(on: webView)
         assertTrackingConsistency("registerTrackedWebView")
     }
 
@@ -1749,6 +1817,7 @@ class WebViewCoordinator {
         }
         if let resolvedWebView {
             uninstallFullscreenStateObservationIfUntracked(resolvedWebView)
+            uninstallNowPlayingSessionObservationIfUntracked(resolvedWebView)
         }
         if removeRecentVisibility {
             removeTabFromVisibilityHistory(owner.tabID, in: owner.windowID)
