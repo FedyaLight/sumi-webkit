@@ -84,16 +84,17 @@ enum SumiTabTitleAnimation {
     static let slidingInLastX = CGFloat(0)
 
     static let loadingShimmerKey = "loadingTitleShimmer"
-    static let loadingShimmerCycleDuration: TimeInterval = 1.2
+    static let loadingShimmerCycleDuration: TimeInterval = 1.1
     static let loadingShimmerMinimumBandWidth = CGFloat(96)
     static let loadingShimmerMaximumBandWidth = CGFloat(180)
     static let loadingShimmerRelativeBandWidth = CGFloat(0.72)
+    static let loadingShimmerShoulderAlpha = CGFloat(0.55)
+    static let loadingShimmerMinimumAlpha = CGFloat(0.04)
 }
 
 final class SumiTabTitleView: NSView {
     private lazy var titleTextField: NSTextField = buildTitleTextField()
     private lazy var previousTextField: NSTextField = buildTitleTextField()
-    private lazy var loadingShimmerTextField: NSTextField = buildTitleTextField()
     private var fadeWidth: CGFloat = 32
     private var trailingFadePadding: CGFloat = 0
     private var isLoadingShimmerRequested = false
@@ -140,11 +141,8 @@ final class SumiTabTitleView: NSView {
         self.trailingFadePadding = trailingFadePadding
         titleTextField.font = font
         previousTextField.font = font
-        loadingShimmerTextField.font = font
         titleTextField.textColor = textColor
         previousTextField.textColor = textColor
-        loadingShimmerTextField.textColor = loadingShimmerColor(for: textColor)
-        loadingShimmerTextField.stringValue = title
         applyTrailingFadeMask(width: fadeWidth, trailingPadding: trailingFadePadding)
         displayTitleIfNeeded(title: title, animated: animated)
         updateLoadingShimmer(isLoading && title.isEmpty == false)
@@ -179,7 +177,6 @@ private extension SumiTabTitleView {
     func setupSubviews() {
         addSubview(previousTextField)
         addSubview(titleTextField)
-        addSubview(loadingShimmerTextField)
     }
 
     func setupLayer() {
@@ -203,22 +200,11 @@ private extension SumiTabTitleView {
             previousTextField.trailingAnchor.constraint(equalTo: trailingAnchor)
         ])
 
-        loadingShimmerTextField.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            loadingShimmerTextField.topAnchor.constraint(equalTo: topAnchor),
-            loadingShimmerTextField.bottomAnchor.constraint(equalTo: bottomAnchor),
-            loadingShimmerTextField.leadingAnchor.constraint(equalTo: leadingAnchor),
-            loadingShimmerTextField.trailingAnchor.constraint(equalTo: trailingAnchor)
-        ])
     }
 
     func setupTextFields() {
         titleTextField.textColor = .labelColor
         previousTextField.textColor = .labelColor
-        loadingShimmerTextField.textColor = loadingShimmerColor(for: .labelColor)
-        loadingShimmerTextField.isHidden = true
-        loadingShimmerTextField.alphaValue = 0
-        loadingShimmerTextField.layer?.opacity = 0
         resetPreviousTitleState()
     }
 
@@ -240,10 +226,6 @@ private extension SumiTabTitleView {
             cell.truncatesLastVisibleLine = false
         }
         return textField
-    }
-
-    func loadingShimmerColor(for textColor: NSColor) -> NSColor {
-        textColor.blended(withFraction: 0.86, of: .white) ?? .white
     }
 
     func shouldAnimateTransition(to title: String, from previousTitle: String) -> Bool {
@@ -278,12 +260,11 @@ private extension SumiTabTitleView {
         }
 
         guard bounds.width > 1, bounds.height > 1 else {
-            loadingShimmerTextField.isHidden = true
             return
         }
 
-        let shimmerLayer = loadingShimmerTextField.layer
-        let maskLayer = loadingShimmerMaskLayer(for: shimmerLayer)
+        let titleLayer = titleTextField.layer
+        let maskLayer = loadingShimmerMaskLayer(for: titleLayer)
         guard lastLoadingShimmerBoundsSize != bounds.size
                 || maskLayer.animation(forKey: SumiTabTitleAnimation.loadingShimmerKey) == nil
         else {
@@ -293,18 +274,12 @@ private extension SumiTabTitleView {
         lastLoadingShimmerBoundsSize = bounds.size
         configureLoadingShimmerMask(maskLayer)
 
-        loadingShimmerTextField.isHidden = false
-        loadingShimmerTextField.alphaValue = 1
-        shimmerLayer?.opacity = 1
         maskLayer.add(buildLoadingShimmerAnimation(), forKey: SumiTabTitleAnimation.loadingShimmerKey)
     }
 
     func stopLoadingShimmer() {
-        loadingShimmerTextField.isHidden = true
-        loadingShimmerTextField.alphaValue = 0
-        loadingShimmerTextField.layer?.opacity = 0
-        loadingShimmerTextField.layer?.mask?.removeAnimation(forKey: SumiTabTitleAnimation.loadingShimmerKey)
-        loadingShimmerTextField.layer?.mask = nil
+        titleTextField.layer?.mask?.removeAnimation(forKey: SumiTabTitleAnimation.loadingShimmerKey)
+        titleTextField.layer?.mask = nil
         lastLoadingShimmerBoundsSize = .zero
     }
 
@@ -319,33 +294,29 @@ private extension SumiTabTitleView {
     }
 
     func configureLoadingShimmerMask(_ mask: CAGradientLayer) {
-        let bandWidth = loadingShimmerBandWidth
         CATransaction.begin()
         CATransaction.setDisableActions(true)
 
-        mask.bounds = CGRect(x: 0, y: 0, width: bandWidth, height: bounds.height)
-        mask.anchorPoint = CGPoint(x: 0.5, y: 0.5)
-        mask.position = CGPoint(x: -bandWidth / 2, y: bounds.midY)
+        mask.frame = bounds
         mask.startPoint = CGPoint(x: 0, y: 0.5)
         mask.endPoint = CGPoint(x: 1, y: 0.5)
         mask.colors = [
-            NSColor.clear.cgColor,
-            NSColor.white.withAlphaComponent(0.18).cgColor,
             NSColor.white.cgColor,
-            NSColor.white.withAlphaComponent(0.18).cgColor,
-            NSColor.clear.cgColor
+            NSColor.white.withAlphaComponent(SumiTabTitleAnimation.loadingShimmerShoulderAlpha).cgColor,
+            NSColor.white.withAlphaComponent(SumiTabTitleAnimation.loadingShimmerMinimumAlpha).cgColor,
+            NSColor.white.withAlphaComponent(SumiTabTitleAnimation.loadingShimmerShoulderAlpha).cgColor,
+            NSColor.white.cgColor
         ]
-        mask.locations = [0, 0.22, 0.5, 0.78, 1]
+        mask.locations = loadingShimmerLocations(centerX: -loadingShimmerRelativeHalfWidth)
         mask.opacity = 1
 
         CATransaction.commit()
     }
 
     func buildLoadingShimmerAnimation() -> CABasicAnimation {
-        let bandWidth = loadingShimmerBandWidth
-        let animation = CABasicAnimation(keyPath: "position.x")
-        animation.fromValue = -bandWidth / 2
-        animation.toValue = bounds.width + bandWidth / 2
+        let animation = CABasicAnimation(keyPath: "locations")
+        animation.fromValue = loadingShimmerLocations(centerX: -loadingShimmerRelativeHalfWidth)
+        animation.toValue = loadingShimmerLocations(centerX: 1 + loadingShimmerRelativeHalfWidth)
         animation.duration = SumiTabTitleAnimation.loadingShimmerCycleDuration
         animation.timingFunction = CAMediaTimingFunction(name: .linear)
         animation.repeatCount = .infinity
@@ -361,6 +332,24 @@ private extension SumiTabTitleView {
             ),
             SumiTabTitleAnimation.loadingShimmerMaximumBandWidth
         )
+    }
+
+    var loadingShimmerRelativeHalfWidth: CGFloat {
+        guard bounds.width > 0 else { return 0 }
+        return (loadingShimmerBandWidth / bounds.width) / 2
+    }
+
+    func loadingShimmerLocations(centerX: CGFloat) -> [NSNumber] {
+        let halfWidth = loadingShimmerRelativeHalfWidth
+        let leadingShoulder = halfWidth * 0.56
+        let trailingShoulder = halfWidth * 0.56
+        return [
+            NSNumber(value: Double(centerX - halfWidth)),
+            NSNumber(value: Double(centerX - leadingShoulder)),
+            NSNumber(value: Double(centerX)),
+            NSNumber(value: Double(centerX + trailingShoulder)),
+            NSNumber(value: Double(centerX + halfWidth))
+        ]
     }
 }
 

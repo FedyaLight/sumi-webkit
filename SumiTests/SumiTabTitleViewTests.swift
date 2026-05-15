@@ -119,22 +119,23 @@ final class SumiTabTitleViewTests: XCTestCase {
         )
         view.layoutSubtreeIfNeeded()
 
-        let shimmerField = try XCTUnwrap(loadingShimmerTextField(in: view))
         let maskLayer = try XCTUnwrap(loadingShimmerMaskLayer(in: view))
         let animation = try XCTUnwrap(maskLayer.animation(forKey: SumiTabTitleAnimation.loadingShimmerKey))
 
-        XCTAssertFalse(shimmerField.isHidden)
-        XCTAssertEqual(shimmerField.alphaValue, 1, accuracy: 0.001)
         XCTAssertEqual(
             maskLayer.bounds.width,
-            144,
+            200,
             accuracy: 0.001
         )
         XCTAssertEqual(animation.duration, SumiTabTitleAnimation.loadingShimmerCycleDuration, accuracy: 0.001)
-        let positionAnimation = try XCTUnwrap(animation as? CABasicAnimation)
-        XCTAssertEqual(positionAnimation.keyPath, "position.x")
-        XCTAssertEqual(positionAnimation.fromValue as? CGFloat, -72)
-        XCTAssertEqual(positionAnimation.toValue as? CGFloat, 272)
+        let locationsAnimation = try XCTUnwrap(animation as? CABasicAnimation)
+        XCTAssertEqual(locationsAnimation.keyPath, "locations")
+        XCTAssertEqual(maskLayer.colors?.count, 5)
+        assertDoubles(maskLayer.locations?.map(\.doubleValue), equalTo: [-0.72, -0.5616, -0.36, -0.1584, 0])
+        assertDoubles(
+            (locationsAnimation.toValue as? [NSNumber])?.map(\.doubleValue),
+            equalTo: [1, 1.1584, 1.36, 1.5616, 1.72]
+        )
     }
 
     func testTitleViewStopsLoadingShimmerAnimation() throws {
@@ -162,10 +163,7 @@ final class SumiTabTitleViewTests: XCTestCase {
             isLoading: false
         )
 
-        let shimmerField = try XCTUnwrap(loadingShimmerTextField(in: view))
-        XCTAssertTrue(shimmerField.isHidden)
-        XCTAssertEqual(shimmerField.alphaValue, 0, accuracy: 0.001)
-        XCTAssertNil(shimmerField.layer?.mask)
+        XCTAssertNil(loadingShimmerMaskLayer(in: view))
     }
 
     func testSwiftUIHostedLabelKeepsFullWidthWithOverlaidAction() throws {
@@ -253,12 +251,6 @@ final class SumiTabTitleViewTests: XCTestCase {
         return (fields[0], fields[1])
     }
 
-    private func loadingShimmerTextField(in view: SumiTabTitleView) -> NSTextField? {
-        let fields = textFields(in: view)
-        guard fields.count > 2 else { return nil }
-        return fields[2]
-    }
-
     private func textFields(in view: SumiTabTitleView) -> [NSTextField] {
         view.subviews.compactMap { $0 as? NSTextField }
     }
@@ -268,6 +260,24 @@ final class SumiTabTitleViewTests: XCTestCase {
     }
 
     private func loadingShimmerMaskLayer(in view: SumiTabTitleView) -> CAGradientLayer? {
-        loadingShimmerTextField(in: view)?.layer?.mask as? CAGradientLayer
+        titleFields(in: view).current.layer?.mask as? CAGradientLayer
+    }
+
+    private func assertDoubles(
+        _ actual: [Double]?,
+        equalTo expected: [Double],
+        accuracy: Double = 0.001,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard let actual else {
+            XCTFail("Expected non-nil values", file: file, line: line)
+            return
+        }
+
+        XCTAssertEqual(actual.count, expected.count, file: file, line: line)
+        for (actualValue, expectedValue) in zip(actual, expected) {
+            XCTAssertEqual(actualValue, expectedValue, accuracy: accuracy, file: file, line: line)
+        }
     }
 }
