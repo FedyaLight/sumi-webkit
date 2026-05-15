@@ -54,6 +54,7 @@ final class WindowWebContentController: NSViewController {
     private var singlePaneHost: SumiWebViewContainerView?
     private var leftPaneHost: SumiWebViewContainerView?
     private var rightPaneHost: SumiWebViewContainerView?
+    private var parkedProtectedHosts: [ObjectIdentifier: SumiWebViewContainerView] = [:]
 
     init(
         browserManager: BrowserManager,
@@ -84,6 +85,9 @@ final class WindowWebContentController: NSViewController {
     }
 
     func tearDownController() {
+        if webViewCoordinator.hasActiveFullscreen(in: windowState.id) {
+            webViewCoordinator.closeActiveFullscreenMedia(in: windowState.id)
+        }
         clearPane(.single)
         clearPane(.left)
         clearPane(.right)
@@ -287,7 +291,10 @@ final class WindowWebContentController: NSViewController {
 
         if let tab, let host = webViewHost(for: tab, pane: .single) {
             attach(host, to: containerView.singlePaneView)
-            containerView.singlePaneView.removeHostedSubviews(keeping: host)
+            containerView.singlePaneView.removeHostedSubviews(
+                keeping: host,
+                shouldRemove: shouldRemoveHostedSubview
+            )
         } else {
             clearPane(.single)
         }
@@ -312,14 +319,20 @@ final class WindowWebContentController: NSViewController {
 
         if let leftTab, let host = webViewHost(for: leftTab, pane: .left) {
             attach(host, to: containerView.leftPaneView)
-            containerView.leftPaneView.removeHostedSubviews(keeping: host)
+            containerView.leftPaneView.removeHostedSubviews(
+                keeping: host,
+                shouldRemove: shouldRemoveHostedSubview
+            )
         } else {
             clearPane(.left)
         }
 
         if let rightTab, let host = webViewHost(for: rightTab, pane: .right) {
             attach(host, to: containerView.rightPaneView)
-            containerView.rightPaneView.removeHostedSubviews(keeping: host)
+            containerView.rightPaneView.removeHostedSubviews(
+                keeping: host,
+                shouldRemove: shouldRemoveHostedSubview
+            )
         } else {
             clearPane(.right)
         }
@@ -334,6 +347,7 @@ final class WindowWebContentController: NSViewController {
         else {
             return
         }
+        guard !host.webView.sumiIsInFullscreenElementPresentation else { return }
         guard window.firstResponder !== host.webView else { return }
         window.makeFirstResponder(host.webView)
     }
@@ -368,6 +382,15 @@ final class WindowWebContentController: NSViewController {
             return host
         }
 
+        if webViewCoordinator.isWebViewProtectedFromCompositorMutation(webView),
+           let existingHost = protectedHost(for: webView) {
+            clearPane(pane)
+            configureViewportStyle(on: existingHost)
+            clearPaneHostReferences(to: existingHost)
+            setPaneHost(existingHost, for: pane)
+            return existingHost
+        }
+
         clearPane(pane)
         let host = SumiWebViewContainerView(tab: tab, webView: webView)
         configureViewportStyle(on: host)
@@ -376,27 +399,92 @@ final class WindowWebContentController: NSViewController {
     }
 
     private func attach(_ host: SumiWebViewContainerView, to paneView: PaneContainerView) {
+        let isProtected = webViewCoordinator.isWebViewProtectedFromCompositorMutation(host.webView)
+        if isProtected {
+            attachProtectedHost(host, to: paneView)
+            return
+        }
+
+        parkedProtectedHosts.removeValue(forKey: ObjectIdentifier(host.webView))
         if host.superview != nil && host.superview !== paneView {
             host.removeFromSuperview()
         }
-        paneView.placeContentHostAboveChromeShadow(host)
-        // After any `removeFromSuperview` (clears owner in host); must follow reparenting.
-        host.compositorContentOwner = self
+        if host.superview == nil || host.superview === paneView {
+            paneView.placeContentHostAboveChromeShadow(host)
+        }
         host.frame = paneView.bounds
         host.autoresizingMask = [.width, .height]
         configureViewportStyle(on: host)
-        host.attachDisplayedContentIfNeeded()
+        if !isProtected {
+            host.attachDisplayedContentIfNeeded()
+        }
         host.isHidden = false
+    }
+
+    private func attachProtectedHost(_ host: SumiWebViewContainerView, to paneView: PaneContainerView) {
+        let webViewID = ObjectIdentifier(host.webView)
+        parkedProtectedHosts[webViewID] = host
+
+        if host.superview != nil && host.superview !== paneView {
+            host.removeFromSuperview()
+        }
+        if host.superview == nil || host.superview === paneView {
+            paneView.placeContentHostAboveChromeShadow(host)
+        }
+        host.frame = paneView.bounds
+        host.autoresizingMask = [.width, .height]
+        configureViewportStyle(on: host)
+        host.isHidden = false
+    }
+
+    private func protectedHost(for webView: WKWebView) -> SumiWebViewContainerView? {
+        let webViewID = ObjectIdentifier(webView)
+        if let parkedHost = parkedProtectedHosts[webViewID] {
+            return parkedHost
+        }
+
+        if let currentHost = [singlePaneHost, leftPaneHost, rightPaneHost]
+            .compactMap({ $0 })
+            .first(where: { $0.webView === webView }) {
+            parkedProtectedHosts[webViewID] = currentHost
+            return currentHost
+        }
+
+        return nil
     }
 
     private func clearPane(_ pane: CompositorPaneDestination) {
         let paneView = paneView(for: pane)
         if let host = paneHost(pane) {
-            host.compositorContentOwner = nil
-            host.removeFromSuperview()
+            if webViewCoordinator.isWebViewProtectedFromCompositorMutation(host.webView) {
+                parkProtectedHost(host)
+            } else {
+                parkedProtectedHosts.removeValue(forKey: ObjectIdentifier(host.webView))
+                host.removeFromSuperview()
+            }
         }
         setPaneHost(nil, for: pane)
-        paneView.removeHostedSubviews(keeping: nil)
+        paneView.removeHostedSubviews(
+            keeping: nil,
+            shouldRemove: shouldRemoveHostedSubview
+        )
+    }
+
+    private func shouldRemoveHostedSubview(_ subview: NSView) -> Bool {
+        guard let host = subview as? SumiWebViewContainerView else {
+            return true
+        }
+        if webViewCoordinator.isWebViewProtectedFromCompositorMutation(host.webView) {
+            parkProtectedHost(host)
+            return false
+        }
+        parkedProtectedHosts.removeValue(forKey: ObjectIdentifier(host.webView))
+        return true
+    }
+
+    private func parkProtectedHost(_ host: SumiWebViewContainerView) {
+        parkedProtectedHosts[ObjectIdentifier(host.webView)] = host
+        host.isHidden = true
     }
 
     private func displayedHost(for tabId: UUID) -> SumiWebViewContainerView? {
@@ -424,6 +512,18 @@ final class WindowWebContentController: NSViewController {
             leftPaneHost = host
         case .right:
             rightPaneHost = host
+        }
+    }
+
+    private func clearPaneHostReferences(to host: SumiWebViewContainerView) {
+        if singlePaneHost === host {
+            singlePaneHost = nil
+        }
+        if leftPaneHost === host {
+            leftPaneHost = nil
+        }
+        if rightPaneHost === host {
+            rightPaneHost = nil
         }
     }
 
@@ -801,11 +901,16 @@ private final class PaneContainerView: NSView {
         addSubview(host, positioned: .above, relativeTo: chromeShadowView)
     }
 
-    func removeHostedSubviews(keeping keepView: NSView?) {
+    func removeHostedSubviews(
+        keeping keepView: NSView?,
+        shouldRemove: (NSView) -> Bool = { _ in true }
+    ) {
         for subview in subviews
             where subview !== keepView && subview !== chromeShadowView
         {
-            subview.removeFromSuperview()
+            if shouldRemove(subview) {
+                subview.removeFromSuperview()
+            }
         }
         keepView?.isHidden = false
         chromeShadowView.isHidden = keepView == nil
@@ -836,6 +941,6 @@ private final class PaneContainerView: NSView {
     }
 
     private var hostedContentView: SumiWebViewContainerView? {
-        subviews.first { $0 is SumiWebViewContainerView } as? SumiWebViewContainerView
+        subviews.first { $0 is SumiWebViewContainerView && !$0.isHidden } as? SumiWebViewContainerView
     }
 }
