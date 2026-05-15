@@ -244,11 +244,11 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         adBlockingModule.setEnabled(true)
         XCTAssertTrue(registry.isEnabled(.trackingProtection))
         XCTAssertTrue(registry.isEnabled(.adBlocking))
-        XCTAssertEqual(adBlockingModule.status, .enabledButEngineUnavailable)
-        XCTAssertEqual(adBlockingModule.assetsIfAvailable(), .empty)
+        XCTAssertEqual(adBlockingModule.status, .enabledNativeSkeleton)
+        XCTAssertFalse(adBlockingModule.assetsIfAvailable().contentRuleListIdentifiers.isEmpty)
         XCTAssertEqual(
-            adBlockingModule.normalTabDecision(for: URL(string: "https://ads.example.com")).assets,
-            .empty
+            adBlockingModule.normalTabDecision(for: URL(string: "https://ads.example.com")).assets.scriptSources,
+            []
         )
 
         registry.enable(.userScripts)
@@ -541,11 +541,11 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         module.setEnabled(true)
 
         XCTAssertTrue(module.isEnabled)
-        XCTAssertEqual(module.status, .enabledButEngineUnavailable)
-        XCTAssertEqual(module.assetsIfAvailable(), .empty)
-        XCTAssertEqual(module.normalTabDecision(for: nil).status, .enabledButEngineUnavailable)
-        XCTAssertEqual(module.normalTabDecision(for: nil).assets, .empty)
-        XCTAssertFalse(module.hasLoadedRuntime)
+        XCTAssertEqual(module.status, .enabledNativeSkeleton)
+        XCTAssertFalse(module.assetsIfAvailable().contentRuleListIdentifiers.isEmpty)
+        XCTAssertEqual(module.normalTabDecision(for: nil).status, .enabledNativeSkeleton)
+        XCTAssertEqual(module.normalTabDecision(for: nil).assets.scriptSources, [])
+        XCTAssertTrue(module.hasLoadedRuntime)
 
         let adBlockingSource = try Self.source(named: "Sumi/ContentBlocking/SumiAdBlockingModule.swift")
         assertSourceExcludes(
@@ -555,13 +555,9 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
                 "adblock-rust",
                 "EasyList",
                 "EasyPrivacy",
-                "SumiContentBlockingService",
                 "SumiTrackingProtectionModule",
                 "SumiTrackingRuleListProvider",
                 "SumiTrackingRuleListPipeline",
-                "SumiWKContentRuleListCompiler",
-                "WKContentRuleListStore",
-                "compileContentRuleList",
                 "WKUserScript",
                 "addUserScript",
                 "addScriptMessageHandler",
@@ -575,7 +571,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             ],
             context: "SumiAdBlockingModule"
         )
-        XCTAssertFalse(adBlockingSource.localizedCaseInsensitiveContains("cosmetic"))
         XCTAssertFalse(adBlockingSource.localizedCaseInsensitiveContains("scriptlet"))
 
         for relativePath in [

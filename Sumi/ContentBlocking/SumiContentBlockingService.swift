@@ -218,8 +218,15 @@ final class SumiContentBlockingService {
             isContentBlockingEnabled: policy.shouldEnableContentBlockingFeature
         )
 
+        let usesDynamicRuleSource = ruleListProvider != nil
+            || trackingProtectionSettings != nil
+            || trackingRuleSource != nil
+            || trackingDataStore != nil
+            || siteDataPolicyStore != nil
+            || siteDataRuleSource != nil
+
         let initialUpdate: SumiContentBlockerRulesUpdate?
-        if policy.ruleLists.isEmpty {
+        if policy.ruleLists.isEmpty, !usesDynamicRuleSource {
             initialUpdate = Self.emptyUpdate()
         } else {
             initialUpdate = nil
@@ -229,10 +236,10 @@ final class SumiContentBlockingService {
 
         if let ruleListProvider {
             bindRuleListProvider(ruleListProvider)
-            scheduleTrackingPolicyRefresh()
-        } else if trackingProtectionSettings != nil || siteDataPolicyStore != nil {
+            scheduleTrackingPolicyRefresh(delayNanoseconds: 0)
+        } else if usesDynamicRuleSource {
             bindTrackingProtection()
-            scheduleTrackingPolicyRefresh()
+            scheduleTrackingPolicyRefresh(delayNanoseconds: 0)
         } else if !policy.ruleLists.isEmpty {
             scheduleCompilation(for: policy)
         }
@@ -281,7 +288,13 @@ final class SumiContentBlockingService {
     }
 
     func setPolicy(_ policy: SumiContentBlockingPolicy) {
-        guard policy != currentPolicy else { return }
+        guard policy != currentPolicy else {
+            if latestUpdate == nil, policy.ruleLists.isEmpty {
+                privacyConfigurationManager.setContentBlockingEnabled(false)
+                publish(Self.emptyUpdate(), cleaningUpAfter: nil)
+            }
+            return
+        }
 
         let previousPolicy = currentPolicy
         currentPolicy = policy
@@ -360,12 +373,17 @@ final class SumiContentBlockingService {
             .store(in: &cancellables)
     }
 
-    private func scheduleTrackingPolicyRefresh(refreshProfileSubjects: Bool = false) {
+    private func scheduleTrackingPolicyRefresh(
+        refreshProfileSubjects: Bool = false,
+        delayNanoseconds: UInt64 = 150_000_000
+    ) {
         trackingRefreshGeneration += 1
         let generation = trackingRefreshGeneration
 
         Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 150_000_000)
+            if delayNanoseconds > 0 {
+                try? await Task.sleep(nanoseconds: delayNanoseconds)
+            }
             guard let self,
                   generation == self.trackingRefreshGeneration
             else { return }
@@ -379,6 +397,11 @@ final class SumiContentBlockingService {
                 }
             } catch {
                 guard generation == self.trackingRefreshGeneration else { return }
+                if self.latestUpdate == nil {
+                    self.currentPolicy = .disabled
+                    self.privacyConfigurationManager.setContentBlockingEnabled(false)
+                    self.publish(Self.emptyUpdate(), cleaningUpAfter: nil)
+                }
                 if refreshProfileSubjects {
                     self.scheduleActiveProfilePolicyRefreshes(delayNanoseconds: 0)
                 }

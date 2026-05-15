@@ -26,11 +26,6 @@ final class SumiExternalSchemeNavigationResponder: SumiNavigationActionWebViewRe
         webView: WKWebView?,
         preferences _: inout SumiNavigationPreferences
     ) async -> SumiNavigationActionPolicy? {
-        let signpostState = PerformanceTrace.beginInterval("NavigationPolicy.externalSchemeResponder")
-        defer {
-            PerformanceTrace.endInterval("NavigationPolicy.externalSchemeResponder", signpostState)
-        }
-
         guard let externalURL = navigationAction.url,
               externalURL.sumiIsExternalSchemeLink,
               SumiExternalSchemePermissionRequest.isValidExternalSchemeURL(externalURL)
@@ -40,6 +35,11 @@ final class SumiExternalSchemeNavigationResponder: SumiNavigationActionWebViewRe
                 shouldCloseTabOnExternalAppOpen = false
             }
             return .next
+        }
+
+        let signpostState = PerformanceTrace.beginInterval("NavigationPolicy.externalSchemeResponder")
+        defer {
+            PerformanceTrace.endInterval("NavigationPolicy.externalSchemeResponder", signpostState)
         }
 
         if let mainFrameNavigation = navigationAction.mainFrameNavigation,

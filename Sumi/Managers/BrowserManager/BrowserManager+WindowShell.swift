@@ -65,6 +65,7 @@ extension BrowserManager {
                     .environment(\.sumiSettings, self.sumiSettings ?? SumiSettingsService())
                     .environment(\.sumiModuleRegistry, self.moduleRegistry)
                     .environment(\.sumiTrackingProtectionModule, self.trackingProtectionModule)
+                    .environment(\.sumiAdBlockingModule, self.adBlockingModule)
                     .environment(\.sumiExtensionsModule, self.extensionsModule)
                     .environment(\.sumiUserscriptsModule, self.userscriptsModule)
 

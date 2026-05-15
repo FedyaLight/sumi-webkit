@@ -25,7 +25,7 @@ struct SumiNormalTabContentBlockingAssetSource {
     static func disabledEmpty(
         scriptsProvider: SumiNormalTabUserScripts
     ) -> SumiNormalTabContentBlockingAssetSource {
-        SumiNormalTabContentBlockingAssetSource(
+        return SumiNormalTabContentBlockingAssetSource(
             assetsPublisher: Just(
                 SumiNormalTabUserContent(
                     contentBlockingUpdate: .empty,
@@ -40,17 +40,49 @@ struct SumiNormalTabContentBlockingAssetSource {
     }
 
     static func enabled(
-        contentBlockingService: SumiContentBlockingService,
+        contentBlockingServices: [SumiContentBlockingService],
         scriptsProvider: SumiNormalTabUserScripts,
         profileId: UUID?
     ) -> SumiNormalTabContentBlockingAssetSource {
-        SumiNormalTabContentBlockingAssetSource(
-            assetsPublisher: contentBlockingService.userContentPublisher(
+        let publishers = contentBlockingServices.map {
+            $0.userContentPublisher(
                 for: scriptsProvider,
                 profileId: profileId
-            ),
-            privacyConfigurationManager: contentBlockingService.privacyConfigurationManager
+            )
+        }
+        let privacyConfigurationManager = contentBlockingServices.count == 1
+            ? contentBlockingServices[0].privacyConfigurationManager
+            : SumiContentBlockingPrivacyConfigurationManager(
+                isContentBlockingEnabled: true
+            )
+        return SumiNormalTabContentBlockingAssetSource(
+            assetsPublisher: Self.combinedAssetsPublisher(publishers),
+            privacyConfigurationManager: privacyConfigurationManager
         )
+    }
+
+    private static func combinedAssetsPublisher(
+        _ publishers: [AnyPublisher<SumiNormalTabUserContent, Never>]
+    ) -> AnyPublisher<SumiNormalTabUserContent, Never> {
+        guard let first = publishers.first else {
+            return Empty().eraseToAnyPublisher()
+        }
+        return publishers.dropFirst().reduce(first) { combined, next in
+            combined.combineLatest(next)
+                .map { lhs, rhs in
+                    SumiNormalTabUserContent(
+                        contentBlockingUpdate: SumiNormalTabContentBlockingUpdate(
+                            globalRuleLists: lhs.contentBlockingUpdate.globalRuleLists.merging(
+                                rhs.contentBlockingUpdate.globalRuleLists
+                            ) { _, rhs in rhs },
+                            updateRuleCount: lhs.contentBlockingUpdate.updateRuleCount
+                                + rhs.contentBlockingUpdate.updateRuleCount
+                        ),
+                        sourceProvider: lhs.sourceProvider
+                    )
+                }
+                .eraseToAnyPublisher()
+        }
     }
 }
 
@@ -214,13 +246,15 @@ enum SumiNormalTabUserContentControllerFactory {
     static func makeController(
         scriptsProvider: SumiNormalTabUserScripts? = nil,
         contentBlockingService: SumiContentBlockingService? = nil,
+        contentBlockingServices: [SumiContentBlockingService] = [],
         profileId: UUID? = nil
     ) -> WKUserContentController {
         let scriptsProvider = scriptsProvider ?? SumiNormalTabUserScripts()
+        let services = ([contentBlockingService].compactMap { $0 } + contentBlockingServices)
         let assetSource: SumiNormalTabContentBlockingAssetSource
-        if let contentBlockingService {
+        if !services.isEmpty {
             assetSource = .enabled(
-                contentBlockingService: contentBlockingService,
+                contentBlockingServices: services,
                 scriptsProvider: scriptsProvider,
                 profileId: profileId
             )

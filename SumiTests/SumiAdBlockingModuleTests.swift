@@ -39,7 +39,7 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         module.setEnabled(true)
 
         XCTAssertTrue(SumiModuleRegistry(settingsStore: store).isEnabled(.adBlocking))
-        XCTAssertEqual(module.status, .enabledButEngineUnavailable)
+        XCTAssertEqual(module.status, .enabledNativeSkeleton)
         XCTAssertFalse(module.hasLoadedRuntime)
 
         module.setEnabled(false)
@@ -88,7 +88,7 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertFalse(module.hasLoadedRuntime)
     }
 
-    func testEnabledShellReportsEngineUnavailableAndStillReturnsEmptyAssets() {
+    func testEnabledNativeSkeletonReportsNativeRuleAssetsWithoutScripts() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let registry = SumiModuleRegistry(
@@ -101,13 +101,14 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         )
 
         XCTAssertTrue(module.isEnabled)
-        XCTAssertEqual(module.status, .enabledButEngineUnavailable)
-        XCTAssertEqual(module.assetsIfAvailable(), .empty)
-        XCTAssertEqual(decision.status, .enabledButEngineUnavailable)
-        XCTAssertEqual(decision.assets.contentRuleListIdentifiers.count, 0)
+        XCTAssertEqual(module.status, .enabledNativeSkeleton)
+        XCTAssertEqual(module.assetsIfAvailable().contentRuleListIdentifiers.count, 2)
+        XCTAssertEqual(decision.status, .enabledNativeSkeleton)
+        XCTAssertEqual(decision.assets.contentRuleListIdentifiers.count, 2)
         XCTAssertEqual(decision.assets.scriptSources.count, 0)
         XCTAssertEqual(decision.assets.scriptMessageHandlerNames.count, 0)
-        XCTAssertFalse(module.hasLoadedRuntime)
+        XCTAssertNotNil(decision.contentBlockingService)
+        XCTAssertTrue(module.hasLoadedRuntime)
     }
 
     func testBrowserManagerStartupWithAdBlockingDisabledDoesNotCreateRuntime() {
@@ -140,15 +141,10 @@ final class SumiAdBlockingModuleTests: XCTestCase {
 
         XCTAssertFalse(model.isEnabled)
 
-        let privacySource = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
         let togglesSource = try Self.source(named: "Sumi/Components/Settings/SumiSettingsModuleToggles.swift")
 
-        XCTAssertTrue(privacySource.contains("SumiSettingsModuleToggleGate(descriptor: .adBlocking)"))
-        XCTAssertFalse(privacySource.contains("SumiAdBlockingModule"))
-        XCTAssertFalse(privacySource.contains("sumiAdBlockingModule"))
-        XCTAssertFalse(togglesSource.contains("SumiAdBlockingModule"))
         XCTAssertFalse(togglesSource.contains("normalTabDecision("))
-        XCTAssertFalse(togglesSource.contains("assetsIfAvailable("))
+        XCTAssertFalse(togglesSource.contains("ruleListStoreIfEnabled("))
     }
 
     func testNormalTabCreationWithAdBlockingDisabledAttachesNoAdBlockingAssets() async throws {
@@ -180,7 +176,7 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertFalse(module.hasLoadedRuntime)
     }
 
-    func testNormalTabCreationWithAdBlockingEnabledShellStillAttachesNoAssets() async throws {
+    func testNormalTabCreationWithAdBlockingEnabledAttachesNativeRuleListsOnly() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let registry = SumiModuleRegistry(
@@ -204,11 +200,12 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         let controller = try XCTUnwrap(webView.configuration.userContentController.sumiNormalTabUserContentController)
         await controller.waitForContentBlockingAssetsInstalled()
 
-        XCTAssertEqual(module.status, .enabledButEngineUnavailable)
-        XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 0)
-        XCTAssertEqual(module.normalTabDecision(for: tab.url).assets, .empty)
+        XCTAssertEqual(module.status, .enabledNativeSkeleton)
+        try await waitForAssets(on: controller) { $0.globalRuleListCount == 2 }
+        XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 2)
+        XCTAssertEqual(module.normalTabDecision(for: tab.url).assets.scriptSources.count, 0)
         assertNoAdBlockingScriptsOrHandlers(in: webView.configuration.userContentController)
-        XCTAssertFalse(module.hasLoadedRuntime)
+        XCTAssertTrue(module.hasLoadedRuntime)
     }
 
     func testAuxiliaryConfigurationsAttachNoAdBlockingAssets() {
@@ -296,8 +293,9 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         await controller.waitForContentBlockingAssetsInstalled()
 
         XCTAssertFalse(registry.isEnabled(.trackingProtection))
-        XCTAssertEqual(adBlockingModule.status, .enabledButEngineUnavailable)
-        XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 0)
+        XCTAssertEqual(adBlockingModule.status, .enabledNativeSkeleton)
+        try await waitForAssets(on: controller) { $0.globalRuleListCount == 2 }
+        XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 2)
         XCTAssertEqual(
             tab.trackingProtectionAppliedAttachmentState,
             SumiTrackingProtectionAttachmentState(siteHost: "example.com", isEnabled: false)
@@ -346,20 +344,137 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertFalse(registry.isEnabled(.adBlocking))
     }
 
-    func testAdBlockingModuleSourceHasNoEngineListCompilerOrTrackingRuntimeIntegration() throws {
+    func testAdblockSettingsPersistCosmeticModeAutoUpdateAndRegionalPlaceholders() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let settings = AdblockSettingsStore(userDefaults: harness.defaults)
+
+        XCTAssertTrue(settings.autoUpdateEnabled)
+        XCTAssertEqual(settings.cosmeticMode, .nativeCSS)
+        XCTAssertTrue(settings.regionalListSelection.identifiers.isEmpty)
+
+        settings.autoUpdateEnabled = false
+        settings.cosmeticMode = .enhancedRuntime
+        settings.regionalListSelection = SumiAdblockRegionalListSelection(identifiers: ["de", "pl"])
+
+        let reloaded = AdblockSettingsStore(userDefaults: harness.defaults)
+        XCTAssertFalse(reloaded.autoUpdateEnabled)
+        XCTAssertEqual(reloaded.cosmeticMode, .enhancedRuntime)
+        XCTAssertEqual(reloaded.regionalListSelection.identifiers, ["de", "pl"])
+    }
+
+    func testCosmeticModesOnlySelectNativeRuleListsAndNeverScripts() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.adBlocking)
+        let settings = AdblockSettingsStore(userDefaults: harness.defaults)
+
+        settings.cosmeticMode = .off
+        var module = SumiAdBlockingModule(moduleRegistry: registry, settingsFactory: { settings })
+        XCTAssertEqual(module.assetsIfAvailable().contentRuleListIdentifiers.count, 1)
+        XCTAssertEqual(module.normalTabDecision(for: nil).assets.scriptSources, [])
+
+        settings.cosmeticMode = .nativeCSS
+        module = SumiAdBlockingModule(moduleRegistry: registry, settingsFactory: { settings })
+        XCTAssertEqual(module.assetsIfAvailable().contentRuleListIdentifiers.count, 2)
+        XCTAssertEqual(module.normalTabDecision(for: nil).assets.scriptSources, [])
+
+        settings.cosmeticMode = .enhancedRuntime
+        module = SumiAdBlockingModule(moduleRegistry: registry, settingsFactory: { settings })
+        XCTAssertEqual(module.assetsIfAvailable().contentRuleListIdentifiers.count, 1)
+        XCTAssertEqual(module.normalTabDecision(for: nil).assets.scriptSources, [])
+        XCTAssertEqual(module.normalTabDecision(for: nil).assets.scriptMessageHandlerNames, [])
+    }
+
+    func testCosmeticModeChangeUpdatesEnabledNativeRuleListPolicy() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.adBlocking)
+        let settings = AdblockSettingsStore(userDefaults: harness.defaults)
+        settings.cosmeticMode = .nativeCSS
+        let module = SumiAdBlockingModule(
+            moduleRegistry: registry,
+            settingsFactory: { settings }
+        )
+        let decision = module.normalTabDecision(for: URL(string: "https://example.com"))
+        let service = try XCTUnwrap(decision.contentBlockingService)
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingServices: [service]
+        )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+
+        try await waitForAssets(on: normalTabController) { $0.globalRuleListCount == 2 }
+
+        settings.cosmeticMode = .off
+
+        let summary = try await waitForAssets(on: normalTabController) { $0.globalRuleListCount == 1 }
+        XCTAssertEqual(summary.updateRuleCount, 1)
+    }
+
+    func testPerSiteDisabledPolicyPreventsRuleListAttachment() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.adBlocking)
+        let sitePolicyStore = AdblockSitePolicyStore(userDefaults: harness.defaults)
+        sitePolicyStore.setSiteOverride(.disabled, for: URL(string: "https://www.example.com/page"))
+        let module = SumiAdBlockingModule(
+            moduleRegistry: registry,
+            sitePolicyFactory: { sitePolicyStore }
+        )
+
+        let decision = module.normalTabDecision(for: URL(string: "https://example.com/other"))
+
+        XCTAssertEqual(decision.status, .enabledNativeSkeleton)
+        XCTAssertEqual(decision.assets, .empty)
+        XCTAssertNil(decision.contentBlockingService)
+        XCTAssertFalse(module.hasLoadedRuntime)
+    }
+
+    func testDisablingAdblockRemovesRuleListsFromExistingController() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.adBlocking)
+        let module = SumiAdBlockingModule(moduleRegistry: registry)
+        let service = try XCTUnwrap(
+            module.normalTabDecision(for: URL(string: "https://example.com")).contentBlockingService
+        )
+        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingServices: [service]
+        )
+        let normalController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+        try await waitForAssets(on: normalController) { $0.globalRuleListCount == 2 }
+
+        module.setEnabled(false)
+        try await waitForAssets(on: normalController) { $0.globalRuleListCount == 0 }
+
+        XCTAssertFalse(module.isEnabled)
+        XCTAssertEqual(normalController.contentBlockingAssetSummary.globalRuleListCount, 0)
+    }
+
+    func testAdBlockingModuleSourceHasNoRustWebExtensionUpdaterOrRuntimeScriptIntegration() throws {
         let source = try Self.source(named: "Sumi/ContentBlocking/SumiAdBlockingModule.swift")
 
         XCTAssertTrue(source.contains("SumiAdBlockingModuleStatus"))
-        XCTAssertTrue(source.contains("enabledButEngineUnavailable"))
+        XCTAssertTrue(source.contains("enabledNativeSkeleton"))
         XCTAssertTrue(source.contains("moduleRegistry.isEnabled(.adBlocking)"))
-        XCTAssertTrue(source.contains("false"))
 
         for forbiddenPattern in [
             "adblock_rust",
             "adblock-rust",
             "EasyList",
             "EasyPrivacy",
-            "SumiContentBlockingService",
             "SumiContentBlockingService.shared",
             "SumiTrackingProtectionModule",
             "SumiTrackingRuleListProvider",
@@ -368,9 +483,6 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             "SumiTrackingProtectionSettings",
             "SumiTrackingProtectionDataStore",
             "SumiTrackerDataUpdater",
-            "SumiWKContentRuleListCompiler",
-            "WKContentRuleListStore",
-            "compileContentRuleList",
             "WKUserScript",
             "addUserScript",
             "addScriptMessageHandler",
@@ -384,15 +496,11 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             XCTAssertFalse(source.contains(forbiddenPattern), forbiddenPattern)
         }
 
-        XCTAssertFalse(source.localizedCaseInsensitiveContains("cosmetic"))
         XCTAssertFalse(source.localizedCaseInsensitiveContains("scriptlet"))
     }
 
-    func testNormalTabAndAuxiliarySourcesDoNotConsultAdBlockingModule() throws {
+    func testAuxiliarySourcesDoNotConsultAdBlockingModule() throws {
         for relativePath in [
-            "Sumi/Models/Tab/Tab+WebViewRuntime.swift",
-            "Sumi/Models/BrowserConfig/BrowserConfig.swift",
-            "Sumi/UserScripts/SumiNormalTabBrowserServicesKitUserContentControllerAdapter.swift",
             "Sumi/UserScripts/SumiNormalTabUserScripts.swift",
             "Sumi/Managers/GlanceManager/GlanceWebView.swift",
             "Sumi/Components/MiniWindow/MiniWindowWebView.swift",

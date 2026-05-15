@@ -10,6 +10,7 @@ import SwiftUI
 struct PrivacySettingsView: View {
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.sumiTrackingProtectionModule) private var trackingProtectionModule
+    @Environment(\.sumiAdBlockingModule) private var adBlockingModule
     @ObservedObject var browserManager: BrowserManager
     var windowState: BrowserWindowState?
 
@@ -49,7 +50,14 @@ struct PrivacySettingsView: View {
                         }
                     }
 
-                    SumiSettingsModuleToggleGate(descriptor: .adBlocking)
+                    SumiSettingsModuleToggleGate(descriptor: .adBlocking) {
+                        if let settings = adBlockingModule.settingsIfEnabled() {
+                            NativeAdblockSettingsView(
+                                settings: settings,
+                                sitePolicyStore: adBlockingModule.sitePolicyStoreIfEnabled()
+                            )
+                        }
+                    }
 
                     Spacer()
                 }
@@ -73,6 +81,111 @@ struct PrivacySettingsView: View {
             }
         }
         return browserManager.currentProfile
+    }
+}
+
+private struct NativeAdblockSettingsView: View {
+    @ObservedObject var settings: AdblockSettingsStore
+    @ObservedObject var sitePolicyStore: AdblockSitePolicyStore
+    @State private var overrideHostInput = ""
+
+    var body: some View {
+        SettingsSection(
+            title: "Native Ad Blocking",
+            subtitle: "Uses WebKit content blocking. Enhanced cleanup is a future mode and does not load runtime scripts yet."
+        ) {
+            SettingsRow(
+                title: "Automatic filter updates",
+                subtitle: "Stored for future list updates; no background updater runs in this skeleton."
+            ) {
+                Toggle("", isOn: $settings.autoUpdateEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+            }
+
+            SettingsRow(
+                title: "Cosmetic filtering",
+                subtitle: settings.cosmeticMode.detail
+            ) {
+                Picker("", selection: $settings.cosmeticMode) {
+                    ForEach(SumiAdblockCosmeticMode.allCases) { mode in
+                        Text(mode.displayTitle).tag(mode)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(maxWidth: 220)
+            }
+
+            SettingsRow(
+                title: "Regional filters",
+                subtitle: "Placeholder for future regional list selection."
+            ) {
+                Text("\(settings.regionalListSelection.identifiers.count) selected")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            SettingsDivider()
+            adblockSiteOverrides
+        }
+    }
+
+    private var adblockSiteOverrides: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Site Overrides")
+                .font(.subheadline)
+                .fontWeight(.medium)
+
+            if sitePolicyStore.sortedSiteOverrides.isEmpty {
+                Text("No site overrides.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(sitePolicyStore.sortedSiteOverrides, id: \.host) { item in
+                        SettingsRow(title: item.host) {
+                            Menu(item.override.displayTitle) {
+                                Button("Use Global Setting") {
+                                    sitePolicyStore.removeSiteOverride(forNormalizedHost: item.host)
+                                }
+                                Button("Enable") {
+                                    _ = sitePolicyStore.setSiteOverride(.allowed, forUserInput: item.host)
+                                }
+                                Button("Disable") {
+                                    _ = sitePolicyStore.setSiteOverride(.disabled, forUserInput: item.host)
+                                }
+                            }
+                            .menuStyle(.button)
+                            .fixedSize()
+                        }
+                    }
+                }
+            }
+
+            HStack(spacing: 8) {
+                TextField("example.com", text: $overrideHostInput)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 220)
+
+                Menu("Add") {
+                    Button("Enable for Site") {
+                        addOverride(.allowed)
+                    }
+                    Button("Disable for Site") {
+                        addOverride(.disabled)
+                    }
+                }
+                .menuStyle(.button)
+                .disabled(overrideHostInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+    }
+
+    private func addOverride(_ override: SumiAdblockSiteOverride) {
+        if sitePolicyStore.setSiteOverride(override, forUserInput: overrideHostInput) {
+            overrideHostInput = ""
+        }
     }
 }
 

@@ -140,7 +140,8 @@ class BrowserConfiguration {
         url: URL?,
         autoplayPolicy: SumiAutoplayPolicy? = nil,
         userScriptsProvider: SumiNormalTabUserScripts? = nil,
-        contentBlockingService: SumiContentBlockingService? = nil
+        contentBlockingService: SumiContentBlockingService? = nil,
+        additionalContentBlockingServices: [SumiContentBlockingService] = []
     ) -> WKWebViewConfiguration {
         let config = makeBaseWebViewConfiguration()
         config.sumiIsNormalTabWebViewConfiguration = true
@@ -150,6 +151,7 @@ class BrowserConfiguration {
             .makeController(
                 scriptsProvider: userScriptsProvider,
                 contentBlockingService: contentBlockingService,
+                contentBlockingServices: additionalContentBlockingServices,
                 profileId: profile.id
             )
         applyAutoplayPolicy(

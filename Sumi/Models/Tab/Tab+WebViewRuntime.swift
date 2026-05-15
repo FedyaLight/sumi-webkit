@@ -384,6 +384,8 @@ extension Tab {
                 trackingProtectionDecision.attachmentState
             )
         }
+        let adBlockingDecision = browserManager?.adBlockingModule
+            .normalTabDecision(for: url)
 
         let configuration = BrowserConfiguration.shared.normalTabWebViewConfiguration(
             for: profile,
@@ -393,7 +395,8 @@ extension Tab {
                 profile: profile
             ),
             userScriptsProvider: normalTabUserScriptsProvider(for: url),
-            contentBlockingService: trackingProtectionDecision?.contentBlockingService
+            contentBlockingService: trackingProtectionDecision?.contentBlockingService,
+            additionalContentBlockingServices: [adBlockingDecision?.contentBlockingService].compactMap { $0 }
         )
         return configuration
     }
