@@ -8,7 +8,8 @@
 import SwiftUI
 
 struct NavMenuStyle: MenuStyle {
-    @Environment(\.colorScheme) var colorScheme
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.isEnabled) var isEnabled
     @Environment(\.controlSize) var controlSize
     @State private var isHovering: Bool = false
@@ -19,7 +20,7 @@ struct NavMenuStyle: MenuStyle {
             .menuIndicator(.hidden)
             .background {
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(.primary.opacity(backgroundColorOpacity))
+                    .fill(backgroundColor)
                     .frame(width: size, height: size)
             }
             .opacity(isEnabled ? 1.0 : 0.3)
@@ -58,12 +59,13 @@ struct NavMenuStyle: MenuStyle {
         8
     }
 
-    private var backgroundColorOpacity: Double {
-        if (isHovering || isPressed) && isEnabled {
-            return colorScheme == .dark ? 0.2 : 0.1
-        } else {
-            return 0.0
+    private var backgroundColor: Color {
+        guard (isHovering || isPressed) && isEnabled else {
+            return .clear
         }
+
+        let tokens = themeContext.tokens(settings: sumiSettings)
+        return isPressed ? tokens.chromeControlPressedBackground : tokens.chromeControlHoverBackground
     }
 }
 
@@ -126,4 +128,3 @@ struct NavMenuStyle: MenuStyle {
     }
     .padding()
 }
-

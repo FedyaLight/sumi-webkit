@@ -221,6 +221,8 @@ private struct ThemeChromePalette {
     let primaryText: Color
     let secondaryText: Color
     let tertiaryText: Color
+    let chromeControlHoverBackground: Color
+    let chromeControlPressedBackground: Color
     let sidebarRowActive: Color
     let sidebarRowHover: Color
     let sidebarSelectionShadow: Color
@@ -269,6 +271,8 @@ private struct ThemeChromePalette {
         let primaryText = ThemeContrastResolver.primaryText(for: scheme)
         let secondaryText = ThemeContrastResolver.secondaryText(for: scheme)
         let tertiaryText = ThemeContrastResolver.tertiaryText(for: scheme)
+        let chromeControlHoverBackground = primaryText.opacity(scheme == .dark ? 0.20 : 0.10)
+        let chromeControlPressedBackground = primaryText.opacity(scheme == .dark ? 0.24 : 0.16)
         let buttonPrimaryText = ThemeContrastResolver.preferredForeground(on: accent)
         let fieldBackground = ThemeChromeRecipeBuilder.zenToolbarElementBackground(scheme: scheme)
         let fieldBackgroundHover = ThemeChromeRecipeBuilder.zenToolbarElementHoverBackground(
@@ -328,6 +332,8 @@ private struct ThemeChromePalette {
             primaryText: primaryText,
             secondaryText: secondaryText,
             tertiaryText: tertiaryText,
+            chromeControlHoverBackground: chromeControlHoverBackground,
+            chromeControlPressedBackground: chromeControlPressedBackground,
             sidebarRowActive: sidebarRowActive,
             sidebarRowHover: sidebarRowHover,
             sidebarSelectionShadow: sidebarSelectionShadow,
@@ -378,6 +384,8 @@ private struct ThemeChromePalette {
             primaryText: mix(primaryText, other.primaryText),
             secondaryText: mix(secondaryText, other.secondaryText),
             tertiaryText: mix(tertiaryText, other.tertiaryText),
+            chromeControlHoverBackground: mix(chromeControlHoverBackground, other.chromeControlHoverBackground),
+            chromeControlPressedBackground: mix(chromeControlPressedBackground, other.chromeControlPressedBackground),
             sidebarRowActive: mix(sidebarRowActive, other.sidebarRowActive),
             sidebarRowHover: mix(sidebarRowHover, other.sidebarRowHover),
             sidebarSelectionShadow: mix(sidebarSelectionShadow, other.sidebarSelectionShadow),
@@ -412,6 +420,8 @@ private struct ThemeChromePalette {
             primaryText: primaryText,
             secondaryText: secondaryText,
             tertiaryText: tertiaryText,
+            chromeControlHoverBackground: chromeControlHoverBackground,
+            chromeControlPressedBackground: chromeControlPressedBackground,
             sidebarRowActive: sidebarRowActive,
             sidebarRowHover: sidebarRowHover,
             sidebarSelectionShadow: sidebarSelectionShadow,

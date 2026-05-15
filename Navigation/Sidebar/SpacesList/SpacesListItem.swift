@@ -49,8 +49,8 @@ struct SpacesListItem: View {
                 .fill(
                     themeContext
                         .tokens(settings: sumiSettings)
-                        .primaryText
-                        .opacity(displayIsHovering ? hoverBackgroundOpacity : 0)
+                        .chromeControlHoverBackground
+                        .opacity(displayIsHovering ? 1 : 0)
                 )
 
             spaceIcon
@@ -126,11 +126,6 @@ struct SpacesListItem: View {
             freezesHoverState: windowState.sidebarInteractionState.freezesSidebarHoverState
         )
     }
-
-    private var hoverBackgroundOpacity: Double {
-        themeContext.chromeColorScheme == .dark ? 0.2 : 0.1
-    }
-
 
     // MARK: - Context Menu
 
@@ -229,7 +224,7 @@ struct SpaceListItemButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: cornerRadius)
-                .fill(tokens.primaryText.opacity(backgroundColorOpacity(isPressed: configuration.isPressed)))
+                .fill(backgroundColor(isPressed: configuration.isPressed))
 
             configuration.label
                 .foregroundStyle(tokens.primaryText)
@@ -268,11 +263,10 @@ struct SpaceListItemButtonStyle: ButtonStyle {
         8
     }
     
-    private func backgroundColorOpacity(isPressed: Bool) -> Double {
-        if (isHovering || isPressed) && isEnabled {
-            return themeContext.chromeColorScheme == .dark ? 0.2 : 0.1
-        } else {
-            return 0.0
+    private func backgroundColor(isPressed: Bool) -> Color {
+        guard (isHovering || isPressed) && isEnabled else {
+            return .clear
         }
+        return isPressed ? tokens.chromeControlPressedBackground : tokens.chromeControlHoverBackground
     }
 }

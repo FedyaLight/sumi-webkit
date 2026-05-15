@@ -8,6 +8,8 @@ struct ChromeThemeTokens {
     let primaryText: Color
     let secondaryText: Color
     let tertiaryText: Color
+    let chromeControlHoverBackground: Color
+    let chromeControlPressedBackground: Color
     let sidebarRowActive: Color
     let sidebarRowHover: Color
     let sidebarSelectionShadow: Color

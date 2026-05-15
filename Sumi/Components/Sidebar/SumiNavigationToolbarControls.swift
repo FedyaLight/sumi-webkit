@@ -27,15 +27,21 @@ struct SumiNavigationToolbarTheme {
     let mouseDownColor: NSColor
     let disabledAlpha: CGFloat
 
-    init(tokens: ChromeThemeTokens, colorScheme: ColorScheme) {
+    init(tokens: ChromeThemeTokens) {
         let tint = NSColor(tokens.primaryText).usingColorSpace(.displayP3)
             ?? NSColor(tokens.primaryText).usingColorSpace(.sRGB)
             ?? .labelColor
 
         tintColor = tint
-        hoverColor = tint.withAlphaComponent(colorScheme == .dark ? 0.16 : 0.10)
-        mouseDownColor = tint.withAlphaComponent(colorScheme == .dark ? 0.24 : 0.16)
+        hoverColor = Self.nsColor(tokens.chromeControlHoverBackground)
+        mouseDownColor = Self.nsColor(tokens.chromeControlPressedBackground)
         disabledAlpha = 0.34
+    }
+
+    private static func nsColor(_ color: Color) -> NSColor {
+        NSColor(color).usingColorSpace(.displayP3)
+            ?? NSColor(color).usingColorSpace(.sRGB)
+            ?? .clear
     }
 }
 

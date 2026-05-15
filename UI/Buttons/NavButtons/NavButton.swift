@@ -30,7 +30,7 @@ struct NavButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: cornerRadius)
-                .fill(tokens.primaryText.opacity(backgroundColorOpacity(isPressed: configuration.isPressed)))
+                .fill(backgroundColor(isPressed: configuration.isPressed))
                 .frame(width: size, height: size)
 
             configuration.label
@@ -79,12 +79,11 @@ struct NavButtonStyle: ButtonStyle {
         8
     }
     
-    private func backgroundColorOpacity(isPressed: Bool) -> Double {
-        if (isHovering || isPressed) && isEnabled {
-            return themeContext.chromeColorScheme == .dark ? 0.2 : 0.1
-        } else {
-            return 0.0
+    private func backgroundColor(isPressed: Bool) -> Color {
+        guard (isHovering || isPressed) && isEnabled else {
+            return .clear
         }
+        return isPressed ? tokens.chromeControlPressedBackground : tokens.chromeControlHoverBackground
     }
 }
 
@@ -108,7 +107,7 @@ struct RectNavButtonStyle: ButtonStyle {
             .frame(height: height)
             .background {
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(tokens.primaryText.opacity(backgroundColorOpacity(isPressed: configuration.isPressed)))
+                    .fill(backgroundColor(isPressed: configuration.isPressed))
             }
             .contentShape(.rect)
             .opacity(isEnabled ? 1.0 : 0.3)
@@ -147,12 +146,11 @@ struct RectNavButtonStyle: ButtonStyle {
         8
     }
 
-    private func backgroundColorOpacity(isPressed: Bool) -> Double {
-        if (isHovering || isPressed) && isEnabled {
-            return themeContext.chromeColorScheme == .dark ? 0.2 : 0.1
-        } else {
-            return 0.0
+    private func backgroundColor(isPressed: Bool) -> Color {
+        guard (isHovering || isPressed) && isEnabled else {
+            return .clear
         }
+        return isPressed ? tokens.chromeControlPressedBackground : tokens.chromeControlHoverBackground
     }
 }
 
