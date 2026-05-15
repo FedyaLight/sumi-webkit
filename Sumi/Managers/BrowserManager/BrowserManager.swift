@@ -1093,10 +1093,15 @@ class BrowserManager: ObservableObject {
             preferredSpaceId: sourceTab.spaceId
         )
         let targetSpace = resolvedTabOpenSpace(for: context)
+        let insertionIndex = tabManager.regularChildInsertionIndex(
+            openedFrom: sourceTab,
+            in: targetSpace
+        )
         return tabManager.createPopupTab(
             in: targetSpace,
             activate: activate,
-            webViewConfigurationOverride: webViewConfigurationOverride
+            webViewConfigurationOverride: webViewConfigurationOverride,
+            regularInsertionIndex: insertionIndex
         )
     }
 
