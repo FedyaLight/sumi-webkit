@@ -338,7 +338,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(liveWebViewPath.contains(".shadow("))
         XCTAssertFalse(liveWebViewPath.contains(".background(contentSurfaceBackground)"))
         XCTAssertFalse(liveWebViewPath.contains(".browserContentViewportBackground("))
-        XCTAssertTrue(liveWebViewPath.contains("contentViewportCutoutBackground: contentViewportCutoutBackground"))
+        XCTAssertTrue(liveWebViewPath.contains("chromeGeometry: chromeGeometry"))
     }
 
     func testWebsiteCompositorOwnsChromeShadowOutsideWebViewHost() throws {
@@ -359,11 +359,11 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertTrue(containerSource.contains("addSubview(chromeShadowView"))
         XCTAssertTrue(containerSource.contains("positioned: .above, relativeTo: chromeShadowView"))
         XCTAssertTrue(containerSource.contains("subview !== chromeShadowView"))
-        XCTAssertFalse(containerSource.contains("masksToBounds"))
+        XCTAssertFalse(containerSource.contains("layer?.mask"))
         XCTAssertFalse(containerSource.contains("override var isOpaque"))
     }
 
-    func testRoundedWebContentViewportUsesCutoutsWithoutWebPageInjectionSnapshotsOrMasks() throws {
+    func testRoundedWebContentViewportUsesNativeLayerClippingWithoutWebPageInjectionOrSnapshots() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -381,24 +381,19 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             )
         }.joined(separator: "\n")
 
-        XCTAssertTrue(featureSource.contains("BrowserContentCornerCutoutView"))
         XCTAssertTrue(featureSource.contains("BrowserContentViewportShadowView"))
         XCTAssertTrue(featureSource.contains("shadowSurfaceLayer.shadowPath"))
-        XCTAssertTrue(featureSource.contains("drawViewportShadow"))
         XCTAssertTrue(featureSource.contains("containsPointInsideRoundedViewport"))
         XCTAssertTrue(featureSource.contains("override func hitTest"))
-        XCTAssertTrue(featureSource.contains("cutoutPath.addClip()"))
-        XCTAssertTrue(featureSource.contains("guard distance >= 0 else { continue }"))
-        XCTAssertTrue(featureSource.contains("BrowserContentViewportVisuals.cornerCutoutShadowOpacityMultiplier"))
-        XCTAssertTrue(featureSource.contains("let referenceView = view.window?.contentView"))
-        XCTAssertTrue(featureSource.contains("let originInReference = view.convert(NSPoint.zero, to: referenceView)"))
-        XCTAssertTrue(featureSource.contains("let sampler = BrowserContentViewportCutoutBackgroundSampler"))
-        XCTAssertTrue(featureSource.contains("sampler.sampledColor(\n                    at: referencePoint"))
+        XCTAssertTrue(featureSource.contains("layer.masksToBounds = radius > 0"))
+        XCTAssertTrue(featureSource.contains("layer.cornerRadius = radius"))
         XCTAssertTrue(featureSource.contains("setAccessibilityElement(false)"))
         XCTAssertTrue(featureSource.contains("setAccessibilityHidden(true)"))
-        XCTAssertTrue(featureSource.contains("override func viewDidChangeEffectiveAppearance()"))
         XCTAssertTrue(featureSource.contains("updateDisplayedHostViewportStyles()"))
-        XCTAssertTrue(featureSource.contains("cutoutView.needsDisplay = true"))
+        XCTAssertFalse(featureSource.contains("BrowserContentCornerCutoutView"))
+        XCTAssertFalse(featureSource.contains("BrowserContentViewportCutoutBackgroundSampler"))
+        XCTAssertFalse(featureSource.contains("drawViewportShadow"))
+        XCTAssertFalse(featureSource.contains("cutoutPath.addClip()"))
 
         let forbiddenTokens = [
             "evaluateJavaScript",

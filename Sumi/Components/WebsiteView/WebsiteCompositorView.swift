@@ -38,7 +38,6 @@ final class WindowWebContentController: NSViewController {
     private let webViewCoordinator: WebViewCoordinator
     private let windowState: BrowserWindowState
     private var chromeGeometry: BrowserChromeGeometry
-    private var contentViewportCutoutBackground: BrowserContentViewportCutoutBackground
     private lazy var containerView = ContainerView(
         browserManager: browserManager,
         splitManager: browserManager.splitManager,
@@ -60,13 +59,11 @@ final class WindowWebContentController: NSViewController {
         browserManager: BrowserManager,
         webViewCoordinator: WebViewCoordinator,
         chromeGeometry: BrowserChromeGeometry,
-        contentViewportCutoutBackground: BrowserContentViewportCutoutBackground,
         windowState: BrowserWindowState
     ) {
         self.browserManager = browserManager
         self.webViewCoordinator = webViewCoordinator
         self.chromeGeometry = chromeGeometry
-        self.contentViewportCutoutBackground = contentViewportCutoutBackground
         self.windowState = windowState
         super.init(nibName: nil, bundle: nil)
     }
@@ -108,15 +105,13 @@ final class WindowWebContentController: NSViewController {
     func update(
         displayState: WebsiteDisplayState,
         hoveredLinkHandler: @escaping (String?) -> Void,
-        chromeGeometry: BrowserChromeGeometry,
-        contentViewportCutoutBackground: BrowserContentViewportCutoutBackground
+        chromeGeometry: BrowserChromeGeometry
     ) {
         if self.chromeGeometry != chromeGeometry {
             self.chromeGeometry = chromeGeometry
             containerView.setChromeGeometry(chromeGeometry)
+            updateDisplayedHostViewportStyles()
         }
-        self.contentViewportCutoutBackground = contentViewportCutoutBackground
-        updateDisplayedHostViewportStyles()
 
         pendingDisplayState = displayState
         self.hoveredLinkHandler = hoveredLinkHandler
@@ -461,10 +456,7 @@ final class WindowWebContentController: NSViewController {
     }
 
     private func configureViewportStyle(on host: SumiWebViewContainerView) {
-        host.setBrowserContentViewport(
-            geometry: chromeGeometry,
-            cutoutBackground: contentViewportCutoutBackground
-        )
+        host.setBrowserContentViewport(geometry: chromeGeometry)
     }
 
     private func scheduleSplitRepair(keep side: SplitViewManager.Side) {
@@ -490,7 +482,6 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
     var rightId: UUID?
     var isSplitDropCaptureActive: Bool
     var chromeGeometry: BrowserChromeGeometry
-    var contentViewportCutoutBackground: BrowserContentViewportCutoutBackground
     let windowState: BrowserWindowState
 
     final class Coordinator {
@@ -541,7 +532,6 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
             browserManager: browserManager,
             webViewCoordinator: webViewCoordinator,
             chromeGeometry: chromeGeometry,
-            contentViewportCutoutBackground: contentViewportCutoutBackground,
             windowState: windowState
         )
     }
@@ -551,8 +541,7 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
         controller.update(
             displayState: makeDisplayState(),
             hoveredLinkHandler: { context.coordinator.setHoveredLink($0) },
-            chromeGeometry: chromeGeometry,
-            contentViewportCutoutBackground: contentViewportCutoutBackground
+            chromeGeometry: chromeGeometry
         )
     }
 

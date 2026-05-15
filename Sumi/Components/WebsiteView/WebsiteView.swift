@@ -135,21 +135,6 @@ struct WebsiteView: View {
         BrowserChromeGeometry(settings: sumiSettings)
     }
 
-    private var contentViewportCutoutBackground: BrowserContentViewportCutoutBackground {
-        if !themeContext.rendersCustomChromeTheme {
-            return .solid(opaqueNSColor(from: themeContext.tokens(settings: sumiSettings).windowBackground))
-        }
-
-        return BrowserContentViewportCutoutBackground(
-            baseColor: opaqueNSColor(from: themeContext.tokens(settings: sumiSettings).windowBackground),
-            sourceGradient: toolbarChromeGradient(for: themeContext.sourceWorkspaceTheme),
-            targetGradient: toolbarChromeGradient(for: themeContext.targetWorkspaceTheme),
-            transitionProgress: themeContext.transitionProgress,
-            usesTransitionLayers: themeContext.isInteractiveTransition
-                || !themeContext.sourceWorkspaceTheme.visuallyEquals(themeContext.targetWorkspaceTheme)
-        )
-    }
-
     private var browserContentSurfaceBackground: Color {
         themeContext.nativeSurfaceThemeContext.tokens(settings: sumiSettings).windowBackground
     }
@@ -218,7 +203,6 @@ struct WebsiteView: View {
                             rightId: splitManager.rightTabId(for: windowState.id),
                             isSplitDropCaptureActive: sidebarDragState.isDragging && sidebarDragState.isInternalDragSession,
                             chromeGeometry: chromeGeometry,
-                            contentViewportCutoutBackground: contentViewportCutoutBackground,
                             windowState: windowState
                         )
                         .coordinateSpace(name: dragCoordinateSpace)
@@ -260,29 +244,6 @@ struct WebsiteView: View {
             
         }
         .id(windowState.nativeSurfaceRoutingRevision)
-    }
-
-    private func toolbarChromeGradient(for workspaceTheme: WorkspaceTheme) -> SpaceGradient {
-        ZenWorkspaceThemeResolver.resolve(
-            theme: workspaceTheme,
-            globalWindowScheme: themeContext.globalColorScheme,
-            settings: sumiSettings,
-            isIncognito: windowState.isIncognito
-        ).toolbarGradient
-    }
-
-    private func opaqueNSColor(from color: Color) -> NSColor {
-        let nsColor = NSColor(color)
-        guard let converted = nsColor.usingColorSpace(.sRGB) else {
-            return nsColor.withAlphaComponent(1)
-        }
-
-        var red: CGFloat = 0
-        var green: CGFloat = 0
-        var blue: CGFloat = 0
-        var alpha: CGFloat = 0
-        converted.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
-        return NSColor(srgbRed: red, green: green, blue: blue, alpha: 1)
     }
 
 }
