@@ -769,7 +769,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     func unloadWebView() {
         invalidateCurrentPermissionPageForWebViewReplacement(reason: "normal-tab-webview-unload")
 
-        let removedTrackedWebViews = browserManager?.webViewCoordinator?.removeAllWebViews(for: self) ?? false
+        let removedTrackedWebViews = browserManager?.webViewCoordinator?.removeAllWebViews(
+            for: self,
+            closeActiveFullscreenMedia: true
+        ) ?? false
 
         guard removedTrackedWebViews || _webView != nil else {
             SumiNativeNowPlayingController.shared.handleTabUnloaded(id)
@@ -1180,7 +1183,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     /// MEMORY LEAK FIX: Comprehensive cleanup for the main tab WebView
     public func performComprehensiveWebViewCleanup() {
-        let removedTrackedWebViews = browserManager?.webViewCoordinator?.removeAllWebViews(for: self) ?? false
+        let removedTrackedWebViews = browserManager?.webViewCoordinator?.removeAllWebViews(
+            for: self,
+            closeActiveFullscreenMedia: true
+        ) ?? false
         guard removedTrackedWebViews || _webView != nil else { return }
 
         RuntimeDiagnostics.debug("Performing comprehensive WebView cleanup for '\(name)'.", category: "Tab")

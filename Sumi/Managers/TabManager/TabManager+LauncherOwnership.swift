@@ -391,7 +391,10 @@ extension TabManager {
             tab.performComprehensiveWebViewCleanup()
             browserManager?.compositorManager.unloadTab(tab)
             if let browserManager {
-                browserManager.requireWebViewCoordinator().removeAllWebViews(for: tab)
+                browserManager.requireWebViewCoordinator().removeAllWebViews(
+                    for: tab,
+                    closeActiveFullscreenMedia: true
+                )
             }
             detach(tab)
             NotificationCenter.default.post(

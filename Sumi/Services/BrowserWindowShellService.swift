@@ -94,7 +94,7 @@ final class BrowserWindowShellService {
 
         if let coordinator = context.webViewCoordinator {
             for tab in windowState.ephemeralTabs {
-                coordinator.removeAllWebViews(for: tab)
+                coordinator.removeAllWebViews(for: tab, closeActiveFullscreenMedia: true)
             }
         }
 
