@@ -135,7 +135,9 @@ final class SettingsModuleToggleTests: XCTestCase {
         XCTAssertTrue(privacySource.contains("NativeAdblockSettingsView"))
         XCTAssertTrue(privacySource.contains("Automatic filter updates"))
         XCTAssertTrue(privacySource.contains("Cosmetic filtering"))
-        XCTAssertTrue(privacySource.contains("Regional filters"))
+        XCTAssertTrue(privacySource.contains("Filter lists"))
+        XCTAssertTrue(privacySource.contains("Base ads"))
+        XCTAssertTrue(privacySource.contains("Regional ads"))
 
         for source in [privacySource, toggleSource] {
             XCTAssertFalse(source.contains("assetsIfAvailable"))

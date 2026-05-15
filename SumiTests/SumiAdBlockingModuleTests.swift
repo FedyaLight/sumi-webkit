@@ -417,7 +417,7 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertFalse(registry.isEnabled(.adBlocking))
     }
 
-    func testAdblockSettingsPersistCosmeticModeAutoUpdateAndRegionalPlaceholders() {
+    func testAdblockSettingsPersistCosmeticModeAutoUpdateAndSelectedLists() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let settings = AdblockSettingsStore(userDefaults: harness.defaults)
@@ -425,15 +425,40 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertTrue(settings.autoUpdateEnabled)
         XCTAssertEqual(settings.cosmeticMode, .nativeCSS)
         XCTAssertTrue(settings.regionalListSelection.identifiers.isEmpty)
+        XCTAssertTrue(settings.selectedLists.usesDefaultSelection)
+        XCTAssertFalse(settings.listSelectionRequiresUpdate)
 
         settings.autoUpdateEnabled = false
         settings.cosmeticMode = .enhancedRuntime
         settings.regionalListSelection = SumiAdblockRegionalListSelection(identifiers: ["de", "pl"])
+        settings.selectedLists = SumiAdblockFilterListSelection(identifiers: ["easylist", "ru-adlist"])
 
         let reloaded = AdblockSettingsStore(userDefaults: harness.defaults)
         XCTAssertFalse(reloaded.autoUpdateEnabled)
         XCTAssertEqual(reloaded.cosmeticMode, .enhancedRuntime)
         XCTAssertEqual(reloaded.regionalListSelection.identifiers, ["de", "pl"])
+        XCTAssertEqual(reloaded.selectedLists.identifiers, ["easylist", "ru-adlist"])
+        XCTAssertTrue(reloaded.listSelectionRequiresUpdate)
+    }
+
+    func testDisabledAdblockCanPersistListSelectionWithoutCreatingRuntime() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        let settings = AdblockSettingsStore(userDefaults: harness.defaults)
+        settings.selectedLists = SumiAdblockFilterListSelection(identifiers: ["easylist", "ru-adlist"])
+        let module = SumiAdBlockingModule(
+            moduleRegistry: registry,
+            settingsFactory: { settings }
+        )
+
+        XCTAssertFalse(module.isEnabled)
+        XCTAssertEqual(module.assetsIfAvailable(), .empty)
+        XCTAssertEqual(module.normalTabDecision(for: URL(string: "https://example.com")).assets, .empty)
+        XCTAssertFalse(module.hasLoadedRuntime)
+        XCTAssertEqual(AdblockSettingsStore(userDefaults: harness.defaults).selectedLists.identifiers, ["easylist", "ru-adlist"])
     }
 
     func testCosmeticModesOnlySelectNativeRuleListsAndNeverScripts() {
@@ -510,6 +535,227 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertEqual(decision.assets, .empty)
         XCTAssertNil(decision.contentBlockingService)
         XCTAssertFalse(module.hasLoadedRuntime)
+    }
+
+    func testPerSitePolicyNormalizesHostWithoutPathOrQuery() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let sitePolicyStore = AdblockSitePolicyStore(userDefaults: harness.defaults)
+
+        sitePolicyStore.setSiteOverride(
+            .disabled,
+            for: URL(string: "https://www.example.com/path/to/page?ad=1#fragment")
+        )
+
+        XCTAssertEqual(sitePolicyStore.sortedSiteOverrides.map(\.host), ["example.com"])
+        XCTAssertEqual(
+            sitePolicyStore.effectivePolicy(
+                for: URL(string: "https://example.com/other"),
+                globalEnabled: true
+            ),
+            SumiAdblockEffectivePolicy(host: "example.com", isEnabled: false)
+        )
+    }
+
+    func testSettingsOverrideChangesAreReflectedByModuleEffectivePolicy() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.adBlocking)
+        let sitePolicyStore = AdblockSitePolicyStore(userDefaults: harness.defaults)
+        let module = SumiAdBlockingModule(
+            moduleRegistry: registry,
+            sitePolicyFactory: { sitePolicyStore }
+        )
+        let url = URL(string: "https://www.example.com/path")!
+
+        XCTAssertTrue(module.effectivePolicy(for: url).isEnabled)
+
+        sitePolicyStore.setSiteOverride(.disabled, for: url)
+        XCTAssertFalse(module.effectivePolicy(for: url).isEnabled)
+
+        sitePolicyStore.removeSiteOverride(forNormalizedHost: "example.com")
+        XCTAssertTrue(module.effectivePolicy(for: url).isEnabled)
+    }
+
+    func testAdblockSitePolicyDoesNotModifyTrackingProtectionPolicy() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let trackingSettings = SumiTrackingProtectionSettings(userDefaults: harness.defaults)
+        let adblockSitePolicyStore = AdblockSitePolicyStore(userDefaults: harness.defaults)
+        let url = URL(string: "https://www.example.com/path")!
+
+        trackingSettings.setGlobalMode(.enabled)
+        trackingSettings.setSiteOverride(.enabled, for: url)
+        adblockSitePolicyStore.setSiteOverride(.disabled, for: url)
+
+        XCTAssertEqual(trackingSettings.override(for: url), .enabled)
+        XCTAssertEqual(adblockSitePolicyStore.override(for: url), .disabled)
+    }
+
+    func testTrackingProtectionSitePolicyDoesNotModifyAdblockPolicy() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let trackingSettings = SumiTrackingProtectionSettings(userDefaults: harness.defaults)
+        let adblockSitePolicyStore = AdblockSitePolicyStore(userDefaults: harness.defaults)
+        let url = URL(string: "https://www.example.com/path")!
+
+        adblockSitePolicyStore.setSiteOverride(.disabled, for: url)
+        trackingSettings.setSiteOverride(.disabled, for: url)
+
+        XCTAssertEqual(adblockSitePolicyStore.override(for: url), .disabled)
+        XCTAssertEqual(trackingSettings.override(for: url), .disabled)
+    }
+
+    func testGlobalDisabledIgnoresPerSiteAllowedWithoutCreatingRuntime() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        let sitePolicyStore = AdblockSitePolicyStore(userDefaults: harness.defaults)
+        sitePolicyStore.setSiteOverride(.allowed, for: URL(string: "https://www.example.com"))
+        var didCreateRuleListStore = false
+        let module = SumiAdBlockingModule(
+            moduleRegistry: registry,
+            sitePolicyFactory: { sitePolicyStore },
+            ruleListStoreFactory: { settings, isEnabled in
+                didCreateRuleListStore = true
+                return AdblockWebKitRuleListStore(settingsStore: settings, isAdblockEnabled: isEnabled)
+            }
+        )
+
+        let decision = module.normalTabDecision(for: URL(string: "https://example.com"))
+
+        XCTAssertEqual(decision.status, .disabled)
+        XCTAssertFalse(decision.effectivePolicy.isEnabled)
+        XCTAssertNil(decision.contentBlockingService)
+        XCTAssertFalse(didCreateRuleListStore)
+        XCTAssertFalse(module.hasLoadedRuntime)
+    }
+
+    func testPerSiteDisabledPolicyPreventsRuleListAttachmentOnNormalTab() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.adBlocking)
+        let sitePolicyStore = AdblockSitePolicyStore(userDefaults: harness.defaults)
+        sitePolicyStore.setSiteOverride(.disabled, for: URL(string: "https://www.example.com/path"))
+        let module = SumiAdBlockingModule(
+            moduleRegistry: registry,
+            sitePolicyFactory: { sitePolicyStore }
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            adBlockingModule: module
+        )
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/reload",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+
+        tab.setupWebView()
+
+        let controller = try XCTUnwrap(
+            tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        await controller.waitForContentBlockingAssetsInstalled()
+
+        XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 0)
+        XCTAssertEqual(tab.adblockAppliedAttachmentState, SumiAdblockAttachmentState(siteHost: "example.com", isEnabled: false))
+        XCTAssertFalse(module.hasLoadedRuntime)
+    }
+
+    func testPerSiteReEnabledPolicyAllowsRuleListAttachmentAfterManualReload() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.adBlocking)
+        let sitePolicyStore = AdblockSitePolicyStore(userDefaults: harness.defaults)
+        let url = URL(string: "https://www.example.com/path")!
+        sitePolicyStore.setSiteOverride(.disabled, for: url)
+        let module = SumiAdBlockingModule(
+            moduleRegistry: registry,
+            sitePolicyFactory: { sitePolicyStore }
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            adBlockingModule: module
+        )
+        let tab = browserManager.tabManager.createNewTab(
+            url: url.absoluteString,
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        tab.setupWebView()
+        let originalWebView = try XCTUnwrap(tab.existingWebView)
+        let originalController = try XCTUnwrap(
+            originalWebView.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        await originalController.waitForContentBlockingAssetsInstalled()
+        XCTAssertEqual(originalController.contentBlockingAssetSummary.globalRuleListCount, 0)
+
+        sitePolicyStore.setSiteOverride(.allowed, for: url)
+        tab.markAdblockReloadRequiredIfNeeded(afterChangingOverrideFor: url)
+
+        XCTAssertTrue(tab.isAdblockReloadRequired)
+        XCTAssertTrue(tab.existingWebView === originalWebView)
+
+        XCTAssertTrue(
+            tab.rebuildNormalWebViewForAdblockIfNeeded(
+                targetURL: tab.url,
+                reason: "SumiAdBlockingModuleTests.manualReload"
+            )
+        )
+        let rebuiltController = try XCTUnwrap(
+            tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        try await waitForAssets(on: rebuiltController) { $0.globalRuleListCount == 2 }
+        tab.clearAdblockReloadRequirementIfResolved(for: tab.url)
+        XCTAssertFalse(tab.isAdblockReloadRequired)
+    }
+
+    func testChangingAdblockPolicyMarksReloadRequiredWithoutAutoReload() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.adBlocking)
+        let sitePolicyStore = AdblockSitePolicyStore(userDefaults: harness.defaults)
+        let module = SumiAdBlockingModule(
+            moduleRegistry: registry,
+            sitePolicyFactory: { sitePolicyStore }
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            adBlockingModule: module
+        )
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://www.example.com/no-auto-reload",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        tab.setupWebView()
+        let originalWebView = try XCTUnwrap(tab.existingWebView)
+        let controller = try XCTUnwrap(
+            originalWebView.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        try await waitForAssets(on: controller) { $0.globalRuleListCount == 2 }
+
+        sitePolicyStore.setSiteOverride(.disabled, for: tab.url)
+        tab.markAdblockReloadRequiredIfNeeded(afterChangingOverrideFor: tab.url)
+
+        XCTAssertTrue(tab.isAdblockReloadRequired)
+        XCTAssertTrue(tab.existingWebView === originalWebView)
+        XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 2)
     }
 
     func testDisablingAdblockRemovesRuleListsFromExistingController() async throws {

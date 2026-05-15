@@ -7,6 +7,7 @@ enum AdblockFilterListCategory: String, Codable, CaseIterable, Sendable {
     case nativeCosmeticCompatibleAds
     case annoyances
     case regional
+    case privacyOverlap
 }
 
 struct AdblockFilterListDescriptor: Codable, Equatable, Identifiable, Sendable {
@@ -17,9 +18,19 @@ struct AdblockFilterListDescriptor: Codable, Equatable, Identifiable, Sendable {
     let homepageURL: URL?
     let defaultEnabled: Bool
     let localeTags: [String]
-    let licenseNoticeHint: String?
+    let licenseNoticeHint: String
+    let variantOfListId: String?
+    let exclusionGroup: String?
+    let shortDescription: String
     let mayContainCosmeticFilters: Bool
     let isAllowedInNativeOnlyMode: Bool
+}
+
+struct AdblockFilterListSelectionValidation: Equatable, Sendable {
+    let requestedIdentifiers: [String]
+    let resolvedIdentifiers: [String]
+    let unknownIdentifiers: [String]
+    let droppedConflictingIdentifiers: [String]
 }
 
 struct AdblockFilterListRegistry: Equatable, Sendable {
@@ -40,12 +51,51 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
         selection: SumiAdblockFilterListSelection,
         locale: Locale = .autoupdatingCurrent
     ) -> [AdblockFilterListDescriptor] {
-        let ids = selection.usesDefaultSelection
-            ? Set(defaultSelectionIdentifiers + recommendedRegionalIdentifiers(for: locale))
-            : Set(selection.identifiers)
+        let ids = Set(validatedSelection(selection, locale: locale).resolvedIdentifiers)
         return descriptors
             .filter { ids.contains($0.id) }
             .sorted { $0.id < $1.id }
+    }
+
+    func validatedSelection(
+        _ selection: SumiAdblockFilterListSelection,
+        locale: Locale = .autoupdatingCurrent
+    ) -> AdblockFilterListSelectionValidation {
+        let requested = selection.usesDefaultSelection
+            ? defaultSelectionIdentifiers + recommendedRegionalIdentifiers(for: locale)
+            : selection.identifiers
+        let descriptorById = Dictionary(uniqueKeysWithValues: descriptors.map { ($0.id, $0) })
+        let knownRequested = requested.filter { descriptorById[$0] != nil }
+        let unknown = requested.filter { descriptorById[$0] == nil }.sorted()
+        let knownSet = Set(knownRequested)
+        let descriptorsByConflictGroup = Dictionary(grouping: descriptors) {
+            $0.exclusionGroup ?? $0.id
+        }
+        var dropped = Set<String>()
+
+        for groupDescriptors in descriptorsByConflictGroup.values {
+            let selectedInGroup = groupDescriptors.filter { knownSet.contains($0.id) }
+            guard selectedInGroup.count > 1 else { continue }
+            let chosen = selectedInGroup
+                .sorted { lhs, rhs in
+                    if lhs.variantOfListId == nil && rhs.variantOfListId != nil { return true }
+                    if lhs.variantOfListId != nil && rhs.variantOfListId == nil { return false }
+                    if lhs.defaultEnabled != rhs.defaultEnabled { return lhs.defaultEnabled }
+                    return lhs.id < rhs.id
+                }
+                .first?.id
+            for descriptor in selectedInGroup where descriptor.id != chosen {
+                dropped.insert(descriptor.id)
+            }
+        }
+
+        let resolved = knownSet.subtracting(dropped).sorted()
+        return AdblockFilterListSelectionValidation(
+            requestedIdentifiers: requested,
+            resolvedIdentifiers: resolved,
+            unknownIdentifiers: unknown,
+            droppedConflictingIdentifiers: dropped.sorted()
+        )
     }
 
     func recommendedRegionalIdentifiers(for locale: Locale) -> [String] {
@@ -66,8 +116,10 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
             .map(\.id)
     }
 
-    static let defaultDescriptors: [AdblockFilterListDescriptor] = [
-        AdblockFilterListDescriptor(
+    static let defaultDescriptors: [AdblockFilterListDescriptor] = {
+        let easyListVariants = "easylist.base.variant"
+        return [
+        descriptor(
             id: "easylist",
             displayName: "EasyList",
             category: .baseAds,
@@ -75,11 +127,13 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
             homepageURL: URL(string: "https://easylist.to/"),
             defaultEnabled: true,
             localeTags: ["en"],
-            licenseNoticeHint: "Fetched from EasyList; list content is maintained upstream and may have its own terms.",
+            licenseNoticeHint: "upstream-managed",
+            exclusionGroup: easyListVariants,
+            shortDescription: "Primary international ad blocking list.",
             mayContainCosmeticFilters: true,
             isAllowedInNativeOnlyMode: true
         ),
-        AdblockFilterListDescriptor(
+        descriptor(
             id: "easylist-without-element-hiding",
             displayName: "EasyList without element hiding",
             category: .nativeCosmeticCompatibleAds,
@@ -87,11 +141,26 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
             homepageURL: URL(string: "https://easylist.to/pages/other-supplementary-filter-lists-and-easylist-variants.html")!,
             defaultEnabled: false,
             localeTags: ["en"],
-            licenseNoticeHint: "Fetched from EasyList; list content is maintained upstream and may have its own terms.",
+            licenseNoticeHint: "upstream-managed",
+            variantOfListId: "easylist",
+            exclusionGroup: easyListVariants,
+            shortDescription: "EasyList variant with element hiding removed.",
             mayContainCosmeticFilters: false,
             isAllowedInNativeOnlyMode: true
         ),
-        AdblockFilterListDescriptor(
+        descriptor(
+            id: "easylist-cookie",
+            displayName: "EasyList Cookie List",
+            category: .annoyances,
+            remoteURL: URL(string: "https://secure.fanboy.co.nz/fanboy-cookiemonster.txt")!,
+            homepageURL: URL(string: "https://easylist.to/")!,
+            localeTags: [],
+            licenseNoticeHint: "upstream-managed",
+            shortDescription: "Cookie banners and privacy notice filters.",
+            mayContainCosmeticFilters: true,
+            isAllowedInNativeOnlyMode: true
+        ),
+        descriptor(
             id: "fanboy-annoyances",
             displayName: "Fanboy's Annoyance List",
             category: .annoyances,
@@ -99,11 +168,111 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
             homepageURL: URL(string: "https://easylist.to/")!,
             defaultEnabled: false,
             localeTags: [],
-            licenseNoticeHint: "Fetched from EasyList/Fanboy upstream; list content may have its own terms.",
+            licenseNoticeHint: "upstream-managed",
+            shortDescription: "Social widgets, pop-ups, cookie notices, and other annoyances.",
             mayContainCosmeticFilters: true,
             isAllowedInNativeOnlyMode: true
         ),
-        AdblockFilterListDescriptor(
+        descriptor(
+            id: "fanboy-social",
+            displayName: "Fanboy's Social Blocking List",
+            category: .annoyances,
+            remoteURL: URL(string: "https://easylist.to/easylist/fanboy-social.txt")!,
+            homepageURL: URL(string: "https://easylist.to/")!,
+            localeTags: [],
+            licenseNoticeHint: "upstream-managed",
+            shortDescription: "Social widgets and embedded social content.",
+            mayContainCosmeticFilters: true,
+            isAllowedInNativeOnlyMode: true
+        ),
+        descriptor(
+            id: "adguard-annoyances",
+            displayName: "AdGuard Annoyances",
+            category: .annoyances,
+            remoteURL: URL(string: "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_14_Annoyances/filter.txt")!,
+            homepageURL: URL(string: "https://adguard.com/kb/general/ad-filtering/adguard-filters/")!,
+            localeTags: [],
+            licenseNoticeHint: "upstream-managed",
+            shortDescription: "Optional annoyance bundle; disabled by default.",
+            mayContainCosmeticFilters: true,
+            isAllowedInNativeOnlyMode: true
+        ),
+        descriptor(
+            id: "adguard-cookie-notices",
+            displayName: "AdGuard Cookie Notices",
+            category: .annoyances,
+            remoteURL: URL(string: "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_18_Annoyances_Cookies/filter.txt")!,
+            homepageURL: URL(string: "https://adguard.com/kb/general/ad-filtering/adguard-filters/")!,
+            localeTags: [],
+            licenseNoticeHint: "upstream-managed",
+            shortDescription: "Cookie notice placeholder list for native-compatible filtering.",
+            mayContainCosmeticFilters: true,
+            isAllowedInNativeOnlyMode: true
+        ),
+        descriptor(
+            id: "abpindo",
+            displayName: "ABPindo",
+            category: .regional,
+            remoteURL: URL(string: "https://raw.githubusercontent.com/ABPindo/indonesianadblockrules/master/subscriptions/abpindo.txt")!,
+            homepageURL: URL(string: "https://easylist.to/pages/other-supplementary-filter-lists-and-easylist-variants.html")!,
+            localeTags: ["id", "id_id"],
+            shortDescription: "Indonesian language ad filters."
+        ),
+        descriptor(
+            id: "abpvn",
+            displayName: "ABPVN List",
+            category: .regional,
+            remoteURL: URL(string: "https://abpvn.com/filter/abpvn.txt")!,
+            homepageURL: URL(string: "https://easylist.to/pages/other-supplementary-filter-lists-and-easylist-variants.html")!,
+            localeTags: ["vi", "vi_vn"],
+            shortDescription: "Vietnamese language ad filters."
+        ),
+        descriptor(
+            id: "easylist-bulgarian",
+            displayName: "Bulgarian List",
+            category: .regional,
+            remoteURL: URL(string: "https://stanev.org/abp/adblock_bg.txt")!,
+            homepageURL: URL(string: "https://easylist.to/pages/other-supplementary-filter-lists-and-easylist-variants.html")!,
+            localeTags: ["bg", "bg_bg"],
+            shortDescription: "Bulgarian language ad filters."
+        ),
+        descriptor(
+            id: "dandelion-nordic",
+            displayName: "Dandelion Sprout's Nordic Filters",
+            category: .regional,
+            remoteURL: URL(string: "https://raw.githubusercontent.com/DandelionSprout/adfilt/master/NorwegianList.txt")!,
+            homepageURL: URL(string: "https://easylist.to/pages/other-supplementary-filter-lists-and-easylist-variants.html")!,
+            localeTags: ["no", "nb", "nn", "da", "is", "fo", "kl", "fi", "sv"],
+            shortDescription: "Nordic language ad filters."
+        ),
+        descriptor(
+            id: "easylist-china",
+            displayName: "EasyList China",
+            category: .regional,
+            remoteURL: URL(string: "https://easylist-downloads.adblockplus.org/easylistchina.txt")!,
+            homepageURL: URL(string: "https://easylist.to/pages/other-supplementary-filter-lists-and-easylist-variants.html")!,
+            localeTags: ["zh", "zh_cn", "zh_tw", "zh_hk"],
+            shortDescription: "Chinese language ad filters."
+        ),
+        descriptor(
+            id: "easylist-czech-slovak",
+            displayName: "EasyList Czech and Slovak",
+            category: .regional,
+            remoteURL: URL(string: "https://raw.githubusercontent.com/tomasko126/easylistczechandslovak/master/filters.txt")!,
+            homepageURL: URL(string: "https://easylist.to/pages/other-supplementary-filter-lists-and-easylist-variants.html")!,
+            localeTags: ["cs", "cs_cz", "sk", "sk_sk"],
+            shortDescription: "Czech and Slovak language ad filters."
+        ),
+        descriptor(
+            id: "easylist-dutch",
+            displayName: "EasyList Dutch",
+            category: .regional,
+            remoteURL: URL(string: "https://easylist-downloads.adblockplus.org/easylistdutch.txt")!,
+            homepageURL: URL(string: "https://easylist.to/pages/other-supplementary-filter-lists-and-easylist-variants.html")!,
+            localeTags: ["nl", "nl_nl", "nl_be"],
+            shortDescription: "Dutch language ad filters."
+        ),
+        descriptor(
             id: "easylist-germany",
             displayName: "EasyList Germany",
             category: .regional,
@@ -111,11 +280,39 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
             homepageURL: URL(string: "https://easylist.to/pages/other-supplementary-filter-lists-and-easylist-variants.html")!,
             defaultEnabled: false,
             localeTags: ["de", "de_de", "de-at", "de-ch"],
-            licenseNoticeHint: "Fetched from EasyList Germany upstream; list content may have its own terms.",
+            licenseNoticeHint: "upstream-managed",
+            shortDescription: "German language ad filters.",
             mayContainCosmeticFilters: true,
             isAllowedInNativeOnlyMode: true
         ),
-        AdblockFilterListDescriptor(
+        descriptor(
+            id: "easylist-hebrew",
+            displayName: "EasyList Hebrew",
+            category: .regional,
+            remoteURL: URL(string: "https://raw.githubusercontent.com/easylist/EasyListHebrew/master/EasyListHebrew.txt")!,
+            homepageURL: URL(string: "https://easylist.to/pages/other-supplementary-filter-lists-and-easylist-variants.html")!,
+            localeTags: ["he", "he_il"],
+            shortDescription: "Hebrew language ad filters."
+        ),
+        descriptor(
+            id: "easylist-italy",
+            displayName: "EasyList Italy",
+            category: .regional,
+            remoteURL: URL(string: "https://easylist-downloads.adblockplus.org/easylistitaly.txt")!,
+            homepageURL: URL(string: "https://easylist.to/pages/other-supplementary-filter-lists-and-easylist-variants.html")!,
+            localeTags: ["it", "it_it"],
+            shortDescription: "Italian language ad filters."
+        ),
+        descriptor(
+            id: "easylist-lithuania",
+            displayName: "EasyList Lithuania",
+            category: .regional,
+            remoteURL: URL(string: "https://raw.githubusercontent.com/EasyList-Lithuania/easylist_lithuania/master/easylistlithuania.txt")!,
+            homepageURL: URL(string: "https://easylist.to/pages/other-supplementary-filter-lists-and-easylist-variants.html")!,
+            localeTags: ["lt", "lt_lt"],
+            shortDescription: "Lithuanian language ad filters."
+        ),
+        descriptor(
             id: "liste-fr",
             displayName: "Liste FR",
             category: .regional,
@@ -123,11 +320,12 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
             homepageURL: URL(string: "https://easylist.to/pages/other-supplementary-filter-lists-and-easylist-variants.html")!,
             defaultEnabled: false,
             localeTags: ["fr", "fr_fr", "fr-ca", "fr-be", "fr-ch"],
-            licenseNoticeHint: "Fetched from Liste FR upstream; list content may have its own terms.",
+            licenseNoticeHint: "upstream-managed",
+            shortDescription: "French language ad filters.",
             mayContainCosmeticFilters: true,
             isAllowedInNativeOnlyMode: true
         ),
-        AdblockFilterListDescriptor(
+        descriptor(
             id: "ru-adlist",
             displayName: "RU AdList",
             category: .regional,
@@ -135,11 +333,12 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
             homepageURL: URL(string: "https://easylist.to/pages/other-supplementary-filter-lists-and-easylist-variants.html")!,
             defaultEnabled: false,
             localeTags: ["ru", "ru_ru", "uk", "uk_ua"],
-            licenseNoticeHint: "Fetched from RU AdList upstream; list content may have its own terms.",
+            licenseNoticeHint: "upstream-managed",
+            shortDescription: "Russian and Ukrainian language ad filters.",
             mayContainCosmeticFilters: true,
             isAllowedInNativeOnlyMode: true
         ),
-        AdblockFilterListDescriptor(
+        descriptor(
             id: "easylist-polish",
             displayName: "EasyList Polish",
             category: .regional,
@@ -147,11 +346,123 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
             homepageURL: URL(string: "https://easylist.to/pages/other-supplementary-filter-lists-and-easylist-variants.html")!,
             defaultEnabled: false,
             localeTags: ["pl", "pl_pl"],
-            licenseNoticeHint: "Fetched from EasyList Polish upstream; list content may have its own terms.",
+            licenseNoticeHint: "upstream-managed",
+            shortDescription: "Polish language ad filters.",
             mayContainCosmeticFilters: true,
             isAllowedInNativeOnlyMode: true
         ),
-    ]
+        descriptor(
+            id: "easylist-portuguese",
+            displayName: "EasyList Portuguese",
+            category: .regional,
+            remoteURL: URL(string: "https://easylist-downloads.adblockplus.org/easylistportuguese.txt")!,
+            homepageURL: URL(string: "https://easylist.to/pages/other-supplementary-filter-lists-and-easylist-variants.html")!,
+            localeTags: ["pt", "pt_pt", "pt_br"],
+            shortDescription: "Portuguese language ad filters."
+        ),
+        descriptor(
+            id: "easylist-spanish",
+            displayName: "EasyList Spanish",
+            category: .regional,
+            remoteURL: URL(string: "https://easylist-downloads.adblockplus.org/easylistspanish.txt")!,
+            homepageURL: URL(string: "https://easylist.to/pages/other-supplementary-filter-lists-and-easylist-variants.html")!,
+            localeTags: ["es", "es_es", "es_mx", "es_ar", "es_cl", "es_co"],
+            shortDescription: "Spanish language ad filters."
+        ),
+        descriptor(
+            id: "indianlist",
+            displayName: "IndianList",
+            category: .regional,
+            remoteURL: URL(string: "https://easylist-downloads.adblockplus.org/indianlist.txt")!,
+            homepageURL: URL(string: "https://easylist.to/pages/other-supplementary-filter-lists-and-easylist-variants.html")!,
+            localeTags: ["hi", "bn", "gu", "pa", "as", "mr", "ml", "te", "kn", "or", "ne", "si"],
+            shortDescription: "Indian subcontinent language ad filters."
+        ),
+        descriptor(
+            id: "koreanlist",
+            displayName: "KoreanList",
+            category: .regional,
+            remoteURL: URL(string: "https://easylist-downloads.adblockplus.org/koreanlist.txt")!,
+            homepageURL: URL(string: "https://easylist.to/pages/other-supplementary-filter-lists-and-easylist-variants.html")!,
+            localeTags: ["ko", "ko_kr"],
+            shortDescription: "Korean language ad filters."
+        ),
+        descriptor(
+            id: "latvian-list",
+            displayName: "Latvian List",
+            category: .regional,
+            remoteURL: URL(string: "https://raw.githubusercontent.com/Latvian-List/adblock-latvian/master/lists/latvian-list.txt")!,
+            homepageURL: URL(string: "https://easylist.to/pages/other-supplementary-filter-lists-and-easylist-variants.html")!,
+            localeTags: ["lv", "lv_lv"],
+            shortDescription: "Latvian language ad filters."
+        ),
+        descriptor(
+            id: "liste-ar",
+            displayName: "Liste AR",
+            category: .regional,
+            remoteURL: URL(string: "https://easylist-downloads.adblockplus.org/Liste_AR.txt")!,
+            homepageURL: URL(string: "https://easylist.to/pages/other-supplementary-filter-lists-and-easylist-variants.html")!,
+            localeTags: ["ar"],
+            shortDescription: "Arabic language ad filters."
+        ),
+        descriptor(
+            id: "adguard-social-media",
+            displayName: "AdGuard Social Media",
+            category: .annoyances,
+            remoteURL: URL(string: "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_4_Social/filter.txt")!,
+            homepageURL: URL(string: "https://adguard.com/kb/general/ad-filtering/adguard-filters/")!,
+            localeTags: [],
+            licenseNoticeHint: "upstream-managed",
+            shortDescription: "Social buttons and widgets placeholder; disabled by default.",
+            mayContainCosmeticFilters: true,
+            isAllowedInNativeOnlyMode: true
+        ),
+        descriptor(
+            id: "easyprivacy-future",
+            displayName: "EasyPrivacy",
+            category: .privacyOverlap,
+            remoteURL: URL(string: "https://easylist.to/easylist/easyprivacy.txt")!,
+            homepageURL: URL(string: "https://easylist.to/")!,
+            localeTags: [],
+            licenseNoticeHint: "upstream-managed",
+            shortDescription: "Privacy-overlap list reserved while Tracking Protection remains separate.",
+            mayContainCosmeticFilters: false,
+            isAllowedInNativeOnlyMode: true
+        ),
+        ]
+    }()
+
+    private static func descriptor(
+        id: String,
+        displayName: String,
+        category: AdblockFilterListCategory,
+        remoteURL: URL,
+        homepageURL: URL?,
+        defaultEnabled: Bool = false,
+        localeTags: [String],
+        licenseNoticeHint: String = "upstream-managed",
+        variantOfListId: String? = nil,
+        exclusionGroup: String? = nil,
+        shortDescription: String,
+        mayContainCosmeticFilters: Bool = true,
+        isAllowedInNativeOnlyMode: Bool = true
+    ) -> AdblockFilterListDescriptor {
+        AdblockFilterListDescriptor(
+            id: id,
+            displayName: displayName,
+            category: category,
+            remoteURL: remoteURL,
+            homepageURL: homepageURL,
+            defaultEnabled: defaultEnabled,
+            localeTags: localeTags,
+            licenseNoticeHint: licenseNoticeHint,
+            variantOfListId: variantOfListId,
+            exclusionGroup: exclusionGroup,
+            shortDescription: shortDescription,
+            mayContainCosmeticFilters: mayContainCosmeticFilters,
+            isAllowedInNativeOnlyMode: isAllowedInNativeOnlyMode
+        )
+    }
 }
 
 struct SumiAdblockFilterListSelection: Codable, Equatable, Sendable {

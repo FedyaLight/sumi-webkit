@@ -33,6 +33,10 @@ extension Tab {
             reason: "Tab.refresh.trackingProtectionPolicy"
         )
         let rebuiltForConfigurationPolicy = rebuiltWebView
+            || rebuildNormalWebViewForAdblockIfNeeded(
+                targetURL: targetURL,
+                reason: "Tab.refresh.adblockPolicy"
+            )
             || rebuildNormalWebViewForAutoplayIfNeeded(
                 targetURL: targetURL,
                 reason: "Tab.refresh.autoplayPolicy"
