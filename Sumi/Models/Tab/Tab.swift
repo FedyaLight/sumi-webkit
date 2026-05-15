@@ -265,6 +265,17 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     var isTrackingProtectionReloadRequired: Bool {
         trackingProtectionReloadRequirement != nil
     }
+    var adblockAppliedAttachmentState: SumiAdblockAttachmentState? {
+        get { webViewRuntime.adblockAppliedAttachmentState }
+        set { webViewRuntime.adblockAppliedAttachmentState = newValue }
+    }
+    var adblockReloadRequirement: SumiAdblockReloadRequirement? {
+        get { webViewRuntime.adblockReloadRequirement }
+        set { webViewRuntime.adblockReloadRequirement = newValue }
+    }
+    var isAdblockReloadRequired: Bool {
+        adblockReloadRequirement != nil
+    }
     var autoplayReloadRequirement: SumiAutoplayReloadRequirement? {
         get { webViewRuntime.autoplayReloadRequirement }
         set { webViewRuntime.autoplayReloadRequirement = newValue }
@@ -827,6 +838,65 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         trackingProtectionAppliedAttachmentState = state
     }
 
+    func adblockDesiredAttachmentState(
+        for targetURL: URL?
+    ) -> SumiAdblockAttachmentState {
+        guard let module = browserManager?.adBlockingModule else {
+            return .disabled(siteHost: nil)
+        }
+        return module.effectivePolicy(for: targetURL).attachmentState
+    }
+
+    func noteAdblockAttachmentApplied(
+        _ state: SumiAdblockAttachmentState
+    ) {
+        adblockAppliedAttachmentState = state
+    }
+
+    func markAdblockReloadRequiredIfNeeded(
+        afterChangingOverrideFor changedURL: URL?
+    ) {
+        guard let module = browserManager?.adBlockingModule,
+              let changedHost = module.normalizedSiteHost(for: changedURL),
+              changedHost == module.normalizedSiteHost(for: url)
+        else { return }
+
+        updateAdblockReloadRequirementForCurrentSite()
+    }
+
+    func updateAdblockReloadRequirementForCurrentSite() {
+        guard existingWebView != nil else {
+            clearAdblockReloadRequirement()
+            return
+        }
+
+        let desiredState = adblockDesiredAttachmentState(for: url)
+        guard desiredState.siteHost != nil,
+              let appliedState = adblockAppliedAttachmentState,
+              appliedState.isEnabled != desiredState.isEnabled
+        else {
+            clearAdblockReloadRequirement()
+            return
+        }
+
+        setAdblockReloadRequirement(
+            SumiAdblockReloadRequirement(
+                siteHost: desiredState.siteHost,
+                desiredAttachmentState: desiredState
+            )
+        )
+    }
+
+    func clearAdblockReloadRequirementIfResolved(for committedURL: URL) {
+        guard let requirement = adblockReloadRequirement else { return }
+
+        let committedState = adblockDesiredAttachmentState(for: committedURL)
+        if committedState.siteHost != requirement.siteHost
+            || adblockAppliedAttachmentState?.isEnabled == committedState.isEnabled {
+            clearAdblockReloadRequirement()
+        }
+    }
+
     func markTrackingProtectionReloadRequiredIfNeeded(
         afterChangingOverrideFor changedURL: URL?
     ) {
@@ -925,6 +995,21 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         return appliedState.isEnabled != desiredState.isEnabled
     }
 
+    func adblockAttachmentRequiresNormalWebViewRebuild(
+        for targetURL: URL?
+    ) -> Bool {
+        guard existingWebView != nil,
+              webViewConfigurationOverride == nil,
+              !isPopupHost
+        else { return false }
+
+        let desiredState = adblockDesiredAttachmentState(for: targetURL)
+        guard let appliedState = adblockAppliedAttachmentState else {
+            return desiredState.isEnabled
+        }
+        return appliedState.isEnabled != desiredState.isEnabled
+    }
+
     func autoplayPolicyRequiresNormalWebViewRebuild(for targetURL: URL?) -> Bool {
         guard let webView = existingWebView,
               webViewConfigurationOverride == nil,
@@ -980,6 +1065,53 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             _webView = replacementWebView
         }
 
+        updateAutoplayReloadRequirementForCurrentSite()
+        return true
+    }
+
+    @discardableResult
+    func rebuildNormalWebViewForAdblockIfNeeded(
+        targetURL: URL?,
+        reason: String
+    ) -> Bool {
+        guard adblockAttachmentRequiresNormalWebViewRebuild(for: targetURL),
+              let previousWebView = existingWebView
+        else { return false }
+
+        let coordinator = browserManager?.webViewCoordinator
+        let previousWindowId = primaryWindowId ?? coordinator?.windowID(containing: previousWebView)
+        let hadTrackedWebViews = coordinator?.windowIDs(for: id).isEmpty == false
+        let previousAppliedState = adblockAppliedAttachmentState
+
+        guard let replacementWebView = makeNormalTabWebView(reason: reason) else {
+            return false
+        }
+
+        invalidateCurrentPermissionPageForWebViewReplacement(reason: reason)
+
+        let removedTrackedWebViews = coordinator?.removeAllWebViews(for: self) ?? false
+        if hadTrackedWebViews && !removedTrackedWebViews {
+            adblockAppliedAttachmentState = previousAppliedState
+            return false
+        }
+
+        if !removedTrackedWebViews {
+            cleanupCloneWebView(previousWebView)
+            _webView = nil
+            primaryWindowId = nil
+        }
+
+        if let previousWindowId {
+            coordinator?.setWebView(replacementWebView, for: id, in: previousWindowId)
+            assignWebViewToWindow(replacementWebView, windowId: previousWindowId)
+            if let windowState = browserManager?.windowRegistry?.windows[previousWindowId] {
+                browserManager?.refreshCompositor(for: windowState)
+            }
+        } else {
+            _webView = replacementWebView
+        }
+
+        updateTrackingProtectionReloadRequirementForCurrentSite()
         updateAutoplayReloadRequirementForCurrentSite()
         return true
     }
@@ -1050,6 +1182,29 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     private func notifyTrackingProtectionReloadRequirementChanged() {
+        objectWillChange.send()
+        NotificationCenter.default.post(
+            name: .sumiTabNavigationStateDidChange,
+            object: self,
+            userInfo: ["tabId": id]
+        )
+    }
+
+    private func setAdblockReloadRequirement(
+        _ requirement: SumiAdblockReloadRequirement
+    ) {
+        guard adblockReloadRequirement != requirement else { return }
+        adblockReloadRequirement = requirement
+        notifyAdblockReloadRequirementChanged()
+    }
+
+    private func clearAdblockReloadRequirement() {
+        guard adblockReloadRequirement != nil else { return }
+        adblockReloadRequirement = nil
+        notifyAdblockReloadRequirementChanged()
+    }
+
+    private func notifyAdblockReloadRequirementChanged() {
         objectWillChange.send()
         NotificationCenter.default.post(
             name: .sumiTabNavigationStateDidChange,

@@ -87,6 +87,7 @@ struct PrivacySettingsView: View {
 private struct NativeAdblockSettingsView: View {
     @ObservedObject var settings: AdblockSettingsStore
     @ObservedObject var sitePolicyStore: AdblockSitePolicyStore
+    private let registry = AdblockFilterListRegistry()
     @State private var overrideHostInput = ""
 
     var body: some View {
@@ -118,17 +119,108 @@ private struct NativeAdblockSettingsView: View {
             }
 
             SettingsRow(
-                title: "Regional filters",
-                subtitle: "Placeholder for future regional list selection."
+                title: "Filter lists",
+                subtitle: listSelectionStatus
             ) {
-                Text("\(settings.regionalListSelection.identifiers.count) selected")
+                Text("\(selectedListCount) selected")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
 
+            filterListSelection
             SettingsDivider()
             adblockSiteOverrides
         }
+    }
+
+    private var listSelectionStatus: String {
+        settings.listSelectionRequiresUpdate
+            ? "Selection saved. Run a manual update to compile the new list set."
+            : "Choose base, regional, and optional annoyance lists."
+    }
+
+    private var selectedListCount: Int {
+        registry.validatedSelection(settings.selectedLists).resolvedIdentifiers.count
+    }
+
+    private var filterListSelection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(displayedCategories, id: \.self) { category in
+                DisclosureGroup(categoryTitle(category)) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(descriptors(in: category)) { descriptor in
+                            filterListRow(descriptor)
+                        }
+                    }
+                    .padding(.top, 8)
+                }
+            }
+        }
+    }
+
+    private var displayedCategories: [AdblockFilterListCategory] {
+        [.baseAds, .nativeCosmeticCompatibleAds, .regional, .annoyances, .privacyOverlap]
+    }
+
+    private func descriptors(in category: AdblockFilterListCategory) -> [AdblockFilterListDescriptor] {
+        registry.descriptors
+            .filter { $0.category == category }
+            .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+    }
+
+    private func categoryTitle(_ category: AdblockFilterListCategory) -> String {
+        switch category {
+        case .baseAds:
+            return "Base ads"
+        case .nativeCosmeticCompatibleAds:
+            return "Base variants"
+        case .annoyances:
+            return "Annoyances, cookies, and social"
+        case .regional:
+            return "Regional ads"
+        case .privacyOverlap:
+            return "Privacy overlap"
+        }
+    }
+
+    private func filterListRow(_ descriptor: AdblockFilterListDescriptor) -> some View {
+        SettingsRow(
+            title: descriptor.displayName,
+            subtitle: filterListSubtitle(descriptor)
+        ) {
+            Toggle(
+                "",
+                isOn: Binding(
+                    get: {
+                        settings.isListSelected(descriptor, registry: registry)
+                    },
+                    set: { isSelected in
+                        settings.setList(descriptor, isSelected: isSelected, registry: registry)
+                    }
+                )
+            )
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .disabled(!descriptor.isAllowedInNativeOnlyMode)
+            .help(descriptor.isAllowedInNativeOnlyMode ? descriptor.shortDescription : "Not compatible with native-only mode")
+        }
+    }
+
+    private func filterListSubtitle(_ descriptor: AdblockFilterListDescriptor) -> String {
+        var parts = [descriptor.shortDescription]
+        if descriptor.mayContainCosmeticFilters {
+            parts.append("May include native CSS hiding rules.")
+        } else {
+            parts.append("Network-only variant.")
+        }
+        if let variantOf = descriptor.variantOfListId {
+            parts.append("Variant of \(variantOf); mutually exclusive.")
+        }
+        if descriptor.category == .privacyOverlap {
+            parts.append("Disabled by default while Tracking Protection is separate.")
+        }
+        parts.append(descriptor.licenseNoticeHint)
+        return parts.joined(separator: " ")
     }
 
     private var adblockSiteOverrides: some View {

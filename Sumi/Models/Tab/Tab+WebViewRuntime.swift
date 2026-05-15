@@ -386,6 +386,11 @@ extension Tab {
         }
         let adBlockingDecision = browserManager?.adBlockingModule
             .normalTabDecision(for: url)
+        if let adBlockingDecision {
+            noteAdblockAttachmentApplied(
+                adBlockingDecision.attachmentState
+            )
+        }
 
         let configuration = BrowserConfiguration.shared.normalTabWebViewConfiguration(
             for: profile,

@@ -31,6 +31,16 @@ struct SumiTrackingProtectionReloadRequirement: Equatable {
     }
 }
 
+struct SumiAdblockReloadRequirement: Equatable {
+    let siteHost: String?
+    let desiredAttachmentState: SumiAdblockAttachmentState
+
+    static func == (lhs: SumiAdblockReloadRequirement, rhs: SumiAdblockReloadRequirement) -> Bool {
+        lhs.siteHost == rhs.siteHost
+            && lhs.desiredAttachmentState == rhs.desiredAttachmentState
+    }
+}
+
 struct SumiAutoplayReloadRequirement: Equatable {
     let desiredPolicy: SumiAutoplayPolicy
     let runtimeRequirement: SumiRuntimePermissionReloadRequirement
@@ -147,6 +157,8 @@ final class TabWebViewRuntime {
     var profileAwaitCancellable: AnyCancellable?
     var trackingProtectionAppliedAttachmentState: SumiTrackingProtectionAttachmentState?
     var trackingProtectionReloadRequirement: SumiTrackingProtectionReloadRequirement?
+    var adblockAppliedAttachmentState: SumiAdblockAttachmentState?
+    var adblockReloadRequirement: SumiAdblockReloadRequirement?
     var autoplayReloadRequirement: SumiAutoplayReloadRequirement?
     var lastWebViewInteractionEvent: NSEvent?
     var webViewInteractionCancellables: [ObjectIdentifier: AnyCancellable] = [:]

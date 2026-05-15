@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import WebKit
 import XCTest
@@ -44,6 +45,54 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         XCTAssertEqual(observedRequest?.value(forHTTPHeaderField: "If-Modified-Since"), "Mon, 13 May 2024 12:00:00 GMT")
     }
 
+    func testDefaultSelectionIsConservativeAndRegionalListsRemainOptional() {
+        let registry = AdblockFilterListRegistry()
+        let selected = registry.selectedDescriptors(
+            selection: .defaultSelection,
+            locale: Locale(identifier: "en_US")
+        )
+        let regionalLists = registry.descriptors.filter { $0.category == .regional }
+
+        XCTAssertEqual(selected.map(\.id), ["easylist"])
+        XCTAssertGreaterThan(regionalLists.count, 12)
+        XCTAssertTrue(regionalLists.allSatisfy { !$0.defaultEnabled })
+        XCTAssertTrue(registry.descriptors.contains { $0.id == "ru-adlist" })
+        XCTAssertTrue(registry.descriptors.contains { $0.category == .privacyOverlap && !$0.defaultEnabled })
+    }
+
+    func testRussianLocaleRecommendsRUAdListWithoutEnablingAllRegionalLists() {
+        let registry = AdblockFilterListRegistry()
+        let selected = registry.selectedDescriptors(
+            selection: .defaultSelection,
+            locale: Locale(identifier: "ru_RU")
+        )
+
+        XCTAssertTrue(selected.map(\.id).contains("ru-adlist"))
+        XCTAssertLessThan(selected.filter { $0.category == .regional }.count, registry.descriptors.filter { $0.category == .regional }.count)
+    }
+
+    func testMutuallyExclusiveEasyListVariantsResolveToNormalList() {
+        let registry = AdblockFilterListRegistry()
+        let validation = registry.validatedSelection(
+            SumiAdblockFilterListSelection(identifiers: ["easylist", "easylist-without-element-hiding"]),
+            locale: Locale(identifier: "en_US")
+        )
+
+        XCTAssertEqual(validation.resolvedIdentifiers, ["easylist"])
+        XCTAssertEqual(validation.droppedConflictingIdentifiers, ["easylist-without-element-hiding"])
+    }
+
+    func testExplicitEasyListNoElementHidingVariantCanBeSelectedAlone() {
+        let registry = AdblockFilterListRegistry()
+        let validation = registry.validatedSelection(
+            SumiAdblockFilterListSelection(identifiers: ["easylist-without-element-hiding"]),
+            locale: Locale(identifier: "en_US")
+        )
+
+        XCTAssertEqual(validation.resolvedIdentifiers, ["easylist-without-element-hiding"])
+        XCTAssertTrue(validation.droppedConflictingIdentifiers.isEmpty)
+    }
+
     func testCoordinatorDownloadsOnlySelectedListsAndWritesManifest() async throws {
         let root = temporaryDirectory()
         let manifestStore = AdblockUpdateManifestStore(rootDirectory: root)
@@ -74,9 +123,34 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         XCTAssertEqual(compileCount, 1)
         XCTAssertEqual(manifest.schemaVersion, 1)
         XCTAssertEqual(manifest.selectedFilterLists.map(\.id), ["easylist"])
+        XCTAssertEqual(manifest.selectedFilterLists.map(\.contentHash), [Self.sha256Hex(Data("||ads.example^".utf8))])
         XCTAssertTrue(manifest.webKitRuleListIdentifiers.allSatisfy(AdblockUpdateCoordinator.isAdblockGeneratedWebKitIdentifier))
         XCTAssertEqual(activeGenerationId, manifest.activeGenerationId)
         XCTAssertEqual(publisher.publishedManifests.count, 1)
+    }
+
+    func testCoordinatorDoesNotDownloadDroppedConflictingVariant() async throws {
+        let root = temporaryDirectory()
+        let manifestStore = AdblockUpdateManifestStore(rootDirectory: root)
+        let downloader = FakeAdblockDownloader(results: [
+            "easylist": .downloaded(Data("||ads.example^".utf8), Self.response(for: "easylist")),
+            "easylist-without-element-hiding": .downloaded(Data("||variant.example^".utf8), Self.response(for: "easylist-without-element-hiding")),
+        ])
+        let compiler = FakeAdblockCompiler()
+        let publisher = FakeAdblockPublisher()
+        let coordinator = Self.coordinator(
+            registry: AdblockFilterListRegistry(),
+            selection: SumiAdblockFilterListSelection(identifiers: ["easylist", "easylist-without-element-hiding"]),
+            downloader: downloader,
+            manifestStore: manifestStore,
+            compiler: compiler,
+            publisher: publisher
+        )
+
+        _ = try await coordinator.updateIfEnabled(reason: "manual")
+
+        let requestedIdentifiers = await downloader.allRequestedIdentifiers()
+        XCTAssertEqual(requestedIdentifiers, ["easylist"])
     }
 
     func testNotModifiedReusesPreviousRawContent() async throws {
@@ -174,6 +248,43 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
 
         let activeAfterCompileFailure = try await manifestStore.activeManifest()?.activeGenerationId
         XCTAssertEqual(activeAfterCompileFailure, firstManifest.activeGenerationId)
+    }
+
+    func testSelectionChangeCreatesDifferentGenerationAndPreservesPreviousUntilSwitch() async throws {
+        let root = temporaryDirectory()
+        let manifestStore = AdblockUpdateManifestStore(rootDirectory: root)
+        let publisher = FakeAdblockPublisher()
+        let optionalFirstManifest = try await Self.coordinator(
+            downloader: FakeAdblockDownloader(results: [
+                "easylist": .downloaded(Data("||first.example^".utf8), Self.response(for: "easylist")),
+            ]),
+            manifestStore: manifestStore,
+            compiler: FakeAdblockCompiler(),
+            publisher: publisher
+        ).updateIfEnabled(reason: "manual")
+        let firstManifest = try XCTUnwrap(optionalFirstManifest)
+
+        let optionalSecondManifest = try await Self.coordinator(
+            registry: AdblockFilterListRegistry(descriptors: [
+                Self.descriptor("easylist", defaultEnabled: true),
+                Self.descriptor("regional-de", defaultEnabled: false),
+            ]),
+            selection: SumiAdblockFilterListSelection(identifiers: ["easylist", "regional-de"]),
+            downloader: FakeAdblockDownloader(results: [
+                "easylist": .notModified(Self.response(for: "easylist", statusCode: 304)),
+                "regional-de": .downloaded(Data("||second.example^".utf8), Self.response(for: "regional-de")),
+            ]),
+            manifestStore: manifestStore,
+            compiler: FakeAdblockCompiler(),
+            publisher: publisher
+        ).updateIfEnabled(reason: "manual")
+        let secondManifest = try XCTUnwrap(optionalSecondManifest)
+        let archivedFirstManifest = try await manifestStore.archivedManifest(generationId: firstManifest.activeGenerationId)
+
+        XCTAssertNotEqual(firstManifest.activeGenerationId, secondManifest.activeGenerationId)
+        XCTAssertEqual(secondManifest.previousGenerationId, firstManifest.activeGenerationId)
+        XCTAssertNotNil(archivedFirstManifest)
+        XCTAssertEqual(secondManifest.selectedFilterLists.map(\.id), ["easylist", "regional-de"])
     }
 
     func testCleanupPreservesActiveAndPreviousAndDeletesOlderGenerations() async throws {
@@ -437,6 +548,9 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
             defaultEnabled: defaultEnabled,
             localeTags: [],
             licenseNoticeHint: "test",
+            variantOfListId: nil,
+            exclusionGroup: id.contains("without") ? "easylist.base.variant" : nil,
+            shortDescription: "test",
             mayContainCosmeticFilters: true,
             isAllowedInNativeOnlyMode: true
         )
@@ -457,6 +571,11 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
             httpVersion: nil,
             headerFields: headers
         )!
+    }
+
+    private static func sha256Hex(_ data: Data) -> String {
+        let digest = SHA256.hash(data: data)
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 
     private func temporaryDirectory() -> URL {

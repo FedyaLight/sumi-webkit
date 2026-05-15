@@ -58,6 +58,21 @@ struct SumiAdblockEffectivePolicy: Equatable, Sendable {
     let isEnabled: Bool
 }
 
+struct SumiAdblockAttachmentState: Equatable, Sendable {
+    let siteHost: String?
+    let isEnabled: Bool
+
+    static func disabled(siteHost: String?) -> SumiAdblockAttachmentState {
+        SumiAdblockAttachmentState(siteHost: siteHost, isEnabled: false)
+    }
+}
+
+extension SumiAdblockEffectivePolicy {
+    var attachmentState: SumiAdblockAttachmentState {
+        SumiAdblockAttachmentState(siteHost: host, isEnabled: isEnabled)
+    }
+}
+
 struct SumiAdblockRegionalListSelection: Codable, Equatable, Sendable {
     var identifiers: [String]
 
@@ -90,17 +105,24 @@ struct SumiAdBlockingAssets: Equatable, Sendable {
 
 struct SumiAdBlockingNormalTabDecision: Equatable, Sendable {
     let status: SumiAdBlockingModuleStatus
+    let effectivePolicy: SumiAdblockEffectivePolicy
     let assets: SumiAdBlockingAssets
     let contentBlockingService: SumiContentBlockingService?
 
     static let disabled = SumiAdBlockingNormalTabDecision(
         status: .disabled,
+        effectivePolicy: SumiAdblockEffectivePolicy(host: nil, isEnabled: false),
         assets: .empty,
         contentBlockingService: nil
     )
 
+    var attachmentState: SumiAdblockAttachmentState {
+        effectivePolicy.attachmentState
+    }
+
     static func == (lhs: SumiAdBlockingNormalTabDecision, rhs: SumiAdBlockingNormalTabDecision) -> Bool {
         lhs.status == rhs.status
+            && lhs.effectivePolicy == rhs.effectivePolicy
             && lhs.assets == rhs.assets
             && (lhs.contentBlockingService == nil) == (rhs.contentBlockingService == nil)
     }
@@ -115,6 +137,7 @@ final class AdblockSettingsStore: ObservableObject {
         static let cosmeticMode = "settings.adblock.cosmeticMode"
         static let regionalListSelection = "settings.adblock.regionalListSelection"
         static let selectedLists = "settings.adblock.selectedLists"
+        static let listSelectionRequiresUpdate = "settings.adblock.listSelectionRequiresUpdate"
     }
 
     @Published var autoUpdateEnabled: Bool {
@@ -145,7 +168,14 @@ final class AdblockSettingsStore: ObservableObject {
             if let data = try? JSONEncoder().encode(selectedLists) {
                 userDefaults.set(data, forKey: DefaultsKey.selectedLists)
             }
+            listSelectionRequiresUpdate = true
             changesSubject.send(())
+        }
+    }
+
+    @Published private(set) var listSelectionRequiresUpdate: Bool {
+        didSet {
+            userDefaults.set(listSelectionRequiresUpdate, forKey: DefaultsKey.listSelectionRequiresUpdate)
         }
     }
 
@@ -178,6 +208,37 @@ final class AdblockSettingsStore: ObservableObject {
         } else {
             selectedLists = .defaultSelection
         }
+        listSelectionRequiresUpdate = userDefaults.object(forKey: DefaultsKey.listSelectionRequiresUpdate) as? Bool ?? false
+    }
+
+    func isListSelected(
+        _ descriptor: AdblockFilterListDescriptor,
+        registry: AdblockFilterListRegistry = AdblockFilterListRegistry()
+    ) -> Bool {
+        registry.validatedSelection(selectedLists).resolvedIdentifiers.contains(descriptor.id)
+    }
+
+    func setList(
+        _ descriptor: AdblockFilterListDescriptor,
+        isSelected: Bool,
+        registry: AdblockFilterListRegistry = AdblockFilterListRegistry()
+    ) {
+        var identifiers = selectedLists.usesDefaultSelection
+            ? registry.validatedSelection(selectedLists).resolvedIdentifiers
+            : selectedLists.identifiers
+        if isSelected {
+            identifiers.append(descriptor.id)
+        } else {
+            identifiers.removeAll { $0 == descriptor.id }
+        }
+        identifiers = registry.validatedSelection(
+            SumiAdblockFilterListSelection(identifiers: identifiers)
+        ).resolvedIdentifiers
+        selectedLists = SumiAdblockFilterListSelection(identifiers: identifiers)
+    }
+
+    func markListUpdateCompleted() {
+        listSelectionRequiresUpdate = false
     }
 }
 
@@ -291,6 +352,7 @@ final class AdblockWebKitRuleListStore {
     private let manifestStore: AdblockUpdateManifestStore
     private let ruleListProvider: AdblockManifestRuleListProvider
     private let updateCoordinator: AdblockUpdateCoordinator
+    private let settingsStore: AdblockSettingsStore
     private let isAdblockEnabled: @Sendable () async -> Bool
     private var settingsCancellable: AnyCancellable?
     private(set) var latestCompilationOutput: AdblockCompilationOutput?
@@ -306,6 +368,7 @@ final class AdblockWebKitRuleListStore {
     ) {
         self.manifestStore = manifestStore
         self.isAdblockEnabled = isAdblockEnabled
+        self.settingsStore = settingsStore
         let provider = AdblockManifestRuleListProvider(
             manifest: nil,
             cosmeticMode: settingsStore.cosmeticMode
@@ -359,7 +422,11 @@ final class AdblockWebKitRuleListStore {
 
     func requestManualUpdate() async throws -> AdblockCompiledGenerationManifest? {
         guard await isAdblockEnabled() else { return nil }
-        return try await updateCoordinator.updateIfEnabled(reason: "manual")
+        let manifest = try await updateCoordinator.updateIfEnabled(reason: "manual")
+        if manifest != nil {
+            settingsStore.markListUpdateCompleted()
+        }
+        return manifest
     }
 
     func requestInitialUpdateIfNeeded() {
@@ -444,21 +511,55 @@ final class SumiAdBlockingModule {
 
     func normalTabDecision(for url: URL?) -> SumiAdBlockingNormalTabDecision {
         guard isEnabled else {
-            return .disabled
+            return SumiAdBlockingNormalTabDecision(
+                status: .disabled,
+                effectivePolicy: effectivePolicy(for: url),
+                assets: .empty,
+                contentBlockingService: nil
+            )
         }
         let policy = sitePolicyStoreIfEnabled().effectivePolicy(for: url, globalEnabled: true)
         guard policy.isEnabled else {
             return SumiAdBlockingNormalTabDecision(
                 status: status,
+                effectivePolicy: policy,
                 assets: .empty,
                 contentBlockingService: nil
             )
         }
         return SumiAdBlockingNormalTabDecision(
             status: status,
+            effectivePolicy: policy,
             assets: assetsIfAvailable(),
             contentBlockingService: ruleListStoreIfEnabled().contentBlockingService
         )
+    }
+
+    func normalizedSiteHost(for url: URL?) -> String? {
+        sitePolicyStoreIfEnabled().normalizedHost(for: url)
+    }
+
+    func effectivePolicy(for url: URL?) -> SumiAdblockEffectivePolicy {
+        let store = sitePolicyStoreIfEnabled()
+        guard isEnabled else {
+            return SumiAdblockEffectivePolicy(
+                host: store.normalizedHost(for: url),
+                isEnabled: false
+            )
+        }
+        return store.effectivePolicy(for: url, globalEnabled: true)
+    }
+
+    func siteOverride(for url: URL?) -> SumiAdblockSiteOverride {
+        sitePolicyStoreIfEnabled().override(for: url)
+    }
+
+    func setSiteOverride(_ override: SumiAdblockSiteOverride, for url: URL?) {
+        sitePolicyStoreIfEnabled().setSiteOverride(override, for: url)
+    }
+
+    func sitePolicyChangesPublisher() -> AnyPublisher<Void, Never> {
+        sitePolicyStoreIfEnabled().changesPublisher
     }
 
     func settingsIfEnabled() -> AdblockSettingsStore? {
