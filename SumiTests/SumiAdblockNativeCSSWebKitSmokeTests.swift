@@ -82,6 +82,100 @@ final class SumiAdblockNativeCSSWebKitSmokeTests: XCTestCase {
         XCTAssertEqual(visibility["attributeTarget"], true)
     }
 
+    func testNativeCSSRootSelectorCanReproduceBlankAppContainerInWebKit() async throws {
+        let service = SumiContentBlockingService(
+            policy: .enabled(ruleLists: [
+                Self.cssDisplayNoneRuleList(
+                    name: "SumiNativeCSSBlankRootReproduction-\(UUID().uuidString)",
+                    selector: "#app"
+                ),
+            ])
+        )
+        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: service
+        )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+        XCTAssertEqual(normalTabController.contentBlockingAssetSummary.globalRuleListCount, 1)
+
+        assertNoAdblockProductionJS(in: controller)
+
+        let webView = makeWebView(userContentController: controller)
+        try await loadHTML(
+            """
+            <!doctype html>
+            <html><body style="min-height: 40px;">
+              <main id="app">
+                <p class="keep-visible">Visible application content</p>
+              </main>
+            </body></html>
+            """,
+            baseURL: URL(string: "https://example.test/root-blank.html")!,
+            into: webView
+        )
+
+        let visibility = try await rootVisibility(in: webView)
+        XCTAssertEqual(visibility["body"], true)
+        XCTAssertEqual(visibility["app"], false)
+        XCTAssertEqual(visibility["control"], false)
+    }
+
+    func testCompilerFilteredNativeCSSDoesNotHideDocumentRootOrAppContainer() async throws {
+        let output = try await AdblockRustCompiler().compile(
+            AdblockCompilationInput(
+                sourceIdentifier: "SumiNativeCSSRootFilter-\(UUID().uuidString)",
+                filterTexts: [
+                    "##html",
+                    "##body",
+                    "##body::before",
+                    "###app",
+                    "##.ad-banner",
+                ],
+                selectedOutputGroups: [.nativeCosmeticCSS]
+            )
+        )
+        XCTAssertEqual(output.diagnostics.filteredUnsafeNativeCosmeticSelectors.map(\.rule), [
+            "html",
+            "body",
+            "#app",
+        ])
+        let group = try XCTUnwrap(output.groups.first { $0.kind == .nativeCosmeticCSS })
+        XCTAssertTrue(group.definition.encodedContentRuleList.contains("body::before"))
+        let service = SumiContentBlockingService(
+            policy: .enabled(ruleLists: [group.definition])
+        )
+        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: service
+        )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+        XCTAssertEqual(normalTabController.contentBlockingAssetSummary.globalRuleListCount, 1)
+
+        assertNoAdblockProductionJS(in: controller)
+
+        let webView = makeWebView(userContentController: controller)
+        try await loadHTML(
+            """
+            <!doctype html>
+            <html><body style="min-height: 40px;">
+              <main id="app">
+                <p class="keep-visible">Visible application content</p>
+                <div class="ad-banner">Ad banner</div>
+              </main>
+            </body></html>
+            """,
+            baseURL: URL(string: "https://example.test/root-filter.html")!,
+            into: webView
+        )
+
+        let visibility = try await rootVisibility(in: webView)
+        XCTAssertEqual(visibility["html"], true)
+        XCTAssertEqual(visibility["body"], true)
+        XCTAssertEqual(visibility["app"], true)
+        XCTAssertEqual(visibility["control"], true)
+        XCTAssertEqual(visibility["adBanner"], false)
+    }
+
     func testEnhancedRuntimeFixtureHidesOnlyInEnhancedScriptPath() async throws {
         let runtimeBundle = AdblockEnhancedRuntimeBundle(
             resources: [
@@ -221,6 +315,51 @@ final class SumiAdblockNativeCSSWebKitSmokeTests: XCTestCase {
         """
         let result = try await webView.evaluateJavaScript(script)
         return try XCTUnwrap(result as? [String: Bool])
+    }
+
+    private func rootVisibility(in webView: WKWebView) async throws -> [String: Bool] {
+        let script = """
+        (() => {
+          const isVisible = (selector) => {
+            const element = document.querySelector(selector);
+            if (!element) { return false; }
+            const style = getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+          };
+          return {
+            html: isVisible('html'),
+            body: isVisible('body'),
+            app: isVisible('#app'),
+            control: isVisible('.keep-visible'),
+            adBanner: isVisible('.ad-banner')
+          };
+        })();
+        """
+        let result = try await webView.evaluateJavaScript(script)
+        return try XCTUnwrap(result as? [String: Bool])
+    }
+
+    private static func cssDisplayNoneRuleList(
+        name: String,
+        selector: String
+    ) -> SumiContentRuleListDefinition {
+        SumiContentRuleListDefinition(
+            name: name,
+            encodedContentRuleList: """
+            [
+              {
+                "trigger": {
+                  "url-filter": ".*"
+                },
+                "action": {
+                  "type": "css-display-none",
+                  "selector": "\(selector)"
+                }
+              }
+            ]
+            """
+        )
     }
 
     private func assertNoAdblockProductionJS(

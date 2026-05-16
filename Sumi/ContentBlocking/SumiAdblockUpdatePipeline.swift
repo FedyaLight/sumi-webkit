@@ -848,6 +848,7 @@ enum AdblockUpdateFailureStage: String, Codable, CaseIterable, Sendable {
     case compilerInputAssemblyFailed = "compiler input assembly failed"
     case nativeCompilationFailed = "native compilation failed"
     case shardPublishFailed = "shard publish failed"
+    case manifestCommitFailed = "manifest commit failed"
 }
 
 struct AdblockFilterListUpdateStatus: Codable, Equatable, Identifiable, Sendable {
@@ -1590,12 +1591,33 @@ final class AdblockManifestRuleListProvider: SumiContentRuleListSetProviding {
     }
 }
 
+struct PreparedAdblockRuleListPublication {
+    let manifest: AdblockCompiledGenerationManifest
+    let definitions: [SumiContentRuleListDefinition]
+    let preparedContentBlockingUpdate: SumiPreparedContentBlockingUpdate
+}
+
 @MainActor
 protocol AdblockRuleListPublishing: AnyObject, Sendable {
+    func preparePublication(
+        manifest: AdblockCompiledGenerationManifest,
+        definitions: [SumiContentRuleListDefinition]
+    ) async throws -> PreparedAdblockRuleListPublication
+
+    func commitPublication(_ publication: PreparedAdblockRuleListPublication)
+}
+
+extension AdblockRuleListPublishing {
     func publish(
         manifest: AdblockCompiledGenerationManifest,
         definitions: [SumiContentRuleListDefinition]
-    ) async throws
+    ) async throws {
+        let publication = try await preparePublication(
+            manifest: manifest,
+            definitions: definitions
+        )
+        commitPublication(publication)
+    }
 }
 
 @MainActor
@@ -1615,9 +1637,33 @@ final class AdblockRuleListPublisher: AdblockRuleListPublishing {
         manifest: AdblockCompiledGenerationManifest,
         definitions: [SumiContentRuleListDefinition]
     ) async throws {
+        let publication = try await preparePublication(
+            manifest: manifest,
+            definitions: definitions
+        )
+        commitPublication(publication)
+    }
+
+    func preparePublication(
+        manifest: AdblockCompiledGenerationManifest,
+        definitions: [SumiContentRuleListDefinition]
+    ) async throws -> PreparedAdblockRuleListPublication {
         let prepared = try await contentBlockingService.prepareRuleListUpdate(ruleLists: definitions)
-        ruleListProvider.updateManifest(manifest, compiledDefinitions: definitions)
-        contentBlockingService.commitPreparedContentBlockingUpdate(prepared)
+        return PreparedAdblockRuleListPublication(
+            manifest: manifest,
+            definitions: definitions,
+            preparedContentBlockingUpdate: prepared
+        )
+    }
+
+    func commitPublication(_ publication: PreparedAdblockRuleListPublication) {
+        ruleListProvider.updateManifest(
+            publication.manifest,
+            compiledDefinitions: publication.definitions
+        )
+        contentBlockingService.commitPreparedContentBlockingUpdate(
+            publication.preparedContentBlockingUpdate
+        )
     }
 }
 
@@ -2179,8 +2225,12 @@ actor AdblockUpdateCoordinator {
             previousGenerationId: previousManifest?.activeGenerationId
         )
 
+        let preparedPublication: PreparedAdblockRuleListPublication
         do {
-            try await publisher.publish(manifest: manifest, definitions: definitions)
+            preparedPublication = try await publisher.preparePublication(
+                manifest: manifest,
+                definitions: definitions
+            )
         } catch let error as SumiContentBlockingCompilationError {
             let currentStatuses = await currentRawFileStatuses(statusesByIdentifier)
             let diagnostics = AdblockUpdateDiagnostics(
@@ -2193,12 +2243,25 @@ actor AdblockUpdateCoordinator {
             latestDiagnostics = diagnostics
             throw diagnostics
         }
-        try await manifestStore.commit(
-            manifest: manifest,
-            httpMetadata: updatedMetadata,
-            stagedRawListURLs: stagedRawURLs,
-            stagedCompiledShardURLs: stagedCompiledShardURLs
-        )
+        do {
+            try await manifestStore.commit(
+                manifest: manifest,
+                httpMetadata: updatedMetadata,
+                stagedRawListURLs: stagedRawURLs,
+                stagedCompiledShardURLs: stagedCompiledShardURLs
+            )
+        } catch {
+            let currentStatuses = await currentRawFileStatuses(statusesByIdentifier)
+            let diagnostics = AdblockUpdateDiagnostics(
+                summary: "Adblock manifest commit failed: \(error.localizedDescription)",
+                stage: .manifestCommitFailed,
+                listStatuses: currentStatuses,
+                selectionDiagnostics: selectionDiagnostics
+            )
+            latestDiagnostics = diagnostics
+            throw diagnostics
+        }
+        await publisher.commitPublication(preparedPublication)
         if let garbageCollector {
             latestCleanupReport = await garbageCollector.cleanupAfterSuccessfulUpdate()
         }
@@ -2727,6 +2790,7 @@ actor AdblockUpdateCoordinator {
             "nativeCSSConverted=\(diagnostics.nativeCosmeticRuleCount)",
             "unsupportedCosmetic=\(diagnostics.unsupportedCosmeticRuleCount)",
             "scriptletOrProceduralIgnored=\(diagnostics.ignoredScriptletOrProceduralRuleCount)",
+            "unsafeNativeCSSRootSelectorsFiltered=\(diagnostics.filteredUnsafeNativeCosmeticSelectors.count)",
             "nativeCSSEmpty=\(diagnostics.isNativeCosmeticGroupEmpty)",
             "unsupported=\(diagnostics.unsupportedRules.count)",
             "ignored=\(diagnostics.ignoredRules.count)",

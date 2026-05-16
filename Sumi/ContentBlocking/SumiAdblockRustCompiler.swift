@@ -202,6 +202,7 @@ struct AdblockCompilationDiagnostics: Equatable, Sendable {
 
     var unsupportedRules: [Entry] = []
     var ignoredRules: [Entry] = []
+    var filteredUnsafeNativeCosmeticSelectors: [Entry] = []
     var nativeCosmeticRuleCount = 0
     var unsupportedCosmeticRuleCount = 0
     var ignoredScriptletOrProceduralRuleCount = 0
@@ -451,7 +452,8 @@ final class AdblockRustCompiler: AdblockFilterCompiling, NativeContentBlockingCo
     ) throws -> NativeContentBlockingCompilationOutput {
         try validateAdapterOutput(adapterOutput)
         let networkBlockCount = adapterOutput.network.countActions(named: "block")
-        let nativeCosmeticCount = adapterOutput.nativeCosmeticCSS.countActions(named: "css-display-none")
+        let sanitizedNativeCosmeticCSS = sanitizeNativeCosmeticCSSRules(adapterOutput.nativeCosmeticCSS)
+        let nativeCosmeticCount = sanitizedNativeCosmeticCSS.rules.countActions(named: "css-display-none")
         let generationId = input.generationId ?? input.sourceIdentifier
         let networkShards = input.selectedOutputGroups.contains(.network)
             ? try makeCompiledShards(
@@ -466,7 +468,7 @@ final class AdblockRustCompiler: AdblockFilterCompiling, NativeContentBlockingCo
         let nativeCosmeticCSSShards = input.selectedOutputGroups.contains(.nativeCosmeticCSS)
             ? try makeCompiledShards(
                 kind: .nativeCosmeticCSS,
-                rules: adapterOutput.nativeCosmeticCSS,
+                rules: sanitizedNativeCosmeticCSS.rules,
                 convertedActionName: "css-display-none",
                 generationId: generationId,
                 input: input,
@@ -489,6 +491,7 @@ final class AdblockRustCompiler: AdblockFilterCompiling, NativeContentBlockingCo
         let diagnostics = AdblockCompilationDiagnostics(
             unsupportedRules: unsupportedDiagnostics,
             ignoredRules: ignoredRules,
+            filteredUnsafeNativeCosmeticSelectors: sanitizedNativeCosmeticCSS.filteredSelectors,
             nativeCosmeticRuleCount: nativeCosmeticCount,
             unsupportedCosmeticRuleCount: unsupportedCosmeticCount,
             ignoredScriptletOrProceduralRuleCount: scriptletOrProceduralCount,
@@ -808,6 +811,176 @@ final class AdblockRustCompiler: AdblockFilterCompiling, NativeContentBlockingCo
                 )
             }
         }
+    }
+
+    private static func sanitizeNativeCosmeticCSSRules(
+        _ rules: [AdblockRustContentRule]
+    ) -> (rules: [AdblockRustContentRule], filteredSelectors: [AdblockCompilationDiagnostics.Entry]) {
+        var sanitizedRules = [AdblockRustContentRule]()
+        var filteredSelectors = [AdblockCompilationDiagnostics.Entry]()
+        sanitizedRules.reserveCapacity(rules.count)
+
+        for rule in rules {
+            guard var action = rule.action.objectValue,
+                  action["type"]?.stringValue == "css-display-none",
+                  let selector = action["selector"]?.stringValue
+            else {
+                sanitizedRules.append(rule)
+                continue
+            }
+
+            let selectorComponents = splitSelectorList(selector)
+            let retainedSelectors = selectorComponents.filter { component in
+                if targetsDocumentRootOrAppContainer(component) {
+                    filteredSelectors.append(
+                        AdblockCompilationDiagnostics.Entry(
+                            rule: component,
+                            reason: "unsafe native CSS root-container selector"
+                        )
+                    )
+                    return false
+                }
+                return true
+            }
+
+            guard !retainedSelectors.isEmpty else {
+                continue
+            }
+
+            if retainedSelectors.count == selectorComponents.count {
+                sanitizedRules.append(rule)
+            } else {
+                action["selector"] = .string(retainedSelectors.joined(separator: ", "))
+                sanitizedRules.append(
+                    AdblockRustContentRule(
+                        action: .object(action),
+                        trigger: rule.trigger
+                    )
+                )
+            }
+        }
+
+        return (sanitizedRules, filteredSelectors)
+    }
+
+    private static func targetsDocumentRootOrAppContainer(_ selector: String) -> Bool {
+        let trimmed = selector.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        let subject = rightmostSelectorCompound(in: trimmed)
+        guard !subject.isEmpty else { return false }
+
+        if isUnsafeRootSelectorSubject(subject, root: "html")
+            || isUnsafeRootSelectorSubject(subject, root: "body")
+            || isUnsafeRootSelectorSubject(subject, root: ":root") {
+            return true
+        }
+
+        for appRoot in ["#app", "#root", "#__next", "#__nuxt"] {
+            if subject == appRoot
+                || subject.hasPrefix(appRoot + ".")
+                || subject.hasPrefix(appRoot + "[")
+                || (subject.hasPrefix(appRoot + ":") && !subject.hasPrefix(appRoot + "::")) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private static func isUnsafeRootSelectorSubject(_ subject: String, root: String) -> Bool {
+        guard subject.hasPrefix(root) else { return false }
+        let suffix = subject.dropFirst(root.count)
+        if suffix.isEmpty {
+            return true
+        }
+        if suffix.hasPrefix("::") {
+            return false
+        }
+        return suffix.hasPrefix(".")
+            || suffix.hasPrefix("[")
+            || suffix.hasPrefix(":")
+    }
+
+    private static func rightmostSelectorCompound(in selector: String) -> String {
+        var depth = 0
+        var quote: Character?
+        var lastBoundary = selector.startIndex
+        var index = selector.startIndex
+
+        while index < selector.endIndex {
+            let character = selector[index]
+            if let activeQuote = quote {
+                if character == activeQuote {
+                    quote = nil
+                } else if character == "\\" {
+                    index = selector.index(after: index)
+                }
+            } else {
+                switch character {
+                case "\"", "'":
+                    quote = character
+                case "[", "(":
+                    depth += 1
+                case "]", ")":
+                    depth = max(0, depth - 1)
+                case ">", "+", "~":
+                    if depth == 0 {
+                        lastBoundary = selector.index(after: index)
+                    }
+                default:
+                    if depth == 0, character.isWhitespace {
+                        lastBoundary = selector.index(after: index)
+                    }
+                }
+            }
+            index = selector.index(after: index)
+        }
+
+        return String(selector[lastBoundary...])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func splitSelectorList(_ selector: String) -> [String] {
+        var parts = [String]()
+        var depth = 0
+        var quote: Character?
+        var start = selector.startIndex
+        var index = selector.startIndex
+
+        while index < selector.endIndex {
+            let character = selector[index]
+            if let activeQuote = quote {
+                if character == activeQuote {
+                    quote = nil
+                } else if character == "\\" {
+                    index = selector.index(after: index)
+                }
+            } else {
+                switch character {
+                case "\"", "'":
+                    quote = character
+                case "[", "(":
+                    depth += 1
+                case "]", ")":
+                    depth = max(0, depth - 1)
+                case "," where depth == 0:
+                    let part = selector[start..<index].trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !part.isEmpty {
+                        parts.append(part)
+                    }
+                    start = selector.index(after: index)
+                default:
+                    break
+                }
+            }
+            index = selector.index(after: index)
+        }
+
+        let finalPart = selector[start..<selector.endIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+        if !finalPart.isEmpty {
+            parts.append(finalPart)
+        }
+        return parts
     }
 
     private static func isCosmeticRule(_ rule: String) -> Bool {
