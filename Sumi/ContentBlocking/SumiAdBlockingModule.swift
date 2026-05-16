@@ -115,6 +115,9 @@ struct SumiAdblockAttachmentDiagnostics: Equatable, Sendable {
     let trackingProtectionModuleEnabled: Bool
     let generationIsStale: Bool
     let lastUpdateError: String?
+    let lastUpdateFailureStage: AdblockUpdateFailureStage?
+    let lastUpdateListStatuses: [AdblockFilterListUpdateStatus]
+    let effectiveSelectionDiagnostics: AdblockEffectiveSelectionDiagnostics?
     let ineligibleSurfaceReason: String?
 }
 
@@ -137,7 +140,12 @@ extension SumiAdblockAttachmentDiagnostics {
             "activeGeneration=\(hasActiveGeneration)",
             "generationIsStale=\(generationIsStale)",
             "selectedListIDs=\(selectedListIdentifiers.joined(separator: ","))",
+            "manualSelectedListIDs=\(effectiveSelectionDiagnostics?.manuallySelectedListIdentifiers.joined(separator: ",") ?? "nil")",
+            "profileDerivedListIDs=\(effectiveSelectionDiagnostics?.profileDerivedListIdentifiers.joined(separator: ",") ?? "nil")",
+            "finalEffectiveListIDs=\(effectiveSelectionDiagnostics?.finalEffectiveListIdentifiers.joined(separator: ",") ?? "nil")",
+            "conflictDroppedListIDs=\(effectiveSelectionDiagnostics?.droppedConflictingIdentifiers.joined(separator: ",") ?? "nil")",
             "activeManifestListIDs=\(activeManifestListIdentifiers.joined(separator: ","))",
+            "lastUpdateFailureStage=\(lastUpdateFailureStage?.rawValue ?? "nil")",
             "networkShardCount=\(networkShardCount)",
             "nativeCSSShardCount=\(nativeCSSShardCount)",
             "attachedGroups=\(attachedNativeGroups.map(\.rawValue).joined(separator: ","))",
@@ -155,6 +163,7 @@ extension SumiAdblockAttachmentDiagnostics {
             "cosmeticMode=\(cosmeticMode?.rawValue ?? "nil")",
             "enhancedRuntimeEnabled=\(enhancedRuntimeIsEnabled)",
             "ineligibleSurfaceReason=\(ineligibleSurfaceReason ?? "nil")",
+            "lastUpdateListStatuses=\(lastUpdateListStatuses.map { "\($0.listIdentifier):\($0.failureStage?.rawValue ?? "ok"):\($0.httpStatus.map(String.init) ?? "nil"):\($0.rawByteSize.map(String.init) ?? "nil")" }.joined(separator: ","))",
         ].joined(separator: "\n")
     }
 }
@@ -530,6 +539,7 @@ final class AdblockWebKitRuleListStore {
     let configuredNativeCompilerIdentity: NativeContentBlockingCompilerIdentity
     private var settingsCancellable: AnyCancellable?
     private(set) var lastFailedShardIdentifier: String?
+    private(set) var lastUpdateDiagnostics: AdblockUpdateDiagnostics?
 
     var hasActiveGeneration: Bool {
         ruleListProvider.activeManifest != nil
@@ -613,6 +623,7 @@ final class AdblockWebKitRuleListStore {
         guard await isAdblockEnabled() else { return nil }
         do {
             let manifest = try await updateCoordinator.updateIfEnabled(reason: "manual")
+            lastUpdateDiagnostics = await updateCoordinator.latestDiagnosticsSnapshot()
             if manifest != nil {
                 lastFailedShardIdentifier = nil
                 settingsStore.markListUpdateCompleted()
@@ -620,6 +631,7 @@ final class AdblockWebKitRuleListStore {
             return manifest
         } catch let diagnostics as AdblockUpdateDiagnostics {
             lastFailedShardIdentifier = diagnostics.failedShardIdentifier
+            lastUpdateDiagnostics = diagnostics
             throw diagnostics
         }
     }
@@ -656,12 +668,15 @@ final class AdblockWebKitRuleListStore {
                     return
                 }
                 _ = try await self.updateCoordinator.updateIfEnabled(reason: "initial")
+                let diagnostics = await self.updateCoordinator.latestDiagnosticsSnapshot()
                 await MainActor.run {
                     self.lastFailedShardIdentifier = nil
+                    self.lastUpdateDiagnostics = diagnostics
                 }
             } catch let diagnostics as AdblockUpdateDiagnostics {
                 await MainActor.run {
                     self.lastFailedShardIdentifier = diagnostics.failedShardIdentifier
+                    self.lastUpdateDiagnostics = diagnostics
                 }
             } catch {}
         }
@@ -853,6 +868,12 @@ final class SumiAdBlockingModule {
                 trackingProtectionModuleEnabled: moduleRegistry.isEnabled(.trackingProtection),
                 generationIsStale: settings.listSelectionRequiresUpdate,
                 lastUpdateError: nil,
+                lastUpdateFailureStage: nil,
+                lastUpdateListStatuses: [],
+                effectiveSelectionDiagnostics: AdblockFilterListRegistry().effectiveSelectionDiagnostics(
+                    selection: settings.selectedLists,
+                    profileKind: settings.selectedNativeProfile
+                ),
                 ineligibleSurfaceReason: policy.host == nil ? "No normalized web host" : nil
             )
         }
@@ -887,7 +908,9 @@ final class SumiAdBlockingModule {
         )
         let selectedProfile = settings?.selectedNativeProfile
         let activeProfile = manifest?.nativeProfile
-        let lastError = ruleListStore.lastFailedShardIdentifier.map { "Failed shard: \($0)" }
+        let lastDiagnostics = ruleListStore.lastUpdateDiagnostics
+        let lastError = lastDiagnostics?.summary
+            ?? ruleListStore.lastFailedShardIdentifier.map { "Failed shard: \($0)" }
 
         return SumiAdblockAttachmentDiagnostics(
             siteHost: policy.host,
@@ -927,6 +950,13 @@ final class SumiAdBlockingModule {
                 || manifest?.nativeProfile != settings?.selectedNativeProfile
                 || manifest?.nativeCompiler != ruleListStore.configuredNativeCompilerIdentity,
             lastUpdateError: lastError,
+            lastUpdateFailureStage: lastDiagnostics?.stage,
+            lastUpdateListStatuses: lastDiagnostics?.listStatuses ?? [],
+            effectiveSelectionDiagnostics: lastDiagnostics?.selectionDiagnostics
+                ?? AdblockFilterListRegistry().effectiveSelectionDiagnostics(
+                    selection: settings?.selectedLists ?? .defaultSelection,
+                    profileKind: settings?.selectedNativeProfile ?? .currentDefault
+                ),
             ineligibleSurfaceReason: policy.host == nil ? "No normalized web host" : nil
         )
     }

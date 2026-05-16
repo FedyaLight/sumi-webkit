@@ -247,6 +247,21 @@ private struct NativeAdblockSettingsView: View {
 
             debugKeyValueGrid(rows: debugGlobalRows)
 
+            if !debugDiagnostics.lastUpdateListStatuses.isEmpty {
+                SettingsDivider()
+                Text("DEBUG Adblock List Updates")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                ForEach(debugDiagnostics.lastUpdateListStatuses) { status in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(status.displayName)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                        debugKeyValueGrid(rows: debugListRows(status))
+                    }
+                }
+            }
+
             if let tabDiagnostics = debugTabDiagnostics {
                 SettingsDivider()
                 Text("DEBUG Current Tab Attachment")
@@ -267,7 +282,13 @@ private struct NativeAdblockSettingsView: View {
             ("Generation stale", diagnostics.generationIsStale.description),
             ("Last successful rebuild", debugDateString(diagnostics.lastSuccessfulUpdateDate)),
             ("Last rebuild error", diagnostics.lastUpdateError ?? "nil"),
+            ("Last failure stage", diagnostics.lastUpdateFailureStage?.rawValue ?? "nil"),
             ("Selected list IDs", diagnostics.selectedListIdentifiers.joined(separator: ", ")),
+            ("Manual selected list IDs", diagnostics.effectiveSelectionDiagnostics?.manuallySelectedListIdentifiers.joined(separator: ", ") ?? "nil"),
+            ("Profile-derived list IDs", diagnostics.effectiveSelectionDiagnostics?.profileDerivedListIdentifiers.joined(separator: ", ") ?? "nil"),
+            ("Recommended regional IDs", diagnostics.effectiveSelectionDiagnostics?.recommendedRegionalListIdentifiers.joined(separator: ", ") ?? "nil"),
+            ("Final effective list IDs", diagnostics.effectiveSelectionDiagnostics?.finalEffectiveListIdentifiers.joined(separator: ", ") ?? "nil"),
+            ("Conflicts/exclusions", diagnostics.effectiveSelectionDiagnostics?.droppedConflictingIdentifiers.joined(separator: ", ") ?? "nil"),
             ("Active manifest list IDs", diagnostics.activeManifestListIdentifiers.joined(separator: ", ")),
             ("Native compiler", diagnostics.nativeCompiler.map { "\($0.name) \($0.version)" } ?? "nil"),
             ("Network shard count", diagnostics.networkShardCount.description),
@@ -279,6 +300,29 @@ private struct NativeAdblockSettingsView: View {
             ("Cosmetic mode", diagnostics.cosmeticMode?.rawValue ?? "nil"),
             ("Enhanced runtime", diagnostics.enhancedRuntimeIsEnabled.description),
             ("Tracking Protection", diagnostics.trackingProtectionModuleEnabled.description),
+        ]
+    }
+
+    private func debugListRows(_ status: AdblockFilterListUpdateStatus) -> [(String, String)] {
+        [
+            ("List id", status.listIdentifier),
+            ("Category", status.category?.rawValue ?? "nil"),
+            ("Selection origin", status.selectionOrigins.map(\.rawValue).joined(separator: ", ")),
+            ("Final URL", status.finalURL ?? "nil"),
+            ("Last checked", debugDateString(status.lastCheckedDate)),
+            ("Last successful download", debugDateString(status.lastSuccessfulDownloadDate)),
+            ("HTTP status", status.httpStatus.map(String.init) ?? "nil"),
+            ("ETag used", status.eTagUsed ?? "nil"),
+            ("ETag saved", status.eTagSaved ?? "nil"),
+            ("Last-Modified used", status.lastModifiedUsed ?? "nil"),
+            ("Last-Modified saved", status.lastModifiedSaved ?? "nil"),
+            ("304 reuse", status.notModifiedReused.description),
+            ("Raw file path", status.rawFilePath ?? "nil"),
+            ("Raw file exists", status.rawFileExists.description),
+            ("Raw bytes", status.rawByteSize.map(String.init) ?? "nil"),
+            ("Content hash", status.contentHash ?? "nil"),
+            ("Failure stage", status.failureStage?.rawValue ?? "nil"),
+            ("Failure reason", status.failureReason ?? "nil"),
         ]
     }
 
@@ -337,7 +381,11 @@ private struct NativeAdblockSettingsView: View {
                 }
             } catch {
                 await MainActor.run {
-                    rebuildStatus = "Rebuild failed: \(error.localizedDescription)"
+                    if let diagnostics = error as? AdblockUpdateDiagnostics {
+                        rebuildStatus = "Rebuild failed: \(diagnostics.summary)"
+                    } else {
+                        rebuildStatus = "Rebuild failed: \(error.localizedDescription)"
+                    }
                     isRebuilding = false
                 }
             }
