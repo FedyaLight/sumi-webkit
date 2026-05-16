@@ -62,11 +62,18 @@ struct SumiAdblockAttachmentState: Equatable, Sendable {
     let siteHost: String?
     let isEnabled: Bool
     let hasEnhancedRuntime: Bool
+    let attachedShardIdentifiers: [String]
 
-    init(siteHost: String?, isEnabled: Bool, hasEnhancedRuntime: Bool = false) {
+    init(
+        siteHost: String?,
+        isEnabled: Bool,
+        hasEnhancedRuntime: Bool = false,
+        attachedShardIdentifiers: [String] = []
+    ) {
         self.siteHost = siteHost
         self.isEnabled = isEnabled
         self.hasEnhancedRuntime = hasEnhancedRuntime
+        self.attachedShardIdentifiers = attachedShardIdentifiers.sorted()
     }
 
     static func disabled(siteHost: String?) -> SumiAdblockAttachmentState {
@@ -83,9 +90,17 @@ struct SumiAdblockAttachmentDiagnostics: Equatable, Sendable {
     let hasActiveGeneration: Bool
     let attachedNativeGroups: [AdblockCompiledRuleGroupKind]
     let attachedShardIdentifiers: [String]
+    let expectedNetworkShardIdentifiers: [String]
+    let expectedNativeCSSShardIdentifiers: [String]
+    let missingShardIdentifiers: [String]
     let contentRuleListIdentifiers: [String]
     let selectedListIdentifiers: [String]
+    let activeManifestListIdentifiers: [String]
     let selectedNativeProfile: AdblockFilterListProfileKind?
+    let activeCompiledNativeProfile: AdblockFilterListProfileKind?
+    let selectedProfileDiffersFromActiveGeneration: Bool
+    let activeGenerationId: String?
+    let lastSuccessfulUpdateDate: Date?
     let nativeCompiler: NativeContentBlockingCompilerIdentity?
     let nativeCompilationSummary: NativeContentBlockingCompilationSummary?
     let nativeSourceLists: [NativeContentBlockingSourceList]
@@ -99,6 +114,8 @@ struct SumiAdblockAttachmentDiagnostics: Equatable, Sendable {
     let enhancedRuntimeIsEnabled: Bool
     let trackingProtectionModuleEnabled: Bool
     let generationIsStale: Bool
+    let lastUpdateError: String?
+    let ineligibleSurfaceReason: String?
 }
 
 extension SumiAdblockAttachmentDiagnostics {
@@ -111,14 +128,23 @@ extension SumiAdblockAttachmentDiagnostics {
             "sitePolicyAllowsAdblock=\(sitePolicyAllowsAdblock)",
             "effectiveEnabled=\(isEnabled)",
             "selectedNativeProfile=\(selectedNativeProfile?.rawValue ?? "nil")",
+            "activeCompiledNativeProfile=\(activeCompiledNativeProfile?.rawValue ?? "nil")",
+            "selectedProfileDiffersFromActiveGeneration=\(selectedProfileDiffersFromActiveGeneration)",
+            "activeGenerationId=\(activeGenerationId ?? "nil")",
+            "lastSuccessfulUpdateDate=\(lastSuccessfulUpdateDate?.description ?? "nil")",
+            "lastUpdateError=\(lastUpdateError ?? "nil")",
             "nativeCompiler=\(nativeCompiler.map { "\($0.name) \($0.version)" } ?? "nil")",
             "activeGeneration=\(hasActiveGeneration)",
             "generationIsStale=\(generationIsStale)",
             "selectedListIDs=\(selectedListIdentifiers.joined(separator: ","))",
+            "activeManifestListIDs=\(activeManifestListIdentifiers.joined(separator: ","))",
             "networkShardCount=\(networkShardCount)",
             "nativeCSSShardCount=\(nativeCSSShardCount)",
             "attachedGroups=\(attachedNativeGroups.map(\.rawValue).joined(separator: ","))",
+            "expectedNetworkShardIdentifiers=\(expectedNetworkShardIdentifiers.joined(separator: ","))",
+            "expectedNativeCSSShardIdentifiers=\(expectedNativeCSSShardIdentifiers.joined(separator: ","))",
             "attachedShardIdentifiers=\(attachedShardIdentifiers.joined(separator: ","))",
+            "missingShardIdentifiers=\(missingShardIdentifiers.joined(separator: ","))",
             "totalNetworkRuleCount=\(totalNetworkRuleCount)",
             "totalNativeCSSRuleCount=\(totalNativeCSSRuleCount)",
             "largestShardJSONByteCount=\(largestShardJSONByteCount)",
@@ -128,6 +154,50 @@ extension SumiAdblockAttachmentDiagnostics {
             "trackingProtectionEnabled=\(trackingProtectionModuleEnabled)",
             "cosmeticMode=\(cosmeticMode?.rawValue ?? "nil")",
             "enhancedRuntimeEnabled=\(enhancedRuntimeIsEnabled)",
+            "ineligibleSurfaceReason=\(ineligibleSurfaceReason ?? "nil")",
+        ].joined(separator: "\n")
+    }
+}
+
+struct SumiAdblockCurrentTabDiagnostics: Equatable, Sendable {
+    let urlString: String?
+    let host: String?
+    let normalizedSiteKey: String?
+    let globalAdblockEnabled: Bool
+    let perSiteAdblockEnabled: Bool
+    let reloadRequired: Bool
+    let activeGenerationId: String?
+    let selectedNativeProfile: AdblockFilterListProfileKind?
+    let activeCompiledNativeProfile: AdblockFilterListProfileKind?
+    let cosmeticMode: SumiAdblockCosmeticMode?
+    let expectedNetworkShardIdentifiers: [String]
+    let expectedNativeCSSShardIdentifiers: [String]
+    let attachedNetworkShardIdentifiers: [String]
+    let attachedNativeCSSShardIdentifiers: [String]
+    let missingShardIdentifiers: [String]
+    let ineligibleSurfaceReason: String?
+}
+
+extension SumiAdblockCurrentTabDiagnostics {
+    var developerReport: String {
+        [
+            "Sumi Adblock current-tab diagnostics",
+            "url=\(urlString ?? "nil")",
+            "host=\(host ?? "nil")",
+            "normalizedSiteKey=\(normalizedSiteKey ?? "nil")",
+            "globalEnabled=\(globalAdblockEnabled)",
+            "perSiteEnabled=\(perSiteAdblockEnabled)",
+            "reloadRequired=\(reloadRequired)",
+            "activeGenerationId=\(activeGenerationId ?? "nil")",
+            "selectedNativeProfile=\(selectedNativeProfile?.rawValue ?? "nil")",
+            "activeCompiledNativeProfile=\(activeCompiledNativeProfile?.rawValue ?? "nil")",
+            "cosmeticMode=\(cosmeticMode?.rawValue ?? "nil")",
+            "expectedNetworkShardIdentifiers=\(expectedNetworkShardIdentifiers.joined(separator: ","))",
+            "expectedNativeCSSShardIdentifiers=\(expectedNativeCSSShardIdentifiers.joined(separator: ","))",
+            "attachedNetworkShardIdentifiers=\(attachedNetworkShardIdentifiers.joined(separator: ","))",
+            "attachedNativeCSSShardIdentifiers=\(attachedNativeCSSShardIdentifiers.joined(separator: ","))",
+            "missingShardIdentifiers=\(missingShardIdentifiers.joined(separator: ","))",
+            "ineligibleSurfaceReason=\(ineligibleSurfaceReason ?? "nil")",
         ].joined(separator: "\n")
     }
 }
@@ -185,7 +255,8 @@ struct SumiAdBlockingNormalTabDecision: Equatable, Sendable {
         SumiAdblockAttachmentState(
             siteHost: effectivePolicy.host,
             isEnabled: effectivePolicy.isEnabled,
-            hasEnhancedRuntime: assets.scriptSources.isEmpty == false
+            hasEnhancedRuntime: assets.scriptSources.isEmpty == false,
+            attachedShardIdentifiers: assets.contentRuleListIdentifiers
         )
     }
 
@@ -744,6 +815,10 @@ final class SumiAdBlockingModule {
         let siteOverride = sitePolicyStoreIfEnabled().override(for: url)
         guard isEnabled, policy.isEnabled else {
             let settings = cachedSettingsStore ?? settingsFactory()
+            let validation = AdblockFilterListRegistry().validatedSelection(
+                settings.selectedLists,
+                profileKind: settings.selectedNativeProfile
+            )
             return SumiAdblockAttachmentDiagnostics(
                 siteHost: policy.host,
                 globalAdblockEnabled: isEnabled,
@@ -753,9 +828,17 @@ final class SumiAdBlockingModule {
                 hasActiveGeneration: false,
                 attachedNativeGroups: [],
                 attachedShardIdentifiers: [],
+                expectedNetworkShardIdentifiers: [],
+                expectedNativeCSSShardIdentifiers: [],
+                missingShardIdentifiers: [],
                 contentRuleListIdentifiers: [],
-                selectedListIdentifiers: [],
+                selectedListIdentifiers: validation.resolvedIdentifiers,
+                activeManifestListIdentifiers: [],
                 selectedNativeProfile: settings.selectedNativeProfile,
+                activeCompiledNativeProfile: nil,
+                selectedProfileDiffersFromActiveGeneration: true,
+                activeGenerationId: nil,
+                lastSuccessfulUpdateDate: nil,
                 nativeCompiler: nil,
                 nativeCompilationSummary: nil,
                 nativeSourceLists: [],
@@ -768,12 +851,15 @@ final class SumiAdBlockingModule {
                 cosmeticMode: settings.cosmeticMode,
                 enhancedRuntimeIsEnabled: false,
                 trackingProtectionModuleEnabled: moduleRegistry.isEnabled(.trackingProtection),
-                generationIsStale: settings.listSelectionRequiresUpdate
+                generationIsStale: settings.listSelectionRequiresUpdate,
+                lastUpdateError: nil,
+                ineligibleSurfaceReason: policy.host == nil ? "No normalized web host" : nil
             )
         }
 
         let settings = settingsIfEnabled()
-        let manifest = ruleListStoreIfEnabled().activeManifest
+        let ruleListStore = ruleListStoreIfEnabled()
+        let manifest = ruleListStore.activeManifest
         let allowedGroups = AdblockManifestRuleListProvider.attachedGroupKinds(
             for: settings?.cosmeticMode ?? .nativeCSS
         )
@@ -788,6 +874,20 @@ final class SumiAdBlockingModule {
         let allShards = manifest?.allNativeShards ?? []
         let networkShards = manifest?.networkShards ?? []
         let nativeCSSShards = manifest?.nativeCSSShards ?? []
+        let expectedNetworkShardIdentifiers = networkShards.map(\.webKitIdentifier).sorted()
+        let expectedNativeCSSShardIdentifiers = allowedGroups.contains(.nativeCosmeticCSS)
+            ? nativeCSSShards.map(\.webKitIdentifier).sorted()
+            : []
+        let expectedShardIdentifiers = (expectedNetworkShardIdentifiers + expectedNativeCSSShardIdentifiers).sorted()
+        let missingShardIdentifiers = expectedShardIdentifiers
+            .filter { !attachedShardIdentifiers.contains($0) }
+        let validation = AdblockFilterListRegistry().validatedSelection(
+            settings?.selectedLists ?? .defaultSelection,
+            profileKind: settings?.selectedNativeProfile ?? .currentDefault
+        )
+        let selectedProfile = settings?.selectedNativeProfile
+        let activeProfile = manifest?.nativeProfile
+        let lastError = ruleListStore.lastFailedShardIdentifier.map { "Failed shard: \($0)" }
 
         return SumiAdblockAttachmentDiagnostics(
             siteHost: policy.host,
@@ -798,11 +898,19 @@ final class SumiAdBlockingModule {
             hasActiveGeneration: manifest != nil,
             attachedNativeGroups: attachedGroups,
             attachedShardIdentifiers: attachedShardIdentifiers,
+            expectedNetworkShardIdentifiers: expectedNetworkShardIdentifiers,
+            expectedNativeCSSShardIdentifiers: expectedNativeCSSShardIdentifiers,
+            missingShardIdentifiers: missingShardIdentifiers,
             contentRuleListIdentifiers: attachedShardIdentifiers.isEmpty
                 ? contentRuleListIdentifiers()
                 : attachedShardIdentifiers,
-            selectedListIdentifiers: manifest?.selectedFilterLists.map(\.id).sorted() ?? [],
-            selectedNativeProfile: manifest?.nativeProfile,
+            selectedListIdentifiers: validation.resolvedIdentifiers,
+            activeManifestListIdentifiers: manifest?.selectedFilterLists.map(\.id).sorted() ?? [],
+            selectedNativeProfile: selectedProfile,
+            activeCompiledNativeProfile: activeProfile,
+            selectedProfileDiffersFromActiveGeneration: selectedProfile != activeProfile,
+            activeGenerationId: manifest?.activeGenerationId,
+            lastSuccessfulUpdateDate: manifest?.lastSuccessfulUpdateDate,
             nativeCompiler: manifest?.nativeCompiler,
             nativeCompilationSummary: manifest?.nativeCompilationSummary,
             nativeSourceLists: manifest?.nativeCompilerSourceLists ?? [],
@@ -811,19 +919,67 @@ final class SumiAdBlockingModule {
             totalNetworkRuleCount: networkShards.reduce(0) { $0 + $1.approximateRuleCount },
             totalNativeCSSRuleCount: nativeCSSShards.reduce(0) { $0 + $1.approximateRuleCount },
             largestShardJSONByteCount: allShards.map(\.jsonByteCount).max() ?? 0,
-            failedShardIdentifier: ruleListStoreIfEnabled().lastFailedShardIdentifier,
+            failedShardIdentifier: ruleListStore.lastFailedShardIdentifier,
             cosmeticMode: settings?.cosmeticMode,
             enhancedRuntimeIsEnabled: settings?.cosmeticMode == .enhancedRuntime,
             trackingProtectionModuleEnabled: moduleRegistry.isEnabled(.trackingProtection),
             generationIsStale: (settings?.listSelectionRequiresUpdate ?? false)
                 || manifest?.nativeProfile != settings?.selectedNativeProfile
-                || manifest?.nativeCompiler != ruleListStoreIfEnabled().configuredNativeCompilerIdentity
+                || manifest?.nativeCompiler != ruleListStore.configuredNativeCompilerIdentity,
+            lastUpdateError: lastError,
+            ineligibleSurfaceReason: policy.host == nil ? "No normalized web host" : nil
         )
     }
 
     func attachmentDiagnosticsReport(for url: URL?) -> String {
         attachmentDiagnostics(for: url).developerReport
     }
+
+    func currentTabDiagnostics(
+        for url: URL?,
+        appliedState: SumiAdblockAttachmentState?,
+        reloadRequired: Bool
+    ) -> SumiAdblockCurrentTabDiagnostics {
+        let diagnostics = attachmentDiagnostics(for: url)
+        let attached = appliedState?.attachedShardIdentifiers ?? []
+        let attachedSet = Set(attached)
+        let attachedNetwork = diagnostics.expectedNetworkShardIdentifiers.filter(attachedSet.contains)
+        let attachedNativeCSS = diagnostics.expectedNativeCSSShardIdentifiers.filter(attachedSet.contains)
+        let expected = diagnostics.expectedNetworkShardIdentifiers + diagnostics.expectedNativeCSSShardIdentifiers
+        let missing = expected.filter { !attachedSet.contains($0) }
+        return SumiAdblockCurrentTabDiagnostics(
+            urlString: url?.absoluteString,
+            host: url?.host,
+            normalizedSiteKey: diagnostics.siteHost,
+            globalAdblockEnabled: diagnostics.globalAdblockEnabled,
+            perSiteAdblockEnabled: diagnostics.sitePolicyAllowsAdblock,
+            reloadRequired: reloadRequired,
+            activeGenerationId: diagnostics.activeGenerationId,
+            selectedNativeProfile: diagnostics.selectedNativeProfile,
+            activeCompiledNativeProfile: diagnostics.activeCompiledNativeProfile,
+            cosmeticMode: diagnostics.cosmeticMode,
+            expectedNetworkShardIdentifiers: diagnostics.expectedNetworkShardIdentifiers,
+            expectedNativeCSSShardIdentifiers: diagnostics.expectedNativeCSSShardIdentifiers,
+            attachedNetworkShardIdentifiers: attachedNetwork,
+            attachedNativeCSSShardIdentifiers: attachedNativeCSS,
+            missingShardIdentifiers: missing,
+            ineligibleSurfaceReason: diagnostics.ineligibleSurfaceReason
+        )
+    }
+
+    #if DEBUG
+    func rebuildSelectedAdblockProfileNow() async throws -> AdblockCompiledGenerationManifest? {
+        guard isEnabled else {
+            throw AdblockUpdateDiagnostics(
+                summary: "Enable built-in Adblock before rebuilding the selected native profile."
+            )
+        }
+        let store = ruleListStoreIfEnabled()
+        let manifest = try await store.requestManualUpdate()
+        cachedSettingsStore?.markListUpdateCompleted()
+        return manifest
+    }
+    #endif
 
     func siteOverride(for url: URL?) -> SumiAdblockSiteOverride {
         sitePolicyStoreIfEnabled().override(for: url)

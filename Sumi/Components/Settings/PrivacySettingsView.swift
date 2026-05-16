@@ -54,7 +54,9 @@ struct PrivacySettingsView: View {
                         if let settings = adBlockingModule.settingsIfEnabled() {
                             NativeAdblockSettingsView(
                                 settings: settings,
-                                sitePolicyStore: adBlockingModule.sitePolicyStoreIfEnabled()
+                                sitePolicyStore: adBlockingModule.sitePolicyStoreIfEnabled(),
+                                adBlockingModule: adBlockingModule,
+                                currentTab: currentTab
                             )
                         }
                     }
@@ -82,13 +84,24 @@ struct PrivacySettingsView: View {
         }
         return browserManager.currentProfile
     }
+
+    private var currentTab: Tab? {
+        guard let windowState else { return nil }
+        return browserManager.currentTab(for: windowState)
+    }
 }
 
 private struct NativeAdblockSettingsView: View {
     @ObservedObject var settings: AdblockSettingsStore
     @ObservedObject var sitePolicyStore: AdblockSitePolicyStore
+    let adBlockingModule: SumiAdBlockingModule
+    let currentTab: Tab?
     private let registry = AdblockFilterListRegistry()
     @State private var overrideHostInput = ""
+    #if DEBUG
+    @State private var rebuildStatus: String?
+    @State private var isRebuilding = false
+    #endif
 
     var body: some View {
         SettingsSection(
@@ -144,6 +157,7 @@ private struct NativeAdblockSettingsView: View {
                 .pickerStyle(.menu)
                 .frame(maxWidth: 220)
             }
+            debugDiagnosticsSection
             #endif
 
             SettingsRow(
@@ -176,7 +190,10 @@ private struct NativeAdblockSettingsView: View {
 
     #if DEBUG
     private var debugNativeProfileSubtitle: String {
-        "Developer-only comparison preset. Changes require a manual update and page reload."
+        if debugDiagnostics.generationIsStale {
+            return "Generation is stale. Rebuild selected Adblock profile now before measuring score."
+        }
+        return "Developer-only comparison preset. Changes require a manual update and page reload."
     }
 
     private func debugProfileLabel(_ profile: AdblockFilterListProfile) -> String {
@@ -187,6 +204,162 @@ private struct NativeAdblockSettingsView: View {
             return profile.displayName
         }
     }
+
+    private var debugDiagnostics: SumiAdblockAttachmentDiagnostics {
+        adBlockingModule.attachmentDiagnostics(for: currentTab?.url)
+    }
+
+    private var debugTabDiagnostics: SumiAdblockCurrentTabDiagnostics? {
+        currentTab?.adblockCurrentTabDiagnostics()
+    }
+
+    private var debugDiagnosticsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SettingsDivider()
+
+            Text("DEBUG Adblock Diagnostics")
+                .font(.subheadline)
+                .fontWeight(.medium)
+
+            if debugDiagnostics.generationIsStale {
+                Text("Current generation is stale. Rebuild/update before measuring score.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            SettingsRow(
+                title: "Rebuild selected Adblock profile now",
+                subtitle: rebuildStatus ?? "Downloads selected lists if needed, compiles the selected native profile, and publishes shards transactionally."
+            ) {
+                Button {
+                    rebuildSelectedProfile()
+                } label: {
+                    if isRebuilding {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text("Rebuild")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isRebuilding)
+            }
+
+            debugKeyValueGrid(rows: debugGlobalRows)
+
+            if let tabDiagnostics = debugTabDiagnostics {
+                SettingsDivider()
+                Text("DEBUG Current Tab Attachment")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                debugKeyValueGrid(rows: debugTabRows(tabDiagnostics))
+            }
+        }
+    }
+
+    private var debugGlobalRows: [(String, String)] {
+        let diagnostics = debugDiagnostics
+        return [
+            ("Global enabled", diagnostics.globalAdblockEnabled.description),
+            ("Selected profile", diagnostics.selectedNativeProfile?.rawValue ?? "nil"),
+            ("Active compiled profile", diagnostics.activeCompiledNativeProfile?.rawValue ?? "nil"),
+            ("Selected differs from active", diagnostics.selectedProfileDiffersFromActiveGeneration.description),
+            ("Generation stale", diagnostics.generationIsStale.description),
+            ("Last successful rebuild", debugDateString(diagnostics.lastSuccessfulUpdateDate)),
+            ("Last rebuild error", diagnostics.lastUpdateError ?? "nil"),
+            ("Selected list IDs", diagnostics.selectedListIdentifiers.joined(separator: ", ")),
+            ("Active manifest list IDs", diagnostics.activeManifestListIdentifiers.joined(separator: ", ")),
+            ("Native compiler", diagnostics.nativeCompiler.map { "\($0.name) \($0.version)" } ?? "nil"),
+            ("Network shard count", diagnostics.networkShardCount.description),
+            ("Native CSS shard count", diagnostics.nativeCSSShardCount.description),
+            ("Total network rules", diagnostics.totalNetworkRuleCount.description),
+            ("Total native CSS rules", diagnostics.totalNativeCSSRuleCount.description),
+            ("Largest shard JSON bytes", diagnostics.largestShardJSONByteCount.description),
+            ("Cap/discard", debugRuleCapString(diagnostics)),
+            ("Cosmetic mode", diagnostics.cosmeticMode?.rawValue ?? "nil"),
+            ("Enhanced runtime", diagnostics.enhancedRuntimeIsEnabled.description),
+            ("Tracking Protection", diagnostics.trackingProtectionModuleEnabled.description),
+        ]
+    }
+
+    private func debugTabRows(_ diagnostics: SumiAdblockCurrentTabDiagnostics) -> [(String, String)] {
+        [
+            ("URL", diagnostics.urlString ?? "nil"),
+            ("Host", diagnostics.host ?? "nil"),
+            ("Normalized site key", diagnostics.normalizedSiteKey ?? "nil"),
+            ("Global Adblock", diagnostics.globalAdblockEnabled.description),
+            ("Per-site Adblock", diagnostics.perSiteAdblockEnabled.description),
+            ("Reload required", diagnostics.reloadRequired.description),
+            ("Active generation", diagnostics.activeGenerationId ?? "nil"),
+            ("Selected profile", diagnostics.selectedNativeProfile?.rawValue ?? "nil"),
+            ("Active compiled profile", diagnostics.activeCompiledNativeProfile?.rawValue ?? "nil"),
+            ("Cosmetic mode", diagnostics.cosmeticMode?.rawValue ?? "nil"),
+            ("Expected network shards", diagnostics.expectedNetworkShardIdentifiers.joined(separator: ", ")),
+            ("Expected native CSS shards", diagnostics.expectedNativeCSSShardIdentifiers.joined(separator: ", ")),
+            ("Attached network shards", diagnostics.attachedNetworkShardIdentifiers.joined(separator: ", ")),
+            ("Attached native CSS shards", diagnostics.attachedNativeCSSShardIdentifiers.joined(separator: ", ")),
+            ("Missing shards", diagnostics.missingShardIdentifiers.joined(separator: ", ")),
+            ("Ineligible surface", diagnostics.ineligibleSurfaceReason ?? "nil"),
+        ]
+    }
+
+    private func debugKeyValueGrid(rows: [(String, String)]) -> some View {
+        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 5) {
+            ForEach(rows, id: \.0) { row in
+                GridRow {
+                    Text(row.0)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(row.1.isEmpty ? "[]" : row.1)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                        .lineLimit(3)
+                }
+            }
+        }
+    }
+
+    private func rebuildSelectedProfile() {
+        guard !isRebuilding else { return }
+        isRebuilding = true
+        rebuildStatus = nil
+        Task {
+            do {
+                let manifest = try await adBlockingModule.rebuildSelectedAdblockProfileNow()
+                await MainActor.run {
+                    if let manifest {
+                        rebuildStatus = "Rebuilt \(manifest.nativeProfile?.rawValue ?? "unknown") at \(debugDateString(manifest.lastSuccessfulUpdateDate)). Reload the test tab before measuring."
+                    } else {
+                        rebuildStatus = "No rebuild ran. Enable built-in Adblock before rebuilding."
+                    }
+                    currentTab?.updateAdblockReloadRequirementForCurrentSite()
+                    isRebuilding = false
+                }
+            } catch {
+                await MainActor.run {
+                    rebuildStatus = "Rebuild failed: \(error.localizedDescription)"
+                    isRebuilding = false
+                }
+            }
+        }
+    }
+
+    private func debugDateString(_ date: Date?) -> String {
+        guard let date else { return "nil" }
+        return Self.debugDateFormatter.string(from: date)
+    }
+
+    private func debugRuleCapString(_ diagnostics: SumiAdblockAttachmentDiagnostics) -> String {
+        guard let cap = diagnostics.nativeCompilationSummary?.ruleCap else { return "nil" }
+        return "hit=\(cap.wasHit) discarded=\(cap.discardedRuleCount)"
+    }
+
+    private static let debugDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .medium
+        return formatter
+    }()
     #endif
 
     private var filterListSelection: some View {

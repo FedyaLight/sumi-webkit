@@ -138,17 +138,16 @@ final class SettingsModuleToggleTests: XCTestCase {
         XCTAssertTrue(privacySource.contains("Filter lists"))
         XCTAssertTrue(privacySource.contains("Base ads"))
         XCTAssertTrue(privacySource.contains("Regional ads"))
+        XCTAssertTrue(privacySource.contains("DEBUG Adblock Diagnostics"))
+        XCTAssertTrue(privacySource.contains("Rebuild selected Adblock profile now"))
 
         for source in [privacySource, toggleSource] {
             XCTAssertFalse(source.contains("oraLikeNative"))
-            XCTAssertFalse(source.contains("referenceAdGuardNative"))
             XCTAssertFalse(source.contains("SafariConverterLib"))
             XCTAssertFalse(source.contains("AdGuard SafariConverterLib"))
             XCTAssertFalse(source.contains("assetsIfAvailable"))
             XCTAssertFalse(source.contains("normalTabDecision"))
-            XCTAssertFalse(source.localizedCaseInsensitiveContains("stale"))
             XCTAssertFalse(source.localizedCaseInsensitiveContains("onboarding"))
-            XCTAssertFalse(source.localizedCaseInsensitiveContains("diagnostics"))
             XCTAssertFalse(source.localizedCaseInsensitiveContains("acceptable ads"))
         }
     }
@@ -236,14 +235,20 @@ final class SettingsModuleToggleTests: XCTestCase {
 
     func testTrackingProtectionSettingsAvoidAutomaticOrBrowserUpdateCopy() throws {
         let source = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
+        let trackingSection = try XCTUnwrap(
+            source.range(of: "private struct LegacyTrackingProtectionRuntimeSettingsView")
+                .flatMap { start in
+                    source.range(of: "private var trackingDataControls", range: start.upperBound..<source.endIndex)
+                        .map { controls in String(source[start.lowerBound..<controls.lowerBound]) }
+                }
+        )
 
-        XCTAssertTrue(source.contains("Update tracker data"))
-        XCTAssertTrue(source.contains("Reset to bundled tracker data"))
-        XCTAssertFalse(source.localizedCaseInsensitiveContains("stale"))
-        XCTAssertFalse(source.localizedCaseInsensitiveContains("automatic update"))
-        XCTAssertFalse(source.localizedCaseInsensitiveContains("browser update"))
-        XCTAssertFalse(source.localizedCaseInsensitiveContains("app update"))
-        XCTAssertFalse(source.localizedCaseInsensitiveContains("application update"))
+        XCTAssertTrue(trackingSection.contains("Protection mode"))
+        XCTAssertFalse(trackingSection.localizedCaseInsensitiveContains("stale"))
+        XCTAssertFalse(trackingSection.localizedCaseInsensitiveContains("automatic update"))
+        XCTAssertFalse(trackingSection.localizedCaseInsensitiveContains("browser update"))
+        XCTAssertFalse(trackingSection.localizedCaseInsensitiveContains("app update"))
+        XCTAssertFalse(trackingSection.localizedCaseInsensitiveContains("application update"))
     }
 
     func testSettingsSourcesAvoidDisallowedModuleSurfaces() throws {
@@ -254,7 +259,6 @@ final class SettingsModuleToggleTests: XCTestCase {
             "first" + "-run",
             "first " + "run",
             "module " + "diag" + "nostics",
-            "diag" + "nostics",
             "unified site " + "settings",
             "stale" + ".*" + targetWord,
             "auto" + "matic.*" + targetWord,
