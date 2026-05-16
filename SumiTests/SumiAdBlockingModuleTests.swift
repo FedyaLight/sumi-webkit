@@ -159,6 +159,35 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertTrue(output.hybridOutput.capabilities.contains(.scriptletResourceCandidate))
     }
 
+    func testNativeCompilerAbstractionWrapsRustOutputAndKeepsEnhancedMetadataSeparate() async throws {
+        let adapter = CountingAdblockRustAdapter(output: .tinyFixture)
+        let compiler = AdblockRustCompiler(adapter: adapter)
+        let input = AdblockCompilationInput(
+            sourceIdentifier: "TestAdblock",
+            filterTexts: AdblockWebKitRuleListStore.tinyFixtureFilters,
+            selectedOutputGroups: [.network, .nativeCosmeticCSS],
+            sourceLists: [
+                NativeContentBlockingSourceList(
+                    id: "fixture",
+                    displayName: "Fixture",
+                    contentHash: "fixture-hash"
+                ),
+            ]
+        )
+
+        let nativeOutput = try await compiler.compileNativeContentBlocking(input)
+        let enhancedOutput = try await compiler.compileEnhancedCompatibility(input)
+
+        let callCount = await adapter.callCount
+        XCTAssertEqual(callCount, 1)
+        XCTAssertEqual(nativeOutput.compilerIdentity.name, "adblock-rust")
+        XCTAssertEqual(nativeOutput.sourceLists.map(\.id), ["fixture"])
+        XCTAssertEqual(nativeOutput.convertedNetworkRuleCount, 1)
+        XCTAssertEqual(nativeOutput.convertedNativeCosmeticRuleCount, 3)
+        XCTAssertEqual(enhancedOutput.enhancedRuntimeBundle.resources.map(\.kind), [.scriptlet])
+        XCTAssertTrue(enhancedOutput.capabilities.contains(.scriptletResourceCandidate))
+    }
+
     func testTinyFixtureCompilesIntoSeparatedWebKitJSONGroups() async throws {
         let compiler = AdblockRustCompiler()
         let output = try await compiler.compile(
@@ -225,11 +254,16 @@ final class SumiAdBlockingModuleTests: XCTestCase {
                     AdblockRustEnhancedResourceCandidate(
                         kind: .noopRedirect,
                         resourceName: "noopjs",
+                        canonicalResourceName: "noopjs",
+                        resourceType: "script",
+                        mimeType: "application/javascript",
                         parameters: [],
                         includeDomains: [],
                         excludeDomains: [],
                         sourceRule: "||cdn.example/script.js$redirect=noopjs",
-                        diagnosticSource: "test adapter"
+                        diagnosticSource: "test adapter",
+                        unsupportedReason: SumiAdblockEnhancedRuntime.webKitRedirectReplacementUnsupportedReason,
+                        matchedTrustedBundledResource: true
                     ),
                     AdblockRustEnhancedResourceCandidate(
                         kind: .proceduralCosmetic,
@@ -265,6 +299,14 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertTrue(output.hybridOutput.capabilities.contains(.redirectResourceCandidate))
         XCTAssertTrue(output.hybridOutput.capabilities.contains(.enhancedCosmeticCleanup))
         XCTAssertEqual(output.hybridOutput.enhancedRuntimeBundle.unsupportedDiagnostics.count, 2)
+        XCTAssertEqual(output.hybridOutput.enhancedRuntimeBundle.redirectResourceCandidates.count, 1)
+        let redirect = try XCTUnwrap(output.hybridOutput.enhancedRuntimeBundle.redirectResourceCandidates.first)
+        XCTAssertEqual(redirect.requestedName, "noopjs")
+        XCTAssertEqual(redirect.canonicalName, "noopjs")
+        XCTAssertEqual(redirect.resourceKind, .script)
+        XCTAssertEqual(redirect.mimeType, "application/javascript")
+        XCTAssertTrue(redirect.matchedTrustedBundledResource)
+        XCTAssertTrue(redirect.unsupportedReason?.contains("WKWebView") == true)
     }
 
     func testCompilerRejectsUnexpectedNativeCosmeticActionsFromAdapter() async throws {
@@ -653,6 +695,49 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertTrue(scripts[0].messageNames.isEmpty)
     }
 
+    func testAttachmentDiagnosticsExposeCompilerListsGroupsAndStaleState() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.adBlocking)
+        let settings = AdblockSettingsStore(userDefaults: harness.defaults)
+        settings.cosmeticMode = .nativeCSS
+        settings.selectedLists = SumiAdblockFilterListSelection(identifiers: ["easylist"])
+        let manifestStore = AdblockUpdateManifestStore(
+            rootDirectory: temporaryAdblockDirectory()
+        )
+        try await seedActiveManifest(in: manifestStore)
+        var capturedStore: AdblockWebKitRuleListStore?
+        let module = SumiAdBlockingModule(
+            moduleRegistry: registry,
+            settingsFactory: { settings },
+            ruleListStoreFactory: { settings, isEnabled in
+                let store = AdblockWebKitRuleListStore(
+                    settingsStore: settings,
+                    isAdblockEnabled: isEnabled,
+                    manifestStore: manifestStore,
+                    compiler: SumiWKContentRuleListCompiler()
+                )
+                capturedStore = store
+                return store
+            }
+        )
+        _ = module.normalTabDecision(for: URL(string: "https://example.com"))
+        await capturedStore?.loadActiveManifestIfEnabled()
+
+        let diagnostics = module.attachmentDiagnostics(for: URL(string: "https://example.com/page"))
+
+        XCTAssertEqual(diagnostics.siteHost, "example.com")
+        XCTAssertTrue(diagnostics.isEnabled)
+        XCTAssertTrue(diagnostics.hasActiveGeneration)
+        XCTAssertEqual(diagnostics.attachedNativeGroups, [.nativeCosmeticCSS, .network])
+        XCTAssertEqual(diagnostics.selectedListIdentifiers, ["easylist"])
+        XCTAssertEqual(diagnostics.nativeCompiler?.name, "adblock-rust")
+        XCTAssertTrue(diagnostics.generationIsStale)
+    }
+
     func testEnhancedRuntimeFirstSliceIsLocalBoundedAndHasNoEvalObserverTimerOrBridge() throws {
         let source = try Self.source(named: "Sumi/ContentBlocking/SumiAdblockEnhancedRuntime.swift")
 
@@ -674,13 +759,22 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         }
     }
 
-    func testTrustedResourceBundleAllowsOnlyKnownAliases() {
+    func testTrustedResourceBundleAllowsOnlyKnownAliases() throws {
         let bundle = SumiAdblockEnhancedRuntime.makeTrustedResourceBundle()
 
         XCTAssertEqual(bundle.trustedScriptlet(for: "sumi-hide")?.canonicalName, "sumi-hide.js")
         XCTAssertEqual(bundle.trustedScriptlet(for: "sumi-hide.js")?.canonicalName, "sumi-hide.js")
+        XCTAssertEqual(bundle.trustedRedirectResource(for: "noopjs")?.canonicalName, "noopjs")
+        XCTAssertEqual(bundle.trustedRedirectResource(for: "noop.js")?.canonicalName, "noopjs")
+        XCTAssertEqual(bundle.trustedRedirectResource(for: "noop.css")?.canonicalName, "noopcss")
+        XCTAssertEqual(bundle.trustedRedirectResource(for: "1x1.gif")?.canonicalName, "1x1-transparent.gif")
+        XCTAssertEqual(bundle.trustedRedirectResource(for: "noop.html")?.canonicalName, "noopframe")
+        XCTAssertEqual(bundle.trustedRedirectResource(for: "nooptext")?.canonicalName, "noop.txt")
+        XCTAssertFalse(try XCTUnwrap(bundle.trustedRedirectResource(for: "noopjs")).canBeDeliveredInWebKit)
         XCTAssertNil(bundle.trustedScriptlet(for: "abort-on-property-read"))
         XCTAssertNil(bundle.trustedScriptlet(for: "remote-script"))
+        XCTAssertNil(bundle.trustedRedirectResource(for: "noop"))
+        XCTAssertNil(bundle.trustedRedirectResource(for: "custom-resource"))
     }
 
     func testPageApplicabilityResolverSelectsOnlyMatchingTrustedScriptlets() throws {
@@ -742,6 +836,130 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertFalse(source.contains(".ad-two"))
         XCTAssertFalse(source.contains(".ad-three"))
         XCTAssertFalse(script?.requiresPageWorld == true)
+    }
+
+    func testRedirectNoopResolverDiagnosesKnownResourcesAsUnsupportedInWebKit() throws {
+        let runtimeBundle = AdblockEnhancedRuntimeBundle(
+            resources: [
+                AdblockEnhancedResource(
+                    name: "noopjs",
+                    kind: .noopRedirect,
+                    sourceRule: "||cdn.example/script.js$script,redirect=noopjs,domain=example.com"
+                ),
+            ],
+            redirectResourceCandidates: [
+                AdblockRedirectResourceCandidate(
+                    requestedName: "noop.js",
+                    canonicalName: "noopjs",
+                    alias: "noop.js",
+                    resourceKind: .script,
+                    mimeType: "application/javascript",
+                    includeDomains: ["example.com"],
+                    excludeDomains: [],
+                    sourceRule: "||cdn.example/script.js$script,redirect=noop.js,domain=example.com",
+                    diagnosticSource: "test",
+                    unsupportedReason: SumiAdblockEnhancedRuntime.webKitRedirectReplacementUnsupportedReason,
+                    matchedTrustedBundledResource: true
+                ),
+            ],
+            unsupportedDiagnostics: []
+        )
+
+        let resolution = AdblockEnhancedRuntimeResolver().resolveDetailed(
+            runtimeBundle: runtimeBundle,
+            pageURL: URL(string: "https://www.example.com/page")
+        )
+
+        XCTAssertNil(resolution.script)
+        XCTAssertTrue(resolution.redirectResources.isEmpty)
+        XCTAssertEqual(resolution.diagnostics.count, 1)
+        XCTAssertTrue(resolution.diagnostics[0].reason.contains("cannot replace http/https response bodies"))
+    }
+
+    func testRedirectNoopResolverRejectsUnknownResourcesAndRespectsDomains() {
+        let runtimeBundle = AdblockEnhancedRuntimeBundle(
+            resources: [
+                AdblockEnhancedResource(
+                    name: "unknown-resource",
+                    kind: .redirect,
+                    sourceRule: "||cdn.example/custom.js$script,redirect=unknown-resource,domain=example.com"
+                ),
+                AdblockEnhancedResource(
+                    name: "noopcss",
+                    kind: .noopRedirect,
+                    sourceRule: "||cdn.example/ad.css$stylesheet,redirect=noopcss,domain=other.test"
+                ),
+            ],
+            redirectResourceCandidates: [
+                AdblockRedirectResourceCandidate(
+                    requestedName: "unknown-resource",
+                    canonicalName: "unknown-resource",
+                    alias: nil,
+                    resourceKind: .unknown,
+                    mimeType: nil,
+                    includeDomains: ["example.com"],
+                    excludeDomains: [],
+                    sourceRule: "||cdn.example/custom.js$script,redirect=unknown-resource,domain=example.com",
+                    diagnosticSource: "test",
+                    unsupportedReason: "unknown redirect resource",
+                    matchedTrustedBundledResource: false
+                ),
+                AdblockRedirectResourceCandidate(
+                    requestedName: "noopcss",
+                    canonicalName: "noopcss",
+                    alias: nil,
+                    resourceKind: .stylesheet,
+                    mimeType: "text/css",
+                    includeDomains: ["other.test"],
+                    excludeDomains: [],
+                    sourceRule: "||cdn.example/ad.css$stylesheet,redirect=noopcss,domain=other.test",
+                    diagnosticSource: "test",
+                    unsupportedReason: SumiAdblockEnhancedRuntime.webKitRedirectReplacementUnsupportedReason,
+                    matchedTrustedBundledResource: true
+                ),
+            ],
+            unsupportedDiagnostics: []
+        )
+
+        let resolution = AdblockEnhancedRuntimeResolver().resolveDetailed(
+            runtimeBundle: runtimeBundle,
+            pageURL: URL(string: "https://example.com/")
+        )
+
+        XCTAssertTrue(resolution.redirectResources.isEmpty)
+        XCTAssertEqual(resolution.diagnostics.count, 1)
+        XCTAssertTrue(resolution.diagnostics[0].reason.contains("unknown redirect/noop resource"))
+        XCTAssertFalse(resolution.diagnostics[0].rule.contains("ad.css"))
+    }
+
+    func testRedirectNoopResolverCapsResourcesPerPage() {
+        let candidates = (0..<3).map { index in
+            AdblockRedirectResourceCandidate(
+                requestedName: "unknown-\(index)",
+                canonicalName: "unknown-\(index)",
+                alias: nil,
+                resourceKind: .unknown,
+                mimeType: nil,
+                includeDomains: ["example.com"],
+                excludeDomains: [],
+                sourceRule: "||cdn.example/\(index).js$script,redirect=unknown-\(index),domain=example.com",
+                diagnosticSource: "test",
+                unsupportedReason: "unknown redirect resource",
+                matchedTrustedBundledResource: false
+            )
+        }
+        let runtimeBundle = AdblockEnhancedRuntimeBundle(
+            resources: [],
+            redirectResourceCandidates: candidates,
+            unsupportedDiagnostics: []
+        )
+
+        let resolution = AdblockEnhancedRuntimeResolver(maxRedirectResourcesPerPage: 1).resolveDetailed(
+            runtimeBundle: runtimeBundle,
+            pageURL: URL(string: "https://example.com/")
+        )
+
+        XCTAssertEqual(resolution.diagnostics.filter { $0.reason == "redirect/noop resource cap reached" }.count, 2)
     }
 
     func testPageApplicabilityResolverDoesNotInstallAllResourcesGlobally() {
@@ -1304,7 +1522,13 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             schemaVersion: 1,
             activeGenerationId: "hybrid-test-generation",
             createdDate: Date(),
-            selectedFilterLists: [],
+            selectedFilterLists: [
+                AdblockCompiledGenerationManifest.SelectedFilterList(
+                    id: "easylist",
+                    displayName: "EasyList",
+                    contentHash: "easylist-hash"
+                ),
+            ],
             webKitRuleListIdentifiers: [
                 "sumi.adblock.network.hybridtest",
                 "sumi.adblock.nativeCSS.hybridtest",
@@ -1343,6 +1567,17 @@ final class SumiAdBlockingModuleTests: XCTestCase {
                 ],
                 unsupportedDiagnostics: []
             ),
+            nativeCompiler: NativeContentBlockingCompilerIdentity(
+                name: "adblock-rust",
+                version: "test"
+            ),
+            nativeCompilerSourceLists: [
+                NativeContentBlockingSourceList(
+                    id: "easylist",
+                    displayName: "EasyList",
+                    contentHash: "easylist-hash"
+                ),
+            ],
             compilerDiagnosticsSummary: "hybrid test",
             lastSuccessfulUpdateDate: Date(),
             previousGenerationId: nil

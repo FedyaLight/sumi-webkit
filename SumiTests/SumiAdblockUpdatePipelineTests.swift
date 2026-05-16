@@ -60,6 +60,30 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         XCTAssertTrue(registry.descriptors.contains { $0.category == .privacyOverlap && !$0.defaultEnabled })
     }
 
+    func testCurrentAndOraLikeNativeProfilesAreDistinctAndExperimentalProfileIsNotDefault() {
+        let registry = AdblockFilterListRegistry()
+        let profiles = Dictionary(uniqueKeysWithValues: registry.comparisonProfiles.map { ($0.id, $0) })
+        let current = profiles[.currentDefault]
+        let oraLike = profiles[.oraLikeNative]
+
+        XCTAssertEqual(current?.listIdentifiers, ["easylist"])
+        XCTAssertEqual(
+            oraLike?.listIdentifiers,
+            [
+                "adguard-base",
+                "adguard-mobile-ads",
+                "adguard-tracking-protection",
+                "adguard-url-tracking",
+                "adguard-annoyances",
+            ]
+        )
+        XCTAssertEqual(registry.defaultSelectionIdentifiers, ["easylist"])
+        XCTAssertTrue(oraLike?.isExperimental == true)
+        XCTAssertTrue(oraLike?.listIdentifiers.allSatisfy { id in
+            registry.descriptors.contains { $0.id == id && !$0.defaultEnabled }
+        } == true)
+    }
+
     func testRussianLocaleRecommendsRUAdListWithoutEnablingAllRegionalLists() {
         let registry = AdblockFilterListRegistry()
         let selected = registry.selectedDescriptors(
@@ -121,9 +145,11 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
 
         XCTAssertEqual(requestedIdentifiers, ["easylist"])
         XCTAssertEqual(compileCount, 1)
-        XCTAssertEqual(manifest.schemaVersion, 2)
+        XCTAssertEqual(manifest.schemaVersion, 3)
         XCTAssertEqual(manifest.selectedFilterLists.map(\.id), ["easylist"])
         XCTAssertEqual(manifest.selectedFilterLists.map(\.contentHash), [Self.sha256Hex(Data("||ads.example^".utf8))])
+        XCTAssertEqual(manifest.nativeCompiler?.name, "fake-native")
+        XCTAssertEqual(manifest.nativeCompilerSourceLists?.map(\.id), ["easylist"])
         XCTAssertTrue(manifest.webKitRuleListIdentifiers.allSatisfy(AdblockUpdateCoordinator.isAdblockGeneratedWebKitIdentifier))
         XCTAssertEqual(activeGenerationId, manifest.activeGenerationId)
         XCTAssertEqual(publisher.publishedManifests.count, 1)
@@ -478,7 +504,8 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
             isAdblockEnabled: { isEnabled },
             downloader: downloader,
             manifestStore: manifestStore,
-            filterCompiler: compiler,
+            nativeCompiler: compiler,
+            enhancedCompiler: compiler,
             publisher: publisher,
             contentRuleListStore: contentRuleListStore,
             garbageCollector: garbageCollector,
@@ -513,6 +540,8 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
                 )
             },
             enhancedRuntimeBundle: nil,
+            nativeCompiler: nil,
+            nativeCompilerSourceLists: nil,
             compilerDiagnosticsSummary: "unsupported=0; ignored=0",
             lastSuccessfulUpdateDate: Date(timeIntervalSince1970: 1_700_000_000),
             previousGenerationId: previousGenerationId
@@ -626,7 +655,12 @@ private actor FakeAdblockDownloader: AdblockFilterListDownloading {
     }
 }
 
-private actor FakeAdblockCompiler: AdblockFilterCompiling {
+private actor FakeAdblockCompiler: NativeContentBlockingCompiler, EnhancedCompatibilityCompiler {
+    nonisolated let identity = NativeContentBlockingCompilerIdentity(
+        name: "fake-native",
+        version: "test"
+    )
+
     private(set) var inputs = [AdblockCompilationInput]()
     private let error: Error?
 
@@ -642,12 +676,14 @@ private actor FakeAdblockCompiler: AdblockFilterCompiling {
         inputs.count
     }
 
-    func compile(_ input: AdblockCompilationInput) async throws -> AdblockCompilationOutput {
+    func compileNativeContentBlocking(
+        _ input: AdblockCompilationInput
+    ) async throws -> NativeContentBlockingCompilationOutput {
         if let error {
             throw error
         }
         inputs.append(input)
-        return AdblockCompilationOutput(
+        return NativeContentBlockingCompilationOutput(
             sourceIdentifier: input.sourceIdentifier,
             groups: [
                 AdblockCompiledRuleGroup(
@@ -665,17 +701,6 @@ private actor FakeAdblockCompiler: AdblockFilterCompiling {
                     contentHash: "css-hash"
                 ),
             ],
-            hybridOutput: AdblockHybridCompilationOutput(
-                nativeRuleGroups: AdblockNativeRuleGroups(
-                    network: nil,
-                    nativeCosmeticCSS: nil
-                ),
-                enhancedRuntimeBundle: AdblockEnhancedRuntimeBundle(
-                    resources: [],
-                    unsupportedDiagnostics: []
-                ),
-                capabilities: [.webKitNativeNetwork, .webKitNativeCSS]
-            ),
             diagnostics: AdblockCompilationDiagnostics(
                 nativeCosmeticRuleCount: 1,
                 unsupportedCosmeticRuleCount: 0,
@@ -686,7 +711,21 @@ private actor FakeAdblockCompiler: AdblockFilterCompiling {
             convertedNetworkRuleCount: 1,
             convertedNativeCosmeticRuleCount: 1,
             unsupportedOrIgnoredRuleCount: 0,
-            contentHash: "compiled-hash"
+            contentHash: "compiled-hash",
+            compilerIdentity: identity,
+            sourceLists: input.sourceLists
+        )
+    }
+
+    func compileEnhancedCompatibility(
+        _ input: AdblockCompilationInput
+    ) async throws -> EnhancedCompatibilityCompilationOutput {
+        EnhancedCompatibilityCompilationOutput(
+            enhancedRuntimeBundle: AdblockEnhancedRuntimeBundle(
+                resources: [],
+                unsupportedDiagnostics: []
+            ),
+            capabilities: []
         )
     }
 }
