@@ -93,7 +93,7 @@ private struct NativeAdblockSettingsView: View {
     var body: some View {
         SettingsSection(
             title: "Native Ad Blocking",
-            subtitle: "Uses WebKit content blocking. Enhanced cleanup is a future mode and does not load runtime scripts yet."
+            subtitle: "Uses WebKit content blocking. Native modes stay script-free; enhanced cleanup remains explicit opt-in."
         ) {
             SettingsRow(
                 title: "Automatic filter updates",
@@ -117,6 +117,34 @@ private struct NativeAdblockSettingsView: View {
                 .pickerStyle(.menu)
                 .frame(maxWidth: 220)
             }
+
+            #if DEBUG
+            SettingsRow(
+                title: "Native profile",
+                subtitle: debugNativeProfileSubtitle
+            ) {
+                Picker(
+                    "",
+                    selection: Binding(
+                        get: { settings.selectedNativeProfile },
+                        set: { profile in
+                            _ = settings.setSelectedNativeProfile(
+                                profile,
+                                registry: registry,
+                                allowDeveloperOnly: true
+                            )
+                        }
+                    )
+                ) {
+                    ForEach(registry.comparisonProfiles) { profile in
+                        Text(debugProfileLabel(profile)).tag(profile.id)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(maxWidth: 220)
+            }
+            #endif
 
             SettingsRow(
                 title: "Filter lists",
@@ -145,6 +173,21 @@ private struct NativeAdblockSettingsView: View {
             profileKind: settings.selectedNativeProfile
         ).resolvedIdentifiers.count
     }
+
+    #if DEBUG
+    private var debugNativeProfileSubtitle: String {
+        "Developer-only comparison preset. Changes require a manual update and page reload."
+    }
+
+    private func debugProfileLabel(_ profile: AdblockFilterListProfile) -> String {
+        switch profile.exposure {
+        case .productionDefault:
+            return "Sumi Default"
+        case .developerOnly:
+            return profile.displayName
+        }
+    }
+    #endif
 
     private var filterListSelection: some View {
         VStack(alignment: .leading, spacing: 12) {
