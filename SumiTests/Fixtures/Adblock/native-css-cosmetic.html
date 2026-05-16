@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sumi Adblock Native CSS Fixture</title>
+  <style>
+    body {
+      font: 16px system-ui, sans-serif;
+      margin: 24px;
+    }
+
+    .fixture-row {
+      border: 1px solid #bbb;
+      margin: 12px 0;
+      padding: 12px;
+    }
+  </style>
+</head>
+<body>
+  <!--
+    Fixture rules:
+    - ##.ad-banner hides the global cosmetic target.
+    - example.test##.sponsored hides the domain-specific target when loaded with an example.test base URL.
+    - example.test###sponsor.card[data-ad="1"] hides the id/class/attribute selector target on example.test.
+    The keep-visible control is intentionally not targeted by any cosmetic rule.
+  -->
+  <h1>Sumi Adblock Native CSS Fixture</h1>
+  <p class="fixture-row keep-visible">Visible control element. This should remain visible.</p>
+  <div class="fixture-row ad-banner">Global cosmetic target: <code>.ad-banner</code></div>
+  <div class="fixture-row sponsored">Domain cosmetic target: <code>.sponsored</code> on example.test</div>
+  <div id="sponsor" class="fixture-row card" data-ad="1">Attribute cosmetic target: <code>#sponsor.card[data-ad="1"]</code></div>
+  <img alt="Network blocking target" src="https://ads.example.test/native-css-fixture.png">
+</body>
+</html>

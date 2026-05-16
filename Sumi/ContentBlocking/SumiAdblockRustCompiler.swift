@@ -30,6 +30,10 @@ struct AdblockCompilationDiagnostics: Equatable, Sendable {
 
     var unsupportedRules: [Entry] = []
     var ignoredRules: [Entry] = []
+    var nativeCosmeticRuleCount = 0
+    var unsupportedCosmeticRuleCount = 0
+    var ignoredScriptletOrProceduralRuleCount = 0
+    var isNativeCosmeticGroupEmpty = true
 }
 
 struct AdblockCompiledRuleGroup: Equatable, Sendable {
@@ -88,6 +92,7 @@ final class AdblockRustCompiler: AdblockFilterCompiling, Sendable {
         normalizedRules: [String],
         adapterOutput: AdblockRustAdapterOutput
     ) throws -> AdblockCompilationOutput {
+        try validateAdapterOutput(adapterOutput)
         var groups = [AdblockCompiledRuleGroup]()
         let networkJSON = try encodedJSON(adapterOutput.network)
         let cosmeticJSON = try encodedJSON(adapterOutput.nativeCosmeticCSS)
@@ -121,12 +126,22 @@ final class AdblockRustCompiler: AdblockFilterCompiling, Sendable {
         let unsupportedDiagnostics = adapterOutput.unsupportedOrIgnored.map {
             AdblockCompilationDiagnostics.Entry(rule: $0.rule, reason: $0.reason)
         }
+        let unsupportedCosmeticCount = adapterOutput.unsupportedOrIgnored.filter {
+            isCosmeticRule($0.rule)
+        }.count
+        let scriptletOrProceduralCount = adapterOutput.unsupportedOrIgnored.filter {
+            isScriptletOrProceduralCosmeticRule($0.rule) || isScriptletOrProceduralReason($0.reason)
+        }.count
         let ignoredRules = normalizedRules
             .filter { $0.hasPrefix("!") || $0.hasPrefix("[") }
             .map { AdblockCompilationDiagnostics.Entry(rule: $0, reason: "metadata or comment") }
         let diagnostics = AdblockCompilationDiagnostics(
             unsupportedRules: unsupportedDiagnostics,
-            ignoredRules: ignoredRules
+            ignoredRules: ignoredRules,
+            nativeCosmeticRuleCount: nativeCosmeticCount,
+            unsupportedCosmeticRuleCount: unsupportedCosmeticCount,
+            ignoredScriptletOrProceduralRuleCount: scriptletOrProceduralCount,
+            isNativeCosmeticGroupEmpty: nativeCosmeticCount == 0
         )
         let contentHash = stableHash(groups.map(\.contentHash).joined(separator: ":"))
 
@@ -154,6 +169,65 @@ final class AdblockRustCompiler: AdblockFilterCompiling, Sendable {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         let data = try encoder.encode(rules)
         return String(decoding: data, as: UTF8.self)
+    }
+
+    private static func validateAdapterOutput(_ output: AdblockRustAdapterOutput) throws {
+        try validateContentRules(output.network, groupName: "network") { actionType, _ in
+            Set([
+                "block",
+                "block-cookies",
+                "ignore-previous-rules",
+                "make-https",
+            ]).contains(actionType)
+        }
+        try validateContentRules(output.nativeCosmeticCSS, groupName: "nativeCosmeticCSS") { actionType, action in
+            actionType == "css-display-none"
+                && action["selector"]?.stringValue?.isEmpty == false
+        }
+    }
+
+    private static func validateContentRules(
+        _ rules: [AdblockRustContentRule],
+        groupName: String,
+        allowsAction: (String, [String: JSONObject]) -> Bool
+    ) throws {
+        for rule in rules {
+            guard let action = rule.action.objectValue,
+                  let actionType = action["type"]?.stringValue,
+                  allowsAction(actionType, action)
+            else {
+                throw AdblockRustCompilerError.invalidAdapterOutput(
+                    "\(groupName) contains unsupported WebKit action"
+                )
+            }
+            guard let trigger = rule.trigger.objectValue,
+                  trigger["url-filter"]?.stringValue?.isEmpty == false
+            else {
+                throw AdblockRustCompilerError.invalidAdapterOutput(
+                    "\(groupName) contains a content rule without url-filter"
+                )
+            }
+        }
+    }
+
+    private static func isCosmeticRule(_ rule: String) -> Bool {
+        rule.contains("##") || rule.contains("#@#") || rule.contains("#?#") || rule.contains("#%#")
+    }
+
+    private static func isScriptletOrProceduralCosmeticRule(_ rule: String) -> Bool {
+        rule.contains("##+js(")
+            || rule.contains("#%#")
+            || rule.contains(":has(")
+            || rule.contains(":has-text(")
+            || rule.contains(":matches-css(")
+            || rule.contains(":xpath(")
+            || rule.contains(":-abp-")
+    }
+
+    private static func isScriptletOrProceduralReason(_ reason: String) -> Bool {
+        reason.localizedCaseInsensitiveContains("scriptlet")
+            || reason.localizedCaseInsensitiveContains("procedural")
+            || reason.localizedCaseInsensitiveContains("generic script inject")
     }
 
     private static func stableHash(_ value: String) -> String {
@@ -317,4 +391,5 @@ enum JSONObject: Codable, Equatable, Sendable {
 enum AdblockRustCompilerError: Error, Equatable {
     case adapterNotFound
     case adapterFailed(status: Int32, stderr: String)
+    case invalidAdapterOutput(String)
 }

@@ -1372,7 +1372,14 @@ actor AdblockUpdateCoordinator {
     }
 
     private static func diagnosticsSummary(_ diagnostics: AdblockCompilationDiagnostics) -> String {
-        "unsupported=\(diagnostics.unsupportedRules.count); ignored=\(diagnostics.ignoredRules.count)"
+        [
+            "nativeCSSConverted=\(diagnostics.nativeCosmeticRuleCount)",
+            "unsupportedCosmetic=\(diagnostics.unsupportedCosmeticRuleCount)",
+            "scriptletOrProceduralIgnored=\(diagnostics.ignoredScriptletOrProceduralRuleCount)",
+            "nativeCSSEmpty=\(diagnostics.isNativeCosmeticGroupEmpty)",
+            "unsupported=\(diagnostics.unsupportedRules.count)",
+            "ignored=\(diagnostics.ignoredRules.count)",
+        ].joined(separator: "; ")
     }
 
     private static func timestampString(_ date: Date) -> String {

@@ -146,8 +146,11 @@ final class SumiAdBlockingModuleTests: XCTestCase {
 
         let callCount = await adapter.callCount
         XCTAssertEqual(callCount, 1)
-        XCTAssertEqual(output.convertedNetworkRuleCount, 2)
-        XCTAssertEqual(output.convertedNativeCosmeticRuleCount, 1)
+        XCTAssertEqual(output.convertedNetworkRuleCount, 1)
+        XCTAssertEqual(output.convertedNativeCosmeticRuleCount, 3)
+        XCTAssertEqual(output.diagnostics.nativeCosmeticRuleCount, 3)
+        XCTAssertEqual(output.diagnostics.ignoredScriptletOrProceduralRuleCount, 1)
+        XCTAssertFalse(output.diagnostics.isNativeCosmeticGroupEmpty)
         XCTAssertTrue(output.groups.contains { $0.kind == .network })
         XCTAssertTrue(output.groups.contains { $0.kind == .nativeCosmeticCSS })
     }
@@ -162,13 +165,17 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(output.inputRuleCount, 4)
-        XCTAssertEqual(output.convertedNetworkRuleCount, 2)
-        XCTAssertEqual(output.convertedNativeCosmeticRuleCount, 1)
+        XCTAssertEqual(output.inputRuleCount, 5)
+        XCTAssertEqual(output.convertedNetworkRuleCount, 1)
+        XCTAssertEqual(output.convertedNativeCosmeticRuleCount, 3)
         XCTAssertEqual(output.unsupportedOrIgnoredRuleCount, 1)
+        XCTAssertEqual(output.diagnostics.nativeCosmeticRuleCount, 3)
+        XCTAssertEqual(output.diagnostics.unsupportedCosmeticRuleCount, 1)
+        XCTAssertEqual(output.diagnostics.ignoredScriptletOrProceduralRuleCount, 1)
+        XCTAssertFalse(output.diagnostics.isNativeCosmeticGroupEmpty)
         XCTAssertEqual(output.groups.map(\.kind).sorted { $0.rawValue < $1.rawValue }, [.nativeCosmeticCSS, .network])
         XCTAssertEqual(output.diagnostics.unsupportedRules.count, 1)
-        XCTAssertTrue(output.diagnostics.unsupportedRules[0].reason.contains("Scriptlet"))
+        XCTAssertTrue(output.diagnostics.unsupportedRules[0].reason.localizedCaseInsensitiveContains("script"))
         XCTAssertFalse(output.contentHash.isEmpty)
 
         let networkGroup = try XCTUnwrap(output.groups.first { $0.kind == .network })
@@ -177,11 +184,66 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         let cosmeticRules = try Self.decodedRuleList(cosmeticGroup.encodedContentRuleList)
 
         let networkActionTypes = networkRules.compactMap { ($0["action"] as? [String: Any])?["type"] as? String }
-        XCTAssertEqual(networkActionTypes.filter { $0 == "block" }.count, 2)
+        XCTAssertEqual(networkActionTypes.filter { $0 == "block" }.count, 1)
         XCTAssertTrue(networkActionTypes.contains("ignore-previous-rules"))
-        XCTAssertEqual(cosmeticRules.count, 1)
-        XCTAssertEqual((cosmeticRules[0]["action"] as? [String: Any])?["type"] as? String, "css-display-none")
-        XCTAssertEqual((cosmeticRules[0]["action"] as? [String: Any])?["selector"] as? String, ".sumi-adblock-test-hide")
+        XCTAssertEqual(cosmeticRules.count, 3)
+        XCTAssertTrue(cosmeticRules.allSatisfy {
+            ($0["action"] as? [String: Any])?["type"] as? String == "css-display-none"
+        })
+        let cosmeticSelectors = cosmeticRules.compactMap {
+            ($0["action"] as? [String: Any])?["selector"] as? String
+        }
+        XCTAssertTrue(cosmeticSelectors.contains(".ad-banner"))
+        XCTAssertTrue(cosmeticSelectors.contains(".sponsored"))
+        XCTAssertTrue(cosmeticSelectors.contains("#sponsor.card[data-ad=\"1\"]"))
+        XCTAssertTrue(cosmeticRules.contains { rule in
+            ((rule["trigger"] as? [String: Any])?["if-domain"] as? [String]) == ["example.test"]
+                && ((rule["action"] as? [String: Any])?["selector"] as? String) == ".sponsored"
+        })
+    }
+
+    func testCompilerRejectsUnexpectedNativeCosmeticActionsFromAdapter() async throws {
+        let adapter = CountingAdblockRustAdapter(
+            output: AdblockRustAdapterOutput(
+                network: [],
+                nativeCosmeticCSS: [
+                    AdblockRustContentRule(
+                        action: .object(["type": .string("script"), "source": .string("alert(1)")]),
+                        trigger: .object(["url-filter": .string(".*")])
+                    ),
+                ],
+                unsupportedOrIgnored: []
+            )
+        )
+        let compiler = AdblockRustCompiler(adapter: adapter)
+
+        do {
+            _ = try await compiler.compile(
+                AdblockCompilationInput(
+                    sourceIdentifier: "TestAdblock",
+                    filterTexts: ["##+js(sumi-future-scriptlet)"],
+                    selectedOutputGroups: [.nativeCosmeticCSS]
+                )
+            )
+            XCTFail("Expected invalid adapter output")
+        } catch AdblockRustCompilerError.invalidAdapterOutput(let message) {
+            XCTAssertTrue(message.contains("nativeCosmeticCSS"))
+        }
+    }
+
+    func testCompilerOutputHashesAreStableForIdenticalInput() async throws {
+        let compiler = AdblockRustCompiler()
+        let input = AdblockCompilationInput(
+            sourceIdentifier: "TestAdblock",
+            filterTexts: Self.tinyFixtureFiltersWithUnsupportedRule,
+            selectedOutputGroups: [.network, .nativeCosmeticCSS]
+        )
+
+        let first = try await compiler.compile(input)
+        let second = try await compiler.compile(input)
+
+        XCTAssertEqual(first.contentHash, second.contentHash)
+        XCTAssertEqual(first.groups.map(\.contentHash), second.groups.map(\.contentHash))
     }
 
     func testBrowserManagerStartupWithAdBlockingDisabledDoesNotCreateRuntime() {
@@ -992,25 +1054,35 @@ private extension AdblockRustAdapterOutput {
         network: [
             AdblockRustContentRule(
                 action: .object(["type": .string("block")]),
-                trigger: .object(["url-filter": .string("^[^:]+:(//)?([^/]+\\\\.)?sumi-adblock-test-blocked\\\\.example")])
-            ),
-            AdblockRustContentRule(
-                action: .object(["type": .string("block")]),
-                trigger: .object([
-                    "url-filter": .string("^[^:]+:(//)?([^/]+\\\\.)?sumi-adblock-domain-test\\\\.example"),
-                    "if-domain": .array([.string("*example.com")]),
-                ])
+                trigger: .object(["url-filter": .string("^[^:]+:(//)?([^/]+\\\\.)?ads\\\\.example\\\\.test")])
             ),
         ],
         nativeCosmeticCSS: [
             AdblockRustContentRule(
                 action: .object([
                     "type": .string("css-display-none"),
-                    "selector": .string(".sumi-adblock-test-hide"),
+                    "selector": .string(".ad-banner"),
+                ]),
+                trigger: .object(["url-filter": .string(".*")])
+            ),
+            AdblockRustContentRule(
+                action: .object([
+                    "type": .string("css-display-none"),
+                    "selector": .string(".sponsored"),
                 ]),
                 trigger: .object([
                     "url-filter": .string(".*"),
-                    "if-domain": .array([.string("example.com")]),
+                    "if-domain": .array([.string("example.test")]),
+                ])
+            ),
+            AdblockRustContentRule(
+                action: .object([
+                    "type": .string("css-display-none"),
+                    "selector": .string("#sponsor.card[data-ad=\"1\"]"),
+                ]),
+                trigger: .object([
+                    "url-filter": .string(".*"),
+                    "if-domain": .array([.string("example.test")]),
                 ])
             ),
         ],

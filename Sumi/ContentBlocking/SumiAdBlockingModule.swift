@@ -438,9 +438,10 @@ final class AdblockWebKitRuleListStore {
     }
 
     static let tinyFixtureFilters = [
-        "||sumi-adblock-test-blocked.example^",
-        "||sumi-adblock-domain-test.example^$domain=example.com",
-        "example.com##.sumi-adblock-test-hide",
+        "||ads.example.test^",
+        "##.ad-banner",
+        "example.test##.sponsored",
+        "example.test###sponsor.card[data-ad=\"1\"]",
     ]
 }
 
