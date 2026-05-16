@@ -60,13 +60,19 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         XCTAssertTrue(registry.descriptors.contains { $0.category == .privacyOverlap && !$0.defaultEnabled })
     }
 
-    func testCurrentAndOraLikeNativeProfilesAreDistinctAndExperimentalProfileIsNotDefault() {
+    func testNativeProfilesRepresentCurrentLightBalancedHighAndOraLikeSeparately() {
         let registry = AdblockFilterListRegistry()
-        let profiles = Dictionary(uniqueKeysWithValues: registry.comparisonProfiles.map { ($0.id, $0) })
+        let profiles = Dictionary(uniqueKeysWithValues: registry.nativeProfiles.map { ($0.id, $0) })
         let current = profiles[.currentDefault]
+        let light = profiles[.lightNative]
+        let balanced = profiles[.balancedNative]
+        let high = profiles[.highBlockingNative]
         let oraLike = profiles[.oraLikeNative]
 
         XCTAssertEqual(current?.listIdentifiers, ["easylist"])
+        XCTAssertEqual(light?.listIdentifiers, ["easylist"])
+        XCTAssertEqual(balanced?.listIdentifiers, ["adguard-base", "adguard-mobile-ads"])
+        XCTAssertEqual(high?.listIdentifiers, ["adguard-base", "adguard-mobile-ads", "adguard-annoyances"])
         XCTAssertEqual(
             oraLike?.listIdentifiers,
             [
@@ -78,10 +84,49 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
             ]
         )
         XCTAssertEqual(registry.defaultSelectionIdentifiers, ["easylist"])
+        XCTAssertEqual(Set(registry.nativeProfiles.map(\.id)).count, 5)
+        XCTAssertTrue(balanced?.isRecommended == true)
+        XCTAssertTrue(high?.isExperimental == true)
         XCTAssertTrue(oraLike?.isExperimental == true)
         XCTAssertTrue(oraLike?.listIdentifiers.allSatisfy { id in
             registry.descriptors.contains { $0.id == id && !$0.defaultEnabled }
         } == true)
+    }
+
+    func testNativeCompilerCatalogKeepsSafariConverterAsExternalHarnessOnly() {
+        let registry = AdblockFilterListRegistry()
+        let compilers = Dictionary(uniqueKeysWithValues: registry.nativeCompilerDescriptors.map { ($0.id, $0) })
+
+        XCTAssertEqual(compilers[.adblockRust]?.integrationStatus, .production)
+        XCTAssertEqual(compilers[.adGuardSafariExperimental]?.integrationStatus, .externalHarnessOnly)
+        XCTAssertTrue(compilers[.adGuardSafariExperimental]?.isExperimental == true)
+    }
+
+    func testDefaultSelectionUsesProfileBaselineAndOptionalRegionalList() {
+        let registry = AdblockFilterListRegistry()
+
+        let balanced = registry.selectedDescriptors(
+            selection: .defaultSelection,
+            profileKind: .balancedNative,
+            locale: Locale(identifier: "ru_RU")
+        )
+        let oraLike = registry.selectedDescriptors(
+            selection: .defaultSelection,
+            profileKind: .oraLikeNative,
+            locale: Locale(identifier: "ru_RU")
+        )
+
+        XCTAssertEqual(balanced.map(\.id), ["adguard-base", "adguard-mobile-ads", "ru-adlist"])
+        XCTAssertEqual(
+            oraLike.map(\.id),
+            [
+                "adguard-annoyances",
+                "adguard-base",
+                "adguard-mobile-ads",
+                "adguard-tracking-protection",
+                "adguard-url-tracking",
+            ]
+        )
     }
 
     func testRussianLocaleRecommendsRUAdListWithoutEnablingAllRegionalLists() {
@@ -145,17 +190,55 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
 
         XCTAssertEqual(requestedIdentifiers, ["easylist"])
         XCTAssertEqual(compileCount, 1)
-        XCTAssertEqual(manifest.schemaVersion, 3)
+        XCTAssertEqual(manifest.schemaVersion, 4)
         XCTAssertEqual(manifest.selectedFilterLists.map(\.id), ["easylist"])
         XCTAssertEqual(manifest.selectedFilterLists.map(\.contentHash), [Self.sha256Hex(Data("||ads.example^".utf8))])
+        XCTAssertEqual(manifest.nativeProfile, .currentDefault)
         XCTAssertEqual(manifest.nativeCompiler?.name, "fake-native")
         XCTAssertEqual(manifest.nativeCompilerSourceLists?.map(\.id), ["easylist"])
+        XCTAssertEqual(manifest.nativeCompilationSummary?.convertedNetworkRuleCount, 1)
+        XCTAssertEqual(manifest.nativeCompilationSummary?.convertedNativeCosmeticRuleCount, 1)
+        XCTAssertEqual(manifest.nativeCompilationSummary?.ruleCap.wasHit, false)
         XCTAssertTrue(manifest.webKitRuleListIdentifiers.allSatisfy(AdblockUpdateCoordinator.isAdblockGeneratedWebKitIdentifier))
         XCTAssertEqual(activeGenerationId, manifest.activeGenerationId)
         XCTAssertEqual(publisher.publishedManifests.count, 1)
         XCTAssertNil(manifest.enhancedRuntimeBundle)
         XCTAssertTrue(manifest.compilerDiagnosticsSummary.contains("nativeCSSConverted=1"))
         XCTAssertTrue(manifest.compilerDiagnosticsSummary.contains("scriptletOrProceduralIgnored=0"))
+    }
+
+    func testLegacyManifestDecodesWithoutNativeProfileOrCompilationSummary() throws {
+        let legacyJSON = """
+        {
+          "schemaVersion": 3,
+          "activeGenerationId": "legacy",
+          "createdDate": 0,
+          "selectedFilterLists": [
+            { "id": "easylist", "displayName": "EasyList", "contentHash": "hash" }
+          ],
+          "webKitRuleListIdentifiers": ["sumi.adblock.network.legacy"],
+          "groupedOutputs": [
+            {
+              "kind": "network",
+              "webKitIdentifier": "sumi.adblock.network.legacy",
+              "contentHash": "hash",
+              "convertedRuleCount": 1
+            }
+          ],
+          "compilerDiagnosticsSummary": "legacy",
+          "lastSuccessfulUpdateDate": 0
+        }
+        """
+
+        let manifest = try JSONDecoder().decode(
+            AdblockCompiledGenerationManifest.self,
+            from: Data(legacyJSON.utf8)
+        )
+
+        XCTAssertEqual(manifest.schemaVersion, 3)
+        XCTAssertNil(manifest.nativeProfile)
+        XCTAssertNil(manifest.nativeCompilationSummary)
+        XCTAssertNil(manifest.nativeCompiler)
     }
 
     func testCoordinatorDoesNotDownloadDroppedConflictingVariant() async throws {
@@ -314,6 +397,68 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         XCTAssertEqual(secondManifest.previousGenerationId, firstManifest.activeGenerationId)
         XCTAssertNotNil(archivedFirstManifest)
         XCTAssertEqual(secondManifest.selectedFilterLists.map(\.id), ["easylist", "regional-de"])
+    }
+
+    func testProfileChangeCreatesDifferentGenerationEvenWhenBaselineListsMatch() async throws {
+        let root = temporaryDirectory()
+        let manifestStore = AdblockUpdateManifestStore(rootDirectory: root)
+        let publisher = FakeAdblockPublisher()
+        let optionalFirstManifest = try await Self.coordinator(
+            profile: .currentDefault,
+            downloader: FakeAdblockDownloader(results: [
+                "easylist": .downloaded(Data("||first.example^".utf8), Self.response(for: "easylist")),
+            ]),
+            manifestStore: manifestStore,
+            compiler: FakeAdblockCompiler(),
+            publisher: publisher
+        ).updateIfEnabled(reason: "manual")
+        let firstManifest = try XCTUnwrap(optionalFirstManifest)
+
+        let optionalSecondManifest = try await Self.coordinator(
+            profile: .lightNative,
+            downloader: FakeAdblockDownloader(results: [
+                "easylist": .notModified(Self.response(for: "easylist", statusCode: 304)),
+            ]),
+            manifestStore: manifestStore,
+            compiler: FakeAdblockCompiler(),
+            publisher: publisher
+        ).updateIfEnabled(reason: "manual")
+        let secondManifest = try XCTUnwrap(optionalSecondManifest)
+
+        XCTAssertNotEqual(firstManifest.activeGenerationId, secondManifest.activeGenerationId)
+        XCTAssertEqual(firstManifest.nativeProfile, .currentDefault)
+        XCTAssertEqual(secondManifest.nativeProfile, .lightNative)
+    }
+
+    func testRuleCapDiagnosticsArePersistedForLargeProfileOutput() async throws {
+        let optionalManifest = try await Self.coordinator(
+            downloader: FakeAdblockDownloader(results: [
+                "easylist": .downloaded(Data("||first.example^".utf8), Self.response(for: "easylist")),
+            ]),
+            manifestStore: AdblockUpdateManifestStore(rootDirectory: temporaryDirectory()),
+            compiler: FakeAdblockCompiler(
+                ruleCap: NativeContentBlockingRuleCapDiagnostics(
+                    configuredRuleLimit: 150_000,
+                    wasHit: true,
+                    discardedRuleCount: 42_000,
+                    sourcePressure: [
+                        NativeContentBlockingRuleCapDiagnostics.SourcePressure(
+                            listIdentifier: "easylist",
+                            approximateRuleCount: 80_000,
+                            inputByteCount: 1_000_000
+                        ),
+                    ]
+                )
+            ),
+            publisher: FakeAdblockPublisher()
+        ).updateIfEnabled(reason: "manual")
+        let manifest = try XCTUnwrap(optionalManifest)
+
+        XCTAssertEqual(manifest.nativeCompilationSummary?.ruleCap.configuredRuleLimit, 150_000)
+        XCTAssertEqual(manifest.nativeCompilationSummary?.ruleCap.wasHit, true)
+        XCTAssertEqual(manifest.nativeCompilationSummary?.ruleCap.discardedRuleCount, 42_000)
+        XCTAssertTrue(manifest.compilerDiagnosticsSummary.contains("ruleCapHit=true"))
+        XCTAssertTrue(manifest.compilerDiagnosticsSummary.contains("discarded=42000"))
     }
 
     func testCleanupPreservesActiveAndPreviousAndDeletesOlderGenerations() async throws {
@@ -490,6 +635,7 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
     private static func coordinator(
         registry: AdblockFilterListRegistry = AdblockFilterListRegistry(descriptors: [descriptor("easylist", defaultEnabled: true)]),
         selection: SumiAdblockFilterListSelection = SumiAdblockFilterListSelection(identifiers: ["easylist"]),
+        profile: AdblockFilterListProfileKind = .currentDefault,
         isEnabled: Bool = true,
         downloader: FakeAdblockDownloader,
         manifestStore: AdblockUpdateManifestStore,
@@ -501,6 +647,7 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         AdblockUpdateCoordinator(
             registry: registry,
             selection: { selection },
+            nativeProfileSelection: { profile },
             isAdblockEnabled: { isEnabled },
             downloader: downloader,
             manifestStore: manifestStore,
@@ -663,9 +810,14 @@ private actor FakeAdblockCompiler: NativeContentBlockingCompiler, EnhancedCompat
 
     private(set) var inputs = [AdblockCompilationInput]()
     private let error: Error?
+    private let ruleCap: NativeContentBlockingRuleCapDiagnostics
 
-    init(error: Error? = nil) {
+    init(
+        error: Error? = nil,
+        ruleCap: NativeContentBlockingRuleCapDiagnostics = .none
+    ) {
         self.error = error
+        self.ruleCap = ruleCap
     }
 
     var compileCount: Int {
@@ -705,7 +857,8 @@ private actor FakeAdblockCompiler: NativeContentBlockingCompiler, EnhancedCompat
                 nativeCosmeticRuleCount: 1,
                 unsupportedCosmeticRuleCount: 0,
                 ignoredScriptletOrProceduralRuleCount: 0,
-                isNativeCosmeticGroupEmpty: false
+                isNativeCosmeticGroupEmpty: false,
+                ruleCap: ruleCap
             ),
             inputRuleCount: input.filterTexts.count,
             convertedNetworkRuleCount: 1,
