@@ -140,6 +140,9 @@ final class SettingsModuleToggleTests: XCTestCase {
         XCTAssertTrue(privacySource.contains("Regional ads"))
 
         for source in [privacySource, toggleSource] {
+            XCTAssertFalse(source.contains("oraLikeNative"))
+            XCTAssertFalse(source.contains("SafariConverterLib"))
+            XCTAssertFalse(source.contains("AdGuard SafariConverterLib"))
             XCTAssertFalse(source.contains("assetsIfAvailable"))
             XCTAssertFalse(source.contains("normalTabDecision"))
             XCTAssertFalse(source.localizedCaseInsensitiveContains("stale"))

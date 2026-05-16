@@ -85,9 +85,14 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         )
         XCTAssertEqual(registry.defaultSelectionIdentifiers, ["easylist"])
         XCTAssertEqual(Set(registry.nativeProfiles.map(\.id)).count, 5)
-        XCTAssertTrue(balanced?.isRecommended == true)
+        XCTAssertFalse(balanced?.isRecommended == true)
+        XCTAssertTrue(light?.isDeveloperOnly == true)
+        XCTAssertTrue(balanced?.isDeveloperOnly == true)
         XCTAssertTrue(high?.isExperimental == true)
+        XCTAssertTrue(high?.isDeveloperOnly == true)
         XCTAssertTrue(oraLike?.isExperimental == true)
+        XCTAssertTrue(oraLike?.isDeveloperOnly == true)
+        XCTAssertEqual(registry.normalUserSelectableNativeProfiles.map(\.id), [.currentDefault])
         XCTAssertTrue(oraLike?.listIdentifiers.allSatisfy { id in
             registry.descriptors.contains { $0.id == id && !$0.defaultEnabled }
         } == true)
@@ -512,6 +517,37 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         XCTAssertEqual(secondManifest.nativeProfile, .lightNative)
     }
 
+    func testManualUpdateUsesSelectedNativeProfileBaselineLists() async throws {
+        let root = temporaryDirectory()
+        let manifestStore = AdblockUpdateManifestStore(rootDirectory: root)
+        let compiler = FakeAdblockCompiler()
+        let publisher = FakeAdblockPublisher()
+        let coordinator = Self.coordinator(
+            registry: AdblockFilterListRegistry(descriptors: [
+                Self.descriptor("adguard-base", defaultEnabled: false),
+                Self.descriptor("adguard-mobile-ads", defaultEnabled: false),
+            ]),
+            selection: .defaultSelection,
+            profile: .balancedNative,
+            downloader: FakeAdblockDownloader(results: [
+                "adguard-base": .downloaded(Data("||base.example^".utf8), Self.response(for: "adguard-base")),
+                "adguard-mobile-ads": .downloaded(Data("||mobile.example^".utf8), Self.response(for: "adguard-mobile-ads")),
+            ]),
+            manifestStore: manifestStore,
+            compiler: compiler,
+            publisher: publisher
+        )
+
+        let updateManifest = try await coordinator.updateIfEnabled(reason: "manual")
+        let manifest = try XCTUnwrap(updateManifest)
+        let inputs = await compiler.inputs
+
+        XCTAssertEqual(manifest.nativeProfile, .balancedNative)
+        XCTAssertEqual(manifest.selectedFilterLists.map(\.id), ["adguard-base", "adguard-mobile-ads"])
+        XCTAssertEqual(inputs.last?.nativeProfile, .balancedNative)
+        XCTAssertEqual(inputs.last?.sourceLists.map(\.id), ["adguard-base", "adguard-mobile-ads"])
+    }
+
     func testManifestRecordsAllShardIdentifiersCountsAndSizes() async throws {
         let optionalManifest = try await Self.coordinator(
             downloader: FakeAdblockDownloader(results: [
@@ -544,9 +580,22 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
             ]
         )
 
-        let offProvider = AdblockManifestRuleListProvider(manifest: manifest, cosmeticMode: .off)
-        let nativeCSSProvider = AdblockManifestRuleListProvider(manifest: manifest, cosmeticMode: .nativeCSS)
-        let enhancedProvider = AdblockManifestRuleListProvider(manifest: manifest, cosmeticMode: .enhancedRuntime)
+        let definitions = Self.definitions(for: manifest)
+        let offProvider = AdblockManifestRuleListProvider(
+            manifest: manifest,
+            cosmeticMode: .off,
+            compiledDefinitions: definitions
+        )
+        let nativeCSSProvider = AdblockManifestRuleListProvider(
+            manifest: manifest,
+            cosmeticMode: .nativeCSS,
+            compiledDefinitions: definitions
+        )
+        let enhancedProvider = AdblockManifestRuleListProvider(
+            manifest: manifest,
+            cosmeticMode: .enhancedRuntime,
+            compiledDefinitions: definitions
+        )
 
         XCTAssertEqual(
             try offProvider.ruleListSet(profileId: nil).allDefinitions.map(\.name).sorted(),
@@ -557,6 +606,20 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         )
         XCTAssertEqual(try nativeCSSProvider.ruleListSet(profileId: nil).allDefinitions.count, 4)
         XCTAssertEqual(try enhancedProvider.ruleListSet(profileId: nil).allDefinitions.count, 4)
+    }
+
+    func testManifestProviderFailsInsteadOfAttachingEmptyShardDefinitions() throws {
+        let manifest = Self.manifest(
+            generationId: "generation",
+            previousGenerationId: nil,
+            listIds: ["easylist"],
+            identifiers: ["sumi.adblock.network.generation.0001.hash-a"]
+        )
+        let provider = AdblockManifestRuleListProvider(manifest: manifest, cosmeticMode: .off)
+
+        XCTAssertThrowsError(try provider.ruleListSet(profileId: nil)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("Missing compiled Adblock shard definition"))
+        }
     }
 
     func testRuleCapDiagnosticsArePersistedForLargeProfileOutput() async throws {
@@ -736,6 +799,7 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
             generationId: "prevhash",
             previousGenerationId: nil,
             listIds: ["easylist"],
+            nativeProfile: .lightNative,
             identifiers: [
                 "sumi.adblock.network.prevhash.0001",
                 "sumi.adblock.network.prevhash.0002",
@@ -746,6 +810,7 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
             generationId: "activehash",
             previousGenerationId: "prevhash",
             listIds: ["easylist"],
+            nativeProfile: .balancedNative,
             identifiers: [
                 "sumi.adblock.network.activehash.0001",
                 "sumi.adblock.nativeCSS.activehash.0001",
@@ -776,8 +841,11 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         let activeAfterRollback = try await manifestStore.activeManifest()?.activeGenerationId
         let requestedIdentifiers = await downloader.allRequestedIdentifiers()
         let compileCount = await compiler.currentCompileCount()
+        let rolledBackManifest = try await manifestStore.activeManifest()
         XCTAssertEqual(activeAfterRollback, "prevhash")
+        XCTAssertEqual(rolledBackManifest?.nativeProfile, .lightNative)
         XCTAssertEqual(publisher.publishedManifests.map(\.activeGenerationId), ["prevhash"])
+        XCTAssertEqual(publisher.publishedManifests.map(\.nativeProfile), [.lightNative])
         XCTAssertTrue(requestedIdentifiers.isEmpty)
         XCTAssertEqual(compileCount, 0)
     }
@@ -814,6 +882,7 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         generationId: String,
         previousGenerationId: String?,
         listIds: [String],
+        nativeProfile: AdblockFilterListProfileKind? = nil,
         identifiers: [String]
     ) -> AdblockCompiledGenerationManifest {
         AdblockCompiledGenerationManifest(
@@ -835,6 +904,7 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
                         identifier: identifier,
                         generationId: generationId,
                         kind: .network,
+                        nativeProfile: nativeProfile,
                         index: index
                     )
                 },
@@ -846,10 +916,12 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
                         identifier: identifier,
                         generationId: generationId,
                         kind: .nativeCosmeticCSS,
+                        nativeProfile: nativeProfile,
                         index: index
                     )
                 },
             enhancedRuntimeBundle: nil,
+            nativeProfile: nativeProfile,
             nativeCompiler: nil,
             nativeCompilerSourceLists: nil,
             compilerDiagnosticsSummary: "unsupported=0; ignored=0",
@@ -862,6 +934,7 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         identifier: String,
         generationId: String,
         kind: AdblockCompiledRuleGroupKind,
+        nativeProfile: AdblockFilterListProfileKind?,
         index: Int
     ) -> NativeContentBlockingShardDescriptor {
         NativeContentBlockingShardDescriptor(
@@ -875,7 +948,7 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
             approximateRuleCount: 1,
             jsonByteCount: 2,
             compilerIdentity: nil,
-            profileIdentity: nil,
+            profileIdentity: nativeProfile,
             diagnosticsSummary: "test"
         )
     }
@@ -884,11 +957,31 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         _ manifest: AdblockCompiledGenerationManifest,
         in manifestStore: AdblockUpdateManifestStore
     ) async throws {
+        let stagingDirectory = try await manifestStore.beginStaging()
+        var stagedCompiledShardURLs = [String: URL]()
+        for shard in manifest.allNativeShards {
+            let url = stagingDirectory.appendingPathComponent("\(shard.id).json")
+            try Data(Self.fixtureCompiledShardJSON.utf8).write(to: url)
+            stagedCompiledShardURLs[shard.id] = url
+        }
         try await manifestStore.commit(
             manifest: manifest,
             httpMetadata: [:],
-            stagedRawListURLs: [:]
+            stagedRawListURLs: [:],
+            stagedCompiledShardURLs: stagedCompiledShardURLs
         )
+    }
+
+    private static func definitions(
+        for manifest: AdblockCompiledGenerationManifest
+    ) -> [SumiContentRuleListDefinition] {
+        manifest.allNativeShards.map { shard in
+            SumiContentRuleListDefinition(
+                name: shard.webKitIdentifier,
+                encodedContentRuleList: fixtureCompiledShardJSON,
+                storeIdentifierOverride: shard.webKitIdentifier
+            )
+        }
     }
 
     private func writeRawList(_ id: String, root: URL) throws {
@@ -949,6 +1042,8 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         temporaryDirectories.append(directory)
         return directory
     }
+
+    private static let fixtureCompiledShardJSON = "[]"
 }
 
 private actor FakeAdblockDownloader: AdblockFilterListDownloading {

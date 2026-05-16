@@ -88,14 +88,20 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertFalse(module.hasLoadedRuntime)
     }
 
-    func testEnabledNativeContentBlockingReportsCompiledRuleAssetsWithoutScripts() {
+    func testEnabledNativeContentBlockingReportsCompiledRuleAssetsWithoutScripts() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
         registry.enable(.adBlocking)
-        let module = SumiAdBlockingModule(moduleRegistry: registry)
+        let settings = AdblockSettingsStore(userDefaults: harness.defaults)
+        let sitePolicyStore = AdblockSitePolicyStore(userDefaults: harness.defaults)
+        let module = try await makeModuleWithSeededManifest(
+            registry: registry,
+            settings: settings,
+            sitePolicyStore: sitePolicyStore
+        )
         let decision = module.normalTabDecision(
             for: URL(string: "https://ads.example.com/page")!
         )
@@ -507,7 +513,13 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
         registry.enable(.adBlocking)
-        let module = SumiAdBlockingModule(moduleRegistry: registry)
+        let settings = AdblockSettingsStore(userDefaults: harness.defaults)
+        let sitePolicyStore = AdblockSitePolicyStore(userDefaults: harness.defaults)
+        let module = try await makeModuleWithSeededManifest(
+            registry: registry,
+            settings: settings,
+            sitePolicyStore: sitePolicyStore
+        )
         let browserManager = BrowserManager(
             moduleRegistry: registry,
             adBlockingModule: module
@@ -598,7 +610,13 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
         registry.enable(.adBlocking)
-        let adBlockingModule = SumiAdBlockingModule(moduleRegistry: registry)
+        let settings = AdblockSettingsStore(userDefaults: harness.defaults)
+        let sitePolicyStore = AdblockSitePolicyStore(userDefaults: harness.defaults)
+        let adBlockingModule = try await makeModuleWithSeededManifest(
+            registry: registry,
+            settings: settings,
+            sitePolicyStore: sitePolicyStore
+        )
         let browserManager = BrowserManager(
             moduleRegistry: registry,
             adBlockingModule: adBlockingModule
@@ -684,7 +702,7 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         settings.cosmeticMode = .enhancedRuntime
         settings.regionalListSelection = SumiAdblockRegionalListSelection(identifiers: ["de", "pl"])
         settings.selectedLists = SumiAdblockFilterListSelection(identifiers: ["easylist", "ru-adlist"])
-        settings.selectedNativeProfile = .balancedNative
+        XCTAssertTrue(settings.setSelectedNativeProfile(.balancedNative, allowDeveloperOnly: true))
 
         let reloaded = AdblockSettingsStore(userDefaults: harness.defaults)
         XCTAssertFalse(reloaded.autoUpdateEnabled)
@@ -695,7 +713,20 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertTrue(reloaded.listSelectionRequiresUpdate)
     }
 
-    func testDisabledAdblockCanPersistListSelectionWithoutCreatingRuntime() {
+    func testDeveloperOnlyNativeProfilesRequireExplicitDeveloperSelection() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let settings = AdblockSettingsStore(userDefaults: harness.defaults)
+
+        XCTAssertFalse(settings.setSelectedNativeProfile(.oraLikeNative))
+        XCTAssertEqual(settings.selectedNativeProfile, .currentDefault)
+
+        XCTAssertTrue(settings.setSelectedNativeProfile(.oraLikeNative, allowDeveloperOnly: true))
+        XCTAssertEqual(settings.selectedNativeProfile, .oraLikeNative)
+        XCTAssertTrue(settings.listSelectionRequiresUpdate)
+    }
+
+    func testDisabledAdblockCanPersistListAndProfileSelectionWithoutCreatingRuntime() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let registry = SumiModuleRegistry(
@@ -703,16 +734,25 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         )
         let settings = AdblockSettingsStore(userDefaults: harness.defaults)
         settings.selectedLists = SumiAdblockFilterListSelection(identifiers: ["easylist", "ru-adlist"])
+        XCTAssertTrue(settings.setSelectedNativeProfile(.balancedNative, allowDeveloperOnly: true))
+        var didCreateRuleListStore = false
         let module = SumiAdBlockingModule(
             moduleRegistry: registry,
-            settingsFactory: { settings }
+            settingsFactory: { settings },
+            ruleListStoreFactory: { settings, isEnabled in
+                didCreateRuleListStore = true
+                return AdblockWebKitRuleListStore(settingsStore: settings, isAdblockEnabled: isEnabled)
+            }
         )
 
         XCTAssertFalse(module.isEnabled)
         XCTAssertEqual(module.assetsIfAvailable(), .empty)
         XCTAssertEqual(module.normalTabDecision(for: URL(string: "https://example.com")).assets, .empty)
+        XCTAssertFalse(didCreateRuleListStore)
         XCTAssertFalse(module.hasLoadedRuntime)
-        XCTAssertEqual(AdblockSettingsStore(userDefaults: harness.defaults).selectedLists.identifiers, ["easylist", "ru-adlist"])
+        let reloaded = AdblockSettingsStore(userDefaults: harness.defaults)
+        XCTAssertEqual(reloaded.selectedLists.identifiers, ["easylist", "ru-adlist"])
+        XCTAssertEqual(reloaded.selectedNativeProfile, .balancedNative)
     }
 
     func testCosmeticModesOnlySelectNativeRuleListsAndNeverScripts() {
@@ -815,12 +855,15 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         let diagnostics = module.attachmentDiagnostics(for: URL(string: "https://example.com/page"))
 
         XCTAssertEqual(diagnostics.siteHost, "example.com")
+        XCTAssertTrue(diagnostics.globalAdblockEnabled)
+        XCTAssertTrue(diagnostics.sitePolicyAllowsAdblock)
+        XCTAssertEqual(diagnostics.siteOverride, .inherit)
         XCTAssertTrue(diagnostics.isEnabled)
         XCTAssertTrue(diagnostics.hasActiveGeneration)
         XCTAssertEqual(diagnostics.attachedNativeGroups, [.nativeCosmeticCSS, .network])
         XCTAssertEqual(diagnostics.attachedShardIdentifiers.count, 2)
         XCTAssertEqual(diagnostics.selectedListIdentifiers, ["easylist"])
-        XCTAssertEqual(diagnostics.selectedNativeProfile, nil)
+        XCTAssertEqual(diagnostics.selectedNativeProfile, .currentDefault)
         XCTAssertEqual(diagnostics.nativeCompiler?.name, "adblock-rust")
         XCTAssertEqual(diagnostics.networkShardCount, 1)
         XCTAssertEqual(diagnostics.nativeCSSShardCount, 1)
@@ -831,6 +874,115 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertFalse(diagnostics.enhancedRuntimeIsEnabled)
         XCTAssertFalse(diagnostics.trackingProtectionModuleEnabled)
         XCTAssertTrue(diagnostics.generationIsStale)
+        XCTAssertTrue(module.attachmentDiagnosticsReport(for: URL(string: "https://example.com/page")).contains("selectedNativeProfile=currentDefault"))
+    }
+
+    func testAttachmentDiagnosticsShowDisabledStateWithoutCreatingRuleListRuntime() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        let settings = AdblockSettingsStore(userDefaults: harness.defaults)
+        XCTAssertTrue(settings.setSelectedNativeProfile(.balancedNative, allowDeveloperOnly: true))
+        var didCreateRuleListStore = false
+        let module = SumiAdBlockingModule(
+            moduleRegistry: registry,
+            settingsFactory: { settings },
+            ruleListStoreFactory: { settings, isEnabled in
+                didCreateRuleListStore = true
+                return AdblockWebKitRuleListStore(settingsStore: settings, isAdblockEnabled: isEnabled)
+            }
+        )
+
+        let diagnostics = module.attachmentDiagnostics(for: URL(string: "https://example.com"))
+
+        XCTAssertFalse(diagnostics.globalAdblockEnabled)
+        XCTAssertFalse(diagnostics.sitePolicyAllowsAdblock)
+        XCTAssertFalse(diagnostics.isEnabled)
+        XCTAssertEqual(diagnostics.selectedNativeProfile, .balancedNative)
+        XCTAssertTrue(diagnostics.attachedShardIdentifiers.isEmpty)
+        XCTAssertFalse(didCreateRuleListStore)
+        XCTAssertFalse(module.hasLoadedRuntime)
+    }
+
+    func testAttachmentDiagnosticsRespectPerSiteDisabledWithoutAttachingShards() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.adBlocking)
+        let sitePolicyStore = AdblockSitePolicyStore(userDefaults: harness.defaults)
+        let url = URL(string: "https://www.example.com/page")!
+        sitePolicyStore.setSiteOverride(.disabled, for: url)
+        var didCreateRuleListStore = false
+        let module = SumiAdBlockingModule(
+            moduleRegistry: registry,
+            sitePolicyFactory: { sitePolicyStore },
+            ruleListStoreFactory: { settings, isEnabled in
+                didCreateRuleListStore = true
+                return AdblockWebKitRuleListStore(settingsStore: settings, isAdblockEnabled: isEnabled)
+            }
+        )
+
+        let diagnostics = module.attachmentDiagnostics(for: url)
+
+        XCTAssertTrue(diagnostics.globalAdblockEnabled)
+        XCTAssertFalse(diagnostics.sitePolicyAllowsAdblock)
+        XCTAssertEqual(diagnostics.siteOverride, .disabled)
+        XCTAssertTrue(diagnostics.attachedNativeGroups.isEmpty)
+        XCTAssertTrue(diagnostics.attachedShardIdentifiers.isEmpty)
+        XCTAssertFalse(didCreateRuleListStore)
+    }
+
+    func testAttachmentDiagnosticsTrackShardAttachmentByCosmeticMode() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.adBlocking)
+        let settings = AdblockSettingsStore(userDefaults: harness.defaults)
+        let manifestStore = AdblockUpdateManifestStore(
+            rootDirectory: temporaryAdblockDirectory()
+        )
+        try await seedActiveManifest(in: manifestStore)
+        var capturedStore: AdblockWebKitRuleListStore?
+        let module = SumiAdBlockingModule(
+            moduleRegistry: registry,
+            settingsFactory: { settings },
+            ruleListStoreFactory: { settings, isEnabled in
+                let store = AdblockWebKitRuleListStore(
+                    settingsStore: settings,
+                    isAdblockEnabled: isEnabled,
+                    manifestStore: manifestStore,
+                    compiler: SumiWKContentRuleListCompiler()
+                )
+                capturedStore = store
+                return store
+            }
+        )
+        _ = module.normalTabDecision(for: URL(string: "https://example.com"))
+        await capturedStore?.loadActiveManifestIfEnabled()
+
+        settings.cosmeticMode = .off
+        let offDiagnostics = module.attachmentDiagnostics(for: URL(string: "https://example.com"))
+        XCTAssertEqual(offDiagnostics.attachedNativeGroups, [.network])
+        XCTAssertEqual(offDiagnostics.attachedShardIdentifiers.count, 1)
+        XCTAssertFalse(offDiagnostics.enhancedRuntimeIsEnabled)
+
+        settings.cosmeticMode = .nativeCSS
+        let nativeDiagnostics = module.attachmentDiagnostics(for: URL(string: "https://example.com"))
+        XCTAssertEqual(nativeDiagnostics.attachedNativeGroups, [.nativeCosmeticCSS, .network])
+        XCTAssertEqual(nativeDiagnostics.attachedShardIdentifiers.count, 2)
+        XCTAssertFalse(nativeDiagnostics.enhancedRuntimeIsEnabled)
+
+        settings.cosmeticMode = .enhancedRuntime
+        let enhancedDiagnostics = module.attachmentDiagnostics(for: URL(string: "https://example.com"))
+        XCTAssertEqual(enhancedDiagnostics.attachedNativeGroups, [.nativeCosmeticCSS, .network])
+        XCTAssertEqual(enhancedDiagnostics.attachedShardIdentifiers.count, 2)
+        XCTAssertTrue(enhancedDiagnostics.enhancedRuntimeIsEnabled)
     }
 
     func testEnhancedRuntimeFirstSliceIsLocalBoundedAndHasNoEvalObserverTimerOrBridge() throws {
@@ -1194,9 +1346,11 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         registry.enable(.adBlocking)
         let settings = AdblockSettingsStore(userDefaults: harness.defaults)
         settings.cosmeticMode = .nativeCSS
-        let module = SumiAdBlockingModule(
-            moduleRegistry: registry,
-            settingsFactory: { settings }
+        let sitePolicyStore = AdblockSitePolicyStore(userDefaults: harness.defaults)
+        let module = try await makeModuleWithSeededManifest(
+            registry: registry,
+            settings: settings,
+            sitePolicyStore: sitePolicyStore
         )
         let decision = module.normalTabDecision(for: URL(string: "https://example.com"))
         let service = try XCTUnwrap(decision.contentBlockingService)
@@ -1379,9 +1533,11 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         let sitePolicyStore = AdblockSitePolicyStore(userDefaults: harness.defaults)
         let url = URL(string: "https://www.example.com/path")!
         sitePolicyStore.setSiteOverride(.disabled, for: url)
-        let module = SumiAdBlockingModule(
-            moduleRegistry: registry,
-            sitePolicyFactory: { sitePolicyStore }
+        let settings = AdblockSettingsStore(userDefaults: harness.defaults)
+        let module = try await makeModuleWithSeededManifest(
+            registry: registry,
+            settings: settings,
+            sitePolicyStore: sitePolicyStore
         )
         let browserManager = BrowserManager(
             moduleRegistry: registry,
@@ -1428,9 +1584,11 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         )
         registry.enable(.adBlocking)
         let sitePolicyStore = AdblockSitePolicyStore(userDefaults: harness.defaults)
-        let module = SumiAdBlockingModule(
-            moduleRegistry: registry,
-            sitePolicyFactory: { sitePolicyStore }
+        let settings = AdblockSettingsStore(userDefaults: harness.defaults)
+        let module = try await makeModuleWithSeededManifest(
+            registry: registry,
+            settings: settings,
+            sitePolicyStore: sitePolicyStore
         )
         let browserManager = BrowserManager(
             moduleRegistry: registry,
@@ -1463,7 +1621,13 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
         registry.enable(.adBlocking)
-        let module = SumiAdBlockingModule(moduleRegistry: registry)
+        let settings = AdblockSettingsStore(userDefaults: harness.defaults)
+        let sitePolicyStore = AdblockSitePolicyStore(userDefaults: harness.defaults)
+        let module = try await makeModuleWithSeededManifest(
+            registry: registry,
+            settings: settings,
+            sitePolicyStore: sitePolicyStore
+        )
         let service = try XCTUnwrap(
             module.normalTabDecision(for: URL(string: "https://example.com")).contentBlockingService
         )
@@ -1554,6 +1718,30 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertTrue(harnessSource.contains("\"external-harness-only\""))
     }
 
+    func testNativeScoreProcedureDocumentsRequiredMeasurementState() throws {
+        let readme = try Self.source(named: "SumiTests/Fixtures/Adblock/README.md")
+
+        for required in [
+            "https://d3ward.github.io/toolz/adblock.html",
+            "https://adblock-tester.com/",
+            "currentDefault",
+            "balancedNative",
+            "highBlockingNative",
+            "oraLikeNative",
+            "Tracking Protection: disabled",
+            "Enhanced runtime: disabled",
+            "Active generation: present and not stale",
+            "attached network shard identifiers",
+            "attached native CSS shard identifiers",
+            "Rule cap/discard state",
+            "Date and local time of measurement",
+            "attachmentDiagnosticsReport(for:)",
+            "Do not claim an improved score",
+        ] {
+            XCTAssertTrue(readme.contains(required), required)
+        }
+    }
+
     func testAuxiliarySourcesDoNotConsultAdBlockingModule() throws {
         for relativePath in [
             "Sumi/UserScripts/SumiNormalTabUserScripts.swift",
@@ -1620,6 +1808,30 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             )
         temporaryDirectories.append(directory)
         return directory
+    }
+
+    private func makeModuleWithSeededManifest(
+        registry: SumiModuleRegistry,
+        settings: AdblockSettingsStore,
+        sitePolicyStore: AdblockSitePolicyStore
+    ) async throws -> SumiAdBlockingModule {
+        let manifestStore = AdblockUpdateManifestStore(
+            rootDirectory: temporaryAdblockDirectory()
+        )
+        try await seedActiveManifest(in: manifestStore)
+        return SumiAdBlockingModule(
+            moduleRegistry: registry,
+            settingsFactory: { settings },
+            sitePolicyFactory: { sitePolicyStore },
+            ruleListStoreFactory: { settings, isEnabled in
+                AdblockWebKitRuleListStore(
+                    settingsStore: settings,
+                    isAdblockEnabled: isEnabled,
+                    manifestStore: manifestStore,
+                    compiler: SumiWKContentRuleListCompiler()
+                )
+            }
+        )
     }
 
     private func seedActiveManifest(in store: AdblockUpdateManifestStore) async throws {
@@ -1692,6 +1904,7 @@ final class SumiAdBlockingModuleTests: XCTestCase {
                 ],
                 unsupportedDiagnostics: []
             ),
+            nativeProfile: .currentDefault,
             nativeCompiler: NativeContentBlockingCompilerIdentity(
                 name: "adblock-rust",
                 version: "test"
@@ -1707,11 +1920,18 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             lastSuccessfulUpdateDate: Date(),
             previousGenerationId: nil
         )
+        let stagingDirectory = try await store.beginStaging()
+        var stagedCompiledShardURLs = [String: URL]()
+        for shard in manifest.allNativeShards {
+            let url = stagingDirectory.appendingPathComponent("\(shard.id).json")
+            try Data(Self.fixtureCompiledShardJSON.utf8).write(to: url)
+            stagedCompiledShardURLs[shard.id] = url
+        }
         try await store.commit(
             manifest: manifest,
             httpMetadata: [:],
             stagedRawListURLs: [:],
-            stagedCompiledShardURLs: [:]
+            stagedCompiledShardURLs: stagedCompiledShardURLs
         )
     }
 
@@ -1797,6 +2017,28 @@ final class SumiAdBlockingModuleTests: XCTestCase {
 
     private static let tinyFixtureFiltersWithUnsupportedRule =
         AdblockWebKitRuleListStore.tinyFixtureFilters + ["example.com##+js(sumi-future-scriptlet)"]
+
+    private static let fixtureCompiledShardJSON = """
+    [
+      {
+        "trigger": {
+          "url-filter": ".*ads\\\\.example/.*"
+        },
+        "action": {
+          "type": "block"
+        }
+      },
+      {
+        "trigger": {
+          "url-filter": ".*"
+        },
+        "action": {
+          "type": "css-display-none",
+          "selector": ".ad-banner"
+        }
+      }
+    ]
+    """
 }
 
 private actor CountingAdblockRustAdapter: AdblockRustAdapterInvoking {

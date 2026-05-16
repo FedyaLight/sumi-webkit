@@ -20,14 +20,24 @@ enum AdblockFilterListProfileKind: String, Codable, CaseIterable, Identifiable, 
     var id: String { rawValue }
 }
 
+enum AdblockNativeProfileExposure: String, Codable, Sendable {
+    case productionDefault
+    case developerOnly
+}
+
 struct AdblockFilterListProfile: Codable, Equatable, Identifiable, Sendable {
     let id: AdblockFilterListProfileKind
     let displayName: String
     let listIdentifiers: [String]
     let isExperimental: Bool
     let isRecommended: Bool
+    let exposure: AdblockNativeProfileExposure
     let appendsRecommendedRegionalList: Bool
     let notes: String
+
+    var isDeveloperOnly: Bool {
+        exposure == .developerOnly
+    }
 }
 
 enum AdblockNativeCompilerKind: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -95,6 +105,7 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
                 listIdentifiers: defaultSelectionIdentifiers,
                 isExperimental: false,
                 isRecommended: false,
+                exposure: .productionDefault,
                 appendsRecommendedRegionalList: true,
                 notes: "Conservative native profile used by Sumi today."
             ),
@@ -104,6 +115,7 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
                 listIdentifiers: ["easylist"],
                 isExperimental: false,
                 isRecommended: false,
+                exposure: .developerOnly,
                 appendsRecommendedRegionalList: true,
                 notes: "Low-overlap native ads profile: one base ads list plus an optional locale-matched regional list."
             ),
@@ -115,9 +127,10 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
                     "adguard-mobile-ads",
                 ],
                 isExperimental: true,
-                isRecommended: true,
+                isRecommended: false,
+                exposure: .developerOnly,
                 appendsRecommendedRegionalList: true,
-                notes: "Candidate stronger native ads profile with no privacy-overlap lists and no JavaScript runtime."
+                notes: "Candidate stronger native ads profile with no privacy-overlap lists and no JavaScript runtime; held for score measurement."
             ),
             AdblockFilterListProfile(
                 id: .highBlockingNative,
@@ -129,6 +142,7 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
                 ],
                 isExperimental: true,
                 isRecommended: false,
+                exposure: .developerOnly,
                 appendsRecommendedRegionalList: true,
                 notes: "Higher native coverage candidate with annoyance blocking and higher cap/false-positive pressure."
             ),
@@ -144,10 +158,15 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
                 ],
                 isExperimental: true,
                 isRecommended: false,
+                exposure: .developerOnly,
                 appendsRecommendedRegionalList: false,
                 notes: "Modeled from Ora's default/recommended AdGuard native lists for comparison only; not enabled by default."
             ),
         ]
+    }
+
+    var normalUserSelectableNativeProfiles: [AdblockFilterListProfile] {
+        nativeProfiles.filter { !$0.isDeveloperOnly }
     }
 
     var comparisonProfiles: [AdblockFilterListProfile] {
@@ -1045,6 +1064,40 @@ actor AdblockUpdateManifestStore {
         return try Data(contentsOf: url)
     }
 
+    func compiledShardDefinitions(
+        for manifest: AdblockCompiledGenerationManifest
+    ) throws -> [SumiContentRuleListDefinition] {
+        try manifest.allNativeShards
+            .sorted {
+                if $0.kind == $1.kind {
+                    return $0.id < $1.id
+                }
+                return $0.kind.rawValue < $1.kind.rawValue
+            }
+            .map { shard in
+                let url = generationDirectory(for: shard.generationId)
+                    .appendingPathComponent("\(shard.id).json")
+                guard fileManager.fileExists(atPath: url.path) else {
+                    throw AdblockUpdateDiagnostics(
+                        summary: "Missing compiled Adblock shard JSON: \(shard.id)",
+                        failedShardIdentifier: shard.webKitIdentifier
+                    )
+                }
+                let data = try Data(contentsOf: url)
+                guard !data.isEmpty else {
+                    throw AdblockUpdateDiagnostics(
+                        summary: "Empty compiled Adblock shard JSON: \(shard.id)",
+                        failedShardIdentifier: shard.webKitIdentifier
+                    )
+                }
+                return SumiContentRuleListDefinition(
+                    name: shard.webKitIdentifier,
+                    encodedContentRuleList: String(decoding: data, as: UTF8.self),
+                    storeIdentifierOverride: shard.webKitIdentifier
+                )
+            }
+    }
+
     func beginStaging() throws -> URL {
         let stagingRoot = rootDirectory.appendingPathComponent("Staging", isDirectory: true)
         try fileManager.createDirectory(at: stagingRoot, withIntermediateDirectories: true)
@@ -1180,14 +1233,21 @@ actor AdblockUpdateManifestStore {
 final class AdblockManifestRuleListProvider: SumiContentRuleListSetProviding {
     private var manifest: AdblockCompiledGenerationManifest?
     private var cosmeticMode: SumiAdblockCosmeticMode
+    private var compiledDefinitionsByIdentifier: [String: SumiContentRuleListDefinition]
     private let changesSubject = PassthroughSubject<Void, Never>()
 
     init(
         manifest: AdblockCompiledGenerationManifest?,
-        cosmeticMode: SumiAdblockCosmeticMode
+        cosmeticMode: SumiAdblockCosmeticMode,
+        compiledDefinitions: [SumiContentRuleListDefinition] = []
     ) {
         self.manifest = manifest
         self.cosmeticMode = cosmeticMode
+        compiledDefinitionsByIdentifier = Dictionary(
+            uniqueKeysWithValues: compiledDefinitions.map {
+                (($0.storeIdentifierOverride ?? $0.name), $0)
+            }
+        )
     }
 
     var changesPublisher: AnyPublisher<Void, Never> {
@@ -1202,9 +1262,18 @@ final class AdblockManifestRuleListProvider: SumiContentRuleListSetProviding {
         manifest
     }
 
-    func updateManifest(_ manifest: AdblockCompiledGenerationManifest?) {
-        guard self.manifest != manifest else { return }
+    func updateManifest(
+        _ manifest: AdblockCompiledGenerationManifest?,
+        compiledDefinitions: [SumiContentRuleListDefinition] = []
+    ) {
+        let definitionsByIdentifier = Dictionary(
+            uniqueKeysWithValues: compiledDefinitions.map {
+                (($0.storeIdentifierOverride ?? $0.name), $0)
+            }
+        )
+        guard self.manifest != manifest || compiledDefinitionsByIdentifier != definitionsByIdentifier else { return }
         self.manifest = manifest
+        compiledDefinitionsByIdentifier = definitionsByIdentifier
         changesSubject.send(())
     }
 
@@ -1217,14 +1286,16 @@ final class AdblockManifestRuleListProvider: SumiContentRuleListSetProviding {
     func ruleListSet(profileId: UUID?) throws -> SumiTrackingRuleListSet {
         guard let manifest else { return SumiTrackingRuleListSet() }
         let allowedKinds = Self.attachedGroupKinds(for: cosmeticMode)
-        let definitions = manifest.allNativeShards
+        let definitions = try manifest.allNativeShards
             .filter { allowedKinds.contains($0.kind) }
             .map { shard in
-                SumiContentRuleListDefinition(
-                    name: shard.webKitIdentifier,
-                    encodedContentRuleList: "[]",
-                    storeIdentifierOverride: shard.webKitIdentifier
-                )
+                guard let definition = compiledDefinitionsByIdentifier[shard.webKitIdentifier] else {
+                    throw AdblockUpdateDiagnostics(
+                        summary: "Missing compiled Adblock shard definition: \(shard.webKitIdentifier)",
+                        failedShardIdentifier: shard.webKitIdentifier
+                    )
+                }
+                return definition
             }
         return SumiTrackingRuleListSet(trackerDataSet: definitions)
     }
@@ -1267,7 +1338,7 @@ final class AdblockRuleListPublisher: AdblockRuleListPublishing {
         definitions: [SumiContentRuleListDefinition]
     ) async throws {
         let prepared = try await contentBlockingService.prepareRuleListUpdate(ruleLists: definitions)
-        ruleListProvider.updateManifest(manifest)
+        ruleListProvider.updateManifest(manifest, compiledDefinitions: definitions)
         contentBlockingService.commitPreparedContentBlockingUpdate(prepared)
     }
 }
@@ -1787,9 +1858,10 @@ actor AdblockUpdateCoordinator {
                 )
             }
             try await manifestStore.replaceActiveManifest(previousManifest)
+            let previousDefinitions = try await manifestStore.compiledShardDefinitions(for: previousManifest)
             try await publisher.publish(
                 manifest: previousManifest,
-                definitions: Self.definitions(from: previousManifest)
+                definitions: previousDefinitions
             )
             return AdblockGenerationRollbackReport(
                 rolledBack: true,
@@ -1816,18 +1888,6 @@ actor AdblockUpdateCoordinator {
             }
         }
         return missing
-    }
-
-    private static func definitions(
-        from manifest: AdblockCompiledGenerationManifest
-    ) -> [SumiContentRuleListDefinition] {
-        manifest.allNativeShards.map { shard in
-            SumiContentRuleListDefinition(
-                name: shard.webKitIdentifier,
-                encodedContentRuleList: "[]",
-                storeIdentifierOverride: shard.webKitIdentifier
-            )
-        }
     }
 
     static func webKitIdentifier(

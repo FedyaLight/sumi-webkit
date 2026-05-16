@@ -76,6 +76,9 @@ struct SumiAdblockAttachmentState: Equatable, Sendable {
 
 struct SumiAdblockAttachmentDiagnostics: Equatable, Sendable {
     let siteHost: String?
+    let globalAdblockEnabled: Bool
+    let sitePolicyAllowsAdblock: Bool
+    let siteOverride: SumiAdblockSiteOverride
     let isEnabled: Bool
     let hasActiveGeneration: Bool
     let attachedNativeGroups: [AdblockCompiledRuleGroupKind]
@@ -96,6 +99,37 @@ struct SumiAdblockAttachmentDiagnostics: Equatable, Sendable {
     let enhancedRuntimeIsEnabled: Bool
     let trackingProtectionModuleEnabled: Bool
     let generationIsStale: Bool
+}
+
+extension SumiAdblockAttachmentDiagnostics {
+    var developerReport: String {
+        [
+            "Sumi Adblock diagnostics",
+            "globalEnabled=\(globalAdblockEnabled)",
+            "siteHost=\(siteHost ?? "nil")",
+            "siteOverride=\(siteOverride.rawValue)",
+            "sitePolicyAllowsAdblock=\(sitePolicyAllowsAdblock)",
+            "effectiveEnabled=\(isEnabled)",
+            "selectedNativeProfile=\(selectedNativeProfile?.rawValue ?? "nil")",
+            "nativeCompiler=\(nativeCompiler.map { "\($0.name) \($0.version)" } ?? "nil")",
+            "activeGeneration=\(hasActiveGeneration)",
+            "generationIsStale=\(generationIsStale)",
+            "selectedListIDs=\(selectedListIdentifiers.joined(separator: ","))",
+            "networkShardCount=\(networkShardCount)",
+            "nativeCSSShardCount=\(nativeCSSShardCount)",
+            "attachedGroups=\(attachedNativeGroups.map(\.rawValue).joined(separator: ","))",
+            "attachedShardIdentifiers=\(attachedShardIdentifiers.joined(separator: ","))",
+            "totalNetworkRuleCount=\(totalNetworkRuleCount)",
+            "totalNativeCSSRuleCount=\(totalNativeCSSRuleCount)",
+            "largestShardJSONByteCount=\(largestShardJSONByteCount)",
+            "failedShardIdentifier=\(failedShardIdentifier ?? "nil")",
+            "ruleCapHit=\(nativeCompilationSummary?.ruleCap.wasHit.description ?? "nil")",
+            "discardedRuleCount=\(nativeCompilationSummary?.ruleCap.discardedRuleCount.description ?? "nil")",
+            "trackingProtectionEnabled=\(trackingProtectionModuleEnabled)",
+            "cosmeticMode=\(cosmeticMode?.rawValue ?? "nil")",
+            "enhancedRuntimeEnabled=\(enhancedRuntimeIsEnabled)",
+        ].joined(separator: "\n")
+    }
 }
 
 extension SumiAdblockEffectivePolicy {
@@ -209,7 +243,7 @@ final class AdblockSettingsStore: ObservableObject {
         }
     }
 
-    @Published var selectedNativeProfile: AdblockFilterListProfileKind {
+    @Published private(set) var selectedNativeProfile: AdblockFilterListProfileKind {
         didSet {
             userDefaults.set(selectedNativeProfile.rawValue, forKey: DefaultsKey.selectedNativeProfile)
             listSelectionRequiresUpdate = true
@@ -293,6 +327,20 @@ final class AdblockSettingsStore: ObservableObject {
 
     func markListUpdateCompleted() {
         listSelectionRequiresUpdate = false
+    }
+
+    @discardableResult
+    func setSelectedNativeProfile(
+        _ profileKind: AdblockFilterListProfileKind,
+        registry: AdblockFilterListRegistry = AdblockFilterListRegistry(),
+        allowDeveloperOnly: Bool = false
+    ) -> Bool {
+        let profile = registry.profile(for: profileKind)
+        guard allowDeveloperOnly || !profile.isDeveloperOnly else {
+            return false
+        }
+        selectedNativeProfile = profileKind
+        return true
     }
 }
 
@@ -507,22 +555,42 @@ final class AdblockWebKitRuleListStore {
 
     func loadActiveManifestIfEnabled() async {
         guard await isAdblockEnabled() else { return }
-        let manifest = try? await manifestStore.activeManifest()
-        ruleListProvider.updateManifest(manifest)
+        do {
+            let manifest = try await manifestStore.activeManifest()
+            let definitions: [SumiContentRuleListDefinition]
+            if let manifest {
+                definitions = try await manifestStore.compiledShardDefinitions(for: manifest)
+            } else {
+                definitions = []
+            }
+            ruleListProvider.updateManifest(manifest, compiledDefinitions: definitions)
+            lastFailedShardIdentifier = nil
+        } catch let diagnostics as AdblockUpdateDiagnostics {
+            lastFailedShardIdentifier = diagnostics.failedShardIdentifier
+            ruleListProvider.updateManifest(nil)
+        } catch {
+            lastFailedShardIdentifier = "manifest-load"
+            ruleListProvider.updateManifest(nil)
+        }
     }
 
     func requestInitialUpdateIfNeeded() {
         guard ruleListProvider.activeManifest == nil
         else { return }
         Task { [weak self] in
+            guard let self else { return }
             do {
-                _ = try await self?.updateCoordinator.updateIfEnabled(reason: "initial")
+                await self.loadActiveManifestIfEnabled()
+                guard await MainActor.run(body: { self.ruleListProvider.activeManifest == nil }) else {
+                    return
+                }
+                _ = try await self.updateCoordinator.updateIfEnabled(reason: "initial")
                 await MainActor.run {
-                    self?.lastFailedShardIdentifier = nil
+                    self.lastFailedShardIdentifier = nil
                 }
             } catch let diagnostics as AdblockUpdateDiagnostics {
                 await MainActor.run {
-                    self?.lastFailedShardIdentifier = diagnostics.failedShardIdentifier
+                    self.lastFailedShardIdentifier = diagnostics.failedShardIdentifier
                 }
             } catch {}
         }
@@ -673,16 +741,21 @@ final class SumiAdBlockingModule {
 
     func attachmentDiagnostics(for url: URL?) -> SumiAdblockAttachmentDiagnostics {
         let policy = effectivePolicy(for: url)
+        let siteOverride = sitePolicyStoreIfEnabled().override(for: url)
         guard isEnabled, policy.isEnabled else {
+            let settings = cachedSettingsStore ?? settingsFactory()
             return SumiAdblockAttachmentDiagnostics(
                 siteHost: policy.host,
+                globalAdblockEnabled: isEnabled,
+                sitePolicyAllowsAdblock: policy.isEnabled,
+                siteOverride: siteOverride,
                 isEnabled: policy.isEnabled,
                 hasActiveGeneration: false,
                 attachedNativeGroups: [],
                 attachedShardIdentifiers: [],
                 contentRuleListIdentifiers: [],
                 selectedListIdentifiers: [],
-                selectedNativeProfile: nil,
+                selectedNativeProfile: settings.selectedNativeProfile,
                 nativeCompiler: nil,
                 nativeCompilationSummary: nil,
                 nativeSourceLists: [],
@@ -692,10 +765,10 @@ final class SumiAdBlockingModule {
                 totalNativeCSSRuleCount: 0,
                 largestShardJSONByteCount: 0,
                 failedShardIdentifier: nil,
-                cosmeticMode: nil,
+                cosmeticMode: settings.cosmeticMode,
                 enhancedRuntimeIsEnabled: false,
                 trackingProtectionModuleEnabled: moduleRegistry.isEnabled(.trackingProtection),
-                generationIsStale: false
+                generationIsStale: settings.listSelectionRequiresUpdate
             )
         }
 
@@ -718,6 +791,9 @@ final class SumiAdBlockingModule {
 
         return SumiAdblockAttachmentDiagnostics(
             siteHost: policy.host,
+            globalAdblockEnabled: true,
+            sitePolicyAllowsAdblock: policy.isEnabled,
+            siteOverride: siteOverride,
             isEnabled: true,
             hasActiveGeneration: manifest != nil,
             attachedNativeGroups: attachedGroups,
@@ -743,6 +819,10 @@ final class SumiAdBlockingModule {
                 || manifest?.nativeProfile != settings?.selectedNativeProfile
                 || manifest?.nativeCompiler != ruleListStoreIfEnabled().configuredNativeCompilerIdentity
         )
+    }
+
+    func attachmentDiagnosticsReport(for url: URL?) -> String {
+        attachmentDiagnostics(for: url).developerReport
     }
 
     func siteOverride(for url: URL?) -> SumiAdblockSiteOverride {
