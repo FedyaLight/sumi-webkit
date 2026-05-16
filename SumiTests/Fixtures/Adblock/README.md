@@ -30,6 +30,12 @@ Profiles to measure:
 3. `highBlockingNative` in `nativeCSS` if update and compile succeed
 4. `referenceAdGuardNative` in `nativeCSS` only as a developer-only reference sample
 
+In Debug builds, select comparison profiles from Settings -> Privacy -> Native
+Ad Blocking -> Native profile. Release builds must not expose developer-only
+profile names or reference profiles. A changed profile persists and marks the
+current generation as requiring a manual update; do not record a score until the
+manual update has completed and the test page has been reloaded.
+
 Required state for every sample:
 
 1. Built-in Adblock global state: enabled.
