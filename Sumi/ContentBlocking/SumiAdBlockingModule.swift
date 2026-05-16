@@ -372,6 +372,10 @@ final class AdblockWebKitRuleListStore {
         ruleListProvider.activeManifest != nil
     }
 
+    var activeEnhancedRuntimeBundle: AdblockEnhancedRuntimeBundle? {
+        ruleListProvider.activeManifest?.enhancedRuntimeBundle
+    }
+
     init(
         settingsStore: AdblockSettingsStore,
         isAdblockEnabled: @escaping @Sendable () async -> Bool = { true },
@@ -565,7 +569,11 @@ final class SumiAdBlockingModule {
 
         let ruleListStore = ruleListStoreIfEnabled()
         guard ruleListStore.hasActiveGeneration,
-              let script = SumiAdblockEnhancedRuntime.makeScript()
+              let bundle = ruleListStore.activeEnhancedRuntimeBundle,
+              let script = SumiAdblockEnhancedRuntime.makeScript(
+                bundle: bundle,
+                pageURL: url
+              )
         else { return [] }
 
         return [script]

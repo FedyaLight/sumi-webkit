@@ -121,12 +121,13 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
 
         XCTAssertEqual(requestedIdentifiers, ["easylist"])
         XCTAssertEqual(compileCount, 1)
-        XCTAssertEqual(manifest.schemaVersion, 1)
+        XCTAssertEqual(manifest.schemaVersion, 2)
         XCTAssertEqual(manifest.selectedFilterLists.map(\.id), ["easylist"])
         XCTAssertEqual(manifest.selectedFilterLists.map(\.contentHash), [Self.sha256Hex(Data("||ads.example^".utf8))])
         XCTAssertTrue(manifest.webKitRuleListIdentifiers.allSatisfy(AdblockUpdateCoordinator.isAdblockGeneratedWebKitIdentifier))
         XCTAssertEqual(activeGenerationId, manifest.activeGenerationId)
         XCTAssertEqual(publisher.publishedManifests.count, 1)
+        XCTAssertNil(manifest.enhancedRuntimeBundle)
         XCTAssertTrue(manifest.compilerDiagnosticsSummary.contains("nativeCSSConverted=1"))
         XCTAssertTrue(manifest.compilerDiagnosticsSummary.contains("scriptletOrProceduralIgnored=0"))
     }
@@ -511,6 +512,7 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
                     convertedRuleCount: 1
                 )
             },
+            enhancedRuntimeBundle: nil,
             compilerDiagnosticsSummary: "unsupported=0; ignored=0",
             lastSuccessfulUpdateDate: Date(timeIntervalSince1970: 1_700_000_000),
             previousGenerationId: previousGenerationId

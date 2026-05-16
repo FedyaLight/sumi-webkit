@@ -32,19 +32,42 @@ struct AdblockEnhancedResource: Equatable, Sendable {
     let sourceRule: String
 }
 
+struct AdblockScriptletInvocation: Codable, Equatable, Sendable {
+    let resourceName: String
+    let parameters: [String]
+    let includeDomains: [String]
+    let excludeDomains: [String]
+    let sourceRule: String
+    let diagnosticSource: String
+}
+
 struct AdblockUnsupportedRuleDiagnostic: Equatable, Sendable {
     let rule: String
     let reason: String
 }
 
-struct AdblockEnhancedRuntimeBundle: Equatable, Sendable {
+struct AdblockEnhancedRuntimeBundle: Codable, Equatable, Sendable {
     let resources: [AdblockEnhancedResource]
+    let scriptletInvocations: [AdblockScriptletInvocation]
     let unsupportedDiagnostics: [AdblockUnsupportedRuleDiagnostic]
 
+    init(
+        resources: [AdblockEnhancedResource],
+        scriptletInvocations: [AdblockScriptletInvocation] = [],
+        unsupportedDiagnostics: [AdblockUnsupportedRuleDiagnostic]
+    ) {
+        self.resources = resources
+        self.scriptletInvocations = scriptletInvocations
+        self.unsupportedDiagnostics = unsupportedDiagnostics
+    }
+
     var isAvailable: Bool {
-        !resources.isEmpty
+        !resources.isEmpty || !scriptletInvocations.isEmpty
     }
 }
+
+extension AdblockEnhancedResource: Codable {}
+extension AdblockUnsupportedRuleDiagnostic: Codable {}
 
 struct AdblockHybridCompilationOutput: Equatable, Sendable {
     let nativeRuleGroups: AdblockNativeRuleGroups
@@ -174,8 +197,8 @@ final class AdblockRustCompiler: AdblockFilterCompiling, Sendable {
             AdblockCompilationDiagnostics.Entry(rule: $0.rule, reason: $0.reason)
         }
         let enhancedResources = Array(
-            (normalizedRules + adapterOutput.unsupportedOrIgnored.map(\.rule))
-                .compactMap(classifyEnhancedResource)
+            adapterOutput.enhancedResourceCandidates
+                .map(AdblockEnhancedResource.init(candidate:))
                 .reduce(into: [String: AdblockEnhancedResource]()) { result, resource in
                     result["\(resource.kind.rawValue):\(resource.name):\(resource.sourceRule)"] = resource
                 }
@@ -186,8 +209,24 @@ final class AdblockRustCompiler: AdblockFilterCompiling, Sendable {
                         : lhs.sourceRule < rhs.sourceRule
                 }
         )
+        let scriptletCandidates = adapterOutput.enhancedResourceCandidates.filter { candidate in
+            candidate.kind == .scriptlet
+        }
+        let unsortedScriptletInvocations = scriptletCandidates.map { candidate in
+            AdblockScriptletInvocation(candidate: candidate)
+        }
+        let scriptletInvocations = unsortedScriptletInvocations.sorted { lhs, rhs in
+            if lhs.sourceRule == rhs.sourceRule {
+                return lhs.resourceName < rhs.resourceName
+            }
+            return lhs.sourceRule < rhs.sourceRule
+        }
         let enhancedUnsupported = adapterOutput.unsupportedOrIgnored
-            .filter { classifyEnhancedResource($0.rule) != nil || isScriptletOrProceduralReason($0.reason) }
+            .filter { diagnostic in
+                adapterOutput.enhancedResourceCandidates.contains { candidate in
+                    candidate.sourceRule == diagnostic.rule
+                } || isScriptletOrProceduralReason(diagnostic.reason)
+            }
             .map { AdblockUnsupportedRuleDiagnostic(rule: $0.rule, reason: $0.reason) }
         let hybridOutput = AdblockHybridCompilationOutput(
             nativeRuleGroups: AdblockNativeRuleGroups(
@@ -196,6 +235,7 @@ final class AdblockRustCompiler: AdblockFilterCompiling, Sendable {
             ),
             enhancedRuntimeBundle: AdblockEnhancedRuntimeBundle(
                 resources: enhancedResources,
+                scriptletInvocations: scriptletInvocations,
                 unsupportedDiagnostics: enhancedUnsupported
             ),
             capabilities: Set(
@@ -314,52 +354,6 @@ final class AdblockRustCompiler: AdblockFilterCompiling, Sendable {
             || rule.contains(":-abp-")
     }
 
-    private static func classifyEnhancedResource(_ rule: String) -> AdblockEnhancedResource? {
-        if rule.contains("##+js("),
-           let name = resourceName(in: rule, marker: "##+js(") {
-            return AdblockEnhancedResource(name: name, kind: .scriptlet, sourceRule: rule)
-        }
-        if rule.contains("$redirect-rule=") || rule.contains("$redirect=") {
-            let kind: AdblockEnhancedResource.Kind = rule.localizedCaseInsensitiveContains("noop")
-                || rule.localizedCaseInsensitiveContains("empty")
-                || rule.localizedCaseInsensitiveContains("blank")
-                ? .noopRedirect
-                : .redirect
-            return AdblockEnhancedResource(name: redirectResourceName(in: rule) ?? "unknown", kind: kind, sourceRule: rule)
-        }
-        if rule.contains("#?#") || rule.contains(":has(") || rule.contains(":has-text(") {
-            return AdblockEnhancedResource(name: "procedural-cosmetic", kind: .cosmeticCleanup, sourceRule: rule)
-        }
-        if rule.contains("sumi-enhanced-cleanup") {
-            return AdblockEnhancedResource(name: "sumi-enhanced-cleanup", kind: .cosmeticCleanup, sourceRule: rule)
-        }
-        return nil
-    }
-
-    private static func resourceName(in rule: String, marker: String) -> String? {
-        guard let markerRange = rule.range(of: marker) else { return nil }
-        let suffix = rule[markerRange.upperBound...]
-        guard let end = suffix.firstIndex(of: ")") else { return nil }
-        return suffix[..<end]
-            .split(separator: ",", maxSplits: 1)
-            .first
-            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
-            .flatMap { $0.isEmpty ? nil : $0 }
-    }
-
-    private static func redirectResourceName(in rule: String) -> String? {
-        for marker in ["$redirect-rule=", "$redirect="] {
-            guard let range = rule.range(of: marker) else { continue }
-            let suffix = rule[range.upperBound...]
-            return suffix
-                .split(separator: ",", maxSplits: 1)
-                .first
-                .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
-                .flatMap { $0.isEmpty ? nil : $0 }
-        }
-        return nil
-    }
-
     private static func isScriptletOrProceduralReason(_ reason: String) -> Bool {
         reason.localizedCaseInsensitiveContains("scriptlet")
             || reason.localizedCaseInsensitiveContains("procedural")
@@ -445,17 +439,103 @@ struct AdblockRustAdapterOutput: Decodable, Equatable, Sendable {
     let network: [AdblockRustContentRule]
     let nativeCosmeticCSS: [AdblockRustContentRule]
     let unsupportedOrIgnored: [AdblockRustAdapterDiagnostic]
+    let enhancedResourceCandidates: [AdblockRustEnhancedResourceCandidate]
 
     private enum CodingKeys: String, CodingKey {
         case network
         case nativeCosmeticCSS = "native_cosmetic_css"
         case unsupportedOrIgnored = "unsupported_or_ignored"
+        case enhancedResourceCandidates = "enhanced_resource_candidates"
+    }
+
+    init(
+        network: [AdblockRustContentRule],
+        nativeCosmeticCSS: [AdblockRustContentRule],
+        unsupportedOrIgnored: [AdblockRustAdapterDiagnostic],
+        enhancedResourceCandidates: [AdblockRustEnhancedResourceCandidate] = []
+    ) {
+        self.network = network
+        self.nativeCosmeticCSS = nativeCosmeticCSS
+        self.unsupportedOrIgnored = unsupportedOrIgnored
+        self.enhancedResourceCandidates = enhancedResourceCandidates
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        network = try container.decode([AdblockRustContentRule].self, forKey: .network)
+        nativeCosmeticCSS = try container.decode([AdblockRustContentRule].self, forKey: .nativeCosmeticCSS)
+        unsupportedOrIgnored = try container.decode([AdblockRustAdapterDiagnostic].self, forKey: .unsupportedOrIgnored)
+        enhancedResourceCandidates = try container.decodeIfPresent(
+            [AdblockRustEnhancedResourceCandidate].self,
+            forKey: .enhancedResourceCandidates
+        ) ?? []
     }
 }
 
 struct AdblockRustAdapterDiagnostic: Decodable, Equatable, Sendable {
     let rule: String
     let reason: String
+}
+
+struct AdblockRustEnhancedResourceCandidate: Decodable, Equatable, Sendable {
+    enum Kind: String, Decodable, Sendable {
+        case scriptlet
+        case redirect
+        case noopRedirect = "noop_redirect"
+        case proceduralCosmetic = "procedural_cosmetic"
+    }
+
+    let kind: Kind
+    let resourceName: String
+    let parameters: [String]
+    let includeDomains: [String]
+    let excludeDomains: [String]
+    let sourceRule: String
+    let diagnosticSource: String
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case resourceName = "resource_name"
+        case parameters
+        case includeDomains = "include_domains"
+        case excludeDomains = "exclude_domains"
+        case sourceRule = "source_rule"
+        case diagnosticSource = "diagnostic_source"
+    }
+}
+
+extension AdblockEnhancedResource {
+    init(candidate: AdblockRustEnhancedResourceCandidate) {
+        let kind: Kind
+        switch candidate.kind {
+        case .scriptlet:
+            kind = .scriptlet
+        case .redirect:
+            kind = .redirect
+        case .noopRedirect:
+            kind = .noopRedirect
+        case .proceduralCosmetic:
+            kind = .cosmeticCleanup
+        }
+        self.init(
+            name: candidate.resourceName,
+            kind: kind,
+            sourceRule: candidate.sourceRule
+        )
+    }
+}
+
+extension AdblockScriptletInvocation {
+    init(candidate: AdblockRustEnhancedResourceCandidate) {
+        self.init(
+            resourceName: candidate.resourceName,
+            parameters: candidate.parameters,
+            includeDomains: candidate.includeDomains,
+            excludeDomains: candidate.excludeDomains,
+            sourceRule: candidate.sourceRule,
+            diagnosticSource: candidate.diagnosticSource
+        )
+    }
 }
 
 struct AdblockRustContentRule: Codable, Equatable, Sendable {

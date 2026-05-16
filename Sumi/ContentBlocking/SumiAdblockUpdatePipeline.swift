@@ -509,6 +509,7 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
     let selectedFilterLists: [SelectedFilterList]
     let webKitRuleListIdentifiers: [String]
     let groupedOutputs: [Group]
+    let enhancedRuntimeBundle: AdblockEnhancedRuntimeBundle?
     let compilerDiagnosticsSummary: String
     let lastSuccessfulUpdateDate: Date
     let previousGenerationId: String?
@@ -1247,12 +1248,15 @@ actor AdblockUpdateCoordinator {
         }
 
         let manifest = AdblockCompiledGenerationManifest(
-            schemaVersion: 1,
+            schemaVersion: 2,
             activeGenerationId: generation.id,
             createdDate: generation.createdDate,
             selectedFilterLists: selectedLists.sorted { $0.id < $1.id },
             webKitRuleListIdentifiers: groups.map(\.webKitIdentifier).sorted(),
             groupedOutputs: groups,
+            enhancedRuntimeBundle: output.hybridOutput.enhancedRuntimeBundle.isAvailable
+                ? output.hybridOutput.enhancedRuntimeBundle
+                : nil,
             compilerDiagnosticsSummary: Self.diagnosticsSummary(output.diagnostics),
             lastSuccessfulUpdateDate: now(),
             previousGenerationId: previousManifest?.activeGenerationId

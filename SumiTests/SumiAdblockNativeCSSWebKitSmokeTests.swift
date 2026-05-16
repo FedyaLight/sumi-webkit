@@ -82,6 +82,69 @@ final class SumiAdblockNativeCSSWebKitSmokeTests: XCTestCase {
         XCTAssertEqual(visibility["attributeTarget"], true)
     }
 
+    func testEnhancedRuntimeFixtureHidesOnlyInEnhancedScriptPath() async throws {
+        let runtimeBundle = AdblockEnhancedRuntimeBundle(
+            resources: [
+                AdblockEnhancedResource(
+                    name: "sumi-hide",
+                    kind: .scriptlet,
+                    sourceRule: "example.test##+js(sumi-hide, .enhanced-ad)"
+                ),
+            ],
+            scriptletInvocations: [
+                AdblockScriptletInvocation(
+                    resourceName: "sumi-hide",
+                    parameters: [".enhanced-ad"],
+                    includeDomains: ["example.test"],
+                    excludeDomains: [],
+                    sourceRule: "example.test##+js(sumi-hide, .enhanced-ad)",
+                    diagnosticSource: "test"
+                ),
+            ],
+            unsupportedDiagnostics: []
+        )
+        let script = try XCTUnwrap(
+            SumiAdblockEnhancedRuntime.makeScript(
+                bundle: runtimeBundle,
+                pageURL: URL(string: "https://example.test/enhanced.html")
+            )
+        )
+        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+            scriptsProvider: SumiNormalTabUserScripts(managedUserScripts: [script])
+        )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+        await normalTabController.replaceNormalTabUserScripts(
+            with: SumiNormalTabUserScripts(managedUserScripts: [script])
+        )
+
+        let webView = makeWebView(userContentController: controller)
+        try await loadHTML(
+            """
+            <!doctype html>
+            <html><body>
+              <div class="keep-visible">control</div>
+              <div class="enhanced-ad">enhanced target</div>
+            </body></html>
+            """,
+            baseURL: URL(string: "https://example.test/enhanced.html")!,
+            into: webView
+        )
+
+        let result = try await webView.evaluateJavaScript(
+            """
+            (() => ({
+              control: getComputedStyle(document.querySelector('.keep-visible')).display !== 'none',
+              enhanced: document.querySelector('.enhanced-ad').hasAttribute('hidden'),
+              marker: document.querySelector('.enhanced-ad').getAttribute('data-sumi-adblock-enhanced-applied')
+            }))();
+            """
+        )
+        let visibility = try XCTUnwrap(result as? [String: Any])
+        XCTAssertEqual(visibility["control"] as? Bool, true)
+        XCTAssertEqual(visibility["enhanced"] as? Bool, true)
+        XCTAssertEqual(visibility["marker"] as? String, "true")
+    }
+
     func testAdblockSourceStillHasNoEnhancedRuntimeScriptletBridgeWebExtensionOrScheduler() throws {
         let corpus = try Self.sumiSourceCorpus()
         let adblockSources = try Self.sourceCorpus(
