@@ -28,7 +28,7 @@ Profiles to measure:
 1. `currentDefault` in `nativeCSS`
 2. `balancedNative` in `nativeCSS`
 3. `highBlockingNative` in `nativeCSS` if update and compile succeed
-4. `oraLikeNative` in `nativeCSS` only as a developer-only experimental sample
+4. `referenceAdGuardNative` in `nativeCSS` only as a developer-only reference sample
 
 Required state for every sample:
 

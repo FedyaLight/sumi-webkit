@@ -14,7 +14,7 @@ LIST_URLS=("https://easylist.to/easylist/easylist.txt")
 usage() {
   cat <<'USAGE'
 Usage:
-  scripts/compare_native_adblock_compilers.sh [--profile current|light|balanced|high|ora-like] [filter-list-url-or-file ...]
+  scripts/compare_native_adblock_compilers.sh [--profile current|light|balanced|high|reference-adguard] [filter-list-url-or-file ...]
 
 Compares Sumi's current adblock-rust native compiler helper against
 AdGuard SafariConverterLib on the same selected list inputs. With no arguments,
@@ -24,7 +24,8 @@ Named profiles:
   current, light  easylist
   balanced        adguard-base + adguard-mobile-ads
   high            balanced + adguard-annoyances
-  ora-like        balanced + tracking + URL tracking + annoyances
+  reference-adguard
+                  balanced + tracking + URL tracking + annoyances
 
 Set SAFARI_CONVERTER_LIB_DIR to an existing SafariConverterLib checkout to avoid
 the script-managed clone under .build/.
@@ -59,7 +60,7 @@ if [[ "${1:-}" == "--profile" ]]; then
         "https://filters.adtidy.org/extension/chromium/filters/14.txt"
       )
       ;;
-    ora-like)
+    reference-adguard)
       LIST_IDS=(
         "adguard-base"
         "adguard-mobile-ads"

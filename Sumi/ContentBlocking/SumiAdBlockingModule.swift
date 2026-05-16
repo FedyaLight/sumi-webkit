@@ -288,7 +288,7 @@ final class AdblockSettingsStore: ObservableObject {
             selectedLists = .defaultSelection
         }
         selectedNativeProfile = userDefaults.string(forKey: DefaultsKey.selectedNativeProfile)
-            .flatMap(AdblockFilterListProfileKind.init(rawValue:))
+            .flatMap(AdblockFilterListProfileKind.init(storedIdentifier:))
             ?? .currentDefault
         listSelectionRequiresUpdate = userDefaults.object(forKey: DefaultsKey.listSelectionRequiresUpdate) as? Bool ?? false
     }

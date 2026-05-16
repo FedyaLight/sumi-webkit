@@ -60,21 +60,21 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         XCTAssertTrue(registry.descriptors.contains { $0.category == .privacyOverlap && !$0.defaultEnabled })
     }
 
-    func testNativeProfilesRepresentCurrentLightBalancedHighAndOraLikeSeparately() {
+    func testNativeProfilesRepresentCurrentLightBalancedHighAndReferenceSeparately() {
         let registry = AdblockFilterListRegistry()
         let profiles = Dictionary(uniqueKeysWithValues: registry.nativeProfiles.map { ($0.id, $0) })
         let current = profiles[.currentDefault]
         let light = profiles[.lightNative]
         let balanced = profiles[.balancedNative]
         let high = profiles[.highBlockingNative]
-        let oraLike = profiles[.oraLikeNative]
+        let reference = profiles[.referenceAdGuardNative]
 
         XCTAssertEqual(current?.listIdentifiers, ["easylist"])
         XCTAssertEqual(light?.listIdentifiers, ["easylist"])
         XCTAssertEqual(balanced?.listIdentifiers, ["adguard-base", "adguard-mobile-ads"])
         XCTAssertEqual(high?.listIdentifiers, ["adguard-base", "adguard-mobile-ads", "adguard-annoyances"])
         XCTAssertEqual(
-            oraLike?.listIdentifiers,
+            reference?.listIdentifiers,
             [
                 "adguard-base",
                 "adguard-mobile-ads",
@@ -90,10 +90,10 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         XCTAssertTrue(balanced?.isDeveloperOnly == true)
         XCTAssertTrue(high?.isExperimental == true)
         XCTAssertTrue(high?.isDeveloperOnly == true)
-        XCTAssertTrue(oraLike?.isExperimental == true)
-        XCTAssertTrue(oraLike?.isDeveloperOnly == true)
+        XCTAssertTrue(reference?.isExperimental == true)
+        XCTAssertTrue(reference?.isDeveloperOnly == true)
         XCTAssertEqual(registry.normalUserSelectableNativeProfiles.map(\.id), [.currentDefault])
-        XCTAssertTrue(oraLike?.listIdentifiers.allSatisfy { id in
+        XCTAssertTrue(reference?.listIdentifiers.allSatisfy { id in
             registry.descriptors.contains { $0.id == id && !$0.defaultEnabled }
         } == true)
     }
@@ -115,15 +115,15 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
             profileKind: .balancedNative,
             locale: Locale(identifier: "ru_RU")
         )
-        let oraLike = registry.selectedDescriptors(
+        let reference = registry.selectedDescriptors(
             selection: .defaultSelection,
-            profileKind: .oraLikeNative,
+            profileKind: .referenceAdGuardNative,
             locale: Locale(identifier: "ru_RU")
         )
 
         XCTAssertEqual(balanced.map(\.id), ["adguard-base", "adguard-mobile-ads", "ru-adlist"])
         XCTAssertEqual(
-            oraLike.map(\.id),
+            reference.map(\.id),
             [
                 "adguard-annoyances",
                 "adguard-base",
@@ -246,6 +246,54 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         XCTAssertNil(manifest.nativeProfile)
         XCTAssertNil(manifest.nativeCompilationSummary)
         XCTAssertNil(manifest.nativeCompiler)
+    }
+
+    func testLegacyOraLikeNativeManifestProfileDecodesAsReferenceAdGuardNative() throws {
+        let legacyJSON = """
+        {
+          "schemaVersion": 4,
+          "activeGenerationId": "legacy-reference",
+          "createdDate": 0,
+          "selectedFilterLists": [
+            { "id": "adguard-base", "displayName": "AdGuard Base", "contentHash": "hash" }
+          ],
+          "webKitRuleListIdentifiers": ["sumi.adblock.network.legacy-reference"],
+          "groupedOutputs": [
+            {
+              "kind": "network",
+              "webKitIdentifier": "sumi.adblock.network.legacy-reference",
+              "contentHash": "hash",
+              "convertedRuleCount": 1
+            }
+          ],
+          "nativeProfile": "oraLikeNative",
+          "compilerDiagnosticsSummary": "legacy",
+          "lastSuccessfulUpdateDate": 0
+        }
+        """
+
+        let manifest = try JSONDecoder().decode(
+            AdblockCompiledGenerationManifest.self,
+            from: Data(legacyJSON.utf8)
+        )
+
+        XCTAssertEqual(manifest.nativeProfile, .referenceAdGuardNative)
+    }
+
+    func testReferenceAdGuardNativeManifestEncodesNeutralProfileIdentifier() throws {
+        let manifest = Self.manifest(
+            generationId: "reference",
+            previousGenerationId: nil,
+            listIds: ["adguard-base"],
+            nativeProfile: .referenceAdGuardNative,
+            identifiers: ["sumi.adblock.network.reference.0001.hash"]
+        )
+
+        let data = try JSONEncoder().encode(manifest)
+        let json = String(decoding: data, as: UTF8.self)
+
+        XCTAssertTrue(json.contains("\"nativeProfile\":\"referenceAdGuardNative\""))
+        XCTAssertFalse(json.contains("oraLikeNative"))
     }
 
     func testLegacyManifestSingleGroupsMigrateIntoSingleShardRepresentation() throws {

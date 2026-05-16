@@ -141,6 +141,7 @@ final class SettingsModuleToggleTests: XCTestCase {
 
         for source in [privacySource, toggleSource] {
             XCTAssertFalse(source.contains("oraLikeNative"))
+            XCTAssertFalse(source.contains("referenceAdGuardNative"))
             XCTAssertFalse(source.contains("SafariConverterLib"))
             XCTAssertFalse(source.contains("AdGuard SafariConverterLib"))
             XCTAssertFalse(source.contains("assetsIfAvailable"))
