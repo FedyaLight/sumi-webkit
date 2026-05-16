@@ -20,8 +20,13 @@ after every profile, mode, list, or site-policy change.
 
 Test pages:
 
-1. `https://adblock-tester.com/`
-2. `https://d3ward.github.io/toolz/adblock.html` as a secondary sample only; it is archived and no longer maintained.
+1. `https://adblock.turtlecute.org/` as the current primary manual sample, with caution: record the score, visible test categories, console logs, and diagnostics because the page is still not authoritative.
+2. `https://adblock-tester.com/` only as a sanity/reference page; do not use adblock-tester.com as the primary score page if it reports a high score while built-in Adblock is disabled.
+3. `https://d3ward.github.io/toolz/adblock.html` as a secondary sample only; it is archived and no longer maintained.
+
+Score pages are not authoritative unless the baseline off/on behavior is
+meaningful in the same build and environment. If Adblock disabled and enabled
+runs are close together, discard the run and debug attachment state first.
 
 Profiles to measure:
 
@@ -44,23 +49,30 @@ Required state for every sample:
 4. Cosmetic mode: `nativeCSS`.
 5. Enhanced runtime: disabled; do a separate comparison if `enhancedRuntime` is tested.
 6. Active generation: present and not stale.
-7. Native compiler identity and version.
-8. Selected native profile.
-9. Selected list IDs.
-10. Network shard count and attached network shard identifiers.
-11. Native CSS shard count and attached native CSS shard identifiers.
-12. Total network/native CSS rule counts.
-13. Largest shard JSON byte count.
-14. Rule cap/discard state.
-15. Failed shard identifier, if any.
-16. Date and local time of measurement.
-17. Whether the page was reloaded after the last state change.
+7. The selected profile must match the active compiled profile.
+8. Native compiler identity and version.
+9. Selected native profile.
+10. Active compiled native profile.
+11. Selected list IDs and active manifest list IDs.
+12. Network shard count and attached network shard identifiers.
+13. Native CSS shard count and attached native CSS shard identifiers.
+14. Total network/native CSS rule counts.
+15. Largest shard JSON byte count.
+16. Rule cap/discard state.
+17. Failed shard identifier or last rebuild error, if any.
+18. Date and local time of measurement.
+19. Whether the page was reloaded after the last state change.
 
 Use `SumiAdBlockingModule.attachmentDiagnosticsReport(for:)` or
 `attachmentDiagnostics(for:)` for the diagnostics capture. If any required
 state is missing, stale, globally disabled, per-site disabled, overlapped by
 Tracking Protection, or missing expected shards, discard that run and repeat it
 after a manual update/recompile plus reload.
+
+In Debug settings, capture the DEBUG Adblock Diagnostics section before and
+after each test. For the current tab, also capture URL, normalized site key,
+reload-required state, expected shards, attached shards, missing shards, and any
+ineligible surface reason.
 
 Do not claim an improved score unless the exact URL, score, mode, native
 profile, compiler, Tracking Protection state, Enhanced runtime state, selected

@@ -897,6 +897,14 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         }
     }
 
+    func adblockCurrentTabDiagnostics() -> SumiAdblockCurrentTabDiagnostics? {
+        browserManager?.adBlockingModule.currentTabDiagnostics(
+            for: url,
+            appliedState: adblockAppliedAttachmentState,
+            reloadRequired: isAdblockReloadRequired
+        )
+    }
+
     func markTrackingProtectionReloadRequiredIfNeeded(
         afterChangingOverrideFor changedURL: URL?
     ) {
@@ -1007,7 +1015,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         guard let appliedState = adblockAppliedAttachmentState else {
             return desiredState.isEnabled
         }
-        return appliedState.isEnabled != desiredState.isEnabled
+        return appliedState != desiredState
     }
 
     func autoplayPolicyRequiresNormalWebViewRebuild(for targetURL: URL?) -> Bool {
