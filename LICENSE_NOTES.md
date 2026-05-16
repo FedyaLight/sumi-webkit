@@ -26,3 +26,31 @@ The application does not vendor those third-party list contents; selected lists
 are fetched from their upstream maintainers at update time. Those fetched list
 contents may have their own licenses, terms, and notices from the upstream list
 projects.
+
+## AdGuard SafariConverterLib comparison
+
+Sumi does not currently vendor or ship AdGuard SafariConverterLib. The developer
+comparison harness in `scripts/compare_native_adblock_compilers.sh` can clone a
+local checkout of `AdguardTeam/SafariConverterLib` for explicit native compiler
+comparison only.
+
+- Upstream: https://github.com/AdguardTeam/SafariConverterLib
+- License: GPL-3.0
+- Sumi usage in this revision: developer comparison harness only; not a
+  production app dependency and not an enhanced/runtime metadata source
+
+## Adblock redirect/noop resource compatibility metadata
+
+Sumi recognizes a small set of uBO-compatible redirect/noop resource names for
+diagnostics and future compatibility wiring: `noopjs`, `noopcss`,
+`1x1-transparent.gif`, `noopframe`, and `noop.txt`, plus selected aliases.
+These entries are Sumi-owned metadata only. Sumi does not vendor Brave
+`adblock-resources` files, uBlock Origin resource contents, or a full redirect
+resource tree.
+
+The current WKWebView implementation classifies those redirect resources as
+unsupported because WebKit content blockers do not replace HTTP(S) response
+bodies and `WKURLSchemeHandler` cannot intercept WebKit's built-in HTTP(S)
+schemes. This keeps license handling simple: no Brave/uBO resource payload is
+copied into the app, and the existing Brave `adblock-rust` MPL-2.0 notice above
+continues to cover only the Rust compiler dependency.

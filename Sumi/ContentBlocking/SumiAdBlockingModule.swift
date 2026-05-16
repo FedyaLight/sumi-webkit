@@ -74,6 +74,17 @@ struct SumiAdblockAttachmentState: Equatable, Sendable {
     }
 }
 
+struct SumiAdblockAttachmentDiagnostics: Equatable, Sendable {
+    let siteHost: String?
+    let isEnabled: Bool
+    let hasActiveGeneration: Bool
+    let attachedNativeGroups: [AdblockCompiledRuleGroupKind]
+    let contentRuleListIdentifiers: [String]
+    let selectedListIdentifiers: [String]
+    let nativeCompiler: NativeContentBlockingCompilerIdentity?
+    let generationIsStale: Bool
+}
+
 extension SumiAdblockEffectivePolicy {
     var attachmentState: SumiAdblockAttachmentState {
         SumiAdblockAttachmentState(siteHost: host, isEnabled: isEnabled)
@@ -366,7 +377,6 @@ final class AdblockWebKitRuleListStore {
     private let settingsStore: AdblockSettingsStore
     private let isAdblockEnabled: @Sendable () async -> Bool
     private var settingsCancellable: AnyCancellable?
-    private(set) var latestCompilationOutput: AdblockCompilationOutput?
 
     var hasActiveGeneration: Bool {
         ruleListProvider.activeManifest != nil
@@ -376,18 +386,26 @@ final class AdblockWebKitRuleListStore {
         ruleListProvider.activeManifest?.enhancedRuntimeBundle
     }
 
+    var activeManifest: AdblockCompiledGenerationManifest? {
+        ruleListProvider.activeManifest
+    }
+
     init(
         settingsStore: AdblockSettingsStore,
         isAdblockEnabled: @escaping @Sendable () async -> Bool = { true },
         registry: AdblockFilterListRegistry = AdblockFilterListRegistry(),
         manifestStore: AdblockUpdateManifestStore = AdblockUpdateManifestStore(),
-        filterCompiler: AdblockFilterCompiling = AdblockRustCompiler(),
+        nativeCompiler: (any NativeContentBlockingCompiler)? = nil,
+        enhancedCompiler: (any EnhancedCompatibilityCompiler)? = nil,
         compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler(),
         compiledRuleListCatalog: SumiCompiledContentRuleListCataloging = AdblockRetainingCompiledRuleListCatalog()
     ) {
         self.manifestStore = manifestStore
         self.isAdblockEnabled = isAdblockEnabled
         self.settingsStore = settingsStore
+        let rustCompiler = AdblockRustCompiler()
+        let resolvedNativeCompiler = nativeCompiler ?? rustCompiler
+        let resolvedEnhancedCompiler = enhancedCompiler ?? rustCompiler
         let provider = AdblockManifestRuleListProvider(
             manifest: nil,
             cosmeticMode: settingsStore.cosmeticMode
@@ -408,7 +426,8 @@ final class AdblockWebKitRuleListStore {
             selection: { await MainActor.run { settingsStore.selectedLists } },
             isAdblockEnabled: isAdblockEnabled,
             manifestStore: manifestStore,
-            filterCompiler: filterCompiler,
+            nativeCompiler: resolvedNativeCompiler,
+            enhancedCompiler: resolvedEnhancedCompiler,
             publisher: publisher,
             contentRuleListStore: compiler,
             garbageCollector: AdblockGenerationGarbageCollector(
@@ -599,6 +618,43 @@ final class SumiAdBlockingModule {
             return effectivePolicy(for: url).attachmentState
         }
         return normalTabDecision(for: url).attachmentState
+    }
+
+    func attachmentDiagnostics(for url: URL?) -> SumiAdblockAttachmentDiagnostics {
+        let policy = effectivePolicy(for: url)
+        guard isEnabled, policy.isEnabled else {
+            return SumiAdblockAttachmentDiagnostics(
+                siteHost: policy.host,
+                isEnabled: policy.isEnabled,
+                hasActiveGeneration: false,
+                attachedNativeGroups: [],
+                contentRuleListIdentifiers: [],
+                selectedListIdentifiers: [],
+                nativeCompiler: nil,
+                generationIsStale: false
+            )
+        }
+
+        let settings = settingsIfEnabled()
+        let manifest = ruleListStoreIfEnabled().activeManifest
+        let allowedGroups = AdblockManifestRuleListProvider.attachedGroupKinds(
+            for: settings?.cosmeticMode ?? .nativeCSS
+        )
+        let attachedGroups = manifest?.groupedOutputs
+            .filter { allowedGroups.contains($0.kind) }
+            .map(\.kind)
+            .sorted { $0.rawValue < $1.rawValue } ?? []
+
+        return SumiAdblockAttachmentDiagnostics(
+            siteHost: policy.host,
+            isEnabled: true,
+            hasActiveGeneration: manifest != nil,
+            attachedNativeGroups: attachedGroups,
+            contentRuleListIdentifiers: manifest?.webKitRuleListIdentifiers.sorted() ?? contentRuleListIdentifiers(),
+            selectedListIdentifiers: manifest?.selectedFilterLists.map(\.id).sorted() ?? [],
+            nativeCompiler: manifest?.nativeCompiler,
+            generationIsStale: settings?.listSelectionRequiresUpdate ?? false
+        )
     }
 
     func siteOverride(for url: URL?) -> SumiAdblockSiteOverride {

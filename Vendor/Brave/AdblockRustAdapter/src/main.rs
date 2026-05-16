@@ -34,12 +34,67 @@ enum EnhancedResourceKind {
 struct EnhancedResourceCandidate {
     kind: EnhancedResourceKind,
     resource_name: String,
+    canonical_resource_name: String,
+    alias: Option<String>,
+    resource_type: String,
+    mime_type: Option<String>,
     parameters: Vec<String>,
     include_domains: Vec<String>,
     exclude_domains: Vec<String>,
     source_rule: String,
     diagnostic_source: String,
+    unsupported_reason: Option<String>,
+    matched_trusted_bundled_resource: bool,
 }
+
+struct RedirectResourceMetadata {
+    canonical_name: &'static str,
+    aliases: &'static [&'static str],
+    resource_type: &'static str,
+    mime_type: &'static str,
+    unsupported_reason: &'static str,
+}
+
+const WEBKIT_RESPONSE_REPLACEMENT_UNSUPPORTED: &str =
+    "WKWebView content blockers cannot replace http/https response bodies; WKURLSchemeHandler cannot intercept WebKit-handled http/https schemes";
+
+const KNOWN_REDIRECT_RESOURCES: &[RedirectResourceMetadata] = &[
+    RedirectResourceMetadata {
+        canonical_name: "noopjs",
+        aliases: &["noop.js"],
+        resource_type: "script",
+        mime_type: "application/javascript",
+        unsupported_reason: WEBKIT_RESPONSE_REPLACEMENT_UNSUPPORTED,
+    },
+    RedirectResourceMetadata {
+        canonical_name: "noopcss",
+        aliases: &["noop.css"],
+        resource_type: "stylesheet",
+        mime_type: "text/css",
+        unsupported_reason: WEBKIT_RESPONSE_REPLACEMENT_UNSUPPORTED,
+    },
+    RedirectResourceMetadata {
+        canonical_name: "1x1-transparent.gif",
+        aliases: &["1x1.gif"],
+        resource_type: "image",
+        mime_type: "image/gif",
+        unsupported_reason: WEBKIT_RESPONSE_REPLACEMENT_UNSUPPORTED,
+    },
+    RedirectResourceMetadata {
+        canonical_name: "noopframe",
+        aliases: &["noop.html"],
+        resource_type: "document",
+        mime_type: "text/html",
+        unsupported_reason: WEBKIT_RESPONSE_REPLACEMENT_UNSUPPORTED,
+    },
+    RedirectResourceMetadata {
+        canonical_name: "noop.txt",
+        aliases: &["nooptext"],
+        resource_type: "text",
+        mime_type: "text/plain",
+        unsupported_reason: WEBKIT_RESPONSE_REPLACEMENT_UNSUPPORTED,
+    },
+];
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = String::new();
@@ -127,18 +182,25 @@ fn enhanced_resource_candidate(rule: &str) -> Option<EnhancedResourceCandidate> 
             let (include_domains, exclude_domains) = cosmetic_domains(rule);
             Some(EnhancedResourceCandidate {
                 kind: EnhancedResourceKind::Scriptlet,
-                resource_name,
+                resource_name: resource_name.clone(),
+                canonical_resource_name: resource_name,
+                alias: None,
+                resource_type: "scriptlet".to_string(),
+                mime_type: None,
                 parameters: parsed_args,
                 include_domains,
                 exclude_domains,
                 source_rule: rule.to_string(),
                 diagnostic_source: "adblock-rust cosmetic parser".to_string(),
+                unsupported_reason: None,
+                matched_trusted_bundled_resource: false,
             })
         }
         Ok(ParsedFilter::Network(filter)) if filter.mask.is_redirect() => {
             let resource_name = filter.modifier_option?;
             let (include_domains, exclude_domains) = network_domains(rule);
             let lowered = resource_name.to_ascii_lowercase();
+            let metadata = redirect_resource_metadata(&lowered);
             let kind = if lowered.contains("noop")
                 || lowered.contains("empty")
                 || lowered.contains("blank")
@@ -149,12 +211,29 @@ fn enhanced_resource_candidate(rule: &str) -> Option<EnhancedResourceCandidate> 
             };
             Some(EnhancedResourceCandidate {
                 kind,
-                resource_name,
+                resource_name: resource_name.clone(),
+                canonical_resource_name: metadata
+                    .map(|metadata| metadata.canonical_name.to_string())
+                    .unwrap_or_else(|| resource_name.clone()),
+                alias: metadata
+                    .and_then(|metadata| alias_for(metadata, &lowered))
+                    .map(ToOwned::to_owned),
+                resource_type: metadata
+                    .map(|metadata| metadata.resource_type.to_string())
+                    .unwrap_or_else(|| "unknown".to_string()),
+                mime_type: metadata.map(|metadata| metadata.mime_type.to_string()),
                 parameters: vec![],
                 include_domains,
                 exclude_domains,
                 source_rule: rule.to_string(),
                 diagnostic_source: "adblock-rust network parser".to_string(),
+                unsupported_reason: Some(
+                    metadata
+                        .map(|metadata| metadata.unsupported_reason)
+                        .unwrap_or("unknown redirect resource is not in Sumi's trusted bundled resource catalog")
+                        .to_string(),
+                ),
+                matched_trusted_bundled_resource: metadata.is_some(),
             })
         }
         _ => procedural_candidate(rule),
@@ -180,12 +259,42 @@ fn procedural_candidate(rule: &str) -> Option<EnhancedResourceCandidate> {
     Some(EnhancedResourceCandidate {
         kind: EnhancedResourceKind::ProceduralCosmetic,
         resource_name: "procedural-cosmetic".to_string(),
+        canonical_resource_name: "procedural-cosmetic".to_string(),
+        alias: None,
+        resource_type: "procedural_cosmetic".to_string(),
+        mime_type: None,
         parameters: vec![],
         include_domains,
         exclude_domains,
         source_rule: rule.to_string(),
         diagnostic_source: "adblock-rust cosmetic parser".to_string(),
+        unsupported_reason: Some(
+            "procedural cosmetic filtering requires a bounded enhanced runtime implementation"
+                .to_string(),
+        ),
+        matched_trusted_bundled_resource: false,
     })
+}
+
+fn redirect_resource_metadata(requested_name: &str) -> Option<&'static RedirectResourceMetadata> {
+    KNOWN_REDIRECT_RESOURCES.iter().find(|metadata| {
+        metadata.canonical_name.eq_ignore_ascii_case(requested_name)
+            || metadata
+                .aliases
+                .iter()
+                .any(|alias| alias.eq_ignore_ascii_case(requested_name))
+    })
+}
+
+fn alias_for<'a>(
+    metadata: &'a RedirectResourceMetadata,
+    requested_name: &str,
+) -> Option<&'a str> {
+    metadata
+        .aliases
+        .iter()
+        .copied()
+        .find(|alias| alias.eq_ignore_ascii_case(requested_name))
 }
 
 fn cosmetic_domains(rule: &str) -> (Vec<String>, Vec<String>) {
@@ -403,6 +512,9 @@ mod tests {
         assert_eq!(candidates.len(), 1);
         assert!(matches!(candidates[0].kind, EnhancedResourceKind::Scriptlet));
         assert_eq!(candidates[0].resource_name, "sumi-hide");
+        assert_eq!(candidates[0].canonical_resource_name, "sumi-hide");
+        assert_eq!(candidates[0].resource_type, "scriptlet");
+        assert_eq!(candidates[0].mime_type, None);
         assert_eq!(candidates[0].parameters, vec![".ad-slot"]);
         assert_eq!(candidates[0].include_domains, vec!["example.com"]);
         assert_eq!(candidates[0].exclude_domains, vec!["cdn.example.com"]);
@@ -421,7 +533,43 @@ mod tests {
         assert_eq!(candidates.len(), 1);
         assert!(matches!(candidates[0].kind, EnhancedResourceKind::NoopRedirect));
         assert_eq!(candidates[0].resource_name, "noopjs");
+        assert_eq!(candidates[0].canonical_resource_name, "noopjs");
+        assert_eq!(candidates[0].resource_type, "script");
+        assert_eq!(candidates[0].mime_type.as_deref(), Some("application/javascript"));
+        assert!(candidates[0].matched_trusted_bundled_resource);
+        assert!(candidates[0]
+            .unsupported_reason
+            .as_deref()
+            .unwrap()
+            .contains("cannot replace http/https response bodies"));
         assert_eq!(candidates[0].include_domains, vec!["example.com"]);
         assert_eq!(candidates[0].exclude_domains, vec!["static.example.com"]);
+    }
+
+    #[test]
+    fn extracts_redirect_aliases_and_unknown_resource_diagnostics() {
+        let rules = vec![
+            "||cdn.example/style.css$stylesheet,redirect=noop.css,domain=example.com".to_string(),
+            "||cdn.example/ad.bin$xmlhttprequest,redirect=custom-resource".to_string(),
+        ];
+
+        let candidates = enhanced_resource_candidates(&rules);
+
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].resource_name, "noop.css");
+        assert_eq!(candidates[0].canonical_resource_name, "noopcss");
+        assert_eq!(candidates[0].alias.as_deref(), Some("noop.css"));
+        assert_eq!(candidates[0].resource_type, "stylesheet");
+        assert!(candidates[0].matched_trusted_bundled_resource);
+
+        assert_eq!(candidates[1].resource_name, "custom-resource");
+        assert_eq!(candidates[1].canonical_resource_name, "custom-resource");
+        assert_eq!(candidates[1].resource_type, "unknown");
+        assert!(!candidates[1].matched_trusted_bundled_resource);
+        assert!(candidates[1]
+            .unsupported_reason
+            .as_deref()
+            .unwrap()
+            .contains("unknown redirect resource"));
     }
 }
