@@ -14,21 +14,48 @@ Manual check:
 
 ## Native score comparison procedure
 
-Do not compare remembered scores. For every sample, use the same normal tab and
-record the exact environment before loading:
+Do not compare remembered scores. A score is valid only when the browser state
+below is captured immediately before the page load and the page is reloaded
+after every profile, mode, list, or site-policy change.
 
-1. Visit `https://d3ward.github.io/toolz/adblock.html` and `https://adblock-tester.com/`.
-2. Record the selected mode (`off`, `nativeCSS`, or `enhancedRuntime`), selected
-   native profile, native compiler identity/version, selected list IDs, and
-   whether Tracking Protection is enabled.
-3. Call `SumiAdBlockingModule.attachmentDiagnostics(for:)` for the tested URL
-   and record stale-generation state, attached native groups, generated rule
-   counts, JSON sizes, and cap/discard state.
-4. After changing mode, profile, selected lists, or per-site policy, reload the
-   page before taking the next score.
-5. Keep Native and Enhanced runs separate. Native score runs must remain
-   Adblock-JS-free; Enhanced is a distinct opt-in compatibility comparison.
+Test pages:
 
-Do not claim an improved score unless the exact URL, mode, profile, compiler,
-Tracking Protection state, stale-generation state, and captured diagnostics are
-kept with the result.
+1. `https://adblock-tester.com/`
+2. `https://d3ward.github.io/toolz/adblock.html` as a secondary sample only; it is archived and no longer maintained.
+
+Profiles to measure:
+
+1. `currentDefault` in `nativeCSS`
+2. `balancedNative` in `nativeCSS`
+3. `highBlockingNative` in `nativeCSS` if update and compile succeed
+4. `oraLikeNative` in `nativeCSS` only as a developer-only experimental sample
+
+Required state for every sample:
+
+1. Built-in Adblock global state: enabled.
+2. Per-site Adblock policy for the test page: allowed or inherit-to-enabled.
+3. Tracking Protection: disabled.
+4. Cosmetic mode: `nativeCSS`.
+5. Enhanced runtime: disabled; do a separate comparison if `enhancedRuntime` is tested.
+6. Active generation: present and not stale.
+7. Native compiler identity and version.
+8. Selected native profile.
+9. Selected list IDs.
+10. Network shard count and attached network shard identifiers.
+11. Native CSS shard count and attached native CSS shard identifiers.
+12. Total network/native CSS rule counts.
+13. Largest shard JSON byte count.
+14. Rule cap/discard state.
+15. Failed shard identifier, if any.
+16. Date and local time of measurement.
+17. Whether the page was reloaded after the last state change.
+
+Use `SumiAdBlockingModule.attachmentDiagnosticsReport(for:)` or
+`attachmentDiagnostics(for:)` for the diagnostics capture. If any required
+state is missing, stale, globally disabled, per-site disabled, overlapped by
+Tracking Protection, or missing expected shards, discard that run and repeat it
+after a manual update/recompile plus reload.
+
+Do not claim an improved score unless the exact URL, score, mode, native
+profile, compiler, Tracking Protection state, Enhanced runtime state, selected
+lists, shard diagnostics, timestamp, and reload state are kept with the result.
