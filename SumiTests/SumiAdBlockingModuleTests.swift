@@ -220,6 +220,26 @@ final class SumiAdBlockingModuleTests: XCTestCase {
                         rule: "example.com#?#.ad:has-text(Sponsored)",
                         reason: "unsupported procedural cosmetic rule"
                     ),
+                ],
+                enhancedResourceCandidates: [
+                    AdblockRustEnhancedResourceCandidate(
+                        kind: .noopRedirect,
+                        resourceName: "noopjs",
+                        parameters: [],
+                        includeDomains: [],
+                        excludeDomains: [],
+                        sourceRule: "||cdn.example/script.js$redirect=noopjs",
+                        diagnosticSource: "test adapter"
+                    ),
+                    AdblockRustEnhancedResourceCandidate(
+                        kind: .proceduralCosmetic,
+                        resourceName: "procedural-cosmetic",
+                        parameters: [],
+                        includeDomains: ["example.com"],
+                        excludeDomains: [],
+                        sourceRule: "example.com#?#.ad:has-text(Sponsored)",
+                        diagnosticSource: "test adapter"
+                    ),
                 ]
             )
         )
@@ -652,6 +672,106 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         ] {
             XCTAssertFalse(source.contains(forbidden), forbidden)
         }
+    }
+
+    func testTrustedResourceBundleAllowsOnlyKnownAliases() {
+        let bundle = SumiAdblockEnhancedRuntime.makeTrustedResourceBundle()
+
+        XCTAssertEqual(bundle.trustedScriptlet(for: "sumi-hide")?.canonicalName, "sumi-hide.js")
+        XCTAssertEqual(bundle.trustedScriptlet(for: "sumi-hide.js")?.canonicalName, "sumi-hide.js")
+        XCTAssertNil(bundle.trustedScriptlet(for: "abort-on-property-read"))
+        XCTAssertNil(bundle.trustedScriptlet(for: "remote-script"))
+    }
+
+    func testPageApplicabilityResolverSelectsOnlyMatchingTrustedScriptlets() throws {
+        let runtimeBundle = AdblockEnhancedRuntimeBundle(
+            resources: [
+                AdblockEnhancedResource(
+                    name: "sumi-hide",
+                    kind: .scriptlet,
+                    sourceRule: "example.com##+js(sumi-hide, .ad-one)"
+                ),
+                AdblockEnhancedResource(
+                    name: "unknown-scriptlet",
+                    kind: .scriptlet,
+                    sourceRule: "example.com##+js(unknown-scriptlet, .ad-two)"
+                ),
+                AdblockEnhancedResource(
+                    name: "sumi-hide",
+                    kind: .scriptlet,
+                    sourceRule: "other.test##+js(sumi-hide, .ad-three)"
+                ),
+            ],
+            scriptletInvocations: [
+                AdblockScriptletInvocation(
+                    resourceName: "sumi-hide",
+                    parameters: [".ad-one"],
+                    includeDomains: ["example.com"],
+                    excludeDomains: [],
+                    sourceRule: "example.com##+js(sumi-hide, .ad-one)",
+                    diagnosticSource: "test"
+                ),
+                AdblockScriptletInvocation(
+                    resourceName: "unknown-scriptlet",
+                    parameters: [".ad-two"],
+                    includeDomains: ["example.com"],
+                    excludeDomains: [],
+                    sourceRule: "example.com##+js(unknown-scriptlet, .ad-two)",
+                    diagnosticSource: "test"
+                ),
+                AdblockScriptletInvocation(
+                    resourceName: "sumi-hide",
+                    parameters: [".ad-three"],
+                    includeDomains: ["other.test"],
+                    excludeDomains: [],
+                    sourceRule: "other.test##+js(sumi-hide, .ad-three)",
+                    diagnosticSource: "test"
+                ),
+            ],
+            unsupportedDiagnostics: []
+        )
+        let resolver = AdblockEnhancedRuntimeResolver()
+
+        let script = resolver.resolve(
+            runtimeBundle: runtimeBundle,
+            pageURL: URL(string: "https://www.example.com/page")
+        )
+
+        let source = try XCTUnwrap(script?.source)
+        XCTAssertTrue(source.contains(".ad-one"))
+        XCTAssertFalse(source.contains(".ad-two"))
+        XCTAssertFalse(source.contains(".ad-three"))
+        XCTAssertFalse(script?.requiresPageWorld == true)
+    }
+
+    func testPageApplicabilityResolverDoesNotInstallAllResourcesGlobally() {
+        let runtimeBundle = AdblockEnhancedRuntimeBundle(
+            resources: [
+                AdblockEnhancedResource(
+                    name: "sumi-hide",
+                    kind: .scriptlet,
+                    sourceRule: "example.com##+js(sumi-hide, .ad-one)"
+                ),
+            ],
+            scriptletInvocations: [
+                AdblockScriptletInvocation(
+                    resourceName: "sumi-hide",
+                    parameters: [".ad-one"],
+                    includeDomains: ["example.com"],
+                    excludeDomains: [],
+                    sourceRule: "example.com##+js(sumi-hide, .ad-one)",
+                    diagnosticSource: "test"
+                ),
+            ],
+            unsupportedDiagnostics: []
+        )
+
+        XCTAssertNil(
+            AdblockEnhancedRuntimeResolver().resolve(
+                runtimeBundle: runtimeBundle,
+                pageURL: URL(string: "https://unrelated.test/")
+            )
+        )
     }
 
     func testNativeCSSAndDisabledModesRemainAdblockRuntimeScriptFreeInTabProvider() async throws {
@@ -1203,6 +1323,26 @@ final class SumiAdBlockingModuleTests: XCTestCase {
                     convertedRuleCount: 1
                 ),
             ],
+            enhancedRuntimeBundle: AdblockEnhancedRuntimeBundle(
+                resources: [
+                    AdblockEnhancedResource(
+                        name: "sumi-hide",
+                        kind: .scriptlet,
+                        sourceRule: "example.com##+js(sumi-hide, .enhanced-ad)"
+                    ),
+                ],
+                scriptletInvocations: [
+                    AdblockScriptletInvocation(
+                        resourceName: "sumi-hide",
+                        parameters: [".enhanced-ad"],
+                        includeDomains: ["example.com"],
+                        excludeDomains: [],
+                        sourceRule: "example.com##+js(sumi-hide, .enhanced-ad)",
+                        diagnosticSource: "test manifest"
+                    ),
+                ],
+                unsupportedDiagnostics: []
+            ),
             compilerDiagnosticsSummary: "hybrid test",
             lastSuccessfulUpdateDate: Date(),
             previousGenerationId: nil
@@ -1339,6 +1479,17 @@ private extension AdblockRustAdapterOutput {
             AdblockRustAdapterDiagnostic(
                 rule: "example.com##+js(sumi-future-scriptlet)",
                 reason: "unsupported by adblock-rust content-blocking conversion: ScriptletInjectionsNotSupported"
+            ),
+        ],
+        enhancedResourceCandidates: [
+            AdblockRustEnhancedResourceCandidate(
+                kind: .scriptlet,
+                resourceName: "sumi-future-scriptlet",
+                parameters: [],
+                includeDomains: ["example.com"],
+                excludeDomains: [],
+                sourceRule: "example.com##+js(sumi-future-scriptlet)",
+                diagnosticSource: "test adapter"
             ),
         ]
     )
