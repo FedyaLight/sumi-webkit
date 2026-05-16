@@ -111,6 +111,55 @@ struct AdblockFilterListSelectionValidation: Equatable, Sendable {
     let droppedConflictingIdentifiers: [String]
 }
 
+enum AdblockEffectiveListSelectionOrigin: String, Codable, CaseIterable, Sendable {
+    case manualListToggle
+    case currentDefault
+    case lightNative
+    case balancedNative
+    case highBlockingNative
+    case referenceAdGuardNative
+    case recommendedRegional
+    case other
+
+    static func profile(_ kind: AdblockFilterListProfileKind) -> AdblockEffectiveListSelectionOrigin {
+        switch kind {
+        case .currentDefault:
+            return .currentDefault
+        case .lightNative:
+            return .lightNative
+        case .balancedNative:
+            return .balancedNative
+        case .highBlockingNative:
+            return .highBlockingNative
+        case .referenceAdGuardNative:
+            return .referenceAdGuardNative
+        }
+    }
+}
+
+struct AdblockEffectiveSelectedListDiagnostics: Codable, Equatable, Identifiable, Sendable {
+    let id: String
+    let displayName: String
+    let category: AdblockFilterListCategory
+    let origins: [AdblockEffectiveListSelectionOrigin]
+}
+
+struct AdblockEffectiveSelectionDiagnostics: Codable, Equatable, Sendable {
+    let selectedNativeProfile: AdblockFilterListProfileKind
+    let manuallySelectedListIdentifiers: [String]
+    let profileDerivedListIdentifiers: [String]
+    let recommendedRegionalListIdentifiers: [String]
+    let requestedIdentifiers: [String]
+    let finalEffectiveListIdentifiers: [String]
+    let unknownIdentifiers: [String]
+    let droppedConflictingIdentifiers: [String]
+    let selectedLists: [AdblockEffectiveSelectedListDiagnostics]
+
+    func origins(forListIdentifier identifier: String) -> [AdblockEffectiveListSelectionOrigin] {
+        selectedLists.first { $0.id == identifier }?.origins ?? []
+    }
+}
+
 struct AdblockFilterListRegistry: Equatable, Sendable {
     let descriptors: [AdblockFilterListDescriptor]
 
@@ -240,6 +289,61 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
         return descriptors
             .filter { ids.contains($0.id) }
             .sorted { $0.id < $1.id }
+    }
+
+    func effectiveSelectionDiagnostics(
+        selection: SumiAdblockFilterListSelection,
+        profileKind: AdblockFilterListProfileKind = .currentDefault,
+        locale: Locale = .autoupdatingCurrent
+    ) -> AdblockEffectiveSelectionDiagnostics {
+        let profile = profile(for: profileKind)
+        let profileIdentifiers = profile.listIdentifiers
+        let regionalIdentifiers = profile.appendsRecommendedRegionalList
+            ? recommendedRegionalIdentifiers(for: locale)
+            : []
+        let validation = validatedSelection(
+            selection,
+            profileKind: profileKind,
+            locale: locale
+        )
+        let descriptorById = Dictionary(uniqueKeysWithValues: descriptors.map { ($0.id, $0) })
+        let profileOrigin = AdblockEffectiveListSelectionOrigin.profile(profileKind)
+        let manualIdentifiers = selection.usesDefaultSelection ? [] : selection.identifiers
+        let selectedDiagnostics = validation.resolvedIdentifiers.compactMap { identifier -> AdblockEffectiveSelectedListDiagnostics? in
+            guard let descriptor = descriptorById[identifier] else { return nil }
+            var origins = [AdblockEffectiveListSelectionOrigin]()
+            if selection.usesDefaultSelection {
+                if profileIdentifiers.contains(identifier) {
+                    origins.append(profileOrigin)
+                }
+                if regionalIdentifiers.contains(identifier) {
+                    origins.append(.recommendedRegional)
+                }
+            } else if manualIdentifiers.contains(identifier) {
+                origins.append(.manualListToggle)
+            }
+            if origins.isEmpty {
+                origins.append(.other)
+            }
+            return AdblockEffectiveSelectedListDiagnostics(
+                id: identifier,
+                displayName: descriptor.displayName,
+                category: descriptor.category,
+                origins: origins
+            )
+        }
+
+        return AdblockEffectiveSelectionDiagnostics(
+            selectedNativeProfile: profileKind,
+            manuallySelectedListIdentifiers: manualIdentifiers.sorted(),
+            profileDerivedListIdentifiers: profileIdentifiers.sorted(),
+            recommendedRegionalListIdentifiers: regionalIdentifiers.sorted(),
+            requestedIdentifiers: validation.requestedIdentifiers,
+            finalEffectiveListIdentifiers: validation.resolvedIdentifiers,
+            unknownIdentifiers: validation.unknownIdentifiers,
+            droppedConflictingIdentifiers: validation.droppedConflictingIdentifiers,
+            selectedLists: selectedDiagnostics.sorted { $0.id < $1.id }
+        )
     }
 
     func validatedSelection(
@@ -722,6 +826,62 @@ struct AdblockFilterListHTTPMetadata: Codable, Equatable, Sendable {
     var lastSuccessfulDownloadDate: Date?
     var contentHash: String?
     var failureSummary: String?
+    var failureStage: AdblockUpdateFailureStage?
+    var lastHTTPStatus: Int?
+}
+
+enum AdblockUpdateFailureStage: String, Codable, CaseIterable, Sendable {
+    case effectiveListSelectionFailed = "effective list selection failed"
+    case missingSelectedListDescriptor = "missing selected list descriptor"
+    case invalidListURL = "invalid list URL"
+    case downloadRequestCreationFailed = "download request creation failed"
+    case networkRequestFailed = "network request failed"
+    case httpStatusFailure = "HTTP status failure"
+    case redirectFailure = "redirect failure"
+    case notModifiedWithoutRawCache = "304 returned but no previous raw list exists"
+    case rawCacheReadFailed = "raw cache read failed"
+    case rawStagingWriteFailed = "raw staging write failed"
+    case rawFileEmpty = "raw file empty"
+    case rawFileTooSmall = "raw file too small / suspicious"
+    case rawFileAppearsHTML = "raw file appears to be HTML/error page"
+    case contentHashFailed = "content hash failed"
+    case compilerInputAssemblyFailed = "compiler input assembly failed"
+    case nativeCompilationFailed = "native compilation failed"
+    case shardPublishFailed = "shard publish failed"
+}
+
+struct AdblockFilterListUpdateStatus: Codable, Equatable, Identifiable, Sendable {
+    let listIdentifier: String
+    let displayName: String
+    let category: AdblockFilterListCategory?
+    let selectionOrigins: [AdblockEffectiveListSelectionOrigin]
+    var finalURL: String?
+    var lastCheckedDate: Date?
+    var lastSuccessfulDownloadDate: Date?
+    var httpStatus: Int?
+    var eTagUsed: String?
+    var eTagSaved: String?
+    var lastModifiedUsed: String?
+    var lastModifiedSaved: String?
+    var notModifiedReused: Bool
+    var rawFilePath: String?
+    var rawFileExists: Bool
+    var rawByteSize: Int?
+    var contentHash: String?
+    var failureStage: AdblockUpdateFailureStage?
+    var failureReason: String?
+
+    var id: String { listIdentifier }
+
+    var isFailure: Bool {
+        failureStage != nil || failureReason != nil
+    }
+}
+
+struct AdblockRawListFileInfo: Equatable, Sendable {
+    let path: String
+    let exists: Bool
+    let byteSize: Int?
 }
 
 struct AdblockRuleListGeneration: Codable, Equatable, Sendable {
@@ -983,10 +1143,41 @@ struct AdblockGenerationRollbackReport: Equatable, Sendable {
 
 struct AdblockUpdateDiagnostics: Error, LocalizedError, Equatable, Sendable {
     var summary: String
+    var stage: AdblockUpdateFailureStage?
     var listFailures: [String: String] = [:]
+    var listStatuses: [AdblockFilterListUpdateStatus] = []
+    var selectionDiagnostics: AdblockEffectiveSelectionDiagnostics?
     var failedShardIdentifier: String?
+    var httpStatusCode: Int?
+    var responseURLString: String?
+    var responseETag: String?
+    var responseLastModified: String?
 
     var errorDescription: String? { summary }
+
+    init(
+        summary: String,
+        stage: AdblockUpdateFailureStage? = nil,
+        listFailures: [String: String] = [:],
+        listStatuses: [AdblockFilterListUpdateStatus] = [],
+        selectionDiagnostics: AdblockEffectiveSelectionDiagnostics? = nil,
+        failedShardIdentifier: String? = nil,
+        httpStatusCode: Int? = nil,
+        responseURLString: String? = nil,
+        responseETag: String? = nil,
+        responseLastModified: String? = nil
+    ) {
+        self.summary = summary
+        self.stage = stage
+        self.listFailures = listFailures
+        self.listStatuses = listStatuses
+        self.selectionDiagnostics = selectionDiagnostics
+        self.failedShardIdentifier = failedShardIdentifier
+        self.httpStatusCode = httpStatusCode
+        self.responseURLString = responseURLString
+        self.responseETag = responseETag
+        self.responseLastModified = responseLastModified
+    }
 }
 
 enum AdblockDownloadOutcome: Equatable, Sendable {
@@ -1010,7 +1201,10 @@ struct AdblockFilterListDownloader: AdblockFilterListDownloading {
         fetch: @escaping Fetch = { request in
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let response = response as? HTTPURLResponse else {
-                throw AdblockUpdateDiagnostics(summary: "Invalid HTTP response")
+                throw AdblockUpdateDiagnostics(
+                    summary: "Network request failed: invalid HTTP response",
+                    stage: .networkRequestFailed
+                )
             }
             return (data, response)
         }
@@ -1022,6 +1216,14 @@ struct AdblockFilterListDownloader: AdblockFilterListDownloading {
         descriptor: AdblockFilterListDescriptor,
         previousMetadata: AdblockFilterListHTTPMetadata?
     ) async throws -> AdblockDownloadOutcome {
+        guard Self.isSupportedRemoteListURL(descriptor.remoteURL) else {
+            throw AdblockUpdateDiagnostics(
+                summary: "Invalid list URL: \(descriptor.remoteURL.absoluteString)",
+                stage: .invalidListURL,
+                responseURLString: descriptor.remoteURL.absoluteString
+            )
+        }
+
         var request = URLRequest(url: descriptor.remoteURL)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 30
@@ -1032,17 +1234,53 @@ struct AdblockFilterListDownloader: AdblockFilterListDownloading {
             request.setValue(lastModified, forHTTPHeaderField: "If-Modified-Since")
         }
 
-        let (data, response) = try await fetch(request)
+        let data: Data
+        let response: HTTPURLResponse
+        do {
+            (data, response) = try await fetch(request)
+        } catch let diagnostics as AdblockUpdateDiagnostics {
+            throw diagnostics
+        } catch {
+            throw AdblockUpdateDiagnostics(
+                summary: "Network request failed: \(error.localizedDescription)",
+                stage: .networkRequestFailed,
+                responseURLString: descriptor.remoteURL.absoluteString
+            )
+        }
+        guard let finalURL = response.url,
+              Self.isSupportedRemoteListURL(finalURL)
+        else {
+            throw AdblockUpdateDiagnostics(
+                summary: "Redirect failure: final URL is not a supported http(s) filter URL",
+                stage: .redirectFailure,
+                httpStatusCode: response.statusCode,
+                responseURLString: response.url?.absoluteString,
+                responseETag: response.value(forHTTPHeaderField: "ETag"),
+                responseLastModified: response.value(forHTTPHeaderField: "Last-Modified")
+            )
+        }
         if response.statusCode == 304 {
             return .notModified(response)
         }
         guard (200..<300).contains(response.statusCode) else {
-            throw AdblockUpdateDiagnostics(summary: "HTTP \(response.statusCode)")
-        }
-        guard !data.isEmpty else {
-            throw AdblockUpdateDiagnostics(summary: "Downloaded list is empty")
+            throw AdblockUpdateDiagnostics(
+                summary: "HTTP status failure: \(response.statusCode)",
+                stage: .httpStatusFailure,
+                httpStatusCode: response.statusCode,
+                responseURLString: finalURL.absoluteString,
+                responseETag: response.value(forHTTPHeaderField: "ETag"),
+                responseLastModified: response.value(forHTTPHeaderField: "Last-Modified")
+            )
         }
         return .downloaded(data, response)
+    }
+
+    private static func isSupportedRemoteListURL(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              url.host?.isEmpty == false
+        else { return false }
+        return true
     }
 }
 
@@ -1090,6 +1328,18 @@ actor AdblockUpdateManifestStore {
         let url = rawListURL(forListIdentifier: identifier)
         guard fileManager.fileExists(atPath: url.path) else { return nil }
         return try Data(contentsOf: url)
+    }
+
+    func rawListFileInfo(forListIdentifier identifier: String) -> AdblockRawListFileInfo {
+        let url = rawListURL(forListIdentifier: identifier)
+        let exists = fileManager.fileExists(atPath: url.path)
+        let attributes = try? fileManager.attributesOfItem(atPath: url.path)
+        let size = (attributes?[.size] as? NSNumber)?.intValue
+        return AdblockRawListFileInfo(
+            path: url.path,
+            exists: exists,
+            byteSize: size
+        )
     }
 
     func compiledShardDefinitions(
@@ -1210,7 +1460,7 @@ actor AdblockUpdateManifestStore {
         try? fileManager.removeItem(at: url)
     }
 
-    private func rawListURL(forListIdentifier identifier: String) -> URL {
+    func rawListURL(forListIdentifier identifier: String) -> URL {
         rootDirectory
             .appendingPathComponent("RawLists", isDirectory: true)
             .appendingPathComponent("\(identifier).txt")
@@ -1591,6 +1841,7 @@ actor AdblockUpdateCoordinator {
     private let garbageCollector: AdblockGenerationGarbageCollector?
     private let now: @Sendable () -> Date
     private(set) var latestCleanupReport: AdblockGenerationCleanupReport?
+    private(set) var latestDiagnostics: AdblockUpdateDiagnostics?
 
     init(
         registry: AdblockFilterListRegistry,
@@ -1649,17 +1900,66 @@ actor AdblockUpdateCoordinator {
         )
     }
 
+    func latestDiagnosticsSnapshot() -> AdblockUpdateDiagnostics? {
+        latestDiagnostics
+    }
+
     func updateIfEnabled(reason: String) async throws -> AdblockCompiledGenerationManifest? {
         guard await isAdblockEnabled() else { return nil }
 
         let selection = await selection()
         let nativeProfile = await nativeProfileSelection()
+        let selectionDiagnostics = registry.effectiveSelectionDiagnostics(
+            selection: selection,
+            profileKind: nativeProfile
+        )
+        if !selectionDiagnostics.unknownIdentifiers.isEmpty {
+            let statuses = selectionDiagnostics.unknownIdentifiers.map {
+                AdblockFilterListUpdateStatus(
+                    listIdentifier: $0,
+                    displayName: "Missing descriptor",
+                    category: nil,
+                    selectionOrigins: selection.usesDefaultSelection ? [.other] : [.manualListToggle],
+                    finalURL: nil,
+                    lastCheckedDate: now(),
+                    lastSuccessfulDownloadDate: nil,
+                    httpStatus: nil,
+                    eTagUsed: nil,
+                    eTagSaved: nil,
+                    lastModifiedUsed: nil,
+                    lastModifiedSaved: nil,
+                    notModifiedReused: false,
+                    rawFilePath: nil,
+                    rawFileExists: false,
+                    rawByteSize: nil,
+                    contentHash: nil,
+                    failureStage: .missingSelectedListDescriptor,
+                    failureReason: "Missing selected list descriptor: \($0)"
+                )
+            }
+            let diagnostics = AdblockUpdateDiagnostics(
+                summary: "missing selected list descriptor: \(selectionDiagnostics.unknownIdentifiers.joined(separator: ","))",
+                stage: .missingSelectedListDescriptor,
+                listFailures: Dictionary(uniqueKeysWithValues: statuses.map { ($0.listIdentifier, $0.failureReason ?? "") }),
+                listStatuses: statuses,
+                selectionDiagnostics: selectionDiagnostics
+            )
+            latestDiagnostics = diagnostics
+            throw diagnostics
+        }
+
         let descriptors = registry.selectedDescriptors(
             selection: selection,
             profileKind: nativeProfile
         )
         guard !descriptors.isEmpty else {
-            throw AdblockUpdateDiagnostics(summary: "No selected Adblock filter lists")
+            let diagnostics = AdblockUpdateDiagnostics(
+                summary: "effective list selection failed: no selected Adblock filter lists",
+                stage: .effectiveListSelectionFailed,
+                selectionDiagnostics: selectionDiagnostics
+            )
+            latestDiagnostics = diagnostics
+            throw diagnostics
         }
 
         let previousManifest = try await manifestStore.activeManifest()
@@ -1674,65 +1974,109 @@ actor AdblockUpdateCoordinator {
         var filterTexts = [String]()
         var selectedLists = [AdblockCompiledGenerationManifest.SelectedFilterList]()
         var failures = [String: String]()
+        var statusesByIdentifier = [String: AdblockFilterListUpdateStatus]()
 
         for descriptor in descriptors {
+            let rawInfo = await manifestStore.rawListFileInfo(forListIdentifier: descriptor.id)
+            let metadata = previousMetadata[descriptor.id]
+            statusesByIdentifier[descriptor.id] = AdblockFilterListUpdateStatus(
+                listIdentifier: descriptor.id,
+                displayName: descriptor.displayName,
+                category: descriptor.category,
+                selectionOrigins: selectionDiagnostics.origins(forListIdentifier: descriptor.id),
+                finalURL: descriptor.remoteURL.absoluteString,
+                lastCheckedDate: metadata?.lastCheckedDate,
+                lastSuccessfulDownloadDate: metadata?.lastSuccessfulDownloadDate,
+                httpStatus: metadata?.lastHTTPStatus,
+                eTagUsed: metadata?.eTag,
+                eTagSaved: metadata?.eTag,
+                lastModifiedUsed: metadata?.lastModified,
+                lastModifiedSaved: metadata?.lastModified,
+                notModifiedReused: false,
+                rawFilePath: rawInfo.path,
+                rawFileExists: rawInfo.exists,
+                rawByteSize: rawInfo.byteSize,
+                contentHash: metadata?.contentHash,
+                failureStage: metadata?.failureStage,
+                failureReason: metadata?.failureSummary
+            )
+        }
+        latestDiagnostics = AdblockUpdateDiagnostics(
+            summary: "Adblock update started: \(reason)",
+            listStatuses: Self.sortedStatuses(statusesByIdentifier),
+            selectionDiagnostics: selectionDiagnostics
+        )
+
+        for descriptor in descriptors {
+            var status = statusesByIdentifier[descriptor.id]!
             do {
-                let result = try await downloader.download(
+                let prepared = try await prepareFilterList(
                     descriptor: descriptor,
-                    previousMetadata: previousMetadata[descriptor.id]
+                    previousMetadata: previousMetadata[descriptor.id],
+                    stagingDirectory: stagingDirectory,
+                    baseStatus: status
                 )
-                let listData: Data
-                var metadata = previousMetadata[descriptor.id] ?? AdblockFilterListHTTPMetadata()
-                metadata.lastCheckedDate = now()
-                metadata.failureSummary = nil
-
-                switch result {
-                case .downloaded(let data, let response):
-                    listData = data
-                    metadata.eTag = response.value(forHTTPHeaderField: "ETag")
-                    metadata.lastModified = response.value(forHTTPHeaderField: "Last-Modified")
-                    metadata.lastSuccessfulDownloadDate = now()
-                    metadata.contentHash = data.sumiAdblockSHA256Digest
-                    let stagedURL = try await manifestStore.writeRawList(
-                        data,
-                        identifier: descriptor.id,
-                        stagingDirectory: stagingDirectory
-                    )
-                    stagedRawURLs[descriptor.id] = stagedURL
-                case .notModified:
-                    guard let previous = try await manifestStore.rawListData(forListIdentifier: descriptor.id) else {
-                        throw AdblockUpdateDiagnostics(summary: "304 without previous raw list")
-                    }
-                    listData = previous
-                    metadata.contentHash = previous.sumiAdblockSHA256Digest
+                status = prepared.status
+                statusesByIdentifier[descriptor.id] = status
+                updatedMetadata[descriptor.id] = prepared.metadata
+                if let stagedRawURL = prepared.stagedRawURL {
+                    stagedRawURLs[descriptor.id] = stagedRawURL
                 }
-
-                updatedMetadata[descriptor.id] = metadata
-                filterTexts.append(String(decoding: listData, as: UTF8.self))
+                filterTexts.append(prepared.filterText)
                 selectedLists.append(
                     AdblockCompiledGenerationManifest.SelectedFilterList(
                         id: descriptor.id,
                         displayName: descriptor.displayName,
-                        contentHash: listData.sumiAdblockSHA256Digest,
+                        contentHash: prepared.contentHash,
                         category: descriptor.category,
-                        inputByteCount: listData.count,
-                        approximateRuleCount: Self.approximateRuleCount(in: listData)
+                        inputByteCount: prepared.byteCount,
+                        approximateRuleCount: Self.approximateRuleCount(in: prepared.data)
                     )
                 )
+                latestDiagnostics = AdblockUpdateDiagnostics(
+                    summary: "Adblock update in progress: \(descriptor.id) prepared",
+                    listStatuses: Self.sortedStatuses(statusesByIdentifier),
+                    selectionDiagnostics: selectionDiagnostics
+                )
+            } catch let error as AdblockFilterListPreparationError {
+                status = error.status
+                statusesByIdentifier[descriptor.id] = status
+                updatedMetadata[descriptor.id] = error.metadata
+                failures[descriptor.id] = status.failureReason ?? error.diagnostics.summary
             } catch {
-                failures[descriptor.id] = error.localizedDescription
                 var metadata = previousMetadata[descriptor.id] ?? AdblockFilterListHTTPMetadata()
+                let stage = (error as? AdblockUpdateDiagnostics)?.stage ?? .networkRequestFailed
                 metadata.lastCheckedDate = now()
+                metadata.failureStage = stage
                 metadata.failureSummary = error.localizedDescription
+                status.lastCheckedDate = metadata.lastCheckedDate
+                status.failureStage = stage
+                status.failureReason = error.localizedDescription
+                statusesByIdentifier[descriptor.id] = status
+                failures[descriptor.id] = error.localizedDescription
                 updatedMetadata[descriptor.id] = metadata
             }
         }
 
         if !failures.isEmpty {
-            throw AdblockUpdateDiagnostics(
-                summary: "Adblock update failed before compilation",
-                listFailures: failures
+            let currentStatuses = await currentRawFileStatuses(statusesByIdentifier)
+            let failedStatuses = currentStatuses.filter(\.isFailure)
+            let firstStage = failedStatuses.first?.failureStage ?? .effectiveListSelectionFailed
+            let summary: String
+            if failedStatuses.count == 1, let failed = failedStatuses.first {
+                summary = "\(firstStage.rawValue): \(failed.listIdentifier): \(failed.failureReason ?? "failed")"
+            } else {
+                summary = "Adblock update failed before compilation: \(firstStage.rawValue)"
+            }
+            let diagnostics = AdblockUpdateDiagnostics(
+                summary: summary,
+                stage: firstStage,
+                listFailures: failures,
+                listStatuses: currentStatuses,
+                selectionDiagnostics: selectionDiagnostics
             )
+            latestDiagnostics = diagnostics
+            throw diagnostics
         }
 
         guard await isAdblockEnabled() else { return nil }
@@ -1770,7 +2114,15 @@ actor AdblockUpdateCoordinator {
         do {
             nativeOutput = try await nativeCompiler.compileNativeContentBlocking(nativeInput)
         } catch {
-            throw AdblockUpdateDiagnostics(summary: "Adblock native compilation failed: \(error.localizedDescription)")
+            let currentStatuses = await currentRawFileStatuses(statusesByIdentifier)
+            let diagnostics = AdblockUpdateDiagnostics(
+                summary: "Adblock native compilation failed: \(error.localizedDescription)",
+                stage: .nativeCompilationFailed,
+                listStatuses: currentStatuses,
+                selectionDiagnostics: selectionDiagnostics
+            )
+            latestDiagnostics = diagnostics
+            throw diagnostics
         }
 
         guard await isAdblockEnabled() else { return nil }
@@ -1830,10 +2182,16 @@ actor AdblockUpdateCoordinator {
         do {
             try await publisher.publish(manifest: manifest, definitions: definitions)
         } catch let error as SumiContentBlockingCompilationError {
-            throw AdblockUpdateDiagnostics(
+            let currentStatuses = await currentRawFileStatuses(statusesByIdentifier)
+            let diagnostics = AdblockUpdateDiagnostics(
                 summary: "Adblock shard publish failed: \(error.localizedDescription)",
+                stage: .shardPublishFailed,
+                listStatuses: currentStatuses,
+                selectionDiagnostics: selectionDiagnostics,
                 failedShardIdentifier: error.identifier
             )
+            latestDiagnostics = diagnostics
+            throw diagnostics
         }
         try await manifestStore.commit(
             manifest: manifest,
@@ -1844,7 +2202,433 @@ actor AdblockUpdateCoordinator {
         if let garbageCollector {
             latestCleanupReport = await garbageCollector.cleanupAfterSuccessfulUpdate()
         }
+        let committedStatuses = await currentRawFileStatuses(statusesByIdentifier)
+        latestDiagnostics = AdblockUpdateDiagnostics(
+            summary: "Adblock update completed",
+            listStatuses: committedStatuses,
+            selectionDiagnostics: selectionDiagnostics
+        )
         return manifest
+    }
+
+    private struct PreparedFilterList: Sendable {
+        let data: Data
+        let filterText: String
+        let contentHash: String
+        let byteCount: Int
+        let metadata: AdblockFilterListHTTPMetadata
+        let status: AdblockFilterListUpdateStatus
+        let stagedRawURL: URL?
+    }
+
+    private struct AdblockFilterListPreparationError: Error, Sendable {
+        let diagnostics: AdblockUpdateDiagnostics
+        let metadata: AdblockFilterListHTTPMetadata
+        let status: AdblockFilterListUpdateStatus
+    }
+
+    private func prepareFilterList(
+        descriptor: AdblockFilterListDescriptor,
+        previousMetadata: AdblockFilterListHTTPMetadata?,
+        stagingDirectory: URL,
+        baseStatus: AdblockFilterListUpdateStatus
+    ) async throws -> PreparedFilterList {
+        var status = baseStatus
+        var metadata = previousMetadata ?? AdblockFilterListHTTPMetadata()
+        let checkDate = now()
+        metadata.lastCheckedDate = checkDate
+        status.lastCheckedDate = checkDate
+        status.eTagUsed = previousMetadata?.eTag
+        status.lastModifiedUsed = previousMetadata?.lastModified
+        status.failureStage = nil
+        status.failureReason = nil
+
+        guard Self.isSupportedRemoteListURL(descriptor.remoteURL) else {
+            throw preparationError(
+                summary: "Invalid list URL: \(descriptor.remoteURL.absoluteString)",
+                stage: .invalidListURL,
+                metadata: metadata,
+                status: status
+            )
+        }
+
+        let result: AdblockDownloadOutcome
+        do {
+            result = try await downloader.download(
+                descriptor: descriptor,
+                previousMetadata: previousMetadata
+            )
+        } catch let diagnostics as AdblockUpdateDiagnostics {
+            throw preparationError(
+                diagnostics: diagnostics,
+                metadata: metadata,
+                status: status
+            )
+        } catch {
+            throw preparationError(
+                summary: "Network request failed: \(error.localizedDescription)",
+                stage: .networkRequestFailed,
+                metadata: metadata,
+                status: status
+            )
+        }
+
+        switch result {
+        case .downloaded(let data, let response):
+            return try await prepareDownloadedData(
+                data,
+                response: response,
+                descriptor: descriptor,
+                metadata: metadata,
+                status: status,
+                stagingDirectory: stagingDirectory
+            )
+        case .notModified(let response):
+            status.httpStatus = response.statusCode
+            status.finalURL = response.url?.absoluteString ?? descriptor.remoteURL.absoluteString
+            status.eTagSaved = response.value(forHTTPHeaderField: "ETag") ?? previousMetadata?.eTag
+            status.lastModifiedSaved = response.value(forHTTPHeaderField: "Last-Modified") ?? previousMetadata?.lastModified
+            metadata.lastHTTPStatus = response.statusCode
+
+            let cachedData: Data?
+            do {
+                cachedData = try await manifestStore.rawListData(forListIdentifier: descriptor.id)
+            } catch {
+                throw preparationError(
+                    summary: "raw cache read failed: \(error.localizedDescription)",
+                    stage: .rawCacheReadFailed,
+                    metadata: metadata,
+                    status: status
+                )
+            }
+
+            if let cachedData {
+                do {
+                    try Self.validateRawListData(cachedData, descriptor: descriptor)
+                    let filterText = try Self.compilerInputText(for: cachedData, descriptor: descriptor)
+                    let hash = cachedData.sumiAdblockSHA256Digest
+                    let rawInfo = await manifestStore.rawListFileInfo(forListIdentifier: descriptor.id)
+                    metadata.contentHash = hash
+                    metadata.failureSummary = nil
+                    metadata.failureStage = nil
+                    status.notModifiedReused = true
+                    status.rawFilePath = rawInfo.path
+                    status.rawFileExists = rawInfo.exists
+                    status.rawByteSize = cachedData.count
+                    status.contentHash = hash
+                    status.lastSuccessfulDownloadDate = metadata.lastSuccessfulDownloadDate
+                    status.failureStage = nil
+                    status.failureReason = nil
+                    return PreparedFilterList(
+                        data: cachedData,
+                        filterText: filterText,
+                        contentHash: hash,
+                        byteCount: cachedData.count,
+                        metadata: metadata,
+                        status: status,
+                        stagedRawURL: nil
+                    )
+                } catch let diagnostics as AdblockUpdateDiagnostics
+                    where diagnostics.stage == .rawFileEmpty || diagnostics.stage == .rawFileTooSmall || diagnostics.stage == .rawFileAppearsHTML {
+                    return try await retryUnconditionalDownload(
+                        descriptor: descriptor,
+                        stagingDirectory: stagingDirectory,
+                        metadata: metadata,
+                        status: status,
+                        cacheMissStage: diagnostics.stage ?? .rawFileEmpty,
+                        cacheMissSummary: diagnostics.summary
+                    )
+                } catch let diagnostics as AdblockUpdateDiagnostics {
+                    throw preparationError(
+                        diagnostics: diagnostics,
+                        metadata: metadata,
+                        status: status
+                    )
+                }
+            }
+
+            return try await retryUnconditionalDownload(
+                descriptor: descriptor,
+                stagingDirectory: stagingDirectory,
+                metadata: metadata,
+                status: status,
+                cacheMissStage: .notModifiedWithoutRawCache,
+                cacheMissSummary: "304 returned but no previous raw list exists"
+            )
+        }
+    }
+
+    private func retryUnconditionalDownload(
+        descriptor: AdblockFilterListDescriptor,
+        stagingDirectory: URL,
+        metadata: AdblockFilterListHTTPMetadata,
+        status: AdblockFilterListUpdateStatus,
+        cacheMissStage: AdblockUpdateFailureStage,
+        cacheMissSummary: String
+    ) async throws -> PreparedFilterList {
+        var retryStatus = status
+        retryStatus.notModifiedReused = false
+        retryStatus.failureStage = nil
+        retryStatus.failureReason = nil
+
+        let retryResult: AdblockDownloadOutcome
+        do {
+            retryResult = try await downloader.download(
+                descriptor: descriptor,
+                previousMetadata: nil
+            )
+        } catch let diagnostics as AdblockUpdateDiagnostics {
+            throw preparationError(
+                diagnostics: diagnostics,
+                metadata: metadata,
+                status: retryStatus
+            )
+        } catch {
+            throw preparationError(
+                summary: "Network request failed after \(cacheMissStage.rawValue): \(error.localizedDescription)",
+                stage: .networkRequestFailed,
+                metadata: metadata,
+                status: retryStatus
+            )
+        }
+
+        switch retryResult {
+        case .downloaded(let data, let response):
+            return try await prepareDownloadedData(
+                data,
+                response: response,
+                descriptor: descriptor,
+                metadata: metadata,
+                status: retryStatus,
+                stagingDirectory: stagingDirectory
+            )
+        case .notModified:
+            throw preparationError(
+                summary: cacheMissSummary,
+                stage: cacheMissStage,
+                metadata: metadata,
+                status: retryStatus
+            )
+        }
+    }
+
+    private func prepareDownloadedData(
+        _ data: Data,
+        response: HTTPURLResponse,
+        descriptor: AdblockFilterListDescriptor,
+        metadata: AdblockFilterListHTTPMetadata,
+        status: AdblockFilterListUpdateStatus,
+        stagingDirectory: URL
+    ) async throws -> PreparedFilterList {
+        var updatedMetadata = metadata
+        var updatedStatus = status
+        updatedStatus.httpStatus = response.statusCode
+        updatedStatus.finalURL = response.url?.absoluteString ?? descriptor.remoteURL.absoluteString
+        updatedStatus.eTagSaved = response.value(forHTTPHeaderField: "ETag")
+        updatedStatus.lastModifiedSaved = response.value(forHTTPHeaderField: "Last-Modified")
+        updatedStatus.notModifiedReused = false
+        updatedMetadata.lastHTTPStatus = response.statusCode
+
+        do {
+            try Self.validateRawListData(data, descriptor: descriptor)
+        } catch let diagnostics as AdblockUpdateDiagnostics {
+            throw preparationError(
+                diagnostics: diagnostics,
+                metadata: updatedMetadata,
+                status: updatedStatus
+            )
+        }
+
+        let filterText: String
+        do {
+            filterText = try Self.compilerInputText(for: data, descriptor: descriptor)
+        } catch let diagnostics as AdblockUpdateDiagnostics {
+            throw preparationError(
+                diagnostics: diagnostics,
+                metadata: updatedMetadata,
+                status: updatedStatus
+            )
+        }
+
+        let stagedURL: URL
+        do {
+            stagedURL = try await manifestStore.writeRawList(
+                data,
+                identifier: descriptor.id,
+                stagingDirectory: stagingDirectory
+            )
+        } catch {
+            throw preparationError(
+                summary: "raw staging write failed: \(error.localizedDescription)",
+                stage: .rawStagingWriteFailed,
+                metadata: updatedMetadata,
+                status: updatedStatus
+            )
+        }
+
+        let hash = data.sumiAdblockSHA256Digest
+        updatedMetadata.eTag = response.value(forHTTPHeaderField: "ETag")
+        updatedMetadata.lastModified = response.value(forHTTPHeaderField: "Last-Modified")
+        updatedMetadata.lastSuccessfulDownloadDate = now()
+        updatedMetadata.contentHash = hash
+        updatedMetadata.failureSummary = nil
+        updatedMetadata.failureStage = nil
+
+        updatedStatus.lastSuccessfulDownloadDate = updatedMetadata.lastSuccessfulDownloadDate
+        updatedStatus.rawFilePath = stagedURL.path
+        updatedStatus.rawFileExists = true
+        updatedStatus.rawByteSize = data.count
+        updatedStatus.contentHash = hash
+        updatedStatus.failureStage = nil
+        updatedStatus.failureReason = nil
+
+        return PreparedFilterList(
+            data: data,
+            filterText: filterText,
+            contentHash: hash,
+            byteCount: data.count,
+            metadata: updatedMetadata,
+            status: updatedStatus,
+            stagedRawURL: stagedURL
+        )
+    }
+
+    private func preparationError(
+        summary: String,
+        stage: AdblockUpdateFailureStage,
+        metadata: AdblockFilterListHTTPMetadata,
+        status: AdblockFilterListUpdateStatus
+    ) -> AdblockFilterListPreparationError {
+        preparationError(
+            diagnostics: AdblockUpdateDiagnostics(summary: summary, stage: stage),
+            metadata: metadata,
+            status: status
+        )
+    }
+
+    private func preparationError(
+        diagnostics: AdblockUpdateDiagnostics,
+        metadata: AdblockFilterListHTTPMetadata,
+        status: AdblockFilterListUpdateStatus
+    ) -> AdblockFilterListPreparationError {
+        var failedMetadata = metadata
+        var failedStatus = status
+        let stage = diagnostics.stage ?? .networkRequestFailed
+        failedMetadata.failureStage = stage
+        failedMetadata.failureSummary = diagnostics.summary
+        failedMetadata.lastHTTPStatus = diagnostics.httpStatusCode ?? failedMetadata.lastHTTPStatus
+        failedStatus.failureStage = stage
+        failedStatus.failureReason = diagnostics.summary
+        failedStatus.httpStatus = diagnostics.httpStatusCode ?? failedStatus.httpStatus
+        failedStatus.finalURL = diagnostics.responseURLString ?? failedStatus.finalURL
+        failedStatus.eTagSaved = diagnostics.responseETag ?? failedStatus.eTagSaved
+        failedStatus.lastModifiedSaved = diagnostics.responseLastModified ?? failedStatus.lastModifiedSaved
+        return AdblockFilterListPreparationError(
+            diagnostics: diagnostics,
+            metadata: failedMetadata,
+            status: failedStatus
+        )
+    }
+
+    private static func sortedStatuses(
+        _ statusesByIdentifier: [String: AdblockFilterListUpdateStatus]
+    ) -> [AdblockFilterListUpdateStatus] {
+        statusesByIdentifier.values.sorted { $0.listIdentifier < $1.listIdentifier }
+    }
+
+    private func currentRawFileStatuses(
+        _ statusesByIdentifier: [String: AdblockFilterListUpdateStatus]
+    ) async -> [AdblockFilterListUpdateStatus] {
+        var statuses = [AdblockFilterListUpdateStatus]()
+        statuses.reserveCapacity(statusesByIdentifier.count)
+        for status in statusesByIdentifier.values {
+            var refreshedStatus = status
+            let rawInfo = await manifestStore.rawListFileInfo(forListIdentifier: status.listIdentifier)
+            refreshedStatus.rawFilePath = rawInfo.path
+            refreshedStatus.rawFileExists = rawInfo.exists
+            refreshedStatus.rawByteSize = rawInfo.byteSize
+            statuses.append(refreshedStatus)
+        }
+        return statuses.sorted { $0.listIdentifier < $1.listIdentifier }
+    }
+
+    private static func isSupportedRemoteListURL(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              url.host?.isEmpty == false
+        else { return false }
+        return true
+    }
+
+    private static func compilerInputText(
+        for data: Data,
+        descriptor: AdblockFilterListDescriptor
+    ) throws -> String {
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw AdblockUpdateDiagnostics(
+                summary: "compiler input assembly failed: \(descriptor.id) is not valid UTF-8",
+                stage: .compilerInputAssemblyFailed
+            )
+        }
+        return text
+    }
+
+    private static func validateRawListData(
+        _ data: Data,
+        descriptor: AdblockFilterListDescriptor
+    ) throws {
+        guard !data.isEmpty else {
+            throw AdblockUpdateDiagnostics(
+                summary: "raw file empty: \(descriptor.id)",
+                stage: .rawFileEmpty
+            )
+        }
+
+        let preview = String(decoding: data.prefix(4096), as: UTF8.self)
+        let trimmedPreview = preview.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowercasedPreview = trimmedPreview.lowercased()
+        if lowercasedPreview.hasPrefix("<!doctype html")
+            || lowercasedPreview.hasPrefix("<html")
+            || (lowercasedPreview.contains("<body") && lowercasedPreview.contains("</html"))
+            || (lowercasedPreview.contains("<title") && lowercasedPreview.contains("</title")) {
+            throw AdblockUpdateDiagnostics(
+                summary: "raw file appears to be HTML/error page: \(descriptor.id)",
+                stage: .rawFileAppearsHTML
+            )
+        }
+
+        guard data.count >= 4 else {
+            throw AdblockUpdateDiagnostics(
+                summary: "raw file too small / suspicious: \(descriptor.id) has \(data.count) bytes",
+                stage: .rawFileTooSmall
+            )
+        }
+
+        if data.count < 16 && !looksLikeFilterList(preview) {
+            throw AdblockUpdateDiagnostics(
+                summary: "raw file too small / suspicious: \(descriptor.id) does not look like a filter list",
+                stage: .rawFileTooSmall
+            )
+        }
+    }
+
+    private static func looksLikeFilterList(_ text: String) -> Bool {
+        text.components(separatedBy: .newlines)
+            .prefix(64)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .contains { line in
+                guard !line.isEmpty else { return false }
+                return line.hasPrefix("!")
+                    || line.hasPrefix("[Adblock")
+                    || line.hasPrefix("||")
+                    || line.hasPrefix("@@")
+                    || line.hasPrefix("##")
+                    || line.contains("##")
+                    || line.contains("#@#")
+                    || line.contains("$")
+                    || line.hasPrefix("0.0.0.0 ")
+                    || line.hasPrefix("127.0.0.1 ")
+            }
     }
 
     func rollbackIfActiveGenerationFailsSmokeCheck() async -> AdblockGenerationRollbackReport {
