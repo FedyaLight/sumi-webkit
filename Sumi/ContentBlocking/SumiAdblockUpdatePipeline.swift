@@ -720,7 +720,8 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
     let createdDate: Date
     let selectedFilterLists: [SelectedFilterList]
     let webKitRuleListIdentifiers: [String]
-    let groupedOutputs: [Group]
+    let networkShards: [NativeContentBlockingShardDescriptor]
+    let nativeCSSShards: [NativeContentBlockingShardDescriptor]
     let enhancedRuntimeBundle: AdblockEnhancedRuntimeBundle?
     let nativeProfile: AdblockFilterListProfileKind?
     let nativeCompiler: NativeContentBlockingCompilerIdentity?
@@ -730,13 +731,28 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
     let lastSuccessfulUpdateDate: Date
     let previousGenerationId: String?
 
+    var allNativeShards: [NativeContentBlockingShardDescriptor] {
+        networkShards + nativeCSSShards
+    }
+
+    var groupedOutputs: [Group] {
+        allNativeShards.map {
+            Group(
+                kind: $0.kind,
+                webKitIdentifier: $0.webKitIdentifier,
+                contentHash: $0.contentHash,
+                convertedRuleCount: $0.approximateRuleCount
+            )
+        }
+    }
+
     init(
         schemaVersion: Int,
         activeGenerationId: String,
         createdDate: Date,
         selectedFilterLists: [SelectedFilterList],
-        webKitRuleListIdentifiers: [String],
-        groupedOutputs: [Group],
+        networkShards: [NativeContentBlockingShardDescriptor],
+        nativeCSSShards: [NativeContentBlockingShardDescriptor],
         enhancedRuntimeBundle: AdblockEnhancedRuntimeBundle?,
         nativeProfile: AdblockFilterListProfileKind? = nil,
         nativeCompiler: NativeContentBlockingCompilerIdentity?,
@@ -750,8 +766,11 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
         self.activeGenerationId = activeGenerationId
         self.createdDate = createdDate
         self.selectedFilterLists = selectedFilterLists
-        self.webKitRuleListIdentifiers = webKitRuleListIdentifiers
-        self.groupedOutputs = groupedOutputs
+        self.networkShards = networkShards
+        self.nativeCSSShards = nativeCSSShards
+        self.webKitRuleListIdentifiers = (networkShards + nativeCSSShards)
+            .map(\.webKitIdentifier)
+            .sorted()
         self.enhancedRuntimeBundle = enhancedRuntimeBundle
         self.nativeProfile = nativeProfile
         self.nativeCompiler = nativeCompiler
@@ -760,6 +779,145 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
         self.compilerDiagnosticsSummary = compilerDiagnosticsSummary
         self.lastSuccessfulUpdateDate = lastSuccessfulUpdateDate
         self.previousGenerationId = previousGenerationId
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case activeGenerationId
+        case createdDate
+        case selectedFilterLists
+        case webKitRuleListIdentifiers
+        case groupedOutputs
+        case networkShards
+        case nativeCSSShards
+        case enhancedRuntimeBundle
+        case nativeProfile
+        case nativeCompiler
+        case nativeCompilerSourceLists
+        case nativeCompilationSummary
+        case compilerDiagnosticsSummary
+        case lastSuccessfulUpdateDate
+        case previousGenerationId
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        activeGenerationId = try container.decode(String.self, forKey: .activeGenerationId)
+        createdDate = try container.decode(Date.self, forKey: .createdDate)
+        selectedFilterLists = try container.decode([SelectedFilterList].self, forKey: .selectedFilterLists)
+        enhancedRuntimeBundle = try container.decodeIfPresent(
+            AdblockEnhancedRuntimeBundle.self,
+            forKey: .enhancedRuntimeBundle
+        )
+        nativeProfile = try container.decodeIfPresent(
+            AdblockFilterListProfileKind.self,
+            forKey: .nativeProfile
+        )
+        nativeCompiler = try container.decodeIfPresent(
+            NativeContentBlockingCompilerIdentity.self,
+            forKey: .nativeCompiler
+        )
+        nativeCompilerSourceLists = try container.decodeIfPresent(
+            [NativeContentBlockingSourceList].self,
+            forKey: .nativeCompilerSourceLists
+        )
+        nativeCompilationSummary = try container.decodeIfPresent(
+            NativeContentBlockingCompilationSummary.self,
+            forKey: .nativeCompilationSummary
+        )
+        compilerDiagnosticsSummary = try container.decode(
+            String.self,
+            forKey: .compilerDiagnosticsSummary
+        )
+        lastSuccessfulUpdateDate = try container.decode(
+            Date.self,
+            forKey: .lastSuccessfulUpdateDate
+        )
+        previousGenerationId = try container.decodeIfPresent(
+            String.self,
+            forKey: .previousGenerationId
+        )
+
+        if let decodedNetworkShards = try container.decodeIfPresent(
+            [NativeContentBlockingShardDescriptor].self,
+            forKey: .networkShards
+        ),
+           let decodedNativeCSSShards = try container.decodeIfPresent(
+            [NativeContentBlockingShardDescriptor].self,
+            forKey: .nativeCSSShards
+        ) {
+            networkShards = decodedNetworkShards
+            nativeCSSShards = decodedNativeCSSShards
+        } else {
+            let legacyGroups = try container.decodeIfPresent([Group].self, forKey: .groupedOutputs) ?? []
+            let activeGenerationIdForMigration = activeGenerationId
+            let selectedFilterListsForMigration = selectedFilterLists
+            let nativeCompilerForMigration = nativeCompiler
+            let nativeProfileForMigration = nativeProfile
+            let migrated = legacyGroups.enumerated().map { index, group in
+                Self.legacyShard(
+                    from: group,
+                    index: index,
+                    generationId: activeGenerationIdForMigration,
+                    selectedFilterLists: selectedFilterListsForMigration,
+                    nativeCompiler: nativeCompilerForMigration,
+                    nativeProfile: nativeProfileForMigration
+                )
+            }
+            networkShards = migrated.filter { $0.kind == .network }
+            nativeCSSShards = migrated.filter { $0.kind == .nativeCosmeticCSS }
+        }
+
+        webKitRuleListIdentifiers = try container.decodeIfPresent(
+            [String].self,
+            forKey: .webKitRuleListIdentifiers
+        ) ?? (networkShards + nativeCSSShards).map(\.webKitIdentifier).sorted()
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(activeGenerationId, forKey: .activeGenerationId)
+        try container.encode(createdDate, forKey: .createdDate)
+        try container.encode(selectedFilterLists, forKey: .selectedFilterLists)
+        try container.encode(webKitRuleListIdentifiers, forKey: .webKitRuleListIdentifiers)
+        try container.encode(groupedOutputs, forKey: .groupedOutputs)
+        try container.encode(networkShards, forKey: .networkShards)
+        try container.encode(nativeCSSShards, forKey: .nativeCSSShards)
+        try container.encodeIfPresent(enhancedRuntimeBundle, forKey: .enhancedRuntimeBundle)
+        try container.encodeIfPresent(nativeProfile, forKey: .nativeProfile)
+        try container.encodeIfPresent(nativeCompiler, forKey: .nativeCompiler)
+        try container.encodeIfPresent(nativeCompilerSourceLists, forKey: .nativeCompilerSourceLists)
+        try container.encodeIfPresent(nativeCompilationSummary, forKey: .nativeCompilationSummary)
+        try container.encode(compilerDiagnosticsSummary, forKey: .compilerDiagnosticsSummary)
+        try container.encode(lastSuccessfulUpdateDate, forKey: .lastSuccessfulUpdateDate)
+        try container.encodeIfPresent(previousGenerationId, forKey: .previousGenerationId)
+    }
+
+    private static func legacyShard(
+        from group: Group,
+        index: Int,
+        generationId: String,
+        selectedFilterLists: [SelectedFilterList],
+        nativeCompiler: NativeContentBlockingCompilerIdentity?,
+        nativeProfile: AdblockFilterListProfileKind?
+    ) -> NativeContentBlockingShardDescriptor {
+        NativeContentBlockingShardDescriptor(
+            id: "legacy-\(group.kind.rawValue)-\(String(format: "%04d", index + 1))",
+            generationId: generationId,
+            kind: group.kind,
+            sourceListIdentifiers: selectedFilterLists.map(\.id).sorted(),
+            sourceCategories: Array(Set(selectedFilterLists.compactMap(\.category)))
+                .sorted { $0.rawValue < $1.rawValue },
+            webKitIdentifier: group.webKitIdentifier,
+            contentHash: group.contentHash,
+            approximateRuleCount: group.convertedRuleCount,
+            jsonByteCount: 0,
+            compilerIdentity: nativeCompiler,
+            profileIdentity: nativeProfile,
+            diagnosticsSummary: "legacySingleGroupRepresentation"
+        )
     }
 }
 
@@ -779,6 +937,7 @@ struct AdblockGenerationRollbackReport: Equatable, Sendable {
 struct AdblockUpdateDiagnostics: Error, LocalizedError, Equatable, Sendable {
     var summary: String
     var listFailures: [String: String] = [:]
+    var failedShardIdentifier: String?
 
     var errorDescription: String? { summary }
 }
@@ -900,9 +1059,9 @@ actor AdblockUpdateManifestStore {
         return url
     }
 
-    func writeCompiledGroup(_ group: AdblockCompiledRuleGroup, stagingDirectory: URL) throws -> URL {
-        let url = stagingDirectory.appendingPathComponent("\(group.kind.rawValue).json")
-        try Data(group.encodedContentRuleList.utf8).write(to: url, options: .atomic)
+    func writeCompiledShard(_ shard: NativeContentBlockingCompiledShard, stagingDirectory: URL) throws -> URL {
+        let url = stagingDirectory.appendingPathComponent("\(shard.descriptor.id).json")
+        try Data(shard.encodedContentRuleList.utf8).write(to: url, options: .atomic)
         return url
     }
 
@@ -910,7 +1069,7 @@ actor AdblockUpdateManifestStore {
         manifest: AdblockCompiledGenerationManifest,
         httpMetadata: [String: AdblockFilterListHTTPMetadata],
         stagedRawListURLs: [String: URL],
-        stagedCompiledGroupURLs: [AdblockCompiledRuleGroupKind: URL] = [:]
+        stagedCompiledShardURLs: [String: URL] = [:]
     ) throws {
         try fileManager.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
         let rawDirectory = rootDirectory.appendingPathComponent("RawLists", isDirectory: true)
@@ -925,8 +1084,8 @@ actor AdblockUpdateManifestStore {
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        for (kind, stagedURL) in stagedCompiledGroupURLs {
-            let destination = generationDirectory.appendingPathComponent("\(kind.rawValue).json")
+        for (shardId, stagedURL) in stagedCompiledShardURLs {
+            let destination = generationDirectory.appendingPathComponent("\(shardId).json")
             try copyReplacingItem(at: destination, withItemAt: stagedURL)
         }
         try atomicWrite(encoder.encode(manifest), to: generationDirectory.appendingPathComponent("manifest.json"))
@@ -1058,13 +1217,13 @@ final class AdblockManifestRuleListProvider: SumiContentRuleListSetProviding {
     func ruleListSet(profileId: UUID?) throws -> SumiTrackingRuleListSet {
         guard let manifest else { return SumiTrackingRuleListSet() }
         let allowedKinds = Self.attachedGroupKinds(for: cosmeticMode)
-        let definitions = manifest.groupedOutputs
+        let definitions = manifest.allNativeShards
             .filter { allowedKinds.contains($0.kind) }
-            .map { group in
+            .map { shard in
                 SumiContentRuleListDefinition(
-                    name: group.webKitIdentifier,
+                    name: shard.webKitIdentifier,
                     encodedContentRuleList: "[]",
-                    storeIdentifierOverride: group.webKitIdentifier
+                    storeIdentifierOverride: shard.webKitIdentifier
                 )
             }
         return SumiTrackingRuleListSet(trackerDataSet: definitions)
@@ -1145,11 +1304,17 @@ actor AdblockGenerationGarbageCollector {
                 activeManifest: activeManifest,
                 previousManifest: previousManifest
             )
+            let preservedIdentifierPrefixes = Set(
+                [activeManifest.activeGenerationId, activeManifest.previousGenerationId]
+                    .compactMap { $0 }
+                    .flatMap(Self.webKitIdentifierPrefixes(forGenerationId:))
+            )
 
             let identifiers = await contentRuleListStore.availableContentRuleListIdentifiers()
             for identifier in identifiers
-                where identifier.hasPrefix("sumi.adblock.")
-                    && !preservedIdentifiers.contains(identifier) {
+                where AdblockUpdateCoordinator.isAdblockGeneratedWebKitIdentifier(identifier)
+                    && !preservedIdentifiers.contains(identifier)
+                    && !preservedIdentifierPrefixes.contains(where: identifier.hasPrefix) {
                 do {
                     try await contentRuleListStore.removeContentRuleList(forIdentifier: identifier)
                     report.removedWebKitIdentifiers.append(identifier)
@@ -1280,19 +1445,24 @@ actor AdblockGenerationGarbageCollector {
         var identifiers = Set(activeManifest.webKitRuleListIdentifiers)
         if let previousManifest {
             identifiers.formUnion(previousManifest.webKitRuleListIdentifiers)
-        } else if let previousGenerationId = activeManifest.previousGenerationId {
-            identifiers.formUnion(webKitIdentifiers(forGenerationId: previousGenerationId))
         }
         return identifiers
     }
 
-    private static func webKitIdentifiers(forGenerationId generationId: String) -> [String] {
+    private static func webKitIdentifierPrefixes(forGenerationId generationId: String) -> [String] {
         guard let hash = generationId.split(separator: "-").last.map(String.init),
               !hash.isEmpty
-        else { return [] }
+        else {
+            return [
+                "sumi.adblock.network.\(generationId).",
+                "sumi.adblock.nativeCSS.\(generationId).",
+            ]
+        }
         return [
-            AdblockUpdateCoordinator.webKitIdentifier(kind: .network, generationHash: hash),
-            AdblockUpdateCoordinator.webKitIdentifier(kind: .nativeCosmeticCSS, generationHash: hash),
+            "sumi.adblock.network.\(generationId).",
+            "sumi.adblock.nativeCSS.\(generationId).",
+            "sumi.adblock.network.\(hash)",
+            "sumi.adblock.nativeCSS.\(hash)",
         ]
     }
 
@@ -1482,6 +1652,8 @@ actor AdblockUpdateCoordinator {
 
         let nativeInput = AdblockCompilationInput(
             sourceIdentifier: sourceIdentifier,
+            generationId: generation.id,
+            nativeProfile: nativeProfile,
             filterTexts: filterTexts,
             selectedOutputGroups: [.network, .nativeCosmeticCSS],
             sourceLists: selectedLists.map {
@@ -1509,35 +1681,27 @@ actor AdblockUpdateCoordinator {
         guard await isAdblockEnabled() else { return nil }
 
         var definitions = [SumiContentRuleListDefinition]()
-        var groups = [AdblockCompiledGenerationManifest.Group]()
-        var stagedCompiledGroupURLs = [AdblockCompiledRuleGroupKind: URL]()
-        for group in nativeOutput.groups.sorted(by: { $0.kind.rawValue < $1.kind.rawValue }) {
-            stagedCompiledGroupURLs[group.kind] = try await manifestStore.writeCompiledGroup(group, stagingDirectory: stagingDirectory)
-            let webKitIdentifier = Self.webKitIdentifier(kind: group.kind, generationHash: generationHash)
-            definitions.append(
-                SumiContentRuleListDefinition(
-                    name: webKitIdentifier,
-                    encodedContentRuleList: group.encodedContentRuleList,
-                    storeIdentifierOverride: webKitIdentifier
-                )
+        var stagedCompiledShardURLs = [String: URL]()
+        for shard in nativeOutput.shards.sorted(by: {
+            if $0.kind == $1.kind {
+                return $0.descriptor.id < $1.descriptor.id
+            }
+            return $0.kind.rawValue < $1.kind.rawValue
+        }) {
+            stagedCompiledShardURLs[shard.descriptor.id] = try await manifestStore.writeCompiledShard(
+                shard,
+                stagingDirectory: stagingDirectory
             )
-            groups.append(
-                AdblockCompiledGenerationManifest.Group(
-                    kind: group.kind,
-                    webKitIdentifier: webKitIdentifier,
-                    contentHash: group.contentHash,
-                    convertedRuleCount: group.convertedRuleCount
-                )
-            )
+            definitions.append(shard.definition)
         }
 
         let manifest = AdblockCompiledGenerationManifest(
-            schemaVersion: 4,
+            schemaVersion: 5,
             activeGenerationId: generation.id,
             createdDate: generation.createdDate,
             selectedFilterLists: selectedLists.sorted { $0.id < $1.id },
-            webKitRuleListIdentifiers: groups.map(\.webKitIdentifier).sorted(),
-            groupedOutputs: groups,
+            networkShards: nativeOutput.networkShards.map(\.descriptor),
+            nativeCSSShards: nativeOutput.nativeCosmeticCSSShards.map(\.descriptor),
             enhancedRuntimeBundle: enhancedOutput?.enhancedRuntimeBundle.isAvailable == true
                 ? enhancedOutput?.enhancedRuntimeBundle
                 : nil,
@@ -1557,18 +1721,26 @@ actor AdblockUpdateCoordinator {
             ),
             compilerDiagnosticsSummary: Self.diagnosticsSummary(
                 nativeDiagnostics: nativeOutput.diagnostics,
+                nativeOutput: nativeOutput,
                 enhancedOutput: enhancedOutput
             ),
             lastSuccessfulUpdateDate: now(),
             previousGenerationId: previousManifest?.activeGenerationId
         )
 
-        try await publisher.publish(manifest: manifest, definitions: definitions)
+        do {
+            try await publisher.publish(manifest: manifest, definitions: definitions)
+        } catch let error as SumiContentBlockingCompilationError {
+            throw AdblockUpdateDiagnostics(
+                summary: "Adblock shard publish failed: \(error.localizedDescription)",
+                failedShardIdentifier: error.identifier
+            )
+        }
         try await manifestStore.commit(
             manifest: manifest,
             httpMetadata: updatedMetadata,
             stagedRawListURLs: stagedRawURLs,
-            stagedCompiledGroupURLs: stagedCompiledGroupURLs
+            stagedCompiledShardURLs: stagedCompiledShardURLs
         )
         if let garbageCollector {
             latestCleanupReport = await garbageCollector.cleanupAfterSuccessfulUpdate()
@@ -1649,11 +1821,11 @@ actor AdblockUpdateCoordinator {
     private static func definitions(
         from manifest: AdblockCompiledGenerationManifest
     ) -> [SumiContentRuleListDefinition] {
-        manifest.groupedOutputs.map { group in
+        manifest.allNativeShards.map { shard in
             SumiContentRuleListDefinition(
-                name: group.webKitIdentifier,
+                name: shard.webKitIdentifier,
                 encodedContentRuleList: "[]",
-                storeIdentifierOverride: group.webKitIdentifier
+                storeIdentifierOverride: shard.webKitIdentifier
             )
         }
     }
@@ -1671,13 +1843,12 @@ actor AdblockUpdateCoordinator {
     }
 
     static func isAdblockGeneratedWebKitIdentifier(_ identifier: String) -> Bool {
-        identifier.hasPrefix("sumi.adblock.network.")
-            || identifier.hasPrefix("sumi.adblock.nativeCSS.")
-            || identifier.hasPrefix("sumi.adblock.regional.")
+        identifier.hasPrefix("sumi.adblock.")
     }
 
     private static func diagnosticsSummary(
         nativeDiagnostics diagnostics: AdblockCompilationDiagnostics,
+        nativeOutput: NativeContentBlockingCompilationOutput,
         enhancedOutput: EnhancedCompatibilityCompilationOutput?
     ) -> String {
         [
@@ -1689,6 +1860,9 @@ actor AdblockUpdateCoordinator {
             "ignored=\(diagnostics.ignoredRules.count)",
             "ruleCapHit=\(diagnostics.ruleCap.wasHit)",
             "discarded=\(diagnostics.ruleCap.discardedRuleCount)",
+            "networkShards=\(nativeOutput.networkShards.count)",
+            "nativeCSSShards=\(nativeOutput.nativeCosmeticCSSShards.count)",
+            "largestShardBytes=\(nativeOutput.shards.map(\.descriptor.jsonByteCount).max() ?? 0)",
             "enhancedResources=\(enhancedOutput?.enhancedRuntimeBundle.resources.count ?? 0)",
             "enhancedUnsupported=\(enhancedOutput?.enhancedRuntimeBundle.unsupportedDiagnostics.count ?? 0)",
         ].joined(separator: "; ")

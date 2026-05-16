@@ -374,6 +374,67 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertEqual(first.groups.map(\.contentHash), second.groups.map(\.contentHash))
     }
 
+    func testNativeCompilerDeterministicallyBuildsMultipleNetworkAndNativeCSSShards() async throws {
+        let adapter = CountingAdblockRustAdapter(
+            output: AdblockRustAdapterOutput(
+                network: [
+                    Self.contentRule(action: "block", urlFilter: "network-1"),
+                    Self.contentRule(action: "block", urlFilter: "network-2"),
+                    Self.contentRule(action: "block", urlFilter: "network-3"),
+                ],
+                nativeCosmeticCSS: [
+                    Self.contentRule(action: "css-display-none", urlFilter: ".*", selector: ".ad-one"),
+                    Self.contentRule(action: "css-display-none", urlFilter: ".*", selector: ".ad-two"),
+                ],
+                unsupportedOrIgnored: []
+            )
+        )
+        let compiler = AdblockRustCompiler(adapter: adapter)
+        let input = AdblockCompilationInput(
+            sourceIdentifier: "ShardFixture",
+            generationId: "20260516T120000Z-shardhash",
+            nativeProfile: .balancedNative,
+            filterTexts: ["fixture"],
+            selectedOutputGroups: [.network, .nativeCosmeticCSS],
+            shardStrategy: NativeContentBlockingShardStrategy(
+                maxRulesPerShard: 1,
+                maxJSONBytesPerShard: 1_000_000
+            )
+        )
+
+        let first = try await compiler.compileNativeContentBlocking(input)
+        let second = try await compiler.compileNativeContentBlocking(input)
+
+        XCTAssertEqual(first.networkShards.count, 3)
+        XCTAssertEqual(first.nativeCosmeticCSSShards.count, 2)
+        XCTAssertEqual(first.networkShards.map(\.descriptor.id), ["network-0001", "network-0002", "network-0003"])
+        XCTAssertEqual(first.nativeCosmeticCSSShards.map(\.descriptor.id), ["nativeCSS-0001", "nativeCSS-0002"])
+        XCTAssertEqual(first.shards.map(\.descriptor.contentHash), second.shards.map(\.descriptor.contentHash))
+        XCTAssertTrue(first.shards.allSatisfy {
+            $0.descriptor.webKitIdentifier.hasPrefix("sumi.adblock.")
+                && $0.descriptor.webKitIdentifier.contains("20260516T120000Z-shardhash")
+                && $0.descriptor.profileIdentity == .balancedNative
+        })
+    }
+
+    func testSingleLegacySizedCompilerOutputStillRepresentsOneShardPerKind() async throws {
+        let output = try await AdblockRustCompiler(
+            adapter: CountingAdblockRustAdapter(output: .tinyFixture)
+        ).compileNativeContentBlocking(
+            AdblockCompilationInput(
+                sourceIdentifier: "SingleShard",
+                generationId: "single-generation",
+                filterTexts: AdblockWebKitRuleListStore.tinyFixtureFilters,
+                selectedOutputGroups: [.network, .nativeCosmeticCSS]
+            )
+        )
+
+        XCTAssertEqual(output.networkShards.count, 1)
+        XCTAssertEqual(output.nativeCosmeticCSSShards.count, 1)
+        XCTAssertEqual(output.networkShards[0].descriptor.generationId, "single-generation")
+        XCTAssertEqual(output.nativeCosmeticCSSShards[0].descriptor.generationId, "single-generation")
+    }
+
     func testBrowserManagerStartupWithAdBlockingDisabledDoesNotCreateRuntime() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -757,9 +818,15 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertTrue(diagnostics.isEnabled)
         XCTAssertTrue(diagnostics.hasActiveGeneration)
         XCTAssertEqual(diagnostics.attachedNativeGroups, [.nativeCosmeticCSS, .network])
+        XCTAssertEqual(diagnostics.attachedShardIdentifiers.count, 2)
         XCTAssertEqual(diagnostics.selectedListIdentifiers, ["easylist"])
         XCTAssertEqual(diagnostics.selectedNativeProfile, nil)
         XCTAssertEqual(diagnostics.nativeCompiler?.name, "adblock-rust")
+        XCTAssertEqual(diagnostics.networkShardCount, 1)
+        XCTAssertEqual(diagnostics.nativeCSSShardCount, 1)
+        XCTAssertEqual(diagnostics.totalNetworkRuleCount, 1)
+        XCTAssertEqual(diagnostics.totalNativeCSSRuleCount, 1)
+        XCTAssertEqual(diagnostics.largestShardJSONByteCount, 2)
         XCTAssertEqual(diagnostics.cosmeticMode, .nativeCSS)
         XCTAssertFalse(diagnostics.enhancedRuntimeIsEnabled)
         XCTAssertFalse(diagnostics.trackingProtectionModuleEnabled)
@@ -1567,22 +1634,42 @@ final class SumiAdBlockingModuleTests: XCTestCase {
                     contentHash: "easylist-hash"
                 ),
             ],
-            webKitRuleListIdentifiers: [
-                "sumi.adblock.network.hybridtest",
-                "sumi.adblock.nativeCSS.hybridtest",
-            ],
-            groupedOutputs: [
-                AdblockCompiledGenerationManifest.Group(
+            networkShards: [
+                NativeContentBlockingShardDescriptor(
+                    id: "network-0001",
+                    generationId: "hybrid-test-generation",
                     kind: .network,
+                    sourceListIdentifiers: ["easylist"],
+                    sourceCategories: [.baseAds],
                     webKitIdentifier: "sumi.adblock.network.hybridtest",
                     contentHash: "network",
-                    convertedRuleCount: 1
+                    approximateRuleCount: 1,
+                    jsonByteCount: 2,
+                    compilerIdentity: NativeContentBlockingCompilerIdentity(
+                        name: "adblock-rust",
+                        version: "test"
+                    ),
+                    profileIdentity: nil,
+                    diagnosticsSummary: "test"
                 ),
-                AdblockCompiledGenerationManifest.Group(
+            ],
+            nativeCSSShards: [
+                NativeContentBlockingShardDescriptor(
+                    id: "nativeCSS-0001",
+                    generationId: "hybrid-test-generation",
                     kind: .nativeCosmeticCSS,
+                    sourceListIdentifiers: ["easylist"],
+                    sourceCategories: [.baseAds],
                     webKitIdentifier: "sumi.adblock.nativeCSS.hybridtest",
                     contentHash: "css",
-                    convertedRuleCount: 1
+                    approximateRuleCount: 1,
+                    jsonByteCount: 2,
+                    compilerIdentity: NativeContentBlockingCompilerIdentity(
+                        name: "adblock-rust",
+                        version: "test"
+                    ),
+                    profileIdentity: nil,
+                    diagnosticsSummary: "test"
                 ),
             ],
             enhancedRuntimeBundle: AdblockEnhancedRuntimeBundle(
@@ -1624,7 +1711,22 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             manifest: manifest,
             httpMetadata: [:],
             stagedRawListURLs: [:],
-            stagedCompiledGroupURLs: [:]
+            stagedCompiledShardURLs: [:]
+        )
+    }
+
+    private static func contentRule(
+        action: String,
+        urlFilter: String,
+        selector: String? = nil
+    ) -> AdblockRustContentRule {
+        var actionPayload: [String: JSONObject] = ["type": .string(action)]
+        if let selector {
+            actionPayload["selector"] = .string(selector)
+        }
+        return AdblockRustContentRule(
+            action: .object(actionPayload),
+            trigger: .object(["url-filter": .string(urlFilter)])
         )
     }
 

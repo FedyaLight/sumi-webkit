@@ -246,6 +246,44 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
         try await waitForRemovedIdentifier(identifier, in: compiler)
     }
 
+    func testPreparedUpdateCompilesAllRuleListsBeforeFailingSmokeLookup() async throws {
+        let firstDefinition = Self.validRuleListDefinition(
+            name: "SumiPreparedShardSmokeFirst-\(UUID().uuidString)",
+            blockedHost: "prepared-shard-smoke-first.example"
+        )
+        let secondDefinition = Self.validRuleListDefinition(
+            name: "SumiPreparedShardSmokeSecond-\(UUID().uuidString)",
+            blockedHost: "prepared-shard-smoke-second.example"
+        )
+        let failingIdentifier = Self.storeIdentifier(for: secondDefinition)
+        let compiler = SmokeLookupFailingContentRuleListCompiler(
+            failingIdentifiers: [failingIdentifier]
+        )
+        let service = SumiContentBlockingService(
+            policy: .disabled,
+            compiler: compiler,
+            compiledRuleListCatalog: InMemoryCompiledRuleListCatalog()
+        )
+
+        do {
+            _ = try await service.prepareRuleListUpdate(
+                ruleLists: [firstDefinition, secondDefinition]
+            )
+            XCTFail("Expected prepared update smoke lookup to fail")
+        } catch let error as SumiContentBlockingCompilationError {
+            XCTAssertEqual(error.identifier, failingIdentifier)
+        }
+
+        XCTAssertEqual(
+            Set(compiler.compiledIdentifiers),
+            Set([
+                Self.storeIdentifier(for: firstDefinition),
+                failingIdentifier
+            ])
+        )
+        XCTAssertEqual(compiler.compiledIdentifiers.count, 2)
+    }
+
     func testContentBlockingUserScriptsUseNormalProviderPath() async throws {
         let marker = "window.__sumiContentBlockingProviderScript = true;"
         let provider = SumiNormalTabUserScripts(
@@ -435,6 +473,45 @@ private final class CountingContentRuleListCompiler: SumiContentRuleListCompilin
 
     func removeContentRuleList(forIdentifier identifier: String) async throws {
         removedIdentifiers.append(identifier)
+        try await wrapped.removeContentRuleList(forIdentifier: identifier)
+    }
+}
+
+@MainActor
+private final class SmokeLookupFailingContentRuleListCompiler: SumiContentRuleListCompiling {
+    private let wrapped = SumiWKContentRuleListCompiler()
+    private let failingIdentifiers: Set<String>
+    private(set) var compiledIdentifiers: [String] = []
+
+    init(failingIdentifiers: Set<String>) {
+        self.failingIdentifiers = failingIdentifiers
+    }
+
+    func lookUpContentRuleList(forIdentifier identifier: String) async -> WKContentRuleList? {
+        await wrapped.lookUpContentRuleList(forIdentifier: identifier)
+    }
+
+    func canLookUpContentRuleList(forIdentifier identifier: String) async -> Bool {
+        guard !failingIdentifiers.contains(identifier) else { return false }
+        return await wrapped.canLookUpContentRuleList(forIdentifier: identifier)
+    }
+
+    func compileContentRuleList(
+        forIdentifier identifier: String,
+        encodedContentRuleList: String
+    ) async throws -> WKContentRuleList {
+        compiledIdentifiers.append(identifier)
+        return try await wrapped.compileContentRuleList(
+            forIdentifier: identifier,
+            encodedContentRuleList: encodedContentRuleList
+        )
+    }
+
+    func availableContentRuleListIdentifiers() async -> [String] {
+        await wrapped.availableContentRuleListIdentifiers()
+    }
+
+    func removeContentRuleList(forIdentifier identifier: String) async throws {
         try await wrapped.removeContentRuleList(forIdentifier: identifier)
     }
 }
