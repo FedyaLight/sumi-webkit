@@ -132,7 +132,8 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
                 isInstalled: false,
                 globalRuleListCount: 0,
                 updateRuleCount: 0,
-                isContentBlockingFeatureEnabled: isContentBlockingFeatureEnabled
+                isContentBlockingFeatureEnabled: isContentBlockingFeatureEnabled,
+                globalRuleListIdentifiers: []
             )
         }
 
@@ -140,7 +141,8 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
             isInstalled: true,
             globalRuleListCount: contentBlockingAssets.globalRuleLists.count,
             updateRuleCount: contentBlockingAssets.updateRuleCount,
-            isContentBlockingFeatureEnabled: isContentBlockingFeatureEnabled
+            isContentBlockingFeatureEnabled: isContentBlockingFeatureEnabled,
+            globalRuleListIdentifiers: Array(contentBlockingAssets.globalRuleLists.keys)
         )
     }
 
@@ -153,7 +155,8 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
                     isInstalled: true,
                     globalRuleListCount: assets.globalRuleLists.count,
                     updateRuleCount: assets.updateRuleCount,
-                    isContentBlockingFeatureEnabled: assets.isContentBlockingFeatureEnabled
+                    isContentBlockingFeatureEnabled: assets.isContentBlockingFeatureEnabled,
+                    globalRuleListIdentifiers: Array(assets.globalRuleLists.keys)
                 )
             }
             .eraseToAnyPublisher()

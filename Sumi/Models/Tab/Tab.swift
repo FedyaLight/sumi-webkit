@@ -901,7 +901,14 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         browserManager?.adBlockingModule.currentTabDiagnostics(
             for: url,
             appliedState: adblockAppliedAttachmentState,
-            reloadRequired: isAdblockReloadRequired
+            reloadRequired: isAdblockReloadRequired,
+            actualAttachedRuleListIdentifiers: existingWebView?
+                .configuration
+                .userContentController
+                .sumiNormalTabUserContentController?
+                .contentBlockingAssetSummary
+                .globalRuleListIdentifiers
+                .filter { $0.hasPrefix("sumi.adblock.") }
         )
     }
 

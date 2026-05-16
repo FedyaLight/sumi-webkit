@@ -140,6 +140,8 @@ final class SettingsModuleToggleTests: XCTestCase {
         XCTAssertTrue(privacySource.contains("Regional ads"))
         XCTAssertTrue(privacySource.contains("DEBUG Adblock Diagnostics"))
         XCTAssertTrue(privacySource.contains("Rebuild selected Adblock profile now"))
+        XCTAssertTrue(privacySource.contains("Copy Adblock Diagnostics"))
+        XCTAssertTrue(privacySource.contains("NSPasteboard.general"))
 
         for source in [privacySource, toggleSource] {
             XCTAssertFalse(source.contains("oraLikeNative"))

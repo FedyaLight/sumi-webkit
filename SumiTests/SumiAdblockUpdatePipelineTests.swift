@@ -1589,13 +1589,29 @@ private final class FakeAdblockPublisher: AdblockRuleListPublishing {
         self.error = error
     }
 
-    func publish(
+    func preparePublication(
         manifest: AdblockCompiledGenerationManifest,
         definitions: [SumiContentRuleListDefinition]
-    ) async throws {
+    ) async throws -> PreparedAdblockRuleListPublication {
         if let error {
             throw error
         }
+        return PreparedAdblockRuleListPublication(
+            manifest: manifest,
+            definitions: definitions,
+            preparedContentBlockingUpdate: SumiPreparedContentBlockingUpdate(
+                policy: definitions.isEmpty ? .disabled : .enabled(ruleLists: definitions),
+                updateEvent: SumiContentBlockerRulesUpdate(
+                    rules: [],
+                    changes: [:],
+                    completionTokens: []
+                )
+            )
+        )
+    }
+
+    func commitPublication(_ publication: PreparedAdblockRuleListPublication) {
+        let manifest = publication.manifest
         publishedManifests.append(manifest)
     }
 }

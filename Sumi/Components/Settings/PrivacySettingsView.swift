@@ -5,6 +5,7 @@
 //  Created by Jonathan Caudill on 15/08/2025.
 //
 
+import AppKit
 import SwiftUI
 
 struct PrivacySettingsView: View {
@@ -100,6 +101,7 @@ private struct NativeAdblockSettingsView: View {
     @State private var overrideHostInput = ""
     #if DEBUG
     @State private var rebuildStatus: String?
+    @State private var copyDiagnosticsStatus: String?
     @State private var isRebuilding = false
     #endif
 
@@ -245,6 +247,16 @@ private struct NativeAdblockSettingsView: View {
                 .disabled(isRebuilding)
             }
 
+            SettingsRow(
+                title: "Copy Adblock Diagnostics",
+                subtitle: copyDiagnosticsStatus ?? "Copy the active generation, current tab attachment, list selection, and failure diagnostics."
+            ) {
+                Button("Copy") {
+                    copyAdblockDiagnostics()
+                }
+                .buttonStyle(.bordered)
+            }
+
             debugKeyValueGrid(rows: debugGlobalRows)
 
             if !debugDiagnostics.lastUpdateListStatuses.isEmpty {
@@ -290,6 +302,7 @@ private struct NativeAdblockSettingsView: View {
             ("Final effective list IDs", diagnostics.effectiveSelectionDiagnostics?.finalEffectiveListIdentifiers.joined(separator: ", ") ?? "nil"),
             ("Conflicts/exclusions", diagnostics.effectiveSelectionDiagnostics?.droppedConflictingIdentifiers.joined(separator: ", ") ?? "nil"),
             ("Active manifest list IDs", diagnostics.activeManifestListIdentifiers.joined(separator: ", ")),
+            ("Compiler diagnostics", diagnostics.compilerDiagnosticsSummary ?? "nil"),
             ("Native compiler", diagnostics.nativeCompiler.map { "\($0.name) \($0.version)" } ?? "nil"),
             ("Network shard count", diagnostics.networkShardCount.description),
             ("Native CSS shard count", diagnostics.nativeCSSShardCount.description),
@@ -334,15 +347,27 @@ private struct NativeAdblockSettingsView: View {
             ("Global Adblock", diagnostics.globalAdblockEnabled.description),
             ("Per-site Adblock", diagnostics.perSiteAdblockEnabled.description),
             ("Reload required", diagnostics.reloadRequired.description),
+            ("Attachment assessment", diagnostics.attachmentAssessment),
+            ("Attached generation", diagnostics.attachedGenerationId ?? "nil"),
+            ("Attached generation IDs", diagnostics.attachedGenerationIds.joined(separator: ", ")),
+            ("Uses active generation", diagnostics.tabUsesActiveGeneration.description),
+            ("Appears older generation", diagnostics.tabAppearsToUseOlderGeneration.description),
+            ("Mixed generation", diagnostics.hasMixedGenerationAttachment.description),
+            ("Attached while disabled", diagnostics.attachedWhilePerSiteAdblockDisabled.description),
+            ("Native CSS while off", diagnostics.nativeCSSAttachedWhileCosmeticModeOff.description),
+            ("Reload for active generation", diagnostics.reloadRequiredForActiveGeneration.description),
             ("Active generation", diagnostics.activeGenerationId ?? "nil"),
             ("Selected profile", diagnostics.selectedNativeProfile?.rawValue ?? "nil"),
             ("Active compiled profile", diagnostics.activeCompiledNativeProfile?.rawValue ?? "nil"),
             ("Cosmetic mode", diagnostics.cosmeticMode?.rawValue ?? "nil"),
             ("Expected network shards", diagnostics.expectedNetworkShardIdentifiers.joined(separator: ", ")),
             ("Expected native CSS shards", diagnostics.expectedNativeCSSShardIdentifiers.joined(separator: ", ")),
+            ("Actual attached shards", diagnostics.actualAttachedShardIdentifiers.joined(separator: ", ")),
+            ("Recorded applied shards", diagnostics.recordedAppliedShardIdentifiers.joined(separator: ", ")),
             ("Attached network shards", diagnostics.attachedNetworkShardIdentifiers.joined(separator: ", ")),
             ("Attached native CSS shards", diagnostics.attachedNativeCSSShardIdentifiers.joined(separator: ", ")),
             ("Missing shards", diagnostics.missingShardIdentifiers.joined(separator: ", ")),
+            ("Unexpected old shards", diagnostics.unexpectedOldShardIdentifiers.joined(separator: ", ")),
             ("Ineligible surface", diagnostics.ineligibleSurfaceReason ?? "nil"),
         ]
     }
@@ -390,6 +415,17 @@ private struct NativeAdblockSettingsView: View {
                 }
             }
         }
+    }
+
+    private func copyAdblockDiagnostics() {
+        let report = adBlockingModule.copyDiagnosticsReport(
+            for: currentTab?.url,
+            currentTabDiagnostics: debugTabDiagnostics
+        )
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(report, forType: .string)
+        copyDiagnosticsStatus = "Copied \(debugDateString(Date()))."
     }
 
     private func debugDateString(_ date: Date?) -> String {

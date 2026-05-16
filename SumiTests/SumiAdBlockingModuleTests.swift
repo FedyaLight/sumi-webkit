@@ -365,6 +365,49 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         }
     }
 
+    func testNativeCompilerFiltersOnlyDocumentRootNativeCSSSelectorsWithDiagnostics() async throws {
+        let adapter = CountingAdblockRustAdapter(
+            output: AdblockRustAdapterOutput(
+                network: [],
+                nativeCosmeticCSS: [
+                    Self.contentRule(action: "css-display-none", urlFilter: ".*", selector: "body"),
+                    Self.contentRule(action: "css-display-none", urlFilter: ".*", selector: "html[class^=\"img_\"]"),
+                    Self.contentRule(action: "css-display-none", urlFilter: ".*", selector: "#app"),
+                    Self.contentRule(action: "css-display-none", urlFilter: ".*", selector: ".ad-one, body, .ad-two"),
+                    Self.contentRule(action: "css-display-none", urlFilter: ".*", selector: "body > .ad-three"),
+                    Self.contentRule(action: "css-display-none", urlFilter: ".*", selector: "#root-ad"),
+                ],
+                unsupportedOrIgnored: []
+            )
+        )
+        let compiler = AdblockRustCompiler(adapter: adapter)
+
+        let output = try await compiler.compileNativeContentBlocking(
+            AdblockCompilationInput(
+                sourceIdentifier: "UnsafeNativeCSS",
+                filterTexts: ["fixture"],
+                selectedOutputGroups: [.nativeCosmeticCSS]
+            )
+        )
+        let shard = try XCTUnwrap(output.nativeCosmeticCSSShards.first)
+        let rules = try Self.decodedRuleList(shard.encodedContentRuleList)
+        let selectors = rules.compactMap {
+            ($0["action"] as? [String: Any])?["selector"] as? String
+        }
+
+        XCTAssertEqual(output.diagnostics.filteredUnsafeNativeCosmeticSelectors.map(\.rule), [
+            "body",
+            "html[class^=\"img_\"]",
+            "#app",
+            "body",
+        ])
+        XCTAssertEqual(selectors, [
+            ".ad-one, .ad-two",
+            "body > .ad-three",
+            "#root-ad",
+        ])
+    }
+
     func testCompilerOutputHashesAreStableForIdenticalInput() async throws {
         let compiler = AdblockRustCompiler()
         let input = AdblockCompilationInput(
@@ -1051,12 +1094,13 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertEqual(diagnostics.activeCompiledNativeProfile, .currentDefault)
         XCTAssertEqual(diagnostics.expectedNetworkShardIdentifiers, ["sumi.adblock.network.hybridtest"])
         XCTAssertEqual(diagnostics.expectedNativeCSSShardIdentifiers, ["sumi.adblock.nativeCSS.hybridtest"])
-        XCTAssertTrue(diagnostics.attachedNetworkShardIdentifiers.isEmpty)
-        XCTAssertTrue(diagnostics.attachedNativeCSSShardIdentifiers.isEmpty)
-        XCTAssertEqual(
-            diagnostics.missingShardIdentifiers,
-            ["sumi.adblock.network.hybridtest", "sumi.adblock.nativeCSS.hybridtest"]
-        )
+        XCTAssertEqual(diagnostics.attachedNetworkShardIdentifiers, ["sumi.adblock.network.hybridtest"])
+        XCTAssertEqual(diagnostics.attachedNativeCSSShardIdentifiers, ["sumi.adblock.nativeCSS.hybridtest"])
+        XCTAssertTrue(diagnostics.missingShardIdentifiers.isEmpty)
+        XCTAssertTrue(diagnostics.unexpectedOldShardIdentifiers.isEmpty)
+        XCTAssertTrue(diagnostics.tabUsesActiveGeneration)
+        XCTAssertFalse(diagnostics.hasMixedGenerationAttachment)
+        XCTAssertEqual(diagnostics.attachmentAssessment, "active generation attached")
 
         let appliedDiagnostics = module.currentTabDiagnostics(
             for: tab.url,
@@ -1073,6 +1117,166 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertEqual(appliedDiagnostics.attachedNetworkShardIdentifiers, ["sumi.adblock.network.hybridtest"])
         XCTAssertEqual(appliedDiagnostics.attachedNativeCSSShardIdentifiers, ["sumi.adblock.nativeCSS.hybridtest"])
         XCTAssertTrue(appliedDiagnostics.missingShardIdentifiers.isEmpty)
+    }
+
+    func testCurrentTabDiagnosticsDetectMixedAndOldShardAttachment() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.adBlocking)
+        let settings = AdblockSettingsStore(userDefaults: harness.defaults)
+        settings.cosmeticMode = .nativeCSS
+        let module = try await makeModuleWithSeededManifest(
+            registry: registry,
+            settings: settings,
+            sitePolicyStore: AdblockSitePolicyStore(userDefaults: harness.defaults)
+        )
+        try await waitForActiveAdblockGeneration(in: module)
+        let oldIdentifier = "sumi.adblock.network.old-generation.0001.oldhash"
+
+        let diagnostics = module.currentTabDiagnostics(
+            for: URL(string: "https://example.com/mixed"),
+            appliedState: SumiAdblockAttachmentState(siteHost: "example.com", isEnabled: true),
+            reloadRequired: false,
+            actualAttachedRuleListIdentifiers: [
+                "sumi.adblock.network.hybridtest",
+                "sumi.adblock.nativeCSS.hybridtest",
+                oldIdentifier,
+            ]
+        )
+
+        XCTAssertTrue(diagnostics.hasMixedGenerationAttachment)
+        XCTAssertEqual(diagnostics.unexpectedOldShardIdentifiers, [oldIdentifier])
+        XCTAssertTrue(diagnostics.reloadRequiredForActiveGeneration)
+        XCTAssertEqual(diagnostics.attachmentAssessment, "mixed old and active Adblock generations attached")
+    }
+
+    func testCurrentTabDiagnosticsDetectAttachedShardsWhenPerSiteDisabled() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.adBlocking)
+        let sitePolicyStore = AdblockSitePolicyStore(userDefaults: harness.defaults)
+        let url = URL(string: "https://www.example.com/disabled")!
+        sitePolicyStore.setSiteOverride(.disabled, for: url)
+        let module = SumiAdBlockingModule(
+            moduleRegistry: registry,
+            sitePolicyFactory: { sitePolicyStore }
+        )
+
+        let diagnostics = module.currentTabDiagnostics(
+            for: url,
+            appliedState: SumiAdblockAttachmentState.disabled(siteHost: "example.com"),
+            reloadRequired: false,
+            actualAttachedRuleListIdentifiers: ["sumi.adblock.network.old-generation.0001.hash"]
+        )
+
+        XCTAssertTrue(diagnostics.attachedWhilePerSiteAdblockDisabled)
+        XCTAssertTrue(diagnostics.reloadRequiredForActiveGeneration)
+        XCTAssertEqual(diagnostics.attachmentAssessment, "attached while per-site Adblock is disabled")
+    }
+
+    func testCurrentTabDiagnosticsDetectNativeCSSAttachedWhileCosmeticModeOff() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.adBlocking)
+        let settings = AdblockSettingsStore(userDefaults: harness.defaults)
+        settings.cosmeticMode = .off
+        let module = try await makeModuleWithSeededManifest(
+            registry: registry,
+            settings: settings,
+            sitePolicyStore: AdblockSitePolicyStore(userDefaults: harness.defaults)
+        )
+        try await waitForActiveAdblockGeneration(in: module)
+
+        let diagnostics = module.currentTabDiagnostics(
+            for: URL(string: "https://example.com/off"),
+            appliedState: SumiAdblockAttachmentState(siteHost: "example.com", isEnabled: true),
+            reloadRequired: false,
+            actualAttachedRuleListIdentifiers: [
+                "sumi.adblock.network.hybridtest",
+                "sumi.adblock.nativeCSS.hybridtest",
+            ]
+        )
+
+        XCTAssertTrue(diagnostics.nativeCSSAttachedWhileCosmeticModeOff)
+        XCTAssertEqual(diagnostics.expectedNativeCSSShardIdentifiers, [])
+        XCTAssertTrue(diagnostics.reloadRequiredForActiveGeneration)
+        XCTAssertEqual(diagnostics.attachmentAssessment, "native CSS attached while cosmetic mode is off")
+    }
+
+    func testCopyDiagnosticsReportIncludesActionableAttachmentAndSelectionFields() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.adBlocking)
+        let settings = AdblockSettingsStore(userDefaults: harness.defaults)
+        settings.cosmeticMode = .nativeCSS
+        let module = try await makeModuleWithSeededManifest(
+            registry: registry,
+            settings: settings,
+            sitePolicyStore: AdblockSitePolicyStore(userDefaults: harness.defaults)
+        )
+        let url = URL(string: "https://example.com/report")!
+        try await waitForActiveAdblockGeneration(in: module, url: url)
+        let tabDiagnostics = module.currentTabDiagnostics(
+            for: url,
+            appliedState: SumiAdblockAttachmentState(siteHost: "example.com", isEnabled: true),
+            reloadRequired: true,
+            actualAttachedRuleListIdentifiers: [
+                "sumi.adblock.network.hybridtest",
+                "sumi.adblock.nativeCSS.hybridtest",
+            ]
+        )
+
+        let report = module.copyDiagnosticsReport(
+            for: url,
+            currentTabDiagnostics: tabDiagnostics
+        )
+
+        for required in [
+            "Sumi Adblock Copy Diagnostics",
+            "timestamp=",
+            "currentURL=https://example.com/report",
+            "normalizedSiteKey=example.com",
+            "selectedNativeProfile=currentDefault",
+            "activeCompiledNativeProfile=currentDefault",
+            "expectedNetworkShardIdentifiers=sumi.adblock.network.hybridtest",
+            "actualAttachedShardIdentifiers=sumi.adblock.nativeCSS.hybridtest,sumi.adblock.network.hybridtest",
+            "reloadRequired=true",
+            "trackingProtectionEnabled=false",
+            "blankPageComparisonHint=",
+        ] {
+            XCTAssertTrue(report.contains(required), required)
+        }
+    }
+
+    func testBlankPageClassifierDistinguishesNativeCSSAndNetworkOverblocking() {
+        XCTAssertEqual(
+            SumiAdblockBlankPageDiagnosticClassifier.classify(
+                adblockOffVisible: true,
+                networkOnlyVisible: true,
+                nativeCSSVisible: false
+            ),
+            "suspected native CSS over-hide"
+        )
+        XCTAssertEqual(
+            SumiAdblockBlankPageDiagnosticClassifier.classify(
+                adblockOffVisible: true,
+                networkOnlyVisible: false,
+                nativeCSSVisible: false
+            ),
+            "suspected network overblocking"
+        )
     }
 
     func testEnhancedRuntimeFirstSliceIsLocalBoundedAndHasNoEvalObserverTimerOrBridge() throws {
@@ -2076,6 +2280,20 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         }
         XCTFail("Timed out waiting for content-blocking assets")
         return controller.contentBlockingAssetSummary
+    }
+
+    private func waitForActiveAdblockGeneration(
+        in module: SumiAdBlockingModule,
+        url: URL? = URL(string: "https://example.com")
+    ) async throws {
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            if module.attachmentDiagnostics(for: url).hasActiveGeneration {
+                return
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTFail("Timed out waiting for active Adblock generation")
     }
 
     private static func source(named relativePath: String) throws -> String {

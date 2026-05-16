@@ -8,6 +8,21 @@ struct SumiNormalTabContentBlockingAssetSummary: Equatable {
     let globalRuleListCount: Int
     let updateRuleCount: Int
     let isContentBlockingFeatureEnabled: Bool
+    let globalRuleListIdentifiers: [String]
+
+    init(
+        isInstalled: Bool,
+        globalRuleListCount: Int,
+        updateRuleCount: Int,
+        isContentBlockingFeatureEnabled: Bool,
+        globalRuleListIdentifiers: [String] = []
+    ) {
+        self.isInstalled = isInstalled
+        self.globalRuleListCount = globalRuleListCount
+        self.updateRuleCount = updateRuleCount
+        self.isContentBlockingFeatureEnabled = isContentBlockingFeatureEnabled
+        self.globalRuleListIdentifiers = globalRuleListIdentifiers.sorted()
+    }
 }
 
 @MainActor
