@@ -127,6 +127,8 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         XCTAssertTrue(manifest.webKitRuleListIdentifiers.allSatisfy(AdblockUpdateCoordinator.isAdblockGeneratedWebKitIdentifier))
         XCTAssertEqual(activeGenerationId, manifest.activeGenerationId)
         XCTAssertEqual(publisher.publishedManifests.count, 1)
+        XCTAssertTrue(manifest.compilerDiagnosticsSummary.contains("nativeCSSConverted=1"))
+        XCTAssertTrue(manifest.compilerDiagnosticsSummary.contains("scriptletOrProceduralIgnored=0"))
     }
 
     func testCoordinatorDoesNotDownloadDroppedConflictingVariant() async throws {
@@ -661,7 +663,12 @@ private actor FakeAdblockCompiler: AdblockFilterCompiling {
                     contentHash: "css-hash"
                 ),
             ],
-            diagnostics: AdblockCompilationDiagnostics(),
+            diagnostics: AdblockCompilationDiagnostics(
+                nativeCosmeticRuleCount: 1,
+                unsupportedCosmeticRuleCount: 0,
+                ignoredScriptletOrProceduralRuleCount: 0,
+                isNativeCosmeticGroupEmpty: false
+            ),
             inputRuleCount: input.filterTexts.count,
             convertedNetworkRuleCount: 1,
             convertedNativeCosmeticRuleCount: 1,
