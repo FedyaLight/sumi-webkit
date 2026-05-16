@@ -27,11 +27,11 @@ enum SumiAdblockCosmeticMode: String, Codable, CaseIterable, Identifiable, Senda
     var detail: String {
         switch self {
         case .off:
-            return "Network blocking only."
+            return "Request blocking only."
         case .nativeCSS:
-            return "Allows WebKit content blocker CSS hiding rules."
+            return "WebKit-native hiding, no runtime script."
         case .enhancedRuntime:
-            return "Reserved for future runtime cleanup; no scripts are loaded yet."
+            return "Adds opt-in compatibility cleanup for difficult pages and may use more CPU or memory."
         }
     }
 }
@@ -61,6 +61,13 @@ struct SumiAdblockEffectivePolicy: Equatable, Sendable {
 struct SumiAdblockAttachmentState: Equatable, Sendable {
     let siteHost: String?
     let isEnabled: Bool
+    let hasEnhancedRuntime: Bool
+
+    init(siteHost: String?, isEnabled: Bool, hasEnhancedRuntime: Bool = false) {
+        self.siteHost = siteHost
+        self.isEnabled = isEnabled
+        self.hasEnhancedRuntime = hasEnhancedRuntime
+    }
 
     static func disabled(siteHost: String?) -> SumiAdblockAttachmentState {
         SumiAdblockAttachmentState(siteHost: siteHost, isEnabled: false)
@@ -117,7 +124,11 @@ struct SumiAdBlockingNormalTabDecision: Equatable, Sendable {
     )
 
     var attachmentState: SumiAdblockAttachmentState {
-        effectivePolicy.attachmentState
+        SumiAdblockAttachmentState(
+            siteHost: effectivePolicy.host,
+            isEnabled: effectivePolicy.isEnabled,
+            hasEnhancedRuntime: assets.scriptSources.isEmpty == false
+        )
     }
 
     static func == (lhs: SumiAdBlockingNormalTabDecision, rhs: SumiAdBlockingNormalTabDecision) -> Bool {
@@ -357,6 +368,10 @@ final class AdblockWebKitRuleListStore {
     private var settingsCancellable: AnyCancellable?
     private(set) var latestCompilationOutput: AdblockCompilationOutput?
 
+    var hasActiveGeneration: Bool {
+        ruleListProvider.activeManifest != nil
+    }
+
     init(
         settingsStore: AdblockSettingsStore,
         isAdblockEnabled: @escaping @Sendable () async -> Bool = { true },
@@ -399,11 +414,7 @@ final class AdblockWebKitRuleListStore {
         )
         Task { [weak self] in
             guard let self else { return }
-            guard await isAdblockEnabled() else { return }
-            let manifest = try? await manifestStore.activeManifest()
-            await MainActor.run {
-                self.ruleListProvider.updateManifest(manifest)
-            }
+            await self.loadActiveManifestIfEnabled()
             _ = await self.updateCoordinator.rollbackIfActiveGenerationFailsSmokeCheck()
         }
         settingsCancellable = settingsStore.$cosmeticMode
@@ -427,6 +438,12 @@ final class AdblockWebKitRuleListStore {
             settingsStore.markListUpdateCompleted()
         }
         return manifest
+    }
+
+    func loadActiveManifestIfEnabled() async {
+        guard await isAdblockEnabled() else { return }
+        let manifest = try? await manifestStore.activeManifest()
+        ruleListProvider.updateManifest(manifest)
     }
 
     func requestInitialUpdateIfNeeded() {
@@ -531,9 +548,27 @@ final class SumiAdBlockingModule {
         return SumiAdBlockingNormalTabDecision(
             status: status,
             effectivePolicy: policy,
-            assets: assetsIfAvailable(),
+            assets: assetsForNormalTab(url: url),
             contentBlockingService: ruleListStoreIfEnabled().contentBlockingService
         )
+    }
+
+    func normalTabEnhancedRuntimeScripts(for url: URL?) -> [SumiUserScript] {
+        guard isEnabled,
+              SumiAdblockEnhancedRuntime.isEligibleWebURL(url),
+              let settings = settingsIfEnabled(),
+              settings.cosmeticMode == .enhancedRuntime
+        else { return [] }
+
+        let policy = sitePolicyStoreIfEnabled().effectivePolicy(for: url, globalEnabled: true)
+        guard policy.isEnabled else { return [] }
+
+        let ruleListStore = ruleListStoreIfEnabled()
+        guard ruleListStore.hasActiveGeneration,
+              let script = SumiAdblockEnhancedRuntime.makeScript()
+        else { return [] }
+
+        return [script]
     }
 
     func normalizedSiteHost(for url: URL?) -> String? {
@@ -549,6 +584,13 @@ final class SumiAdBlockingModule {
             )
         }
         return store.effectivePolicy(for: url, globalEnabled: true)
+    }
+
+    func desiredAttachmentState(for url: URL?) -> SumiAdblockAttachmentState {
+        guard isEnabled else {
+            return effectivePolicy(for: url).attachmentState
+        }
+        return normalTabDecision(for: url).attachmentState
     }
 
     func siteOverride(for url: URL?) -> SumiAdblockSiteOverride {
@@ -598,5 +640,14 @@ final class SumiAdBlockingModule {
     private func contentRuleListIdentifiers() -> [String] {
         guard let settings = settingsIfEnabled() else { return [] }
         return AdblockWebKitRuleListStore.ruleListIdentifiers(for: settings.cosmeticMode)
+    }
+
+    private func assetsForNormalTab(url: URL?) -> SumiAdBlockingAssets {
+        let enhancedScripts = normalTabEnhancedRuntimeScripts(for: url)
+        return SumiAdBlockingAssets(
+            contentRuleListIdentifiers: contentRuleListIdentifiers(),
+            scriptSources: enhancedScripts.map(\.source),
+            scriptMessageHandlerNames: enhancedScripts.flatMap(\.messageNames)
+        )
     }
 }
