@@ -153,6 +153,7 @@ extension Tab {
 
     func normalTabManagedUserScripts(for targetURL: URL?) -> [SumiUserScript] {
         var scripts = normalTabCoreUserScripts()
+        scripts.append(contentsOf: browserManager?.adBlockingModule.normalTabEnhancedRuntimeScripts(for: targetURL) ?? [])
         scripts.append(contentsOf: browserManager?.extensionsModule.normalTabUserScripts() ?? [])
 
         if let targetURL {

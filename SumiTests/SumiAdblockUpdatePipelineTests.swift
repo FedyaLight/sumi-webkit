@@ -663,6 +663,17 @@ private actor FakeAdblockCompiler: AdblockFilterCompiling {
                     contentHash: "css-hash"
                 ),
             ],
+            hybridOutput: AdblockHybridCompilationOutput(
+                nativeRuleGroups: AdblockNativeRuleGroups(
+                    network: nil,
+                    nativeCosmeticCSS: nil
+                ),
+                enhancedRuntimeBundle: AdblockEnhancedRuntimeBundle(
+                    resources: [],
+                    unsupportedDiagnostics: []
+                ),
+                capabilities: [.webKitNativeNetwork, .webKitNativeCSS]
+            ),
             diagnostics: AdblockCompilationDiagnostics(
                 nativeCosmeticRuleCount: 1,
                 unsupportedCosmeticRuleCount: 0,

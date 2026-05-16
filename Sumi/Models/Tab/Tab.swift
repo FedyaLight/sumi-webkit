@@ -844,7 +844,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         guard let module = browserManager?.adBlockingModule else {
             return .disabled(siteHost: nil)
         }
-        return module.effectivePolicy(for: targetURL).attachmentState
+        return module.desiredAttachmentState(for: targetURL)
     }
 
     func noteAdblockAttachmentApplied(
@@ -873,7 +873,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         let desiredState = adblockDesiredAttachmentState(for: url)
         guard desiredState.siteHost != nil,
               let appliedState = adblockAppliedAttachmentState,
-              appliedState.isEnabled != desiredState.isEnabled
+              appliedState != desiredState
         else {
             clearAdblockReloadRequirement()
             return

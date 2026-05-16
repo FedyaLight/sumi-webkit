@@ -6,6 +6,52 @@ enum AdblockCompiledRuleGroupKind: String, Codable, CaseIterable, Hashable, Send
     case nativeCosmeticCSS
 }
 
+enum AdblockRuntimeCapability: String, Codable, CaseIterable, Sendable {
+    case webKitNativeNetwork
+    case webKitNativeCSS
+    case enhancedCosmeticCleanup
+    case scriptletResourceCandidate
+    case redirectResourceCandidate
+}
+
+struct AdblockNativeRuleGroups: Equatable, Sendable {
+    let network: AdblockCompiledRuleGroup?
+    let nativeCosmeticCSS: AdblockCompiledRuleGroup?
+}
+
+struct AdblockEnhancedResource: Equatable, Sendable {
+    enum Kind: String, Codable, Sendable {
+        case cosmeticCleanup
+        case scriptlet
+        case redirect
+        case noopRedirect
+    }
+
+    let name: String
+    let kind: Kind
+    let sourceRule: String
+}
+
+struct AdblockUnsupportedRuleDiagnostic: Equatable, Sendable {
+    let rule: String
+    let reason: String
+}
+
+struct AdblockEnhancedRuntimeBundle: Equatable, Sendable {
+    let resources: [AdblockEnhancedResource]
+    let unsupportedDiagnostics: [AdblockUnsupportedRuleDiagnostic]
+
+    var isAvailable: Bool {
+        !resources.isEmpty
+    }
+}
+
+struct AdblockHybridCompilationOutput: Equatable, Sendable {
+    let nativeRuleGroups: AdblockNativeRuleGroups
+    let enhancedRuntimeBundle: AdblockEnhancedRuntimeBundle
+    let capabilities: Set<AdblockRuntimeCapability>
+}
+
 struct AdblockCompilationInput: Equatable, Sendable {
     let sourceIdentifier: String
     let filterTexts: [String]
@@ -54,6 +100,7 @@ struct AdblockCompiledRuleGroup: Equatable, Sendable {
 struct AdblockCompilationOutput: Equatable, Sendable {
     let sourceIdentifier: String
     let groups: [AdblockCompiledRuleGroup]
+    let hybridOutput: AdblockHybridCompilationOutput
     let diagnostics: AdblockCompilationDiagnostics
     let inputRuleCount: Int
     let convertedNetworkRuleCount: Int
@@ -126,6 +173,48 @@ final class AdblockRustCompiler: AdblockFilterCompiling, Sendable {
         let unsupportedDiagnostics = adapterOutput.unsupportedOrIgnored.map {
             AdblockCompilationDiagnostics.Entry(rule: $0.rule, reason: $0.reason)
         }
+        let enhancedResources = Array(
+            (normalizedRules + adapterOutput.unsupportedOrIgnored.map(\.rule))
+                .compactMap(classifyEnhancedResource)
+                .reduce(into: [String: AdblockEnhancedResource]()) { result, resource in
+                    result["\(resource.kind.rawValue):\(resource.name):\(resource.sourceRule)"] = resource
+                }
+                .values
+                .sorted { lhs, rhs in
+                    lhs.sourceRule == rhs.sourceRule
+                        ? lhs.name < rhs.name
+                        : lhs.sourceRule < rhs.sourceRule
+                }
+        )
+        let enhancedUnsupported = adapterOutput.unsupportedOrIgnored
+            .filter { classifyEnhancedResource($0.rule) != nil || isScriptletOrProceduralReason($0.reason) }
+            .map { AdblockUnsupportedRuleDiagnostic(rule: $0.rule, reason: $0.reason) }
+        let hybridOutput = AdblockHybridCompilationOutput(
+            nativeRuleGroups: AdblockNativeRuleGroups(
+                network: groups.first { $0.kind == .network },
+                nativeCosmeticCSS: groups.first { $0.kind == .nativeCosmeticCSS }
+            ),
+            enhancedRuntimeBundle: AdblockEnhancedRuntimeBundle(
+                resources: enhancedResources,
+                unsupportedDiagnostics: enhancedUnsupported
+            ),
+            capabilities: Set(
+                [
+                    networkBlockCount > 0 ? .webKitNativeNetwork : nil,
+                    nativeCosmeticCount > 0 ? .webKitNativeCSS : nil,
+                ].compactMap { $0 }
+                    + enhancedResources.map { resource in
+                        switch resource.kind {
+                        case .cosmeticCleanup:
+                            return .enhancedCosmeticCleanup
+                        case .scriptlet:
+                            return .scriptletResourceCandidate
+                        case .redirect, .noopRedirect:
+                            return .redirectResourceCandidate
+                        }
+                    }
+            )
+        )
         let unsupportedCosmeticCount = adapterOutput.unsupportedOrIgnored.filter {
             isCosmeticRule($0.rule)
         }.count
@@ -148,6 +237,7 @@ final class AdblockRustCompiler: AdblockFilterCompiling, Sendable {
         return AdblockCompilationOutput(
             sourceIdentifier: input.sourceIdentifier,
             groups: groups,
+            hybridOutput: hybridOutput,
             diagnostics: diagnostics,
             inputRuleCount: normalizedRules.count,
             convertedNetworkRuleCount: networkBlockCount,
@@ -222,6 +312,52 @@ final class AdblockRustCompiler: AdblockFilterCompiling, Sendable {
             || rule.contains(":matches-css(")
             || rule.contains(":xpath(")
             || rule.contains(":-abp-")
+    }
+
+    private static func classifyEnhancedResource(_ rule: String) -> AdblockEnhancedResource? {
+        if rule.contains("##+js("),
+           let name = resourceName(in: rule, marker: "##+js(") {
+            return AdblockEnhancedResource(name: name, kind: .scriptlet, sourceRule: rule)
+        }
+        if rule.contains("$redirect-rule=") || rule.contains("$redirect=") {
+            let kind: AdblockEnhancedResource.Kind = rule.localizedCaseInsensitiveContains("noop")
+                || rule.localizedCaseInsensitiveContains("empty")
+                || rule.localizedCaseInsensitiveContains("blank")
+                ? .noopRedirect
+                : .redirect
+            return AdblockEnhancedResource(name: redirectResourceName(in: rule) ?? "unknown", kind: kind, sourceRule: rule)
+        }
+        if rule.contains("#?#") || rule.contains(":has(") || rule.contains(":has-text(") {
+            return AdblockEnhancedResource(name: "procedural-cosmetic", kind: .cosmeticCleanup, sourceRule: rule)
+        }
+        if rule.contains("sumi-enhanced-cleanup") {
+            return AdblockEnhancedResource(name: "sumi-enhanced-cleanup", kind: .cosmeticCleanup, sourceRule: rule)
+        }
+        return nil
+    }
+
+    private static func resourceName(in rule: String, marker: String) -> String? {
+        guard let markerRange = rule.range(of: marker) else { return nil }
+        let suffix = rule[markerRange.upperBound...]
+        guard let end = suffix.firstIndex(of: ")") else { return nil }
+        return suffix[..<end]
+            .split(separator: ",", maxSplits: 1)
+            .first
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    private static func redirectResourceName(in rule: String) -> String? {
+        for marker in ["$redirect-rule=", "$redirect="] {
+            guard let range = rule.range(of: marker) else { continue }
+            let suffix = rule[range.upperBound...]
+            return suffix
+                .split(separator: ",", maxSplits: 1)
+                .first
+                .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+                .flatMap { $0.isEmpty ? nil : $0 }
+        }
+        return nil
     }
 
     private static func isScriptletOrProceduralReason(_ reason: String) -> Bool {
