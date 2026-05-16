@@ -385,12 +385,22 @@ fn parse_scriptlet_args(args: &str) -> Option<Vec<String>> {
 
 fn unsupported_reason(rule: &str) -> String {
     match parse_filter(rule, true, ParseOptions::default()) {
-        Ok(ParsedFilter::Network(filter)) => match TryInto::<CbRuleEquivalent>::try_into(filter) {
-            Ok(_) => "ignored by selected content-blocking output groups".to_string(),
-            Err(error) => {
-                format!("unsupported by adblock-rust content-blocking conversion: {error:?}")
+        Ok(ParsedFilter::Network(filter)) => {
+            // `FilterSet::into_content_blocking()` strips `$badfilter` rules before conversion,
+            // but calling `TryInto<CbRuleEquivalent>` on one directly trips adblock-rust's
+            // debug assertion (`BAD_FILTER should be filtered out`). Unsupported-rule
+            // diagnostics inspect individual unused rules, so keep that path defensive too.
+            if filter.mask.is_badfilter() {
+                return "ignored by adblock-rust content-blocking conversion: NetworkBadFilterUnsupported"
+                    .to_string();
             }
-        },
+            match TryInto::<CbRuleEquivalent>::try_into(filter) {
+                Ok(_) => "ignored by selected content-blocking output groups".to_string(),
+                Err(error) => {
+                    format!("unsupported by adblock-rust content-blocking conversion: {error:?}")
+                }
+            }
+        }
         Ok(ParsedFilter::Cosmetic(filter)) => match TryInto::<CbRule>::try_into(filter) {
             Ok(_) => "ignored by selected content-blocking output groups".to_string(),
             Err(error) => {
@@ -426,6 +436,13 @@ mod tests {
         let reason = unsupported_reason("example.com##+js(sumi-future-scriptlet)");
 
         assert!(reason.contains("ScriptletInjectionsNotSupported"));
+    }
+
+    #[test]
+    fn reports_badfilter_without_panicking() {
+        let reason = unsupported_reason("||ads.example.test^$badfilter");
+
+        assert!(reason.contains("NetworkBadFilterUnsupported"));
     }
 
     #[test]

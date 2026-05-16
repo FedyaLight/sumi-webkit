@@ -7,23 +7,24 @@ SAFARI_CONVERTER_LIB_DIR="${SAFARI_CONVERTER_LIB_DIR:-${WORK_DIR}/SafariConverte
 RUST_MANIFEST="${ROOT}/Vendor/Brave/AdblockRustAdapter/Cargo.toml"
 RUST_HELPER="${ROOT}/Vendor/Brave/AdblockRustAdapter/target/debug/sumi-adblock-rust-adapter"
 
-LIST_URLS=(
-  "https://easylist.to/easylist/easylist.txt"
-  "https://filters.adtidy.org/extension/chromium/filters/2.txt"
-  "https://filters.adtidy.org/extension/chromium/filters/11.txt"
-  "https://filters.adtidy.org/extension/chromium/filters/3.txt"
-  "https://filters.adtidy.org/windows/filters/17.txt"
-  "https://filters.adtidy.org/extension/chromium/filters/14.txt"
-)
+PROFILE="current"
+LIST_IDS=("easylist")
+LIST_URLS=("https://easylist.to/easylist/easylist.txt")
 
 usage() {
   cat <<'USAGE'
 Usage:
-  scripts/compare_native_adblock_compilers.sh [filter-list-url-or-file ...]
+  scripts/compare_native_adblock_compilers.sh [--profile current|light|balanced|high|ora-like] [filter-list-url-or-file ...]
 
 Compares Sumi's current adblock-rust native compiler helper against
 AdGuard SafariConverterLib on the same selected list inputs. With no arguments,
-it uses Sumi current default plus the Ora-like AdGuard comparison lists.
+it uses Sumi's current default profile (`easylist`).
+
+Named profiles:
+  current, light  easylist
+  balanced        adguard-base + adguard-mobile-ads
+  high            balanced + adguard-annoyances
+  ora-like        balanced + tracking + URL tracking + annoyances
 
 Set SAFARI_CONVERTER_LIB_DIR to an existing SafariConverterLib checkout to avoid
 the script-managed clone under .build/.
@@ -35,11 +36,63 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   exit 0
 fi
 
+if [[ "${1:-}" == "--profile" ]]; then
+  PROFILE="${2:?missing profile name}"
+  shift 2
+  case "${PROFILE}" in
+    current|light)
+      LIST_IDS=("easylist")
+      LIST_URLS=("https://easylist.to/easylist/easylist.txt")
+      ;;
+    balanced)
+      LIST_IDS=("adguard-base" "adguard-mobile-ads")
+      LIST_URLS=(
+        "https://filters.adtidy.org/extension/chromium/filters/2.txt"
+        "https://filters.adtidy.org/extension/chromium/filters/11.txt"
+      )
+      ;;
+    high)
+      LIST_IDS=("adguard-base" "adguard-mobile-ads" "adguard-annoyances")
+      LIST_URLS=(
+        "https://filters.adtidy.org/extension/chromium/filters/2.txt"
+        "https://filters.adtidy.org/extension/chromium/filters/11.txt"
+        "https://filters.adtidy.org/extension/chromium/filters/14.txt"
+      )
+      ;;
+    ora-like)
+      LIST_IDS=(
+        "adguard-base"
+        "adguard-mobile-ads"
+        "adguard-tracking-protection"
+        "adguard-url-tracking"
+        "adguard-annoyances"
+      )
+      LIST_URLS=(
+        "https://filters.adtidy.org/extension/chromium/filters/2.txt"
+        "https://filters.adtidy.org/extension/chromium/filters/11.txt"
+        "https://filters.adtidy.org/extension/chromium/filters/3.txt"
+        "https://filters.adtidy.org/windows/filters/17.txt"
+        "https://filters.adtidy.org/extension/chromium/filters/14.txt"
+      )
+      ;;
+    *)
+      echo "Unknown profile: ${PROFILE}" >&2
+      exit 2
+      ;;
+  esac
+fi
+
 if [[ "$#" -gt 0 ]]; then
+  PROFILE="custom"
   LIST_URLS=("$@")
+  LIST_IDS=()
+  for source in "${LIST_URLS[@]}"; do
+    LIST_IDS+=("custom-$(printf '%s' "${source}" | shasum -a 256 | awk '{print substr($1,1,8)}')")
+  done
 fi
 
 mkdir -p "${WORK_DIR}/lists" "${WORK_DIR}/SafariConverterCompare"
+PROFILE_SLUG="$(printf '%s' "${PROFILE}" | tr -c '[:alnum:]._-' '-')"
 
 if [[ ! -d "${SAFARI_CONVERTER_LIB_DIR}/.git" ]]; then
   rm -rf "${SAFARI_CONVERTER_LIB_DIR}"
@@ -48,9 +101,12 @@ fi
 
 cargo build --manifest-path "${RUST_MANIFEST}" >/dev/null
 
-COMBINED="${WORK_DIR}/combined.txt"
+COMBINED="${WORK_DIR}/${PROFILE_SLUG}-combined.txt"
+METADATA="${WORK_DIR}/${PROFILE_SLUG}-comparison-metadata.json"
 : >"${COMBINED}"
-for source in "${LIST_URLS[@]}"; do
+LIST_LOCAL_PATHS=()
+for index in "${!LIST_URLS[@]}"; do
+  source="${LIST_URLS[$index]}"
   name="$(printf '%s' "${source}" | shasum -a 256 | awk '{print substr($1,1,16)}')"
   destination="${WORK_DIR}/lists/${name}.txt"
   if [[ "${source}" =~ ^https?:// ]]; then
@@ -61,7 +117,42 @@ for source in "${LIST_URLS[@]}"; do
   printf '\n! source: %s\n' "${source}" >>"${COMBINED}"
   cat "${destination}" >>"${COMBINED}"
   printf '\n' >>"${COMBINED}"
+  LIST_LOCAL_PATHS+=("${destination}")
 done
+
+/usr/bin/python3 - "$METADATA" "$PROFILE" "${LIST_IDS[@]}" -- "${LIST_LOCAL_PATHS[@]}" <<'PY'
+import json
+import pathlib
+import sys
+
+out_path, profile, *rest = sys.argv[1:]
+split = rest.index("--")
+ids = rest[:split]
+paths = rest[split + 1 :]
+lists = []
+for identifier, raw_path in zip(ids, paths):
+    data = pathlib.Path(raw_path).read_bytes()
+    text = data.decode("utf-8", errors="replace")
+    approximate_rule_count = sum(
+        1 for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith(("!", "["))
+    )
+    lists.append(
+        {
+            "id": identifier,
+            "inputByteSize": len(data),
+            "approximateInputRuleCount": approximate_rule_count,
+        }
+    )
+payload = {
+    "profile": profile,
+    "inputListIDs": ids,
+    "inputLists": lists,
+    "inputByteSize": sum(item["inputByteSize"] for item in lists),
+    "approximateInputRuleCount": sum(item["approximateInputRuleCount"] for item in lists),
+}
+pathlib.Path(out_path).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+PY
 
 SWIFT_PACKAGE="${WORK_DIR}/SafariConverterCompare"
 cat >"${SWIFT_PACKAGE}/Package.swift" <<SWIFT
@@ -93,6 +184,7 @@ import WebKit
 
 struct Report: Encodable {
     let compiler: String
+    let integrationStatus: String
     let conversionSucceeded: Bool
     let version: String
     let inputRuleCount: Int
@@ -103,6 +195,8 @@ struct Report: Encodable {
     let webKitCompileSucceeded: Bool
     let jsonSizeBytes: Int
     let conversionTimeMilliseconds: Double
+    let ruleCapHit: Bool
+    let discardedRuleCount: Int
 }
 
 struct ValidationOutput: Encodable {
@@ -137,6 +231,7 @@ enum Main {
         let nativeCSSCount = result.safariRulesJSON.components(separatedBy: "\"css-display-none\"").count - 1
         let report = Report(
             compiler: "SafariConverterLib",
+            integrationStatus: "external-harness-only",
             conversionSucceeded: true,
             version: ContentBlockerConverterVersion.library,
             inputRuleCount: result.sourceRulesCount,
@@ -151,7 +246,9 @@ enum Main {
             ],
             webKitCompileSucceeded: webKitSucceeded,
             jsonSizeBytes: result.safariRulesJSON.utf8.count,
-            conversionTimeMilliseconds: elapsed
+            conversionTimeMilliseconds: elapsed,
+            ruleCapHit: result.discardedSafariRules > 0,
+            discardedRuleCount: result.discardedSafariRules
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -180,12 +277,14 @@ enum Main {
 }
 SWIFT
 
-RUST_RAW="${WORK_DIR}/adblock-rust-output.json"
-RUST_REPORT="${WORK_DIR}/adblock-rust-report.json"
-RUST_COMBINED_JSON="${WORK_DIR}/adblock-rust-combined-webkit.json"
-RUST_STDERR="${WORK_DIR}/adblock-rust-stderr.txt"
-RUST_WEBKIT_REPORT="${WORK_DIR}/adblock-rust-webkit-report.json"
-SAFARI_REPORT="${WORK_DIR}/safari-converter-report.json"
+RUST_RAW="${WORK_DIR}/${PROFILE_SLUG}-adblock-rust-output.json"
+RUST_REPORT="${WORK_DIR}/${PROFILE_SLUG}-adblock-rust-report.json"
+RUST_NETWORK_JSON="${WORK_DIR}/${PROFILE_SLUG}-adblock-rust-network-webkit.json"
+RUST_NATIVE_CSS_JSON="${WORK_DIR}/${PROFILE_SLUG}-adblock-rust-native-css-webkit.json"
+RUST_STDERR="${WORK_DIR}/${PROFILE_SLUG}-adblock-rust-stderr.txt"
+RUST_NETWORK_WEBKIT_REPORT="${WORK_DIR}/${PROFILE_SLUG}-adblock-rust-network-webkit-report.json"
+RUST_NATIVE_CSS_WEBKIT_REPORT="${WORK_DIR}/${PROFILE_SLUG}-adblock-rust-native-css-webkit-report.json"
+SAFARI_REPORT="${WORK_DIR}/${PROFILE_SLUG}-safari-converter-report.json"
 
 START_NS="$(date +%s%N)"
 set +e
@@ -196,11 +295,17 @@ END_NS="$(date +%s%N)"
 RUST_MS="$(( (END_NS - START_NS) / 1000000 ))"
 
 if [[ "${RUST_STATUS}" -eq 0 ]]; then
-  /usr/bin/python3 - "$RUST_RAW" "$RUST_REPORT" "$RUST_COMBINED_JSON" "$RUST_MS" <<'PY'
+  /usr/bin/python3 - "$RUST_RAW" "$RUST_REPORT" "$RUST_NETWORK_JSON" "$RUST_NATIVE_CSS_JSON" "$RUST_MS" <<'PY'
 import json
 import sys
 
-raw_path, report_path, combined_path, elapsed_ms = sys.argv[1], sys.argv[2], sys.argv[3], float(sys.argv[4])
+raw_path, report_path, network_path, native_css_path, elapsed_ms = (
+    sys.argv[1],
+    sys.argv[2],
+    sys.argv[3],
+    sys.argv[4],
+    float(sys.argv[5]),
+)
 with open(raw_path, "r", encoding="utf-8") as handle:
     raw = json.load(handle)
 
@@ -211,6 +316,7 @@ encoded_network = json.dumps(network, ensure_ascii=False, separators=(",", ":"))
 encoded_css = json.dumps(css, ensure_ascii=False, separators=(",", ":"))
 report = {
     "compiler": "adblock-rust",
+    "integrationStatus": "in-app-production-default",
     "conversionSucceeded": True,
     "version": "adblock-rust-adapter/0.1.0 adblock-rust/0.12.5",
     "inputRuleCount": len(raw.get("used_rules", [])) + len(unsupported),
@@ -222,27 +328,51 @@ report = {
         f"unsupportedOrIgnored={len(unsupported)}",
     ],
     "webKitCompileSucceeded": False,
+    "networkGroupWebKitCompileSucceeded": False,
+    "nativeCSSGroupWebKitCompileSucceeded": False,
     "jsonSizeBytes": len(encoded_network.encode("utf-8")) + len(encoded_css.encode("utf-8")),
     "conversionTimeMilliseconds": elapsed_ms,
+    "ruleCapHit": False,
+    "discardedRuleCount": 0,
 }
-with open(combined_path, "w", encoding="utf-8") as handle:
-    json.dump(network + css, handle, ensure_ascii=False, separators=(",", ":"))
+with open(network_path, "w", encoding="utf-8") as handle:
+    json.dump(network, handle, ensure_ascii=False, separators=(",", ":"))
+with open(native_css_path, "w", encoding="utf-8") as handle:
+    json.dump(css, handle, ensure_ascii=False, separators=(",", ":"))
 with open(report_path, "w", encoding="utf-8") as handle:
     json.dump(report, handle, indent=2, sort_keys=True)
     handle.write("\n")
 PY
 
-  (cd "${SWIFT_PACKAGE}" && swift run -c release SafariConverterCompare --validate-json <"${RUST_COMBINED_JSON}" >"${RUST_WEBKIT_REPORT}")
-  /usr/bin/python3 - "$RUST_REPORT" "$RUST_WEBKIT_REPORT" <<'PY'
+  set +e
+  (cd "${SWIFT_PACKAGE}" && swift run -c release SafariConverterCompare --validate-json <"${RUST_NETWORK_JSON}" >"${RUST_NETWORK_WEBKIT_REPORT}")
+  RUST_NETWORK_WEBKIT_STATUS="$?"
+  (cd "${SWIFT_PACKAGE}" && swift run -c release SafariConverterCompare --validate-json <"${RUST_NATIVE_CSS_JSON}" >"${RUST_NATIVE_CSS_WEBKIT_REPORT}")
+  RUST_NATIVE_CSS_WEBKIT_STATUS="$?"
+  set -e
+  if [[ "${RUST_NETWORK_WEBKIT_STATUS}" -ne 0 ]]; then
+    printf '{"webKitCompileSucceeded":false,"processExitStatus":%s}\n' "${RUST_NETWORK_WEBKIT_STATUS}" >"${RUST_NETWORK_WEBKIT_REPORT}"
+  fi
+  if [[ "${RUST_NATIVE_CSS_WEBKIT_STATUS}" -ne 0 ]]; then
+    printf '{"webKitCompileSucceeded":false,"processExitStatus":%s}\n' "${RUST_NATIVE_CSS_WEBKIT_STATUS}" >"${RUST_NATIVE_CSS_WEBKIT_REPORT}"
+  fi
+  /usr/bin/python3 - "$RUST_REPORT" "$RUST_NETWORK_WEBKIT_REPORT" "$RUST_NATIVE_CSS_WEBKIT_REPORT" <<'PY'
 import json
 import sys
 
-report_path, webkit_path = sys.argv[1], sys.argv[2]
+report_path, network_webkit_path, native_css_webkit_path = sys.argv[1], sys.argv[2], sys.argv[3]
 with open(report_path, "r", encoding="utf-8") as handle:
     report = json.load(handle)
-with open(webkit_path, "r", encoding="utf-8") as handle:
-    webkit = json.load(handle)
-report["webKitCompileSucceeded"] = bool(webkit["webKitCompileSucceeded"])
+with open(network_webkit_path, "r", encoding="utf-8") as handle:
+    network_webkit = json.load(handle)
+with open(native_css_webkit_path, "r", encoding="utf-8") as handle:
+    native_css_webkit = json.load(handle)
+report["networkGroupWebKitCompileSucceeded"] = bool(network_webkit["webKitCompileSucceeded"])
+report["nativeCSSGroupWebKitCompileSucceeded"] = bool(native_css_webkit["webKitCompileSucceeded"])
+report["webKitCompileSucceeded"] = bool(
+    report["networkGroupWebKitCompileSucceeded"]
+    and report["nativeCSSGroupWebKitCompileSucceeded"]
+)
 with open(report_path, "w", encoding="utf-8") as handle:
     json.dump(report, handle, indent=2, sort_keys=True)
     handle.write("\n")
@@ -259,6 +389,7 @@ with open(stderr_path, "r", encoding="utf-8") as handle:
     stderr_lines = [line.strip() for line in handle if line.strip()]
 report = {
     "compiler": "adblock-rust",
+    "integrationStatus": "in-app-production-default",
     "conversionSucceeded": False,
     "version": "adblock-rust-adapter/0.1.0 adblock-rust/0.12.5",
     "inputRuleCount": input_rule_count,
@@ -270,8 +401,12 @@ report = {
         *stderr_lines[:4],
     ],
     "webKitCompileSucceeded": False,
+    "networkGroupWebKitCompileSucceeded": False,
+    "nativeCSSGroupWebKitCompileSucceeded": False,
     "jsonSizeBytes": 0,
     "conversionTimeMilliseconds": elapsed_ms,
+    "ruleCapHit": False,
+    "discardedRuleCount": 0,
 }
 with open(report_path, "w", encoding="utf-8") as handle:
     json.dump(report, handle, indent=2, sort_keys=True)
@@ -280,6 +415,20 @@ PY
 fi
 
 (cd "${SWIFT_PACKAGE}" && swift run -c release SafariConverterCompare <"${COMBINED}" >"${SAFARI_REPORT}")
+
+/usr/bin/python3 - "$METADATA" "$RUST_REPORT" "$SAFARI_REPORT" <<'PY'
+import json
+import pathlib
+import sys
+
+metadata_path, *report_paths = sys.argv[1:]
+metadata = json.loads(pathlib.Path(metadata_path).read_text())
+for report_path in report_paths:
+    path = pathlib.Path(report_path)
+    report = json.loads(path.read_text())
+    report.update(metadata)
+    path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+PY
 
 printf 'Wrote comparison reports:\n'
 printf '  %s\n' "${RUST_REPORT}"

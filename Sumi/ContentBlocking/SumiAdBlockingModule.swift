@@ -81,7 +81,13 @@ struct SumiAdblockAttachmentDiagnostics: Equatable, Sendable {
     let attachedNativeGroups: [AdblockCompiledRuleGroupKind]
     let contentRuleListIdentifiers: [String]
     let selectedListIdentifiers: [String]
+    let selectedNativeProfile: AdblockFilterListProfileKind?
     let nativeCompiler: NativeContentBlockingCompilerIdentity?
+    let nativeCompilationSummary: NativeContentBlockingCompilationSummary?
+    let nativeSourceLists: [NativeContentBlockingSourceList]
+    let cosmeticMode: SumiAdblockCosmeticMode?
+    let enhancedRuntimeIsEnabled: Bool
+    let trackingProtectionModuleEnabled: Bool
     let generationIsStale: Bool
 }
 
@@ -159,6 +165,7 @@ final class AdblockSettingsStore: ObservableObject {
         static let cosmeticMode = "settings.adblock.cosmeticMode"
         static let regionalListSelection = "settings.adblock.regionalListSelection"
         static let selectedLists = "settings.adblock.selectedLists"
+        static let selectedNativeProfile = "settings.adblock.selectedNativeProfile"
         static let listSelectionRequiresUpdate = "settings.adblock.listSelectionRequiresUpdate"
     }
 
@@ -195,6 +202,14 @@ final class AdblockSettingsStore: ObservableObject {
         }
     }
 
+    @Published var selectedNativeProfile: AdblockFilterListProfileKind {
+        didSet {
+            userDefaults.set(selectedNativeProfile.rawValue, forKey: DefaultsKey.selectedNativeProfile)
+            listSelectionRequiresUpdate = true
+            changesSubject.send(())
+        }
+    }
+
     @Published private(set) var listSelectionRequiresUpdate: Bool {
         didSet {
             userDefaults.set(listSelectionRequiresUpdate, forKey: DefaultsKey.listSelectionRequiresUpdate)
@@ -213,6 +228,7 @@ final class AdblockSettingsStore: ObservableObject {
         userDefaults.register(defaults: [
             DefaultsKey.autoUpdateEnabled: true,
             DefaultsKey.cosmeticMode: SumiAdblockCosmeticMode.nativeCSS.rawValue,
+            DefaultsKey.selectedNativeProfile: AdblockFilterListProfileKind.currentDefault.rawValue,
         ])
         autoUpdateEnabled = userDefaults.object(forKey: DefaultsKey.autoUpdateEnabled) as? Bool ?? true
         cosmeticMode = userDefaults.string(forKey: DefaultsKey.cosmeticMode)
@@ -230,6 +246,9 @@ final class AdblockSettingsStore: ObservableObject {
         } else {
             selectedLists = .defaultSelection
         }
+        selectedNativeProfile = userDefaults.string(forKey: DefaultsKey.selectedNativeProfile)
+            .flatMap(AdblockFilterListProfileKind.init(rawValue:))
+            ?? .currentDefault
         listSelectionRequiresUpdate = userDefaults.object(forKey: DefaultsKey.listSelectionRequiresUpdate) as? Bool ?? false
     }
 
@@ -237,7 +256,10 @@ final class AdblockSettingsStore: ObservableObject {
         _ descriptor: AdblockFilterListDescriptor,
         registry: AdblockFilterListRegistry = AdblockFilterListRegistry()
     ) -> Bool {
-        registry.validatedSelection(selectedLists).resolvedIdentifiers.contains(descriptor.id)
+        registry.validatedSelection(
+            selectedLists,
+            profileKind: selectedNativeProfile
+        ).resolvedIdentifiers.contains(descriptor.id)
     }
 
     func setList(
@@ -246,7 +268,10 @@ final class AdblockSettingsStore: ObservableObject {
         registry: AdblockFilterListRegistry = AdblockFilterListRegistry()
     ) {
         var identifiers = selectedLists.usesDefaultSelection
-            ? registry.validatedSelection(selectedLists).resolvedIdentifiers
+            ? registry.validatedSelection(
+                selectedLists,
+                profileKind: selectedNativeProfile
+            ).resolvedIdentifiers
             : selectedLists.identifiers
         if isSelected {
             identifiers.append(descriptor.id)
@@ -376,6 +401,7 @@ final class AdblockWebKitRuleListStore {
     private let updateCoordinator: AdblockUpdateCoordinator
     private let settingsStore: AdblockSettingsStore
     private let isAdblockEnabled: @Sendable () async -> Bool
+    let configuredNativeCompilerIdentity: NativeContentBlockingCompilerIdentity
     private var settingsCancellable: AnyCancellable?
 
     var hasActiveGeneration: Bool {
@@ -406,6 +432,7 @@ final class AdblockWebKitRuleListStore {
         let rustCompiler = AdblockRustCompiler()
         let resolvedNativeCompiler = nativeCompiler ?? rustCompiler
         let resolvedEnhancedCompiler = enhancedCompiler ?? rustCompiler
+        configuredNativeCompilerIdentity = resolvedNativeCompiler.identity
         let provider = AdblockManifestRuleListProvider(
             manifest: nil,
             cosmeticMode: settingsStore.cosmeticMode
@@ -424,6 +451,7 @@ final class AdblockWebKitRuleListStore {
         updateCoordinator = AdblockUpdateCoordinator.production(
             registry: registry,
             selection: { await MainActor.run { settingsStore.selectedLists } },
+            nativeProfileSelection: { await MainActor.run { settingsStore.selectedNativeProfile } },
             isAdblockEnabled: isAdblockEnabled,
             manifestStore: manifestStore,
             nativeCompiler: resolvedNativeCompiler,
@@ -630,7 +658,13 @@ final class SumiAdBlockingModule {
                 attachedNativeGroups: [],
                 contentRuleListIdentifiers: [],
                 selectedListIdentifiers: [],
+                selectedNativeProfile: nil,
                 nativeCompiler: nil,
+                nativeCompilationSummary: nil,
+                nativeSourceLists: [],
+                cosmeticMode: nil,
+                enhancedRuntimeIsEnabled: false,
+                trackingProtectionModuleEnabled: moduleRegistry.isEnabled(.trackingProtection),
                 generationIsStale: false
             )
         }
@@ -652,8 +686,16 @@ final class SumiAdBlockingModule {
             attachedNativeGroups: attachedGroups,
             contentRuleListIdentifiers: manifest?.webKitRuleListIdentifiers.sorted() ?? contentRuleListIdentifiers(),
             selectedListIdentifiers: manifest?.selectedFilterLists.map(\.id).sorted() ?? [],
+            selectedNativeProfile: manifest?.nativeProfile,
             nativeCompiler: manifest?.nativeCompiler,
-            generationIsStale: settings?.listSelectionRequiresUpdate ?? false
+            nativeCompilationSummary: manifest?.nativeCompilationSummary,
+            nativeSourceLists: manifest?.nativeCompilerSourceLists ?? [],
+            cosmeticMode: settings?.cosmeticMode,
+            enhancedRuntimeIsEnabled: settings?.cosmeticMode == .enhancedRuntime,
+            trackingProtectionModuleEnabled: moduleRegistry.isEnabled(.trackingProtection),
+            generationIsStale: (settings?.listSelectionRequiresUpdate ?? false)
+                || manifest?.nativeProfile != settings?.selectedNativeProfile
+                || manifest?.nativeCompiler != ruleListStoreIfEnabled().configuredNativeCompilerIdentity
         )
     }
 

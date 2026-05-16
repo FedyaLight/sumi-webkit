@@ -135,6 +135,25 @@ struct NativeContentBlockingSourceList: Codable, Equatable, Sendable {
     let id: String
     let displayName: String
     let contentHash: String
+    let category: AdblockFilterListCategory?
+    let inputByteCount: Int?
+    let approximateRuleCount: Int?
+
+    init(
+        id: String,
+        displayName: String,
+        contentHash: String,
+        category: AdblockFilterListCategory? = nil,
+        inputByteCount: Int? = nil,
+        approximateRuleCount: Int? = nil
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.contentHash = contentHash
+        self.category = category
+        self.inputByteCount = inputByteCount
+        self.approximateRuleCount = approximateRuleCount
+    }
 }
 
 struct AdblockCompilationInput: Equatable, Sendable {
@@ -168,6 +187,39 @@ struct AdblockCompilationDiagnostics: Equatable, Sendable {
     var unsupportedCosmeticRuleCount = 0
     var ignoredScriptletOrProceduralRuleCount = 0
     var isNativeCosmeticGroupEmpty = true
+    var ruleCap = NativeContentBlockingRuleCapDiagnostics.none
+}
+
+struct NativeContentBlockingRuleCapDiagnostics: Codable, Equatable, Sendable {
+    struct SourcePressure: Codable, Equatable, Sendable {
+        let listIdentifier: String
+        let approximateRuleCount: Int
+        let inputByteCount: Int
+    }
+
+    let configuredRuleLimit: Int?
+    let wasHit: Bool
+    let discardedRuleCount: Int
+    let sourcePressure: [SourcePressure]
+
+    static let none = NativeContentBlockingRuleCapDiagnostics(
+        configuredRuleLimit: nil,
+        wasHit: false,
+        discardedRuleCount: 0,
+        sourcePressure: []
+    )
+}
+
+struct NativeContentBlockingCompilationSummary: Codable, Equatable, Sendable {
+    let inputRuleCount: Int
+    let inputByteCount: Int
+    let convertedNetworkRuleCount: Int
+    let convertedNativeCosmeticRuleCount: Int
+    let unsupportedOrIgnoredRuleCount: Int
+    let networkJSONByteCount: Int
+    let nativeCosmeticJSONByteCount: Int
+    let totalJSONByteCount: Int
+    let ruleCap: NativeContentBlockingRuleCapDiagnostics
 }
 
 struct AdblockCompiledRuleGroup: Equatable, Sendable {
@@ -206,6 +258,22 @@ struct NativeContentBlockingCompilationOutput: Equatable, Sendable {
 
     var ruleListDefinitions: [SumiContentRuleListDefinition] {
         groups.map(\.definition)
+    }
+
+    var networkJSONByteCount: Int {
+        groups
+            .filter { $0.kind == .network }
+            .reduce(0) { $0 + $1.encodedContentRuleList.utf8.count }
+    }
+
+    var nativeCosmeticJSONByteCount: Int {
+        groups
+            .filter { $0.kind == .nativeCosmeticCSS }
+            .reduce(0) { $0 + $1.encodedContentRuleList.utf8.count }
+    }
+
+    var totalJSONByteCount: Int {
+        networkJSONByteCount + nativeCosmeticJSONByteCount
     }
 }
 
@@ -363,7 +431,27 @@ final class AdblockRustCompiler: AdblockFilterCompiling, NativeContentBlockingCo
             nativeCosmeticRuleCount: nativeCosmeticCount,
             unsupportedCosmeticRuleCount: unsupportedCosmeticCount,
             ignoredScriptletOrProceduralRuleCount: scriptletOrProceduralCount,
-            isNativeCosmeticGroupEmpty: nativeCosmeticCount == 0
+            isNativeCosmeticGroupEmpty: nativeCosmeticCount == 0,
+            ruleCap: NativeContentBlockingRuleCapDiagnostics(
+                configuredRuleLimit: nil,
+                wasHit: false,
+                discardedRuleCount: 0,
+                sourcePressure: input.sourceLists.compactMap { source in
+                    guard let approximateRuleCount = source.approximateRuleCount,
+                          let inputByteCount = source.inputByteCount
+                    else { return nil }
+                    return NativeContentBlockingRuleCapDiagnostics.SourcePressure(
+                        listIdentifier: source.id,
+                        approximateRuleCount: approximateRuleCount,
+                        inputByteCount: inputByteCount
+                    )
+                }
+                .sorted { lhs, rhs in
+                    lhs.approximateRuleCount == rhs.approximateRuleCount
+                        ? lhs.listIdentifier < rhs.listIdentifier
+                        : lhs.approximateRuleCount > rhs.approximateRuleCount
+                }
+            )
         )
         let contentHash = stableHash(groups.map(\.contentHash).joined(separator: ":"))
 

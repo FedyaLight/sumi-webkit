@@ -12,6 +12,9 @@ enum AdblockFilterListCategory: String, Codable, CaseIterable, Sendable {
 
 enum AdblockFilterListProfileKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case currentDefault
+    case lightNative
+    case balancedNative
+    case highBlockingNative
     case oraLikeNative
 
     var id: String { rawValue }
@@ -21,6 +24,28 @@ struct AdblockFilterListProfile: Codable, Equatable, Identifiable, Sendable {
     let id: AdblockFilterListProfileKind
     let displayName: String
     let listIdentifiers: [String]
+    let isExperimental: Bool
+    let isRecommended: Bool
+    let appendsRecommendedRegionalList: Bool
+    let notes: String
+}
+
+enum AdblockNativeCompilerKind: String, Codable, CaseIterable, Identifiable, Sendable {
+    case adblockRust
+    case adGuardSafariExperimental
+
+    var id: String { rawValue }
+}
+
+enum AdblockNativeCompilerIntegrationStatus: String, Codable, Sendable {
+    case production
+    case externalHarnessOnly
+}
+
+struct AdblockNativeCompilerDescriptor: Codable, Equatable, Identifiable, Sendable {
+    let id: AdblockNativeCompilerKind
+    let displayName: String
+    let integrationStatus: AdblockNativeCompilerIntegrationStatus
     let isExperimental: Bool
     let notes: String
 }
@@ -62,18 +87,54 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
             .sorted()
     }
 
-    var comparisonProfiles: [AdblockFilterListProfile] {
+    var nativeProfiles: [AdblockFilterListProfile] {
         [
             AdblockFilterListProfile(
                 id: .currentDefault,
                 displayName: "Sumi current default",
                 listIdentifiers: defaultSelectionIdentifiers,
                 isExperimental: false,
+                isRecommended: false,
+                appendsRecommendedRegionalList: true,
                 notes: "Conservative native profile used by Sumi today."
             ),
             AdblockFilterListProfile(
+                id: .lightNative,
+                displayName: "Light Native",
+                listIdentifiers: ["easylist"],
+                isExperimental: false,
+                isRecommended: false,
+                appendsRecommendedRegionalList: true,
+                notes: "Low-overlap native ads profile: one base ads list plus an optional locale-matched regional list."
+            ),
+            AdblockFilterListProfile(
+                id: .balancedNative,
+                displayName: "Balanced Native",
+                listIdentifiers: [
+                    "adguard-base",
+                    "adguard-mobile-ads",
+                ],
+                isExperimental: true,
+                isRecommended: true,
+                appendsRecommendedRegionalList: true,
+                notes: "Candidate stronger native ads profile with no privacy-overlap lists and no JavaScript runtime."
+            ),
+            AdblockFilterListProfile(
+                id: .highBlockingNative,
+                displayName: "High Blocking Native",
+                listIdentifiers: [
+                    "adguard-base",
+                    "adguard-mobile-ads",
+                    "adguard-annoyances",
+                ],
+                isExperimental: true,
+                isRecommended: false,
+                appendsRecommendedRegionalList: true,
+                notes: "Higher native coverage candidate with annoyance blocking and higher cap/false-positive pressure."
+            ),
+            AdblockFilterListProfile(
                 id: .oraLikeNative,
-                displayName: "Ora-like native AdGuard profile",
+                displayName: "Ora-like Experimental",
                 listIdentifiers: [
                     "adguard-base",
                     "adguard-mobile-ads",
@@ -82,16 +143,53 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
                     "adguard-annoyances",
                 ],
                 isExperimental: true,
+                isRecommended: false,
+                appendsRecommendedRegionalList: false,
                 notes: "Modeled from Ora's default/recommended AdGuard native lists for comparison only; not enabled by default."
             ),
         ]
     }
 
+    var comparisonProfiles: [AdblockFilterListProfile] {
+        nativeProfiles
+    }
+
+    var nativeCompilerDescriptors: [AdblockNativeCompilerDescriptor] {
+        [
+            AdblockNativeCompilerDescriptor(
+                id: .adblockRust,
+                displayName: "adblock-rust",
+                integrationStatus: .production,
+                isExperimental: false,
+                notes: "Current production WebKit-native compiler implementation."
+            ),
+            AdblockNativeCompilerDescriptor(
+                id: .adGuardSafariExperimental,
+                displayName: "AdGuard SafariConverterLib",
+                integrationStatus: .externalHarnessOnly,
+                isExperimental: true,
+                notes: "Comparison-only today; not presented as an in-app compiler implementation."
+            ),
+        ]
+    }
+
+    func profile(for kind: AdblockFilterListProfileKind) -> AdblockFilterListProfile {
+        nativeProfiles.first { $0.id == kind }
+            ?? nativeProfiles.first { $0.id == .currentDefault }!
+    }
+
     func selectedDescriptors(
         selection: SumiAdblockFilterListSelection,
+        profileKind: AdblockFilterListProfileKind = .currentDefault,
         locale: Locale = .autoupdatingCurrent
     ) -> [AdblockFilterListDescriptor] {
-        let ids = Set(validatedSelection(selection, locale: locale).resolvedIdentifiers)
+        let ids = Set(
+            validatedSelection(
+                selection,
+                profileKind: profileKind,
+                locale: locale
+            ).resolvedIdentifiers
+        )
         return descriptors
             .filter { ids.contains($0.id) }
             .sorted { $0.id < $1.id }
@@ -99,10 +197,13 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
 
     func validatedSelection(
         _ selection: SumiAdblockFilterListSelection,
+        profileKind: AdblockFilterListProfileKind = .currentDefault,
         locale: Locale = .autoupdatingCurrent
     ) -> AdblockFilterListSelectionValidation {
+        let profile = profile(for: profileKind)
         let requested = selection.usesDefaultSelection
-            ? defaultSelectionIdentifiers + recommendedRegionalIdentifiers(for: locale)
+            ? profile.listIdentifiers
+                + (profile.appendsRecommendedRegionalList ? recommendedRegionalIdentifiers(for: locale) : [])
             : selection.identifiers
         let descriptorById = Dictionary(uniqueKeysWithValues: descriptors.map { ($0.id, $0) })
         let knownRequested = requested.filter { descriptorById[$0] != nil }
@@ -586,6 +687,25 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
         let id: String
         let displayName: String
         let contentHash: String
+        let category: AdblockFilterListCategory?
+        let inputByteCount: Int?
+        let approximateRuleCount: Int?
+
+        init(
+            id: String,
+            displayName: String,
+            contentHash: String,
+            category: AdblockFilterListCategory? = nil,
+            inputByteCount: Int? = nil,
+            approximateRuleCount: Int? = nil
+        ) {
+            self.id = id
+            self.displayName = displayName
+            self.contentHash = contentHash
+            self.category = category
+            self.inputByteCount = inputByteCount
+            self.approximateRuleCount = approximateRuleCount
+        }
     }
 
     struct Group: Codable, Equatable, Sendable {
@@ -602,11 +722,45 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
     let webKitRuleListIdentifiers: [String]
     let groupedOutputs: [Group]
     let enhancedRuntimeBundle: AdblockEnhancedRuntimeBundle?
+    let nativeProfile: AdblockFilterListProfileKind?
     let nativeCompiler: NativeContentBlockingCompilerIdentity?
     let nativeCompilerSourceLists: [NativeContentBlockingSourceList]?
+    let nativeCompilationSummary: NativeContentBlockingCompilationSummary?
     let compilerDiagnosticsSummary: String
     let lastSuccessfulUpdateDate: Date
     let previousGenerationId: String?
+
+    init(
+        schemaVersion: Int,
+        activeGenerationId: String,
+        createdDate: Date,
+        selectedFilterLists: [SelectedFilterList],
+        webKitRuleListIdentifiers: [String],
+        groupedOutputs: [Group],
+        enhancedRuntimeBundle: AdblockEnhancedRuntimeBundle?,
+        nativeProfile: AdblockFilterListProfileKind? = nil,
+        nativeCompiler: NativeContentBlockingCompilerIdentity?,
+        nativeCompilerSourceLists: [NativeContentBlockingSourceList]?,
+        nativeCompilationSummary: NativeContentBlockingCompilationSummary? = nil,
+        compilerDiagnosticsSummary: String,
+        lastSuccessfulUpdateDate: Date,
+        previousGenerationId: String?
+    ) {
+        self.schemaVersion = schemaVersion
+        self.activeGenerationId = activeGenerationId
+        self.createdDate = createdDate
+        self.selectedFilterLists = selectedFilterLists
+        self.webKitRuleListIdentifiers = webKitRuleListIdentifiers
+        self.groupedOutputs = groupedOutputs
+        self.enhancedRuntimeBundle = enhancedRuntimeBundle
+        self.nativeProfile = nativeProfile
+        self.nativeCompiler = nativeCompiler
+        self.nativeCompilerSourceLists = nativeCompilerSourceLists
+        self.nativeCompilationSummary = nativeCompilationSummary
+        self.compilerDiagnosticsSummary = compilerDiagnosticsSummary
+        self.lastSuccessfulUpdateDate = lastSuccessfulUpdateDate
+        self.previousGenerationId = previousGenerationId
+    }
 }
 
 struct AdblockGenerationCleanupReport: Equatable, Sendable {
@@ -1157,6 +1311,7 @@ actor AdblockGenerationGarbageCollector {
 actor AdblockUpdateCoordinator {
     private let registry: AdblockFilterListRegistry
     private let selection: @Sendable () async -> SumiAdblockFilterListSelection
+    private let nativeProfileSelection: @Sendable () async -> AdblockFilterListProfileKind
     private let isAdblockEnabled: @Sendable () async -> Bool
     private let downloader: any AdblockFilterListDownloading
     private let manifestStore: AdblockUpdateManifestStore
@@ -1171,6 +1326,9 @@ actor AdblockUpdateCoordinator {
     init(
         registry: AdblockFilterListRegistry,
         selection: @escaping @Sendable () async -> SumiAdblockFilterListSelection,
+        nativeProfileSelection: @escaping @Sendable () async -> AdblockFilterListProfileKind = {
+            .currentDefault
+        },
         isAdblockEnabled: @escaping @Sendable () async -> Bool,
         downloader: any AdblockFilterListDownloading,
         manifestStore: AdblockUpdateManifestStore,
@@ -1183,6 +1341,7 @@ actor AdblockUpdateCoordinator {
     ) {
         self.registry = registry
         self.selection = selection
+        self.nativeProfileSelection = nativeProfileSelection
         self.isAdblockEnabled = isAdblockEnabled
         self.downloader = downloader
         self.manifestStore = manifestStore
@@ -1197,6 +1356,7 @@ actor AdblockUpdateCoordinator {
     static func production(
         registry: AdblockFilterListRegistry,
         selection: @escaping @Sendable () async -> SumiAdblockFilterListSelection,
+        nativeProfileSelection: @escaping @Sendable () async -> AdblockFilterListProfileKind,
         isAdblockEnabled: @escaping @Sendable () async -> Bool,
         manifestStore: AdblockUpdateManifestStore,
         nativeCompiler: any NativeContentBlockingCompiler,
@@ -1208,6 +1368,7 @@ actor AdblockUpdateCoordinator {
         AdblockUpdateCoordinator(
             registry: registry,
             selection: selection,
+            nativeProfileSelection: nativeProfileSelection,
             isAdblockEnabled: isAdblockEnabled,
             downloader: AdblockFilterListDownloader(),
             manifestStore: manifestStore,
@@ -1223,7 +1384,11 @@ actor AdblockUpdateCoordinator {
         guard await isAdblockEnabled() else { return nil }
 
         let selection = await selection()
-        let descriptors = registry.selectedDescriptors(selection: selection)
+        let nativeProfile = await nativeProfileSelection()
+        let descriptors = registry.selectedDescriptors(
+            selection: selection,
+            profileKind: nativeProfile
+        )
         guard !descriptors.isEmpty else {
             throw AdblockUpdateDiagnostics(summary: "No selected Adblock filter lists")
         }
@@ -1279,7 +1444,10 @@ actor AdblockUpdateCoordinator {
                     AdblockCompiledGenerationManifest.SelectedFilterList(
                         id: descriptor.id,
                         displayName: descriptor.displayName,
-                        contentHash: listData.sumiAdblockSHA256Digest
+                        contentHash: listData.sumiAdblockSHA256Digest,
+                        category: descriptor.category,
+                        inputByteCount: listData.count,
+                        approximateRuleCount: Self.approximateRuleCount(in: listData)
                     )
                 )
             } catch {
@@ -1300,7 +1468,11 @@ actor AdblockUpdateCoordinator {
 
         guard await isAdblockEnabled() else { return nil }
 
-        let seed = selectedLists.map { "\($0.id):\($0.contentHash)" }.joined(separator: "|")
+        let seed = [
+            "profile:\(nativeProfile.rawValue)",
+            "compiler:\(nativeCompiler.identity.name):\(nativeCompiler.identity.version)",
+            selectedLists.map { "\($0.id):\($0.contentHash)" }.joined(separator: "|"),
+        ].joined(separator: "|")
         let generationHash = Self.shortHash(seed)
         let generation = AdblockRuleListGeneration(
             id: "\(Self.timestampString(now()))-\(generationHash)",
@@ -1316,7 +1488,10 @@ actor AdblockUpdateCoordinator {
                 NativeContentBlockingSourceList(
                     id: $0.id,
                     displayName: $0.displayName,
-                    contentHash: $0.contentHash
+                    contentHash: $0.contentHash,
+                    category: $0.category,
+                    inputByteCount: $0.inputByteCount,
+                    approximateRuleCount: $0.approximateRuleCount
                 )
             }
         )
@@ -1357,7 +1532,7 @@ actor AdblockUpdateCoordinator {
         }
 
         let manifest = AdblockCompiledGenerationManifest(
-            schemaVersion: 3,
+            schemaVersion: 4,
             activeGenerationId: generation.id,
             createdDate: generation.createdDate,
             selectedFilterLists: selectedLists.sorted { $0.id < $1.id },
@@ -1366,8 +1541,20 @@ actor AdblockUpdateCoordinator {
             enhancedRuntimeBundle: enhancedOutput?.enhancedRuntimeBundle.isAvailable == true
                 ? enhancedOutput?.enhancedRuntimeBundle
                 : nil,
+            nativeProfile: nativeProfile,
             nativeCompiler: nativeOutput.compilerIdentity,
             nativeCompilerSourceLists: nativeOutput.sourceLists,
+            nativeCompilationSummary: NativeContentBlockingCompilationSummary(
+                inputRuleCount: nativeOutput.inputRuleCount,
+                inputByteCount: filterTexts.reduce(0) { $0 + $1.utf8.count },
+                convertedNetworkRuleCount: nativeOutput.convertedNetworkRuleCount,
+                convertedNativeCosmeticRuleCount: nativeOutput.convertedNativeCosmeticRuleCount,
+                unsupportedOrIgnoredRuleCount: nativeOutput.unsupportedOrIgnoredRuleCount,
+                networkJSONByteCount: nativeOutput.networkJSONByteCount,
+                nativeCosmeticJSONByteCount: nativeOutput.nativeCosmeticJSONByteCount,
+                totalJSONByteCount: nativeOutput.totalJSONByteCount,
+                ruleCap: nativeOutput.diagnostics.ruleCap
+            ),
             compilerDiagnosticsSummary: Self.diagnosticsSummary(
                 nativeDiagnostics: nativeOutput.diagnostics,
                 enhancedOutput: enhancedOutput
@@ -1500,9 +1687,20 @@ actor AdblockUpdateCoordinator {
             "nativeCSSEmpty=\(diagnostics.isNativeCosmeticGroupEmpty)",
             "unsupported=\(diagnostics.unsupportedRules.count)",
             "ignored=\(diagnostics.ignoredRules.count)",
+            "ruleCapHit=\(diagnostics.ruleCap.wasHit)",
+            "discarded=\(diagnostics.ruleCap.discardedRuleCount)",
             "enhancedResources=\(enhancedOutput?.enhancedRuntimeBundle.resources.count ?? 0)",
             "enhancedUnsupported=\(enhancedOutput?.enhancedRuntimeBundle.unsupportedDiagnostics.count ?? 0)",
         ].joined(separator: "; ")
+    }
+
+    private static func approximateRuleCount(in data: Data) -> Int {
+        String(decoding: data, as: UTF8.self)
+            .components(separatedBy: .newlines)
+            .lazy
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("!") && !$0.hasPrefix("[") }
+            .count
     }
 
     private static func timestampString(_ date: Date) -> String {

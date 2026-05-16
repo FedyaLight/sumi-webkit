@@ -235,6 +235,27 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         })
     }
 
+    func testBadFilterIsReportedByRustAdapterWithoutCrashingNativeCompilation() async throws {
+        let compiler = AdblockRustCompiler()
+        let output = try await compiler.compileNativeContentBlocking(
+            AdblockCompilationInput(
+                sourceIdentifier: "BadFilter",
+                filterTexts: [
+                    "||ads.example.test^",
+                    "||ads.example.test^$badfilter",
+                ],
+                selectedOutputGroups: [.network, .nativeCosmeticCSS]
+            )
+        )
+
+        XCTAssertEqual(output.convertedNetworkRuleCount, 0)
+        XCTAssertTrue(
+            output.diagnostics.unsupportedRules.contains(where: {
+                $0.reason.contains("NetworkBadFilterUnsupported")
+            })
+        )
+    }
+
     func testHybridCompilerClassifiesRedirectAndProceduralCandidatesWithoutNativeParserBypass() async throws {
         let adapter = CountingAdblockRustAdapter(
             output: AdblockRustAdapterOutput(
@@ -595,18 +616,21 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertEqual(settings.cosmeticMode, .nativeCSS)
         XCTAssertTrue(settings.regionalListSelection.identifiers.isEmpty)
         XCTAssertTrue(settings.selectedLists.usesDefaultSelection)
+        XCTAssertEqual(settings.selectedNativeProfile, .currentDefault)
         XCTAssertFalse(settings.listSelectionRequiresUpdate)
 
         settings.autoUpdateEnabled = false
         settings.cosmeticMode = .enhancedRuntime
         settings.regionalListSelection = SumiAdblockRegionalListSelection(identifiers: ["de", "pl"])
         settings.selectedLists = SumiAdblockFilterListSelection(identifiers: ["easylist", "ru-adlist"])
+        settings.selectedNativeProfile = .balancedNative
 
         let reloaded = AdblockSettingsStore(userDefaults: harness.defaults)
         XCTAssertFalse(reloaded.autoUpdateEnabled)
         XCTAssertEqual(reloaded.cosmeticMode, .enhancedRuntime)
         XCTAssertEqual(reloaded.regionalListSelection.identifiers, ["de", "pl"])
         XCTAssertEqual(reloaded.selectedLists.identifiers, ["easylist", "ru-adlist"])
+        XCTAssertEqual(reloaded.selectedNativeProfile, .balancedNative)
         XCTAssertTrue(reloaded.listSelectionRequiresUpdate)
     }
 
@@ -734,7 +758,11 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertTrue(diagnostics.hasActiveGeneration)
         XCTAssertEqual(diagnostics.attachedNativeGroups, [.nativeCosmeticCSS, .network])
         XCTAssertEqual(diagnostics.selectedListIdentifiers, ["easylist"])
+        XCTAssertEqual(diagnostics.selectedNativeProfile, nil)
         XCTAssertEqual(diagnostics.nativeCompiler?.name, "adblock-rust")
+        XCTAssertEqual(diagnostics.cosmeticMode, .nativeCSS)
+        XCTAssertFalse(diagnostics.enhancedRuntimeIsEnabled)
+        XCTAssertFalse(diagnostics.trackingProtectionModuleEnabled)
         XCTAssertTrue(diagnostics.generationIsStale)
     }
 
@@ -1447,6 +1475,16 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             }
 
         XCTAssertTrue(unexpected.isEmpty, unexpected.joined(separator: "\n"))
+    }
+
+    func testSafariConverterIsNotPresentedAsInAppCompilerWhileIntegrationIsDeferred() throws {
+        let compilerSource = try Self.source(named: "Sumi/ContentBlocking/SumiAdblockRustCompiler.swift")
+        let updateSource = try Self.source(named: "Sumi/ContentBlocking/SumiAdblockUpdatePipeline.swift")
+        let harnessSource = try Self.source(named: "scripts/compare_native_adblock_compilers.sh")
+
+        XCTAssertFalse(compilerSource.contains("AdGuardSafariNativeContentBlockingCompiler"))
+        XCTAssertTrue(updateSource.contains("externalHarnessOnly"))
+        XCTAssertTrue(harnessSource.contains("\"external-harness-only\""))
     }
 
     func testAuxiliarySourcesDoNotConsultAdBlockingModule() throws {

@@ -140,7 +140,10 @@ private struct NativeAdblockSettingsView: View {
     }
 
     private var selectedListCount: Int {
-        registry.validatedSelection(settings.selectedLists).resolvedIdentifiers.count
+        registry.validatedSelection(
+            settings.selectedLists,
+            profileKind: settings.selectedNativeProfile
+        ).resolvedIdentifiers.count
     }
 
     private var filterListSelection: some View {
