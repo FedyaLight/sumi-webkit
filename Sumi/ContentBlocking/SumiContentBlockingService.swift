@@ -117,8 +117,26 @@ final class SumiWKContentRuleListCompiler: SumiContentRuleListCompiling {
     }
 }
 
-enum SumiContentBlockingCompilationError: Error {
+enum SumiContentBlockingCompilationError: Error, LocalizedError {
     case missingCompiledRuleList(String)
+    case failedToCompileRuleList(String, String)
+
+    var identifier: String {
+        switch self {
+        case .missingCompiledRuleList(let identifier),
+             .failedToCompileRuleList(let identifier, _):
+            return identifier
+        }
+    }
+
+    var errorDescription: String? {
+        switch self {
+        case .missingCompiledRuleList(let identifier):
+            return "Compiled content rule list could not be looked up: \(identifier)"
+        case .failedToCompileRuleList(let identifier, let reason):
+            return "Failed to compile content rule list \(identifier): \(reason)"
+        }
+    }
 }
 
 struct SumiPreparedContentBlockingUpdate {
@@ -563,6 +581,12 @@ final class SumiContentBlockingService {
         for definition in definitions {
             compiledRules.append(try await rule(for: definition))
         }
+        for definition in definitions {
+            let storeIdentifier = storeIdentifier(for: definition)
+            guard await compiler.canLookUpContentRuleList(forIdentifier: storeIdentifier) else {
+                throw SumiContentBlockingCompilationError.missingCompiledRuleList(storeIdentifier)
+            }
+        }
 
         return Self.updateEvent(for: compiledRules)
     }
@@ -580,14 +604,8 @@ final class SumiContentBlockingService {
     }
 
     private func rule(for definition: SumiContentRuleListDefinition) async throws -> SumiContentBlockerRules {
-        let rulesIdentifier = SumiContentBlockerRulesIdentifier(
-            name: definition.name,
-            tdsEtag: definition.contentHash,
-            tempListId: nil,
-            allowListId: nil,
-            unprotectedSitesHash: nil
-        )
-        let storeIdentifier = definition.storeIdentifierOverride ?? rulesIdentifier.stringValue
+        let rulesIdentifier = rulesIdentifier(for: definition)
+        let storeIdentifier = storeIdentifier(for: definition)
 
         if let cachedRules = compiledRulesByIdentifier[storeIdentifier] {
             return cachedRules
@@ -597,10 +615,17 @@ final class SumiContentBlockingService {
         if let cachedRuleList = await compiler.lookUpContentRuleList(forIdentifier: storeIdentifier) {
             ruleList = cachedRuleList
         } else {
-            ruleList = try await compiler.compileContentRuleList(
-                forIdentifier: storeIdentifier,
-                encodedContentRuleList: definition.encodedContentRuleList
-            )
+            do {
+                ruleList = try await compiler.compileContentRuleList(
+                    forIdentifier: storeIdentifier,
+                    encodedContentRuleList: definition.encodedContentRuleList
+                )
+            } catch {
+                throw SumiContentBlockingCompilationError.failedToCompileRuleList(
+                    storeIdentifier,
+                    error.localizedDescription
+                )
+            }
         }
 
         let rules = SumiContentBlockerRules(
@@ -611,6 +636,22 @@ final class SumiContentBlockingService {
         )
         compiledRulesByIdentifier[storeIdentifier] = rules
         return rules
+    }
+
+    private func rulesIdentifier(
+        for definition: SumiContentRuleListDefinition
+    ) -> SumiContentBlockerRulesIdentifier {
+        SumiContentBlockerRulesIdentifier(
+            name: definition.name,
+            tdsEtag: definition.contentHash,
+            tempListId: nil,
+            allowListId: nil,
+            unprotectedSitesHash: nil
+        )
+    }
+
+    private func storeIdentifier(for definition: SumiContentRuleListDefinition) -> String {
+        definition.storeIdentifierOverride ?? rulesIdentifier(for: definition).stringValue
     }
 
     private func publishProfileUpdate(

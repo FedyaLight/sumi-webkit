@@ -284,7 +284,10 @@ RUST_NATIVE_CSS_JSON="${WORK_DIR}/${PROFILE_SLUG}-adblock-rust-native-css-webkit
 RUST_STDERR="${WORK_DIR}/${PROFILE_SLUG}-adblock-rust-stderr.txt"
 RUST_NETWORK_WEBKIT_REPORT="${WORK_DIR}/${PROFILE_SLUG}-adblock-rust-network-webkit-report.json"
 RUST_NATIVE_CSS_WEBKIT_REPORT="${WORK_DIR}/${PROFILE_SLUG}-adblock-rust-native-css-webkit-report.json"
+RUST_SHARD_DIR="${WORK_DIR}/${PROFILE_SLUG}-adblock-rust-shards"
+RUST_SHARD_REPORT="${WORK_DIR}/${PROFILE_SLUG}-adblock-rust-shard-dry-run-report.json"
 SAFARI_REPORT="${WORK_DIR}/${PROFILE_SLUG}-safari-converter-report.json"
+rm -f "${RUST_SHARD_REPORT}"
 
 START_NS="$(date +%s%N)"
 set +e
@@ -377,6 +380,109 @@ with open(report_path, "w", encoding="utf-8") as handle:
     json.dump(report, handle, indent=2, sort_keys=True)
     handle.write("\n")
 PY
+
+  rm -rf "${RUST_SHARD_DIR}"
+  mkdir -p "${RUST_SHARD_DIR}"
+  /usr/bin/python3 - "$RUST_RAW" "$RUST_SHARD_DIR" "$RUST_SHARD_REPORT" <<'PY'
+import json
+import pathlib
+import sys
+
+raw_path, shard_dir, report_path = map(pathlib.Path, sys.argv[1:])
+raw = json.loads(raw_path.read_text())
+max_rules = 25_000
+max_bytes = 3_000_000
+
+def encode(rules):
+    return json.dumps(rules, ensure_ascii=False, separators=(",", ":"))
+
+def chunk(rules):
+    if not rules:
+        return [[]]
+    chunks = []
+    current = []
+    current_bytes = 2
+    for rule in rules:
+        encoded_rule = json.dumps(rule, ensure_ascii=False, separators=(",", ":"))
+        separator = 0 if not current else 1
+        if current and (len(current) >= max_rules or current_bytes + separator + len(encoded_rule.encode("utf-8")) > max_bytes):
+            chunks.append(current)
+            current = []
+            current_bytes = 2
+            separator = 0
+        current.append(rule)
+        current_bytes += separator + len(encoded_rule.encode("utf-8"))
+    if current:
+        chunks.append(current)
+    return chunks
+
+def write_group(name, rules):
+    output = []
+    for index, shard_rules in enumerate(chunk(rules), start=1):
+        encoded = encode(shard_rules)
+        path = shard_dir / f"{name}-{index:04d}.json"
+        path.write_text(encoded)
+        output.append(
+            {
+                "id": f"{name}-{index:04d}",
+                "path": str(path),
+                "ruleCount": len(shard_rules),
+                "jsonSizeBytes": len(encoded.encode("utf-8")),
+                "webKitCompileSucceeded": None,
+            }
+        )
+    return output
+
+report = {
+    "strategy": {
+        "maxRulesPerShard": max_rules,
+        "maxJSONBytesPerShard": max_bytes,
+    },
+    "networkShards": write_group("network", raw.get("network", [])),
+    "nativeCSSShards": write_group("nativeCSS", raw.get("native_cosmetic_css", [])),
+}
+report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+PY
+
+  while IFS= read -r shard_path; do
+    shard_report_path="${shard_path%.json}-webkit-report.json"
+    set +e
+    (cd "${SWIFT_PACKAGE}" && swift run -c release SafariConverterCompare --validate-json <"${shard_path}" >"${shard_report_path}")
+    shard_status="$?"
+    set -e
+    if [[ "${shard_status}" -ne 0 ]]; then
+      printf '{"webKitCompileSucceeded":false,"processExitStatus":%s}\n' "${shard_status}" >"${shard_report_path}"
+    fi
+  done < <(find "${RUST_SHARD_DIR}" -name '*.json' ! -name '*-webkit-report.json' | sort)
+
+  /usr/bin/python3 - "$RUST_SHARD_REPORT" "$RUST_REPORT" <<'PY'
+import json
+import pathlib
+import sys
+
+shard_report_path = pathlib.Path(sys.argv[1])
+rust_report_path = pathlib.Path(sys.argv[2])
+report = json.loads(shard_report_path.read_text())
+rust_report = json.loads(rust_report_path.read_text())
+
+for group_name in ("networkShards", "nativeCSSShards"):
+    for shard in report[group_name]:
+        webkit_report = json.loads(pathlib.Path(shard["path"].replace(".json", "-webkit-report.json")).read_text())
+        shard["webKitCompileSucceeded"] = bool(webkit_report["webKitCompileSucceeded"])
+
+all_shards = report["networkShards"] + report["nativeCSSShards"]
+report.update(
+    {
+        "networkShardCount": len(report["networkShards"]),
+        "nativeCSSShardCount": len(report["nativeCSSShards"]),
+        "largestShardJSONBytes": max((item["jsonSizeBytes"] for item in all_shards), default=0),
+        "allShardWebKitCompileSucceeded": all(item["webKitCompileSucceeded"] for item in all_shards),
+        "previousOneShotNetworkWebKitCompileSucceeded": rust_report["networkGroupWebKitCompileSucceeded"],
+        "previousOneShotNativeCSSWebKitCompileSucceeded": rust_report["nativeCSSGroupWebKitCompileSucceeded"],
+    }
+)
+shard_report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+PY
 else
   /usr/bin/python3 - "$COMBINED" "$RUST_STDERR" "$RUST_REPORT" "$RUST_STATUS" "$RUST_MS" <<'PY'
 import json
@@ -432,4 +538,7 @@ PY
 
 printf 'Wrote comparison reports:\n'
 printf '  %s\n' "${RUST_REPORT}"
+if [[ -f "${RUST_SHARD_REPORT}" ]]; then
+  printf '  %s\n' "${RUST_SHARD_REPORT}"
+fi
 printf '  %s\n' "${SAFARI_REPORT}"

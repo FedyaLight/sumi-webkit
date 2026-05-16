@@ -79,12 +79,19 @@ struct SumiAdblockAttachmentDiagnostics: Equatable, Sendable {
     let isEnabled: Bool
     let hasActiveGeneration: Bool
     let attachedNativeGroups: [AdblockCompiledRuleGroupKind]
+    let attachedShardIdentifiers: [String]
     let contentRuleListIdentifiers: [String]
     let selectedListIdentifiers: [String]
     let selectedNativeProfile: AdblockFilterListProfileKind?
     let nativeCompiler: NativeContentBlockingCompilerIdentity?
     let nativeCompilationSummary: NativeContentBlockingCompilationSummary?
     let nativeSourceLists: [NativeContentBlockingSourceList]
+    let networkShardCount: Int
+    let nativeCSSShardCount: Int
+    let totalNetworkRuleCount: Int
+    let totalNativeCSSRuleCount: Int
+    let largestShardJSONByteCount: Int
+    let failedShardIdentifier: String?
     let cosmeticMode: SumiAdblockCosmeticMode?
     let enhancedRuntimeIsEnabled: Bool
     let trackingProtectionModuleEnabled: Bool
@@ -403,6 +410,7 @@ final class AdblockWebKitRuleListStore {
     private let isAdblockEnabled: @Sendable () async -> Bool
     let configuredNativeCompilerIdentity: NativeContentBlockingCompilerIdentity
     private var settingsCancellable: AnyCancellable?
+    private(set) var lastFailedShardIdentifier: String?
 
     var hasActiveGeneration: Bool {
         ruleListProvider.activeManifest != nil
@@ -484,11 +492,17 @@ final class AdblockWebKitRuleListStore {
 
     func requestManualUpdate() async throws -> AdblockCompiledGenerationManifest? {
         guard await isAdblockEnabled() else { return nil }
-        let manifest = try await updateCoordinator.updateIfEnabled(reason: "manual")
-        if manifest != nil {
-            settingsStore.markListUpdateCompleted()
+        do {
+            let manifest = try await updateCoordinator.updateIfEnabled(reason: "manual")
+            if manifest != nil {
+                lastFailedShardIdentifier = nil
+                settingsStore.markListUpdateCompleted()
+            }
+            return manifest
+        } catch let diagnostics as AdblockUpdateDiagnostics {
+            lastFailedShardIdentifier = diagnostics.failedShardIdentifier
+            throw diagnostics
         }
-        return manifest
     }
 
     func loadActiveManifestIfEnabled() async {
@@ -501,7 +515,16 @@ final class AdblockWebKitRuleListStore {
         guard ruleListProvider.activeManifest == nil
         else { return }
         Task { [weak self] in
-            _ = try? await self?.updateCoordinator.updateIfEnabled(reason: "initial")
+            do {
+                _ = try await self?.updateCoordinator.updateIfEnabled(reason: "initial")
+                await MainActor.run {
+                    self?.lastFailedShardIdentifier = nil
+                }
+            } catch let diagnostics as AdblockUpdateDiagnostics {
+                await MainActor.run {
+                    self?.lastFailedShardIdentifier = diagnostics.failedShardIdentifier
+                }
+            } catch {}
         }
     }
 
@@ -656,12 +679,19 @@ final class SumiAdBlockingModule {
                 isEnabled: policy.isEnabled,
                 hasActiveGeneration: false,
                 attachedNativeGroups: [],
+                attachedShardIdentifiers: [],
                 contentRuleListIdentifiers: [],
                 selectedListIdentifiers: [],
                 selectedNativeProfile: nil,
                 nativeCompiler: nil,
                 nativeCompilationSummary: nil,
                 nativeSourceLists: [],
+                networkShardCount: 0,
+                nativeCSSShardCount: 0,
+                totalNetworkRuleCount: 0,
+                totalNativeCSSRuleCount: 0,
+                largestShardJSONByteCount: 0,
+                failedShardIdentifier: nil,
                 cosmeticMode: nil,
                 enhancedRuntimeIsEnabled: false,
                 trackingProtectionModuleEnabled: moduleRegistry.isEnabled(.trackingProtection),
@@ -674,22 +704,38 @@ final class SumiAdBlockingModule {
         let allowedGroups = AdblockManifestRuleListProvider.attachedGroupKinds(
             for: settings?.cosmeticMode ?? .nativeCSS
         )
-        let attachedGroups = manifest?.groupedOutputs
+        let attachedShards = manifest?.allNativeShards
             .filter { allowedGroups.contains($0.kind) }
-            .map(\.kind)
-            .sorted { $0.rawValue < $1.rawValue } ?? []
+            ?? []
+        let attachedGroups = Array(Set(attachedShards.map(\.kind)))
+            .sorted { $0.rawValue < $1.rawValue }
+        let attachedShardIdentifiers = attachedShards
+            .map(\.webKitIdentifier)
+            .sorted()
+        let allShards = manifest?.allNativeShards ?? []
+        let networkShards = manifest?.networkShards ?? []
+        let nativeCSSShards = manifest?.nativeCSSShards ?? []
 
         return SumiAdblockAttachmentDiagnostics(
             siteHost: policy.host,
             isEnabled: true,
             hasActiveGeneration: manifest != nil,
             attachedNativeGroups: attachedGroups,
-            contentRuleListIdentifiers: manifest?.webKitRuleListIdentifiers.sorted() ?? contentRuleListIdentifiers(),
+            attachedShardIdentifiers: attachedShardIdentifiers,
+            contentRuleListIdentifiers: attachedShardIdentifiers.isEmpty
+                ? contentRuleListIdentifiers()
+                : attachedShardIdentifiers,
             selectedListIdentifiers: manifest?.selectedFilterLists.map(\.id).sorted() ?? [],
             selectedNativeProfile: manifest?.nativeProfile,
             nativeCompiler: manifest?.nativeCompiler,
             nativeCompilationSummary: manifest?.nativeCompilationSummary,
             nativeSourceLists: manifest?.nativeCompilerSourceLists ?? [],
+            networkShardCount: networkShards.count,
+            nativeCSSShardCount: nativeCSSShards.count,
+            totalNetworkRuleCount: networkShards.reduce(0) { $0 + $1.approximateRuleCount },
+            totalNativeCSSRuleCount: nativeCSSShards.reduce(0) { $0 + $1.approximateRuleCount },
+            largestShardJSONByteCount: allShards.map(\.jsonByteCount).max() ?? 0,
+            failedShardIdentifier: ruleListStoreIfEnabled().lastFailedShardIdentifier,
             cosmeticMode: settings?.cosmeticMode,
             enhancedRuntimeIsEnabled: settings?.cosmeticMode == .enhancedRuntime,
             trackingProtectionModuleEnabled: moduleRegistry.isEnabled(.trackingProtection),
@@ -745,6 +791,15 @@ final class SumiAdBlockingModule {
 
     private func contentRuleListIdentifiers() -> [String] {
         guard let settings = settingsIfEnabled() else { return [] }
+        if let manifest = cachedRuleListStore?.activeManifest {
+            let allowedKinds = AdblockManifestRuleListProvider.attachedGroupKinds(
+                for: settings.cosmeticMode
+            )
+            return manifest.allNativeShards
+                .filter { allowedKinds.contains($0.kind) }
+                .map(\.webKitIdentifier)
+                .sorted()
+        }
         return AdblockWebKitRuleListStore.ruleListIdentifiers(for: settings.cosmeticMode)
     }
 

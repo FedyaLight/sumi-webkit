@@ -19,6 +19,16 @@ struct AdblockNativeRuleGroups: Equatable, Sendable {
     let nativeCosmeticCSS: AdblockCompiledRuleGroup?
 }
 
+struct NativeContentBlockingShardStrategy: Codable, Equatable, Sendable {
+    let maxRulesPerShard: Int
+    let maxJSONBytesPerShard: Int
+
+    static let conservativeDefault = NativeContentBlockingShardStrategy(
+        maxRulesPerShard: 25_000,
+        maxJSONBytesPerShard: 3_000_000
+    )
+}
+
 struct AdblockEnhancedResource: Equatable, Sendable {
     enum Kind: String, Codable, Sendable {
         case cosmeticCleanup
@@ -158,20 +168,29 @@ struct NativeContentBlockingSourceList: Codable, Equatable, Sendable {
 
 struct AdblockCompilationInput: Equatable, Sendable {
     let sourceIdentifier: String
+    let generationId: String?
+    let nativeProfile: AdblockFilterListProfileKind?
     let filterTexts: [String]
     let selectedOutputGroups: Set<AdblockCompiledRuleGroupKind>
     let sourceLists: [NativeContentBlockingSourceList]
+    let shardStrategy: NativeContentBlockingShardStrategy
 
     init(
         sourceIdentifier: String,
+        generationId: String? = nil,
+        nativeProfile: AdblockFilterListProfileKind? = nil,
         filterTexts: [String],
         selectedOutputGroups: Set<AdblockCompiledRuleGroupKind>,
-        sourceLists: [NativeContentBlockingSourceList] = []
+        sourceLists: [NativeContentBlockingSourceList] = [],
+        shardStrategy: NativeContentBlockingShardStrategy = .conservativeDefault
     ) {
         self.sourceIdentifier = sourceIdentifier
+        self.generationId = generationId
+        self.nativeProfile = nativeProfile
         self.filterTexts = filterTexts
         self.selectedOutputGroups = selectedOutputGroups
         self.sourceLists = sourceLists
+        self.shardStrategy = shardStrategy
     }
 }
 
@@ -237,9 +256,51 @@ struct AdblockCompiledRuleGroup: Equatable, Sendable {
     }
 }
 
+struct NativeContentBlockingShardDescriptor: Codable, Equatable, Sendable {
+    let id: String
+    let generationId: String
+    let kind: AdblockCompiledRuleGroupKind
+    let sourceListIdentifiers: [String]
+    let sourceCategories: [AdblockFilterListCategory]
+    let webKitIdentifier: String
+    let contentHash: String
+    let approximateRuleCount: Int
+    let jsonByteCount: Int
+    let compilerIdentity: NativeContentBlockingCompilerIdentity?
+    let profileIdentity: AdblockFilterListProfileKind?
+    let diagnosticsSummary: String
+}
+
+struct NativeContentBlockingCompiledShard: Equatable, Sendable {
+    let descriptor: NativeContentBlockingShardDescriptor
+    let encodedContentRuleList: String
+    let convertedRuleCount: Int
+
+    var kind: AdblockCompiledRuleGroupKind { descriptor.kind }
+
+    var definition: SumiContentRuleListDefinition {
+        SumiContentRuleListDefinition(
+            name: descriptor.webKitIdentifier,
+            encodedContentRuleList: encodedContentRuleList,
+            storeIdentifierOverride: descriptor.webKitIdentifier
+        )
+    }
+
+    var legacyGroup: AdblockCompiledRuleGroup {
+        AdblockCompiledRuleGroup(
+            kind: descriptor.kind,
+            name: descriptor.webKitIdentifier,
+            encodedContentRuleList: encodedContentRuleList,
+            convertedRuleCount: convertedRuleCount,
+            contentHash: descriptor.contentHash
+        )
+    }
+}
+
 struct NativeContentBlockingCompilationOutput: Equatable, Sendable {
     let sourceIdentifier: String
-    let groups: [AdblockCompiledRuleGroup]
+    let networkShards: [NativeContentBlockingCompiledShard]
+    let nativeCosmeticCSSShards: [NativeContentBlockingCompiledShard]
     let diagnostics: AdblockCompilationDiagnostics
     let inputRuleCount: Int
     let convertedNetworkRuleCount: Int
@@ -248,6 +309,16 @@ struct NativeContentBlockingCompilationOutput: Equatable, Sendable {
     let contentHash: String
     let compilerIdentity: NativeContentBlockingCompilerIdentity
     let sourceLists: [NativeContentBlockingSourceList]
+    let nativeProfile: AdblockFilterListProfileKind?
+    let shardStrategy: NativeContentBlockingShardStrategy
+
+    var shards: [NativeContentBlockingCompiledShard] {
+        networkShards + nativeCosmeticCSSShards
+    }
+
+    var groups: [AdblockCompiledRuleGroup] {
+        shards.map(\.legacyGroup)
+    }
 
     var nativeRuleGroups: AdblockNativeRuleGroups {
         AdblockNativeRuleGroups(
@@ -257,19 +328,15 @@ struct NativeContentBlockingCompilationOutput: Equatable, Sendable {
     }
 
     var ruleListDefinitions: [SumiContentRuleListDefinition] {
-        groups.map(\.definition)
+        shards.map(\.definition)
     }
 
     var networkJSONByteCount: Int {
-        groups
-            .filter { $0.kind == .network }
-            .reduce(0) { $0 + $1.encodedContentRuleList.utf8.count }
+        networkShards.reduce(0) { $0 + $1.descriptor.jsonByteCount }
     }
 
     var nativeCosmeticJSONByteCount: Int {
-        groups
-            .filter { $0.kind == .nativeCosmeticCSS }
-            .reduce(0) { $0 + $1.encodedContentRuleList.utf8.count }
+        nativeCosmeticCSSShards.reduce(0) { $0 + $1.descriptor.jsonByteCount }
     }
 
     var totalJSONByteCount: Int {
@@ -383,35 +450,29 @@ final class AdblockRustCompiler: AdblockFilterCompiling, NativeContentBlockingCo
         identity: NativeContentBlockingCompilerIdentity
     ) throws -> NativeContentBlockingCompilationOutput {
         try validateAdapterOutput(adapterOutput)
-        var groups = [AdblockCompiledRuleGroup]()
-        let networkJSON = try encodedJSON(adapterOutput.network)
-        let cosmeticJSON = try encodedJSON(adapterOutput.nativeCosmeticCSS)
         let networkBlockCount = adapterOutput.network.countActions(named: "block")
         let nativeCosmeticCount = adapterOutput.nativeCosmeticCSS.countActions(named: "css-display-none")
-
-        if input.selectedOutputGroups.contains(.network) {
-            groups.append(
-                AdblockCompiledRuleGroup(
-                    kind: .network,
-                    name: "\(input.sourceIdentifier).network",
-                    encodedContentRuleList: networkJSON,
-                    convertedRuleCount: networkBlockCount,
-                    contentHash: stableHash(networkJSON)
-                )
+        let generationId = input.generationId ?? input.sourceIdentifier
+        let networkShards = input.selectedOutputGroups.contains(.network)
+            ? try makeCompiledShards(
+                kind: .network,
+                rules: adapterOutput.network,
+                convertedActionName: "block",
+                generationId: generationId,
+                input: input,
+                identity: identity
             )
-        }
-
-        if input.selectedOutputGroups.contains(.nativeCosmeticCSS) {
-            groups.append(
-                AdblockCompiledRuleGroup(
-                    kind: .nativeCosmeticCSS,
-                    name: "\(input.sourceIdentifier).native-css",
-                    encodedContentRuleList: cosmeticJSON,
-                    convertedRuleCount: nativeCosmeticCount,
-                    contentHash: stableHash(cosmeticJSON)
-                )
+            : []
+        let nativeCosmeticCSSShards = input.selectedOutputGroups.contains(.nativeCosmeticCSS)
+            ? try makeCompiledShards(
+                kind: .nativeCosmeticCSS,
+                rules: adapterOutput.nativeCosmeticCSS,
+                convertedActionName: "css-display-none",
+                generationId: generationId,
+                input: input,
+                identity: identity
             )
-        }
+            : []
 
         let unsupportedDiagnostics = adapterOutput.unsupportedOrIgnored.map {
             AdblockCompilationDiagnostics.Entry(rule: $0.rule, reason: $0.reason)
@@ -453,11 +514,16 @@ final class AdblockRustCompiler: AdblockFilterCompiling, NativeContentBlockingCo
                 }
             )
         )
-        let contentHash = stableHash(groups.map(\.contentHash).joined(separator: ":"))
+        let contentHash = stableHash(
+            (networkShards + nativeCosmeticCSSShards)
+                .map(\.descriptor.contentHash)
+                .joined(separator: ":")
+        )
 
         return NativeContentBlockingCompilationOutput(
             sourceIdentifier: input.sourceIdentifier,
-            groups: groups,
+            networkShards: networkShards,
+            nativeCosmeticCSSShards: nativeCosmeticCSSShards,
             diagnostics: diagnostics,
             inputRuleCount: normalizedRules.count,
             convertedNetworkRuleCount: networkBlockCount,
@@ -465,7 +531,9 @@ final class AdblockRustCompiler: AdblockFilterCompiling, NativeContentBlockingCo
             unsupportedOrIgnoredRuleCount: diagnostics.unsupportedRules.count + diagnostics.ignoredRules.count,
             contentHash: contentHash,
             compilerIdentity: identity,
-            sourceLists: input.sourceLists
+            sourceLists: input.sourceLists,
+            nativeProfile: input.nativeProfile,
+            shardStrategy: input.shardStrategy
         )
     }
 
@@ -579,6 +647,130 @@ final class AdblockRustCompiler: AdblockFilterCompiling, NativeContentBlockingCo
         return String(decoding: data, as: UTF8.self)
     }
 
+    private static func encodedRuleJSON(_ rule: AdblockRustContentRule) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let data = try encoder.encode(rule)
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private static func makeCompiledShards(
+        kind: AdblockCompiledRuleGroupKind,
+        rules: [AdblockRustContentRule],
+        convertedActionName: String,
+        generationId: String,
+        input: AdblockCompilationInput,
+        identity: NativeContentBlockingCompilerIdentity
+    ) throws -> [NativeContentBlockingCompiledShard] {
+        let ruleChunks = try deterministicChunks(
+            from: rules,
+            strategy: input.shardStrategy
+        )
+        let sourceListIdentifiers = input.sourceLists.map(\.id).sorted()
+        let sourceCategories = Array(Set(input.sourceLists.compactMap(\.category)))
+            .sorted { $0.rawValue < $1.rawValue }
+
+        return try ruleChunks.enumerated().map { index, chunk in
+            let encodedContentRuleList = try encodedJSON(chunk)
+            let contentHash = stableHash(encodedContentRuleList)
+            let shardIndex = index + 1
+            let jsonByteCount = encodedContentRuleList.utf8.count
+            let softLimitExceeded = jsonByteCount > input.shardStrategy.maxJSONBytesPerShard
+            let descriptor = NativeContentBlockingShardDescriptor(
+                id: shardId(kind: kind, index: shardIndex),
+                generationId: generationId,
+                kind: kind,
+                sourceListIdentifiers: sourceListIdentifiers,
+                sourceCategories: sourceCategories,
+                webKitIdentifier: shardWebKitIdentifier(
+                    kind: kind,
+                    generationId: generationId,
+                    shardIndex: shardIndex,
+                    contentHash: contentHash
+                ),
+                contentHash: contentHash,
+                approximateRuleCount: chunk.count,
+                jsonByteCount: jsonByteCount,
+                compilerIdentity: identity,
+                profileIdentity: input.nativeProfile,
+                diagnosticsSummary: [
+                    "deterministicChunk",
+                    "rules=\(chunk.count)",
+                    "bytes=\(jsonByteCount)",
+                    "softByteLimitExceeded=\(softLimitExceeded)",
+                ].joined(separator: ";")
+            )
+            return NativeContentBlockingCompiledShard(
+                descriptor: descriptor,
+                encodedContentRuleList: encodedContentRuleList,
+                convertedRuleCount: chunk.countActions(named: convertedActionName)
+            )
+        }
+    }
+
+    private static func deterministicChunks(
+        from rules: [AdblockRustContentRule],
+        strategy: NativeContentBlockingShardStrategy
+    ) throws -> [[AdblockRustContentRule]] {
+        guard !rules.isEmpty else { return [[]] }
+
+        var chunks = [[AdblockRustContentRule]]()
+        var currentChunk = [AdblockRustContentRule]()
+        var currentEstimatedByteCount = 2
+
+        for rule in rules {
+            let encodedRuleByteCount = try encodedRuleJSON(rule).utf8.count
+            let separatorByteCount = currentChunk.isEmpty ? 0 : 1
+            let wouldExceedRuleLimit = currentChunk.count >= strategy.maxRulesPerShard
+            let wouldExceedByteLimit = !currentChunk.isEmpty
+                && currentEstimatedByteCount + separatorByteCount + encodedRuleByteCount > strategy.maxJSONBytesPerShard
+
+            if wouldExceedRuleLimit || wouldExceedByteLimit {
+                chunks.append(currentChunk)
+                currentChunk = []
+                currentEstimatedByteCount = 2
+            }
+
+            let actualSeparatorByteCount = currentChunk.isEmpty ? 0 : 1
+            currentChunk.append(rule)
+            currentEstimatedByteCount += actualSeparatorByteCount + encodedRuleByteCount
+        }
+
+        if !currentChunk.isEmpty {
+            chunks.append(currentChunk)
+        }
+
+        return try chunks.flatMap { try splitChunkIfNeeded($0, strategy: strategy) }
+    }
+
+    private static func splitChunkIfNeeded(
+        _ chunk: [AdblockRustContentRule],
+        strategy: NativeContentBlockingShardStrategy
+    ) throws -> [[AdblockRustContentRule]] {
+        let encodedByteCount = try encodedJSON(chunk).utf8.count
+        guard encodedByteCount > strategy.maxJSONBytesPerShard, chunk.count > 1 else {
+            return [chunk]
+        }
+        let midpoint = chunk.count / 2
+        let firstHalf = Array(chunk[..<midpoint])
+        let secondHalf = Array(chunk[midpoint...])
+        return try splitChunkIfNeeded(firstHalf, strategy: strategy)
+            + splitChunkIfNeeded(secondHalf, strategy: strategy)
+    }
+
+    private static func shardId(kind: AdblockCompiledRuleGroupKind, index: Int) -> String {
+        "\(kind.identifierComponent)-\(String(format: "%04d", index))"
+    }
+
+    private static func shardWebKitIdentifier(
+        kind: AdblockCompiledRuleGroupKind,
+        generationId: String,
+        shardIndex: Int,
+        contentHash: String
+    ) -> String {
+        "sumi.adblock.\(kind.identifierComponent).\(generationId).\(String(format: "%04d", shardIndex)).\(contentHash)"
+    }
+
     private static func validateAdapterOutput(_ output: AdblockRustAdapterOutput) throws {
         try validateContentRules(output.network, groupName: "network") { actionType, _ in
             Set([
@@ -641,6 +833,17 @@ final class AdblockRustCompiler: AdblockFilterCompiling, NativeContentBlockingCo
     private static func stableHash(_ value: String) -> String {
         let digest = SHA256.hash(data: Data(value.utf8))
         return digest.prefix(12).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+private extension AdblockCompiledRuleGroupKind {
+    var identifierComponent: String {
+        switch self {
+        case .network:
+            return "network"
+        case .nativeCosmeticCSS:
+            return "nativeCSS"
+        }
     }
 }
 
