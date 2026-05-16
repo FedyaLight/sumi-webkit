@@ -15,9 +15,37 @@ enum AdblockFilterListProfileKind: String, Codable, CaseIterable, Identifiable, 
     case lightNative
     case balancedNative
     case highBlockingNative
-    case oraLikeNative
+    case referenceAdGuardNative
 
     var id: String { rawValue }
+
+    private static let legacyReferenceAdGuardNativeIdentifier = "oraLikeNative"
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        guard let profileKind = Self(storedIdentifier: rawValue) else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Unknown Adblock native profile kind: \(rawValue)"
+            )
+        }
+        self = profileKind
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+
+    init?(storedIdentifier: String) {
+        switch storedIdentifier {
+        case Self.legacyReferenceAdGuardNativeIdentifier:
+            self = .referenceAdGuardNative
+        default:
+            self.init(rawValue: storedIdentifier)
+        }
+    }
 }
 
 enum AdblockNativeProfileExposure: String, Codable, Sendable {
@@ -147,8 +175,8 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
                 notes: "Higher native coverage candidate with annoyance blocking and higher cap/false-positive pressure."
             ),
             AdblockFilterListProfile(
-                id: .oraLikeNative,
-                displayName: "Ora-like Experimental",
+                id: .referenceAdGuardNative,
+                displayName: "Reference AdGuard Native",
                 listIdentifiers: [
                     "adguard-base",
                     "adguard-mobile-ads",
@@ -160,7 +188,7 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
                 isRecommended: false,
                 exposure: .developerOnly,
                 appendsRecommendedRegionalList: false,
-                notes: "Modeled from Ora's default/recommended AdGuard native lists for comparison only; not enabled by default."
+                notes: "AdGuard-heavy reference profile for native compiler comparison only; not enabled by default."
             ),
         ]
     }
@@ -288,7 +316,7 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
             defaultEnabled: false,
             localeTags: ["en"],
             licenseNoticeHint: "upstream-managed",
-            shortDescription: "Core AdGuard advertising filters; modeled for Ora-like native comparison.",
+            shortDescription: "Core AdGuard advertising filters used by high-coverage native reference profiles.",
             mayContainCosmeticFilters: true,
             isAllowedInNativeOnlyMode: true
         ),
@@ -301,7 +329,7 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
             defaultEnabled: false,
             localeTags: [],
             licenseNoticeHint: "upstream-managed",
-            shortDescription: "Mobile ad-network filters included in Ora's default profile; experimental on desktop WebKit.",
+            shortDescription: "Mobile ad-network filters used by AdGuard-heavy native reference profiles; experimental on desktop WebKit.",
             mayContainCosmeticFilters: true,
             isAllowedInNativeOnlyMode: true
         ),
