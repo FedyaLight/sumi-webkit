@@ -30,6 +30,7 @@ final class SettingsModuleToggleTests: XCTestCase {
 
         XCTAssertTrue(source.contains("Adblock & Protection"))
         XCTAssertTrue(source.contains("Apply selected protection level"))
+        XCTAssertTrue(source.contains("Restart Sumi to finish applying global protection changes."))
         XCTAssertTrue(source.contains("Off"))
         XCTAssertTrue(source.contains("Protection"))
         XCTAssertTrue(source.contains("Adblock"))

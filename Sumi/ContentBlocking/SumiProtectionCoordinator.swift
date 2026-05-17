@@ -306,8 +306,8 @@ struct SumiProtectionCurrentTabDiagnostics: Equatable, Sendable {
             "perSiteProtectionEnabled=\(perSiteProtectionEnabled)",
             "reloadRequired=\(reloadRequired)",
             "reloadRequiredReason=\(reloadRequiredReason ?? "nil")",
-            "didManualReloadRebuildWebView=\(didManualReloadRebuildWebView)",
-            "appliedAfterManualReload=\(appliedAfterManualReload)",
+            "manualReloadRebuiltWebView=\(didManualReloadRebuildWebView)",
+            "manualReloadMatchedDesiredState=\(appliedAfterManualReload)",
             "contentBlockingServiceGenerationId=\(contentBlockingServiceGenerationId.map(String.init) ?? "nil")",
             "generationSource=\(generationSource?.rawValue ?? "nil")",
             "nativeRuleBundleId=\(nativeRuleBundleId ?? "nil")",
@@ -375,6 +375,7 @@ struct SumiProtectionCurrentTabDiagnostics: Equatable, Sendable {
 struct SumiProtectionGlobalDiagnostics: Equatable, Sendable {
     let selectedProtectionLevel: SumiProtectionLevel
     let appliedProtectionLevel: SumiProtectionLevel
+    let browserRestartRequired: Bool
     let generationSource: AdblockRuleGenerationSource?
     let nativeRuleBundleId: String?
     let bundleProfileId: String?
@@ -407,6 +408,7 @@ final class SumiProtectionSettings: ObservableObject {
     private enum DefaultsKey {
         static let level = "settings.protection.level"
         static let appliedLevel = "settings.protection.appliedLevel"
+        static let browserRestartRequired = "settings.protection.browserRestartRequired"
         static let legacyAdblockEnabled = "settings.modules.adBlocking.enabled"
         static let legacyTrackingEnabled = "settings.modules.trackingProtection.enabled"
         static let legacyTrackingGlobalMode = "settings.trackingProtection.globalMode"
@@ -422,6 +424,13 @@ final class SumiProtectionSettings: ObservableObject {
     @Published private(set) var appliedLevel: SumiProtectionLevel {
         didSet {
             userDefaults.set(appliedLevel.rawValue, forKey: DefaultsKey.appliedLevel)
+            changesSubject.send(())
+        }
+    }
+
+    @Published private(set) var browserRestartRequired: Bool {
+        didSet {
+            userDefaults.set(browserRestartRequired, forKey: DefaultsKey.browserRestartRequired)
             changesSubject.send(())
         }
     }
@@ -451,11 +460,12 @@ final class SumiProtectionSettings: ObservableObject {
             userDefaults.set(resolvedLevel.rawValue, forKey: DefaultsKey.level)
         }
         level = resolvedLevel
+        browserRestartRequired = userDefaults.bool(forKey: DefaultsKey.browserRestartRequired)
 
         if let rawAppliedLevel = userDefaults.string(forKey: DefaultsKey.appliedLevel) {
             if rawAppliedLevel == "extreme" {
                 appliedLevel = .adblock
-                userDefaults.set(appliedLevel.rawValue, forKey: DefaultsKey.appliedLevel)
+                userDefaults.set(SumiProtectionLevel.adblock.rawValue, forKey: DefaultsKey.appliedLevel)
             } else if let decodedAppliedLevel = SumiProtectionLevel(rawValue: rawAppliedLevel) {
                 appliedLevel = decodedAppliedLevel
             } else {
@@ -476,6 +486,11 @@ final class SumiProtectionSettings: ObservableObject {
     func setAppliedLevel(_ level: SumiProtectionLevel) {
         guard appliedLevel != level else { return }
         appliedLevel = level
+    }
+
+    func setBrowserRestartRequired(_ isRequired: Bool) {
+        guard browserRestartRequired != isRequired else { return }
+        browserRestartRequired = isRequired
     }
 
     private static func migratedLevel(from userDefaults: UserDefaults) -> SumiProtectionLevel {
@@ -506,6 +521,7 @@ final class SumiProtectionCoordinator {
     private var cachedAttachmentPlan: SumiProtectionGlobalAttachmentPlan?
     private var cachedAttachmentService: SumiContentBlockingService?
     private var contentBlockingServiceGenerationId: UInt64 = 0
+    private var runtimeAppliedLevel: SumiProtectionLevel
     private var lastBundleLookupDuration: TimeInterval?
     private var lastPreparedBundleDiscoveryProfileId: String?
     private var lastPreparedBundleDiscovery: SumiPreparedAdblockBundleDiscovery?
@@ -522,7 +538,8 @@ final class SumiProtectionCoordinator {
         self.adBlockingModule = adBlockingModule
         self.moduleRegistry = moduleRegistry
         self.siteNormalizer = siteNormalizer
-        syncLegacyModuleGates(for: settings.appliedLevel)
+        self.runtimeAppliedLevel = settings.appliedLevel
+        syncLegacyModuleGates(for: runtimeAppliedLevel)
     }
 
     func setLevel(_ level: SumiProtectionLevel) {
@@ -532,6 +549,7 @@ final class SumiProtectionCoordinator {
     var applyNeeded: Bool {
         let selectedLevel = settings.level
         guard selectedLevel == settings.appliedLevel else { return true }
+        guard !settings.browserRestartRequired else { return false }
         guard let requiredBundleProfileId = selectedLevel.preferredBundleProfileId else {
             return false
         }
@@ -541,6 +559,7 @@ final class SumiProtectionCoordinator {
     func applySelectedLevel() async throws -> SumiProtectionApplyOutcome {
         let selectedLevel = settings.level
         let previousAppliedLevel = settings.appliedLevel
+        let wasApplyNeeded = applyNeeded
         syncLegacyModuleGates(for: selectedLevel)
 
         do {
@@ -592,7 +611,10 @@ final class SumiProtectionCoordinator {
             }
 
             settings.setAppliedLevel(selectedLevel)
-            try await prepareCachedAttachmentService(for: selectedLevel)
+            if wasApplyNeeded || selectedLevel != previousAppliedLevel {
+                settings.setBrowserRestartRequired(true)
+            }
+            syncLegacyModuleGates(for: runtimeAppliedLevel)
             let summary = applySummary(
                 selectedLevel: selectedLevel,
                 installedBundleProfileId: installedBundleProfileId
@@ -607,7 +629,7 @@ final class SumiProtectionCoordinator {
                 summary: summary
             )
         } catch {
-            syncLegacyModuleGates(for: previousAppliedLevel)
+            syncLegacyModuleGates(for: runtimeAppliedLevel)
             let message: String
             if let applyError = error as? SumiProtectionApplyError {
                 message = applyError.localizedDescription
@@ -627,10 +649,12 @@ final class SumiProtectionCoordinator {
     @discardableResult
     func restoreAppliedLevelForStartup() async throws -> AdblockCompiledGenerationManifest? {
         let appliedLevel = settings.appliedLevel
+        runtimeAppliedLevel = appliedLevel
         syncLegacyModuleGates(for: appliedLevel)
         guard let requiredBundleProfileId = appliedLevel.preferredBundleProfileId else {
             clearPreparedBundleLookupDiagnostics()
             try await prepareCachedAttachmentService(for: appliedLevel)
+            settings.setBrowserRestartRequired(false)
             lastApplyError = nil
             return nil
         }
@@ -648,6 +672,7 @@ final class SumiProtectionCoordinator {
                 )
             }
             try await prepareCachedAttachmentService(for: appliedLevel)
+            settings.setBrowserRestartRequired(false)
             lastApplySummary = "Restored \(appliedLevel.displayTitle) using prepared bundle \(requiredBundleProfileId)."
             lastApplyError = nil
             return manifest
@@ -662,12 +687,6 @@ final class SumiProtectionCoordinator {
             lastApplyError = message
             throw SumiProtectionApplyError.applyFailed(message)
         }
-    }
-
-    func recordReloadMarkingAfterApply(tabCount: Int) {
-        guard var summary = lastApplySummary else { return }
-        summary += " Marked \(tabCount) eligible web \(tabCount == 1 ? "tab" : "tabs") reload-required where the attachment plan changed."
-        lastApplySummary = summary
     }
 
     func normalTabDecision(
@@ -716,7 +735,7 @@ final class SumiProtectionCoordinator {
         includeExpensiveDiagnostics: Bool,
         loadRuleDefinitions: Bool
     ) -> SumiProtectionRulePlan {
-        let requestedLevel = settings.appliedLevel
+        let requestedLevel = runtimeAppliedLevel
         let manifest = requestedLevel == .off
             ? nil
             : adBlockingModule.activeManifestIfLoaded()
@@ -1165,6 +1184,7 @@ final class SumiProtectionCoordinator {
         return SumiProtectionGlobalDiagnostics(
             selectedProtectionLevel: selectedLevel,
             appliedProtectionLevel: settings.appliedLevel,
+            browserRestartRequired: settings.browserRestartRequired,
             generationSource: manifest?.generationSource,
             nativeRuleBundleId: manifest?.nativeRuleBundleId,
             bundleProfileId: installedBundleProfileId,
@@ -1223,6 +1243,7 @@ final class SumiProtectionCoordinator {
             "Global protection state",
             "protectionLevel=\(global.selectedProtectionLevel.rawValue)",
             "appliedProtectionLevel=\(global.appliedProtectionLevel.rawValue)",
+            "browserRestartRequired=\(global.browserRestartRequired)",
             "generationSource=\(global.generationSource?.rawValue ?? "nil")",
             "nativeRuleBundleId=\(global.nativeRuleBundleId ?? "nil")",
             "bundleProfileId=\(global.bundleProfileId ?? "nil")",
@@ -1267,8 +1288,8 @@ final class SumiProtectionCoordinator {
             "ruleListIdentifierSamplesByGroup=\(SumiProtectionCurrentTabDiagnostics.renderIdentifierSamples(Self.ruleListIdentifierSamplesByGroup(for: plan)))",
             "reloadRequired=\(reloadRequired)",
             "reloadRequiredReason=\(reloadRequiredReason ?? "nil")",
-            "didManualReloadRebuildWebView=\(didManualReloadRebuildWebView)",
-            "appliedAfterManualReload=\(appliedAfterManualReload)",
+            "manualReloadRebuiltWebView=\(didManualReloadRebuildWebView)",
+            "manualReloadMatchedDesiredState=\(appliedAfterManualReload)",
             "contentBlockingServiceGenerationId=\(contentBlockingServiceGenerationId)",
             "planComputeDuration=\(currentTabDiagnostics.map { SumiProtectionCurrentTabDiagnostics.renderDuration($0.planComputeDuration) } ?? "nil")",
             "bundleLookupDuration=\(SumiProtectionCurrentTabDiagnostics.renderOptionalDuration(lastBundleLookupDuration))",
@@ -1320,9 +1341,9 @@ final class SumiProtectionCoordinator {
         installedBundleProfileId: String?
     ) -> String {
         if let installedBundleProfileId {
-            return "Applied \(selectedLevel.displayTitle) using prepared bundle \(installedBundleProfileId)."
+            return "Saved \(selectedLevel.displayTitle) using prepared bundle \(installedBundleProfileId). Restart Sumi to apply global protection changes."
         }
-        return "Applied \(selectedLevel.displayTitle)."
+        return "Saved \(selectedLevel.displayTitle). Restart Sumi to apply global protection changes."
     }
 
     private func cachedTrackingSourceAvailable() -> Bool {
