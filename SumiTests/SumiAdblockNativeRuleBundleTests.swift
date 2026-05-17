@@ -64,6 +64,76 @@ final class SumiAdblockNativeRuleBundleTests: XCTestCase {
         XCTAssertEqual(compileCount, 0)
     }
 
+    func testExplicitEmbeddedBundleInstallSetsEmbeddedGenerationSource() async throws {
+        let bundleURL = try makeBundle(profileId: "currentDefault")
+        let adblockRoot = temporaryDirectory()
+        let manifestStore = AdblockUpdateManifestStore(rootDirectory: adblockRoot)
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let store = AdblockWebKitRuleListStore(
+            settingsStore: AdblockSettingsStore(userDefaults: harness.defaults),
+            isAdblockEnabled: { true },
+            manifestStore: manifestStore,
+            compiler: SumiWKContentRuleListCompiler(),
+            embeddedBundleURLProvider: { nil }
+        )
+
+        let installed = try await store.requestEmbeddedBundleInstall(bundleURL: bundleURL)
+
+        let manifest = try XCTUnwrap(installed)
+        XCTAssertEqual(manifest.generationSource, .embeddedBundle)
+        XCTAssertEqual(manifest.nativeRuleBundleId, "sumi.adblock.bundle.currentDefault.test")
+        XCTAssertEqual(manifest.nativeProfile, .currentDefault)
+        XCTAssertEqual(store.activeManifest?.generationSource, .embeddedBundle)
+        XCTAssertEqual(store.lastUpdateDiagnostics?.summary, "Embedded Adblock bundle installed")
+    }
+
+    func testEmbeddedBundleCatalogListsResourceProfiles() throws {
+        let sourceBundleURL = try makeBundle(profileId: "currentDefault")
+        let resourceRoot = temporaryDirectory()
+        let embeddedRoot = resourceRoot
+            .appendingPathComponent("SumiAdblockBundles/currentDefault", isDirectory: true)
+        try FileManager.default.createDirectory(at: embeddedRoot, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(
+            at: sourceBundleURL,
+            to: embeddedRoot.appendingPathComponent("SumiAdblockBundle", isDirectory: true)
+        )
+
+        let snapshot = SumiEmbeddedAdblockBundleCatalog.snapshot(
+            resourceURL: resourceRoot,
+            generatedBundlesRootURL: temporaryDirectory()
+        )
+
+        XCTAssertEqual(snapshot.installableProfiles.map(\.id), ["currentDefault"])
+        XCTAssertEqual(snapshot.installableProfiles.first?.bundleId, "sumi.adblock.bundle.currentDefault.test")
+        XCTAssertEqual(snapshot.installableProfiles.first?.networkShardCount, 1)
+        XCTAssertEqual(snapshot.installableProfiles.first?.networkRuleCount, 1)
+        XCTAssertFalse(snapshot.generatedBundlesPresentOutsideAppResources)
+    }
+
+    func testMissingEmbeddedBundleCatalogReportsClearDiagnosticsAndGeneratedPresence() throws {
+        let resourceRoot = temporaryDirectory()
+        let generatedRoot = temporaryDirectory()
+        let generatedManifest = generatedRoot
+            .appendingPathComponent("currentDefault/SumiAdblockBundle/manifest.json")
+        try FileManager.default.createDirectory(
+            at: generatedManifest.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("{}".utf8).write(to: generatedManifest)
+
+        let snapshot = SumiEmbeddedAdblockBundleCatalog.snapshot(
+            resourceURL: resourceRoot,
+            generatedBundlesRootURL: generatedRoot
+        )
+
+        XCTAssertTrue(snapshot.profiles.isEmpty)
+        XCTAssertTrue(snapshot.expectedResourcePath.contains("SumiAdblockBundles/<profile>/SumiAdblockBundle"))
+        XCTAssertTrue(snapshot.generateCommand.contains("scripts/build_sumi_adblock_bundle.sh"))
+        XCTAssertEqual(snapshot.generatedBundlesRootPath, generatedRoot.path)
+        XCTAssertTrue(snapshot.generatedBundlesPresentOutsideAppResources)
+    }
+
     func testEmbeddedBundleInstallPreservesPreviousGenerationForRollback() async throws {
         let bundleURL = try makeBundle(generationId: "embedded-generation")
         let adblockRoot = temporaryDirectory()
@@ -91,7 +161,8 @@ final class SumiAdblockNativeRuleBundleTests: XCTestCase {
     }
 
     private func makeBundle(
-        generationId: String = "embedded-generation"
+        generationId: String = "embedded-generation",
+        profileId: String = "currentDefault"
     ) throws -> URL {
         let root = temporaryDirectory()
         let bundleURL = root.appendingPathComponent("SumiAdblockBundle", isDirectory: true)
@@ -104,9 +175,9 @@ final class SumiAdblockNativeRuleBundleTests: XCTestCase {
 
         let manifest: [String: Any] = [
             "schemaVersion": 1,
-            "bundleId": "sumi.adblock.bundle.currentDefault.test",
+            "bundleId": "sumi.adblock.bundle.\(profileId).test",
             "generationId": generationId,
-            "profileId": "currentDefault",
+            "profileId": profileId,
             "compiler": [
                 "name": "adblock-rust",
                 "version": "adblock-rust-adapter/0.1.0 adblock-rust/0.12.5 sumi-native-css-safety/0.4",

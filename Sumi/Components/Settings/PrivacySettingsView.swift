@@ -107,7 +107,10 @@ private struct NativeAdblockSettingsView: View {
     @State private var rebuildStatus: String?
     @State private var copyDiagnosticsStatus: String?
     @State private var resetListsStatus: String?
+    @State private var selectedEmbeddedBundleProfileId = "currentDefault"
+    @State private var embeddedBundleInstallStatus: String?
     @State private var isRebuilding = false
+    @State private var isInstallingEmbeddedBundle = false
     #endif
 
     var body: some View {
@@ -140,7 +143,7 @@ private struct NativeAdblockSettingsView: View {
 
             #if DEBUG
             SettingsRow(
-                title: "Native profile",
+                title: "Runtime-generated dev profile",
                 subtitle: debugNativeProfileSubtitle
             ) {
                 Picker(
@@ -164,6 +167,7 @@ private struct NativeAdblockSettingsView: View {
                 .pickerStyle(.menu)
                 .frame(maxWidth: 220)
             }
+            debugEmbeddedBundleSection
             debugDiagnosticsSection
             #endif
 
@@ -238,12 +242,12 @@ private struct NativeAdblockSettingsView: View {
     #if DEBUG
     private var debugNativeProfileSubtitle: String {
         if effectiveSelectionDiagnostics.isCustomListSelection {
-            return "Effective mode is Custom list selection. Reset lists to selected profile before measuring a clean profile."
+            return "Controls the old runtime-generated path, not embedded bundles. Effective mode is Custom list selection."
         }
         if debugDiagnostics.generationIsStale {
-            return "Generation is stale. Rebuild selected Adblock profile now before measuring score."
+            return "Controls the old runtime-generated path, not embedded bundles. Generation is stale until rebuilt."
         }
-        return "Developer-only comparison preset. Changes require a manual update and page reload."
+        return "Controls the old runtime-generated path, not embedded bundles. Changes require a rebuild and page reload."
     }
 
     private func debugProfileLabel(_ profile: AdblockFilterListProfile) -> String {
@@ -329,7 +333,7 @@ private struct NativeAdblockSettingsView: View {
 
             SettingsRow(
                 title: "Reset lists to selected profile",
-                subtitle: resetListsStatus ?? "Clears manual list toggles and restores the selected profile-derived list set."
+                subtitle: resetListsStatus ?? "Runtime-generated profiles only. This does not select or install an embedded bundle."
             ) {
                 Button("Reset") {
                     resetListsToSelectedProfile()
@@ -392,6 +396,99 @@ private struct NativeAdblockSettingsView: View {
         }
     }
 
+    private var debugEmbeddedBundleSection: some View {
+        let snapshot = adBlockingModule.embeddedAdblockBundleSnapshot()
+        let profiles = snapshot.installableProfiles
+
+        return VStack(alignment: .leading, spacing: 10) {
+            SettingsDivider()
+
+            Text("Embedded Adblock Bundle")
+                .font(.subheadline)
+                .fontWeight(.medium)
+
+            if profiles.isEmpty {
+                Text("No embedded Adblock bundle found")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+
+                debugKeyValueGrid(rows: [
+                    ("Expected resource path", snapshot.expectedResourcePath),
+                    ("Generate command", snapshot.generateCommand),
+                    ("Generated bundle root", snapshot.generatedBundlesRootPath),
+                    ("Generated outside app resources", snapshot.generatedBundlesPresentOutsideAppResources.description),
+                ])
+            } else {
+                SettingsRow(
+                    title: "Embedded bundle profile",
+                    subtitle: selectedEmbeddedBundleSubtitle
+                ) {
+                    Picker("", selection: $selectedEmbeddedBundleProfileId) {
+                        ForEach(profiles) { profile in
+                            Text(profile.displayName).tag(profile.id)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: 220)
+                }
+
+                SettingsRow(
+                    title: "Install selected embedded bundle",
+                    subtitle: embeddedBundleInstallStatus ?? "Installs the selected embedded bundle through the native content-blocking publisher."
+                ) {
+                    Button {
+                        installSelectedEmbeddedBundle()
+                    } label: {
+                        if isInstallingEmbeddedBundle {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Text("Install")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isInstallingEmbeddedBundle || selectedEmbeddedBundleProfile == nil)
+                }
+
+                debugKeyValueGrid(rows: debugEmbeddedBundleRows(snapshot))
+            }
+        }
+    }
+
+    private var selectedEmbeddedBundleProfile: SumiEmbeddedAdblockBundleProfile? {
+        let profiles = adBlockingModule.embeddedAdblockBundleSnapshot().installableProfiles
+        return profiles.first { $0.id == selectedEmbeddedBundleProfileId } ?? profiles.first
+    }
+
+    private var selectedEmbeddedBundleSubtitle: String {
+        guard let profile = selectedEmbeddedBundleProfile else {
+            return "No installable embedded bundle profile is available."
+        }
+        return "bundleId=\(profile.bundleId ?? "nil"); generation=\(profile.generationId ?? "nil")"
+    }
+
+    private func debugEmbeddedBundleRows(_ snapshot: SumiEmbeddedAdblockBundleSnapshot) -> [(String, String)] {
+        var rows = [
+            ("Expected resource path", snapshot.expectedResourcePath),
+            ("Generated bundle root", snapshot.generatedBundlesRootPath),
+            ("Generated outside app resources", snapshot.generatedBundlesPresentOutsideAppResources.description),
+        ]
+        if let profile = selectedEmbeddedBundleProfile {
+            rows.append(contentsOf: [
+                ("Bundle profile id", profile.id),
+                ("Native bundle id", profile.bundleId ?? "nil"),
+                ("Bundle generation id", profile.generationId ?? "nil"),
+                ("Bundle path", profile.bundleURL.path),
+                ("Network shards", profile.networkShardCount.description),
+                ("Native CSS shards", profile.nativeCSSShardCount.description),
+                ("Network rules", profile.networkRuleCount.description),
+                ("Native CSS rules", profile.nativeCSSRuleCount.description),
+            ])
+        }
+        return rows
+    }
+
     private var debugGlobalRows: [(String, String)] {
         let diagnostics = debugDiagnostics
         return [
@@ -422,6 +519,9 @@ private struct NativeAdblockSettingsView: View {
             ("Network shard count", diagnostics.networkShardCount.description),
             ("Native CSS shard count", diagnostics.nativeCSSShardCount.description),
             ("Attached shard count", diagnostics.attachedShardIdentifiers.count.description),
+            ("Expected network shards", diagnostics.expectedNetworkShardIdentifiers.joined(separator: ", ")),
+            ("Expected native CSS shards", diagnostics.expectedNativeCSSShardIdentifiers.joined(separator: ", ")),
+            ("Missing shards", diagnostics.missingShardIdentifiers.joined(separator: ", ")),
             ("Total network rules", diagnostics.totalNetworkRuleCount.description),
             ("Total native CSS rules", diagnostics.totalNativeCSSRuleCount.description),
             ("Largest shard JSON bytes", diagnostics.largestShardJSONByteCount.description),
@@ -542,9 +642,40 @@ private struct NativeAdblockSettingsView: View {
         }
     }
 
+    private func installSelectedEmbeddedBundle() {
+        guard !isInstallingEmbeddedBundle,
+              let profile = selectedEmbeddedBundleProfile
+        else { return }
+        isInstallingEmbeddedBundle = true
+        embeddedBundleInstallStatus = nil
+        Task {
+            do {
+                let manifest = try await adBlockingModule.installEmbeddedAdblockBundle(profileId: profile.id)
+                await MainActor.run {
+                    if let manifest {
+                        embeddedBundleInstallStatus = "Installed \(profile.id). generationSource=\(manifest.generationSource.rawValue); nativeRuleBundleId=\(manifest.nativeRuleBundleId ?? "nil")."
+                    } else {
+                        embeddedBundleInstallStatus = "No install ran. Enable built-in Adblock before installing."
+                    }
+                    debugDiagnosticsTarget.tab?.updateAdblockReloadRequirementForCurrentSite()
+                    isInstallingEmbeddedBundle = false
+                }
+            } catch {
+                await MainActor.run {
+                    if let diagnostics = error as? AdblockUpdateDiagnostics {
+                        embeddedBundleInstallStatus = "Install failed: \(diagnostics.summary)"
+                    } else {
+                        embeddedBundleInstallStatus = "Install failed: \(error.localizedDescription)"
+                    }
+                    isInstallingEmbeddedBundle = false
+                }
+            }
+        }
+    }
+
     private func resetListsToSelectedProfile() {
         settings.resetListsToSelectedProfile()
-        resetListsStatus = "Reset to \(selectedProfileDisplayName). Run rebuild to compile the profile-derived list set."
+        resetListsStatus = "Reset runtime-generated profile lists to \(selectedProfileDisplayName). Embedded bundle selection is unchanged."
     }
 
     private func debugCompactValue(_ value: String) -> String {

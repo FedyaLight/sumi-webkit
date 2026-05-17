@@ -870,8 +870,35 @@ final class AdblockWebKitRuleListStore {
         previousManifest: AdblockCompiledGenerationManifest?
     ) async throws -> AdblockCompiledGenerationManifest? {
         guard let bundleURL = embeddedBundleURLProvider() else { return nil }
+        return try await installEmbeddedBundle(
+            at: bundleURL,
+            previousManifest: previousManifest,
+            skipIfAlreadyInstalled: true
+        )
+    }
+
+#if DEBUG
+    func requestEmbeddedBundleInstall(
+        bundleURL: URL
+    ) async throws -> AdblockCompiledGenerationManifest? {
+        guard await isAdblockEnabled() else { return nil }
+        let previousManifest = try await manifestStore.activeManifest()
+        return try await installEmbeddedBundle(
+            at: bundleURL,
+            previousManifest: previousManifest,
+            skipIfAlreadyInstalled: false
+        )
+    }
+#endif
+
+    private func installEmbeddedBundle(
+        at bundleURL: URL,
+        previousManifest: AdblockCompiledGenerationManifest?,
+        skipIfAlreadyInstalled: Bool
+    ) async throws -> AdblockCompiledGenerationManifest? {
         let bundle = try SumiAdblockNativeRuleBundle.load(directoryURL: bundleURL)
-        if previousManifest?.generationSource == .embeddedBundle,
+        if skipIfAlreadyInstalled,
+           previousManifest?.generationSource == .embeddedBundle,
            previousManifest?.nativeRuleBundleId == bundle.manifest.bundleId {
             return nil
         }
@@ -1399,6 +1426,28 @@ final class SumiAdBlockingModule {
         let manifest = try await store.requestManualUpdate()
         cachedSettingsStore?.markListUpdateCompleted()
         return manifest
+    }
+
+    func embeddedAdblockBundleSnapshot() -> SumiEmbeddedAdblockBundleSnapshot {
+        SumiEmbeddedAdblockBundleCatalog.snapshot()
+    }
+
+    func installEmbeddedAdblockBundle(
+        profileId: String
+    ) async throws -> AdblockCompiledGenerationManifest? {
+        guard isEnabled else {
+            throw AdblockUpdateDiagnostics(
+                summary: "Enable built-in Adblock before installing an embedded Adblock bundle.",
+                generationSource: .embeddedBundle
+            )
+        }
+        guard let bundleURL = SumiEmbeddedAdblockBundleCatalog.embeddedBundleURL(for: profileId) else {
+            throw AdblockUpdateDiagnostics(
+                summary: "No embedded Adblock bundle found for profile \(profileId).",
+                generationSource: .embeddedBundle
+            )
+        }
+        return try await ruleListStoreIfEnabled().requestEmbeddedBundleInstall(bundleURL: bundleURL)
     }
     #endif
 
