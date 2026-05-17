@@ -350,7 +350,22 @@ private struct AdblockProtectionSettingsView: View {
     private var debugProtectionRows: [(String, String)] {
         let global = globalDiagnostics
         let plan = diagnosticsPlan
-        let tabDiagnostics = diagnosticsTarget.tab?.protectionCurrentTabDiagnostics()
+        let contentBlockingSummary = diagnosticsTarget.tab?
+            .existingWebView?
+            .configuration
+            .userContentController
+            .sumiNormalTabUserContentController?
+            .contentBlockingAssetSummary
+        let actualAttachedIdentifiers = contentBlockingSummary?.globalRuleListIdentifiers ?? []
+        let expectedSet = Set(plan.expectedRuleListIdentifiers)
+        let actualSet = Set(actualAttachedIdentifiers)
+        let missingAfterAttachment = plan.expectedRuleListIdentifiers.filter { !actualSet.contains($0) }
+        let unexpectedOldIdentifiers = actualAttachedIdentifiers.filter {
+            !expectedSet.contains($0)
+                && ($0.hasPrefix("sumi.adblock.")
+                    || $0.hasPrefix("sumi.tracking.")
+                    || $0 == "SumiTrackingProtectionTrackerDataSet")
+        }
         return [
             ("GLOBAL selected protection level", global.selectedProtectionLevel.rawValue),
             ("GLOBAL applied protection level", global.appliedProtectionLevel.rawValue),
@@ -368,6 +383,7 @@ private struct AdblockProtectionSettingsView: View {
             ("GLOBAL groups available", global.globalGroupsAvailable.map(\.rawValue).joined(separator: ", ")),
             ("GLOBAL tracking source available", global.trackingSourceAvailable.description),
             ("GLOBAL adblock bundle available", global.adblockBundleAvailable.description),
+            ("GLOBAL strict Off active", global.strictOffActive.description),
             ("Diagnostics target", diagnosticsTarget.source),
             ("Diagnostics URL", diagnosticsTarget.url?.absoluteString ?? "nil"),
             ("PAGE requested level", plan.requestedLevel.rawValue),
@@ -391,13 +407,14 @@ private struct AdblockProtectionSettingsView: View {
             ("Dedupe", plan.dedupeSummary.reportLine),
             ("Overlap", plan.overlapSummary.reportLine),
             ("Expected identifiers", plan.expectedRuleListIdentifiers.joined(separator: ", ")),
-            ("Lookup succeeded identifiers", tabDiagnostics?.lookupSucceededIdentifiers.joined(separator: ", ") ?? "nil"),
-            ("Lookup failed identifiers", tabDiagnostics?.lookupFailedIdentifiers.joined(separator: ", ") ?? "nil"),
-            ("Added identifiers", tabDiagnostics?.addedToUserContentControllerIdentifiers.joined(separator: ", ") ?? "nil"),
-            ("Actual attached identifiers", tabDiagnostics?.actualAttachedRuleListIdentifiers.joined(separator: ", ") ?? "nil"),
-            ("Missing after attachment", tabDiagnostics?.missingAfterAttachmentIdentifiers.joined(separator: ", ") ?? "nil"),
-            ("Applied generation", tabDiagnostics?.appliedProtectionGenerationId ?? "nil"),
-            ("Applied groups", tabDiagnostics?.appliedProtectionGroups.map(\.rawValue).joined(separator: ", ") ?? "nil"),
+            ("Lookup succeeded identifiers", contentBlockingSummary?.lookupSucceededIdentifiers.joined(separator: ", ") ?? "nil"),
+            ("Lookup failed identifiers", contentBlockingSummary?.lookupFailedIdentifiers.joined(separator: ", ") ?? "nil"),
+            ("Added identifiers", contentBlockingSummary?.addedToUserContentControllerIdentifiers.joined(separator: ", ") ?? "nil"),
+            ("Actual attached identifiers", actualAttachedIdentifiers.joined(separator: ", ")),
+            ("Missing after attachment", missingAfterAttachment.joined(separator: ", ")),
+            ("Unexpected old identifiers", unexpectedOldIdentifiers.joined(separator: ", ")),
+            ("Applied generation", diagnosticsTarget.tab?.protectionAppliedAttachmentState?.activeGenerationId ?? "nil"),
+            ("Applied groups", diagnosticsTarget.tab?.protectionAppliedAttachmentState?.activeGroups.map(\.rawValue).joined(separator: ", ") ?? "nil"),
             ("Ineligible surface", plan.ineligibleSurfaceReason ?? "nil"),
             ("Planning errors", plan.planningErrors.joined(separator: " | ")),
         ]

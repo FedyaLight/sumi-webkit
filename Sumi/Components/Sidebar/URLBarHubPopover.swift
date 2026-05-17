@@ -301,7 +301,8 @@ struct URLBarHubPopover: View {
 
     private var snapshot: SiteControlsSnapshot {
         _ = refreshNonce
-        return SiteControlsSnapshot.resolve(
+        let start = Date()
+        let resolved = SiteControlsSnapshot.resolve(
             url: currentTab?.url,
             profile: activeProfile,
             showsAutoplayPermission: currentTab?.audioState.isPlayingAudio == true,
@@ -314,6 +315,8 @@ struct URLBarHubPopover: View {
             adBlockingModule: browserManager.adBlockingModule,
             adblockReloadRequired: currentTab?.isAdblockReloadRequired == true
         )
+        currentTab?.lastProtectionURLHubSummaryDuration = Date().timeIntervalSince(start)
+        return resolved
     }
 
     private var permissionsTopLevelSummary: String {

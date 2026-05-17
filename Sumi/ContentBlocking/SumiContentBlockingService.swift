@@ -29,6 +29,16 @@ struct SumiContentRuleListDefinition: Equatable, Sendable {
         return digest.prefix(12).map { String(format: "%02x", $0) }.joined()
     }
 
+    var webKitStoreIdentifier: String {
+        storeIdentifierOverride ?? SumiContentBlockerRulesIdentifier(
+            name: name,
+            tdsEtag: contentHash,
+            tempListId: nil,
+            allowListId: nil,
+            unprotectedSitesHash: nil
+        ).stringValue
+    }
+
     func metadataOnly() -> SumiContentRuleListDefinition {
         SumiContentRuleListDefinition(
             name: name,
@@ -649,17 +659,25 @@ final class SumiContentBlockingService {
         compiledRules.reserveCapacity(definitions.count)
         var lookupSucceededIdentifiers = [String]()
         var lookupFailedIdentifiers = [String]()
+        var ruleListLookupDuration: TimeInterval = 0
 
         for definition in definitions {
-            compiledRules.append(try await rule(for: definition))
-        }
-        for (index, definition) in definitions.enumerated() {
+            let lookupStart = Date()
+            var rules = try await rule(for: definition)
             let storeIdentifier = storeIdentifier(for: definition)
-            if await canLookUpCompiledRuleList(forIdentifier: storeIdentifier) == false {
+            var canLookUp = await canLookUpCompiledRuleList(forIdentifier: storeIdentifier)
+            ruleListLookupDuration += Date().timeIntervalSince(lookupStart)
+
+            if canLookUp == false {
                 compiledRulesByIdentifier.removeValue(forKey: storeIdentifier)
-                compiledRules[index] = try await rule(for: definition)
+                let retryStart = Date()
+                rules = try await rule(for: definition)
+                canLookUp = await canLookUpCompiledRuleList(forIdentifier: storeIdentifier)
+                ruleListLookupDuration += Date().timeIntervalSince(retryStart)
             }
-            if await canLookUpCompiledRuleList(forIdentifier: storeIdentifier) {
+
+            if canLookUp {
+                compiledRules.append(rules)
                 lookupSucceededIdentifiers.append(storeIdentifier)
             } else {
                 lookupFailedIdentifiers.append(storeIdentifier)
@@ -670,7 +688,8 @@ final class SumiContentBlockingService {
         return Self.updateEvent(
             for: compiledRules,
             lookupSucceededIdentifiers: lookupSucceededIdentifiers,
-            lookupFailedIdentifiers: lookupFailedIdentifiers
+            lookupFailedIdentifiers: lookupFailedIdentifiers,
+            ruleListLookupDuration: ruleListLookupDuration
         )
     }
 
@@ -745,7 +764,7 @@ final class SumiContentBlockingService {
     }
 
     private func storeIdentifier(for definition: SumiContentRuleListDefinition) -> String {
-        definition.storeIdentifierOverride ?? rulesIdentifier(for: definition).stringValue
+        definition.webKitStoreIdentifier
     }
 
     private func publishProfileUpdate(
@@ -835,7 +854,8 @@ final class SumiContentBlockingService {
     private static func updateEvent(
         for rules: [SumiContentBlockerRules],
         lookupSucceededIdentifiers: [String]? = nil,
-        lookupFailedIdentifiers: [String] = []
+        lookupFailedIdentifiers: [String] = [],
+        ruleListLookupDuration: TimeInterval? = nil
     ) -> SumiContentBlockerRulesUpdate {
         let changes = Dictionary(uniqueKeysWithValues: rules.map { ($0.name, SumiContentBlockerRulesIdentifier.Difference.all) })
         return SumiContentBlockerRulesUpdate(
@@ -843,7 +863,8 @@ final class SumiContentBlockingService {
             changes: changes,
             completionTokens: [],
             lookupSucceededIdentifiers: (lookupSucceededIdentifiers ?? rules.map(\.storeIdentifier)).sorted(),
-            lookupFailedIdentifiers: lookupFailedIdentifiers.sorted()
+            lookupFailedIdentifiers: lookupFailedIdentifiers.sorted(),
+            ruleListLookupDuration: ruleListLookupDuration
         )
     }
 
@@ -853,7 +874,8 @@ final class SumiContentBlockingService {
             changes: [:],
             completionTokens: [],
             lookupSucceededIdentifiers: [],
-            lookupFailedIdentifiers: []
+            lookupFailedIdentifiers: [],
+            ruleListLookupDuration: nil
         )
     }
 
@@ -866,7 +888,8 @@ final class SumiContentBlockingService {
             },
             updateRuleCount: update.rules.count,
             lookupSucceededIdentifiers: update.lookupSucceededIdentifiers,
-            lookupFailedIdentifiers: update.lookupFailedIdentifiers
+            lookupFailedIdentifiers: update.lookupFailedIdentifiers,
+            ruleListLookupDuration: update.ruleListLookupDuration
         )
     }
 

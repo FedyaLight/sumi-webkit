@@ -176,6 +176,13 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
                     ruleListProvider: provider,
                     contentBlockingService: SumiContentBlockingService(policy: .disabled)
                 )
+            },
+            ruleListProviderFactory: { settings, dataStore in
+                SumiTrackingRuleListProvider(
+                    settings: settings,
+                    dataStore: dataStore,
+                    trackingRuleSource: trackingRuleSource
+                )
             }
         )
 

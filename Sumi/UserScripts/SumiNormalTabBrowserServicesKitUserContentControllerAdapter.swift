@@ -7,12 +7,14 @@ struct SumiNormalTabContentBlockingUpdate {
     let updateRuleCount: Int
     let lookupSucceededIdentifiers: [String]
     let lookupFailedIdentifiers: [String]
+    let ruleListLookupDuration: TimeInterval?
 
     static let empty = SumiNormalTabContentBlockingUpdate(
         globalRuleLists: [:],
         updateRuleCount: 0,
         lookupSucceededIdentifiers: [],
-        lookupFailedIdentifiers: []
+        lookupFailedIdentifiers: [],
+        ruleListLookupDuration: nil
     )
 }
 
@@ -91,12 +93,32 @@ struct SumiNormalTabContentBlockingAssetSource {
                             lookupFailedIdentifiers: Array(Set(
                                 lhs.contentBlockingUpdate.lookupFailedIdentifiers
                                 + rhs.contentBlockingUpdate.lookupFailedIdentifiers
-                            )).sorted()
+                            )).sorted(),
+                            ruleListLookupDuration: Self.combinedDuration(
+                                lhs.contentBlockingUpdate.ruleListLookupDuration,
+                                rhs.contentBlockingUpdate.ruleListLookupDuration
+                            )
                         ),
                         sourceProvider: lhs.sourceProvider
                     )
                 }
                 .eraseToAnyPublisher()
+        }
+    }
+
+    private static func combinedDuration(
+        _ lhs: TimeInterval?,
+        _ rhs: TimeInterval?
+    ) -> TimeInterval? {
+        switch (lhs, rhs) {
+        case (.none, .none):
+            return nil
+        case (.some(let lhs), .none):
+            return lhs
+        case (.none, .some(let rhs)):
+            return rhs
+        case (.some(let lhs), .some(let rhs)):
+            return lhs + rhs
         }
     }
 }
@@ -110,6 +132,7 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
         let lookupSucceededIdentifiers: [String]
         let lookupFailedIdentifiers: [String]
         let addedToUserContentControllerIdentifiers: [String]
+        let ruleListLookupDuration: TimeInterval?
         let tabAttachmentDuration: TimeInterval?
     }
 
@@ -158,6 +181,7 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
                 lookupSucceededIdentifiers: [],
                 lookupFailedIdentifiers: [],
                 addedToUserContentControllerIdentifiers: [],
+                ruleListLookupDuration: nil,
                 tabAttachmentDuration: nil
             )
         }
@@ -171,6 +195,7 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
             lookupSucceededIdentifiers: contentBlockingAssets.lookupSucceededIdentifiers,
             lookupFailedIdentifiers: contentBlockingAssets.lookupFailedIdentifiers,
             addedToUserContentControllerIdentifiers: contentBlockingAssets.addedToUserContentControllerIdentifiers,
+            ruleListLookupDuration: contentBlockingAssets.ruleListLookupDuration,
             tabAttachmentDuration: contentBlockingAssets.tabAttachmentDuration
         )
     }
@@ -189,6 +214,7 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
                     lookupSucceededIdentifiers: assets.lookupSucceededIdentifiers,
                     lookupFailedIdentifiers: assets.lookupFailedIdentifiers,
                     addedToUserContentControllerIdentifiers: assets.addedToUserContentControllerIdentifiers,
+                    ruleListLookupDuration: assets.ruleListLookupDuration,
                     tabAttachmentDuration: assets.tabAttachmentDuration
                 )
             }
@@ -231,6 +257,7 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
         guard !isCleanedUp, assetsPublisherCancellable != nil else { return }
 
         let start = Date()
+        let hadAttachedRuleLists = !globalContentRuleLists.isEmpty
         removeAllContentRuleLists()
 
         let isContentBlockingFeatureEnabled = isContentBlockingFeatureEnabled
@@ -242,7 +269,7 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
                 addedIdentifiers.append(identifier)
             }
         }
-
+        let didTouchRuleLists = hadAttachedRuleLists || !addedIdentifiers.isEmpty
         contentBlockingAssets = ContentBlockingAssets(
             globalRuleLists: globalContentRuleLists,
             updateRuleCount: update.updateRuleCount,
@@ -250,7 +277,8 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
             lookupSucceededIdentifiers: update.lookupSucceededIdentifiers,
             lookupFailedIdentifiers: update.lookupFailedIdentifiers,
             addedToUserContentControllerIdentifiers: addedIdentifiers,
-            tabAttachmentDuration: Date().timeIntervalSince(start)
+            ruleListLookupDuration: update.ruleListLookupDuration,
+            tabAttachmentDuration: didTouchRuleLists ? Date().timeIntervalSince(start) : nil
         )
         resumeAssetWaiters()
     }

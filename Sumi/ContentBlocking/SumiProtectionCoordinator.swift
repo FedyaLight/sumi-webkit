@@ -286,7 +286,9 @@ struct SumiProtectionCurrentTabDiagnostics: Equatable, Sendable {
     let currentProcessResidentMemoryBytes: UInt64?
     let planComputeDuration: TimeInterval
     let bundleLookupDuration: TimeInterval?
+    let ruleListLookupDuration: TimeInterval?
     let tabAttachmentDuration: TimeInterval?
+    let webViewRebuildDuration: TimeInterval?
     let urlHubSummaryDuration: TimeInterval?
     let planningErrors: [String]
 
@@ -337,7 +339,9 @@ struct SumiProtectionCurrentTabDiagnostics: Equatable, Sendable {
             "currentProcessResidentMemoryBytes=\(currentProcessResidentMemoryBytes.map(String.init) ?? "nil")",
             "planComputeDuration=\(Self.renderDuration(planComputeDuration))",
             "bundleLookupDuration=\(Self.renderOptionalDuration(bundleLookupDuration))",
+            "ruleListLookupDuration=\(Self.renderOptionalDuration(ruleListLookupDuration))",
             "tabAttachmentDuration=\(Self.renderOptionalDuration(tabAttachmentDuration))",
+            "webViewRebuildDuration=\(Self.renderOptionalDuration(webViewRebuildDuration))",
             "urlHubSummaryDuration=\(Self.renderOptionalDuration(urlHubSummaryDuration))",
             "planningErrors=\(planningErrors.joined(separator: " | "))",
         ].joined(separator: "\n")
@@ -385,6 +389,7 @@ struct SumiProtectionGlobalDiagnostics: Equatable, Sendable {
     let globalGroupsAvailable: [SumiProtectionGroupKind]
     let trackingSourceAvailable: Bool
     let adblockBundleAvailable: Bool
+    let strictOffActive: Bool
 }
 
 struct SumiProtectionApplyOutcome: Equatable, Sendable {
@@ -670,19 +675,9 @@ final class SumiProtectionCoordinator {
         profileId: UUID?
     ) -> SumiProtectionNormalTabDecision {
         let plan = cachedRulePlan(for: url, profileId: profileId)
-        if let service = cachedContentBlockingService(for: plan) {
-            return SumiProtectionNormalTabDecision(
-                plan: plan,
-                contentBlockingService: service
-            )
-        }
-        let fallbackPlan = rulePlan(for: url, profileId: profileId)
-        let service = fallbackPlan.ruleDefinitions.isEmpty
-            ? nil
-            : SumiContentBlockingService(policy: .enabled(ruleLists: fallbackPlan.ruleDefinitions))
         return SumiProtectionNormalTabDecision(
-            plan: fallbackPlan,
-            contentBlockingService: service
+            plan: plan,
+            contentBlockingService: cachedContentBlockingService(for: plan)
         )
     }
 
@@ -872,7 +867,7 @@ final class SumiProtectionCoordinator {
             finalActiveGroups = activeGroups
                 .filter { activeGroupsAfterDedupe.contains($0) }
                 .uniqueSorted()
-            expectedRuleListIdentifiers = deduped.definitions.map(\.definition.identifier).sorted()
+            expectedRuleListIdentifiers = deduped.definitions.map(\.definition.webKitStoreIdentifier).sorted()
             dedupeSummary = deduped.summary
             overlapSummary = Self.overlapSummary(
                 for: plannedDefinitions,
@@ -1066,6 +1061,7 @@ final class SumiProtectionCoordinator {
         appliedAfterManualReload: Bool = false,
         actualAttachedRuleListIdentifiers: [String]? = nil,
         contentBlockingAssetSummary: SumiNormalTabContentBlockingAssetSummary? = nil,
+        webViewRebuildDuration: TimeInterval? = nil,
         urlHubSummaryDuration: TimeInterval? = nil
     ) -> SumiProtectionCurrentTabDiagnostics {
         let planStart = Date()
@@ -1137,7 +1133,9 @@ final class SumiProtectionCoordinator {
             currentProcessResidentMemoryBytes: Self.currentProcessResidentMemoryBytes(),
             planComputeDuration: planComputeDuration,
             bundleLookupDuration: lastBundleLookupDuration,
+            ruleListLookupDuration: contentBlockingAssetSummary?.ruleListLookupDuration,
             tabAttachmentDuration: contentBlockingAssetSummary?.tabAttachmentDuration,
+            webViewRebuildDuration: webViewRebuildDuration,
             urlHubSummaryDuration: urlHubSummaryDuration,
             planningErrors: plan.planningErrors
         )
@@ -1184,7 +1182,13 @@ final class SumiProtectionCoordinator {
             lastApplyError: lastApplyError,
             globalGroupsAvailable: availableGroups,
             trackingSourceAvailable: trackingSourceAvailable,
-            adblockBundleAvailable: adblockBundleAvailable
+            adblockBundleAvailable: adblockBundleAvailable,
+            strictOffActive: selectedLevel == .off
+                && appliedLevel == .off
+                && cachedAttachmentPlan == nil
+                && cachedAttachmentService == nil
+                && !trackingProtectionModule.isEnabled
+                && !adBlockingModule.isEnabled
         )
     }
 
@@ -1207,6 +1211,7 @@ final class SumiProtectionCoordinator {
         let lookupSucceededIdentifiers = currentTabDiagnostics?.lookupSucceededIdentifiers ?? []
         let lookupFailedIdentifiers = currentTabDiagnostics?.lookupFailedIdentifiers ?? []
         let addedIdentifiers = currentTabDiagnostics?.addedToUserContentControllerIdentifiers ?? []
+        let unexpectedOldIdentifiers = currentTabDiagnostics?.unexpectedOldRuleListIdentifiers ?? []
         let reloadRequired = currentTabDiagnostics?.reloadRequired ?? false
         let reloadRequiredReason = currentTabDiagnostics?.reloadRequiredReason
         let didManualReloadRebuildWebView = currentTabDiagnostics?.didManualReloadRebuildWebView ?? false
@@ -1232,6 +1237,7 @@ final class SumiProtectionCoordinator {
             "globalGroupsAvailable=\(global.globalGroupsAvailable.map(\.rawValue).joined(separator: ","))",
             "trackingSourceAvailable=\(global.trackingSourceAvailable)",
             "adblockBundleAvailable=\(global.adblockBundleAvailable)",
+            "strictOffActive=\(global.strictOffActive)",
             "",
             "Target page plan",
             "targetSource=\(targetDescription)",
@@ -1253,9 +1259,11 @@ final class SumiProtectionCoordinator {
             "lookupSucceededIdentifiers=\(lookupSucceededIdentifiers.joined(separator: ","))",
             "lookupFailedIdentifiers=\(lookupFailedIdentifiers.joined(separator: ","))",
             "addedToUserContentControllerIdentifiers=\(addedIdentifiers.joined(separator: ","))",
+            "actualAttachedRuleListIdentifiers=\(actualAttachedIdentifiers.joined(separator: ","))",
             "attachedIdentifiers=\(actualAttachedIdentifiers.joined(separator: ","))",
             "missingIdentifiers=\(missingIdentifiers.joined(separator: ","))",
             "missingAfterAttachmentIdentifiers=\(missingIdentifiers.joined(separator: ","))",
+            "unexpectedOldIdentifiers=\(unexpectedOldIdentifiers.joined(separator: ","))",
             "ruleListIdentifierSamplesByGroup=\(SumiProtectionCurrentTabDiagnostics.renderIdentifierSamples(Self.ruleListIdentifierSamplesByGroup(for: plan)))",
             "reloadRequired=\(reloadRequired)",
             "reloadRequiredReason=\(reloadRequiredReason ?? "nil")",
@@ -1264,7 +1272,9 @@ final class SumiProtectionCoordinator {
             "contentBlockingServiceGenerationId=\(contentBlockingServiceGenerationId)",
             "planComputeDuration=\(currentTabDiagnostics.map { SumiProtectionCurrentTabDiagnostics.renderDuration($0.planComputeDuration) } ?? "nil")",
             "bundleLookupDuration=\(SumiProtectionCurrentTabDiagnostics.renderOptionalDuration(lastBundleLookupDuration))",
+            "ruleListLookupDuration=\(SumiProtectionCurrentTabDiagnostics.renderOptionalDuration(currentTabDiagnostics?.ruleListLookupDuration))",
             "tabAttachmentDuration=\(SumiProtectionCurrentTabDiagnostics.renderOptionalDuration(currentTabDiagnostics?.tabAttachmentDuration))",
+            "webViewRebuildDuration=\(SumiProtectionCurrentTabDiagnostics.renderOptionalDuration(currentTabDiagnostics?.webViewRebuildDuration))",
             "urlHubSummaryDuration=\(SumiProtectionCurrentTabDiagnostics.renderOptionalDuration(currentTabDiagnostics?.urlHubSummaryDuration))",
             "dedupeSummary=\(plan.dedupeSummary.reportLine)",
             "overlapSummary=\(plan.overlapSummary.reportLine)",
@@ -1337,16 +1347,7 @@ final class SumiProtectionCoordinator {
     }
 
     private func trackingRuleDefinitions(profileId: UUID?) throws -> [SumiContentRuleListDefinition] {
-        guard let assets = trackingProtectionModule.contentBlockingAssetsIfEnabled() else { return [] }
-        let policy = SumiTrackingProtectionPolicy(
-            globalMode: .enabled,
-            enabledSiteHosts: [],
-            disabledSiteHosts: []
-        )
-        return try assets.ruleListProvider.ruleListSet(
-            for: policy,
-            profileId: profileId
-        ).allDefinitions
+        try trackingProtectionModule.coordinatorRuleListDefinitions(profileId: profileId)
     }
 
     private func groupAdblockDefinitions(
@@ -1358,7 +1359,7 @@ final class SumiProtectionCoordinator {
               Self.preparedBundleProfileId(in: manifest) != nil
         else { return [] }
         let definitionsByIdentifier = definitions.reduce(into: [String: SumiContentRuleListDefinition]()) { result, definition in
-            result[definition.identifier] = definition
+            result[definition.webKitStoreIdentifier] = definition
         }
         return Self.cachedAdblockGroups(level: level, manifest: manifest)
             .compactMap { cachedGroup in
@@ -1462,7 +1463,7 @@ final class SumiProtectionCoordinator {
         var removedIdentifiers = [String]()
 
         for planned in plannedDefinitions {
-            let identifier = planned.definition.identifier
+            let identifier = planned.definition.webKitStoreIdentifier
             guard seenIdentifiers.insert(identifier).inserted else {
                 duplicateIdentifierCount += 1
                 removedIdentifiers.append(identifier)
@@ -1711,12 +1712,6 @@ private struct CachedAdblockGroup: Equatable, Sendable {
     let identifiers: [String]
     let shardCount: Int
     let ruleCount: Int
-}
-
-private extension SumiContentRuleListDefinition {
-    var identifier: String {
-        storeIdentifierOverride ?? name
-    }
 }
 
 private extension AdblockRuleGenerationSource {

@@ -17,19 +17,22 @@ struct SumiContentBlockerRulesUpdate: CustomDebugStringConvertible {
     let completionTokens: [CompletionToken]
     let lookupSucceededIdentifiers: [String]
     let lookupFailedIdentifiers: [String]
+    let ruleListLookupDuration: TimeInterval?
 
     init(
         rules: [SumiContentBlockerRules],
         changes: [String: SumiContentBlockerRulesIdentifier.Difference],
         completionTokens: [CompletionToken],
         lookupSucceededIdentifiers: [String] = [],
-        lookupFailedIdentifiers: [String] = []
+        lookupFailedIdentifiers: [String] = [],
+        ruleListLookupDuration: TimeInterval? = nil
     ) {
         self.rules = rules
         self.changes = changes
         self.completionTokens = completionTokens
         self.lookupSucceededIdentifiers = lookupSucceededIdentifiers.sorted()
         self.lookupFailedIdentifiers = lookupFailedIdentifiers.sorted()
+        self.ruleListLookupDuration = ruleListLookupDuration
     }
 
     var debugDescription: String {
@@ -39,6 +42,7 @@ struct SumiContentBlockerRulesUpdate: CustomDebugStringConvertible {
           completionTokens: \(completionTokens)
           lookupSucceededIdentifiers: \(lookupSucceededIdentifiers.joined(separator: ", "))
           lookupFailedIdentifiers: \(lookupFailedIdentifiers.joined(separator: ", "))
+          ruleListLookupDuration: \(ruleListLookupDuration.map { "\($0)" } ?? "nil")
         """
     }
 }
