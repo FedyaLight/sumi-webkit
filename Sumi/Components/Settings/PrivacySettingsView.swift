@@ -385,6 +385,7 @@ private struct AdblockProtectionSettingsView: View {
     private var debugProtectionRows: [(String, String)] {
         let global = globalDiagnostics
         let plan = diagnosticsPlan
+        let tabDiagnostics = diagnosticsTarget.tab?.protectionCurrentTabDiagnostics()
         return [
             ("GLOBAL selected protection level", global.selectedProtectionLevel.rawValue),
             ("GLOBAL applied protection level", global.appliedProtectionLevel.rawValue),
@@ -395,6 +396,9 @@ private struct AdblockProtectionSettingsView: View {
             ("GLOBAL native bundle id", global.nativeRuleBundleId ?? "nil"),
             ("GLOBAL bundle profile id", global.bundleProfileId ?? "nil"),
             ("GLOBAL required bundle profile", global.requiredBundleProfileId ?? "nil"),
+            ("GLOBAL prepared bundle available", global.preparedBundleAvailable.description),
+            ("GLOBAL prepared bundle source", global.preparedBundleSource?.rawValue ?? "nil"),
+            ("GLOBAL searched bundle paths", global.searchedBundlePaths.map { "\($0.source.rawValue): exists=\($0.exists) path=\($0.path) rejected=\($0.rejectionReason ?? "nil")" }.joined(separator: " | ")),
             ("GLOBAL active generation", global.activeGenerationId ?? "nil"),
             ("GLOBAL groups available", global.globalGroupsAvailable.map(\.rawValue).joined(separator: ", ")),
             ("GLOBAL tracking source available", global.trackingSourceAvailable.description),
@@ -403,6 +407,7 @@ private struct AdblockProtectionSettingsView: View {
             ("Diagnostics URL", diagnosticsTarget.url?.absoluteString ?? "nil"),
             ("PAGE requested level", plan.requestedLevel.rawValue),
             ("Effective level", plan.effectiveLevel.rawValue),
+            ("Desired groups", plan.requestedLevel.requestedGroups.map(\.rawValue).joined(separator: ", ")),
             ("Active groups", plan.activeGroups.map(\.rawValue).joined(separator: ", ")),
             ("Inactive groups", plan.inactiveGroups.map(\.rawValue).joined(separator: ", ")),
             ("Per-site protection", plan.sitePolicyAllowsProtection.description),
@@ -422,6 +427,13 @@ private struct AdblockProtectionSettingsView: View {
             ("Dedupe", plan.dedupeSummary.reportLine),
             ("Overlap", plan.overlapSummary.reportLine),
             ("Expected identifiers", plan.expectedRuleListIdentifiers.joined(separator: ", ")),
+            ("Lookup succeeded identifiers", tabDiagnostics?.lookupSucceededIdentifiers.joined(separator: ", ") ?? "nil"),
+            ("Lookup failed identifiers", tabDiagnostics?.lookupFailedIdentifiers.joined(separator: ", ") ?? "nil"),
+            ("Added identifiers", tabDiagnostics?.addedToUserContentControllerIdentifiers.joined(separator: ", ") ?? "nil"),
+            ("Actual attached identifiers", tabDiagnostics?.actualAttachedRuleListIdentifiers.joined(separator: ", ") ?? "nil"),
+            ("Missing after attachment", tabDiagnostics?.missingAfterAttachmentIdentifiers.joined(separator: ", ") ?? "nil"),
+            ("Applied generation", tabDiagnostics?.appliedProtectionGenerationId ?? "nil"),
+            ("Applied groups", tabDiagnostics?.appliedProtectionGroups.map(\.rawValue).joined(separator: ", ") ?? "nil"),
             ("Ineligible surface", plan.ineligibleSurfaceReason ?? "nil"),
             ("Planning errors", plan.planningErrors.joined(separator: " | ")),
         ]
@@ -510,11 +522,7 @@ private struct NativeAdblockSettingsView: View {
     @State private var resetListsStatus: String?
     @State private var selectedEmbeddedBundleSource: SumiAdblockBundleInstallSource = .appResource
     @State private var selectedEmbeddedBundleProfileId = "currentDefault"
-    @State private var embeddedBundleInstallStatus: String?
-    @State private var embeddedBundleInstallManifest: AdblockCompiledGenerationManifest?
-    @State private var embeddedBundleInstallError: AdblockUpdateDiagnostics?
     @State private var isRebuilding = false
-    @State private var isInstallingEmbeddedBundle = false
     #endif
 
     var body: some View {
@@ -816,7 +824,7 @@ private struct NativeAdblockSettingsView: View {
                 .font(.subheadline)
                 .fontWeight(.medium)
 
-            Text("DEBUG-only bundle install path. This is separate from the runtime-generated dev profile controls below.")
+            Text("DEBUG-only prepared bundle diagnostics. Apply selected protection level installs the required bundle automatically.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -869,26 +877,7 @@ private struct NativeAdblockSettingsView: View {
                     .disabled(profiles.isEmpty)
                 }
 
-                SettingsRow(
-                    title: "Install selected bundle",
-                    subtitle: embeddedBundleInstallStatus ?? "Installs the selected appResource/developmentBundle through the native content-blocking publisher."
-                ) {
-                    Button {
-                        installSelectedEmbeddedBundle()
-                    } label: {
-                        if isInstallingEmbeddedBundle {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Text("Install")
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isInstallingEmbeddedBundle || selectedEmbeddedBundleProfile == nil)
-                }
-
                 debugKeyValueGrid(rows: debugEmbeddedBundleRows(snapshot))
-                debugKeyValueGrid(rows: debugEmbeddedBundleInstallRows)
             }
         }
     }
@@ -930,24 +919,6 @@ private struct NativeAdblockSettingsView: View {
             ])
         }
         return rows
-    }
-
-    private var debugEmbeddedBundleInstallRows: [(String, String)] {
-        let diagnostics = debugDiagnostics
-        let manifest = embeddedBundleInstallManifest
-        let installError = embeddedBundleInstallError
-        return [
-            ("Last install result", embeddedBundleInstallStatus ?? diagnostics.lastUpdateSummary ?? "nil"),
-            ("Installed bundle source", manifest?.generationSource.rawValue ?? diagnostics.generationSource?.rawValue ?? installError?.generationSource?.rawValue ?? "nil"),
-            ("Installed bundle profile", manifest?.bundleProfileId ?? manifest?.nativeProfile?.rawValue ?? diagnostics.bundleProfileId ?? installError?.bundleProfileId ?? "nil"),
-            ("Installed bundle id", manifest?.nativeRuleBundleId ?? diagnostics.nativeRuleBundleId ?? installError?.nativeRuleBundleId ?? "nil"),
-            ("Installed generation id", manifest?.activeGenerationId ?? diagnostics.activeGenerationId ?? "nil"),
-            ("Install error", installError?.summary ?? diagnostics.lastUpdateError ?? "nil"),
-            ("Installed network shards", (manifest?.networkShards.count ?? diagnostics.networkShardCount).description),
-            ("Installed native CSS shards", (manifest?.nativeCSSShards.count ?? diagnostics.nativeCSSShardCount).description),
-            ("Installed network rules", (manifest?.networkShards.reduce(0) { $0 + $1.approximateRuleCount } ?? diagnostics.totalNetworkRuleCount).description),
-            ("Installed native CSS rules", (manifest?.nativeCSSShards.reduce(0) { $0 + $1.approximateRuleCount } ?? diagnostics.totalNativeCSSRuleCount).description),
-        ]
     }
 
     private var debugGlobalRows: [(String, String)] {
@@ -1103,51 +1074,6 @@ private struct NativeAdblockSettingsView: View {
                         rebuildStatus = "Rebuild failed: \(error.localizedDescription)"
                     }
                     isRebuilding = false
-                }
-            }
-        }
-    }
-
-    private func installSelectedEmbeddedBundle() {
-        guard !isInstallingEmbeddedBundle,
-              let profile = selectedEmbeddedBundleProfile
-        else { return }
-        isInstallingEmbeddedBundle = true
-        embeddedBundleInstallStatus = nil
-        embeddedBundleInstallManifest = nil
-        embeddedBundleInstallError = nil
-        Task {
-            do {
-                let manifest = try await adBlockingModule.installEmbeddedAdblockBundle(
-                    profileId: profile.profileId,
-                    source: profile.source
-                )
-                await MainActor.run {
-                    if let manifest {
-                        embeddedBundleInstallManifest = manifest
-                        embeddedBundleInstallStatus = "Installed \(profile.source.displayTitle) \(profile.profileId). generationSource=\(manifest.generationSource.rawValue); nativeRuleBundleId=\(manifest.nativeRuleBundleId ?? "nil")."
-                    } else {
-                        embeddedBundleInstallStatus = "No install ran. Enable built-in Adblock before installing."
-                    }
-                    debugDiagnosticsTarget.tab?.updateAdblockReloadRequirementForCurrentSite()
-                    isInstallingEmbeddedBundle = false
-                }
-            } catch {
-                await MainActor.run {
-                    if let diagnostics = error as? AdblockUpdateDiagnostics {
-                        embeddedBundleInstallError = diagnostics
-                        embeddedBundleInstallStatus = "Install failed: \(diagnostics.summary)"
-                    } else {
-                        embeddedBundleInstallError = AdblockUpdateDiagnostics(
-                            summary: error.localizedDescription,
-                            generationSource: profile.source.generationSource,
-                            bundleProfileId: profile.profileId,
-                            bundlePath: profile.bundleURL.path,
-                            nativeRuleBundleId: profile.bundleId
-                        )
-                        embeddedBundleInstallStatus = "Install failed: \(error.localizedDescription)"
-                    }
-                    isInstallingEmbeddedBundle = false
                 }
             }
         }

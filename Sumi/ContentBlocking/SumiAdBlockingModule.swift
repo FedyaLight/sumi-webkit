@@ -891,6 +891,25 @@ final class AdblockWebKitRuleListStore {
         }
     }
 
+    func restorePreparedManifestIfAvailable(
+        profileId: String
+    ) async throws -> AdblockCompiledGenerationManifest? {
+        guard await isAdblockEnabled() else { return nil }
+        guard let manifest = try await manifestStore.activeManifest(),
+              Self.isPreparedManifest(manifest, profileId: profileId)
+        else { return nil }
+
+        try await publishPersistedManifest(manifest)
+        lastFailedShardIdentifier = nil
+        lastUpdateDiagnostics = AdblockUpdateDiagnostics(
+            summary: "success: restored prepared Adblock bundle",
+            generationSource: manifest.generationSource,
+            bundleProfileId: profileId,
+            nativeRuleBundleId: manifest.nativeRuleBundleId
+        )
+        return manifest
+    }
+
     func requestInitialUpdateIfNeeded() {
         guard ruleListProvider.activeManifest == nil
         else { return }
@@ -926,6 +945,22 @@ final class AdblockWebKitRuleListStore {
             at: bundleURL,
             previousManifest: previousManifest,
             skipIfAlreadyInstalled: true
+        )
+    }
+
+    func requestPreparedBundleInstall(
+        bundleURL: URL,
+        source: SumiAdblockBundleInstallSource,
+        profileId: String
+    ) async throws -> AdblockCompiledGenerationManifest? {
+        guard await isAdblockEnabled() else { return nil }
+        let previousManifest = try await manifestStore.activeManifest()
+        return try await installEmbeddedBundle(
+            at: bundleURL,
+            source: source,
+            requestedProfileId: profileId,
+            previousManifest: previousManifest,
+            skipIfAlreadyInstalled: false
         )
     }
 
@@ -1071,6 +1106,33 @@ final class AdblockWebKitRuleListStore {
         return manifest
     }
 
+    private func publishPersistedManifest(
+        _ manifest: AdblockCompiledGenerationManifest
+    ) async throws {
+        try await manifestStore.validateCompiledShardFiles(for: manifest)
+        let definitions = try await manifestStore.compiledShardDefinitions(for: manifest)
+        let preparedUpdate = try await contentBlockingService.prepareRuleListUpdate(
+            ruleLists: definitions,
+            retainEncodedRuleListsInPreparedPolicy: false
+        )
+        ruleListProvider.updateManifest(manifest)
+        contentBlockingService.commitPreparedContentBlockingUpdate(preparedUpdate)
+    }
+
+    private static func isPreparedManifest(
+        _ manifest: AdblockCompiledGenerationManifest,
+        profileId: String
+    ) -> Bool {
+        guard manifest.generationSource != .runtimeGenerated else { return false }
+        if manifest.bundleProfileId == profileId {
+            return true
+        }
+        if manifest.nativeProfile?.rawValue == profileId {
+            return true
+        }
+        return manifest.nativeRuleBundleId?.contains(profileId) == true
+    }
+
     private static func embeddedBundleInstallDiagnostics(
         summary: String,
         stage: AdblockUpdateFailureStage,
@@ -1155,6 +1217,8 @@ final class SumiAdBlockingModule {
     private let settingsFactory: @MainActor () -> AdblockSettingsStore
     private let sitePolicyFactory: @MainActor () -> AdblockSitePolicyStore
     private let ruleListStoreFactory: @MainActor (AdblockSettingsStore, @escaping @Sendable () async -> Bool) -> AdblockWebKitRuleListStore
+    private let preparedBundleResourceURL: URL?
+    private let preparedBundleGeneratedRootURL: URL?
     private var cachedSettingsStore: AdblockSettingsStore?
     private var cachedSitePolicyStore: AdblockSitePolicyStore?
     private var cachedRuleListStore: AdblockWebKitRuleListStore?
@@ -1164,6 +1228,8 @@ final class SumiAdBlockingModule {
         moduleRegistry: SumiModuleRegistry = .shared,
         settingsFactory: (@MainActor () -> AdblockSettingsStore)? = nil,
         sitePolicyFactory: (@MainActor () -> AdblockSitePolicyStore)? = nil,
+        preparedBundleResourceURL: URL? = Bundle.main.resourceURL,
+        preparedBundleGeneratedRootURL: URL? = SumiPreparedAdblockBundleResolver.defaultGeneratedBundlesRootURL(),
         ruleListStoreFactory: @escaping @MainActor (AdblockSettingsStore, @escaping @Sendable () async -> Bool) -> AdblockWebKitRuleListStore = {
             AdblockWebKitRuleListStore(settingsStore: $0, isAdblockEnabled: $1)
         }
@@ -1176,6 +1242,8 @@ final class SumiAdBlockingModule {
             AdblockSitePolicyStore(userDefaults: moduleRegistry.userDefaults)
         }
         self.ruleListStoreFactory = ruleListStoreFactory
+        self.preparedBundleResourceURL = preparedBundleResourceURL
+        self.preparedBundleGeneratedRootURL = preparedBundleGeneratedRootURL
     }
 
     var isEnabled: Bool {
@@ -1304,8 +1372,46 @@ final class SumiAdBlockingModule {
                 bundleProfileId: profileId
             )
         }
-        return try await ruleListStoreIfEnabled().requestAppResourceBundleInstall(
+        let discovery = preparedNativeRuleBundleDiscovery(profileId: profileId)
+        guard let resolvedBundle = discovery.resolvedBundle else {
+            throw AdblockUpdateDiagnostics(
+                summary: discovery.failureSummary,
+                failedShardIdentifier: "prepared-bundle-\(profileId)",
+                generationSource: nil,
+                bundleProfileId: profileId
+            )
+        }
+        return try await ruleListStoreIfEnabled().requestPreparedBundleInstall(
+            bundleURL: resolvedBundle.bundleURL,
+            source: resolvedBundle.source,
             profileId: profileId
+        )
+    }
+
+    func restorePreparedNativeRuleBundleForStartup(
+        profileId: String
+    ) async throws -> AdblockCompiledGenerationManifest? {
+        guard isEnabled else {
+            throw AdblockUpdateDiagnostics(
+                summary: "Enable built-in Adblock before restoring prepared bundle \(profileId).",
+                generationSource: nil,
+                bundleProfileId: profileId
+            )
+        }
+        let store = ruleListStoreIfEnabled()
+        if let restored = try await store.restorePreparedManifestIfAvailable(profileId: profileId) {
+            return restored
+        }
+        return try await installPreparedNativeRuleBundle(profileId: profileId)
+    }
+
+    func preparedNativeRuleBundleDiscovery(
+        profileId: String
+    ) -> SumiPreparedAdblockBundleDiscovery {
+        SumiPreparedAdblockBundleResolver.discover(
+            profileId: profileId,
+            resourceURL: preparedBundleResourceURL,
+            generatedBundlesRootURL: preparedBundleGeneratedRootURL
         )
     }
 

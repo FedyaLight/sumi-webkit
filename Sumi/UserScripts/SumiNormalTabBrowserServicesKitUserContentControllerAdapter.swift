@@ -5,10 +5,14 @@ import WebKit
 struct SumiNormalTabContentBlockingUpdate {
     let globalRuleLists: [String: WKContentRuleList]
     let updateRuleCount: Int
+    let lookupSucceededIdentifiers: [String]
+    let lookupFailedIdentifiers: [String]
 
     static let empty = SumiNormalTabContentBlockingUpdate(
         globalRuleLists: [:],
-        updateRuleCount: 0
+        updateRuleCount: 0,
+        lookupSucceededIdentifiers: [],
+        lookupFailedIdentifiers: []
     )
 }
 
@@ -79,7 +83,15 @@ struct SumiNormalTabContentBlockingAssetSource {
                                 rhs.contentBlockingUpdate.globalRuleLists
                             ) { _, rhs in rhs },
                             updateRuleCount: lhs.contentBlockingUpdate.updateRuleCount
-                                + rhs.contentBlockingUpdate.updateRuleCount
+                                + rhs.contentBlockingUpdate.updateRuleCount,
+                            lookupSucceededIdentifiers: Array(Set(
+                                lhs.contentBlockingUpdate.lookupSucceededIdentifiers
+                                + rhs.contentBlockingUpdate.lookupSucceededIdentifiers
+                            )).sorted(),
+                            lookupFailedIdentifiers: Array(Set(
+                                lhs.contentBlockingUpdate.lookupFailedIdentifiers
+                                + rhs.contentBlockingUpdate.lookupFailedIdentifiers
+                            )).sorted()
                         ),
                         sourceProvider: lhs.sourceProvider
                     )
@@ -95,6 +107,9 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
         let globalRuleLists: [String: WKContentRuleList]
         let updateRuleCount: Int
         let isContentBlockingFeatureEnabled: Bool
+        let lookupSucceededIdentifiers: [String]
+        let lookupFailedIdentifiers: [String]
+        let addedToUserContentControllerIdentifiers: [String]
     }
 
     private let privacyConfigurationManager: SumiContentBlockingPrivacyConfigurationManager
@@ -138,7 +153,10 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
                 globalRuleListCount: 0,
                 updateRuleCount: 0,
                 isContentBlockingFeatureEnabled: isContentBlockingFeatureEnabled,
-                globalRuleListIdentifiers: []
+                globalRuleListIdentifiers: [],
+                lookupSucceededIdentifiers: [],
+                lookupFailedIdentifiers: [],
+                addedToUserContentControllerIdentifiers: []
             )
         }
 
@@ -147,7 +165,10 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
             globalRuleListCount: contentBlockingAssets.globalRuleLists.count,
             updateRuleCount: contentBlockingAssets.updateRuleCount,
             isContentBlockingFeatureEnabled: isContentBlockingFeatureEnabled,
-            globalRuleListIdentifiers: Array(contentBlockingAssets.globalRuleLists.keys)
+            globalRuleListIdentifiers: Array(contentBlockingAssets.globalRuleLists.keys),
+            lookupSucceededIdentifiers: contentBlockingAssets.lookupSucceededIdentifiers,
+            lookupFailedIdentifiers: contentBlockingAssets.lookupFailedIdentifiers,
+            addedToUserContentControllerIdentifiers: contentBlockingAssets.addedToUserContentControllerIdentifiers
         )
     }
 
@@ -161,7 +182,10 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
                     globalRuleListCount: assets.globalRuleLists.count,
                     updateRuleCount: assets.updateRuleCount,
                     isContentBlockingFeatureEnabled: assets.isContentBlockingFeatureEnabled,
-                    globalRuleListIdentifiers: Array(assets.globalRuleLists.keys)
+                    globalRuleListIdentifiers: Array(assets.globalRuleLists.keys),
+                    lookupSucceededIdentifiers: assets.lookupSucceededIdentifiers,
+                    lookupFailedIdentifiers: assets.lookupFailedIdentifiers,
+                    addedToUserContentControllerIdentifiers: assets.addedToUserContentControllerIdentifiers
                 )
             }
             .eraseToAnyPublisher()
@@ -205,15 +229,22 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
         removeAllContentRuleLists()
 
         let isContentBlockingFeatureEnabled = isContentBlockingFeatureEnabled
+        var addedIdentifiers = [String]()
         if isContentBlockingFeatureEnabled {
-            globalContentRuleLists = update.globalRuleLists
-            update.globalRuleLists.values.forEach(add)
+            for (identifier, ruleList) in update.globalRuleLists.sorted(by: { $0.key < $1.key }) {
+                add(ruleList)
+                globalContentRuleLists[identifier] = ruleList
+                addedIdentifiers.append(identifier)
+            }
         }
 
         contentBlockingAssets = ContentBlockingAssets(
-            globalRuleLists: update.globalRuleLists,
+            globalRuleLists: globalContentRuleLists,
             updateRuleCount: update.updateRuleCount,
-            isContentBlockingFeatureEnabled: isContentBlockingFeatureEnabled
+            isContentBlockingFeatureEnabled: isContentBlockingFeatureEnabled,
+            lookupSucceededIdentifiers: update.lookupSucceededIdentifiers,
+            lookupFailedIdentifiers: update.lookupFailedIdentifiers,
+            addedToUserContentControllerIdentifiers: addedIdentifiers
         )
         resumeAssetWaiters()
     }

@@ -3,25 +3,34 @@ import Foundation
 import ObjectiveC
 import WebKit
 
-struct SumiNormalTabContentBlockingAssetSummary: Equatable {
+struct SumiNormalTabContentBlockingAssetSummary: Equatable, Sendable {
     let isInstalled: Bool
     let globalRuleListCount: Int
     let updateRuleCount: Int
     let isContentBlockingFeatureEnabled: Bool
     let globalRuleListIdentifiers: [String]
+    let lookupSucceededIdentifiers: [String]
+    let lookupFailedIdentifiers: [String]
+    let addedToUserContentControllerIdentifiers: [String]
 
     init(
         isInstalled: Bool,
         globalRuleListCount: Int,
         updateRuleCount: Int,
         isContentBlockingFeatureEnabled: Bool,
-        globalRuleListIdentifiers: [String] = []
+        globalRuleListIdentifiers: [String] = [],
+        lookupSucceededIdentifiers: [String] = [],
+        lookupFailedIdentifiers: [String] = [],
+        addedToUserContentControllerIdentifiers: [String] = []
     ) {
         self.isInstalled = isInstalled
         self.globalRuleListCount = globalRuleListCount
         self.updateRuleCount = updateRuleCount
         self.isContentBlockingFeatureEnabled = isContentBlockingFeatureEnabled
         self.globalRuleListIdentifiers = globalRuleListIdentifiers.sorted()
+        self.lookupSucceededIdentifiers = lookupSucceededIdentifiers.sorted()
+        self.lookupFailedIdentifiers = lookupFailedIdentifiers.sorted()
+        self.addedToUserContentControllerIdentifiers = addedToUserContentControllerIdentifiers.sorted()
     }
 }
 

@@ -266,7 +266,7 @@ final class SumiCompiledContentRuleListCatalog: SumiCompiledContentRuleListCatal
         for rules: [SumiContentBlockerRules]
     ) -> [String: Set<String>] {
         rules.reduce(into: [:]) { result, rules in
-            result[rules.identifier.name, default: []].insert(rules.identifier.stringValue)
+            result[rules.identifier.name, default: []].insert(rules.storeIdentifier)
         }
     }
 }
@@ -634,6 +634,8 @@ final class SumiContentBlockingService {
     ) async throws -> SumiContentBlockerRulesUpdate {
         var compiledRules: [SumiContentBlockerRules] = []
         compiledRules.reserveCapacity(definitions.count)
+        var lookupSucceededIdentifiers = [String]()
+        var lookupFailedIdentifiers = [String]()
 
         for definition in definitions {
             compiledRules.append(try await rule(for: definition))
@@ -644,12 +646,19 @@ final class SumiContentBlockingService {
                 compiledRulesByIdentifier.removeValue(forKey: storeIdentifier)
                 compiledRules[index] = try await rule(for: definition)
             }
-            guard await canLookUpCompiledRuleList(forIdentifier: storeIdentifier) else {
+            if await canLookUpCompiledRuleList(forIdentifier: storeIdentifier) {
+                lookupSucceededIdentifiers.append(storeIdentifier)
+            } else {
+                lookupFailedIdentifiers.append(storeIdentifier)
                 throw SumiContentBlockingCompilationError.missingCompiledRuleList(storeIdentifier)
             }
         }
 
-        return Self.updateEvent(for: compiledRules)
+        return Self.updateEvent(
+            for: compiledRules,
+            lookupSucceededIdentifiers: lookupSucceededIdentifiers,
+            lookupFailedIdentifiers: lookupFailedIdentifiers
+        )
     }
 
     private func canLookUpCompiledRuleList(forIdentifier identifier: String) async -> Bool {
@@ -701,6 +710,7 @@ final class SumiContentBlockingService {
 
         let rules = SumiContentBlockerRules(
             name: definition.name,
+            storeIdentifier: storeIdentifier,
             rulesList: ruleList,
             etag: definition.contentHash,
             identifier: rulesIdentifier
@@ -769,9 +779,9 @@ final class SumiContentBlockingService {
     private func cleanupTransientCompiledRuleLists(
         from update: SumiContentBlockerRulesUpdate
     ) {
-        let activeIdentifiers = Set(latestUpdate?.rules.map(\.identifier.stringValue) ?? [])
+        let activeIdentifiers = Set(latestUpdate?.rules.map(\.storeIdentifier) ?? [])
         let transientIdentifiers = update.rules
-            .map(\.identifier.stringValue)
+            .map(\.storeIdentifier)
             .filter { !activeIdentifiers.contains($0) }
         compiledRuleListCatalog.forgetIdentifiers(transientIdentifiers)
         forgetCachedCompiledRuleLists(withIdentifiers: transientIdentifiers)
@@ -809,12 +819,18 @@ final class SumiContentBlockingService {
         }
     }
 
-    private static func updateEvent(for rules: [SumiContentBlockerRules]) -> SumiContentBlockerRulesUpdate {
+    private static func updateEvent(
+        for rules: [SumiContentBlockerRules],
+        lookupSucceededIdentifiers: [String]? = nil,
+        lookupFailedIdentifiers: [String] = []
+    ) -> SumiContentBlockerRulesUpdate {
         let changes = Dictionary(uniqueKeysWithValues: rules.map { ($0.name, SumiContentBlockerRulesIdentifier.Difference.all) })
         return SumiContentBlockerRulesUpdate(
             rules: rules,
             changes: changes,
-            completionTokens: []
+            completionTokens: [],
+            lookupSucceededIdentifiers: (lookupSucceededIdentifiers ?? rules.map(\.storeIdentifier)).sorted(),
+            lookupFailedIdentifiers: lookupFailedIdentifiers.sorted()
         )
     }
 
@@ -822,7 +838,9 @@ final class SumiContentBlockingService {
         SumiContentBlockerRulesUpdate(
             rules: [],
             changes: [:],
-            completionTokens: []
+            completionTokens: [],
+            lookupSucceededIdentifiers: [],
+            lookupFailedIdentifiers: []
         )
     }
 
@@ -831,9 +849,11 @@ final class SumiContentBlockingService {
     ) -> SumiNormalTabContentBlockingUpdate {
         SumiNormalTabContentBlockingUpdate(
             globalRuleLists: update.rules.reduce(into: [:]) { result, rules in
-                result[rules.name] = rules.rulesList
+                result[rules.storeIdentifier] = rules.rulesList
             },
-            updateRuleCount: update.rules.count
+            updateRuleCount: update.rules.count,
+            lookupSucceededIdentifiers: update.lookupSucceededIdentifiers,
+            lookupFailedIdentifiers: update.lookupFailedIdentifiers
         )
     }
 

@@ -619,8 +619,9 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             adBlockingModule: protection.adBlockingModule,
             protectionCoordinator: protection.coordinator
         )
+        let targetURL = URL(string: "https://www.example.com/apply-level")!
         let tab = browserManager.tabManager.createNewTab(
-            url: "https://www.example.com/apply-level",
+            url: targetURL.absoluteString,
             in: browserManager.tabManager.currentSpace,
             activate: false
         )
@@ -640,7 +641,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
         XCTAssertTrue(
             tab.rebuildNormalWebViewForProtectionIfNeeded(
-                targetURL: tab.url,
+                targetURL: targetURL,
                 reason: "BrowserConfigurationNormalTabTests.applyLevel"
             )
         )
@@ -649,7 +650,31 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
         await rebuiltController.waitForContentBlockingAssetsInstalled()
         try await waitForAssets(on: rebuiltController) { $0.globalRuleListCount == 1 }
-        tab.clearProtectionReloadRequirementIfResolved(for: tab.url)
+        tab.clearProtectionReloadRequirementIfResolved(for: targetURL)
+        XCTAssertFalse(tab.isProtectionReloadRequired)
+        XCTAssertEqual(tab.protectionAppliedAttachmentState?.effectiveLevel, .protection)
+
+        let protectedWebView = try XCTUnwrap(tab.existingWebView)
+        tab.url = targetURL
+        protection.coordinator.setLevel(.off)
+        _ = try await protection.coordinator.applySelectedLevel()
+        tab.updateProtectionReloadRequirementForCurrentSite()
+        XCTAssertTrue(tab.isProtectionReloadRequired)
+        XCTAssertTrue(tab.existingWebView === protectedWebView)
+
+        XCTAssertTrue(
+            tab.rebuildNormalWebViewForProtectionIfNeeded(
+                targetURL: targetURL,
+                reason: "BrowserConfigurationNormalTabTests.applyOff"
+            )
+        )
+        let offController = try XCTUnwrap(
+            tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        await offController.waitForContentBlockingAssetsInstalled()
+        XCTAssertEqual(offController.contentBlockingAssetSummary.globalRuleListCount, 0)
+        XCTAssertTrue(offController.contentBlockingAssetSummary.globalRuleListIdentifiers.filter { $0.hasPrefix("sumi.") }.isEmpty)
+        tab.clearProtectionReloadRequirementIfResolved(for: targetURL)
         XCTAssertFalse(tab.isProtectionReloadRequired)
     }
 

@@ -381,16 +381,22 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let moduleSource = try Self.source(named: "Sumi/ContentBlocking/SumiTrackingProtectionModule.swift")
         let dataSource = try Self.source(named: "Sumi/ContentBlocking/SumiTrackingProtection.swift")
         let settingsSource = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
+        let trackingSettingsSource: String
+        if let trackingSettingsRange = settingsSource.range(of: "private struct LegacyTrackingProtectionRuntimeSettingsView") {
+            trackingSettingsSource = String(settingsSource[trackingSettingsRange.lowerBound...])
+        } else {
+            trackingSettingsSource = settingsSource
+        }
 
         XCTAssertTrue(settingsSource.contains(".accessibilityLabel(\"Update tracker data\")"))
         XCTAssertTrue(settingsSource.contains("await trackingProtectionModule.updateTrackerDataManually()"))
         XCTAssertTrue(settingsSource.contains(".accessibilityLabel(\"Reset to bundled tracker data\")"))
-        XCTAssertFalse(settingsSource.contains(".task"))
-        XCTAssertFalse(settingsSource.contains(".onAppear"))
-        XCTAssertFalse(settingsSource.localizedCaseInsensitiveContains("stale"))
-        XCTAssertFalse(settingsSource.localizedCaseInsensitiveContains("automatic update"))
-        XCTAssertFalse(settingsSource.localizedCaseInsensitiveContains("browser update"))
-        XCTAssertFalse(settingsSource.localizedCaseInsensitiveContains("app update"))
+        XCTAssertFalse(trackingSettingsSource.contains(".task"))
+        XCTAssertFalse(trackingSettingsSource.contains(".onAppear"))
+        XCTAssertFalse(trackingSettingsSource.localizedCaseInsensitiveContains("stale"))
+        XCTAssertFalse(trackingSettingsSource.localizedCaseInsensitiveContains("automatic update"))
+        XCTAssertFalse(trackingSettingsSource.localizedCaseInsensitiveContains("browser update"))
+        XCTAssertFalse(trackingSettingsSource.localizedCaseInsensitiveContains("app update"))
 
         for source in [moduleSource, dataSource] {
             XCTAssertFalse(source.contains("Timer"))
@@ -544,6 +550,11 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertFalse(module.assetsIfAvailable().contentRuleListIdentifiers.isEmpty)
         XCTAssertEqual(module.normalTabDecision(for: nil).status, .enabledNativeContentBlocking)
         XCTAssertEqual(module.normalTabDecision(for: nil).assets.scriptSources, [])
+        XCTAssertFalse(module.hasLoadedRuntime)
+
+        let eligibleDecision = module.normalTabDecision(for: try XCTUnwrap(URL(string: "https://example.com/")))
+        XCTAssertEqual(eligibleDecision.status, .enabledNativeContentBlocking)
+        XCTAssertNotNil(eligibleDecision.contentBlockingService)
         XCTAssertTrue(module.hasLoadedRuntime)
 
         let adBlockingSource = try Self.source(named: "Sumi/ContentBlocking/SumiAdBlockingModule.swift")
