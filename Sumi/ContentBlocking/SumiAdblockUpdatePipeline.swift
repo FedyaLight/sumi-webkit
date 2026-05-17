@@ -22,12 +22,10 @@ enum AdblockFilterListProfileKind: String, Codable, CaseIterable, Identifiable, 
 
     var id: String { rawValue }
 
-    private static let legacyReferenceAdGuardNativeIdentifier = "oraLikeNative"
-
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let rawValue = try container.decode(String.self)
-        guard let profileKind = Self(storedIdentifier: rawValue) else {
+        guard let profileKind = Self(rawValue: rawValue) else {
             throw DecodingError.dataCorruptedError(
                 in: container,
                 debugDescription: "Unknown Adblock native profile kind: \(rawValue)"
@@ -39,15 +37,6 @@ enum AdblockFilterListProfileKind: String, Codable, CaseIterable, Identifiable, 
     func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         try container.encode(rawValue)
-    }
-
-    init?(storedIdentifier: String) {
-        switch storedIdentifier {
-        case Self.legacyReferenceAdGuardNativeIdentifier:
-            self = .referenceAdGuardNative
-        default:
-            self.init(rawValue: storedIdentifier)
-        }
     }
 }
 
