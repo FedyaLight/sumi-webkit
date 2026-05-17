@@ -99,7 +99,7 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertTrue(diagnosticsPlan.overlapSummary.exactComparisonAvailable)
     }
 
-    func testProtectionAttachesOnlyTrackingGroupAndDoesNotCreateAdblockRuntime() {
+    func testSelectingProtectionRequiresApplyBeforeTrackingGroupActivates() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let fixture = makeCoordinatorFixture(
@@ -108,11 +108,22 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         )
 
         fixture.coordinator.setLevel(.protection)
+        XCTAssertTrue(fixture.coordinator.applyNeeded)
+        XCTAssertEqual(
+            fixture.coordinator.normalTabDecision(
+                for: URL(string: "https://example.com")!,
+                profileId: nil
+            ).plan.effectiveLevel,
+            .off
+        )
+
+        _ = try await fixture.coordinator.applySelectedLevel()
         let decision = fixture.coordinator.normalTabDecision(
             for: URL(string: "https://example.com")!,
             profileId: nil
         )
 
+        XCTAssertFalse(fixture.coordinator.applyNeeded)
         XCTAssertEqual(decision.plan.effectiveLevel, .protection)
         XCTAssertEqual(decision.plan.activeGroups, [.trackingNetwork])
         XCTAssertEqual(decision.plan.expectedRuleListIdentifiers, ["sumi.tracking.network"])
@@ -136,6 +147,7 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
             networkRules: [Self.ruleList(identifier: "sumi.adblock.network.curated", filter: ".*ads\\.example/.*")]
         )
 
+        let outcome = try await fixture.coordinator.applySelectedLevel()
         let plan = try await waitForPlan(fixture.coordinator) { plan in
             plan.bundleProfileId == "adguardAdsPrivacy"
         }
@@ -145,6 +157,7 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertEqual(plan.bundleSource, .embeddedBundle)
         XCTAssertEqual(plan.bundleProfileId, "adguardAdsPrivacy")
         XCTAssertEqual(plan.requiredBundleProfileId, "adguardAdsPrivacy")
+        XCTAssertEqual(outcome.installedBundleProfileId, "adguardAdsPrivacy")
         XCTAssertEqual(plan.previousGenerationId, "previous-adblock-generation")
         XCTAssertTrue(plan.previousGenerationRetained)
         XCTAssertTrue(plan.trackingGroupActive)
@@ -167,6 +180,7 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
             nativeCSSRules: [Self.ruleList(identifier: "sumi.adblock.nativeCSS.maximum", filter: ".*", selector: ".ad")]
         )
 
+        let outcome = try await fixture.coordinator.applySelectedLevel()
         let plan = try await waitForPlan(fixture.coordinator) { plan in
             plan.bundleProfileId == "maximumCustomReference"
         }
@@ -176,6 +190,7 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertEqual(plan.bundleSource, .developmentBundle)
         XCTAssertEqual(plan.bundleProfileId, "maximumCustomReference")
         XCTAssertEqual(plan.requiredBundleProfileId, "maximumCustomReference")
+        XCTAssertEqual(outcome.installedBundleProfileId, "maximumCustomReference")
         XCTAssertTrue(plan.trackingGroupActive)
         XCTAssertTrue(plan.adblockGroupActive)
         XCTAssertTrue(plan.nativeCSSGroupActive)
@@ -183,7 +198,67 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertEqual(plan.shardCountsByGroup[.maximumNativeCSS], 1)
     }
 
-    func testMissingRequiredBundleIsReportedWithoutRuntimeGeneratedFallback() {
+    func testMissingRequiredBundleApplyReportsClearErrorWithoutRuntimeGeneratedFallback() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let fixture = makeCoordinatorFixture(
+            defaults: harness.defaults,
+            trackingDefinitions: [Self.ruleList(identifier: "sumi.tracking.network", filter: ".*tracker\\.example/.*")]
+        )
+
+        fixture.coordinator.setLevel(.protection)
+        _ = try await fixture.coordinator.applySelectedLevel()
+        fixture.coordinator.setLevel(.adblock)
+        do {
+            _ = try await fixture.coordinator.applySelectedLevel()
+            XCTFail("Expected applying Adblock without a prepared bundle to fail")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Required prepared bundle profile adguardAdsPrivacy is unavailable"))
+        }
+        let plan = fixture.coordinator.rulePlan(
+            for: URL(string: "https://example.com")!,
+            profileId: nil
+        )
+        let global = fixture.coordinator.globalDiagnostics()
+
+        XCTAssertEqual(plan.requestedLevel, .protection)
+        XCTAssertEqual(plan.effectiveLevel, .protection)
+        XCTAssertEqual(global.selectedProtectionLevel, .adblock)
+        XCTAssertEqual(global.appliedProtectionLevel, .protection)
+        XCTAssertEqual(global.requiredBundleProfileId, "adguardAdsPrivacy")
+        XCTAssertTrue(global.applyNeeded)
+        XCTAssertTrue(global.lastApplyError?.contains("Required prepared bundle profile adguardAdsPrivacy is unavailable") == true)
+        XCTAssertNil(plan.bundleSource)
+        XCTAssertFalse(global.lastApplyError?.contains("runtimeGenerated") == true)
+    }
+
+    func testRuntimeGeneratedBundleDoesNotSatisfyPreparedAdblockRequirement() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let fixture = try await makeCoordinatorFixtureWithSeededAdblockBundle(
+            defaults: harness.defaults,
+            level: .adblock,
+            bundleProfileId: "adguardAdsPrivacy",
+            generationSource: .runtimeGenerated,
+            networkRules: [Self.ruleList(identifier: "sumi.adblock.network.runtime", filter: ".*ads\\.example/.*")]
+        )
+
+        XCTAssertTrue(fixture.coordinator.applyNeeded)
+        let plan = fixture.coordinator.rulePlan(
+            for: URL(string: "https://example.com")!,
+            profileId: nil
+        )
+        let global = fixture.coordinator.globalDiagnostics()
+
+        XCTAssertEqual(plan.bundleSource, .runtimeGenerated)
+        XCTAssertEqual(plan.bundleProfileId, "adguardAdsPrivacy")
+        XCTAssertFalse(plan.activeGroups.contains(.adblockAdsPrivacyNetwork))
+        XCTAssertTrue(plan.planningErrors.contains("Required prepared bundle profile adguardAdsPrivacy is not active."))
+        XCTAssertFalse(global.adblockBundleAvailable)
+        XCTAssertTrue(global.applyNeeded)
+    }
+
+    func testSuccessfulApplyClearsStaleApplyError() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let fixture = makeCoordinatorFixture(
@@ -192,17 +267,48 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         )
 
         fixture.coordinator.setLevel(.adblock)
-        let plan = fixture.coordinator.rulePlan(
+        do {
+            _ = try await fixture.coordinator.applySelectedLevel()
+            XCTFail("Expected Adblock apply to fail without a prepared bundle")
+        } catch {
+            XCTAssertTrue(fixture.coordinator.globalDiagnostics().lastApplyError?.contains("adguardAdsPrivacy") == true)
+        }
+
+        fixture.coordinator.setLevel(.protection)
+        _ = try await fixture.coordinator.applySelectedLevel()
+
+        let global = fixture.coordinator.globalDiagnostics()
+        XCTAssertNil(global.lastApplyError)
+        XCTAssertEqual(global.appliedProtectionLevel, .protection)
+        XCTAssertEqual(global.lastApplySummary, "Applied Protection.")
+    }
+
+    func testCachedRulePlanDoesNotLoadRuleDefinitionsDuringUIRendering() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let fixture = try await makeCoordinatorFixtureWithSeededAdblockBundle(
+            defaults: harness.defaults,
+            level: .adblock,
+            bundleProfileId: "adguardAdsPrivacy",
+            generationSource: .embeddedBundle,
+            networkRules: [Self.ruleList(identifier: "sumi.adblock.network.curated", filter: ".*ads\\.example/.*")]
+        )
+        XCTAssertEqual(fixture.trackingRuleSource.ruleListCallCount, 0)
+
+        let cachedPlan = fixture.coordinator.cachedRulePlan(
             for: URL(string: "https://example.com")!,
             profileId: nil
         )
+        let global = fixture.coordinator.globalDiagnostics()
 
-        XCTAssertEqual(plan.requestedLevel, .adblock)
-        XCTAssertEqual(plan.effectiveLevel, .protection)
-        XCTAssertEqual(plan.requiredBundleProfileId, "adguardAdsPrivacy")
-        XCTAssertTrue(plan.planningErrors.contains { $0.contains("Required native bundle profile adguardAdsPrivacy is not active") })
-        XCTAssertNil(plan.bundleSource)
-        XCTAssertFalse(plan.planningErrors.contains { $0.contains("runtimeGenerated") })
+        XCTAssertEqual(cachedPlan.effectiveLevel, .adblock)
+        XCTAssertEqual(cachedPlan.activeGroups, [.adblockAdsPrivacyNetwork, .trackingNetwork])
+        XCTAssertEqual(cachedPlan.bundleProfileId, "adguardAdsPrivacy")
+        XCTAssertTrue(cachedPlan.ruleDefinitions.isEmpty)
+        XCTAssertEqual(cachedPlan.expectedRuleListIdentifiers, ["sumi.adblock.network.curated"])
+        XCTAssertEqual(fixture.trackingRuleSource.ruleListCallCount, 0)
+        XCTAssertTrue(global.trackingSourceAvailable)
+        XCTAssertFalse(fixture.trackingRuleSource.ruleListCallCount > 0)
     }
 
     func testPerSiteDisableDisablesAllProtectionGroups() async throws {
@@ -228,7 +334,7 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertTrue(plan.expectedRuleListIdentifiers.isEmpty)
     }
 
-    func testInternalSurfacesAreIneligibleAndAttachNothing() {
+    func testInternalSurfacesAreIneligibleAndAttachNothing() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let fixture = makeCoordinatorFixture(
@@ -237,6 +343,7 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         )
 
         fixture.coordinator.setLevel(.protection)
+        _ = try await fixture.coordinator.applySelectedLevel()
         let plan = fixture.coordinator.rulePlan(
             for: SumiSurface.settingsSurfaceURL(paneQuery: "privacy"),
             profileId: nil
@@ -335,6 +442,120 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertTrue(diagnostics.developerReport.contains("overlapSummary="))
     }
 
+    func testSettingsPagePlanCanBeIneligibleWhileGlobalDiagnosticsStillShowSelectedAdblock() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let fixture = try await makeCoordinatorFixtureWithSeededAdblockBundle(
+            defaults: harness.defaults,
+            level: .adblock,
+            bundleProfileId: "adguardAdsPrivacy",
+            generationSource: .embeddedBundle,
+            networkRules: [Self.ruleList(identifier: "sumi.adblock.network.curated", filter: ".*ads\\.example/.*")]
+        )
+        _ = try await waitForPlan(fixture.coordinator) { $0.bundleProfileId == "adguardAdsPrivacy" }
+
+        let settingsURL = SumiSurface.settingsSurfaceURL(paneQuery: "privacy")
+        let pagePlan = fixture.coordinator.rulePlan(for: settingsURL, profileId: nil)
+        let global = fixture.coordinator.globalDiagnostics()
+
+        XCTAssertEqual(global.selectedProtectionLevel, .adblock)
+        XCTAssertEqual(global.bundleProfileId, "adguardAdsPrivacy")
+        XCTAssertFalse(global.applyNeeded)
+        XCTAssertEqual(pagePlan.ineligibleSurfaceReason, "Internal Sumi surface")
+        XCTAssertEqual(pagePlan.effectiveLevel, .off)
+        XCTAssertTrue(pagePlan.activeGroups.isEmpty)
+    }
+
+    func testCopyDiagnosticsSeparatesGlobalStateFromTargetPagePlan() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let fixture = try await makeCoordinatorFixtureWithSeededAdblockBundle(
+            defaults: harness.defaults,
+            level: .adblock,
+            bundleProfileId: "adguardAdsPrivacy",
+            generationSource: .embeddedBundle,
+            networkRules: [Self.ruleList(identifier: "sumi.adblock.network.curated", filter: ".*ads\\.example/.*")]
+        )
+        _ = try await waitForPlan(fixture.coordinator) { $0.bundleProfileId == "adguardAdsPrivacy" }
+
+        let report = fixture.coordinator.copyDiagnosticsReport(
+            for: SumiSurface.settingsSurfaceURL(paneQuery: "privacy"),
+            currentTabDiagnostics: nil,
+            targetDescription: "current tab (ineligible: Internal Sumi surface)"
+        )
+
+        XCTAssertTrue(report.contains("Global protection state"))
+        XCTAssertTrue(report.contains("protectionLevel=adblock"))
+        XCTAssertTrue(report.contains("bundleProfileId=adguardAdsPrivacy"))
+        XCTAssertTrue(report.contains("Target page plan"))
+        XCTAssertTrue(report.contains("targetURL=sumi://settings?pane=privacy"))
+        XCTAssertTrue(report.contains("ineligibleSurfaceReason=Internal Sumi surface"))
+        XCTAssertTrue(report.contains("effectiveProtectionLevel=off"))
+    }
+
+    func testUnifiedDiagnosticsTargetUsesLastEligibleWebTabWhenSettingsIsSelected() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        let settings = SumiProtectionSettings(userDefaults: harness.defaults)
+        settings.setLevel(.protection)
+        let trackingModule = makeTrackingModule(
+            registry: registry,
+            defaults: harness.defaults,
+            trackingRuleSource: RecordingTrackingRuleSource(
+                definitions: [Self.ruleList(identifier: "sumi.tracking.network", filter: ".*tracker\\.example/.*")]
+            )
+        )
+        let coordinator = SumiProtectionCoordinator(
+            settings: settings,
+            trackingProtectionModule: trackingModule,
+            adBlockingModule: SumiAdBlockingModule(moduleRegistry: registry),
+            moduleRegistry: registry
+        )
+        _ = try await coordinator.applySelectedLevel()
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            trackingProtectionModule: trackingModule,
+            protectionCoordinator: coordinator
+        )
+        let windowState = BrowserWindowState()
+        let space = browserManager.tabManager.currentSpace
+        windowState.currentSpaceId = space?.id
+        let webTab = browserManager.tabManager.createNewTab(
+            url: "https://www.example.com/failing-page",
+            in: space,
+            activate: false
+        )
+        let settingsTab = browserManager.tabManager.createNewTab(
+            url: SumiSurface.settingsSurfaceURL(paneQuery: "privacy").absoluteString,
+            in: space,
+            activate: false
+        )
+        windowState.currentTabId = settingsTab.id
+        if let spaceId = space?.id {
+            windowState.recentRegularTabIdsBySpace[spaceId] = [settingsTab.id, webTab.id]
+        }
+
+        let target = browserManager.lastActiveProtectionEligibleNormalWebTab(
+            in: windowState,
+            excluding: settingsTab
+        )
+        let report = coordinator.copyDiagnosticsReport(
+            for: target?.url,
+            currentTabDiagnostics: nil,
+            targetDescription: "last eligible web tab (current tab ineligible: Internal Sumi surface)",
+            requestingURL: settingsTab.url
+        )
+
+        XCTAssertEqual(target?.id, webTab.id)
+        XCTAssertTrue(report.contains("targetSource=last eligible web tab"))
+        XCTAssertTrue(report.contains("targetURL=https://www.example.com/failing-page"))
+        XCTAssertTrue(report.contains("requestingURL=sumi://settings?pane=privacy"))
+        XCTAssertFalse(report.contains("targetURL=sumi://settings"))
+    }
+
     func testUnifiedSourceKeepsNativeModesScriptFreeAndEnhancedRuntimeSeparate() throws {
         let coordinatorSource = try Self.source(named: "Sumi/ContentBlocking/SumiProtectionCoordinator.swift")
         let tabRuntimeSource = try Self.source(named: "Sumi/Models/Tab/Tab+WebViewRuntime.swift")
@@ -343,15 +564,31 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertFalse(coordinatorSource.contains("WKUserScript"))
         XCTAssertFalse(coordinatorSource.contains("WKWebExtension"))
         XCTAssertFalse(coordinatorSource.contains("MutationObserver"))
-        XCTAssertFalse(coordinatorSource.contains("runtimeGenerated"))
+        XCTAssertTrue(coordinatorSource.contains("preparedBundleProfileId"))
+        XCTAssertTrue(coordinatorSource.contains("isPreparedBundleSource"))
         XCTAssertFalse(coordinatorSource.contains("compileNativeContentBlocking"))
         XCTAssertTrue(tabRuntimeSource.contains("protectionCoordinator"))
         XCTAssertTrue(tabRuntimeSource.contains(".normalTabDecision(for: url, profileId: profile.id)"))
         XCTAssertFalse(tabRuntimeSource.contains("additionalContentBlockingServices: [adBlockingDecision"))
+        XCTAssertFalse(tabRuntimeSource.contains("normalTabContentBlockingDecision("))
         XCTAssertTrue(tabRuntimeSource.contains("normalTabEnhancedRuntimeScripts"))
         XCTAssertTrue(settingsSource.contains("DEBUG Legacy Protection Controls"))
         XCTAssertTrue(settingsSource.contains("Adblock & Protection"))
+        XCTAssertTrue(settingsSource.contains("Apply selected protection level"))
+        XCTAssertTrue(settingsSource.contains("Deprecated runtime-generated dev profile"))
         XCTAssertTrue(settingsSource.contains("#if DEBUG"))
+    }
+
+    func testSettingsAndURLHubUseCachedProtectionPlansForNormalRendering() throws {
+        let settingsSource = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
+        let urlHubSource = try Self.source(named: "Sumi/Components/Sidebar/URLBarHubPopover.swift")
+
+        XCTAssertTrue(settingsSource.contains("coordinator.cachedRulePlan(for: currentTab?.url"))
+        XCTAssertTrue(settingsSource.contains("coordinator.cachedRulePlan(for: diagnosticsTarget.url"))
+        XCTAssertFalse(settingsSource.contains("coordinator.rulePlan(for: currentTab?.url"))
+        XCTAssertFalse(settingsSource.contains("coordinator.rulePlan(for: diagnosticsTarget.url"))
+        XCTAssertTrue(urlHubSource.contains("protectionCoordinator.cachedRulePlan(for: url"))
+        XCTAssertFalse(urlHubSource.contains("protectionCoordinator.rulePlan(for: url"))
     }
 
     private struct CoordinatorFixture {
@@ -415,6 +652,7 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
     ) async throws -> CoordinatorFixture {
         let settings = SumiProtectionSettings(userDefaults: defaults)
         settings.setLevel(level)
+        settings.setAppliedLevel(level)
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(userDefaults: defaults)
         )

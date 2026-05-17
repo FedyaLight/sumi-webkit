@@ -1,1 +1,1 @@
-/Users/fedaefimov/Downloads/Aura/Sumi-webkit/Vendor/Brave/AdblockRustAdapter/target/debug/sumi-adblock-rust-adapter: /Users/fedaefimov/Downloads/Aura/Sumi-webkit/Vendor/Brave/AdblockRustAdapter/src/main.rs
+/Users/fedaefimov/Downloads/Aura/sumi-webkit/Vendor/Brave/AdblockRustAdapter/target/debug/sumi-adblock-rust-adapter: /Users/fedaefimov/Downloads/Aura/sumi-webkit/Vendor/Brave/AdblockRustAdapter/src/main.rs

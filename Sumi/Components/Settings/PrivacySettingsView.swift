@@ -116,6 +116,8 @@ private struct AdblockProtectionSettingsView: View {
     let currentTab: Tab?
     @ObservedObject private var settings: SumiProtectionSettings
     @State private var overrideStatus: String?
+    @State private var applyStatus: String?
+    @State private var isApplying = false
     #if DEBUG
     @State private var copyDiagnosticsStatus: String?
     #endif
@@ -160,12 +162,39 @@ private struct AdblockProtectionSettingsView: View {
             }
 
             SettingsRow(
-                title: "Effective level",
-                subtitle: effectiveLevelSubtitle
+                title: "Apply selected protection level",
+                subtitle: applyRowSubtitle
             ) {
-                Text(effectivePlan.effectiveLevel.displayTitle)
+                Button {
+                    applySelectedLevel()
+                } label: {
+                    if isApplying {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text("Apply")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isApplying || !coordinator.applyNeeded)
+            }
+
+            SettingsRow(
+                title: "Applied level",
+                subtitle: appliedLevelSubtitle
+            ) {
+                Text(settings.appliedLevel.displayTitle)
                     .font(.callout)
-                    .foregroundStyle(effectivePlan.effectiveLevel == settings.level ? Color.secondary : Color.orange)
+                    .foregroundStyle(coordinator.applyNeeded ? Color.orange : Color.secondary)
+            }
+
+            SettingsRow(
+                title: "Current page level",
+                subtitle: currentPageLevelSubtitle
+            ) {
+                Text(currentPagePlan.effectiveLevel.displayTitle)
+                    .font(.callout)
+                    .foregroundStyle(currentPagePlan.effectiveLevel == settings.appliedLevel ? Color.secondary : Color.orange)
             }
 
             SettingsRow(
@@ -176,7 +205,7 @@ private struct AdblockProtectionSettingsView: View {
                     toggleCurrentSiteProtection()
                 }
                 .buttonStyle(.bordered)
-                .disabled(currentTab == nil || effectivePlan.siteHost == nil || settings.level == .off)
+                .disabled(currentTab == nil || currentPagePlan.siteHost == nil || settings.appliedLevel == .off)
             }
 
             if let overrideStatus {
@@ -211,52 +240,78 @@ private struct AdblockProtectionSettingsView: View {
             get: { settings.level },
             set: { level in
                 coordinator.setLevel(level)
-                currentTab?.updateProtectionReloadRequirementForCurrentSite()
-                currentTab?.updateTrackingProtectionReloadRequirementForCurrentSite()
-                currentTab?.updateAdblockReloadRequirementForCurrentSite()
+                applyStatus = "Selection saved. Apply is required before eligible web tabs use \(level.displayTitle)."
             }
         )
     }
 
-    private var effectivePlan: SumiProtectionRulePlan {
-        coordinator.rulePlan(for: diagnosticsTarget.url, profileId: diagnosticsTarget.tab?.resolveProfile()?.id)
+    private var currentPagePlan: SumiProtectionRulePlan {
+        coordinator.cachedRulePlan(for: currentTab?.url, profileId: currentTab?.resolveProfile()?.id)
     }
 
-    private var effectiveLevelSubtitle: String {
-        if let reason = effectivePlan.ineligibleSurfaceReason {
+    private var diagnosticsPlan: SumiProtectionRulePlan {
+        coordinator.cachedRulePlan(for: diagnosticsTarget.url, profileId: diagnosticsTarget.tab?.resolveProfile()?.id)
+    }
+
+    private var globalDiagnostics: SumiProtectionGlobalDiagnostics {
+        coordinator.globalDiagnostics()
+    }
+
+    private var applyRowSubtitle: String {
+        if let applyStatus {
+            return applyStatus
+        }
+        if let error = globalDiagnostics.lastApplyError {
+            return error
+        }
+        if coordinator.applyNeeded {
+            return "Selection saved. Apply to activate \(settings.level.displayTitle) and mark changed web tabs reload-required."
+        }
+        return globalDiagnostics.lastApplySummary ?? "Selected level is already applied."
+    }
+
+    private var appliedLevelSubtitle: String {
+        if coordinator.applyNeeded {
+            return "Selected \(settings.level.displayTitle) is not active yet."
+        }
+        return "This is the level used to build eligible page attachment plans."
+    }
+
+    private var currentPageLevelSubtitle: String {
+        if let reason = currentPagePlan.ineligibleSurfaceReason {
             return reason
         }
-        if !effectivePlan.planningErrors.isEmpty {
-            return effectivePlan.planningErrors.joined(separator: " ")
+        if !currentPagePlan.planningErrors.isEmpty {
+            return currentPagePlan.planningErrors.joined(separator: " ")
         }
-        if effectivePlan.bundleProfileId != nil {
-            return "Bundle source: \(effectivePlan.bundleSource?.rawValue ?? "unknown")."
+        if currentPagePlan.bundleProfileId != nil {
+            return "Bundle source: \(currentPagePlan.bundleSource?.rawValue ?? "unknown")."
         }
         return "Native WebKit rule lists only; no Adblock runtime script is enabled by this level."
     }
 
     private var currentSiteSubtitle: String {
-        guard let host = effectivePlan.siteHost else {
+        guard let host = currentPagePlan.siteHost else {
             return "Open an http or https tab to change site protection."
         }
-        if settings.level == .off {
-            return "Global level is Off."
+        if settings.appliedLevel == .off {
+            return "Applied global level is Off."
         }
-        if effectivePlan.siteOverride == .disabled {
-            return "Protection is off for \(host). Reload required for existing pages."
+        if currentPagePlan.siteOverride == .disabled {
+            return "Protection off for this site: \(host). Reload required for existing pages."
         }
-        return "Protection follows the global \(settings.level.displayTitle) level for \(host)."
+        return "Protection follows the applied \(settings.appliedLevel.displayTitle) level for \(host)."
     }
 
     private var currentSiteButtonTitle: String {
-        effectivePlan.siteOverride == .disabled
+        currentPagePlan.siteOverride == .disabled
             ? "Use Global Level"
             : "Turn Off for Site"
     }
 
     private func toggleCurrentSiteProtection() {
         guard let tab = currentTab else { return }
-        let nextOverride: SumiAdblockSiteOverride = effectivePlan.siteOverride == .disabled
+        let nextOverride: SumiAdblockSiteOverride = currentPagePlan.siteOverride == .disabled
             ? .inherit
             : .disabled
         coordinator.setSiteOverride(nextOverride, for: tab.url)
@@ -264,6 +319,28 @@ private struct AdblockProtectionSettingsView: View {
         overrideStatus = nextOverride == .disabled
             ? "Protection will be off for this site after reload."
             : "This site will use the global level after reload."
+    }
+
+    private func applySelectedLevel() {
+        guard !isApplying else { return }
+        isApplying = true
+        applyStatus = nil
+        Task {
+            do {
+                let outcome = try await coordinator.applySelectedLevel()
+                let markedTabs = browserManager.markProtectionReloadRequiredForEligibleNormalWebTabs()
+                coordinator.recordReloadMarkingAfterApply(tabCount: markedTabs)
+                await MainActor.run {
+                    applyStatus = coordinator.globalDiagnostics().lastApplySummary ?? outcome.summary
+                    isApplying = false
+                }
+            } catch {
+                await MainActor.run {
+                    applyStatus = error.localizedDescription
+                    isApplying = false
+                }
+            }
+        }
     }
 
     private var diagnosticsTarget: DebugProtectionDiagnosticsTarget {
@@ -306,11 +383,25 @@ private struct AdblockProtectionSettingsView: View {
 
     #if DEBUG
     private var debugProtectionRows: [(String, String)] {
-        let plan = effectivePlan
+        let global = globalDiagnostics
+        let plan = diagnosticsPlan
         return [
+            ("GLOBAL selected protection level", global.selectedProtectionLevel.rawValue),
+            ("GLOBAL applied protection level", global.appliedProtectionLevel.rawValue),
+            ("GLOBAL apply needed", global.applyNeeded.description),
+            ("GLOBAL last apply summary", global.lastApplySummary ?? "nil"),
+            ("GLOBAL last apply error", global.lastApplyError ?? "nil"),
+            ("GLOBAL generation source", global.generationSource?.rawValue ?? "nil"),
+            ("GLOBAL native bundle id", global.nativeRuleBundleId ?? "nil"),
+            ("GLOBAL bundle profile id", global.bundleProfileId ?? "nil"),
+            ("GLOBAL required bundle profile", global.requiredBundleProfileId ?? "nil"),
+            ("GLOBAL active generation", global.activeGenerationId ?? "nil"),
+            ("GLOBAL groups available", global.globalGroupsAvailable.map(\.rawValue).joined(separator: ", ")),
+            ("GLOBAL tracking source available", global.trackingSourceAvailable.description),
+            ("GLOBAL adblock bundle available", global.adblockBundleAvailable.description),
             ("Diagnostics target", diagnosticsTarget.source),
             ("Diagnostics URL", diagnosticsTarget.url?.absoluteString ?? "nil"),
-            ("Protection level", plan.requestedLevel.rawValue),
+            ("PAGE requested level", plan.requestedLevel.rawValue),
             ("Effective level", plan.effectiveLevel.rawValue),
             ("Active groups", plan.activeGroups.map(\.rawValue).joined(separator: ", ")),
             ("Inactive groups", plan.inactiveGroups.map(\.rawValue).joined(separator: ", ")),
@@ -456,8 +547,8 @@ private struct NativeAdblockSettingsView: View {
 
             #if DEBUG
             SettingsRow(
-                title: "Runtime-generated dev profile",
-                subtitle: debugNativeProfileSubtitle
+                title: "Deprecated runtime-generated dev profile",
+                subtitle: "DEBUG only. Disabled for the unified flow; normal Off / Protection / Adblock / Extreme levels use prepared bundles only."
             ) {
                 Picker(
                     "",
@@ -479,6 +570,7 @@ private struct NativeAdblockSettingsView: View {
                 .labelsHidden()
                 .pickerStyle(.menu)
                 .frame(maxWidth: 220)
+                .disabled(true)
             }
             debugEmbeddedBundleSection
                 .onAppear {
@@ -648,18 +740,19 @@ private struct NativeAdblockSettingsView: View {
             }
 
             SettingsRow(
-                title: "Reset lists to selected profile",
-                subtitle: resetListsStatus ?? "Runtime-generated profiles only. This does not select or install an embedded bundle."
+                title: "Reset deprecated runtime-generated lists",
+                subtitle: resetListsStatus ?? "DEBUG only and deprecated. This does not affect the unified protection levels."
             ) {
                 Button("Reset") {
                     resetListsToSelectedProfile()
                 }
                 .buttonStyle(.bordered)
+                .disabled(true)
             }
 
             SettingsRow(
-                title: "Rebuild selected Adblock profile now",
-                subtitle: rebuildStatus ?? "Downloads selected lists if needed, compiles the selected native profile, and publishes shards transactionally."
+                title: "Deprecated runtime-generated rebuild",
+                subtitle: rebuildStatus ?? "DEBUG only and disabled for the unified flow. Browser runtime installs prepared bundles instead."
             ) {
                 Button {
                     rebuildSelectedProfile()
@@ -672,7 +765,7 @@ private struct NativeAdblockSettingsView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(isRebuilding)
+                .disabled(true)
             }
 
             SettingsRow(

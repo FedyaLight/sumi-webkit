@@ -678,6 +678,32 @@ final class AdblockSitePolicyStore: ObservableObject {
     }
 }
 
+final class PreparedBundleOnlyAdblockCompiler: NativeContentBlockingCompiler, EnhancedCompatibilityCompiler, Sendable {
+    let identity = NativeContentBlockingCompilerIdentity(
+        name: "prepared-bundle-only",
+        version: "1"
+    )
+
+    func compileNativeContentBlocking(
+        _ input: AdblockCompilationInput
+    ) async throws -> NativeContentBlockingCompilationOutput {
+        throw disabledDiagnostics
+    }
+
+    func compileEnhancedCompatibility(
+        _ input: AdblockCompilationInput
+    ) async throws -> EnhancedCompatibilityCompilationOutput {
+        throw disabledDiagnostics
+    }
+
+    private var disabledDiagnostics: AdblockUpdateDiagnostics {
+        AdblockUpdateDiagnostics(
+            summary: "Browser runtime Adblock list conversion is disabled. Install a prepared native rule bundle instead.",
+            generationSource: nil
+        )
+    }
+}
+
 @MainActor
 final class AdblockWebKitRuleListStore {
     let contentBlockingService: SumiContentBlockingService
@@ -723,9 +749,9 @@ final class AdblockWebKitRuleListStore {
         self.isAdblockEnabled = isAdblockEnabled
         self.settingsStore = settingsStore
         self.embeddedBundleURLProvider = embeddedBundleURLProvider
-        let rustCompiler = AdblockRustCompiler()
-        let resolvedNativeCompiler = nativeCompiler ?? rustCompiler
-        let resolvedEnhancedCompiler = enhancedCompiler ?? rustCompiler
+        let preparedBundleOnlyCompiler = PreparedBundleOnlyAdblockCompiler()
+        let resolvedNativeCompiler = nativeCompiler ?? preparedBundleOnlyCompiler
+        let resolvedEnhancedCompiler = enhancedCompiler ?? preparedBundleOnlyCompiler
         configuredNativeCompilerIdentity = resolvedNativeCompiler.identity
         let provider = AdblockManifestRuleListProvider(
             manifest: nil,
@@ -781,19 +807,12 @@ final class AdblockWebKitRuleListStore {
 
     func requestManualUpdate() async throws -> AdblockCompiledGenerationManifest? {
         guard await isAdblockEnabled() else { return nil }
-        do {
-            let manifest = try await updateCoordinator.updateIfEnabled(reason: "manual")
-            lastUpdateDiagnostics = await updateCoordinator.latestDiagnosticsSnapshot()
-            if manifest != nil {
-                lastFailedShardIdentifier = nil
-                settingsStore.markListUpdateCompleted()
-            }
-            return manifest
-        } catch let diagnostics as AdblockUpdateDiagnostics {
-            lastFailedShardIdentifier = diagnostics.failedShardIdentifier
-            lastUpdateDiagnostics = diagnostics
-            throw diagnostics
-        }
+        let diagnostics = preparedBundleOnlyDiagnostics(
+            summary: "Manual Adblock list conversion is disabled in the browser runtime. Install a prepared native rule bundle instead."
+        )
+        lastFailedShardIdentifier = "prepared-bundle-required"
+        lastUpdateDiagnostics = diagnostics
+        throw diagnostics
     }
 
     func contentRuleListDefinitions(
@@ -877,42 +896,26 @@ final class AdblockWebKitRuleListStore {
         else { return }
         Task { [weak self] in
             guard let self else { return }
-            do {
-                await self.loadActiveManifestIfEnabled()
-                guard await MainActor.run(body: { self.ruleListProvider.activeManifest == nil }) else {
-                    return
-                }
-#if DEBUG
-                _ = try await self.updateCoordinator.updateIfEnabled(reason: "initial")
-                let diagnostics = await self.updateCoordinator.latestDiagnosticsSnapshot()
-                await MainActor.run {
-                    self.lastFailedShardIdentifier = nil
-                    self.lastUpdateDiagnostics = diagnostics
-                }
-#else
-                await MainActor.run {
-                    self.lastFailedShardIdentifier = nil
-                    self.lastUpdateDiagnostics = AdblockUpdateDiagnostics(
-                        summary: "No embedded Adblock bundle is available; runtime Adblock conversion is disabled outside DEBUG.",
-                        generationSource: nil
-                    )
-                }
-#endif
-            } catch let diagnostics as AdblockUpdateDiagnostics {
-                await MainActor.run {
-                    self.lastFailedShardIdentifier = diagnostics.failedShardIdentifier
-                    self.lastUpdateDiagnostics = diagnostics
-                }
-            } catch {
-                await MainActor.run {
-                    self.lastFailedShardIdentifier = "embedded-bundle"
-                    self.lastUpdateDiagnostics = AdblockUpdateDiagnostics(
-                        summary: "Embedded Adblock bundle install failed: \(error.localizedDescription)",
-                        generationSource: .embeddedBundle
-                    )
-                }
+            await self.loadActiveManifestIfEnabled()
+            guard await MainActor.run(body: { self.ruleListProvider.activeManifest == nil }) else {
+                return
+            }
+            await MainActor.run {
+                self.lastFailedShardIdentifier = "prepared-bundle-required"
+                self.lastUpdateDiagnostics = AdblockUpdateDiagnostics(
+                    summary: "No prepared Adblock bundle is available; browser runtime Adblock conversion is disabled.",
+                    generationSource: nil
+                )
             }
         }
+    }
+
+    private func preparedBundleOnlyDiagnostics(summary: String) -> AdblockUpdateDiagnostics {
+        AdblockUpdateDiagnostics(
+            summary: summary,
+            failedShardIdentifier: "prepared-bundle-required",
+            generationSource: nil
+        )
     }
 
     private func installEmbeddedBundleIfNeeded(
@@ -1159,15 +1162,19 @@ final class SumiAdBlockingModule {
 
     init(
         moduleRegistry: SumiModuleRegistry = .shared,
-        settingsFactory: @escaping @MainActor () -> AdblockSettingsStore = { .shared },
-        sitePolicyFactory: @escaping @MainActor () -> AdblockSitePolicyStore = { .shared },
+        settingsFactory: (@MainActor () -> AdblockSettingsStore)? = nil,
+        sitePolicyFactory: (@MainActor () -> AdblockSitePolicyStore)? = nil,
         ruleListStoreFactory: @escaping @MainActor (AdblockSettingsStore, @escaping @Sendable () async -> Bool) -> AdblockWebKitRuleListStore = {
             AdblockWebKitRuleListStore(settingsStore: $0, isAdblockEnabled: $1)
         }
     ) {
         self.moduleRegistry = moduleRegistry
-        self.settingsFactory = settingsFactory
-        self.sitePolicyFactory = sitePolicyFactory
+        self.settingsFactory = settingsFactory ?? {
+            AdblockSettingsStore(userDefaults: moduleRegistry.userDefaults)
+        }
+        self.sitePolicyFactory = sitePolicyFactory ?? {
+            AdblockSitePolicyStore(userDefaults: moduleRegistry.userDefaults)
+        }
         self.ruleListStoreFactory = ruleListStoreFactory
     }
 
@@ -1285,6 +1292,21 @@ final class SumiAdBlockingModule {
                 )
             }
         }
+    }
+
+    func installPreparedNativeRuleBundle(
+        profileId: String
+    ) async throws -> AdblockCompiledGenerationManifest? {
+        guard isEnabled else {
+            throw AdblockUpdateDiagnostics(
+                summary: "Enable built-in Adblock before installing prepared bundle \(profileId).",
+                generationSource: .embeddedBundle,
+                bundleProfileId: profileId
+            )
+        }
+        return try await ruleListStoreIfEnabled().requestAppResourceBundleInstall(
+            profileId: profileId
+        )
     }
 
     func normalizedSiteHost(for url: URL?) -> String? {

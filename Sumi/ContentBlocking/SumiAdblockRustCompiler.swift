@@ -1176,6 +1176,17 @@ struct AdblockRustHelperExecutableAdapter: AdblockRustAdapterInvoking {
             }
         }
 
+#if DEBUG
+        let sourceRootCandidate = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Vendor/Brave/AdblockRustAdapter/target/debug/sumi-adblock-rust-adapter")
+        if FileManager.default.isExecutableFile(atPath: sourceRootCandidate.path) {
+            return sourceRootCandidate
+        }
+#endif
+
         throw AdblockRustCompilerError.adapterNotFound
     }
 
