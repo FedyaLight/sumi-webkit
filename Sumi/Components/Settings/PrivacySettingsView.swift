@@ -109,7 +109,7 @@ private struct AdblockProtectionSettingsView: View {
     var body: some View {
         SettingsSection(
             title: "Adblock & Protection",
-            subtitle: "One native protection plan controls tracker blocking, native ad blocking, and per-site disable."
+            subtitle: "Global protection changes are saved here and take effect after restarting Sumi. Per-site disable remains available from the URL hub."
         ) {
             SettingsRow(
                 title: "Level",
@@ -205,7 +205,7 @@ private struct AdblockProtectionSettingsView: View {
             get: { settings.level },
             set: { level in
                 coordinator.setLevel(level)
-                applyStatus = "Selection saved. Apply is required before eligible web tabs use \(level.displayTitle)."
+                applyStatus = "Selection saved. Apply, then restart Sumi for \(level.displayTitle) to take effect globally."
             }
         )
     }
@@ -229,17 +229,23 @@ private struct AdblockProtectionSettingsView: View {
         if let error = globalDiagnostics.lastApplyError {
             return error
         }
+        if globalDiagnostics.browserRestartRequired {
+            return "Restart Sumi to finish applying global protection changes."
+        }
         if coordinator.applyNeeded {
-            return "Selection saved. Apply to activate \(settings.level.displayTitle) and mark changed web tabs reload-required."
+            return "Selection saved. Apply to save \(settings.level.displayTitle), then restart Sumi."
         }
         return globalDiagnostics.lastApplySummary ?? "Selected level is already applied."
     }
 
     private var appliedLevelSubtitle: String {
+        if globalDiagnostics.browserRestartRequired {
+            return "Restart Sumi before this global level is reliable in browser pages."
+        }
         if coordinator.applyNeeded {
             return "Selected \(settings.level.displayTitle) is not active yet."
         }
-        return "This is the level used to build eligible page attachment plans."
+        return "This is the level used after Sumi starts."
     }
 
     private var currentPageLevelSubtitle: String {
@@ -263,7 +269,7 @@ private struct AdblockProtectionSettingsView: View {
             return "Applied global level is Off."
         }
         if currentPagePlan.siteOverride == .disabled {
-            return "Protection off for this site: \(host). Reload required for existing pages."
+            return "Protection off for this site: \(host)."
         }
         return "Protection follows the applied \(settings.appliedLevel.displayTitle) level for \(host)."
     }
@@ -282,8 +288,8 @@ private struct AdblockProtectionSettingsView: View {
         coordinator.setSiteOverride(nextOverride, for: tab.url)
         tab.markProtectionReloadRequiredIfNeeded(afterChangingPolicyFor: tab.url)
         overrideStatus = nextOverride == .disabled
-            ? "Protection will be off for this site after reload."
-            : "This site will use the global level after reload."
+            ? "Protection is off for this site without a browser restart."
+            : "This site uses the global level without a browser restart."
     }
 
     private func applySelectedLevel() {
@@ -293,8 +299,6 @@ private struct AdblockProtectionSettingsView: View {
         Task {
             do {
                 let outcome = try await coordinator.applySelectedLevel()
-                let markedTabs = browserManager.markProtectionReloadRequiredForEligibleNormalWebTabs()
-                coordinator.recordReloadMarkingAfterApply(tabCount: markedTabs)
                 await MainActor.run {
                     applyStatus = coordinator.globalDiagnostics().lastApplySummary ?? outcome.summary
                     isApplying = false

@@ -398,7 +398,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(module.hasLoadedRuntime)
     }
 
-    func testEnabledTrackingModuleAttachesRulesAndDisableBlocksFutureNormalTabs() async throws {
+    func testEnabledTrackingModuleAttachesRulesAndDisableBlocksFutureNormalTabsAfterRestart() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let registry = SumiModuleRegistry(
@@ -445,6 +445,8 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
         protection.coordinator.setLevel(.off)
         _ = try await protection.coordinator.applySelectedLevel()
+        XCTAssertTrue(protection.coordinator.settings.browserRestartRequired)
+        _ = try await protection.coordinator.restoreAppliedLevelForStartup()
         let disabledTab = browserManager.tabManager.createNewTab(
             url: "https://example.com/tracking-disabled-after-toggle",
             in: browserManager.tabManager.currentSpace,
@@ -603,7 +605,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(tab.isProtectionReloadRequired)
     }
 
-    func testApplyingProtectionLevelMarksEligibleTabsReloadRequiredAndManualReloadAppliesPlan() async throws {
+    func testApplyingGlobalProtectionLevelRequiresRestartAndManualReloadDoesNotApplyPlan() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let registry = SumiModuleRegistry(
@@ -644,178 +646,111 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
         protection.coordinator.setLevel(.protection)
         _ = try await protection.coordinator.applySelectedLevel()
-        let markedCount = browserManager.markProtectionReloadRequiredForEligibleNormalWebTabs()
-        if markedCount == 0 {
-            tab.updateProtectionReloadRequirementForCurrentSite()
-        }
-        XCTAssertLessThanOrEqual(markedCount, 1)
-        XCTAssertTrue(tab.isProtectionReloadRequired)
+        XCTAssertTrue(protection.coordinator.settings.browserRestartRequired)
+        XCTAssertFalse(protection.coordinator.applyNeeded)
+        tab.updateProtectionReloadRequirementForCurrentSite()
+        XCTAssertFalse(tab.isProtectionReloadRequired)
         XCTAssertTrue(tab.existingWebView === originalWebView)
         let protectionDecision = protection.coordinator.normalTabDecision(
             for: targetURL,
             profileId: tab.resolveProfile()?.id
         )
-        XCTAssertNotNil(
-            protectionDecision.contentBlockingService,
-            "expectedIdentifiers=\(protectionDecision.plan.expectedRuleListIdentifiers) activeGroups=\(protectionDecision.plan.activeGroups)"
-        )
+        XCTAssertEqual(protectionDecision.plan.effectiveLevel, .off)
+        XCTAssertNil(protectionDecision.contentBlockingService)
 
-        tab.refresh()
-        XCTAssertFalse(tab.existingWebView === originalWebView)
-        XCTAssertTrue(tab.didManualReloadRebuildProtectionWebView)
-        XCTAssertTrue(tab.appliedProtectionAfterManualReload)
-        let rebuiltController = try XCTUnwrap(
+        XCTAssertFalse(
+            tab.rebuildNormalWebViewForProtectionIfNeeded(
+                targetURL: targetURL,
+                reason: "BrowserConfigurationNormalTabTests.globalManualReloadIgnored"
+            )
+        )
+        XCTAssertTrue(tab.existingWebView === originalWebView)
+        XCTAssertFalse(tab.didManualReloadRebuildProtectionWebView)
+        XCTAssertFalse(tab.appliedProtectionAfterManualReload)
+        let manuallyReloadedController = try XCTUnwrap(
             tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
         )
-        await rebuiltController.waitForContentBlockingAssetsInstalled()
-        try await waitForAssets(on: rebuiltController) { $0.globalRuleListCount == 1 }
-        tab.clearProtectionReloadRequirementIfResolved(for: targetURL)
-        XCTAssertFalse(tab.isProtectionReloadRequired)
-        XCTAssertEqual(tab.protectionAppliedAttachmentState?.effectiveLevel, .protection)
+        await manuallyReloadedController.waitForContentBlockingAssetsInstalled()
+        XCTAssertEqual(manuallyReloadedController.contentBlockingAssetSummary.globalRuleListCount, 0)
+        XCTAssertEqual(tab.protectionAppliedAttachmentState?.effectiveLevel, .off)
 
-        let protectedWebView = try XCTUnwrap(tab.existingWebView)
-        tab.url = targetURL
-        protection.coordinator.setLevel(.off)
-        _ = try await protection.coordinator.applySelectedLevel()
-        tab.updateProtectionReloadRequirementForCurrentSite()
-        XCTAssertTrue(tab.isProtectionReloadRequired)
-        XCTAssertTrue(tab.existingWebView === protectedWebView)
-
-        tab.refresh()
-        XCTAssertFalse(tab.existingWebView === protectedWebView)
-        XCTAssertTrue(tab.didManualReloadRebuildProtectionWebView)
-        XCTAssertTrue(tab.appliedProtectionAfterManualReload)
-        let offController = try XCTUnwrap(
-            tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
+        _ = try await protection.coordinator.restoreAppliedLevelForStartup()
+        XCTAssertFalse(protection.coordinator.settings.browserRestartRequired)
+        let restartedTab = browserManager.tabManager.createNewTab(
+            url: "https://www.example.com/after-restart",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
         )
-        await offController.waitForContentBlockingAssetsInstalled()
-        XCTAssertEqual(offController.contentBlockingAssetSummary.globalRuleListCount, 0)
-        XCTAssertTrue(offController.contentBlockingAssetSummary.globalRuleListIdentifiers.filter { $0.hasPrefix("sumi.") }.isEmpty)
-        tab.clearProtectionReloadRequirementIfResolved(for: targetURL)
-        XCTAssertFalse(tab.isProtectionReloadRequired)
+        restartedTab.setupWebView()
+        let restartedController = try XCTUnwrap(
+            restartedTab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        await restartedController.waitForContentBlockingAssetsInstalled()
+        try await waitForAssets(on: restartedController) { $0.globalRuleListCount == 1 }
+        XCTAssertEqual(restartedTab.protectionAppliedAttachmentState?.effectiveLevel, .protection)
     }
 
-    func testLiveProtectionLevelSwitchingManualReloadAppliesCurrentPlanWithoutRestart() async throws {
+    func testOffProtectionLevelKeepsNewTabHotPathEmptyAfterRestart() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
-        let temporaryRoot = FileManager.default.temporaryDirectory
-            .appendingPathComponent("SumiLiveProtectionSwitch-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
-
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
         let probe = NormalTabTrackingRuntimeProbe()
-        let trackingRuleDefinition = Self.validRuleListDefinition()
         let module = makeProbeTrackingModule(
             registry: registry,
             probe: probe,
             defaults: harness.defaults,
-            ruleDefinitions: [trackingRuleDefinition]
+            ruleDefinitions: [Self.validRuleListDefinition()]
         )
-        let resourceRoot = temporaryRoot.appendingPathComponent("Resources", isDirectory: true)
-        let developmentRoot = temporaryRoot.appendingPathComponent("Generated", isDirectory: true)
-        let bundleURL = developmentRoot
-            .appendingPathComponent(SumiProtectionBundleProfile.adblock, isDirectory: true)
-            .appendingPathComponent("SumiAdblockBundle", isDirectory: true)
-        try PreparedAdblockTestSupport.makeBundle(at: bundleURL)
-        let manifestStore = AdblockUpdateManifestStore(
-            rootDirectory: temporaryRoot.appendingPathComponent("ManifestStore", isDirectory: true)
-        )
-        let settings = SumiProtectionSettings(userDefaults: harness.defaults)
-        settings.setLevel(.off)
-        settings.setAppliedLevel(.off)
-        let adBlockingModule = SumiAdBlockingModule(
-            moduleRegistry: registry,
-            settingsFactory: { AdblockSettingsStore(userDefaults: harness.defaults) },
-            sitePolicyFactory: { AdblockSitePolicyStore(userDefaults: harness.defaults) },
-            preparedBundleResourceURL: resourceRoot,
-            preparedBundleGeneratedRootURL: developmentRoot,
-            ruleListStoreFactory: { settings, isEnabled in
-                AdblockWebKitRuleListStore(
-                    settingsStore: settings,
-                    isAdblockEnabled: isEnabled,
-                    manifestStore: manifestStore,
-                    compiler: SumiWKContentRuleListCompiler(),
-                    embeddedBundleURLProvider: { nil }
-                )
-            }
-        )
-        let coordinator = SumiProtectionCoordinator(
-            settings: settings,
+        let protection = makeProtectionCoordinator(
+            defaults: harness.defaults,
+            registry: registry,
             trackingProtectionModule: module,
-            adBlockingModule: adBlockingModule,
+            level: .protection
+        )
+        var browserManager = BrowserManager(
+            moduleRegistry: registry,
+            trackingProtectionModule: module,
+            adBlockingModule: protection.adBlockingModule,
+            protectionCoordinator: protection.coordinator
+        )
+        _ = try await protection.coordinator.restoreAppliedLevelForStartup()
+
+        protection.coordinator.setLevel(.off)
+        _ = try await protection.coordinator.applySelectedLevel()
+        XCTAssertTrue(protection.coordinator.settings.browserRestartRequired)
+
+        let restartedCoordinator = SumiProtectionCoordinator(
+            settings: protection.coordinator.settings,
+            trackingProtectionModule: module,
+            adBlockingModule: protection.adBlockingModule,
             moduleRegistry: registry
         )
-        let browserManager = BrowserManager(
+        browserManager = BrowserManager(
             moduleRegistry: registry,
             trackingProtectionModule: module,
-            adBlockingModule: adBlockingModule,
-            protectionCoordinator: coordinator
+            adBlockingModule: protection.adBlockingModule,
+            protectionCoordinator: restartedCoordinator
         )
-        let targetURL = URL(string: "https://www.example.com/live-switch")!
+        _ = try await restartedCoordinator.restoreAppliedLevelForStartup()
+        XCTAssertFalse(restartedCoordinator.settings.browserRestartRequired)
+        XCTAssertFalse(registry.isEnabled(.trackingProtection))
+        XCTAssertFalse(registry.isEnabled(.adBlocking))
+
         let tab = browserManager.tabManager.createNewTab(
-            url: targetURL.absoluteString,
+            url: "https://www.example.com/off-after-restart",
             in: browserManager.tabManager.currentSpace,
-            activate: true
+            activate: false
         )
         tab.setupWebView()
-        let initialController = try XCTUnwrap(
+        let controller = try XCTUnwrap(
             tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
         )
-        await initialController.waitForContentBlockingAssetsInstalled()
-        XCTAssertTrue(initialController.contentBlockingAssetSummary.globalRuleListIdentifiers.isEmpty)
+        await controller.waitForContentBlockingAssetsInstalled()
+        XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 0)
+        XCTAssertTrue(controller.contentBlockingAssetSummary.globalRuleListIdentifiers.filter { $0.hasPrefix("sumi.") }.isEmpty)
         XCTAssertEqual(tab.protectionAppliedAttachmentState?.effectiveLevel, .off)
-
-        try await applyLevelAndManualReload(
-            .protection,
-            coordinator: coordinator,
-            tab: tab,
-            url: targetURL,
-            expectedGroups: [.trackingNetwork],
-            expectedIdentifierPrefixes: [trackingRuleDefinition.webKitStoreIdentifier],
-            forbiddenIdentifierPrefixes: ["sumi.adblock."]
-        )
-
-        try await applyLevelAndManualReload(
-            .adblock,
-            coordinator: coordinator,
-            tab: tab,
-            url: targetURL,
-            expectedGroups: [.trackingNetwork, .adblockAdsPrivacyNetwork],
-            expectedIdentifierPrefixes: [trackingRuleDefinition.webKitStoreIdentifier, "sumi.adblock.network."],
-            forbiddenIdentifierPrefixes: []
-        )
-
-        try await applyLevelAndManualReload(
-            .protection,
-            coordinator: coordinator,
-            tab: tab,
-            url: targetURL,
-            expectedGroups: [.trackingNetwork],
-            expectedIdentifierPrefixes: [trackingRuleDefinition.webKitStoreIdentifier],
-            forbiddenIdentifierPrefixes: ["sumi.adblock."]
-        )
-
-        try await applyLevelAndManualReload(
-            .off,
-            coordinator: coordinator,
-            tab: tab,
-            url: targetURL,
-            expectedGroups: [],
-            expectedIdentifierPrefixes: [],
-            forbiddenIdentifierPrefixes: [trackingRuleDefinition.webKitStoreIdentifier, "sumi.adblock."]
-        )
-
-        try await applyLevelAndManualReload(
-            .adblock,
-            coordinator: coordinator,
-            tab: tab,
-            url: targetURL,
-            expectedGroups: [.trackingNetwork, .adblockAdsPrivacyNetwork],
-            expectedIdentifierPrefixes: [trackingRuleDefinition.webKitStoreIdentifier, "sumi.adblock.network."],
-            forbiddenIdentifierPrefixes: []
-        )
     }
 
     func testChangingOverrideForNonCurrentSiteDoesNotMarkReloadRequired() async throws {
@@ -1649,76 +1584,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             cnames: nil
         )
         return try JSONEncoder().encode(trackerData)
-    }
-
-    private func applyLevelAndManualReload(
-        _ level: SumiProtectionLevel,
-        coordinator: SumiProtectionCoordinator,
-        tab: Tab,
-        url: URL,
-        expectedGroups: [SumiProtectionGroupKind],
-        expectedIdentifierPrefixes: [String],
-        forbiddenIdentifierPrefixes: [String],
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) async throws {
-        coordinator.setLevel(level)
-        _ = try await coordinator.applySelectedLevel()
-        tab.url = url
-        tab.updateProtectionReloadRequirementForCurrentSite()
-        XCTAssertTrue(tab.isProtectionReloadRequired, file: file, line: line)
-
-        let previousWebView = try XCTUnwrap(tab.existingWebView, file: file, line: line)
-        let expectedDecision = coordinator.normalTabDecision(for: url, profileId: tab.resolveProfile()?.id)
-        let expectedPlan = expectedDecision.plan
-        XCTAssertEqual(expectedPlan.effectiveLevel, level, file: file, line: line)
-        XCTAssertEqual(Set(expectedPlan.activeGroups), Set(expectedGroups), file: file, line: line)
-        if !expectedPlan.expectedRuleListIdentifiers.isEmpty {
-            XCTAssertNotNil(
-                expectedDecision.contentBlockingService,
-                "expectedIdentifiers=\(expectedPlan.expectedRuleListIdentifiers) activeGroups=\(expectedPlan.activeGroups)",
-                file: file,
-                line: line
-            )
-        }
-
-        tab.refresh()
-        let rebuiltWebView = try XCTUnwrap(tab.existingWebView, file: file, line: line)
-        XCTAssertFalse(rebuiltWebView === previousWebView, file: file, line: line)
-        XCTAssertTrue(tab.didManualReloadRebuildProtectionWebView, file: file, line: line)
-        XCTAssertTrue(tab.appliedProtectionAfterManualReload, file: file, line: line)
-
-        let expectedIdentifiers = expectedPlan.expectedRuleListIdentifiers
-        let summary = try await waitForAssets(on: tab, timeout: 10) {
-            Set($0.globalRuleListIdentifiers) == Set(expectedIdentifiers)
-        }
-        let actualIdentifiers = summary.globalRuleListIdentifiers
-
-        XCTAssertEqual(Set(actualIdentifiers), Set(expectedIdentifiers), file: file, line: line)
-        for prefix in expectedIdentifierPrefixes {
-            XCTAssertTrue(
-                actualIdentifiers.contains { $0.hasPrefix(prefix) },
-                "Expected an attached identifier with prefix \(prefix); actual=\(actualIdentifiers)",
-                file: file,
-                line: line
-            )
-        }
-        for prefix in forbiddenIdentifierPrefixes {
-            XCTAssertFalse(
-                actualIdentifiers.contains { $0.hasPrefix(prefix) },
-                "Unexpected attached identifier with prefix \(prefix); actual=\(actualIdentifiers)",
-                file: file,
-                line: line
-            )
-        }
-
-        let appliedState = try XCTUnwrap(tab.protectionAppliedAttachmentState, file: file, line: line)
-        XCTAssertEqual(appliedState.effectiveLevel, level, file: file, line: line)
-        XCTAssertEqual(Set(appliedState.activeGroups), Set(expectedGroups), file: file, line: line)
-        XCTAssertEqual(Set(appliedState.attachedRuleListIdentifiers), Set(expectedIdentifiers), file: file, line: line)
-
-        tab.clearProtectionReloadRequirementIfResolved(for: url)
-        XCTAssertFalse(tab.isProtectionReloadRequired, file: file, line: line)
     }
 
     @discardableResult

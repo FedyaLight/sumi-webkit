@@ -1403,32 +1403,6 @@ class BrowserManager: ObservableObject {
         )
     }
 
-    @discardableResult
-    func markProtectionReloadRequiredForEligibleNormalWebTabs() -> Int {
-        var seen = Set<UUID>()
-        var markedCount = 0
-        var tabs = tabManager.allTabs()
-        tabs.append(
-            contentsOf: windowRegistry?.allWindows
-                .flatMap(\.ephemeralTabs) ?? []
-        )
-
-        for tab in tabs where seen.insert(tab.id).inserted {
-            guard tab.requiresPrimaryWebView,
-                  !tab.isPopupHost,
-                  protectionCoordinator.surfaceEligibility(for: tab.url).isEligible
-            else { continue }
-
-            let wasReloadRequired = tab.isProtectionReloadRequired
-            tab.updateProtectionReloadRequirementForCurrentSite()
-            if tab.isProtectionReloadRequired && !wasReloadRequired {
-                markedCount += 1
-            }
-        }
-
-        return markedCount
-    }
-
 #if DEBUG
     func lastActiveProtectionEligibleNormalWebTab(
         in windowState: BrowserWindowState?,

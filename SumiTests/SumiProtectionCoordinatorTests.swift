@@ -76,6 +76,8 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
 
         fixture.coordinator.setLevel(.protection)
         _ = try await fixture.coordinator.applySelectedLevel()
+        XCTAssertTrue(fixture.coordinator.settings.browserRestartRequired)
+        _ = try await fixture.coordinator.restoreAppliedLevelForStartup()
         let decision = fixture.coordinator.normalTabDecision(for: URL(string: "https://example.com")!, profileId: nil)
 
         XCTAssertEqual(decision.plan.effectiveLevel, .protection)
@@ -101,10 +103,13 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
 
         fixture.coordinator.setLevel(.adblock)
         let outcome = try await fixture.coordinator.applySelectedLevel()
+        XCTAssertTrue(fixture.coordinator.settings.browserRestartRequired)
+        _ = try await fixture.coordinator.restoreAppliedLevelForStartup()
         let plan = fixture.coordinator.rulePlan(for: URL(string: "https://example.com")!, profileId: nil)
         let global = fixture.coordinator.globalDiagnostics()
 
         XCTAssertEqual(outcome.installedBundleProfileId, "adguardAdsPrivacy")
+        XCTAssertFalse(global.browserRestartRequired)
         XCTAssertEqual(plan.effectiveLevel, .adblock)
         XCTAssertEqual(plan.activeGroups, [.adblockAdsPrivacyNetwork, .trackingNetwork])
         XCTAssertEqual(plan.bundleSource, .developmentBundle)

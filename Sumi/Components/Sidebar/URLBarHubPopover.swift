@@ -128,6 +128,7 @@ struct SiteControlsSnapshot: Equatable {
         autoplayReloadRequired: Bool = false,
         permissionsSummary: String? = nil,
         protectionCoordinator: SumiProtectionCoordinator? = nil,
+        protectionBrowserRestartRequired: Bool = false,
         protectionReloadRequired: Bool = false,
         trackingProtectionModule: SumiTrackingProtectionModule? = nil,
         trackingProtectionReloadRequired: Bool = false,
@@ -180,7 +181,9 @@ struct SiteControlsSnapshot: Equatable {
             if let protectionCoordinator {
                 let plan = protectionCoordinator.cachedRulePlan(for: url, profileId: profile?.id)
                 let subtitle: String
-                if protectionReloadRequired {
+                if protectionBrowserRestartRequired {
+                    subtitle = "Restart Sumi to apply global changes"
+                } else if protectionReloadRequired {
                     subtitle = "Reload required"
                 } else if plan.requestedLevel == .off {
                     subtitle = "Off globally"
@@ -309,6 +312,7 @@ struct URLBarHubPopover: View {
             autoplayReloadRequired: currentTab?.isAutoplayReloadRequired == true,
             permissionsSummary: permissionsTopLevelSummary,
             protectionCoordinator: browserManager.protectionCoordinator,
+            protectionBrowserRestartRequired: browserManager.protectionCoordinator.settings.browserRestartRequired,
             protectionReloadRequired: currentTab?.isProtectionReloadRequired == true,
             trackingProtectionModule: browserManager.trackingProtectionModule,
             trackingProtectionReloadRequired: currentTab?.isTrackingProtectionReloadRequired == true,
