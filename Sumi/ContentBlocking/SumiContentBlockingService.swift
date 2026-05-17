@@ -293,6 +293,19 @@ final class SumiContentBlockingService {
     private var cancellables = Set<AnyCancellable>()
 
     private(set) var latestUpdate: SumiContentBlockerRulesUpdate?
+
+    var latestRuleListIdentifiers: [String] {
+        latestUpdate?.rules.map(\.storeIdentifier).sorted() ?? []
+    }
+
+    var latestLookupSucceededIdentifiers: [String] {
+        latestUpdate?.lookupSucceededIdentifiers ?? []
+    }
+
+    var latestLookupFailedIdentifiers: [String] {
+        latestUpdate?.lookupFailedIdentifiers ?? []
+    }
+
     init(
         policy: SumiContentBlockingPolicy = .defaultPolicy,
         compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler(),

@@ -12,6 +12,7 @@ struct SumiNormalTabContentBlockingAssetSummary: Equatable, Sendable {
     let lookupSucceededIdentifiers: [String]
     let lookupFailedIdentifiers: [String]
     let addedToUserContentControllerIdentifiers: [String]
+    let tabAttachmentDuration: TimeInterval?
 
     init(
         isInstalled: Bool,
@@ -21,7 +22,8 @@ struct SumiNormalTabContentBlockingAssetSummary: Equatable, Sendable {
         globalRuleListIdentifiers: [String] = [],
         lookupSucceededIdentifiers: [String] = [],
         lookupFailedIdentifiers: [String] = [],
-        addedToUserContentControllerIdentifiers: [String] = []
+        addedToUserContentControllerIdentifiers: [String] = [],
+        tabAttachmentDuration: TimeInterval? = nil
     ) {
         self.isInstalled = isInstalled
         self.globalRuleListCount = globalRuleListCount
@@ -31,6 +33,7 @@ struct SumiNormalTabContentBlockingAssetSummary: Equatable, Sendable {
         self.lookupSucceededIdentifiers = lookupSucceededIdentifiers.sorted()
         self.lookupFailedIdentifiers = lookupFailedIdentifiers.sorted()
         self.addedToUserContentControllerIdentifiers = addedToUserContentControllerIdentifiers.sorted()
+        self.tabAttachmentDuration = tabAttachmentDuration
     }
 }
 

@@ -271,6 +271,10 @@ struct SumiProtectionCurrentTabDiagnostics: Equatable, Sendable {
     let desiredGroups: [SumiProtectionGroupKind]
     let perSiteProtectionEnabled: Bool
     let reloadRequired: Bool
+    let reloadRequiredReason: String?
+    let didManualReloadRebuildWebView: Bool
+    let appliedAfterManualReload: Bool
+    let contentBlockingServiceGenerationId: UInt64?
     let generationSource: AdblockRuleGenerationSource?
     let nativeRuleBundleId: String?
     let bundleProfileId: String?
@@ -300,6 +304,10 @@ struct SumiProtectionCurrentTabDiagnostics: Equatable, Sendable {
     let eligibleSurfaceReason: String?
     let ineligibleSurfaceReason: String?
     let currentProcessResidentMemoryBytes: UInt64?
+    let planComputeDuration: TimeInterval
+    let bundleLookupDuration: TimeInterval?
+    let tabAttachmentDuration: TimeInterval?
+    let urlHubSummaryDuration: TimeInterval?
     let planningErrors: [String]
 
     var developerReport: String {
@@ -315,6 +323,10 @@ struct SumiProtectionCurrentTabDiagnostics: Equatable, Sendable {
             "desiredGroups=\(desiredGroups.map(\.rawValue).joined(separator: ","))",
             "perSiteProtectionEnabled=\(perSiteProtectionEnabled)",
             "reloadRequired=\(reloadRequired)",
+            "reloadRequiredReason=\(reloadRequiredReason ?? "nil")",
+            "didManualReloadRebuildWebView=\(didManualReloadRebuildWebView)",
+            "appliedAfterManualReload=\(appliedAfterManualReload)",
+            "contentBlockingServiceGenerationId=\(contentBlockingServiceGenerationId.map(String.init) ?? "nil")",
             "generationSource=\(generationSource?.rawValue ?? "nil")",
             "nativeRuleBundleId=\(nativeRuleBundleId ?? "nil")",
             "bundleProfileId=\(bundleProfileId ?? "nil")",
@@ -344,6 +356,10 @@ struct SumiProtectionCurrentTabDiagnostics: Equatable, Sendable {
             "eligibleSurfaceReason=\(eligibleSurfaceReason ?? "nil")",
             "ineligibleSurfaceReason=\(ineligibleSurfaceReason ?? "nil")",
             "currentProcessResidentMemoryBytes=\(currentProcessResidentMemoryBytes.map(String.init) ?? "nil")",
+            "planComputeDuration=\(Self.renderDuration(planComputeDuration))",
+            "bundleLookupDuration=\(Self.renderOptionalDuration(bundleLookupDuration))",
+            "tabAttachmentDuration=\(Self.renderOptionalDuration(tabAttachmentDuration))",
+            "urlHubSummaryDuration=\(Self.renderOptionalDuration(urlHubSummaryDuration))",
             "planningErrors=\(planningErrors.joined(separator: " | "))",
         ].joined(separator: "\n")
     }
@@ -362,6 +378,14 @@ struct SumiProtectionCurrentTabDiagnostics: Equatable, Sendable {
                 samples[group].map { "\(group.rawValue):\($0.joined(separator: "|"))" }
             }
             .joined(separator: ",")
+    }
+
+    static func renderDuration(_ duration: TimeInterval) -> String {
+        String(format: "%.3fms", duration * 1000)
+    }
+
+    static func renderOptionalDuration(_ duration: TimeInterval?) -> String {
+        duration.map(renderDuration) ?? "nil"
     }
 }
 
@@ -481,6 +505,12 @@ final class SumiProtectionCoordinator {
     private var cancellables = Set<AnyCancellable>()
     private(set) var lastApplySummary: String?
     private(set) var lastApplyError: String?
+    private var cachedAttachmentPlan: SumiProtectionGlobalAttachmentPlan?
+    private var cachedAttachmentService: SumiContentBlockingService?
+    private var contentBlockingServiceGenerationId: UInt64 = 0
+    private var lastBundleLookupDuration: TimeInterval?
+    private var lastPreparedBundleDiscoveryProfileId: String?
+    private var lastPreparedBundleDiscovery: SumiPreparedAdblockBundleDiscovery?
 
     init(
         settings: SumiProtectionSettings = .shared,
@@ -519,6 +549,19 @@ final class SumiProtectionCoordinator {
             var installedBundleProfileId: String?
             if let requiredBundleProfileId = selectedLevel.preferredBundleProfileId {
                 if activePreparedBundleProfileId != requiredBundleProfileId {
+                    let discoveryStart = Date()
+                    let discovery = adBlockingModule.preparedNativeRuleBundleDiscovery(
+                        profileId: requiredBundleProfileId
+                    )
+                    lastBundleLookupDuration = Date().timeIntervalSince(discoveryStart)
+                    lastPreparedBundleDiscoveryProfileId = requiredBundleProfileId
+                    lastPreparedBundleDiscovery = discovery
+                    guard discovery.resolvedBundle != nil else {
+                        throw SumiProtectionApplyError.requiredPreparedBundleUnavailable(
+                            profileId: requiredBundleProfileId,
+                            detail: discovery.failureSummary
+                        )
+                    }
                     let manifest: AdblockCompiledGenerationManifest?
                     do {
                         manifest = try await adBlockingModule.installPreparedNativeRuleBundle(
@@ -546,9 +589,12 @@ final class SumiProtectionCoordinator {
                     )
                 }
                 installedBundleProfileId = requiredBundleProfileId
+            } else {
+                clearPreparedBundleLookupDiagnostics()
             }
 
             settings.setAppliedLevel(selectedLevel)
+            try await prepareCachedAttachmentService(for: selectedLevel)
             let summary = applySummary(
                 selectedLevel: selectedLevel,
                 installedBundleProfileId: installedBundleProfileId
@@ -570,8 +616,12 @@ final class SumiProtectionCoordinator {
             } else {
                 message = "Could not apply \(selectedLevel.displayTitle): \(error.localizedDescription)"
             }
+            settings.setAppliedLevel(previousAppliedLevel)
             lastApplySummary = nil
             lastApplyError = message
+            if selectedLevel == .off {
+                clearCachedAttachmentService()
+            }
             throw SumiProtectionApplyError.applyFailed(message)
         }
     }
@@ -581,6 +631,8 @@ final class SumiProtectionCoordinator {
         let appliedLevel = settings.appliedLevel
         syncLegacyModuleGates(for: appliedLevel)
         guard let requiredBundleProfileId = appliedLevel.preferredBundleProfileId else {
+            clearPreparedBundleLookupDiagnostics()
+            try await prepareCachedAttachmentService(for: appliedLevel)
             lastApplyError = nil
             return nil
         }
@@ -597,6 +649,7 @@ final class SumiProtectionCoordinator {
                     detail: "Startup restore did not publish the requested prepared bundle."
                 )
             }
+            try await prepareCachedAttachmentService(for: appliedLevel)
             lastApplySummary = "Restored \(appliedLevel.displayTitle) using prepared bundle \(requiredBundleProfileId)."
             lastApplyError = nil
             return manifest
@@ -623,18 +676,25 @@ final class SumiProtectionCoordinator {
         for url: URL?,
         profileId: UUID?
     ) -> SumiProtectionNormalTabDecision {
-        let plan = rulePlan(for: url, profileId: profileId)
-        let service = plan.ruleDefinitions.isEmpty
+        let plan = cachedRulePlan(for: url, profileId: profileId)
+        if let service = cachedContentBlockingService(for: plan) {
+            return SumiProtectionNormalTabDecision(
+                plan: plan,
+                contentBlockingService: service
+            )
+        }
+        let fallbackPlan = rulePlan(for: url, profileId: profileId)
+        let service = fallbackPlan.ruleDefinitions.isEmpty
             ? nil
-            : SumiContentBlockingService(policy: .enabled(ruleLists: plan.ruleDefinitions))
+            : SumiContentBlockingService(policy: .enabled(ruleLists: fallbackPlan.ruleDefinitions))
         return SumiProtectionNormalTabDecision(
-            plan: plan,
+            plan: fallbackPlan,
             contentBlockingService: service
         )
     }
 
     func desiredAttachmentState(for url: URL?) -> SumiProtectionAttachmentState {
-        rulePlan(for: url, profileId: nil).attachmentState
+        cachedRulePlan(for: url, profileId: nil).attachmentState
     }
 
     func rulePlan(
@@ -669,6 +729,9 @@ final class SumiProtectionCoordinator {
         loadRuleDefinitions: Bool
     ) -> SumiProtectionRulePlan {
         let requestedLevel = settings.appliedLevel
+        let manifest = requestedLevel == .off
+            ? nil
+            : adBlockingModule.activeManifestIfLoaded()
         let eligibility = SumiAdblockSurfaceEligibility.evaluate(
             url: url,
             normalizer: siteNormalizer
@@ -679,75 +742,130 @@ final class SumiProtectionCoordinator {
             && eligibility.isEligible
             && siteOverride != .disabled
 
+        let globalPlan = siteAllowsProtection
+            ? globalAttachmentPlan(
+                for: requestedLevel,
+                profileId: profileId,
+                includeExpensiveDiagnostics: includeExpensiveDiagnostics,
+                loadRuleDefinitions: loadRuleDefinitions
+            )
+            : emptyGlobalAttachmentPlan(
+                for: requestedLevel,
+                manifest: manifest
+            )
+
+        let requestedGroups = siteAllowsProtection ? requestedLevel.requestedGroups : []
+        let inactiveGroups = requestedGroups
+            .filter { !globalPlan.activeGroups.contains($0) }
+            .sorted { $0.rawValue < $1.rawValue }
+        let effectiveLevel = Self.effectiveLevel(for: globalPlan.activeGroups)
+
+        return SumiProtectionRulePlan(
+            requestedLevel: requestedLevel,
+            effectiveLevel: effectiveLevel,
+            siteHost: siteHost,
+            siteOverride: siteOverride,
+            sitePolicyAllowsProtection: siteAllowsProtection,
+            activeGroups: globalPlan.activeGroups,
+            inactiveGroups: inactiveGroups,
+            bundleSource: globalPlan.bundleSource,
+            nativeRuleBundleId: globalPlan.nativeRuleBundleId,
+            bundleProfileId: globalPlan.bundleProfileId,
+            requiredBundleProfileId: globalPlan.requiredBundleProfileId,
+            activeGenerationId: globalPlan.activeGenerationId,
+            previousGenerationId: globalPlan.previousGenerationId,
+            previousGenerationRetained: globalPlan.previousGenerationRetained,
+            ruleCountsByGroup: globalPlan.ruleCountsByGroup,
+            shardCountsByGroup: globalPlan.shardCountsByGroup,
+            expectedRuleListIdentifiers: globalPlan.expectedRuleListIdentifiers,
+            dedupeSummary: globalPlan.dedupeSummary,
+            overlapSummary: globalPlan.overlapSummary,
+            ineligibleSurfaceReason: eligibility.ineligibleReason,
+            planningErrors: globalPlan.planningErrors,
+            ruleDefinitions: globalPlan.ruleDefinitions
+        )
+    }
+
+    private func globalAttachmentPlan(
+        for level: SumiProtectionLevel,
+        profileId: UUID?,
+        includeExpensiveDiagnostics: Bool,
+        loadRuleDefinitions: Bool
+    ) -> SumiProtectionGlobalAttachmentPlan {
+        let manifest = adBlockingModule.activeManifestIfLoaded()
+        if !loadRuleDefinitions,
+           !includeExpensiveDiagnostics,
+           let cachedAttachmentPlan,
+           cachedAttachmentPlanMatches(cachedAttachmentPlan, level: level, manifest: manifest)
+        {
+            return metadataOnlyGlobalAttachmentPlan(cachedAttachmentPlan)
+        }
+
         var activeGroups = [SumiProtectionGroupKind]()
         var ruleCountsByGroup = [SumiProtectionGroupKind: Int]()
         var shardCountsByGroup = [SumiProtectionGroupKind: Int]()
         var expectedRuleListIdentifiers = [String]()
         var plannedDefinitions = [PlannedRuleDefinition]()
         var planningErrors = [String]()
-        let manifest = adBlockingModule.activeManifestIfLoaded()
-        let installedBundleProfileId = Self.installedBundleProfileId(from: manifest)
         let preparedBundleProfileId = manifest.flatMap { Self.preparedBundleProfileId(in: $0) }
 
-        if siteAllowsProtection {
-            if requestedLevel.requestedGroups.contains(.trackingNetwork) {
+        if level.requestedGroups.contains(.trackingNetwork) {
+            if loadRuleDefinitions {
+                do {
+                    let definitions = try trackingRuleDefinitions(profileId: profileId)
+                    if !definitions.isEmpty {
+                        activeGroups.append(.trackingNetwork)
+                        ruleCountsByGroup[.trackingNetwork] = definitions.count
+                        shardCountsByGroup[.trackingNetwork] = definitions.count
+                        plannedDefinitions.append(contentsOf: definitions.map {
+                            PlannedRuleDefinition(group: .trackingNetwork, source: .tracking, definition: $0)
+                        })
+                    }
+                } catch {
+                    planningErrors.append("Tracking Protection rules unavailable: \(error.localizedDescription)")
+                }
+            } else if cachedTrackingSourceAvailable() {
+                activeGroups.append(.trackingNetwork)
+            }
+        }
+
+        if let requiredProfileId = level.preferredBundleProfileId {
+            if preparedBundleProfileId == requiredProfileId {
                 if loadRuleDefinitions {
                     do {
-                        let definitions = try trackingRuleDefinitions(profileId: profileId)
-                        if !definitions.isEmpty {
-                            activeGroups.append(.trackingNetwork)
-                            ruleCountsByGroup[.trackingNetwork] = definitions.count
-                            shardCountsByGroup[.trackingNetwork] = definitions.count
-                            plannedDefinitions.append(contentsOf: definitions.map {
-                                PlannedRuleDefinition(group: .trackingNetwork, source: .tracking, definition: $0)
+                        let definitions = try adBlockingModule.contentRuleListDefinitions(
+                            for: level.adblockRuleGroupKinds
+                        )
+                        let grouped = groupAdblockDefinitions(
+                            definitions,
+                            level: level,
+                            manifest: manifest
+                        )
+                        for entry in grouped where !entry.definitions.isEmpty {
+                            activeGroups.append(entry.group)
+                            ruleCountsByGroup[entry.group] = entry.ruleCount
+                            shardCountsByGroup[entry.group] = entry.definitions.count
+                            plannedDefinitions.append(contentsOf: entry.definitions.map {
+                                PlannedRuleDefinition(group: entry.group, source: .adblock, definition: $0)
                             })
                         }
                     } catch {
-                        planningErrors.append("Tracking Protection rules unavailable: \(error.localizedDescription)")
+                        planningErrors.append("Native Adblock bundle rules unavailable: \(error.localizedDescription)")
                     }
-                } else if cachedTrackingSourceAvailable() {
-                    activeGroups.append(.trackingNetwork)
-                }
-            }
-
-            if let requiredProfileId = requestedLevel.preferredBundleProfileId {
-                if preparedBundleProfileId == requiredProfileId {
-                    if loadRuleDefinitions {
-                        do {
-                            let definitions = try adBlockingModule.contentRuleListDefinitions(
-                                for: requestedLevel.adblockRuleGroupKinds
-                            )
-                            let grouped = groupAdblockDefinitions(
-                                definitions,
-                                level: requestedLevel,
-                                manifest: manifest
-                            )
-                            for entry in grouped where !entry.definitions.isEmpty {
-                                activeGroups.append(entry.group)
-                                ruleCountsByGroup[entry.group] = entry.ruleCount
-                                shardCountsByGroup[entry.group] = entry.definitions.count
-                                plannedDefinitions.append(contentsOf: entry.definitions.map {
-                                    PlannedRuleDefinition(group: entry.group, source: .adblock, definition: $0)
-                                })
-                            }
-                        } catch {
-                            planningErrors.append("Native Adblock bundle rules unavailable: \(error.localizedDescription)")
-                        }
-                    } else if let manifest {
-                        let grouped = Self.cachedAdblockGroups(
-                            level: requestedLevel,
-                            manifest: manifest
-                        )
-                        for entry in grouped where entry.shardCount > 0 {
-                            activeGroups.append(entry.group)
-                            ruleCountsByGroup[entry.group] = entry.ruleCount
-                            shardCountsByGroup[entry.group] = entry.shardCount
-                            expectedRuleListIdentifiers.append(contentsOf: entry.identifiers)
-                        }
+                } else if let manifest {
+                    let grouped = Self.cachedAdblockGroups(
+                        level: level,
+                        manifest: manifest
+                    )
+                    for entry in grouped where entry.shardCount > 0 {
+                        activeGroups.append(entry.group)
+                        ruleCountsByGroup[entry.group] = entry.ruleCount
+                        shardCountsByGroup[entry.group] = entry.shardCount
+                        expectedRuleListIdentifiers.append(contentsOf: entry.identifiers)
                     }
-                } else {
-                    planningErrors.append("Required prepared bundle profile \(requiredProfileId) is not active.")
                 }
+            } else {
+                planningErrors.append("Required prepared bundle profile \(requiredProfileId) is not active.")
             }
         }
 
@@ -776,50 +894,201 @@ final class SumiProtectionCoordinator {
             ruleDefinitions = []
         }
 
-        let requestedGroups = siteAllowsProtection ? requestedLevel.requestedGroups : []
-        let inactiveGroups = requestedGroups
-            .filter { !finalActiveGroups.contains($0) }
-            .sorted { $0.rawValue < $1.rawValue }
-        let effectiveLevel = Self.effectiveLevel(for: finalActiveGroups)
-
-        return SumiProtectionRulePlan(
-            requestedLevel: requestedLevel,
-            effectiveLevel: effectiveLevel,
-            siteHost: siteHost,
-            siteOverride: siteOverride,
-            sitePolicyAllowsProtection: siteAllowsProtection,
+        return SumiProtectionGlobalAttachmentPlan(
+            level: level,
             activeGroups: finalActiveGroups,
-            inactiveGroups: inactiveGroups,
-            bundleSource: manifest?.generationSource,
-            nativeRuleBundleId: manifest?.nativeRuleBundleId,
-            bundleProfileId: installedBundleProfileId,
-            requiredBundleProfileId: requestedLevel.preferredBundleProfileId,
-            activeGenerationId: manifest?.activeGenerationId,
-            previousGenerationId: manifest?.previousGenerationId,
-            previousGenerationRetained: manifest?.previousGenerationId != nil,
+            inactiveGroups: level.requestedGroups.filter { !finalActiveGroups.contains($0) },
             ruleCountsByGroup: ruleCountsByGroup,
             shardCountsByGroup: shardCountsByGroup,
             expectedRuleListIdentifiers: expectedRuleListIdentifiers,
             dedupeSummary: dedupeSummary,
             overlapSummary: overlapSummary,
-            ineligibleSurfaceReason: eligibility.ineligibleReason,
             planningErrors: planningErrors,
-            ruleDefinitions: ruleDefinitions
+            ruleDefinitions: ruleDefinitions,
+            bundleSource: manifest?.generationSource,
+            nativeRuleBundleId: manifest?.nativeRuleBundleId,
+            bundleProfileId: Self.installedBundleProfileId(from: manifest),
+            requiredBundleProfileId: level.preferredBundleProfileId,
+            activeGenerationId: manifest?.activeGenerationId,
+            previousGenerationId: manifest?.previousGenerationId,
+            previousGenerationRetained: manifest?.previousGenerationId != nil
         )
+    }
+
+    private func emptyGlobalAttachmentPlan(
+        for level: SumiProtectionLevel,
+        manifest: AdblockCompiledGenerationManifest?
+    ) -> SumiProtectionGlobalAttachmentPlan {
+        SumiProtectionGlobalAttachmentPlan(
+            level: level,
+            activeGroups: [],
+            inactiveGroups: [],
+            ruleCountsByGroup: [:],
+            shardCountsByGroup: [:],
+            expectedRuleListIdentifiers: [],
+            dedupeSummary: .empty,
+            overlapSummary: .deferred,
+            planningErrors: [],
+            ruleDefinitions: [],
+            bundleSource: manifest?.generationSource,
+            nativeRuleBundleId: manifest?.nativeRuleBundleId,
+            bundleProfileId: Self.installedBundleProfileId(from: manifest),
+            requiredBundleProfileId: level.preferredBundleProfileId,
+            activeGenerationId: manifest?.activeGenerationId,
+            previousGenerationId: manifest?.previousGenerationId,
+            previousGenerationRetained: manifest?.previousGenerationId != nil
+        )
+    }
+
+    private func metadataOnlyGlobalAttachmentPlan(
+        _ plan: SumiProtectionGlobalAttachmentPlan
+    ) -> SumiProtectionGlobalAttachmentPlan {
+        SumiProtectionGlobalAttachmentPlan(
+            level: plan.level,
+            activeGroups: plan.activeGroups,
+            inactiveGroups: plan.inactiveGroups,
+            ruleCountsByGroup: plan.ruleCountsByGroup,
+            shardCountsByGroup: plan.shardCountsByGroup,
+            expectedRuleListIdentifiers: plan.expectedRuleListIdentifiers,
+            dedupeSummary: plan.dedupeSummary,
+            overlapSummary: .deferred,
+            planningErrors: plan.planningErrors,
+            ruleDefinitions: [],
+            bundleSource: plan.bundleSource,
+            nativeRuleBundleId: plan.nativeRuleBundleId,
+            bundleProfileId: plan.bundleProfileId,
+            requiredBundleProfileId: plan.requiredBundleProfileId,
+            activeGenerationId: plan.activeGenerationId,
+            previousGenerationId: plan.previousGenerationId,
+            previousGenerationRetained: plan.previousGenerationRetained
+        )
+    }
+
+    private func cachedAttachmentPlanMatches(
+        _ plan: SumiProtectionGlobalAttachmentPlan,
+        level: SumiProtectionLevel,
+        manifest: AdblockCompiledGenerationManifest?
+    ) -> Bool {
+        guard plan.level == level else { return false }
+        guard plan.requiredBundleProfileId == level.preferredBundleProfileId else { return false }
+        guard plan.activeGenerationId == manifest?.activeGenerationId else { return false }
+        guard plan.bundleProfileId == Self.installedBundleProfileId(from: manifest) else { return false }
+        return true
+    }
+
+    private func cachedContentBlockingService(
+        for plan: SumiProtectionRulePlan
+    ) -> SumiContentBlockingService? {
+        guard plan.sitePolicyAllowsProtection,
+              !plan.expectedRuleListIdentifiers.isEmpty,
+              let cachedAttachmentPlan,
+              let cachedAttachmentService,
+              cachedAttachmentPlanMatches(
+                cachedAttachmentPlan,
+                level: plan.requestedLevel,
+                manifest: adBlockingModule.activeManifestIfLoaded()
+              ),
+              cachedAttachmentService.latestRuleListIdentifiers == plan.expectedRuleListIdentifiers
+        else { return nil }
+        return cachedAttachmentService
+    }
+
+    private func prepareCachedAttachmentService(
+        for level: SumiProtectionLevel
+    ) async throws {
+        guard level != .off else {
+            clearCachedAttachmentService()
+            return
+        }
+
+        let plan = globalAttachmentPlan(
+            for: level,
+            profileId: nil,
+            includeExpensiveDiagnostics: false,
+            loadRuleDefinitions: true
+        )
+
+        try validateRequiredGroupsReady(in: plan)
+
+        guard plan.isAttachable else {
+            clearCachedAttachmentService()
+            cachedAttachmentPlan = plan
+            return
+        }
+
+        let service = SumiContentBlockingService(policy: .disabled)
+        let preparedUpdate = try await service.prepareRuleListUpdate(
+            ruleLists: plan.ruleDefinitions,
+            retainEncodedRuleListsInPreparedPolicy: false
+        )
+        service.commitPreparedContentBlockingUpdate(preparedUpdate)
+        cachedAttachmentPlan = plan
+        cachedAttachmentService = service
+        contentBlockingServiceGenerationId &+= 1
+    }
+
+    private func validateRequiredGroupsReady(
+        in plan: SumiProtectionGlobalAttachmentPlan
+    ) throws {
+        if let requiredProfileId = plan.requiredBundleProfileId,
+           plan.bundleProfileId != requiredProfileId
+        {
+            throw SumiProtectionApplyError.requiredPreparedBundleUnavailable(
+                profileId: requiredProfileId,
+                detail: "The active prepared bundle after install is \(plan.bundleProfileId ?? "nil")."
+            )
+        }
+
+        switch plan.level {
+        case .off, .protection:
+            return
+        case .adblock:
+            guard plan.activeGroups.contains(.adblockAdsPrivacyNetwork) else {
+                throw SumiProtectionApplyError.requiredPreparedBundleUnavailable(
+                    profileId: SumiProtectionBundleProfile.adblock,
+                    detail: "No adguardAdsPrivacy network rule lists were available after install."
+                )
+            }
+        case .extreme:
+            guard plan.activeGroups.contains(.maximumNativeNetwork) else {
+                throw SumiProtectionApplyError.requiredPreparedBundleUnavailable(
+                    profileId: SumiProtectionBundleProfile.extreme,
+                    detail: "No maximumCustomReference network rule lists were available after install."
+                )
+            }
+        }
+    }
+
+    private func clearCachedAttachmentService() {
+        cachedAttachmentPlan = nil
+        cachedAttachmentService = nil
+        contentBlockingServiceGenerationId &+= 1
+    }
+
+    private func clearPreparedBundleLookupDiagnostics() {
+        lastBundleLookupDuration = nil
+        lastPreparedBundleDiscoveryProfileId = nil
+        lastPreparedBundleDiscovery = nil
     }
 
     func currentTabDiagnostics(
         for url: URL?,
         appliedState: SumiProtectionAttachmentState?,
         reloadRequired: Bool,
+        reloadRequiredReason: String? = nil,
+        didManualReloadRebuildWebView: Bool = false,
+        appliedAfterManualReload: Bool = false,
         actualAttachedRuleListIdentifiers: [String]? = nil,
-        contentBlockingAssetSummary: SumiNormalTabContentBlockingAssetSummary? = nil
+        contentBlockingAssetSummary: SumiNormalTabContentBlockingAssetSummary? = nil,
+        urlHubSummaryDuration: TimeInterval? = nil
     ) -> SumiProtectionCurrentTabDiagnostics {
+        let planStart = Date()
         let plan = rulePlan(
             for: url,
             profileId: nil,
             includeExpensiveDiagnostics: true
         )
+        let planComputeDuration = Date().timeIntervalSince(planStart)
         let recordedApplied = appliedState?.attachedRuleListIdentifiers ?? []
         let lookupSucceeded = contentBlockingAssetSummary?.lookupSucceededIdentifiers ?? []
         let lookupFailed = contentBlockingAssetSummary?.lookupFailedIdentifiers ?? []
@@ -833,7 +1102,9 @@ final class SumiProtectionCoordinator {
         let expectedSet = Set(expected)
         let actualSet = Set(actual)
         let missing = expected.filter { !actualSet.contains($0) }
-        let unexpected = actual.filter { !expectedSet.contains($0) }
+        let unexpected = actual.filter {
+            !expectedSet.contains($0) && Self.isSumiOwnedProtectionIdentifier($0)
+        }
 
         return SumiProtectionCurrentTabDiagnostics(
             urlString: url?.absoluteString,
@@ -846,6 +1117,10 @@ final class SumiProtectionCoordinator {
             desiredGroups: plan.requestedLevel.requestedGroups,
             perSiteProtectionEnabled: plan.sitePolicyAllowsProtection,
             reloadRequired: reloadRequired,
+            reloadRequiredReason: reloadRequired ? (reloadRequiredReason ?? "protection attachment plan changed") : nil,
+            didManualReloadRebuildWebView: didManualReloadRebuildWebView,
+            appliedAfterManualReload: appliedAfterManualReload,
+            contentBlockingServiceGenerationId: contentBlockingServiceGenerationId,
             generationSource: plan.bundleSource,
             nativeRuleBundleId: plan.nativeRuleBundleId,
             bundleProfileId: plan.bundleProfileId,
@@ -875,19 +1150,26 @@ final class SumiProtectionCoordinator {
             eligibleSurfaceReason: plan.ineligibleSurfaceReason == nil ? "eligible http(s) web surface" : nil,
             ineligibleSurfaceReason: plan.ineligibleSurfaceReason,
             currentProcessResidentMemoryBytes: Self.currentProcessResidentMemoryBytes(),
+            planComputeDuration: planComputeDuration,
+            bundleLookupDuration: lastBundleLookupDuration,
+            tabAttachmentDuration: contentBlockingAssetSummary?.tabAttachmentDuration,
+            urlHubSummaryDuration: urlHubSummaryDuration,
             planningErrors: plan.planningErrors
         )
     }
 
     func globalDiagnostics() -> SumiProtectionGlobalDiagnostics {
-        let manifest = adBlockingModule.activeManifestIfLoaded()
         let selectedLevel = settings.level
+        let appliedLevel = settings.appliedLevel
+        let manifest = selectedLevel == .off && appliedLevel == .off
+            ? nil
+            : adBlockingModule.activeManifestIfLoaded()
         let installedBundleProfileId = Self.installedBundleProfileId(from: manifest)
         let activePreparedProfileId = manifest.flatMap { Self.preparedBundleProfileId(in: $0) }
         let requiredBundleProfileId = selectedLevel.preferredBundleProfileId
-        let preparedBundleDiscovery = requiredBundleProfileId.map {
-            adBlockingModule.preparedNativeRuleBundleDiscovery(profileId: $0)
-        }
+        let preparedBundleDiscovery = requiredBundleProfileId == lastPreparedBundleDiscoveryProfileId
+            ? lastPreparedBundleDiscovery
+            : nil
         let trackingSourceAvailable = cachedTrackingSourceAvailable()
         let availableGroups = globallyAvailableGroups(
             manifest: manifest,
@@ -905,8 +1187,12 @@ final class SumiProtectionCoordinator {
             bundleProfileId: installedBundleProfileId,
             activeGenerationId: manifest?.activeGenerationId,
             requiredBundleProfileId: requiredBundleProfileId,
-            preparedBundleAvailable: preparedBundleDiscovery?.isAvailable ?? true,
-            preparedBundleSource: preparedBundleDiscovery?.source,
+            preparedBundleAvailable: preparedBundleDiscovery?.isAvailable ?? (requiredBundleProfileId.map { activePreparedProfileId == $0 } ?? true),
+            preparedBundleSource: preparedBundleDiscovery?.source ?? (
+                requiredBundleProfileId != nil && activePreparedProfileId == requiredBundleProfileId
+                    ? manifest?.generationSource.sumiBundleInstallSource
+                    : nil
+            ),
             searchedBundlePaths: preparedBundleDiscovery?.searchedPaths ?? [],
             applyNeeded: applyNeeded,
             lastApplySummary: lastApplySummary,
@@ -937,6 +1223,9 @@ final class SumiProtectionCoordinator {
         let lookupFailedIdentifiers = currentTabDiagnostics?.lookupFailedIdentifiers ?? []
         let addedIdentifiers = currentTabDiagnostics?.addedToUserContentControllerIdentifiers ?? []
         let reloadRequired = currentTabDiagnostics?.reloadRequired ?? false
+        let reloadRequiredReason = currentTabDiagnostics?.reloadRequiredReason
+        let didManualReloadRebuildWebView = currentTabDiagnostics?.didManualReloadRebuildWebView ?? false
+        let appliedAfterManualReload = currentTabDiagnostics?.appliedAfterManualReload ?? false
         var lines = [
             "Sumi Adblock & Protection Copy Diagnostics",
             "timestamp=\(Self.iso8601Timestamp(Date()))",
@@ -985,6 +1274,14 @@ final class SumiProtectionCoordinator {
             "missingAfterAttachmentIdentifiers=\(missingIdentifiers.joined(separator: ","))",
             "ruleListIdentifierSamplesByGroup=\(SumiProtectionCurrentTabDiagnostics.renderIdentifierSamples(Self.ruleListIdentifierSamplesByGroup(for: plan)))",
             "reloadRequired=\(reloadRequired)",
+            "reloadRequiredReason=\(reloadRequiredReason ?? "nil")",
+            "didManualReloadRebuildWebView=\(didManualReloadRebuildWebView)",
+            "appliedAfterManualReload=\(appliedAfterManualReload)",
+            "contentBlockingServiceGenerationId=\(contentBlockingServiceGenerationId)",
+            "planComputeDuration=\(currentTabDiagnostics.map { SumiProtectionCurrentTabDiagnostics.renderDuration($0.planComputeDuration) } ?? "nil")",
+            "bundleLookupDuration=\(SumiProtectionCurrentTabDiagnostics.renderOptionalDuration(lastBundleLookupDuration))",
+            "tabAttachmentDuration=\(SumiProtectionCurrentTabDiagnostics.renderOptionalDuration(currentTabDiagnostics?.tabAttachmentDuration))",
+            "urlHubSummaryDuration=\(SumiProtectionCurrentTabDiagnostics.renderOptionalDuration(currentTabDiagnostics?.urlHubSummaryDuration))",
             "dedupeSummary=\(plan.dedupeSummary.reportLine)",
             "overlapSummary=\(plan.overlapSummary.reportLine)",
             "planningErrors=\(plan.planningErrors.joined(separator: " | "))",
@@ -1316,6 +1613,12 @@ final class SumiProtectionCoordinator {
         return (Array(parts.prefix(4)) + ["..."] + Array(parts.suffix(2))).joined(separator: ".")
     }
 
+    private static func isSumiOwnedProtectionIdentifier(_ identifier: String) -> Bool {
+        identifier.hasPrefix("sumi.adblock.")
+            || identifier.hasPrefix("sumi.tracking.")
+            || identifier == "SumiTrackingProtectionTrackerDataSet"
+    }
+
     private static func canonicalWebKitJSONHash(_ encodedContentRuleList: String) -> String? {
         guard let data = encodedContentRuleList.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data),
@@ -1410,6 +1713,30 @@ private struct PlannedRuleDefinition: Equatable, Sendable {
     let definition: SumiContentRuleListDefinition
 }
 
+private struct SumiProtectionGlobalAttachmentPlan: Equatable, Sendable {
+    let level: SumiProtectionLevel
+    let activeGroups: [SumiProtectionGroupKind]
+    let inactiveGroups: [SumiProtectionGroupKind]
+    let ruleCountsByGroup: [SumiProtectionGroupKind: Int]
+    let shardCountsByGroup: [SumiProtectionGroupKind: Int]
+    let expectedRuleListIdentifiers: [String]
+    let dedupeSummary: SumiProtectionDedupeSummary
+    let overlapSummary: SumiProtectionOverlapSummary
+    let planningErrors: [String]
+    let ruleDefinitions: [SumiContentRuleListDefinition]
+    let bundleSource: AdblockRuleGenerationSource?
+    let nativeRuleBundleId: String?
+    let bundleProfileId: String?
+    let requiredBundleProfileId: String?
+    let activeGenerationId: String?
+    let previousGenerationId: String?
+    let previousGenerationRetained: Bool
+
+    var isAttachable: Bool {
+        !activeGroups.isEmpty && !expectedRuleListIdentifiers.isEmpty
+    }
+}
+
 private struct CachedAdblockGroup: Equatable, Sendable {
     let group: SumiProtectionGroupKind
     let identifiers: [String]
@@ -1430,6 +1757,19 @@ private extension AdblockRuleGenerationSource {
             return true
         case .runtimeGenerated:
             return false
+        }
+    }
+
+    var sumiBundleInstallSource: SumiAdblockBundleInstallSource? {
+        switch self {
+        case .embeddedBundle:
+            return .appResource
+        case .developmentBundle:
+            return .developmentBundle
+        case .futureRemoteBundle:
+            return .futureRemoteBundle
+        case .runtimeGenerated:
+            return nil
         }
     }
 }

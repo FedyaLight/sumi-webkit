@@ -287,6 +287,14 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     var isProtectionReloadRequired: Bool {
         protectionReloadRequirement != nil
     }
+    var didManualReloadRebuildProtectionWebView: Bool {
+        get { webViewRuntime.didManualReloadRebuildProtectionWebView }
+        set { webViewRuntime.didManualReloadRebuildProtectionWebView = newValue }
+    }
+    var appliedProtectionAfterManualReload: Bool {
+        get { webViewRuntime.appliedProtectionAfterManualReload }
+        set { webViewRuntime.appliedProtectionAfterManualReload = newValue }
+    }
     var autoplayReloadRequirement: SumiAutoplayReloadRequirement? {
         get { webViewRuntime.autoplayReloadRequirement }
         set { webViewRuntime.autoplayReloadRequirement = newValue }
@@ -993,6 +1001,11 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             for: url,
             appliedState: protectionAppliedAttachmentState,
             reloadRequired: isProtectionReloadRequired,
+            reloadRequiredReason: protectionReloadRequirement.map { requirement in
+                "desired=\(requirement.desiredAttachmentState.effectiveLevel.rawValue)"
+            },
+            didManualReloadRebuildWebView: didManualReloadRebuildProtectionWebView,
+            appliedAfterManualReload: appliedProtectionAfterManualReload,
             actualAttachedRuleListIdentifiers: contentBlockingSummary?.globalRuleListIdentifiers,
             contentBlockingAssetSummary: contentBlockingSummary
         )
@@ -1384,6 +1397,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         _ requirement: SumiProtectionReloadRequirement
     ) {
         guard protectionReloadRequirement != requirement else { return }
+        didManualReloadRebuildProtectionWebView = false
+        appliedProtectionAfterManualReload = false
         protectionReloadRequirement = requirement
         notifyProtectionReloadRequirementChanged()
     }
