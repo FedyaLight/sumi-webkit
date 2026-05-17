@@ -12,6 +12,10 @@ private struct SumiAdBlockingModuleEnvironmentKey: EnvironmentKey {
     static let defaultValue = MainActor.assumeIsolated { SumiAdBlockingModule.shared }
 }
 
+private struct SumiProtectionCoordinatorEnvironmentKey: EnvironmentKey {
+    static let defaultValue = MainActor.assumeIsolated { SumiProtectionCoordinator.shared }
+}
+
 private struct SumiExtensionsModuleEnvironmentKey: EnvironmentKey {
     static let defaultValue = MainActor.assumeIsolated { SumiExtensionsModule.shared }
 }
@@ -34,6 +38,11 @@ extension EnvironmentValues {
     var sumiAdBlockingModule: SumiAdBlockingModule {
         get { self[SumiAdBlockingModuleEnvironmentKey.self] }
         set { self[SumiAdBlockingModuleEnvironmentKey.self] = newValue }
+    }
+
+    var sumiProtectionCoordinator: SumiProtectionCoordinator {
+        get { self[SumiProtectionCoordinatorEnvironmentKey.self] }
+        set { self[SumiProtectionCoordinatorEnvironmentKey.self] = newValue }
     }
 
     var sumiExtensionsModule: SumiExtensionsModule {

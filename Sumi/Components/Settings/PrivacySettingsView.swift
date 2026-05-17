@@ -12,6 +12,7 @@ struct PrivacySettingsView: View {
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.sumiTrackingProtectionModule) private var trackingProtectionModule
     @Environment(\.sumiAdBlockingModule) private var adBlockingModule
+    @Environment(\.sumiProtectionCoordinator) private var protectionCoordinator
     @ObservedObject var browserManager: BrowserManager
     var windowState: BrowserWindowState?
 
@@ -40,29 +41,43 @@ struct PrivacySettingsView: View {
                         }
                     }
 
-                    SumiSettingsModuleToggleGate(descriptor: .trackingProtection) {
-                        if let settings = trackingProtectionModule.settingsIfEnabled(),
-                           let dataStore = trackingProtectionModule.dataStoreIfEnabled() {
-                            LegacyTrackingProtectionRuntimeSettingsView(
-                                trackingProtectionModule: trackingProtectionModule,
-                                trackingProtectionSettings: settings,
-                                trackingProtectionDataStore: dataStore
-                            )
-                        }
-                    }
+                    AdblockProtectionSettingsView(
+                        coordinator: protectionCoordinator,
+                        browserManager: browserManager,
+                        windowState: windowState,
+                        currentTab: currentTab
+                    )
 
-                    SumiSettingsModuleToggleGate(descriptor: .adBlocking) {
-                        if let settings = adBlockingModule.settingsIfEnabled() {
-                            NativeAdblockSettingsView(
-                                settings: settings,
-                                sitePolicyStore: adBlockingModule.sitePolicyStoreIfEnabled(),
-                                adBlockingModule: adBlockingModule,
-                                browserManager: browserManager,
-                                windowState: windowState,
-                                currentTab: currentTab
-                            )
+                    #if DEBUG
+                    DisclosureGroup("DEBUG Legacy Protection Controls") {
+                        VStack(alignment: .leading, spacing: 16) {
+                            SumiSettingsModuleToggleGate(descriptor: .trackingProtection) {
+                                if let settings = trackingProtectionModule.settingsIfEnabled(),
+                                   let dataStore = trackingProtectionModule.dataStoreIfEnabled() {
+                                    LegacyTrackingProtectionRuntimeSettingsView(
+                                        trackingProtectionModule: trackingProtectionModule,
+                                        trackingProtectionSettings: settings,
+                                        trackingProtectionDataStore: dataStore
+                                    )
+                                }
+                            }
+
+                            SumiSettingsModuleToggleGate(descriptor: .adBlocking) {
+                                if let settings = adBlockingModule.settingsIfEnabled() {
+                                    NativeAdblockSettingsView(
+                                        settings: settings,
+                                        sitePolicyStore: adBlockingModule.sitePolicyStoreIfEnabled(),
+                                        adBlockingModule: adBlockingModule,
+                                        browserManager: browserManager,
+                                        windowState: windowState,
+                                        currentTab: currentTab
+                                    )
+                                }
+                            }
                         }
+                        .padding(.top, 8)
                     }
+                    #endif
 
                     Spacer()
                 }
@@ -92,6 +107,301 @@ struct PrivacySettingsView: View {
         guard let windowState else { return nil }
         return browserManager.currentTab(for: windowState)
     }
+}
+
+private struct AdblockProtectionSettingsView: View {
+    let coordinator: SumiProtectionCoordinator
+    let browserManager: BrowserManager
+    let windowState: BrowserWindowState?
+    let currentTab: Tab?
+    @ObservedObject private var settings: SumiProtectionSettings
+    @State private var overrideStatus: String?
+    #if DEBUG
+    @State private var copyDiagnosticsStatus: String?
+    #endif
+
+    init(
+        coordinator: SumiProtectionCoordinator,
+        browserManager: BrowserManager,
+        windowState: BrowserWindowState?,
+        currentTab: Tab?
+    ) {
+        self.coordinator = coordinator
+        self.browserManager = browserManager
+        self.windowState = windowState
+        self.currentTab = currentTab
+        _settings = ObservedObject(wrappedValue: coordinator.settings)
+    }
+
+    var body: some View {
+        SettingsSection(
+            title: "Adblock & Protection",
+            subtitle: "One native protection plan controls tracker blocking, native ad blocking, and per-site disable."
+        ) {
+            SettingsRow(
+                title: "Level",
+                subtitle: settings.level.detail
+            ) {
+                Picker("", selection: levelBinding) {
+                    ForEach(SumiProtectionLevel.allCases) { level in
+                        Text(level.displayTitle).tag(level)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 420)
+            }
+
+            if settings.level == .extreme {
+                Text("Extreme may use noticeably more memory and can break some sites. Reload the affected tab to apply attachment changes.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            SettingsRow(
+                title: "Effective level",
+                subtitle: effectiveLevelSubtitle
+            ) {
+                Text(effectivePlan.effectiveLevel.displayTitle)
+                    .font(.callout)
+                    .foregroundStyle(effectivePlan.effectiveLevel == settings.level ? Color.secondary : Color.orange)
+            }
+
+            SettingsRow(
+                title: "Current site",
+                subtitle: currentSiteSubtitle
+            ) {
+                Button(currentSiteButtonTitle) {
+                    toggleCurrentSiteProtection()
+                }
+                .buttonStyle(.bordered)
+                .disabled(currentTab == nil || effectivePlan.siteHost == nil || settings.level == .off)
+            }
+
+            if let overrideStatus {
+                Text(overrideStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            #if DEBUG
+            SettingsDivider()
+            Text("DEBUG Unified Protection Diagnostics")
+                .font(.subheadline)
+                .fontWeight(.medium)
+
+            SettingsRow(
+                title: "Copy Diagnostics",
+                subtitle: copyDiagnosticsStatus ?? "Copies the unified plan, active groups, bundle, overlap, dedupe, and target-tab attachment state."
+            ) {
+                Button("Copy") {
+                    copyUnifiedProtectionDiagnostics()
+                }
+                .buttonStyle(.bordered)
+            }
+
+            debugKeyValueGrid(rows: debugProtectionRows)
+            #endif
+        }
+    }
+
+    private var levelBinding: Binding<SumiProtectionLevel> {
+        Binding(
+            get: { settings.level },
+            set: { level in
+                coordinator.setLevel(level)
+                currentTab?.updateProtectionReloadRequirementForCurrentSite()
+                currentTab?.updateTrackingProtectionReloadRequirementForCurrentSite()
+                currentTab?.updateAdblockReloadRequirementForCurrentSite()
+            }
+        )
+    }
+
+    private var effectivePlan: SumiProtectionRulePlan {
+        coordinator.rulePlan(for: diagnosticsTarget.url, profileId: diagnosticsTarget.tab?.resolveProfile()?.id)
+    }
+
+    private var effectiveLevelSubtitle: String {
+        if let reason = effectivePlan.ineligibleSurfaceReason {
+            return reason
+        }
+        if !effectivePlan.planningErrors.isEmpty {
+            return effectivePlan.planningErrors.joined(separator: " ")
+        }
+        if effectivePlan.bundleProfileId != nil {
+            return "Bundle source: \(effectivePlan.bundleSource?.rawValue ?? "unknown")."
+        }
+        return "Native WebKit rule lists only; no Adblock runtime script is enabled by this level."
+    }
+
+    private var currentSiteSubtitle: String {
+        guard let host = effectivePlan.siteHost else {
+            return "Open an http or https tab to change site protection."
+        }
+        if settings.level == .off {
+            return "Global level is Off."
+        }
+        if effectivePlan.siteOverride == .disabled {
+            return "Protection is off for \(host). Reload required for existing pages."
+        }
+        return "Protection follows the global \(settings.level.displayTitle) level for \(host)."
+    }
+
+    private var currentSiteButtonTitle: String {
+        effectivePlan.siteOverride == .disabled
+            ? "Use Global Level"
+            : "Turn Off for Site"
+    }
+
+    private func toggleCurrentSiteProtection() {
+        guard let tab = currentTab else { return }
+        let nextOverride: SumiAdblockSiteOverride = effectivePlan.siteOverride == .disabled
+            ? .inherit
+            : .disabled
+        coordinator.setSiteOverride(nextOverride, for: tab.url)
+        tab.markProtectionReloadRequiredIfNeeded(afterChangingPolicyFor: tab.url)
+        overrideStatus = nextOverride == .disabled
+            ? "Protection will be off for this site after reload."
+            : "This site will use the global level after reload."
+    }
+
+    private var diagnosticsTarget: DebugProtectionDiagnosticsTarget {
+        let currentEligibility = coordinator.surfaceEligibility(for: currentTab?.url)
+        if let currentTab, currentEligibility.isEligible {
+            return DebugProtectionDiagnosticsTarget(
+                tab: currentTab,
+                url: currentTab.url,
+                source: "current tab"
+            )
+        }
+
+        #if DEBUG
+        if let fallback = browserManager.lastActiveProtectionEligibleNormalWebTab(
+            in: windowState,
+            excluding: currentTab
+        ) {
+            let source: String
+            if let reason = currentEligibility.ineligibleReason {
+                source = "last eligible web tab (current tab ineligible: \(reason))"
+            } else {
+                source = "last eligible web tab"
+            }
+            return DebugProtectionDiagnosticsTarget(
+                tab: fallback,
+                url: fallback.url,
+                source: source
+            )
+        }
+        #endif
+
+        return DebugProtectionDiagnosticsTarget(
+            tab: currentTab,
+            url: currentTab?.url,
+            source: currentEligibility.ineligibleReason.map {
+                "current tab (ineligible: \($0))"
+            } ?? "current tab"
+        )
+    }
+
+    #if DEBUG
+    private var debugProtectionRows: [(String, String)] {
+        let plan = effectivePlan
+        return [
+            ("Diagnostics target", diagnosticsTarget.source),
+            ("Diagnostics URL", diagnosticsTarget.url?.absoluteString ?? "nil"),
+            ("Protection level", plan.requestedLevel.rawValue),
+            ("Effective level", plan.effectiveLevel.rawValue),
+            ("Active groups", plan.activeGroups.map(\.rawValue).joined(separator: ", ")),
+            ("Inactive groups", plan.inactiveGroups.map(\.rawValue).joined(separator: ", ")),
+            ("Per-site protection", plan.sitePolicyAllowsProtection.description),
+            ("Site override", plan.siteOverride.rawValue),
+            ("Generation source", plan.bundleSource?.rawValue ?? "nil"),
+            ("Native bundle id", plan.nativeRuleBundleId ?? "nil"),
+            ("Bundle profile id", plan.bundleProfileId ?? "nil"),
+            ("Required bundle profile", plan.requiredBundleProfileId ?? "nil"),
+            ("Active generation", plan.activeGenerationId ?? "nil"),
+            ("Previous generation", plan.previousGenerationId ?? "nil"),
+            ("Previous retained", plan.previousGenerationRetained.description),
+            ("Tracking active", plan.trackingGroupActive.description),
+            ("Adblock active", plan.adblockGroupActive.description),
+            ("Native CSS active", plan.nativeCSSGroupActive.description),
+            ("Rule counts", debugCounts(plan.ruleCountsByGroup)),
+            ("Shard counts", debugCounts(plan.shardCountsByGroup)),
+            ("Dedupe", plan.dedupeSummary.reportLine),
+            ("Overlap", plan.overlapSummary.reportLine),
+            ("Expected identifiers", plan.expectedRuleListIdentifiers.joined(separator: ", ")),
+            ("Ineligible surface", plan.ineligibleSurfaceReason ?? "nil"),
+            ("Planning errors", plan.planningErrors.joined(separator: " | ")),
+        ]
+    }
+
+    private func copyUnifiedProtectionDiagnostics() {
+        let target = diagnosticsTarget
+        let report = coordinator.copyDiagnosticsReport(
+            for: target.url,
+            currentTabDiagnostics: target.tab?.protectionCurrentTabDiagnostics(),
+            targetDescription: target.source,
+            requestingURL: currentTab?.url
+        )
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(report, forType: .string)
+        copyDiagnosticsStatus = "Copied \(debugDateString(Date())) for \(target.url?.absoluteString ?? target.source)."
+    }
+
+    private func debugCounts(_ counts: [SumiProtectionGroupKind: Int]) -> String {
+        SumiProtectionGroupKind.allCases
+            .compactMap { group in
+                counts[group].map { "\(group.rawValue)=\($0)" }
+            }
+            .joined(separator: ", ")
+    }
+
+    private func debugKeyValueGrid(rows: [(String, String)]) -> some View {
+        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 5) {
+            ForEach(rows, id: \.0) { row in
+                GridRow {
+                    Text(row.0)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(debugCompactValue(row.1))
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                        .lineLimit(3)
+                        .truncationMode(.middle)
+                }
+            }
+        }
+    }
+
+    private func debugCompactValue(_ value: String) -> String {
+        guard !value.isEmpty else { return "[]" }
+        let limit = 240
+        guard value.count > limit else { return value }
+        let head = value.prefix(120)
+        let tail = value.suffix(80)
+        return "\(head) ... \(tail) (\(value.count) chars; copy diagnostics for full value)"
+    }
+
+    private func debugDateString(_ date: Date?) -> String {
+        guard let date else { return "nil" }
+        return Self.debugDateFormatter.string(from: date)
+    }
+
+    private static let debugDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .medium
+        return formatter
+    }()
+    #endif
+}
+
+private struct DebugProtectionDiagnosticsTarget {
+    let tab: Tab?
+    let url: URL?
+    let source: String
 }
 
 private struct NativeAdblockSettingsView: View {

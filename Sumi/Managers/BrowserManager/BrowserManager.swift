@@ -165,6 +165,7 @@ class BrowserManager: ObservableObject {
     let moduleRegistry: SumiModuleRegistry
     let trackingProtectionModule: SumiTrackingProtectionModule
     let adBlockingModule: SumiAdBlockingModule
+    let protectionCoordinator: SumiProtectionCoordinator
     let extensionsModule: SumiExtensionsModule
     let userscriptsModule: SumiUserscriptsModule
     var extensionSurfaceStore: BrowserExtensionSurfaceStore {
@@ -305,6 +306,7 @@ class BrowserManager: ObservableObject {
         // Explicit injection seams keep module-boundary tests focused without constructing optional runtimes at startup.
         trackingProtectionModule: SumiTrackingProtectionModule? = nil,
         adBlockingModule: SumiAdBlockingModule? = nil,
+        protectionCoordinator: SumiProtectionCoordinator? = nil,
         extensionsModule: SumiExtensionsModule? = nil,
         userscriptsModule: SumiUserscriptsModule? = nil,
         systemPermissionService: (any SumiSystemPermissionService)? = nil,
@@ -362,10 +364,19 @@ class BrowserManager: ObservableObject {
         let externalSchemeSessionStore = externalSchemeSessionStore ?? SumiExternalSchemeSessionStore()
         self.modelContext = startupModelContext
         self.moduleRegistry = moduleRegistry
-        self.trackingProtectionModule = trackingProtectionModule
+        let resolvedTrackingProtectionModule = trackingProtectionModule
             ?? SumiTrackingProtectionModule(moduleRegistry: moduleRegistry)
-        self.adBlockingModule = adBlockingModule
+        let resolvedAdBlockingModule = adBlockingModule
             ?? SumiAdBlockingModule(moduleRegistry: moduleRegistry)
+        self.trackingProtectionModule = resolvedTrackingProtectionModule
+        self.adBlockingModule = resolvedAdBlockingModule
+        self.protectionCoordinator = protectionCoordinator
+            ?? SumiProtectionCoordinator(
+                settings: SumiProtectionSettings(userDefaults: moduleRegistry.userDefaults),
+                trackingProtectionModule: resolvedTrackingProtectionModule,
+                adBlockingModule: resolvedAdBlockingModule,
+                moduleRegistry: moduleRegistry
+            )
         self.userscriptsModule = userscriptsModule
             ?? SumiUserscriptsModule(
                 moduleRegistry: moduleRegistry,
@@ -1378,6 +1389,16 @@ class BrowserManager: ObservableObject {
     }
 
 #if DEBUG
+    func lastActiveProtectionEligibleNormalWebTab(
+        in windowState: BrowserWindowState?,
+        excluding excludedTab: Tab? = nil
+    ) -> Tab? {
+        lastActiveAdblockEligibleNormalWebTab(
+            in: windowState,
+            excluding: excludedTab
+        )
+    }
+
     func lastActiveAdblockEligibleNormalWebTab(
         in windowState: BrowserWindowState?,
         excluding excludedTab: Tab? = nil
@@ -1427,7 +1448,7 @@ class BrowserManager: ObservableObject {
         return candidates.first { tab in
             guard tab.id != excludedTab?.id else { return false }
             guard tab.requiresPrimaryWebView, !tab.isPopupHost else { return false }
-            return adBlockingModule.surfaceEligibility(for: tab.url).isEligible
+            return protectionCoordinator.surfaceEligibility(for: tab.url).isEligible
         }
     }
 #endif

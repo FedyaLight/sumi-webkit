@@ -276,6 +276,17 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     var isAdblockReloadRequired: Bool {
         adblockReloadRequirement != nil
     }
+    var protectionAppliedAttachmentState: SumiProtectionAttachmentState? {
+        get { webViewRuntime.protectionAppliedAttachmentState }
+        set { webViewRuntime.protectionAppliedAttachmentState = newValue }
+    }
+    var protectionReloadRequirement: SumiProtectionReloadRequirement? {
+        get { webViewRuntime.protectionReloadRequirement }
+        set { webViewRuntime.protectionReloadRequirement = newValue }
+    }
+    var isProtectionReloadRequired: Bool {
+        protectionReloadRequirement != nil
+    }
     var autoplayReloadRequirement: SumiAutoplayReloadRequirement? {
         get { webViewRuntime.autoplayReloadRequirement }
         set { webViewRuntime.autoplayReloadRequirement = newValue }
@@ -678,15 +689,11 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             return
         }
 
-        let rebuiltWebView = rebuildNormalWebViewForTrackingProtectionIfNeeded(
+        let rebuiltWebView = rebuildNormalWebViewForProtectionIfNeeded(
             targetURL: newURL,
-            reason: "Tab.loadURL.trackingProtectionPolicy"
+            reason: "Tab.loadURL.protectionPolicy"
         )
         let rebuiltForConfigurationPolicy = rebuiltWebView
-            || rebuildNormalWebViewForAdblockIfNeeded(
-                targetURL: newURL,
-                reason: "Tab.loadURL.adblockPolicy"
-            )
             || rebuildNormalWebViewForAutoplayIfNeeded(
                 targetURL: newURL,
                 reason: "Tab.loadURL.autoplayPolicy"
@@ -917,6 +924,79 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         )
     }
 
+    func protectionDesiredAttachmentState(
+        for targetURL: URL?
+    ) -> SumiProtectionAttachmentState {
+        guard let coordinator = browserManager?.protectionCoordinator else {
+            return .disabled(siteHost: nil)
+        }
+        return coordinator.desiredAttachmentState(for: targetURL)
+    }
+
+    func noteProtectionAttachmentApplied(
+        _ state: SumiProtectionAttachmentState
+    ) {
+        protectionAppliedAttachmentState = state
+    }
+
+    func markProtectionReloadRequiredIfNeeded(
+        afterChangingPolicyFor changedURL: URL?
+    ) {
+        guard let coordinator = browserManager?.protectionCoordinator,
+              let changedHost = coordinator.surfaceEligibility(for: changedURL).normalizedSiteHost,
+              changedHost == coordinator.surfaceEligibility(for: url).normalizedSiteHost
+        else { return }
+
+        updateProtectionReloadRequirementForCurrentSite()
+    }
+
+    func updateProtectionReloadRequirementForCurrentSite() {
+        guard existingWebView != nil else {
+            clearProtectionReloadRequirement()
+            return
+        }
+
+        let desiredState = protectionDesiredAttachmentState(for: url)
+        guard desiredState.siteHost != nil,
+              let appliedState = protectionAppliedAttachmentState,
+              appliedState != desiredState
+        else {
+            clearProtectionReloadRequirement()
+            return
+        }
+
+        setProtectionReloadRequirement(
+            SumiProtectionReloadRequirement(
+                siteHost: desiredState.siteHost,
+                desiredAttachmentState: desiredState
+            )
+        )
+    }
+
+    func clearProtectionReloadRequirementIfResolved(for committedURL: URL) {
+        guard let requirement = protectionReloadRequirement else { return }
+
+        let committedState = protectionDesiredAttachmentState(for: committedURL)
+        if committedState.siteHost != requirement.siteHost
+            || protectionAppliedAttachmentState == committedState {
+            clearProtectionReloadRequirement()
+        }
+    }
+
+    func protectionCurrentTabDiagnostics() -> SumiProtectionCurrentTabDiagnostics? {
+        browserManager?.protectionCoordinator.currentTabDiagnostics(
+            for: url,
+            appliedState: protectionAppliedAttachmentState,
+            reloadRequired: isProtectionReloadRequired,
+            actualAttachedRuleListIdentifiers: existingWebView?
+                .configuration
+                .userContentController
+                .sumiNormalTabUserContentController?
+                .contentBlockingAssetSummary
+                .globalRuleListIdentifiers
+        )
+    }
+
     func markTrackingProtectionReloadRequiredIfNeeded(
         afterChangingOverrideFor changedURL: URL?
     ) {
@@ -1030,6 +1110,21 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         return appliedState != desiredState
     }
 
+    func protectionAttachmentRequiresNormalWebViewRebuild(
+        for targetURL: URL?
+    ) -> Bool {
+        guard existingWebView != nil,
+              webViewConfigurationOverride == nil,
+              !isPopupHost
+        else { return false }
+
+        let desiredState = protectionDesiredAttachmentState(for: targetURL)
+        guard let appliedState = protectionAppliedAttachmentState else {
+            return desiredState.isEnabled
+        }
+        return appliedState != desiredState
+    }
+
     func autoplayPolicyRequiresNormalWebViewRebuild(for targetURL: URL?) -> Bool {
         guard let webView = existingWebView,
               webViewConfigurationOverride == nil,
@@ -1085,6 +1180,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             _webView = replacementWebView
         }
 
+        updateProtectionReloadRequirementForCurrentSite()
         updateAutoplayReloadRequirementForCurrentSite()
         return true
     }
@@ -1132,6 +1228,56 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         }
 
         updateTrackingProtectionReloadRequirementForCurrentSite()
+        updateAutoplayReloadRequirementForCurrentSite()
+        return true
+    }
+
+    @discardableResult
+    func rebuildNormalWebViewForProtectionIfNeeded(
+        targetURL: URL?,
+        reason: String
+    ) -> Bool {
+        guard protectionAttachmentRequiresNormalWebViewRebuild(for: targetURL),
+              let previousWebView = existingWebView
+        else { return false }
+
+        let coordinator = browserManager?.webViewCoordinator
+        let previousWindowId = primaryWindowId ?? coordinator?.windowID(containing: previousWebView)
+        let hadTrackedWebViews = coordinator?.windowIDs(for: id).isEmpty == false
+        let previousProtectionState = protectionAppliedAttachmentState
+        let previousTrackingState = trackingProtectionAppliedAttachmentState
+        let previousAdblockState = adblockAppliedAttachmentState
+
+        guard let replacementWebView = makeNormalTabWebView(reason: reason) else {
+            return false
+        }
+
+        invalidateCurrentPermissionPageForWebViewReplacement(reason: reason)
+
+        let removedTrackedWebViews = coordinator?.removeAllWebViews(for: self) ?? false
+        if hadTrackedWebViews && !removedTrackedWebViews {
+            protectionAppliedAttachmentState = previousProtectionState
+            trackingProtectionAppliedAttachmentState = previousTrackingState
+            adblockAppliedAttachmentState = previousAdblockState
+            return false
+        }
+
+        if !removedTrackedWebViews {
+            cleanupCloneWebView(previousWebView)
+            _webView = nil
+            primaryWindowId = nil
+        }
+
+        if let previousWindowId {
+            coordinator?.setWebView(replacementWebView, for: id, in: previousWindowId)
+            assignWebViewToWindow(replacementWebView, windowId: previousWindowId)
+            if let windowState = browserManager?.windowRegistry?.windows[previousWindowId] {
+                browserManager?.refreshCompositor(for: windowState)
+            }
+        } else {
+            _webView = replacementWebView
+        }
+
         updateAutoplayReloadRequirementForCurrentSite()
         return true
     }
@@ -1225,6 +1371,29 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     private func notifyAdblockReloadRequirementChanged() {
+        objectWillChange.send()
+        NotificationCenter.default.post(
+            name: .sumiTabNavigationStateDidChange,
+            object: self,
+            userInfo: ["tabId": id]
+        )
+    }
+
+    private func setProtectionReloadRequirement(
+        _ requirement: SumiProtectionReloadRequirement
+    ) {
+        guard protectionReloadRequirement != requirement else { return }
+        protectionReloadRequirement = requirement
+        notifyProtectionReloadRequirementChanged()
+    }
+
+    private func clearProtectionReloadRequirement() {
+        guard protectionReloadRequirement != nil else { return }
+        protectionReloadRequirement = nil
+        notifyProtectionReloadRequirementChanged()
+    }
+
+    private func notifyProtectionReloadRequirementChanged() {
         objectWillChange.send()
         NotificationCenter.default.post(
             name: .sumiTabNavigationStateDidChange,

@@ -487,13 +487,13 @@ final class AdblockSettingsStore: ObservableObject {
         self.userDefaults = userDefaults
         userDefaults.register(defaults: [
             DefaultsKey.autoUpdateEnabled: true,
-            DefaultsKey.cosmeticMode: SumiAdblockCosmeticMode.nativeCSS.rawValue,
+            DefaultsKey.cosmeticMode: SumiAdblockCosmeticMode.off.rawValue,
             DefaultsKey.selectedNativeProfile: AdblockFilterListProfileKind.currentDefault.rawValue,
         ])
         autoUpdateEnabled = userDefaults.object(forKey: DefaultsKey.autoUpdateEnabled) as? Bool ?? true
         cosmeticMode = userDefaults.string(forKey: DefaultsKey.cosmeticMode)
             .flatMap(SumiAdblockCosmeticMode.init(rawValue:))
-            ?? .nativeCSS
+            ?? .off
         if let data = userDefaults.data(forKey: DefaultsKey.regionalListSelection),
            let decoded = try? JSONDecoder().decode(SumiAdblockRegionalListSelection.self, from: data) {
             regionalListSelection = decoded
@@ -714,7 +714,9 @@ final class AdblockWebKitRuleListStore {
         compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler(),
         compiledRuleListCatalog: SumiCompiledContentRuleListCataloging = AdblockRetainingCompiledRuleListCatalog(),
         embeddedBundleURLProvider: @escaping @MainActor () -> URL? = {
-            SumiAdblockNativeRuleBundle.bundledDirectoryURL()
+            SumiAdblockNativeRuleBundle.bundledDirectoryURL(
+                for: SumiProtectionBundleProfile.adblock
+            ) ?? SumiAdblockNativeRuleBundle.bundledDirectoryURL()
         }
     ) {
         self.manifestStore = manifestStore
@@ -792,6 +794,48 @@ final class AdblockWebKitRuleListStore {
             lastUpdateDiagnostics = diagnostics
             throw diagnostics
         }
+    }
+
+    func contentRuleListDefinitions(
+        for allowedKinds: Set<AdblockCompiledRuleGroupKind>
+    ) throws -> [SumiContentRuleListDefinition] {
+        guard let manifest = activeManifest else { return [] }
+        let loader = AdblockManifestRuleListProvider.diskBackedDefinitionLoader(
+            storageRoot: manifestStore.storageRoot
+        )
+        return try manifest.allNativeShards
+            .filter { allowedKinds.contains($0.kind) }
+            .sorted {
+                if $0.kind == $1.kind {
+                    return $0.id < $1.id
+                }
+                return $0.kind.rawValue < $1.kind.rawValue
+            }
+            .map(loader)
+    }
+
+    func requestAppResourceBundleInstall(
+        profileId: String
+    ) async throws -> AdblockCompiledGenerationManifest? {
+        guard await isAdblockEnabled() else { return nil }
+        guard let bundleURL = SumiAdblockNativeRuleBundle.bundledDirectoryURL(for: profileId) else {
+            let diagnostics = AdblockUpdateDiagnostics(
+                summary: "No embedded Adblock bundle found for profile \(profileId).",
+                generationSource: .embeddedBundle,
+                bundleProfileId: profileId
+            )
+            lastFailedShardIdentifier = "embedded-bundle-\(profileId)"
+            lastUpdateDiagnostics = diagnostics
+            throw diagnostics
+        }
+        let previousManifest = try await manifestStore.activeManifest()
+        return try await installEmbeddedBundle(
+            at: bundleURL,
+            source: .appResource,
+            requestedProfileId: profileId,
+            previousManifest: previousManifest,
+            skipIfAlreadyInstalled: true
+        )
     }
 
     func loadActiveManifestIfEnabled() async {
@@ -1111,6 +1155,7 @@ final class SumiAdBlockingModule {
     private var cachedSettingsStore: AdblockSettingsStore?
     private var cachedSitePolicyStore: AdblockSitePolicyStore?
     private var cachedRuleListStore: AdblockWebKitRuleListStore?
+    private var preferredBundleInstallProfileIdsInFlight = Set<String>()
 
     init(
         moduleRegistry: SumiModuleRegistry = .shared,
@@ -1207,6 +1252,39 @@ final class SumiAdBlockingModule {
         else { return [] }
 
         return [script]
+    }
+
+    func activeManifestIfLoaded() -> AdblockCompiledGenerationManifest? {
+        cachedRuleListStore?.activeManifest
+    }
+
+    func contentRuleListDefinitions(
+        for allowedKinds: Set<AdblockCompiledRuleGroupKind>
+    ) throws -> [SumiContentRuleListDefinition] {
+        try ruleListStoreIfEnabled().contentRuleListDefinitions(for: allowedKinds)
+    }
+
+    func ensurePreferredNativeRuleBundleInstalled(profileId: String) {
+        guard isEnabled else { return }
+        let store = ruleListStoreIfEnabled()
+        guard store.activeManifest?.bundleProfileId != profileId else { return }
+        guard store.activeManifest?.nativeRuleBundleId?.contains(".\(profileId).") != true else { return }
+        guard preferredBundleInstallProfileIdsInFlight.insert(profileId).inserted else { return }
+
+        Task { @MainActor [weak self, weak store] in
+            defer { self?.preferredBundleInstallProfileIdsInFlight.remove(profileId) }
+            await store?.loadActiveManifestIfEnabled()
+            guard store?.activeManifest?.bundleProfileId != profileId else { return }
+            guard store?.activeManifest?.nativeRuleBundleId?.contains(".\(profileId).") != true else { return }
+            do {
+                _ = try await store?.requestAppResourceBundleInstall(profileId: profileId)
+            } catch {
+                RuntimeDiagnostics.debug(
+                    "Preferred Adblock bundle install failed for \(profileId): \(error.localizedDescription)",
+                    category: "Adblock"
+                )
+            }
+        }
     }
 
     func normalizedSiteHost(for url: URL?) -> String? {

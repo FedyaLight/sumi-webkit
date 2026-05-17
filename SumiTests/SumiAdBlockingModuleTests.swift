@@ -108,9 +108,9 @@ final class SumiAdBlockingModuleTests: XCTestCase {
 
         XCTAssertTrue(module.isEnabled)
         XCTAssertEqual(module.status, .enabledNativeContentBlocking)
-        XCTAssertEqual(module.assetsIfAvailable().contentRuleListIdentifiers.count, 2)
+        XCTAssertEqual(module.assetsIfAvailable().contentRuleListIdentifiers.count, 1)
         XCTAssertEqual(decision.status, .enabledNativeContentBlocking)
-        XCTAssertEqual(decision.assets.contentRuleListIdentifiers.count, 2)
+        XCTAssertEqual(decision.assets.contentRuleListIdentifiers.count, 1)
         XCTAssertEqual(decision.assets.scriptSources.count, 0)
         XCTAssertEqual(decision.assets.scriptMessageHandlerNames.count, 0)
         XCTAssertNotNil(decision.contentBlockingService)
@@ -635,6 +635,7 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             settings: settings,
             sitePolicyStore: sitePolicyStore
         )
+        try await waitForActiveAdblockGeneration(in: module)
         let browserManager = BrowserManager(
             moduleRegistry: registry,
             adBlockingModule: module
@@ -685,14 +686,19 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         registry.enable(.trackingProtection)
         let trackingSettings = SumiTrackingProtectionSettings(userDefaults: harness.defaults)
         trackingSettings.setGlobalMode(.enabled)
-        let trackingService = SumiContentBlockingService(
-            policy: .enabled(ruleLists: [Self.validRuleListDefinition()])
-        )
+        let trackingRuleDefinitions = [Self.validRuleListDefinition()]
         let trackingModule = SumiTrackingProtectionModule(
             moduleRegistry: registry,
             settingsFactory: { trackingSettings },
             dataStoreFactory: { self.makeTrackingDataStore(defaults: harness.defaults) },
-            contentBlockingServiceFactory: { _, _ in trackingService }
+            contentBlockingAssetsFactory: { settings, dataStore in
+                let provider = SumiTrackingRuleListProvider(
+                    settings: settings,
+                    dataStore: dataStore,
+                    trackingRuleSource: FixedAdblockTrackingRuleSource(ruleDefinitions: trackingRuleDefinitions)
+                )
+                return SumiTrackingContentBlockingAssets(ruleListProvider: provider)
+            }
         )
         let adBlockingModule = SumiAdBlockingModule(moduleRegistry: registry)
         let browserManager = BrowserManager(
@@ -749,13 +755,13 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         )
         await controller.waitForContentBlockingAssetsInstalled()
 
-        XCTAssertFalse(registry.isEnabled(.trackingProtection))
+        XCTAssertTrue(registry.isEnabled(.trackingProtection))
         XCTAssertEqual(adBlockingModule.status, .enabledNativeContentBlocking)
-        try await waitForAssets(on: controller) { $0.globalRuleListCount == 2 }
-        XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 2)
+        try await waitForAssets(on: controller) { $0.globalRuleListCount == 1 }
+        XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 1)
         XCTAssertEqual(
             tab.trackingProtectionAppliedAttachmentState,
-            SumiTrackingProtectionAttachmentState(siteHost: "example.com", isEnabled: false)
+            SumiTrackingProtectionAttachmentState(siteHost: "example.com", isEnabled: true)
         )
         assertNoAdBlockingScriptsOrHandlers(in: controller.wkUserContentController)
     }
@@ -807,7 +813,7 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         let settings = AdblockSettingsStore(userDefaults: harness.defaults)
 
         XCTAssertTrue(settings.autoUpdateEnabled)
-        XCTAssertEqual(settings.cosmeticMode, .nativeCSS)
+        XCTAssertEqual(settings.cosmeticMode, .off)
         XCTAssertTrue(settings.regionalListSelection.identifiers.isEmpty)
         XCTAssertTrue(settings.selectedLists.usesDefaultSelection)
         XCTAssertEqual(settings.selectedNativeProfile, .currentDefault)
@@ -948,7 +954,8 @@ final class SumiAdBlockingModuleTests: XCTestCase {
                     settingsStore: settings,
                     isAdblockEnabled: isEnabled,
                     manifestStore: manifestStore,
-                    compiler: SumiWKContentRuleListCompiler()
+                    compiler: SumiWKContentRuleListCompiler(),
+                    embeddedBundleURLProvider: { nil }
                 )
                 capturedStore = store
                 return store
@@ -988,7 +995,8 @@ final class SumiAdBlockingModuleTests: XCTestCase {
                     settingsStore: settings,
                     isAdblockEnabled: isEnabled,
                     manifestStore: manifestStore,
-                    compiler: SumiWKContentRuleListCompiler()
+                    compiler: SumiWKContentRuleListCompiler(),
+                    embeddedBundleURLProvider: { nil }
                 )
                 capturedStore = store
                 return store
@@ -1121,7 +1129,8 @@ final class SumiAdBlockingModuleTests: XCTestCase {
                     settingsStore: settings,
                     isAdblockEnabled: isEnabled,
                     manifestStore: manifestStore,
-                    compiler: SumiWKContentRuleListCompiler()
+                    compiler: SumiWKContentRuleListCompiler(),
+                    embeddedBundleURLProvider: { nil }
                 )
                 capturedStore = store
                 return store
@@ -1164,23 +1173,21 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             settings: settings,
             sitePolicyStore: sitePolicyStore
         )
-        let browserManager = BrowserManager(
-            moduleRegistry: registry,
-            adBlockingModule: module
-        )
-        let tab = browserManager.tabManager.createNewTab(
-            url: "https://www.example.com/current-tab-diagnostics",
-            in: browserManager.tabManager.currentSpace,
-            activate: false
-        )
+        let url = URL(string: "https://www.example.com/current-tab-diagnostics")!
+        try await waitForActiveAdblockGeneration(in: module, url: url)
 
-        tab.setupWebView()
-        let controller = try XCTUnwrap(
-            tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
+        let diagnostics = module.currentTabDiagnostics(
+            for: url,
+            appliedState: SumiAdblockAttachmentState(
+                siteHost: "example.com",
+                isEnabled: true,
+                attachedShardIdentifiers: [
+                    "sumi.adblock.network.hybridtest",
+                    "sumi.adblock.nativeCSS.hybridtest",
+                ]
+            ),
+            reloadRequired: false
         )
-        try await waitForAssets(on: controller) { $0.globalRuleListCount == 2 }
-
-        let diagnostics = try XCTUnwrap(tab.adblockCurrentTabDiagnostics())
 
         XCTAssertEqual(diagnostics.normalizedSiteKey, "example.com")
         XCTAssertTrue(diagnostics.globalAdblockEnabled)
@@ -1203,7 +1210,7 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         )
 
         let appliedDiagnostics = module.currentTabDiagnostics(
-            for: tab.url,
+            for: url,
             appliedState: SumiAdblockAttachmentState(
                 siteHost: "example.com",
                 isEnabled: true,
@@ -1219,7 +1226,7 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertTrue(appliedDiagnostics.missingShardIdentifiers.isEmpty)
 
         let missingDiagnostics = module.currentTabDiagnostics(
-            for: tab.url,
+            for: url,
             appliedState: SumiAdblockAttachmentState(siteHost: "example.com", isEnabled: true),
             reloadRequired: false,
             actualAttachedRuleListIdentifiers: ["sumi.adblock.network.hybridtest"]
@@ -1862,7 +1869,8 @@ final class SumiAdBlockingModuleTests: XCTestCase {
                     settingsStore: settings,
                     isAdblockEnabled: isEnabled,
                     manifestStore: manifestStore,
-                    compiler: SumiWKContentRuleListCompiler()
+                    compiler: SumiWKContentRuleListCompiler(),
+                    embeddedBundleURLProvider: { nil }
                 )
                 capturedStore = store
                 return store
@@ -2089,8 +2097,13 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             settings: settings,
             sitePolicyStore: sitePolicyStore
         )
+        try await waitForActiveAdblockGeneration(in: module, url: url)
         let browserManager = BrowserManager(
             moduleRegistry: registry,
+            trackingProtectionModule: makeEmptyTrackingProtectionModule(
+                registry: registry,
+                defaults: harness.defaults
+            ),
             adBlockingModule: module
         )
         let tab = browserManager.tabManager.createNewTab(
@@ -2106,14 +2119,14 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         await originalController.waitForContentBlockingAssetsInstalled()
         XCTAssertEqual(originalController.contentBlockingAssetSummary.globalRuleListCount, 0)
 
-        sitePolicyStore.setSiteOverride(.allowed, for: url)
-        tab.markAdblockReloadRequiredIfNeeded(afterChangingOverrideFor: url)
+        browserManager.protectionCoordinator.setSiteOverride(.allowed, for: url)
+        tab.markProtectionReloadRequiredIfNeeded(afterChangingPolicyFor: url)
 
-        XCTAssertTrue(tab.isAdblockReloadRequired)
+        XCTAssertTrue(tab.isProtectionReloadRequired)
         XCTAssertTrue(tab.existingWebView === originalWebView)
 
         XCTAssertTrue(
-            tab.rebuildNormalWebViewForAdblockIfNeeded(
+            tab.rebuildNormalWebViewForProtectionIfNeeded(
                 targetURL: tab.url,
                 reason: "SumiAdBlockingModuleTests.manualReload"
             )
@@ -2121,9 +2134,9 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         let rebuiltController = try XCTUnwrap(
             tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
         )
-        try await waitForAssets(on: rebuiltController) { $0.globalRuleListCount == 2 }
-        tab.clearAdblockReloadRequirementIfResolved(for: tab.url)
-        XCTAssertFalse(tab.isAdblockReloadRequired)
+        try await waitForAssets(on: rebuiltController) { $0.globalRuleListCount == 1 }
+        tab.clearProtectionReloadRequirementIfResolved(for: tab.url)
+        XCTAssertFalse(tab.isProtectionReloadRequired)
     }
 
     func testChangingAdblockPolicyMarksReloadRequiredWithoutAutoReload() async throws {
@@ -2140,8 +2153,13 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             settings: settings,
             sitePolicyStore: sitePolicyStore
         )
+        try await waitForActiveAdblockGeneration(in: module)
         let browserManager = BrowserManager(
             moduleRegistry: registry,
+            trackingProtectionModule: makeEmptyTrackingProtectionModule(
+                registry: registry,
+                defaults: harness.defaults
+            ),
             adBlockingModule: module
         )
         let tab = browserManager.tabManager.createNewTab(
@@ -2154,14 +2172,14 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         let controller = try XCTUnwrap(
             originalWebView.configuration.userContentController.sumiNormalTabUserContentController
         )
-        try await waitForAssets(on: controller) { $0.globalRuleListCount == 2 }
+        try await waitForAssets(on: controller) { $0.globalRuleListCount == 1 }
 
-        sitePolicyStore.setSiteOverride(.disabled, for: tab.url)
-        tab.markAdblockReloadRequiredIfNeeded(afterChangingOverrideFor: tab.url)
+        browserManager.protectionCoordinator.setSiteOverride(.disabled, for: tab.url)
+        tab.markProtectionReloadRequiredIfNeeded(afterChangingPolicyFor: tab.url)
 
-        XCTAssertTrue(tab.isAdblockReloadRequired)
+        XCTAssertTrue(tab.isProtectionReloadRequired)
         XCTAssertTrue(tab.existingWebView === originalWebView)
-        XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 2)
+        XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 1)
     }
 
     func testDisablingAdblockRemovesRuleListsFromExistingController() async throws {
@@ -2185,7 +2203,7 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             contentBlockingServices: [service]
         )
         let normalController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
-        try await waitForAssets(on: normalController) { $0.globalRuleListCount == 2 }
+        try await waitForAssets(on: normalController) { $0.globalRuleListCount == 1 }
 
         module.setEnabled(false)
         try await waitForAssets(on: normalController) { $0.globalRuleListCount == 0 }
@@ -2359,6 +2377,27 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         )
     }
 
+    private func makeEmptyTrackingProtectionModule(
+        registry: SumiModuleRegistry,
+        defaults: UserDefaults
+    ) -> SumiTrackingProtectionModule {
+        let trackingSettings = SumiTrackingProtectionSettings(userDefaults: defaults)
+        trackingSettings.setGlobalMode(.enabled)
+        return SumiTrackingProtectionModule(
+            moduleRegistry: registry,
+            settingsFactory: { trackingSettings },
+            dataStoreFactory: { self.makeTrackingDataStore(defaults: defaults) },
+            contentBlockingAssetsFactory: { settings, dataStore in
+                let provider = SumiTrackingRuleListProvider(
+                    settings: settings,
+                    dataStore: dataStore,
+                    trackingRuleSource: FixedAdblockTrackingRuleSource(ruleDefinitions: [])
+                )
+                return SumiTrackingContentBlockingAssets(ruleListProvider: provider)
+            }
+        )
+    }
+
     private func temporaryAdblockDirectory() -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(
@@ -2387,7 +2426,8 @@ final class SumiAdBlockingModuleTests: XCTestCase {
                     settingsStore: settings,
                     isAdblockEnabled: isEnabled,
                     manifestStore: manifestStore,
-                    compiler: SumiWKContentRuleListCompiler()
+                    compiler: SumiWKContentRuleListCompiler(),
+                    embeddedBundleURLProvider: { nil }
                 )
             }
         )
@@ -2477,7 +2517,8 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             ],
             compilerDiagnosticsSummary: "nativeCSSConverted=1; unsafeNativeCSSRootSelectorsFiltered=2; ruleCapHit=false; discarded=0",
             lastSuccessfulUpdateDate: Date(),
-            previousGenerationId: nil
+            previousGenerationId: nil,
+            bundleProfileId: SumiProtectionBundleProfile.adblock
         )
         let stagingDirectory = try await store.beginStaging()
         var stagedCompiledShardURLs = [String: URL]()
@@ -2612,6 +2653,20 @@ final class SumiAdBlockingModuleTests: XCTestCase {
       }
     ]
     """
+}
+
+private final class FixedAdblockTrackingRuleSource: SumiTrackingProtectionRuleProviding {
+    private let ruleDefinitions: [SumiContentRuleListDefinition]
+
+    init(ruleDefinitions: [SumiContentRuleListDefinition]) {
+        self.ruleDefinitions = ruleDefinitions
+    }
+
+    func ruleLists(
+        for policy: SumiTrackingProtectionPolicy
+    ) throws -> [SumiContentRuleListDefinition] {
+        policy.isFullyDisabled ? [] : ruleDefinitions
+    }
 }
 
 private actor CountingAdblockRustAdapter: AdblockRustAdapterInvoking {

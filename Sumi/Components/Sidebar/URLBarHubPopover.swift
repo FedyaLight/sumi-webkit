@@ -102,6 +102,10 @@ struct SiteControlsSettingRowModel: Equatable, Identifiable {
             siteOverride: SumiTrackingProtectionSiteOverride,
             reloadRequired: Bool
         )
+        case protection(
+            plan: SumiProtectionRulePlan,
+            reloadRequired: Bool
+        )
         case adBlocking(
             policy: SumiAdblockEffectivePolicy,
             siteOverride: SumiAdblockSiteOverride,
@@ -122,6 +126,8 @@ struct SiteControlsSettingRowModel: Equatable, Identifiable {
 
     var isDisabled: Bool {
         switch kind {
+        case .protection(let plan, _):
+            return plan.requestedLevel == .off || plan.siteHost == nil
         case .adBlocking(_, _, let globalEnabled, _):
             return !globalEnabled
         case .tracking(_, _, _),
@@ -134,6 +140,8 @@ struct SiteControlsSettingRowModel: Equatable, Identifiable {
 
     var isInteractive: Bool {
         switch kind {
+        case .protection(let plan, _):
+            return plan.requestedLevel != .off && plan.siteHost != nil
         case .adBlocking(_, _, let globalEnabled, _):
             return globalEnabled
         case .tracking(_, _, _),
@@ -221,6 +229,8 @@ struct SiteControlsSnapshot: Equatable {
         showsAutoplayPermission: Bool = false,
         autoplayReloadRequired: Bool = false,
         permissionsSummary: String? = nil,
+        protectionCoordinator: SumiProtectionCoordinator? = nil,
+        protectionReloadRequired: Bool = false,
         trackingProtectionModule: SumiTrackingProtectionModule? = nil,
         trackingProtectionReloadRequired: Bool = false,
         adBlockingModule: SumiAdBlockingModule? = nil,
@@ -269,7 +279,36 @@ struct SiteControlsSnapshot: Equatable {
             _ = autoplayReloadRequired
             _ = profile
 
-            if let trackingPolicy = trackingProtectionModule?.effectivePolicyIfEnabled(for: url) {
+            if let protectionCoordinator {
+                let plan = protectionCoordinator.rulePlan(for: url, profileId: profile?.id)
+                let subtitle: String
+                if protectionReloadRequired {
+                    subtitle = "Reload required"
+                } else if plan.requestedLevel == .off {
+                    subtitle = "Off globally"
+                } else if !plan.sitePolicyAllowsProtection {
+                    subtitle = "Off for this site"
+                } else {
+                    subtitle = plan.effectiveLevel.displayTitle
+                }
+                rows.append(
+                    .init(
+                        id: "adblock-protection",
+                        chromeIconName: plan.sitePolicyAllowsProtection && plan.effectiveLevel != .off
+                            ? nil
+                            : "shield-off",
+                        fallbackSystemName: plan.sitePolicyAllowsProtection && plan.effectiveLevel != .off
+                            ? "shield.lefthalf.filled"
+                            : "shield.slash",
+                        title: "Adblock & Protection",
+                        subtitle: subtitle,
+                        kind: .protection(
+                            plan: plan,
+                            reloadRequired: protectionReloadRequired
+                        )
+                    )
+                )
+            } else if let trackingPolicy = trackingProtectionModule?.effectivePolicyIfEnabled(for: url) {
                 let siteOverride = trackingProtectionModule?.siteOverrideIfEnabled(for: url) ?? .inherit
                 rows.append(
                     .init(
@@ -290,7 +329,7 @@ struct SiteControlsSnapshot: Equatable {
                     )
                 )
             }
-            if let adBlockingModule {
+            if protectionCoordinator == nil, let adBlockingModule {
                 let adblockPolicy = adBlockingModule.effectivePolicy(for: url)
                 let siteOverride = adBlockingModule.siteOverride(for: url)
                 rows.append(
@@ -417,6 +456,8 @@ struct URLBarHubPopover: View {
             showsAutoplayPermission: currentTab?.audioState.isPlayingAudio == true,
             autoplayReloadRequired: currentTab?.isAutoplayReloadRequired == true,
             permissionsSummary: permissionsTopLevelSummary,
+            protectionCoordinator: browserManager.protectionCoordinator,
+            protectionReloadRequired: currentTab?.isProtectionReloadRequired == true,
             trackingProtectionModule: browserManager.trackingProtectionModule,
             trackingProtectionReloadRequired: currentTab?.isTrackingProtectionReloadRequired == true,
             adBlockingModule: browserManager.adBlockingModule,
@@ -477,6 +518,12 @@ struct URLBarHubPopover: View {
             handleNavigationStateDidChange(notification)
         }
         .onReceive(browserManager.trackingProtectionModule.settingsChangesPublisherIfEnabled()) {
+            _ in refreshNonce += 1
+        }
+        .onReceive(browserManager.protectionCoordinator.settings.changesPublisher) {
+            _ in refreshNonce += 1
+        }
+        .onReceive(browserManager.protectionCoordinator.sitePolicyChangesPublisher()) {
             _ in refreshNonce += 1
         }
         .onReceive(browserManager.adBlockingModule.sitePolicyChangesPublisher()) {
@@ -788,6 +835,11 @@ struct URLBarHubPopover: View {
 
     private func handleSettingAction(_ row: SiteControlsSettingRowModel) {
         switch row.kind {
+        case .protection(let plan, _):
+            guard plan.requestedLevel != .off else { return }
+            setProtectionOverride(
+                plan.siteOverride == .disabled ? .inherit : .disabled
+            )
         case .tracking(let policy, _, _):
             setTrackingProtectionOverride(
                 URLBarTrackingProtectionPresenter.siteOverrideAfterToggle(for: policy)
@@ -849,6 +901,17 @@ struct URLBarHubPopover: View {
         settings.setSiteOverride(override, for: currentTab.url)
         currentTab.markTrackingProtectionReloadRequiredIfNeeded(
             afterChangingOverrideFor: currentTab.url
+        )
+        refreshNonce += 1
+    }
+
+    private func setProtectionOverride(
+        _ override: SumiAdblockSiteOverride
+    ) {
+        guard let currentTab else { return }
+        browserManager.protectionCoordinator.setSiteOverride(override, for: currentTab.url)
+        currentTab.markProtectionReloadRequiredIfNeeded(
+            afterChangingPolicyFor: currentTab.url
         )
         refreshNonce += 1
     }

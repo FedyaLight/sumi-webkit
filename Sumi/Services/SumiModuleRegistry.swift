@@ -15,7 +15,7 @@ enum SumiModuleID: String, CaseIterable, Codable, Hashable, Identifiable, Sendab
 final class SumiModuleSettingsStore {
     static let standard = SumiModuleSettingsStore(userDefaults: .standard)
 
-    private let userDefaults: UserDefaults
+    let userDefaults: UserDefaults
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
@@ -39,6 +39,10 @@ final class SumiModuleRegistry {
     static let shared = SumiModuleRegistry()
 
     private let settingsStore: SumiModuleSettingsStore
+
+    var userDefaults: UserDefaults {
+        settingsStore.userDefaults
+    }
 
     init(settingsStore: SumiModuleSettingsStore = .standard) {
         self.settingsStore = settingsStore
