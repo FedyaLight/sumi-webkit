@@ -547,8 +547,23 @@ class BrowserManager: ObservableObject {
     
     /// Called when TabManager finishes loading initial data from persistence
     private func handleTabManagerDataLoaded() {
-        windowSessionService.handleTabManagerDataLoaded(delegate: self)
-        reconcileStartupSessionIfPossible()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.restoreProtectionForStartupIfNeeded()
+            self.windowSessionService.handleTabManagerDataLoaded(delegate: self)
+            self.reconcileStartupSessionIfPossible()
+        }
+    }
+
+    private func restoreProtectionForStartupIfNeeded() async {
+        do {
+            _ = try await protectionCoordinator.restoreAppliedLevelForStartup()
+        } catch {
+            RuntimeDiagnostics.debug(
+                "Protection startup restore failed: \(error.localizedDescription)",
+                category: "Protection"
+            )
+        }
     }
 
     // MARK: - Profile Switching

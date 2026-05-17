@@ -409,6 +409,214 @@ enum SumiAdblockBundleInstallSource: String, CaseIterable, Identifiable, Sendabl
     }
 }
 
+struct SumiPreparedAdblockBundleSearchPath: Equatable, Sendable {
+    let source: SumiAdblockBundleInstallSource
+    let path: String
+    let exists: Bool
+    let rejectionReason: String?
+}
+
+struct SumiPreparedAdblockBundleDiscovery: Equatable, Sendable {
+    struct ResolvedBundle: Equatable, Sendable {
+        let source: SumiAdblockBundleInstallSource
+        let bundleURL: URL
+        let profileId: String
+        let bundleId: String?
+        let generationId: String?
+    }
+
+    let requiredProfileId: String
+    let resolvedBundle: ResolvedBundle?
+    let searchedPaths: [SumiPreparedAdblockBundleSearchPath]
+
+    var isAvailable: Bool {
+        resolvedBundle != nil
+    }
+
+    var source: SumiAdblockBundleInstallSource? {
+        resolvedBundle?.source
+    }
+
+    var failureSummary: String {
+        let details = searchedPaths.map { path in
+            "\(path.source.rawValue) path=\(path.path) exists=\(path.exists) rejected=\(path.rejectionReason ?? "nil")"
+        }.joined(separator: " | ")
+        return "Searched prepared bundle sources for profile \(requiredProfileId): \(details)"
+    }
+}
+
+enum SumiPreparedAdblockBundleResolver {
+    static func discover(
+        profileId: String,
+        resourceURL: URL? = Bundle.main.resourceURL,
+        generatedBundlesRootURL: URL? = defaultGeneratedBundlesRootURL(),
+        fileManager: FileManager = .default
+    ) -> SumiPreparedAdblockBundleDiscovery {
+        var searchedPaths = [SumiPreparedAdblockBundleSearchPath]()
+
+        let appResourcePath = (resourceURL ?? URL(fileURLWithPath: "<missing app resources>", isDirectory: true))
+            .appendingPathComponent("SumiAdblockBundles", isDirectory: true)
+            .appendingPathComponent(profileId, isDirectory: true)
+            .appendingPathComponent(SumiAdblockNativeRuleBundle.directoryName, isDirectory: true)
+        if let resolved = evaluate(
+            source: .appResource,
+            profileId: profileId,
+            bundleURL: appResourcePath,
+            resourceUnavailableReason: resourceURL == nil ? "Bundle resourceURL is unavailable." : nil,
+            fileManager: fileManager,
+            searchedPaths: &searchedPaths
+        ) {
+            return SumiPreparedAdblockBundleDiscovery(
+                requiredProfileId: profileId,
+                resolvedBundle: resolved,
+                searchedPaths: searchedPaths
+            )
+        }
+
+        let developmentRoot = generatedBundlesRootURL ?? defaultGeneratedBundlesRootURL()
+        let developmentPath = developmentRoot
+            .appendingPathComponent(profileId, isDirectory: true)
+            .appendingPathComponent(SumiAdblockNativeRuleBundle.directoryName, isDirectory: true)
+#if DEBUG
+        if let resolved = evaluate(
+            source: .developmentBundle,
+            profileId: profileId,
+            bundleURL: developmentPath,
+            resourceUnavailableReason: nil,
+            fileManager: fileManager,
+            searchedPaths: &searchedPaths
+        ) {
+            return SumiPreparedAdblockBundleDiscovery(
+                requiredProfileId: profileId,
+                resolvedBundle: resolved,
+                searchedPaths: searchedPaths
+            )
+        }
+#else
+        let developmentExists = bundleDirectoryExists(developmentPath, fileManager: fileManager)
+        searchedPaths.append(
+            SumiPreparedAdblockBundleSearchPath(
+                source: .developmentBundle,
+                path: developmentPath.path,
+                exists: developmentExists,
+                rejectionReason: developmentExists
+                    ? "developmentBundle is only accepted in DEBUG builds."
+                    : "Path does not exist."
+            )
+        )
+#endif
+
+        searchedPaths.append(
+            SumiPreparedAdblockBundleSearchPath(
+                source: .futureRemoteBundle,
+                path: "<futureRemoteBundle>",
+                exists: false,
+                rejectionReason: "futureRemoteBundle discovery is not implemented."
+            )
+        )
+
+        return SumiPreparedAdblockBundleDiscovery(
+            requiredProfileId: profileId,
+            resolvedBundle: nil,
+            searchedPaths: searchedPaths
+        )
+    }
+
+    static func defaultGeneratedBundlesRootURL() -> URL {
+        repositoryRootURL().appendingPathComponent(".build/sumi-adblock-bundles", isDirectory: true)
+    }
+
+    static func repositoryRootURL() -> URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+    }
+
+    private static func evaluate(
+        source: SumiAdblockBundleInstallSource,
+        profileId: String,
+        bundleURL: URL,
+        resourceUnavailableReason: String?,
+        fileManager: FileManager,
+        searchedPaths: inout [SumiPreparedAdblockBundleSearchPath]
+    ) -> SumiPreparedAdblockBundleDiscovery.ResolvedBundle? {
+        if let resourceUnavailableReason {
+            searchedPaths.append(
+                SumiPreparedAdblockBundleSearchPath(
+                    source: source,
+                    path: bundleURL.path,
+                    exists: false,
+                    rejectionReason: resourceUnavailableReason
+                )
+            )
+            return nil
+        }
+
+        let exists = bundleDirectoryExists(bundleURL, fileManager: fileManager)
+        guard exists else {
+            searchedPaths.append(
+                SumiPreparedAdblockBundleSearchPath(
+                    source: source,
+                    path: bundleURL.path,
+                    exists: false,
+                    rejectionReason: "Path does not exist."
+                )
+            )
+            return nil
+        }
+
+        do {
+            let bundle = try SumiAdblockNativeRuleBundle.load(directoryURL: bundleURL, fileManager: fileManager)
+            guard bundle.manifest.profileId == profileId else {
+                searchedPaths.append(
+                    SumiPreparedAdblockBundleSearchPath(
+                        source: source,
+                        path: bundleURL.path,
+                        exists: true,
+                        rejectionReason: "Manifest profileId \(bundle.manifest.profileId) does not match required profile \(profileId)."
+                    )
+                )
+                return nil
+            }
+            searchedPaths.append(
+                SumiPreparedAdblockBundleSearchPath(
+                    source: source,
+                    path: bundleURL.path,
+                    exists: true,
+                    rejectionReason: nil
+                )
+            )
+            return SumiPreparedAdblockBundleDiscovery.ResolvedBundle(
+                source: source,
+                bundleURL: bundleURL,
+                profileId: bundle.manifest.profileId,
+                bundleId: bundle.manifest.bundleId,
+                generationId: bundle.manifest.generationId
+            )
+        } catch {
+            searchedPaths.append(
+                SumiPreparedAdblockBundleSearchPath(
+                    source: source,
+                    path: bundleURL.path,
+                    exists: true,
+                    rejectionReason: error.localizedDescription
+                )
+            )
+            return nil
+        }
+    }
+
+    private static func bundleDirectoryExists(
+        _ bundleURL: URL,
+        fileManager: FileManager
+    ) -> Bool {
+        var isDirectory: ObjCBool = false
+        return fileManager.fileExists(atPath: bundleURL.path, isDirectory: &isDirectory)
+            && isDirectory.boolValue
+    }
+}
+
 #if DEBUG
 struct SumiEmbeddedAdblockBundleProfile: Equatable, Identifiable, Sendable {
     let id: String
@@ -672,14 +880,11 @@ enum SumiEmbeddedAdblockBundleCatalog {
     }
 
     private static func defaultGeneratedBundlesRootURL() -> URL? {
-        repositoryRootURL().appendingPathComponent(".build/sumi-adblock-bundles", isDirectory: true)
+        SumiPreparedAdblockBundleResolver.defaultGeneratedBundlesRootURL()
     }
 
     private static func repositoryRootURL() -> URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
+        SumiPreparedAdblockBundleResolver.repositoryRootURL()
     }
 }
 #endif

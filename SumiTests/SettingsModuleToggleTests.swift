@@ -145,11 +145,13 @@ final class SettingsModuleToggleTests: XCTestCase {
         XCTAssertTrue(privacySource.contains("Bundle source"))
         XCTAssertTrue(privacySource.contains("Development Build"))
         XCTAssertTrue(privacySource.contains("futureRemoteBundle"))
-        XCTAssertTrue(privacySource.contains("Install selected bundle"))
+        XCTAssertTrue(privacySource.contains("Apply selected protection level installs the required bundle automatically."))
         XCTAssertTrue(privacySource.contains("DEBUG Adblock Diagnostics"))
         XCTAssertTrue(privacySource.contains("Deprecated runtime-generated rebuild"))
         XCTAssertTrue(privacySource.contains("Copy Adblock Diagnostics"))
         XCTAssertTrue(privacySource.contains("NSPasteboard.general"))
+        XCTAssertFalse(privacySource.contains("Install selected bundle"))
+        XCTAssertFalse(privacySource.contains("installSelectedEmbeddedBundle"))
 
         for source in [privacySource, toggleSource] {
             XCTAssertFalse(source.contains("oraLikeNative"))
@@ -182,8 +184,9 @@ final class SettingsModuleToggleTests: XCTestCase {
         XCTAssertTrue(debugBlock.contains("Generate command"))
         XCTAssertTrue(bundleSource.contains("scripts/build_sumi_adblock_bundle.sh --all-profiles --output .build/sumi-adblock-bundles"))
         XCTAssertTrue(debugBlock.contains("Generated outside app resources"))
-        XCTAssertTrue(debugBlock.contains("installEmbeddedAdblockBundle("))
-        XCTAssertTrue(debugBlock.contains("source: profile.source"))
+        XCTAssertTrue(debugBlock.contains("Apply selected protection level installs the required bundle automatically."))
+        XCTAssertFalse(debugBlock.contains("Install selected bundle"))
+        XCTAssertFalse(debugBlock.contains("installSelectedEmbeddedBundle"))
 
         XCTAssertFalse(releaseSource.contains("Embedded Adblock Bundle"))
         XCTAssertFalse(releaseSource.contains("Install selected bundle"))

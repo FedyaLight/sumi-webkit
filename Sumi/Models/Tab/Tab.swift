@@ -984,16 +984,17 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func protectionCurrentTabDiagnostics() -> SumiProtectionCurrentTabDiagnostics? {
-        browserManager?.protectionCoordinator.currentTabDiagnostics(
+        let contentBlockingSummary = existingWebView?
+            .configuration
+            .userContentController
+            .sumiNormalTabUserContentController?
+            .contentBlockingAssetSummary
+        return browserManager?.protectionCoordinator.currentTabDiagnostics(
             for: url,
             appliedState: protectionAppliedAttachmentState,
             reloadRequired: isProtectionReloadRequired,
-            actualAttachedRuleListIdentifiers: existingWebView?
-                .configuration
-                .userContentController
-                .sumiNormalTabUserContentController?
-                .contentBlockingAssetSummary
-                .globalRuleListIdentifiers
+            actualAttachedRuleListIdentifiers: contentBlockingSummary?.globalRuleListIdentifiers,
+            contentBlockingAssetSummary: contentBlockingSummary
         )
     }
 

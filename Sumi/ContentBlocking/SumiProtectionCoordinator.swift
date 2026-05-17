@@ -268,6 +268,7 @@ struct SumiProtectionCurrentTabDiagnostics: Equatable, Sendable {
     let effectiveProtectionLevel: SumiProtectionLevel
     let activeGroups: [SumiProtectionGroupKind]
     let inactiveGroups: [SumiProtectionGroupKind]
+    let desiredGroups: [SumiProtectionGroupKind]
     let perSiteProtectionEnabled: Bool
     let reloadRequired: Bool
     let generationSource: AdblockRuleGenerationSource?
@@ -282,13 +283,20 @@ struct SumiProtectionCurrentTabDiagnostics: Equatable, Sendable {
     let dedupeSummary: SumiProtectionDedupeSummary
     let overlapSummary: SumiProtectionOverlapSummary
     let expectedRuleListIdentifiers: [String]
+    let lookupSucceededIdentifiers: [String]
+    let lookupFailedIdentifiers: [String]
+    let addedToUserContentControllerIdentifiers: [String]
     let recordedAppliedRuleListIdentifiers: [String]
     let actualAttachedRuleListIdentifiers: [String]
     let missingRuleListIdentifiers: [String]
+    let missingAfterAttachmentIdentifiers: [String]
     let unexpectedOldRuleListIdentifiers: [String]
     let activeGenerationId: String?
+    let appliedProtectionGenerationId: String?
+    let appliedProtectionGroups: [SumiProtectionGroupKind]
     let previousGenerationId: String?
     let previousGenerationRetained: Bool
+    let ruleListIdentifierSamplesByGroup: [SumiProtectionGroupKind: [String]]
     let eligibleSurfaceReason: String?
     let ineligibleSurfaceReason: String?
     let currentProcessResidentMemoryBytes: UInt64?
@@ -304,6 +312,7 @@ struct SumiProtectionCurrentTabDiagnostics: Equatable, Sendable {
             "effectiveProtectionLevel=\(effectiveProtectionLevel.rawValue)",
             "activeGroups=\(activeGroups.map(\.rawValue).joined(separator: ","))",
             "inactiveGroups=\(inactiveGroups.map(\.rawValue).joined(separator: ","))",
+            "desiredGroups=\(desiredGroups.map(\.rawValue).joined(separator: ","))",
             "perSiteProtectionEnabled=\(perSiteProtectionEnabled)",
             "reloadRequired=\(reloadRequired)",
             "generationSource=\(generationSource?.rawValue ?? "nil")",
@@ -318,13 +327,20 @@ struct SumiProtectionCurrentTabDiagnostics: Equatable, Sendable {
             "dedupeSummary=\(dedupeSummary.reportLine)",
             "overlapSummary=\(overlapSummary.reportLine)",
             "expectedRuleListIdentifiers=\(expectedRuleListIdentifiers.joined(separator: ","))",
+            "lookupSucceededIdentifiers=\(lookupSucceededIdentifiers.joined(separator: ","))",
+            "lookupFailedIdentifiers=\(lookupFailedIdentifiers.joined(separator: ","))",
+            "addedToUserContentControllerIdentifiers=\(addedToUserContentControllerIdentifiers.joined(separator: ","))",
             "recordedAppliedRuleListIdentifiers=\(recordedAppliedRuleListIdentifiers.joined(separator: ","))",
             "actualAttachedRuleListIdentifiers=\(actualAttachedRuleListIdentifiers.joined(separator: ","))",
             "missingRuleListIdentifiers=\(missingRuleListIdentifiers.joined(separator: ","))",
+            "missingAfterAttachmentIdentifiers=\(missingAfterAttachmentIdentifiers.joined(separator: ","))",
             "unexpectedOldRuleListIdentifiers=\(unexpectedOldRuleListIdentifiers.joined(separator: ","))",
             "activeGenerationId=\(activeGenerationId ?? "nil")",
+            "appliedProtectionGenerationId=\(appliedProtectionGenerationId ?? "nil")",
+            "appliedProtectionGroups=\(appliedProtectionGroups.map(\.rawValue).joined(separator: ","))",
             "previousGenerationId=\(previousGenerationId ?? "nil")",
             "previousGenerationRetained=\(previousGenerationRetained)",
+            "ruleListIdentifierSamplesByGroup=\(Self.renderIdentifierSamples(ruleListIdentifierSamplesByGroup))",
             "eligibleSurfaceReason=\(eligibleSurfaceReason ?? "nil")",
             "ineligibleSurfaceReason=\(ineligibleSurfaceReason ?? "nil")",
             "currentProcessResidentMemoryBytes=\(currentProcessResidentMemoryBytes.map(String.init) ?? "nil")",
@@ -332,10 +348,18 @@ struct SumiProtectionCurrentTabDiagnostics: Equatable, Sendable {
         ].joined(separator: "\n")
     }
 
-    private static func renderCounts(_ counts: [SumiProtectionGroupKind: Int]) -> String {
+    static func renderCounts(_ counts: [SumiProtectionGroupKind: Int]) -> String {
         SumiProtectionGroupKind.allCases
             .compactMap { group in
                 counts[group].map { "\(group.rawValue):\($0)" }
+            }
+            .joined(separator: ",")
+    }
+
+    static func renderIdentifierSamples(_ samples: [SumiProtectionGroupKind: [String]]) -> String {
+        SumiProtectionGroupKind.allCases
+            .compactMap { group in
+                samples[group].map { "\(group.rawValue):\($0.joined(separator: "|"))" }
             }
             .joined(separator: ",")
     }
@@ -349,6 +373,9 @@ struct SumiProtectionGlobalDiagnostics: Equatable, Sendable {
     let bundleProfileId: String?
     let activeGenerationId: String?
     let requiredBundleProfileId: String?
+    let preparedBundleAvailable: Bool
+    let preparedBundleSource: SumiAdblockBundleInstallSource?
+    let searchedBundlePaths: [SumiPreparedAdblockBundleSearchPath]
     let applyNeeded: Bool
     let lastApplySummary: String?
     let lastApplyError: String?
@@ -542,6 +569,43 @@ final class SumiProtectionCoordinator {
                 message = applyError.localizedDescription
             } else {
                 message = "Could not apply \(selectedLevel.displayTitle): \(error.localizedDescription)"
+            }
+            lastApplySummary = nil
+            lastApplyError = message
+            throw SumiProtectionApplyError.applyFailed(message)
+        }
+    }
+
+    @discardableResult
+    func restoreAppliedLevelForStartup() async throws -> AdblockCompiledGenerationManifest? {
+        let appliedLevel = settings.appliedLevel
+        syncLegacyModuleGates(for: appliedLevel)
+        guard let requiredBundleProfileId = appliedLevel.preferredBundleProfileId else {
+            lastApplyError = nil
+            return nil
+        }
+
+        do {
+            let manifest = try await adBlockingModule.restorePreparedNativeRuleBundleForStartup(
+                profileId: requiredBundleProfileId
+            )
+            guard let manifest,
+                  Self.preparedBundleProfileId(in: manifest) == requiredBundleProfileId
+            else {
+                throw SumiProtectionApplyError.requiredPreparedBundleUnavailable(
+                    profileId: requiredBundleProfileId,
+                    detail: "Startup restore did not publish the requested prepared bundle."
+                )
+            }
+            lastApplySummary = "Restored \(appliedLevel.displayTitle) using prepared bundle \(requiredBundleProfileId)."
+            lastApplyError = nil
+            return manifest
+        } catch {
+            let message: String
+            if let applyError = error as? SumiProtectionApplyError {
+                message = applyError.localizedDescription
+            } else {
+                message = "Could not restore \(appliedLevel.displayTitle) at startup: \(error.localizedDescription)"
             }
             lastApplySummary = nil
             lastApplyError = message
@@ -748,7 +812,8 @@ final class SumiProtectionCoordinator {
         for url: URL?,
         appliedState: SumiProtectionAttachmentState?,
         reloadRequired: Bool,
-        actualAttachedRuleListIdentifiers: [String]? = nil
+        actualAttachedRuleListIdentifiers: [String]? = nil,
+        contentBlockingAssetSummary: SumiNormalTabContentBlockingAssetSummary? = nil
     ) -> SumiProtectionCurrentTabDiagnostics {
         let plan = rulePlan(
             for: url,
@@ -756,7 +821,14 @@ final class SumiProtectionCoordinator {
             includeExpensiveDiagnostics: true
         )
         let recordedApplied = appliedState?.attachedRuleListIdentifiers ?? []
-        let actual = (actualAttachedRuleListIdentifiers ?? recordedApplied).sorted()
+        let lookupSucceeded = contentBlockingAssetSummary?.lookupSucceededIdentifiers ?? []
+        let lookupFailed = contentBlockingAssetSummary?.lookupFailedIdentifiers ?? []
+        let added = contentBlockingAssetSummary?.addedToUserContentControllerIdentifiers ?? []
+        let actual = (
+            actualAttachedRuleListIdentifiers
+                ?? contentBlockingAssetSummary?.globalRuleListIdentifiers
+                ?? recordedApplied
+        ).sorted()
         let expected = plan.expectedRuleListIdentifiers
         let expectedSet = Set(expected)
         let actualSet = Set(actual)
@@ -771,6 +843,7 @@ final class SumiProtectionCoordinator {
             effectiveProtectionLevel: plan.effectiveLevel,
             activeGroups: plan.activeGroups,
             inactiveGroups: plan.inactiveGroups,
+            desiredGroups: plan.requestedLevel.requestedGroups,
             perSiteProtectionEnabled: plan.sitePolicyAllowsProtection,
             reloadRequired: reloadRequired,
             generationSource: plan.bundleSource,
@@ -785,13 +858,20 @@ final class SumiProtectionCoordinator {
             dedupeSummary: plan.dedupeSummary,
             overlapSummary: plan.overlapSummary,
             expectedRuleListIdentifiers: expected,
+            lookupSucceededIdentifiers: lookupSucceeded,
+            lookupFailedIdentifiers: lookupFailed,
+            addedToUserContentControllerIdentifiers: added,
             recordedAppliedRuleListIdentifiers: recordedApplied,
             actualAttachedRuleListIdentifiers: actual,
             missingRuleListIdentifiers: missing,
+            missingAfterAttachmentIdentifiers: missing,
             unexpectedOldRuleListIdentifiers: unexpected,
             activeGenerationId: plan.activeGenerationId,
+            appliedProtectionGenerationId: appliedState?.activeGenerationId,
+            appliedProtectionGroups: appliedState?.activeGroups ?? [],
             previousGenerationId: plan.previousGenerationId,
             previousGenerationRetained: plan.previousGenerationRetained,
+            ruleListIdentifierSamplesByGroup: Self.ruleListIdentifierSamplesByGroup(for: plan),
             eligibleSurfaceReason: plan.ineligibleSurfaceReason == nil ? "eligible http(s) web surface" : nil,
             ineligibleSurfaceReason: plan.ineligibleSurfaceReason,
             currentProcessResidentMemoryBytes: Self.currentProcessResidentMemoryBytes(),
@@ -805,6 +885,9 @@ final class SumiProtectionCoordinator {
         let installedBundleProfileId = Self.installedBundleProfileId(from: manifest)
         let activePreparedProfileId = manifest.flatMap { Self.preparedBundleProfileId(in: $0) }
         let requiredBundleProfileId = selectedLevel.preferredBundleProfileId
+        let preparedBundleDiscovery = requiredBundleProfileId.map {
+            adBlockingModule.preparedNativeRuleBundleDiscovery(profileId: $0)
+        }
         let trackingSourceAvailable = cachedTrackingSourceAvailable()
         let availableGroups = globallyAvailableGroups(
             manifest: manifest,
@@ -822,6 +905,9 @@ final class SumiProtectionCoordinator {
             bundleProfileId: installedBundleProfileId,
             activeGenerationId: manifest?.activeGenerationId,
             requiredBundleProfileId: requiredBundleProfileId,
+            preparedBundleAvailable: preparedBundleDiscovery?.isAvailable ?? true,
+            preparedBundleSource: preparedBundleDiscovery?.source,
+            searchedBundlePaths: preparedBundleDiscovery?.searchedPaths ?? [],
             applyNeeded: applyNeeded,
             lastApplySummary: lastApplySummary,
             lastApplyError: lastApplyError,
@@ -847,6 +933,9 @@ final class SumiProtectionCoordinator {
         let targetURLString = url?.absoluteString ?? "nil"
         let actualAttachedIdentifiers = currentTabDiagnostics?.actualAttachedRuleListIdentifiers ?? []
         let missingIdentifiers = currentTabDiagnostics?.missingRuleListIdentifiers ?? []
+        let lookupSucceededIdentifiers = currentTabDiagnostics?.lookupSucceededIdentifiers ?? []
+        let lookupFailedIdentifiers = currentTabDiagnostics?.lookupFailedIdentifiers ?? []
+        let addedIdentifiers = currentTabDiagnostics?.addedToUserContentControllerIdentifiers ?? []
         let reloadRequired = currentTabDiagnostics?.reloadRequired ?? false
         var lines = [
             "Sumi Adblock & Protection Copy Diagnostics",
@@ -860,6 +949,9 @@ final class SumiProtectionCoordinator {
             "bundleProfileId=\(global.bundleProfileId ?? "nil")",
             "activeGenerationId=\(global.activeGenerationId ?? "nil")",
             "requiredBundleProfileId=\(global.requiredBundleProfileId ?? "nil")",
+            "preparedBundleAvailable=\(global.preparedBundleAvailable)",
+            "preparedBundleSource=\(global.preparedBundleSource?.rawValue ?? "nil")",
+            "searchedBundlePaths=\(Self.renderSearchedBundlePaths(global.searchedBundlePaths))",
             "applyNeeded=\(global.applyNeeded)",
             "lastApplySummary=\(global.lastApplySummary ?? "nil")",
             "lastApplyError=\(global.lastApplyError ?? "nil")",
@@ -878,11 +970,20 @@ final class SumiProtectionCoordinator {
             "effectiveProtectionLevel=\(plan.effectiveLevel.rawValue)",
             "activeGroups=\(plan.activeGroups.map(\.rawValue).joined(separator: ","))",
             "inactiveGroups=\(plan.inactiveGroups.map(\.rawValue).joined(separator: ","))",
+            "desiredGroups=\(plan.requestedLevel.requestedGroups.map(\.rawValue).joined(separator: ","))",
             "trackingGroupActive=\(plan.trackingGroupActive)",
             "adblockGroupActive=\(plan.adblockGroupActive)",
             "nativeCSSGroupActive=\(plan.nativeCSSGroupActive)",
+            "ruleCountsByGroup=\(SumiProtectionCurrentTabDiagnostics.renderCounts(plan.ruleCountsByGroup))",
+            "shardCountsByGroup=\(SumiProtectionCurrentTabDiagnostics.renderCounts(plan.shardCountsByGroup))",
+            "expectedRuleListIdentifiers=\(plan.expectedRuleListIdentifiers.joined(separator: ","))",
+            "lookupSucceededIdentifiers=\(lookupSucceededIdentifiers.joined(separator: ","))",
+            "lookupFailedIdentifiers=\(lookupFailedIdentifiers.joined(separator: ","))",
+            "addedToUserContentControllerIdentifiers=\(addedIdentifiers.joined(separator: ","))",
             "attachedIdentifiers=\(actualAttachedIdentifiers.joined(separator: ","))",
             "missingIdentifiers=\(missingIdentifiers.joined(separator: ","))",
+            "missingAfterAttachmentIdentifiers=\(missingIdentifiers.joined(separator: ","))",
+            "ruleListIdentifierSamplesByGroup=\(SumiProtectionCurrentTabDiagnostics.renderIdentifierSamples(Self.ruleListIdentifierSamplesByGroup(for: plan)))",
             "reloadRequired=\(reloadRequired)",
             "dedupeSummary=\(plan.dedupeSummary.reportLine)",
             "overlapSummary=\(plan.overlapSummary.reportLine)",
@@ -1182,6 +1283,39 @@ final class SumiProtectionCoordinator {
         )
     }
 
+    private static func ruleListIdentifierSamplesByGroup(
+        for plan: SumiProtectionRulePlan
+    ) -> [SumiProtectionGroupKind: [String]] {
+        var samples = [SumiProtectionGroupKind: [String]]()
+        for group in plan.activeGroups {
+            let identifiers: [String]
+            switch group {
+            case .trackingNetwork:
+                identifiers = plan.expectedRuleListIdentifiers.filter {
+                    !$0.hasPrefix("sumi.adblock.")
+                }
+            case .adblockAdsPrivacyNetwork, .maximumNativeNetwork:
+                identifiers = plan.expectedRuleListIdentifiers.filter {
+                    $0.hasPrefix("sumi.adblock.network.")
+                }
+            case .maximumNativeCSS:
+                identifiers = plan.expectedRuleListIdentifiers.filter {
+                    $0.hasPrefix("sumi.adblock.nativeCSS.")
+                }
+            }
+            samples[group] = identifiers
+                .prefix(4)
+                .map(redactedRuleListIdentifier)
+        }
+        return samples
+    }
+
+    private static func redactedRuleListIdentifier(_ identifier: String) -> String {
+        let parts = identifier.split(separator: ".").map(String.init)
+        guard parts.count > 6 else { return identifier }
+        return (Array(parts.prefix(4)) + ["..."] + Array(parts.suffix(2))).joined(separator: ".")
+    }
+
     private static func canonicalWebKitJSONHash(_ encodedContentRuleList: String) -> String? {
         guard let data = encodedContentRuleList.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data),
@@ -1234,6 +1368,14 @@ final class SumiProtectionCoordinator {
 #else
         return nil
 #endif
+    }
+
+    private static func renderSearchedBundlePaths(
+        _ paths: [SumiPreparedAdblockBundleSearchPath]
+    ) -> String {
+        paths.map { path in
+            "\(path.source.rawValue):path=\(path.path);exists=\(path.exists);rejected=\(path.rejectionReason ?? "nil")"
+        }.joined(separator: " | ")
     }
 
     private static func iso8601Timestamp(_ date: Date) -> String {

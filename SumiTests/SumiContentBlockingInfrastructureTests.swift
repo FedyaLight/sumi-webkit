@@ -1,4 +1,5 @@
 import Combine
+import Network
 import WebKit
 import XCTest
 
@@ -73,6 +74,29 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
         XCTAssertEqual(summary.updateRuleCount, 1)
         XCTAssertTrue(service.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking))
         XCTAssertTrue(summary.isContentBlockingFeatureEnabled)
+    }
+
+    func testAssetSummaryReportsStoreLookupAndAddedIdentifiersSeparately() async throws {
+        let definition = Self.validRuleListDefinition(
+            name: "SumiLookupSummaryRuleList-\(UUID().uuidString)",
+            blockedHost: "lookup-summary.example"
+        )
+        let expectedStoreIdentifier = Self.storeIdentifier(for: definition)
+        let service = SumiContentBlockingService(
+            policy: .enabled(ruleLists: [definition])
+        )
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: service
+        )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+
+        let summary = normalTabController.contentBlockingAssetSummary
+        XCTAssertEqual(summary.lookupSucceededIdentifiers, [expectedStoreIdentifier])
+        XCTAssertTrue(summary.lookupFailedIdentifiers.isEmpty)
+        XCTAssertEqual(summary.addedToUserContentControllerIdentifiers, [expectedStoreIdentifier])
+        XCTAssertEqual(summary.globalRuleListIdentifiers, [expectedStoreIdentifier])
     }
 
     func testDynamicRuleProviderWaitsForInitialResolvedRulesInsteadOfPublishingEmptyPlaceholder() async throws {
@@ -244,6 +268,60 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
         try await service.validateRuleLists([definition])
 
         try await waitForRemovedIdentifier(identifier, in: compiler)
+    }
+
+    func testFunctionalWebKitSmokeOffLoadsResourceAndAdblockBlocksResource() async throws {
+        let server = try await LocalHTTPResourceServer.start()
+        defer { server.stop() }
+
+        let offController: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: SumiContentBlockingService(policy: .disabled)
+        )
+        let offNormalController = try XCTUnwrap(offController.sumiNormalTabUserContentController)
+        await offNormalController.waitForContentBlockingAssetsInstalled()
+        let offWebView = makeWebView(userContentController: offController)
+        try await loadURL(server.pageURL(cacheBuster: UUID().uuidString), into: offWebView)
+
+        let offLoadedResource = await server.waitForRequest(path: "/blocked-resource.png", timeout: 2)
+        XCTAssertTrue(offLoadedResource, "Off should allow the known test resource to reach the local HTTP server.")
+
+        server.resetRequests()
+
+        let blockedIdentifier = "sumi.adblock.network.functional-smoke-\(UUID().uuidString)"
+        let service = SumiContentBlockingService(
+            policy: .enabled(ruleLists: [
+                SumiContentRuleListDefinition(
+                    name: blockedIdentifier,
+                    encodedContentRuleList: """
+                    [
+                      {
+                        "trigger": {
+                          "url-filter": ".*blocked-resource\\\\.png.*"
+                        },
+                        "action": {
+                          "type": "block"
+                        }
+                      }
+                    ]
+                    """,
+                    storeIdentifierOverride: blockedIdentifier
+                ),
+            ])
+        )
+        let adblockController: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: service
+        )
+        let adblockNormalController = try XCTUnwrap(adblockController.sumiNormalTabUserContentController)
+        await adblockNormalController.waitForContentBlockingAssetsInstalled()
+        let summary = adblockNormalController.contentBlockingAssetSummary
+        XCTAssertEqual(summary.lookupSucceededIdentifiers, [blockedIdentifier])
+        XCTAssertEqual(summary.addedToUserContentControllerIdentifiers, [blockedIdentifier])
+
+        let adblockWebView = makeWebView(userContentController: adblockController)
+        try await loadURL(server.pageURL(cacheBuster: UUID().uuidString), into: adblockWebView)
+
+        let adblockLoadedResource = await server.waitForRequest(path: "/blocked-resource.png", timeout: 1)
+        XCTAssertFalse(adblockLoadedResource, "Adblock must attach a WKContentRuleList that prevents the known resource request.")
     }
 
     func testPreparedUpdateCompilesAllRuleListsBeforeFailingSmokeLookup() async throws {
@@ -433,6 +511,216 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         XCTFail("Timed out waiting for compiled rule list removal: \(identifier)")
+    }
+
+    private func makeWebView(userContentController: WKUserContentController) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController = userContentController
+        return WKWebView(
+            frame: CGRect(x: 0, y: 0, width: 640, height: 480),
+            configuration: configuration
+        )
+    }
+
+    private func loadURL(
+        _ url: URL,
+        into webView: WKWebView
+    ) async throws {
+        let didFinish = expectation(description: "page loaded")
+        let delegate = ContentBlockingNavigationDelegateBox {
+            didFinish.fulfill()
+        }
+        webView.navigationDelegate = delegate
+        webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
+        await fulfillment(of: [didFinish], timeout: 5)
+        webView.navigationDelegate = nil
+    }
+}
+
+private final class LocalHTTPResourceServer: @unchecked Sendable {
+    private let listener: NWListener
+    private let queue = DispatchQueue(label: "sumi.content-blocking.http-smoke")
+    private let lock = NSLock()
+    private var requests: [String] = []
+    private var startContinuation: CheckedContinuation<Void, Error>?
+
+    static func start() async throws -> LocalHTTPResourceServer {
+        let server = try LocalHTTPResourceServer()
+        try await server.start()
+        return server
+    }
+
+    private init() throws {
+        listener = try NWListener(
+            using: .tcp,
+            on: NWEndpoint.Port(rawValue: 0)!
+        )
+        listener.newConnectionHandler = { [weak self] connection in
+            self?.handle(connection)
+        }
+    }
+
+    var port: UInt16 {
+        listener.port?.rawValue ?? 0
+    }
+
+    func pageURL(cacheBuster: String) -> URL {
+        URL(string: "http://127.0.0.1:\(port)/?cache=\(cacheBuster)")!
+    }
+
+    func stop() {
+        listener.cancel()
+    }
+
+    func resetRequests() {
+        lock.withLock {
+            requests.removeAll(keepingCapacity: true)
+        }
+    }
+
+    func waitForRequest(path: String, timeout: TimeInterval) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if hasRequest(path: path) {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        return hasRequest(path: path)
+    }
+
+    private func start() async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            lock.withLock {
+                startContinuation = continuation
+            }
+            listener.stateUpdateHandler = { [weak self] state in
+                switch state {
+                case .ready:
+                    self?.finishStart(.success(()))
+                case .failed(let error):
+                    self?.finishStart(.failure(error))
+                default:
+                    break
+                }
+            }
+            listener.start(queue: queue)
+        }
+    }
+
+    private func finishStart(_ result: Result<Void, Error>) {
+        let continuation = lock.withLock {
+            let continuation = startContinuation
+            startContinuation = nil
+            return continuation
+        }
+        switch result {
+        case .success:
+            continuation?.resume()
+        case .failure(let error):
+            continuation?.resume(throwing: error)
+        }
+    }
+
+    private func hasRequest(path: String) -> Bool {
+        lock.withLock {
+            requests.contains(path)
+        }
+    }
+
+    private func recordRequest(path: String) {
+        lock.withLock {
+            requests.append(path)
+        }
+    }
+
+    private func handle(_ connection: NWConnection) {
+        connection.start(queue: queue)
+        receiveRequest(on: connection, accumulatedData: Data())
+    }
+
+    private func receiveRequest(
+        on connection: NWConnection,
+        accumulatedData: Data
+    ) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) { [weak self] data, _, isComplete, error in
+            guard let self else {
+                connection.cancel()
+                return
+            }
+            var requestData = accumulatedData
+            if let data {
+                requestData.append(data)
+            }
+            let headerTerminator = Data("\r\n\r\n".utf8)
+            guard requestData.range(of: headerTerminator) != nil || isComplete || error != nil else {
+                self.receiveRequest(on: connection, accumulatedData: requestData)
+                return
+            }
+            respond(to: requestData, on: connection)
+        }
+    }
+
+    private func respond(
+        to requestData: Data,
+        on connection: NWConnection
+    ) {
+        let requestText = String(decoding: requestData, as: UTF8.self)
+        let requestTarget = requestText
+            .split(separator: "\r\n", maxSplits: 1, omittingEmptySubsequences: false)
+            .first?
+            .split(separator: " ")
+            .dropFirst()
+            .first
+            .map(String.init) ?? "/"
+        let path = requestTarget.split(separator: "?", maxSplits: 1).first.map(String.init) ?? requestTarget
+        recordRequest(path: path)
+
+        let cacheToken = requestTarget.split(separator: "?", maxSplits: 1).dropFirst().first.map(String.init) ?? "none"
+        let body: Data
+        let contentType: String
+        if path == "/" {
+            body = Data("""
+            <!doctype html>
+            <html>
+              <body>
+                <p>content blocking smoke</p>
+                <img src="/blocked-resource.png?\(cacheToken)" alt="blocked resource">
+              </body>
+            </html>
+            """.utf8)
+            contentType = "text/html; charset=utf-8"
+        } else {
+            body = Data("ok".utf8)
+            contentType = "image/png"
+        }
+        let header = Data([
+            "HTTP/1.1 200 OK",
+            "Content-Type: \(contentType)",
+            "Content-Length: \(body.count)",
+            "Cache-Control: no-store",
+            "Connection: close",
+            "",
+            "",
+        ].joined(separator: "\r\n").utf8)
+        connection.send(content: header + body, completion: .contentProcessed { _ in
+            connection.cancel()
+        })
+    }
+}
+
+private final class ContentBlockingNavigationDelegateBox: NSObject, WKNavigationDelegate {
+    private let onFinish: () -> Void
+
+    init(onFinish: @escaping () -> Void) {
+        self.onFinish = onFinish
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didFinish navigation: WKNavigation!
+    ) {
+        onFinish()
     }
 }
 
