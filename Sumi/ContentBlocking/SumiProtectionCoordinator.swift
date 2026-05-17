@@ -4,14 +4,12 @@ import Foundation
 
 enum SumiProtectionBundleProfile {
     static let adblock = "adguardAdsPrivacy"
-    static let extreme = "maximumCustomReference"
 }
 
 enum SumiProtectionLevel: String, Codable, CaseIterable, Identifiable, Sendable {
     case off
     case protection
     case adblock
-    case extreme
 
     var id: String { rawValue }
 
@@ -23,8 +21,6 @@ enum SumiProtectionLevel: String, Codable, CaseIterable, Identifiable, Sendable 
             return "Protection"
         case .adblock:
             return "Adblock"
-        case .extreme:
-            return "Extreme"
         }
     }
 
@@ -36,8 +32,6 @@ enum SumiProtectionLevel: String, Codable, CaseIterable, Identifiable, Sendable 
             return "Lightweight tracker protection."
         case .adblock:
             return "Recommended native ad blocking with tracker protection."
-        case .extreme:
-            return "Strongest native mode. May use more memory or break sites."
         }
     }
 
@@ -49,8 +43,6 @@ enum SumiProtectionLevel: String, Codable, CaseIterable, Identifiable, Sendable 
             return [.trackingNetwork]
         case .adblock:
             return [.trackingNetwork, .adblockAdsPrivacyNetwork]
-        case .extreme:
-            return [.trackingNetwork, .maximumNativeNetwork, .maximumNativeCSS]
         }
     }
 
@@ -60,8 +52,6 @@ enum SumiProtectionLevel: String, Codable, CaseIterable, Identifiable, Sendable 
             return nil
         case .adblock:
             return SumiProtectionBundleProfile.adblock
-        case .extreme:
-            return SumiProtectionBundleProfile.extreme
         }
     }
 
@@ -71,8 +61,6 @@ enum SumiProtectionLevel: String, Codable, CaseIterable, Identifiable, Sendable 
             return []
         case .adblock:
             return [.network]
-        case .extreme:
-            return [.network, .nativeCosmeticCSS]
         }
     }
 }
@@ -80,8 +68,6 @@ enum SumiProtectionLevel: String, Codable, CaseIterable, Identifiable, Sendable 
 enum SumiProtectionGroupKind: String, Codable, CaseIterable, Hashable, Sendable {
     case trackingNetwork
     case adblockAdsPrivacyNetwork
-    case maximumNativeNetwork
-    case maximumNativeCSS
 }
 
 struct SumiProtectionAttachmentState: Equatable, Sendable {
@@ -220,12 +206,8 @@ struct SumiProtectionRulePlan: Equatable, Sendable {
 
     var adblockGroupActive: Bool {
         activeGroups.contains(.adblockAdsPrivacyNetwork)
-            || activeGroups.contains(.maximumNativeNetwork)
     }
 
-    var nativeCSSGroupActive: Bool {
-        activeGroups.contains(.maximumNativeCSS)
-    }
 }
 
 struct SumiProtectionNormalTabDecision: Equatable, Sendable {
@@ -246,8 +228,7 @@ struct SumiProtectionNormalTabDecision: Equatable, Sendable {
     var adblockAttachmentState: SumiAdblockAttachmentState {
         SumiAdblockAttachmentState(
             siteHost: plan.siteHost,
-            isEnabled: plan.adblockGroupActive || plan.nativeCSSGroupActive,
-            hasEnhancedRuntime: false,
+            isEnabled: plan.adblockGroupActive,
             attachedShardIdentifiers: plan.expectedRuleListIdentifiers.filter {
                 $0.hasPrefix("sumi.adblock.")
             }
@@ -281,7 +262,6 @@ struct SumiProtectionCurrentTabDiagnostics: Equatable, Sendable {
     let requiredBundleProfileId: String?
     let trackingGroupActive: Bool
     let adblockGroupActive: Bool
-    let nativeCSSGroupActive: Bool
     let ruleCountsByGroup: [SumiProtectionGroupKind: Int]
     let shardCountsByGroup: [SumiProtectionGroupKind: Int]
     let dedupeSummary: SumiProtectionDedupeSummary
@@ -333,7 +313,6 @@ struct SumiProtectionCurrentTabDiagnostics: Equatable, Sendable {
             "requiredBundleProfileId=\(requiredBundleProfileId ?? "nil")",
             "trackingGroupActive=\(trackingGroupActive)",
             "adblockGroupActive=\(adblockGroupActive)",
-            "nativeCSSGroupActive=\(nativeCSSGroupActive)",
             "ruleCountsByGroup=\(Self.renderCounts(ruleCountsByGroup))",
             "shardCountsByGroup=\(Self.renderCounts(shardCountsByGroup))",
             "dedupeSummary=\(dedupeSummary.reportLine)",
@@ -452,18 +431,32 @@ final class SumiProtectionSettings: ObservableObject {
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
         let resolvedLevel: SumiProtectionLevel
-        if let rawLevel = userDefaults.string(forKey: DefaultsKey.level),
-           let decodedLevel = SumiProtectionLevel(rawValue: rawLevel) {
-            resolvedLevel = decodedLevel
+        if let rawLevel = userDefaults.string(forKey: DefaultsKey.level) {
+            if rawLevel == "extreme" {
+                resolvedLevel = .adblock
+                userDefaults.set(resolvedLevel.rawValue, forKey: DefaultsKey.level)
+            } else if let decodedLevel = SumiProtectionLevel(rawValue: rawLevel) {
+                resolvedLevel = decodedLevel
+            } else {
+                resolvedLevel = Self.migratedLevel(from: userDefaults)
+                userDefaults.set(resolvedLevel.rawValue, forKey: DefaultsKey.level)
+            }
         } else {
             resolvedLevel = Self.migratedLevel(from: userDefaults)
             userDefaults.set(resolvedLevel.rawValue, forKey: DefaultsKey.level)
         }
         level = resolvedLevel
 
-        if let rawAppliedLevel = userDefaults.string(forKey: DefaultsKey.appliedLevel),
-           let decodedAppliedLevel = SumiProtectionLevel(rawValue: rawAppliedLevel) {
-            appliedLevel = decodedAppliedLevel
+        if let rawAppliedLevel = userDefaults.string(forKey: DefaultsKey.appliedLevel) {
+            if rawAppliedLevel == "extreme" {
+                appliedLevel = .adblock
+                userDefaults.set(appliedLevel.rawValue, forKey: DefaultsKey.appliedLevel)
+            } else if let decodedAppliedLevel = SumiProtectionLevel(rawValue: rawAppliedLevel) {
+                appliedLevel = decodedAppliedLevel
+            } else {
+                appliedLevel = resolvedLevel
+                userDefaults.set(resolvedLevel.rawValue, forKey: DefaultsKey.appliedLevel)
+            }
         } else {
             appliedLevel = resolvedLevel
             userDefaults.set(resolvedLevel.rawValue, forKey: DefaultsKey.appliedLevel)
@@ -1049,13 +1042,6 @@ final class SumiProtectionCoordinator {
                     detail: "No adguardAdsPrivacy network rule lists were available after install."
                 )
             }
-        case .extreme:
-            guard plan.activeGroups.contains(.maximumNativeNetwork) else {
-                throw SumiProtectionApplyError.requiredPreparedBundleUnavailable(
-                    profileId: SumiProtectionBundleProfile.extreme,
-                    detail: "No maximumCustomReference network rule lists were available after install."
-                )
-            }
         }
     }
 
@@ -1127,7 +1113,6 @@ final class SumiProtectionCoordinator {
             requiredBundleProfileId: plan.requiredBundleProfileId,
             trackingGroupActive: plan.trackingGroupActive,
             adblockGroupActive: plan.adblockGroupActive,
-            nativeCSSGroupActive: plan.nativeCSSGroupActive,
             ruleCountsByGroup: plan.ruleCountsByGroup,
             shardCountsByGroup: plan.shardCountsByGroup,
             dedupeSummary: plan.dedupeSummary,
@@ -1262,7 +1247,6 @@ final class SumiProtectionCoordinator {
             "desiredGroups=\(plan.requestedLevel.requestedGroups.map(\.rawValue).joined(separator: ","))",
             "trackingGroupActive=\(plan.trackingGroupActive)",
             "adblockGroupActive=\(plan.adblockGroupActive)",
-            "nativeCSSGroupActive=\(plan.nativeCSSGroupActive)",
             "ruleCountsByGroup=\(SumiProtectionCurrentTabDiagnostics.renderCounts(plan.ruleCountsByGroup))",
             "shardCountsByGroup=\(SumiProtectionCurrentTabDiagnostics.renderCounts(plan.shardCountsByGroup))",
             "expectedRuleListIdentifiers=\(plan.expectedRuleListIdentifiers.joined(separator: ","))",
@@ -1318,7 +1302,7 @@ final class SumiProtectionCoordinator {
 
     private func syncLegacyModuleGates(for level: SumiProtectionLevel) {
         trackingProtectionModule.setEnabled(level != .off)
-        adBlockingModule.setEnabled(level == .adblock || level == .extreme)
+        adBlockingModule.setEnabled(level == .adblock)
     }
 
     private func applySummary(
@@ -1347,7 +1331,6 @@ final class SumiProtectionCoordinator {
         if let manifest,
            Self.preparedBundleProfileId(in: manifest) != nil {
             groups.append(contentsOf: Self.cachedAdblockGroups(level: .adblock, manifest: manifest).map(\.group))
-            groups.append(contentsOf: Self.cachedAdblockGroups(level: .extreme, manifest: manifest).map(\.group))
         }
 
         return groups.uniqueSorted()
@@ -1419,10 +1402,6 @@ final class SumiProtectionCoordinator {
         switch (bundleProfileId, shardKind, level) {
         case (SumiProtectionBundleProfile.adblock, .network, .adblock):
             return .adblockAdsPrivacyNetwork
-        case (SumiProtectionBundleProfile.extreme, .network, .extreme):
-            return .maximumNativeNetwork
-        case (SumiProtectionBundleProfile.extreme, .nativeCosmeticCSS, .extreme):
-            return .maximumNativeCSS
         default:
             return nil
         }
@@ -1444,15 +1423,12 @@ final class SumiProtectionCoordinator {
         if let bundleProfileId = manifest.bundleProfileId, !bundleProfileId.isEmpty {
             return bundleProfileId
         }
-        if let nativeProfile = manifest.nativeProfile?.rawValue, !nativeProfile.isEmpty {
-            return nativeProfile
-        }
         return inferredBundleProfileId(from: manifest.nativeRuleBundleId)
     }
 
     private static func inferredBundleProfileId(from nativeRuleBundleId: String?) -> String? {
         guard let nativeRuleBundleId else { return nil }
-        for profileId in [SumiProtectionBundleProfile.adblock, SumiProtectionBundleProfile.extreme] {
+        for profileId in [SumiProtectionBundleProfile.adblock] {
             if nativeRuleBundleId.contains(profileId) {
                 return profileId
             }
@@ -1463,9 +1439,6 @@ final class SumiProtectionCoordinator {
     private static func effectiveLevel(
         for activeGroups: [SumiProtectionGroupKind]
     ) -> SumiProtectionLevel {
-        if activeGroups.contains(.maximumNativeNetwork) || activeGroups.contains(.maximumNativeCSS) {
-            return .extreme
-        }
         if activeGroups.contains(.adblockAdsPrivacyNetwork) {
             return .adblock
         }
@@ -1591,13 +1564,9 @@ final class SumiProtectionCoordinator {
                 identifiers = plan.expectedRuleListIdentifiers.filter {
                     !$0.hasPrefix("sumi.adblock.")
                 }
-            case .adblockAdsPrivacyNetwork, .maximumNativeNetwork:
+            case .adblockAdsPrivacyNetwork:
                 identifiers = plan.expectedRuleListIdentifiers.filter {
                     $0.hasPrefix("sumi.adblock.network.")
-                }
-            case .maximumNativeCSS:
-                identifiers = plan.expectedRuleListIdentifiers.filter {
-                    $0.hasPrefix("sumi.adblock.nativeCSS.")
                 }
             }
             samples[group] = identifiers
@@ -1752,12 +1721,7 @@ private extension SumiContentRuleListDefinition {
 
 private extension AdblockRuleGenerationSource {
     var isPreparedBundleSource: Bool {
-        switch self {
-        case .embeddedBundle, .developmentBundle, .futureRemoteBundle:
-            return true
-        case .runtimeGenerated:
-            return false
-        }
+        true
     }
 
     var sumiBundleInstallSource: SumiAdblockBundleInstallSource? {
@@ -1768,8 +1732,6 @@ private extension AdblockRuleGenerationSource {
             return .developmentBundle
         case .futureRemoteBundle:
             return .futureRemoteBundle
-        case .runtimeGenerated:
-            return nil
         }
     }
 }

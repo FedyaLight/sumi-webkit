@@ -5,27 +5,27 @@ vendored or directly used.
 
 ## Brave adblock-rust
 
-`Vendor/Brave/AdblockRustAdapter` builds a local helper executable that uses
-Brave's `adblock` crate from `brave/adblock-rust`.
+`Vendor/Brave/AdblockRustAdapter` is retained as developer/off-browser tooling
+around Brave's `adblock` crate from `brave/adblock-rust` while prepared-bundle
+generation moves out of this repository.
 
 - Upstream: https://github.com/brave/adblock-rust
 - Crate license: MPL-2.0
-- Sumi usage: offline ABP/uBO-style filter translation into Apple/WebKit
-  content-blocking JSON for the native Adblock compiler boundary
-- Runtime role: compiler helper only; not a live WebKit request interceptor and
-  not a WebExtension
+- Sumi usage: developer-side prepared-bundle generation only
+- Runtime role: none in Sumi.app; the browser does not invoke the helper, parse raw
+  lists, or use it as a live WebKit request interceptor/WebExtension
 
 This notice does not make the entire Sumi Adblock module MPL-2.0. Sumi remains
 GPL-3.0, with the vendored/used Brave `adblock` crate component governed by
 MPL-2.0 as applicable.
 
-## Adblock filter-list registry
+## Prepared protection bundles
 
-Sumi's native Adblock registry stores upstream filter-list metadata and URLs.
-The application does not vendor those third-party list contents; selected lists
-are fetched from their upstream maintainers at update time. Those fetched list
-contents may have their own licenses, terms, and notices from the upstream list
-projects.
+`sumi-webkit` consumes prepared protection bundles only. Raw list fetching,
+conversion, and future bundle generation belong outside the browser, planned for
+a separate `sumi-protection-bundles` repository driven by GitHub Actions. Any
+upstream list contents used by that external generation pipeline may have their
+own licenses, terms, and notices from the upstream list projects.
 
 ## AdGuard SafariConverterLib comparison
 
@@ -48,9 +48,7 @@ These entries are Sumi-owned metadata only. Sumi does not vendor Brave
 `adblock-resources` files, uBlock Origin resource contents, or a full redirect
 resource tree.
 
-The current WKWebView implementation classifies those redirect resources as
-unsupported because WebKit content blockers do not replace HTTP(S) response
-bodies and `WKURLSchemeHandler` cannot intercept WebKit's built-in HTTP(S)
-schemes. This keeps license handling simple: no Brave/uBO resource payload is
-copied into the app, and the existing Brave `adblock-rust` MPL-2.0 notice above
-continues to cover only the Rust compiler dependency.
+The final browser product does not ship a redirect/scriptlet runtime path. No
+Brave/uBO resource payload is copied into Sumi.app, and the Brave
+`adblock-rust` notice above now covers only retained developer tooling outside
+the app runtime.

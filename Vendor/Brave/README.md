@@ -1,21 +1,16 @@
 Brave vendored adapters
 =======================
 
-`AdblockRustAdapter` is a small local helper executable around
-`brave/adblock-rust` (`adblock` crate, MPL-2.0). Sumi uses it as the production
-compiler backend for the native Adblock module's offline ABP/uBO-to-WebKit
-content-blocking translation.
+`AdblockRustAdapter` is retained as local developer tooling around
+`brave/adblock-rust` (`adblock` crate, MPL-2.0) while prepared-bundle generation
+moves out of `sumi-webkit`.
 
-The helper is built by the Xcode app target with `cargo build --locked` and
-copied beside the app executable as `sumi-adblock-rust-adapter`. A Rust toolchain
-with Cargo must be installed for normal app and unit-test builds.
+Sumi.app no longer builds, copies, or invokes this helper. The browser consumes
+prepared protection bundles only; it does not fetch raw filter lists, parse
+ABP/uBO syntax, or run `adblock-rust` at runtime. The planned long-term home for
+generation is a separate `sumi-protection-bundles` repository driven by GitHub
+Actions.
 
-This executable is intentionally temporary. The production-suitable long-term
-shape is a Rust static library or XCFramework with a narrow C ABI wrapper; that
-would remove process spawning and make packaging/signing more explicit. Until
-then, Swift reaches the helper only through `AdblockRustCompiler`, the helper is
-invoked only as a short-lived compiler step, and it is never a live request
-interceptor.
-
-The browser runtime does not use adblock-rust as a per-request engine. WebKit
-runtime blocking remains native `WKContentRuleList`.
+If this adapter remains useful during the transition, it should be run manually
+or from external bundle-generation automation only. Browser runtime blocking
+stays native `WKContentRuleList` compiled from verified prepared bundle shards.

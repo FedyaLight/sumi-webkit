@@ -196,7 +196,7 @@ struct SumiAdblockNativeRuleBundle: Sendable {
         installedDate: Date,
         generationSource: AdblockRuleGenerationSource = .embeddedBundle
     ) -> AdblockCompiledGenerationManifest {
-        let selectedLists = manifest.lists.map {
+        let selectedFilterLists = manifest.lists.map {
             AdblockCompiledGenerationManifest.SelectedFilterList(
                 id: $0.id,
                 displayName: $0.displayName,
@@ -242,11 +242,9 @@ struct SumiAdblockNativeRuleBundle: Sendable {
             schemaVersion: 6,
             activeGenerationId: manifest.generationId,
             createdDate: generatedDate ?? installedDate,
-            selectedFilterLists: selectedLists.sorted { $0.id < $1.id },
+            selectedFilterLists: selectedFilterLists.sorted { $0.id < $1.id },
             networkShards: networkShards,
             nativeCSSShards: nativeCSSShards,
-            enhancedRuntimeBundle: nil,
-            nativeProfile: AdblockFilterListProfileKind(rawValue: manifest.profileId),
             nativeCompiler: compiler,
             nativeCompilerSourceLists: sourceLists.sorted { $0.id < $1.id },
             nativeCompilationSummary: summary,
@@ -303,7 +301,6 @@ struct SumiAdblockNativeRuleBundle: Sendable {
             approximateRuleCount: shard.ruleCount,
             jsonByteCount: shard.byteSize,
             compilerIdentity: compiler,
-            profileIdentity: AdblockFilterListProfileKind(rawValue: manifest.profileId),
             diagnosticsSummary: "\(manifest.bundleId);\(shard.group)"
         )
     }
@@ -667,10 +664,7 @@ struct SumiEmbeddedAdblockBundleSnapshot: Equatable, Sendable {
 
 enum SumiEmbeddedAdblockBundleCatalog {
     static let supportedProfileIds = [
-        "currentDefault",
-        "adguardAdsOnly",
         "adguardAdsPrivacy",
-        "maximumCustomReference",
     ]
 
     static let generateCommand = "scripts/build_sumi_adblock_bundle.sh --all-profiles --output .build/sumi-adblock-bundles"
@@ -866,14 +860,8 @@ enum SumiEmbeddedAdblockBundleCatalog {
 
     private static func displayName(for profileId: String) -> String {
         switch profileId {
-        case "currentDefault":
-            return "currentDefault"
-        case "adguardAdsOnly":
-            return "adguardAdsOnly"
         case "adguardAdsPrivacy":
             return "adguardAdsPrivacy"
-        case "maximumCustomReference":
-            return "maximumCustomReference"
         default:
             return profileId
         }

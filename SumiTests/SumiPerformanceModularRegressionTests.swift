@@ -143,8 +143,8 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let settingsSource = try Self.source(named: "Sumi/Components/Settings/SettingsView.swift")
 
         XCTAssertTrue(togglesSource.contains("SumiSettingsModuleToggleGate"))
-        XCTAssertTrue(privacySource.contains("SumiSettingsModuleToggleGate(descriptor: .trackingProtection)"))
-        XCTAssertTrue(privacySource.contains("SumiSettingsModuleToggleGate(descriptor: .adBlocking)"))
+        XCTAssertFalse(privacySource.contains("SumiSettingsModuleToggleGate(descriptor: .trackingProtection)"))
+        XCTAssertFalse(privacySource.contains("SumiSettingsModuleToggleGate(descriptor: .adBlocking)"))
         XCTAssertTrue(settingsSource.contains("SumiSettingsModuleToggleGate(descriptor: .extensions)"))
         XCTAssertTrue(settingsSource.contains("SumiSettingsModuleToggleGate(descriptor: .userScripts)"))
 
@@ -214,7 +214,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertTrue(sources.contains("__sumiTabSuspension"))
         assertNoOptionalModuleScriptsOrHandlers(in: webView.configuration.userContentController)
         XCTAssertNil(webView.configuration.webExtensionController)
-        XCTAssertEqual(adBlockingModule.normalTabDecision(for: tab.url).assets, .empty)
+        XCTAssertFalse(adBlockingModule.hasLoadedRuntime)
 
         let suspensionScript = try XCTUnwrap(
             tab.normalTabCoreUserScripts().first { $0.source.contains("__sumiTabSuspension") }
@@ -245,11 +245,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertTrue(registry.isEnabled(.trackingProtection))
         XCTAssertTrue(registry.isEnabled(.adBlocking))
         XCTAssertEqual(adBlockingModule.status, .enabledNativeContentBlocking)
-        XCTAssertFalse(adBlockingModule.assetsIfAvailable().contentRuleListIdentifiers.isEmpty)
-        XCTAssertEqual(
-            adBlockingModule.normalTabDecision(for: URL(string: "https://ads.example.com")).assets.scriptSources,
-            []
-        )
+        XCTAssertFalse(adBlockingModule.hasLoadedRuntime)
 
         registry.enable(.userScripts)
         XCTAssertTrue(registry.isEnabled(.userScripts))
@@ -381,16 +377,12 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let moduleSource = try Self.source(named: "Sumi/ContentBlocking/SumiTrackingProtectionModule.swift")
         let dataSource = try Self.source(named: "Sumi/ContentBlocking/SumiTrackingProtection.swift")
         let settingsSource = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
-        let trackingSettingsSource: String
-        if let trackingSettingsRange = settingsSource.range(of: "private struct LegacyTrackingProtectionRuntimeSettingsView") {
-            trackingSettingsSource = String(settingsSource[trackingSettingsRange.lowerBound...])
-        } else {
-            trackingSettingsSource = settingsSource
-        }
+        let trackingSettingsSource = settingsSource
 
-        XCTAssertTrue(settingsSource.contains(".accessibilityLabel(\"Update tracker data\")"))
-        XCTAssertTrue(settingsSource.contains("await trackingProtectionModule.updateTrackerDataManually()"))
-        XCTAssertTrue(settingsSource.contains(".accessibilityLabel(\"Reset to bundled tracker data\")"))
+        XCTAssertFalse(settingsSource.contains("LegacyTrackingProtectionRuntimeSettingsView"))
+        XCTAssertFalse(settingsSource.contains(".accessibilityLabel(\"Update tracker data\")"))
+        XCTAssertFalse(settingsSource.contains("await trackingProtectionModule.updateTrackerDataManually()"))
+        XCTAssertFalse(settingsSource.contains(".accessibilityLabel(\"Reset to bundled tracker data\")"))
         XCTAssertFalse(trackingSettingsSource.contains(".task"))
         XCTAssertFalse(trackingSettingsSource.contains(".onAppear"))
         XCTAssertFalse(trackingSettingsSource.localizedCaseInsensitiveContains("stale"))
@@ -528,7 +520,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         )
     }
 
-    func testAdBlockingSkeletonStaysInert() throws {
+    func testAdBlockingPreparedBundleBoundaryStaysInertUntilNeeded() throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let registry = SumiModuleRegistry(
@@ -538,24 +530,13 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
 
         XCTAssertFalse(module.isEnabled)
         XCTAssertEqual(module.status, .disabled)
-        XCTAssertEqual(module.assetsIfAvailable(), .empty)
-        XCTAssertEqual(module.normalTabDecision(for: nil).status, .disabled)
-        XCTAssertEqual(module.normalTabDecision(for: nil).assets, .empty)
         XCTAssertFalse(module.hasLoadedRuntime)
 
         module.setEnabled(true)
 
         XCTAssertTrue(module.isEnabled)
         XCTAssertEqual(module.status, .enabledNativeContentBlocking)
-        XCTAssertFalse(module.assetsIfAvailable().contentRuleListIdentifiers.isEmpty)
-        XCTAssertEqual(module.normalTabDecision(for: nil).status, .enabledNativeContentBlocking)
-        XCTAssertEqual(module.normalTabDecision(for: nil).assets.scriptSources, [])
         XCTAssertFalse(module.hasLoadedRuntime)
-
-        let eligibleDecision = module.normalTabDecision(for: try XCTUnwrap(URL(string: "https://example.com/")))
-        XCTAssertEqual(eligibleDecision.status, .enabledNativeContentBlocking)
-        XCTAssertNotNil(eligibleDecision.contentBlockingService)
-        XCTAssertTrue(module.hasLoadedRuntime)
 
         let adBlockingSource = try Self.source(named: "Sumi/ContentBlocking/SumiAdBlockingModule.swift")
         assertSourceExcludes(

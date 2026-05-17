@@ -10,106 +10,10 @@ import SwiftUI
 import UniformTypeIdentifiers
 import WebKit
 
-struct URLBarTrackingProtectionPresenter: Equatable {
-    struct ShieldIcon: Equatable {
-        let chromeIconName: String
-        let fallbackSystemName: String
-        let showsCheckmark: Bool
-    }
-
-    let rowTitle: String
-    let rowSubtitle: String?
-    let isEnabled: Bool
-    let shieldIcon: ShieldIcon
-    let shieldAccessibilityLabel: String
-    let shieldAccessibilityValue: String
-
-    static func make(
-        policy: SumiTrackingProtectionEffectivePolicy,
-        isReloadRequired: Bool
-    ) -> URLBarTrackingProtectionPresenter {
-        let isEnabled = policy.isEnabled
-
-        return URLBarTrackingProtectionPresenter(
-            rowTitle: "Tracking Protection",
-            rowSubtitle: isReloadRequired ? "Reload required" : nil,
-            isEnabled: isEnabled,
-            shieldIcon: ShieldIcon(
-                chromeIconName: isEnabled ? "shield.fill" : "tracking-protection",
-                fallbackSystemName: isEnabled ? "shield.fill" : "shield",
-                showsCheckmark: isEnabled
-            ),
-            shieldAccessibilityLabel: isEnabled
-                ? "Disable Tracking Protection for this site"
-                : "Enable Tracking Protection for this site",
-            shieldAccessibilityValue: isEnabled ? "On" : "Off"
-        )
-    }
-
-    static func siteOverrideAfterToggle(
-        for policy: SumiTrackingProtectionEffectivePolicy
-    ) -> SumiTrackingProtectionSiteOverride {
-        policy.isEnabled ? .disabled : .enabled
-    }
-
-}
-
-struct URLBarAdblockPresenter: Equatable {
-    let rowTitle: String
-    let rowSubtitle: String
-    let isEnabled: Bool
-    let isInteractive: Bool
-    let accessibilityLabel: String
-    let accessibilityValue: String
-
-    static func make(
-        policy: SumiAdblockEffectivePolicy,
-        isGlobalEnabled: Bool,
-        isReloadRequired: Bool
-    ) -> URLBarAdblockPresenter {
-        let subtitle: String
-        if isReloadRequired {
-            subtitle = "Reload required"
-        } else if !isGlobalEnabled {
-            subtitle = "Off globally"
-        } else {
-            subtitle = policy.isEnabled ? "On for this site" : "Off for this site"
-        }
-
-        return URLBarAdblockPresenter(
-            rowTitle: "Ad Blocking",
-            rowSubtitle: subtitle,
-            isEnabled: isGlobalEnabled && policy.isEnabled,
-            isInteractive: isGlobalEnabled && policy.host != nil,
-            accessibilityLabel: policy.isEnabled
-                ? "Disable Ad Blocking for this site"
-                : "Enable Ad Blocking for this site",
-            accessibilityValue: subtitle
-        )
-    }
-
-    static func siteOverrideAfterToggle(
-        for policy: SumiAdblockEffectivePolicy
-    ) -> SumiAdblockSiteOverride {
-        policy.isEnabled ? .disabled : .allowed
-    }
-}
-
 struct SiteControlsSettingRowModel: Equatable, Identifiable {
     enum Kind: Equatable {
-        case tracking(
-            policy: SumiTrackingProtectionEffectivePolicy,
-            siteOverride: SumiTrackingProtectionSiteOverride,
-            reloadRequired: Bool
-        )
         case protection(
             plan: SumiProtectionRulePlan,
-            reloadRequired: Bool
-        )
-        case adBlocking(
-            policy: SumiAdblockEffectivePolicy,
-            siteOverride: SumiAdblockSiteOverride,
-            globalEnabled: Bool,
             reloadRequired: Bool
         )
         case cookies
@@ -128,10 +32,7 @@ struct SiteControlsSettingRowModel: Equatable, Identifiable {
         switch kind {
         case .protection(let plan, _):
             return plan.requestedLevel == .off || plan.siteHost == nil
-        case .adBlocking(_, _, let globalEnabled, _):
-            return !globalEnabled
-        case .tracking(_, _, _),
-             .cookies,
+        case .cookies,
              .permissions,
              .localPage:
             return false
@@ -142,10 +43,7 @@ struct SiteControlsSettingRowModel: Equatable, Identifiable {
         switch kind {
         case .protection(let plan, _):
             return plan.requestedLevel != .off && plan.siteHost != nil
-        case .adBlocking(_, _, let globalEnabled, _):
-            return globalEnabled
-        case .tracking(_, _, _),
-             .cookies,
+        case .cookies,
              .permissions:
             return true
         default:
@@ -305,53 +203,6 @@ struct SiteControlsSnapshot: Equatable {
                         kind: .protection(
                             plan: plan,
                             reloadRequired: protectionReloadRequired
-                        )
-                    )
-                )
-            } else if let trackingPolicy = trackingProtectionModule?.effectivePolicyIfEnabled(for: url) {
-                let siteOverride = trackingProtectionModule?.siteOverrideIfEnabled(for: url) ?? .inherit
-                rows.append(
-                    .init(
-                        id: "tracking",
-                        chromeIconName: trackingPolicy.isEnabled
-                            ? nil
-                            : "tracking-protection",
-                        fallbackSystemName: trackingPolicy.isEnabled
-                            ? "shield.fill"
-                            : "shield",
-                        title: "Tracking Protection",
-                        subtitle: trackingProtectionReloadRequired ? "Reload required" : nil,
-                        kind: .tracking(
-                            policy: trackingPolicy,
-                            siteOverride: siteOverride,
-                            reloadRequired: trackingProtectionReloadRequired
-                        )
-                    )
-                )
-            }
-            if protectionCoordinator == nil, let adBlockingModule {
-                let adblockPolicy = adBlockingModule.effectivePolicy(for: url)
-                let siteOverride = adBlockingModule.siteOverride(for: url)
-                rows.append(
-                    .init(
-                        id: "ad-blocking",
-                        chromeIconName: adblockPolicy.isEnabled && adBlockingModule.isEnabled
-                            ? nil
-                            : "shield-off",
-                        fallbackSystemName: adblockPolicy.isEnabled && adBlockingModule.isEnabled
-                            ? "shield.lefthalf.filled"
-                            : "shield.slash",
-                        title: "Ad Blocking",
-                        subtitle: URLBarAdblockPresenter.make(
-                            policy: adblockPolicy,
-                            isGlobalEnabled: adBlockingModule.isEnabled,
-                            isReloadRequired: adblockReloadRequired
-                        ).rowSubtitle,
-                        kind: .adBlocking(
-                            policy: adblockPolicy,
-                            siteOverride: siteOverride,
-                            globalEnabled: adBlockingModule.isEnabled,
-                            reloadRequired: adblockReloadRequired
                         )
                     )
                 )
@@ -816,8 +667,6 @@ struct URLBarHubPopover: View {
                 ForEach(snapshot.settingsRows) { row in
                     HubSettingRow(
                         model: row,
-                        trackingPresenter: trackingPresenter(for: row),
-                        adblockPresenter: adblockPresenter(for: row),
                         resetAction: resetAction(for: row)
                     ) {
                         handleSettingAction(row)
@@ -840,15 +689,6 @@ struct URLBarHubPopover: View {
             setProtectionOverride(
                 plan.siteOverride == .disabled ? .inherit : .disabled
             )
-        case .tracking(let policy, _, _):
-            setTrackingProtectionOverride(
-                URLBarTrackingProtectionPresenter.siteOverrideAfterToggle(for: policy)
-            )
-        case .adBlocking(let policy, _, let globalEnabled, _):
-            guard globalEnabled else { return }
-            setAdblockOverride(
-                URLBarAdblockPresenter.siteOverrideAfterToggle(for: policy)
-            )
         case .cookies:
             setMode(.siteDataDetails, direction: .forward)
         case .permissions:
@@ -858,51 +698,11 @@ struct URLBarHubPopover: View {
         }
     }
 
-    private func trackingPresenter(
-        for row: SiteControlsSettingRowModel
-    ) -> URLBarTrackingProtectionPresenter? {
-        guard case .tracking(let policy, _, let reloadRequired) = row.kind else {
-            return nil
-        }
-
-        return URLBarTrackingProtectionPresenter.make(
-            policy: policy,
-            isReloadRequired: reloadRequired
-        )
-    }
-
-    private func adblockPresenter(
-        for row: SiteControlsSettingRowModel
-    ) -> URLBarAdblockPresenter? {
-        guard case .adBlocking(let policy, _, let globalEnabled, let reloadRequired) = row.kind else {
-            return nil
-        }
-
-        return URLBarAdblockPresenter.make(
-            policy: policy,
-            isGlobalEnabled: globalEnabled,
-            isReloadRequired: reloadRequired
-        )
-    }
-
     private func resetAction(
         for row: SiteControlsSettingRowModel
     ) -> (() -> Void)? {
         _ = row
         return nil
-    }
-
-    private func setTrackingProtectionOverride(
-        _ override: SumiTrackingProtectionSiteOverride
-    ) {
-        guard let currentTab,
-              let settings = browserManager.trackingProtectionModule.settingsIfEnabled()
-        else { return }
-        settings.setSiteOverride(override, for: currentTab.url)
-        currentTab.markTrackingProtectionReloadRequiredIfNeeded(
-            afterChangingOverrideFor: currentTab.url
-        )
-        refreshNonce += 1
     }
 
     private func setProtectionOverride(
@@ -912,19 +712,6 @@ struct URLBarHubPopover: View {
         browserManager.protectionCoordinator.setSiteOverride(override, for: currentTab.url)
         currentTab.markProtectionReloadRequiredIfNeeded(
             afterChangingPolicyFor: currentTab.url
-        )
-        refreshNonce += 1
-    }
-
-    private func setAdblockOverride(
-        _ override: SumiAdblockSiteOverride
-    ) {
-        guard let currentTab,
-              browserManager.adBlockingModule.isEnabled
-        else { return }
-        browserManager.adBlockingModule.setSiteOverride(override, for: currentTab.url)
-        currentTab.markAdblockReloadRequiredIfNeeded(
-            afterChangingOverrideFor: currentTab.url
         )
         refreshNonce += 1
     }
@@ -1785,41 +1572,8 @@ private struct SumiFooterSecurityStatus: View {
     }
 }
 
-private struct SumiTrackingProtectionShieldIcon: View {
-    let presenter: URLBarTrackingProtectionPresenter
-    let size: CGFloat
-    let tint: Color
-    let checkTint: Color
-
-    var body: some View {
-        ZStack {
-            if presenter.shieldIcon.showsCheckmark {
-                Image(systemName: "shield.fill")
-                    .font(.system(size: size, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .symbolRenderingMode(.monochrome)
-
-                Image(systemName: "checkmark")
-                    .font(.system(size: max(size * 0.44, 8), weight: .black))
-                    .foregroundStyle(checkTint)
-                    .offset(y: -1)
-            } else {
-                SumiZenChromeIcon(
-                    iconName: presenter.shieldIcon.chromeIconName,
-                    fallbackSystemName: presenter.shieldIcon.fallbackSystemName,
-                    size: size,
-                    tint: tint
-                )
-            }
-        }
-        .frame(width: size, height: size)
-    }
-}
-
 private struct HubSettingRow: View {
     let model: SiteControlsSettingRowModel
-    let trackingPresenter: URLBarTrackingProtectionPresenter?
-    let adblockPresenter: URLBarAdblockPresenter?
     let resetAction: (() -> Void)?
     let action: () -> Void
 
@@ -1833,34 +1587,17 @@ private struct HubSettingRow: View {
 
     init(
         model: SiteControlsSettingRowModel,
-        trackingPresenter: URLBarTrackingProtectionPresenter? = nil,
-        adblockPresenter: URLBarAdblockPresenter? = nil,
         resetAction: (() -> Void)? = nil,
         action: @escaping () -> Void
     ) {
         self.model = model
-        self.trackingPresenter = trackingPresenter
-        self.adblockPresenter = adblockPresenter
         self.resetAction = resetAction
         self.action = action
     }
 
     var body: some View {
         Group {
-            if let trackingPresenter {
-                Button(action: action) {
-                    trackingRowContent(trackingPresenter)
-                }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            } else if let adblockPresenter {
-                Button(action: action) {
-                    adblockRowContent(adblockPresenter)
-                }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .disabled(!adblockPresenter.isInteractive)
-            } else if model.isInteractive && !model.isDisabled {
+            if model.isInteractive && !model.isDisabled {
                 Button(action: action) {
                     rowContent
                 }
@@ -1886,91 +1623,6 @@ private struct HubSettingRow: View {
             }
         }
         .accessibilityIdentifier("urlhub-setting-row-\(model.id)")
-    }
-
-    private func adblockRowContent(
-        _ presenter: URLBarAdblockPresenter
-    ) -> some View {
-        HStack(spacing: 8) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(capsuleFill)
-                    .scaleEffect(capsuleScale)
-
-                SumiZenChromeIcon(
-                    iconName: presenter.isEnabled ? nil : "shield-off",
-                    fallbackSystemName: presenter.isEnabled ? "shield.lefthalf.filled" : "shield.slash",
-                    size: 16,
-                    tint: presenter.isEnabled ? Color.black.opacity(0.88) : iconTint
-                )
-            }
-            .frame(width: 34, height: 34)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(presenter.rowTitle)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(tokens.primaryText)
-                    .lineLimit(1)
-                Text(presenter.rowSubtitle)
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(tokens.secondaryText)
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
-        .contentShape(Rectangle())
-        .help(presenter.accessibilityLabel)
-        .accessibilityLabel(presenter.accessibilityLabel)
-        .accessibilityValue(presenter.accessibilityValue)
-    }
-
-    private func trackingRowContent(
-        _ presenter: URLBarTrackingProtectionPresenter
-    ) -> some View {
-        HStack(spacing: 8) {
-            trackingShieldCapsule(presenter)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(presenter.rowTitle)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(tokens.primaryText)
-                    .lineLimit(1)
-
-                if let rowSubtitle = presenter.rowSubtitle {
-                    Text(rowSubtitle)
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(tokens.secondaryText)
-                        .lineLimit(1)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-        }
-        .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
-        .contentShape(Rectangle())
-        .help(presenter.shieldAccessibilityLabel)
-        .accessibilityLabel(presenter.shieldAccessibilityLabel)
-        .accessibilityValue(presenter.shieldAccessibilityValue)
-    }
-
-    private func trackingShieldCapsule(
-        _ presenter: URLBarTrackingProtectionPresenter
-    ) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(capsuleFill)
-                .scaleEffect(capsuleScale)
-
-            SumiTrackingProtectionShieldIcon(
-                presenter: presenter,
-                size: 17,
-                tint: presenter.isEnabled ? Color.black.opacity(0.88) : iconTint,
-                checkTint: Color.white
-            )
-        }
-        .frame(width: 34, height: 34)
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var rowContent: some View {

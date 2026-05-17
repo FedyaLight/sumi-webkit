@@ -47,7 +47,7 @@ Required state for every sample:
 2. Per-site Adblock policy for the test page: allowed or inherit-to-enabled.
 3. Tracking Protection: disabled.
 4. Cosmetic mode: `nativeCSS`.
-5. Enhanced runtime: disabled; do a separate comparison if `enhancedRuntime` is tested.
+5. Browser runtime: prepared native bundles only; no enhanced runtime path exists in Sumi.app.
 6. Active generation: present and not stale.
 7. The selected profile must match the active compiled profile.
 8. Native compiler identity and version.
@@ -63,8 +63,7 @@ Required state for every sample:
 18. Date and local time of measurement.
 19. Whether the page was reloaded after the last state change.
 
-Use `SumiAdBlockingModule.attachmentDiagnosticsReport(for:)` or
-`attachmentDiagnostics(for:)` for the diagnostics capture. If any required
+Use unified protection diagnostics for the capture. If any required
 state is missing, stale, globally disabled, per-site disabled, overlapped by
 Tracking Protection, or missing expected shards, discard that run and repeat it
 after a manual update/recompile plus reload.
