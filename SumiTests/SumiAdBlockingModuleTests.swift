@@ -138,6 +138,64 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertFalse(module.hasLoadedRuntime)
     }
 
+    func testInternalSumiPagesAreAdblockIneligibleAndExpectNoShards() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.adBlocking)
+        var didCreateRuleListStore = false
+        let module = SumiAdBlockingModule(
+            moduleRegistry: registry,
+            ruleListStoreFactory: { settings, isEnabled in
+                didCreateRuleListStore = true
+                return AdblockWebKitRuleListStore(settingsStore: settings, isAdblockEnabled: isEnabled)
+            }
+        )
+        let settingsURL = SumiSurface.settingsSurfaceURL(paneQuery: "privacy")
+
+        let decision = module.normalTabDecision(for: settingsURL)
+        let diagnostics = module.attachmentDiagnostics(for: settingsURL)
+        let currentTabDiagnostics = module.currentTabDiagnostics(
+            for: settingsURL,
+            appliedState: nil,
+            reloadRequired: false,
+            actualAttachedRuleListIdentifiers: []
+        )
+
+        XCTAssertFalse(module.surfaceEligibility(for: settingsURL).isEligible)
+        XCTAssertEqual(module.surfaceEligibility(for: settingsURL).ineligibleReason, "Internal Sumi surface")
+        XCTAssertNil(module.normalizedSiteHost(for: settingsURL))
+        XCTAssertFalse(module.effectivePolicy(for: settingsURL).isEnabled)
+        XCTAssertEqual(decision.assets, .empty)
+        XCTAssertNil(decision.contentBlockingService)
+        XCTAssertFalse(diagnostics.isEnabled)
+        XCTAssertEqual(diagnostics.ineligibleSurfaceReason, "Internal Sumi surface")
+        XCTAssertTrue(diagnostics.expectedNetworkShardIdentifiers.isEmpty)
+        XCTAssertTrue(diagnostics.expectedNativeCSSShardIdentifiers.isEmpty)
+        XCTAssertTrue(diagnostics.missingShardIdentifiers.isEmpty)
+        XCTAssertEqual(currentTabDiagnostics.suspectedBlankPageCategory, "D internal/ineligible surface")
+        XCTAssertFalse(didCreateRuleListStore)
+    }
+
+    func testAboutBlankIsAdblockIneligibleAndReportsReason() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.adBlocking)
+        let module = SumiAdBlockingModule(moduleRegistry: registry)
+
+        let diagnostics = module.attachmentDiagnostics(for: SumiSurface.emptyTabURL)
+
+        XCTAssertEqual(diagnostics.ineligibleSurfaceReason, "Sumi empty/new tab surface")
+        XCTAssertTrue(diagnostics.expectedNetworkShardIdentifiers.isEmpty)
+        XCTAssertTrue(diagnostics.expectedNativeCSSShardIdentifiers.isEmpty)
+        XCTAssertTrue(diagnostics.missingShardIdentifiers.isEmpty)
+    }
+
     func testSwiftCompilerBoundaryInvokesRustAdapter() async throws {
         let adapter = CountingAdblockRustAdapter(output: .tinyFixture)
         let compiler = AdblockRustCompiler(adapter: adapter)
@@ -181,8 +239,9 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             ]
         )
 
-        let nativeOutput = try await compiler.compileNativeContentBlocking(input)
-        let enhancedOutput = try await compiler.compileEnhancedCompatibility(input)
+        let combinedOutput = try await compiler.compileNativeAndEnhancedCompatibility(input)
+        let nativeOutput = combinedOutput.nativeOutput
+        let enhancedOutput = try XCTUnwrap(combinedOutput.enhancedOutput)
 
         let callCount = await adapter.callCount
         XCTAssertEqual(callCount, 1)
@@ -371,9 +430,13 @@ final class SumiAdBlockingModuleTests: XCTestCase {
                 network: [],
                 nativeCosmeticCSS: [
                     Self.contentRule(action: "css-display-none", urlFilter: ".*", selector: "body"),
+                    Self.contentRule(action: "css-display-none", urlFilter: ".*", selector: "HTML"),
                     Self.contentRule(action: "css-display-none", urlFilter: ".*", selector: "html[class^=\"img_\"]"),
                     Self.contentRule(action: "css-display-none", urlFilter: ".*", selector: "#app"),
                     Self.contentRule(action: "css-display-none", urlFilter: ".*", selector: ".ad-one, body, .ad-two"),
+                    Self.contentRule(action: "css-display-none", urlFilter: ".*", selector: "body > div[id][class*=\" \"]:first-child"),
+                    Self.contentRule(action: "css-display-none", urlFilter: ".*", selector: "body > div[id][class*=\" \"]:has(div.adblock_subtitle)"),
+                    Self.contentRule(action: "css-display-none", urlFilter: ".*", selector: "BODY > DIV[id][class*=\" \"]"),
                     Self.contentRule(action: "css-display-none", urlFilter: ".*", selector: "body > .ad-three"),
                     Self.contentRule(action: "css-display-none", urlFilter: ".*", selector: "#root-ad"),
                 ],
@@ -397,10 +460,18 @@ final class SumiAdBlockingModuleTests: XCTestCase {
 
         XCTAssertEqual(output.diagnostics.filteredUnsafeNativeCosmeticSelectors.map(\.rule), [
             "body",
+            "HTML",
             "html[class^=\"img_\"]",
             "#app",
             "body",
+            "body > div[id][class*=\" \"]:first-child",
+            "body > div[id][class*=\" \"]:has(div.adblock_subtitle)",
+            "BODY > DIV[id][class*=\" \"]",
         ])
+        XCTAssertEqual(
+            output.diagnostics.filteredUnsafeNativeCosmeticSelectors.last?.reason,
+            "unsafe native CSS root-child page shell selector"
+        )
         XCTAssertEqual(selectors, [
             ".ad-one, .ad-two",
             "body > .ad-three",
@@ -769,6 +840,36 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertTrue(settings.listSelectionRequiresUpdate)
     }
 
+    func testResetListsToSelectedProfileClearsManualCustomSelection() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let settings = AdblockSettingsStore(userDefaults: harness.defaults)
+        XCTAssertTrue(settings.setSelectedNativeProfile(.balancedNative, allowDeveloperOnly: true))
+        settings.selectedLists = SumiAdblockFilterListSelection(
+            identifiers: ["adguard-base", "easylist", "fanboy-social"]
+        )
+        let registry = AdblockFilterListRegistry()
+
+        XCTAssertTrue(
+            registry.effectiveSelectionDiagnostics(
+                selection: settings.selectedLists,
+                profileKind: settings.selectedNativeProfile
+            ).isCustomListSelection
+        )
+
+        settings.resetListsToSelectedProfile()
+
+        let diagnostics = registry.effectiveSelectionDiagnostics(
+            selection: settings.selectedLists,
+            profileKind: settings.selectedNativeProfile,
+            locale: Locale(identifier: "en_US")
+        )
+        XCTAssertTrue(settings.selectedLists.usesDefaultSelection)
+        XCTAssertEqual(diagnostics.finalEffectiveListIdentifiers, ["adguard-base", "adguard-mobile-ads"])
+        XCTAssertFalse(diagnostics.isCustomListSelection)
+        XCTAssertTrue(settings.listSelectionRequiresUpdate)
+    }
+
     func testLegacyOraLikeNativeSettingsProfileLoadsAsReferenceAdGuardNative() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -926,6 +1027,8 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertEqual(diagnostics.activeCompiledNativeProfile, .currentDefault)
         XCTAssertFalse(diagnostics.selectedProfileDiffersFromActiveGeneration)
         XCTAssertEqual(diagnostics.activeGenerationId, "hybrid-test-generation")
+        XCTAssertNil(diagnostics.previousGenerationId)
+        XCTAssertFalse(diagnostics.previousGenerationRetained)
         XCTAssertNotNil(diagnostics.lastSuccessfulUpdateDate)
         XCTAssertEqual(diagnostics.nativeCompiler?.name, "adblock-rust")
         XCTAssertEqual(diagnostics.networkShardCount, 1)
@@ -933,6 +1036,10 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertEqual(diagnostics.totalNetworkRuleCount, 1)
         XCTAssertEqual(diagnostics.totalNativeCSSRuleCount, 1)
         XCTAssertEqual(diagnostics.largestShardJSONByteCount, 2)
+        XCTAssertEqual(diagnostics.unsafeNativeCSSFilteredRuleCount, 2)
+#if DEBUG
+        XCTAssertNotNil(diagnostics.currentProcessResidentMemoryBytes)
+#endif
         XCTAssertEqual(diagnostics.cosmeticMode, .nativeCSS)
         XCTAssertFalse(diagnostics.enhancedRuntimeIsEnabled)
         XCTAssertFalse(diagnostics.trackingProtectionModuleEnabled)
@@ -1101,6 +1208,10 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertTrue(diagnostics.tabUsesActiveGeneration)
         XCTAssertFalse(diagnostics.hasMixedGenerationAttachment)
         XCTAssertEqual(diagnostics.attachmentAssessment, "active generation attached")
+        XCTAssertEqual(
+            diagnostics.suspectedBlankPageCategory,
+            "A possible native CSS over-hiding; compare cosmeticMode.off"
+        )
 
         let appliedDiagnostics = module.currentTabDiagnostics(
             for: tab.url,
@@ -1117,6 +1228,19 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertEqual(appliedDiagnostics.attachedNetworkShardIdentifiers, ["sumi.adblock.network.hybridtest"])
         XCTAssertEqual(appliedDiagnostics.attachedNativeCSSShardIdentifiers, ["sumi.adblock.nativeCSS.hybridtest"])
         XCTAssertTrue(appliedDiagnostics.missingShardIdentifiers.isEmpty)
+
+        let missingDiagnostics = module.currentTabDiagnostics(
+            for: tab.url,
+            appliedState: SumiAdblockAttachmentState(siteHost: "example.com", isEnabled: true),
+            reloadRequired: false,
+            actualAttachedRuleListIdentifiers: ["sumi.adblock.network.hybridtest"]
+        )
+        XCTAssertEqual(missingDiagnostics.missingShardIdentifiers, ["sumi.adblock.nativeCSS.hybridtest"])
+        XCTAssertTrue(missingDiagnostics.reloadRequiredForActiveGeneration)
+        XCTAssertEqual(
+            missingDiagnostics.suspectedBlankPageCategory,
+            "C mixed/stale/reload-required attachment"
+        )
     }
 
     func testCurrentTabDiagnosticsDetectMixedAndOldShardAttachment() async throws {
@@ -1151,6 +1275,42 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertEqual(diagnostics.unexpectedOldShardIdentifiers, [oldIdentifier])
         XCTAssertTrue(diagnostics.reloadRequiredForActiveGeneration)
         XCTAssertEqual(diagnostics.attachmentAssessment, "mixed old and active Adblock generations attached")
+        XCTAssertEqual(diagnostics.suspectedBlankPageCategory, "C mixed/stale/reload-required attachment")
+    }
+
+    func testCurrentTabDiagnosticsDetectAttachedGenerationDifferentFromActiveGeneration() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.adBlocking)
+        let settings = AdblockSettingsStore(userDefaults: harness.defaults)
+        settings.cosmeticMode = .nativeCSS
+        let module = try await makeModuleWithSeededManifest(
+            registry: registry,
+            settings: settings,
+            sitePolicyStore: AdblockSitePolicyStore(userDefaults: harness.defaults)
+        )
+        try await waitForActiveAdblockGeneration(in: module)
+
+        let diagnostics = module.currentTabDiagnostics(
+            for: URL(string: "https://example.com/old-generation"),
+            appliedState: SumiAdblockAttachmentState(siteHost: "example.com", isEnabled: true),
+            reloadRequired: false,
+            actualAttachedRuleListIdentifiers: [
+                "sumi.adblock.network.old-generation.0001.oldhash",
+                "sumi.adblock.nativeCSS.old-generation.0001.oldhash",
+            ]
+        )
+
+        XCTAssertEqual(diagnostics.attachedGenerationId, "old-generation")
+        XCTAssertFalse(diagnostics.tabUsesActiveGeneration)
+        XCTAssertTrue(diagnostics.tabAppearsToUseOlderGeneration)
+        XCTAssertEqual(diagnostics.missingShardIdentifiers.count, 2)
+        XCTAssertEqual(diagnostics.unexpectedOldShardIdentifiers.count, 2)
+        XCTAssertTrue(diagnostics.reloadRequiredForActiveGeneration)
+        XCTAssertEqual(diagnostics.suspectedBlankPageCategory, "C mixed/stale/reload-required attachment")
     }
 
     func testCurrentTabDiagnosticsDetectAttachedShardsWhenPerSiteDisabled() {
@@ -1210,6 +1370,65 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertEqual(diagnostics.expectedNativeCSSShardIdentifiers, [])
         XCTAssertTrue(diagnostics.reloadRequiredForActiveGeneration)
         XCTAssertEqual(diagnostics.attachmentAssessment, "native CSS attached while cosmetic mode is off")
+
+        let networkOnlyDiagnostics = module.currentTabDiagnostics(
+            for: URL(string: "https://example.com/off"),
+            appliedState: SumiAdblockAttachmentState(siteHost: "example.com", isEnabled: true),
+            reloadRequired: false,
+            actualAttachedRuleListIdentifiers: ["sumi.adblock.network.hybridtest"]
+        )
+        XCTAssertEqual(
+            networkOnlyDiagnostics.suspectedBlankPageCategory,
+            "B possible network overblocking; compare Adblock disabled"
+        )
+    }
+
+    func testSettingsDiagnosticsCanTargetLastActiveEligibleWebTab() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.adBlocking)
+        let module = SumiAdBlockingModule(moduleRegistry: registry)
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            adBlockingModule: module
+        )
+        let windowState = BrowserWindowState()
+        let space = browserManager.tabManager.currentSpace
+        windowState.currentSpaceId = space?.id
+        let webTab = browserManager.tabManager.createNewTab(
+            url: "https://www.example.com/failing-page",
+            in: space,
+            activate: false
+        )
+        let settingsTab = browserManager.tabManager.createNewTab(
+            url: SumiSurface.settingsSurfaceURL(paneQuery: "privacy").absoluteString,
+            in: space,
+            activate: false
+        )
+        windowState.currentTabId = settingsTab.id
+        if let spaceId = space?.id {
+            windowState.recentRegularTabIdsBySpace[spaceId] = [settingsTab.id, webTab.id]
+        }
+
+        let target = browserManager.lastActiveAdblockEligibleNormalWebTab(
+            in: windowState,
+            excluding: settingsTab
+        )
+        let report = module.copyDiagnosticsReport(
+            for: target?.url,
+            currentTabDiagnostics: nil,
+            targetDescription: "last eligible web tab (current tab ineligible: Internal Sumi surface)"
+        )
+
+        XCTAssertEqual(target?.id, webTab.id)
+        XCTAssertTrue(report.contains("targetSource=last eligible web tab"))
+        XCTAssertTrue(report.contains("targetURL=https://www.example.com/failing-page"))
+        XCTAssertTrue(report.contains("diagnosticsTargetURL=https://www.example.com/failing-page"))
+        XCTAssertTrue(report.contains("requestingURL=nil"))
+        XCTAssertFalse(report.contains("targetURL=sumi://settings"))
     }
 
     func testCopyDiagnosticsReportIncludesActionableAttachmentAndSelectionFields() async throws {
@@ -1240,12 +1459,18 @@ final class SumiAdBlockingModuleTests: XCTestCase {
 
         let report = module.copyDiagnosticsReport(
             for: url,
-            currentTabDiagnostics: tabDiagnostics
+            currentTabDiagnostics: tabDiagnostics,
+            targetDescription: "current tab",
+            requestingURL: SumiSurface.settingsSurfaceURL(paneQuery: "privacy")
         )
 
         for required in [
             "Sumi Adblock Copy Diagnostics",
             "timestamp=",
+            "targetSource=current tab",
+            "targetURL=https://example.com/report",
+            "diagnosticsTargetURL=https://example.com/report",
+            "requestingURL=sumi://settings?pane=privacy",
             "currentURL=https://example.com/report",
             "normalizedSiteKey=example.com",
             "selectedNativeProfile=currentDefault",
@@ -1254,6 +1479,8 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             "actualAttachedShardIdentifiers=sumi.adblock.nativeCSS.hybridtest,sumi.adblock.network.hybridtest",
             "reloadRequired=true",
             "trackingProtectionEnabled=false",
+            "unsafeNativeCSSFilteredRuleCount=2",
+            "suspectedBlankPageCategory=C mixed/stale/reload-required attachment",
             "blankPageComparisonHint=",
         ] {
             XCTAssertTrue(report.contains(required), required)
@@ -1971,6 +2198,9 @@ final class SumiAdBlockingModuleTests: XCTestCase {
 
         XCTAssertTrue(compilerSource.contains("AdblockRustHelperExecutableAdapter"))
         XCTAssertTrue(compilerSource.contains("SUMI_ADBLOCK_RUST_ADAPTER"))
+        XCTAssertTrue(compilerSource.contains("compileNativeAndEnhancedCompatibility"))
+        XCTAssertFalse(compilerSource.contains("AdblockRustAdapterOutputCache"))
+        XCTAssertFalse(compilerSource.contains("cachedOutput"))
         XCTAssertFalse(compilerSource.contains("networkContentRule(from:"))
         XCTAssertFalse(compilerSource.contains("cosmeticContentRule(from:"))
         XCTAssertFalse(compilerSource.contains("escapedLooseURLFilter"))
@@ -2213,7 +2443,7 @@ final class SumiAdBlockingModuleTests: XCTestCase {
                     contentHash: "easylist-hash"
                 ),
             ],
-            compilerDiagnosticsSummary: "hybrid test",
+            compilerDiagnosticsSummary: "nativeCSSConverted=1; unsafeNativeCSSRootSelectorsFiltered=2; ruleCapHit=false; discarded=0",
             lastSuccessfulUpdateDate: Date(),
             previousGenerationId: nil
         )

@@ -7,20 +7,41 @@ struct SumiContentRuleListDefinition: Equatable, Sendable {
     let name: String
     let encodedContentRuleList: String
     let storeIdentifierOverride: String?
+    private let contentHashOverride: String?
 
     init(
         name: String,
         encodedContentRuleList: String,
-        storeIdentifierOverride: String? = nil
+        storeIdentifierOverride: String? = nil,
+        contentHashOverride: String? = nil
     ) {
         self.name = name
         self.encodedContentRuleList = encodedContentRuleList
         self.storeIdentifierOverride = storeIdentifierOverride
+        self.contentHashOverride = contentHashOverride
     }
 
     var contentHash: String {
+        if let contentHashOverride {
+            return contentHashOverride
+        }
         let digest = SHA256.hash(data: Data(encodedContentRuleList.utf8))
         return digest.prefix(12).map { String(format: "%02x", $0) }.joined()
+    }
+
+    func metadataOnly() -> SumiContentRuleListDefinition {
+        SumiContentRuleListDefinition(
+            name: name,
+            encodedContentRuleList: "",
+            storeIdentifierOverride: storeIdentifierOverride,
+            contentHashOverride: contentHash
+        )
+    }
+
+    static func == (lhs: SumiContentRuleListDefinition, rhs: SumiContentRuleListDefinition) -> Bool {
+        lhs.name == rhs.name
+            && lhs.storeIdentifierOverride == rhs.storeIdentifierOverride
+            && lhs.contentHash == rhs.contentHash
     }
 }
 
@@ -146,6 +167,11 @@ struct SumiPreparedContentBlockingUpdate {
 
 @MainActor
 protocol SumiCompiledContentRuleListCataloging: AnyObject {
+    func cachedIdentifiersToForget(
+        replacing previousRules: [SumiContentBlockerRules],
+        with activeRules: [SumiContentBlockerRules]
+    ) -> [String]
+
     func staleIdentifiers(
         replacing previousRules: [SumiContentBlockerRules],
         with activeRules: [SumiContentBlockerRules]
@@ -168,7 +194,51 @@ final class SumiCompiledContentRuleListCatalog: SumiCompiledContentRuleListCatal
         identifiersByName = persisted.mapValues { Set($0) }
     }
 
+    func cachedIdentifiersToForget(
+        replacing previousRules: [SumiContentBlockerRules],
+        with activeRules: [SumiContentBlockerRules]
+    ) -> [String] {
+        staleIdentifiersWithoutMutating(
+            replacing: previousRules,
+            with: activeRules
+        )
+    }
+
     func staleIdentifiers(
+        replacing previousRules: [SumiContentBlockerRules],
+        with activeRules: [SumiContentBlockerRules]
+    ) -> [String] {
+        let staleIdentifiers = staleIdentifiersWithoutMutating(
+            replacing: previousRules,
+            with: activeRules
+        )
+        let activeIdentifiersByName = Self.identifiersByName(for: activeRules)
+        let namesToSweep = Set(identifiersByName.keys).union(activeIdentifiersByName.keys)
+        for name in namesToSweep {
+            let activeIdentifiers = activeIdentifiersByName[name] ?? []
+            if activeIdentifiers.isEmpty {
+                identifiersByName.removeValue(forKey: name)
+            } else {
+                identifiersByName[name] = activeIdentifiers
+            }
+        }
+        save()
+        return staleIdentifiers
+    }
+
+    func forgetIdentifiers(_ identifiers: [String]) {
+        guard !identifiers.isEmpty else { return }
+        let identifiersToForget = Set(identifiers)
+        for name in Array(identifiersByName.keys) {
+            identifiersByName[name]?.subtract(identifiersToForget)
+            if identifiersByName[name]?.isEmpty == true {
+                identifiersByName.removeValue(forKey: name)
+            }
+        }
+        save()
+    }
+
+    private func staleIdentifiersWithoutMutating(
         replacing previousRules: [SumiContentBlockerRules],
         with activeRules: [SumiContentBlockerRules]
     ) -> [String] {
@@ -182,28 +252,9 @@ final class SumiCompiledContentRuleListCatalog: SumiCompiledContentRuleListCatal
             var knownIdentifiers = identifiersByName[name] ?? []
             knownIdentifiers.formUnion(previousIdentifiersByName[name] ?? [])
             staleIdentifiers.formUnion(knownIdentifiers.subtracting(activeIdentifiers))
-
-            if activeIdentifiers.isEmpty {
-                identifiersByName.removeValue(forKey: name)
-            } else {
-                identifiersByName[name] = activeIdentifiers
-            }
         }
 
-        save()
         return Array(staleIdentifiers)
-    }
-
-    func forgetIdentifiers(_ identifiers: [String]) {
-        guard !identifiers.isEmpty else { return }
-        let identifiersToForget = Set(identifiers)
-        for name in Array(identifiersByName.keys) {
-            identifiersByName[name]?.subtract(identifiersToForget)
-            if identifiersByName[name]?.isEmpty == true {
-                identifiersByName.removeValue(forKey: name)
-            }
-        }
-        save()
     }
 
     private func save() {
@@ -363,11 +414,16 @@ final class SumiContentBlockingService {
     }
 
     func prepareRuleListUpdate(
-        ruleLists definitions: [SumiContentRuleListDefinition]
+        ruleLists definitions: [SumiContentRuleListDefinition],
+        retainEncodedRuleListsInPreparedPolicy: Bool = true
     ) async throws -> SumiPreparedContentBlockingUpdate {
         let policy: SumiContentBlockingPolicy = definitions.isEmpty
             ? .disabled
-            : .enabled(ruleLists: definitions)
+            : .enabled(
+                ruleLists: retainEncodedRuleListsInPreparedPolicy
+                    ? definitions
+                    : definitions.map { $0.metadataOnly() }
+            )
         let update = try await updateEvent(for: definitions)
         return SumiPreparedContentBlockingUpdate(
             policy: policy,
@@ -554,6 +610,7 @@ final class SumiContentBlockingService {
             let update = try await updateEvent(for: policy.ruleLists)
 
             guard generation == compilationGeneration, policy == currentPolicy else { return }
+            currentPolicy = Self.metadataOnlyPolicy(policy)
             privacyConfigurationManager.setContentBlockingEnabled(policy.shouldEnableContentBlockingFeature)
             publish(update, cleaningUpAfter: latestUpdate)
         } catch {
@@ -683,11 +740,16 @@ final class SumiContentBlockingService {
         replacing previousRules: [SumiContentBlockerRules],
         with activeRules: [SumiContentBlockerRules]
     ) {
+        let cachedIdentifiersToForget = compiledRuleListCatalog.cachedIdentifiersToForget(
+            replacing: previousRules,
+            with: activeRules
+        )
         let staleIdentifiers = compiledRuleListCatalog.staleIdentifiers(
             replacing: previousRules,
             with: activeRules
         )
-        removeCompiledRuleLists(withIdentifiers: staleIdentifiers)
+        forgetCachedCompiledRuleLists(withIdentifiers: cachedIdentifiersToForget)
+        removeCompiledRuleListsFromStore(withIdentifiers: staleIdentifiers)
     }
 
     private func cleanupTransientCompiledRuleLists(
@@ -698,21 +760,38 @@ final class SumiContentBlockingService {
             .map(\.identifier.stringValue)
             .filter { !activeIdentifiers.contains($0) }
         compiledRuleListCatalog.forgetIdentifiers(transientIdentifiers)
-        removeCompiledRuleLists(withIdentifiers: transientIdentifiers)
+        forgetCachedCompiledRuleLists(withIdentifiers: transientIdentifiers)
+        removeCompiledRuleListsFromStore(withIdentifiers: transientIdentifiers)
     }
 
-    private func removeCompiledRuleLists(withIdentifiers identifiers: [String]) {
+    private func forgetCachedCompiledRuleLists(withIdentifiers identifiers: [String]) {
         let uniqueIdentifiers = Array(Set(identifiers))
         guard !uniqueIdentifiers.isEmpty else { return }
 
         for identifier in uniqueIdentifiers {
             compiledRulesByIdentifier.removeValue(forKey: identifier)
         }
+    }
+
+    private func removeCompiledRuleListsFromStore(withIdentifiers identifiers: [String]) {
+        let uniqueIdentifiers = Array(Set(identifiers))
+        guard !uniqueIdentifiers.isEmpty else { return }
 
         Task { @MainActor [compiler] in
             for identifier in uniqueIdentifiers {
                 try? await compiler.removeContentRuleList(forIdentifier: identifier)
             }
+        }
+    }
+
+    private static func metadataOnlyPolicy(
+        _ policy: SumiContentBlockingPolicy
+    ) -> SumiContentBlockingPolicy {
+        switch policy {
+        case .disabled:
+            return .disabled
+        case .enabled(let ruleLists):
+            return .enabled(ruleLists: ruleLists.map { $0.metadataOnly() })
         }
     }
 

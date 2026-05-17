@@ -682,6 +682,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             reason: "Tab.loadURL.trackingProtectionPolicy"
         )
         let rebuiltForConfigurationPolicy = rebuiltWebView
+            || rebuildNormalWebViewForAdblockIfNeeded(
+                targetURL: newURL,
+                reason: "Tab.loadURL.adblockPolicy"
+            )
             || rebuildNormalWebViewForAutoplayIfNeeded(
                 targetURL: newURL,
                 reason: "Tab.loadURL.autoplayPolicy"

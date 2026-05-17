@@ -120,15 +120,96 @@ final class SumiAdblockNativeCSSWebKitSmokeTests: XCTestCase {
         XCTAssertEqual(visibility["control"], false)
     }
 
+    func testNativeCSSRootChildShellSelectorCanReproduceBlankAppContainerInWebKit() async throws {
+        let service = SumiContentBlockingService(
+            policy: .enabled(ruleLists: [
+                Self.cssDisplayNoneRuleList(
+                    name: "SumiNativeCSSBlankShellReproduction-\(UUID().uuidString)",
+                    selector: "body > div[id][class*=\" \"]"
+                ),
+            ])
+        )
+        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: service
+        )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+        XCTAssertEqual(normalTabController.contentBlockingAssetSummary.globalRuleListCount, 1)
+
+        assertNoAdblockProductionJS(in: controller)
+
+        let webView = makeWebView(userContentController: controller)
+        try await loadHTML(
+            """
+            <!doctype html>
+            <html><body style="min-height: 40px;">
+              <div id="app" class="application shell">
+                <p class="keep-visible">Visible application content</p>
+              </div>
+            </body></html>
+            """,
+            baseURL: URL(string: "https://urtech.ca/root-child-shell-blank.html")!,
+            into: webView
+        )
+
+        let visibility = try await rootVisibility(in: webView)
+        XCTAssertEqual(visibility["body"], true)
+        XCTAssertEqual(visibility["app"], false)
+        XCTAssertEqual(visibility["control"], false)
+    }
+
+    func testNativeCSSRootChildHasShellSelectorCanReproduceBlankAppContainerInWebKit() async throws {
+        let service = SumiContentBlockingService(
+            policy: .enabled(ruleLists: [
+                Self.cssDisplayNoneRuleList(
+                    name: "SumiNativeCSSBlankShellHasReproduction-\(UUID().uuidString)",
+                    selector: "body > div[id][class*=\" \"]:has(div.adblock_subtitle)"
+                ),
+            ])
+        )
+        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: service
+        )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+        XCTAssertEqual(normalTabController.contentBlockingAssetSummary.globalRuleListCount, 1)
+
+        assertNoAdblockProductionJS(in: controller)
+
+        let webView = makeWebView(userContentController: controller)
+        try await loadHTML(
+            """
+            <!doctype html>
+            <html><body style="min-height: 40px;">
+              <div id="app" class="application shell">
+                <div class="adblock_subtitle">Detector copy</div>
+                <p class="keep-visible">Visible application content</p>
+              </div>
+            </body></html>
+            """,
+            baseURL: URL(string: "https://bradola.com/root-child-shell-has-blank.html")!,
+            into: webView
+        )
+
+        let visibility = try await rootVisibility(in: webView)
+        XCTAssertEqual(visibility["body"], true)
+        XCTAssertEqual(visibility["app"], false)
+        XCTAssertEqual(visibility["control"], false)
+    }
+
     func testCompilerFilteredNativeCSSDoesNotHideDocumentRootOrAppContainer() async throws {
         let output = try await AdblockRustCompiler().compile(
             AdblockCompilationInput(
                 sourceIdentifier: "SumiNativeCSSRootFilter-\(UUID().uuidString)",
                 filterTexts: [
                     "##html",
+                    "##HTML",
                     "##body",
                     "##body::before",
                     "###app",
+                    "##body > div[id][class*=\" \"]",
+                    "##BODY > DIV[id][class*=\" \"]",
+                    "bradola.com##body > div[id][class*=\" \"]:has(div.adblock_subtitle)",
                     "##.ad-banner",
                 ],
                 selectedOutputGroups: [.nativeCosmeticCSS]
@@ -136,11 +217,20 @@ final class SumiAdblockNativeCSSWebKitSmokeTests: XCTestCase {
         )
         XCTAssertEqual(output.diagnostics.filteredUnsafeNativeCosmeticSelectors.map(\.rule), [
             "html",
+            "HTML",
             "body",
             "#app",
+            "body > div[id][class*=\" \"]",
+            "BODY > DIV[id][class*=\" \"]",
+            "body > div[id][class*=\" \"]:has(div.adblock_subtitle)",
         ])
+        XCTAssertEqual(
+            output.diagnostics.filteredUnsafeNativeCosmeticSelectors.last?.reason,
+            "unsafe native CSS root-child page shell selector"
+        )
         let group = try XCTUnwrap(output.groups.first { $0.kind == .nativeCosmeticCSS })
         XCTAssertTrue(group.definition.encodedContentRuleList.contains("body::before"))
+        XCTAssertFalse(group.definition.encodedContentRuleList.contains("adblock_subtitle"))
         let service = SumiContentBlockingService(
             policy: .enabled(ruleLists: [group.definition])
         )
@@ -158,10 +248,10 @@ final class SumiAdblockNativeCSSWebKitSmokeTests: XCTestCase {
             """
             <!doctype html>
             <html><body style="min-height: 40px;">
-              <main id="app">
+              <div id="app" class="application shell">
                 <p class="keep-visible">Visible application content</p>
                 <div class="ad-banner">Ad banner</div>
-              </main>
+              </div>
             </body></html>
             """,
             baseURL: URL(string: "https://example.test/root-filter.html")!,
@@ -344,7 +434,10 @@ final class SumiAdblockNativeCSSWebKitSmokeTests: XCTestCase {
         name: String,
         selector: String
     ) -> SumiContentRuleListDefinition {
-        SumiContentRuleListDefinition(
+        let encodedSelector = selector
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return SumiContentRuleListDefinition(
             name: name,
             encodedContentRuleList: """
             [
@@ -354,7 +447,7 @@ final class SumiAdblockNativeCSSWebKitSmokeTests: XCTestCase {
                 },
                 "action": {
                   "type": "css-display-none",
-                  "selector": "\(selector)"
+                  "selector": "\(encodedSelector)"
                 }
               }
             ]

@@ -58,6 +58,67 @@ struct SumiAdblockEffectivePolicy: Equatable, Sendable {
     let isEnabled: Bool
 }
 
+struct SumiAdblockSurfaceEligibility: Equatable, Sendable {
+    let isEligible: Bool
+    let normalizedSiteHost: String?
+    let ineligibleReason: String?
+
+    static func evaluate(
+        url: URL?,
+        normalizer: SumiTrackingProtectionSiteNormalizer
+    ) -> SumiAdblockSurfaceEligibility {
+        guard let url else {
+            return SumiAdblockSurfaceEligibility(
+                isEligible: false,
+                normalizedSiteHost: nil,
+                ineligibleReason: "No URL"
+            )
+        }
+
+        let scheme = url.scheme?.lowercased()
+        if SumiSurface.isEmptyNewTabURL(url) || scheme == "about" {
+            return SumiAdblockSurfaceEligibility(
+                isEligible: false,
+                normalizedSiteHost: nil,
+                ineligibleReason: "Sumi empty/new tab surface"
+            )
+        }
+        if scheme == "sumi" {
+            return SumiAdblockSurfaceEligibility(
+                isEligible: false,
+                normalizedSiteHost: nil,
+                ineligibleReason: "Internal Sumi surface"
+            )
+        }
+        if scheme == "file" {
+            return SumiAdblockSurfaceEligibility(
+                isEligible: false,
+                normalizedSiteHost: nil,
+                ineligibleReason: "Local file URL"
+            )
+        }
+        guard scheme == "http" || scheme == "https" else {
+            return SumiAdblockSurfaceEligibility(
+                isEligible: false,
+                normalizedSiteHost: nil,
+                ineligibleReason: "Unsupported URL scheme: \(scheme ?? "nil")"
+            )
+        }
+        guard let host = normalizer.normalizedHost(for: url) else {
+            return SumiAdblockSurfaceEligibility(
+                isEligible: false,
+                normalizedSiteHost: nil,
+                ineligibleReason: "No normalized web host"
+            )
+        }
+        return SumiAdblockSurfaceEligibility(
+            isEligible: true,
+            normalizedSiteHost: host,
+            ineligibleReason: nil
+        )
+    }
+}
+
 struct SumiAdblockAttachmentState: Equatable, Sendable {
     let siteHost: String?
     let isEnabled: Bool
@@ -101,6 +162,8 @@ struct SumiAdblockAttachmentDiagnostics: Equatable, Sendable {
     let activeCompiledNativeProfile: AdblockFilterListProfileKind?
     let selectedProfileDiffersFromActiveGeneration: Bool
     let activeGenerationId: String?
+    let previousGenerationId: String?
+    let previousGenerationRetained: Bool
     let lastSuccessfulUpdateDate: Date?
     let nativeCompiler: NativeContentBlockingCompilerIdentity?
     let nativeCompilationSummary: NativeContentBlockingCompilationSummary?
@@ -120,6 +183,9 @@ struct SumiAdblockAttachmentDiagnostics: Equatable, Sendable {
     let lastUpdateFailureStage: AdblockUpdateFailureStage?
     let lastUpdateListStatuses: [AdblockFilterListUpdateStatus]
     let effectiveSelectionDiagnostics: AdblockEffectiveSelectionDiagnostics?
+    let latestRebuildMemoryDiagnostics: AdblockRebuildMemoryDiagnostics?
+    let currentProcessResidentMemoryBytes: UInt64?
+    let unsafeNativeCSSFilteredRuleCount: Int
     let ineligibleSurfaceReason: String?
 }
 
@@ -136,6 +202,8 @@ extension SumiAdblockAttachmentDiagnostics {
             "activeCompiledNativeProfile=\(activeCompiledNativeProfile?.rawValue ?? "nil")",
             "selectedProfileDiffersFromActiveGeneration=\(selectedProfileDiffersFromActiveGeneration)",
             "activeGenerationId=\(activeGenerationId ?? "nil")",
+            "previousGenerationId=\(previousGenerationId ?? "nil")",
+            "previousGenerationRetained=\(previousGenerationRetained)",
             "lastSuccessfulUpdateDate=\(lastSuccessfulUpdateDate?.description ?? "nil")",
             "lastUpdateSummary=\(lastUpdateSummary ?? "nil")",
             "lastUpdateError=\(lastUpdateError ?? "nil")",
@@ -143,6 +211,8 @@ extension SumiAdblockAttachmentDiagnostics {
             "activeGeneration=\(hasActiveGeneration)",
             "generationIsStale=\(generationIsStale)",
             "selectedListIDs=\(selectedListIdentifiers.joined(separator: ","))",
+            "effectiveMode=\(effectiveSelectionDiagnostics?.effectiveModeLabel ?? "nil")",
+            "usesProfileDerivedSelection=\(effectiveSelectionDiagnostics?.usesProfileDerivedSelection.description ?? "nil")",
             "manualSelectedListIDs=\(effectiveSelectionDiagnostics?.manuallySelectedListIdentifiers.joined(separator: ",") ?? "nil")",
             "profileDerivedListIDs=\(effectiveSelectionDiagnostics?.profileDerivedListIdentifiers.joined(separator: ",") ?? "nil")",
             "finalEffectiveListIDs=\(effectiveSelectionDiagnostics?.finalEffectiveListIdentifiers.joined(separator: ",") ?? "nil")",
@@ -163,6 +233,12 @@ extension SumiAdblockAttachmentDiagnostics {
             "failedShardIdentifier=\(failedShardIdentifier ?? "nil")",
             "ruleCapHit=\(nativeCompilationSummary?.ruleCap.wasHit.description ?? "nil")",
             "discardedRuleCount=\(nativeCompilationSummary?.ruleCap.discardedRuleCount.description ?? "nil")",
+            "unsafeNativeCSSFilteredRuleCount=\(unsafeNativeCSSFilteredRuleCount)",
+            "rebuildPeakResidentMemoryBytes=\(latestRebuildMemoryDiagnostics?.peakResidentMemoryBytes.map(String.init) ?? "nil")",
+            "rebuildSteadyStateResidentMemoryBytes=\(latestRebuildMemoryDiagnostics?.steadyStateResidentMemoryBytes.map(String.init) ?? "nil")",
+            "rebuildMemoryStages=\(latestRebuildMemoryDiagnostics?.snapshots.map { "\($0.stage.rawValue):\($0.residentMemoryBytes)" }.joined(separator: ",") ?? "nil")",
+            "rebuildBudgetWarnings=\(latestRebuildMemoryDiagnostics?.budgetWarnings.joined(separator: " | ") ?? "nil")",
+            "currentProcessResidentMemoryBytes=\(currentProcessResidentMemoryBytes.map(String.init) ?? "nil")",
             "trackingProtectionEnabled=\(trackingProtectionModuleEnabled)",
             "cosmeticMode=\(cosmeticMode?.rawValue ?? "nil")",
             "enhancedRuntimeEnabled=\(enhancedRuntimeIsEnabled)",
@@ -200,6 +276,8 @@ struct SumiAdblockCurrentTabDiagnostics: Equatable, Sendable {
     let nativeCSSAttachedWhileCosmeticModeOff: Bool
     let reloadRequiredForActiveGeneration: Bool
     let attachmentAssessment: String
+    let suspectedBlankPageCategory: String
+    let attachmentMemorySnapshot: AdblockRebuildMemorySnapshot?
     let ineligibleSurfaceReason: String?
 }
 
@@ -234,6 +312,8 @@ extension SumiAdblockCurrentTabDiagnostics {
             "nativeCSSAttachedWhileCosmeticModeOff=\(nativeCSSAttachedWhileCosmeticModeOff)",
             "reloadRequiredForActiveGeneration=\(reloadRequiredForActiveGeneration)",
             "attachmentAssessment=\(attachmentAssessment)",
+            "suspectedBlankPageCategory=\(suspectedBlankPageCategory)",
+            "afterPageReloadAttachmentResidentMemoryBytes=\(attachmentMemorySnapshot?.residentMemoryBytes.description ?? "nil")",
             "ineligibleSurfaceReason=\(ineligibleSurfaceReason ?? "nil")",
         ].joined(separator: "\n")
     }
@@ -455,6 +535,10 @@ final class AdblockSettingsStore: ObservableObject {
         selectedLists = SumiAdblockFilterListSelection(identifiers: identifiers)
     }
 
+    func resetListsToSelectedProfile() {
+        selectedLists = .defaultSelection
+    }
+
     func markListUpdateCompleted() {
         listSelectionRequiresUpdate = false
     }
@@ -509,7 +593,10 @@ final class AdblockSitePolicyStore: ObservableObject {
 
     func effectivePolicy(for url: URL?, globalEnabled: Bool) -> SumiAdblockEffectivePolicy {
         let host = normalizedHost(for: url)
-        if let host, let override = siteOverrides[host] {
+        guard let host else {
+            return SumiAdblockEffectivePolicy(host: nil, isEnabled: false)
+        }
+        if let override = siteOverrides[host] {
             switch override {
             case .allowed:
                 return SumiAdblockEffectivePolicy(host: host, isEnabled: true)
@@ -543,7 +630,11 @@ final class AdblockSitePolicyStore: ObservableObject {
     }
 
     func normalizedHost(for url: URL?) -> String? {
-        siteNormalizer.normalizedHost(for: url)
+        surfaceEligibility(for: url).normalizedSiteHost
+    }
+
+    func surfaceEligibility(for url: URL?) -> SumiAdblockSurfaceEligibility {
+        SumiAdblockSurfaceEligibility.evaluate(url: url, normalizer: siteNormalizer)
     }
 
     private func setSiteOverride(_ override: SumiAdblockSiteOverride, forNormalizedHost host: String) {
@@ -622,7 +713,10 @@ final class AdblockWebKitRuleListStore {
         configuredNativeCompilerIdentity = resolvedNativeCompiler.identity
         let provider = AdblockManifestRuleListProvider(
             manifest: nil,
-            cosmeticMode: settingsStore.cosmeticMode
+            cosmeticMode: settingsStore.cosmeticMode,
+            compiledDefinitionLoader: AdblockManifestRuleListProvider.diskBackedDefinitionLoader(
+                storageRoot: manifestStore.storageRoot
+            )
         )
         ruleListProvider = provider
         contentBlockingService = SumiContentBlockingService(
@@ -690,13 +784,10 @@ final class AdblockWebKitRuleListStore {
         guard await isAdblockEnabled() else { return }
         do {
             let manifest = try await manifestStore.activeManifest()
-            let definitions: [SumiContentRuleListDefinition]
             if let manifest {
-                definitions = try await manifestStore.compiledShardDefinitions(for: manifest)
-            } else {
-                definitions = []
+                try await manifestStore.validateCompiledShardFiles(for: manifest)
             }
-            ruleListProvider.updateManifest(manifest, compiledDefinitions: definitions)
+            ruleListProvider.updateManifest(manifest)
             lastFailedShardIdentifier = nil
         } catch let diagnostics as AdblockUpdateDiagnostics {
             lastFailedShardIdentifier = diagnostics.failedShardIdentifier
@@ -742,6 +833,16 @@ final class AdblockWebKitRuleListStore {
 
 @MainActor
 final class AdblockRetainingCompiledRuleListCatalog: SumiCompiledContentRuleListCataloging {
+    func cachedIdentifiersToForget(
+        replacing previousRules: [SumiContentBlockerRules],
+        with activeRules: [SumiContentBlockerRules]
+    ) -> [String] {
+        let activeIdentifiers = Set(activeRules.map(\.identifier.stringValue))
+        return previousRules
+            .map(\.identifier.stringValue)
+            .filter { !activeIdentifiers.contains($0) }
+    }
+
     func staleIdentifiers(
         replacing previousRules: [SumiContentBlockerRules],
         with activeRules: [SumiContentBlockerRules]
@@ -815,6 +916,14 @@ final class SumiAdBlockingModule {
             )
         }
         let policy = sitePolicyStoreIfEnabled().effectivePolicy(for: url, globalEnabled: true)
+        guard surfaceEligibility(for: url).isEligible else {
+            return SumiAdBlockingNormalTabDecision(
+                status: status,
+                effectivePolicy: policy,
+                assets: .empty,
+                contentBlockingService: nil
+            )
+        }
         guard policy.isEnabled else {
             return SumiAdBlockingNormalTabDecision(
                 status: status,
@@ -857,6 +966,10 @@ final class SumiAdBlockingModule {
         sitePolicyStoreIfEnabled().normalizedHost(for: url)
     }
 
+    func surfaceEligibility(for url: URL?) -> SumiAdblockSurfaceEligibility {
+        sitePolicyStoreIfEnabled().surfaceEligibility(for: url)
+    }
+
     func effectivePolicy(for url: URL?) -> SumiAdblockEffectivePolicy {
         let store = sitePolicyStoreIfEnabled()
         guard isEnabled else {
@@ -876,6 +989,7 @@ final class SumiAdBlockingModule {
     }
 
     func attachmentDiagnostics(for url: URL?) -> SumiAdblockAttachmentDiagnostics {
+        let eligibility = surfaceEligibility(for: url)
         let policy = effectivePolicy(for: url)
         let siteOverride = sitePolicyStoreIfEnabled().override(for: url)
         guard isEnabled, policy.isEnabled else {
@@ -904,6 +1018,8 @@ final class SumiAdBlockingModule {
                 activeCompiledNativeProfile: nil,
                 selectedProfileDiffersFromActiveGeneration: true,
                 activeGenerationId: nil,
+                previousGenerationId: nil,
+                previousGenerationRetained: false,
                 lastSuccessfulUpdateDate: nil,
                 nativeCompiler: nil,
                 nativeCompilationSummary: nil,
@@ -926,7 +1042,10 @@ final class SumiAdBlockingModule {
                     selection: settings.selectedLists,
                     profileKind: settings.selectedNativeProfile
                 ),
-                ineligibleSurfaceReason: policy.host == nil ? "No normalized web host" : nil
+                latestRebuildMemoryDiagnostics: nil,
+                currentProcessResidentMemoryBytes: Self.currentProcessResidentMemoryBytes(),
+                unsafeNativeCSSFilteredRuleCount: 0,
+                ineligibleSurfaceReason: eligibility.ineligibleReason
             )
         }
 
@@ -965,6 +1084,7 @@ final class SumiAdBlockingModule {
         let lastError = lastDiagnostics?.stage == nil
             ? ruleListStore.lastFailedShardIdentifier.map { "Failed shard: \($0)" }
             : lastDiagnostics?.summary
+        let compilerDiagnosticsSummary = manifest?.compilerDiagnosticsSummary
 
         return SumiAdblockAttachmentDiagnostics(
             siteHost: policy.host,
@@ -983,11 +1103,13 @@ final class SumiAdBlockingModule {
                 : attachedShardIdentifiers,
             selectedListIdentifiers: validation.resolvedIdentifiers,
             activeManifestListIdentifiers: manifest?.selectedFilterLists.map(\.id).sorted() ?? [],
-            compilerDiagnosticsSummary: manifest?.compilerDiagnosticsSummary,
+            compilerDiagnosticsSummary: compilerDiagnosticsSummary,
             selectedNativeProfile: selectedProfile,
             activeCompiledNativeProfile: activeProfile,
             selectedProfileDiffersFromActiveGeneration: selectedProfile != activeProfile,
             activeGenerationId: manifest?.activeGenerationId,
+            previousGenerationId: manifest?.previousGenerationId,
+            previousGenerationRetained: manifest?.previousGenerationId != nil,
             lastSuccessfulUpdateDate: manifest?.lastSuccessfulUpdateDate,
             nativeCompiler: manifest?.nativeCompiler,
             nativeCompilationSummary: manifest?.nativeCompilationSummary,
@@ -1013,7 +1135,13 @@ final class SumiAdBlockingModule {
                     selection: settings?.selectedLists ?? .defaultSelection,
                     profileKind: settings?.selectedNativeProfile ?? .currentDefault
                 ),
-            ineligibleSurfaceReason: policy.host == nil ? "No normalized web host" : nil
+            latestRebuildMemoryDiagnostics: lastDiagnostics?.memoryDiagnostics,
+            currentProcessResidentMemoryBytes: Self.currentProcessResidentMemoryBytes(),
+            unsafeNativeCSSFilteredRuleCount: Self.diagnosticsIntegerValue(
+                named: "unsafeNativeCSSRootSelectorsFiltered",
+                in: compilerDiagnosticsSummary
+            ) ?? 0,
+            ineligibleSurfaceReason: eligibility.ineligibleReason
         )
     }
 
@@ -1073,6 +1201,18 @@ final class SumiAdBlockingModule {
             tabAppearsOlder: tabAppearsOlder,
             reloadRequired: reloadRequired
         )
+        let suspectedBlankPageCategory = Self.suspectedBlankPageCategory(
+            ineligibleSurfaceReason: diagnostics.ineligibleSurfaceReason,
+            attachedNetwork: attachedNetwork,
+            attachedNativeCSS: attachedNativeCSS,
+            missing: missing,
+            unexpectedOld: unexpectedOld,
+            hasMixedGenerationAttachment: hasMixedGenerationAttachment,
+            reloadRequiredForActiveGeneration: reloadRequiredForActiveGeneration,
+            cosmeticMode: diagnostics.cosmeticMode,
+            hasActiveGeneration: diagnostics.hasActiveGeneration,
+            isEnabled: diagnostics.isEnabled
+        )
         return SumiAdblockCurrentTabDiagnostics(
             urlString: url?.absoluteString,
             host: url?.host,
@@ -1101,6 +1241,8 @@ final class SumiAdBlockingModule {
             nativeCSSAttachedWhileCosmeticModeOff: nativeCSSAttachedWhileOff,
             reloadRequiredForActiveGeneration: reloadRequiredForActiveGeneration,
             attachmentAssessment: assessment,
+            suspectedBlankPageCategory: suspectedBlankPageCategory,
+            attachmentMemorySnapshot: Self.attachmentMemorySnapshot(),
             ineligibleSurfaceReason: diagnostics.ineligibleSurfaceReason
         )
     }
@@ -1108,13 +1250,20 @@ final class SumiAdBlockingModule {
     #if DEBUG
     func copyDiagnosticsReport(
         for url: URL?,
-        currentTabDiagnostics: SumiAdblockCurrentTabDiagnostics?
+        currentTabDiagnostics: SumiAdblockCurrentTabDiagnostics?,
+        targetDescription: String = "current tab",
+        requestingURL: URL? = nil
     ) -> String {
         let diagnostics = attachmentDiagnostics(for: url)
+        let targetURLString = url?.absoluteString ?? "nil"
         var lines = [
             "Sumi Adblock Copy Diagnostics",
             "timestamp=\(Self.iso8601Timestamp(Date()))",
-            "currentURL=\(url?.absoluteString ?? "nil")",
+            "targetSource=\(targetDescription)",
+            "targetURL=\(targetURLString)",
+            "diagnosticsTargetURL=\(targetURLString)",
+            "requestingURL=\(requestingURL?.absoluteString ?? "nil")",
+            "currentURL=\(targetURLString)",
             "webViewSurfaceEligible=\(diagnostics.ineligibleSurfaceReason == nil)",
             diagnostics.developerReport,
         ]
@@ -1199,6 +1348,74 @@ final class SumiAdBlockingModule {
             return "no Adblock shards attached"
         }
         return "inconclusive"
+    }
+
+    private static func suspectedBlankPageCategory(
+        ineligibleSurfaceReason: String?,
+        attachedNetwork: [String],
+        attachedNativeCSS: [String],
+        missing: [String],
+        unexpectedOld: [String],
+        hasMixedGenerationAttachment: Bool,
+        reloadRequiredForActiveGeneration: Bool,
+        cosmeticMode: SumiAdblockCosmeticMode?,
+        hasActiveGeneration: Bool,
+        isEnabled: Bool
+    ) -> String {
+        if ineligibleSurfaceReason != nil {
+            return "D internal/ineligible surface"
+        }
+        if reloadRequiredForActiveGeneration
+            || hasMixedGenerationAttachment
+            || !missing.isEmpty
+            || !unexpectedOld.isEmpty {
+            return "C mixed/stale/reload-required attachment"
+        }
+        guard isEnabled, hasActiveGeneration else {
+            return "not diagnosable"
+        }
+        if cosmeticMode == .nativeCSS || cosmeticMode == .enhancedRuntime,
+           !attachedNativeCSS.isEmpty {
+            return "A possible native CSS over-hiding; compare cosmeticMode.off"
+        }
+        if cosmeticMode == .off,
+           !attachedNetwork.isEmpty {
+            return "B possible network overblocking; compare Adblock disabled"
+        }
+        return "not diagnosable"
+    }
+
+    private static func diagnosticsIntegerValue(named key: String, in summary: String?) -> Int? {
+        guard let summary else { return nil }
+        let prefix = "\(key)="
+        return summary
+            .split(separator: ";")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { $0.hasPrefix(prefix) }
+            .flatMap { Int($0.dropFirst(prefix.count)) }
+    }
+
+    private static func currentProcessResidentMemoryBytes() -> UInt64? {
+#if DEBUG
+        return AdblockProcessMemorySampler.residentMemoryBytes()
+#else
+        return nil
+#endif
+    }
+
+    private static func attachmentMemorySnapshot() -> AdblockRebuildMemorySnapshot? {
+#if DEBUG
+        guard let residentMemoryBytes = AdblockProcessMemorySampler.residentMemoryBytes() else {
+            return nil
+        }
+        return AdblockRebuildMemorySnapshot(
+            stage: .afterPageReloadAttachment,
+            timestamp: Date(),
+            residentMemoryBytes: residentMemoryBytes
+        )
+#else
+        return nil
+#endif
     }
 
     private static func blankPageComparisonHint(
