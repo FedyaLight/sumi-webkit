@@ -138,15 +138,16 @@ final class SettingsModuleToggleTests: XCTestCase {
         XCTAssertTrue(privacySource.contains("Filter lists"))
         XCTAssertTrue(privacySource.contains("Base ads"))
         XCTAssertTrue(privacySource.contains("Regional ads"))
-        XCTAssertTrue(privacySource.contains("Runtime-generated dev profile"))
-        XCTAssertTrue(privacySource.contains("This does not select or install an embedded bundle"))
+        XCTAssertTrue(privacySource.contains("Apply selected protection level"))
+        XCTAssertTrue(privacySource.contains("Deprecated runtime-generated dev profile"))
+        XCTAssertTrue(privacySource.contains("normal Off / Protection / Adblock / Extreme levels use prepared bundles only"))
         XCTAssertTrue(privacySource.contains("Embedded Adblock Bundle"))
         XCTAssertTrue(privacySource.contains("Bundle source"))
         XCTAssertTrue(privacySource.contains("Development Build"))
         XCTAssertTrue(privacySource.contains("futureRemoteBundle"))
         XCTAssertTrue(privacySource.contains("Install selected bundle"))
         XCTAssertTrue(privacySource.contains("DEBUG Adblock Diagnostics"))
-        XCTAssertTrue(privacySource.contains("Rebuild selected Adblock profile now"))
+        XCTAssertTrue(privacySource.contains("Deprecated runtime-generated rebuild"))
         XCTAssertTrue(privacySource.contains("Copy Adblock Diagnostics"))
         XCTAssertTrue(privacySource.contains("NSPasteboard.general"))
 
@@ -192,9 +193,12 @@ final class SettingsModuleToggleTests: XCTestCase {
     func testNativeProfilePickerIsLabeledAsRuntimeGeneratedOnly() throws {
         let source = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
 
-        XCTAssertTrue(source.contains("Runtime-generated dev profile"))
-        XCTAssertTrue(source.contains("Controls the old runtime-generated path, not embedded bundles."))
-        XCTAssertTrue(source.contains("Runtime-generated profiles only. This does not select or install an embedded bundle."))
+        XCTAssertTrue(source.contains("Deprecated runtime-generated dev profile"))
+        XCTAssertTrue(source.contains("DEBUG only. Disabled for the unified flow; normal Off / Protection / Adblock / Extreme levels use prepared bundles only."))
+        XCTAssertTrue(source.contains("Reset deprecated runtime-generated lists"))
+        XCTAssertTrue(source.contains("DEBUG only and deprecated. This does not affect the unified protection levels."))
+        XCTAssertTrue(source.contains("Deprecated runtime-generated rebuild"))
+        XCTAssertTrue(source.contains("DEBUG only and disabled for the unified flow. Browser runtime installs prepared bundles instead."))
         XCTAssertFalse(source.contains("title: \"Native profile\""))
     }
 

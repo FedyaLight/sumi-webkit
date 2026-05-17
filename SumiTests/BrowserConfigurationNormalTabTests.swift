@@ -443,6 +443,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertEqual(probe.serviceCount, 1)
 
         protection.coordinator.setLevel(.off)
+        _ = try await protection.coordinator.applySelectedLevel()
         let disabledTab = browserManager.tabManager.createNewTab(
             url: "https://example.com/tracking-disabled-after-toggle",
             in: browserManager.tabManager.currentSpace,
@@ -467,7 +468,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         registry.enable(.trackingProtection)
         let settings = SumiTrackingProtectionSettings(userDefaults: harness.defaults)
         settings.setGlobalMode(.enabled)
-        settings.setSiteOverride(.disabled, for: URL(string: "https://www.example.com/path")!)
         let probe = NormalTabTrackingRuntimeProbe()
         let module = makeProbeTrackingModule(
             registry: registry,
@@ -481,6 +481,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             trackingProtectionModule: module,
             level: .protection
         )
+        protection.coordinator.setSiteOverride(.disabled, for: URL(string: "https://www.example.com/path")!)
         let browserManager = BrowserManager(
             moduleRegistry: registry,
             trackingProtectionModule: module,
@@ -500,7 +501,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         await controller.waitForContentBlockingAssetsInstalled()
 
         XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 0)
-        XCTAssertEqual(probe.settingsCount, 1)
+        XCTAssertEqual(probe.settingsCount, 0)
         XCTAssertEqual(probe.dataStoreCount, 0)
         XCTAssertEqual(probe.serviceCount, 0)
         XCTAssertEqual(
@@ -569,7 +570,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         await originalController.waitForContentBlockingAssetsInstalled()
         try await waitForAssets(on: originalController) { $0.globalRuleListCount == 1 }
 
-        settings.setSiteOverride(.disabled, for: tab.url)
+        protection.coordinator.setSiteOverride(.disabled, for: tab.url)
         tab.markProtectionReloadRequiredIfNeeded(afterChangingPolicyFor: tab.url)
 
         XCTAssertTrue(tab.isProtectionReloadRequired)
@@ -589,6 +590,65 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         await rebuiltController.waitForContentBlockingAssetsInstalled()
         XCTAssertEqual(rebuiltController.contentBlockingAssetSummary.globalRuleListCount, 0)
 
+        tab.clearProtectionReloadRequirementIfResolved(for: tab.url)
+        XCTAssertFalse(tab.isProtectionReloadRequired)
+    }
+
+    func testApplyingProtectionLevelMarksEligibleTabsReloadRequiredAndManualReloadAppliesPlan() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        let probe = NormalTabTrackingRuntimeProbe()
+        let module = makeProbeTrackingModule(
+            registry: registry,
+            probe: probe,
+            defaults: harness.defaults,
+            ruleDefinitions: [Self.validRuleListDefinition()]
+        )
+        let protection = makeProtectionCoordinator(
+            defaults: harness.defaults,
+            registry: registry,
+            trackingProtectionModule: module,
+            level: .off
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            trackingProtectionModule: module,
+            adBlockingModule: protection.adBlockingModule,
+            protectionCoordinator: protection.coordinator
+        )
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://www.example.com/apply-level",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        tab.setupWebView()
+        let originalWebView = try XCTUnwrap(tab.existingWebView)
+        let originalController = try XCTUnwrap(
+            originalWebView.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        await originalController.waitForContentBlockingAssetsInstalled()
+        XCTAssertEqual(originalController.contentBlockingAssetSummary.globalRuleListCount, 0)
+
+        protection.coordinator.setLevel(.protection)
+        _ = try await protection.coordinator.applySelectedLevel()
+        XCTAssertEqual(browserManager.markProtectionReloadRequiredForEligibleNormalWebTabs(), 1)
+        XCTAssertTrue(tab.isProtectionReloadRequired)
+        XCTAssertTrue(tab.existingWebView === originalWebView)
+
+        XCTAssertTrue(
+            tab.rebuildNormalWebViewForProtectionIfNeeded(
+                targetURL: tab.url,
+                reason: "BrowserConfigurationNormalTabTests.applyLevel"
+            )
+        )
+        let rebuiltController = try XCTUnwrap(
+            tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        await rebuiltController.waitForContentBlockingAssetsInstalled()
+        try await waitForAssets(on: rebuiltController) { $0.globalRuleListCount == 1 }
         tab.clearProtectionReloadRequirementIfResolved(for: tab.url)
         XCTAssertFalse(tab.isProtectionReloadRequired)
     }
@@ -647,7 +707,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         try await waitForAssets(on: controller) { $0.globalRuleListCount == 1 }
 
         let otherURL = URL(string: "https://www.other.example/path")!
-        settings.setSiteOverride(.disabled, for: otherURL)
+        protection.coordinator.setSiteOverride(.disabled, for: otherURL)
         tab.markProtectionReloadRequiredIfNeeded(afterChangingPolicyFor: otherURL)
 
         XCTAssertFalse(tab.isProtectionReloadRequired)
@@ -1267,6 +1327,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
     ) -> (adBlockingModule: SumiAdBlockingModule, coordinator: SumiProtectionCoordinator) {
         let protectionSettings = SumiProtectionSettings(userDefaults: defaults)
         protectionSettings.setLevel(level)
+        protectionSettings.setAppliedLevel(level)
         let adBlockingModule = SumiAdBlockingModule(moduleRegistry: registry)
         let coordinator = SumiProtectionCoordinator(
             settings: protectionSettings,

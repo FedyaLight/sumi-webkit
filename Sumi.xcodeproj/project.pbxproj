@@ -227,15 +227,14 @@
 			productReference = 2C89252E2E88DFF9002236DC /* SumiTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		7F8340FB2E37F39400674A5D /* Sumi */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 7F8341082E37F39500674A5D /* Build configuration list for PBXNativeTarget "Sumi" */;
-			buildPhases = (
-				A11AD010B11D000100000001 /* Build Adblock Rust Adapter */,
-				7F8340F82E37F39400674A5D /* Sources */,
-				7F8340F92E37F39400674A5D /* Frameworks */,
-				7F8340FA2E37F39400674A5D /* Resources */,
-			);
+			7F8340FB2E37F39400674A5D /* Sumi */ = {
+				isa = PBXNativeTarget;
+				buildConfigurationList = 7F8341082E37F39500674A5D /* Build configuration list for PBXNativeTarget "Sumi" */;
+				buildPhases = (
+					7F8340F82E37F39400674A5D /* Sources */,
+					7F8340F92E37F39400674A5D /* Frameworks */,
+					7F8340FA2E37F39400674A5D /* Resources */,
+				);
 			buildRules = (
 			);
 			dependencies = (
@@ -329,31 +328,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
-
-/* Begin PBXShellScriptBuildPhase section */
-		A11AD010B11D000100000001 /* Build Adblock Rust Adapter */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/Vendor/Brave/AdblockRustAdapter/Cargo.toml",
-				"$(SRCROOT)/Vendor/Brave/AdblockRustAdapter/Cargo.lock",
-				"$(SRCROOT)/Vendor/Brave/AdblockRustAdapter/src/main.rs",
-			);
-			name = "Build Adblock Rust Adapter";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(TARGET_BUILD_DIR)/$(EXECUTABLE_FOLDER_PATH)/sumi-adblock-rust-adapter",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "set -eu\nexport PATH=\"/opt/homebrew/bin:/usr/local/bin:$HOME/.cargo/bin:$PATH\"\nif ! command -v cargo >/dev/null 2>&1; then\n  echo \"error: Cargo/Rust toolchain is required to build Vendor/Brave/AdblockRustAdapter\" >&2\n  echo \"Expected cargo in /opt/homebrew/bin, /usr/local/bin, or ~/.cargo/bin.\" >&2\n  exit 1\nfi\ncase \"${CONFIGURATION:-Debug}\" in\n  Release)\n    cargo_profile=\"release\"\n    cargo_flag=\"--release\"\n    ;;\n  *)\n    cargo_profile=\"debug\"\n    cargo_flag=\"\"\n    ;;\nesac\nadapter_dir=\"$SRCROOT/Vendor/Brave/AdblockRustAdapter\"\nCARGO_TARGET_DIR=\"$TARGET_TEMP_DIR/AdblockRustAdapterTarget\" cargo build --locked --manifest-path \"$adapter_dir/Cargo.toml\" $cargo_flag\nmkdir -p \"$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH\"\ncp \"$TARGET_TEMP_DIR/AdblockRustAdapterTarget/$cargo_profile/sumi-adblock-rust-adapter\" \"$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/sumi-adblock-rust-adapter\"\n";
-		};
-/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		2C8925382E88DFF9002236DC /* Sources */ = {

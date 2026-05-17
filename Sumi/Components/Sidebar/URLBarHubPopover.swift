@@ -280,14 +280,14 @@ struct SiteControlsSnapshot: Equatable {
             _ = profile
 
             if let protectionCoordinator {
-                let plan = protectionCoordinator.rulePlan(for: url, profileId: profile?.id)
+                let plan = protectionCoordinator.cachedRulePlan(for: url, profileId: profile?.id)
                 let subtitle: String
                 if protectionReloadRequired {
                     subtitle = "Reload required"
                 } else if plan.requestedLevel == .off {
                     subtitle = "Off globally"
                 } else if !plan.sitePolicyAllowsProtection {
-                    subtitle = "Off for this site"
+                    subtitle = "Protection off for this site"
                 } else {
                     subtitle = plan.effectiveLevel.displayTitle
                 }
