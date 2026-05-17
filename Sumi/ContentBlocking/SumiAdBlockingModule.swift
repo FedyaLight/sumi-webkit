@@ -364,7 +364,8 @@ final class AdblockWebKitRuleListStore {
     func requestPreparedBundleInstall(
         bundleURL: URL,
         source: SumiAdblockBundleInstallSource,
-        profileId: String
+        profileId: String,
+        remoteMetadata: SumiAdblockPreparedBundleRemoteMetadata? = nil
     ) async throws -> AdblockCompiledGenerationManifest? {
         guard await isAdblockEnabled() else { return nil }
         return try await installPreparedBundle(
@@ -372,7 +373,8 @@ final class AdblockWebKitRuleListStore {
             source: source,
             requestedProfileId: profileId,
             previousManifest: try await manifestStore.activeManifest(),
-            skipIfAlreadyInstalled: false
+            skipIfAlreadyInstalled: false,
+            remoteMetadata: remoteMetadata
         )
     }
 
@@ -388,7 +390,8 @@ final class AdblockWebKitRuleListStore {
             source: source,
             requestedProfileId: profileId,
             previousManifest: try await manifestStore.activeManifest(),
-            skipIfAlreadyInstalled: false
+            skipIfAlreadyInstalled: false,
+            remoteMetadata: nil
         )
     }
 #endif
@@ -402,7 +405,8 @@ final class AdblockWebKitRuleListStore {
             source: .appResource,
             requestedProfileId: SumiProtectionBundleProfile.adblock,
             previousManifest: previousManifest,
-            skipIfAlreadyInstalled: true
+            skipIfAlreadyInstalled: true,
+            remoteMetadata: nil
         )
     }
 
@@ -411,7 +415,8 @@ final class AdblockWebKitRuleListStore {
         source: SumiAdblockBundleInstallSource,
         requestedProfileId: String?,
         previousManifest: AdblockCompiledGenerationManifest?,
-        skipIfAlreadyInstalled: Bool
+        skipIfAlreadyInstalled: Bool,
+        remoteMetadata: SumiAdblockPreparedBundleRemoteMetadata?
     ) async throws -> AdblockCompiledGenerationManifest? {
         let bundle: SumiAdblockNativeRuleBundle
         do {
@@ -434,7 +439,8 @@ final class AdblockWebKitRuleListStore {
         let manifest = bundle.compiledGenerationManifest(
             previousManifest: previousManifest,
             installedDate: Date(),
-            generationSource: source.generationSource
+            generationSource: source.generationSource,
+            remoteMetadata: remoteMetadata
         )
         let definitions = try bundle.contentRuleListDefinitions()
         let publication = try await updateCoordinator.prepareEmbeddedBundlePublication(
@@ -543,6 +549,7 @@ final class SumiAdBlockingModule {
     private let sitePolicyFactory: @MainActor () -> AdblockSitePolicyStore
     private let ruleListStoreFactory: @MainActor (AdblockSettingsStore, @escaping @Sendable () async -> Bool) -> AdblockWebKitRuleListStore
     private let preparedBundleResourceURL: URL?
+    private let preparedBundleRemoteRootURL: URL?
     private let preparedBundleGeneratedRootURL: URL?
     private var cachedSettingsStore: AdblockSettingsStore?
     private var cachedSitePolicyStore: AdblockSitePolicyStore?
@@ -553,6 +560,7 @@ final class SumiAdBlockingModule {
         settingsFactory: (@MainActor () -> AdblockSettingsStore)? = nil,
         sitePolicyFactory: (@MainActor () -> AdblockSitePolicyStore)? = nil,
         preparedBundleResourceURL: URL? = Bundle.main.resourceURL,
+        preparedBundleRemoteRootURL: URL? = SumiRemoteAdblockBundleCache.defaultRootDirectory(),
         preparedBundleGeneratedRootURL: URL? = SumiPreparedAdblockBundleResolver.defaultGeneratedBundlesRootURL(),
         ruleListStoreFactory: @escaping @MainActor (AdblockSettingsStore, @escaping @Sendable () async -> Bool) -> AdblockWebKitRuleListStore = {
             AdblockWebKitRuleListStore(settingsStore: $0, isAdblockEnabled: $1)
@@ -563,6 +571,7 @@ final class SumiAdBlockingModule {
         self.sitePolicyFactory = sitePolicyFactory ?? { AdblockSitePolicyStore(userDefaults: moduleRegistry.userDefaults) }
         self.ruleListStoreFactory = ruleListStoreFactory
         self.preparedBundleResourceURL = preparedBundleResourceURL
+        self.preparedBundleRemoteRootURL = preparedBundleRemoteRootURL
         self.preparedBundleGeneratedRootURL = preparedBundleGeneratedRootURL
     }
 
@@ -608,7 +617,8 @@ final class SumiAdBlockingModule {
         return try await ruleListStoreIfEnabled().requestPreparedBundleInstall(
             bundleURL: resolvedBundle.bundleURL,
             source: resolvedBundle.source,
-            profileId: profileId
+            profileId: profileId,
+            remoteMetadata: resolvedBundle.remoteMetadata
         )
     }
 
@@ -631,6 +641,7 @@ final class SumiAdBlockingModule {
         SumiPreparedAdblockBundleResolver.discover(
             profileId: profileId,
             resourceURL: preparedBundleResourceURL,
+            remoteBundlesRootURL: preparedBundleRemoteRootURL,
             generatedBundlesRootURL: preparedBundleGeneratedRootURL
         )
     }
@@ -721,7 +732,7 @@ final class SumiAdBlockingModule {
             bundleURL = SumiEmbeddedAdblockBundleCatalog.embeddedBundleURL(for: profileId)
         case .developmentBundle:
             bundleURL = SumiEmbeddedAdblockBundleCatalog.developmentBundleURL(for: profileId)
-        case .futureRemoteBundle:
+        case .remoteReleaseBundle:
             bundleURL = nil
         }
         guard let bundleURL else {

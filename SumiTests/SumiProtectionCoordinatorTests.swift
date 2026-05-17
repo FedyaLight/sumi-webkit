@@ -69,6 +69,38 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.trackingRuleSource.callCount, 0)
     }
 
+    func testManualBundleUpdateWhileOffCachesOnlyAndDoesNotLoadAdblockRuntime() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let updater = FakeProtectionBundleRemoteUpdater(
+            result: SumiProtectionRemoteBundleFetchResult(
+                profileId: SumiProtectionBundleProfile.adblock,
+                releaseVersion: "20260517T000000Z-test",
+                releaseTag: "bundles-20260517T000000Z-test",
+                releaseURL: "https://example.test/release",
+                publishedDate: nil,
+                bundleId: "sumi.adblock.bundle.adguardAdsPrivacy.test",
+                generationId: "remote-generation",
+                bundleURL: temporaryDirectory(prefix: "SumiProtectionRemoteResult")
+            )
+        )
+        let fixture = makeFixture(
+            defaults: harness.defaults,
+            resourceRoot: temporaryDirectory(prefix: "SumiProtectionResource"),
+            developmentRoot: temporaryDirectory(prefix: "SumiProtectionDevelopment"),
+            bundleRemoteUpdater: updater,
+            bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore(userDefaults: harness.defaults)
+        )
+
+        fixture.coordinator.setLevel(.off)
+        let outcome = try await fixture.coordinator.updatePreparedBundlesManually()
+
+        XCTAssertEqual(outcome.activation, .cachedOnly)
+        XCTAssertFalse(fixture.didCreateAdblockRuleListStore())
+        XCTAssertFalse(fixture.coordinator.globalDiagnostics().browserRestartRequired)
+        XCTAssertEqual(fixture.coordinator.bundleUpdateStatusStore.lastReleaseVersion, "20260517T000000Z-test")
+    }
+
     func testProtectionActivatesTrackingNetworkOnly() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -156,7 +188,9 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
     private func makeFixture(
         defaults: UserDefaults,
         resourceRoot: URL? = nil,
-        developmentRoot: URL? = nil
+        developmentRoot: URL? = nil,
+        bundleRemoteUpdater: (any SumiProtectionBundleRemoteUpdating)? = nil,
+        bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore? = nil
     ) -> Fixture {
         let registry = SumiModuleRegistry(settingsStore: SumiModuleSettingsStore(userDefaults: defaults))
         let trackingRuleSource = PreparedBundleTrackingRuleSource(
@@ -198,6 +232,7 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
             settingsFactory: { AdblockSettingsStore(userDefaults: defaults) },
             sitePolicyFactory: { AdblockSitePolicyStore(userDefaults: defaults) },
             preparedBundleResourceURL: resourceRoot,
+            preparedBundleRemoteRootURL: temporaryDirectory(prefix: "SumiProtectionRemote"),
             preparedBundleGeneratedRootURL: developmentRoot,
             ruleListStoreFactory: { settings, isEnabled in
                 didCreateAdblockRuleListStore = true
@@ -214,7 +249,9 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
             settings: SumiProtectionSettings(userDefaults: defaults),
             trackingProtectionModule: trackingModule,
             adBlockingModule: adBlockingModule,
-            moduleRegistry: registry
+            moduleRegistry: registry,
+            bundleRemoteUpdater: bundleRemoteUpdater ?? FakeProtectionBundleRemoteUpdater(),
+            bundleUpdateStatusStore: bundleUpdateStatusStore ?? SumiProtectionBundleUpdateStatusStore(userDefaults: defaults)
         )
         return Fixture(
             coordinator: coordinator,
@@ -248,5 +285,29 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         let coordinator: SumiProtectionCoordinator
         let trackingRuleSource: PreparedBundleTrackingRuleSource
         let didCreateAdblockRuleListStore: () -> Bool
+    }
+}
+
+private final class FakeProtectionBundleRemoteUpdater: SumiProtectionBundleRemoteUpdating, @unchecked Sendable {
+    var result: SumiProtectionRemoteBundleFetchResult?
+    var error: Error?
+
+    init(result: SumiProtectionRemoteBundleFetchResult? = nil, error: Error? = nil) {
+        self.result = result
+        self.error = error
+    }
+
+    func fetchLatestApprovedBundle(profileId: String) async throws -> SumiProtectionRemoteBundleFetchResult {
+        if let error { throw error }
+        return result ?? SumiProtectionRemoteBundleFetchResult(
+            profileId: profileId,
+            releaseVersion: "20260517T000000Z-test",
+            releaseTag: "bundles-20260517T000000Z-test",
+            releaseURL: nil,
+            publishedDate: nil,
+            bundleId: "sumi.adblock.bundle.\(profileId).test",
+            generationId: "remote-generation",
+            bundleURL: URL(fileURLWithPath: "/tmp/SumiProtectionFakeRemoteBundle", isDirectory: true)
+        )
     }
 }

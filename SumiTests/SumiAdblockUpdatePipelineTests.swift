@@ -16,7 +16,7 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
     }
 
     func testRuntimeGeneratedSourceIsNotAvailableInAppRuntime() {
-        XCTAssertEqual(AdblockRuleGenerationSource.allCases, [.embeddedBundle, .developmentBundle, .futureRemoteBundle])
+        XCTAssertEqual(AdblockRuleGenerationSource.allCases, [.embeddedBundle, .developmentBundle, .remoteReleaseBundle])
         XCTAssertNil(AdblockRuleGenerationSource(rawValue: "runtimeGenerated"))
     }
 

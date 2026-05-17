@@ -86,9 +86,11 @@ private struct AdblockProtectionSettingsView: View {
     let windowState: BrowserWindowState?
     let currentTab: Tab?
     @ObservedObject private var settings: SumiProtectionSettings
+    @ObservedObject private var bundleUpdateStatus: SumiProtectionBundleUpdateStatusStore
     @State private var overrideStatus: String?
     @State private var applyStatus: String?
     @State private var isApplying = false
+    @State private var isUpdatingBundles = false
     #if DEBUG
     @State private var copyDiagnosticsStatus: String?
     #endif
@@ -104,6 +106,7 @@ private struct AdblockProtectionSettingsView: View {
         self.windowState = windowState
         self.currentTab = currentTab
         _settings = ObservedObject(wrappedValue: coordinator.settings)
+        _bundleUpdateStatus = ObservedObject(wrappedValue: coordinator.bundleUpdateStatusStore)
     }
 
     var body: some View {
@@ -151,6 +154,24 @@ private struct AdblockProtectionSettingsView: View {
                 Text(settings.appliedLevel.displayTitle)
                     .font(.callout)
                     .foregroundStyle(coordinator.applyNeeded ? Color.orange : Color.secondary)
+            }
+
+            SettingsRow(
+                title: "Prepared bundles",
+                subtitle: preparedBundlesSubtitle
+            ) {
+                Button {
+                    updatePreparedBundles()
+                } label: {
+                    if isUpdatingBundles {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text("Update bundles")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(isUpdatingBundles)
             }
 
             SettingsRow(
@@ -248,6 +269,35 @@ private struct AdblockProtectionSettingsView: View {
         return "This is the level used after Sumi starts."
     }
 
+    private var preparedBundlesSubtitle: String {
+        let global = globalDiagnostics
+        let installedVersion = global.remoteReleaseVersion
+            ?? global.activeGenerationId
+            ?? bundleUpdateStatus.lastReleaseVersion
+        let installedDate = global.lastSuccessfulBundleInstallDate
+            ?? bundleUpdateStatus.lastSuccessDate
+        let installed = installedVersion.map { version in
+            if let installedDate {
+                return "Installed \(version) on \(settingsDateString(installedDate))."
+            }
+            return "Installed \(version)."
+        } ?? "No prepared Adblock bundle is installed yet."
+
+        if isUpdatingBundles {
+            return "Fetching and verifying the latest approved prepared bundle release."
+        }
+        if let failure = bundleUpdateStatus.lastFailureReason {
+            return "\(installed) Last update failed: \(failure)"
+        }
+        if let summary = bundleUpdateStatus.lastSummary {
+            return "\(installed) \(summary)"
+        }
+        if settings.appliedLevel == .adblock {
+            return "\(installed) Updates are manual; existing pages may need reload or restart after a bundle change."
+        }
+        return "\(installed) Updating only downloads the Adblock bundle; it does not turn protection on."
+    }
+
     private var currentPageLevelSubtitle: String {
         if let reason = currentPagePlan.ineligibleSurfaceReason {
             return reason
@@ -310,6 +360,30 @@ private struct AdblockProtectionSettingsView: View {
                 }
             }
         }
+    }
+
+    private func updatePreparedBundles() {
+        guard !isUpdatingBundles else { return }
+        isUpdatingBundles = true
+        Task {
+            do {
+                let outcome = try await coordinator.updatePreparedBundlesManually()
+                await MainActor.run {
+                    applyStatus = outcome.browserRestartRequired
+                        ? "Prepared bundles updated. Restart Sumi before relying on the new global bundle set."
+                        : nil
+                    isUpdatingBundles = false
+                }
+            } catch {
+                await MainActor.run {
+                    isUpdatingBundles = false
+                }
+            }
+        }
+    }
+
+    private func settingsDateString(_ date: Date) -> String {
+        Self.settingsDateFormatter.string(from: date)
     }
 
     private var diagnosticsTarget: DebugProtectionDiagnosticsTarget {
@@ -484,6 +558,13 @@ private struct AdblockProtectionSettingsView: View {
         return formatter
     }()
     #endif
+
+    private static let settingsDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
 }
 
 private struct DebugProtectionDiagnosticsTarget {

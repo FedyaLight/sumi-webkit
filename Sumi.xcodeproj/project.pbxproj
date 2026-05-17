@@ -227,14 +227,14 @@
 			productReference = 2C89252E2E88DFF9002236DC /* SumiTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-			7F8340FB2E37F39400674A5D /* Sumi */ = {
-				isa = PBXNativeTarget;
-				buildConfigurationList = 7F8341082E37F39500674A5D /* Build configuration list for PBXNativeTarget "Sumi" */;
-				buildPhases = (
-					7F8340F82E37F39400674A5D /* Sources */,
-					7F8340F92E37F39400674A5D /* Frameworks */,
-					7F8340FA2E37F39400674A5D /* Resources */,
-				);
+		7F8340FB2E37F39400674A5D /* Sumi */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7F8341082E37F39500674A5D /* Build configuration list for PBXNativeTarget "Sumi" */;
+			buildPhases = (
+				7F8340F82E37F39400674A5D /* Sources */,
+				7F8340F92E37F39400674A5D /* Frameworks */,
+				7F8340FA2E37F39400674A5D /* Resources */,
+			);
 			buildRules = (
 			);
 			dependencies = (

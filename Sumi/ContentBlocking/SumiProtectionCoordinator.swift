@@ -380,6 +380,11 @@ struct SumiProtectionGlobalDiagnostics: Equatable, Sendable {
     let nativeRuleBundleId: String?
     let bundleProfileId: String?
     let activeGenerationId: String?
+    let remoteReleaseVersion: String?
+    let remoteReleaseTag: String?
+    let remoteReleaseURL: String?
+    let bundleGeneratedDate: Date?
+    let lastSuccessfulBundleInstallDate: Date?
     let requiredBundleProfileId: String?
     let preparedBundleAvailable: Bool
     let preparedBundleSource: SumiAdblockBundleInstallSource?
@@ -514,6 +519,8 @@ final class SumiProtectionCoordinator {
     private let adBlockingModule: SumiAdBlockingModule
     private let moduleRegistry: SumiModuleRegistry
     private let siteNormalizer: SumiTrackingProtectionSiteNormalizer
+    private let bundleRemoteUpdater: any SumiProtectionBundleRemoteUpdating
+    let bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore
 
     private var cancellables = Set<AnyCancellable>()
     private(set) var lastApplySummary: String?
@@ -531,13 +538,17 @@ final class SumiProtectionCoordinator {
         trackingProtectionModule: SumiTrackingProtectionModule = .shared,
         adBlockingModule: SumiAdBlockingModule = .shared,
         moduleRegistry: SumiModuleRegistry = .shared,
-        siteNormalizer: SumiTrackingProtectionSiteNormalizer = SumiTrackingProtectionSiteNormalizer()
+        siteNormalizer: SumiTrackingProtectionSiteNormalizer = SumiTrackingProtectionSiteNormalizer(),
+        bundleRemoteUpdater: any SumiProtectionBundleRemoteUpdating = SumiProtectionBundleRemoteUpdater(),
+        bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore = .shared
     ) {
         self.settings = settings
         self.trackingProtectionModule = trackingProtectionModule
         self.adBlockingModule = adBlockingModule
         self.moduleRegistry = moduleRegistry
         self.siteNormalizer = siteNormalizer
+        self.bundleRemoteUpdater = bundleRemoteUpdater
+        self.bundleUpdateStatusStore = bundleUpdateStatusStore
         self.runtimeAppliedLevel = settings.appliedLevel
         syncLegacyModuleGates(for: runtimeAppliedLevel)
     }
@@ -565,14 +576,16 @@ final class SumiProtectionCoordinator {
         do {
             var installedBundleProfileId: String?
             if let requiredBundleProfileId = selectedLevel.preferredBundleProfileId {
-                if activePreparedBundleProfileId != requiredBundleProfileId {
-                    let discoveryStart = Date()
-                    let discovery = adBlockingModule.preparedNativeRuleBundleDiscovery(
-                        profileId: requiredBundleProfileId
-                    )
-                    lastBundleLookupDuration = Date().timeIntervalSince(discoveryStart)
-                    lastPreparedBundleDiscoveryProfileId = requiredBundleProfileId
-                    lastPreparedBundleDiscovery = discovery
+                let discoveryStart = Date()
+                let discovery = adBlockingModule.preparedNativeRuleBundleDiscovery(
+                    profileId: requiredBundleProfileId
+                )
+                lastBundleLookupDuration = Date().timeIntervalSince(discoveryStart)
+                lastPreparedBundleDiscoveryProfileId = requiredBundleProfileId
+                lastPreparedBundleDiscovery = discovery
+                let shouldInstallDiscoveredRemoteBundle = discovery.resolvedBundle?.source == .remoteReleaseBundle
+                    && discovery.resolvedBundle?.bundleId != adBlockingModule.activeManifestIfLoaded()?.nativeRuleBundleId
+                if activePreparedBundleProfileId != requiredBundleProfileId || shouldInstallDiscoveredRemoteBundle {
                     guard discovery.resolvedBundle != nil else {
                         throw SumiProtectionApplyError.requiredPreparedBundleUnavailable(
                             profileId: requiredBundleProfileId,
@@ -643,6 +656,63 @@ final class SumiProtectionCoordinator {
                 clearCachedAttachmentService()
             }
             throw SumiProtectionApplyError.applyFailed(message)
+        }
+    }
+
+    func updatePreparedBundlesManually() async throws -> SumiProtectionBundleManualUpdateOutcome {
+        let profileId = SumiProtectionBundleProfile.adblock
+        do {
+            let remote = try await bundleRemoteUpdater.fetchLatestApprovedBundle(profileId: profileId)
+            let activeManifest = adBlockingModule.activeManifestIfLoaded()
+            let activation: SumiProtectionBundleManualUpdateActivation
+            let restartRequired: Bool
+            let summary: String
+
+            if settings.appliedLevel == .adblock {
+                if activeManifest?.nativeRuleBundleId == remote.bundleId
+                    || activeManifest?.activeGenerationId == remote.generationId {
+                    activation = .alreadyCurrent
+                    restartRequired = settings.browserRestartRequired
+                    summary = "Prepared bundles are already current: \(remote.releaseVersion)."
+                } else {
+                    let manifest = try await adBlockingModule.installPreparedNativeRuleBundle(profileId: profileId)
+                    guard manifest?.nativeRuleBundleId == remote.bundleId,
+                          manifest?.activeGenerationId == remote.generationId
+                    else {
+                        throw SumiProtectionApplyError.requiredPreparedBundleUnavailable(
+                            profileId: profileId,
+                            detail: "The remote bundle was cached but did not become the active prepared bundle."
+                        )
+                    }
+                    try await prepareCachedAttachmentService(for: settings.appliedLevel)
+                    settings.setBrowserRestartRequired(true)
+                    activation = .installedRestartRequired
+                    restartRequired = true
+                    summary = "Updated prepared bundles to \(remote.releaseVersion). Restart Sumi or reload open pages before relying on the new rules."
+                    lastApplySummary = summary
+                    lastApplyError = nil
+                }
+            } else {
+                activation = .cachedOnly
+                restartRequired = settings.browserRestartRequired
+                summary = "Downloaded prepared bundles \(remote.releaseVersion). They will be used after Adblock is selected and applied."
+            }
+
+            let outcome = SumiProtectionBundleManualUpdateOutcome(
+                profileId: profileId,
+                releaseVersion: remote.releaseVersion,
+                releaseTag: remote.releaseTag,
+                bundleId: remote.bundleId,
+                generationId: remote.generationId,
+                activation: activation,
+                browserRestartRequired: restartRequired,
+                summary: summary
+            )
+            bundleUpdateStatusStore.recordSuccess(outcome)
+            return outcome
+        } catch {
+            bundleUpdateStatusStore.recordFailure(error)
+            throw error
         }
     }
 
@@ -1189,6 +1259,11 @@ final class SumiProtectionCoordinator {
             nativeRuleBundleId: manifest?.nativeRuleBundleId,
             bundleProfileId: installedBundleProfileId,
             activeGenerationId: manifest?.activeGenerationId,
+            remoteReleaseVersion: manifest?.remoteReleaseVersion,
+            remoteReleaseTag: manifest?.remoteReleaseTag,
+            remoteReleaseURL: manifest?.remoteReleaseURL,
+            bundleGeneratedDate: manifest?.createdDate,
+            lastSuccessfulBundleInstallDate: manifest?.lastSuccessfulUpdateDate,
             requiredBundleProfileId: requiredBundleProfileId,
             preparedBundleAvailable: preparedBundleDiscovery?.isAvailable ?? (requiredBundleProfileId.map { activePreparedProfileId == $0 } ?? true),
             preparedBundleSource: preparedBundleDiscovery?.source ?? (
@@ -1746,8 +1821,8 @@ private extension AdblockRuleGenerationSource {
             return .appResource
         case .developmentBundle:
             return .developmentBundle
-        case .futureRemoteBundle:
-            return .futureRemoteBundle
+        case .remoteReleaseBundle:
+            return .remoteReleaseBundle
         }
     }
 }
