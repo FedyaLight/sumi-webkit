@@ -383,6 +383,13 @@ struct SumiProtectionGlobalDiagnostics: Equatable, Sendable {
     let remoteReleaseVersion: String?
     let remoteReleaseTag: String?
     let remoteReleaseURL: String?
+    let remoteManifestSignatureRequired: Bool
+    let remoteManifestSignatureVerified: Bool?
+    let remoteSigningKeyId: String?
+    let remoteSigningKeyVersion: Int?
+    let lastRemoteUpdateError: String?
+    let lastSignatureError: String?
+    let downgradeRejected: Bool
     let bundleGeneratedDate: Date?
     let lastSuccessfulBundleInstallDate: Date?
     let requiredBundleProfileId: String?
@@ -704,6 +711,10 @@ final class SumiProtectionCoordinator {
                 releaseTag: remote.releaseTag,
                 bundleId: remote.bundleId,
                 generationId: remote.generationId,
+                manifestSignatureRequired: remote.manifestSignatureRequired,
+                manifestSignatureVerified: remote.manifestSignatureVerified,
+                signingKeyId: remote.signingKeyId,
+                signingKeyVersion: remote.signingKeyVersion,
                 activation: activation,
                 browserRestartRequired: restartRequired,
                 summary: summary
@@ -1262,6 +1273,16 @@ final class SumiProtectionCoordinator {
             remoteReleaseVersion: manifest?.remoteReleaseVersion,
             remoteReleaseTag: manifest?.remoteReleaseTag,
             remoteReleaseURL: manifest?.remoteReleaseURL,
+            remoteManifestSignatureRequired: SumiProtectionBundleTrust.remoteManifestSignatureRequired,
+            remoteManifestSignatureVerified: manifest?.remoteManifestSignatureVerified
+                ?? bundleUpdateStatusStore.lastSignatureVerified,
+            remoteSigningKeyId: manifest?.remoteSigningKeyId
+                ?? bundleUpdateStatusStore.lastSigningKeyId,
+            remoteSigningKeyVersion: manifest?.remoteSigningKeyVersion
+                ?? bundleUpdateStatusStore.lastSigningKeyVersion,
+            lastRemoteUpdateError: bundleUpdateStatusStore.lastFailureReason,
+            lastSignatureError: bundleUpdateStatusStore.lastSignatureError,
+            downgradeRejected: bundleUpdateStatusStore.lastDowngradeRejected ?? false,
             bundleGeneratedDate: manifest?.createdDate,
             lastSuccessfulBundleInstallDate: manifest?.lastSuccessfulUpdateDate,
             requiredBundleProfileId: requiredBundleProfileId,
@@ -1323,6 +1344,14 @@ final class SumiProtectionCoordinator {
             "nativeRuleBundleId=\(global.nativeRuleBundleId ?? "nil")",
             "bundleProfileId=\(global.bundleProfileId ?? "nil")",
             "activeGenerationId=\(global.activeGenerationId ?? "nil")",
+            "remoteReleaseVersion=\(global.remoteReleaseVersion ?? "nil")",
+            "remoteManifestSignatureRequired=\(global.remoteManifestSignatureRequired)",
+            "remoteManifestSignatureVerified=\(global.remoteManifestSignatureVerified.map(String.init) ?? "false")",
+            "signingKeyId=\(global.remoteSigningKeyId ?? "nil")",
+            "signingKeyVersion=\(global.remoteSigningKeyVersion.map(String.init) ?? "nil")",
+            "lastRemoteUpdateError=\(global.lastRemoteUpdateError ?? "nil")",
+            "lastSignatureError=\(global.lastSignatureError ?? "nil")",
+            "downgradeRejected=\(global.downgradeRejected)",
             "requiredBundleProfileId=\(global.requiredBundleProfileId ?? "nil")",
             "preparedBundleAvailable=\(global.preparedBundleAvailable)",
             "preparedBundleSource=\(global.preparedBundleSource?.rawValue ?? "nil")",

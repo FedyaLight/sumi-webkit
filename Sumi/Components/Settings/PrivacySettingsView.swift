@@ -282,20 +282,33 @@ private struct AdblockProtectionSettingsView: View {
             }
             return "Installed \(version)."
         } ?? "No prepared Adblock bundle is installed yet."
+        let signature = preparedBundleSignatureSubtitle(global: global)
 
         if isUpdatingBundles {
-            return "Fetching and verifying the latest approved prepared bundle release."
+            return "Fetching and verifying the latest signed prepared bundle release."
         }
         if let failure = bundleUpdateStatus.lastFailureReason {
-            return "\(installed) Last update failed: \(failure)"
+            return "\(installed) \(signature) Last update failed: \(failure)"
         }
         if let summary = bundleUpdateStatus.lastSummary {
-            return "\(installed) \(summary)"
+            return "\(installed) \(signature) \(summary)"
         }
         if settings.appliedLevel == .adblock {
-            return "\(installed) Updates are manual; existing pages may need reload or restart after a bundle change."
+            return "\(installed) \(signature) Updates are manual; existing pages may need reload or restart after a bundle change."
         }
-        return "\(installed) Updating only downloads the Adblock bundle; it does not turn protection on."
+        return "\(installed) \(signature) Updating only downloads the Adblock bundle; it does not turn protection on."
+    }
+
+    private func preparedBundleSignatureSubtitle(global: SumiProtectionGlobalDiagnostics) -> String {
+        if global.remoteManifestSignatureVerified == true {
+            let key = global.remoteSigningKeyId.map { " with key \($0)" } ?? ""
+            let version = global.remoteSigningKeyVersion.map { " v\($0)" } ?? ""
+            return "Signature verified\(key)\(version)."
+        }
+        if let signatureError = global.lastSignatureError {
+            return "Signature verification failed: \(signatureError)"
+        }
+        return "Remote releases require a manifest signature."
     }
 
     private var currentPageLevelSubtitle: String {
@@ -453,6 +466,14 @@ private struct AdblockProtectionSettingsView: View {
             ("GLOBAL generation source", global.generationSource?.rawValue ?? "nil"),
             ("GLOBAL native bundle id", global.nativeRuleBundleId ?? "nil"),
             ("GLOBAL bundle profile id", global.bundleProfileId ?? "nil"),
+            ("GLOBAL remote release version", global.remoteReleaseVersion ?? "nil"),
+            ("GLOBAL remote manifest signature required", global.remoteManifestSignatureRequired.description),
+            ("GLOBAL remote manifest signature verified", global.remoteManifestSignatureVerified.map(String.init) ?? "false"),
+            ("GLOBAL signing key id", global.remoteSigningKeyId ?? "nil"),
+            ("GLOBAL signing key version", global.remoteSigningKeyVersion.map(String.init) ?? "nil"),
+            ("GLOBAL last remote update error", global.lastRemoteUpdateError ?? "nil"),
+            ("GLOBAL last signature error", global.lastSignatureError ?? "nil"),
+            ("GLOBAL downgrade rejected", global.downgradeRejected.description),
             ("GLOBAL required bundle profile", global.requiredBundleProfileId ?? "nil"),
             ("GLOBAL prepared bundle available", global.preparedBundleAvailable.description),
             ("GLOBAL prepared bundle source", global.preparedBundleSource?.rawValue ?? "nil"),
