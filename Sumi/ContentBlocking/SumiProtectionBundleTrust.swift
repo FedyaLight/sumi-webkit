@@ -34,7 +34,7 @@ enum SumiProtectionBundleTrust {
         SumiProtectionBundleSigningKey(
             id: "sumi-protection-bundles-ed25519-v1",
             version: 1,
-            publicKeyBase64: "Y0hVG5cU1XYFdgLKLff+Ka+dc95Fu/JPC1ISGLEKJfU="
+            publicKeyBase64: "9QrGgDqdgiEizieSlGzJ81YcCKuL5CVyW6MBNRnQjAA="
         ),
     ]
 }

@@ -94,6 +94,56 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
         }
     }
 
+    func testPinnedProductionSigningKeyVerifiesFixtureSignatureAndRejectsTampering() throws {
+        let verifier = SumiProtectionBundleSignatureVerifier()
+        let manifestData = Data((#"{"fixture":"sumi-production-signing-key-v1","schemaVersion":1}"# + "\n").utf8)
+        let signatureJSON = #"""
+        {
+          "algorithm" : "Ed25519",
+          "keyId" : "sumi-protection-bundles-ed25519-v1",
+          "schemaVersion" : 1,
+          "signature" : "7pmzjFXq+A/VTXOaQ2xzithpa7Tp5h51RCoXy9vUE7CA+2e+HBXqokmV36ldjrMAI9Fdy8bmGWItRY7utjgxDw==",
+          "signedAsset" : "sumi-protection-bundles-release.json"
+        }
+        """#
+        let signatureData = Data(signatureJSON.utf8)
+
+        let verification = try verifier.verify(
+            manifestData: manifestData,
+            signatureData: signatureData,
+            expectedSignedAsset: SumiProtectionBundleRemoteUpdateConstants.releaseManifestAssetName
+        )
+        XCTAssertEqual(verification.keyId, "sumi-protection-bundles-ed25519-v1")
+        XCTAssertEqual(verification.keyVersion, 1)
+
+        var modifiedManifestData = manifestData
+        modifiedManifestData.append(contentsOf: [0])
+        XCTAssertThrowsError(
+            try verifier.verify(
+                manifestData: modifiedManifestData,
+                signatureData: signatureData,
+                expectedSignedAsset: SumiProtectionBundleRemoteUpdateConstants.releaseManifestAssetName
+            )
+        ) { error in
+            guard case .signatureInvalid = error as? SumiProtectionBundleRemoteUpdateError else {
+                return XCTFail("Expected invalid signature for modified manifest, got \(error)")
+            }
+        }
+
+        let wrongSignatureData = Data(signatureJSON.replacingOccurrences(of: "\"7pmz", with: "\"Apmz").utf8)
+        XCTAssertThrowsError(
+            try verifier.verify(
+                manifestData: manifestData,
+                signatureData: wrongSignatureData,
+                expectedSignedAsset: SumiProtectionBundleRemoteUpdateConstants.releaseManifestAssetName
+            )
+        ) { error in
+            guard case .signatureInvalid = error as? SumiProtectionBundleRemoteUpdateError else {
+                return XCTFail("Expected invalid signature for wrong signature, got \(error)")
+            }
+        }
+    }
+
     func testRemoteUpdaterRejectsUnknownSigningKey() async throws {
         let root = temporaryDirectory()
         let fixture = try makeReleaseFixture(
