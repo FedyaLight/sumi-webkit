@@ -1,5 +1,6 @@
 import Combine
 import SwiftData
+import WebKit
 import XCTest
 
 @testable import Sumi
@@ -47,6 +48,32 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         XCTAssertEqual(tabManager.structuralLookupImmediateFlushCount, immediateFlushesBefore)
         XCTAssertEqual(tabManager.tab(for: first.id)?.id, first.id)
         XCTAssertEqual(tabManager.tab(for: second.id)?.id, second.id)
+    }
+
+    func testAdoptingGlanceTabInsertsAfterSourceAndPreservesWebView() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let space = tabManager.createSpace(name: "Workspace")
+        let source = tabManager.createNewTab(url: "https://example.com/source", in: space)
+        let trailing = tabManager.createNewTab(url: "https://example.com/trailing", in: space, activate: false)
+        let preview = Tab(
+            url: URL(string: "https://destination.example/preview")!,
+            name: "Preview",
+            spaceId: space.id
+        )
+        let webView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        preview._webView = webView
+
+        let adopted = tabManager.adoptGlanceTab(preview, sourceTab: source, in: space)
+
+        XCTAssertTrue(adopted === preview)
+        XCTAssertTrue(preview.existingWebView === webView)
+        XCTAssertEqual(tabManager.tabsBySpace[space.id]?.map(\.id), [
+            source.id,
+            preview.id,
+            trailing.id,
+        ])
+        XCTAssertEqual(tabManager.tabsBySpace[space.id]?.map(\.index), [0, 1, 2])
+        XCTAssertEqual(tabManager.tab(for: preview.id)?.id, preview.id)
     }
 
     func testRemovingSelectedTabPublishesOnceAndSelectsReplacement() throws {

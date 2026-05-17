@@ -1687,6 +1687,28 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertTrue(policy?.isDownload == true)
     }
 
+    func testDownloadResponderDoesNotTreatOptionGlanceClickAsDownload() async {
+        let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
+        let tab = Tab(url: URL(string: "https://example.com")!)
+        tab.sumiSettings = settings
+        tab.setClickModifierFlags([.option])
+        let responder = SumiDownloadsNavigationResponder(tab: tab, downloadManager: nil)
+        let adapter = SumiNavigationResponderAdapter(target: responder)
+        var preferences = NavigationPreferences.default
+
+        let policy = await adapter.decidePolicy(
+            for: navigationAction(
+                url: URL(string: "https://example.com/page")!,
+                navigationType: .linkActivated(isMiddleClick: false),
+                shouldDownload: true,
+                modifierFlags: [.option]
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertNil(policy)
+    }
+
     func testDownloadResponderContinuesForRegularNavigationAction() async {
         let tab = Tab(url: URL(string: "https://example.com")!)
         let responder = SumiDownloadsNavigationResponder(tab: tab, downloadManager: nil)
@@ -1775,13 +1797,19 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertFalse(tab.isGlanceTriggerActive([.option]))
     }
 
-    func testDynamicGlanceIgnoresModifiedClicks() {
+    func testDynamicGlanceRequiresEssentialExternalCleanClick() {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
         let tab = Tab(url: URL(string: "https://source.example/page")!)
         tab.sumiSettings = settings
         let externalURL = URL(string: "https://destination.example/page")!
         let sameHostURL = URL(string: "https://source.example/other")!
 
+        XCTAssertFalse(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: []))
+
+        tab.shortcutPinRole = .spacePinned
+        XCTAssertFalse(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: []))
+
+        tab.shortcutPinRole = .essential
         XCTAssertTrue(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: []))
         XCTAssertFalse(tab.shouldOpenDynamicallyInGlance(url: sameHostURL, modifierFlags: []))
         XCTAssertFalse(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: [.command]))
@@ -1897,6 +1925,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             for: navigationAction(
                 url: targetURL,
                 navigationType: .linkActivated(isMiddleClick: false),
+                shouldDownload: true,
                 sourceURL: tab.url
             ),
             preferences: &preferences
@@ -1904,6 +1933,56 @@ final class SumiNavigationResponderTests: XCTestCase {
 
         XCTAssertTrue(policy?.isCancel == true)
         XCTAssertEqual(browserManager.glanceManager.currentSession?.currentURL, targetURL)
+    }
+
+    func testPopupResponderEssentialExternalCleanClickRoutesToGlance() async {
+        let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
+        let browserManager = BrowserManager()
+        browserManager.sumiSettings = settings
+        let tab = Tab(url: URL(string: "https://source.example/page")!)
+        tab.browserManager = browserManager
+        tab.sumiSettings = settings
+        tab.shortcutPinRole = .essential
+        let responder = SumiPopupHandlingNavigationResponder(tab: tab)
+        let adapter = SumiNavigationResponderAdapter(target: responder)
+        let targetURL = URL(string: "https://destination.example/page")!
+        var preferences = NavigationPreferences.default
+
+        let policy = await adapter.decidePolicy(
+            for: navigationAction(
+                url: targetURL,
+                navigationType: .linkActivated(isMiddleClick: false),
+                sourceURL: tab.url
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertTrue(policy?.isCancel == true)
+        XCTAssertEqual(browserManager.glanceManager.currentSession?.currentURL, targetURL)
+    }
+
+    func testPopupResponderRegularExternalCleanClickDoesNotRouteToGlance() async {
+        let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
+        let browserManager = BrowserManager()
+        browserManager.sumiSettings = settings
+        let tab = Tab(url: URL(string: "https://source.example/page")!)
+        tab.browserManager = browserManager
+        tab.sumiSettings = settings
+        let responder = SumiPopupHandlingNavigationResponder(tab: tab)
+        let adapter = SumiNavigationResponderAdapter(target: responder)
+        let targetURL = URL(string: "https://destination.example/page")!
+        var preferences = NavigationPreferences.default
+
+        _ = await adapter.decidePolicy(
+            for: navigationAction(
+                url: targetURL,
+                navigationType: .linkActivated(isMiddleClick: false),
+                sourceURL: tab.url
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertNil(browserManager.glanceManager.currentSession)
     }
 
     func testPopupResponderCommandClickDoesNotRouteToGlance() async {

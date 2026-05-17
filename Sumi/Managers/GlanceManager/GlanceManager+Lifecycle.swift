@@ -3,79 +3,53 @@ import WebKit
 
 @MainActor
 extension GlanceManager {
-    func dismissGlance(reason: GlanceDismissReason = .close) {
-        guard isActive || currentSession != nil else { return }
-
-        if reason == .close {
-            webViewCoordinator?.tearDownForDismissal()
-        }
-
-        isActive = false
-        webView = nil
-        webViewCoordinator = nil
-        NotificationCenter.default.post(name: .glanceDidDeactivate, object: self)
-        currentSession = nil
-    }
-
     func moveToSplitView() {
         guard let session = currentSession,
               let browserManager,
-              let windowState = windowRegistry?.activeWindow else { return }
+              let windowState = windowRegistry?.windows[session.windowId] ?? windowRegistry?.activeWindow
+        else { return }
 
-        let extractedWebView = webViewCoordinator?.detachWebViewForTransfer()
-
-        let newTab: Tab
-        if let webView = extractedWebView {
-            newTab = browserManager.tabManager.createNewTabWithWebView(
-                url: session.currentURL.absoluteString,
-                in: browserManager.tabManager.currentSpace,
-                existingWebView: webView
-            )
-        } else {
-            newTab = browserManager.tabManager.createNewTab(
-                url: session.currentURL.absoluteString,
-                in: browserManager.tabManager.currentSpace
-            )
-        }
-
+        transition(to: .promoting)
+        materializePreviewWebViewIfNeeded(for: session)
+        let newTab = browserManager.tabManager.adoptGlanceTab(
+            session.previewTab,
+            sourceTab: session.sourceTab,
+            in: browserManager.tabManager.currentSpace
+        )
         browserManager.splitManager.enterSplit(with: newTab, placeOn: .right, in: windowState)
-        browserManager.selectTab(newTab)
-        dismissGlance(reason: .moveToSplit)
+        browserManager.selectTab(newTab, in: windowState)
+        finishPromotedSession()
     }
 
     func moveToNewTab() {
         guard let session = currentSession,
-              let browserManager,
-              let coordinator = webViewCoordinator else { return }
+              let browserManager else { return }
 
-        let extractedWebView = coordinator.detachWebViewForTransfer()
-        let newTab = browserManager.tabManager.createNewTabWithWebView(
-            url: session.currentURL.absoluteString,
-            in: browserManager.tabManager.currentSpace,
-            existingWebView: extractedWebView
+        transition(to: .promoting)
+        materializePreviewWebViewIfNeeded(for: session)
+        let newTab = browserManager.tabManager.adoptGlanceTab(
+            session.previewTab,
+            sourceTab: session.sourceTab,
+            in: browserManager.tabManager.currentSpace
         )
 
-        browserManager.selectTab(newTab)
-        dismissGlance(reason: .promoteToTab)
+        if let windowState = windowRegistry?.windows[session.windowId] ?? windowRegistry?.activeWindow {
+            browserManager.selectTab(newTab, in: windowState)
+        } else {
+            browserManager.selectTab(newTab)
+        }
+        finishPromotedSession()
     }
 
-    // MARK: - WebView Management
+    private func finishPromotedSession() {
+        currentSession = nil
+        transition(to: .idle)
+        NotificationCenter.default.post(name: .glanceDidDeactivate, object: self)
+    }
 
-    func createWebView() -> GlanceWebView {
-        if let existingWebView = webView {
-            return existingWebView
-        }
-
-        guard let currentSession else {
-            assertionFailure("GlanceManager.createWebView called without an active session")
-            return GlanceWebView(session: GlanceSession(
-                targetURL: URL(string: "about:blank")!,
-                windowId: windowRegistry?.activeWindow?.id ?? UUID()
-            ))
-        }
-
-        var newWebView = GlanceWebView(session: currentSession)
-        newWebView.glanceManager = self
-        return newWebView
+    private func materializePreviewWebViewIfNeeded(for session: GlanceSession) {
+        guard let webView = session.previewTab.ensureWebView() else { return }
+        webView.allowsMagnification = false
+        session.observe(webView)
     }
 }

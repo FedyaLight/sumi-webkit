@@ -1007,7 +1007,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
     func testAuxiliaryAndFaviconPathsDoNotAccessTrackingRuntime() throws {
         for relativePath in [
-            "Sumi/Managers/GlanceManager/GlanceWebView.swift",
             "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
             "Sumi/Favicons/DDG/Model/FaviconDownloader.swift",
         ] {
@@ -1022,7 +1021,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
     func testAuxiliaryAndFaviconPathsDoNotAccessUserscriptsRuntime() throws {
         for relativePath in [
-            "Sumi/Managers/GlanceManager/GlanceWebView.swift",
             "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
             "Sumi/Favicons/DDG/Model/FaviconDownloader.swift",
             "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift",
@@ -1038,7 +1036,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
     func testAuxiliaryAndFaviconPathsDoNotAccessExtensionsRuntime() throws {
         for relativePath in [
-            "Sumi/Managers/GlanceManager/GlanceWebView.swift",
             "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
             "Sumi/Favicons/DDG/Model/FaviconDownloader.swift",
             "Sumi/Models/BrowserConfig/BrowserConfig.swift",
@@ -1065,7 +1062,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(faviconSource.contains("normalTabWebViewConfiguration("))
 
         for relativePath in [
-            "Sumi/Managers/GlanceManager/GlanceWebView.swift",
             "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
             "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift",
         ] {
@@ -1073,6 +1069,16 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             XCTAssertTrue(source.contains("auxiliaryWebViewConfiguration"), relativePath)
             XCTAssertFalse(source.contains("normalTabWebViewConfiguration("), relativePath)
         }
+    }
+
+    func testGlancePreviewUsesTransientNormalTabRuntimeInsteadOfAuxiliarySurface() throws {
+        let managerSource = try Self.source(named: "Sumi/Managers/GlanceManager/GlanceManager.swift")
+        let sessionSource = try Self.source(named: "Sumi/Managers/GlanceManager/GlanceSession.swift")
+
+        XCTAssertTrue(managerSource.contains("previewTab.ensureWebView()"))
+        XCTAssertTrue(sessionSource.contains("let previewTab: Tab"))
+        XCTAssertFalse(managerSource.contains("auxiliaryWebViewConfiguration"))
+        XCTAssertFalse(managerSource.contains("surface: .glance"))
     }
 
     func testNormalTabConfigurationInstallsCoreScriptProvider() throws {

@@ -42,6 +42,7 @@ final class FocusableWKWebView: WKWebView {
     weak var owningTab: Tab?
     let interactionEventsPublisher = PassthroughSubject<SumiWebViewInteractionEvent, Never>()
     private var findInPageCompletionHandler: ((FindResult) -> Void)?
+    private var shouldSwallowNextMouseUpAfterImmediateGlance = false
 
     override init(frame: CGRect, configuration: WKWebViewConfiguration) {
         _ = Self.swizzleImmediateActionAnimationControllerOnce
@@ -142,7 +143,7 @@ final class FocusableWKWebView: WKWebView {
         }
 
         if isSuppressed {
-            owningTab?.onLinkHover?(nil)
+            owningTab?.updateHoveredLink(nil)
         }
     }
 
@@ -179,6 +180,10 @@ final class FocusableWKWebView: WKWebView {
         owningTab?.setClickModifierFlags(event.modifierFlags)
         owningTab?.recordPopupUserActivation(event, kind: "mouseDown")
 
+        if routeImmediateGlanceIfNeeded(with: event) {
+            return
+        }
+
         if Self.shouldApplyControlClickFix(
             event: event,
             pageHost: url?.host,
@@ -205,6 +210,18 @@ final class FocusableWKWebView: WKWebView {
         }
 
         performDefaultMouseDownBehavior(with: event)
+    }
+
+    private func routeImmediateGlanceIfNeeded(with event: NSEvent) -> Bool {
+        guard let tab = owningTab,
+              let targetURL = tab.immediateGlanceURLForWebViewMouseDown(event)
+        else { return false }
+
+        shouldSwallowNextMouseUpAfterImmediateGlance = true
+        tab.openURLInGlance(targetURL)
+        tab.activate()
+        tab.setClickModifierFlags([])
+        return true
     }
 
     private func performDefaultMouseDownBehavior(with event: NSEvent) {
@@ -337,6 +354,13 @@ final class FocusableWKWebView: WKWebView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if shouldSwallowNextMouseUpAfterImmediateGlance {
+            shouldSwallowNextMouseUpAfterImmediateGlance = false
+            owningTab?.setClickModifierFlags([])
+            owningTab?.clearWebViewInteractionEvent()
+            return
+        }
+
         super.mouseUp(with: event)
         let owningTab = owningTab
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {

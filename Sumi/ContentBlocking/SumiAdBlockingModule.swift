@@ -168,6 +168,8 @@ struct SumiAdblockAttachmentDiagnostics: Equatable, Sendable {
     let nativeCompiler: NativeContentBlockingCompilerIdentity?
     let nativeCompilationSummary: NativeContentBlockingCompilationSummary?
     let nativeSourceLists: [NativeContentBlockingSourceList]
+    let generationSource: AdblockRuleGenerationSource?
+    let nativeRuleBundleId: String?
     let networkShardCount: Int
     let nativeCSSShardCount: Int
     let totalNetworkRuleCount: Int
@@ -208,6 +210,8 @@ extension SumiAdblockAttachmentDiagnostics {
             "lastUpdateSummary=\(lastUpdateSummary ?? "nil")",
             "lastUpdateError=\(lastUpdateError ?? "nil")",
             "nativeCompiler=\(nativeCompiler.map { "\($0.name) \($0.version)" } ?? "nil")",
+            "generationSource=\(generationSource?.rawValue ?? "nil")",
+            "nativeRuleBundleId=\(nativeRuleBundleId ?? "nil")",
             "activeGeneration=\(hasActiveGeneration)",
             "generationIsStale=\(generationIsStale)",
             "selectedListIDs=\(selectedListIdentifiers.joined(separator: ","))",
@@ -677,6 +681,7 @@ final class AdblockWebKitRuleListStore {
     private let updateCoordinator: AdblockUpdateCoordinator
     private let settingsStore: AdblockSettingsStore
     private let isAdblockEnabled: @Sendable () async -> Bool
+    private let embeddedBundleURLProvider: @MainActor () -> URL?
     let configuredNativeCompilerIdentity: NativeContentBlockingCompilerIdentity
     private var settingsCancellable: AnyCancellable?
     private(set) var lastFailedShardIdentifier: String?
@@ -702,11 +707,15 @@ final class AdblockWebKitRuleListStore {
         nativeCompiler: (any NativeContentBlockingCompiler)? = nil,
         enhancedCompiler: (any EnhancedCompatibilityCompiler)? = nil,
         compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler(),
-        compiledRuleListCatalog: SumiCompiledContentRuleListCataloging = AdblockRetainingCompiledRuleListCatalog()
+        compiledRuleListCatalog: SumiCompiledContentRuleListCataloging = AdblockRetainingCompiledRuleListCatalog(),
+        embeddedBundleURLProvider: @escaping @MainActor () -> URL? = {
+            SumiAdblockNativeRuleBundle.bundledDirectoryURL()
+        }
     ) {
         self.manifestStore = manifestStore
         self.isAdblockEnabled = isAdblockEnabled
         self.settingsStore = settingsStore
+        self.embeddedBundleURLProvider = embeddedBundleURLProvider
         let rustCompiler = AdblockRustCompiler()
         let resolvedNativeCompiler = nativeCompiler ?? rustCompiler
         let resolvedEnhancedCompiler = enhancedCompiler ?? rustCompiler
@@ -784,6 +793,22 @@ final class AdblockWebKitRuleListStore {
         guard await isAdblockEnabled() else { return }
         do {
             let manifest = try await manifestStore.activeManifest()
+            do {
+                if try await installEmbeddedBundleIfNeeded(previousManifest: manifest) != nil {
+                    return
+                }
+            } catch where manifest != nil {
+                try await manifestStore.validateCompiledShardFiles(for: manifest!)
+                ruleListProvider.updateManifest(manifest)
+                lastFailedShardIdentifier = nil
+                if lastUpdateDiagnostics == nil {
+                    lastUpdateDiagnostics = AdblockUpdateDiagnostics(
+                        summary: "Embedded Adblock bundle install failed; retained active generation",
+                        generationSource: manifest?.generationSource
+                    )
+                }
+                return
+            }
             if let manifest {
                 try await manifestStore.validateCompiledShardFiles(for: manifest)
             }
@@ -808,19 +833,99 @@ final class AdblockWebKitRuleListStore {
                 guard await MainActor.run(body: { self.ruleListProvider.activeManifest == nil }) else {
                     return
                 }
+#if DEBUG
                 _ = try await self.updateCoordinator.updateIfEnabled(reason: "initial")
                 let diagnostics = await self.updateCoordinator.latestDiagnosticsSnapshot()
                 await MainActor.run {
                     self.lastFailedShardIdentifier = nil
                     self.lastUpdateDiagnostics = diagnostics
                 }
+#else
+                await MainActor.run {
+                    self.lastFailedShardIdentifier = nil
+                    self.lastUpdateDiagnostics = AdblockUpdateDiagnostics(
+                        summary: "No embedded Adblock bundle is available; runtime Adblock conversion is disabled outside DEBUG.",
+                        generationSource: nil
+                    )
+                }
+#endif
             } catch let diagnostics as AdblockUpdateDiagnostics {
                 await MainActor.run {
                     self.lastFailedShardIdentifier = diagnostics.failedShardIdentifier
                     self.lastUpdateDiagnostics = diagnostics
                 }
-            } catch {}
+            } catch {
+                await MainActor.run {
+                    self.lastFailedShardIdentifier = "embedded-bundle"
+                    self.lastUpdateDiagnostics = AdblockUpdateDiagnostics(
+                        summary: "Embedded Adblock bundle install failed: \(error.localizedDescription)",
+                        generationSource: .embeddedBundle
+                    )
+                }
+            }
         }
+    }
+
+    private func installEmbeddedBundleIfNeeded(
+        previousManifest: AdblockCompiledGenerationManifest?
+    ) async throws -> AdblockCompiledGenerationManifest? {
+        guard let bundleURL = embeddedBundleURLProvider() else { return nil }
+        let bundle = try SumiAdblockNativeRuleBundle.load(directoryURL: bundleURL)
+        if previousManifest?.generationSource == .embeddedBundle,
+           previousManifest?.nativeRuleBundleId == bundle.manifest.bundleId {
+            return nil
+        }
+
+        let manifest = bundle.compiledGenerationManifest(
+            previousManifest: previousManifest,
+            installedDate: Date()
+        )
+        let definitions = try bundle.contentRuleListDefinitions()
+        let preparedPublication: PreparedAdblockRuleListPublication
+        do {
+            preparedPublication = try await updateCoordinator.prepareEmbeddedBundlePublication(
+                manifest: manifest,
+                definitions: definitions
+            )
+        } catch let error as SumiContentBlockingCompilationError {
+            let diagnostics = AdblockUpdateDiagnostics(
+                summary: "Embedded Adblock bundle shard publish failed: \(error.localizedDescription)",
+                stage: .shardPublishFailed,
+                failedShardIdentifier: error.identifier,
+                generationSource: .embeddedBundle
+            )
+            lastFailedShardIdentifier = diagnostics.failedShardIdentifier
+            lastUpdateDiagnostics = diagnostics
+            throw diagnostics
+        }
+
+        let stagedShardURLs = try bundle.stagedShardURLs()
+        let metadata = try await manifestStore.loadHTTPMetadata()
+        do {
+            try await manifestStore.commit(
+                manifest: manifest,
+                httpMetadata: metadata,
+                stagedRawListURLs: [:],
+                stagedCompiledShardURLs: stagedShardURLs
+            )
+        } catch {
+            let diagnostics = AdblockUpdateDiagnostics(
+                summary: "Embedded Adblock bundle manifest commit failed: \(error.localizedDescription)",
+                stage: .manifestCommitFailed,
+                generationSource: .embeddedBundle
+            )
+            lastFailedShardIdentifier = diagnostics.failedShardIdentifier
+            lastUpdateDiagnostics = diagnostics
+            throw diagnostics
+        }
+
+        await updateCoordinator.commitEmbeddedBundlePublication(preparedPublication)
+        lastFailedShardIdentifier = nil
+        lastUpdateDiagnostics = AdblockUpdateDiagnostics(
+            summary: "Embedded Adblock bundle installed",
+            generationSource: .embeddedBundle
+        )
+        return manifest
     }
 
     static let tinyFixtureFilters = [
@@ -1024,6 +1129,8 @@ final class SumiAdBlockingModule {
                 nativeCompiler: nil,
                 nativeCompilationSummary: nil,
                 nativeSourceLists: [],
+                generationSource: nil,
+                nativeRuleBundleId: nil,
                 networkShardCount: 0,
                 nativeCSSShardCount: 0,
                 totalNetworkRuleCount: 0,
@@ -1114,6 +1221,8 @@ final class SumiAdBlockingModule {
             nativeCompiler: manifest?.nativeCompiler,
             nativeCompilationSummary: manifest?.nativeCompilationSummary,
             nativeSourceLists: manifest?.nativeCompilerSourceLists ?? [],
+            generationSource: manifest?.generationSource,
+            nativeRuleBundleId: manifest?.nativeRuleBundleId,
             networkShardCount: networkShards.count,
             nativeCSSShardCount: nativeCSSShards.count,
             totalNetworkRuleCount: networkShards.reduce(0) { $0 + $1.approximateRuleCount },

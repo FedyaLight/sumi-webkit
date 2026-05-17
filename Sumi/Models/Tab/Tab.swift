@@ -385,6 +385,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     // MARK: - Link Hover Callback
     var onLinkHover: ((String?) -> Void)? = nil
+    var lastHoveredLinkURL: URL? = nil
 
     private var navigationStateController: TabNavigationStateController {
         navigationRuntime.navigationStateController

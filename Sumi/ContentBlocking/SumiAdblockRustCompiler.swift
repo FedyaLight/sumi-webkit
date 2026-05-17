@@ -758,7 +758,7 @@ final class AdblockRustCompiler: AdblockFilterCompiling, NativeContentBlockingCo
         from rules: [AdblockRustContentRule],
         strategy: NativeContentBlockingShardStrategy
     ) throws -> [[AdblockRustContentRule]] {
-        guard !rules.isEmpty else { return [[]] }
+        guard !rules.isEmpty else { return [] }
 
         var chunks = [[AdblockRustContentRule]]()
         var currentChunk = [AdblockRustContentRule]()
