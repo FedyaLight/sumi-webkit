@@ -36,11 +36,14 @@ final class SumiDownloadsNavigationResponder: SumiNavigationActionResponding, Su
         let actionModifierFlags = navigationAction.modifierFlags.intersection([.command, .option, .control, .shift])
         let modifierFlags = tab?.resolvedNavigationModifierFlags(actionFlags: actionModifierFlags)
             ?? navigationAction.modifierFlags
+        let optionGlanceRequested = tab?.isGlanceTriggerActive(modifierFlags) == true
         let optionDownloadRequested = navigationAction.navigationType.isLinkActivated
             && modifierFlags.contains(.option)
             && !modifierFlags.contains(.command)
+            && !optionGlanceRequested
 
-        if (navigationAction.shouldDownload && !isRestoringSessionState) || optionDownloadRequested {
+        if (navigationAction.shouldDownload && !isRestoringSessionState && !optionGlanceRequested)
+            || optionDownloadRequested {
             return .download
         }
 

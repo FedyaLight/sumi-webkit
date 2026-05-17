@@ -404,6 +404,8 @@ private struct NativeAdblockSettingsView: View {
             ("Active compiled profile", diagnostics.activeCompiledNativeProfile?.rawValue ?? "nil"),
             ("Selected differs from active", diagnostics.selectedProfileDiffersFromActiveGeneration.description),
             ("Generation stale", diagnostics.generationIsStale.description),
+            ("Generation source", diagnostics.generationSource?.rawValue ?? "nil"),
+            ("Native bundle id", diagnostics.nativeRuleBundleId ?? "nil"),
             ("Previous generation retained", diagnostics.previousGenerationRetained.description),
             ("Last successful rebuild", debugDateString(diagnostics.lastSuccessfulUpdateDate)),
             ("Last rebuild error", diagnostics.lastUpdateError ?? "nil"),

@@ -46,6 +46,11 @@ telemetry-id
 
 # Mirror repo: no CI / editor defaults in Git — keep locally if needed
 .github/
+!.github/
+.github/*
+!.github/workflows/
+.github/workflows/*
+!.github/workflows/build-adblock-bundle.yml
 .vscode/
 
 # Local dev artifacts (not part of the Xcode app)
@@ -56,3 +61,6 @@ default.profraw
 
 # Local documentation (not published to GitHub)
 docs/
+!docs/
+docs/*
+!docs/adblock-native-rule-bundle-v1.md

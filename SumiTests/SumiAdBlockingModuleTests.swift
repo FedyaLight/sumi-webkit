@@ -1463,6 +1463,8 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             "normalizedSiteKey=example.com",
             "selectedNativeProfile=currentDefault",
             "activeCompiledNativeProfile=currentDefault",
+            "generationSource=runtimeGenerated",
+            "nativeRuleBundleId=nil",
             "expectedNetworkShardIdentifiers=sumi.adblock.network.hybridtest",
             "actualAttachedShardIdentifiers=sumi.adblock.nativeCSS.hybridtest,sumi.adblock.network.hybridtest",
             "reloadRequired=true",
@@ -2202,6 +2204,9 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             "Vendor/Brave/AdblockRustAdapter/Cargo.lock",
             "Vendor/Brave/AdblockRustAdapter/src/main.rs",
             "LICENSE_NOTES.md",
+            "scripts/sumi_adblock_bundle.py",
+            "docs/adblock-native-rule-bundle-v1.md",
+            ".github/workflows/build-adblock-bundle.yml",
         ]
         let output = try Self.runSourceSearch(
             pattern: "adblock-rust|adblock::|sumi-adblock-rust-adapter|SUMI_ADBLOCK_RUST_ADAPTER"
@@ -2260,7 +2265,7 @@ final class SumiAdBlockingModuleTests: XCTestCase {
     func testAuxiliarySourcesDoNotConsultAdBlockingModule() throws {
         for relativePath in [
             "Sumi/UserScripts/SumiNormalTabUserScripts.swift",
-            "Sumi/Managers/GlanceManager/GlanceWebView.swift",
+            "Sumi/Managers/GlanceManager/GlanceManager.swift",
             "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
             "Sumi/Favicons/DDG/Model/FaviconDownloader.swift",
         ] {

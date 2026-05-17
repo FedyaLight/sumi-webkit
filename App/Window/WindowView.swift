@@ -100,6 +100,7 @@ struct WindowView: View {
                     chromeThemeScope {
                         GlanceOverlayView()
                         .environmentObject(browserManager.glanceManager)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .zIndex(WindowTransientChromeZIndex.glance)
                 }
             }
@@ -286,6 +287,9 @@ struct WindowView: View {
             }
 
             WebContent()
+                .scaleEffect(glanceWebContentScale)
+                .opacity(glanceWebContentOpacity)
+                .animation(glanceWebContentAnimation, value: browserManager.glanceManager.isActive)
 
             if rendersDockedSidebar && shellEdge.isRight {
                 SidebarDockedColumn(
@@ -420,6 +424,19 @@ struct WindowView: View {
     }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var glanceWebContentScale: CGFloat {
+        browserManager.glanceManager.isActive && !reduceMotion ? 0.97 : 1
+    }
+
+    private var glanceWebContentOpacity: Double {
+        guard browserManager.glanceManager.isActive else { return 1 }
+        return reduceMotion ? 0.75 : 0.3
+    }
+
+    private var glanceWebContentAnimation: Animation? {
+        reduceMotion ? .easeOut(duration: 0.08) : .smooth(duration: 0.35)
+    }
 
     private var resolvedThemeContext: ResolvedThemeContext {
         windowState.resolvedThemeContext(

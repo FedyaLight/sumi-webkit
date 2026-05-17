@@ -888,6 +888,49 @@ class TabManager: ObservableObject {
         }
     }
 
+    @discardableResult
+    func adoptGlanceTab(
+        _ tab: Tab,
+        sourceTab: Tab?,
+        in space: Space? = nil
+    ) -> Tab {
+        withStructuralUpdateTransaction {
+            attach(tab)
+            if contains(tab) { return tab }
+
+            let targetSpace = space
+                ?? sourceTab?.spaceId.flatMap { sourceSpaceId in
+                    spaces.first(where: { $0.id == sourceSpaceId })
+                }
+                ?? currentSpace
+                ?? ensureDefaultSpaceIfNeeded()
+
+            if targetSpace.profileId == nil {
+                targetSpace.profileId = tab.profileId ?? browserManager?.currentProfile?.id
+                markAllSpacesStructurallyDirty()
+            }
+
+            let insertionIndex: Int? = {
+                if let sourceTab,
+                   sourceTab.spaceId == targetSpace.id,
+                   let sourceIndex = tabsBySpace[targetSpace.id]?.firstIndex(where: { $0.id == sourceTab.id }) {
+                    return sourceIndex + 1
+                }
+                if sourceTab?.isPinned == true || sourceTab?.shortcutPinRole == .essential {
+                    return 0
+                }
+                return nil
+            }()
+
+            if let currentURL = tab.existingWebView?.url {
+                tab.url = currentURL
+            }
+            insertRegularTab(tab, in: targetSpace.id, at: insertionIndex)
+            scheduleStructuralPersistence()
+            return tab
+        }
+    }
+
     private func insertRegularTab(_ tab: Tab, in spaceId: UUID, at insertionIndex: Int?) {
         var arr = tabsBySpace[spaceId] ?? []
         let safeIndex = insertionIndex.map { max(0, min($0, arr.count)) } ?? arr.count

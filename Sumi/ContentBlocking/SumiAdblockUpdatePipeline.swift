@@ -892,6 +892,12 @@ struct AdblockRuleListGeneration: Codable, Equatable, Sendable {
     let createdDate: Date
 }
 
+enum AdblockRuleGenerationSource: String, Codable, CaseIterable, Sendable {
+    case runtimeGenerated
+    case embeddedBundle
+    case futureRemoteBundle
+}
+
 struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
     struct SelectedFilterList: Codable, Equatable, Sendable {
         let id: String
@@ -940,6 +946,8 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
     let compilerDiagnosticsSummary: String
     let lastSuccessfulUpdateDate: Date
     let previousGenerationId: String?
+    let generationSource: AdblockRuleGenerationSource
+    let nativeRuleBundleId: String?
 
     var allNativeShards: [NativeContentBlockingShardDescriptor] {
         networkShards + nativeCSSShards
@@ -970,7 +978,9 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
         nativeCompilationSummary: NativeContentBlockingCompilationSummary? = nil,
         compilerDiagnosticsSummary: String,
         lastSuccessfulUpdateDate: Date,
-        previousGenerationId: String?
+        previousGenerationId: String?,
+        generationSource: AdblockRuleGenerationSource = .runtimeGenerated,
+        nativeRuleBundleId: String? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.activeGenerationId = activeGenerationId
@@ -989,6 +999,8 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
         self.compilerDiagnosticsSummary = compilerDiagnosticsSummary
         self.lastSuccessfulUpdateDate = lastSuccessfulUpdateDate
         self.previousGenerationId = previousGenerationId
+        self.generationSource = generationSource
+        self.nativeRuleBundleId = nativeRuleBundleId
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -1008,6 +1020,8 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
         case compilerDiagnosticsSummary
         case lastSuccessfulUpdateDate
         case previousGenerationId
+        case generationSource
+        case nativeRuleBundleId
     }
 
     init(from decoder: Decoder) throws {
@@ -1047,6 +1061,14 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
         previousGenerationId = try container.decodeIfPresent(
             String.self,
             forKey: .previousGenerationId
+        )
+        generationSource = try container.decodeIfPresent(
+            AdblockRuleGenerationSource.self,
+            forKey: .generationSource
+        ) ?? .runtimeGenerated
+        nativeRuleBundleId = try container.decodeIfPresent(
+            String.self,
+            forKey: .nativeRuleBundleId
         )
 
         if let decodedNetworkShards = try container.decodeIfPresent(
@@ -1103,6 +1125,8 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
         try container.encode(compilerDiagnosticsSummary, forKey: .compilerDiagnosticsSummary)
         try container.encode(lastSuccessfulUpdateDate, forKey: .lastSuccessfulUpdateDate)
         try container.encodeIfPresent(previousGenerationId, forKey: .previousGenerationId)
+        try container.encode(generationSource, forKey: .generationSource)
+        try container.encodeIfPresent(nativeRuleBundleId, forKey: .nativeRuleBundleId)
     }
 
     private static func legacyShard(
@@ -1323,6 +1347,7 @@ struct AdblockUpdateDiagnostics: Error, LocalizedError, Equatable, Sendable {
     var responseETag: String?
     var responseLastModified: String?
     var memoryDiagnostics: AdblockRebuildMemoryDiagnostics?
+    var generationSource: AdblockRuleGenerationSource?
 
     var errorDescription: String? { summary }
 
@@ -1337,7 +1362,8 @@ struct AdblockUpdateDiagnostics: Error, LocalizedError, Equatable, Sendable {
         responseURLString: String? = nil,
         responseETag: String? = nil,
         responseLastModified: String? = nil,
-        memoryDiagnostics: AdblockRebuildMemoryDiagnostics? = nil
+        memoryDiagnostics: AdblockRebuildMemoryDiagnostics? = nil,
+        generationSource: AdblockRuleGenerationSource? = nil
     ) {
         self.summary = summary
         self.stage = stage
@@ -1350,6 +1376,7 @@ struct AdblockUpdateDiagnostics: Error, LocalizedError, Equatable, Sendable {
         self.responseETag = responseETag
         self.responseLastModified = responseLastModified
         self.memoryDiagnostics = memoryDiagnostics
+        self.generationSource = generationSource
     }
 }
 
@@ -2182,6 +2209,26 @@ actor AdblockUpdateCoordinator {
         latestDiagnostics
     }
 
+    func prepareEmbeddedBundlePublication(
+        manifest: AdblockCompiledGenerationManifest,
+        definitions: [SumiContentRuleListDefinition]
+    ) async throws -> PreparedAdblockRuleListPublication {
+        try await publisher.preparePublication(
+            manifest: manifest,
+            definitions: definitions
+        )
+    }
+
+    func commitEmbeddedBundlePublication(
+        _ publication: PreparedAdblockRuleListPublication
+    ) async {
+        await publisher.commitPublication(publication)
+        latestDiagnostics = AdblockUpdateDiagnostics(
+            summary: "Embedded Adblock bundle installed",
+            generationSource: .embeddedBundle
+        )
+    }
+
     func updateIfEnabled(reason: String) async throws -> AdblockCompiledGenerationManifest? {
         guard await isAdblockEnabled() else { return nil }
 #if DEBUG
@@ -2545,7 +2592,8 @@ actor AdblockUpdateCoordinator {
             summary: "Adblock update completed",
             listStatuses: committedStatuses,
             selectionDiagnostics: selectionDiagnostics,
-            memoryDiagnostics: finalMemoryDiagnostics
+            memoryDiagnostics: finalMemoryDiagnostics,
+            generationSource: .runtimeGenerated
         )
         return manifest
     }

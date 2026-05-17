@@ -30,7 +30,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
     }
 
     /// WebKit `createWebView` path: merged navigation modifier flags drive routing —
-    /// Glance when explicitly triggered (Option) → pending `window.open` match → cross-host dynamic Glance (no modifiers) → new tab/window.
+    /// Glance when explicitly triggered (Option) → pending `window.open` match → Zen-like essential external Glance → new tab/window.
     func createWebViewAsync(
         from webView: WKWebView,
         with configuration: WKWebViewConfiguration,
@@ -56,9 +56,9 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
 
         let navigationFlags = tab.navigationModifierFlags(from: navigationAction)
         if let requestURL,
-           !isExtensionOriginated,
            tab.isGlanceTriggerActive(navigationFlags) {
             tab.openURLInGlance(requestURL)
+            resetLinkGestureModifierState(for: tab)
             return nil
         }
 
@@ -79,6 +79,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
                 modifierFlags: navigationFlags
            ) {
             tab.openURLInGlance(requestURL)
+            resetLinkGestureModifierState(for: tab)
             return nil
         }
 
@@ -147,9 +148,9 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
 
         let navigationFlags = tab.navigationModifierFlags(from: navigationAction)
         if let requestURL,
-           !isExtensionOriginated,
            tab.isGlanceTriggerActive(navigationFlags) {
             tab.openURLInGlance(requestURL)
+            resetLinkGestureModifierState(for: tab)
             return nil
         }
 
@@ -170,6 +171,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
                 modifierFlags: navigationFlags
            ) {
             tab.openURLInGlance(requestURL)
+            resetLinkGestureModifierState(for: tab)
             return nil
         }
 
@@ -231,7 +233,6 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             return .cancel
         }
 
-        guard let targetFrame = navigationAction.targetFrame else { return .next }
         guard let url = navigationAction.url else { return .next }
 
         let isLinkActivated = !navigationAction.isTargetingNewWindow
@@ -247,6 +248,24 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
         let modifierFlags = navigationModifierFlags(from: navigationAction, tab: tab)
         if tab.isGlanceTriggerActive(modifierFlags) {
             tab.openURLInGlance(url)
+            resetLinkGestureModifierState(for: tab)
+            return .cancel
+        }
+
+        guard let targetFrame = navigationAction.targetFrame else { return .next }
+
+        let isExtensionOriginated = Tab.isExtensionOriginatedPopupNavigation(
+            sourceURL: navigationAction.sourceURL,
+            requestURL: url
+        )
+        if !isExtensionOriginated,
+           !navigationAction.navigationType.isMiddleButtonClick,
+           tab.shouldOpenDynamicallyInGlance(
+                url: url,
+                modifierFlags: modifierFlags
+           ) {
+            tab.openURLInGlance(url)
+            resetLinkGestureModifierState(for: tab)
             return .cancel
         }
 

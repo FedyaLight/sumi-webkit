@@ -29,6 +29,35 @@ extension Tab {
         browserManager?.glanceManager.presentExternalURL(url, from: self)
     }
 
+    func updateHoveredLink(_ href: String?) {
+        lastHoveredLinkURL = href.flatMap(URL.init(string:))
+        onLinkHover?(href)
+    }
+
+    func immediateGlanceURLForWebViewMouseDown(_ event: NSEvent) -> URL? {
+        guard event.type == .leftMouseDown,
+              let targetURL = lastHoveredLinkURL,
+              targetURL.isGlancePreviewableLink
+        else { return nil }
+
+        let modifierFlags = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        if isGlanceTriggerActive(modifierFlags) {
+            return targetURL
+        }
+        if shouldOpenDynamicallyInGlance(url: targetURL, modifierFlags: modifierFlags) {
+            return targetURL
+        }
+        return nil
+    }
+
+    func glanceOriginRectInWindow(maxAge: TimeInterval = 1.0) -> CGRect? {
+        guard let event = lastWebViewInteractionEvent else { return nil }
+        let age = ProcessInfo.processInfo.systemUptime - event.timestamp
+        guard age >= 0, age <= maxAge else { return nil }
+        let point = event.locationInWindow
+        return CGRect(x: point.x - 22, y: point.y - 22, width: 44, height: 44)
+    }
+
     func navigationModifierFlags(from navigationAction: WKNavigationAction) -> NSEvent.ModifierFlags {
         let flags = navigationAction.modifierFlags.intersection([.command, .option, .control, .shift])
         return resolvedNavigationModifierFlags(actionFlags: flags)
@@ -57,10 +86,17 @@ extension Tab {
         guard modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty else {
             return false
         }
+        guard isPinned || shortcutPinRole == .essential else { return false }
+        guard let scheme = url.sumiNavigationalScheme,
+              [.http, .https, .file].contains(scheme)
+        else { return false }
+
+        if scheme == .file {
+            return self.url != url
+        }
 
         guard let currentHost = self.url.host,
               let newHost = url.host else { return false }
-
         return currentHost != newHost
     }
 
@@ -129,7 +165,13 @@ extension Tab {
             }
         }
     }
+}
 
+private extension URL {
+    var isGlancePreviewableLink: Bool {
+        guard let scheme = sumiNavigationalScheme else { return false }
+        return [.http, .https, .file].contains(scheme)
+    }
 }
 
 /// Reports hovered `<a href>` for chrome (e.g. link status). Injected in the main frame only to limit work in subframes;
@@ -254,7 +296,7 @@ private final class SumiLinkInteractionSubfeature: NSObject, @MainActor SumiUser
         case "linkHover":
             return { [weak self] params, _ in
                 guard let payload = SumiHrefPayload.decode(from: params) else { return nil }
-                self?.tab?.onLinkHover?(payload.href)
+                self?.tab?.updateHoveredLink(payload.href)
                 return SumiJSONValue.object(["accepted": .bool(true)])
             }
         default:
