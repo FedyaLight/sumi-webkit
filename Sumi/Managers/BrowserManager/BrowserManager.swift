@@ -1377,6 +1377,61 @@ class BrowserManager: ObservableObject {
         )
     }
 
+#if DEBUG
+    func lastActiveAdblockEligibleNormalWebTab(
+        in windowState: BrowserWindowState?,
+        excluding excludedTab: Tab? = nil
+    ) -> Tab? {
+        var seen = Set<UUID>()
+        var candidates = [Tab]()
+
+        func append(_ tab: Tab?) {
+            guard let tab else { return }
+            guard seen.insert(tab.id).inserted else { return }
+            candidates.append(tab)
+        }
+
+        if let windowState {
+            append(currentTab(for: windowState))
+
+            if windowState.isIncognito {
+                windowState.ephemeralTabs
+                    .sorted { ($0.lastSelectedAt ?? .distantPast) > ($1.lastSelectedAt ?? .distantPast) }
+                    .forEach { append($0) }
+            } else {
+                if let currentSpaceId = windowState.currentSpaceId {
+                    windowState.recentRegularTabIdsBySpace[currentSpaceId]?
+                        .compactMap { tabManager.tab(for: $0) }
+                        .forEach { append($0) }
+                    (tabManager.tabsBySpace[currentSpaceId] ?? [])
+                        .sorted { ($0.lastSelectedAt ?? .distantPast) > ($1.lastSelectedAt ?? .distantPast) }
+                        .forEach { append($0) }
+                }
+
+                windowState.recentRegularTabIdsBySpace.values
+                    .flatMap { $0 }
+                    .compactMap { tabManager.tab(for: $0) }
+                    .forEach { append($0) }
+                windowState.activeTabForSpace.values
+                    .compactMap { tabManager.tab(for: $0) }
+                    .forEach { append($0) }
+            }
+        }
+
+        append(tabManager.currentTab)
+        tabManager.tabsBySpace.values
+            .flatMap { $0 }
+            .sorted { ($0.lastSelectedAt ?? .distantPast) > ($1.lastSelectedAt ?? .distantPast) }
+            .forEach { append($0) }
+
+        return candidates.first { tab in
+            guard tab.id != excludedTab?.id else { return false }
+            guard tab.requiresPrimaryWebView, !tab.isPopupHost else { return false }
+            return adBlockingModule.surfaceEligibility(for: tab.url).isEligible
+        }
+    }
+#endif
+
     @MainActor
     private func reconcilePermissionSidebarPins(reason: String) async {
         let state = await permissionCoordinator.stateSnapshot()

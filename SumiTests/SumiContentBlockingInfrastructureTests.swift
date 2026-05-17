@@ -520,7 +520,44 @@ private final class SmokeLookupFailingContentRuleListCompiler: SumiContentRuleLi
 private final class InMemoryCompiledRuleListCatalog: SumiCompiledContentRuleListCataloging {
     private var identifiersByName: [String: Set<String>] = [:]
 
+    func cachedIdentifiersToForget(
+        replacing previousRules: [SumiContentBlockerRules],
+        with activeRules: [SumiContentBlockerRules]
+    ) -> [String] {
+        staleIdentifiersWithoutMutating(
+            replacing: previousRules,
+            with: activeRules
+        )
+    }
+
     func staleIdentifiers(
+        replacing previousRules: [SumiContentBlockerRules],
+        with activeRules: [SumiContentBlockerRules]
+    ) -> [String] {
+        let staleIdentifiers = staleIdentifiersWithoutMutating(
+            replacing: previousRules,
+            with: activeRules
+        )
+        let activeIdentifiersByName = Self.identifiersByName(for: activeRules)
+        let namesToSweep = Set(identifiersByName.keys).union(activeIdentifiersByName.keys)
+        for name in namesToSweep {
+            let activeIdentifiers = activeIdentifiersByName[name] ?? []
+            identifiersByName[name] = activeIdentifiers.isEmpty ? nil : activeIdentifiers
+        }
+        return Array(staleIdentifiers)
+    }
+
+    func forgetIdentifiers(_ identifiers: [String]) {
+        let identifiersToForget = Set(identifiers)
+        for name in Array(identifiersByName.keys) {
+            identifiersByName[name]?.subtract(identifiersToForget)
+            if identifiersByName[name]?.isEmpty == true {
+                identifiersByName.removeValue(forKey: name)
+            }
+        }
+    }
+
+    private func staleIdentifiersWithoutMutating(
         replacing previousRules: [SumiContentBlockerRules],
         with activeRules: [SumiContentBlockerRules]
     ) -> [String] {
@@ -534,20 +571,9 @@ private final class InMemoryCompiledRuleListCatalog: SumiCompiledContentRuleList
             var knownIdentifiers = identifiersByName[name] ?? []
             knownIdentifiers.formUnion(previousIdentifiersByName[name] ?? [])
             staleIdentifiers.formUnion(knownIdentifiers.subtracting(activeIdentifiers))
-            identifiersByName[name] = activeIdentifiers.isEmpty ? nil : activeIdentifiers
         }
 
         return Array(staleIdentifiers)
-    }
-
-    func forgetIdentifiers(_ identifiers: [String]) {
-        let identifiersToForget = Set(identifiers)
-        for name in Array(identifiersByName.keys) {
-            identifiersByName[name]?.subtract(identifiersToForget)
-            if identifiersByName[name]?.isEmpty == true {
-                identifiersByName.removeValue(forKey: name)
-            }
-        }
     }
 
     private static func identifiersByName(

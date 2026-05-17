@@ -678,9 +678,15 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         )
 
         XCTAssertEqual(profileDiagnostics.finalEffectiveListIdentifiers, ["adguard-base", "adguard-mobile-ads"])
+        XCTAssertTrue(profileDiagnostics.usesProfileDerivedSelection)
+        XCTAssertFalse(profileDiagnostics.isCustomListSelection)
+        XCTAssertEqual(profileDiagnostics.effectiveModeLabel, "Selected profile")
         XCTAssertEqual(profileDiagnostics.origins(forListIdentifier: "adguard-base"), [.balancedNative])
         XCTAssertEqual(manualDiagnostics.profileDerivedListIdentifiers, ["adguard-base", "adguard-mobile-ads"])
         XCTAssertEqual(manualDiagnostics.finalEffectiveListIdentifiers, ["regional-de"])
+        XCTAssertFalse(manualDiagnostics.usesProfileDerivedSelection)
+        XCTAssertTrue(manualDiagnostics.isCustomListSelection)
+        XCTAssertEqual(manualDiagnostics.effectiveModeLabel, "Custom list selection")
         XCTAssertEqual(manualDiagnostics.origins(forListIdentifier: "regional-de"), [.manualListToggle])
     }
 
@@ -906,6 +912,36 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         XCTAssertEqual(manifest.networkShards.map(\.approximateRuleCount), [1, 1, 1])
         XCTAssertEqual(manifest.nativeCSSShards.map(\.jsonByteCount), [2, 2])
         XCTAssertTrue(manifest.webKitRuleListIdentifiers.allSatisfy { $0.contains(manifest.activeGenerationId) })
+    }
+
+    func testMemoryDiagnosticsRecordPeakSteadyStateAndBudgetMetadata() async throws {
+        let coordinator = Self.coordinator(
+            selection: SumiAdblockFilterListSelection(identifiers: ["easylist"]),
+            downloader: FakeAdblockDownloader(results: [
+                "easylist": .downloaded(Data("||first.example^".utf8), Self.response(for: "easylist")),
+            ]),
+            manifestStore: AdblockUpdateManifestStore(rootDirectory: temporaryDirectory()),
+            compiler: FakeAdblockCompiler(networkShardCount: 21, nativeCSSShardCount: 1),
+            publisher: FakeAdblockPublisher()
+        )
+
+        _ = try await coordinator.updateIfEnabled(reason: "manual")
+        let diagnostics = await coordinator.latestDiagnosticsSnapshot()
+
+#if DEBUG
+        let memory = try XCTUnwrap(diagnostics?.memoryDiagnostics)
+        XCTAssertGreaterThan(memory.snapshots.count, 0)
+        XCTAssertNotNil(memory.peakResidentMemoryBytes)
+        XCTAssertNotNil(memory.steadyStateResidentMemoryBytes)
+        XCTAssertEqual(memory.activeGenerationShardCount, 22)
+        XCTAssertEqual(memory.attachedShardCount, 22)
+        XCTAssertEqual(memory.effectiveListCount, 1)
+        XCTAssertFalse(memory.oldGenerationRetained)
+        XCTAssertTrue(memory.budgetWarnings.contains { $0.contains("Shard count exceeds") })
+        XCTAssertTrue(memory.snapshots.map(\.stage).contains(.afterClearingTemporaryObjects))
+#else
+        XCTAssertNil(diagnostics?.memoryDiagnostics)
+#endif
     }
 
     func testManifestProviderAttachesAllShardsSelectedByCosmeticMode() throws {

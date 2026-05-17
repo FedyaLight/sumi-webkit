@@ -57,6 +57,8 @@ struct PrivacySettingsView: View {
                                 settings: settings,
                                 sitePolicyStore: adBlockingModule.sitePolicyStoreIfEnabled(),
                                 adBlockingModule: adBlockingModule,
+                                browserManager: browserManager,
+                                windowState: windowState,
                                 currentTab: currentTab
                             )
                         }
@@ -96,12 +98,15 @@ private struct NativeAdblockSettingsView: View {
     @ObservedObject var settings: AdblockSettingsStore
     @ObservedObject var sitePolicyStore: AdblockSitePolicyStore
     let adBlockingModule: SumiAdBlockingModule
+    let browserManager: BrowserManager
+    let windowState: BrowserWindowState?
     let currentTab: Tab?
     private let registry = AdblockFilterListRegistry()
     @State private var overrideHostInput = ""
     #if DEBUG
     @State private var rebuildStatus: String?
     @State private var copyDiagnosticsStatus: String?
+    @State private var resetListsStatus: String?
     @State private var isRebuilding = false
     #endif
 
@@ -163,6 +168,15 @@ private struct NativeAdblockSettingsView: View {
             #endif
 
             SettingsRow(
+                title: "Effective mode",
+                subtitle: effectiveModeSubtitle
+            ) {
+                Text(effectiveModeTitle)
+                    .font(.callout)
+                    .foregroundColor(effectiveSelectionDiagnostics.isCustomListSelection ? .orange : .secondary)
+            }
+
+            SettingsRow(
                 title: "Filter lists",
                 subtitle: listSelectionStatus
             ) {
@@ -183,15 +197,49 @@ private struct NativeAdblockSettingsView: View {
             : "Choose base, regional, and optional annoyance lists."
     }
 
-    private var selectedListCount: Int {
-        registry.validatedSelection(
-            settings.selectedLists,
+    private var effectiveSelectionDiagnostics: AdblockEffectiveSelectionDiagnostics {
+        registry.effectiveSelectionDiagnostics(
+            selection: settings.selectedLists,
             profileKind: settings.selectedNativeProfile
-        ).resolvedIdentifiers.count
+        )
+    }
+
+    private var effectiveModeTitle: String {
+        effectiveSelectionDiagnostics.isCustomListSelection
+            ? "Custom list selection"
+            : selectedProfileDisplayName
+    }
+
+    private var effectiveModeSubtitle: String {
+        if effectiveSelectionDiagnostics.isCustomListSelection {
+            return "Manual list toggles differ from the selected profile. Rebuild will compile the final effective list set, not the profile baseline."
+        }
+        return "Using the selected profile-derived list set."
+    }
+
+    private var selectedProfileDisplayName: String {
+        let profile = registry.profile(for: settings.selectedNativeProfile)
+        switch profile.exposure {
+        case .productionDefault:
+            return "Sumi default list set"
+        case .developerOnly:
+#if DEBUG
+            return profile.displayName
+#else
+            return "Custom list selection"
+#endif
+        }
+    }
+
+    private var selectedListCount: Int {
+        effectiveSelectionDiagnostics.finalEffectiveListIdentifiers.count
     }
 
     #if DEBUG
     private var debugNativeProfileSubtitle: String {
+        if effectiveSelectionDiagnostics.isCustomListSelection {
+            return "Effective mode is Custom list selection. Reset lists to selected profile before measuring a clean profile."
+        }
         if debugDiagnostics.generationIsStale {
             return "Generation is stale. Rebuild selected Adblock profile now before measuring score."
         }
@@ -208,11 +256,47 @@ private struct NativeAdblockSettingsView: View {
     }
 
     private var debugDiagnostics: SumiAdblockAttachmentDiagnostics {
-        adBlockingModule.attachmentDiagnostics(for: currentTab?.url)
+        adBlockingModule.attachmentDiagnostics(for: debugDiagnosticsTarget.url)
     }
 
     private var debugTabDiagnostics: SumiAdblockCurrentTabDiagnostics? {
-        currentTab?.adblockCurrentTabDiagnostics()
+        debugDiagnosticsTarget.tab?.adblockCurrentTabDiagnostics()
+    }
+
+    private var debugDiagnosticsTarget: DebugAdblockDiagnosticsTarget {
+        let currentEligibility = adBlockingModule.surfaceEligibility(for: currentTab?.url)
+        if let currentTab, currentEligibility.isEligible {
+            return DebugAdblockDiagnosticsTarget(
+                tab: currentTab,
+                url: currentTab.url,
+                source: "current tab"
+            )
+        }
+
+        if let fallback = browserManager.lastActiveAdblockEligibleNormalWebTab(
+            in: windowState,
+            excluding: currentTab
+        ) {
+            let source: String
+            if let reason = currentEligibility.ineligibleReason {
+                source = "last eligible web tab (current tab ineligible: \(reason))"
+            } else {
+                source = "last eligible web tab"
+            }
+            return DebugAdblockDiagnosticsTarget(
+                tab: fallback,
+                url: fallback.url,
+                source: source
+            )
+        }
+
+        return DebugAdblockDiagnosticsTarget(
+            tab: currentTab,
+            url: currentTab?.url,
+            source: currentEligibility.ineligibleReason.map {
+                "current tab (ineligible: \($0))"
+            } ?? "current tab"
+        )
     }
 
     private var debugDiagnosticsSection: some View {
@@ -227,6 +311,30 @@ private struct NativeAdblockSettingsView: View {
                 Text("Current generation is stale. Rebuild/update before measuring score.")
                     .font(.caption)
                     .foregroundStyle(.orange)
+            }
+
+            if effectiveSelectionDiagnostics.isCustomListSelection {
+                Text("Effective mode: Custom list selection. Manual lists override the selected profile baseline.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            if !debugBudgetWarnings.isEmpty {
+                ForEach(debugBudgetWarnings, id: \.self) { warning in
+                    Text(warning)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+
+            SettingsRow(
+                title: "Reset lists to selected profile",
+                subtitle: resetListsStatus ?? "Clears manual list toggles and restores the selected profile-derived list set."
+            ) {
+                Button("Reset") {
+                    resetListsToSelectedProfile()
+                }
+                .buttonStyle(.bordered)
             }
 
             SettingsRow(
@@ -249,7 +357,7 @@ private struct NativeAdblockSettingsView: View {
 
             SettingsRow(
                 title: "Copy Adblock Diagnostics",
-                subtitle: copyDiagnosticsStatus ?? "Copy the active generation, current tab attachment, list selection, and failure diagnostics."
+                subtitle: copyDiagnosticsStatus ?? "Copy the active generation, target tab attachment, list selection, and failure diagnostics."
             ) {
                 Button("Copy") {
                     copyAdblockDiagnostics()
@@ -287,11 +395,16 @@ private struct NativeAdblockSettingsView: View {
     private var debugGlobalRows: [(String, String)] {
         let diagnostics = debugDiagnostics
         return [
+            ("Diagnostics target", debugDiagnosticsTarget.source),
+            ("Diagnostics URL", debugDiagnosticsTarget.url?.absoluteString ?? "nil"),
+            ("Diagnostics target ineligible", diagnostics.ineligibleSurfaceReason ?? "nil"),
             ("Global enabled", diagnostics.globalAdblockEnabled.description),
+            ("Effective mode", diagnostics.effectiveSelectionDiagnostics?.effectiveModeLabel ?? effectiveModeTitle),
             ("Selected profile", diagnostics.selectedNativeProfile?.rawValue ?? "nil"),
             ("Active compiled profile", diagnostics.activeCompiledNativeProfile?.rawValue ?? "nil"),
             ("Selected differs from active", diagnostics.selectedProfileDiffersFromActiveGeneration.description),
             ("Generation stale", diagnostics.generationIsStale.description),
+            ("Previous generation retained", diagnostics.previousGenerationRetained.description),
             ("Last successful rebuild", debugDateString(diagnostics.lastSuccessfulUpdateDate)),
             ("Last rebuild error", diagnostics.lastUpdateError ?? "nil"),
             ("Last failure stage", diagnostics.lastUpdateFailureStage?.rawValue ?? "nil"),
@@ -306,10 +419,17 @@ private struct NativeAdblockSettingsView: View {
             ("Native compiler", diagnostics.nativeCompiler.map { "\($0.name) \($0.version)" } ?? "nil"),
             ("Network shard count", diagnostics.networkShardCount.description),
             ("Native CSS shard count", diagnostics.nativeCSSShardCount.description),
+            ("Attached shard count", diagnostics.attachedShardIdentifiers.count.description),
             ("Total network rules", diagnostics.totalNetworkRuleCount.description),
             ("Total native CSS rules", diagnostics.totalNativeCSSRuleCount.description),
             ("Largest shard JSON bytes", diagnostics.largestShardJSONByteCount.description),
+            ("Peak rebuild memory", debugByteString(diagnostics.latestRebuildMemoryDiagnostics?.peakResidentMemoryBytes)),
+            ("Steady rebuild memory", debugByteString(diagnostics.latestRebuildMemoryDiagnostics?.steadyStateResidentMemoryBytes)),
+            ("Current process memory", debugByteString(diagnostics.currentProcessResidentMemoryBytes)),
+            ("Memory stages", diagnostics.latestRebuildMemoryDiagnostics?.snapshots.map { "\($0.stage.rawValue)=\(debugByteString($0.residentMemoryBytes))" }.joined(separator: ", ") ?? "nil"),
+            ("Budget warnings", debugBudgetWarnings.joined(separator: " | ")),
             ("Cap/discard", debugRuleCapString(diagnostics)),
+            ("Unsafe native CSS filtered", diagnostics.unsafeNativeCSSFilteredRuleCount.description),
             ("Cosmetic mode", diagnostics.cosmeticMode?.rawValue ?? "nil"),
             ("Enhanced runtime", diagnostics.enhancedRuntimeIsEnabled.description),
             ("Tracking Protection", diagnostics.trackingProtectionModuleEnabled.description),
@@ -356,6 +476,8 @@ private struct NativeAdblockSettingsView: View {
             ("Attached while disabled", diagnostics.attachedWhilePerSiteAdblockDisabled.description),
             ("Native CSS while off", diagnostics.nativeCSSAttachedWhileCosmeticModeOff.description),
             ("Reload for active generation", diagnostics.reloadRequiredForActiveGeneration.description),
+            ("Suspected blank page category", diagnostics.suspectedBlankPageCategory),
+            ("After attachment memory", debugByteString(diagnostics.attachmentMemorySnapshot?.residentMemoryBytes)),
             ("Active generation", diagnostics.activeGenerationId ?? "nil"),
             ("Selected profile", diagnostics.selectedNativeProfile?.rawValue ?? "nil"),
             ("Active compiled profile", diagnostics.activeCompiledNativeProfile?.rawValue ?? "nil"),
@@ -379,10 +501,11 @@ private struct NativeAdblockSettingsView: View {
                     Text(row.0)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(row.1.isEmpty ? "[]" : row.1)
+                    Text(debugCompactValue(row.1))
                         .font(.caption.monospaced())
                         .textSelection(.enabled)
                         .lineLimit(3)
+                        .truncationMode(.middle)
                 }
             }
         }
@@ -401,7 +524,7 @@ private struct NativeAdblockSettingsView: View {
                     } else {
                         rebuildStatus = "No rebuild ran. Enable built-in Adblock before rebuilding."
                     }
-                    currentTab?.updateAdblockReloadRequirementForCurrentSite()
+                    debugDiagnosticsTarget.tab?.updateAdblockReloadRequirementForCurrentSite()
                     isRebuilding = false
                 }
             } catch {
@@ -417,15 +540,32 @@ private struct NativeAdblockSettingsView: View {
         }
     }
 
+    private func resetListsToSelectedProfile() {
+        settings.resetListsToSelectedProfile()
+        resetListsStatus = "Reset to \(selectedProfileDisplayName). Run rebuild to compile the profile-derived list set."
+    }
+
+    private func debugCompactValue(_ value: String) -> String {
+        guard !value.isEmpty else { return "[]" }
+        let limit = 240
+        guard value.count > limit else { return value }
+        let head = value.prefix(120)
+        let tail = value.suffix(80)
+        return "\(head) ... \(tail) (\(value.count) chars; copy diagnostics for full value)"
+    }
+
     private func copyAdblockDiagnostics() {
+        let target = debugDiagnosticsTarget
         let report = adBlockingModule.copyDiagnosticsReport(
-            for: currentTab?.url,
-            currentTabDiagnostics: debugTabDiagnostics
+            for: target.url,
+            currentTabDiagnostics: target.tab?.adblockCurrentTabDiagnostics(),
+            targetDescription: target.source,
+            requestingURL: currentTab?.url
         )
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(report, forType: .string)
-        copyDiagnosticsStatus = "Copied \(debugDateString(Date()))."
+        copyDiagnosticsStatus = "Copied \(debugDateString(Date())) for \(target.url?.absoluteString ?? target.source)."
     }
 
     private func debugDateString(_ date: Date?) -> String {
@@ -436,6 +576,30 @@ private struct NativeAdblockSettingsView: View {
     private func debugRuleCapString(_ diagnostics: SumiAdblockAttachmentDiagnostics) -> String {
         guard let cap = diagnostics.nativeCompilationSummary?.ruleCap else { return "nil" }
         return "hit=\(cap.wasHit) discarded=\(cap.discardedRuleCount)"
+    }
+
+    private var debugBudgetWarnings: [String] {
+        let diagnostics = debugDiagnostics
+        let compiledWarnings = AdblockRebuildBudget.warnings(
+            networkRuleCount: diagnostics.totalNetworkRuleCount,
+            nativeCSSRuleCount: diagnostics.totalNativeCSSRuleCount,
+            shardCount: diagnostics.networkShardCount + diagnostics.nativeCSSShardCount,
+            selectionDiagnostics: diagnostics.effectiveSelectionDiagnostics
+        )
+        if compiledWarnings.isEmpty, diagnostics.generationIsStale {
+            return ["Active generation counts may not match the selected lists until rebuild completes."]
+        }
+        return compiledWarnings
+    }
+
+    private func debugByteString(_ bytes: UInt64?) -> String {
+        guard let bytes else { return "nil" }
+        let mib = Double(bytes) / 1_048_576
+        return String(format: "%.1f MiB", mib)
+    }
+
+    private func debugByteString(_ bytes: UInt64) -> String {
+        debugByteString(Optional(bytes))
     }
 
     private static let debugDateFormatter: DateFormatter = {
@@ -583,6 +747,14 @@ private struct NativeAdblockSettingsView: View {
         }
     }
 }
+
+#if DEBUG
+private struct DebugAdblockDiagnosticsTarget {
+    let tab: Tab?
+    let url: URL?
+    let source: String
+}
+#endif
 
 private struct LegacyTrackingProtectionRuntimeSettingsView: View {
     let trackingProtectionModule: SumiTrackingProtectionModule

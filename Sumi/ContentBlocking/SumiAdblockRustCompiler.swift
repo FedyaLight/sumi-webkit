@@ -252,7 +252,8 @@ struct AdblockCompiledRuleGroup: Equatable, Sendable {
     var definition: SumiContentRuleListDefinition {
         SumiContentRuleListDefinition(
             name: name,
-            encodedContentRuleList: encodedContentRuleList
+            encodedContentRuleList: encodedContentRuleList,
+            contentHashOverride: contentHash
         )
     }
 }
@@ -283,7 +284,8 @@ struct NativeContentBlockingCompiledShard: Equatable, Sendable {
         SumiContentRuleListDefinition(
             name: descriptor.webKitIdentifier,
             encodedContentRuleList: encodedContentRuleList,
-            storeIdentifierOverride: descriptor.webKitIdentifier
+            storeIdentifierOverride: descriptor.webKitIdentifier,
+            contentHashOverride: descriptor.contentHash
         )
     }
 
@@ -380,18 +382,30 @@ protocol EnhancedCompatibilityCompiler: AnyObject, Sendable {
     ) async throws -> EnhancedCompatibilityCompilationOutput
 }
 
+struct NativeAndEnhancedCompatibilityCompilationOutput: Sendable {
+    let nativeOutput: NativeContentBlockingCompilationOutput
+    let enhancedOutput: EnhancedCompatibilityCompilationOutput?
+}
+
+protocol NativeAndEnhancedCompatibilityCompiler: NativeContentBlockingCompiler, EnhancedCompatibilityCompiler {
+    func compileNativeAndEnhancedCompatibility(
+        _ input: AdblockCompilationInput
+    ) async throws -> NativeAndEnhancedCompatibilityCompilationOutput
+}
+
 protocol AdblockFilterCompiling: AnyObject, Sendable {
     func compile(_ input: AdblockCompilationInput) async throws -> AdblockCompilationOutput
 }
 
-final class AdblockRustCompiler: AdblockFilterCompiling, NativeContentBlockingCompiler, EnhancedCompatibilityCompiler, Sendable {
+final class AdblockRustCompiler: AdblockFilterCompiling, NativeContentBlockingCompiler, EnhancedCompatibilityCompiler, NativeAndEnhancedCompatibilityCompiler, Sendable {
+    private static let nativeCSSSafetyPolicyVersion = "sumi-native-css-safety/0.4"
+
     let identity = NativeContentBlockingCompilerIdentity(
         name: "adblock-rust",
-        version: AdblockRustHelperExecutableAdapter.adapterVersion
+        version: "\(AdblockRustHelperExecutableAdapter.adapterVersion) \(AdblockRustCompiler.nativeCSSSafetyPolicyVersion)"
     )
 
     private let adapter: any AdblockRustAdapterInvoking
-    private let outputCache = AdblockRustAdapterOutputCache()
 
     init(adapter: any AdblockRustAdapterInvoking = AdblockRustHelperExecutableAdapter()) {
         self.adapter = adapter
@@ -399,13 +413,19 @@ final class AdblockRustCompiler: AdblockFilterCompiling, NativeContentBlockingCo
 
     func compile(_ input: AdblockCompilationInput) async throws -> AdblockCompilationOutput {
         let normalizedRules = Self.normalizedRules(from: input.filterTexts)
-        let adapterOutput = try await adapterOutput(for: normalizedRules)
+        let adapterOutput = try await adapter.compile(normalizedRules)
+#if DEBUG
+        await AdblockRebuildMemoryLifecycle.record(.afterRustConversion)
+#endif
         let nativeOutput = try Self.makeNativeOutput(
             input: input,
             normalizedRules: normalizedRules,
             adapterOutput: adapterOutput,
             identity: identity
         )
+#if DEBUG
+        await AdblockRebuildMemoryLifecycle.record(.afterShardJSONGeneration)
+#endif
         let enhancedOutput = Self.makeEnhancedOutput(adapterOutput: adapterOutput)
         return Self.makeOutput(
             nativeOutput: nativeOutput,
@@ -417,31 +437,54 @@ final class AdblockRustCompiler: AdblockFilterCompiling, NativeContentBlockingCo
         _ input: AdblockCompilationInput
     ) async throws -> NativeContentBlockingCompilationOutput {
         let normalizedRules = Self.normalizedRules(from: input.filterTexts)
-        let adapterOutput = try await adapterOutput(for: normalizedRules)
-        return try Self.makeNativeOutput(
+        let adapterOutput = try await adapter.compile(normalizedRules)
+#if DEBUG
+        await AdblockRebuildMemoryLifecycle.record(.afterRustConversion)
+#endif
+        let output = try Self.makeNativeOutput(
             input: input,
             normalizedRules: normalizedRules,
             adapterOutput: adapterOutput,
             identity: identity
         )
+#if DEBUG
+        await AdblockRebuildMemoryLifecycle.record(.afterShardJSONGeneration)
+#endif
+        return output
     }
 
     func compileEnhancedCompatibility(
         _ input: AdblockCompilationInput
     ) async throws -> EnhancedCompatibilityCompilationOutput {
         let normalizedRules = Self.normalizedRules(from: input.filterTexts)
-        let adapterOutput = try await adapterOutput(for: normalizedRules)
+        let adapterOutput = try await adapter.compile(normalizedRules)
+#if DEBUG
+        await AdblockRebuildMemoryLifecycle.record(.afterRustConversion)
+#endif
         return Self.makeEnhancedOutput(adapterOutput: adapterOutput)
     }
 
-    private func adapterOutput(for normalizedRules: [String]) async throws -> AdblockRustAdapterOutput {
-        let cacheKey = Self.stableHash(normalizedRules.joined(separator: "\n"))
-        if let cachedOutput = await outputCache.output(for: cacheKey) {
-            return cachedOutput
-        }
+    func compileNativeAndEnhancedCompatibility(
+        _ input: AdblockCompilationInput
+    ) async throws -> NativeAndEnhancedCompatibilityCompilationOutput {
+        let normalizedRules = Self.normalizedRules(from: input.filterTexts)
         let adapterOutput = try await adapter.compile(normalizedRules)
-        await outputCache.store(adapterOutput, for: cacheKey)
-        return adapterOutput
+#if DEBUG
+        await AdblockRebuildMemoryLifecycle.record(.afterRustConversion)
+#endif
+        let nativeOutput = try Self.makeNativeOutput(
+            input: input,
+            normalizedRules: normalizedRules,
+            adapterOutput: adapterOutput,
+            identity: identity
+        )
+#if DEBUG
+        await AdblockRebuildMemoryLifecycle.record(.afterShardJSONGeneration)
+#endif
+        return NativeAndEnhancedCompatibilityCompilationOutput(
+            nativeOutput: nativeOutput,
+            enhancedOutput: Self.makeEnhancedOutput(adapterOutput: adapterOutput)
+        )
     }
 
     private static func makeNativeOutput(
@@ -831,11 +874,11 @@ final class AdblockRustCompiler: AdblockFilterCompiling, NativeContentBlockingCo
 
             let selectorComponents = splitSelectorList(selector)
             let retainedSelectors = selectorComponents.filter { component in
-                if targetsDocumentRootOrAppContainer(component) {
+                if let unsafeReason = unsafeNativeCSSSelectorReason(component) {
                     filteredSelectors.append(
                         AdblockCompilationDiagnostics.Entry(
                             rule: component,
-                            reason: "unsafe native CSS root-container selector"
+                            reason: unsafeReason
                         )
                     )
                     return false
@@ -863,15 +906,26 @@ final class AdblockRustCompiler: AdblockFilterCompiling, NativeContentBlockingCo
         return (sanitizedRules, filteredSelectors)
     }
 
+    private static func unsafeNativeCSSSelectorReason(_ selector: String) -> String? {
+        if targetsDocumentRootOrAppContainer(selector) {
+            return "unsafe native CSS root-container selector"
+        }
+        if targetsRootChildPageShellContainer(selector) {
+            return "unsafe native CSS root-child page shell selector"
+        }
+        return nil
+    }
+
     private static func targetsDocumentRootOrAppContainer(_ selector: String) -> Bool {
         let trimmed = selector.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         let subject = rightmostSelectorCompound(in: trimmed)
         guard !subject.isEmpty else { return false }
 
-        if isUnsafeRootSelectorSubject(subject, root: "html")
-            || isUnsafeRootSelectorSubject(subject, root: "body")
-            || isUnsafeRootSelectorSubject(subject, root: ":root") {
+        let caseInsensitiveHTMLSubject = subject.lowercased()
+        if isUnsafeRootSelectorSubject(caseInsensitiveHTMLSubject, root: "html")
+            || isUnsafeRootSelectorSubject(caseInsensitiveHTMLSubject, root: "body")
+            || isUnsafeRootSelectorSubject(caseInsensitiveHTMLSubject, root: ":root") {
             return true
         }
 
@@ -885,6 +939,41 @@ final class AdblockRustCompiler: AdblockFilterCompiling, NativeContentBlockingCo
         }
 
         return false
+    }
+
+    private static func targetsRootChildPageShellContainer(_ selector: String) -> Bool {
+        let normalized = normalizedRootChildSelector(selector)
+        let normalizedSubject = normalizedRootChildSubjectSelector(normalized)
+        return [
+            "body > div[id][class*=\" \"]",
+            "body > div[id][class*=\" \"]:first-child",
+            "html > body > div[id][class*=\" \"]",
+            "html > body > div[id][class*=\" \"]:first-child",
+        ].contains(normalizedSubject)
+    }
+
+    private static func normalizedRootChildSelector(_ selector: String) -> String {
+        selector
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "[class*=' ']", with: "[class*=\" \"]")
+            .replacingOccurrences(
+                of: #"\s*>\s*"#,
+                with: " > ",
+                options: .regularExpression
+            )
+            .replacingOccurrences(
+                of: #"\s+"#,
+                with: " ",
+                options: .regularExpression
+            )
+    }
+
+    private static func normalizedRootChildSubjectSelector(_ selector: String) -> String {
+        guard let hasRange = selector.range(of: ":has(") else {
+            return selector
+        }
+        return String(selector[..<hasRange.lowerBound])
     }
 
     private static func isUnsafeRootSelectorSubject(_ subject: String, root: String) -> Bool {
@@ -1024,21 +1113,6 @@ protocol AdblockRustAdapterInvoking: Sendable {
     func compile(_ normalizedRules: [String]) async throws -> AdblockRustAdapterOutput
 }
 
-private actor AdblockRustAdapterOutputCache {
-    private var cacheKey: String?
-    private var cachedOutput: AdblockRustAdapterOutput?
-
-    func output(for cacheKey: String) -> AdblockRustAdapterOutput? {
-        guard self.cacheKey == cacheKey else { return nil }
-        return cachedOutput
-    }
-
-    func store(_ output: AdblockRustAdapterOutput, for cacheKey: String) {
-        self.cacheKey = cacheKey
-        cachedOutput = output
-    }
-}
-
 struct AdblockRustHelperExecutableAdapter: AdblockRustAdapterInvoking {
     static let adapterVersion = "adblock-rust-adapter/0.1.0 adblock-rust/0.12.5"
 
@@ -1076,7 +1150,9 @@ struct AdblockRustHelperExecutableAdapter: AdblockRustAdapterInvoking {
             throw AdblockRustCompilerError.adapterFailed(status: process.terminationStatus, stderr: stderr)
         }
 
-        return try JSONDecoder().decode(AdblockRustAdapterOutput.self, from: output)
+        return try autoreleasepool {
+            try JSONDecoder().decode(AdblockRustAdapterOutput.self, from: output)
+        }
     }
 
     private static func helperExecutableURL() throws -> URL {

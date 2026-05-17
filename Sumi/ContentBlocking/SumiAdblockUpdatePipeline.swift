@@ -1,6 +1,9 @@
 import Combine
 import CryptoKit
 import Foundation
+#if DEBUG
+import Darwin
+#endif
 
 enum AdblockFilterListCategory: String, Codable, CaseIterable, Sendable {
     case baseAds
@@ -146,6 +149,7 @@ struct AdblockEffectiveSelectedListDiagnostics: Codable, Equatable, Identifiable
 
 struct AdblockEffectiveSelectionDiagnostics: Codable, Equatable, Sendable {
     let selectedNativeProfile: AdblockFilterListProfileKind
+    let usesProfileDerivedSelection: Bool
     let manuallySelectedListIdentifiers: [String]
     let profileDerivedListIdentifiers: [String]
     let recommendedRegionalListIdentifiers: [String]
@@ -157,6 +161,14 @@ struct AdblockEffectiveSelectionDiagnostics: Codable, Equatable, Sendable {
 
     func origins(forListIdentifier identifier: String) -> [AdblockEffectiveListSelectionOrigin] {
         selectedLists.first { $0.id == identifier }?.origins ?? []
+    }
+
+    var isCustomListSelection: Bool {
+        !usesProfileDerivedSelection
+    }
+
+    var effectiveModeLabel: String {
+        isCustomListSelection ? "Custom list selection" : "Selected profile"
     }
 }
 
@@ -335,6 +347,7 @@ struct AdblockFilterListRegistry: Equatable, Sendable {
 
         return AdblockEffectiveSelectionDiagnostics(
             selectedNativeProfile: profileKind,
+            usesProfileDerivedSelection: selection.usesDefaultSelection,
             manuallySelectedListIdentifiers: manualIdentifiers.sorted(),
             profileDerivedListIdentifiers: profileIdentifiers.sorted(),
             recommendedRegionalListIdentifiers: regionalIdentifiers.sorted(),
@@ -1142,6 +1155,173 @@ struct AdblockGenerationRollbackReport: Equatable, Sendable {
     let diagnostics: [String]
 }
 
+enum AdblockRebuildMemoryStage: String, Codable, CaseIterable, Sendable {
+    case beforeRebuild
+    case afterDownloadRawValidation
+    case afterRustConversion
+    case afterShardJSONGeneration
+    case afterWKContentRuleListStoreCompile
+    case afterManifestCommitProviderSwitch
+    case afterCleanup
+    case afterClearingTemporaryObjects
+    case afterPageReloadAttachment
+}
+
+struct AdblockRebuildMemorySnapshot: Codable, Equatable, Sendable {
+    let stage: AdblockRebuildMemoryStage
+    let timestamp: Date
+    let residentMemoryBytes: UInt64
+}
+
+struct AdblockRebuildMemoryDiagnostics: Codable, Equatable, Sendable {
+    let snapshots: [AdblockRebuildMemorySnapshot]
+    let peakResidentMemoryBytes: UInt64?
+    let steadyStateResidentMemoryBytes: UInt64?
+    let activeGenerationShardCount: Int
+    let attachedShardCount: Int
+    let totalNetworkRuleCount: Int
+    let totalNativeCSSRuleCount: Int
+    let selectedProfile: AdblockFilterListProfileKind?
+    let effectiveListCount: Int
+    let manualListCount: Int
+    let oldGenerationRetained: Bool
+    let budgetWarnings: [String]
+
+    init(
+        snapshots: [AdblockRebuildMemorySnapshot],
+        activeGenerationShardCount: Int,
+        attachedShardCount: Int,
+        totalNetworkRuleCount: Int,
+        totalNativeCSSRuleCount: Int,
+        selectedProfile: AdblockFilterListProfileKind?,
+        effectiveListCount: Int,
+        manualListCount: Int,
+        oldGenerationRetained: Bool,
+        budgetWarnings: [String]
+    ) {
+        self.snapshots = snapshots
+        peakResidentMemoryBytes = snapshots.map(\.residentMemoryBytes).max()
+        steadyStateResidentMemoryBytes = snapshots.last { snapshot in
+            snapshot.stage == .afterClearingTemporaryObjects
+        }?.residentMemoryBytes ?? snapshots.last?.residentMemoryBytes
+        self.activeGenerationShardCount = activeGenerationShardCount
+        self.attachedShardCount = attachedShardCount
+        self.totalNetworkRuleCount = totalNetworkRuleCount
+        self.totalNativeCSSRuleCount = totalNativeCSSRuleCount
+        self.selectedProfile = selectedProfile
+        self.effectiveListCount = effectiveListCount
+        self.manualListCount = manualListCount
+        self.oldGenerationRetained = oldGenerationRetained
+        self.budgetWarnings = budgetWarnings
+    }
+}
+
+enum AdblockRebuildBudget {
+    static let networkRuleWarningThreshold = 150_000
+    static let nativeCSSRuleWarningThreshold = 75_000
+    static let shardWarningThreshold = 20
+
+    static func warnings(
+        networkRuleCount: Int,
+        nativeCSSRuleCount: Int,
+        shardCount: Int,
+        selectionDiagnostics: AdblockEffectiveSelectionDiagnostics?
+    ) -> [String] {
+        var warnings = [String]()
+        if networkRuleCount > networkRuleWarningThreshold {
+            warnings.append("Network rules exceed lightweight budget: \(networkRuleCount) > \(networkRuleWarningThreshold)")
+        }
+        if nativeCSSRuleCount > nativeCSSRuleWarningThreshold {
+            warnings.append("Native CSS rules exceed lightweight budget: \(nativeCSSRuleCount) > \(nativeCSSRuleWarningThreshold)")
+        }
+        if shardCount > shardWarningThreshold {
+            warnings.append("Shard count exceeds lightweight budget: \(shardCount) > \(shardWarningThreshold)")
+        }
+        if selectionDiagnostics?.isCustomListSelection == true {
+            warnings.append("Effective mode is custom list selection; selected profile is not the compiled list budget.")
+        }
+        return warnings
+    }
+}
+
+#if DEBUG
+actor AdblockRebuildMemoryRecorder {
+    private var snapshots = [AdblockRebuildMemorySnapshot]()
+    private let now: @Sendable () -> Date
+
+    init(now: @escaping @Sendable () -> Date = Date.init) {
+        self.now = now
+    }
+
+    func record(_ stage: AdblockRebuildMemoryStage) {
+        guard let residentMemoryBytes = AdblockProcessMemorySampler.residentMemoryBytes() else { return }
+        let snapshot = AdblockRebuildMemorySnapshot(
+            stage: stage,
+            timestamp: now(),
+            residentMemoryBytes: residentMemoryBytes
+        )
+        snapshots.append(snapshot)
+        RuntimeDiagnostics.emit("[Adblock] rebuild memory \(stage.rawValue): \(residentMemoryBytes) bytes")
+    }
+
+    func diagnostics(
+        manifest: AdblockCompiledGenerationManifest?,
+        selectionDiagnostics: AdblockEffectiveSelectionDiagnostics?,
+        attachedShardCount: Int
+    ) -> AdblockRebuildMemoryDiagnostics {
+        let networkRuleCount = manifest?.networkShards.reduce(0) { $0 + $1.approximateRuleCount } ?? 0
+        let nativeCSSRuleCount = manifest?.nativeCSSShards.reduce(0) { $0 + $1.approximateRuleCount } ?? 0
+        let shardCount = manifest?.allNativeShards.count ?? 0
+        return AdblockRebuildMemoryDiagnostics(
+            snapshots: snapshots,
+            activeGenerationShardCount: shardCount,
+            attachedShardCount: attachedShardCount,
+            totalNetworkRuleCount: networkRuleCount,
+            totalNativeCSSRuleCount: nativeCSSRuleCount,
+            selectedProfile: selectionDiagnostics?.selectedNativeProfile ?? manifest?.nativeProfile,
+            effectiveListCount: selectionDiagnostics?.finalEffectiveListIdentifiers.count
+                ?? manifest?.selectedFilterLists.count
+                ?? 0,
+            manualListCount: selectionDiagnostics?.manuallySelectedListIdentifiers.count ?? 0,
+            oldGenerationRetained: manifest?.previousGenerationId != nil,
+            budgetWarnings: AdblockRebuildBudget.warnings(
+                networkRuleCount: networkRuleCount,
+                nativeCSSRuleCount: nativeCSSRuleCount,
+                shardCount: shardCount,
+                selectionDiagnostics: selectionDiagnostics
+            )
+        )
+    }
+}
+
+enum AdblockRebuildMemoryLifecycle {
+    @TaskLocal static var recorder: AdblockRebuildMemoryRecorder?
+
+    static func record(_ stage: AdblockRebuildMemoryStage) async {
+        await recorder?.record(stage)
+    }
+}
+
+enum AdblockProcessMemorySampler {
+    static func residentMemoryBytes() -> UInt64? {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.stride / MemoryLayout<integer_t>.stride)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(
+                    mach_task_self_,
+                    task_flavor_t(TASK_VM_INFO),
+                    $0,
+                    &count
+                )
+            }
+        }
+        guard result == KERN_SUCCESS else { return nil }
+        return UInt64(info.phys_footprint)
+    }
+}
+#endif
+
 struct AdblockUpdateDiagnostics: Error, LocalizedError, Equatable, Sendable {
     var summary: String
     var stage: AdblockUpdateFailureStage?
@@ -1153,6 +1333,7 @@ struct AdblockUpdateDiagnostics: Error, LocalizedError, Equatable, Sendable {
     var responseURLString: String?
     var responseETag: String?
     var responseLastModified: String?
+    var memoryDiagnostics: AdblockRebuildMemoryDiagnostics?
 
     var errorDescription: String? { summary }
 
@@ -1166,7 +1347,8 @@ struct AdblockUpdateDiagnostics: Error, LocalizedError, Equatable, Sendable {
         httpStatusCode: Int? = nil,
         responseURLString: String? = nil,
         responseETag: String? = nil,
-        responseLastModified: String? = nil
+        responseLastModified: String? = nil,
+        memoryDiagnostics: AdblockRebuildMemoryDiagnostics? = nil
     ) {
         self.summary = summary
         self.stage = stage
@@ -1178,6 +1360,7 @@ struct AdblockUpdateDiagnostics: Error, LocalizedError, Equatable, Sendable {
         self.responseURLString = responseURLString
         self.responseETag = responseETag
         self.responseLastModified = responseLastModified
+        self.memoryDiagnostics = memoryDiagnostics
     }
 }
 
@@ -1372,9 +1555,33 @@ actor AdblockUpdateManifestStore {
                 return SumiContentRuleListDefinition(
                     name: shard.webKitIdentifier,
                     encodedContentRuleList: String(decoding: data, as: UTF8.self),
-                    storeIdentifierOverride: shard.webKitIdentifier
+                    storeIdentifierOverride: shard.webKitIdentifier,
+                    contentHashOverride: shard.contentHash
                 )
             }
+    }
+
+    func validateCompiledShardFiles(
+        for manifest: AdblockCompiledGenerationManifest
+    ) throws {
+        for shard in manifest.allNativeShards {
+            let url = generationDirectory(for: shard.generationId)
+                .appendingPathComponent("\(shard.id).json")
+            guard fileManager.fileExists(atPath: url.path) else {
+                throw AdblockUpdateDiagnostics(
+                    summary: "Missing compiled Adblock shard JSON: \(shard.id)",
+                    failedShardIdentifier: shard.webKitIdentifier
+                )
+            }
+            let attributes = try fileManager.attributesOfItem(atPath: url.path)
+            let size = (attributes[.size] as? NSNumber)?.intValue ?? 0
+            guard size > 0 else {
+                throw AdblockUpdateDiagnostics(
+                    summary: "Empty compiled Adblock shard JSON: \(shard.id)",
+                    failedShardIdentifier: shard.webKitIdentifier
+                )
+            }
+        }
     }
 
     func beginStaging() throws -> URL {
@@ -1513,15 +1720,23 @@ final class AdblockManifestRuleListProvider: SumiContentRuleListSetProviding {
     private var manifest: AdblockCompiledGenerationManifest?
     private var cosmeticMode: SumiAdblockCosmeticMode
     private var compiledDefinitionsByIdentifier: [String: SumiContentRuleListDefinition]
+    private let compiledDefinitionLoader: (NativeContentBlockingShardDescriptor) throws -> SumiContentRuleListDefinition
     private let changesSubject = PassthroughSubject<Void, Never>()
 
     init(
         manifest: AdblockCompiledGenerationManifest?,
         cosmeticMode: SumiAdblockCosmeticMode,
-        compiledDefinitions: [SumiContentRuleListDefinition] = []
+        compiledDefinitions: [SumiContentRuleListDefinition] = [],
+        compiledDefinitionLoader: @escaping (NativeContentBlockingShardDescriptor) throws -> SumiContentRuleListDefinition = {
+            throw AdblockUpdateDiagnostics(
+                summary: "Missing compiled Adblock shard definition: \($0.webKitIdentifier)",
+                failedShardIdentifier: $0.webKitIdentifier
+            )
+        }
     ) {
         self.manifest = manifest
         self.cosmeticMode = cosmeticMode
+        self.compiledDefinitionLoader = compiledDefinitionLoader
         compiledDefinitionsByIdentifier = Dictionary(
             uniqueKeysWithValues: compiledDefinitions.map {
                 (($0.storeIdentifierOverride ?? $0.name), $0)
@@ -1568,13 +1783,10 @@ final class AdblockManifestRuleListProvider: SumiContentRuleListSetProviding {
         let definitions = try manifest.allNativeShards
             .filter { allowedKinds.contains($0.kind) }
             .map { shard in
-                guard let definition = compiledDefinitionsByIdentifier[shard.webKitIdentifier] else {
-                    throw AdblockUpdateDiagnostics(
-                        summary: "Missing compiled Adblock shard definition: \(shard.webKitIdentifier)",
-                        failedShardIdentifier: shard.webKitIdentifier
-                    )
+                if let definition = compiledDefinitionsByIdentifier[shard.webKitIdentifier] {
+                    return definition
                 }
-                return definition
+                return try compiledDefinitionLoader(shard)
             }
         return SumiTrackingRuleListSet(trackerDataSet: definitions)
     }
@@ -1587,6 +1799,37 @@ final class AdblockManifestRuleListProvider: SumiContentRuleListSetProviding {
             return [.network]
         case .nativeCSS, .enhancedRuntime:
             return [.network, .nativeCosmeticCSS]
+        }
+    }
+
+    static func diskBackedDefinitionLoader(
+        storageRoot: URL,
+        fileManager: FileManager = .default
+    ) -> (NativeContentBlockingShardDescriptor) throws -> SumiContentRuleListDefinition {
+        { shard in
+            let url = storageRoot
+                .appendingPathComponent("Generated", isDirectory: true)
+                .appendingPathComponent(shard.generationId, isDirectory: true)
+                .appendingPathComponent("\(shard.id).json")
+            guard fileManager.fileExists(atPath: url.path) else {
+                throw AdblockUpdateDiagnostics(
+                    summary: "Missing compiled Adblock shard JSON: \(shard.id)",
+                    failedShardIdentifier: shard.webKitIdentifier
+                )
+            }
+            let data = try Data(contentsOf: url)
+            guard !data.isEmpty else {
+                throw AdblockUpdateDiagnostics(
+                    summary: "Empty compiled Adblock shard JSON: \(shard.id)",
+                    failedShardIdentifier: shard.webKitIdentifier
+                )
+            }
+            return SumiContentRuleListDefinition(
+                name: shard.webKitIdentifier,
+                encodedContentRuleList: String(decoding: data, as: UTF8.self),
+                storeIdentifierOverride: shard.webKitIdentifier,
+                contentHashOverride: shard.contentHash
+            )
         }
     }
 }
@@ -1648,19 +1891,19 @@ final class AdblockRuleListPublisher: AdblockRuleListPublishing {
         manifest: AdblockCompiledGenerationManifest,
         definitions: [SumiContentRuleListDefinition]
     ) async throws -> PreparedAdblockRuleListPublication {
-        let prepared = try await contentBlockingService.prepareRuleListUpdate(ruleLists: definitions)
+        let prepared = try await contentBlockingService.prepareRuleListUpdate(
+            ruleLists: definitions,
+            retainEncodedRuleListsInPreparedPolicy: false
+        )
         return PreparedAdblockRuleListPublication(
             manifest: manifest,
-            definitions: definitions,
+            definitions: definitions.map { $0.metadataOnly() },
             preparedContentBlockingUpdate: prepared
         )
     }
 
     func commitPublication(_ publication: PreparedAdblockRuleListPublication) {
-        ruleListProvider.updateManifest(
-            publication.manifest,
-            compiledDefinitions: publication.definitions
-        )
+        ruleListProvider.updateManifest(publication.manifest)
         contentBlockingService.commitPreparedContentBlockingUpdate(
             publication.preparedContentBlockingUpdate
         )
@@ -1952,6 +2195,10 @@ actor AdblockUpdateCoordinator {
 
     func updateIfEnabled(reason: String) async throws -> AdblockCompiledGenerationManifest? {
         guard await isAdblockEnabled() else { return nil }
+#if DEBUG
+        let memoryRecorder = AdblockRebuildMemoryRecorder(now: now)
+        await memoryRecorder.record(.beforeRebuild)
+#endif
 
         let selection = await selection()
         let nativeProfile = await nativeProfileSelection()
@@ -2125,6 +2372,9 @@ actor AdblockUpdateCoordinator {
             throw diagnostics
         }
 
+#if DEBUG
+        await memoryRecorder.record(.afterDownloadRawValidation)
+#endif
         guard await isAdblockEnabled() else { return nil }
 
         let seed = [
@@ -2139,26 +2389,93 @@ actor AdblockUpdateCoordinator {
         )
         let sourceIdentifier = "sumi.adblock.\(generationHash)"
 
-        let nativeInput = AdblockCompilationInput(
-            sourceIdentifier: sourceIdentifier,
-            generationId: generation.id,
-            nativeProfile: nativeProfile,
-            filterTexts: filterTexts,
-            selectedOutputGroups: [.network, .nativeCosmeticCSS],
-            sourceLists: selectedLists.map {
-                NativeContentBlockingSourceList(
-                    id: $0.id,
-                    displayName: $0.displayName,
-                    contentHash: $0.contentHash,
-                    category: $0.category,
-                    inputByteCount: $0.inputByteCount,
-                    approximateRuleCount: $0.approximateRuleCount
-                )
-            }
-        )
-        let nativeOutput: NativeContentBlockingCompilationOutput
+        let sourceLists = selectedLists.map {
+            NativeContentBlockingSourceList(
+                id: $0.id,
+                displayName: $0.displayName,
+                contentHash: $0.contentHash,
+                category: $0.category,
+                inputByteCount: $0.inputByteCount,
+                approximateRuleCount: $0.approximateRuleCount
+            )
+        }
+        let nativeInputByteCount = filterTexts.reduce(0) { $0 + $1.utf8.count }
+        var manifest: AdblockCompiledGenerationManifest!
+        var definitions = [SumiContentRuleListDefinition]()
+        var stagedCompiledShardURLs = [String: URL]()
         do {
-            nativeOutput = try await nativeCompiler.compileNativeContentBlocking(nativeInput)
+            let compilationOutput: NativeAndEnhancedCompatibilityCompilationOutput = try await {
+                let nativeInput = AdblockCompilationInput(
+                    sourceIdentifier: sourceIdentifier,
+                    generationId: generation.id,
+                    nativeProfile: nativeProfile,
+                    filterTexts: filterTexts,
+                    selectedOutputGroups: [.network, .nativeCosmeticCSS],
+                    sourceLists: sourceLists
+                )
+#if DEBUG
+                return try await AdblockRebuildMemoryLifecycle.$recorder.withValue(memoryRecorder) {
+                    try await compileNativeAndEnhancedOutputs(nativeInput)
+                }
+#else
+                return try await compileNativeAndEnhancedOutputs(nativeInput)
+#endif
+            }()
+            filterTexts.removeAll(keepingCapacity: false)
+
+            guard await isAdblockEnabled() else { return nil }
+
+            let nativeOutput = compilationOutput.nativeOutput
+            let enhancedOutput = compilationOutput.enhancedOutput
+            var compiledDefinitions = [SumiContentRuleListDefinition]()
+            var compiledShardURLs = [String: URL]()
+            for shard in nativeOutput.shards.sorted(by: {
+                if $0.kind == $1.kind {
+                    return $0.descriptor.id < $1.descriptor.id
+                }
+                return $0.kind.rawValue < $1.kind.rawValue
+            }) {
+                compiledShardURLs[shard.descriptor.id] = try await manifestStore.writeCompiledShard(
+                    shard,
+                    stagingDirectory: stagingDirectory
+                )
+                compiledDefinitions.append(shard.definition)
+            }
+
+            manifest = AdblockCompiledGenerationManifest(
+                schemaVersion: 5,
+                activeGenerationId: generation.id,
+                createdDate: generation.createdDate,
+                selectedFilterLists: selectedLists.sorted { $0.id < $1.id },
+                networkShards: nativeOutput.networkShards.map(\.descriptor),
+                nativeCSSShards: nativeOutput.nativeCosmeticCSSShards.map(\.descriptor),
+                enhancedRuntimeBundle: enhancedOutput?.enhancedRuntimeBundle.isAvailable == true
+                    ? enhancedOutput?.enhancedRuntimeBundle
+                    : nil,
+                nativeProfile: nativeProfile,
+                nativeCompiler: nativeOutput.compilerIdentity,
+                nativeCompilerSourceLists: nativeOutput.sourceLists,
+                nativeCompilationSummary: NativeContentBlockingCompilationSummary(
+                    inputRuleCount: nativeOutput.inputRuleCount,
+                    inputByteCount: nativeInputByteCount,
+                    convertedNetworkRuleCount: nativeOutput.convertedNetworkRuleCount,
+                    convertedNativeCosmeticRuleCount: nativeOutput.convertedNativeCosmeticRuleCount,
+                    unsupportedOrIgnoredRuleCount: nativeOutput.unsupportedOrIgnoredRuleCount,
+                    networkJSONByteCount: nativeOutput.networkJSONByteCount,
+                    nativeCosmeticJSONByteCount: nativeOutput.nativeCosmeticJSONByteCount,
+                    totalJSONByteCount: nativeOutput.totalJSONByteCount,
+                    ruleCap: nativeOutput.diagnostics.ruleCap
+                ),
+                compilerDiagnosticsSummary: Self.diagnosticsSummary(
+                    nativeDiagnostics: nativeOutput.diagnostics,
+                    nativeOutput: nativeOutput,
+                    enhancedOutput: enhancedOutput
+                ),
+                lastSuccessfulUpdateDate: now(),
+                previousGenerationId: previousManifest?.activeGenerationId
+            )
+            definitions = compiledDefinitions
+            stagedCompiledShardURLs = compiledShardURLs
         } catch {
             let currentStatuses = await currentRawFileStatuses(statusesByIdentifier)
             let diagnostics = AdblockUpdateDiagnostics(
@@ -2170,60 +2487,6 @@ actor AdblockUpdateCoordinator {
             latestDiagnostics = diagnostics
             throw diagnostics
         }
-
-        guard await isAdblockEnabled() else { return nil }
-
-        let enhancedOutput = try await enhancedCompiler?.compileEnhancedCompatibility(nativeInput)
-
-        guard await isAdblockEnabled() else { return nil }
-
-        var definitions = [SumiContentRuleListDefinition]()
-        var stagedCompiledShardURLs = [String: URL]()
-        for shard in nativeOutput.shards.sorted(by: {
-            if $0.kind == $1.kind {
-                return $0.descriptor.id < $1.descriptor.id
-            }
-            return $0.kind.rawValue < $1.kind.rawValue
-        }) {
-            stagedCompiledShardURLs[shard.descriptor.id] = try await manifestStore.writeCompiledShard(
-                shard,
-                stagingDirectory: stagingDirectory
-            )
-            definitions.append(shard.definition)
-        }
-
-        let manifest = AdblockCompiledGenerationManifest(
-            schemaVersion: 5,
-            activeGenerationId: generation.id,
-            createdDate: generation.createdDate,
-            selectedFilterLists: selectedLists.sorted { $0.id < $1.id },
-            networkShards: nativeOutput.networkShards.map(\.descriptor),
-            nativeCSSShards: nativeOutput.nativeCosmeticCSSShards.map(\.descriptor),
-            enhancedRuntimeBundle: enhancedOutput?.enhancedRuntimeBundle.isAvailable == true
-                ? enhancedOutput?.enhancedRuntimeBundle
-                : nil,
-            nativeProfile: nativeProfile,
-            nativeCompiler: nativeOutput.compilerIdentity,
-            nativeCompilerSourceLists: nativeOutput.sourceLists,
-            nativeCompilationSummary: NativeContentBlockingCompilationSummary(
-                inputRuleCount: nativeOutput.inputRuleCount,
-                inputByteCount: filterTexts.reduce(0) { $0 + $1.utf8.count },
-                convertedNetworkRuleCount: nativeOutput.convertedNetworkRuleCount,
-                convertedNativeCosmeticRuleCount: nativeOutput.convertedNativeCosmeticRuleCount,
-                unsupportedOrIgnoredRuleCount: nativeOutput.unsupportedOrIgnoredRuleCount,
-                networkJSONByteCount: nativeOutput.networkJSONByteCount,
-                nativeCosmeticJSONByteCount: nativeOutput.nativeCosmeticJSONByteCount,
-                totalJSONByteCount: nativeOutput.totalJSONByteCount,
-                ruleCap: nativeOutput.diagnostics.ruleCap
-            ),
-            compilerDiagnosticsSummary: Self.diagnosticsSummary(
-                nativeDiagnostics: nativeOutput.diagnostics,
-                nativeOutput: nativeOutput,
-                enhancedOutput: enhancedOutput
-            ),
-            lastSuccessfulUpdateDate: now(),
-            previousGenerationId: previousManifest?.activeGenerationId
-        )
 
         let preparedPublication: PreparedAdblockRuleListPublication
         do {
@@ -2243,6 +2506,10 @@ actor AdblockUpdateCoordinator {
             latestDiagnostics = diagnostics
             throw diagnostics
         }
+#if DEBUG
+        await memoryRecorder.record(.afterWKContentRuleListStoreCompile)
+#endif
+        definitions.removeAll(keepingCapacity: false)
         do {
             try await manifestStore.commit(
                 manifest: manifest,
@@ -2262,14 +2529,34 @@ actor AdblockUpdateCoordinator {
             throw diagnostics
         }
         await publisher.commitPublication(preparedPublication)
+#if DEBUG
+        await memoryRecorder.record(.afterManifestCommitProviderSwitch)
+#endif
         if let garbageCollector {
             latestCleanupReport = await garbageCollector.cleanupAfterSuccessfulUpdate()
         }
         let committedStatuses = await currentRawFileStatuses(statusesByIdentifier)
+#if DEBUG
+        await memoryRecorder.record(.afterCleanup)
+        stagedRawURLs.removeAll(keepingCapacity: false)
+        updatedMetadata.removeAll(keepingCapacity: false)
+        selectedLists.removeAll(keepingCapacity: false)
+        statusesByIdentifier.removeAll(keepingCapacity: false)
+        await memoryRecorder.record(.afterClearingTemporaryObjects)
+        let memoryDiagnostics = await memoryRecorder.diagnostics(
+            manifest: manifest,
+            selectionDiagnostics: selectionDiagnostics,
+            attachedShardCount: manifest.allNativeShards.count
+        )
+        let finalMemoryDiagnostics: AdblockRebuildMemoryDiagnostics? = memoryDiagnostics
+#else
+        let finalMemoryDiagnostics: AdblockRebuildMemoryDiagnostics? = nil
+#endif
         latestDiagnostics = AdblockUpdateDiagnostics(
             summary: "Adblock update completed",
             listStatuses: committedStatuses,
-            selectionDiagnostics: selectionDiagnostics
+            selectionDiagnostics: selectionDiagnostics,
+            memoryDiagnostics: finalMemoryDiagnostics
         )
         return manifest
     }
@@ -2288,6 +2575,30 @@ actor AdblockUpdateCoordinator {
         let diagnostics: AdblockUpdateDiagnostics
         let metadata: AdblockFilterListHTTPMetadata
         let status: AdblockFilterListUpdateStatus
+    }
+
+    private func compileNativeAndEnhancedOutputs(
+        _ input: AdblockCompilationInput
+    ) async throws -> NativeAndEnhancedCompatibilityCompilationOutput {
+        if let enhancedCompiler,
+           let combinedCompiler = nativeCompiler as? any NativeAndEnhancedCompatibilityCompiler,
+           Self.isSameCompilerObject(combinedCompiler, enhancedCompiler) {
+            return try await combinedCompiler.compileNativeAndEnhancedCompatibility(input)
+        }
+
+        let nativeOutput = try await nativeCompiler.compileNativeContentBlocking(input)
+        let enhancedOutput = try await enhancedCompiler?.compileEnhancedCompatibility(input)
+        return NativeAndEnhancedCompatibilityCompilationOutput(
+            nativeOutput: nativeOutput,
+            enhancedOutput: enhancedOutput
+        )
+    }
+
+    private static func isSameCompilerObject(
+        _ lhs: any NativeAndEnhancedCompatibilityCompiler,
+        _ rhs: any EnhancedCompatibilityCompiler
+    ) -> Bool {
+        ObjectIdentifier(lhs) == ObjectIdentifier(rhs)
     }
 
     private func prepareFilterList(
