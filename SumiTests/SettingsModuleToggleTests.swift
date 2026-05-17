@@ -141,7 +141,10 @@ final class SettingsModuleToggleTests: XCTestCase {
         XCTAssertTrue(privacySource.contains("Runtime-generated dev profile"))
         XCTAssertTrue(privacySource.contains("This does not select or install an embedded bundle"))
         XCTAssertTrue(privacySource.contains("Embedded Adblock Bundle"))
-        XCTAssertTrue(privacySource.contains("Install selected embedded bundle"))
+        XCTAssertTrue(privacySource.contains("Bundle source"))
+        XCTAssertTrue(privacySource.contains("Development Build"))
+        XCTAssertTrue(privacySource.contains("futureRemoteBundle"))
+        XCTAssertTrue(privacySource.contains("Install selected bundle"))
         XCTAssertTrue(privacySource.contains("DEBUG Adblock Diagnostics"))
         XCTAssertTrue(privacySource.contains("Rebuild selected Adblock profile now"))
         XCTAssertTrue(privacySource.contains("Copy Adblock Diagnostics"))
@@ -172,15 +175,17 @@ final class SettingsModuleToggleTests: XCTestCase {
         releaseSource.removeSubrange(debugStart.lowerBound..<debugEnd.upperBound)
 
         XCTAssertTrue(debugBlock.contains("Embedded Adblock Bundle"))
-        XCTAssertTrue(debugBlock.contains("No embedded Adblock bundle found"))
-        XCTAssertTrue(debugBlock.contains("Expected resource path"))
+        XCTAssertTrue(debugBlock.contains("No App Resource or Development Build Adblock bundles found"))
+        XCTAssertTrue(debugBlock.contains("Expected app resource path"))
+        XCTAssertTrue(debugBlock.contains("Expected development path"))
         XCTAssertTrue(debugBlock.contains("Generate command"))
         XCTAssertTrue(bundleSource.contains("scripts/build_sumi_adblock_bundle.sh --all-profiles --output .build/sumi-adblock-bundles"))
         XCTAssertTrue(debugBlock.contains("Generated outside app resources"))
-        XCTAssertTrue(debugBlock.contains("installEmbeddedAdblockBundle(profileId: profile.id)"))
+        XCTAssertTrue(debugBlock.contains("installEmbeddedAdblockBundle("))
+        XCTAssertTrue(debugBlock.contains("source: profile.source"))
 
         XCTAssertFalse(releaseSource.contains("Embedded Adblock Bundle"))
-        XCTAssertFalse(releaseSource.contains("Install selected embedded bundle"))
+        XCTAssertFalse(releaseSource.contains("Install selected bundle"))
         XCTAssertFalse(releaseSource.contains("SumiEmbeddedAdblockBundleCatalog"))
     }
 

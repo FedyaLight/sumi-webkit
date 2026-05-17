@@ -175,8 +175,9 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertTrue(diagnostics.expectedNetworkShardIdentifiers.isEmpty)
         XCTAssertTrue(diagnostics.expectedNativeCSSShardIdentifiers.isEmpty)
         XCTAssertTrue(diagnostics.missingShardIdentifiers.isEmpty)
+        XCTAssertEqual(currentTabDiagnostics.attachmentAssessment, "ineligible surface, no Adblock attachment expected")
         XCTAssertEqual(currentTabDiagnostics.suspectedBlankPageCategory, "D internal/ineligible surface")
-        XCTAssertFalse(didCreateRuleListStore)
+        XCTAssertTrue(didCreateRuleListStore)
     }
 
     func testAboutBlankIsAdblockIneligibleAndReportsReason() {
@@ -1096,7 +1097,7 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertTrue(diagnostics.attachedShardIdentifiers.isEmpty)
         XCTAssertTrue(diagnostics.expectedNetworkShardIdentifiers.isEmpty)
         XCTAssertTrue(diagnostics.expectedNativeCSSShardIdentifiers.isEmpty)
-        XCTAssertFalse(didCreateRuleListStore)
+        XCTAssertTrue(didCreateRuleListStore)
     }
 
     func testAttachmentDiagnosticsTrackShardAttachmentByCosmeticMode() async throws {
@@ -1417,6 +1418,44 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertTrue(report.contains("diagnosticsTargetURL=https://www.example.com/failing-page"))
         XCTAssertTrue(report.contains("requestingURL=nil"))
         XCTAssertFalse(report.contains("targetURL=sumi://settings"))
+    }
+
+    func testCopyDiagnosticsFromInternalSettingsStillReportsGlobalActiveGeneration() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.adBlocking)
+        let settings = AdblockSettingsStore(userDefaults: harness.defaults)
+        let module = try await makeModuleWithSeededManifest(
+            registry: registry,
+            settings: settings,
+            sitePolicyStore: AdblockSitePolicyStore(userDefaults: harness.defaults)
+        )
+        let settingsURL = SumiSurface.settingsSurfaceURL(paneQuery: "privacy")
+        try await waitForActiveAdblockGeneration(in: module, url: settingsURL)
+
+        let diagnostics = module.currentTabDiagnostics(
+            for: settingsURL,
+            appliedState: nil,
+            reloadRequired: false,
+            actualAttachedRuleListIdentifiers: []
+        )
+        let report = module.copyDiagnosticsReport(
+            for: settingsURL,
+            currentTabDiagnostics: diagnostics,
+            targetDescription: "current tab (ineligible: Internal Sumi surface)"
+        )
+
+        XCTAssertTrue(report.contains("targetURL=sumi://settings?pane=privacy"))
+        XCTAssertTrue(report.contains("webViewSurfaceEligible=false"))
+        XCTAssertTrue(report.contains("activeGeneration=true"))
+        XCTAssertTrue(report.contains("activeGenerationId=hybrid-test-generation"))
+        XCTAssertTrue(report.contains("generationSource=runtimeGenerated"))
+        XCTAssertTrue(report.contains("expectedNetworkShardIdentifiers="))
+        XCTAssertTrue(report.contains("missingShardIdentifiers="))
+        XCTAssertTrue(report.contains("attachmentAssessment=ineligible surface, no Adblock attachment expected"))
     }
 
     func testCopyDiagnosticsReportIncludesActionableAttachmentAndSelectionFields() async throws {

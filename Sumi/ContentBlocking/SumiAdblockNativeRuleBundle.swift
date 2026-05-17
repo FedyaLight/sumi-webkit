@@ -10,6 +10,7 @@ enum SumiAdblockNativeRuleBundleError: Error, LocalizedError, Equatable {
     case shardHashMismatch(path: String, expected: String, actual: String)
     case shardSizeMismatch(path: String, expected: Int, actual: Int)
     case invalidShardJSON(String)
+    case unsupportedNativeCSSSafetyPolicyVersion(String?)
 
     var errorDescription: String? {
         switch self {
@@ -29,6 +30,8 @@ enum SumiAdblockNativeRuleBundleError: Error, LocalizedError, Equatable {
             return "Embedded Adblock bundle shard size mismatch for \(path): expected \(expected), got \(actual)"
         case .invalidShardJSON(let path):
             return "Embedded Adblock bundle shard JSON is invalid: \(path)"
+        case .unsupportedNativeCSSSafetyPolicyVersion(let version):
+            return "Embedded Adblock bundle native CSS safety policy is unsupported: \(version ?? "missing")"
         }
     }
 }
@@ -84,7 +87,7 @@ struct SumiAdblockNativeRuleBundleManifest: Codable, Equatable, Sendable {
     let generationId: String
     let profileId: String
     let compiler: Compiler
-    let nativeCSSSafetyPolicyVersion: String
+    let nativeCSSSafetyPolicyVersion: String?
     let generatedDate: String
     let lists: [SourceList]
     let shards: [Shard]
@@ -96,6 +99,7 @@ struct SumiAdblockNativeRuleBundleManifest: Codable, Equatable, Sendable {
 struct SumiAdblockNativeRuleBundle: Sendable {
     static let directoryName = "SumiAdblockBundle"
     static let manifestFileName = "manifest.json"
+    static let requiredNativeCSSSafetyPolicyVersion = "sumi-native-css-safety/0.4"
 
     let directoryURL: URL
     let manifest: SumiAdblockNativeRuleBundleManifest
@@ -121,6 +125,11 @@ struct SumiAdblockNativeRuleBundle: Sendable {
         let manifest = try JSONDecoder().decode(SumiAdblockNativeRuleBundleManifest.self, from: data)
         guard manifest.schemaVersion == 1 else {
             throw SumiAdblockNativeRuleBundleError.unsupportedSchemaVersion(manifest.schemaVersion)
+        }
+        guard manifest.nativeCSSSafetyPolicyVersion == requiredNativeCSSSafetyPolicyVersion else {
+            throw SumiAdblockNativeRuleBundleError.unsupportedNativeCSSSafetyPolicyVersion(
+                manifest.nativeCSSSafetyPolicyVersion
+            )
         }
         return SumiAdblockNativeRuleBundle(
             directoryURL: directoryURL,
@@ -157,7 +166,8 @@ struct SumiAdblockNativeRuleBundle: Sendable {
 
     func compiledGenerationManifest(
         previousManifest: AdblockCompiledGenerationManifest?,
-        installedDate: Date
+        installedDate: Date,
+        generationSource: AdblockRuleGenerationSource = .embeddedBundle
     ) -> AdblockCompiledGenerationManifest {
         let selectedLists = manifest.lists.map {
             AdblockCompiledGenerationManifest.SelectedFilterList(
@@ -213,11 +223,12 @@ struct SumiAdblockNativeRuleBundle: Sendable {
             nativeCompiler: compiler,
             nativeCompilerSourceLists: sourceLists.sorted { $0.id < $1.id },
             nativeCompilationSummary: summary,
-            compilerDiagnosticsSummary: compilerDiagnosticsSummary,
+            compilerDiagnosticsSummary: compilerDiagnosticsSummary(generationSource: generationSource),
             lastSuccessfulUpdateDate: installedDate,
             previousGenerationId: previousManifest?.activeGenerationId,
-            generationSource: .embeddedBundle,
-            nativeRuleBundleId: manifest.bundleId
+            generationSource: generationSource,
+            nativeRuleBundleId: manifest.bundleId,
+            bundleProfileId: manifest.profileId
         )
     }
 
@@ -225,12 +236,14 @@ struct SumiAdblockNativeRuleBundle: Sendable {
         ISO8601DateFormatter().date(from: manifest.generatedDate)
     }
 
-    private var compilerDiagnosticsSummary: String {
+    func compilerDiagnosticsSummary(
+        generationSource: AdblockRuleGenerationSource
+    ) -> String {
         [
-            "generationSource=embeddedBundle",
+            "generationSource=\(generationSource.rawValue)",
             "bundleId=\(manifest.bundleId)",
             "bundleProfileId=\(manifest.profileId)",
-            "nativeCSSSafetyPolicy=\(manifest.nativeCSSSafetyPolicyVersion)",
+            "nativeCSSSafetyPolicy=\(manifest.nativeCSSSafetyPolicyVersion ?? "missing")",
             "nativeCSSConverted=\(manifest.diagnosticsSummary.nativeCSSRuleCount)",
             "unsafeNativeCSSRootSelectorsFiltered=\(manifest.unsafeCSSFilteredCount)",
             "nativeCSSEmpty=\(manifest.diagnosticsSummary.nativeCSSRuleCount == 0)",
@@ -241,6 +254,10 @@ struct SumiAdblockNativeRuleBundle: Sendable {
             "nativeCSSShards=\(manifest.shards.filter { $0.ruleGroupKind == .nativeCosmeticCSS }.count)",
             "largestShardBytes=\(manifest.shards.map(\.byteSize).max() ?? 0)",
         ].joined(separator: "; ")
+    }
+
+    private var compilerDiagnosticsSummary: String {
+        compilerDiagnosticsSummary(generationSource: .embeddedBundle)
     }
 
     private func descriptor(
@@ -260,7 +277,7 @@ struct SumiAdblockNativeRuleBundle: Sendable {
             jsonByteCount: shard.byteSize,
             compilerIdentity: compiler,
             profileIdentity: AdblockFilterListProfileKind(rawValue: manifest.profileId),
-            diagnosticsSummary: "embeddedBundle;\(manifest.bundleId);\(shard.group)"
+            diagnosticsSummary: "\(manifest.bundleId);\(shard.group)"
         )
     }
 
@@ -335,9 +352,41 @@ struct SumiAdblockNativeRuleBundle: Sendable {
     }
 }
 
+enum SumiAdblockBundleInstallSource: String, CaseIterable, Identifiable, Sendable {
+    case appResource
+    case developmentBundle
+    case futureRemoteBundle
+
+    var id: String { rawValue }
+
+    var displayTitle: String {
+        switch self {
+        case .appResource:
+            return "App Resource"
+        case .developmentBundle:
+            return "Development Build"
+        case .futureRemoteBundle:
+            return "Future Remote"
+        }
+    }
+
+    var generationSource: AdblockRuleGenerationSource {
+        switch self {
+        case .appResource:
+            return .embeddedBundle
+        case .developmentBundle:
+            return .developmentBundle
+        case .futureRemoteBundle:
+            return .futureRemoteBundle
+        }
+    }
+}
+
 #if DEBUG
 struct SumiEmbeddedAdblockBundleProfile: Equatable, Identifiable, Sendable {
     let id: String
+    let source: SumiAdblockBundleInstallSource
+    let profileId: String
     let displayName: String
     let bundleURL: URL
     let bundleId: String?
@@ -355,6 +404,7 @@ struct SumiEmbeddedAdblockBundleProfile: Equatable, Identifiable, Sendable {
 
 struct SumiEmbeddedAdblockBundleSnapshot: Equatable, Sendable {
     let expectedResourcePath: String
+    let expectedDevelopmentPath: String
     let generateCommand: String
     let generatedBundlesRootPath: String
     let generatedBundlesPresentOutsideAppResources: Bool
@@ -362,6 +412,21 @@ struct SumiEmbeddedAdblockBundleSnapshot: Equatable, Sendable {
 
     var installableProfiles: [SumiEmbeddedAdblockBundleProfile] {
         profiles.filter(\.isInstallable)
+    }
+
+    func installableProfiles(
+        source: SumiAdblockBundleInstallSource
+    ) -> [SumiEmbeddedAdblockBundleProfile] {
+        installableProfiles.filter { $0.source == source }
+    }
+
+    func profile(
+        source: SumiAdblockBundleInstallSource,
+        profileId: String
+    ) -> SumiEmbeddedAdblockBundleProfile? {
+        installableProfiles.first {
+            $0.source == source && $0.profileId == profileId
+        }
     }
 }
 
@@ -381,21 +446,48 @@ enum SumiEmbeddedAdblockBundleCatalog {
         fileManager: FileManager = .default
     ) -> SumiEmbeddedAdblockBundleSnapshot {
         let resourceRoot = resourceURL ?? URL(fileURLWithPath: "<missing app resources>")
-        let profileURLs = supportedProfileIds.compactMap { profileId -> SumiEmbeddedAdblockBundleProfile? in
-            guard let bundleURL = embeddedBundleURL(
+        let generatedRoot = generatedBundlesRootURL ?? repositoryRootURL()
+            .appendingPathComponent(".build/sumi-adblock-bundles", isDirectory: true)
+        let profileURLs = supportedProfileIds.flatMap { profileId -> [SumiEmbeddedAdblockBundleProfile] in
+            var profiles = [SumiEmbeddedAdblockBundleProfile]()
+            if let bundleURL = embeddedBundleCandidateURL(
                 for: profileId,
                 resourceURL: resourceURL,
                 fileManager: fileManager
-            ) else { return nil }
-            return profile(for: profileId, bundleURL: bundleURL, fileManager: fileManager)
+            ) {
+                profiles.append(
+                    profile(
+                        for: profileId,
+                        source: .appResource,
+                        bundleURL: bundleURL,
+                        fileManager: fileManager
+                    )
+                )
+            }
+            if let bundleURL = developmentBundleURL(
+                for: profileId,
+                generatedBundlesRootURL: generatedRoot,
+                fileManager: fileManager
+            ) {
+                profiles.append(
+                    profile(
+                        for: profileId,
+                        source: .developmentBundle,
+                        bundleURL: bundleURL,
+                        fileManager: fileManager
+                    )
+                )
+            }
+            return profiles
         }
-
-        let generatedRoot = generatedBundlesRootURL ?? repositoryRootURL()
-            .appendingPathComponent(".build/sumi-adblock-bundles", isDirectory: true)
 
         return SumiEmbeddedAdblockBundleSnapshot(
             expectedResourcePath: resourceRoot
                 .appendingPathComponent("SumiAdblockBundles/<profile>/\(SumiAdblockNativeRuleBundle.directoryName)", isDirectory: true)
+                .path,
+            expectedDevelopmentPath: generatedRoot
+                .appendingPathComponent("<profile>", isDirectory: true)
+                .appendingPathComponent(SumiAdblockNativeRuleBundle.directoryName, isDirectory: true)
                 .path,
             generateCommand: generateCommand,
             generatedBundlesRootPath: generatedRoot.path,
@@ -403,7 +495,12 @@ enum SumiEmbeddedAdblockBundleCatalog {
                 rootURL: generatedRoot,
                 fileManager: fileManager
             ),
-            profiles: profileURLs.sorted { $0.id < $1.id }
+            profiles: profileURLs.sorted {
+                if $0.profileId == $1.profileId {
+                    return $0.source.rawValue < $1.source.rawValue
+                }
+                return $0.profileId < $1.profileId
+            }
         )
     }
 
@@ -434,8 +531,43 @@ enum SumiEmbeddedAdblockBundleCatalog {
         }
     }
 
+    private static func embeddedBundleCandidateURL(
+        for profileId: String,
+        resourceURL: URL?,
+        fileManager: FileManager
+    ) -> URL? {
+        guard let resourceURL else { return nil }
+        let candidates = [
+            resourceURL
+                .appendingPathComponent("SumiAdblockBundles", isDirectory: true)
+                .appendingPathComponent(profileId, isDirectory: true)
+                .appendingPathComponent(SumiAdblockNativeRuleBundle.directoryName, isDirectory: true),
+            resourceURL
+                .appendingPathComponent(profileId, isDirectory: true)
+                .appendingPathComponent(SumiAdblockNativeRuleBundle.directoryName, isDirectory: true),
+            resourceURL
+                .appendingPathComponent(SumiAdblockNativeRuleBundle.directoryName, isDirectory: true),
+        ]
+        return candidates.first {
+            bundleDirectoryExists($0, fileManager: fileManager)
+        }
+    }
+
+    static func developmentBundleURL(
+        for profileId: String,
+        generatedBundlesRootURL: URL? = defaultGeneratedBundlesRootURL(),
+        fileManager: FileManager = .default
+    ) -> URL? {
+        guard let generatedBundlesRootURL else { return nil }
+        let candidate = generatedBundlesRootURL
+            .appendingPathComponent(profileId, isDirectory: true)
+            .appendingPathComponent(SumiAdblockNativeRuleBundle.directoryName, isDirectory: true)
+        return bundleDirectoryExists(candidate, fileManager: fileManager) ? candidate : nil
+    }
+
     private static func profile(
         for profileId: String,
+        source: SumiAdblockBundleInstallSource,
         bundleURL: URL,
         fileManager: FileManager
     ) -> SumiEmbeddedAdblockBundleProfile {
@@ -444,7 +576,9 @@ enum SumiEmbeddedAdblockBundleCatalog {
             let networkShards = bundle.manifest.shards.filter { $0.kind == "network" }
             let nativeCSSShards = bundle.manifest.shards.filter { $0.kind == "nativeCSS" }
             return SumiEmbeddedAdblockBundleProfile(
-                id: bundle.manifest.profileId,
+                id: "\(source.rawValue):\(bundle.manifest.profileId)",
+                source: source,
+                profileId: bundle.manifest.profileId,
                 displayName: displayName(for: bundle.manifest.profileId),
                 bundleURL: bundleURL,
                 bundleId: bundle.manifest.bundleId,
@@ -457,7 +591,9 @@ enum SumiEmbeddedAdblockBundleCatalog {
             )
         } catch {
             return SumiEmbeddedAdblockBundleProfile(
-                id: profileId,
+                id: "\(source.rawValue):\(profileId)",
+                source: source,
+                profileId: profileId,
                 displayName: displayName(for: profileId),
                 bundleURL: bundleURL,
                 bundleId: nil,
@@ -482,6 +618,15 @@ enum SumiEmbeddedAdblockBundleCatalog {
                 .appendingPathComponent(SumiAdblockNativeRuleBundle.manifestFileName)
             return fileManager.fileExists(atPath: manifestURL.path)
         }
+    }
+
+    private static func bundleDirectoryExists(
+        _ bundleURL: URL,
+        fileManager: FileManager
+    ) -> Bool {
+        var isDirectory: ObjCBool = false
+        return fileManager.fileExists(atPath: bundleURL.path, isDirectory: &isDirectory)
+            && isDirectory.boolValue
     }
 
     private static func displayName(for profileId: String) -> String {
