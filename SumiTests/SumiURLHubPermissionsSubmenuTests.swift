@@ -17,11 +17,13 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
         XCTAssertLessThan(cookiesRange.lowerBound, permissionsRange.lowerBound)
     }
 
-    func testURLHubPermissionsRowKeepsCookiesAndTrackingRows() throws {
+    func testURLHubPermissionsRowKeepsCookiesAndUnifiedProtectionRows() throws {
         let source = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
 
         XCTAssertTrue(source.contains("kind: .cookies"))
-        XCTAssertTrue(source.contains("kind: .tracking("))
+        XCTAssertTrue(source.contains("kind: .protection("))
+        XCTAssertFalse(source.contains("kind: .tracking("))
+        XCTAssertFalse(source.contains("kind: .adBlocking("))
         XCTAssertTrue(source.contains("setMode(.siteDataDetails, direction: .forward)"))
         XCTAssertTrue(source.contains("setMode(.permissions, direction: .forward)"))
     }
