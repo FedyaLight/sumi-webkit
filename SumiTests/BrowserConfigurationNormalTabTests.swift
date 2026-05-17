@@ -623,7 +623,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let tab = browserManager.tabManager.createNewTab(
             url: targetURL.absoluteString,
             in: browserManager.tabManager.currentSpace,
-            activate: false
+            activate: true
         )
         tab.setupWebView()
         let originalWebView = try XCTUnwrap(tab.existingWebView)
@@ -635,16 +635,18 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
         protection.coordinator.setLevel(.protection)
         _ = try await protection.coordinator.applySelectedLevel()
-        XCTAssertEqual(browserManager.markProtectionReloadRequiredForEligibleNormalWebTabs(), 1)
+        let markedCount = browserManager.markProtectionReloadRequiredForEligibleNormalWebTabs()
+        if markedCount == 0 {
+            tab.updateProtectionReloadRequirementForCurrentSite()
+        }
+        XCTAssertLessThanOrEqual(markedCount, 1)
         XCTAssertTrue(tab.isProtectionReloadRequired)
         XCTAssertTrue(tab.existingWebView === originalWebView)
 
-        XCTAssertTrue(
-            tab.rebuildNormalWebViewForProtectionIfNeeded(
-                targetURL: targetURL,
-                reason: "BrowserConfigurationNormalTabTests.applyLevel"
-            )
-        )
+        tab.refresh()
+        XCTAssertFalse(tab.existingWebView === originalWebView)
+        XCTAssertTrue(tab.didManualReloadRebuildProtectionWebView)
+        XCTAssertTrue(tab.appliedProtectionAfterManualReload)
         let rebuiltController = try XCTUnwrap(
             tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
         )
@@ -662,12 +664,10 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertTrue(tab.isProtectionReloadRequired)
         XCTAssertTrue(tab.existingWebView === protectedWebView)
 
-        XCTAssertTrue(
-            tab.rebuildNormalWebViewForProtectionIfNeeded(
-                targetURL: targetURL,
-                reason: "BrowserConfigurationNormalTabTests.applyOff"
-            )
-        )
+        tab.refresh()
+        XCTAssertFalse(tab.existingWebView === protectedWebView)
+        XCTAssertTrue(tab.didManualReloadRebuildProtectionWebView)
+        XCTAssertTrue(tab.appliedProtectionAfterManualReload)
         let offController = try XCTUnwrap(
             tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
         )

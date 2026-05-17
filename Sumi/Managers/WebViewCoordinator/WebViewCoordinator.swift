@@ -2099,6 +2099,12 @@ class WebViewCoordinator {
 
     /// Reload a tab across all windows displaying it
     func reloadTab(_ tab: Tab) {
+        if tab.isProtectionReloadRequired,
+           tab.protectionAttachmentRequiresNormalWebViewRebuild(for: tab.existingWebView?.url ?? tab.url)
+        {
+            tab.refresh()
+            return
+        }
         let tabId = tab.id
         let allWebViews = getAllWebViews(for: tabId)
         for webView in allWebViews {

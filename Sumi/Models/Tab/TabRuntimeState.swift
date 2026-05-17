@@ -161,6 +161,8 @@ final class TabWebViewRuntime {
     var adblockReloadRequirement: SumiAdblockReloadRequirement?
     var protectionAppliedAttachmentState: SumiProtectionAttachmentState?
     var protectionReloadRequirement: SumiProtectionReloadRequirement?
+    var didManualReloadRebuildProtectionWebView: Bool = false
+    var appliedProtectionAfterManualReload: Bool = false
     var autoplayReloadRequirement: SumiAutoplayReloadRequirement?
     var lastWebViewInteractionEvent: NSEvent?
     var webViewInteractionCancellables: [ObjectIdentifier: AnyCancellable] = [:]

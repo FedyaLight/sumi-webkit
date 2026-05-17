@@ -75,6 +75,48 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertFalse(fixture.adBlockingModule.hasLoadedRuntime)
     }
 
+    func testStrictOffApplyAndStartupDoNotRestorePreparedBundles() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let resourceRoot = temporaryAdblockDirectory()
+        let generatedRoot = temporaryAdblockDirectory()
+        try makePreparedBundle(
+            at: generatedRoot
+                .appendingPathComponent("adguardAdsPrivacy", isDirectory: true)
+                .appendingPathComponent("SumiAdblockBundle", isDirectory: true),
+            profileId: "adguardAdsPrivacy",
+            generationId: "adguard-off-generation",
+            includeNativeCSS: false
+        )
+        let fixture = makeCoordinatorFixture(
+            defaults: harness.defaults,
+            trackingDefinitions: [Self.ruleList(identifier: "sumi.tracking.network", filter: ".*tracker\\.example/.*")],
+            preparedBundleResourceURL: resourceRoot,
+            preparedBundleGeneratedRootURL: generatedRoot
+        )
+
+        fixture.coordinator.setLevel(.off)
+        _ = try await fixture.coordinator.applySelectedLevel()
+        let restoredManifest = try await fixture.coordinator.restoreAppliedLevelForStartup()
+        let decision = fixture.coordinator.normalTabDecision(
+            for: URL(string: "https://example.com/off")!,
+            profileId: nil
+        )
+        let global = fixture.coordinator.globalDiagnostics()
+
+        XCTAssertNil(restoredManifest)
+        XCTAssertEqual(decision.plan.effectiveLevel, .off)
+        XCTAssertTrue(decision.plan.activeGroups.isEmpty)
+        XCTAssertTrue(decision.plan.expectedRuleListIdentifiers.isEmpty)
+        XCTAssertNil(decision.contentBlockingService)
+        XCTAssertNil(global.bundleProfileId)
+        XCTAssertNil(global.activeGenerationId)
+        XCTAssertTrue(global.globalGroupsAvailable.isEmpty)
+        XCTAssertFalse(fixture.didCreateAdblockRuleListStore())
+        XCTAssertEqual(fixture.trackingRuleSource.ruleListCallCount, 0)
+        XCTAssertFalse(fixture.adBlockingModule.hasLoadedRuntime)
+    }
+
     func testStandardPlanDefersExpensiveOverlapDiagnosticsUntilDiagnosticsRequest() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -199,6 +241,125 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertEqual(plan.shardCountsByGroup[.maximumNativeCSS], 1)
     }
 
+    func testLiveApplyTransitionsPublishCachedAttachmentPlanWithoutRestart() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let resourceRoot = temporaryAdblockDirectory()
+        let generatedRoot = temporaryAdblockDirectory()
+        try makePreparedBundle(
+            at: generatedRoot
+                .appendingPathComponent("adguardAdsPrivacy", isDirectory: true)
+                .appendingPathComponent("SumiAdblockBundle", isDirectory: true),
+            profileId: "adguardAdsPrivacy",
+            generationId: "adguard-live-generation",
+            includeNativeCSS: false
+        )
+        try makePreparedBundle(
+            at: generatedRoot
+                .appendingPathComponent("maximumCustomReference", isDirectory: true)
+                .appendingPathComponent("SumiAdblockBundle", isDirectory: true),
+            profileId: "maximumCustomReference",
+            generationId: "maximum-live-generation",
+            includeNativeCSS: true
+        )
+        let fixture = makeCoordinatorFixture(
+            defaults: harness.defaults,
+            trackingDefinitions: [Self.ruleList(identifier: "sumi.tracking.network", filter: ".*tracker\\.example/.*")],
+            preparedBundleResourceURL: resourceRoot,
+            preparedBundleGeneratedRootURL: generatedRoot
+        )
+        let url = URL(string: "https://example.com/live-switch")!
+
+        func apply(
+            _ level: SumiProtectionLevel,
+            expectedEffectiveLevel: SumiProtectionLevel,
+            expectedGroups: [SumiProtectionGroupKind],
+            expectedIdentifierPrefixes: [String],
+            expectsService: Bool,
+            file: StaticString = #filePath,
+            line: UInt = #line
+        ) async throws {
+            fixture.coordinator.setLevel(level)
+            _ = try await fixture.coordinator.applySelectedLevel()
+            let callCountAfterApply = fixture.trackingRuleSource.ruleListCallCount
+            let decision = fixture.coordinator.normalTabDecision(for: url, profileId: nil)
+            let secondDecision = fixture.coordinator.normalTabDecision(for: url, profileId: nil)
+
+            XCTAssertEqual(decision.plan.effectiveLevel, expectedEffectiveLevel, file: file, line: line)
+            XCTAssertEqual(decision.plan.activeGroups, expectedGroups, file: file, line: line)
+            for prefix in expectedIdentifierPrefixes {
+                XCTAssertTrue(
+                    decision.plan.expectedRuleListIdentifiers.contains { $0.hasPrefix(prefix) },
+                    file: file,
+                    line: line
+                )
+            }
+            XCTAssertEqual(decision.contentBlockingService != nil, expectsService, file: file, line: line)
+            XCTAssertEqual(secondDecision.contentBlockingService != nil, expectsService, file: file, line: line)
+            XCTAssertEqual(fixture.trackingRuleSource.ruleListCallCount, callCountAfterApply, file: file, line: line)
+        }
+
+        try await apply(
+            .adblock,
+            expectedEffectiveLevel: .adblock,
+            expectedGroups: [.adblockAdsPrivacyNetwork, .trackingNetwork],
+            expectedIdentifierPrefixes: ["sumi.tracking.network", "sumi.adblock.network.adguard-live-generation.0001"],
+            expectsService: true
+        )
+        try await apply(
+            .off,
+            expectedEffectiveLevel: .off,
+            expectedGroups: [],
+            expectedIdentifierPrefixes: [],
+            expectsService: false
+        )
+        let offDiagnostics = fixture.coordinator.currentTabDiagnostics(
+            for: url,
+            appliedState: .disabled(siteHost: "example.com"),
+            reloadRequired: false,
+            actualAttachedRuleListIdentifiers: []
+        )
+        XCTAssertEqual(offDiagnostics.effectiveProtectionLevel, .off)
+        XCTAssertTrue(offDiagnostics.activeGroups.isEmpty)
+        XCTAssertTrue(offDiagnostics.expectedRuleListIdentifiers.isEmpty)
+        XCTAssertTrue(offDiagnostics.actualAttachedRuleListIdentifiers.isEmpty)
+        XCTAssertTrue(offDiagnostics.missingRuleListIdentifiers.isEmpty)
+        XCTAssertNil(offDiagnostics.bundleProfileId)
+
+        try await apply(
+            .protection,
+            expectedEffectiveLevel: .protection,
+            expectedGroups: [.trackingNetwork],
+            expectedIdentifierPrefixes: ["sumi.tracking.network"],
+            expectsService: true
+        )
+        try await apply(
+            .adblock,
+            expectedEffectiveLevel: .adblock,
+            expectedGroups: [.adblockAdsPrivacyNetwork, .trackingNetwork],
+            expectedIdentifierPrefixes: ["sumi.tracking.network", "sumi.adblock.network.adguard-live-generation.0001"],
+            expectsService: true
+        )
+        try await apply(
+            .extreme,
+            expectedEffectiveLevel: .extreme,
+            expectedGroups: [.maximumNativeCSS, .maximumNativeNetwork, .trackingNetwork],
+            expectedIdentifierPrefixes: [
+                "sumi.tracking.network",
+                "sumi.adblock.network.maximum-live-generation.0001",
+                "sumi.adblock.nativeCSS.maximum-live-generation.0001",
+            ],
+            expectsService: true
+        )
+        try await apply(
+            .protection,
+            expectedEffectiveLevel: .protection,
+            expectedGroups: [.trackingNetwork],
+            expectedIdentifierPrefixes: ["sumi.tracking.network"],
+            expectsService: true
+        )
+    }
+
     func testMissingRequiredBundleApplyReportsClearErrorWithoutRuntimeGeneratedFallback() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -242,6 +403,22 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertEqual(global.searchedBundlePaths.map(\.source), [.appResource, .developmentBundle, .futureRemoteBundle])
         XCTAssertNil(plan.bundleSource)
         XCTAssertFalse(global.lastApplyError?.contains("runtimeGenerated") == true)
+
+        fixture.coordinator.setLevel(.extreme)
+        do {
+            _ = try await fixture.coordinator.applySelectedLevel()
+            XCTFail("Expected applying Extreme without a prepared bundle to fail")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Required prepared bundle profile maximumCustomReference is unavailable"))
+            XCTAssertFalse(error.localizedDescription.contains("runtimeGenerated"))
+        }
+
+        let extremeFailureGlobal = fixture.coordinator.globalDiagnostics()
+        XCTAssertEqual(extremeFailureGlobal.selectedProtectionLevel, .extreme)
+        XCTAssertEqual(extremeFailureGlobal.appliedProtectionLevel, .protection)
+        XCTAssertEqual(extremeFailureGlobal.requiredBundleProfileId, "maximumCustomReference")
+        XCTAssertFalse(extremeFailureGlobal.preparedBundleAvailable)
+        XCTAssertTrue(extremeFailureGlobal.lastApplyError?.contains("maximumCustomReference") == true)
     }
 
     func testApplyAdblockDiscoversDevelopmentBundleAndPublishesActiveGeneration() async throws {
@@ -659,20 +836,20 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
                 requestedLevel: .adblock,
                 effectiveLevel: .adblock,
                 activeGroups: [.trackingNetwork, .adblockAdsPrivacyNetwork],
-                attachedRuleListIdentifiers: ["old.identifier"],
+                attachedRuleListIdentifiers: ["sumi.adblock.old.identifier"],
                 activeGenerationId: "old"
             ),
             reloadRequired: true,
-            actualAttachedRuleListIdentifiers: ["old.identifier"],
+            actualAttachedRuleListIdentifiers: ["sumi.adblock.old.identifier"],
             contentBlockingAssetSummary: SumiNormalTabContentBlockingAssetSummary(
                 isInstalled: true,
                 globalRuleListCount: 1,
                 updateRuleCount: 2,
                 isContentBlockingFeatureEnabled: true,
-                globalRuleListIdentifiers: ["old.identifier"],
+                globalRuleListIdentifiers: ["sumi.adblock.old.identifier"],
                 lookupSucceededIdentifiers: ["sumi.tracking.network"],
                 lookupFailedIdentifiers: ["sumi.adblock.network.curated"],
-                addedToUserContentControllerIdentifiers: ["old.identifier"]
+                addedToUserContentControllerIdentifiers: ["sumi.adblock.old.identifier"]
             )
         )
 
@@ -685,14 +862,20 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertEqual(diagnostics.missingAfterAttachmentIdentifiers, plan.expectedRuleListIdentifiers)
         XCTAssertEqual(diagnostics.lookupSucceededIdentifiers, ["sumi.tracking.network"])
         XCTAssertEqual(diagnostics.lookupFailedIdentifiers, ["sumi.adblock.network.curated"])
-        XCTAssertEqual(diagnostics.addedToUserContentControllerIdentifiers, ["old.identifier"])
+        XCTAssertEqual(diagnostics.addedToUserContentControllerIdentifiers, ["sumi.adblock.old.identifier"])
         XCTAssertEqual(diagnostics.appliedProtectionGenerationId, "old")
         XCTAssertEqual(diagnostics.appliedProtectionGroups, [.adblockAdsPrivacyNetwork, .trackingNetwork])
-        XCTAssertEqual(diagnostics.unexpectedOldRuleListIdentifiers, ["old.identifier"])
+        XCTAssertEqual(diagnostics.unexpectedOldRuleListIdentifiers, ["sumi.adblock.old.identifier"])
         XCTAssertTrue(diagnostics.reloadRequired)
+        XCTAssertEqual(diagnostics.reloadRequiredReason, "protection attachment plan changed")
+        XCTAssertFalse(diagnostics.didManualReloadRebuildWebView)
+        XCTAssertFalse(diagnostics.appliedAfterManualReload)
+        XCTAssertNotNil(diagnostics.contentBlockingServiceGenerationId)
+        XCTAssertGreaterThanOrEqual(diagnostics.planComputeDuration, 0)
         XCTAssertTrue(diagnostics.developerReport.contains("protectionLevel=adblock"))
         XCTAssertTrue(diagnostics.developerReport.contains("lookupSucceededIdentifiers=sumi.tracking.network"))
-        XCTAssertTrue(diagnostics.developerReport.contains("addedToUserContentControllerIdentifiers=old.identifier"))
+        XCTAssertTrue(diagnostics.developerReport.contains("addedToUserContentControllerIdentifiers=sumi.adblock.old.identifier"))
+        XCTAssertTrue(diagnostics.developerReport.contains("didManualReloadRebuildWebView=false"))
         XCTAssertTrue(diagnostics.developerReport.contains("dedupeSummary="))
         XCTAssertTrue(diagnostics.developerReport.contains("overlapSummary="))
     }

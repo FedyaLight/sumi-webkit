@@ -110,6 +110,7 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
         let lookupSucceededIdentifiers: [String]
         let lookupFailedIdentifiers: [String]
         let addedToUserContentControllerIdentifiers: [String]
+        let tabAttachmentDuration: TimeInterval?
     }
 
     private let privacyConfigurationManager: SumiContentBlockingPrivacyConfigurationManager
@@ -156,7 +157,8 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
                 globalRuleListIdentifiers: [],
                 lookupSucceededIdentifiers: [],
                 lookupFailedIdentifiers: [],
-                addedToUserContentControllerIdentifiers: []
+                addedToUserContentControllerIdentifiers: [],
+                tabAttachmentDuration: nil
             )
         }
 
@@ -168,7 +170,8 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
             globalRuleListIdentifiers: Array(contentBlockingAssets.globalRuleLists.keys),
             lookupSucceededIdentifiers: contentBlockingAssets.lookupSucceededIdentifiers,
             lookupFailedIdentifiers: contentBlockingAssets.lookupFailedIdentifiers,
-            addedToUserContentControllerIdentifiers: contentBlockingAssets.addedToUserContentControllerIdentifiers
+            addedToUserContentControllerIdentifiers: contentBlockingAssets.addedToUserContentControllerIdentifiers,
+            tabAttachmentDuration: contentBlockingAssets.tabAttachmentDuration
         )
     }
 
@@ -185,7 +188,8 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
                     globalRuleListIdentifiers: Array(assets.globalRuleLists.keys),
                     lookupSucceededIdentifiers: assets.lookupSucceededIdentifiers,
                     lookupFailedIdentifiers: assets.lookupFailedIdentifiers,
-                    addedToUserContentControllerIdentifiers: assets.addedToUserContentControllerIdentifiers
+                    addedToUserContentControllerIdentifiers: assets.addedToUserContentControllerIdentifiers,
+                    tabAttachmentDuration: assets.tabAttachmentDuration
                 )
             }
             .eraseToAnyPublisher()
@@ -226,6 +230,7 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
     private func installContentBlockingUpdate(_ update: SumiNormalTabContentBlockingUpdate) {
         guard !isCleanedUp, assetsPublisherCancellable != nil else { return }
 
+        let start = Date()
         removeAllContentRuleLists()
 
         let isContentBlockingFeatureEnabled = isContentBlockingFeatureEnabled
@@ -244,7 +249,8 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
             isContentBlockingFeatureEnabled: isContentBlockingFeatureEnabled,
             lookupSucceededIdentifiers: update.lookupSucceededIdentifiers,
             lookupFailedIdentifiers: update.lookupFailedIdentifiers,
-            addedToUserContentControllerIdentifiers: addedIdentifiers
+            addedToUserContentControllerIdentifiers: addedIdentifiers,
+            tabAttachmentDuration: Date().timeIntervalSince(start)
         )
         resumeAssetWaiters()
     }

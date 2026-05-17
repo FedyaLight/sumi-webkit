@@ -46,6 +46,12 @@ final class BrowserPrivacyService {
     }
 
     private func reloadFromOrigin(_ tab: Tab, webView: WKWebView) {
+        if tab.isProtectionReloadRequired,
+           tab.protectionAttachmentRequiresNormalWebViewRebuild(for: webView.url ?? tab.url)
+        {
+            tab.refresh()
+            return
+        }
         tab.performMainFrameNavigationAfterHydrationIfNeeded(
             on: webView
         ) { resolvedWebView in
