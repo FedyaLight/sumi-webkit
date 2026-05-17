@@ -85,7 +85,9 @@ final class SumiAdblockNativeRuleBundleTests: XCTestCase {
         XCTAssertEqual(manifest.nativeRuleBundleId, "sumi.adblock.bundle.currentDefault.test")
         XCTAssertEqual(manifest.nativeProfile, .currentDefault)
         XCTAssertEqual(store.activeManifest?.generationSource, .embeddedBundle)
-        XCTAssertEqual(store.lastUpdateDiagnostics?.summary, "Embedded Adblock bundle installed")
+        XCTAssertEqual(store.lastUpdateDiagnostics?.summary, "success: Adblock bundle installed")
+        XCTAssertEqual(store.lastUpdateDiagnostics?.bundleProfileId, "currentDefault")
+        XCTAssertEqual(store.lastUpdateDiagnostics?.nativeRuleBundleId, "sumi.adblock.bundle.currentDefault.test")
     }
 
     func testEmbeddedBundleCatalogListsResourceProfiles() throws {
@@ -104,11 +106,65 @@ final class SumiAdblockNativeRuleBundleTests: XCTestCase {
             generatedBundlesRootURL: temporaryDirectory()
         )
 
-        XCTAssertEqual(snapshot.installableProfiles.map(\.id), ["currentDefault"])
+        XCTAssertEqual(snapshot.installableProfiles.map(\.profileId), ["currentDefault"])
+        XCTAssertEqual(snapshot.installableProfiles.map(\.source), [.appResource])
         XCTAssertEqual(snapshot.installableProfiles.first?.bundleId, "sumi.adblock.bundle.currentDefault.test")
         XCTAssertEqual(snapshot.installableProfiles.first?.networkShardCount, 1)
         XCTAssertEqual(snapshot.installableProfiles.first?.networkRuleCount, 1)
         XCTAssertFalse(snapshot.generatedBundlesPresentOutsideAppResources)
+    }
+
+    func testEmbeddedBundleCatalogListsDevelopmentProfilesWithoutAppCopy() throws {
+        let sourceBundleURL = try makeBundle(profileId: "adguardAdsOnly")
+        let resourceRoot = temporaryDirectory()
+        let generatedRoot = temporaryDirectory()
+        let developmentRoot = generatedRoot
+            .appendingPathComponent("adguardAdsOnly", isDirectory: true)
+        try FileManager.default.createDirectory(at: developmentRoot, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(
+            at: sourceBundleURL,
+            to: developmentRoot.appendingPathComponent("SumiAdblockBundle", isDirectory: true)
+        )
+
+        let snapshot = SumiEmbeddedAdblockBundleCatalog.snapshot(
+            resourceURL: resourceRoot,
+            generatedBundlesRootURL: generatedRoot
+        )
+
+        XCTAssertEqual(snapshot.installableProfiles.map(\.profileId), ["adguardAdsOnly"])
+        XCTAssertEqual(snapshot.installableProfiles.map(\.source), [.developmentBundle])
+        XCTAssertTrue(snapshot.expectedDevelopmentPath.contains(".build/sumi-adblock-bundles/<profile>/SumiAdblockBundle") || snapshot.expectedDevelopmentPath.contains("<profile>/SumiAdblockBundle"))
+        XCTAssertTrue(snapshot.generatedBundlesPresentOutsideAppResources)
+    }
+
+    func testDevelopmentBundleInstallSetsDevelopmentGenerationSource() async throws {
+        let bundleURL = try makeBundle(profileId: "adguardAdsOnly")
+        let adblockRoot = temporaryDirectory()
+        let manifestStore = AdblockUpdateManifestStore(rootDirectory: adblockRoot)
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let store = AdblockWebKitRuleListStore(
+            settingsStore: AdblockSettingsStore(userDefaults: harness.defaults),
+            isAdblockEnabled: { true },
+            manifestStore: manifestStore,
+            compiler: SumiWKContentRuleListCompiler(),
+            embeddedBundleURLProvider: { nil }
+        )
+
+        let installed = try await store.requestEmbeddedBundleInstall(
+            bundleURL: bundleURL,
+            source: .developmentBundle,
+            profileId: "adguardAdsOnly"
+        )
+
+        let manifest = try XCTUnwrap(installed)
+        XCTAssertEqual(manifest.generationSource, .developmentBundle)
+        XCTAssertEqual(manifest.nativeRuleBundleId, "sumi.adblock.bundle.adguardAdsOnly.test")
+        XCTAssertNil(manifest.nativeProfile)
+        XCTAssertEqual(manifest.bundleProfileId, "adguardAdsOnly")
+        XCTAssertEqual(store.activeManifest?.generationSource, .developmentBundle)
+        XCTAssertEqual(store.lastUpdateDiagnostics?.generationSource, .developmentBundle)
+        XCTAssertEqual(store.lastUpdateDiagnostics?.bundleProfileId, "adguardAdsOnly")
     }
 
     func testMissingEmbeddedBundleCatalogReportsClearDiagnosticsAndGeneratedPresence() throws {
@@ -127,11 +183,36 @@ final class SumiAdblockNativeRuleBundleTests: XCTestCase {
             generatedBundlesRootURL: generatedRoot
         )
 
-        XCTAssertTrue(snapshot.profiles.isEmpty)
+        XCTAssertFalse(snapshot.installableProfiles.contains { $0.isInstallable })
         XCTAssertTrue(snapshot.expectedResourcePath.contains("SumiAdblockBundles/<profile>/SumiAdblockBundle"))
+        XCTAssertTrue(snapshot.expectedDevelopmentPath.contains("<profile>/SumiAdblockBundle"))
         XCTAssertTrue(snapshot.generateCommand.contains("scripts/build_sumi_adblock_bundle.sh"))
         XCTAssertEqual(snapshot.generatedBundlesRootPath, generatedRoot.path)
         XCTAssertTrue(snapshot.generatedBundlesPresentOutsideAppResources)
+    }
+
+    func testBundleInstallRejectsOlderNativeCSSSafetyPolicyWithStage() async throws {
+        let bundleURL = try makeBundle(nativeCSSSafetyPolicyVersion: "sumi-native-css-safety/0.3")
+        let adblockRoot = temporaryDirectory()
+        let manifestStore = AdblockUpdateManifestStore(rootDirectory: adblockRoot)
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let store = AdblockWebKitRuleListStore(
+            settingsStore: AdblockSettingsStore(userDefaults: harness.defaults),
+            isAdblockEnabled: { true },
+            manifestStore: manifestStore,
+            compiler: SumiWKContentRuleListCompiler(),
+            embeddedBundleURLProvider: { nil }
+        )
+
+        do {
+            _ = try await store.requestEmbeddedBundleInstall(bundleURL: bundleURL)
+            XCTFail("Expected safety policy rejection")
+        } catch let diagnostics as AdblockUpdateDiagnostics {
+            XCTAssertEqual(diagnostics.stage, .embeddedBundleManifestRead)
+            XCTAssertEqual(diagnostics.bundleProfileId, nil)
+            XCTAssertTrue(diagnostics.summary.contains("native CSS safety policy"))
+        }
     }
 
     func testEmbeddedBundleInstallPreservesPreviousGenerationForRollback() async throws {
@@ -162,7 +243,8 @@ final class SumiAdblockNativeRuleBundleTests: XCTestCase {
 
     private func makeBundle(
         generationId: String = "embedded-generation",
-        profileId: String = "currentDefault"
+        profileId: String = "currentDefault",
+        nativeCSSSafetyPolicyVersion: String = "sumi-native-css-safety/0.4"
     ) throws -> URL {
         let root = temporaryDirectory()
         let bundleURL = root.appendingPathComponent("SumiAdblockBundle", isDirectory: true)
@@ -180,9 +262,9 @@ final class SumiAdblockNativeRuleBundleTests: XCTestCase {
             "profileId": profileId,
             "compiler": [
                 "name": "adblock-rust",
-                "version": "adblock-rust-adapter/0.1.0 adblock-rust/0.12.5 sumi-native-css-safety/0.4",
+                "version": "adblock-rust-adapter/0.1.0 adblock-rust/0.12.5 \(nativeCSSSafetyPolicyVersion)",
             ],
-            "nativeCSSSafetyPolicyVersion": "sumi-native-css-safety/0.4",
+            "nativeCSSSafetyPolicyVersion": nativeCSSSafetyPolicyVersion,
             "generatedDate": "2026-05-17T00:00:00Z",
             "lists": [
                 [
