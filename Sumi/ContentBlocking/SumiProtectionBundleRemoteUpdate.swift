@@ -33,6 +33,7 @@ enum SumiProtectionBundleRemoteUpdateConstants {
     static let owner = "FedyaLight"
     static let repository = "sumi-protection-bundles"
     static let releaseManifestAssetName = "sumi-protection-bundles-release.json"
+    static let releaseManifestSignatureAssetName = "sumi-protection-bundles-release.json.sig"
     static let releaseManifestSchemaVersion = 1
     static let browserBundleExpectationVersion = 1
     static let maximumAssetByteCount = 50_000_000
@@ -41,8 +42,15 @@ enum SumiProtectionBundleRemoteUpdateConstants {
 enum SumiProtectionBundleRemoteUpdateError: Error, LocalizedError, Equatable {
     case releaseIsNotApproved
     case releaseManifestAssetMissing(String)
+    case releaseManifestSignatureAssetMissing(String)
+    case signatureMetadataMalformed(String)
+    case signatureAlgorithmUnsupported(String)
+    case signatureKeyUnknown(String)
+    case signaturePublicKeyInvalid(String)
+    case signatureInvalid(String)
     case releaseManifestSchemaUnsupported(Int)
     case releaseManifestIncompatible(String)
+    case releaseDowngradeRejected(current: String, incoming: String)
     case profileMissing(String)
     case assetMissing(String)
     case assetSizeMismatch(name: String, expected: Int, actual: Int)
@@ -58,10 +66,24 @@ enum SumiProtectionBundleRemoteUpdateError: Error, LocalizedError, Equatable {
             return "Latest bundle release is not approved for browser consumption."
         case .releaseManifestAssetMissing(let name):
             return "Release manifest asset is missing: \(name)."
+        case .releaseManifestSignatureAssetMissing(let name):
+            return "Release manifest signature asset is missing: \(name)."
+        case .signatureMetadataMalformed(let detail):
+            return "Release manifest signature metadata is malformed: \(detail)"
+        case .signatureAlgorithmUnsupported(let algorithm):
+            return "Release manifest signature algorithm is unsupported: \(algorithm)."
+        case .signatureKeyUnknown(let keyId):
+            return "Release manifest signing key is not pinned by this Sumi build: \(keyId)."
+        case .signaturePublicKeyInvalid(let keyId):
+            return "Pinned release manifest public key is invalid: \(keyId)."
+        case .signatureInvalid(let keyId):
+            return "Release manifest signature verification failed for key \(keyId)."
         case .releaseManifestSchemaUnsupported(let version):
             return "Unsupported bundle release manifest schema: \(version)."
         case .releaseManifestIncompatible(let detail):
             return "Bundle release is incompatible with this Sumi build: \(detail)"
+        case .releaseDowngradeRejected(let current, let incoming):
+            return "Bundle release downgrade rejected: installed \(current), remote \(incoming)."
         case .profileMissing(let profileId):
             return "Release does not contain required bundle profile \(profileId)."
         case .assetMissing(let name):
@@ -237,6 +259,10 @@ struct SumiProtectionRemoteBundleFetchResult: Equatable, Sendable {
     let releaseTag: String
     let releaseURL: String?
     let publishedDate: Date?
+    let manifestSignatureRequired: Bool
+    let manifestSignatureVerified: Bool
+    let signingKeyId: String
+    let signingKeyVersion: Int
     let bundleId: String
     let generationId: String
     let bundleURL: URL
@@ -248,16 +274,19 @@ protocol SumiProtectionBundleRemoteUpdating: AnyObject, Sendable {
 
 actor SumiProtectionBundleRemoteUpdater: SumiProtectionBundleRemoteUpdating {
     private let fetcher: SumiProtectionBundleReleaseFetching
+    private let signatureVerifier: any SumiProtectionBundleManifestVerifying
     private let rootDirectory: URL
     private let fileManager: FileManager
     private let isoDateFormatter = ISO8601DateFormatter()
 
     init(
         fetcher: SumiProtectionBundleReleaseFetching = SumiProtectionBundleGitHubReleaseClient(),
+        signatureVerifier: any SumiProtectionBundleManifestVerifying = SumiProtectionBundleSignatureVerifier(),
         rootDirectory: URL = SumiRemoteAdblockBundleCache.defaultRootDirectory(),
         fileManager: FileManager = .default
     ) {
         self.fetcher = fetcher
+        self.signatureVerifier = signatureVerifier
         self.rootDirectory = rootDirectory
         self.fileManager = fileManager
     }
@@ -273,14 +302,30 @@ actor SumiProtectionBundleRemoteUpdater: SumiProtectionBundleRemoteUpdating {
                 SumiProtectionBundleRemoteUpdateConstants.releaseManifestAssetName
             )
         }
+        guard let releaseManifestSignatureAsset = releaseAssets[SumiProtectionBundleRemoteUpdateConstants.releaseManifestSignatureAssetName] else {
+            throw SumiProtectionBundleRemoteUpdateError.releaseManifestSignatureAssetMissing(
+                SumiProtectionBundleRemoteUpdateConstants.releaseManifestSignatureAssetName
+            )
+        }
 
         let releaseManifestData = try await verifiedData(
             for: releaseManifestAsset,
             expectedHash: githubDigestSHA256(releaseManifestAsset.digest),
             expectedByteSize: releaseManifestAsset.size
         )
+        let releaseManifestSignatureData = try await verifiedData(
+            for: releaseManifestSignatureAsset,
+            expectedHash: githubDigestSHA256(releaseManifestSignatureAsset.digest),
+            expectedByteSize: releaseManifestSignatureAsset.size
+        )
+        let signatureVerification = try signatureVerifier.verify(
+            manifestData: releaseManifestData,
+            signatureData: releaseManifestSignatureData,
+            expectedSignedAsset: SumiProtectionBundleRemoteUpdateConstants.releaseManifestAssetName
+        )
         let manifest = try JSONDecoder().decode(SumiProtectionBundleReleaseManifest.self, from: releaseManifestData)
         try manifest.validate()
+        try rejectDowngradeIfNeeded(profileId: profileId, incomingReleaseVersion: manifest.releaseVersion)
         guard let bundle = manifest.bundle(profileId: profileId) else {
             throw SumiProtectionBundleRemoteUpdateError.profileMissing(profileId)
         }
@@ -326,7 +371,11 @@ actor SumiProtectionBundleRemoteUpdater: SumiProtectionBundleRemoteUpdating {
             releaseVersion: manifest.releaseVersion,
             releaseTag: release.tagName,
             releaseURL: release.htmlURL,
-            publishedDate: release.publishedAt.flatMap { isoDateFormatter.date(from: $0) }
+            publishedDate: release.publishedAt.flatMap { isoDateFormatter.date(from: $0) },
+            manifestSignatureRequired: SumiProtectionBundleTrust.remoteManifestSignatureRequired,
+            manifestSignatureVerified: true,
+            signingKeyId: signatureVerification.keyId,
+            signingKeyVersion: signatureVerification.keyVersion
         )
         let metadataData = try JSONEncoder().encode(metadata)
         try metadataData.write(
@@ -351,10 +400,34 @@ actor SumiProtectionBundleRemoteUpdater: SumiProtectionBundleRemoteUpdating {
             releaseTag: release.tagName,
             releaseURL: release.htmlURL,
             publishedDate: metadata.publishedDate,
+            manifestSignatureRequired: SumiProtectionBundleTrust.remoteManifestSignatureRequired,
+            manifestSignatureVerified: true,
+            signingKeyId: signatureVerification.keyId,
+            signingKeyVersion: signatureVerification.keyVersion,
             bundleId: bundle.bundleId,
             generationId: bundle.generationId,
             bundleURL: cachedBundleURL
         )
+    }
+
+    private func rejectDowngradeIfNeeded(
+        profileId: String,
+        incomingReleaseVersion: String
+    ) throws {
+        let currentBundleURL = SumiRemoteAdblockBundleCache.bundleURL(
+            profileId: profileId,
+            rootDirectory: rootDirectory
+        )
+        guard let current = SumiRemoteAdblockBundleCache.remoteMetadata(
+            bundleURL: currentBundleURL,
+            fileManager: fileManager
+        )?.releaseVersion else { return }
+        guard Self.compareReleaseVersions(incomingReleaseVersion, current) != .orderedAscending else {
+            throw SumiProtectionBundleRemoteUpdateError.releaseDowngradeRejected(
+                current: current,
+                incoming: incomingReleaseVersion
+            )
+        }
     }
 
     private func stagingBundleDirectory() throws -> URL {
@@ -443,6 +516,10 @@ actor SumiProtectionBundleRemoteUpdater: SumiProtectionBundleRemoteUpdating {
         return String(digest.dropFirst("sha256:".count))
     }
 
+    private static func compareReleaseVersions(_ lhs: String, _ rhs: String) -> ComparisonResult {
+        lhs.compare(rhs, options: [.numeric])
+    }
+
     private static func sha256Hex(_ data: Data) -> String {
         SHA256.hash(data: data)
             .map { String(format: "%02x", $0) }
@@ -462,6 +539,10 @@ struct SumiProtectionBundleManualUpdateOutcome: Equatable, Sendable {
     let releaseTag: String
     let bundleId: String
     let generationId: String
+    let manifestSignatureRequired: Bool
+    let manifestSignatureVerified: Bool
+    let signingKeyId: String
+    let signingKeyVersion: Int
     let activation: SumiProtectionBundleManualUpdateActivation
     let browserRestartRequired: Bool
     let summary: String
@@ -478,6 +559,11 @@ final class SumiProtectionBundleUpdateStatusStore: ObservableObject {
         static let lastBundleId = "settings.protection.bundleUpdate.lastBundleId"
         static let lastSummary = "settings.protection.bundleUpdate.lastSummary"
         static let lastFailureReason = "settings.protection.bundleUpdate.lastFailureReason"
+        static let lastSignatureVerified = "settings.protection.bundleUpdate.lastSignatureVerified"
+        static let lastSigningKeyId = "settings.protection.bundleUpdate.lastSigningKeyId"
+        static let lastSigningKeyVersion = "settings.protection.bundleUpdate.lastSigningKeyVersion"
+        static let lastSignatureError = "settings.protection.bundleUpdate.lastSignatureError"
+        static let lastDowngradeRejected = "settings.protection.bundleUpdate.lastDowngradeRejected"
     }
 
     @Published private(set) var lastAttemptDate: Date?
@@ -486,6 +572,11 @@ final class SumiProtectionBundleUpdateStatusStore: ObservableObject {
     @Published private(set) var lastBundleId: String?
     @Published private(set) var lastSummary: String?
     @Published private(set) var lastFailureReason: String?
+    @Published private(set) var lastSignatureVerified: Bool?
+    @Published private(set) var lastSigningKeyId: String?
+    @Published private(set) var lastSigningKeyVersion: Int?
+    @Published private(set) var lastSignatureError: String?
+    @Published private(set) var lastDowngradeRejected: Bool?
 
     private let userDefaults: UserDefaults
 
@@ -497,6 +588,17 @@ final class SumiProtectionBundleUpdateStatusStore: ObservableObject {
         lastBundleId = userDefaults.string(forKey: DefaultsKey.lastBundleId)
         lastSummary = userDefaults.string(forKey: DefaultsKey.lastSummary)
         lastFailureReason = userDefaults.string(forKey: DefaultsKey.lastFailureReason)
+        if userDefaults.object(forKey: DefaultsKey.lastSignatureVerified) != nil {
+            lastSignatureVerified = userDefaults.bool(forKey: DefaultsKey.lastSignatureVerified)
+        }
+        lastSigningKeyId = userDefaults.string(forKey: DefaultsKey.lastSigningKeyId)
+        if userDefaults.object(forKey: DefaultsKey.lastSigningKeyVersion) != nil {
+            lastSigningKeyVersion = userDefaults.integer(forKey: DefaultsKey.lastSigningKeyVersion)
+        }
+        lastSignatureError = userDefaults.string(forKey: DefaultsKey.lastSignatureError)
+        if userDefaults.object(forKey: DefaultsKey.lastDowngradeRejected) != nil {
+            lastDowngradeRejected = userDefaults.bool(forKey: DefaultsKey.lastDowngradeRejected)
+        }
     }
 
     func recordSuccess(_ outcome: SumiProtectionBundleManualUpdateOutcome, date: Date = Date()) {
@@ -506,6 +608,11 @@ final class SumiProtectionBundleUpdateStatusStore: ObservableObject {
         lastBundleId = outcome.bundleId
         lastSummary = outcome.summary
         lastFailureReason = nil
+        lastSignatureVerified = outcome.manifestSignatureVerified
+        lastSigningKeyId = outcome.signingKeyId
+        lastSigningKeyVersion = outcome.signingKeyVersion
+        lastSignatureError = nil
+        lastDowngradeRejected = false
         persist()
     }
 
@@ -513,6 +620,11 @@ final class SumiProtectionBundleUpdateStatusStore: ObservableObject {
         lastAttemptDate = date
         lastSummary = nil
         lastFailureReason = error.localizedDescription
+        lastSignatureVerified = false
+        if let signatureError = Self.signatureFailureSummary(error) {
+            lastSignatureError = signatureError
+        }
+        lastDowngradeRejected = Self.isDowngradeRejection(error)
         persist()
     }
 
@@ -523,6 +635,11 @@ final class SumiProtectionBundleUpdateStatusStore: ObservableObject {
         setOrRemove(lastBundleId, forKey: DefaultsKey.lastBundleId)
         setOrRemove(lastSummary, forKey: DefaultsKey.lastSummary)
         setOrRemove(lastFailureReason, forKey: DefaultsKey.lastFailureReason)
+        setOrRemove(lastSignatureVerified, forKey: DefaultsKey.lastSignatureVerified)
+        setOrRemove(lastSigningKeyId, forKey: DefaultsKey.lastSigningKeyId)
+        setOrRemove(lastSigningKeyVersion, forKey: DefaultsKey.lastSigningKeyVersion)
+        setOrRemove(lastSignatureError, forKey: DefaultsKey.lastSignatureError)
+        setOrRemove(lastDowngradeRejected, forKey: DefaultsKey.lastDowngradeRejected)
     }
 
     private func setOrRemove(_ value: Any?, forKey key: String) {
@@ -531,5 +648,28 @@ final class SumiProtectionBundleUpdateStatusStore: ObservableObject {
         } else {
             userDefaults.removeObject(forKey: key)
         }
+    }
+
+    private static func signatureFailureSummary(_ error: Error) -> String? {
+        guard let remoteError = error as? SumiProtectionBundleRemoteUpdateError else { return nil }
+        switch remoteError {
+        case .releaseManifestSignatureAssetMissing,
+             .signatureMetadataMalformed,
+             .signatureAlgorithmUnsupported,
+             .signatureKeyUnknown,
+             .signaturePublicKeyInvalid,
+             .signatureInvalid:
+            return remoteError.localizedDescription
+        default:
+            return nil
+        }
+    }
+
+    private static func isDowngradeRejection(_ error: Error) -> Bool {
+        guard let remoteError = error as? SumiProtectionBundleRemoteUpdateError else { return false }
+        if case .releaseDowngradeRejected = remoteError {
+            return true
+        }
+        return false
     }
 }

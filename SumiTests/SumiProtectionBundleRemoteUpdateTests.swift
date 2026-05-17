@@ -20,6 +20,7 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
         let fixture = try makeReleaseFixture(generationId: "remote-generation")
         let updater = SumiProtectionBundleRemoteUpdater(
             fetcher: fixture.fetcher,
+            signatureVerifier: fixture.signatureVerifier,
             rootDirectory: root
         )
 
@@ -32,6 +33,121 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
         XCTAssertEqual(cached.manifest.profileId, SumiProtectionBundleProfile.adblock)
         XCTAssertEqual(cached.manifest.generationId, "remote-generation")
         XCTAssertEqual(metadata?.releaseVersion, result.releaseVersion)
+        XCTAssertEqual(metadata?.manifestSignatureVerified, true)
+        XCTAssertEqual(metadata?.signingKeyId, fixture.signingKey.id)
+    }
+
+    func testRemoteUpdaterRejectsUnsignedManifest() async throws {
+        let root = temporaryDirectory()
+        let fixture = try makeReleaseFixture(generationId: "remote-generation", includeSignature: false)
+        let updater = SumiProtectionBundleRemoteUpdater(
+            fetcher: fixture.fetcher,
+            signatureVerifier: fixture.signatureVerifier,
+            rootDirectory: root
+        )
+
+        do {
+            _ = try await updater.fetchLatestApprovedBundle(profileId: SumiProtectionBundleProfile.adblock)
+            XCTFail("Expected missing signature")
+        } catch let error as SumiProtectionBundleRemoteUpdateError {
+            guard case .releaseManifestSignatureAssetMissing = error else {
+                return XCTFail("Expected missing signature, got \(error)")
+            }
+        }
+    }
+
+    func testRemoteUpdaterRejectsInvalidSignature() async throws {
+        let root = temporaryDirectory()
+        let fixture = try makeReleaseFixture(generationId: "remote-generation", corruptSignature: true)
+        let updater = SumiProtectionBundleRemoteUpdater(
+            fetcher: fixture.fetcher,
+            signatureVerifier: fixture.signatureVerifier,
+            rootDirectory: root
+        )
+
+        do {
+            _ = try await updater.fetchLatestApprovedBundle(profileId: SumiProtectionBundleProfile.adblock)
+            XCTFail("Expected invalid signature")
+        } catch let error as SumiProtectionBundleRemoteUpdateError {
+            guard case .signatureInvalid = error else {
+                return XCTFail("Expected invalid signature, got \(error)")
+            }
+        }
+    }
+
+    func testRemoteUpdaterRejectsModifiedManifestAfterSigning() async throws {
+        let root = temporaryDirectory()
+        let fixture = try makeReleaseFixture(generationId: "remote-generation", mutateManifestAfterSigning: true)
+        let updater = SumiProtectionBundleRemoteUpdater(
+            fetcher: fixture.fetcher,
+            signatureVerifier: fixture.signatureVerifier,
+            rootDirectory: root
+        )
+
+        do {
+            _ = try await updater.fetchLatestApprovedBundle(profileId: SumiProtectionBundleProfile.adblock)
+            XCTFail("Expected invalid signature")
+        } catch let error as SumiProtectionBundleRemoteUpdateError {
+            guard case .signatureInvalid = error else {
+                return XCTFail("Expected invalid signature, got \(error)")
+            }
+        }
+    }
+
+    func testRemoteUpdaterRejectsUnknownSigningKey() async throws {
+        let root = temporaryDirectory()
+        let fixture = try makeReleaseFixture(
+            generationId: "remote-generation",
+            keyId: "sumi-protection-bundles-ed25519-unknown"
+        )
+        let updater = SumiProtectionBundleRemoteUpdater(
+            fetcher: fixture.fetcher,
+            signatureVerifier: fixture.signatureVerifier,
+            rootDirectory: root
+        )
+
+        do {
+            _ = try await updater.fetchLatestApprovedBundle(profileId: SumiProtectionBundleProfile.adblock)
+            XCTFail("Expected unknown key")
+        } catch let error as SumiProtectionBundleRemoteUpdateError {
+            guard case .signatureKeyUnknown = error else {
+                return XCTFail("Expected unknown key, got \(error)")
+            }
+        }
+    }
+
+    func testRemoteUpdaterRejectsOlderSignedReleaseAsDowngrade() async throws {
+        let root = temporaryDirectory()
+        let previousBundleURL = SumiRemoteAdblockBundleCache.bundleURL(
+            profileId: SumiProtectionBundleProfile.adblock,
+            rootDirectory: root
+        )
+        try PreparedAdblockTestSupport.makeBundle(at: previousBundleURL, generationId: "previous-generation")
+        try writeRemoteMetadata(
+            bundleURL: previousBundleURL,
+            releaseVersion: "20260518T000000Z-test"
+        )
+        let fixture = try makeReleaseFixture(
+            generationId: "remote-generation",
+            releaseVersion: "20260517T000000Z-test"
+        )
+        let updater = SumiProtectionBundleRemoteUpdater(
+            fetcher: fixture.fetcher,
+            signatureVerifier: fixture.signatureVerifier,
+            rootDirectory: root
+        )
+
+        do {
+            _ = try await updater.fetchLatestApprovedBundle(profileId: SumiProtectionBundleProfile.adblock)
+            XCTFail("Expected downgrade rejection")
+        } catch let error as SumiProtectionBundleRemoteUpdateError {
+            guard case .releaseDowngradeRejected = error else {
+                return XCTFail("Expected downgrade rejection, got \(error)")
+            }
+        }
+
+        let cached = try SumiAdblockNativeRuleBundle.load(directoryURL: previousBundleURL)
+        XCTAssertEqual(cached.manifest.generationId, "previous-generation")
     }
 
     func testRemoteUpdaterRejectsHashMismatchAndPreservesPreviousCache() async throws {
@@ -47,6 +163,7 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
         )
         let updater = SumiProtectionBundleRemoteUpdater(
             fetcher: fixture.fetcher,
+            signatureVerifier: fixture.signatureVerifier,
             rootDirectory: root
         )
 
@@ -63,6 +180,50 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
         XCTAssertEqual(cached.manifest.generationId, "previous-generation")
     }
 
+    func testRemoteUpdaterRejectsAssetByteSizeMismatch() async throws {
+        let root = temporaryDirectory()
+        let fixture = try makeReleaseFixture(
+            generationId: "new-generation",
+            sizeMismatchAssetName: "\(SumiProtectionBundleProfile.adblock)-network-0001.json"
+        )
+        let updater = SumiProtectionBundleRemoteUpdater(
+            fetcher: fixture.fetcher,
+            signatureVerifier: fixture.signatureVerifier,
+            rootDirectory: root
+        )
+
+        do {
+            _ = try await updater.fetchLatestApprovedBundle(profileId: SumiProtectionBundleProfile.adblock)
+            XCTFail("Expected size mismatch")
+        } catch let error as SumiProtectionBundleRemoteUpdateError {
+            guard case .assetSizeMismatch = error else {
+                return XCTFail("Expected size mismatch, got \(error)")
+            }
+        }
+    }
+
+    func testSignatureFailurePreservesPreviousCache() async throws {
+        let root = temporaryDirectory()
+        let previousBundleURL = SumiRemoteAdblockBundleCache.bundleURL(
+            profileId: SumiProtectionBundleProfile.adblock,
+            rootDirectory: root
+        )
+        try PreparedAdblockTestSupport.makeBundle(at: previousBundleURL, generationId: "previous-generation")
+        let fixture = try makeReleaseFixture(generationId: "new-generation", corruptSignature: true)
+        let updater = SumiProtectionBundleRemoteUpdater(
+            fetcher: fixture.fetcher,
+            signatureVerifier: fixture.signatureVerifier,
+            rootDirectory: root
+        )
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await updater.fetchLatestApprovedBundle(profileId: SumiProtectionBundleProfile.adblock)
+        }
+
+        let cached = try SumiAdblockNativeRuleBundle.load(directoryURL: previousBundleURL)
+        XCTAssertEqual(cached.manifest.generationId, "previous-generation")
+    }
+
     func testRemoteUpdaterRejectsIncompatibleReleaseManifestBeforeCaching() async throws {
         let root = temporaryDirectory()
         let fixture = try makeReleaseFixture(
@@ -71,6 +232,7 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
         )
         let updater = SumiProtectionBundleRemoteUpdater(
             fetcher: fixture.fetcher,
+            signatureVerifier: fixture.signatureVerifier,
             rootDirectory: root
         )
 
@@ -87,7 +249,13 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
 
     private func makeReleaseFixture(
         generationId: String,
+        releaseVersion: String = "20260517T000000Z-test",
+        includeSignature: Bool = true,
+        corruptSignature: Bool = false,
+        mutateManifestAfterSigning: Bool = false,
+        keyId: String = "sumi-protection-bundles-ed25519-v1",
         tamperedAssetName: String? = nil,
+        sizeMismatchAssetName: String? = nil,
         nativeCSSSafetyPolicyVersion: String = SumiAdblockNativeRuleBundle.requiredNativeCSSSafetyPolicyVersion
     ) throws -> ReleaseFixture {
         let sourceRoot = temporaryDirectory()
@@ -95,6 +263,12 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
         try PreparedAdblockTestSupport.makeBundle(at: bundleURL, generationId: generationId)
         let bundle = try SumiAdblockNativeRuleBundle.load(directoryURL: bundleURL)
         let profileId = bundle.manifest.profileId
+        let privateKey = Curve25519.Signing.PrivateKey()
+        let signingKey = SumiProtectionBundleSigningKey(
+            id: "sumi-protection-bundles-ed25519-v1",
+            version: 1,
+            publicKeyBase64: privateKey.publicKey.rawRepresentation.base64EncodedString()
+        )
 
         var dataByName = [String: Data]()
         var assetDescriptors = [[String: Any]]()
@@ -135,15 +309,9 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
             )
         }
 
-        if let tamperedAssetName, var tampered = dataByName[tamperedAssetName],
-           let first = tampered.first {
-            tampered[0] = first == 0 ? 1 : first ^ 0xff
-            dataByName[tamperedAssetName] = tampered
-        }
-
         let releaseManifest: [String: Any] = [
             "schemaVersion": 1,
-            "releaseVersion": "20260517T000000Z-test",
+            "releaseVersion": releaseVersion,
             "generatedAt": "2026-05-17T00:00:00Z",
             "repository": [
                 "owner": "FedyaLight",
@@ -171,7 +339,46 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
             withJSONObject: releaseManifest,
             options: [.prettyPrinted, .sortedKeys]
         )
-        dataByName[SumiProtectionBundleRemoteUpdateConstants.releaseManifestAssetName] = releaseManifestData
+        let signedManifestData = releaseManifestData
+
+        if let tamperedAssetName, var tampered = dataByName[tamperedAssetName],
+           let first = tampered.first {
+            tampered[0] = first == 0 ? 1 : first ^ 0xff
+            dataByName[tamperedAssetName] = tampered
+        }
+        if let sizeMismatchAssetName, var tampered = dataByName[sizeMismatchAssetName] {
+            tampered.append(0xff)
+            dataByName[sizeMismatchAssetName] = tampered
+        }
+
+        if mutateManifestAfterSigning {
+            var mutated = releaseManifest
+            mutated["releaseVersion"] = "\(releaseVersion)-mutated"
+            dataByName[SumiProtectionBundleRemoteUpdateConstants.releaseManifestAssetName] = try JSONSerialization.data(
+                withJSONObject: mutated,
+                options: [.prettyPrinted, .sortedKeys]
+            )
+        } else {
+            dataByName[SumiProtectionBundleRemoteUpdateConstants.releaseManifestAssetName] = releaseManifestData
+        }
+
+        if includeSignature {
+            var signature = try privateKey.signature(for: signedManifestData)
+            if corruptSignature {
+                signature[0] = signature[0] == 0 ? 1 : signature[0] ^ 0xff
+            }
+            let signatureMetadata: [String: Any] = [
+                "schemaVersion": 1,
+                "algorithm": "Ed25519",
+                "keyId": keyId,
+                "signedAsset": SumiProtectionBundleRemoteUpdateConstants.releaseManifestAssetName,
+                "signature": signature.base64EncodedString(),
+            ]
+            dataByName[SumiProtectionBundleRemoteUpdateConstants.releaseManifestSignatureAssetName] = try JSONSerialization.data(
+                withJSONObject: signatureMetadata,
+                options: [.prettyPrinted, .sortedKeys]
+            )
+        }
 
         let assets = dataByName.map { name, data in
             SumiProtectionBundleGitHubRelease.Asset(
@@ -187,14 +394,34 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
             }
         )
         let release = SumiProtectionBundleGitHubRelease(
-            tagName: "bundles-20260517T000000Z-test",
-            htmlURL: "https://github.com/FedyaLight/sumi-protection-bundles/releases/tag/bundles-20260517T000000Z-test",
+            tagName: "bundles-\(releaseVersion)",
+            htmlURL: "https://github.com/FedyaLight/sumi-protection-bundles/releases/tag/bundles-\(releaseVersion)",
             draft: false,
             prerelease: false,
             publishedAt: "2026-05-17T00:00:00Z",
             assets: assets
         )
-        return ReleaseFixture(fetcher: FakeReleaseFetcher(release: release, dataByURL: dataByURL))
+        return ReleaseFixture(
+            fetcher: FakeReleaseFetcher(release: release, dataByURL: dataByURL),
+            signatureVerifier: SumiProtectionBundleSignatureVerifier(keys: [signingKey]),
+            signingKey: signingKey
+        )
+    }
+
+    private func writeRemoteMetadata(
+        bundleURL: URL,
+        releaseVersion: String
+    ) throws {
+        let metadata = SumiAdblockPreparedBundleRemoteMetadata(
+            releaseVersion: releaseVersion,
+            releaseTag: "bundles-\(releaseVersion)",
+            manifestSignatureRequired: true,
+            manifestSignatureVerified: true,
+            signingKeyId: "sumi-protection-bundles-ed25519-v1",
+            signingKeyVersion: 1
+        )
+        let data = try JSONEncoder().encode(metadata)
+        try data.write(to: bundleURL.appendingPathComponent(SumiRemoteAdblockBundleCache.metadataFileName))
     }
 
     private func temporaryDirectory() -> URL {
@@ -213,6 +440,8 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
 
 private struct ReleaseFixture {
     let fetcher: FakeReleaseFetcher
+    let signatureVerifier: SumiProtectionBundleSignatureVerifier
+    let signingKey: SumiProtectionBundleSigningKey
 }
 
 private final class FakeReleaseFetcher: SumiProtectionBundleReleaseFetching, @unchecked Sendable {

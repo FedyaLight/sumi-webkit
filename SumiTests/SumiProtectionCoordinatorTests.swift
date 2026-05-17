@@ -79,6 +79,10 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
                 releaseTag: "bundles-20260517T000000Z-test",
                 releaseURL: "https://example.test/release",
                 publishedDate: nil,
+                manifestSignatureRequired: true,
+                manifestSignatureVerified: true,
+                signingKeyId: "sumi-protection-bundles-ed25519-v1",
+                signingKeyVersion: 1,
                 bundleId: "sumi.adblock.bundle.adguardAdsPrivacy.test",
                 generationId: "remote-generation",
                 bundleURL: temporaryDirectory(prefix: "SumiProtectionRemoteResult")
@@ -99,6 +103,8 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertFalse(fixture.didCreateAdblockRuleListStore())
         XCTAssertFalse(fixture.coordinator.globalDiagnostics().browserRestartRequired)
         XCTAssertEqual(fixture.coordinator.bundleUpdateStatusStore.lastReleaseVersion, "20260517T000000Z-test")
+        XCTAssertEqual(fixture.coordinator.bundleUpdateStatusStore.lastSignatureVerified, true)
+        XCTAssertEqual(fixture.coordinator.bundleUpdateStatusStore.lastSigningKeyId, "sumi-protection-bundles-ed25519-v1")
     }
 
     func testProtectionActivatesTrackingNetworkOnly() async throws {
@@ -305,6 +311,10 @@ private final class FakeProtectionBundleRemoteUpdater: SumiProtectionBundleRemot
             releaseTag: "bundles-20260517T000000Z-test",
             releaseURL: nil,
             publishedDate: nil,
+            manifestSignatureRequired: true,
+            manifestSignatureVerified: true,
+            signingKeyId: "sumi-protection-bundles-ed25519-v1",
+            signingKeyVersion: 1,
             bundleId: "sumi.adblock.bundle.\(profileId).test",
             generationId: "remote-generation",
             bundleURL: URL(fileURLWithPath: "/tmp/SumiProtectionFakeRemoteBundle", isDirectory: true)

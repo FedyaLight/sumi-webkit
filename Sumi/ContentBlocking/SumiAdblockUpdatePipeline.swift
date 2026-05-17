@@ -33,17 +33,29 @@ struct SumiAdblockPreparedBundleRemoteMetadata: Codable, Equatable, Sendable {
     let releaseTag: String
     let releaseURL: String?
     let publishedDate: Date?
+    let manifestSignatureRequired: Bool?
+    let manifestSignatureVerified: Bool?
+    let signingKeyId: String?
+    let signingKeyVersion: Int?
 
     init(
         releaseVersion: String,
         releaseTag: String,
         releaseURL: String? = nil,
-        publishedDate: Date? = nil
+        publishedDate: Date? = nil,
+        manifestSignatureRequired: Bool? = nil,
+        manifestSignatureVerified: Bool? = nil,
+        signingKeyId: String? = nil,
+        signingKeyVersion: Int? = nil
     ) {
         self.releaseVersion = releaseVersion
         self.releaseTag = releaseTag
         self.releaseURL = releaseURL
         self.publishedDate = publishedDate
+        self.manifestSignatureRequired = manifestSignatureRequired
+        self.manifestSignatureVerified = manifestSignatureVerified
+        self.signingKeyId = signingKeyId
+        self.signingKeyVersion = signingKeyVersion
     }
 }
 
@@ -92,6 +104,10 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
     let remoteReleaseVersion: String?
     let remoteReleaseTag: String?
     let remoteReleaseURL: String?
+    let remoteManifestSignatureRequired: Bool?
+    let remoteManifestSignatureVerified: Bool?
+    let remoteSigningKeyId: String?
+    let remoteSigningKeyVersion: Int?
 
     var allNativeShards: [NativeContentBlockingShardDescriptor] {
         networkShards + nativeCSSShards
@@ -136,6 +152,10 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
         self.remoteReleaseVersion = remoteMetadata?.releaseVersion
         self.remoteReleaseTag = remoteMetadata?.releaseTag
         self.remoteReleaseURL = remoteMetadata?.releaseURL
+        self.remoteManifestSignatureRequired = remoteMetadata?.manifestSignatureRequired
+        self.remoteManifestSignatureVerified = remoteMetadata?.manifestSignatureVerified
+        self.remoteSigningKeyId = remoteMetadata?.signingKeyId
+        self.remoteSigningKeyVersion = remoteMetadata?.signingKeyVersion
     }
 }
 
