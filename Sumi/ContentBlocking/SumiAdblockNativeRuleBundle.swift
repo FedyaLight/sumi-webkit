@@ -194,7 +194,8 @@ struct SumiAdblockNativeRuleBundle: Sendable {
     func compiledGenerationManifest(
         previousManifest: AdblockCompiledGenerationManifest?,
         installedDate: Date,
-        generationSource: AdblockRuleGenerationSource = .embeddedBundle
+        generationSource: AdblockRuleGenerationSource = .embeddedBundle,
+        remoteMetadata: SumiAdblockPreparedBundleRemoteMetadata? = nil
     ) -> AdblockCompiledGenerationManifest {
         let selectedFilterLists = manifest.lists.map {
             AdblockCompiledGenerationManifest.SelectedFilterList(
@@ -253,7 +254,8 @@ struct SumiAdblockNativeRuleBundle: Sendable {
             previousGenerationId: previousManifest?.activeGenerationId,
             generationSource: generationSource,
             nativeRuleBundleId: manifest.bundleId,
-            bundleProfileId: manifest.profileId
+            bundleProfileId: manifest.profileId,
+            remoteMetadata: remoteMetadata
         )
     }
 
@@ -378,8 +380,8 @@ struct SumiAdblockNativeRuleBundle: Sendable {
 
 enum SumiAdblockBundleInstallSource: String, CaseIterable, Identifiable, Sendable {
     case appResource
+    case remoteReleaseBundle
     case developmentBundle
-    case futureRemoteBundle
 
     var id: String { rawValue }
 
@@ -387,10 +389,10 @@ enum SumiAdblockBundleInstallSource: String, CaseIterable, Identifiable, Sendabl
         switch self {
         case .appResource:
             return "App Resource"
+        case .remoteReleaseBundle:
+            return "Remote Release"
         case .developmentBundle:
             return "Development Build"
-        case .futureRemoteBundle:
-            return "Future Remote"
         }
     }
 
@@ -398,10 +400,10 @@ enum SumiAdblockBundleInstallSource: String, CaseIterable, Identifiable, Sendabl
         switch self {
         case .appResource:
             return .embeddedBundle
+        case .remoteReleaseBundle:
+            return .remoteReleaseBundle
         case .developmentBundle:
             return .developmentBundle
-        case .futureRemoteBundle:
-            return .futureRemoteBundle
         }
     }
 }
@@ -420,6 +422,7 @@ struct SumiPreparedAdblockBundleDiscovery: Equatable, Sendable {
         let profileId: String
         let bundleId: String?
         let generationId: String?
+        let remoteMetadata: SumiAdblockPreparedBundleRemoteMetadata?
     }
 
     let requiredProfileId: String
@@ -446,10 +449,31 @@ enum SumiPreparedAdblockBundleResolver {
     static func discover(
         profileId: String,
         resourceURL: URL? = Bundle.main.resourceURL,
+        remoteBundlesRootURL: URL? = SumiRemoteAdblockBundleCache.defaultRootDirectory(),
         generatedBundlesRootURL: URL? = defaultGeneratedBundlesRootURL(),
         fileManager: FileManager = .default
     ) -> SumiPreparedAdblockBundleDiscovery {
         var searchedPaths = [SumiPreparedAdblockBundleSearchPath]()
+
+        let remoteRoot = remoteBundlesRootURL ?? SumiRemoteAdblockBundleCache.defaultRootDirectory()
+        let remotePath = SumiRemoteAdblockBundleCache.bundleURL(
+            profileId: profileId,
+            rootDirectory: remoteRoot
+        )
+        if let resolved = evaluate(
+            source: .remoteReleaseBundle,
+            profileId: profileId,
+            bundleURL: remotePath,
+            resourceUnavailableReason: nil,
+            fileManager: fileManager,
+            searchedPaths: &searchedPaths
+        ) {
+            return SumiPreparedAdblockBundleDiscovery(
+                requiredProfileId: profileId,
+                resolvedBundle: resolved,
+                searchedPaths: searchedPaths
+            )
+        }
 
         let appResourcePath = (resourceURL ?? URL(fileURLWithPath: "<missing app resources>", isDirectory: true))
             .appendingPathComponent("SumiAdblockBundles", isDirectory: true)
@@ -502,15 +526,6 @@ enum SumiPreparedAdblockBundleResolver {
             )
         )
 #endif
-
-        searchedPaths.append(
-            SumiPreparedAdblockBundleSearchPath(
-                source: .futureRemoteBundle,
-                path: "<futureRemoteBundle>",
-                exists: false,
-                rejectionReason: "futureRemoteBundle discovery is not implemented."
-            )
-        )
 
         return SumiPreparedAdblockBundleDiscovery(
             requiredProfileId: profileId,
@@ -589,7 +604,10 @@ enum SumiPreparedAdblockBundleResolver {
                 bundleURL: bundleURL,
                 profileId: bundle.manifest.profileId,
                 bundleId: bundle.manifest.bundleId,
-                generationId: bundle.manifest.generationId
+                generationId: bundle.manifest.generationId,
+                remoteMetadata: source == .remoteReleaseBundle
+                    ? SumiRemoteAdblockBundleCache.remoteMetadata(bundleURL: bundleURL, fileManager: fileManager)
+                    : nil
             )
         } catch {
             searchedPaths.append(
@@ -637,7 +655,6 @@ struct SumiEmbeddedAdblockBundleProfile: Equatable, Identifiable, Sendable {
 struct SumiEmbeddedAdblockBundleSnapshot: Equatable, Sendable {
     let expectedResourcePath: String
     let expectedDevelopmentPath: String
-    let generateCommand: String
     let generatedBundlesRootPath: String
     let generatedBundlesPresentOutsideAppResources: Bool
     let profiles: [SumiEmbeddedAdblockBundleProfile]
@@ -666,8 +683,6 @@ enum SumiEmbeddedAdblockBundleCatalog {
     static let supportedProfileIds = [
         "adguardAdsPrivacy",
     ]
-
-    static let generateCommand = "scripts/build_sumi_adblock_bundle.sh --all-profiles --output .build/sumi-adblock-bundles"
 
     static func snapshot(
         resourceURL: URL? = Bundle.main.resourceURL,
@@ -718,7 +733,6 @@ enum SumiEmbeddedAdblockBundleCatalog {
                 .appendingPathComponent("<profile>", isDirectory: true)
                 .appendingPathComponent(SumiAdblockNativeRuleBundle.directoryName, isDirectory: true)
                 .path,
-            generateCommand: generateCommand,
             generatedBundlesRootPath: generatedRoot.path,
             generatedBundlesPresentOutsideAppResources: generatedBundlesPresent(
                 rootURL: generatedRoot,

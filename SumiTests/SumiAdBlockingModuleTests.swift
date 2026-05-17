@@ -59,6 +59,7 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             settingsFactory: { AdblockSettingsStore(userDefaults: harness.defaults) },
             sitePolicyFactory: { AdblockSitePolicyStore(userDefaults: harness.defaults) },
             preparedBundleResourceURL: temporaryDirectory(),
+            preparedBundleRemoteRootURL: temporaryDirectory(),
             preparedBundleGeneratedRootURL: developmentRoot,
             ruleListStoreFactory: { settings, isEnabled in
                 AdblockWebKitRuleListStore(
@@ -119,6 +120,7 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             moduleRegistry: registry,
             settingsFactory: { AdblockSettingsStore(userDefaults: defaults) },
             sitePolicyFactory: { AdblockSitePolicyStore(userDefaults: defaults) },
+            preparedBundleRemoteRootURL: temporaryDirectory(),
             ruleListStoreFactory: { settings, isEnabled in
                 AdblockWebKitRuleListStore(
                     settingsStore: settings,

@@ -25,7 +25,26 @@ enum AdblockUpdateFailureStage: String, Codable, CaseIterable, Sendable {
 enum AdblockRuleGenerationSource: String, Codable, CaseIterable, Sendable {
     case embeddedBundle
     case developmentBundle
-    case futureRemoteBundle
+    case remoteReleaseBundle
+}
+
+struct SumiAdblockPreparedBundleRemoteMetadata: Codable, Equatable, Sendable {
+    let releaseVersion: String
+    let releaseTag: String
+    let releaseURL: String?
+    let publishedDate: Date?
+
+    init(
+        releaseVersion: String,
+        releaseTag: String,
+        releaseURL: String? = nil,
+        publishedDate: Date? = nil
+    ) {
+        self.releaseVersion = releaseVersion
+        self.releaseTag = releaseTag
+        self.releaseURL = releaseURL
+        self.publishedDate = publishedDate
+    }
 }
 
 struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
@@ -70,6 +89,9 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
     let generationSource: AdblockRuleGenerationSource
     let nativeRuleBundleId: String?
     let bundleProfileId: String?
+    let remoteReleaseVersion: String?
+    let remoteReleaseTag: String?
+    let remoteReleaseURL: String?
 
     var allNativeShards: [NativeContentBlockingShardDescriptor] {
         networkShards + nativeCSSShards
@@ -90,7 +112,8 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
         previousGenerationId: String?,
         generationSource: AdblockRuleGenerationSource,
         nativeRuleBundleId: String? = nil,
-        bundleProfileId: String? = nil
+        bundleProfileId: String? = nil,
+        remoteMetadata: SumiAdblockPreparedBundleRemoteMetadata? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.activeGenerationId = activeGenerationId
@@ -110,6 +133,9 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
         self.generationSource = generationSource
         self.nativeRuleBundleId = nativeRuleBundleId
         self.bundleProfileId = bundleProfileId
+        self.remoteReleaseVersion = remoteMetadata?.releaseVersion
+        self.remoteReleaseTag = remoteMetadata?.releaseTag
+        self.remoteReleaseURL = remoteMetadata?.releaseURL
     }
 }
 

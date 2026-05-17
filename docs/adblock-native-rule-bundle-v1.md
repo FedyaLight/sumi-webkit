@@ -4,7 +4,7 @@
 
 The final browser-side flow is intentionally small:
 
-1. A separate bundle-generation repository — planned as `sumi-protection-bundles` — fetches upstream lists outside the browser.
+1. A separate bundle-generation repository, `sumi-protection-bundles`, fetches upstream lists outside the browser.
 2. GitHub Actions generates and verifies prepared bundles there.
 3. `sumi-webkit` accepts a prepared bundle, verifies the manifest, shard hashes, and native-CSS safety policy, compiles shards through `WKContentRuleListStore`, and publishes the new generation only after lookup succeeds.
 4. Sumi keeps the previous generation so a failed install or failed smoke lookup can roll back safely.
@@ -41,13 +41,17 @@ Until `sumi-protection-bundles` exists, local developer tooling may still create
 
 That path is an import/consumption path only. It is not a browser generation path, and Sumi.app does not run the generation scripts.
 
-## Future static update design
+## Remote release update design
 
-The intended static update path stays outside the browser runtime:
+The static update path stays outside the browser runtime:
 
 1. GitHub Actions in `sumi-protection-bundles` generates and verifies bundles weekly or on demand.
-2. A signed GitHub Release asset or static hosting path exposes the prepared bundle.
-3. Sumi downloads only the prepared artifact, verifies it, compiles its shards with WebKit, and keeps the previous generation for rollback.
-4. Sumi.app never runs `adblock-rust` and never parses raw filter lists.
+2. GitHub Release assets expose a machine-readable release manifest, checksums, bundle manifests, diagnostics, and prepared shard JSON.
+3. Sumi checks for updates only after the user presses **Update bundles** in Privacy / Protection settings.
+4. Sumi downloads only the release manifest and prepared assets, verifies compatibility, byte sizes, and SHA-256 hashes, then replaces its cached prepared bundle after staging succeeds.
+5. If Adblock is already the applied level, Sumi compiles the prepared shards with WebKit and commits the new active generation only after validation succeeds.
+6. Sumi keeps the previous generation so failed downloads, hash mismatches, incompatible manifests, and compile failures do not replace the last known good active bundle set.
+
+Sumi.app never runs `adblock-rust`, never parses raw filter lists, and never checks for bundle updates on launch or timers. Existing pages may need reload or a full Sumi restart after a manual bundle update; the UI reports restart-required instead of claiming live replacement.
 
 The current repository keeps any temporary generation scripts as developer tooling only. They must not be referenced by Sumi.app runtime, release UI, or app-target build phases.
