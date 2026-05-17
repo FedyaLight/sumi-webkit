@@ -138,6 +138,10 @@ final class SettingsModuleToggleTests: XCTestCase {
         XCTAssertTrue(privacySource.contains("Filter lists"))
         XCTAssertTrue(privacySource.contains("Base ads"))
         XCTAssertTrue(privacySource.contains("Regional ads"))
+        XCTAssertTrue(privacySource.contains("Runtime-generated dev profile"))
+        XCTAssertTrue(privacySource.contains("This does not select or install an embedded bundle"))
+        XCTAssertTrue(privacySource.contains("Embedded Adblock Bundle"))
+        XCTAssertTrue(privacySource.contains("Install selected embedded bundle"))
         XCTAssertTrue(privacySource.contains("DEBUG Adblock Diagnostics"))
         XCTAssertTrue(privacySource.contains("Rebuild selected Adblock profile now"))
         XCTAssertTrue(privacySource.contains("Copy Adblock Diagnostics"))
@@ -152,6 +156,41 @@ final class SettingsModuleToggleTests: XCTestCase {
             XCTAssertFalse(source.localizedCaseInsensitiveContains("onboarding"))
             XCTAssertFalse(source.localizedCaseInsensitiveContains("acceptable ads"))
         }
+    }
+
+    func testEmbeddedBundleSettingsControlsAreDebugOnly() throws {
+        let source = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
+        let bundleSource = try Self.source(named: "Sumi/ContentBlocking/SumiAdblockNativeRuleBundle.swift")
+        let debugStart = try XCTUnwrap(
+            source.range(of: "#if DEBUG\n    @State private var rebuildStatus")
+        )
+        let debugEnd = try XCTUnwrap(
+            source.range(of: "    #endif\n\n    private var filterListSelection")
+        )
+        let debugBlock = String(source[debugStart.lowerBound..<debugEnd.upperBound])
+        var releaseSource = source
+        releaseSource.removeSubrange(debugStart.lowerBound..<debugEnd.upperBound)
+
+        XCTAssertTrue(debugBlock.contains("Embedded Adblock Bundle"))
+        XCTAssertTrue(debugBlock.contains("No embedded Adblock bundle found"))
+        XCTAssertTrue(debugBlock.contains("Expected resource path"))
+        XCTAssertTrue(debugBlock.contains("Generate command"))
+        XCTAssertTrue(bundleSource.contains("scripts/build_sumi_adblock_bundle.sh --all-profiles --output .build/sumi-adblock-bundles"))
+        XCTAssertTrue(debugBlock.contains("Generated outside app resources"))
+        XCTAssertTrue(debugBlock.contains("installEmbeddedAdblockBundle(profileId: profile.id)"))
+
+        XCTAssertFalse(releaseSource.contains("Embedded Adblock Bundle"))
+        XCTAssertFalse(releaseSource.contains("Install selected embedded bundle"))
+        XCTAssertFalse(releaseSource.contains("SumiEmbeddedAdblockBundleCatalog"))
+    }
+
+    func testNativeProfilePickerIsLabeledAsRuntimeGeneratedOnly() throws {
+        let source = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
+
+        XCTAssertTrue(source.contains("Runtime-generated dev profile"))
+        XCTAssertTrue(source.contains("Controls the old runtime-generated path, not embedded bundles."))
+        XCTAssertTrue(source.contains("Runtime-generated profiles only. This does not select or install an embedded bundle."))
+        XCTAssertFalse(source.contains("title: \"Native profile\""))
     }
 
     func testTrackingProtectionSettingsRuntimeAccessStaysBehindModuleGate() throws {

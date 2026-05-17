@@ -229,6 +229,7 @@ struct SumiAdblockNativeRuleBundle: Sendable {
         [
             "generationSource=embeddedBundle",
             "bundleId=\(manifest.bundleId)",
+            "bundleProfileId=\(manifest.profileId)",
             "nativeCSSSafetyPolicy=\(manifest.nativeCSSSafetyPolicyVersion)",
             "nativeCSSConverted=\(manifest.diagnosticsSummary.nativeCSSRuleCount)",
             "unsafeNativeCSSRootSelectorsFiltered=\(manifest.unsafeCSSFilteredCount)",
@@ -333,6 +334,183 @@ struct SumiAdblockNativeRuleBundle: Sendable {
             .joined()
     }
 }
+
+#if DEBUG
+struct SumiEmbeddedAdblockBundleProfile: Equatable, Identifiable, Sendable {
+    let id: String
+    let displayName: String
+    let bundleURL: URL
+    let bundleId: String?
+    let generationId: String?
+    let networkShardCount: Int
+    let nativeCSSShardCount: Int
+    let networkRuleCount: Int
+    let nativeCSSRuleCount: Int
+    let loadError: String?
+
+    var isInstallable: Bool {
+        loadError == nil
+    }
+}
+
+struct SumiEmbeddedAdblockBundleSnapshot: Equatable, Sendable {
+    let expectedResourcePath: String
+    let generateCommand: String
+    let generatedBundlesRootPath: String
+    let generatedBundlesPresentOutsideAppResources: Bool
+    let profiles: [SumiEmbeddedAdblockBundleProfile]
+
+    var installableProfiles: [SumiEmbeddedAdblockBundleProfile] {
+        profiles.filter(\.isInstallable)
+    }
+}
+
+enum SumiEmbeddedAdblockBundleCatalog {
+    static let supportedProfileIds = [
+        "currentDefault",
+        "adguardAdsOnly",
+        "adguardAdsPrivacy",
+        "maximumCustomReference",
+    ]
+
+    static let generateCommand = "scripts/build_sumi_adblock_bundle.sh --all-profiles --output .build/sumi-adblock-bundles"
+
+    static func snapshot(
+        resourceURL: URL? = Bundle.main.resourceURL,
+        generatedBundlesRootURL: URL? = defaultGeneratedBundlesRootURL(),
+        fileManager: FileManager = .default
+    ) -> SumiEmbeddedAdblockBundleSnapshot {
+        let resourceRoot = resourceURL ?? URL(fileURLWithPath: "<missing app resources>")
+        let profileURLs = supportedProfileIds.compactMap { profileId -> SumiEmbeddedAdblockBundleProfile? in
+            guard let bundleURL = embeddedBundleURL(
+                for: profileId,
+                resourceURL: resourceURL,
+                fileManager: fileManager
+            ) else { return nil }
+            return profile(for: profileId, bundleURL: bundleURL, fileManager: fileManager)
+        }
+
+        let generatedRoot = generatedBundlesRootURL ?? repositoryRootURL()
+            .appendingPathComponent(".build/sumi-adblock-bundles", isDirectory: true)
+
+        return SumiEmbeddedAdblockBundleSnapshot(
+            expectedResourcePath: resourceRoot
+                .appendingPathComponent("SumiAdblockBundles/<profile>/\(SumiAdblockNativeRuleBundle.directoryName)", isDirectory: true)
+                .path,
+            generateCommand: generateCommand,
+            generatedBundlesRootPath: generatedRoot.path,
+            generatedBundlesPresentOutsideAppResources: generatedBundlesPresent(
+                rootURL: generatedRoot,
+                fileManager: fileManager
+            ),
+            profiles: profileURLs.sorted { $0.id < $1.id }
+        )
+    }
+
+    static func embeddedBundleURL(
+        for profileId: String,
+        resourceURL: URL? = Bundle.main.resourceURL,
+        fileManager: FileManager = .default
+    ) -> URL? {
+        guard let resourceURL else { return nil }
+        let candidates = [
+            resourceURL
+                .appendingPathComponent("SumiAdblockBundles", isDirectory: true)
+                .appendingPathComponent(profileId, isDirectory: true)
+                .appendingPathComponent(SumiAdblockNativeRuleBundle.directoryName, isDirectory: true),
+            resourceURL
+                .appendingPathComponent(profileId, isDirectory: true)
+                .appendingPathComponent(SumiAdblockNativeRuleBundle.directoryName, isDirectory: true),
+            resourceURL
+                .appendingPathComponent(SumiAdblockNativeRuleBundle.directoryName, isDirectory: true),
+        ]
+
+        return candidates.first { candidate in
+            let manifestURL = candidate.appendingPathComponent(SumiAdblockNativeRuleBundle.manifestFileName)
+            guard fileManager.fileExists(atPath: manifestURL.path),
+                  let bundle = try? SumiAdblockNativeRuleBundle.load(directoryURL: candidate, fileManager: fileManager)
+            else { return false }
+            return bundle.manifest.profileId == profileId
+        }
+    }
+
+    private static func profile(
+        for profileId: String,
+        bundleURL: URL,
+        fileManager: FileManager
+    ) -> SumiEmbeddedAdblockBundleProfile {
+        do {
+            let bundle = try SumiAdblockNativeRuleBundle.load(directoryURL: bundleURL, fileManager: fileManager)
+            let networkShards = bundle.manifest.shards.filter { $0.kind == "network" }
+            let nativeCSSShards = bundle.manifest.shards.filter { $0.kind == "nativeCSS" }
+            return SumiEmbeddedAdblockBundleProfile(
+                id: bundle.manifest.profileId,
+                displayName: displayName(for: bundle.manifest.profileId),
+                bundleURL: bundleURL,
+                bundleId: bundle.manifest.bundleId,
+                generationId: bundle.manifest.generationId,
+                networkShardCount: networkShards.count,
+                nativeCSSShardCount: nativeCSSShards.count,
+                networkRuleCount: networkShards.reduce(0) { $0 + $1.ruleCount },
+                nativeCSSRuleCount: nativeCSSShards.reduce(0) { $0 + $1.ruleCount },
+                loadError: nil
+            )
+        } catch {
+            return SumiEmbeddedAdblockBundleProfile(
+                id: profileId,
+                displayName: displayName(for: profileId),
+                bundleURL: bundleURL,
+                bundleId: nil,
+                generationId: nil,
+                networkShardCount: 0,
+                nativeCSSShardCount: 0,
+                networkRuleCount: 0,
+                nativeCSSRuleCount: 0,
+                loadError: error.localizedDescription
+            )
+        }
+    }
+
+    private static func generatedBundlesPresent(
+        rootURL: URL,
+        fileManager: FileManager
+    ) -> Bool {
+        supportedProfileIds.contains { profileId in
+            let manifestURL = rootURL
+                .appendingPathComponent(profileId, isDirectory: true)
+                .appendingPathComponent(SumiAdblockNativeRuleBundle.directoryName, isDirectory: true)
+                .appendingPathComponent(SumiAdblockNativeRuleBundle.manifestFileName)
+            return fileManager.fileExists(atPath: manifestURL.path)
+        }
+    }
+
+    private static func displayName(for profileId: String) -> String {
+        switch profileId {
+        case "currentDefault":
+            return "currentDefault"
+        case "adguardAdsOnly":
+            return "adguardAdsOnly"
+        case "adguardAdsPrivacy":
+            return "adguardAdsPrivacy"
+        case "maximumCustomReference":
+            return "maximumCustomReference"
+        default:
+            return profileId
+        }
+    }
+
+    private static func defaultGeneratedBundlesRootURL() -> URL? {
+        repositoryRootURL().appendingPathComponent(".build/sumi-adblock-bundles", isDirectory: true)
+    }
+
+    private static func repositoryRootURL() -> URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+    }
+}
+#endif
 
 private extension SumiAdblockNativeRuleBundleManifest.Shard {
     var ruleGroupKind: AdblockCompiledRuleGroupKind {
