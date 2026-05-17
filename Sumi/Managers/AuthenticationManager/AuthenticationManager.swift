@@ -160,7 +160,11 @@ final class AuthenticationManager: NSObject {
         }
 
         tab.finishIdentityFlow(requestId: request.requestId, with: .success(url))
-        tab.ensureWebView()?.reload()
+        if tab.protectionAttachmentRequiresNormalWebViewRebuild(for: tab.existingWebView?.url ?? tab.url) {
+            tab.refresh()
+        } else {
+            tab.ensureWebView()?.reload()
+        }
     }
 
     private func cancelActiveIdentityFlow() {

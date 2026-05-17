@@ -391,7 +391,7 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        guard eligibleTab() != nil else {
+        guard let tab = eligibleTab() else {
             completionHandler(tabUnavailableUntilReloadError)
             return
         }
@@ -406,7 +406,9 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
             return
         }
 
-        if fromOrigin {
+        if tab.protectionAttachmentRequiresNormalWebViewRebuild(for: webView.url ?? tab.url) {
+            tab.refresh()
+        } else if fromOrigin {
             webView.reloadFromOrigin()
         } else {
             webView.reload()

@@ -310,11 +310,16 @@ extension Tab {
 
         if !isPopupHost && _existingWebView == nil {
             if let controller = _webView?.configuration.userContentController.sumiNormalTabUserContentController {
-                Task { @MainActor [weak self] in
+                let initialWebView = _webView
+                Task { @MainActor [weak self, weak initialWebView] in
                     let signpostState = PerformanceTrace.beginInterval("ContentBlocking.assetsInstallWait")
                     await controller.waitForContentBlockingAssetsInstalled()
                     PerformanceTrace.endInterval("ContentBlocking.assetsInstallWait", signpostState)
-                    guard let self, self._existingWebView == nil else { return }
+                    guard let self,
+                          let initialWebView,
+                          self._existingWebView == nil,
+                          self._webView === initialWebView
+                    else { return }
                     self.loadURL(self.url)
                 }
             } else {
@@ -423,6 +428,14 @@ extension Tab {
 
     private func canReuseAsNormalTabWebView(_ webView: WKWebView) -> Bool {
         guard webView.configuration.sumiIsNormalTabWebViewConfiguration else {
+            return false
+        }
+        let desiredProtectionState = protectionDesiredAttachmentState(for: webView.url ?? url)
+        if let appliedProtectionState = protectionAppliedAttachmentState {
+            guard appliedProtectionState == desiredProtectionState else {
+                return false
+            }
+        } else if desiredProtectionState.isEnabled {
             return false
         }
         guard let profile = resolveProfile(),

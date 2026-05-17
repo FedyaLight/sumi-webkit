@@ -295,6 +295,14 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { webViewRuntime.appliedProtectionAfterManualReload }
         set { webViewRuntime.appliedProtectionAfterManualReload = newValue }
     }
+    var lastProtectionWebViewRebuildDuration: TimeInterval? {
+        get { webViewRuntime.lastProtectionWebViewRebuildDuration }
+        set { webViewRuntime.lastProtectionWebViewRebuildDuration = newValue }
+    }
+    var lastProtectionURLHubSummaryDuration: TimeInterval? {
+        get { webViewRuntime.lastProtectionURLHubSummaryDuration }
+        set { webViewRuntime.lastProtectionURLHubSummaryDuration = newValue }
+    }
     var autoplayReloadRequirement: SumiAutoplayReloadRequirement? {
         get { webViewRuntime.autoplayReloadRequirement }
         set { webViewRuntime.autoplayReloadRequirement = newValue }
@@ -1007,7 +1015,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             didManualReloadRebuildWebView: didManualReloadRebuildProtectionWebView,
             appliedAfterManualReload: appliedProtectionAfterManualReload,
             actualAttachedRuleListIdentifiers: contentBlockingSummary?.globalRuleListIdentifiers,
-            contentBlockingAssetSummary: contentBlockingSummary
+            contentBlockingAssetSummary: contentBlockingSummary,
+            webViewRebuildDuration: lastProtectionWebViewRebuildDuration,
+            urlHubSummaryDuration: lastProtectionURLHubSummaryDuration
         )
     }
 
@@ -1255,6 +1265,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
               let previousWebView = existingWebView
         else { return false }
 
+        let rebuildStart = Date()
         let coordinator = browserManager?.webViewCoordinator
         let previousWindowId = primaryWindowId ?? coordinator?.windowID(containing: previousWebView)
         let hadTrackedWebViews = coordinator?.windowIDs(for: id).isEmpty == false
@@ -1292,6 +1303,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             _webView = replacementWebView
         }
 
+        lastProtectionWebViewRebuildDuration = Date().timeIntervalSince(rebuildStart)
         updateAutoplayReloadRequirementForCurrentSite()
         return true
     }
@@ -1399,6 +1411,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         guard protectionReloadRequirement != requirement else { return }
         didManualReloadRebuildProtectionWebView = false
         appliedProtectionAfterManualReload = false
+        lastProtectionWebViewRebuildDuration = nil
         protectionReloadRequirement = requirement
         notifyProtectionReloadRequirementChanged()
     }

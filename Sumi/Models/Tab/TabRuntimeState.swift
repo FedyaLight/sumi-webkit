@@ -163,6 +163,8 @@ final class TabWebViewRuntime {
     var protectionReloadRequirement: SumiProtectionReloadRequirement?
     var didManualReloadRebuildProtectionWebView: Bool = false
     var appliedProtectionAfterManualReload: Bool = false
+    var lastProtectionWebViewRebuildDuration: TimeInterval?
+    var lastProtectionURLHubSummaryDuration: TimeInterval?
     var autoplayReloadRequirement: SumiAutoplayReloadRequirement?
     var lastWebViewInteractionEvent: NSEvent?
     var webViewInteractionCancellables: [ObjectIdentifier: AnyCancellable] = [:]

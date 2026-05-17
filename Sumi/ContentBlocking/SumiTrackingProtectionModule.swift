@@ -34,6 +34,10 @@ final class SumiTrackingProtectionModule {
         SumiTrackingProtectionSettings,
         SumiTrackingProtectionDataStore
     ) -> SumiTrackingContentBlockingAssets
+    private let ruleListProviderFactory: @MainActor (
+        SumiTrackingProtectionSettings,
+        SumiTrackingProtectionDataStore
+    ) -> SumiTrackingRuleListProvider
     private let siteNormalizer: SumiTrackingProtectionSiteNormalizer
 
     private var cachedSettings: SumiTrackingProtectionSettings?
@@ -49,6 +53,10 @@ final class SumiTrackingProtectionModule {
             SumiTrackingProtectionSettings,
             SumiTrackingProtectionDataStore
         ) -> SumiTrackingContentBlockingAssets)? = nil,
+        ruleListProviderFactory: (@MainActor (
+            SumiTrackingProtectionSettings,
+            SumiTrackingProtectionDataStore
+        ) -> SumiTrackingRuleListProvider)? = nil,
         // Compatibility/test seam for service-level assertions without restoring a shared runtime.
         contentBlockingServiceFactory: (@MainActor (
             SumiTrackingProtectionSettings,
@@ -59,16 +67,23 @@ final class SumiTrackingProtectionModule {
         self.moduleRegistry = moduleRegistry
         self.settingsFactory = settingsFactory
         self.dataStoreFactory = dataStoreFactory
+        let resolvedRuleListProviderFactory: @MainActor (
+            SumiTrackingProtectionSettings,
+            SumiTrackingProtectionDataStore
+        ) -> SumiTrackingRuleListProvider = ruleListProviderFactory ?? { settings, dataStore in
+            SumiTrackingRuleListProvider(
+                settings: settings,
+                dataStore: dataStore,
+                siteDataPolicyStore: .shared
+            )
+        }
+        self.ruleListProviderFactory = resolvedRuleListProviderFactory
         self.contentBlockingAssetsFactory = { settings, dataStore in
             if let contentBlockingAssetsFactory {
                 return contentBlockingAssetsFactory(settings, dataStore)
             }
 
-            let ruleListProvider = SumiTrackingRuleListProvider(
-                settings: settings,
-                dataStore: dataStore,
-                siteDataPolicyStore: .shared
-            )
+            let ruleListProvider = resolvedRuleListProviderFactory(settings, dataStore)
             if let contentBlockingServiceFactory {
                 return SumiTrackingContentBlockingAssets(
                     ruleListProvider: ruleListProvider,
@@ -127,6 +142,21 @@ final class SumiTrackingProtectionModule {
         let assets = contentBlockingAssetsFactory(settings, dataStore)
         cachedContentBlockingAssets = assets
         return assets
+    }
+
+    func coordinatorRuleListDefinitions(profileId: UUID?) throws -> [SumiContentRuleListDefinition] {
+        guard isEnabled else { return [] }
+        guard let settings = settingsIfEnabled(),
+              let dataStore = dataStoreIfEnabled()
+        else { return [] }
+
+        let provider = ruleListProviderFactory(settings, dataStore)
+        let policy = SumiTrackingProtectionPolicy(
+            globalMode: .enabled,
+            enabledSiteHosts: [],
+            disabledSiteHosts: []
+        )
+        return try provider.ruleListSet(for: policy, profileId: profileId).allDefinitions
     }
 
     func normalizedSiteHost(for url: URL?) -> String? {
