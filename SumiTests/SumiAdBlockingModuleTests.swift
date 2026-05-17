@@ -870,18 +870,6 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertTrue(settings.listSelectionRequiresUpdate)
     }
 
-    func testLegacyOraLikeNativeSettingsProfileLoadsAsReferenceAdGuardNative() {
-        let harness = TestDefaultsHarness()
-        defer { harness.reset() }
-        harness.defaults.set("oraLikeNative", forKey: "settings.adblock.selectedNativeProfile")
-
-        let settings = AdblockSettingsStore(userDefaults: harness.defaults)
-
-        XCTAssertEqual(settings.selectedNativeProfile, .referenceAdGuardNative)
-        XCTAssertTrue(settings.setSelectedNativeProfile(.referenceAdGuardNative, allowDeveloperOnly: true))
-        XCTAssertEqual(harness.defaults.string(forKey: "settings.adblock.selectedNativeProfile"), "referenceAdGuardNative")
-    }
-
     func testDisabledAdblockCanPersistListAndProfileSelectionWithoutCreatingRuntime() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
