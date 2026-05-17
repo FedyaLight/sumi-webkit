@@ -21,6 +21,7 @@ struct SumiNormalTabUserContent {
 struct SumiNormalTabContentBlockingAssetSource {
     let assetsPublisher: AnyPublisher<SumiNormalTabUserContent, Never>
     let privacyConfigurationManager: SumiContentBlockingPrivacyConfigurationManager
+    let retainedContentBlockingServices: [SumiContentBlockingService]
 
     static func disabledEmpty(
         scriptsProvider: SumiNormalTabUserScripts
@@ -35,7 +36,8 @@ struct SumiNormalTabContentBlockingAssetSource {
             .eraseToAnyPublisher(),
             privacyConfigurationManager: SumiContentBlockingPrivacyConfigurationManager(
                 isContentBlockingEnabled: false
-            )
+            ),
+            retainedContentBlockingServices: []
         )
     }
 
@@ -57,7 +59,8 @@ struct SumiNormalTabContentBlockingAssetSource {
             )
         return SumiNormalTabContentBlockingAssetSource(
             assetsPublisher: Self.combinedAssetsPublisher(publishers),
-            privacyConfigurationManager: privacyConfigurationManager
+            privacyConfigurationManager: privacyConfigurationManager,
+            retainedContentBlockingServices: contentBlockingServices
         )
     }
 
@@ -95,6 +98,7 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
     }
 
     private let privacyConfigurationManager: SumiContentBlockingPrivacyConfigurationManager
+    private let retainedContentBlockingServices: [SumiContentBlockingService]
     private lazy var messageHandlerRegistry = SumiUserScriptMessageHandlerRegistry(userContentController: self)
     private var globalContentRuleLists = [String: WKContentRuleList]()
     private var assetsPublisherCancellable: AnyCancellable?
@@ -105,6 +109,7 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
 
     init(assetSource: SumiNormalTabContentBlockingAssetSource) {
         privacyConfigurationManager = assetSource.privacyConfigurationManager
+        retainedContentBlockingServices = assetSource.retainedContentBlockingServices
         super.init()
 
         assetsPublisherCancellable = assetSource.assetsPublisher.sink { [weak self] content in

@@ -638,14 +638,28 @@ final class SumiContentBlockingService {
         for definition in definitions {
             compiledRules.append(try await rule(for: definition))
         }
-        for definition in definitions {
+        for (index, definition) in definitions.enumerated() {
             let storeIdentifier = storeIdentifier(for: definition)
-            guard await compiler.canLookUpContentRuleList(forIdentifier: storeIdentifier) else {
+            if await canLookUpCompiledRuleList(forIdentifier: storeIdentifier) == false {
+                compiledRulesByIdentifier.removeValue(forKey: storeIdentifier)
+                compiledRules[index] = try await rule(for: definition)
+            }
+            guard await canLookUpCompiledRuleList(forIdentifier: storeIdentifier) else {
                 throw SumiContentBlockingCompilationError.missingCompiledRuleList(storeIdentifier)
             }
         }
 
         return Self.updateEvent(for: compiledRules)
+    }
+
+    private func canLookUpCompiledRuleList(forIdentifier identifier: String) async -> Bool {
+        for _ in 0..<3 {
+            if await compiler.canLookUpContentRuleList(forIdentifier: identifier) {
+                return true
+            }
+            await Task.yield()
+        }
+        return false
     }
 
     private func profileSubject(

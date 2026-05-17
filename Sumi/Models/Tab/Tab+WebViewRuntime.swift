@@ -378,18 +378,15 @@ extension Tab {
             return nil
         }
 
-        let trackingProtectionDecision = browserManager?.trackingProtectionModule
-            .normalTabContentBlockingDecision(for: url)
-        if let trackingProtectionDecision {
+        let protectionDecision = browserManager?.protectionCoordinator
+            .normalTabDecision(for: url, profileId: profile.id)
+        if let protectionDecision {
+            noteProtectionAttachmentApplied(protectionDecision.attachmentState)
             noteTrackingProtectionAttachmentApplied(
-                trackingProtectionDecision.attachmentState
+                protectionDecision.trackingAttachmentState
             )
-        }
-        let adBlockingDecision = browserManager?.adBlockingModule
-            .normalTabDecision(for: url)
-        if let adBlockingDecision {
             noteAdblockAttachmentApplied(
-                adBlockingDecision.attachmentState
+                protectionDecision.adblockAttachmentState
             )
         }
 
@@ -401,8 +398,7 @@ extension Tab {
                 profile: profile
             ),
             userScriptsProvider: normalTabUserScriptsProvider(for: url),
-            contentBlockingService: trackingProtectionDecision?.contentBlockingService,
-            additionalContentBlockingServices: [adBlockingDecision?.contentBlockingService].compactMap { $0 }
+            contentBlockingService: protectionDecision?.contentBlockingService
         )
         return configuration
     }

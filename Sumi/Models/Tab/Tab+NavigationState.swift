@@ -28,15 +28,11 @@ extension Tab {
     func refresh() {
         beginLoadingPresentationIfNeeded()
         let targetURL = _webView?.url ?? url
-        let rebuiltWebView = rebuildNormalWebViewForTrackingProtectionIfNeeded(
+        let rebuiltWebView = rebuildNormalWebViewForProtectionIfNeeded(
             targetURL: targetURL,
-            reason: "Tab.refresh.trackingProtectionPolicy"
+            reason: "Tab.refresh.protectionPolicy"
         )
         let rebuiltForConfigurationPolicy = rebuiltWebView
-            || rebuildNormalWebViewForAdblockIfNeeded(
-                targetURL: targetURL,
-                reason: "Tab.refresh.adblockPolicy"
-            )
             || rebuildNormalWebViewForAutoplayIfNeeded(
                 targetURL: targetURL,
                 reason: "Tab.refresh.autoplayPolicy"

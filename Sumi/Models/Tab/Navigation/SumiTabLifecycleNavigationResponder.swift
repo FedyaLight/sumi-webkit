@@ -87,6 +87,7 @@ final class SumiTabLifecycleNavigationResponder:
             tab.noteCommittedMainDocumentNavigation(to: newURL)
             tab.clearTrackingProtectionReloadRequirementIfResolved(for: newURL)
             tab.clearAdblockReloadRequirementIfResolved(for: newURL)
+            tab.clearProtectionReloadRequirementIfResolved(for: newURL)
             tab.clearAutoplayReloadRequirementIfResolved(for: newURL)
             tab.historyRecorder.didCommitMainFrameNavigation(
                 to: newURL,

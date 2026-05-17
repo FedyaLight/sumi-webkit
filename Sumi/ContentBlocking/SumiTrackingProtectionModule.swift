@@ -84,6 +84,16 @@ final class SumiTrackingProtectionModule {
         moduleRegistry.isEnabled(.trackingProtection)
     }
 
+    func setEnabled(_ isEnabled: Bool) {
+        moduleRegistry.setEnabled(isEnabled, for: .trackingProtection)
+        if !isEnabled {
+            cachedContentBlockingAssets?.contentBlockingService.setPolicy(.disabled)
+            cachedContentBlockingAssets = nil
+            cachedDataStore = nil
+            cachedSettings = nil
+        }
+    }
+
     func settingsIfEnabled() -> SumiTrackingProtectionSettings? {
         guard isEnabled else { return nil }
         if let cachedSettings {

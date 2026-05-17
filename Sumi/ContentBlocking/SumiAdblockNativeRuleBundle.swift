@@ -113,6 +113,33 @@ struct SumiAdblockNativeRuleBundle: Sendable {
         )
     }
 
+    static func bundledDirectoryURL(
+        for profileId: String,
+        in bundle: Bundle = .main,
+        fileManager: FileManager = .default
+    ) -> URL? {
+        guard let resourceURL = bundle.resourceURL else { return nil }
+        let candidates = [
+            resourceURL
+                .appendingPathComponent("SumiAdblockBundles", isDirectory: true)
+                .appendingPathComponent(profileId, isDirectory: true)
+                .appendingPathComponent(directoryName, isDirectory: true),
+            resourceURL
+                .appendingPathComponent(profileId, isDirectory: true)
+                .appendingPathComponent(directoryName, isDirectory: true),
+            resourceURL
+                .appendingPathComponent(directoryName, isDirectory: true),
+        ]
+
+        return candidates.first { candidate in
+            let manifestURL = candidate.appendingPathComponent(manifestFileName)
+            guard fileManager.fileExists(atPath: manifestURL.path),
+                  let bundle = try? SumiAdblockNativeRuleBundle.load(directoryURL: candidate, fileManager: fileManager)
+            else { return false }
+            return bundle.manifest.profileId == profileId
+        }
+    }
+
     static func load(
         directoryURL: URL,
         fileManager: FileManager = .default
