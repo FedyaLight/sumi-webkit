@@ -28,18 +28,44 @@ final class SettingsModuleToggleTests: XCTestCase {
     func testPrivacySettingsExposeUnifiedProtectionOnly() throws {
         let source = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
 
-        XCTAssertTrue(source.contains("Adblock & Protection"))
-        XCTAssertTrue(source.contains("Current level"))
-        XCTAssertTrue(source.contains("Apply selected protection level"))
-        XCTAssertTrue(source.contains("Bundle version"))
-        XCTAssertTrue(source.contains("Last update date"))
-        XCTAssertTrue(source.contains("Signature verified"))
-        XCTAssertTrue(source.contains("Restart required"))
-        XCTAssertTrue(source.contains("Update bundles"))
-        XCTAssertTrue(source.contains("Last update error"))
-        XCTAssertTrue(source.contains("Off"))
-        XCTAssertTrue(source.contains("Protection"))
-        XCTAssertTrue(source.contains("Adblock"))
+        XCTAssertTrue(source.contains("SettingsSection(title: \"Adblock & Protection\")"))
+        XCTAssertTrue(source.contains("levelOptionButton(for: level)"))
+        XCTAssertTrue(source.contains("ForEach(SumiProtectionLevel.allCases)"))
+        XCTAssertTrue(source.contains("Text(\"Apply\")"))
+        XCTAssertTrue(source.contains("Apply to use this level."))
+        XCTAssertTrue(source.contains("No blocking"))
+        XCTAssertTrue(source.contains("Blocks known trackers"))
+        XCTAssertTrue(source.contains("Blocks trackers and ads"))
+        XCTAssertTrue(source.contains("Text(\"Last update\")"))
+        XCTAssertTrue(source.contains("Label(\"Update\", systemImage: \"arrow.clockwise\")"))
+        XCTAssertTrue(source.contains("Update failed:"))
+        XCTAssertTrue(source.contains("Restart Sumi to apply this change."))
+        XCTAssertTrue(source.contains("Copy Protection Diagnostics"))
+        XCTAssertTrue(source.contains("#if DEBUG"))
+
+        for removedCopy in [
+            "Picker(\"Protection level\", selection: levelBinding)",
+            "Developer Diagnostics",
+            "DEBUG Unified Protection Diagnostics",
+            "Text(\"Signature\")",
+            "return \"Verified\"",
+            "return \"Not verified\"",
+            "Current level",
+            "Apply selected protection level",
+            "Bundle version",
+            "Last update date",
+            "Signature verified",
+            "Update bundles",
+            "Last update error",
+            "Sumi uses signed prepared protection bundles only",
+            "Selection saved",
+            "Manual bundle updates only",
+            "Release version / bundle generation",
+            "Remote release manifest signature is valid",
+            "Signed remote release manifests are mandatory",
+        ] {
+            XCTAssertFalse(source.contains(removedCopy), removedCopy)
+        }
         XCTAssertFalse(source.contains("Current page level"))
         XCTAssertFalse(source.contains("Current site"))
         XCTAssertFalse(source.contains("SumiSettingsModuleToggleGate(descriptor: .trackingProtection)"))
