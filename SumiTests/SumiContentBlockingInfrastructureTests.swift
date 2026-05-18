@@ -220,6 +220,43 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
         XCTAssertEqual(compiler.compileCount, 1)
     }
 
+    func testWarmStoreRuleListDoesNotPerformDuplicateSmokeLookup() async throws {
+        let definition = Self.validRuleListDefinition(
+            name: "SumiWarmStoreRuleList-\(UUID().uuidString)",
+            blockedHost: "warm-store.example"
+        )
+        let storeIdentifier = Self.storeIdentifier(for: definition)
+
+        let setupService = SumiContentBlockingService(
+            policy: .enabled(ruleLists: [definition]),
+            compiler: CountingContentRuleListCompiler()
+        )
+        let setupController: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: setupService
+        )
+        let setupNormalTabController = try XCTUnwrap(setupController.sumiNormalTabUserContentController)
+        await setupNormalTabController.waitForContentBlockingAssetsInstalled()
+        setupNormalTabController.cleanUpBeforeClosing()
+
+        let warmCompiler = CountingContentRuleListCompiler()
+        let warmService = SumiContentBlockingService(
+            policy: .enabled(ruleLists: [definition]),
+            compiler: warmCompiler
+        )
+        let warmController: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: warmService
+        )
+        let warmNormalTabController = try XCTUnwrap(warmController.sumiNormalTabUserContentController)
+        await warmNormalTabController.waitForContentBlockingAssetsInstalled()
+        defer { warmNormalTabController.cleanUpBeforeClosing() }
+
+        let summary = warmNormalTabController.contentBlockingAssetSummary
+        XCTAssertEqual(summary.lookupSucceededIdentifiers, [storeIdentifier])
+        XCTAssertEqual(warmCompiler.lookupCount, 1)
+        XCTAssertEqual(warmCompiler.canLookupCount, 0)
+        XCTAssertEqual(warmCompiler.compileCount, 0)
+    }
+
     func testPolicyUpdateRemovesPreviousCompiledRuleListForSameName() async throws {
         let compiler = CountingContentRuleListCompiler()
         let catalog = InMemoryCompiledRuleListCatalog()
@@ -727,16 +764,20 @@ private final class ContentBlockingNavigationDelegateBox: NSObject, WKNavigation
 @MainActor
 private final class CountingContentRuleListCompiler: SumiContentRuleListCompiling {
     private let wrapped = SumiWKContentRuleListCompiler()
+    private(set) var lookupCount = 0
+    private(set) var canLookupCount = 0
     private(set) var compileCount = 0
     private(set) var failureCount = 0
     private(set) var removedIdentifiers: [String] = []
 
     func lookUpContentRuleList(forIdentifier identifier: String) async -> WKContentRuleList? {
-        await wrapped.lookUpContentRuleList(forIdentifier: identifier)
+        lookupCount += 1
+        return await wrapped.lookUpContentRuleList(forIdentifier: identifier)
     }
 
     func canLookUpContentRuleList(forIdentifier identifier: String) async -> Bool {
-        await wrapped.canLookUpContentRuleList(forIdentifier: identifier)
+        canLookupCount += 1
+        return await wrapped.canLookUpContentRuleList(forIdentifier: identifier)
     }
 
     func compileContentRuleList(

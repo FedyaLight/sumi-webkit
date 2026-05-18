@@ -226,12 +226,12 @@ extension TabManager {
                     favicon: "globe",
                     spaceId: spaceId,
                     index: snapshotTab.index,
-                    browserManager: browserManager
+                    browserManager: browserManager,
+                    loadsCachedFaviconOnInit: false
                 )
                 tab.canGoBack = snapshotTab.canGoBack
                 tab.canGoForward = snapshotTab.canGoForward
                 tab.profileId = spaces.first(where: { $0.id == spaceId })?.profileId
-                _ = tab.applyCachedFaviconOrPlaceholder(for: url)
                 attach(tab)
                 tabs.append(tab)
             }

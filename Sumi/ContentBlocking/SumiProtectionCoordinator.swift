@@ -825,7 +825,10 @@ final class SumiProtectionCoordinator {
             normalizer: siteNormalizer
         )
         let siteHost = eligibility.normalizedSiteHost
-        let siteOverride = adBlockingModule.siteOverride(for: url)
+        let shouldConsultSiteOverride = requestedLevel != .off && eligibility.isEligible
+        let siteOverride = shouldConsultSiteOverride
+            ? adBlockingModule.siteOverride(for: url)
+            : .inherit
         let siteAllowsProtection = requestedLevel != .off
             && eligibility.isEligible
             && siteOverride != .disabled
@@ -1100,7 +1103,7 @@ final class SumiProtectionCoordinator {
 
         guard plan.isAttachable else {
             clearCachedAttachmentService()
-            cachedAttachmentPlan = plan
+            cachedAttachmentPlan = metadataOnlyGlobalAttachmentPlan(plan)
             return
         }
 
@@ -1110,7 +1113,7 @@ final class SumiProtectionCoordinator {
             retainEncodedRuleListsInPreparedPolicy: false
         )
         service.commitPreparedContentBlockingUpdate(preparedUpdate)
-        cachedAttachmentPlan = plan
+        cachedAttachmentPlan = metadataOnlyGlobalAttachmentPlan(plan)
         cachedAttachmentService = service
         contentBlockingServiceGenerationId &+= 1
     }

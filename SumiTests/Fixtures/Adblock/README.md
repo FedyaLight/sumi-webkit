@@ -76,34 +76,3 @@ ineligible surface reason.
 Do not claim an improved score unless the exact URL, score, mode, native
 profile, compiler, Tracking Protection state, Enhanced runtime state, selected
 lists, shard diagnostics, timestamp, and reload state are kept with the result.
-
-## 2026-05-17 grouped compiler harness result
-
-`scripts/compare_native_adblock_compilers.sh` now compares the current
-adblock-rust compiler with an external, harness-only SafariConverterLib v4.2.2
-compiler. The SafariConverterLib path uses neutral `experimentalAdGuardNative`
-grouping: `generalAds`, `privacy`, `annoyances`, `regional`, and `custom`.
-Each group is converted separately, split into network/native CSS shards, run
-through the native CSS safety filter, then compiled and looked up with
-`WKContentRuleListStore` before page attachment.
-
-Conditions: `https://adblock.turtlecute.org/`, Tracking Protection off,
-`nativeCSS`, enhanced runtime off. Turtlecute did not emit final
-`Total / Blocked / Not Blocked` results in the headless WKWebView harness before
-timeout, so the fallback `50%` visual value is not a valid blocking score.
-
-| Profile | Backend | Network | Native CSS | Shards N/C | Peak rebuild MB | Page MB | Score | Blank |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
-| `currentDefault` | adblock-rust | 61,438 | 23,671 | 3/1 | 101.3 | 38.2 | not finalized | visible |
-| `currentDefault` | SafariConverterLib grouped | 65,330 | 6,075 | 3/1 | 417.3 | 40.6 | not finalized | visible |
-| `balancedNative` / ads-only | adblock-rust | 80,986 | 51,979 | 4/3 | 200.4 | 32.9 | not finalized | visible |
-| `balancedNative` / ads-only | SafariConverterLib grouped | 86,248 | 19,080 | 4/2 | 645.3 | 43.0 | not finalized | visible |
-| `adguard-ads-privacy` | adblock-rust | 273,477 | 52,251 | 11/3 | 375.3 | 58.5 | not finalized | visible |
-| `adguard-ads-privacy` | SafariConverterLib grouped | 279,283 | 19,279 | 12/3 | 1,102.8 | 57.9 | not finalized | visible |
-| `referenceAdGuardNative` | adblock-rust | 279,678 | 88,964 | 12/5 | 420.6 | 60.0 | not finalized | visible |
-| `referenceAdGuardNative` | SafariConverterLib grouped | 285,642 | 40,973 | 13/5 | 1,102.9 | 50.7 | not finalized | visible |
-
-Interpretation: SafariConverterLib reduced native CSS output substantially, but
-the current grouped harness peaked much higher during rebuild and did not show a
-clear WebKit memory win except on the reference profile. Treat the result as
-evidence for more curated-profile work, not as migration evidence.

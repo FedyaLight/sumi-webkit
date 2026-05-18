@@ -10,7 +10,10 @@ import SwiftUI
 
 extension Tab {
     @discardableResult
-    func applyCachedFaviconOrPlaceholder(for url: URL) -> Bool {
+    func applyCachedFaviconOrPlaceholder(
+        for url: URL,
+        allowCacheLookup: Bool = true
+    ) -> Bool {
         let defaultFavicon = SwiftUI.Image(systemName: "globe")
         let lookupIdentifier = Self.faviconLookupIdentifier(for: url)
 
@@ -35,7 +38,8 @@ extension Tab {
             return true
         }
 
-        guard SumiFaviconResolver.cacheKey(for: url) != nil,
+        guard allowCacheLookup,
+              SumiFaviconResolver.cacheKey(for: url) != nil,
               let lookupIdentifier,
               let image = TabFaviconStore.getCachedImage(forDocumentURL: url)
         else {
