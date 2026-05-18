@@ -85,7 +85,6 @@ private struct AdblockProtectionSettingsView: View {
     let currentTab: Tab?
     @ObservedObject private var settings: SumiProtectionSettings
     @ObservedObject private var bundleUpdateStatus: SumiProtectionBundleUpdateStatusStore
-    @State private var applyStatus: String?
     @State private var isApplying = false
     @State private var isUpdatingBundles = false
     #if DEBUG
@@ -106,133 +105,31 @@ private struct AdblockProtectionSettingsView: View {
         _bundleUpdateStatus = ObservedObject(wrappedValue: coordinator.bundleUpdateStatusStore)
     }
 
+    @ViewBuilder
     var body: some View {
-        SettingsSection(
-            title: "Adblock & Protection",
-            subtitle: "Sumi uses signed prepared protection bundles only. Global level changes take effect after Apply and a restart."
-        ) {
-            SettingsRow(
-                title: "Current level",
-                subtitle: currentLevelSubtitle
-            ) {
-                Text(settings.appliedLevel.displayTitle)
-                    .font(.callout)
-                    .foregroundStyle(settings.browserRestartRequired ? Color.orange : Color.secondary)
+        #if DEBUG
+        protectionSettingsSection
+            .contextMenu {
+                debugDiagnosticsContextMenu
             }
+        #else
+        protectionSettingsSection
+        #endif
+    }
 
-            levelDescriptionList
+    private var protectionSettingsSection: some View {
+        SettingsSection(title: "Adblock & Protection") {
+            VStack(alignment: .leading, spacing: 12) {
+                levelControls
 
-            SettingsRow(
-                title: "Apply selected protection level",
-                subtitle: applyRowSubtitle
-            ) {
-                HStack(spacing: 10) {
-                    Picker("", selection: levelBinding) {
-                        ForEach(SumiProtectionLevel.allCases) { level in
-                            Text(level.displayTitle).tag(level)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: 310)
-
-                    Button {
-                        applySelectedLevel()
-                    } label: {
-                        if isApplying {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Text("Apply")
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isApplying || !coordinator.applyNeeded)
+                if settings.browserRestartRequired {
+                    restartRequiredWarning
                 }
+
+                SettingsDivider()
+
+                lastUpdateRow
             }
-
-            SettingsRow(
-                title: "Bundle version",
-                subtitle: bundleVersionSubtitle
-            ) {
-                Text(bundleVersionText)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-
-            SettingsRow(
-                title: "Last update date",
-                subtitle: lastUpdateSubtitle
-            ) {
-                Text(lastUpdateText)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-
-            SettingsRow(
-                title: "Signature verified",
-                subtitle: signatureStatusSubtitle
-            ) {
-                Text(signatureStatusText)
-                    .font(.callout)
-                    .foregroundStyle(signatureStatusColor)
-            }
-
-            SettingsRow(
-                title: "Restart required",
-                subtitle: restartRequiredSubtitle
-            ) {
-                Text(settings.browserRestartRequired ? "Yes" : "No")
-                    .font(.callout)
-                    .foregroundStyle(settings.browserRestartRequired ? Color.orange : Color.secondary)
-            }
-
-            SettingsRow(
-                title: "Update bundles",
-                subtitle: updateBundlesSubtitle
-            ) {
-                Button {
-                    updatePreparedBundles()
-                } label: {
-                    if isUpdatingBundles {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Text("Update bundles")
-                    }
-                }
-                .buttonStyle(.bordered)
-                .disabled(isUpdatingBundles)
-            }
-
-            if let lastUpdateError {
-                SettingsRow(
-                    title: "Last update error",
-                    subtitle: lastUpdateError
-                ) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .foregroundStyle(Color.orange)
-                }
-            }
-
-            #if DEBUG
-            SettingsDivider()
-            Text("DEBUG Unified Protection Diagnostics")
-                .font(.subheadline)
-                .fontWeight(.medium)
-
-            SettingsRow(
-                title: "Copy Diagnostics",
-                subtitle: copyDiagnosticsStatus ?? "Copies the unified plan, active groups, bundle, overlap, dedupe, and target-tab attachment state."
-            ) {
-                Button("Copy") {
-                    copyUnifiedProtectionDiagnostics()
-                }
-                .buttonStyle(.bordered)
-            }
-
-            debugKeyValueGrid(rows: debugProtectionRows)
-            #endif
         }
     }
 
@@ -241,9 +138,164 @@ private struct AdblockProtectionSettingsView: View {
             get: { settings.level },
             set: { level in
                 coordinator.setLevel(level)
-                applyStatus = "Selection saved. Apply, then restart Sumi for \(level.displayTitle) to take effect globally."
             }
         )
+    }
+
+    private var levelControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                ForEach(SumiProtectionLevel.allCases) { level in
+                    levelOptionButton(for: level)
+                }
+            }
+
+            HStack(alignment: .center, spacing: 10) {
+                Text(applyHelperText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                Spacer(minLength: 12)
+
+                Button {
+                    applySelectedLevel()
+                } label: {
+                    if isApplying {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(minWidth: 44)
+                    } else {
+                        Text("Apply")
+                            .frame(minWidth: 44)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(isApplying || !coordinator.applyNeeded)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func levelOptionButton(for level: SumiProtectionLevel) -> some View {
+        let isSelected = settings.level == level
+        return Button {
+            levelBinding.wrappedValue = level
+        } label: {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .center, spacing: 6) {
+                    Text(level.displayTitle)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 4)
+
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary.opacity(0.45))
+                        .accessibilityHidden(true)
+                }
+
+                Text(levelSubtitle(for: level))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.vertical, 9)
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(
+                        isSelected
+                            ? Color.accentColor.opacity(0.12)
+                            : Color(nsColor: .controlBackgroundColor).opacity(0.72)
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(
+                        isSelected
+                            ? Color.accentColor.opacity(0.58)
+                            : Color.secondary.opacity(0.18),
+                        lineWidth: 1
+                    )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(level.displayTitle), \(levelSubtitle(for: level))")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var lastUpdateRow: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Last update")
+                    .font(.body)
+
+                Text(lastUpdateText)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+
+                if let lastUpdateErrorText {
+                    Text(lastUpdateErrorText)
+                        .font(.caption)
+                        .foregroundStyle(Color.red)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Spacer(minLength: 16)
+
+            Button {
+                updatePreparedBundles()
+            } label: {
+                if isUpdatingBundles {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Updating")
+                    }
+                } else {
+                    Label("Update", systemImage: "arrow.clockwise")
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(isUpdatingBundles)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var restartRequiredWarning: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.red)
+                .frame(width: 18, height: 18)
+
+            Text("Restart Sumi to apply this change.")
+                .font(.callout.weight(.medium))
+                .foregroundStyle(Color.red)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.red.opacity(0.10))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.red.opacity(0.35), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
     }
 
     private var diagnosticsPlan: SumiProtectionRulePlan {
@@ -254,151 +306,51 @@ private struct AdblockProtectionSettingsView: View {
         coordinator.globalDiagnostics()
     }
 
-    private var currentLevelSubtitle: String {
-        if settings.browserRestartRequired {
-            return "Restart Sumi before relying on newly applied global protection changes."
-        }
-        if settings.level != settings.appliedLevel {
-            return "Selected \(settings.level.displayTitle) is pending Apply."
-        }
-        return settings.appliedLevel.detail
-    }
-
-    private var levelDescriptionList: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(SumiProtectionLevel.allCases) { level in
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(level.displayTitle)
-                        .font(.caption.weight(.semibold))
-                        .frame(width: 74, alignment: .leading)
-                    Text(level.detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-        .padding(.vertical, 2)
-    }
-
-    private var applyRowSubtitle: String {
-        if let applyStatus {
-            return applyStatus
-        }
-        if let error = globalDiagnostics.lastApplyError {
-            return error
-        }
-        if globalDiagnostics.browserRestartRequired {
-            return "Restart Sumi to finish applying global protection changes."
-        }
-        if coordinator.applyNeeded {
-            return "Selection saved. Apply to save \(settings.level.displayTitle), then restart Sumi."
-        }
-        return globalDiagnostics.lastApplySummary ?? "Selected level is already applied."
-    }
-
-    private var bundleVersionText: String {
-        let global = globalDiagnostics
-        if let release = global.remoteReleaseVersion ?? bundleUpdateStatus.lastReleaseVersion {
-            if let generation = global.activeGenerationId {
-                return "\(release) / \(generation)"
-            }
-            return release
-        }
-        return global.activeGenerationId ?? "Not installed"
-    }
-
-    private var bundleVersionSubtitle: String {
-        let source = globalDiagnostics.preparedBundleSource?.displayTitle ?? "No active prepared bundle"
-        return "Release version / bundle generation. Source: \(source)."
-    }
-
     private var lastUpdateText: String {
         let global = globalDiagnostics
         if let date = global.lastSuccessfulBundleInstallDate ?? bundleUpdateStatus.lastSuccessDate {
             return settingsDateString(date)
         }
-        if let attemptDate = bundleUpdateStatus.lastAttemptDate {
-            return "No successful update; last attempt \(settingsDateString(attemptDate))"
-        }
         return "Never"
     }
 
-    private var lastUpdateSubtitle: String {
-        if let summary = bundleUpdateStatus.lastSummary {
-            return summary
-        }
-        return "Manual bundle updates only; Sumi does not poll in the background."
+    private var lastUpdateErrorText: String? {
+        guard let reason = bundleUpdateStatus.lastFailureReason else { return nil }
+        return "Update failed: \(Self.compactUpdateError(reason))"
     }
 
-    private var signatureStatusText: String {
-        let global = globalDiagnostics
-        if global.remoteManifestSignatureVerified == true {
-            return "Verified"
-        }
-        if global.remoteManifestSignatureVerified == false || global.lastSignatureError != nil {
-            return "Failed"
-        }
-        return "Required"
-    }
-
-    private var signatureStatusSubtitle: String {
-        let global = globalDiagnostics
-        if let signatureError = global.lastSignatureError {
-            return signatureError
-        }
-        if global.remoteManifestSignatureVerified == true {
-            return "Remote release manifest signature is valid."
-        }
-        return "Signed remote release manifests are mandatory."
-    }
-
-    private var signatureStatusColor: Color {
-        let global = globalDiagnostics
-        if global.remoteManifestSignatureVerified == true {
-            return .secondary
-        }
-        if global.remoteManifestSignatureVerified == false || global.lastSignatureError != nil {
-            return .orange
-        }
-        return .secondary
-    }
-
-    private var restartRequiredSubtitle: String {
-        if settings.browserRestartRequired {
-            return "Restart Sumi to finish applying the current global level or bundle update."
+    private var applyHelperText: String {
+        if isApplying {
+            return "Applying..."
         }
         if coordinator.applyNeeded {
-            return "Apply the selected level before restarting."
+            return "Apply to use this level."
         }
-        return "No restart is pending."
+        return "Applied."
     }
 
-    private var updateBundlesSubtitle: String {
-        if isUpdatingBundles {
-            return "Fetching and verifying the latest signed prepared bundle release."
+    private func levelSubtitle(for level: SumiProtectionLevel) -> String {
+        switch level {
+        case .off:
+            return "No blocking"
+        case .protection:
+            return "Blocks known trackers"
+        case .adblock:
+            return "Blocks trackers and ads"
         }
-        return "Manual signed remote check. Updating bundles does not change the selected level."
-    }
-
-    private var lastUpdateError: String? {
-        bundleUpdateStatus.lastFailureReason
     }
 
     private func applySelectedLevel() {
         guard !isApplying else { return }
         isApplying = true
-        applyStatus = nil
         Task {
             do {
-                let outcome = try await coordinator.applySelectedLevel()
+                _ = try await coordinator.applySelectedLevel()
                 await MainActor.run {
-                    applyStatus = coordinator.globalDiagnostics().lastApplySummary ?? outcome.summary
                     isApplying = false
                 }
             } catch {
                 await MainActor.run {
-                    applyStatus = error.localizedDescription
                     isApplying = false
                 }
             }
@@ -410,11 +362,8 @@ private struct AdblockProtectionSettingsView: View {
         isUpdatingBundles = true
         Task {
             do {
-                let outcome = try await coordinator.updatePreparedBundlesManually()
+                _ = try await coordinator.updatePreparedBundlesManually()
                 await MainActor.run {
-                    applyStatus = outcome.browserRestartRequired
-                        ? "Prepared bundles updated. Restart Sumi before relying on the new global bundle set."
-                        : nil
                     isUpdatingBundles = false
                 }
             } catch {
@@ -468,6 +417,12 @@ private struct AdblockProtectionSettingsView: View {
     }
 
     #if DEBUG
+    private var debugDiagnosticsContextMenu: some View {
+        Button("Copy Protection Diagnostics") {
+            copyUnifiedProtectionDiagnostics()
+        }
+    }
+
     private var debugProtectionRows: [(String, String)] {
         let global = globalDiagnostics
         let plan = diagnosticsPlan
@@ -570,32 +525,6 @@ private struct AdblockProtectionSettingsView: View {
             .joined(separator: ", ")
     }
 
-    private func debugKeyValueGrid(rows: [(String, String)]) -> some View {
-        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 5) {
-            ForEach(rows, id: \.0) { row in
-                GridRow {
-                    Text(row.0)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(debugCompactValue(row.1))
-                        .font(.caption.monospaced())
-                        .textSelection(.enabled)
-                        .lineLimit(3)
-                        .truncationMode(.middle)
-                }
-            }
-        }
-    }
-
-    private func debugCompactValue(_ value: String) -> String {
-        guard !value.isEmpty else { return "[]" }
-        let limit = 240
-        guard value.count > limit else { return value }
-        let head = value.prefix(120)
-        let tail = value.suffix(80)
-        return "\(head) ... \(tail) (\(value.count) chars; copy diagnostics for full value)"
-    }
-
     private func debugDateString(_ date: Date?) -> String {
         guard let date else { return "nil" }
         return Self.debugDateFormatter.string(from: date)
@@ -615,6 +544,16 @@ private struct AdblockProtectionSettingsView: View {
         formatter.timeStyle = .short
         return formatter
     }()
+
+    private static func compactUpdateError(_ reason: String) -> String {
+        let singleLine = reason
+            .split(whereSeparator: \.isNewline)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let limit = 140
+        guard singleLine.count > limit else { return singleLine }
+        return "\(singleLine.prefix(limit))..."
+    }
 }
 
 private struct DebugProtectionDiagnosticsTarget {
