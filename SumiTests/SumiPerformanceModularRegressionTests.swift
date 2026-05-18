@@ -100,14 +100,8 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
-        let trackingProbe = TrackingRuntimeProbe()
         let userscriptsProbe = UserscriptsRuntimeProbe()
         let extensionsProbe = ExtensionsRuntimeProbe()
-        let trackingModule = makeTrackingModule(
-            registry: registry,
-            probe: trackingProbe,
-            defaults: harness.defaults
-        )
         let userscriptsModule = makeUserscriptsModule(
             registry: registry,
             probe: userscriptsProbe
@@ -120,16 +114,12 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
 
         let browserManager = BrowserManager(
             moduleRegistry: registry,
-            trackingProtectionModule: trackingModule,
             adBlockingModule: adBlockingModule,
             extensionsModule: extensionsModule,
             userscriptsModule: userscriptsModule
         )
 
         XCTAssertNotNil(browserManager.currentProfile)
-        XCTAssertEqual(trackingProbe.settingsCount, 0)
-        XCTAssertEqual(trackingProbe.dataStoreCount, 0)
-        XCTAssertEqual(trackingProbe.serviceCount, 0)
         XCTAssertEqual(userscriptsProbe.managerCount, 0)
         XCTAssertEqual(userscriptsProbe.storeCount, 0)
         XCTAssertEqual(userscriptsProbe.injectorCount, 0)
@@ -207,7 +197,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         )
         let coordinator = SumiProtectionCoordinator(
             settings: settings,
-            trackingProtectionModule: SumiTrackingProtectionModule(moduleRegistry: registry),
             adBlockingModule: adBlockingModule,
             moduleRegistry: registry
         )
@@ -226,17 +215,11 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
-        let trackingProbe = TrackingRuntimeProbe()
         let userscriptsProbe = UserscriptsRuntimeProbe()
         let extensionsProbe = ExtensionsRuntimeProbe()
         let adBlockingModule = SumiAdBlockingModule(moduleRegistry: registry)
         let browserManager = BrowserManager(
             moduleRegistry: registry,
-            trackingProtectionModule: makeTrackingModule(
-                registry: registry,
-                probe: trackingProbe,
-                defaults: harness.defaults
-            ),
             adBlockingModule: adBlockingModule,
             extensionsModule: try makeExtensionsModule(
                 registry: registry,
@@ -274,9 +257,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             tab.normalTabCoreUserScripts().first { $0.source.contains("__sumiTabSuspension") }
         )
         XCTAssertTrue(suspensionScript.forMainFrameOnly)
-        XCTAssertEqual(trackingProbe.settingsCount, 0)
-        XCTAssertEqual(trackingProbe.dataStoreCount, 0)
-        XCTAssertEqual(trackingProbe.serviceCount, 0)
         XCTAssertEqual(userscriptsProbe.managerCount, 0)
         XCTAssertEqual(userscriptsProbe.storeCount, 0)
         XCTAssertEqual(userscriptsProbe.injectorCount, 0)
@@ -310,14 +290,16 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertTrue(registry.isEnabled(.extensions))
         XCTAssertFalse(registry.isEnabled(.userScripts))
 
-        let trackingSettings = SumiTrackingProtectionSettings(userDefaults: harness.defaults)
+        let protectionSettings = SumiProtectionSettings(userDefaults: harness.defaults)
         let url = URL(string: "https://www.example.com/path")!
-        trackingSettings.setGlobalMode(.enabled)
-        trackingSettings.setSiteOverride(.disabled, for: url)
+        protectionSettings.setLevel(.protection)
+        protectionSettings.setAppliedLevel(.protection)
+        adBlockingModule.setSiteOverride(.disabled, for: url)
         adBlockingModule.setEnabled(false)
 
-        XCTAssertEqual(trackingSettings.globalMode, .enabled)
-        XCTAssertEqual(trackingSettings.override(for: url), .disabled)
+        XCTAssertEqual(protectionSettings.level, .protection)
+        XCTAssertEqual(protectionSettings.appliedLevel, .protection)
+        XCTAssertEqual(adBlockingModule.siteOverride(for: url), .disabled)
         XCTAssertFalse(registry.isEnabled(.adBlocking))
         XCTAssertTrue(registry.isEnabled(.trackingProtection))
     }
@@ -428,8 +410,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             XCTAssertFalse(source.contains("SumiContentBlockingService.shared"), relativePath)
         }
 
-        let moduleSource = try Self.source(named: "Sumi/ContentBlocking/SumiTrackingProtectionModule.swift")
-        let dataSource = try Self.source(named: "Sumi/ContentBlocking/SumiTrackingProtection.swift")
         let settingsSource = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
         let trackingSettingsSource = settingsSource
 
@@ -444,10 +424,12 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertFalse(trackingSettingsSource.localizedCaseInsensitiveContains("browser update"))
         XCTAssertFalse(trackingSettingsSource.localizedCaseInsensitiveContains("app update"))
 
-        for source in [moduleSource, dataSource] {
+        for source in [
+            try Self.source(named: "Sumi/ContentBlocking/SumiProtectionCoordinator.swift"),
+            try Self.source(named: "Sumi/ContentBlocking/SumiContentBlockingService.swift"),
+        ] {
             XCTAssertFalse(source.contains("Timer"))
             XCTAssertFalse(source.contains("scheduledTimer"))
-            XCTAssertFalse(source.contains("Task.sleep"))
             XCTAssertFalse(source.localizedCaseInsensitiveContains("stale"))
         }
 
@@ -738,35 +720,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertTrue(productionSources.contains("didFinishOnboardingKey: true"))
     }
 
-    private func makeTrackingModule(
-        registry: SumiModuleRegistry,
-        probe: TrackingRuntimeProbe,
-        defaults: UserDefaults
-    ) -> SumiTrackingProtectionModule {
-        SumiTrackingProtectionModule(
-            moduleRegistry: registry,
-            settingsFactory: {
-                probe.settingsCount += 1
-                return SumiTrackingProtectionSettings(userDefaults: defaults)
-            },
-            dataStoreFactory: {
-                probe.dataStoreCount += 1
-                return SumiTrackingProtectionDataStore(
-                    userDefaults: defaults,
-                    storageDirectory: FileManager.default.temporaryDirectory
-                        .appendingPathComponent(
-                            "SumiPrompt20Tracking-\(UUID().uuidString)",
-                            isDirectory: true
-                        )
-                )
-            },
-            contentBlockingServiceFactory: { _, _ in
-                probe.serviceCount += 1
-                return SumiContentBlockingService(policy: .disabled)
-            }
-        )
-    }
-
     private func makeUserscriptsModule(
         registry: SumiModuleRegistry,
         probe: UserscriptsRuntimeProbe
@@ -905,12 +858,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
     }
-}
-
-private final class TrackingRuntimeProbe {
-    var settingsCount = 0
-    var dataStoreCount = 0
-    var serviceCount = 0
 }
 
 private final class UserscriptsRuntimeProbe {

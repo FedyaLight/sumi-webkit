@@ -24,10 +24,10 @@ Release and bundle manifests preserve the source name, source URL, license URL,
 attribution, generation date, source SHA-256, rule count, and shard count before
 Sumi consumes the prepared shards.
 
-The older in-browser DDG TrackerRadarKit path remains a temporary migration
-fallback until prepared `trackingNetwork` output is manually proven comparable.
-It must not be attached independently when a prepared `trackingNetwork` group is
-active.
+Sumi.app does not fetch DDG tracker data directly, run TrackerRadarKit
+conversion, or generate tracking WebKit rules in the browser runtime. Prepared
+`trackingNetwork` shards from signed protection-bundle releases are the only
+runtime tracking data path.
 
 ## Adblock redirect/noop resource compatibility metadata
 

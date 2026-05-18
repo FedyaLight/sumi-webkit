@@ -36,7 +36,7 @@ Native CSS is not a normal product mode. It remains validated only so prepared b
 
 ## Development bundle import
 
-Until `sumi-protection-bundles` exists, local developer tooling may still create prepared bundles outside the app. Sumi can consume a prepared development bundle from:
+Local developer tooling may still create prepared bundles outside the app. Sumi can consume a prepared development bundle from:
 
 ```text
 .build/sumi-adblock-bundles/adguardAdsPrivacy/SumiAdblockBundle
@@ -55,11 +55,11 @@ The static update path stays outside the browser runtime:
 5. If Protection or Adblock is already the applied level, Sumi compiles the prepared shards for the requested logical groups with WebKit and commits the new active generation only after validation succeeds.
 6. Sumi keeps the previous generation so failed downloads, hash mismatches, incompatible manifests, and compile failures do not replace the last known good active bundle set.
 
-Sumi.app never runs `adblock-rust`, never parses raw filter lists, and never checks for bundle updates on launch or timers. Existing pages may need reload or a full Sumi restart after a manual bundle update; the UI reports restart-required instead of claiming live replacement.
+Sumi.app never runs `adblock-rust`, never parses raw filter lists, never converts DDG TDS through TrackerRadarKit, and never checks for bundle updates on launch or timers. Existing pages may need reload or a full Sumi restart after a manual bundle update; the UI reports restart-required instead of claiming live replacement.
 
 The current repository keeps any temporary generation scripts as developer tooling only. They must not be referenced by Sumi.app runtime, release UI, or app-target build phases.
 
-The old browser-side DDG TrackerRadarKit path is retained only as a temporary migration fallback while prepared `trackingNetwork` output is validated against the previous baseline. It must not be used as an independent normal-tab attachment path when the prepared `trackingNetwork` group is active.
+There is no browser-side DDG TrackerRadarKit fallback. Protection requires a prepared `trackingNetwork` group from the signed app, development, or remote bundle. Adblock requires both prepared `trackingNetwork` and prepared `adblockAdsPrivacyNetwork`.
 
 ## Manual validation
 

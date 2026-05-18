@@ -30,9 +30,7 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
         let snapshot = SiteControlsSnapshot.resolve(
             url: URL(string: "https://example.com")!,
             profile: nil,
-            protectionCoordinator: nil,
-            trackingProtectionModule: nil,
-            adBlockingModule: nil
+            protectionCoordinator: nil
         )
 
         XCTAssertFalse(snapshot.settingsRows.contains { $0.id == "tracking-protection" })
@@ -128,7 +126,6 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
         )
         let coordinator = SumiProtectionCoordinator(
             settings: settings,
-            trackingProtectionModule: SumiTrackingProtectionModule(moduleRegistry: registry),
             adBlockingModule: adBlockingModule,
             moduleRegistry: registry
         )

@@ -34,8 +34,8 @@ final class SumiRegistrableDomainResolverTests: XCTestCase {
     }
 }
 
-final class SumiTrackingProtectionSiteNormalizerRegistrableDomainTests: XCTestCase {
-    private let normalizer = SumiTrackingProtectionSiteNormalizer()
+final class SumiProtectionSiteNormalizerRegistrableDomainTests: XCTestCase {
+    private let normalizer = SumiProtectionSiteNormalizer()
 
     func testNormalizerLowercasesAndUsesRegistrableDomain() {
         XCTAssertEqual(normalizer.normalizedHost(fromRawHost: " WWW.Example.COM. "), "example.com")

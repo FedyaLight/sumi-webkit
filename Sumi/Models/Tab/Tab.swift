@@ -254,17 +254,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { webViewRuntime.webViewConfigurationOverride }
         set { webViewRuntime.webViewConfigurationOverride = newValue }
     }
-    var trackingProtectionAppliedAttachmentState: SumiTrackingProtectionAttachmentState? {
-        get { webViewRuntime.trackingProtectionAppliedAttachmentState }
-        set { webViewRuntime.trackingProtectionAppliedAttachmentState = newValue }
-    }
-    var trackingProtectionReloadRequirement: SumiTrackingProtectionReloadRequirement? {
-        get { webViewRuntime.trackingProtectionReloadRequirement }
-        set { webViewRuntime.trackingProtectionReloadRequirement = newValue }
-    }
-    var isTrackingProtectionReloadRequired: Bool {
-        trackingProtectionReloadRequirement != nil
-    }
     var adblockAppliedAttachmentState: SumiAdblockAttachmentState? {
         get { webViewRuntime.adblockAppliedAttachmentState }
         set { webViewRuntime.adblockAppliedAttachmentState = newValue }
@@ -855,21 +844,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         isDisplayingPDFDocument = false
     }
 
-    func trackingProtectionDesiredAttachmentState(
-        for targetURL: URL?
-    ) -> SumiTrackingProtectionAttachmentState {
-        guard let module = browserManager?.trackingProtectionModule else {
-            return .disabled(siteHost: nil)
-        }
-        return module.effectivePolicy(for: targetURL).attachmentState
-    }
-
-    func noteTrackingProtectionAttachmentApplied(
-        _ state: SumiTrackingProtectionAttachmentState
-    ) {
-        trackingProtectionAppliedAttachmentState = state
-    }
-
     func adblockDesiredAttachmentState(
         for targetURL: URL?
     ) -> SumiAdblockAttachmentState {
@@ -1025,50 +999,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         )
     }
 
-    func markTrackingProtectionReloadRequiredIfNeeded(
-        afterChangingOverrideFor changedURL: URL?
-    ) {
-        guard let module = browserManager?.trackingProtectionModule,
-              let changedHost = module.normalizedSiteHost(for: changedURL),
-              changedHost == module.normalizedSiteHost(for: url)
-        else { return }
-
-        updateTrackingProtectionReloadRequirementForCurrentSite()
-    }
-
-    func updateTrackingProtectionReloadRequirementForCurrentSite() {
-        guard existingWebView != nil else {
-            clearTrackingProtectionReloadRequirement()
-            return
-        }
-
-        let desiredState = trackingProtectionDesiredAttachmentState(for: url)
-        guard desiredState.siteHost != nil,
-              let appliedState = trackingProtectionAppliedAttachmentState,
-              appliedState.isEnabled != desiredState.isEnabled
-        else {
-            clearTrackingProtectionReloadRequirement()
-            return
-        }
-
-        setTrackingProtectionReloadRequirement(
-            SumiTrackingProtectionReloadRequirement(
-                siteHost: desiredState.siteHost,
-                desiredAttachmentState: desiredState
-            )
-        )
-    }
-
-    func clearTrackingProtectionReloadRequirementIfResolved(for committedURL: URL) {
-        guard let requirement = trackingProtectionReloadRequirement else { return }
-
-        let committedState = trackingProtectionDesiredAttachmentState(for: committedURL)
-        if committedState.siteHost != requirement.siteHost
-            || trackingProtectionAppliedAttachmentState?.isEnabled == committedState.isEnabled {
-            clearTrackingProtectionReloadRequirement()
-        }
-    }
-
     func markAutoplayReloadRequiredIfNeeded(afterChangingPolicyFor changedURL: URL?) {
         let changedOrigin = SumiPermissionOrigin(url: changedURL)
         let currentOrigin = SumiPermissionOrigin(url: url)
@@ -1106,21 +1036,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     func clearAutoplayReloadRequirementIfResolved(for committedURL: URL) {
         _ = committedURL
         updateAutoplayReloadRequirementForCurrentSite()
-    }
-
-    func trackingProtectionAttachmentRequiresNormalWebViewRebuild(
-        for targetURL: URL?
-    ) -> Bool {
-        guard existingWebView != nil,
-              webViewConfigurationOverride == nil,
-              !isPopupHost
-        else { return false }
-
-        let desiredState = trackingProtectionDesiredAttachmentState(for: targetURL)
-        guard let appliedState = trackingProtectionAppliedAttachmentState else {
-            return desiredState.isEnabled
-        }
-        return appliedState.isEnabled != desiredState.isEnabled
     }
 
     func adblockAttachmentRequiresNormalWebViewRebuild(
@@ -1167,53 +1082,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     @discardableResult
-    func rebuildNormalWebViewForTrackingProtectionIfNeeded(
-        targetURL: URL?,
-        reason: String
-    ) -> Bool {
-        guard trackingProtectionAttachmentRequiresNormalWebViewRebuild(for: targetURL),
-              let previousWebView = existingWebView
-        else { return false }
-
-        let coordinator = browserManager?.webViewCoordinator
-        let previousWindowId = primaryWindowId ?? coordinator?.windowID(containing: previousWebView)
-        let hadTrackedWebViews = coordinator?.windowIDs(for: id).isEmpty == false
-        let previousAppliedState = trackingProtectionAppliedAttachmentState
-
-        guard let replacementWebView = makeNormalTabWebView(reason: reason) else {
-            return false
-        }
-
-        invalidateCurrentPermissionPageForWebViewReplacement(reason: reason)
-
-        let removedTrackedWebViews = coordinator?.removeAllWebViews(for: self) ?? false
-        if hadTrackedWebViews && !removedTrackedWebViews {
-            trackingProtectionAppliedAttachmentState = previousAppliedState
-            return false
-        }
-
-        if !removedTrackedWebViews {
-            cleanupCloneWebView(previousWebView)
-            _webView = nil
-            primaryWindowId = nil
-        }
-
-        if let previousWindowId {
-            coordinator?.setWebView(replacementWebView, for: id, in: previousWindowId)
-            assignWebViewToWindow(replacementWebView, windowId: previousWindowId)
-            if let windowState = browserManager?.windowRegistry?.windows[previousWindowId] {
-                browserManager?.refreshCompositor(for: windowState)
-            }
-        } else {
-            _webView = replacementWebView
-        }
-
-        updateProtectionReloadRequirementForCurrentSite()
-        updateAutoplayReloadRequirementForCurrentSite()
-        return true
-    }
-
-    @discardableResult
     func rebuildNormalWebViewForAdblockIfNeeded(
         targetURL: URL?,
         reason: String
@@ -1255,7 +1123,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             _webView = replacementWebView
         }
 
-        updateTrackingProtectionReloadRequirementForCurrentSite()
         updateAutoplayReloadRequirementForCurrentSite()
         return true
     }
@@ -1274,7 +1141,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         let previousWindowId = primaryWindowId ?? coordinator?.windowID(containing: previousWebView)
         let hadTrackedWebViews = coordinator?.windowIDs(for: id).isEmpty == false
         let previousProtectionState = protectionAppliedAttachmentState
-        let previousTrackingState = trackingProtectionAppliedAttachmentState
         let previousAdblockState = adblockAppliedAttachmentState
 
         guard let replacementWebView = makeNormalTabWebView(reason: reason) else {
@@ -1286,7 +1152,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         let removedTrackedWebViews = coordinator?.removeAllWebViews(for: self) ?? false
         if hadTrackedWebViews && !removedTrackedWebViews {
             protectionAppliedAttachmentState = previousProtectionState
-            trackingProtectionAppliedAttachmentState = previousTrackingState
             adblockAppliedAttachmentState = previousAdblockState
             return false
         }
@@ -1360,29 +1225,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         SumiAutoplayPolicyStoreAdapter.shared.effectivePolicy(
             for: targetURL,
             profile: resolveProfile()
-        )
-    }
-
-    private func setTrackingProtectionReloadRequirement(
-        _ requirement: SumiTrackingProtectionReloadRequirement
-    ) {
-        guard trackingProtectionReloadRequirement != requirement else { return }
-        trackingProtectionReloadRequirement = requirement
-        notifyTrackingProtectionReloadRequirementChanged()
-    }
-
-    private func clearTrackingProtectionReloadRequirement() {
-        guard trackingProtectionReloadRequirement != nil else { return }
-        trackingProtectionReloadRequirement = nil
-        notifyTrackingProtectionReloadRequirementChanged()
-    }
-
-    private func notifyTrackingProtectionReloadRequirementChanged() {
-        objectWillChange.send()
-        NotificationCenter.default.post(
-            name: .sumiTabNavigationStateDidChange,
-            object: self,
-            userInfo: ["tabId": id]
         )
     }
 

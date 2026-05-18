@@ -219,13 +219,6 @@ struct SumiProtectionNormalTabDecision: Equatable, Sendable {
         plan.attachmentState
     }
 
-    var trackingAttachmentState: SumiTrackingProtectionAttachmentState {
-        SumiTrackingProtectionAttachmentState(
-            siteHost: plan.siteHost,
-            isEnabled: plan.trackingGroupActive
-        )
-    }
-
     var adblockAttachmentState: SumiAdblockAttachmentState {
         SumiAdblockAttachmentState(
             siteHost: plan.siteHost,
@@ -512,7 +505,7 @@ final class SumiProtectionSettings: ObservableObject {
             return .adblock
         }
         if userDefaults.bool(forKey: DefaultsKey.legacyTrackingEnabled)
-            || userDefaults.string(forKey: DefaultsKey.legacyTrackingGlobalMode) == SumiTrackingProtectionGlobalMode.enabled.rawValue {
+            || userDefaults.string(forKey: DefaultsKey.legacyTrackingGlobalMode) == "enabled" {
             return .protection
         }
         return .off
@@ -524,10 +517,9 @@ final class SumiProtectionCoordinator {
     static let shared = SumiProtectionCoordinator()
 
     let settings: SumiProtectionSettings
-    private let trackingProtectionModule: SumiTrackingProtectionModule
     private let adBlockingModule: SumiAdBlockingModule
     private let moduleRegistry: SumiModuleRegistry
-    private let siteNormalizer: SumiTrackingProtectionSiteNormalizer
+    private let siteNormalizer: SumiProtectionSiteNormalizer
     private let bundleRemoteUpdater: any SumiProtectionBundleRemoteUpdating
     let bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore
 
@@ -544,15 +536,13 @@ final class SumiProtectionCoordinator {
 
     init(
         settings: SumiProtectionSettings = .shared,
-        trackingProtectionModule: SumiTrackingProtectionModule = .shared,
         adBlockingModule: SumiAdBlockingModule = .shared,
         moduleRegistry: SumiModuleRegistry = .shared,
-        siteNormalizer: SumiTrackingProtectionSiteNormalizer = SumiTrackingProtectionSiteNormalizer(),
+        siteNormalizer: SumiProtectionSiteNormalizer = SumiProtectionSiteNormalizer(),
         bundleRemoteUpdater: any SumiProtectionBundleRemoteUpdating = SumiProtectionBundleRemoteUpdater(),
         bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore = .shared
     ) {
         self.settings = settings
-        self.trackingProtectionModule = trackingProtectionModule
         self.adBlockingModule = adBlockingModule
         self.moduleRegistry = moduleRegistry
         self.siteNormalizer = siteNormalizer
@@ -1325,7 +1315,6 @@ final class SumiProtectionCoordinator {
                 && appliedLevel == .off
                 && cachedAttachmentPlan == nil
                 && cachedAttachmentService == nil
-                && !trackingProtectionModule.isEnabled
                 && !adBlockingModule.isEnabled
         )
     }
@@ -1460,9 +1449,6 @@ final class SumiProtectionCoordinator {
     }
 
     private func syncLegacyModuleGates(for level: SumiProtectionLevel) {
-        // Temporary migration fallback only: normal-tab attachment is prepared-bundle-only through this coordinator.
-        // Do not wire SumiTrackingProtectionModule into normal tabs while prepared trackingNetwork is active.
-        trackingProtectionModule.setEnabled(level != .off)
         switch level {
         case .off:
             adBlockingModule.setEnabled(false)
@@ -1758,7 +1744,6 @@ final class SumiProtectionCoordinator {
     private static func isSumiOwnedProtectionIdentifier(_ identifier: String) -> Bool {
         identifier.hasPrefix("sumi.adblock.")
             || identifier.hasPrefix("sumi.tracking.")
-            || identifier == "SumiTrackingProtectionTrackerDataSet"
     }
 
     private static func canonicalWebKitJSONHash(_ encodedContentRuleList: String) -> String? {

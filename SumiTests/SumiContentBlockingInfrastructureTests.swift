@@ -101,8 +101,8 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
 
     func testDynamicRuleProviderWaitsForInitialResolvedRulesInsteadOfPublishingEmptyPlaceholder() async throws {
         let provider = StaticContentRuleListSetProvider(
-            ruleListSet: SumiTrackingRuleListSet(
-                trackerDataSet: [Self.validRuleListDefinition()]
+            ruleListSet: SumiContentRuleListSet(
+                definitions: [Self.validRuleListDefinition()]
             )
         )
         let service = SumiContentBlockingService(
@@ -919,13 +919,13 @@ private final class StaticContentRuleListSetProvider: SumiContentRuleListSetProv
     let changesPublisher = PassthroughSubject<Void, Never>().eraseToAnyPublisher()
     let hasProfileSpecificRuleLists = false
 
-    private let ruleListSet: SumiTrackingRuleListSet
+    private let ruleListSet: SumiContentRuleListSet
 
-    init(ruleListSet: SumiTrackingRuleListSet) {
+    init(ruleListSet: SumiContentRuleListSet) {
         self.ruleListSet = ruleListSet
     }
 
-    func ruleListSet(profileId: UUID?) throws -> SumiTrackingRuleListSet {
+    func ruleListSet(profileId: UUID?) throws -> SumiContentRuleListSet {
         ruleListSet
     }
 }

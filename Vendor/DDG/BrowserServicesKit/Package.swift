@@ -16,7 +16,6 @@ let package = Package(
         .library(name: "PrivacyConfig", targets: ["PrivacyConfig"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/duckduckgo/TrackerRadarKit.git", exact: "3.1.0"),
         .package(path: "../URLPredictor"),
     ],
     targets: [
@@ -38,16 +37,6 @@ let package = Package(
             dependencies: [
                 .product(name: "URLPredictor", package: "URLPredictor"),
             ],
-            swiftSettings: [
-                .define("DEBUG", .when(configuration: .debug))
-            ]
-        ),
-        .target(
-            name: "ContentBlocking",
-            dependencies: [
-                "TrackerRadarKit",
-            ],
-            path: "Sources/BrowserServicesKit/ContentBlocking",
             swiftSettings: [
                 .define("DEBUG", .when(configuration: .debug))
             ]
@@ -84,7 +73,6 @@ let package = Package(
             name: "PrivacyConfig",
             dependencies: [
                 "Common",
-                "ContentBlocking",
                 "Persistence",
             ],
             swiftSettings: [
