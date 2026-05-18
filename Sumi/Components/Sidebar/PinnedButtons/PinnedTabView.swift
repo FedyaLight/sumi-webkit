@@ -48,6 +48,7 @@ struct PinnedTabView: View {
                 chromeTemplateSystemImageName: chromeTemplateSystemImageName,
                 presentationState: presentationState,
                 isHovered: displayIsHovered,
+                isLoading: liveTab?.isLoading ?? false,
                 configuration: pinnedTabsConfiguration
             )
 
@@ -217,6 +218,7 @@ struct PinnedTileVisual: View {
     var chromeTemplateSystemImageName: String? = nil
     var presentationState: ShortcutPresentationState
     var isHovered: Bool = false
+    var isLoading: Bool = false
     var configuration: PinnedTabsConfiguration? = nil
 
     @Environment(\.sumiSettings) private var sumiSettings
@@ -260,6 +262,7 @@ struct PinnedTileVisual: View {
                     scale: faviconScale,
                     blur: faviconBlur
                 )
+                .loadingAlphaWaveMask(isLoading)
                 .allowsHitTesting(false)
             }
         }
@@ -387,6 +390,97 @@ struct PinnedTileVisual: View {
                 )
             }
         }
+    }
+}
+
+private extension View {
+    func loadingAlphaWaveMask(_ isActive: Bool) -> some View {
+        modifier(SumiLoadingAlphaWaveMaskModifier(isActive: isActive))
+    }
+}
+
+private struct SumiLoadingAlphaWaveMaskModifier: ViewModifier {
+    let isActive: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content.mask {
+            if isActive && !reduceMotion {
+                SumiLoadingAlphaWaveMask()
+            } else {
+                Color.white
+            }
+        }
+    }
+}
+
+private struct SumiLoadingAlphaWaveMask: View {
+    @State private var isAnimating = false
+
+    var body: some View {
+        GeometryReader { proxy in
+            let size = proxy.size
+            let halfWidth = relativeHalfWidth(for: size.width)
+            let centerX = isAnimating ? 1 + halfWidth : -halfWidth
+
+            LinearGradient(
+                stops: gradientStops(centerX: centerX, halfWidth: halfWidth),
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .onAppear {
+                restart()
+            }
+            .onChange(of: size) { _, _ in
+                restart()
+            }
+            .animation(
+                .linear(duration: SumiTabTitleAnimation.loadingAlphaWaveCycleDuration)
+                    .repeatForever(autoreverses: false),
+                value: isAnimating
+            )
+        }
+    }
+
+    private func restart() {
+        isAnimating = false
+        DispatchQueue.main.async {
+            isAnimating = true
+        }
+    }
+
+    private func gradientStops(centerX: CGFloat, halfWidth: CGFloat) -> [Gradient.Stop] {
+        let leadingShoulder = halfWidth * 0.56
+        let trailingShoulder = halfWidth * 0.56
+        return [
+            .init(color: .white, location: centerX - halfWidth),
+            .init(
+                color: .white.opacity(SumiTabTitleAnimation.loadingAlphaWaveShoulderAlpha),
+                location: centerX - leadingShoulder
+            ),
+            .init(
+                color: .white.opacity(SumiTabTitleAnimation.loadingAlphaWaveMinimumAlpha),
+                location: centerX
+            ),
+            .init(
+                color: .white.opacity(SumiTabTitleAnimation.loadingAlphaWaveShoulderAlpha),
+                location: centerX + trailingShoulder
+            ),
+            .init(color: .white, location: centerX + halfWidth)
+        ]
+    }
+
+    private func relativeHalfWidth(for width: CGFloat) -> CGFloat {
+        guard width > 0 else { return 0 }
+        let bandWidth = min(
+            max(
+                width * SumiTabTitleAnimation.loadingAlphaWaveRelativeBandWidth,
+                SumiTabTitleAnimation.loadingAlphaWaveMinimumBandWidth
+            ),
+            SumiTabTitleAnimation.loadingAlphaWaveMaximumBandWidth
+        )
+        return (bandWidth / width) / 2
     }
 }
 
