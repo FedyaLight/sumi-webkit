@@ -283,6 +283,7 @@ class BrowserManager: ObservableObject {
     var didConsumeStartupLastSessionRestoreOffer = false
     private var structuralChangeCancellable: AnyCancellable?
     private var tabManagerLoadObserverToken: NSObjectProtocol?
+    private var startupProtectionRestoreTask: Task<Void, Never>?
     private var pendingWindowSessionPersistTasks: [UUID: Task<Void, Never>] = [:]
     private var pendingWindowSessionPersistStates: [UUID: BrowserWindowState] = [:]
     private var pendingUserActivationsByWindow: [UUID: PendingUserTabActivation] = [:]
@@ -512,6 +513,8 @@ class BrowserManager: ObservableObject {
                 self?.handleTabManagerDataLoaded()
             }
         }
+
+        beginProtectionRestoreForStartupIfNeeded()
     }
 
     private func bindTabManagerStructuralUpdates() {
@@ -543,10 +546,22 @@ class BrowserManager: ObservableObject {
     private func handleTabManagerDataLoaded() {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            await self.restoreProtectionForStartupIfNeeded()
+            await self.awaitProtectionRestoreForStartupIfNeeded()
             self.windowSessionService.handleTabManagerDataLoaded(delegate: self)
             self.reconcileStartupSessionIfPossible()
         }
+    }
+
+    private func beginProtectionRestoreForStartupIfNeeded() {
+        guard startupProtectionRestoreTask == nil else { return }
+        startupProtectionRestoreTask = Task { @MainActor [weak self] in
+            await self?.restoreProtectionForStartupIfNeeded()
+        }
+    }
+
+    private func awaitProtectionRestoreForStartupIfNeeded() async {
+        beginProtectionRestoreForStartupIfNeeded()
+        await startupProtectionRestoreTask?.value
     }
 
     private func restoreProtectionForStartupIfNeeded() async {
@@ -1345,6 +1360,8 @@ class BrowserManager: ObservableObject {
     isolated deinit {
         permissionRecentActivityTask?.cancel()
         permissionSidebarPinningTask?.cancel()
+        startupProtectionRestoreTask?.cancel()
+        startupProtectionRestoreTask = nil
         pendingWindowSessionPersistTasks.values.forEach { $0.cancel() }
         pendingWindowSessionPersistTasks.removeAll()
         pendingWindowSessionPersistStates.removeAll()

@@ -177,7 +177,11 @@ extension Tab {
               let provider = controller.normalTabUserScriptsProvider
         else { return }
 
-        provider.replaceManagedUserScripts(normalTabManagedUserScripts(for: targetURL))
+        let managedUserScripts = normalTabManagedUserScripts(for: targetURL)
+        guard provider.replaceManagedUserScriptsIfChanged(managedUserScripts) else {
+            return
+        }
+
         let signpostState = PerformanceTrace.beginInterval("Tab.replaceNormalTabUserScripts")
         defer { PerformanceTrace.endInterval("Tab.replaceNormalTabUserScripts", signpostState) }
         await controller.replaceNormalTabUserScripts(with: provider)
@@ -311,16 +315,20 @@ extension Tab {
         if !isPopupHost && _existingWebView == nil {
             if let controller = _webView?.configuration.userContentController.sumiNormalTabUserContentController {
                 let initialWebView = _webView
-                Task { @MainActor [weak self, weak initialWebView] in
-                    let signpostState = PerformanceTrace.beginInterval("ContentBlocking.assetsInstallWait")
-                    await controller.waitForContentBlockingAssetsInstalled()
-                    PerformanceTrace.endInterval("ContentBlocking.assetsInstallWait", signpostState)
-                    guard let self,
-                          let initialWebView,
-                          self._existingWebView == nil,
-                          self._webView === initialWebView
-                    else { return }
-                    self.loadURL(self.url)
+                if controller.contentBlockingAssetSummary.isInstalled {
+                    loadURL(url)
+                } else {
+                    Task { @MainActor [weak self, weak initialWebView] in
+                        let signpostState = PerformanceTrace.beginInterval("ContentBlocking.assetsInstallWait")
+                        await controller.waitForContentBlockingAssetsInstalled()
+                        PerformanceTrace.endInterval("ContentBlocking.assetsInstallWait", signpostState)
+                        guard let self,
+                              let initialWebView,
+                              self._existingWebView == nil,
+                              self._webView === initialWebView
+                        else { return }
+                        self.loadURL(self.url)
+                    }
                 }
             } else {
                 loadURL(url)

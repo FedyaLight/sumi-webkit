@@ -85,6 +85,25 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         XCTAssertEqual(installedScriptCount(containing: "__sumiDDGFaviconTransportInstalled", in: controller), 1)
     }
 
+    func testEquivalentManagedScriptSetDoesNotAdvanceRevision() {
+        let provider = SumiNormalTabUserScripts(
+            managedUserScripts: [
+                ParityUserScript(context: "sumiParityStableManaged", sourceMarker: "__sumiParityStableManaged")
+            ]
+        )
+
+        let didReplaceEquivalentScripts = provider.replaceManagedUserScriptsIfChanged([
+            ParityUserScript(context: "sumiParityStableManaged", sourceMarker: "__sumiParityStableManaged")
+        ])
+        let didReplaceChangedScripts = provider.replaceManagedUserScriptsIfChanged([
+            ParityUserScript(context: "sumiParityChangedManaged", sourceMarker: "__sumiParityChangedManaged")
+        ])
+
+        XCTAssertFalse(didReplaceEquivalentScripts)
+        XCTAssertTrue(didReplaceChangedScripts)
+        XCTAssertEqual(provider.scriptsRevision, 1)
+    }
+
     func testWaitForContentBlockingAssetsInstalledReturnsForAlreadyInstalledDisabledAssets() async throws {
         let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController()
         let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
