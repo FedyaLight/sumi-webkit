@@ -188,10 +188,39 @@ struct SumiProtectionBundleReleaseManifest: Decodable, Sendable {
     }
 
     struct Bundle: Decodable, Equatable, Sendable {
+        struct Group: Decodable, Equatable, Sendable {
+            struct Source: Decodable, Equatable, Sendable {
+                let name: String?
+                let sourceName: String?
+                let url: String?
+                let sourceURL: String?
+                let license: String?
+                let sourceLicense: String?
+                let sourceLicenseURL: String?
+                let attribution: String?
+                let generatedAt: String?
+                let sourceSha256: String?
+                let sourceByteSize: Int?
+                let ruleCount: Int?
+                let shardCount: Int?
+                let nonCommercialOnly: Bool?
+                let shareAlike: Bool?
+                let generator: String?
+            }
+
+            let id: SumiProtectionGroupKind
+            let status: String?
+            let ruleCount: Int
+            let shardCount: Int
+            let assetNames: [String]
+            let source: Source?
+        }
+
         let profileId: String
         let bundleId: String
         let generationId: String
         let generatedDate: String
+        let groups: [Group]?
         let assetNames: [String]
     }
 
@@ -331,6 +360,7 @@ actor SumiProtectionBundleRemoteUpdater: SumiProtectionBundleRemoteUpdating {
         guard let bundle = manifest.bundle(profileId: profileId) else {
             throw SumiProtectionBundleRemoteUpdateError.profileMissing(profileId)
         }
+        try validateReleaseBundleGroups(bundle)
         let bundleAssets = manifest.assets(for: bundle)
         guard Set(bundle.assetNames) == Set(bundleAssets.map(\.name)) else {
             throw SumiProtectionBundleRemoteUpdateError.releaseManifestIncompatible(
@@ -428,6 +458,74 @@ actor SumiProtectionBundleRemoteUpdater: SumiProtectionBundleRemoteUpdating {
             throw SumiProtectionBundleRemoteUpdateError.releaseDowngradeRejected(
                 current: current,
                 incoming: incomingReleaseVersion
+            )
+        }
+    }
+
+    private func validateReleaseBundleGroups(
+        _ bundle: SumiProtectionBundleReleaseManifest.Bundle
+    ) throws {
+        guard let groups = bundle.groups, !groups.isEmpty else {
+            throw SumiProtectionBundleRemoteUpdateError.releaseManifestIncompatible(
+                "bundle \(bundle.profileId) has no logical group metadata"
+            )
+        }
+        var groupsById = [SumiProtectionGroupKind: SumiProtectionBundleReleaseManifest.Bundle.Group]()
+        for group in groups {
+            guard groupsById[group.id] == nil else {
+                throw SumiProtectionBundleRemoteUpdateError.releaseManifestIncompatible(
+                    "bundle \(bundle.profileId) has duplicate group \(group.id.rawValue)"
+                )
+            }
+            groupsById[group.id] = group
+        }
+        guard let trackingGroup = groupsById[.trackingNetwork] else {
+            throw SumiProtectionBundleRemoteUpdateError.releaseManifestIncompatible(
+                "bundle \(bundle.profileId) is missing trackingNetwork metadata"
+            )
+        }
+        guard groupsById[.adblockAdsPrivacyNetwork] != nil else {
+            throw SumiProtectionBundleRemoteUpdateError.releaseManifestIncompatible(
+                "bundle \(bundle.profileId) is missing adblockAdsPrivacyNetwork metadata"
+            )
+        }
+        guard trackingGroup.ruleCount > 0,
+              trackingGroup.shardCount > 0,
+              !trackingGroup.assetNames.isEmpty
+        else {
+            throw SumiProtectionBundleRemoteUpdateError.releaseManifestIncompatible(
+                "trackingNetwork metadata does not describe generated assets"
+            )
+        }
+        guard let source = trackingGroup.source else {
+            throw SumiProtectionBundleRemoteUpdateError.releaseManifestIncompatible(
+                "trackingNetwork metadata is missing source attribution"
+            )
+        }
+        guard source.sourceName == "DuckDuckGo Tracker Radar / TDS",
+              source.sourceURL == "https://staticcdn.duckduckgo.com/trackerblocking/v6/current/macos-tds.json",
+              source.sourceLicense == "CC BY-NC-SA 4.0",
+              source.sourceLicenseURL == "https://creativecommons.org/licenses/by-nc-sa/4.0/",
+              source.attribution?.isEmpty == false,
+              source.generatedAt?.isEmpty == false,
+              source.sourceSha256?.isEmpty == false,
+              source.nonCommercialOnly == true,
+              source.shareAlike == true
+        else {
+            throw SumiProtectionBundleRemoteUpdateError.releaseManifestIncompatible(
+                "trackingNetwork source metadata is incomplete"
+            )
+        }
+        if let sourceRuleCount = source.ruleCount,
+           sourceRuleCount != trackingGroup.ruleCount {
+            throw SumiProtectionBundleRemoteUpdateError.releaseManifestIncompatible(
+                "trackingNetwork source ruleCount does not match group ruleCount"
+            )
+        }
+        if let sourceShardCount = source.shardCount,
+           sourceShardCount != trackingGroup.shardCount {
+            throw SumiProtectionBundleRemoteUpdateError.releaseManifestIncompatible(
+                "trackingNetwork source shardCount does not match group shardCount"
             )
         }
     }

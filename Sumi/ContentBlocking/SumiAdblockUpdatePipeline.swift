@@ -734,5 +734,6 @@ actor AdblockUpdateCoordinator {
 
     static func isAdblockGeneratedWebKitIdentifier(_ identifier: String) -> Bool {
         identifier.hasPrefix("sumi.adblock.")
+            || identifier.hasPrefix("sumi.tracking.network.")
     }
 }

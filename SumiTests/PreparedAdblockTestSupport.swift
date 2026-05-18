@@ -4,6 +4,13 @@ import Foundation
 @testable import Sumi
 
 enum PreparedAdblockTestSupport {
+    static let ddgTrackingSourceName = "DuckDuckGo Tracker Radar / TDS"
+    static let ddgTrackingSourceURL = "https://staticcdn.duckduckgo.com/trackerblocking/v6/current/macos-tds.json"
+    static let ddgTrackingSourceLicense = "CC BY-NC-SA 4.0"
+    static let ddgTrackingSourceLicenseURL = "https://creativecommons.org/licenses/by-nc-sa/4.0/"
+    static let ddgTrackingAttribution = "Derived from DuckDuckGo Tracker Radar / Tracker Data Set for non-commercial Sumi protection bundles under CC BY-NC-SA 4.0 share-alike terms."
+    static let ddgTrackingSourceSha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
     static func makeBundle(
         at bundleURL: URL,
         profileId: String = SumiProtectionBundleProfile.adblock,
@@ -93,9 +100,23 @@ enum PreparedAdblockTestSupport {
                     "ruleCount": includeTrackingNetwork ? 1 : 0,
                     "shardCount": includeTrackingNetwork ? 1 : 0,
                     "source": [
+                        "type": "ddgTDS",
                         "name": "test-prepared-tracking",
-                        "url": "https://example.test/tracking.json",
-                        "license": "test-fixture",
+                        "sourceName": ddgTrackingSourceName,
+                        "url": ddgTrackingSourceURL,
+                        "sourceURL": ddgTrackingSourceURL,
+                        "license": ddgTrackingSourceLicense,
+                        "sourceLicense": ddgTrackingSourceLicense,
+                        "sourceLicenseURL": ddgTrackingSourceLicenseURL,
+                        "attribution": ddgTrackingAttribution,
+                        "generatedAt": "2026-05-17T00:00:00Z",
+                        "sourceSha256": ddgTrackingSourceSha256,
+                        "sourceByteSize": 1234,
+                        "ruleCount": includeTrackingNetwork ? 1 : 0,
+                        "shardCount": includeTrackingNetwork ? 1 : 0,
+                        "nonCommercialOnly": true,
+                        "shareAlike": true,
+                        "generator": "sumi-ddg-tds-webkit/0.1 tracker-radar-kit-compatible",
                     ],
                     "deduplication": [
                         "exactDuplicatesRemoved": 0,
@@ -350,10 +371,16 @@ enum PreparedAdblockTestSupport {
                 status: includeTrackingNetwork ? "available" : "placeholder",
                 ruleCount: includeTrackingNetwork ? 1 : 0,
                 shardCount: includeTrackingNetwork ? 1 : 0,
-                sourceName: "test-prepared-tracking",
-                sourceURL: "https://example.test/tracking.json",
-                sourceLicense: "test-fixture",
-                sourceGenerator: nil,
+                sourceName: ddgTrackingSourceName,
+                sourceURL: ddgTrackingSourceURL,
+                sourceLicense: ddgTrackingSourceLicense,
+                sourceLicenseURL: ddgTrackingSourceLicenseURL,
+                sourceAttribution: ddgTrackingAttribution,
+                sourceGeneratedAt: "2026-05-17T00:00:00Z",
+                sourceSha256: ddgTrackingSourceSha256,
+                sourceNonCommercialOnly: true,
+                sourceShareAlike: true,
+                sourceGenerator: "sumi-ddg-tds-webkit/0.1 tracker-radar-kit-compatible",
                 notes: includeTrackingNetwork ? [] : [
                     "trackingNetwork is intentionally missing for migration diagnostics coverage.",
                 ]
@@ -366,6 +393,12 @@ enum PreparedAdblockTestSupport {
                 sourceName: "test-prepared-adblock",
                 sourceURL: "https://example.test/adblock.txt",
                 sourceLicense: "test-fixture",
+                sourceLicenseURL: nil,
+                sourceAttribution: nil,
+                sourceGeneratedAt: nil,
+                sourceSha256: nil,
+                sourceNonCommercialOnly: nil,
+                sourceShareAlike: nil,
                 sourceGenerator: nil,
                 notes: []
             ),

@@ -338,28 +338,37 @@ final class AdblockWebKitRuleListStore {
 
     func loadActiveManifestIfEnabled() async {
         guard await isAdblockEnabled() else { return }
+        let observedManifest = ruleListProvider.activeManifest
         do {
             let manifest = try await manifestStore.activeManifest()
             do {
                 if try await installEmbeddedBundleIfNeeded(previousManifest: manifest) != nil { return }
             } catch where manifest != nil {
                 try await manifestStore.validateCompiledShardFiles(for: manifest!)
-                ruleListProvider.updateManifest(manifest)
+                updateManifestIfNoNewerPublication(manifest, replacing: observedManifest)
                 lastFailedShardIdentifier = nil
                 return
             }
             if let manifest { try await manifestStore.validateCompiledShardFiles(for: manifest) }
-            ruleListProvider.updateManifest(manifest)
+            updateManifestIfNoNewerPublication(manifest, replacing: observedManifest)
             lastFailedShardIdentifier = nil
         } catch let diagnostics as AdblockUpdateDiagnostics {
             lastFailedShardIdentifier = diagnostics.failedShardIdentifier
             lastUpdateDiagnostics = diagnostics
-            ruleListProvider.updateManifest(nil)
+            updateManifestIfNoNewerPublication(nil, replacing: observedManifest)
         } catch {
             lastFailedShardIdentifier = "manifest-load"
             lastUpdateDiagnostics = AdblockUpdateDiagnostics(summary: error.localizedDescription)
-            ruleListProvider.updateManifest(nil)
+            updateManifestIfNoNewerPublication(nil, replacing: observedManifest)
         }
+    }
+
+    private func updateManifestIfNoNewerPublication(
+        _ manifest: AdblockCompiledGenerationManifest?,
+        replacing observedManifest: AdblockCompiledGenerationManifest?
+    ) {
+        guard ruleListProvider.activeManifest == observedManifest else { return }
+        ruleListProvider.updateManifest(manifest)
     }
 
     func restorePreparedManifestIfAvailable(profileId: String) async throws -> AdblockCompiledGenerationManifest? {

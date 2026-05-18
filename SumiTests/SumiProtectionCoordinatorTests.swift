@@ -124,12 +124,15 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertTrue(fixture.coordinator.settings.browserRestartRequired)
         _ = try await fixture.coordinator.restoreAppliedLevelForStartup()
         let decision = fixture.coordinator.normalTabDecision(for: URL(string: "https://example.com")!, profileId: nil)
+        let global = fixture.coordinator.globalDiagnostics()
 
         XCTAssertEqual(decision.plan.effectiveLevel, .protection)
         XCTAssertEqual(decision.plan.activeGroups, [.trackingNetwork])
         XCTAssertTrue(decision.plan.expectedRuleListIdentifiers.allSatisfy { $0.hasPrefix("sumi.tracking.network.") })
         XCTAssertTrue(decision.plan.trackingGroupActive)
         XCTAssertFalse(decision.plan.adblockGroupActive)
+        XCTAssertTrue(global.groupSourceDiagnostics[.trackingNetwork]?.contains("sourceName=DuckDuckGo Tracker Radar / TDS") == true)
+        XCTAssertTrue(global.groupSourceDiagnostics[.trackingNetwork]?.contains("sourceLicense=CC BY-NC-SA 4.0") == true)
         XCTAssertEqual(fixture.trackingRuleSource.callCount, 0)
         XCTAssertTrue(fixture.didCreateAdblockRuleListStore())
     }
@@ -220,6 +223,7 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertFalse(tabRuntimeSource.contains("adBlockingModule.normalTabDecision"))
         XCTAssertFalse(tabRuntimeSource.contains("trackingProtectionModule.normalTabDecision"))
         XCTAssertTrue(coordinatorSource.contains("SumiProtectionCoordinator"))
+        XCTAssertTrue(coordinatorSource.contains("Temporary migration fallback only"))
     }
 
     private func makeFixture(

@@ -1460,6 +1460,8 @@ final class SumiProtectionCoordinator {
     }
 
     private func syncLegacyModuleGates(for level: SumiProtectionLevel) {
+        // Temporary migration fallback only: normal-tab attachment is prepared-bundle-only through this coordinator.
+        // Do not wire SumiTrackingProtectionModule into normal tabs while prepared trackingNetwork is active.
         trackingProtectionModule.setEnabled(level != .off)
         switch level {
         case .off:
