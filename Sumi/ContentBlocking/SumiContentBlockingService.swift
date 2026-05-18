@@ -283,6 +283,16 @@ final class SumiCompiledContentRuleListCatalog: SumiCompiledContentRuleListCatal
 
 @MainActor
 final class SumiContentBlockingService {
+    private enum RuleStoreReadiness {
+        case verifiedByStoreLookup
+        case needsSmokeLookup
+    }
+
+    private struct ResolvedRule {
+        let rules: SumiContentBlockerRules
+        let storeReadiness: RuleStoreReadiness
+    }
+
     let privacyConfigurationManager: SumiContentBlockingPrivacyConfigurationManager
 
     private let compiler: SumiContentRuleListCompiling
@@ -663,15 +673,20 @@ final class SumiContentBlockingService {
 
         for definition in definitions {
             let lookupStart = Date()
-            var rules = try await rule(for: definition)
-            let storeIdentifier = storeIdentifier(for: definition)
-            var canLookUp = await canLookUpCompiledRuleList(forIdentifier: storeIdentifier)
+            var resolvedRule = try await rule(for: definition)
+            var rules = resolvedRule.rules
+            let storeIdentifier = rules.storeIdentifier
+            var canLookUp = resolvedRule.storeReadiness == .verifiedByStoreLookup
+            if canLookUp == false {
+                canLookUp = await canLookUpCompiledRuleList(forIdentifier: storeIdentifier)
+            }
             ruleListLookupDuration += Date().timeIntervalSince(lookupStart)
 
             if canLookUp == false {
                 compiledRulesByIdentifier.removeValue(forKey: storeIdentifier)
                 let retryStart = Date()
-                rules = try await rule(for: definition)
+                resolvedRule = try await rule(for: definition)
+                rules = resolvedRule.rules
                 canLookUp = await canLookUpCompiledRuleList(forIdentifier: storeIdentifier)
                 ruleListLookupDuration += Date().timeIntervalSince(retryStart)
             }
@@ -715,23 +730,29 @@ final class SumiContentBlockingService {
         return subject
     }
 
-    private func rule(for definition: SumiContentRuleListDefinition) async throws -> SumiContentBlockerRules {
+    private func rule(for definition: SumiContentRuleListDefinition) async throws -> ResolvedRule {
         let rulesIdentifier = rulesIdentifier(for: definition)
         let storeIdentifier = storeIdentifier(for: definition)
 
         if let cachedRules = compiledRulesByIdentifier[storeIdentifier] {
-            return cachedRules
+            return ResolvedRule(
+                rules: cachedRules,
+                storeReadiness: .needsSmokeLookup
+            )
         }
 
         let ruleList: WKContentRuleList
+        let storeReadiness: RuleStoreReadiness
         if let cachedRuleList = await compiler.lookUpContentRuleList(forIdentifier: storeIdentifier) {
             ruleList = cachedRuleList
+            storeReadiness = .verifiedByStoreLookup
         } else {
             do {
                 ruleList = try await compiler.compileContentRuleList(
                     forIdentifier: storeIdentifier,
                     encodedContentRuleList: definition.encodedContentRuleList
                 )
+                storeReadiness = .needsSmokeLookup
             } catch {
                 throw SumiContentBlockingCompilationError.failedToCompileRuleList(
                     storeIdentifier,
@@ -748,7 +769,10 @@ final class SumiContentBlockingService {
             identifier: rulesIdentifier
         )
         compiledRulesByIdentifier[storeIdentifier] = rules
-        return rules
+        return ResolvedRule(
+            rules: rules,
+            storeReadiness: storeReadiness
+        )
     }
 
     private func rulesIdentifier(

@@ -213,11 +213,11 @@ class SearchManager {
     @MainActor private func searchHistoryEntries(for query: String) async -> [HistoryListItem] {
         guard let historyManager else { return [] }
 
-        async let visitMatches = historyManager.searchSuggestions(matching: query, limit: 100)
+        async let visitMatches = historyManager.searchSuggestions(matching: query, limit: 20)
         async let siteMatches = historyManager.historyPage(
             query: .rangeFilter(.allSites),
             searchTerm: query,
-            limit: 100
+            limit: 20
         ).items
 
         return mergeHistorySuggestionItems(

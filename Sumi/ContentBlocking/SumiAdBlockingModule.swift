@@ -561,7 +561,7 @@ final class SumiAdBlockingModule {
         sitePolicyFactory: (@MainActor () -> AdblockSitePolicyStore)? = nil,
         preparedBundleResourceURL: URL? = Bundle.main.resourceURL,
         preparedBundleRemoteRootURL: URL? = SumiRemoteAdblockBundleCache.defaultRootDirectory(),
-        preparedBundleGeneratedRootURL: URL? = SumiPreparedAdblockBundleResolver.defaultGeneratedBundlesRootURL(),
+        preparedBundleGeneratedRootURL: URL? = nil,
         ruleListStoreFactory: @escaping @MainActor (AdblockSettingsStore, @escaping @Sendable () async -> Bool) -> AdblockWebKitRuleListStore = {
             AdblockWebKitRuleListStore(settingsStore: $0, isAdblockEnabled: $1)
         }
@@ -712,7 +712,9 @@ final class SumiAdBlockingModule {
 
 #if DEBUG
     func embeddedAdblockBundleSnapshot() -> SumiEmbeddedAdblockBundleSnapshot {
-        SumiEmbeddedAdblockBundleCatalog.snapshot()
+        SumiEmbeddedAdblockBundleCatalog.snapshot(
+            generatedBundlesRootURL: preparedBundleGeneratedRootURL
+        )
     }
 
     func installEmbeddedAdblockBundle(
@@ -731,7 +733,10 @@ final class SumiAdBlockingModule {
         case .appResource:
             bundleURL = SumiEmbeddedAdblockBundleCatalog.embeddedBundleURL(for: profileId)
         case .developmentBundle:
-            bundleURL = SumiEmbeddedAdblockBundleCatalog.developmentBundleURL(for: profileId)
+            bundleURL = SumiEmbeddedAdblockBundleCatalog.developmentBundleURL(
+                for: profileId,
+                generatedBundlesRootURL: preparedBundleGeneratedRootURL
+            )
         case .remoteReleaseBundle:
             bundleURL = nil
         }

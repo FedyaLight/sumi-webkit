@@ -624,7 +624,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         spaceId: UUID? = nil,
         index: Int = 0,
         browserManager: BrowserManager? = nil,
-        existingWebView: WKWebView? = nil
+        existingWebView: WKWebView? = nil,
+        loadsCachedFaviconOnInit: Bool = true
     ) {
         self.id = id
         self.url = url
@@ -638,7 +639,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         navigationStateController.delegate = self
         self._existingWebView = existingWebView
 
-        applyCachedFaviconOrPlaceholder(for: url)
+        applyCachedFaviconOrPlaceholder(
+            for: url,
+            allowCacheLookup: loadsCachedFaviconOnInit
+        )
     }
 
     func bindToShortcutPin(_ pin: ShortcutPin) {

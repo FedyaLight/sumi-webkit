@@ -166,6 +166,60 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         )
     }
 
+    func testStartupRestoreDoesNotBlockOnFaviconCacheLoad() throws {
+        let persistenceSource = try Self.source(named: "Sumi/Managers/TabManager/TabManager+Persistence.swift")
+        XCTAssertFalse(persistenceSource.contains("waitUntilSharedFaviconManagerLoaded"))
+        XCTAssertFalse(persistenceSource.contains("async let faviconLoadTask"))
+        XCTAssertFalse(persistenceSource.contains("await faviconLoadTask"))
+        XCTAssertTrue(persistenceSource.contains("loadsCachedFaviconOnInit: false"))
+
+        let startupRestoreSource = try Self.source(named: "Sumi/Managers/TabManager/TabManager+StartupRestore.swift")
+        XCTAssertTrue(startupRestoreSource.contains("loadsCachedFaviconOnInit: false"))
+    }
+
+    func testCachedProtectionAttachmentPlanDropsEncodedRuleListsAfterPreparation() throws {
+        let source = try Self.source(named: "Sumi/ContentBlocking/SumiProtectionCoordinator.swift")
+
+        XCTAssertTrue(source.contains("retainEncodedRuleListsInPreparedPolicy: false"))
+        XCTAssertFalse(source.contains("cachedAttachmentPlan = plan"))
+        XCTAssertEqual(
+            source.components(separatedBy: "cachedAttachmentPlan = metadataOnlyGlobalAttachmentPlan(plan)").count - 1,
+            2
+        )
+    }
+
+    func testOffProtectionDecisionDoesNotInitializeSiteOverrideStore() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        let settings = SumiProtectionSettings(userDefaults: harness.defaults)
+        settings.setAppliedLevel(.off)
+        var sitePolicyFactoryCalls = 0
+        let adBlockingModule = SumiAdBlockingModule(
+            moduleRegistry: registry,
+            sitePolicyFactory: {
+                sitePolicyFactoryCalls += 1
+                return AdblockSitePolicyStore(userDefaults: harness.defaults)
+            }
+        )
+        let coordinator = SumiProtectionCoordinator(
+            settings: settings,
+            trackingProtectionModule: SumiTrackingProtectionModule(moduleRegistry: registry),
+            adBlockingModule: adBlockingModule,
+            moduleRegistry: registry
+        )
+
+        _ = coordinator.normalTabDecision(
+            for: URL(string: "https://example.com/path"),
+            profileId: nil
+        )
+
+        XCTAssertEqual(sitePolicyFactoryCalls, 0)
+    }
+
     func testDefaultNormalTabAttachesOnlyCoreRuntimeAndNoOptionalModuleAssets() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
