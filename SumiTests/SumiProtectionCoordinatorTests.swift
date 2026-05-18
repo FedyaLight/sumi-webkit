@@ -36,7 +36,7 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertEqual(SumiProtectionLevel.protection.requestedGroups, [.trackingNetwork])
         XCTAssertEqual(SumiProtectionLevel.adblock.requestedGroups, [.trackingNetwork, .adblockAdsPrivacyNetwork])
         XCTAssertNil(SumiProtectionLevel.off.preferredBundleProfileId)
-        XCTAssertNil(SumiProtectionLevel.protection.preferredBundleProfileId)
+        XCTAssertEqual(SumiProtectionLevel.protection.preferredBundleProfileId, "adguardAdsPrivacy")
         XCTAssertEqual(SumiProtectionLevel.adblock.preferredBundleProfileId, "adguardAdsPrivacy")
         XCTAssertEqual(SumiProtectionLevel.adblock.adblockRuleGroupKinds, [.network])
     }
@@ -110,7 +110,14 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
     func testProtectionActivatesTrackingNetworkOnly() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
-        let fixture = makeFixture(defaults: harness.defaults)
+        let resourceRoot = temporaryDirectory(prefix: "SumiProtectionResource")
+        let developmentRoot = temporaryDirectory(prefix: "SumiProtectionDevelopment")
+        try makePreparedDevelopmentBundle(in: developmentRoot)
+        let fixture = makeFixture(
+            defaults: harness.defaults,
+            resourceRoot: resourceRoot,
+            developmentRoot: developmentRoot
+        )
 
         fixture.coordinator.setLevel(.protection)
         _ = try await fixture.coordinator.applySelectedLevel()
@@ -120,11 +127,11 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(decision.plan.effectiveLevel, .protection)
         XCTAssertEqual(decision.plan.activeGroups, [.trackingNetwork])
-        XCTAssertEqual(decision.plan.expectedRuleListIdentifiers, ["sumi.tracking.network"])
+        XCTAssertTrue(decision.plan.expectedRuleListIdentifiers.allSatisfy { $0.hasPrefix("sumi.tracking.network.") })
         XCTAssertTrue(decision.plan.trackingGroupActive)
         XCTAssertFalse(decision.plan.adblockGroupActive)
-        XCTAssertEqual(fixture.trackingRuleSource.callCount, 1)
-        XCTAssertFalse(fixture.didCreateAdblockRuleListStore())
+        XCTAssertEqual(fixture.trackingRuleSource.callCount, 0)
+        XCTAssertTrue(fixture.didCreateAdblockRuleListStore())
     }
 
     func testAdblockRequiresAndInstallsPreparedAdguardAdsPrivacyDevelopmentBundle() async throws {
@@ -153,10 +160,34 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertEqual(plan.bundleSource, .developmentBundle)
         XCTAssertEqual(plan.bundleProfileId, "adguardAdsPrivacy")
         XCTAssertEqual(plan.requiredBundleProfileId, "adguardAdsPrivacy")
-        XCTAssertTrue(plan.expectedRuleListIdentifiers.contains("sumi.tracking.network"))
+        XCTAssertTrue(plan.expectedRuleListIdentifiers.contains { $0.hasPrefix("sumi.tracking.network.") })
         XCTAssertTrue(plan.expectedRuleListIdentifiers.contains { $0.hasPrefix("sumi.adblock.network.") })
+        XCTAssertEqual(fixture.trackingRuleSource.callCount, 0)
         XCTAssertEqual(global.preparedBundleSource, .developmentBundle)
         XCTAssertTrue(fixture.didCreateAdblockRuleListStore())
+    }
+
+    func testMissingTrackingNetworkReportsClearError() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let resourceRoot = temporaryDirectory(prefix: "SumiProtectionResource")
+        let developmentRoot = temporaryDirectory(prefix: "SumiProtectionDevelopment")
+        try makePreparedDevelopmentBundle(in: developmentRoot, includeTrackingNetwork: false)
+        let fixture = makeFixture(
+            defaults: harness.defaults,
+            resourceRoot: resourceRoot,
+            developmentRoot: developmentRoot
+        )
+
+        fixture.coordinator.setLevel(.protection)
+        do {
+            _ = try await fixture.coordinator.applySelectedLevel()
+            XCTFail("Expected missing prepared trackingNetwork error")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("trackingNetwork"))
+            XCTAssertTrue(error.localizedDescription.contains("prepared"))
+        }
+        XCTAssertEqual(fixture.trackingRuleSource.callCount, 0)
     }
 
     func testMissingAdguardAdsPrivacyReportsClearError() async {
@@ -266,11 +297,17 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         )
     }
 
-    private func makePreparedDevelopmentBundle(in root: URL) throws {
+    private func makePreparedDevelopmentBundle(
+        in root: URL,
+        includeTrackingNetwork: Bool = true
+    ) throws {
         let bundleURL = root
             .appendingPathComponent("adguardAdsPrivacy", isDirectory: true)
             .appendingPathComponent("SumiAdblockBundle", isDirectory: true)
-        try PreparedAdblockTestSupport.makeBundle(at: bundleURL)
+        try PreparedAdblockTestSupport.makeBundle(
+            at: bundleURL,
+            includeTrackingNetwork: includeTrackingNetwork
+        )
     }
 
     private func temporaryDirectory(prefix: String) -> URL {

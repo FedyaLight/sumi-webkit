@@ -38,10 +38,11 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         let definitions = try module.contentRuleListDefinitions(for: [.network])
         let state = module.desiredAttachmentState(for: URL(string: "https://example.com")!)
 
-        XCTAssertEqual(definitions.count, 1)
-        XCTAssertTrue(definitions.allSatisfy { $0.name.hasPrefix("sumi.adblock.network.") })
+        XCTAssertEqual(definitions.count, 2)
+        XCTAssertTrue(definitions.contains { $0.name.hasPrefix("sumi.tracking.network.") })
+        XCTAssertTrue(definitions.contains { $0.name.hasPrefix("sumi.adblock.network.") })
         XCTAssertTrue(state.isEnabled)
-        XCTAssertEqual(state.attachedShardIdentifiers.count, 1)
+        XCTAssertEqual(state.attachedShardIdentifiers.count, 2)
     }
 
     func testPreparedDevelopmentBundleInstallPathStillWorks() async throws {

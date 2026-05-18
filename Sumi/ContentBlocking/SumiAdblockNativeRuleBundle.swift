@@ -55,6 +55,7 @@ struct SumiAdblockNativeRuleBundleManifest: Codable, Equatable, Sendable {
     struct Shard: Codable, Equatable, Sendable {
         let kind: String
         let group: String
+        let logicalGroup: String?
         let relativePath: String
         let hash: String
         let byteSize: Int
@@ -82,6 +83,26 @@ struct SumiAdblockNativeRuleBundleManifest: Codable, Equatable, Sendable {
         let warnings: [String]
     }
 
+    struct Group: Codable, Equatable, Sendable {
+        struct Source: Codable, Equatable, Sendable {
+            let type: String?
+            let name: String?
+            let url: String?
+            let license: String?
+            let generator: String?
+        }
+
+        let id: SumiProtectionGroupKind
+        let displayName: String?
+        let status: String?
+        let activeLevels: [String]?
+        let ruleCount: Int
+        let shardCount: Int
+        let assetRelativePaths: [String]?
+        let source: Source?
+        let notes: [String]?
+    }
+
     let schemaVersion: Int
     let bundleId: String
     let generationId: String
@@ -90,6 +111,8 @@ struct SumiAdblockNativeRuleBundleManifest: Codable, Equatable, Sendable {
     let nativeCSSSafetyPolicyVersion: String?
     let generatedDate: String
     let lists: [SourceList]
+    let profileLevelMapping: [String: [SumiProtectionGroupKind]]?
+    let groups: [Group]?
     let shards: [Shard]
     let diagnosticsSummary: DiagnosticsSummary
     let unsafeCSSFilteredCount: Int
@@ -230,7 +253,7 @@ struct SumiAdblockNativeRuleBundle: Sendable {
         let summary = NativeContentBlockingCompilationSummary(
             inputRuleCount: manifest.diagnosticsSummary.inputRuleCount,
             inputByteCount: manifest.lists.reduce(0) { $0 + $1.byteSize },
-            convertedNetworkRuleCount: manifest.diagnosticsSummary.networkRuleCount,
+            convertedNetworkRuleCount: networkShards.reduce(0) { $0 + $1.approximateRuleCount },
             convertedNativeCosmeticRuleCount: manifest.diagnosticsSummary.nativeCSSRuleCount,
             unsupportedOrIgnoredRuleCount: 0,
             networkJSONByteCount: networkShards.reduce(0) { $0 + $1.jsonByteCount },
@@ -248,6 +271,7 @@ struct SumiAdblockNativeRuleBundle: Sendable {
             nativeCSSShards: nativeCSSShards,
             nativeCompiler: compiler,
             nativeCompilerSourceLists: sourceLists.sorted { $0.id < $1.id },
+            nativeLogicalGroups: logicalGroups,
             nativeCompilationSummary: summary,
             compilerDiagnosticsSummary: compilerDiagnosticsSummary(generationSource: generationSource),
             lastSuccessfulUpdateDate: installedDate,
@@ -261,6 +285,23 @@ struct SumiAdblockNativeRuleBundle: Sendable {
 
     private var generatedDate: Date? {
         ISO8601DateFormatter().date(from: manifest.generatedDate)
+    }
+
+    private var logicalGroups: [NativeContentBlockingLogicalGroupDescriptor]? {
+        manifest.groups?.map {
+            NativeContentBlockingLogicalGroupDescriptor(
+                id: $0.id,
+                status: $0.status,
+                ruleCount: $0.ruleCount,
+                shardCount: $0.shardCount,
+                sourceName: $0.source?.name,
+                sourceURL: $0.source?.url,
+                sourceLicense: $0.source?.license,
+                sourceGenerator: $0.source?.generator,
+                notes: $0.notes ?? []
+            )
+        }
+        .sorted { $0.id.rawValue < $1.id.rawValue }
     }
 
     func compilerDiagnosticsSummary(
@@ -298,12 +339,15 @@ struct SumiAdblockNativeRuleBundle: Sendable {
             sourceListIdentifiers: manifest.lists.map(\.id).sorted(),
             sourceCategories: Array(Set(manifest.lists.compactMap(\.category)))
                 .sorted { $0.rawValue < $1.rawValue },
+            protectionGroup: shard.protectionGroupKind(
+                bundleProfileId: manifest.profileId
+            ),
             webKitIdentifier: shard.webKitIdentifier,
             contentHash: shard.hash,
             approximateRuleCount: shard.ruleCount,
             jsonByteCount: shard.byteSize,
             compilerIdentity: compiler,
-            diagnosticsSummary: "\(manifest.bundleId);\(shard.group)"
+            diagnosticsSummary: "\(manifest.bundleId);\(shard.logicalGroup ?? shard.group)"
         )
     }
 
@@ -901,5 +945,19 @@ private extension SumiAdblockNativeRuleBundleManifest.Shard {
         default:
             return .network
         }
+    }
+
+    func protectionGroupKind(bundleProfileId: String) -> SumiProtectionGroupKind? {
+        if let logicalGroup,
+           let group = SumiProtectionGroupKind(rawValue: logicalGroup) {
+            return group
+        }
+        if let group = SumiProtectionGroupKind(rawValue: group) {
+            return group
+        }
+        if bundleProfileId == SumiProtectionBundleProfile.adblock && ruleGroupKind == .network {
+            return .adblockAdsPrivacyNetwork
+        }
+        return nil
     }
 }

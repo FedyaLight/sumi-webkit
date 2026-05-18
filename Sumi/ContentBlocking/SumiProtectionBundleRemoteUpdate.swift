@@ -198,6 +198,7 @@ struct SumiProtectionBundleReleaseManifest: Decodable, Sendable {
     enum AssetRole: String, Decodable, Equatable, Sendable {
         case bundleManifest
         case diagnostics
+        case trackingNetworkShard
         case networkShard
         case nativeCSSShard
     }
@@ -206,6 +207,7 @@ struct SumiProtectionBundleReleaseManifest: Decodable, Sendable {
         let name: String
         let role: AssetRole
         let bundleProfileId: String
+        let groupId: SumiProtectionGroupKind?
         let relativePath: String
         let byteSize: Int
         let sha256: String

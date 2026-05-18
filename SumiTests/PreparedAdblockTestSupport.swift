@@ -8,9 +8,33 @@ enum PreparedAdblockTestSupport {
         at bundleURL: URL,
         profileId: String = SumiProtectionBundleProfile.adblock,
         generationId: String = "prepared-generation",
+        includeTrackingNetwork: Bool = true,
         includeNativeCSS: Bool = false,
         nativeCSSSafetyPolicyVersion: String = SumiAdblockNativeRuleBundle.requiredNativeCSSSafetyPolicyVersion
     ) throws {
+        var shards: [[String: Any]] = []
+
+        if includeTrackingNetwork {
+            let trackingDirectory = bundleURL.appendingPathComponent("trackingNetwork", isDirectory: true)
+            try FileManager.default.createDirectory(at: trackingDirectory, withIntermediateDirectories: true)
+
+            let trackingData = Data(trackingRuleJSON().utf8)
+            let trackingHash = sha256Hex(trackingData)
+            try trackingData.write(to: trackingDirectory.appendingPathComponent("trackingNetwork-0001.json"))
+            shards.append(
+                [
+                    "kind": "network",
+                    "group": "trackingNetwork",
+                    "logicalGroup": "trackingNetwork",
+                    "relativePath": "trackingNetwork/trackingNetwork-0001.json",
+                    "hash": trackingHash,
+                    "byteSize": trackingData.count,
+                    "ruleCount": 1,
+                    "webKitIdentifier": "sumi.tracking.network.\(generationId).0001.\(trackingHash.prefix(12))",
+                ]
+            )
+        }
+
         let networkDirectory = bundleURL.appendingPathComponent("network", isDirectory: true)
         try FileManager.default.createDirectory(at: networkDirectory, withIntermediateDirectories: true)
 
@@ -18,17 +42,18 @@ enum PreparedAdblockTestSupport {
         let networkHash = sha256Hex(networkData)
         try networkData.write(to: networkDirectory.appendingPathComponent("network-0001.json"))
 
-        var shards: [[String: Any]] = [
+        shards.append(
             [
                 "kind": "network",
-                "group": "network",
+                "group": "adblockAdsPrivacyNetwork",
+                "logicalGroup": "adblockAdsPrivacyNetwork",
                 "relativePath": "network/network-0001.json",
                 "hash": networkHash,
                 "byteSize": networkData.count,
                 "ruleCount": 1,
                 "webKitIdentifier": "sumi.adblock.network.\(generationId).0001.\(networkHash.prefix(12))",
-            ],
-        ]
+            ]
+        )
 
         if includeNativeCSS {
             let cssDirectory = bundleURL.appendingPathComponent("nativeCSS", isDirectory: true)
@@ -39,7 +64,8 @@ enum PreparedAdblockTestSupport {
             shards.append(
                 [
                     "kind": "nativeCSS",
-                    "group": "nativeCSS",
+                    "group": "adblockAdsPrivacyNetwork",
+                    "logicalGroup": "adblockAdsPrivacyNetwork",
                     "relativePath": "nativeCSS/nativeCSS-0001.json",
                     "hash": cssHash,
                     "byteSize": cssData.count,
@@ -54,6 +80,49 @@ enum PreparedAdblockTestSupport {
             "bundleId": "sumi.adblock.bundle.\(profileId).test",
             "generationId": generationId,
             "profileId": profileId,
+            "profileLevelMapping": [
+                "off": [],
+                "protection": ["trackingNetwork"],
+                "adblock": ["trackingNetwork", "adblockAdsPrivacyNetwork"],
+            ],
+            "groups": [
+                [
+                    "id": "trackingNetwork",
+                    "displayName": "Tracking Network",
+                    "status": includeTrackingNetwork ? "available" : "placeholder",
+                    "ruleCount": includeTrackingNetwork ? 1 : 0,
+                    "shardCount": includeTrackingNetwork ? 1 : 0,
+                    "source": [
+                        "name": "test-prepared-tracking",
+                        "url": "https://example.test/tracking.json",
+                        "license": "test-fixture",
+                    ],
+                    "deduplication": [
+                        "exactDuplicatesRemoved": 0,
+                        "safeToDedupe": true,
+                    ],
+                    "notes": includeTrackingNetwork ? [] : [
+                        "trackingNetwork is intentionally missing for migration diagnostics coverage.",
+                    ],
+                ],
+                [
+                    "id": "adblockAdsPrivacyNetwork",
+                    "displayName": "Adblock Ads Privacy Network",
+                    "status": "available",
+                    "ruleCount": 1,
+                    "shardCount": 1,
+                    "source": [
+                        "name": "test-prepared-adblock",
+                        "url": "https://example.test/adblock.txt",
+                        "license": "test-fixture",
+                    ],
+                    "deduplication": [
+                        "exactDuplicatesRemoved": 0,
+                        "safeToDedupe": true,
+                    ],
+                    "notes": [],
+                ],
+            ],
             "compiler": [
                 "name": "sumi-protection-bundles",
                 "version": "test",
@@ -76,7 +145,7 @@ enum PreparedAdblockTestSupport {
                 "inputRuleCount": shards.count,
                 "finalRuleCount": shards.count,
                 "finalShardCount": shards.count,
-                "networkRuleCount": 1,
+                "networkRuleCount": includeTrackingNetwork ? 2 : 1,
                 "nativeCSSRuleCount": includeNativeCSS ? 1 : 0,
                 "unsafeCSSFilteredCount": 0,
                 "warnings": [],
@@ -104,20 +173,41 @@ enum PreparedAdblockTestSupport {
         generationId: String = "prepared-generation",
         previousGenerationId: String? = nil,
         generationSource: AdblockRuleGenerationSource = .developmentBundle,
+        includeTrackingNetwork: Bool = true,
         includeNativeCSS: Bool = false
     ) async throws -> AdblockCompiledGenerationManifest {
+        var networkShards: [NativeContentBlockingShardDescriptor] = []
+        var shardDataById = [String: Data]()
+
+        if includeTrackingNetwork {
+            let trackingData = Data(trackingRuleJSON().utf8)
+            let trackingHash = sha256Hex(trackingData)
+            let trackingShard = shard(
+                id: "trackingNetwork-0001",
+                generationId: generationId,
+                kind: .network,
+                protectionGroup: .trackingNetwork,
+                webKitIdentifier: "sumi.tracking.network.\(generationId).0001.\(trackingHash.prefix(12))",
+                data: trackingData
+            )
+            networkShards.append(trackingShard)
+            shardDataById[trackingShard.id] = trackingData
+        }
+
         let networkData = Data(networkRuleJSON().utf8)
         let networkHash = sha256Hex(networkData)
         let networkShard = shard(
             id: "network-0001",
             generationId: generationId,
             kind: .network,
+            protectionGroup: .adblockAdsPrivacyNetwork,
             webKitIdentifier: "sumi.adblock.network.\(generationId).0001.\(networkHash.prefix(12))",
             data: networkData
         )
+        networkShards.append(networkShard)
 
         var nativeCSSShards: [NativeContentBlockingShardDescriptor] = []
-        var shardDataById = [networkShard.id: networkData]
+        shardDataById[networkShard.id] = networkData
         if includeNativeCSS {
             let cssData = Data(nativeCSSRuleJSON().utf8)
             let cssHash = sha256Hex(cssData)
@@ -125,6 +215,7 @@ enum PreparedAdblockTestSupport {
                 id: "nativeCSS-0001",
                 generationId: generationId,
                 kind: .nativeCosmeticCSS,
+                protectionGroup: .adblockAdsPrivacyNetwork,
                 webKitIdentifier: "sumi.adblock.nativeCSS.\(generationId).0001.\(cssHash.prefix(12))",
                 data: cssData
             )
@@ -143,13 +234,14 @@ enum PreparedAdblockTestSupport {
                     contentHash: "\(profileId)-hash"
                 ),
             ],
-            networkShards: [networkShard],
+            networkShards: networkShards,
             nativeCSSShards: nativeCSSShards,
             nativeCompiler: NativeContentBlockingCompilerIdentity(
                 name: "sumi-protection-bundles",
                 version: "test"
             ),
             nativeCompilerSourceLists: [],
+            nativeLogicalGroups: logicalGroups(includeTrackingNetwork: includeTrackingNetwork),
             compilerDiagnosticsSummary: "generationSource=\(generationSource.rawValue)",
             lastSuccessfulUpdateDate: Date(timeIntervalSince1970: 1_700_000_000),
             previousGenerationId: previousGenerationId,
@@ -179,6 +271,10 @@ enum PreparedAdblockTestSupport {
 
     static func networkRuleJSON() -> String {
         encodedNetworkRuleJSON(filter: ".*ads\\\\.example/.*")
+    }
+
+    static func trackingRuleJSON() -> String {
+        encodedNetworkRuleJSON(filter: ".*tracker\\\\.example/.*")
     }
 
     static func nativeCSSRuleJSON() -> String {
@@ -222,6 +318,7 @@ enum PreparedAdblockTestSupport {
         id: String,
         generationId: String,
         kind: AdblockCompiledRuleGroupKind,
+        protectionGroup: SumiProtectionGroupKind? = nil,
         webKitIdentifier: String,
         data: Data
     ) -> NativeContentBlockingShardDescriptor {
@@ -231,6 +328,7 @@ enum PreparedAdblockTestSupport {
             kind: kind,
             sourceListIdentifiers: [SumiProtectionBundleProfile.adblock],
             sourceCategories: [.baseAds],
+            protectionGroup: protectionGroup,
             webKitIdentifier: webKitIdentifier,
             contentHash: sha256Hex(data),
             approximateRuleCount: 1,
@@ -241,6 +339,37 @@ enum PreparedAdblockTestSupport {
             ),
             diagnosticsSummary: "prepared-test"
         )
+    }
+
+    private static func logicalGroups(
+        includeTrackingNetwork: Bool
+    ) -> [NativeContentBlockingLogicalGroupDescriptor] {
+        [
+            NativeContentBlockingLogicalGroupDescriptor(
+                id: .trackingNetwork,
+                status: includeTrackingNetwork ? "available" : "placeholder",
+                ruleCount: includeTrackingNetwork ? 1 : 0,
+                shardCount: includeTrackingNetwork ? 1 : 0,
+                sourceName: "test-prepared-tracking",
+                sourceURL: "https://example.test/tracking.json",
+                sourceLicense: "test-fixture",
+                sourceGenerator: nil,
+                notes: includeTrackingNetwork ? [] : [
+                    "trackingNetwork is intentionally missing for migration diagnostics coverage.",
+                ]
+            ),
+            NativeContentBlockingLogicalGroupDescriptor(
+                id: .adblockAdsPrivacyNetwork,
+                status: "available",
+                ruleCount: 1,
+                shardCount: 1,
+                sourceName: "test-prepared-adblock",
+                sourceURL: "https://example.test/adblock.txt",
+                sourceLicense: "test-fixture",
+                sourceGenerator: nil,
+                notes: []
+            ),
+        ]
     }
 }
 

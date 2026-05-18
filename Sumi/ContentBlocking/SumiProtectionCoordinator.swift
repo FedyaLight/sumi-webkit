@@ -3,6 +3,7 @@ import CryptoKit
 import Foundation
 
 enum SumiProtectionBundleProfile {
+    static let unified = "adguardAdsPrivacy"
     static let adblock = "adguardAdsPrivacy"
 }
 
@@ -48,10 +49,10 @@ enum SumiProtectionLevel: String, Codable, CaseIterable, Identifiable, Sendable 
 
     var preferredBundleProfileId: String? {
         switch self {
-        case .off, .protection:
+        case .off:
             return nil
-        case .adblock:
-            return SumiProtectionBundleProfile.adblock
+        case .protection, .adblock:
+            return SumiProtectionBundleProfile.unified
         }
     }
 
@@ -400,6 +401,7 @@ struct SumiProtectionGlobalDiagnostics: Equatable, Sendable {
     let lastApplySummary: String?
     let lastApplyError: String?
     let globalGroupsAvailable: [SumiProtectionGroupKind]
+    let groupSourceDiagnostics: [SumiProtectionGroupKind: String]
     let trackingSourceAvailable: Bool
     let adblockBundleAvailable: Bool
     let strictOffActive: Bool
@@ -571,7 +573,11 @@ final class SumiProtectionCoordinator {
         guard let requiredBundleProfileId = selectedLevel.preferredBundleProfileId else {
             return false
         }
-        return activePreparedBundleProfileId != requiredBundleProfileId
+        guard activePreparedBundleProfileId == requiredBundleProfileId,
+              let manifest = adBlockingModule.activeManifestIfLoaded()
+        else { return true }
+        let availableGroups = Set(Self.cachedPreparedGroups(level: selectedLevel, manifest: manifest).map(\.group))
+        return !Set(selectedLevel.requestedGroups).isSubset(of: availableGroups)
     }
 
     func applySelectedLevel() async throws -> SumiProtectionApplyOutcome {
@@ -625,6 +631,13 @@ final class SumiProtectionCoordinator {
                         detail: "The active prepared bundle after install is \(activePreparedBundleProfileId ?? "nil")."
                     )
                 }
+                let readinessPlan = globalAttachmentPlan(
+                    for: selectedLevel,
+                    profileId: nil,
+                    includeExpensiveDiagnostics: false,
+                    loadRuleDefinitions: false
+                )
+                try validateRequiredGroupsReady(in: readinessPlan)
                 installedBundleProfileId = requiredBundleProfileId
             } else {
                 clearPreparedBundleLookupDiagnostics()
@@ -668,6 +681,8 @@ final class SumiProtectionCoordinator {
 
     func updatePreparedBundlesManually() async throws -> SumiProtectionBundleManualUpdateOutcome {
         let profileId = SumiProtectionBundleProfile.adblock
+        let appliedLevel = settings.appliedLevel
+        syncLegacyModuleGates(for: appliedLevel)
         do {
             let remote = try await bundleRemoteUpdater.fetchLatestApprovedBundle(profileId: profileId)
             let activeManifest = adBlockingModule.activeManifestIfLoaded()
@@ -675,7 +690,7 @@ final class SumiProtectionCoordinator {
             let restartRequired: Bool
             let summary: String
 
-            if settings.appliedLevel == .adblock {
+            if appliedLevel != .off {
                 if activeManifest?.nativeRuleBundleId == remote.bundleId
                     || activeManifest?.activeGenerationId == remote.generationId {
                     activation = .alreadyCurrent
@@ -691,7 +706,7 @@ final class SumiProtectionCoordinator {
                             detail: "The remote bundle was cached but did not become the active prepared bundle."
                         )
                     }
-                    try await prepareCachedAttachmentService(for: settings.appliedLevel)
+                    try await prepareCachedAttachmentService(for: appliedLevel)
                     settings.setBrowserRestartRequired(true)
                     activation = .installedRestartRequired
                     restartRequired = true
@@ -702,7 +717,7 @@ final class SumiProtectionCoordinator {
             } else {
                 activation = .cachedOnly
                 restartRequired = settings.browserRestartRequired
-                summary = "Downloaded prepared bundles \(remote.releaseVersion). They will be used after Adblock is selected and applied."
+                summary = "Downloaded prepared bundles \(remote.releaseVersion). They will be used after Protection or Adblock is selected and applied."
             }
 
             let outcome = SumiProtectionBundleManualUpdateOutcome(
@@ -900,34 +915,14 @@ final class SumiProtectionCoordinator {
         var planningErrors = [String]()
         let preparedBundleProfileId = manifest.flatMap { Self.preparedBundleProfileId(in: $0) }
 
-        if level.requestedGroups.contains(.trackingNetwork) {
-            if loadRuleDefinitions {
-                do {
-                    let definitions = try trackingRuleDefinitions(profileId: profileId)
-                    if !definitions.isEmpty {
-                        activeGroups.append(.trackingNetwork)
-                        ruleCountsByGroup[.trackingNetwork] = definitions.count
-                        shardCountsByGroup[.trackingNetwork] = definitions.count
-                        plannedDefinitions.append(contentsOf: definitions.map {
-                            PlannedRuleDefinition(group: .trackingNetwork, source: .tracking, definition: $0)
-                        })
-                    }
-                } catch {
-                    planningErrors.append("Tracking Protection rules unavailable: \(error.localizedDescription)")
-                }
-            } else if cachedTrackingSourceAvailable() {
-                activeGroups.append(.trackingNetwork)
-            }
-        }
-
         if let requiredProfileId = level.preferredBundleProfileId {
             if preparedBundleProfileId == requiredProfileId {
                 if loadRuleDefinitions {
                     do {
                         let definitions = try adBlockingModule.contentRuleListDefinitions(
-                            for: level.adblockRuleGroupKinds
+                            for: Set(level.requestedGroups)
                         )
-                        let grouped = groupAdblockDefinitions(
+                        let grouped = groupPreparedDefinitions(
                             definitions,
                             level: level,
                             manifest: manifest
@@ -937,14 +932,18 @@ final class SumiProtectionCoordinator {
                             ruleCountsByGroup[entry.group] = entry.ruleCount
                             shardCountsByGroup[entry.group] = entry.definitions.count
                             plannedDefinitions.append(contentsOf: entry.definitions.map {
-                                PlannedRuleDefinition(group: entry.group, source: .adblock, definition: $0)
+                                PlannedRuleDefinition(
+                                    group: entry.group,
+                                    source: entry.group == .trackingNetwork ? .tracking : .adblock,
+                                    definition: $0
+                                )
                             })
                         }
                     } catch {
-                        planningErrors.append("Native Adblock bundle rules unavailable: \(error.localizedDescription)")
+                        planningErrors.append("Prepared protection bundle rules unavailable: \(error.localizedDescription)")
                     }
                 } else if let manifest {
-                    let grouped = Self.cachedAdblockGroups(
+                    let grouped = Self.cachedPreparedGroups(
                         level: level,
                         manifest: manifest
                     )
@@ -957,6 +956,12 @@ final class SumiProtectionCoordinator {
                 }
             } else {
                 planningErrors.append("Required prepared bundle profile \(requiredProfileId) is not active.")
+            }
+            let availablePreparedGroups = manifest.map {
+                Set(Self.cachedPreparedGroups(level: level, manifest: $0).map(\.group))
+            } ?? []
+            for group in level.requestedGroups where !availablePreparedGroups.contains(group) {
+                planningErrors.append("Prepared \(group.rawValue) group is unavailable in active bundle.")
             }
         }
 
@@ -1131,9 +1136,22 @@ final class SumiProtectionCoordinator {
         }
 
         switch plan.level {
-        case .off, .protection:
+        case .off:
             return
+        case .protection:
+            guard plan.activeGroups.contains(.trackingNetwork) else {
+                throw SumiProtectionApplyError.requiredPreparedBundleUnavailable(
+                    profileId: SumiProtectionBundleProfile.unified,
+                    detail: "No prepared trackingNetwork rule lists were available after install."
+                )
+            }
         case .adblock:
+            guard plan.activeGroups.contains(.trackingNetwork) else {
+                throw SumiProtectionApplyError.requiredPreparedBundleUnavailable(
+                    profileId: SumiProtectionBundleProfile.unified,
+                    detail: "No prepared trackingNetwork rule lists were available after install."
+                )
+            }
             guard plan.activeGroups.contains(.adblockAdsPrivacyNetwork) else {
                 throw SumiProtectionApplyError.requiredPreparedBundleUnavailable(
                     profileId: SumiProtectionBundleProfile.adblock,
@@ -1300,6 +1318,7 @@ final class SumiProtectionCoordinator {
             lastApplySummary: lastApplySummary,
             lastApplyError: lastApplyError,
             globalGroupsAvailable: availableGroups,
+            groupSourceDiagnostics: Self.groupSourceDiagnostics(from: manifest),
             trackingSourceAvailable: trackingSourceAvailable,
             adblockBundleAvailable: adblockBundleAvailable,
             strictOffActive: selectedLevel == .off
@@ -1363,6 +1382,8 @@ final class SumiProtectionCoordinator {
             "lastApplySummary=\(global.lastApplySummary ?? "nil")",
             "lastApplyError=\(global.lastApplyError ?? "nil")",
             "globalGroupsAvailable=\(global.globalGroupsAvailable.map(\.rawValue).joined(separator: ","))",
+            "trackingNetworkSource=\(global.groupSourceDiagnostics[.trackingNetwork] ?? "nil")",
+            "adblockAdsPrivacyNetworkSource=\(global.groupSourceDiagnostics[.adblockAdsPrivacyNetwork] ?? "nil")",
             "trackingSourceAvailable=\(global.trackingSourceAvailable)",
             "adblockBundleAvailable=\(global.adblockBundleAvailable)",
             "strictOffActive=\(global.strictOffActive)",
@@ -1440,7 +1461,17 @@ final class SumiProtectionCoordinator {
 
     private func syncLegacyModuleGates(for level: SumiProtectionLevel) {
         trackingProtectionModule.setEnabled(level != .off)
-        adBlockingModule.setEnabled(level == .adblock)
+        switch level {
+        case .off:
+            adBlockingModule.setEnabled(false)
+            adBlockingModule.setPreparedBundleRuntimeEnabled(false)
+        case .protection:
+            adBlockingModule.setPreparedBundleRuntimeEnabled(true)
+            adBlockingModule.setEnabled(false)
+        case .adblock:
+            adBlockingModule.setPreparedBundleRuntimeEnabled(true)
+            adBlockingModule.setEnabled(true)
+        }
     }
 
     private func applySummary(
@@ -1454,7 +1485,18 @@ final class SumiProtectionCoordinator {
     }
 
     private func cachedTrackingSourceAvailable() -> Bool {
-        trackingProtectionModule.isEnabled
+        guard let manifest = adBlockingModule.activeManifestIfLoaded() else { return false }
+        return Self.cachedPreparedGroups(level: .protection, manifest: manifest)
+            .contains { $0.group == .trackingNetwork && $0.shardCount > 0 }
+    }
+
+    private static func groupSourceDiagnostics(
+        from manifest: AdblockCompiledGenerationManifest?
+    ) -> [SumiProtectionGroupKind: String] {
+        guard let manifest else { return [:] }
+        return (manifest.nativeLogicalGroups ?? []).reduce(into: [:]) { result, group in
+            result[group.id] = group.reportLine
+        }
     }
 
     private func globallyAvailableGroups(
@@ -1468,17 +1510,13 @@ final class SumiProtectionCoordinator {
 
         if let manifest,
            Self.preparedBundleProfileId(in: manifest) != nil {
-            groups.append(contentsOf: Self.cachedAdblockGroups(level: .adblock, manifest: manifest).map(\.group))
+            groups.append(contentsOf: Self.cachedPreparedGroups(level: .adblock, manifest: manifest).map(\.group))
         }
 
         return groups.uniqueSorted()
     }
 
-    private func trackingRuleDefinitions(profileId: UUID?) throws -> [SumiContentRuleListDefinition] {
-        try trackingProtectionModule.coordinatorRuleListDefinitions(profileId: profileId)
-    }
-
-    private func groupAdblockDefinitions(
+    private func groupPreparedDefinitions(
         _ definitions: [SumiContentRuleListDefinition],
         level: SumiProtectionLevel,
         manifest: AdblockCompiledGenerationManifest?
@@ -1489,7 +1527,7 @@ final class SumiProtectionCoordinator {
         let definitionsByIdentifier = definitions.reduce(into: [String: SumiContentRuleListDefinition]()) { result, definition in
             result[definition.webKitStoreIdentifier] = definition
         }
-        return Self.cachedAdblockGroups(level: level, manifest: manifest)
+        return Self.cachedPreparedGroups(level: level, manifest: manifest)
             .compactMap { cachedGroup in
                 let definitions = cachedGroup.identifiers.compactMap { definitionsByIdentifier[$0] }
                 guard !definitions.isEmpty else { return nil }
@@ -1501,14 +1539,14 @@ final class SumiProtectionCoordinator {
             }
     }
 
-    private static func cachedAdblockGroups(
+    private static func cachedPreparedGroups(
         level: SumiProtectionLevel,
         manifest: AdblockCompiledGenerationManifest
     ) -> [CachedAdblockGroup] {
         guard let bundleProfileId = preparedBundleProfileId(in: manifest) else { return [] }
         let groups = manifest.allNativeShards.reduce(into: [SumiProtectionGroupKind: CachedAdblockGroup]()) { result, shard in
             guard let group = protectionGroup(
-                for: shard.kind,
+                for: shard,
                 bundleProfileId: bundleProfileId,
                 level: level
             ) else { return }
@@ -1524,12 +1562,16 @@ final class SumiProtectionCoordinator {
     }
 
     private static func protectionGroup(
-        for shardKind: AdblockCompiledRuleGroupKind,
+        for shard: NativeContentBlockingShardDescriptor,
         bundleProfileId: String,
         level: SumiProtectionLevel
     ) -> SumiProtectionGroupKind? {
-        switch (bundleProfileId, shardKind, level) {
-        case (SumiProtectionBundleProfile.adblock, .network, .adblock):
+        guard shard.kind == .network else { return nil }
+        if let protectionGroup = shard.protectionGroup {
+            return level.requestedGroups.contains(protectionGroup) ? protectionGroup : nil
+        }
+        switch (bundleProfileId, level) {
+        case (SumiProtectionBundleProfile.adblock, .adblock):
             return .adblockAdsPrivacyNetwork
         default:
             return nil
