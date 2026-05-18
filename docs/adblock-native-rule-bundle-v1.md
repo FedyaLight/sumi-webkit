@@ -22,7 +22,7 @@ SumiAdblockBundle/
 
 `manifest.json` records the schema version, bundle id, profile id, compiler identity, safety-policy version, source-list ids and hashes, logical group metadata, profile-to-group mapping, shard metadata, unsafe native-CSS count, and deduplication/overlap summary. The app keeps only metadata, paths, hashes, identifiers, and logical groups in provider state; full shard JSON is read only for prepared-bundle verification and WebKit compilation.
 
-`trackingNetwork` is generated in `sumi-protection-bundles` from DuckDuckGo Tracker Radar / TDS (`https://staticcdn.duckduckgo.com/trackerblocking/v6/current/macos-tds.json`). The generated tracking shards are CC BY-NC-SA 4.0 derived data for non-commercial Sumi bundle use, with share-alike terms preserved. Bundle and release manifests must include `sourceName`, `sourceURL`, `sourceLicense`, `sourceLicenseURL`, `attribution`, `generatedAt`, `sourceSha256`, `ruleCount`, and `shardCount` for this group.
+`trackingNetwork` is generated in `sumi-protection-bundles` from DuckDuckGo Tracker Radar / Tracker Data Set (TDS) (`https://staticcdn.duckduckgo.com/trackerblocking/v6/current/macos-tds.json`). The generated tracking shards are CC BY-NC-SA 4.0 derived data for non-commercial Sumi bundle use, with share-alike terms preserved for derived `trackingNetwork` data. Bundle and release manifests must include `sourceName`, `sourceURL`, `sourceLicense`, `sourceLicenseURL`, `attribution`, `generatedAt`, `sourceSha256`, `ruleCount`, and `shardCount` for this group.
 
 ## Product contract
 

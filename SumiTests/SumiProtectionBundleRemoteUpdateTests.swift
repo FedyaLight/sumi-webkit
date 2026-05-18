@@ -60,6 +60,28 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
         }
     }
 
+    func testRemoteUpdaterRejectsUnsignedManifestAndPreservesPreviousCache() async throws {
+        let root = temporaryDirectory()
+        let previousBundleURL = SumiRemoteAdblockBundleCache.bundleURL(
+            profileId: SumiProtectionBundleProfile.adblock,
+            rootDirectory: root
+        )
+        try PreparedAdblockTestSupport.makeBundle(at: previousBundleURL, generationId: "previous-generation")
+        let fixture = try makeReleaseFixture(generationId: "new-generation", includeSignature: false)
+        let updater = SumiProtectionBundleRemoteUpdater(
+            fetcher: fixture.fetcher,
+            signatureVerifier: fixture.signatureVerifier,
+            rootDirectory: root
+        )
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await updater.fetchLatestApprovedBundle(profileId: SumiProtectionBundleProfile.adblock)
+        }
+
+        let cached = try SumiAdblockNativeRuleBundle.load(directoryURL: previousBundleURL)
+        XCTAssertEqual(cached.manifest.generationId, "previous-generation")
+    }
+
     func testRemoteUpdaterRejectsInvalidSignature() async throws {
         let root = temporaryDirectory()
         let fixture = try makeReleaseFixture(generationId: "remote-generation", corruptSignature: true)
@@ -301,6 +323,29 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: cachedURL.path))
     }
 
+    func testRemoteUpdaterRejectsTrackingNetworkWithoutDDGLicenseMetadata() async throws {
+        let root = temporaryDirectory()
+        let fixture = try makeReleaseFixture(
+            generationId: "remote-generation",
+            omitTrackingSourceLicense: true
+        )
+        let updater = SumiProtectionBundleRemoteUpdater(
+            fetcher: fixture.fetcher,
+            signatureVerifier: fixture.signatureVerifier,
+            rootDirectory: root
+        )
+
+        do {
+            _ = try await updater.fetchLatestApprovedBundle(profileId: SumiProtectionBundleProfile.adblock)
+            XCTFail("Expected missing DDG tracking license metadata")
+        } catch let error as SumiProtectionBundleRemoteUpdateError {
+            guard case .releaseManifestIncompatible(let detail) = error else {
+                return XCTFail("Expected incompatible release manifest, got \(error)")
+            }
+            XCTAssertTrue(detail.contains("trackingNetwork source metadata"))
+        }
+    }
+
     private func makeReleaseFixture(
         generationId: String,
         releaseVersion: String = "20260517T000000Z-test",
@@ -310,7 +355,8 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
         keyId: String = "sumi-protection-bundles-ed25519-v1",
         tamperedAssetName: String? = nil,
         sizeMismatchAssetName: String? = nil,
-        nativeCSSSafetyPolicyVersion: String = SumiAdblockNativeRuleBundle.requiredNativeCSSSafetyPolicyVersion
+        nativeCSSSafetyPolicyVersion: String = SumiAdblockNativeRuleBundle.requiredNativeCSSSafetyPolicyVersion,
+        omitTrackingSourceLicense: Bool = false
     ) throws -> ReleaseFixture {
         let sourceRoot = temporaryDirectory()
         let bundleURL = sourceRoot.appendingPathComponent(SumiAdblockNativeRuleBundle.directoryName, isDirectory: true)
@@ -399,7 +445,13 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
             }
             if let source = group.source {
                 let sourceData = try JSONEncoder().encode(source)
-                releaseGroup["source"] = try JSONSerialization.jsonObject(with: sourceData)
+                var sourceObject = try XCTUnwrap(JSONSerialization.jsonObject(with: sourceData) as? [String: Any])
+                if omitTrackingSourceLicense && group.id == .trackingNetwork {
+                    sourceObject.removeValue(forKey: "license")
+                    sourceObject.removeValue(forKey: "sourceLicense")
+                    sourceObject.removeValue(forKey: "sourceLicenseURL")
+                }
+                releaseGroup["source"] = sourceObject
             }
             return releaseGroup
         }

@@ -54,9 +54,9 @@ struct SettingsAboutTab: View {
 
             SettingsSectionCard(
                 title: "Protection Data Notices",
-                subtitle: "Prepared tracking data may be derived from DuckDuckGo Tracker Radar / TDS."
+                subtitle: "Generated trackingNetwork bundle data may be derived from DuckDuckGo Tracker Radar / TDS."
             ) {
-                Text("DuckDuckGo Tracker Radar / TDS tracking data is licensed under CC BY-NC-SA 4.0. Non-commercial use and share-alike terms apply to generated trackingNetwork bundle data.")
+                Text("DuckDuckGo Tracker Radar / TDS tracking data is licensed under CC BY-NC-SA 4.0. Non-commercial use and share-alike terms apply to generated protection bundle data.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

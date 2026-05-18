@@ -1350,6 +1350,7 @@ final class SumiProtectionCoordinator {
             "Global protection state",
             "protectionLevel=\(global.selectedProtectionLevel.rawValue)",
             "appliedProtectionLevel=\(global.appliedProtectionLevel.rawValue)",
+            "restartRequired=\(global.browserRestartRequired)",
             "browserRestartRequired=\(global.browserRestartRequired)",
             "generationSource=\(global.generationSource?.rawValue ?? "nil")",
             "nativeRuleBundleId=\(global.nativeRuleBundleId ?? "nil")",
@@ -1357,7 +1358,7 @@ final class SumiProtectionCoordinator {
             "activeGenerationId=\(global.activeGenerationId ?? "nil")",
             "remoteReleaseVersion=\(global.remoteReleaseVersion ?? "nil")",
             "remoteManifestSignatureRequired=\(global.remoteManifestSignatureRequired)",
-            "remoteManifestSignatureVerified=\(global.remoteManifestSignatureVerified.map(String.init) ?? "false")",
+            "remoteManifestSignatureVerified=\(global.remoteManifestSignatureVerified.map(String.init) ?? "nil")",
             "signingKeyId=\(global.remoteSigningKeyId ?? "nil")",
             "signingKeyVersion=\(global.remoteSigningKeyVersion.map(String.init) ?? "nil")",
             "lastRemoteUpdateError=\(global.lastRemoteUpdateError ?? "nil")",
@@ -1371,8 +1372,8 @@ final class SumiProtectionCoordinator {
             "lastApplySummary=\(global.lastApplySummary ?? "nil")",
             "lastApplyError=\(global.lastApplyError ?? "nil")",
             "globalGroupsAvailable=\(global.globalGroupsAvailable.map(\.rawValue).joined(separator: ","))",
-            "trackingNetworkSource=\(global.groupSourceDiagnostics[.trackingNetwork] ?? "nil")",
-            "adblockAdsPrivacyNetworkSource=\(global.groupSourceDiagnostics[.adblockAdsPrivacyNetwork] ?? "nil")",
+            "trackingNetworkSourceLicenseSummary=\(global.groupSourceDiagnostics[.trackingNetwork] ?? "nil")",
+            "adblockAdsPrivacyNetworkSourceSummary=\(global.groupSourceDiagnostics[.adblockAdsPrivacyNetwork] ?? "nil")",
             "trackingSourceAvailable=\(global.trackingSourceAvailable)",
             "adblockBundleAvailable=\(global.adblockBundleAvailable)",
             "strictOffActive=\(global.strictOffActive)",
@@ -1380,7 +1381,6 @@ final class SumiProtectionCoordinator {
             "Target page plan",
             "targetSource=\(targetDescription)",
             "targetURL=\(targetURLString)",
-            "diagnosticsTargetURL=\(targetURLString)",
             "requestingURL=\(requestingURL?.absoluteString ?? "nil")",
             "eligible=\(plan.ineligibleSurfaceReason == nil)",
             "ineligibleSurfaceReason=\(plan.ineligibleSurfaceReason ?? "nil")",
@@ -1398,7 +1398,6 @@ final class SumiProtectionCoordinator {
             "lookupFailedIdentifiers=\(lookupFailedIdentifiers.joined(separator: ","))",
             "addedToUserContentControllerIdentifiers=\(addedIdentifiers.joined(separator: ","))",
             "actualAttachedRuleListIdentifiers=\(actualAttachedIdentifiers.joined(separator: ","))",
-            "attachedIdentifiers=\(actualAttachedIdentifiers.joined(separator: ","))",
             "missingIdentifiers=\(missingIdentifiers.joined(separator: ","))",
             "missingAfterAttachmentIdentifiers=\(missingIdentifiers.joined(separator: ","))",
             "unexpectedOldIdentifiers=\(unexpectedOldIdentifiers.joined(separator: ","))",
@@ -1417,10 +1416,9 @@ final class SumiProtectionCoordinator {
             "dedupeSummary=\(plan.dedupeSummary.reportLine)",
             "overlapSummary=\(plan.overlapSummary.reportLine)",
             "planningErrors=\(plan.planningErrors.joined(separator: " | "))",
+            "currentTabDiagnosticsAvailable=\(currentTabDiagnostics != nil)",
         ]
-        if let currentTabDiagnostics {
-            lines.append(currentTabDiagnostics.developerReport)
-        } else {
+        if currentTabDiagnostics == nil {
             lines.append("Sumi Adblock & Protection current-tab diagnostics\ncurrentTab=nil")
         }
         return lines.joined(separator: "\n")

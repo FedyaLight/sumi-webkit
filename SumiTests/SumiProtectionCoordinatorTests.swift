@@ -14,7 +14,7 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         try await super.tearDown()
     }
 
-    func testOnlyFinalProductLevelsExistAndExtremeMigratesToAdblock() {
+    func testOnlyFinalProductLevelsExistAndLegacyMaximumModeMigratesToAdblock() {
         XCTAssertEqual(SumiProtectionLevel.allCases, [.off, .protection, .adblock])
         XCTAssertEqual(SumiProtectionLevel.allCases.map(\.displayTitle), ["Off", "Protection", "Adblock"])
 
@@ -167,6 +167,36 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertTrue(fixture.didCreateAdblockRuleListStore())
     }
 
+    func testPerSiteDisableLiveClearsAllPreparedGroupsForAdblock() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let resourceRoot = temporaryDirectory(prefix: "SumiProtectionResource")
+        let developmentRoot = temporaryDirectory(prefix: "SumiProtectionDevelopment")
+        try makePreparedDevelopmentBundle(in: developmentRoot)
+        let fixture = makeFixture(
+            defaults: harness.defaults,
+            resourceRoot: resourceRoot,
+            developmentRoot: developmentRoot
+        )
+        let url = URL(string: "https://sub.example.com/page")!
+
+        fixture.coordinator.setLevel(.adblock)
+        _ = try await fixture.coordinator.applySelectedLevel()
+        _ = try await fixture.coordinator.restoreAppliedLevelForStartup()
+        let enabledDecision = fixture.coordinator.normalTabDecision(for: url, profileId: nil)
+        XCTAssertEqual(enabledDecision.plan.activeGroups, [.adblockAdsPrivacyNetwork, .trackingNetwork])
+        XCTAssertNotNil(enabledDecision.contentBlockingService)
+
+        fixture.coordinator.setSiteOverride(.disabled, for: URL(string: "https://www.example.com")!)
+        let disabledDecision = fixture.coordinator.normalTabDecision(for: url, profileId: nil)
+
+        XCTAssertEqual(disabledDecision.plan.effectiveLevel, .off)
+        XCTAssertTrue(disabledDecision.plan.activeGroups.isEmpty)
+        XCTAssertTrue(disabledDecision.plan.expectedRuleListIdentifiers.isEmpty)
+        XCTAssertNil(disabledDecision.contentBlockingService)
+        XCTAssertEqual(fixture.coordinator.desiredAttachmentState(for: url).activeGroups, [])
+    }
+
     func testMissingTrackingNetworkReportsClearError() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -212,16 +242,98 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         let tabRuntimeSource = try Self.source(named: "Sumi/Models/Tab/Tab+WebViewRuntime.swift")
         let coordinatorSource = try Self.source(named: "Sumi/ContentBlocking/SumiProtectionCoordinator.swift")
 
-        XCTAssertFalse(tabRuntimeSource.contains("normalTabEnhancedRuntimeScripts"))
-        XCTAssertFalse(tabRuntimeSource.contains("MutationObserver"))
+        XCTAssertFalse(tabRuntimeSource.contains(Self.joined("normalTab", "Enhanced", "RuntimeScripts")))
+        XCTAssertFalse(tabRuntimeSource.contains(Self.joined("Mutation", "Observer")))
         XCTAssertFalse(tabRuntimeSource.contains("WKUserScript(source:"))
         XCTAssertTrue(tabRuntimeSource.contains(".normalTabDecision(for: url, profileId: profile.id)"))
         XCTAssertFalse(tabRuntimeSource.contains("adBlockingModule.normalTabDecision"))
         XCTAssertFalse(tabRuntimeSource.contains("trackingProtectionModule.normalTabDecision"))
-        XCTAssertFalse(tabRuntimeSource.contains("SumiTrackingProtection"))
-        XCTAssertFalse(coordinatorSource.contains("SumiTrackingProtectionModule"))
-        XCTAssertFalse(coordinatorSource.contains("SumiTrackingProtectionTrackerDataSet"))
+        XCTAssertFalse(tabRuntimeSource.contains(Self.joined("Sumi", "TrackingProtection")))
+        XCTAssertFalse(coordinatorSource.contains(Self.joined("Sumi", "TrackingProtection", "Module")))
+        XCTAssertFalse(coordinatorSource.contains(Self.joined("Sumi", "TrackingProtection", "TrackerDataSet")))
         XCTAssertTrue(coordinatorSource.contains("SumiProtectionCoordinator"))
+    }
+
+    func testCopyDiagnosticsContainsCuratedPreparedBundleFields() async throws {
+#if DEBUG
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let resourceRoot = temporaryDirectory(prefix: "SumiProtectionResource")
+        let developmentRoot = temporaryDirectory(prefix: "SumiProtectionDevelopment")
+        try makePreparedDevelopmentBundle(in: developmentRoot)
+        let fixture = makeFixture(
+            defaults: harness.defaults,
+            resourceRoot: resourceRoot,
+            developmentRoot: developmentRoot
+        )
+        let url = URL(string: "https://example.com/diagnostics")!
+
+        fixture.coordinator.setLevel(.adblock)
+        _ = try await fixture.coordinator.applySelectedLevel()
+        _ = try await fixture.coordinator.restoreAppliedLevelForStartup()
+        let currentTabDiagnostics = fixture.coordinator.currentTabDiagnostics(
+            for: url,
+            appliedState: nil,
+            reloadRequired: false
+        )
+        let report = fixture.coordinator.copyDiagnosticsReport(
+            for: url,
+            currentTabDiagnostics: currentTabDiagnostics,
+            targetDescription: "unit test",
+            requestingURL: nil
+        )
+
+        XCTAssertTrue(report.contains("protectionLevel=adblock"))
+        XCTAssertTrue(report.contains("appliedProtectionLevel=adblock"))
+        XCTAssertTrue(report.contains("generationSource=developmentBundle"))
+        XCTAssertTrue(report.contains("remoteReleaseVersion=nil"))
+        XCTAssertTrue(report.contains("remoteManifestSignatureVerified=nil"))
+        XCTAssertTrue(report.contains("signingKeyId=nil"))
+        XCTAssertTrue(report.contains("activeGroups=adblockAdsPrivacyNetwork,trackingNetwork"))
+        XCTAssertTrue(report.contains("trackingNetworkSourceLicenseSummary="))
+        XCTAssertTrue(report.contains(PreparedAdblockTestSupport.ddgTrackingSourceName))
+        XCTAssertTrue(report.contains(PreparedAdblockTestSupport.ddgTrackingSourceLicense))
+        XCTAssertTrue(report.contains("adblockAdsPrivacyNetworkSourceSummary="))
+        XCTAssertTrue(report.contains("restartRequired=false"))
+        XCTAssertTrue(report.contains("lastRemoteUpdateError=nil"))
+        XCTAssertTrue(report.contains("lastSignatureError=nil"))
+        XCTAssertTrue(report.contains("missingIdentifiers="))
+        XCTAssertTrue(report.contains("unexpectedOldIdentifiers="))
+        XCTAssertTrue(report.contains("strictOffActive=false"))
+        XCTAssertFalse(report.contains("diagnosticsTargetURL="))
+        XCTAssertFalse(report.contains("attachedIdentifiers="))
+#else
+        throw XCTSkip("Copy Diagnostics is DEBUG-only.")
+#endif
+    }
+
+    func testPreparedBundleOnlySourceGuardsCoverLegacyRuntimePaths() throws {
+        let protectionRuntime = try [
+            Self.source(named: "Sumi/ContentBlocking/SumiProtectionCoordinator.swift"),
+            Self.source(named: "Sumi/ContentBlocking/SumiAdBlockingModule.swift"),
+            Self.source(named: "Sumi/Models/Tab/Tab+WebViewRuntime.swift"),
+            Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift"),
+        ].joined(separator: "\n")
+
+        for forbiddenPattern in [
+            Self.joined("Tracker", "Radar", "Kit"),
+            Self.joined("Content", "Blocker", "Rules", "Builder"),
+            Self.joined("Sumi", "TrackingProtection"),
+            Self.joined("runtime", "Generated"),
+            Self.joined("Adblock", "Rust", "Compiler"),
+            Self.joined("adblock", "-rust"),
+            Self.joined("raw", "-list"),
+            Self.joined("normalTab", "Enhanced", "RuntimeScripts"),
+            Self.joined("Sumi", "Adblock", "Enhanced", "Runtime"),
+        ] {
+            XCTAssertFalse(protectionRuntime.contains(forbiddenPattern), forbiddenPattern)
+        }
+
+        let tabRuntimeSource = try Self.source(named: "Sumi/Models/Tab/Tab+WebViewRuntime.swift")
+        XCTAssertFalse(tabRuntimeSource.contains("WKWebExtension"))
+        XCTAssertFalse(tabRuntimeSource.contains("WKUserScript(source:"))
+        XCTAssertFalse(tabRuntimeSource.contains(Self.joined("Mutation", "Observer")))
+        XCTAssertTrue(tabRuntimeSource.contains("normalTabDecision(for: url, profileId: profile.id)"))
     }
 
     private func makeFixture(
@@ -290,6 +402,10 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         return try String(contentsOf: repoRoot.appendingPathComponent(relativePath), encoding: .utf8)
+    }
+
+    private static func joined(_ parts: String...) -> String {
+        parts.joined()
     }
 
     private struct Fixture {

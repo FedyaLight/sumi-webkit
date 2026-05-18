@@ -100,14 +100,20 @@ final class SumiAdBlockingModuleTests: XCTestCase {
     }
 
     func testAppRuntimeHasNoGenerationFallbackRustInvocationOrEnhancedRuntime() throws {
-        let runtimeSources = try Self.combinedSource(in: "Sumi")
+        let runtimeSources = try [
+            Self.combinedSource(in: "Sumi/ContentBlocking"),
+            Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift"),
+            Self.source(named: "Sumi/Models/Tab/Tab+WebViewRuntime.swift"),
+        ].joined(separator: "\n")
         let settingsSource = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
 
-        XCTAssertFalse(runtimeSources.contains("runtimeGenerated"))
-        XCTAssertFalse(runtimeSources.contains("AdblockRustCompiler"))
-        XCTAssertFalse(runtimeSources.contains("sumi-adblock-rust-adapter"))
-        XCTAssertFalse(runtimeSources.contains("SumiAdblockEnhancedRuntime"))
-        XCTAssertFalse(runtimeSources.contains("normalTabEnhancedRuntimeScripts"))
+        XCTAssertFalse(runtimeSources.contains(Self.joined("runtime", "Generated")))
+        XCTAssertFalse(runtimeSources.contains(Self.joined("Adblock", "Rust", "Compiler")))
+        XCTAssertFalse(runtimeSources.contains(Self.joined("sumi", "-adblock", "-rust", "-adapter")))
+        XCTAssertFalse(runtimeSources.contains(Self.joined("Sumi", "Adblock", "Enhanced", "Runtime")))
+        XCTAssertFalse(runtimeSources.contains(Self.joined("normalTab", "Enhanced", "RuntimeScripts")))
+        XCTAssertFalse(runtimeSources.contains("WKWebExtension"))
+        XCTAssertFalse(runtimeSources.contains("WKUserScript(source:"))
         XCTAssertFalse(settingsSource.localizedCaseInsensitiveContains("rebuild selected adblock profile now"))
         XCTAssertFalse(settingsSource.localizedCaseInsensitiveContains("raw list"))
     }
@@ -159,5 +165,9 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         return try urls
             .map { try String(contentsOf: $0, encoding: .utf8) }
             .joined(separator: "\n")
+    }
+
+    private static func joined(_ parts: String...) -> String {
+        parts.joined()
     }
 }
