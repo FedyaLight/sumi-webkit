@@ -6,6 +6,7 @@ struct SumiHistoryTabRootView: View {
     @Environment(\.resolvedThemeContext) private var themeContext
     @ObservedObject var browserManager: BrowserManager
     @StateObject private var viewModel: HistoryPageViewModel
+    @StateObject private var scrollHoverCoordinator = NativeSurfaceScrollHoverCoordinator()
 
     private enum Layout {
         static let sidebarWidth: CGFloat = 220
@@ -37,8 +38,12 @@ struct SumiHistoryTabRootView: View {
         .background(tokens.windowBackground)
         .environment(\.resolvedThemeContext, surfaceThemeContext)
         .environment(\.colorScheme, surfaceThemeContext.chromeColorScheme)
+        .environment(\.nativeSurfaceHoverUpdatesEnabled, scrollHoverCoordinator.hoverUpdatesEnabled)
         .onAppear {
             viewModel.appear()
+        }
+        .onDisappear {
+            scrollHoverCoordinator.reset()
         }
     }
 
@@ -225,6 +230,7 @@ struct SumiHistoryTabRootView: View {
             .padding(.horizontal, 24)
             .padding(.vertical, 26)
         }
+        .suppressesNativeSurfaceHoverWhileScrolling(scrollHoverCoordinator, region: "history-list")
     }
 
     private var historyCard: some View {
@@ -334,9 +340,7 @@ private struct HistoryRow: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(rowBackgroundColor)
         )
-        .onHover { hovering in
-            isHovering = hovering
-        }
+        .nativeSurfaceHover($isHovering)
         .contextMenu {
             rowMenuContent
         }
