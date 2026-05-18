@@ -7,6 +7,7 @@ struct SumiBookmarksTabRootView: View {
     @Environment(\.resolvedThemeContext) private var themeContext
     @ObservedObject var browserManager: BrowserManager
     @StateObject private var viewModel: SumiBookmarksPageViewModel
+    @StateObject private var scrollHoverCoordinator = NativeSurfaceScrollHoverCoordinator()
     @State private var bookmarkDraft: SumiBookmarkFormDraft?
     @State private var folderDraft: SumiFolderFormDraft?
     @FocusState private var searchFocused: Bool
@@ -37,6 +38,7 @@ struct SumiBookmarksTabRootView: View {
         .background(tokens.windowBackground)
         .environment(\.resolvedThemeContext, surfaceThemeContext)
         .environment(\.colorScheme, surfaceThemeContext.chromeColorScheme)
+        .environment(\.nativeSurfaceHoverUpdatesEnabled, scrollHoverCoordinator.hoverUpdatesEnabled)
         .overlay(alignment: .topLeading) {
             Button {
                 searchFocused = true
@@ -50,6 +52,7 @@ struct SumiBookmarksTabRootView: View {
             .accessibilityHidden(true)
         }
         .onAppear { viewModel.appear() }
+        .onDisappear { scrollHoverCoordinator.reset() }
         .onDeleteCommand { viewModel.deleteSelected() }
         .sheet(item: $bookmarkDraft) { draft in
             SumiBookmarkFormView(
@@ -126,6 +129,7 @@ struct SumiBookmarksTabRootView: View {
                 .padding(.horizontal, 10)
                 .padding(.bottom, 16)
             }
+            .suppressesNativeSurfaceHoverWhileScrolling(scrollHoverCoordinator, region: "bookmarks-sidebar")
         }
         .frame(width: Layout.sidebarWidth, alignment: .leading)
     }
@@ -322,6 +326,7 @@ struct SumiBookmarksTabRootView: View {
             .padding(.horizontal, 28)
             .padding(.vertical, 22)
         }
+        .suppressesNativeSurfaceHoverWhileScrolling(scrollHoverCoordinator, region: "bookmarks-list")
     }
 
     private var emptyState: some View {
@@ -399,7 +404,7 @@ private struct SumiBookmarkEntityRow: View {
         .contentShape(Rectangle())
         .onTapGesture { select() }
         .onTapGesture(count: 2) { open() }
-        .onHover { isHovering = $0 }
+        .nativeSurfaceHover($isHovering)
         .task(id: faviconLoadID) {
             await loadFaviconImage()
         }
