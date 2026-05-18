@@ -120,6 +120,14 @@ final class Profile: NSObject, Identifiable {
         await SumiWebsiteDataCleanupService.shared.clearAllProfileWebsiteData(in: dataStore)
         await refreshDataStoreStats()
     }
+
+    @discardableResult
+    func removePersistentDataStore() async -> Bool {
+        guard !isEphemeral else { return true }
+        cachedPersistentDataStore = nil
+        return await SumiWebsiteDataCleanupService.shared
+            .removePersistentDataStore(forIdentifier: id)
+    }
     
     /// Releases the ephemeral profile's non-persistent store ownership.
     /// Ephemeral profiles use `WKWebsiteDataStore.nonPersistent()` through the

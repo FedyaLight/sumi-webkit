@@ -148,7 +148,7 @@ final class SumiProtectionBundleGitHubReleaseClient: SumiProtectionBundleRelease
     init(
         owner: String = SumiProtectionBundleRemoteUpdateConstants.owner,
         repository: String = SumiProtectionBundleRemoteUpdateConstants.repository,
-        session: URLSession = .shared
+        session: URLSession = SumiNonPersistentURLSession.shared
     ) {
         latestReleaseURL = URL(string: "https://api.github.com/repos/\(owner)/\(repository)/releases/latest")!
         self.session = session

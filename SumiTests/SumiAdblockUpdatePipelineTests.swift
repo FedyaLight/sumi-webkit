@@ -73,7 +73,7 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         XCTAssertEqual(publisher.committedManifestIds, [previous.activeGenerationId])
     }
 
-    func testStartupCleanupPreservesActiveAndPreviousCompiledRuleLists() async throws {
+    func testSuccessfulUpdateCleanupRemovesPreviousCompiledRuleListsAndManifestReference() async throws {
         let root = temporaryDirectory()
         let store = AdblockUpdateManifestStore(rootDirectory: root)
         let previous = try await PreparedAdblockTestSupport.seedPreparedManifest(
@@ -99,11 +99,26 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         )
 
         let report = await collector.cleanupAfterSuccessfulUpdate()
+        let cleanedActiveManifest = try await store.activeManifest()
 
-        XCTAssertEqual(report.removedWebKitIdentifiers, [staleIdentifier])
-        XCTAssertEqual(compiler.removedIdentifiers, [staleIdentifier])
+        XCTAssertEqual(
+            report.removedWebKitIdentifiers,
+            (previous.webKitRuleListIdentifiers + [staleIdentifier]).sorted()
+        )
+        XCTAssertEqual(
+            compiler.removedIdentifiers.sorted(),
+            (previous.webKitRuleListIdentifiers + [staleIdentifier]).sorted()
+        )
         XCTAssertTrue(Set(compiler.removedIdentifiers).isDisjoint(with: active.webKitRuleListIdentifiers))
-        XCTAssertTrue(Set(compiler.removedIdentifiers).isDisjoint(with: previous.webKitRuleListIdentifiers))
+        XCTAssertNil(cleanedActiveManifest?.previousGenerationId)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: root
+                    .appendingPathComponent("Generated", isDirectory: true)
+                    .appendingPathComponent(previous.activeGenerationId, isDirectory: true)
+                    .path
+            )
+        )
     }
 
     private func temporaryDirectory() -> URL {

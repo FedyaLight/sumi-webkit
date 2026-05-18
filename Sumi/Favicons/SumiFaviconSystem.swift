@@ -1,6 +1,7 @@
 import AppKit
 import Bookmarks
 import CoreData
+import Darwin
 import Foundation
 import WebKit
 
@@ -42,9 +43,14 @@ protocol BookmarkManager: AnyObject {
     func allHosts() -> Set<String>
 }
 
+@MainActor
 private enum SumiFaviconPersistence {
+    private static var didRegisterTestDirectoryCleanup = false
+
     static func rootDirectoryURL() -> URL {
         if RuntimeDiagnostics.isRunningTests {
+            removeStaleTestDirectories()
+            registerCurrentTestDirectoryCleanupIfNeeded()
             let testURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
                 .appendingPathComponent("SumiFavicons-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
             try? FileManager.default.createDirectory(at: testURL, withIntermediateDirectories: true)
@@ -71,6 +77,49 @@ private enum SumiFaviconPersistence {
         return directory
     }
 
+    private static func removeStaleTestDirectories() {
+        let fileManager = FileManager.default
+        let temporaryDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        guard let contents = try? fileManager.contentsOfDirectory(
+            at: temporaryDirectory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        for directory in contents {
+            let prefix = "SumiFavicons-"
+            let name = directory.lastPathComponent
+            guard name.hasPrefix(prefix),
+                  let pid = Int32(name.dropFirst(prefix.count)),
+                  pid != currentPID,
+                  !isProcessRunning(pid)
+            else {
+                continue
+            }
+            try? fileManager.removeItem(at: directory)
+        }
+    }
+
+    private static func isProcessRunning(_ pid: pid_t) -> Bool {
+        kill(pid, 0) == 0 || errno == EPERM
+    }
+
+    private static func registerCurrentTestDirectoryCleanupIfNeeded() {
+        guard !didRegisterTestDirectoryCleanup else { return }
+        didRegisterTestDirectoryCleanup = true
+        atexit {
+            SumiFaviconPersistence.removeCurrentTestDirectory()
+        }
+    }
+
+    private static func removeCurrentTestDirectory() {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("SumiFavicons-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
+        try? FileManager.default.removeItem(at: directory)
+    }
 }
 
 @MainActor

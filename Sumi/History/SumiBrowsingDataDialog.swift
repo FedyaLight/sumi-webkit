@@ -2,6 +2,7 @@ import SwiftUI
 import WebKit
 
 struct SumiBrowsingDataDialog: View {
+    @Environment(\.sumiSettings) private var sumiSettings
     @StateObject private var viewModel: SumiBrowsingDataDialogViewModel
 
     init(
@@ -17,11 +18,13 @@ struct SumiBrowsingDataDialog: View {
     }
 
     var body: some View {
+        @Bindable var settings = sumiSettings
+
         VStack(alignment: .leading, spacing: 22) {
             Text("Browsing data")
                 .font(.system(size: 28, weight: .semibold))
 
-            timeRangeControls
+            headerControls
 
             dataTypeCard
 
@@ -30,6 +33,8 @@ struct SumiBrowsingDataDialog: View {
                     .font(.callout)
                     .foregroundStyle(.red)
             }
+
+            automaticCleanupRow(selection: $settings.browsingDataRetentionPeriod)
 
             footer
         }
@@ -44,6 +49,18 @@ struct SumiBrowsingDataDialog: View {
         .shadow(color: .black.opacity(0.22), radius: 28, y: 12)
         .onAppear {
             viewModel.appear()
+        }
+    }
+
+    private var headerControls: some View {
+        HStack(spacing: 12) {
+            timeRangeControls
+
+            Spacer(minLength: 12)
+
+            if viewModel.showsAllProfilesOption {
+                allProfilesButton
+            }
         }
     }
 
@@ -136,6 +153,73 @@ struct SumiBrowsingDataDialog: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
+    private var allProfilesButton: some View {
+        let isSelected = viewModel.clearsAllProfiles
+        return Button {
+            viewModel.setClearsAllProfiles(!isSelected)
+        } label: {
+            HStack(spacing: 8) {
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                Text("All profiles")
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .background(timeRangeBackground(isSelected: isSelected))
+            .overlay(timeRangeBorder(isSelected: isSelected))
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help("Apply the selected data types to every browser profile")
+    }
+
+    private func automaticCleanupRow(
+        selection: Binding<SumiBrowsingDataRetentionPeriod>
+    ) -> some View {
+        HStack(alignment: .center, spacing: 14) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.system(size: 18, weight: .medium))
+                .frame(width: 24, height: 24)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Automatic cleanup")
+                    .font(.system(size: 16, weight: .semibold))
+                Text(automaticCleanupSubtitle(for: selection.wrappedValue))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 12)
+
+            Picker("", selection: selection) {
+                ForEach(SumiBrowsingDataRetentionPeriod.allCases) { period in
+                    Text(period.title).tag(period)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(width: 128)
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 14)
+        .overlay(alignment: .top) {
+            Divider()
+        }
+    }
+
+    private func automaticCleanupSubtitle(
+        for period: SumiBrowsingDataRetentionPeriod
+    ) -> String {
+        guard period.isEnabled else {
+            return "Sumi will not delete old browsing data automatically."
+        }
+        return "Deletes history older than \(period.title) and clears volatile WebKit data without removing sign-in storage."
+    }
+
     private func browsingDataRow(_ category: SumiBrowsingDataCategory) -> some View {
         HStack(alignment: .center, spacing: 14) {
             Toggle(
@@ -210,6 +294,7 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
     @Published private(set) var isLoadingSummary = false
     @Published private(set) var isDeleting = false
     @Published private(set) var errorMessage: String?
+    @Published private(set) var clearsAllProfiles = false
     @Published var selectedRange: SumiBrowsingDataTimeRange = .lastHour {
         didSet {
             guard selectedRange != oldValue else { return }
@@ -246,6 +331,10 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
         !selectedCategories.isEmpty && !isDeleting
     }
 
+    var showsAllProfilesOption: Bool {
+        regularProfileCount > 1
+    }
+
     var deleteButtonTitle: String {
         isDeleting ? "Deleting..." : "Delete"
     }
@@ -268,6 +357,12 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
         } else {
             selectedCategories.remove(category)
         }
+        refreshSummary()
+    }
+
+    func setClearsAllProfiles(_ value: Bool) {
+        clearsAllProfiles = value && showsAllProfilesOption
+        refreshSummary()
     }
 
     func subtitle(for category: SumiBrowsingDataCategory) -> String {
@@ -311,7 +406,7 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
             defer { isLoadingSummary = false }
 
             guard let browserManager,
-                  let dataStore = browserManager.currentProfile?.dataStore
+                  browserManager.currentProfile != nil
             else {
                 summary = SumiBrowsingDataSummary()
                 return
@@ -320,7 +415,8 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
             let latestSummary = await cleanupService.summary(
                 range: selectedRange,
                 historyManager: browserManager.historyManager,
-                dataStore: dataStore
+                profiles: browserManager.profileManager.profiles,
+                includeAllProfiles: clearsAllProfiles
             )
             guard !Task.isCancelled else { return }
             summary = latestSummary
@@ -329,7 +425,7 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
 
     private func deleteNow() async {
         guard let browserManager,
-              let currentProfile = browserManager.currentProfile
+              browserManager.currentProfile != nil
         else {
             errorMessage = "No active profile."
             return
@@ -343,12 +439,19 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
             range: selectedRange,
             categories: selectedCategories,
             historyManager: browserManager.historyManager,
-            dataStore: currentProfile.dataStore
+            profiles: browserManager.profileManager.profiles,
+            includeAllProfiles: clearsAllProfiles
         )
-        await currentProfile.refreshDataStoreStats()
+        for profile in browserManager.profileManager.profiles where !profile.isEphemeral {
+            await profile.refreshDataStoreStats()
+        }
 
         isDeleting = false
         browserManager.closeDialog()
+    }
+
+    private var regularProfileCount: Int {
+        browserManager?.profileManager.profiles.filter { !$0.isEphemeral }.count ?? 0
     }
 
     private func plural(_ value: Int, singular: String, plural: String) -> String {

@@ -690,7 +690,7 @@ final class AdblockRetainingCompiledRuleListCatalog: SumiCompiledContentRuleList
         return previousRules.map(\.identifier.stringValue).filter { !activeIdentifiers.contains($0) }
     }
 
-    func staleIdentifiers(
+    func orphanedIdentifiers(
         replacing previousRules: [SumiContentBlockerRules],
         with activeRules: [SumiContentBlockerRules]
     ) -> [String] { [] }

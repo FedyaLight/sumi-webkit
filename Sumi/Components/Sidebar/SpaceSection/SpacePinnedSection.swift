@@ -490,32 +490,28 @@ extension SpaceView {
     // MARK: - Folder Management
 
     private func deleteFolder(_ folder: TabFolder) {
-        if let animation = sidebarContentMutationAnimation {
-            withAnimation(animation) {
-                browserManager.tabManager.deleteFolder(folder.id)
-            }
-        } else {
+        mutatePinnedContent {
             browserManager.tabManager.deleteFolder(folder.id)
         }
     }
 
     private func removeShortcutPin(_ pin: ShortcutPin) {
-        if let animation = sidebarContentMutationAnimation {
-            withAnimation(animation) {
-                browserManager.tabManager.removeShortcutPin(pin)
-            }
-        } else {
+        mutatePinnedContent {
             browserManager.tabManager.removeShortcutPin(pin)
         }
     }
 
     private func moveShortcutPinToRegularTabs(_ pin: ShortcutPin) {
-        if let animation = sidebarContentMutationAnimation {
-            withAnimation(animation) {
-                browserManager.tabManager.convertShortcutPinToRegularTab(pin, in: space.id)
-            }
-        } else {
+        mutatePinnedContent {
             browserManager.tabManager.convertShortcutPinToRegularTab(pin, in: space.id)
+        }
+    }
+
+    private func mutatePinnedContent(_ update: () -> Void) {
+        if let animation = sidebarContentMutationAnimation {
+            withAnimation(animation, update)
+        } else {
+            update()
         }
     }
 

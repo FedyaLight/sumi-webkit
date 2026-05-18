@@ -56,7 +56,7 @@ extension UserScriptGMBridge {
         let responseType = args["responseType"] as? String ?? ""
         let requestId = callbackId
 
-        let task = URLSession.shared.dataTask(with: request) { [weak self, weak webView] data, response, error in
+        let task = SumiNonPersistentURLSession.shared.dataTask(with: request) { [weak self, weak webView] data, response, error in
             Task { @MainActor [weak self, weak webView] in
                 guard let self, let webView else { return }
 
@@ -160,7 +160,7 @@ extension UserScriptGMBridge {
             ?? url.lastPathComponent.nonEmpty
             ?? "download"
         let requestId = callbackId.isEmpty ? UUID().uuidString : callbackId
-        let task = URLSession.shared.downloadTask(with: url) { [weak self, weak webView] tempURL, response, error in
+        let task = SumiNonPersistentURLSession.shared.downloadTask(with: url) { [weak self, weak webView] tempURL, response, error in
             Task { @MainActor [weak self, weak webView] in
                 guard let self else { return }
                 self.activeTasks.removeValue(forKey: requestId)

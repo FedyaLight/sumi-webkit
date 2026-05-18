@@ -16,11 +16,14 @@ struct DialogView: View {
             if isPresentedInCurrentWindow,
                let dialog = browserManager.dialogManager.activeDialog {
                 overlayBackground
+                modalEventShield
+                    .transition(.opacity)
                 dialogContent(dialog)
                     .transition(dialogTransition)
                     .zIndex(1)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Require both: avoids a full-window hit target when `isVisible`/`activeDialog` are briefly out of sync,
         // and skips hit testing while the dialog subtree is empty (e.g. during transition teardown).
         .allowsHitTesting(isPresentedInCurrentWindow)
@@ -31,10 +34,20 @@ struct DialogView: View {
     private var overlayBackground: some View {
         Color.black.opacity(0.4)
             .ignoresSafeArea()
-            .onTapGesture {
-                browserManager.closeDialog()
-            }
             .transition(.opacity)
+    }
+
+    private var modalEventShield: some View {
+        MouseEventShieldView(
+            onClick: {
+                browserManager.closeDialog()
+            },
+            suppressesUnderlyingWebContentHover: true,
+            cursorPolicy: .arrow
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder

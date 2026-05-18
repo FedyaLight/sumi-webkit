@@ -40,6 +40,39 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         XCTAssertEqual(tabManager.tabs(in: spaceA).count, 1)
     }
 
+    func testProfileCleanupKeepsReassignedSpacesAndMovesStaleTabsToOwningSpaceProfile() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let deletedProfileId = UUID()
+        let fallbackProfileId = UUID()
+        let reassignedProfileId = UUID()
+
+        let deletedSpace = tabManager.createSpace(name: "Deleted", profileId: deletedProfileId)
+        let reassignedSpace = tabManager.createSpace(name: "Reassigned", profileId: deletedProfileId)
+        reassignedSpace.profileId = reassignedProfileId
+
+        let staleTab = tabManager.createNewTab(in: reassignedSpace, activate: true)
+        staleTab.profileId = deletedProfileId
+        let deletedPin = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: deletedProfileId,
+            index: 0,
+            launchURL: URL(string: "https://old.example")!,
+            title: "Old"
+        )
+        tabManager.pinnedByProfile[deletedProfileId] = [deletedPin]
+
+        tabManager.cleanupProfileReferences(
+            deletedProfileId,
+            fallbackProfileId: fallbackProfileId
+        )
+
+        XCTAssertEqual(deletedSpace.profileId, fallbackProfileId)
+        XCTAssertEqual(reassignedSpace.profileId, reassignedProfileId)
+        XCTAssertEqual(staleTab.profileId, reassignedProfileId)
+        XCTAssertNil(tabManager.pinnedByProfile[deletedProfileId])
+    }
+
     private func makeInMemoryTabManager() throws -> TabManager {
         let container = try ModelContainer(
             for: SumiStartupPersistence.schema,

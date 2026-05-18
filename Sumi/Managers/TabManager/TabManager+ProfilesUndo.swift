@@ -4,16 +4,54 @@ import Foundation
 extension TabManager {
     func cleanupProfileReferences(_ deletedProfileId: UUID) {
         guard let fallback = browserManager?.profileManager.profiles.first else { return }
+        cleanupProfileReferences(deletedProfileId, fallbackProfileId: fallback.id)
+    }
+
+    func cleanupProfileReferences(_ deletedProfileId: UUID, fallbackProfileId: UUID) {
         var didChange = false
+        var dirtySpaceIds = Set<UUID>()
+        let spacesById = Dictionary(uniqueKeysWithValues: spaces.map { ($0.id, $0) })
+
+        let tabsToUnload = tabsBySpace.values
+            .flatMap(\.self)
+            .filter { tab in
+                if tab.profileId == deletedProfileId { return true }
+                guard let spaceId = tab.spaceId else { return false }
+                return spacesById[spaceId]?.profileId == deletedProfileId
+            }
+        for tab in tabsToUnload {
+            tab.unloadWebView()
+        }
+
         for index in spaces.indices where spaces[index].profileId == deletedProfileId {
-            spaces[index].profileId = fallback.id
+            spaces[index].profileId = fallbackProfileId
             if currentSpace?.id == spaces[index].id {
-                currentSpace?.profileId = fallback.id
+                currentSpace?.profileId = fallbackProfileId
             }
             didChange = true
         }
+
+        for (spaceId, tabs) in tabsBySpace {
+            let resolvedProfileId = spaces.first(where: { $0.id == spaceId })?.profileId ?? fallbackProfileId
+            for tab in tabs where tab.profileId == deletedProfileId {
+                tab.profileId = resolvedProfileId
+                dirtySpaceIds.insert(spaceId)
+                didChange = true
+            }
+        }
+
+        if let removedPins = pinnedByProfile.removeValue(forKey: deletedProfileId),
+           !removedPins.isEmpty {
+            recordShortcutPinsStructuralChange(previous: removedPins, current: [])
+            markPinnedSnapshotDirty(for: deletedProfileId)
+            didChange = true
+        }
+
         if didChange {
             markAllSpacesStructurallyDirty()
+            for spaceId in dirtySpaceIds {
+                markRegularTabsStructurallyDirty(for: spaceId)
+            }
             scheduleStructuralPersistence()
         }
         handleProfileSwitch()
