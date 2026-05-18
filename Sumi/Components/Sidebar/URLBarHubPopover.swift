@@ -186,7 +186,7 @@ struct SiteControlsSnapshot: Equatable {
                 } else if !plan.sitePolicyAllowsProtection {
                     subtitle = "Protection off for this site"
                 } else {
-                    subtitle = plan.effectiveLevel.displayTitle
+                    subtitle = "\(plan.effectiveLevel.displayTitle) on for this site"
                 }
                 rows.append(
                     .init(
@@ -1590,7 +1590,9 @@ private struct HubSettingRow: View {
 
     var body: some View {
         Group {
-            if model.isInteractive && !model.isDisabled {
+            if showsProtectionToggle {
+                rowContent
+            } else if model.isInteractive && !model.isDisabled {
                 Button(action: action) {
                     rowContent
                 }
@@ -1655,10 +1657,34 @@ private struct HubSettingRow: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(tokens.secondaryText.opacity(0.78))
                     .frame(width: 14, height: 22)
+            } else if showsProtectionToggle {
+                Toggle(
+                    "Protection off for this site",
+                    isOn: Binding(
+                        get: { protectionOffForSite },
+                        set: { _ in action() }
+                    )
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .help("Protection off for this site")
+                .accessibilityLabel("Protection off for this site")
             }
         }
         .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
         .contentShape(Rectangle())
+    }
+
+    private var showsProtectionToggle: Bool {
+        guard model.isInteractive, !model.isDisabled else { return false }
+        guard case .protection = model.kind else { return false }
+        return true
+    }
+
+    private var protectionOffForSite: Bool {
+        guard case .protection(let plan, _) = model.kind else { return false }
+        return plan.siteOverride == .disabled
     }
 
     private var capsuleFill: Color {

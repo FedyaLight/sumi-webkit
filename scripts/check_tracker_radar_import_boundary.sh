@@ -3,9 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-approved_files=(
-  "Sumi/ContentBlocking/SumiTrackingProtection.swift"
-)
+approved_files=()
 
 is_approved() {
   local candidate="$1"
@@ -36,8 +34,8 @@ done < <(
 )
 
 if [[ "$status" -ne 0 ]]; then
-  echo "TrackerRadarKit imports are only allowed in the approved tracking adapter boundary." >&2
+  echo "TrackerRadarKit imports are not allowed in Sumi.app runtime." >&2
   exit "$status"
 fi
 
-echo "TrackerRadarKit import boundary audit passed"
+echo "TrackerRadarKit runtime import audit passed"

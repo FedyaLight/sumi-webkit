@@ -59,7 +59,7 @@ struct SumiSettingsModuleToggleDescriptor: Identifiable, Equatable {
         moduleID: .adBlocking,
         title: "Ad Blocking",
         toggleTitle: "Enable Ad Blocking",
-        detail: "Ad Blocking is separate from Tracking Protection. While off, Sumi does not load prepared bundle shards, compile WebKit rule lists, schedule updates, or attach runtime blocking."
+        detail: "This legacy runtime gate is controlled by Adblock & Protection. While off, Sumi does not load prepared bundle shards, prepare WebKit rule lists, schedule updates, or attach blocking."
     )
 
     static let extensions = SumiSettingsModuleToggleDescriptor(

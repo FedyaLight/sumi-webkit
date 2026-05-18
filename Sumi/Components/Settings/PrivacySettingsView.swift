@@ -85,7 +85,6 @@ private struct AdblockProtectionSettingsView: View {
     let currentTab: Tab?
     @ObservedObject private var settings: SumiProtectionSettings
     @ObservedObject private var bundleUpdateStatus: SumiProtectionBundleUpdateStatusStore
-    @State private var overrideStatus: String?
     @State private var applyStatus: String?
     @State private var isApplying = false
     @State private var isUpdatingBundles = false
@@ -110,53 +109,87 @@ private struct AdblockProtectionSettingsView: View {
     var body: some View {
         SettingsSection(
             title: "Adblock & Protection",
-            subtitle: "Global protection changes are saved here and take effect after restarting Sumi. Per-site disable remains available from the URL hub."
+            subtitle: "Sumi uses signed prepared protection bundles only. Global level changes take effect after Apply and a restart."
         ) {
             SettingsRow(
-                title: "Level",
-                subtitle: settings.level.detail
+                title: "Current level",
+                subtitle: currentLevelSubtitle
             ) {
-                Picker("", selection: levelBinding) {
-                    ForEach(SumiProtectionLevel.allCases) { level in
-                        Text(level.displayTitle).tag(level)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 420)
+                Text(settings.appliedLevel.displayTitle)
+                    .font(.callout)
+                    .foregroundStyle(settings.browserRestartRequired ? Color.orange : Color.secondary)
             }
 
+            levelDescriptionList
 
             SettingsRow(
                 title: "Apply selected protection level",
                 subtitle: applyRowSubtitle
             ) {
-                Button {
-                    applySelectedLevel()
-                } label: {
-                    if isApplying {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Text("Apply")
+                HStack(spacing: 10) {
+                    Picker("", selection: levelBinding) {
+                        ForEach(SumiProtectionLevel.allCases) { level in
+                            Text(level.displayTitle).tag(level)
+                        }
                     }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 310)
+
+                    Button {
+                        applySelectedLevel()
+                    } label: {
+                        if isApplying {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Text("Apply")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isApplying || !coordinator.applyNeeded)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(isApplying || !coordinator.applyNeeded)
             }
 
             SettingsRow(
-                title: "Applied level",
-                subtitle: appliedLevelSubtitle
+                title: "Bundle version",
+                subtitle: bundleVersionSubtitle
             ) {
-                Text(settings.appliedLevel.displayTitle)
+                Text(bundleVersionText)
                     .font(.callout)
-                    .foregroundStyle(coordinator.applyNeeded ? Color.orange : Color.secondary)
+                    .foregroundStyle(.secondary)
             }
 
             SettingsRow(
-                title: "Prepared bundles",
-                subtitle: preparedBundlesSubtitle
+                title: "Last update date",
+                subtitle: lastUpdateSubtitle
+            ) {
+                Text(lastUpdateText)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            SettingsRow(
+                title: "Signature verified",
+                subtitle: signatureStatusSubtitle
+            ) {
+                Text(signatureStatusText)
+                    .font(.callout)
+                    .foregroundStyle(signatureStatusColor)
+            }
+
+            SettingsRow(
+                title: "Restart required",
+                subtitle: restartRequiredSubtitle
+            ) {
+                Text(settings.browserRestartRequired ? "Yes" : "No")
+                    .font(.callout)
+                    .foregroundStyle(settings.browserRestartRequired ? Color.orange : Color.secondary)
+            }
+
+            SettingsRow(
+                title: "Update bundles",
+                subtitle: updateBundlesSubtitle
             ) {
                 Button {
                     updatePreparedBundles()
@@ -172,30 +205,14 @@ private struct AdblockProtectionSettingsView: View {
                 .disabled(isUpdatingBundles)
             }
 
-            SettingsRow(
-                title: "Current page level",
-                subtitle: currentPageLevelSubtitle
-            ) {
-                Text(currentPagePlan.effectiveLevel.displayTitle)
-                    .font(.callout)
-                    .foregroundStyle(currentPagePlan.effectiveLevel == settings.appliedLevel ? Color.secondary : Color.orange)
-            }
-
-            SettingsRow(
-                title: "Current site",
-                subtitle: currentSiteSubtitle
-            ) {
-                Button(currentSiteButtonTitle) {
-                    toggleCurrentSiteProtection()
+            if let lastUpdateError {
+                SettingsRow(
+                    title: "Last update error",
+                    subtitle: lastUpdateError
+                ) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(Color.orange)
                 }
-                .buttonStyle(.bordered)
-                .disabled(currentTab == nil || currentPagePlan.siteHost == nil || settings.appliedLevel == .off)
-            }
-
-            if let overrideStatus {
-                Text(overrideStatus)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             #if DEBUG
@@ -229,16 +246,39 @@ private struct AdblockProtectionSettingsView: View {
         )
     }
 
-    private var currentPagePlan: SumiProtectionRulePlan {
-        coordinator.cachedRulePlan(for: currentTab?.url, profileId: currentTab?.resolveProfile()?.id)
-    }
-
     private var diagnosticsPlan: SumiProtectionRulePlan {
         coordinator.cachedRulePlan(for: diagnosticsTarget.url, profileId: diagnosticsTarget.tab?.resolveProfile()?.id)
     }
 
     private var globalDiagnostics: SumiProtectionGlobalDiagnostics {
         coordinator.globalDiagnostics()
+    }
+
+    private var currentLevelSubtitle: String {
+        if settings.browserRestartRequired {
+            return "Restart Sumi before relying on newly applied global protection changes."
+        }
+        if settings.level != settings.appliedLevel {
+            return "Selected \(settings.level.displayTitle) is pending Apply."
+        }
+        return settings.appliedLevel.detail
+    }
+
+    private var levelDescriptionList: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(SumiProtectionLevel.allCases) { level in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(level.displayTitle)
+                        .font(.caption.weight(.semibold))
+                        .frame(width: 74, alignment: .leading)
+                    Text(level.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(.vertical, 2)
     }
 
     private var applyRowSubtitle: String {
@@ -257,100 +297,92 @@ private struct AdblockProtectionSettingsView: View {
         return globalDiagnostics.lastApplySummary ?? "Selected level is already applied."
     }
 
-    private var appliedLevelSubtitle: String {
-        if globalDiagnostics.browserRestartRequired {
-            return "Restart Sumi before this global level is reliable in browser pages."
+    private var bundleVersionText: String {
+        let global = globalDiagnostics
+        if let release = global.remoteReleaseVersion ?? bundleUpdateStatus.lastReleaseVersion {
+            if let generation = global.activeGenerationId {
+                return "\(release) / \(generation)"
+            }
+            return release
         }
-        if coordinator.applyNeeded {
-            return "Selected \(settings.level.displayTitle) is not active yet."
-        }
-        return "This is the level used after Sumi starts."
+        return global.activeGenerationId ?? "Not installed"
     }
 
-    private var preparedBundlesSubtitle: String {
-        let global = globalDiagnostics
-        let installedVersion = global.remoteReleaseVersion
-            ?? global.activeGenerationId
-            ?? bundleUpdateStatus.lastReleaseVersion
-        let installedDate = global.lastSuccessfulBundleInstallDate
-            ?? bundleUpdateStatus.lastSuccessDate
-        let installed = installedVersion.map { version in
-            if let installedDate {
-                return "Installed \(version) on \(settingsDateString(installedDate))."
-            }
-            return "Installed \(version)."
-        } ?? "No prepared Adblock bundle is installed yet."
-        let signature = preparedBundleSignatureSubtitle(global: global)
+    private var bundleVersionSubtitle: String {
+        let source = globalDiagnostics.preparedBundleSource?.displayTitle ?? "No active prepared bundle"
+        return "Release version / bundle generation. Source: \(source)."
+    }
 
+    private var lastUpdateText: String {
+        let global = globalDiagnostics
+        if let date = global.lastSuccessfulBundleInstallDate ?? bundleUpdateStatus.lastSuccessDate {
+            return settingsDateString(date)
+        }
+        if let attemptDate = bundleUpdateStatus.lastAttemptDate {
+            return "No successful update; last attempt \(settingsDateString(attemptDate))"
+        }
+        return "Never"
+    }
+
+    private var lastUpdateSubtitle: String {
+        if let summary = bundleUpdateStatus.lastSummary {
+            return summary
+        }
+        return "Manual bundle updates only; Sumi does not poll in the background."
+    }
+
+    private var signatureStatusText: String {
+        let global = globalDiagnostics
+        if global.remoteManifestSignatureVerified == true {
+            return "Verified"
+        }
+        if global.remoteManifestSignatureVerified == false || global.lastSignatureError != nil {
+            return "Failed"
+        }
+        return "Required"
+    }
+
+    private var signatureStatusSubtitle: String {
+        let global = globalDiagnostics
+        if let signatureError = global.lastSignatureError {
+            return signatureError
+        }
+        if global.remoteManifestSignatureVerified == true {
+            return "Remote release manifest signature is valid."
+        }
+        return "Signed remote release manifests are mandatory."
+    }
+
+    private var signatureStatusColor: Color {
+        let global = globalDiagnostics
+        if global.remoteManifestSignatureVerified == true {
+            return .secondary
+        }
+        if global.remoteManifestSignatureVerified == false || global.lastSignatureError != nil {
+            return .orange
+        }
+        return .secondary
+    }
+
+    private var restartRequiredSubtitle: String {
+        if settings.browserRestartRequired {
+            return "Restart Sumi to finish applying the current global level or bundle update."
+        }
+        if coordinator.applyNeeded {
+            return "Apply the selected level before restarting."
+        }
+        return "No restart is pending."
+    }
+
+    private var updateBundlesSubtitle: String {
         if isUpdatingBundles {
             return "Fetching and verifying the latest signed prepared bundle release."
         }
-        if let failure = bundleUpdateStatus.lastFailureReason {
-            return "\(installed) \(signature) Last update failed: \(failure)"
-        }
-        if let summary = bundleUpdateStatus.lastSummary {
-            return "\(installed) \(signature) \(summary)"
-        }
-        if settings.appliedLevel == .adblock {
-            return "\(installed) \(signature) Updates are manual; existing pages may need reload or restart after a bundle change."
-        }
-        return "\(installed) \(signature) Updating only downloads the Adblock bundle; it does not turn protection on."
+        return "Manual signed remote check. Updating bundles does not change the selected level."
     }
 
-    private func preparedBundleSignatureSubtitle(global: SumiProtectionGlobalDiagnostics) -> String {
-        if global.remoteManifestSignatureVerified == true {
-            let key = global.remoteSigningKeyId.map { " with key \($0)" } ?? ""
-            let version = global.remoteSigningKeyVersion.map { " v\($0)" } ?? ""
-            return "Signature verified\(key)\(version)."
-        }
-        if let signatureError = global.lastSignatureError {
-            return "Signature verification failed: \(signatureError)"
-        }
-        return "Remote releases require a manifest signature."
-    }
-
-    private var currentPageLevelSubtitle: String {
-        if let reason = currentPagePlan.ineligibleSurfaceReason {
-            return reason
-        }
-        if !currentPagePlan.planningErrors.isEmpty {
-            return currentPagePlan.planningErrors.joined(separator: " ")
-        }
-        if currentPagePlan.bundleProfileId != nil {
-            return "Bundle source: \(currentPagePlan.bundleSource?.rawValue ?? "unknown")."
-        }
-        return "Native WebKit rule lists only; no Adblock runtime script is enabled by this level."
-    }
-
-    private var currentSiteSubtitle: String {
-        guard let host = currentPagePlan.siteHost else {
-            return "Open an http or https tab to change site protection."
-        }
-        if settings.appliedLevel == .off {
-            return "Applied global level is Off."
-        }
-        if currentPagePlan.siteOverride == .disabled {
-            return "Protection off for this site: \(host)."
-        }
-        return "Protection follows the applied \(settings.appliedLevel.displayTitle) level for \(host)."
-    }
-
-    private var currentSiteButtonTitle: String {
-        currentPagePlan.siteOverride == .disabled
-            ? "Use Global Level"
-            : "Turn Off for Site"
-    }
-
-    private func toggleCurrentSiteProtection() {
-        guard let tab = currentTab else { return }
-        let nextOverride: SumiAdblockSiteOverride = currentPagePlan.siteOverride == .disabled
-            ? .inherit
-            : .disabled
-        coordinator.setSiteOverride(nextOverride, for: tab.url)
-        tab.markProtectionReloadRequiredIfNeeded(afterChangingPolicyFor: tab.url)
-        overrideStatus = nextOverride == .disabled
-            ? "Protection is off for this site without a browser restart."
-            : "This site uses the global level without a browser restart."
+    private var lastUpdateError: String? {
+        bundleUpdateStatus.lastFailureReason
     }
 
     private func applySelectedLevel() {

@@ -18,6 +18,7 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
 
         XCTAssertTrue(source.contains("id: \"adblock-protection\""))
         XCTAssertTrue(source.contains("title: \"Adblock & Protection\""))
+        XCTAssertTrue(source.contains("Protection off for this site"))
         XCTAssertTrue(source.contains("Restart Sumi to apply global changes"))
         XCTAssertFalse(source.contains("URLBarTrackingProtectionPresenter"))
         XCTAssertFalse(source.contains("URLBarAdblockPresenter"))
@@ -51,7 +52,7 @@ final class URLBarTrackingProtectionPresenterTests: XCTestCase {
 
         XCTAssertNil(row.chromeIconName)
         XCTAssertEqual(row.fallbackSystemName, "shield.lefthalf.filled")
-        XCTAssertEqual(row.subtitle, SumiProtectionLevel.adblock.displayTitle)
+        XCTAssertEqual(row.subtitle, "Adblock on for this site")
         XCTAssertFalse(row.isDisabled)
         XCTAssertTrue(row.isInteractive)
     }
