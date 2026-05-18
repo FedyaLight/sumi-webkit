@@ -20,7 +20,7 @@ final class SumiAdblockNativeRuleBundleTests: XCTestCase {
         let bundle = try SumiAdblockNativeRuleBundle.load(directoryURL: bundleURL)
 
         XCTAssertEqual(bundle.manifest.profileId, "adguardAdsPrivacy")
-        XCTAssertEqual(try bundle.contentRuleListDefinitions().count, 1)
+        XCTAssertEqual(try bundle.contentRuleListDefinitions().count, 2)
 
         let shardURL = bundleURL.appendingPathComponent("network/network-0001.json")
         var tampered = try Data(contentsOf: shardURL)
@@ -56,7 +56,7 @@ final class SumiAdblockNativeRuleBundleTests: XCTestCase {
         XCTAssertEqual(manifest.generationSource, .developmentBundle)
         XCTAssertEqual(manifest.bundleProfileId, "adguardAdsPrivacy")
         XCTAssertEqual(manifest.nativeRuleBundleId, "sumi.adblock.bundle.adguardAdsPrivacy.test")
-        XCTAssertEqual(manifest.networkShards.count, 1)
+        XCTAssertEqual(manifest.networkShards.count, 2)
         XCTAssertEqual(manifest.nativeCSSShards.count, 0)
         XCTAssertEqual(store.lastUpdateDiagnostics?.summary, "success: Adblock bundle installed")
     }

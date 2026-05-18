@@ -319,6 +319,23 @@ final class AdblockWebKitRuleListStore {
             .map(loader)
     }
 
+    func contentRuleListDefinitions(for protectionGroups: Set<SumiProtectionGroupKind>) throws -> [SumiContentRuleListDefinition] {
+        guard let manifest = activeManifest else { return [] }
+        let loader = AdblockManifestRuleListProvider.diskBackedDefinitionLoader(storageRoot: manifestStore.storageRoot)
+        return try manifest.allNativeShards
+            .filter { shard in
+                guard shard.kind == .network else { return false }
+                return shard.protectionGroup.map { protectionGroups.contains($0) } ?? false
+            }
+            .sorted { lhs, rhs in
+                if lhs.protectionGroup == rhs.protectionGroup {
+                    return lhs.id < rhs.id
+                }
+                return (lhs.protectionGroup?.rawValue ?? "") < (rhs.protectionGroup?.rawValue ?? "")
+            }
+            .map(loader)
+    }
+
     func loadActiveManifestIfEnabled() async {
         guard await isAdblockEnabled() else { return }
         do {
@@ -554,6 +571,7 @@ final class SumiAdBlockingModule {
     private var cachedSettingsStore: AdblockSettingsStore?
     private var cachedSitePolicyStore: AdblockSitePolicyStore?
     private var cachedRuleListStore: AdblockWebKitRuleListStore?
+    private var preparedBundleRuntimeEnabled = false
 
     init(
         moduleRegistry: SumiModuleRegistry = .shared,
@@ -576,12 +594,21 @@ final class SumiAdBlockingModule {
     }
 
     var isEnabled: Bool { moduleRegistry.isEnabled(.adBlocking) }
+    var isPreparedBundleRuntimeEnabled: Bool { preparedBundleRuntimeEnabled || isEnabled }
     var status: SumiAdBlockingModuleStatus { isEnabled ? .enabledNativeContentBlocking : .disabled }
     var hasLoadedRuntime: Bool { cachedRuleListStore != nil }
 
     func setEnabled(_ isEnabled: Bool) {
         moduleRegistry.setEnabled(isEnabled, for: .adBlocking)
-        if !isEnabled {
+        if !isEnabled && !isPreparedBundleRuntimeEnabled {
+            cachedRuleListStore?.contentBlockingService.setPolicy(.disabled)
+            cachedRuleListStore = nil
+        }
+    }
+
+    func setPreparedBundleRuntimeEnabled(_ isEnabled: Bool) {
+        preparedBundleRuntimeEnabled = isEnabled
+        if !isEnabled && !self.isEnabled {
             cachedRuleListStore?.contentBlockingService.setPolicy(.disabled)
             cachedRuleListStore = nil
         }
@@ -594,13 +621,19 @@ final class SumiAdBlockingModule {
     func contentRuleListDefinitions(
         for allowedKinds: Set<AdblockCompiledRuleGroupKind>
     ) throws -> [SumiContentRuleListDefinition] {
-        try ruleListStoreIfEnabled().contentRuleListDefinitions(for: allowedKinds)
+        try ruleListStoreIfPreparedBundleRuntimeEnabled().contentRuleListDefinitions(for: allowedKinds)
+    }
+
+    func contentRuleListDefinitions(
+        for protectionGroups: Set<SumiProtectionGroupKind>
+    ) throws -> [SumiContentRuleListDefinition] {
+        try ruleListStoreIfPreparedBundleRuntimeEnabled().contentRuleListDefinitions(for: protectionGroups)
     }
 
     func installPreparedNativeRuleBundle(profileId: String) async throws -> AdblockCompiledGenerationManifest? {
-        guard isEnabled else {
+        guard isPreparedBundleRuntimeEnabled else {
             throw AdblockUpdateDiagnostics(
-                summary: "Enable built-in Adblock before installing prepared bundle \(profileId).",
+                summary: "Enable Sumi protection before installing prepared bundle \(profileId).",
                 generationSource: .embeddedBundle,
                 bundleProfileId: profileId
             )
@@ -614,7 +647,7 @@ final class SumiAdBlockingModule {
                 bundleProfileId: profileId
             )
         }
-        return try await ruleListStoreIfEnabled().requestPreparedBundleInstall(
+        return try await ruleListStoreIfPreparedBundleRuntimeEnabled().requestPreparedBundleInstall(
             bundleURL: resolvedBundle.bundleURL,
             source: resolvedBundle.source,
             profileId: profileId,
@@ -623,14 +656,14 @@ final class SumiAdBlockingModule {
     }
 
     func restorePreparedNativeRuleBundleForStartup(profileId: String) async throws -> AdblockCompiledGenerationManifest? {
-        guard isEnabled else {
+        guard isPreparedBundleRuntimeEnabled else {
             throw AdblockUpdateDiagnostics(
-                summary: "Enable built-in Adblock before restoring prepared bundle \(profileId).",
+                summary: "Enable Sumi protection before restoring prepared bundle \(profileId).",
                 generationSource: nil,
                 bundleProfileId: profileId
             )
         }
-        let store = ruleListStoreIfEnabled()
+        let store = ruleListStoreIfPreparedBundleRuntimeEnabled()
         if let restored = try await store.restorePreparedManifestIfAvailable(profileId: profileId) {
             return restored
         }
@@ -783,10 +816,18 @@ final class SumiAdBlockingModule {
     }
 
     private func ruleListStoreIfEnabled() -> AdblockWebKitRuleListStore {
+        ruleListStore()
+    }
+
+    private func ruleListStoreIfPreparedBundleRuntimeEnabled() -> AdblockWebKitRuleListStore {
+        ruleListStore()
+    }
+
+    private func ruleListStore() -> AdblockWebKitRuleListStore {
         if let cachedRuleListStore { return cachedRuleListStore }
         let settings = settingsIfEnabled() ?? settingsFactory()
         let store = ruleListStoreFactory(settings, { [weak self] in
-            await MainActor.run { self?.isEnabled == true }
+            await MainActor.run { self?.isPreparedBundleRuntimeEnabled == true }
         })
         cachedRuleListStore = store
         return store

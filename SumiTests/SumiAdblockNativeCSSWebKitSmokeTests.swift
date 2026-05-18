@@ -22,7 +22,7 @@ final class SumiAdblockNativeCSSWebKitSmokeTests: XCTestCase {
         let manifest = bundle.compiledGenerationManifest(previousManifest: nil, installedDate: Date())
 
         XCTAssertEqual(bundle.manifest.nativeCSSSafetyPolicyVersion, SumiAdblockNativeRuleBundle.requiredNativeCSSSafetyPolicyVersion)
-        XCTAssertEqual(manifest.networkShards.count, 1)
+        XCTAssertEqual(manifest.networkShards.count, 2)
         XCTAssertEqual(manifest.nativeCSSShards.count, 1)
     }
 

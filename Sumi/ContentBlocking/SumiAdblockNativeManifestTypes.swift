@@ -67,16 +67,101 @@ struct NativeContentBlockingCompilationSummary: Codable, Equatable, Sendable {
     let ruleCap: NativeContentBlockingRuleCapDiagnostics
 }
 
+struct NativeContentBlockingLogicalGroupDescriptor: Codable, Equatable, Sendable {
+    let id: SumiProtectionGroupKind
+    let status: String?
+    let ruleCount: Int
+    let shardCount: Int
+    let sourceName: String?
+    let sourceURL: String?
+    let sourceLicense: String?
+    let sourceGenerator: String?
+    let notes: [String]
+
+    var reportLine: String {
+        [
+            "status=\(status ?? "nil")",
+            "rules=\(ruleCount)",
+            "shards=\(shardCount)",
+            "sourceName=\(sourceName ?? "nil")",
+            "sourceURL=\(sourceURL ?? "nil")",
+            "sourceLicense=\(sourceLicense ?? "nil")",
+            "sourceGenerator=\(sourceGenerator ?? "nil")",
+            "notes=\(notes.joined(separator: " | "))",
+        ].joined(separator: "; ")
+    }
+}
+
 struct NativeContentBlockingShardDescriptor: Codable, Equatable, Sendable {
     let id: String
     let generationId: String
     let kind: AdblockCompiledRuleGroupKind
     let sourceListIdentifiers: [String]
     let sourceCategories: [AdblockFilterListCategory]
+    let protectionGroup: SumiProtectionGroupKind?
     let webKitIdentifier: String
     let contentHash: String
     let approximateRuleCount: Int
     let jsonByteCount: Int
     let compilerIdentity: NativeContentBlockingCompilerIdentity?
     let diagnosticsSummary: String
+
+    init(
+        id: String,
+        generationId: String,
+        kind: AdblockCompiledRuleGroupKind,
+        sourceListIdentifiers: [String],
+        sourceCategories: [AdblockFilterListCategory],
+        protectionGroup: SumiProtectionGroupKind? = nil,
+        webKitIdentifier: String,
+        contentHash: String,
+        approximateRuleCount: Int,
+        jsonByteCount: Int,
+        compilerIdentity: NativeContentBlockingCompilerIdentity?,
+        diagnosticsSummary: String
+    ) {
+        self.id = id
+        self.generationId = generationId
+        self.kind = kind
+        self.sourceListIdentifiers = sourceListIdentifiers
+        self.sourceCategories = sourceCategories
+        self.protectionGroup = protectionGroup
+        self.webKitIdentifier = webKitIdentifier
+        self.contentHash = contentHash
+        self.approximateRuleCount = approximateRuleCount
+        self.jsonByteCount = jsonByteCount
+        self.compilerIdentity = compilerIdentity
+        self.diagnosticsSummary = diagnosticsSummary
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case generationId
+        case kind
+        case sourceListIdentifiers
+        case sourceCategories
+        case protectionGroup
+        case webKitIdentifier
+        case contentHash
+        case approximateRuleCount
+        case jsonByteCount
+        case compilerIdentity
+        case diagnosticsSummary
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        generationId = try container.decode(String.self, forKey: .generationId)
+        kind = try container.decode(AdblockCompiledRuleGroupKind.self, forKey: .kind)
+        sourceListIdentifiers = try container.decode([String].self, forKey: .sourceListIdentifiers)
+        sourceCategories = try container.decode([AdblockFilterListCategory].self, forKey: .sourceCategories)
+        protectionGroup = try container.decodeIfPresent(SumiProtectionGroupKind.self, forKey: .protectionGroup)
+        webKitIdentifier = try container.decode(String.self, forKey: .webKitIdentifier)
+        contentHash = try container.decode(String.self, forKey: .contentHash)
+        approximateRuleCount = try container.decode(Int.self, forKey: .approximateRuleCount)
+        jsonByteCount = try container.decode(Int.self, forKey: .jsonByteCount)
+        compilerIdentity = try container.decodeIfPresent(NativeContentBlockingCompilerIdentity.self, forKey: .compilerIdentity)
+        diagnosticsSummary = try container.decode(String.self, forKey: .diagnosticsSummary)
+    }
 }

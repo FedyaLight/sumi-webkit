@@ -322,18 +322,26 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
 
         var dataByName = [String: Data]()
         var assetDescriptors = [[String: Any]]()
-        func appendAsset(name: String, role: String, relativePath: String, data: Data) {
+        func appendAsset(
+            name: String,
+            role: String,
+            relativePath: String,
+            data: Data,
+            groupId: String? = nil
+        ) {
             dataByName[name] = data
-            assetDescriptors.append(
-                [
-                    "name": name,
-                    "role": role,
-                    "bundleProfileId": profileId,
-                    "relativePath": relativePath,
-                    "byteSize": data.count,
-                    "sha256": sha256Hex(data),
-                ]
-            )
+            var descriptor: [String: Any] = [
+                "name": name,
+                "role": role,
+                "bundleProfileId": profileId,
+                "relativePath": relativePath,
+                "byteSize": data.count,
+                "sha256": sha256Hex(data),
+            ]
+            if let groupId {
+                descriptor["groupId"] = groupId
+            }
+            assetDescriptors.append(descriptor)
         }
 
         appendAsset(
@@ -351,11 +359,21 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
         for shard in bundle.manifest.shards {
             let name = "\(profileId)-\(URL(fileURLWithPath: shard.relativePath).lastPathComponent)"
             let data = try Data(contentsOf: bundleURL.appendingPathComponent(shard.relativePath))
+            let groupId = shard.logicalGroup ?? shard.group
+            let role: String
+            if shard.kind == "nativeCSS" {
+                role = "nativeCSSShard"
+            } else if groupId == SumiProtectionGroupKind.trackingNetwork.rawValue {
+                role = "trackingNetworkShard"
+            } else {
+                role = "networkShard"
+            }
             appendAsset(
                 name: name,
-                role: shard.kind == "nativeCSS" ? "nativeCSSShard" : "networkShard",
+                role: role,
                 relativePath: shard.relativePath,
-                data: data
+                data: data,
+                groupId: groupId
             )
         }
 

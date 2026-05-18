@@ -94,6 +94,7 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
     let nativeCSSShards: [NativeContentBlockingShardDescriptor]
     let nativeCompiler: NativeContentBlockingCompilerIdentity?
     let nativeCompilerSourceLists: [NativeContentBlockingSourceList]?
+    let nativeLogicalGroups: [NativeContentBlockingLogicalGroupDescriptor]?
     let nativeCompilationSummary: NativeContentBlockingCompilationSummary?
     let compilerDiagnosticsSummary: String
     let lastSuccessfulUpdateDate: Date
@@ -122,6 +123,7 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
         nativeCSSShards: [NativeContentBlockingShardDescriptor],
         nativeCompiler: NativeContentBlockingCompilerIdentity?,
         nativeCompilerSourceLists: [NativeContentBlockingSourceList]?,
+        nativeLogicalGroups: [NativeContentBlockingLogicalGroupDescriptor]? = nil,
         nativeCompilationSummary: NativeContentBlockingCompilationSummary? = nil,
         compilerDiagnosticsSummary: String,
         lastSuccessfulUpdateDate: Date,
@@ -142,6 +144,7 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
             .sorted()
         self.nativeCompiler = nativeCompiler
         self.nativeCompilerSourceLists = nativeCompilerSourceLists
+        self.nativeLogicalGroups = nativeLogicalGroups
         self.nativeCompilationSummary = nativeCompilationSummary
         self.compilerDiagnosticsSummary = compilerDiagnosticsSummary
         self.lastSuccessfulUpdateDate = lastSuccessfulUpdateDate

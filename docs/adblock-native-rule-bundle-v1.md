@@ -15,11 +15,12 @@ The bundle directory layout is:
 SumiAdblockBundle/
   manifest.json
   diagnostics.json
+  trackingNetwork/*.json
   network/*.json
   nativeCSS/*.json
 ```
 
-`manifest.json` records the schema version, bundle id, profile id, compiler identity, safety-policy version, source-list ids and hashes, shard metadata, unsafe native-CSS count, and deduplication summary. The app keeps only metadata, paths, hashes, and identifiers in provider state; full shard JSON is read only for prepared-bundle verification and WebKit compilation.
+`manifest.json` records the schema version, bundle id, profile id, compiler identity, safety-policy version, source-list ids and hashes, logical group metadata, profile-to-group mapping, shard metadata, unsafe native-CSS count, and deduplication/overlap summary. The app keeps only metadata, paths, hashes, identifiers, and logical groups in provider state; full shard JSON is read only for prepared-bundle verification and WebKit compilation.
 
 ## Product contract
 
@@ -49,7 +50,7 @@ The static update path stays outside the browser runtime:
 2. GitHub Release assets expose a machine-readable release manifest, checksums, bundle manifests, diagnostics, and prepared shard JSON.
 3. Sumi checks for updates only after the user presses **Update bundles** in Privacy / Protection settings.
 4. Sumi downloads only the release manifest and prepared assets, verifies compatibility, byte sizes, and SHA-256 hashes, then replaces its cached prepared bundle after staging succeeds.
-5. If Adblock is already the applied level, Sumi compiles the prepared shards with WebKit and commits the new active generation only after validation succeeds.
+5. If Protection or Adblock is already the applied level, Sumi compiles the prepared shards for the requested logical groups with WebKit and commits the new active generation only after validation succeeds.
 6. Sumi keeps the previous generation so failed downloads, hash mismatches, incompatible manifests, and compile failures do not replace the last known good active bundle set.
 
 Sumi.app never runs `adblock-rust`, never parses raw filter lists, and never checks for bundle updates on launch or timers. Existing pages may need reload or a full Sumi restart after a manual bundle update; the UI reports restart-required instead of claiming live replacement.
