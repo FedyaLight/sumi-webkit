@@ -182,7 +182,7 @@ protocol SumiCompiledContentRuleListCataloging: AnyObject {
         with activeRules: [SumiContentBlockerRules]
     ) -> [String]
 
-    func staleIdentifiers(
+    func orphanedIdentifiers(
         replacing previousRules: [SumiContentBlockerRules],
         with activeRules: [SumiContentBlockerRules]
     ) -> [String]
@@ -208,17 +208,17 @@ final class SumiCompiledContentRuleListCatalog: SumiCompiledContentRuleListCatal
         replacing previousRules: [SumiContentBlockerRules],
         with activeRules: [SumiContentBlockerRules]
     ) -> [String] {
-        staleIdentifiersWithoutMutating(
+        orphanedIdentifiersWithoutMutating(
             replacing: previousRules,
             with: activeRules
         )
     }
 
-    func staleIdentifiers(
+    func orphanedIdentifiers(
         replacing previousRules: [SumiContentBlockerRules],
         with activeRules: [SumiContentBlockerRules]
     ) -> [String] {
-        let staleIdentifiers = staleIdentifiersWithoutMutating(
+        let orphanedIdentifiers = orphanedIdentifiersWithoutMutating(
             replacing: previousRules,
             with: activeRules
         )
@@ -233,7 +233,7 @@ final class SumiCompiledContentRuleListCatalog: SumiCompiledContentRuleListCatal
             }
         }
         save()
-        return staleIdentifiers
+        return orphanedIdentifiers
     }
 
     func forgetIdentifiers(_ identifiers: [String]) {
@@ -248,23 +248,23 @@ final class SumiCompiledContentRuleListCatalog: SumiCompiledContentRuleListCatal
         save()
     }
 
-    private func staleIdentifiersWithoutMutating(
+    private func orphanedIdentifiersWithoutMutating(
         replacing previousRules: [SumiContentBlockerRules],
         with activeRules: [SumiContentBlockerRules]
     ) -> [String] {
         let previousIdentifiersByName = Self.identifiersByName(for: previousRules)
         let activeIdentifiersByName = Self.identifiersByName(for: activeRules)
         let namesToSweep = Set(previousIdentifiersByName.keys).union(activeIdentifiersByName.keys)
-        var staleIdentifiers = Set<String>()
+        var orphanedIdentifiers = Set<String>()
 
         for name in namesToSweep {
             let activeIdentifiers = activeIdentifiersByName[name] ?? []
             var knownIdentifiers = identifiersByName[name] ?? []
             knownIdentifiers.formUnion(previousIdentifiersByName[name] ?? [])
-            staleIdentifiers.formUnion(knownIdentifiers.subtracting(activeIdentifiers))
+            orphanedIdentifiers.formUnion(knownIdentifiers.subtracting(activeIdentifiers))
         }
 
-        return Array(staleIdentifiers)
+        return Array(orphanedIdentifiers)
     }
 
     private func save() {
@@ -823,7 +823,7 @@ final class SumiContentBlockingService {
         let subject = profileSubject(for: profileId)
         let previousUpdate = subject.value
         subject.send(update)
-        cleanupStaleCompiledRuleLists(
+        cleanupOrphanedCompiledRuleLists(
             replacing: previousUpdate?.rules ?? [],
             with: update.rules
         )
@@ -835,13 +835,13 @@ final class SumiContentBlockingService {
     ) {
         latestUpdate = update
         updatesSubject.send(update)
-        cleanupStaleCompiledRuleLists(
+        cleanupOrphanedCompiledRuleLists(
             replacing: previousUpdate?.rules ?? [],
             with: update.rules
         )
     }
 
-    private func cleanupStaleCompiledRuleLists(
+    private func cleanupOrphanedCompiledRuleLists(
         replacing previousRules: [SumiContentBlockerRules],
         with activeRules: [SumiContentBlockerRules]
     ) {
@@ -849,12 +849,12 @@ final class SumiContentBlockingService {
             replacing: previousRules,
             with: activeRules
         )
-        let staleIdentifiers = compiledRuleListCatalog.staleIdentifiers(
+        let orphanedIdentifiers = compiledRuleListCatalog.orphanedIdentifiers(
             replacing: previousRules,
             with: activeRules
         )
         forgetCachedCompiledRuleLists(withIdentifiers: cachedIdentifiersToForget)
-        removeCompiledRuleListsFromStore(withIdentifiers: staleIdentifiers)
+        removeCompiledRuleListsFromStore(withIdentifiers: orphanedIdentifiers)
     }
 
     private func cleanupTransientCompiledRuleLists(
@@ -890,7 +890,7 @@ final class SumiContentBlockingService {
 #if DEBUG
         SumiProtectionStartupRestoreDiagnostics.shared.recordCompiledRuleListRemoval(
             identifiers: uniqueIdentifiers,
-            reason: "SumiContentBlockingService stale compiled rule-list cleanup"
+            reason: "SumiContentBlockingService orphaned compiled rule-list cleanup"
         )
 #endif
     }

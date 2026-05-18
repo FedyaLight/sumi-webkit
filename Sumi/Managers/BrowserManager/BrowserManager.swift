@@ -220,6 +220,7 @@ class BrowserManager: ObservableObject {
         didSet {
             tabSuspensionService.rebuildProactiveTimers(reason: "settings-attached")
             reconcileStartupSessionIfPossible()
+            scheduleAutomaticBrowsingDataCleanup(reason: "settings-attached")
         }
     }
     let sumiProfileRouter = SumiProfileRouter()
@@ -292,6 +293,7 @@ class BrowserManager: ObservableObject {
     var didConsumeStartupLastSessionRestoreOffer = false
     private var structuralChangeCancellable: AnyCancellable?
     private var tabManagerLoadObserverToken: NSObjectProtocol?
+    private var browsingDataRetentionObserverToken: NSObjectProtocol?
     private var startupProtectionRestoreTask: Task<Void, Never>?
     private(set) var hasFinishedStartupProtectionRestore = false
     private var deferredStartupBackgroundTabIds: Set<UUID> = []
@@ -530,6 +532,20 @@ class BrowserManager: ObservableObject {
             }
         }
 
+        browsingDataRetentionObserverToken = NotificationCenter.default.addObserver(
+            forName: .sumiBrowsingDataRetentionChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.scheduleAutomaticBrowsingDataCleanup(
+                    reason: "retention-setting-changed",
+                    force: true,
+                    delayNanoseconds: 0
+                )
+            }
+        }
+
         beginProtectionRestoreForStartupIfNeeded()
     }
 
@@ -698,6 +714,7 @@ class BrowserManager: ObservableObject {
             }
 
             await self.runAutomaticPermissionCleanupIfNeeded(for: profile)
+            self.scheduleAutomaticBrowsingDataCleanup(reason: "profile-switch")
         }
     }
 
@@ -709,6 +726,23 @@ class BrowserManager: ObservableObject {
         let repository = SumiPermissionSettingsRepository(browserManager: self)
         return await repository.runAutomaticCleanupIfNeeded(
             profile: SumiPermissionSettingsProfileContext(profile: profile)
+        )
+    }
+
+    func scheduleAutomaticBrowsingDataCleanup(
+        reason: String,
+        force: Bool = false,
+        delayNanoseconds: UInt64? = nil
+    ) {
+        guard let sumiSettings else { return }
+        SumiAutomaticBrowsingDataCleanupService.shared.scheduleIfNeeded(
+            retentionPeriod: sumiSettings.browsingDataRetentionPeriod,
+            historyManager: historyManager,
+            profiles: profileManager.profiles,
+            currentProfileId: currentProfile?.id,
+            force: force,
+            reason: reason,
+            delayNanoseconds: delayNanoseconds
         )
     }
 
@@ -1420,6 +1454,9 @@ class BrowserManager: ObservableObject {
         if let token = tabManagerLoadObserverToken {
             NotificationCenter.default.removeObserver(token)
         }
+        if let token = browsingDataRetentionObserverToken {
+            NotificationCenter.default.removeObserver(token)
+        }
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -1850,11 +1887,11 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         loadPolicy: TabSelectionLoadPolicy
     ) {
-        guard canMaterializeNormalTabWebViewDuringStartup(tab) else { return }
-
         if tab.isUnloaded {
             tab.beginLoadingPresentationIfNeeded()
         }
+
+        guard canMaterializeNormalTabWebViewDuringStartup(tab) else { return }
 
         switch loadPolicy {
         case .immediate:

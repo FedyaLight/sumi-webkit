@@ -36,6 +36,7 @@ class SumiSettingsService {
     private let memorySaverCustomDeactivationDelayKey = "settings.memorySaver.customDeactivationDelay"
     private let startupModeKey = "settings.startup.mode"
     private let startupPageURLStringKey = "settings.startup.pageURL"
+    private let browsingDataRetentionDaysKey = "settings.browsingData.retentionDays"
 
     var currentSettingsTab: SettingsTabs = .general
 
@@ -205,6 +206,17 @@ class SumiSettingsService {
         }
     }
 
+    var browsingDataRetentionPeriod: SumiBrowsingDataRetentionPeriod {
+        didSet {
+            userDefaults.set(browsingDataRetentionPeriod.rawValue, forKey: browsingDataRetentionDaysKey)
+            NotificationCenter.default.post(
+                name: .sumiBrowsingDataRetentionChanged,
+                object: nil,
+                userInfo: ["days": browsingDataRetentionPeriod.rawValue]
+            )
+        }
+    }
+
     var resolvedStartupPageURL: URL {
         SumiStartupPageURL.runtimeURL(from: startupPageURLString)
     }
@@ -237,6 +249,7 @@ class SumiSettingsService {
             memorySaverCustomDeactivationDelayKey: SumiMemorySaverCustomDelay.defaultDelay,
             startupModeKey: SumiStartupMode.restorePreviousSession.rawValue,
             startupPageURLStringKey: SumiStartupPageURL.defaultURLString,
+            browsingDataRetentionDaysKey: SumiBrowsingDataRetentionPeriod.defaultPeriod.rawValue,
         ])
 
         // Initialize properties from UserDefaults
@@ -311,6 +324,19 @@ class SumiSettingsService {
         self.startupPageURLString =
             userDefaults.string(forKey: startupPageURLStringKey)
             ?? SumiStartupPageURL.defaultURLString
+        let storedBrowsingDataRetentionDays = userDefaults.object(
+            forKey: browsingDataRetentionDaysKey
+        ) as? Int
+        let resolvedBrowsingDataRetentionPeriod = SumiBrowsingDataRetentionPeriod.persistedValue(
+            storedBrowsingDataRetentionDays
+        )
+        self.browsingDataRetentionPeriod = resolvedBrowsingDataRetentionPeriod
+        if storedBrowsingDataRetentionDays != resolvedBrowsingDataRetentionPeriod.rawValue {
+            userDefaults.set(
+                resolvedBrowsingDataRetentionPeriod.rawValue,
+                forKey: browsingDataRetentionDaysKey
+            )
+        }
 
         if let data = userDefaults.data(forKey: siteSearchEntriesKey),
            let decoded = try? JSONDecoder().decode([SiteSearchEntry].self, from: data) {
@@ -631,6 +657,8 @@ extension Notification.Name {
     static let tabUnloadTimeoutChanged = Notification.Name("tabUnloadTimeoutChanged")
     static let sumiMemorySaverPolicyChanged = Notification.Name("SumiMemorySaverPolicyChanged")
     static let sumiMemoryPressureReceived = Notification.Name("SumiMemoryPressureReceived")
+    static let sumiBrowsingDataRetentionChanged =
+        Notification.Name("SumiBrowsingDataRetentionChanged")
 }
 
 // MARK: - Environment Key

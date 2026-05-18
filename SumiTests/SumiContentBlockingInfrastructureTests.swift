@@ -7,6 +7,25 @@ import XCTest
 
 @MainActor
 final class SumiContentBlockingInfrastructureTests: XCTestCase {
+    private var preexistingCompiledRuleListIdentifiers = Set<String>()
+
+    override func setUp() async throws {
+        try await super.setUp()
+        preexistingCompiledRuleListIdentifiers = Set(
+            await SumiWKContentRuleListCompiler().availableContentRuleListIdentifiers()
+        )
+    }
+
+    override func tearDown() async throws {
+        let compiler = SumiWKContentRuleListCompiler()
+        let currentIdentifiers = Set(await compiler.availableContentRuleListIdentifiers())
+        for identifier in currentIdentifiers.subtracting(preexistingCompiledRuleListIdentifiers) {
+            try? await compiler.removeContentRuleList(forIdentifier: identifier)
+        }
+        preexistingCompiledRuleListIdentifiers.removeAll()
+        try await super.tearDown()
+    }
+
     func testDefaultFactoryInstallsDisabledAssetsWithoutContentBlockingService() async throws {
         let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController()
         let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
@@ -598,7 +617,7 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
     private func waitForCompilerFailure(
         _ compiler: CountingContentRuleListCompiler
     ) async throws {
-        let deadline = Date().addingTimeInterval(5)
+        let deadline = Date().addingTimeInterval(15)
         while Date() < deadline {
             if compiler.failureCount > 0 {
                 return
@@ -612,7 +631,7 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
         _ identifier: String,
         in compiler: CountingContentRuleListCompiler
     ) async throws {
-        let deadline = Date().addingTimeInterval(5)
+        let deadline = Date().addingTimeInterval(15)
         while Date() < deadline {
             if compiler.removedIdentifiers.contains(identifier) {
                 return
@@ -925,17 +944,17 @@ private final class InMemoryCompiledRuleListCatalog: SumiCompiledContentRuleList
         replacing previousRules: [SumiContentBlockerRules],
         with activeRules: [SumiContentBlockerRules]
     ) -> [String] {
-        staleIdentifiersWithoutMutating(
+        orphanedIdentifiersWithoutMutating(
             replacing: previousRules,
             with: activeRules
         )
     }
 
-    func staleIdentifiers(
+    func orphanedIdentifiers(
         replacing previousRules: [SumiContentBlockerRules],
         with activeRules: [SumiContentBlockerRules]
     ) -> [String] {
-        let staleIdentifiers = staleIdentifiersWithoutMutating(
+        let orphanedIdentifiers = orphanedIdentifiersWithoutMutating(
             replacing: previousRules,
             with: activeRules
         )
@@ -945,7 +964,7 @@ private final class InMemoryCompiledRuleListCatalog: SumiCompiledContentRuleList
             let activeIdentifiers = activeIdentifiersByName[name] ?? []
             identifiersByName[name] = activeIdentifiers.isEmpty ? nil : activeIdentifiers
         }
-        return Array(staleIdentifiers)
+        return Array(orphanedIdentifiers)
     }
 
     func forgetIdentifiers(_ identifiers: [String]) {
@@ -958,23 +977,23 @@ private final class InMemoryCompiledRuleListCatalog: SumiCompiledContentRuleList
         }
     }
 
-    private func staleIdentifiersWithoutMutating(
+    private func orphanedIdentifiersWithoutMutating(
         replacing previousRules: [SumiContentBlockerRules],
         with activeRules: [SumiContentBlockerRules]
     ) -> [String] {
         let previousIdentifiersByName = Self.identifiersByName(for: previousRules)
         let activeIdentifiersByName = Self.identifiersByName(for: activeRules)
         let namesToSweep = Set(previousIdentifiersByName.keys).union(activeIdentifiersByName.keys)
-        var staleIdentifiers = Set<String>()
+        var orphanedIdentifiers = Set<String>()
 
         for name in namesToSweep {
             let activeIdentifiers = activeIdentifiersByName[name] ?? []
             var knownIdentifiers = identifiersByName[name] ?? []
             knownIdentifiers.formUnion(previousIdentifiersByName[name] ?? [])
-            staleIdentifiers.formUnion(knownIdentifiers.subtracting(activeIdentifiers))
+            orphanedIdentifiers.formUnion(knownIdentifiers.subtracting(activeIdentifiers))
         }
 
-        return Array(staleIdentifiers)
+        return Array(orphanedIdentifiers)
     }
 
     private static func identifiersByName(

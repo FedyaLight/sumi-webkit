@@ -247,6 +247,16 @@ final class SiteSettingsFakeWebsiteDataService: SumiWebsiteDataCleanupServicing 
     func clearAllProfileWebsiteData(in dataStore: WKWebsiteDataStore) async {
         _ = dataStore
     }
+
+    func removePersistentDataStore(forIdentifier identifier: UUID) async -> Bool {
+        _ = identifier
+        return true
+    }
+
+    func prunePersistentDataStores(keeping identifiersToKeep: Set<UUID>) async -> [UUID] {
+        _ = identifiersToKeep
+        return []
+    }
 }
 
 @MainActor

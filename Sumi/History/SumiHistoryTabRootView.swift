@@ -7,6 +7,7 @@ struct SumiHistoryTabRootView: View {
     @ObservedObject var browserManager: BrowserManager
     @StateObject private var viewModel: HistoryPageViewModel
     @StateObject private var scrollHoverCoordinator = NativeSurfaceScrollHoverCoordinator()
+    private let windowState: BrowserWindowState?
 
     private enum Layout {
         static let sidebarWidth: CGFloat = 220
@@ -19,6 +20,7 @@ struct SumiHistoryTabRootView: View {
 
     init(browserManager: BrowserManager, windowState: BrowserWindowState?) {
         self.browserManager = browserManager
+        self.windowState = windowState
         _viewModel = StateObject(
             wrappedValue: HistoryPageViewModel(
                 browserManager: browserManager,
@@ -38,7 +40,7 @@ struct SumiHistoryTabRootView: View {
         .background(tokens.windowBackground)
         .environment(\.resolvedThemeContext, surfaceThemeContext)
         .environment(\.colorScheme, surfaceThemeContext.chromeColorScheme)
-        .environment(\.nativeSurfaceHoverUpdatesEnabled, scrollHoverCoordinator.hoverUpdatesEnabled)
+        .environment(\.nativeSurfaceHoverUpdatesEnabled, nativeSurfaceHoverUpdatesEnabled)
         .onAppear {
             viewModel.appear()
         }
@@ -57,6 +59,11 @@ struct SumiHistoryTabRootView: View {
 
     private var selectionBackground: Color {
         surfaceThemeContext.nativeSurfaceSelectionBackground
+    }
+
+    private var nativeSurfaceHoverUpdatesEnabled: Bool {
+        scrollHoverCoordinator.hoverUpdatesEnabled
+            && !browserManager.dialogManager.isPresented(in: windowState?.window)
     }
 
     private var sidebar: some View {

@@ -40,6 +40,10 @@ protocol SumiWebsiteDataCleanupServicing: AnyObject {
         in dataStore: WKWebsiteDataStore
     ) async
     func clearAllProfileWebsiteData(in dataStore: WKWebsiteDataStore) async
+    @discardableResult
+    func removePersistentDataStore(forIdentifier identifier: UUID) async -> Bool
+    @discardableResult
+    func prunePersistentDataStores(keeping identifiersToKeep: Set<UUID>) async -> [UUID]
 }
 
 struct SumiSiteDataEntry: Identifiable, Hashable, Sendable {
@@ -446,11 +450,11 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
         using store: Store
     ) async {
         await store.removeData(
-            ofTypes: WKWebsiteDataStore.safelyRemovableWebsiteDataTypes,
+            ofTypes: WKWebsiteDataStore.allWebsiteDataTypesExceptCookies,
             modifiedSince: .distantPast
         )
 
-        let records = await store.dataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes())
+        let records = await store.dataRecords(ofTypes: WKWebsiteDataStore.sumiManualFullCleanupDataTypes)
         let removableRecords = records.filter { record in
             !preservationPolicy.shouldPreserveDataRecord(displayName: record.displayName)
         }
@@ -460,6 +464,47 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
         )
 
         await performRemoveCookies(.all, using: store)
+    }
+
+    @discardableResult
+    func removePersistentDataStore(forIdentifier identifier: UUID) async -> Bool {
+        do {
+            try await WKWebsiteDataStore.remove(forIdentifier: identifier)
+            return true
+        } catch {
+            RuntimeDiagnostics.emit(
+                "Error removing persistent WebKit data store \(identifier.uuidString): \(error)"
+            )
+            return false
+        }
+    }
+
+    @discardableResult
+    func prunePersistentDataStores(keeping identifiersToKeep: Set<UUID>) async -> [UUID] {
+        let existingIdentifiers = await fetchPersistentDataStoreIdentifiers()
+        var removedIdentifiers: [UUID] = []
+
+        for identifier in existingIdentifiers where !identifiersToKeep.contains(identifier) {
+            if await removePersistentDataStore(forIdentifier: identifier) {
+                removedIdentifiers.append(identifier)
+            }
+        }
+
+        if !removedIdentifiers.isEmpty {
+            RuntimeDiagnostics.debug(
+                "Pruned \(removedIdentifiers.count) orphan WebKit persistent data stores.",
+                category: "BrowsingDataCleanup"
+            )
+        }
+        return removedIdentifiers
+    }
+
+    private func fetchPersistentDataStoreIdentifiers() async -> [UUID] {
+        await withCheckedContinuation { continuation in
+            WKWebsiteDataStore.fetchAllDataStoreIdentifiers { identifiers in
+                continuation.resume(returning: identifiers)
+            }
+        }
     }
 
     private func performRemoveWebsiteDataForDomain<Store: SumiWebsiteDataStore>(
@@ -599,17 +644,26 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
 }
 
 extension WKWebsiteDataStore {
-    static var allWebsiteDataTypesExceptCookies: Set<String> {
-        var types = Self.allWebsiteDataTypes()
+    static var sumiSupplementalWebsiteDataTypes: Set<String> {
+        [
+            WKWebsiteDataTypeSearchFieldRecentSearches,
+            WKWebsiteDataTypeMediaKeys,
+            WKWebsiteDataTypeHashSalt,
+            "_WKWebsiteDataTypeHSTSCache",
+            "_WKWebsiteDataTypeResourceLoadStatistics",
+            "_WKWebsiteDataTypeCredentials",
+            "_WKWebsiteDataTypeAdClickAttributions",
+            "_WKWebsiteDataTypePrivateClickMeasurements",
+            "_WKWebsiteDataTypeAlternativeServices"
+        ]
+    }
 
-        types.insert("_WKWebsiteDataTypeMediaKeys")
-        types.insert("_WKWebsiteDataTypeHSTSCache")
-        types.insert("_WKWebsiteDataTypeSearchFieldRecentSearches")
-        types.insert("_WKWebsiteDataTypeResourceLoadStatistics")
-        types.insert("_WKWebsiteDataTypeCredentials")
-        types.insert("_WKWebsiteDataTypeAdClickAttributions")
-        types.insert("_WKWebsiteDataTypePrivateClickMeasurements")
-        types.insert("_WKWebsiteDataTypeAlternativeServices")
+    static var sumiManualFullCleanupDataTypes: Set<String> {
+        Self.allWebsiteDataTypes().union(sumiSupplementalWebsiteDataTypes)
+    }
+
+    static var allWebsiteDataTypesExceptCookies: Set<String> {
+        var types = Self.sumiManualFullCleanupDataTypes
 
         types.remove(WKWebsiteDataTypeCookies)
         return types
@@ -629,12 +683,52 @@ extension WKWebsiteDataStore {
             WKWebsiteDataTypeDiskCache,
             WKWebsiteDataTypeMemoryCache,
             WKWebsiteDataTypeOfflineWebApplicationCache,
-            WKWebsiteDataTypeWebSQLDatabases,
-            WKWebsiteDataTypeIndexedDBDatabases,
+            WKWebsiteDataTypeFetchCache,
+            WKWebsiteDataTypeServiceWorkerRegistrations,
+            "_WKWebsiteDataTypeAlternativeServices",
+            "_WKWebsiteDataTypeHSTSCache"
+        ]
+    }
+
+    static var sumiSiteDataTypes: Set<String> {
+        [
+            WKWebsiteDataTypeCookies,
             WKWebsiteDataTypeLocalStorage,
             WKWebsiteDataTypeSessionStorage,
+            WKWebsiteDataTypeWebSQLDatabases,
+            WKWebsiteDataTypeIndexedDBDatabases,
+            WKWebsiteDataTypeFileSystem,
             WKWebsiteDataTypeFetchCache,
-            WKWebsiteDataTypeServiceWorkerRegistrations
+            WKWebsiteDataTypeServiceWorkerRegistrations,
+            WKWebsiteDataTypeMediaKeys,
+            WKWebsiteDataTypeHashSalt,
+            "_WKWebsiteDataTypeCredentials"
+        ]
+    }
+
+    static var sumiHistoryDataTypes: Set<String> {
+        [
+            WKWebsiteDataTypeSearchFieldRecentSearches,
+            "_WKWebsiteDataTypeResourceLoadStatistics",
+            "_WKWebsiteDataTypeAdClickAttributions",
+            "_WKWebsiteDataTypePrivateClickMeasurements"
+        ]
+    }
+
+    static var sumiAutomaticCleanupDataTypes: Set<String> {
+        [
+            WKWebsiteDataTypeDiskCache,
+            WKWebsiteDataTypeMemoryCache,
+            WKWebsiteDataTypeOfflineWebApplicationCache,
+            WKWebsiteDataTypeFetchCache,
+            WKWebsiteDataTypeServiceWorkerRegistrations,
+            WKWebsiteDataTypeSearchFieldRecentSearches,
+            WKWebsiteDataTypeHashSalt,
+            "_WKWebsiteDataTypeAdClickAttributions",
+            "_WKWebsiteDataTypePrivateClickMeasurements",
+            "_WKWebsiteDataTypeAlternativeServices",
+            "_WKWebsiteDataTypeHSTSCache",
+            "_WKWebsiteDataTypeResourceLoadStatistics"
         ]
     }
 

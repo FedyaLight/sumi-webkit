@@ -262,7 +262,7 @@ final class UserScriptStore {
     /// writing the compiled source into the scripts directory.
     @discardableResult
     func installScript(from url: URL) async throws -> SumiInstalledUserScript {
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await SumiNonPersistentURLSession.shared.data(from: url)
         guard let content = String(data: data, encoding: .utf8),
               let parsedMetadata = UserScriptMetadataParser.parse(content)
         else {
@@ -487,7 +487,7 @@ final class UserScriptStore {
                 continue
             }
             let url = try resolvedResourceURL(urlString, baseURL: installURL)
-            let (data, response) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await SumiNonPersistentURLSession.shared.data(from: url)
             let content = String(data: data, encoding: .utf8) ?? ""
             let localFile = scriptRequireDir.appendingPathComponent(Self.sanitizeFilename(url.absoluteString))
             try data.write(to: localFile, options: .atomic)
@@ -518,7 +518,7 @@ final class UserScriptStore {
         var result: [String: String] = [:]
         for (name, urlString) in resources {
             let url = try resolvedResourceURL(urlString, baseURL: installURL)
-            let (data, response) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await SumiNonPersistentURLSession.shared.data(from: url)
             let content = String(data: data, encoding: .utf8) ?? data.base64EncodedString()
             let localFile = scriptResourceDir.appendingPathComponent(Self.sanitizeFilename(name))
             try data.write(to: localFile, options: .atomic)

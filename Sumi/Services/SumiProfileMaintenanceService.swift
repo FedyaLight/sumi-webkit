@@ -31,13 +31,18 @@ final class SumiProfileMaintenanceService {
         }
 
         Task { @MainActor in
-            if context.currentProfile()?.id == profile.id,
-               let replacement = context.profileManager.profiles.first(where: { $0.id != profile.id })
-            {
+            guard let replacement = context.profileManager.profiles.first(where: { $0.id != profile.id }) else {
+                return
+            }
+
+            if context.currentProfile()?.id == profile.id {
                 await context.switchToProfile(replacement)
             }
 
-            context.tabManager.cleanupProfileReferences(profile.id)
+            context.tabManager.cleanupProfileReferences(
+                profile.id,
+                fallbackProfileId: replacement.id
+            )
             await profile.clearAllData()
 
             let deleted = context.profileManager.deleteProfile(profile)
@@ -51,6 +56,7 @@ final class SumiProfileMaintenanceService {
                     )
                 )
             } else {
+                _ = await profile.removePersistentDataStore()
                 SharedVisitedLinkStoreProvider.shared.discardStore(for: profile.id)
             }
         }

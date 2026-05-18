@@ -63,6 +63,10 @@ final class HistoryManager: ObservableObject {
         }
     }
 
+    func refreshAfterExternalMutation() async {
+        await refreshSummary(incrementRevision: true)
+    }
+
     @discardableResult
     func addVisit(
         url: URL,

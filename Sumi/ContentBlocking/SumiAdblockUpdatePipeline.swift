@@ -114,6 +114,43 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
         networkShards + nativeCSSShards
     }
 
+    func withoutPreviousGeneration() -> AdblockCompiledGenerationManifest {
+        let remoteMetadata: SumiAdblockPreparedBundleRemoteMetadata?
+        if let remoteReleaseVersion, let remoteReleaseTag {
+            remoteMetadata = SumiAdblockPreparedBundleRemoteMetadata(
+                releaseVersion: remoteReleaseVersion,
+                releaseTag: remoteReleaseTag,
+                releaseURL: remoteReleaseURL,
+                manifestSignatureRequired: remoteManifestSignatureRequired,
+                manifestSignatureVerified: remoteManifestSignatureVerified,
+                signingKeyId: remoteSigningKeyId,
+                signingKeyVersion: remoteSigningKeyVersion
+            )
+        } else {
+            remoteMetadata = nil
+        }
+
+        return AdblockCompiledGenerationManifest(
+            schemaVersion: schemaVersion,
+            activeGenerationId: activeGenerationId,
+            createdDate: createdDate,
+            selectedFilterLists: selectedFilterLists,
+            networkShards: networkShards,
+            nativeCSSShards: nativeCSSShards,
+            nativeCompiler: nativeCompiler,
+            nativeCompilerSourceLists: nativeCompilerSourceLists,
+            nativeLogicalGroups: nativeLogicalGroups,
+            nativeCompilationSummary: nativeCompilationSummary,
+            compilerDiagnosticsSummary: compilerDiagnosticsSummary,
+            lastSuccessfulUpdateDate: lastSuccessfulUpdateDate,
+            previousGenerationId: nil,
+            generationSource: generationSource,
+            nativeRuleBundleId: nativeRuleBundleId,
+            bundleProfileId: bundleProfileId,
+            remoteMetadata: remoteMetadata
+        )
+    }
+
     init(
         schemaVersion: Int,
         activeGenerationId: String,
@@ -845,15 +882,8 @@ actor AdblockGenerationGarbageCollector {
         var report = AdblockGenerationCleanupReport()
         do {
             guard let activeManifest = try await manifestStore.activeManifest() else { return report }
-            let previousManifest: AdblockCompiledGenerationManifest?
-            if let previousGenerationId = activeManifest.previousGenerationId {
-                previousManifest = try await manifestStore.archivedManifest(generationId: previousGenerationId)
-            } else {
-                previousManifest = nil
-            }
-            let preservedGenerationIds = Set([activeManifest.activeGenerationId, activeManifest.previousGenerationId].compactMap { $0 })
+            let preservedGenerationIds = Set([activeManifest.activeGenerationId])
             let preservedIdentifiers = Set(activeManifest.webKitRuleListIdentifiers)
-                .union(previousManifest?.webKitRuleListIdentifiers ?? [])
             let identifiers = await contentRuleListStore.availableContentRuleListIdentifiers()
             for identifier in identifiers
                 where AdblockUpdateCoordinator.isAdblockGeneratedWebKitIdentifier(identifier)
@@ -878,6 +908,9 @@ actor AdblockGenerationGarbageCollector {
                     try? fileManager.removeItem(at: url)
                     report.removedFilePaths.append(url.path)
                 }
+            }
+            if activeManifest.previousGenerationId != nil {
+                try await manifestStore.replaceActiveManifest(activeManifest.withoutPreviousGeneration())
             }
             let stagingRoot = await manifestStore.stagingDirectoryURL()
             if fileManager.fileExists(atPath: stagingRoot.path) {
