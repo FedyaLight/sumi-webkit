@@ -133,8 +133,10 @@ struct SpaceGradientBackgroundView: View {
             case .toolbarChrome:
                 if accessibilityReduceTransparency {
                     chromeTokens.windowBackground
-                } else {
+                } else if shouldRenderNativeMaterialBase {
                     NativeChromeMaterialBackground(role: nativeMaterialRole)
+                } else {
+                    Color.clear
                 }
             }
         }
@@ -142,6 +144,10 @@ struct SpaceGradientBackgroundView: View {
 
     private var shouldRenderCustomTheme: Bool {
         themeContext.rendersCustomChromeTheme
+    }
+
+    private var shouldRenderNativeMaterialBase: Bool {
+        !themeContext.rendersOpaqueCustomChromeTheme
     }
 
     private func themedLayer(

@@ -195,15 +195,24 @@ struct WorkspaceGradientTheme: Codable, Hashable, Sendable {
     }
 
     static let customChromeThemeDisableThreshold: Double = 0.02
+    static let customChromeThemeOpaqueThreshold: Double = 0.98
 
     var customChromeThemeIntensity: Double {
-        opacity < WorkspaceGradientTheme.customChromeThemeDisableThreshold
-            ? 0
-            : opacity
+        if opacity < WorkspaceGradientTheme.customChromeThemeDisableThreshold {
+            return 0
+        }
+        if opacity >= WorkspaceGradientTheme.customChromeThemeOpaqueThreshold {
+            return 1
+        }
+        return opacity
     }
 
     var usesCustomChromeTheme: Bool {
         customChromeThemeIntensity > 0
+    }
+
+    var rendersOpaqueCustomChromeTheme: Bool {
+        customChromeThemeIntensity >= 1
     }
 
     mutating func replaceColors(
