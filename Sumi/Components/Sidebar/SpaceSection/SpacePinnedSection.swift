@@ -509,7 +509,9 @@ extension SpaceView {
 
     private func mutatePinnedContent(_ update: () -> Void) {
         if let animation = sidebarContentMutationAnimation {
-            withAnimation(animation, update)
+            withAnimation(animation) {
+                update()
+            }
         } else {
             update()
         }
