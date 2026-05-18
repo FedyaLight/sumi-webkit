@@ -576,6 +576,9 @@ class WebViewCoordinator {
             guard let tab = resolveTab(for: tabId, in: windowState, browserManager: browserManager) else {
                 continue
             }
+            guard browserManager.canMaterializeNormalTabWebViewDuringStartup(tab) else {
+                continue
+            }
 
             browserManager.compositorManager.markTabAccessed(tab.id)
             if getWebView(for: tab.id, in: windowState.id) == nil {

@@ -83,6 +83,11 @@ extension Tab {
     /// Creates a fully configured normal-tab WebView. This is the single
     /// construction path for primary and clone normal-tab runtimes.
     func makeNormalTabWebView(reason: String) -> WKWebView? {
+        let startupTrace = StartupPerformanceTrace.firstWebViewCreationStarted()
+        defer {
+            StartupPerformanceTrace.firstWebViewCreationFinished(startupTrace)
+        }
+
         guard let configuration = normalTabWebViewConfiguration(reason: reason) else {
             return nil
         }

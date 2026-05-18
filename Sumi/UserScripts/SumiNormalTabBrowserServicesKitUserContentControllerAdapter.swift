@@ -309,6 +309,11 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
     private func installContentBlockingUpdate(_ update: SumiNormalTabContentBlockingUpdate) {
         guard !isCleanedUp else { return }
 
+        let startupTrace = StartupPerformanceTrace.firstContentBlockingAttachStarted()
+        defer {
+            StartupPerformanceTrace.firstContentBlockingAttachFinished(startupTrace)
+        }
+
         let isContentBlockingFeatureEnabled = isContentBlockingFeatureEnabled
         if hasInstalledEquivalentUpdate(
             update,
