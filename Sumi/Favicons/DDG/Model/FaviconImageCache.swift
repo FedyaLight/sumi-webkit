@@ -41,6 +41,12 @@ protocol FaviconImageCaching {
     func getFavicons(with urls: some Sequence<URL>) -> [Favicon]?
 
     @MainActor
+    func loadCachedFavicons(with urls: [URL]) async -> [Favicon]
+
+    @MainActor
+    func hasCachedFavicon(faviconUrl: URL) -> Bool
+
+    @MainActor
     func cleanOld(bookmarkManager: BookmarkManager) async
 
     @MainActor
@@ -56,10 +62,25 @@ protocol FaviconImageCaching {
 
 final class FaviconImageCache: FaviconImageCaching {
 
+    private static let maximumInMemoryEntries = 192
+    private static let maximumInMemoryCost = 24 * 1024 * 1024
+
     private let storing: FaviconImageCacheStorage
 
     @MainActor
     private var entries = [URL: Favicon]()
+
+    @MainActor
+    private var entryAccessOrder = [URL]()
+
+    @MainActor
+    private var entryCosts = [URL: Int]()
+
+    @MainActor
+    private var totalEntryCost = 0
+
+    @MainActor
+    private var knownFaviconUrls = Set<URL>()
 
     init(faviconStoring: FaviconStoring) {
         storing = FaviconImageCacheStorage(storing: faviconStoring)
@@ -70,18 +91,8 @@ final class FaviconImageCache: FaviconImageCaching {
 
     @MainActor
     func load() async throws {
-        let favicons: [Favicon]
-        do {
-            favicons = try await storing.loadFavicons()
-            Logger.favicons.debug("Favicons loaded successfully")
-        } catch {
-            Logger.favicons.error("Loading of favicons failed: \(error.localizedDescription)")
-            throw error
-        }
-
-        for favicon in favicons {
-            entries[favicon.url] = favicon
-        }
+        knownFaviconUrls = Set(try await storing.loadFaviconMetadata().map(\.url))
+        Logger.favicons.debug("Favicon image cache ready for lazy loading")
         loaded = true
     }
 
@@ -90,19 +101,15 @@ final class FaviconImageCache: FaviconImageCaching {
             return
         }
 
-        // Remove existing favicon with the same URL
-        let oldFavicons = favicons.compactMap { entries[$0.url] }
-
-        // Save the new ones
         for favicon in favicons {
-            entries[favicon.url] = favicon
+            cache(favicon)
         }
 
         let storing = storing
 
         Task {
             do {
-                _ = await storing.removeFavicons(oldFavicons)
+                try await storing.removeFavicons(with: favicons.map(\.url))
                 try await storing.save(favicons)
                 Logger.favicons.debug("Favicon saved successfully. URL: \(favicons.map(\.url.absoluteString).description)")
                 await MainActor.run {
@@ -117,19 +124,54 @@ final class FaviconImageCache: FaviconImageCaching {
     @MainActor
     func clearAllInMemory(markLoaded: Bool = true) {
         entries.removeAll(keepingCapacity: false)
+        entryAccessOrder.removeAll(keepingCapacity: false)
+        entryCosts.removeAll(keepingCapacity: false)
+        totalEntryCost = 0
+        knownFaviconUrls.removeAll(keepingCapacity: false)
         loaded = markLoaded
     }
 
     func get(faviconUrl: URL) -> Favicon? {
         guard loaded else { return nil }
 
-        return entries[faviconUrl]
+        guard let favicon = entries[faviconUrl] else { return nil }
+        markAccessed(faviconUrl)
+        return favicon
     }
 
     func getFavicons(with urls: some Sequence<URL>) -> [Favicon]? {
         guard loaded else { return nil }
 
-        return urls.compactMap { faviconUrl in entries[faviconUrl] }
+        return urls.compactMap { faviconUrl in
+            guard let favicon = entries[faviconUrl] else { return nil }
+            markAccessed(faviconUrl)
+            return favicon
+        }
+    }
+
+    func loadCachedFavicons(with urls: [URL]) async -> [Favicon] {
+        guard loaded, !urls.isEmpty else { return [] }
+
+        let requestedUrls = urls.uniquedPreservingOrder()
+        let urlsToLoad = requestedUrls.filter { entries[$0] == nil }
+
+        if !urlsToLoad.isEmpty {
+            do {
+                let favicons = try await storing.loadFavicons(with: urlsToLoad)
+                for favicon in favicons {
+                    cache(favicon)
+                }
+            } catch {
+                Logger.favicons.error("Loading cached favicons by URL failed: \(error.localizedDescription)")
+            }
+        }
+
+        return getFavicons(with: requestedUrls) ?? []
+    }
+
+    func hasCachedFavicon(faviconUrl: URL) -> Bool {
+        guard loaded else { return false }
+        return knownFaviconUrls.contains(faviconUrl) || entries[faviconUrl] != nil
     }
 
     // MARK: - Clean
@@ -177,11 +219,72 @@ final class FaviconImageCache: FaviconImageCaching {
     // MARK: - Private
 
     @MainActor
-    private func removeFavicons(filter isRemoved: (Favicon) -> Bool) async -> Result<Void, Error> {
-        let faviconsToRemove = entries.values.filter(isRemoved)
-        faviconsToRemove.forEach { entries[$0.url] = nil }
+    private func removeFavicons(filter isRemoved: (FaviconMetadata) -> Bool) async -> Result<Void, Error> {
+        let metadataToRemove: [FaviconMetadata]
+        do {
+            metadataToRemove = try await storing.loadFaviconMetadata().filter(isRemoved)
+        } catch {
+            Logger.favicons.error("Loading favicon metadata for removal failed: \(error.localizedDescription)")
+            return .failure(error)
+        }
 
-        return await storing.removeFavicons(faviconsToRemove)
+        let urlsToRemove = Set(metadataToRemove.map(\.url))
+        for url in urlsToRemove {
+            entries[url] = nil
+            knownFaviconUrls.remove(url)
+            if let cost = entryCosts.removeValue(forKey: url) {
+                totalEntryCost -= cost
+            }
+        }
+        entryAccessOrder.removeAll { urlsToRemove.contains($0) }
+
+        return await storing.removeFavicons(withIdentifiers: metadataToRemove.map(\.identifier))
+    }
+
+    @MainActor
+    private func cache(_ favicon: Favicon) {
+        let favicon = favicon.withoutImageData
+        if let previousCost = entryCosts[favicon.url] {
+            totalEntryCost -= previousCost
+        }
+        entries[favicon.url] = favicon
+        knownFaviconUrls.insert(favicon.url)
+        let cost = max(1, favicon.image?.sumiFaviconCacheBitmapByteCost ?? 1)
+        entryCosts[favicon.url] = cost
+        totalEntryCost += cost
+        markAccessed(favicon.url)
+        trimInMemoryEntriesIfNeeded()
+    }
+
+    @MainActor
+    private func markAccessed(_ faviconUrl: URL) {
+        entryAccessOrder.removeAll { $0 == faviconUrl }
+        entryAccessOrder.append(faviconUrl)
+    }
+
+    @MainActor
+    private func trimInMemoryEntriesIfNeeded() {
+        while (entries.count > Self.maximumInMemoryEntries || totalEntryCost > Self.maximumInMemoryCost),
+              let oldestUrl = entryAccessOrder.first {
+            entries[oldestUrl] = nil
+            if let cost = entryCosts.removeValue(forKey: oldestUrl) {
+                totalEntryCost -= cost
+            }
+            entryAccessOrder.removeFirst()
+        }
+    }
+}
+
+private extension NSImage {
+    var sumiFaviconCacheBitmapByteCost: Int {
+        let representationCost = representations
+            .map { $0.pixelsWide * $0.pixelsHigh * 4 }
+            .max() ?? 0
+        if representationCost > 0 {
+            return representationCost
+        }
+
+        return max(1, Int(size.width * size.height * 4))
     }
 }
 
@@ -200,6 +303,14 @@ private final class FaviconImageCacheStorage: @unchecked Sendable {
         try await storing.loadFavicons()
     }
 
+    func loadFavicons(with urls: [URL]) async throws -> [Favicon] {
+        try await storing.loadFavicons(with: urls)
+    }
+
+    func loadFaviconMetadata() async throws -> [FaviconMetadata] {
+        try await storing.loadFaviconMetadata()
+    }
+
     func save(_ favicons: [Favicon]) async throws {
         try await storing.save(favicons)
     }
@@ -215,5 +326,29 @@ private final class FaviconImageCacheStorage: @unchecked Sendable {
             Logger.favicons.error("Removing of favicons failed: \(error.localizedDescription)")
             return .failure(error)
         }
+    }
+
+    func removeFavicons(with urls: [URL]) async throws {
+        try await storing.removeFavicons(with: urls)
+    }
+
+    func removeFavicons(withIdentifiers identifiers: [UUID]) async -> Result<Void, Error> {
+        guard !identifiers.isEmpty else { return .success(()) }
+
+        do {
+            try await storing.removeFavicons(withIdentifiers: identifiers)
+            Logger.favicons.debug("Favicons removed successfully.")
+            return .success(())
+        } catch {
+            Logger.favicons.error("Removing of favicons failed: \(error.localizedDescription)")
+            return .failure(error)
+        }
+    }
+}
+
+private extension Array where Element == URL {
+    func uniquedPreservingOrder() -> [URL] {
+        var seen = Set<URL>()
+        return filter { seen.insert($0).inserted }
     }
 }

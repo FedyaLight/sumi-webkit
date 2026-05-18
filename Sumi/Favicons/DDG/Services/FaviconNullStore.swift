@@ -25,11 +25,27 @@ final class FaviconNullStore: FaviconStoring {
         return []
     }
 
+    func loadFavicons(with urls: [URL]) async throws -> [Favicon] {
+        return []
+    }
+
+    func loadFaviconMetadata() async throws -> [FaviconMetadata] {
+        return []
+    }
+
     func save(_ favicons: [Favicon]) async throws {
         ()
     }
 
     func removeFavicons(_ favicons: [Favicon]) async throws {
+        ()
+    }
+
+    func removeFavicons(with urls: [URL]) async throws {
+        ()
+    }
+
+    func removeFavicons(withIdentifiers identifiers: [UUID]) async throws {
         ()
     }
 

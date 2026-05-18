@@ -512,6 +512,60 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         XCTAssertEqual(otherProfileVisits.map(\.domain), ["other.example"])
         XCTAssertEqual(cleanupService.clearedProfileStores, 1)
     }
+
+    func testBrowsingDataAllTimeSiteDataAndCacheClearsFaviconCacheWithoutHistorySelection() async throws {
+        let harness = try makeHistoryHarness()
+        let cleanupService = FakeCleanupService()
+        let faviconCleaner = FakeFaviconCleaner()
+        let service = SumiBrowsingDataCleanupService(
+            websiteDataCleanupService: cleanupService,
+            faviconCacheCleaner: faviconCleaner,
+            referenceDateProvider: { historyTestDate("2026-04-23T12:00:00Z") }
+        )
+
+        await service.clear(
+            range: .allTime,
+            categories: [.siteData, .cache],
+            historyManager: harness.historyManager,
+            dataStore: .nonPersistent()
+        )
+
+        XCTAssertEqual(cleanupService.clearedProfileStores, 1)
+        XCTAssertEqual(faviconCleaner.burnAfterHistoryClearSavedLogins.count, 1)
+        XCTAssertTrue(faviconCleaner.burnDomainsCalls.isEmpty)
+    }
+
+    func testBrowsingDataFiniteCacheClearBurnsAffectedFaviconsWithoutHistorySelection() async throws {
+        let harness = try makeHistoryHarness()
+        let cleanupService = FakeCleanupService()
+        let faviconCleaner = FakeFaviconCleaner()
+        let service = SumiBrowsingDataCleanupService(
+            websiteDataCleanupService: cleanupService,
+            faviconCacheCleaner: faviconCleaner,
+            referenceDateProvider: { historyTestDate("2026-04-23T12:00:00Z") }
+        )
+
+        try await harness.historyManager.store.recordVisit(
+            url: URL(string: "https://www.reddit.com/r/browsers")!,
+            title: "Recent",
+            visitedAt: historyTestDate("2026-04-23T11:45:00Z"),
+            profileId: harness.profileID
+        )
+
+        await service.clear(
+            range: .lastHour,
+            categories: [.cache],
+            historyManager: harness.historyManager,
+            dataStore: .nonPersistent()
+        )
+
+        XCTAssertEqual(cleanupService.removedDomainSets.count, 1)
+        XCTAssertEqual(cleanupService.removedDomainSets[0].domains, ["reddit.com"])
+        XCTAssertEqual(faviconCleaner.burnDomainsCalls.count, 1)
+        XCTAssertEqual(faviconCleaner.burnDomainsCalls[0].domains, ["reddit.com"])
+        XCTAssertTrue(faviconCleaner.burnDomainsCalls[0].remainingHistoryHosts.isEmpty)
+        XCTAssertTrue(faviconCleaner.burnAfterHistoryClearSavedLogins.isEmpty)
+    }
 }
 
 @MainActor
@@ -717,6 +771,28 @@ private final class FakeCleanupService: SumiWebsiteDataCleanupServicing {
     private func delay(_ nanoseconds: UInt64) async {
         guard nanoseconds > 0 else { return }
         try? await Task.sleep(nanoseconds: nanoseconds)
+    }
+}
+
+@MainActor
+private final class FakeFaviconCleaner: SumiBrowsingDataFaviconCleaning {
+    private(set) var burnAfterHistoryClearSavedLogins: [Set<String>] = []
+    private(set) var burnDomainsCalls: [(
+        domains: Set<String>,
+        remainingHistoryHosts: Set<String>,
+        savedLogins: Set<String>
+    )] = []
+
+    func burnAfterHistoryClear(savedLogins: Set<String>) async {
+        burnAfterHistoryClearSavedLogins.append(savedLogins)
+    }
+
+    func burnDomains(
+        _ domains: Set<String>,
+        remainingHistoryHosts: Set<String>,
+        savedLogins: Set<String>
+    ) async {
+        burnDomainsCalls.append((domains, remainingHistoryHosts, savedLogins))
     }
 }
 

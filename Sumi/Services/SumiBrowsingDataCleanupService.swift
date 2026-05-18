@@ -112,18 +112,33 @@ struct SumiBrowsingDataSummary: Equatable {
 }
 
 @MainActor
+protocol SumiBrowsingDataFaviconCleaning: AnyObject {
+    func burnAfterHistoryClear(savedLogins: Set<String>) async
+    func burnDomains(
+        _ domains: Set<String>,
+        remainingHistoryHosts: Set<String>,
+        savedLogins: Set<String>
+    ) async
+}
+
+extension SumiFaviconSystem: SumiBrowsingDataFaviconCleaning {}
+
+@MainActor
 final class SumiBrowsingDataCleanupService {
     static let shared = SumiBrowsingDataCleanupService()
 
     private let websiteDataCleanupService: any SumiWebsiteDataCleanupServicing
+    private let faviconCacheCleaner: any SumiBrowsingDataFaviconCleaning
     private let referenceDateProvider: @MainActor () -> Date
 
     init(
         websiteDataCleanupService: (any SumiWebsiteDataCleanupServicing)? = nil,
+        faviconCacheCleaner: (any SumiBrowsingDataFaviconCleaning)? = nil,
         referenceDateProvider: @escaping @MainActor () -> Date = { Date() }
     ) {
         self.websiteDataCleanupService = websiteDataCleanupService
             ?? SumiWebsiteDataCleanupService.shared
+        self.faviconCacheCleaner = faviconCacheCleaner ?? SumiFaviconSystem.shared
         self.referenceDateProvider = referenceDateProvider
     }
 
@@ -200,7 +215,6 @@ final class SumiBrowsingDataCleanupService {
                     modifiedSince: .distantPast,
                     in: dataStore
                 )
-                await clearFaviconCacheIfHistoryWasNotCleared(categories: categories)
             } else if !domains.isEmpty {
                 await websiteDataCleanupService.removeWebsiteDataForDomains(
                     domains,
@@ -210,13 +224,28 @@ final class SumiBrowsingDataCleanupService {
                 )
             }
         }
+
+        await clearFaviconCacheIfNeeded(range: range, categories: categories, domains: domains)
     }
 
-    private func clearFaviconCacheIfHistoryWasNotCleared(categories: Set<SumiBrowsingDataCategory>) async {
+    private func clearFaviconCacheIfNeeded(
+        range: SumiBrowsingDataTimeRange,
+        categories: Set<SumiBrowsingDataCategory>,
+        domains: Set<String>
+    ) async {
+        guard categories.contains(.cache) else { return }
         guard !categories.contains(.history) else { return }
-        await SumiFaviconSystem.shared.burnAfterHistoryClear(
-            savedLogins: BasicAuthCredentialStore().allCredentialHosts()
-        )
+        let savedLogins = BasicAuthCredentialStore().allCredentialHosts()
+
+        if range == .allTime {
+            await faviconCacheCleaner.burnAfterHistoryClear(savedLogins: savedLogins)
+        } else if !domains.isEmpty {
+            await faviconCacheCleaner.burnDomains(
+                domains,
+                remainingHistoryHosts: [],
+                savedLogins: savedLogins
+            )
+        }
     }
 
     private func normalizeDomains(_ domains: Set<String>) -> Set<String> {

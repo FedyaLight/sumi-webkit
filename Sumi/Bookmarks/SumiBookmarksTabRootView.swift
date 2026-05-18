@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -356,6 +357,7 @@ private struct SumiBookmarkEntityRow: View {
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isHovering = false
+    @State private var faviconImage: NSImage?
 
     private var tokens: ChromeThemeTokens {
         themeContext.tokens(settings: sumiSettings)
@@ -398,6 +400,9 @@ private struct SumiBookmarkEntityRow: View {
         .onTapGesture { select() }
         .onTapGesture(count: 2) { open() }
         .onHover { isHovering = $0 }
+        .task(id: faviconLoadID) {
+            await loadFaviconImage()
+        }
         .contextMenu { contextMenu }
         .modifier(SumiBookmarkDragDropModifier(canDrag: canDrag, beginDrag: beginDrag, drop: drop))
     }
@@ -409,19 +414,40 @@ private struct SumiBookmarkEntityRow: View {
                 .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(tokens.secondaryText)
                 .frame(width: 22, height: 22)
-        } else if let url = entity.url,
-                  let cacheKey = SumiFaviconResolver.cacheKey(for: url),
-                  let favicon = Tab.getCachedFavicon(for: cacheKey) {
-            favicon
+        } else if let image = faviconImage ?? cachedFaviconImage {
+            Image(nsImage: image)
                 .resizable()
                 .scaledToFit()
                 .frame(width: 22, height: 22)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         } else {
             Image(systemName: "globe")
                 .font(.system(size: 17, weight: .medium))
                 .foregroundStyle(tokens.secondaryText)
                 .frame(width: 22, height: 22)
         }
+    }
+
+    private var faviconLoadID: String {
+        entity.url?.absoluteString ?? "folder-\(entity.id)"
+    }
+
+    private var cachedFaviconImage: NSImage? {
+        guard let url = entity.url else { return nil }
+        return TabFaviconStore.getCachedImage(forDocumentURL: url)
+    }
+
+    @MainActor
+    private func loadFaviconImage() async {
+        guard let url = entity.url else {
+            faviconImage = nil
+            return
+        }
+
+        faviconImage = cachedFaviconImage
+        let loadedImage = await TabFaviconStore.loadCachedDisplayImage(forDocumentURL: url)
+        guard !Task.isCancelled else { return }
+        faviconImage = loadedImage ?? cachedFaviconImage
     }
 
     @ViewBuilder

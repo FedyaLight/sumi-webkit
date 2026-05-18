@@ -40,7 +40,12 @@ enum SumiFaviconResolver {
 
     @MainActor
     static func image(for url: URL, webView: WKWebView? = nil) async -> NSImage? {
-        await SumiFaviconSystem.shared.manager.handleFaviconLinks([], documentUrl: url, webView: webView)?.image
+        if let image = await TabFaviconStore.loadCachedDisplayImage(forDocumentURL: url) {
+            return image
+        }
+
+        _ = await SumiFaviconSystem.shared.manager.handleFaviconLinks([], documentUrl: url, webView: webView)
+        return await TabFaviconStore.loadCachedDisplayImage(forDocumentURL: url)
     }
 
     private static func systemImageName(for url: URL) -> String? {

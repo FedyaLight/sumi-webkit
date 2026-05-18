@@ -18,6 +18,12 @@
 
 import Cocoa
 import Foundation
+import ImageIO
+
+enum SumiFaviconImagePolicy {
+    static let maxDecodedPixelSize = 256
+    static let maxLauncherDisplayPixelSize = 64
+}
 
 struct Favicon {
 
@@ -84,18 +90,22 @@ struct Favicon {
         }
     }
 
-    init(identifier: UUID, url: URL, image: NSImage?, relationString: String, documentUrl: URL, dateCreated: Date) {
+    init(identifier: UUID, url: URL, image: NSImage?, imageData: Data? = nil, relationString: String, documentUrl: URL, dateCreated: Date) {
         self.init(identifier: identifier,
                   url: url, image: image,
+                  imageData: imageData,
                   relation: Relation(relationString: relationString),
                   documentUrl: documentUrl,
                   dateCreated: dateCreated)
     }
 
-    init(identifier: UUID, url: URL, image: NSImage?, relation: Relation, documentUrl: URL, dateCreated: Date) {
+    init(identifier: UUID, url: URL, image: NSImage?, imageData: Data? = nil, relation: Relation, documentUrl: URL, dateCreated: Date) {
+        let decodedImage = image ?? imageData.flatMap {
+            NSImage.sumiDecodedFaviconImage(data: $0, maxPixelSize: SumiFaviconImagePolicy.maxDecodedPixelSize)
+        }
 
         // Avoid storing or using of non-valid or huge images
-        if let image = image, image.isValid {
+        if let image = decodedImage, image.isValid {
             let sizeCategory = SizeCategory(imageSize: image.size)
             if sizeCategory == .huge || sizeCategory == .noImage {
                 self.image = nil
@@ -108,6 +118,7 @@ struct Favicon {
 
         self.identifier = identifier
         self.url = url
+        self.imageData = imageData
         self.relation = relation
         self.sizeCategory = SizeCategory(imageSize: self.image?.size)
         self.documentUrl = documentUrl
@@ -117,6 +128,7 @@ struct Favicon {
     let identifier: UUID
     let url: URL
     let image: NSImage?
+    let imageData: Data?
     let relation: Relation
     let sizeCategory: SizeCategory
     let documentUrl: URL
@@ -128,5 +140,108 @@ struct Favicon {
         }
 
         return max(image.size.width, image.size.height)
+    }
+
+    var withoutImageData: Favicon {
+        Favicon(
+            identifier: identifier,
+            url: url,
+            image: image,
+            relation: relation,
+            documentUrl: documentUrl,
+            dateCreated: dateCreated
+        )
+    }
+}
+
+extension NSImage {
+    static func sumiDecodedFaviconImage(data: Data, maxPixelSize: Int) -> NSImage? {
+        let sourceOptions = [
+            kCGImageSourceShouldCache: false
+        ] as CFDictionary
+
+        if let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) {
+            let index = source.sumiBestFaviconImageIndex(targetPixelSize: maxPixelSize)
+            let thumbnailOptions = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+                kCGImageSourceShouldCache: false,
+                kCGImageSourceShouldCacheImmediately: false
+            ] as CFDictionary
+
+            if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, index, thumbnailOptions) {
+                return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+            }
+        }
+
+        guard let image = NSImage(data: data), image.isValid else {
+            return nil
+        }
+        return image.sumiFaviconImageConstrained(maxLongestSide: CGFloat(maxPixelSize))
+    }
+
+    func sumiFaviconImageConstrained(maxLongestSide: CGFloat) -> NSImage {
+        let longestSide = max(size.width, size.height)
+        guard longestSide > maxLongestSide, longestSide > 0 else {
+            return self
+        }
+
+        let scale = maxLongestSide / longestSide
+        let targetSize = NSSize(
+            width: max(1, size.width * scale),
+            height: max(1, size.height * scale)
+        )
+        let image = NSImage(size: targetSize)
+        image.lockFocus()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        draw(
+            in: NSRect(origin: .zero, size: targetSize),
+            from: NSRect(origin: .zero, size: size),
+            operation: .copy,
+            fraction: 1
+        )
+        image.unlockFocus()
+        return image
+    }
+
+    func sumiFaviconPNGData(maxPixelSize: Int) -> Data? {
+        let constrained = sumiFaviconImageConstrained(maxLongestSide: CGFloat(maxPixelSize))
+        guard let cgImage = constrained.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return constrained.tiffRepresentation
+        }
+        let representation = NSBitmapImageRep(cgImage: cgImage)
+        return representation.representation(using: .png, properties: [:])
+    }
+}
+
+private extension CGImageSource {
+    func sumiBestFaviconImageIndex(targetPixelSize: Int) -> Int {
+        let count = CGImageSourceGetCount(self)
+        guard count > 1 else { return 0 }
+
+        var bestIndex = 0
+        var bestScore = Int.max
+
+        for index in 0..<count {
+            guard let properties = CGImageSourceCopyPropertiesAtIndex(self, index, nil) as? [CFString: Any],
+                  let width = properties[kCGImagePropertyPixelWidth] as? Int,
+                  let height = properties[kCGImagePropertyPixelHeight] as? Int else {
+                continue
+            }
+
+            let longestSide = max(width, height)
+            guard longestSide > 0 else { continue }
+
+            let score = longestSide >= targetPixelSize
+                ? longestSide - targetPixelSize
+                : 10_000 + targetPixelSize - longestSide
+            if score < bestScore {
+                bestScore = score
+                bestIndex = index
+            }
+        }
+
+        return bestIndex
     }
 }
