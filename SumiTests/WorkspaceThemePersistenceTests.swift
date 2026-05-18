@@ -111,6 +111,23 @@ final class WorkspaceThemePersistenceTests: XCTestCase {
         XCTAssertEqual(theme.texture, 0.0, accuracy: 0.0001)
     }
 
+    func testCustomChromeIntensitySnapsAtLightweightEdges() {
+        let hidden = WorkspaceGradientTheme(colors: makeThemeColors(), opacity: 0.019, texture: 0.18)
+        XCTAssertEqual(hidden.customChromeThemeIntensity, 0, accuracy: 0.0001)
+        XCTAssertFalse(hidden.usesCustomChromeTheme)
+        XCTAssertFalse(hidden.rendersOpaqueCustomChromeTheme)
+
+        let visible = WorkspaceGradientTheme(colors: makeThemeColors(), opacity: 0.02, texture: 0.18)
+        XCTAssertEqual(visible.customChromeThemeIntensity, 0.02, accuracy: 0.0001)
+        XCTAssertTrue(visible.usesCustomChromeTheme)
+        XCTAssertFalse(visible.rendersOpaqueCustomChromeTheme)
+
+        let opaque = WorkspaceGradientTheme(colors: makeThemeColors(), opacity: 0.98, texture: 0.18)
+        XCTAssertEqual(opaque.customChromeThemeIntensity, 1, accuracy: 0.0001)
+        XCTAssertTrue(opaque.usesCustomChromeTheme)
+        XCTAssertTrue(opaque.rendersOpaqueCustomChromeTheme)
+    }
+
     func testGradientThemeAllowsZeroPersistedDotsWithoutDefaultFallback() {
         let theme = WorkspaceGradientTheme(colors: [], opacity: 0.64, texture: 0.18)
 
@@ -181,5 +198,17 @@ final class WorkspaceThemePersistenceTests: XCTestCase {
 
         XCTAssertEqual(resolvedTheme, expectedTheme)
         XCTAssertFalse(resolvedTheme.visuallyEquals(.default))
+    }
+
+    private func makeThemeColors() -> [WorkspaceThemeColor] {
+        [
+            WorkspaceThemeColor(
+                hex: "#F4EFDF",
+                isPrimary: true,
+                algorithm: .floating,
+                lightness: 0.9,
+                position: .monochrome
+            )
+        ]
     }
 }

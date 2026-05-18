@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import Sumi
 
@@ -84,6 +85,35 @@ final class WindowThemeStateTests: XCTestCase {
         XCTAssertFalse(secondResolvedTheme.visuallyEquals(targetTheme))
     }
 
+    func testResolvedThemeContextOnlySkipsNativeMaterialWhenChromeIsFullyCovered() {
+        let opaqueTheme = makeTheme(opacity: 0.98)
+        let translucentTheme = makeTheme(opacity: 0.72)
+
+        let idleOpaque = makeContext(
+            workspaceTheme: opaqueTheme,
+            sourceWorkspaceTheme: opaqueTheme,
+            targetWorkspaceTheme: opaqueTheme,
+            isInteractiveTransition: false
+        )
+        XCTAssertTrue(idleOpaque.rendersOpaqueCustomChromeTheme)
+
+        let mixedTransition = makeContext(
+            workspaceTheme: translucentTheme,
+            sourceWorkspaceTheme: opaqueTheme,
+            targetWorkspaceTheme: translucentTheme,
+            isInteractiveTransition: true
+        )
+        XCTAssertFalse(mixedTransition.rendersOpaqueCustomChromeTheme)
+
+        let opaqueTransition = makeContext(
+            workspaceTheme: opaqueTheme,
+            sourceWorkspaceTheme: opaqueTheme,
+            targetWorkspaceTheme: opaqueTheme,
+            isInteractiveTransition: true
+        )
+        XCTAssertTrue(opaqueTransition.rendersOpaqueCustomChromeTheme)
+    }
+
     func testCancelRestoresSourceThemeWithoutIntermediateSnap() {
         let sourceTheme = WorkspaceTheme(gradient: .default)
         let targetTheme = WorkspaceTheme(gradient: .incognito)
@@ -104,6 +134,39 @@ final class WindowThemeStateTests: XCTestCase {
         XCTAssertFalse(state.isTransitioning)
         XCTAssertFalse(state.isInteractive)
         XCTAssertEqual(state.progress, 1.0, accuracy: 0.0001)
+    }
+
+    private func makeTheme(opacity: Double) -> WorkspaceTheme {
+        WorkspaceTheme(
+            gradient: SpaceGradient(
+                angle: 90,
+                nodes: [
+                    GradientNode(colorHex: "#F4EFDF", location: 0.0),
+                    GradientNode(colorHex: "#F0B8CD", location: 1.0)
+                ],
+                grain: 0.125,
+                opacity: opacity
+            )
+        )
+    }
+
+    private func makeContext(
+        workspaceTheme: WorkspaceTheme,
+        sourceWorkspaceTheme: WorkspaceTheme,
+        targetWorkspaceTheme: WorkspaceTheme,
+        isInteractiveTransition: Bool
+    ) -> ResolvedThemeContext {
+        ResolvedThemeContext(
+            globalColorScheme: .dark,
+            chromeColorScheme: .dark,
+            sourceChromeColorScheme: .dark,
+            targetChromeColorScheme: .dark,
+            workspaceTheme: workspaceTheme,
+            sourceWorkspaceTheme: sourceWorkspaceTheme,
+            targetWorkspaceTheme: targetWorkspaceTheme,
+            isInteractiveTransition: isInteractiveTransition,
+            transitionProgress: isInteractiveTransition ? 0.5 : 1
+        )
     }
 
     func testRestartInteractiveTransitionCanSwitchToOppositeNeighborWithoutSnap() {

@@ -33,6 +33,15 @@ struct ResolvedThemeContext: Equatable {
             || targetWorkspaceTheme.gradientTheme.usesCustomChromeTheme
     }
 
+    var rendersOpaqueCustomChromeTheme: Bool {
+        if isInteractiveTransition || !sourceWorkspaceTheme.visuallyEquals(targetWorkspaceTheme) {
+            return sourceWorkspaceTheme.gradientTheme.rendersOpaqueCustomChromeTheme
+                && targetWorkspaceTheme.gradientTheme.rendersOpaqueCustomChromeTheme
+        }
+
+        return workspaceTheme.gradientTheme.rendersOpaqueCustomChromeTheme
+    }
+
     var activeCustomChromeThemeIntensity: Double {
         workspaceTheme.gradientTheme.customChromeThemeIntensity
     }
