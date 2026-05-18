@@ -40,6 +40,18 @@ protocol FaviconManagement: AnyObject {
 
     @MainActor
     func getCachedFavicon(forHostOrAnySubdomain domain: String, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) -> Favicon?
+
+    @MainActor
+    func getCachedDisplayFavicon(for documentUrl: URL, baseDomain: String?, targetPixelSize: CGFloat) -> Favicon?
+
+    @MainActor
+    func loadCachedFavicon(for documentUrl: URL, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) async -> Favicon?
+
+    @MainActor
+    func loadCachedFavicon(forHostOrAnySubdomain domain: String, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) async -> Favicon?
+
+    @MainActor
+    func loadCachedDisplayFavicon(for documentUrl: URL, baseDomain: String?, targetPixelSize: CGFloat) async -> Favicon?
 }
 
 final class FaviconManager: FaviconManagement {
@@ -155,30 +167,53 @@ final class FaviconManager: FaviconManagement {
 
         // If we have links from the page, try those first
         // Fetch favicons if needed
-        var faviconLinksToFetch = filteringAlreadyFetchedFaviconLinks(from: faviconLinkSnapshots)
+        var faviconLinksToFetch = await filteringAlreadyFetchedFaviconLinks(from: faviconLinkSnapshots)
         var newFavicons = await fetchFavicons(faviconLinks: faviconLinksToFetch, documentUrl: documentUrl, webView: webView)
         if let favicon = await cacheFavicons(newFavicons, faviconURLs: faviconLinkSnapshots.map(\.href), for: documentUrl) {
             return favicon
         }
         guard !Task.isCancelled else { return nil }
 
-        // If main links failed or were empty, try fallback
-        let fallbackLinks = fallbackFaviconLinks(for: documentUrl)
-        faviconLinksToFetch = filteringAlreadyFetchedFaviconLinks(from: fallbackLinks)
+        let defaultRootLinks = defaultRootFaviconLinks(for: documentUrl)
+        faviconLinksToFetch = await filteringAlreadyFetchedFaviconLinks(from: defaultRootLinks)
         newFavicons = await fetchFavicons(faviconLinks: faviconLinksToFetch, documentUrl: documentUrl, webView: webView)
-        return await cacheFavicons(newFavicons, faviconURLs: fallbackLinks.lazy.map(\.href), for: documentUrl)
+        return await cacheFavicons(newFavicons, faviconURLs: defaultRootLinks.lazy.map(\.href), for: documentUrl)
     }
 
     @MainActor
     func image(forLookupKey key: String) -> NSImage? {
         guard let documentURL = SumiFaviconLookupKey.documentURL(for: key) else { return nil }
 
-        if let favicon = getCachedFavicon(for: documentURL, sizeCategory: .small, fallBackToSmaller: true) {
-            return favicon.image
-        }
+        let baseDomain = documentURL.host.flatMap { SumiRegistrableDomainResolver().registrableDomain(forHost: $0) }
+        return getCachedDisplayFavicon(
+            for: documentURL,
+            baseDomain: baseDomain,
+            targetPixelSize: CGFloat(SumiFaviconImagePolicy.maxLauncherDisplayPixelSize)
+        )?.image
+    }
 
-        guard let host = documentURL.host else { return nil }
-        return getCachedFavicon(for: host, sizeCategory: .small, fallBackToSmaller: true)?.image
+    @MainActor
+    func getCachedDisplayFavicon(for documentUrl: URL, baseDomain: String?, targetPixelSize: CGFloat) -> Favicon? {
+        guard isCacheLoaded else { return nil }
+
+        let candidateURLs = displayFaviconCandidateURLs(for: documentUrl, baseDomain: baseDomain)
+        let favicons = imageCache.getFavicons(with: candidateURLs) ?? []
+        return FaviconSelector.getMostSuitableFavicon(
+            forDisplayTargetPixelSize: targetPixelSize,
+            favicons: favicons
+        )
+    }
+
+    @MainActor
+    func loadCachedDisplayFavicon(for documentUrl: URL, baseDomain: String?, targetPixelSize: CGFloat) async -> Favicon? {
+        await awaitFaviconsLoaded()
+
+        let candidateURLs = displayFaviconCandidateURLs(for: documentUrl, baseDomain: baseDomain)
+        let favicons = await imageCache.loadCachedFavicons(with: candidateURLs)
+        return FaviconSelector.getMostSuitableFavicon(
+            forDisplayTargetPixelSize: targetPixelSize,
+            favicons: favicons
+        )
     }
 
     @MainActor
@@ -259,6 +294,39 @@ final class FaviconManager: FaviconManagement {
         return nil
     }
 
+    @MainActor
+    func loadCachedFavicon(for documentUrl: URL, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) async -> Favicon? {
+        await awaitFaviconsLoaded()
+
+        guard let faviconURL = referenceCache.getFaviconUrl(for: documentUrl, sizeCategory: sizeCategory) else {
+            guard fallBackToSmaller, let smallerSizeCategory = sizeCategory.smaller else {
+                return nil
+            }
+            return await loadCachedFavicon(for: documentUrl, sizeCategory: smallerSizeCategory, fallBackToSmaller: fallBackToSmaller)
+        }
+
+        return await loadCachedFavicon(faviconURL: faviconURL)
+    }
+
+    @MainActor
+    func loadCachedFavicon(forHostOrAnySubdomain domain: String, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) async -> Favicon? {
+        await awaitFaviconsLoaded()
+
+        if let favicon = await loadCachedFavicon(for: domain, sizeCategory: sizeCategory, fallBackToSmaller: fallBackToSmaller) {
+            return favicon
+        }
+
+        let availableSubdomains = referenceCache.hostReferences.keys + referenceCache.urlReferences.keys.compactMap { $0.host }
+        let subdomain = availableSubdomains.first { subdomain in
+            subdomain.hasSuffix(domain)
+        }
+
+        if let subdomain {
+            return await loadCachedFavicon(for: subdomain, sizeCategory: sizeCategory, fallBackToSmaller: fallBackToSmaller)
+        }
+        return nil
+    }
+
     // MARK: - Burning
 
     @MainActor
@@ -286,7 +354,7 @@ final class FaviconManager: FaviconManagement {
 
     // MARK: - Private
 
-    private func fallbackFaviconLinks(for documentUrl: URL) -> [FaviconLinkSnapshot] {
+    private func defaultRootFaviconLinks(for documentUrl: URL) -> [FaviconLinkSnapshot] {
         guard let root = documentUrl.sumiRoot else { return [] }
         var result = [FaviconLinkSnapshot]()
         if [.https, .http].contains(documentUrl.sumiNavigationalScheme) {
@@ -299,7 +367,7 @@ final class FaviconManager: FaviconManagement {
     }
 
     @MainActor
-    private func filteringAlreadyFetchedFaviconLinks(from faviconLinks: [FaviconLinkSnapshot]) -> [FaviconLinkSnapshot] {
+    private func filteringAlreadyFetchedFaviconLinks(from faviconLinks: [FaviconLinkSnapshot]) async -> [FaviconLinkSnapshot] {
         guard !faviconLinks.isEmpty else { return [] }
 
         let urlsToLinks = faviconLinks.reduce(into: [URL: FaviconLinkSnapshot]()) { result, faviconLink in
@@ -307,10 +375,10 @@ final class FaviconManager: FaviconManagement {
         }
         let weekAgo = Date.sumiWeekAgo
         let faviconURLs = Array(urlsToLinks.keys)
-        let cachedFavicons = imageCache.getFavicons(with: faviconURLs)?
+        let cachedFavicons = await imageCache.loadCachedFavicons(with: faviconURLs)
             .filter { favicon in
                 favicon.dateCreated > weekAgo
-            } ?? []
+            }
         let cachedUrls = Set(cachedFavicons.map(\.url))
 
         let nonCachedFavicons = urlsToLinks.filter { url, _ in
@@ -346,13 +414,17 @@ final class FaviconManager: FaviconManagement {
                 guard let result else {
                     continue
                 }
-                guard let image = NSImage(dataUsingCIImage: result.data) else {
+                guard let image = NSImage.sumiDecodedFaviconImage(
+                    data: result.data,
+                    maxPixelSize: SumiFaviconImagePolicy.maxDecodedPixelSize
+                ) else {
                     Logger.favicons.error("Error downloading Favicon from \(result.faviconUrl.absoluteString): \(CocoaError(.fileReadCorruptFile).localizedDescription)")
                     continue
                 }
                 favicons.append(Favicon(identifier: UUID(),
                                         url: result.faviconUrl,
                                         image: image,
+                                        imageData: result.data,
                                         relationString: result.relationString,
                                         documentUrl: result.documentUrl,
                                         dateCreated: Date()))
@@ -395,13 +467,106 @@ final class FaviconManager: FaviconManagement {
         // Insert new favicons to cache
         imageCache.insert(favicons)
         // Pick most suitable favicons
-        let cachedFavicons = imageCache.getFavicons(with: faviconURLs)?.filter { $0.dateCreated > Date.sumiWeekAgo }
+        let cachedFavicons = await imageCache.loadCachedFavicons(with: faviconURLs).filter { $0.dateCreated > Date.sumiWeekAgo }
 
         return await handleFaviconReferenceCacheInsertion(
             documentURL: documentUrl,
-            cachedFavicons: cachedFavicons ?? [],
+            cachedFavicons: cachedFavicons,
             newFavicons: favicons
         )
+    }
+
+    @MainActor
+    private func loadCachedFavicon(for host: String, sizeCategory: Favicon.SizeCategory, fallBackToSmaller: Bool) async -> Favicon? {
+        guard let faviconUrl = referenceCache.getFaviconUrl(for: host, sizeCategory: sizeCategory) else {
+            guard fallBackToSmaller, let smallerSizeCategory = sizeCategory.smaller else {
+                return nil
+            }
+            return await loadCachedFavicon(for: host, sizeCategory: smallerSizeCategory, fallBackToSmaller: fallBackToSmaller)
+        }
+
+        return await loadCachedFavicon(faviconURL: faviconUrl)
+    }
+
+    @MainActor
+    private func loadCachedFavicon(faviconURL: URL) async -> Favicon? {
+        if let favicon = imageCache.get(faviconUrl: faviconURL) {
+            return favicon
+        }
+        return await imageCache.loadCachedFavicons(with: [faviconURL]).first
+    }
+
+    @MainActor
+    private func displayFaviconCandidateURLs(for documentUrl: URL, baseDomain: String?) -> [URL] {
+        var candidateURLs = [URL]()
+
+        func append(_ faviconURL: URL?) {
+            guard let faviconURL, !candidateURLs.contains(faviconURL) else { return }
+            candidateURLs.append(faviconURL)
+        }
+
+        let candidateDocumentURLs = displayFaviconCandidateDocumentURLs(for: documentUrl, baseDomain: baseDomain)
+        let candidateHosts = displayFaviconCandidateHosts(for: documentUrl, baseDomain: baseDomain)
+        let preferredCategories: [Favicon.SizeCategory] = [.medium, .small]
+
+        for documentURL in candidateDocumentURLs {
+            for category in preferredCategories {
+                append(referenceCache.getFaviconUrl(for: documentURL, sizeCategory: category))
+            }
+        }
+
+        for host in candidateHosts {
+            for category in preferredCategories {
+                append(referenceCache.getFaviconUrl(for: host, sizeCategory: category))
+            }
+        }
+
+        return candidateURLs
+    }
+
+    @MainActor
+    private func displayFaviconCandidateDocumentURLs(for documentUrl: URL, baseDomain: String?) -> [URL] {
+        var urls = [URL]()
+
+        func append(_ url: URL?) {
+            guard let url, !urls.contains(url) else { return }
+            urls.append(url)
+        }
+
+        append(documentUrl)
+        if let host = documentUrl.host {
+            append(URL(string: "https://\(host)/"))
+        }
+        if let baseDomain {
+            append(URL(string: "https://\(baseDomain)/"))
+            append(URL(string: "https://www.\(baseDomain)/"))
+        }
+
+        return urls
+    }
+
+    @MainActor
+    private func displayFaviconCandidateHosts(for documentUrl: URL, baseDomain: String?) -> [String] {
+        var hosts = [String]()
+
+        func append(_ host: String?) {
+            guard let host else { return }
+            let normalizedHost = host.lowercased()
+            guard !hosts.contains(normalizedHost) else { return }
+            hosts.append(normalizedHost)
+        }
+
+        append(documentUrl.host)
+        append(baseDomain)
+        if let baseDomain {
+            append("www.\(baseDomain)")
+            let domainSuffix = ".\(baseDomain)"
+            for host in referenceCache.hostReferences.keys where host == baseDomain || host.hasSuffix(domainSuffix) {
+                append(host)
+            }
+        }
+
+        return hosts
     }
 }
 
@@ -450,11 +615,14 @@ extension FaviconManager: SumiFaviconStoring {
               let faviconURL = self.referenceCache.getFaviconUrl(for: url, sizeCategory: .small) else {
             return false
         }
-        return self.imageCache.get(faviconUrl: faviconURL) != nil
+        return self.imageCache.hasCachedFavicon(faviconUrl: faviconURL)
     }
 
     func storeFavicon(_ imageData: Data, with url: URL?, for documentURL: URL) async throws {
-        guard let image = NSImage(data: imageData) else {
+        guard let image = NSImage.sumiDecodedFaviconImage(
+            data: imageData,
+            maxPixelSize: SumiFaviconImagePolicy.maxDecodedPixelSize
+        ) else {
             return
         }
 
@@ -467,6 +635,7 @@ extension FaviconManager: SumiFaviconStoring {
         let favicon = Favicon(identifier: UUID(),
                               url: faviconURL,
                               image: image,
+                              imageData: imageData,
                               relationString: "favicon",
                               documentUrl: documentURL,
                               dateCreated: Date())

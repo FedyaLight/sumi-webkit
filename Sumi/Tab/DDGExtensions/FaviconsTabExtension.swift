@@ -24,6 +24,11 @@ final class FaviconsTabExtension {
             faviconHandlingTask?.cancel()
         }
     }
+    private var cachedFaviconLoadingTask: Task<Void, Never>? {
+        willSet {
+            cachedFaviconLoadingTask?.cancel()
+        }
+    }
 
     @Published private(set) var favicon: NSImage?
 
@@ -55,36 +60,47 @@ final class FaviconsTabExtension {
             return
         }
 
-        guard faviconManagement.isCacheLoaded else { return }
-
-        if let cachedFavicon = cachedFavicon(for: currentURL)?.image {
-            if cachedFavicon != favicon {
-                favicon = cachedFavicon
+        if faviconManagement.isCacheLoaded {
+            if let cachedFavicon = displayImage(from: cachedDisplayFavicon(for: currentURL)) {
+                if cachedFavicon != favicon {
+                    favicon = cachedFavicon
+                }
+            } else if previousURL?.host != currentURL.host {
+                favicon = nil
             }
-        } else if previousURL?.host != currentURL.host {
-            favicon = nil
+        }
+
+        cachedFaviconLoadingTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            guard let cachedFavicon = displayImage(from: await loadCachedDisplayFavicon(for: currentURL)) else { return }
+            guard let tab = self.tab,
+                  currentURL == (tab.existingWebView?.url ?? tab.url) else { return }
+
+            if cachedFavicon != self.favicon {
+                self.favicon = cachedFavicon
+            }
         }
     }
 
-    private func cachedFavicon(for currentURL: URL) -> Favicon? {
-        if let favicon = faviconManagement.getCachedFavicon(
+    private func cachedDisplayFavicon(for currentURL: URL) -> Favicon? {
+        faviconManagement.getCachedDisplayFavicon(
             for: currentURL,
-            sizeCategory: .small,
-            fallBackToSmaller: false
-        ) {
-            return favicon
-        }
+            baseDomain: registrableDomainResolver.registrableDomain(forHost: currentURL.host),
+            targetPixelSize: CGFloat(SumiFaviconImagePolicy.maxLauncherDisplayPixelSize)
+        )
+    }
 
-        guard let domain = registrableDomainResolver.registrableDomain(forHost: currentURL.host) else { return nil }
-        return faviconManagement.getCachedFavicon(
-            forHostOrAnySubdomain: domain,
-            sizeCategory: .small,
-            fallBackToSmaller: false
+    private func loadCachedDisplayFavicon(for currentURL: URL) async -> Favicon? {
+        await faviconManagement.loadCachedDisplayFavicon(
+            for: currentURL,
+            baseDomain: registrableDomainResolver.registrableDomain(forHost: currentURL.host),
+            targetPixelSize: CGFloat(SumiFaviconImagePolicy.maxLauncherDisplayPixelSize)
         )
     }
 
     deinit {
         faviconHandlingTask?.cancel()
+        cachedFaviconLoadingTask?.cancel()
     }
 
     var faviconPublisher: AnyPublisher<NSImage?, Never> {
@@ -105,17 +121,25 @@ extension FaviconsTabExtension: SumiDDGFaviconUserScriptDelegate {
 
         faviconHandlingTask = Task { [weak self, faviconManagement] in
             guard let self else { return }
-            if let favicon = await faviconManagement.handleFaviconLinks(
+            let handledFavicon = await faviconManagement.handleFaviconLinks(
                 faviconLinks,
                 documentUrl: documentUrl,
                 webView: webView
-            ),
+            )
+            let displayFavicon = await self.loadCachedDisplayFavicon(for: documentUrl) ?? handledFavicon
+            if let image = self.displayImage(from: displayFavicon),
                !Task.isCancelled,
                let tab = self.tab,
                documentUrl == (tab.existingWebView?.url ?? tab.url)
             {
-                self.favicon = favicon.image
+                self.favicon = image
             }
         }
+    }
+
+    private func displayImage(from favicon: Favicon?) -> NSImage? {
+        favicon?.image?.sumiFaviconImageConstrained(
+            maxLongestSide: CGFloat(SumiFaviconImagePolicy.maxLauncherDisplayPixelSize)
+        )
     }
 }

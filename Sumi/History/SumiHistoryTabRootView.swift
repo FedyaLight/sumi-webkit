@@ -468,6 +468,7 @@ private struct HistoryFaviconView: View {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             } else {
                 Image(systemName: "globe")
                     .resizable()
@@ -482,11 +483,10 @@ private struct HistoryFaviconView: View {
 
     @MainActor
     private func loadImage() async {
-        if let cacheKey = SumiFaviconResolver.cacheKey(for: url),
-           let cachedImage = TabFaviconStore.getCachedImage(for: cacheKey) {
-            image = cachedImage
-            return
-        }
-        image = nil
+        let cachedImage = TabFaviconStore.getCachedImage(forDocumentURL: url)
+        image = cachedImage
+        let loadedImage = await TabFaviconStore.loadCachedDisplayImage(forDocumentURL: url)
+        guard !Task.isCancelled else { return }
+        image = loadedImage ?? cachedImage
     }
 }

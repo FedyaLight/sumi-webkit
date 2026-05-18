@@ -982,20 +982,26 @@ private struct StoredPinnedTileContent: View {
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
     @State private var faviconCacheRefreshID = UUID()
+    @State private var loadedStoredFaviconURL: URL?
+    @State private var loadedStoredFavicon: Image?
 
     var body: some View {
         let _ = faviconCacheRefreshID
         let resolvedTitle = pin.preferredDisplayTitle
+        let resolvedFavicon = currentLoadedStoredFavicon ?? pin.storedFavicon
+        let resolvedChromeTemplateSystemImageName = currentLoadedStoredFavicon == nil
+            ? pin.storedChromeTemplateSystemImageName
+            : nil
         PinnedTabView(
-            tabIcon: pin.storedFavicon,
-            chromeTemplateSystemImageName: pin.storedChromeTemplateSystemImageName,
+            tabIcon: resolvedFavicon,
+            chromeTemplateSystemImageName: resolvedChromeTemplateSystemImageName,
             presentationState: presentationState,
             liveTab: nil,
             dragSourceConfiguration: makePinnedTileDragSourceConfiguration(
                 pin: pin,
                 resolvedTitle: resolvedTitle,
-                previewIcon: pin.storedFavicon,
-                chromeTemplateSystemImageName: pin.storedChromeTemplateSystemImageName,
+                previewIcon: resolvedFavicon,
+                chromeTemplateSystemImageName: resolvedChromeTemplateSystemImageName,
                 previewPresentationState: presentationState,
                 pinnedConfiguration: dragPinnedConfiguration,
                 exclusionZones: dragExclusionZones,
@@ -1020,7 +1026,12 @@ private struct StoredPinnedTileContent: View {
             action: onActivate,
             onUnload: onUnload
         )
+        .task(id: storedFaviconLoadKey) {
+            await loadStoredFavicon()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { _ in
+            loadedStoredFaviconURL = nil
+            loadedStoredFavicon = nil
             faviconCacheRefreshID = UUID()
         }
         .overlay(alignment: .bottomTrailing) {
@@ -1039,6 +1050,26 @@ private struct StoredPinnedTileContent: View {
     }
 
     private var dragExclusionZones: [SidebarDragSourceExclusionZone] { [] }
+
+    private var currentLoadedStoredFavicon: Image? {
+        loadedStoredFaviconURL == pin.launchURL ? loadedStoredFavicon : nil
+    }
+
+    private var storedFaviconLoadKey: String {
+        "\(pin.launchURL.absoluteString)|\(faviconCacheRefreshID.uuidString)"
+    }
+
+    @MainActor
+    private func loadStoredFavicon() async {
+        let launchURL = pin.launchURL
+        guard let image = await TabFaviconStore.loadCachedLauncherImage(forDocumentURL: launchURL),
+              !Task.isCancelled,
+              launchURL == pin.launchURL
+        else { return }
+
+        loadedStoredFaviconURL = launchURL
+        loadedStoredFavicon = Image(nsImage: image)
+    }
 }
 
 @MainActor

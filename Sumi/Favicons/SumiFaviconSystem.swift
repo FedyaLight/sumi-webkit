@@ -70,6 +70,7 @@ private enum SumiFaviconPersistence {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
     }
+
 }
 
 @MainActor

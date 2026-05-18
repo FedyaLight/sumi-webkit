@@ -63,4 +63,44 @@ final class FaviconSelector {
         return nil
     }
 
+    static func getMostSuitableFavicon(forDisplayTargetPixelSize targetPixelSize: CGFloat, favicons: [Favicon]) -> Favicon? {
+        let targetPixelSize = max(1, Int(targetPixelSize.rounded(.up)))
+        return favicons
+            .filter { $0.image != nil && $0.longestSide > 0 }
+            .min { lhs, rhs in
+                let lhsSizeScore = displaySizeScore(for: lhs, targetPixelSize: targetPixelSize)
+                let rhsSizeScore = displaySizeScore(for: rhs, targetPixelSize: targetPixelSize)
+                if lhsSizeScore != rhsSizeScore {
+                    return lhsSizeScore < rhsSizeScore
+                }
+
+                let lhsRelationScore = displayRelationScore(for: lhs.relation)
+                let rhsRelationScore = displayRelationScore(for: rhs.relation)
+                if lhsRelationScore != rhsRelationScore {
+                    return lhsRelationScore < rhsRelationScore
+                }
+
+                return lhs.dateCreated > rhs.dateCreated
+            }
+    }
+
+    private static func displaySizeScore(for favicon: Favicon, targetPixelSize: Int) -> Int {
+        let longestSide = max(1, Int(favicon.longestSide.rounded(.up)))
+        if longestSide >= targetPixelSize {
+            return longestSide - targetPixelSize
+        }
+        return 10_000 + targetPixelSize - longestSide
+    }
+
+    private static func displayRelationScore(for relation: Favicon.Relation) -> Int {
+        switch relation {
+        case .favicon:
+            return 0
+        case .icon:
+            return 1
+        case .other:
+            return 2
+        }
+    }
+
 }

@@ -1,3 +1,4 @@
+import AppKit
 import CoreData
 import XCTest
 
@@ -545,6 +546,12 @@ final class SumiBookmarkFaviconStoreParityTests: XCTestCase {
         let directory = try temporaryDirectory(named: "SumiFaviconClearAllParity")
         let faviconURL = try XCTUnwrap(URL(string: "https://assets.example/favicon.ico"))
         let documentURL = try XCTUnwrap(URL(string: "https://clear-all.example/start"))
+        let faviconID = try XCTUnwrap(UUID(uuidString: "dddddddd-eeee-ffff-aaaa-bbbbbbbbbbbb"))
+        let pngData = try XCTUnwrap(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="))
+        let payloadURL = directory
+            .appendingPathComponent("FaviconImageData", isDirectory: true)
+            .appendingPathComponent(faviconID.uuidString.lowercased())
+            .appendingPathExtension("favicon")
         let dateCreated = try XCTUnwrap(DateComponents(
             calendar: Calendar(identifier: .gregorian),
             timeZone: TimeZone(secondsFromGMT: 0),
@@ -565,9 +572,10 @@ final class SumiBookmarkFaviconStoreParityTests: XCTestCase {
 
         try await store.save([
             Favicon(
-                identifier: try XCTUnwrap(UUID(uuidString: "dddddddd-eeee-ffff-aaaa-bbbbbbbbbbbb")),
+                identifier: faviconID,
                 url: faviconURL,
                 image: nil,
+                imageData: pngData,
                 relation: .favicon,
                 documentUrl: documentURL,
                 dateCreated: dateCreated
@@ -591,6 +599,7 @@ final class SumiBookmarkFaviconStoreParityTests: XCTestCase {
 
         let faviconsBeforeDelete = try await store.loadFavicons()
         XCTAssertEqual(faviconsBeforeDelete.count, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: payloadURL.path))
         let referencesBeforeDelete = try await store.loadFaviconReferences()
         XCTAssertEqual(referencesBeforeDelete.0.count, 1)
         XCTAssertEqual(referencesBeforeDelete.1.count, 1)
@@ -602,6 +611,7 @@ final class SumiBookmarkFaviconStoreParityTests: XCTestCase {
         let referencesAfterDelete = try await store.loadFaviconReferences()
         XCTAssertTrue(referencesAfterDelete.0.isEmpty)
         XCTAssertTrue(referencesAfterDelete.1.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: payloadURL.path))
 
         let reopenedDatabase = try makeCoreDataDatabase(
             name: "Favicons",
@@ -616,6 +626,103 @@ final class SumiBookmarkFaviconStoreParityTests: XCTestCase {
         let reopenedReferences = try await reopenedStore.loadFaviconReferences()
         XCTAssertTrue(reopenedReferences.0.isEmpty)
         XCTAssertTrue(reopenedReferences.1.isEmpty)
+    }
+
+    func testFaviconStoreLoadsMetadataAndFaviconsByURLWithoutFullImageFetch() async throws {
+        let directory = try temporaryDirectory(named: "SumiFaviconLazyURLFetch")
+        let firstFaviconURL = try XCTUnwrap(URL(string: "https://assets.example/first.ico"))
+        let secondFaviconURL = try XCTUnwrap(URL(string: "https://assets.example/second.ico"))
+        let firstDocumentURL = try XCTUnwrap(URL(string: "https://first.example/start"))
+        let secondDocumentURL = try XCTUnwrap(URL(string: "https://second.example/start"))
+        let firstID = try XCTUnwrap(UUID(uuidString: "11111111-2222-3333-4444-555555555555"))
+        let secondID = try XCTUnwrap(UUID(uuidString: "22222222-3333-4444-5555-666666666666"))
+        let firstDate = try XCTUnwrap(DateComponents(
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0),
+            year: 2026,
+            month: 3,
+            day: 4
+        ).date)
+        let secondDate = try XCTUnwrap(DateComponents(
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0),
+            year: 2026,
+            month: 3,
+            day: 5
+        ).date)
+        let store = FaviconStore(database: try makeCoreDataDatabase(
+            name: "Favicons",
+            directory: directory,
+            modelName: "Favicons",
+            preferredBundles: [.main]
+        ))
+
+        try await store.save([
+            Favicon(identifier: firstID, url: firstFaviconURL, image: nil, relation: .favicon, documentUrl: firstDocumentURL, dateCreated: firstDate),
+            Favicon(identifier: secondID, url: secondFaviconURL, image: nil, relation: .icon, documentUrl: secondDocumentURL, dateCreated: secondDate),
+        ])
+
+        let secondOnly = try await store.loadFavicons(with: [secondFaviconURL])
+        XCTAssertEqual(secondOnly.map(\.identifier), [secondID])
+        XCTAssertEqual(secondOnly.first?.url, secondFaviconURL)
+
+        let metadata = try await store.loadFaviconMetadata()
+        XCTAssertEqual(metadata.map(\.identifier), [firstID, secondID])
+        XCTAssertEqual(metadata.map(\.url), [firstFaviconURL, secondFaviconURL])
+        XCTAssertEqual(metadata.map(\.documentUrl), [firstDocumentURL, secondDocumentURL])
+
+        try await store.removeFavicons(with: [secondFaviconURL])
+
+        let remainingFavicons = try await store.loadFavicons()
+        XCTAssertEqual(remainingFavicons.map(\.identifier), [firstID])
+    }
+
+    func testFaviconStorePersistsEncodedPayloadOutsideCoreDataImageTransformer() async throws {
+        let directory = try temporaryDirectory(named: "SumiFaviconEncodedPayload")
+        let faviconURL = try XCTUnwrap(URL(string: "https://assets.example/favicon.png"))
+        let documentURL = try XCTUnwrap(URL(string: "https://encoded.example/start"))
+        let faviconID = try XCTUnwrap(UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"))
+        let pngData = try XCTUnwrap(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="))
+        let database = try makeCoreDataDatabase(
+            name: "Favicons",
+            directory: directory,
+            modelName: "Favicons",
+            preferredBundles: [.main]
+        )
+        let store = FaviconStore(database: database)
+
+        try await store.save([
+            Favicon(
+                identifier: faviconID,
+                url: faviconURL,
+                image: nil,
+                imageData: pngData,
+                relation: .favicon,
+                documentUrl: documentURL,
+                dateCreated: Date()
+            ),
+        ])
+
+        let loaded = try await store.loadFavicons(with: [faviconURL])
+        XCTAssertEqual(loaded.map(\.identifier), [faviconID])
+        XCTAssertNotNil(loaded.first?.image)
+
+        let payloadURL = directory
+            .appendingPathComponent("FaviconImageData", isDirectory: true)
+            .appendingPathComponent(faviconID.uuidString.lowercased())
+            .appendingPathExtension("favicon")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: payloadURL.path))
+
+        let context = database.makeContext(
+            concurrencyType: .privateQueueConcurrencyType,
+            name: "SumiFaviconEncodedPayloadInspect"
+        )
+        try await context.perform {
+            let request = FaviconManagedObject.fetchRequest() as NSFetchRequest<FaviconManagedObject>
+            request.predicate = NSPredicate(format: "identifier == %@", faviconID as CVarArg)
+            let row = try XCTUnwrap(context.fetch(request).first)
+            XCTAssertNil(row.imageEncrypted)
+        }
     }
 
     private func temporaryDirectory(named name: String) throws -> URL {

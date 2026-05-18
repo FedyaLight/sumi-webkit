@@ -166,6 +166,8 @@ private struct ShortcutSidebarRowChrome: View {
     @State private var isActionHovered = false
     @State private var isResetHovered = false
     @State private var faviconCacheRefreshID = UUID()
+    @State private var loadedStoredFaviconURL: URL?
+    @State private var loadedStoredFavicon: Image?
     @StateObject private var emojiManager = EmojiPickerManager()
 
     var body: some View {
@@ -252,7 +254,12 @@ private struct ShortcutSidebarRowChrome: View {
         .accessibilityValue(runtimeAffordance.isSelected ? "selected" : "not selected")
         .sidebarDDGHover($isRowHovered, isEnabled: dragIsEnabled)
         .sidebarZenPressEffect(sourceID: rowSourceID, isEnabled: dragIsEnabled)
+        .task(id: storedFaviconLoadKey) {
+            await loadStoredFavicon()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { _ in
+            loadedStoredFaviconURL = nil
+            loadedStoredFavicon = nil
             faviconCacheRefreshID = UUID()
         }
         .sidebarAppKitContextMenu(
@@ -299,7 +306,7 @@ private struct ShortcutSidebarRowChrome: View {
     }
 
     private var displayFavicon: Image {
-        liveTab?.favicon ?? pin.storedFavicon
+        liveTab?.favicon ?? currentLoadedStoredFavicon ?? pin.storedFavicon
     }
 
     private var chromeTemplateSystemImageName: String? {
@@ -310,6 +317,9 @@ private struct ShortcutSidebarRowChrome: View {
             if liveTab.faviconIsTemplateGlobePlaceholder {
                 return SumiPersistentGlyph.launcherSystemImageFallback
             }
+            return nil
+        }
+        if currentLoadedStoredFavicon != nil {
             return nil
         }
         return pin.storedChromeTemplateSystemImageName
@@ -497,6 +507,32 @@ private struct ShortcutSidebarRowChrome: View {
 
     private var displayIsResetHovering: Bool {
         SidebarHoverChrome.displayHover(isResetHovered, freezesHoverState: freezesHoverState)
+    }
+
+    private var currentLoadedStoredFavicon: Image? {
+        loadedStoredFaviconURL == pin.launchURL ? loadedStoredFavicon : nil
+    }
+
+    private var storedFaviconLoadKey: String {
+        guard liveTab == nil, pin.iconAsset == nil else {
+            return "disabled|\(pin.id.uuidString)|\(faviconCacheRefreshID.uuidString)"
+        }
+        return "\(pin.launchURL.absoluteString)|\(faviconCacheRefreshID.uuidString)"
+    }
+
+    @MainActor
+    private func loadStoredFavicon() async {
+        guard liveTab == nil, pin.iconAsset == nil else { return }
+
+        let launchURL = pin.launchURL
+        guard let image = await TabFaviconStore.loadCachedLauncherImage(forDocumentURL: launchURL),
+              !Task.isCancelled,
+              liveTab == nil,
+              launchURL == pin.launchURL
+        else { return }
+
+        loadedStoredFaviconURL = launchURL
+        loadedStoredFavicon = Image(nsImage: image)
     }
 
     private var dragSourceConfiguration: SidebarDragSourceConfiguration? {
