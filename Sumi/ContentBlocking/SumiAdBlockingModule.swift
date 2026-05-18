@@ -32,7 +32,7 @@ struct SumiAdblockSurfaceEligibility: Equatable, Sendable {
 
     static func evaluate(
         url: URL?,
-        normalizer: SumiTrackingProtectionSiteNormalizer
+        normalizer: SumiProtectionSiteNormalizer
     ) -> SumiAdblockSurfaceEligibility {
         guard let url else {
             return SumiAdblockSurfaceEligibility(isEligible: false, normalizedSiteHost: nil, ineligibleReason: "No URL")
@@ -184,7 +184,7 @@ final class AdblockSitePolicyStore: ObservableObject {
 
     @Published private(set) var siteOverrides: [String: SumiAdblockSiteOverride]
     private let userDefaults: UserDefaults
-    private let siteNormalizer: SumiTrackingProtectionSiteNormalizer
+    private let siteNormalizer: SumiProtectionSiteNormalizer
     private let changesSubject = PassthroughSubject<Void, Never>()
 
     var changesPublisher: AnyPublisher<Void, Never> { changesSubject.eraseToAnyPublisher() }
@@ -194,7 +194,7 @@ final class AdblockSitePolicyStore: ObservableObject {
         registrableDomainResolver: any SumiRegistrableDomainResolving = SumiRegistrableDomainResolver()
     ) {
         self.userDefaults = userDefaults
-        self.siteNormalizer = SumiTrackingProtectionSiteNormalizer(registrableDomainResolver: registrableDomainResolver)
+        self.siteNormalizer = SumiProtectionSiteNormalizer(registrableDomainResolver: registrableDomainResolver)
         siteOverrides = Self.loadSiteOverrides(from: userDefaults)
     }
 

@@ -37,7 +37,6 @@ struct SumiApp: App {
                 .environment(webViewCoordinator)
                 .environment(\.sumiSettings, settingsManager)
                 .environment(\.sumiModuleRegistry, browserManager.moduleRegistry)
-                .environment(\.sumiTrackingProtectionModule, browserManager.trackingProtectionModule)
                 .environment(\.sumiAdBlockingModule, browserManager.adBlockingModule)
                 .environment(\.sumiProtectionCoordinator, browserManager.protectionCoordinator)
                 .environment(\.sumiExtensionsModule, browserManager.extensionsModule)

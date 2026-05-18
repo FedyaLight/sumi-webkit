@@ -426,15 +426,15 @@ final class AdblockManifestRuleListProvider: SumiContentRuleListSetProviding {
         changesSubject.send(())
     }
 
-    func ruleListSet(profileId: UUID?) throws -> SumiTrackingRuleListSet {
-        guard let manifest else { return SumiTrackingRuleListSet() }
+    func ruleListSet(profileId: UUID?) throws -> SumiContentRuleListSet {
+        guard let manifest else { return SumiContentRuleListSet() }
         let definitions = try manifest.networkShards.map { shard in
             if let definition = compiledDefinitionsByIdentifier[shard.webKitIdentifier] {
                 return definition
             }
             return try compiledDefinitionLoader(shard)
         }
-        return SumiTrackingRuleListSet(trackerDataSet: definitions)
+        return SumiContentRuleListSet(definitions: definitions)
     }
 
     static func diskBackedDefinitionLoader(

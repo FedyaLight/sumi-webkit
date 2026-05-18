@@ -66,7 +66,6 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertTrue(global.searchedBundlePaths.isEmpty)
         XCTAssertNil(global.bundleProfileId)
         XCTAssertFalse(fixture.didCreateAdblockRuleListStore())
-        XCTAssertEqual(fixture.trackingRuleSource.callCount, 0)
     }
 
     func testManualBundleUpdateWhileOffCachesOnlyAndDoesNotLoadAdblockRuntime() async throws {
@@ -133,7 +132,6 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertFalse(decision.plan.adblockGroupActive)
         XCTAssertTrue(global.groupSourceDiagnostics[.trackingNetwork]?.contains("sourceName=DuckDuckGo Tracker Radar / TDS") == true)
         XCTAssertTrue(global.groupSourceDiagnostics[.trackingNetwork]?.contains("sourceLicense=CC BY-NC-SA 4.0") == true)
-        XCTAssertEqual(fixture.trackingRuleSource.callCount, 0)
         XCTAssertTrue(fixture.didCreateAdblockRuleListStore())
     }
 
@@ -165,7 +163,6 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertEqual(plan.requiredBundleProfileId, "adguardAdsPrivacy")
         XCTAssertTrue(plan.expectedRuleListIdentifiers.contains { $0.hasPrefix("sumi.tracking.network.") })
         XCTAssertTrue(plan.expectedRuleListIdentifiers.contains { $0.hasPrefix("sumi.adblock.network.") })
-        XCTAssertEqual(fixture.trackingRuleSource.callCount, 0)
         XCTAssertEqual(global.preparedBundleSource, .developmentBundle)
         XCTAssertTrue(fixture.didCreateAdblockRuleListStore())
     }
@@ -190,7 +187,6 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
             XCTAssertTrue(error.localizedDescription.contains("trackingNetwork"))
             XCTAssertTrue(error.localizedDescription.contains("prepared"))
         }
-        XCTAssertEqual(fixture.trackingRuleSource.callCount, 0)
     }
 
     func testMissingAdguardAdsPrivacyReportsClearError() async {
@@ -222,8 +218,10 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertTrue(tabRuntimeSource.contains(".normalTabDecision(for: url, profileId: profile.id)"))
         XCTAssertFalse(tabRuntimeSource.contains("adBlockingModule.normalTabDecision"))
         XCTAssertFalse(tabRuntimeSource.contains("trackingProtectionModule.normalTabDecision"))
+        XCTAssertFalse(tabRuntimeSource.contains("SumiTrackingProtection"))
+        XCTAssertFalse(coordinatorSource.contains("SumiTrackingProtectionModule"))
+        XCTAssertFalse(coordinatorSource.contains("SumiTrackingProtectionTrackerDataSet"))
         XCTAssertTrue(coordinatorSource.contains("SumiProtectionCoordinator"))
-        XCTAssertTrue(coordinatorSource.contains("Temporary migration fallback only"))
     }
 
     private func makeFixture(
@@ -234,38 +232,6 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore? = nil
     ) -> Fixture {
         let registry = SumiModuleRegistry(settingsStore: SumiModuleSettingsStore(userDefaults: defaults))
-        let trackingRuleSource = PreparedBundleTrackingRuleSource(
-            definitions: [PreparedAdblockTestSupport.ruleList(identifier: "sumi.tracking.network", filter: ".*tracker\\\\.example/.*")]
-        )
-        let trackingModule = SumiTrackingProtectionModule(
-            moduleRegistry: registry,
-            settingsFactory: { SumiTrackingProtectionSettings(userDefaults: defaults) },
-            dataStoreFactory: {
-                SumiTrackingProtectionDataStore(
-                    userDefaults: defaults,
-                    storageDirectory: self.temporaryDirectory(prefix: "SumiProtectionTracking")
-                )
-            },
-            contentBlockingAssetsFactory: { settings, dataStore in
-                let provider = SumiTrackingRuleListProvider(
-                    settings: settings,
-                    dataStore: dataStore,
-                    trackingRuleSource: trackingRuleSource
-                )
-                return SumiTrackingContentBlockingAssets(
-                    ruleListProvider: provider,
-                    contentBlockingService: SumiContentBlockingService(policy: .disabled)
-                )
-            },
-            ruleListProviderFactory: { settings, dataStore in
-                SumiTrackingRuleListProvider(
-                    settings: settings,
-                    dataStore: dataStore,
-                    trackingRuleSource: trackingRuleSource
-                )
-            }
-        )
-
         var didCreateAdblockRuleListStore = false
         let manifestStore = AdblockUpdateManifestStore(rootDirectory: temporaryDirectory(prefix: "SumiProtectionAdblock"))
         let adBlockingModule = SumiAdBlockingModule(
@@ -288,7 +254,6 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         )
         let coordinator = SumiProtectionCoordinator(
             settings: SumiProtectionSettings(userDefaults: defaults),
-            trackingProtectionModule: trackingModule,
             adBlockingModule: adBlockingModule,
             moduleRegistry: registry,
             bundleRemoteUpdater: bundleRemoteUpdater ?? FakeProtectionBundleRemoteUpdater(),
@@ -296,7 +261,6 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         )
         return Fixture(
             coordinator: coordinator,
-            trackingRuleSource: trackingRuleSource,
             didCreateAdblockRuleListStore: { didCreateAdblockRuleListStore }
         )
     }
@@ -330,7 +294,6 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
 
     private struct Fixture {
         let coordinator: SumiProtectionCoordinator
-        let trackingRuleSource: PreparedBundleTrackingRuleSource
         let didCreateAdblockRuleListStore: () -> Bool
     }
 }

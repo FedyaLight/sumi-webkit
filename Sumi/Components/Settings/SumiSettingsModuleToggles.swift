@@ -4,10 +4,6 @@ private struct SumiModuleRegistryEnvironmentKey: EnvironmentKey {
     static let defaultValue = MainActor.assumeIsolated { SumiModuleRegistry.shared }
 }
 
-private struct SumiTrackingProtectionModuleEnvironmentKey: EnvironmentKey {
-    static let defaultValue = MainActor.assumeIsolated { SumiTrackingProtectionModule.shared }
-}
-
 private struct SumiAdBlockingModuleEnvironmentKey: EnvironmentKey {
     static let defaultValue = MainActor.assumeIsolated { SumiAdBlockingModule.shared }
 }
@@ -28,11 +24,6 @@ extension EnvironmentValues {
     var sumiModuleRegistry: SumiModuleRegistry {
         get { self[SumiModuleRegistryEnvironmentKey.self] }
         set { self[SumiModuleRegistryEnvironmentKey.self] = newValue }
-    }
-
-    var sumiTrackingProtectionModule: SumiTrackingProtectionModule {
-        get { self[SumiTrackingProtectionModuleEnvironmentKey.self] }
-        set { self[SumiTrackingProtectionModuleEnvironmentKey.self] = newValue }
     }
 
     var sumiAdBlockingModule: SumiAdBlockingModule {
@@ -64,18 +55,11 @@ struct SumiSettingsModuleToggleDescriptor: Identifiable, Equatable {
 
     var id: SumiModuleID { moduleID }
 
-    static let trackingProtection = SumiSettingsModuleToggleDescriptor(
-        moduleID: .trackingProtection,
-        title: "Tracking Protection",
-        toggleTitle: "Enable Tracking Protection",
-        detail: "When off, Sumi does not load tracker data, rule lists, update jobs, or protection scripts. Tracker data updates are manual only and do not run in the background."
-    )
-
     static let adBlocking = SumiSettingsModuleToggleDescriptor(
         moduleID: .adBlocking,
         title: "Ad Blocking",
         toggleTitle: "Enable Ad Blocking",
-        detail: "Ad Blocking is separate from Tracking Protection. While off, Sumi does not compile WebKit rule lists, load filter lists, schedule updates, or attach runtime blocking."
+        detail: "Ad Blocking is separate from Tracking Protection. While off, Sumi does not load prepared bundle shards, compile WebKit rule lists, schedule updates, or attach runtime blocking."
     )
 
     static let extensions = SumiSettingsModuleToggleDescriptor(

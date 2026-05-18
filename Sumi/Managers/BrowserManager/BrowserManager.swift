@@ -163,7 +163,6 @@ class BrowserManager: ObservableObject {
     var modelContext: ModelContext
     let startupWorkspaceTheme: WorkspaceTheme?
     let moduleRegistry: SumiModuleRegistry
-    let trackingProtectionModule: SumiTrackingProtectionModule
     let adBlockingModule: SumiAdBlockingModule
     let protectionCoordinator: SumiProtectionCoordinator
     let extensionsModule: SumiExtensionsModule
@@ -304,7 +303,6 @@ class BrowserManager: ObservableObject {
     init(
         moduleRegistry: SumiModuleRegistry = .shared,
         // Explicit injection seams keep module-boundary tests focused without constructing optional runtimes at startup.
-        trackingProtectionModule: SumiTrackingProtectionModule? = nil,
         adBlockingModule: SumiAdBlockingModule? = nil,
         protectionCoordinator: SumiProtectionCoordinator? = nil,
         extensionsModule: SumiExtensionsModule? = nil,
@@ -364,16 +362,12 @@ class BrowserManager: ObservableObject {
         let externalSchemeSessionStore = externalSchemeSessionStore ?? SumiExternalSchemeSessionStore()
         self.modelContext = startupModelContext
         self.moduleRegistry = moduleRegistry
-        let resolvedTrackingProtectionModule = trackingProtectionModule
-            ?? SumiTrackingProtectionModule(moduleRegistry: moduleRegistry)
         let resolvedAdBlockingModule = adBlockingModule
             ?? SumiAdBlockingModule(moduleRegistry: moduleRegistry)
-        self.trackingProtectionModule = resolvedTrackingProtectionModule
         self.adBlockingModule = resolvedAdBlockingModule
         self.protectionCoordinator = protectionCoordinator
             ?? SumiProtectionCoordinator(
                 settings: SumiProtectionSettings(userDefaults: moduleRegistry.userDefaults),
-                trackingProtectionModule: resolvedTrackingProtectionModule,
                 adBlockingModule: resolvedAdBlockingModule,
                 moduleRegistry: moduleRegistry
             )

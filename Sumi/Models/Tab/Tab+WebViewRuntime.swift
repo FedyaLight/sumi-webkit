@@ -386,9 +386,6 @@ extension Tab {
             .normalTabDecision(for: url, profileId: profile.id)
         if let protectionDecision {
             noteProtectionAttachmentApplied(protectionDecision.attachmentState)
-            noteTrackingProtectionAttachmentApplied(
-                protectionDecision.trackingAttachmentState
-            )
             noteAdblockAttachmentApplied(
                 protectionDecision.adblockAttachmentState
             )

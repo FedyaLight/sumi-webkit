@@ -21,16 +21,6 @@ struct TabBackForwardNavigationContext {
     let originHistoryItem: WKBackForwardListItem?
 }
 
-struct SumiTrackingProtectionReloadRequirement: Equatable {
-    let siteHost: String?
-    let desiredAttachmentState: SumiTrackingProtectionAttachmentState
-
-    static func == (lhs: SumiTrackingProtectionReloadRequirement, rhs: SumiTrackingProtectionReloadRequirement) -> Bool {
-        lhs.siteHost == rhs.siteHost
-            && lhs.desiredAttachmentState == rhs.desiredAttachmentState
-    }
-}
-
 struct SumiAdblockReloadRequirement: Equatable {
     let siteHost: String?
     let desiredAttachmentState: SumiAdblockAttachmentState
@@ -155,8 +145,6 @@ final class TabWebViewRuntime {
     var isSuspensionRestoreInProgress: Bool = false
     var suspensionRestoreTraceState: OSSignpostIntervalState?
     var profileAwaitCancellable: AnyCancellable?
-    var trackingProtectionAppliedAttachmentState: SumiTrackingProtectionAttachmentState?
-    var trackingProtectionReloadRequirement: SumiTrackingProtectionReloadRequirement?
     var adblockAppliedAttachmentState: SumiAdblockAttachmentState?
     var adblockReloadRequirement: SumiAdblockReloadRequirement?
     var protectionAppliedAttachmentState: SumiProtectionAttachmentState?

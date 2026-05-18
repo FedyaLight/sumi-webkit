@@ -129,11 +129,7 @@ struct SiteControlsSnapshot: Equatable {
         permissionsSummary: String? = nil,
         protectionCoordinator: SumiProtectionCoordinator? = nil,
         protectionBrowserRestartRequired: Bool = false,
-        protectionReloadRequired: Bool = false,
-        trackingProtectionModule: SumiTrackingProtectionModule? = nil,
-        trackingProtectionReloadRequired: Bool = false,
-        adBlockingModule: SumiAdBlockingModule? = nil,
-        adblockReloadRequired: Bool = false
+        protectionReloadRequired: Bool = false
     ) -> SiteControlsSnapshot {
         guard let url else {
             return SiteControlsSnapshot(
@@ -313,11 +309,7 @@ struct URLBarHubPopover: View {
             permissionsSummary: permissionsTopLevelSummary,
             protectionCoordinator: browserManager.protectionCoordinator,
             protectionBrowserRestartRequired: browserManager.protectionCoordinator.settings.browserRestartRequired,
-            protectionReloadRequired: currentTab?.isProtectionReloadRequired == true,
-            trackingProtectionModule: browserManager.trackingProtectionModule,
-            trackingProtectionReloadRequired: currentTab?.isTrackingProtectionReloadRequired == true,
-            adBlockingModule: browserManager.adBlockingModule,
-            adblockReloadRequired: currentTab?.isAdblockReloadRequired == true
+            protectionReloadRequired: currentTab?.isProtectionReloadRequired == true
         )
         currentTab?.lastProtectionURLHubSummaryDuration = Date().timeIntervalSince(start)
         return resolved
@@ -375,16 +367,10 @@ struct URLBarHubPopover: View {
         .onReceive(NotificationCenter.default.publisher(for: .sumiTabNavigationStateDidChange)) { notification in
             handleNavigationStateDidChange(notification)
         }
-        .onReceive(browserManager.trackingProtectionModule.settingsChangesPublisherIfEnabled()) {
-            _ in refreshNonce += 1
-        }
         .onReceive(browserManager.protectionCoordinator.settings.changesPublisher) {
             _ in refreshNonce += 1
         }
         .onReceive(browserManager.protectionCoordinator.sitePolicyChangesPublisher()) {
-            _ in refreshNonce += 1
-        }
-        .onReceive(browserManager.adBlockingModule.sitePolicyChangesPublisher()) {
             _ in refreshNonce += 1
         }
     }

@@ -1,15 +1,22 @@
 import Foundation
 import SwiftData
-import TrackerRadarKit
 import WebKit
 import XCTest
-import os
 
 @testable import Sumi
 
 @MainActor
 final class BrowserConfigurationNormalTabTests: XCTestCase {
     private var temporaryDirectories: [URL] = []
+
+    private func makeUnloadedNormalTabWebView(
+        for tab: Tab,
+        reason: String
+    ) throws -> WKWebView {
+        let webView = try XCTUnwrap(tab.makeNormalTabWebView(reason: reason))
+        tab._webView = webView
+        return webView
+    }
 
     override func tearDown() async throws {
         for directory in temporaryDirectories {
@@ -45,38 +52,27 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertEqual(contentBlockingSummary.globalRuleListCount, 0)
     }
 
-    func testBrowserManagerStartupWithTrackingDisabledDoesNotInitializeTrackingRuntime() {
+    func testBrowserManagerStartupWithProtectionOffDoesNotInitializePreparedBundleRuntime() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
-        let probe = NormalTabTrackingRuntimeProbe()
-        let module = makeProbeTrackingModule(
-            registry: registry,
-            probe: probe,
-            defaults: harness.defaults
-        )
         let adBlockingModule = SumiAdBlockingModule(moduleRegistry: registry)
         let protectionCoordinator = SumiProtectionCoordinator(
             settings: SumiProtectionSettings(userDefaults: harness.defaults),
-            trackingProtectionModule: module,
             adBlockingModule: adBlockingModule,
             moduleRegistry: registry
         )
 
         let browserManager = BrowserManager(
             moduleRegistry: registry,
-            trackingProtectionModule: module,
             adBlockingModule: adBlockingModule,
             protectionCoordinator: protectionCoordinator
         )
 
         XCTAssertNotNil(browserManager.currentProfile)
-        XCTAssertFalse(registry.isEnabled(.trackingProtection))
-        XCTAssertEqual(probe.settingsCount, 0)
-        XCTAssertEqual(probe.dataStoreCount, 0)
-        XCTAssertEqual(probe.serviceCount, 0)
+        XCTAssertFalse(adBlockingModule.hasLoadedRuntime)
     }
 
     func testBrowserManagerStartupWithUserscriptsDisabledDoesNotInitializeUserscriptsRuntime() {
@@ -130,27 +126,19 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertTrue(browserManager.extensionSurfaceStore.installedExtensions.isEmpty)
     }
 
-    func testTabNormalWebViewCreationWithTrackingDisabledDoesNotInitializeTrackingRuntime() async throws {
+    func testTabNormalWebViewCreationWithProtectionOffDoesNotLoadOrAttachPreparedRules() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
-        let probe = NormalTabTrackingRuntimeProbe()
-        let module = makeProbeTrackingModule(
-            registry: registry,
-            probe: probe,
-            defaults: harness.defaults
-        )
         let protection = try makeProtectionCoordinator(
             defaults: harness.defaults,
             registry: registry,
-            trackingProtectionModule: module,
             level: .off
         )
         let browserManager = BrowserManager(
             moduleRegistry: registry,
-            trackingProtectionModule: module,
             adBlockingModule: protection.adBlockingModule,
             protectionCoordinator: protection.coordinator
         )
@@ -160,172 +148,16 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             activate: false
         )
 
-        tab.setupWebView()
-
-        let webView = try XCTUnwrap(tab.existingWebView)
+        let webView = try makeUnloadedNormalTabWebView(
+            for: tab,
+            reason: "BrowserConfigurationNormalTabTests.protectionOff"
+        )
         let controller = try XCTUnwrap(webView.configuration.userContentController.sumiNormalTabUserContentController)
         await controller.waitForContentBlockingAssetsInstalled()
 
         XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 0)
-        XCTAssertEqual(probe.settingsCount, 0)
-        XCTAssertEqual(probe.dataStoreCount, 0)
-        XCTAssertEqual(probe.serviceCount, 0)
-    }
-
-    func testTrackingProtectionOptionalOffPathDoesNoTrackerWork() async throws {
-        let harness = TestDefaultsHarness()
-        defer { harness.reset() }
-        let registry = SumiModuleRegistry(
-            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
-        )
-        let probe = NormalTabTrackingRuntimeProbe()
-        let bundledProvider = SpyBundledTrackerDataProvider(
-            data: Data("{\"this\":\"would fail TrackerData decoding\"}".utf8)
-        )
-        var assetsFactoryCount = 0
-        var updaterFactoryCount = 0
-        let module = SumiTrackingProtectionModule(
-            moduleRegistry: registry,
-            settingsFactory: {
-                probe.settingsCount += 1
-                return SumiTrackingProtectionSettings(userDefaults: harness.defaults)
-            },
-            dataStoreFactory: {
-                probe.dataStoreCount += 1
-                return SumiTrackingProtectionDataStore(
-                    userDefaults: harness.defaults,
-                    storageDirectory: FileManager.default.temporaryDirectory
-                        .appendingPathComponent("SumiOptionalTrackingOff-\(UUID().uuidString)", isDirectory: true),
-                    bundledProvider: bundledProvider
-                )
-            },
-            contentBlockingAssetsFactory: { settings, dataStore in
-                assetsFactoryCount += 1
-                let ruleSource = SpyTrackingProtectionRuleSource()
-                let provider = SumiTrackingRuleListProvider(
-                    settings: settings,
-                    dataStore: dataStore,
-                    trackingRuleSource: ruleSource
-                )
-                return SumiTrackingContentBlockingAssets(
-                    ruleListProvider: provider,
-                    contentBlockingService: SumiContentBlockingService(
-                        policy: .disabled,
-                        compiler: SumiWKContentRuleListCompiler(),
-                        ruleListProvider: provider
-                    )
-                )
-            }
-        )
-        let protection = try makeProtectionCoordinator(
-            defaults: harness.defaults,
-            registry: registry,
-            trackingProtectionModule: module,
-            level: .off
-        )
-        let browserManager = BrowserManager(
-            moduleRegistry: registry,
-            trackingProtectionModule: module,
-            adBlockingModule: protection.adBlockingModule,
-            protectionCoordinator: protection.coordinator
-        )
-
-        let decision = module.normalTabContentBlockingDecision(
-            for: URL(string: "https://example.com/tracking-off")
-        )
-        XCTAssertFalse(decision.effectivePolicy.isEnabled)
-        XCTAssertNil(decision.contentBlockingService)
-
-        let updateResult = await module.updateTrackerDataManually {
-            updaterFactoryCount += 1
-            return SumiTrackerDataUpdater(fetch: { request in
-                (
-                    Data(),
-                    HTTPURLResponse(
-                        url: request.url!,
-                        statusCode: 500,
-                        httpVersion: nil,
-                        headerFields: nil
-                    )!
-                )
-            })
-        }
-
-        guard case .disabled = updateResult else {
-            return XCTFail("Expected disabled manual update result, got \(updateResult)")
-        }
-
-        let tab = browserManager.tabManager.createNewTab(
-            url: "https://example.com/tracking-off-tab",
-            in: browserManager.tabManager.currentSpace,
-            activate: false
-        )
-        tab.setupWebView()
-        let controller = try XCTUnwrap(
-            tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
-        )
-        await controller.waitForContentBlockingAssetsInstalled()
-
-        XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 0)
         XCTAssertFalse(controller.contentBlockingAssetSummary.isContentBlockingFeatureEnabled)
-        XCTAssertEqual(probe.settingsCount, 0)
-        XCTAssertEqual(probe.dataStoreCount, 0)
-        XCTAssertEqual(probe.serviceCount, 0)
-        XCTAssertEqual(assetsFactoryCount, 0)
-        XCTAssertEqual(updaterFactoryCount, 0)
-        XCTAssertEqual(bundledProvider.embeddedDataCallCount, 0)
-    }
-
-    func testTrackingProtectionPolicyOffDoesNotCreateRuleAssetsOrLoadTrackerData() async throws {
-        let harness = TestDefaultsHarness()
-        defer { harness.reset() }
-        let registry = SumiModuleRegistry(
-            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
-        )
-        registry.enable(.trackingProtection)
-        let settings = SumiTrackingProtectionSettings(userDefaults: harness.defaults)
-        let bundledProvider = SpyBundledTrackerDataProvider(
-            data: Data("{\"this\":\"would fail TrackerData decoding\"}".utf8)
-        )
-        let probe = NormalTabTrackingRuntimeProbe()
-        var assetsFactoryCount = 0
-        let module = SumiTrackingProtectionModule(
-            moduleRegistry: registry,
-            settingsFactory: {
-                probe.settingsCount += 1
-                return settings
-            },
-            dataStoreFactory: {
-                probe.dataStoreCount += 1
-                return SumiTrackingProtectionDataStore(
-                    userDefaults: harness.defaults,
-                    storageDirectory: FileManager.default.temporaryDirectory
-                        .appendingPathComponent("SumiPolicyTrackingOff-\(UUID().uuidString)", isDirectory: true),
-                    bundledProvider: bundledProvider
-                )
-            },
-            contentBlockingAssetsFactory: { settings, dataStore in
-                assetsFactoryCount += 1
-                let provider = SumiTrackingRuleListProvider(
-                    settings: settings,
-                    dataStore: dataStore,
-                    trackingRuleSource: SpyTrackingProtectionRuleSource()
-                )
-                return SumiTrackingContentBlockingAssets(ruleListProvider: provider)
-            }
-        )
-
-        let decision = module.normalTabContentBlockingDecision(
-            for: URL(string: "https://example.com/policy-off")
-        )
-
-        XCTAssertFalse(decision.effectivePolicy.isEnabled)
-        XCTAssertNil(decision.contentBlockingService)
-        XCTAssertEqual(probe.settingsCount, 1)
-        XCTAssertEqual(probe.dataStoreCount, 0)
-        XCTAssertEqual(probe.serviceCount, 0)
-        XCTAssertEqual(assetsFactoryCount, 0)
-        XCTAssertEqual(bundledProvider.embeddedDataCallCount, 0)
+        XCTAssertFalse(protection.adBlockingModule.hasLoadedRuntime)
     }
 
     func testTabNormalWebViewCreationWithUserscriptsDisabledDoesNotInitializeUserscriptsRuntime() async throws {
@@ -349,9 +181,10 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             activate: false
         )
 
-        tab.setupWebView()
-
-        let webView = try XCTUnwrap(tab.existingWebView)
+        let webView = try makeUnloadedNormalTabWebView(
+            for: tab,
+            reason: "BrowserConfigurationNormalTabTests.userscriptsDisabled"
+        )
         let controller = try XCTUnwrap(webView.configuration.userContentController.sumiNormalTabUserContentController)
         await controller.waitForContentBlockingAssetsInstalled()
         let provider = try XCTUnwrap(controller.normalTabUserScriptsProvider)
@@ -390,9 +223,10 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             activate: false
         )
 
-        tab.setupWebView()
-
-        let webView = try XCTUnwrap(tab.existingWebView)
+        let webView = try makeUnloadedNormalTabWebView(
+            for: tab,
+            reason: "BrowserConfigurationNormalTabTests.extensionsDisabled"
+        )
         let controller = try XCTUnwrap(webView.configuration.userContentController.sumiNormalTabUserContentController)
         await controller.waitForContentBlockingAssetsInstalled()
         let provider = try XCTUnwrap(controller.normalTabUserScriptsProvider)
@@ -408,30 +242,19 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(module.hasLoadedRuntime)
     }
 
-    func testEnabledTrackingModuleAttachesRulesAndDisableBlocksFutureNormalTabsAfterRestart() async throws {
+    func testPreparedTrackingNetworkAttachesRulesAndDisableBlocksFutureNormalTabsAfterRestart() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
-        registry.enable(.trackingProtection)
-        SumiTrackingProtectionSettings(userDefaults: harness.defaults).setGlobalMode(.enabled)
-        let probe = NormalTabTrackingRuntimeProbe()
-        let module = makeProbeTrackingModule(
-            registry: registry,
-            probe: probe,
-            defaults: harness.defaults,
-            ruleDefinitions: [Self.validRuleListDefinition()]
-        )
         let protection = try makeProtectionCoordinator(
             defaults: harness.defaults,
             registry: registry,
-            trackingProtectionModule: module,
             level: .protection
         )
         let browserManager = BrowserManager(
             moduleRegistry: registry,
-            trackingProtectionModule: module,
             adBlockingModule: protection.adBlockingModule,
             protectionCoordinator: protection.coordinator
         )
@@ -442,16 +265,15 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             in: browserManager.tabManager.currentSpace,
             activate: false
         )
-        enabledTab.setupWebView()
+        let enabledWebView = try makeUnloadedNormalTabWebView(
+            for: enabledTab,
+            reason: "BrowserConfigurationNormalTabTests.trackingEnabled"
+        )
         let enabledController = try XCTUnwrap(
-            enabledTab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
+            enabledWebView.configuration.userContentController.sumiNormalTabUserContentController
         )
         await enabledController.waitForContentBlockingAssetsInstalled()
         try await waitForAssets(on: enabledController) { $0.globalRuleListCount == 1 }
-
-        XCTAssertEqual(probe.settingsCount, 0)
-        XCTAssertEqual(probe.dataStoreCount, 0)
-        XCTAssertEqual(probe.serviceCount, 0)
 
         protection.coordinator.setLevel(.off)
         _ = try await protection.coordinator.applySelectedLevel()
@@ -462,42 +284,33 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             in: browserManager.tabManager.currentSpace,
             activate: false
         )
-        disabledTab.setupWebView()
+        let disabledWebView = try makeUnloadedNormalTabWebView(
+            for: disabledTab,
+            reason: "BrowserConfigurationNormalTabTests.trackingDisabledAfterToggle"
+        )
         let disabledController = try XCTUnwrap(
-            disabledTab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
+            disabledWebView.configuration.userContentController.sumiNormalTabUserContentController
         )
         await disabledController.waitForContentBlockingAssetsInstalled()
 
         XCTAssertEqual(disabledController.contentBlockingAssetSummary.globalRuleListCount, 0)
-        XCTAssertEqual(probe.serviceCount, 0)
+        XCTAssertTrue(disabledController.contentBlockingAssetSummary.globalRuleListIdentifiers.filter { $0.hasPrefix("sumi.") }.isEmpty)
     }
 
-    func testEnabledTrackingModuleWithSiteDisabledAttachesNoRulesAndNoService() async throws {
+    func testPreparedTrackingNetworkWithSiteDisabledAttachesNoRulesAndNoService() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
-        registry.enable(.trackingProtection)
-        let settings = SumiTrackingProtectionSettings(userDefaults: harness.defaults)
-        settings.setGlobalMode(.enabled)
-        let probe = NormalTabTrackingRuntimeProbe()
-        let module = makeProbeTrackingModule(
-            registry: registry,
-            probe: probe,
-            defaults: harness.defaults,
-            ruleDefinitions: [Self.validRuleListDefinition()]
-        )
         let protection = try makeProtectionCoordinator(
             defaults: harness.defaults,
             registry: registry,
-            trackingProtectionModule: module,
             level: .protection
         )
         protection.coordinator.setSiteOverride(.disabled, for: URL(string: "https://www.example.com/path")!)
         let browserManager = BrowserManager(
             moduleRegistry: registry,
-            trackingProtectionModule: module,
             adBlockingModule: protection.adBlockingModule,
             protectionCoordinator: protection.coordinator
         )
@@ -507,20 +320,18 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             in: browserManager.tabManager.currentSpace,
             activate: false
         )
-        tab.setupWebView()
+        let webView = try makeUnloadedNormalTabWebView(
+            for: tab,
+            reason: "BrowserConfigurationNormalTabTests.siteDisabled"
+        )
         let controller = try XCTUnwrap(
-            tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
+            webView.configuration.userContentController.sumiNormalTabUserContentController
         )
         await controller.waitForContentBlockingAssetsInstalled()
 
         XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 0)
-        XCTAssertEqual(probe.settingsCount, 0)
-        XCTAssertEqual(probe.dataStoreCount, 0)
-        XCTAssertEqual(probe.serviceCount, 0)
-        XCTAssertEqual(
-            tab.trackingProtectionAppliedAttachmentState,
-            SumiTrackingProtectionAttachmentState(siteHost: "example.com", isEnabled: false)
-        )
+        XCTAssertEqual(tab.protectionAppliedAttachmentState?.effectiveLevel, .off)
+        XCTAssertEqual(tab.protectionAppliedAttachmentState?.activeGroups, [])
     }
 
     func testSiteOverrideChangeMarksReloadRequiredAndManualRebuildAppliesPolicy() async throws {
@@ -529,51 +340,13 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
-        registry.enable(.trackingProtection)
-        let settings = SumiTrackingProtectionSettings(userDefaults: harness.defaults)
-        settings.setGlobalMode(.enabled)
-        let probe = NormalTabTrackingRuntimeProbe()
-        let ruleDefinitions = [Self.validRuleListDefinition()]
-        let module = SumiTrackingProtectionModule(
-            moduleRegistry: registry,
-            settingsFactory: {
-                probe.settingsCount += 1
-                return settings
-            },
-            dataStoreFactory: {
-                probe.dataStoreCount += 1
-                return SumiTrackingProtectionDataStore(
-                    userDefaults: harness.defaults,
-                    storageDirectory: FileManager.default.temporaryDirectory
-                        .appendingPathComponent("SumiNormalTabReloadRequired-\(UUID().uuidString)", isDirectory: true)
-                )
-            },
-            contentBlockingAssetsFactory: { settings, dataStore in
-                probe.serviceCount += 1
-                let provider = SumiTrackingRuleListProvider(
-                    settings: settings,
-                    dataStore: dataStore,
-                    trackingRuleSource: FixedTrackingProtectionRuleSource(ruleDefinitions: ruleDefinitions)
-                )
-                return SumiTrackingContentBlockingAssets(ruleListProvider: provider)
-            },
-            ruleListProviderFactory: { settings, dataStore in
-                SumiTrackingRuleListProvider(
-                    settings: settings,
-                    dataStore: dataStore,
-                    trackingRuleSource: FixedTrackingProtectionRuleSource(ruleDefinitions: ruleDefinitions)
-                )
-            }
-        )
         let protection = try makeProtectionCoordinator(
             defaults: harness.defaults,
             registry: registry,
-            trackingProtectionModule: module,
             level: .protection
         )
         let browserManager = BrowserManager(
             moduleRegistry: registry,
-            trackingProtectionModule: module,
             adBlockingModule: protection.adBlockingModule,
             protectionCoordinator: protection.coordinator
         )
@@ -583,8 +356,10 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             in: browserManager.tabManager.currentSpace,
             activate: false
         )
-        tab.setupWebView()
-        let originalWebView = try XCTUnwrap(tab.existingWebView)
+        let originalWebView = try makeUnloadedNormalTabWebView(
+            for: tab,
+            reason: "BrowserConfigurationNormalTabTests.reloadRequired"
+        )
         let originalController = try XCTUnwrap(
             originalWebView.configuration.userContentController.sumiNormalTabUserContentController
         )
@@ -621,17 +396,9 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
-        let probe = NormalTabTrackingRuntimeProbe()
-        let module = makeProbeTrackingModule(
-            registry: registry,
-            probe: probe,
-            defaults: harness.defaults,
-            ruleDefinitions: [Self.validRuleListDefinition()]
-        )
         let protection = try makeProtectionCoordinator(
             defaults: harness.defaults,
             registry: registry,
-            trackingProtectionModule: module,
             level: .off
         )
         let targetURL = URL(string: "https://www.example.com/apply-level")!
@@ -671,22 +438,13 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
-        let probe = NormalTabTrackingRuntimeProbe()
-        let module = makeProbeTrackingModule(
-            registry: registry,
-            probe: probe,
-            defaults: harness.defaults,
-            ruleDefinitions: [Self.validRuleListDefinition()]
-        )
         let protection = try makeProtectionCoordinator(
             defaults: harness.defaults,
             registry: registry,
-            trackingProtectionModule: module,
             level: .protection
         )
         var browserManager = BrowserManager(
             moduleRegistry: registry,
-            trackingProtectionModule: module,
             adBlockingModule: protection.adBlockingModule,
             protectionCoordinator: protection.coordinator
         )
@@ -698,13 +456,11 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
         let restartedCoordinator = SumiProtectionCoordinator(
             settings: protection.coordinator.settings,
-            trackingProtectionModule: module,
             adBlockingModule: protection.adBlockingModule,
             moduleRegistry: registry
         )
         browserManager = BrowserManager(
             moduleRegistry: registry,
-            trackingProtectionModule: module,
             adBlockingModule: protection.adBlockingModule,
             protectionCoordinator: restartedCoordinator
         )
@@ -718,9 +474,12 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             in: browserManager.tabManager.currentSpace,
             activate: false
         )
-        tab.setupWebView()
+        let webView = try makeUnloadedNormalTabWebView(
+            for: tab,
+            reason: "BrowserConfigurationNormalTabTests.offAfterRestart"
+        )
         let controller = try XCTUnwrap(
-            tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
+            webView.configuration.userContentController.sumiNormalTabUserContentController
         )
         await controller.waitForContentBlockingAssetsInstalled()
         XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 0)
@@ -734,45 +493,13 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
-        registry.enable(.trackingProtection)
-        let settings = SumiTrackingProtectionSettings(userDefaults: harness.defaults)
-        settings.setGlobalMode(.enabled)
-        let ruleDefinitions = [Self.validRuleListDefinition()]
-        let module = SumiTrackingProtectionModule(
-            moduleRegistry: registry,
-            settingsFactory: { settings },
-            dataStoreFactory: {
-                SumiTrackingProtectionDataStore(
-                    userDefaults: harness.defaults,
-                    storageDirectory: FileManager.default.temporaryDirectory
-                        .appendingPathComponent("SumiNormalTabNonCurrentOverride-\(UUID().uuidString)", isDirectory: true)
-                )
-            },
-            contentBlockingAssetsFactory: { settings, dataStore in
-                let provider = SumiTrackingRuleListProvider(
-                    settings: settings,
-                    dataStore: dataStore,
-                    trackingRuleSource: FixedTrackingProtectionRuleSource(ruleDefinitions: ruleDefinitions)
-                )
-                return SumiTrackingContentBlockingAssets(ruleListProvider: provider)
-            },
-            ruleListProviderFactory: { settings, dataStore in
-                SumiTrackingRuleListProvider(
-                    settings: settings,
-                    dataStore: dataStore,
-                    trackingRuleSource: FixedTrackingProtectionRuleSource(ruleDefinitions: ruleDefinitions)
-                )
-            }
-        )
         let protection = try makeProtectionCoordinator(
             defaults: harness.defaults,
             registry: registry,
-            trackingProtectionModule: module,
             level: .protection
         )
         let browserManager = BrowserManager(
             moduleRegistry: registry,
-            trackingProtectionModule: module,
             adBlockingModule: protection.adBlockingModule,
             protectionCoordinator: protection.coordinator
         )
@@ -782,9 +509,12 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             in: browserManager.tabManager.currentSpace,
             activate: false
         )
-        tab.setupWebView()
+        let webView = try makeUnloadedNormalTabWebView(
+            for: tab,
+            reason: "BrowserConfigurationNormalTabTests.nonCurrentOverride"
+        )
         let controller = try XCTUnwrap(
-            tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
+            webView.configuration.userContentController.sumiNormalTabUserContentController
         )
         await controller.waitForContentBlockingAssetsInstalled()
         try await waitForAssets(on: controller) { $0.globalRuleListCount == 1 }
@@ -794,88 +524,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         tab.markProtectionReloadRequiredIfNeeded(afterChangingPolicyFor: otherURL)
 
         XCTAssertFalse(tab.isProtectionReloadRequired)
-    }
-
-    func testNormalTabsAfterManualTrackerDataUpdateUseCommittedWorkingRules() async throws {
-        let harness = TestDefaultsHarness()
-        defer { harness.reset() }
-        let registry = SumiModuleRegistry(
-            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
-        )
-        registry.enable(.trackingProtection)
-        let settings = SumiTrackingProtectionSettings(userDefaults: harness.defaults)
-        settings.setGlobalMode(.enabled)
-        let storageDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("SumiNormalTabManualUpdate-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: storageDirectory) }
-        let dataStore = SumiTrackingProtectionDataStore(
-            userDefaults: harness.defaults,
-            storageDirectory: storageDirectory
-        )
-        try dataStore.storeDownloadedData(
-            Self.trackerDataJSON(domain: "initial-normal-manual.example"),
-            etag: "\"initial-normal-manual\""
-        )
-        let module = SumiTrackingProtectionModule(
-            moduleRegistry: registry,
-            settingsFactory: { settings },
-            dataStoreFactory: { dataStore },
-            contentBlockingServiceFactory: { settings, dataStore in
-                SumiContentBlockingService(
-                    policy: .disabled,
-                    trackingProtectionSettings: settings,
-                    trackingRuleSource: SumiEmbeddedDDGTrackerDataRuleSource(dataStore: dataStore),
-                    trackingDataStore: dataStore
-                )
-            }
-        )
-        let updatedTrackerData = try Self.trackerDataJSON(domain: "updated-normal-manual.example")
-
-        let updateResult = await module.updateTrackerDataManually {
-            SumiTrackerDataUpdater(fetch: { request in
-                (
-                    updatedTrackerData,
-                    HTTPURLResponse(
-                        url: request.url!,
-                        statusCode: 200,
-                        httpVersion: nil,
-                        headerFields: ["ETag": "\"updated-normal-manual\""]
-                    )!
-                )
-            })
-        }
-
-        guard case .downloaded = updateResult else {
-            return XCTFail("Expected downloaded result, got \(updateResult)")
-        }
-        let protection = try makeProtectionCoordinator(
-            defaults: harness.defaults,
-            registry: registry,
-            trackingProtectionModule: module,
-            level: .protection
-        )
-        let browserManager = BrowserManager(
-            moduleRegistry: registry,
-            trackingProtectionModule: module,
-            adBlockingModule: protection.adBlockingModule,
-            protectionCoordinator: protection.coordinator
-        )
-        _ = try await protection.coordinator.restoreAppliedLevelForStartup()
-        let tab = browserManager.tabManager.createNewTab(
-            url: "https://example.com/after-manual-update",
-            in: browserManager.tabManager.currentSpace,
-            activate: false
-        )
-        tab.setupWebView()
-        let controller = try XCTUnwrap(
-            tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
-        )
-        await controller.waitForContentBlockingAssetsInstalled()
-        try await waitForAssets(on: controller) { $0.globalRuleListCount == 1 }
-
-        let activeDataSet = try dataStore.loadActiveDataSet()
-        XCTAssertEqual(activeDataSet.trackerDomains, ["updated-normal-manual.example"])
-        XCTAssertEqual(dataStore.downloadedETag, "\"updated-normal-manual\"")
     }
 
     func testNormalTabConfigurationCreatesDistinctMarkedControllers() {
@@ -1406,7 +1054,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
     private func makeProtectionCoordinator(
         defaults: UserDefaults,
         registry: SumiModuleRegistry,
-        trackingProtectionModule: SumiTrackingProtectionModule,
         level: SumiProtectionLevel
     ) throws -> (adBlockingModule: SumiAdBlockingModule, coordinator: SumiProtectionCoordinator) {
         let protectionSettings = SumiProtectionSettings(userDefaults: defaults)
@@ -1437,54 +1084,10 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
         let coordinator = SumiProtectionCoordinator(
             settings: protectionSettings,
-            trackingProtectionModule: trackingProtectionModule,
             adBlockingModule: adBlockingModule,
             moduleRegistry: registry
         )
         return (adBlockingModule, coordinator)
-    }
-
-    private func makeProbeTrackingModule(
-        registry: SumiModuleRegistry,
-        probe: NormalTabTrackingRuntimeProbe,
-        defaults: UserDefaults,
-        service: SumiContentBlockingService? = nil,
-        ruleDefinitions: [SumiContentRuleListDefinition]? = nil
-    ) -> SumiTrackingProtectionModule {
-        SumiTrackingProtectionModule(
-            moduleRegistry: registry,
-            settingsFactory: {
-                probe.settingsCount += 1
-                return SumiTrackingProtectionSettings(userDefaults: defaults)
-            },
-            dataStoreFactory: {
-                probe.dataStoreCount += 1
-                return SumiTrackingProtectionDataStore(
-                    userDefaults: defaults,
-                    storageDirectory: FileManager.default.temporaryDirectory
-                        .appendingPathComponent("SumiNormalTabTrackingRuntime-\(UUID().uuidString)", isDirectory: true)
-                )
-            },
-            contentBlockingAssetsFactory: { settings, dataStore in
-                probe.serviceCount += 1
-                let provider = SumiTrackingRuleListProvider(
-                    settings: settings,
-                    dataStore: dataStore,
-                    trackingRuleSource: FixedTrackingProtectionRuleSource(ruleDefinitions: ruleDefinitions ?? [])
-                )
-                return SumiTrackingContentBlockingAssets(
-                    ruleListProvider: provider,
-                    contentBlockingService: service ?? SumiContentBlockingService(policy: .disabled)
-                )
-            },
-            ruleListProviderFactory: { settings, dataStore in
-                SumiTrackingRuleListProvider(
-                    settings: settings,
-                    dataStore: dataStore,
-                    trackingRuleSource: FixedTrackingProtectionRuleSource(ruleDefinitions: ruleDefinitions ?? [])
-                )
-            }
-        )
     }
 
     private func makeProbeUserscriptsModule(
@@ -1534,53 +1137,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
                 )
             }
         )
-    }
-
-    private static func validRuleListDefinition() -> SumiContentRuleListDefinition {
-        SumiContentRuleListDefinition(
-            name: "SumiNormalTabTrackingTestRules-\(UUID().uuidString)",
-            encodedContentRuleList: """
-            [
-              {
-                "trigger": {
-                  "url-filter": ".*normal-tab-blocked\\\\.example/.*"
-                },
-                "action": {
-                  "type": "block"
-                }
-              }
-            ]
-            """
-        )
-    }
-
-    private static func trackerDataJSON(domain: String) throws -> Data {
-        let ownerName = "Tracker Example"
-        let tracker = KnownTracker(
-            domain: domain,
-            defaultAction: .block,
-            owner: KnownTracker.Owner(
-                name: ownerName,
-                displayName: ownerName,
-                ownedBy: nil
-            ),
-            prevalence: 1,
-            subdomains: nil,
-            categories: ["Analytics"],
-            rules: nil
-        )
-        let entity = Entity(
-            displayName: ownerName,
-            domains: [domain],
-            prevalence: 1
-        )
-        let trackerData = TrackerData(
-            trackers: [domain: tracker],
-            entities: [ownerName: entity],
-            domains: [domain: ownerName],
-            cnames: nil
-        )
-        return try JSONEncoder().encode(trackerData)
     }
 
     @discardableResult
@@ -1660,62 +1216,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             for: Schema([ExtensionEntity.self]),
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
-    }
-}
-
-@MainActor
-private final class NormalTabTrackingRuntimeProbe {
-    var settingsCount = 0
-    var dataStoreCount = 0
-    var serviceCount = 0
-}
-
-private struct SpyBundledTrackerDataProvider: SumiBundledTrackerDataProviding {
-    let embeddedDataEtag = "\"spy-tracker-data\""
-
-    private let data: Data
-    private let embeddedDataCalls = OSAllocatedUnfairLock(initialState: 0)
-
-    init(data: Data) {
-        self.data = data
-    }
-
-    var embeddedDataCallCount: Int {
-        embeddedDataCalls.withLock { $0 }
-    }
-
-    func embeddedData() throws -> Data {
-        embeddedDataCalls.withLock {
-            $0 += 1
-        }
-        return data
-    }
-}
-
-@MainActor
-private final class SpyTrackingProtectionRuleSource: SumiTrackingProtectionRuleProviding {
-    private(set) var ruleListCallCount = 0
-
-    func ruleLists(
-        for policy: SumiTrackingProtectionPolicy
-    ) throws -> [SumiContentRuleListDefinition] {
-        ruleListCallCount += 1
-        XCTFail("Tracking rule source should not be called while tracking protection is disabled")
-        return []
-    }
-}
-
-private final class FixedTrackingProtectionRuleSource: SumiTrackingProtectionRuleProviding {
-    private let ruleDefinitions: [SumiContentRuleListDefinition]
-
-    init(ruleDefinitions: [SumiContentRuleListDefinition]) {
-        self.ruleDefinitions = ruleDefinitions
-    }
-
-    func ruleLists(
-        for policy: SumiTrackingProtectionPolicy
-    ) throws -> [SumiContentRuleListDefinition] {
-        policy.isFullyDisabled ? [] : ruleDefinitions
     }
 }
 

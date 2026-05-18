@@ -405,18 +405,3 @@ enum PreparedAdblockTestSupport {
         ]
     }
 }
-
-@MainActor
-final class PreparedBundleTrackingRuleSource: SumiTrackingProtectionRuleProviding {
-    private(set) var callCount = 0
-    private let definitions: [SumiContentRuleListDefinition]
-
-    init(definitions: [SumiContentRuleListDefinition]) {
-        self.definitions = definitions
-    }
-
-    func ruleLists(for policy: SumiTrackingProtectionPolicy) throws -> [SumiContentRuleListDefinition] {
-        callCount += 1
-        return policy.isFullyDisabled ? [] : definitions
-    }
-}

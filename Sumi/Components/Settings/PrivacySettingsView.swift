@@ -10,8 +10,6 @@ import SwiftUI
 
 struct PrivacySettingsView: View {
     @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.sumiTrackingProtectionModule) private var trackingProtectionModule
-    @Environment(\.sumiAdBlockingModule) private var adBlockingModule
     @Environment(\.sumiProtectionCoordinator) private var protectionCoordinator
     @ObservedObject var browserManager: BrowserManager
     var windowState: BrowserWindowState?
@@ -454,8 +452,7 @@ private struct AdblockProtectionSettingsView: View {
         let unexpectedOldIdentifiers = actualAttachedIdentifiers.filter {
             !expectedSet.contains($0)
                 && ($0.hasPrefix("sumi.adblock.")
-                    || $0.hasPrefix("sumi.tracking.")
-                    || $0 == "SumiTrackingProtectionTrackerDataSet")
+                    || $0.hasPrefix("sumi.tracking."))
         }
         return [
             ("GLOBAL selected protection level", global.selectedProtectionLevel.rawValue),
