@@ -26,20 +26,20 @@ struct SumiNormalTabUserContent {
 @MainActor
 struct SumiNormalTabContentBlockingAssetSource {
     let assetsPublisher: AnyPublisher<SumiNormalTabUserContent, Never>
+    let initialContent: SumiNormalTabUserContent?
     let privacyConfigurationManager: SumiContentBlockingPrivacyConfigurationManager
     let retainedContentBlockingServices: [SumiContentBlockingService]
 
     static func disabledEmpty(
         scriptsProvider: SumiNormalTabUserScripts
     ) -> SumiNormalTabContentBlockingAssetSource {
+        let content = SumiNormalTabUserContent(
+            contentBlockingUpdate: .empty,
+            sourceProvider: scriptsProvider
+        )
         return SumiNormalTabContentBlockingAssetSource(
-            assetsPublisher: Just(
-                SumiNormalTabUserContent(
-                    contentBlockingUpdate: .empty,
-                    sourceProvider: scriptsProvider
-                )
-            )
-            .eraseToAnyPublisher(),
+            assetsPublisher: Just(content).eraseToAnyPublisher(),
+            initialContent: content,
             privacyConfigurationManager: SumiContentBlockingPrivacyConfigurationManager(
                 isContentBlockingEnabled: false
             ),
@@ -65,8 +65,57 @@ struct SumiNormalTabContentBlockingAssetSource {
             )
         return SumiNormalTabContentBlockingAssetSource(
             assetsPublisher: Self.combinedAssetsPublisher(publishers),
+            initialContent: Self.initialContent(
+                from: contentBlockingServices,
+                scriptsProvider: scriptsProvider
+            ),
             privacyConfigurationManager: privacyConfigurationManager,
             retainedContentBlockingServices: contentBlockingServices
+        )
+    }
+
+    private static func initialContent(
+        from services: [SumiContentBlockingService],
+        scriptsProvider: SumiNormalTabUserScripts
+    ) -> SumiNormalTabUserContent? {
+        guard !services.isEmpty else { return nil }
+        let updates = services.compactMap(\.latestUpdate)
+        guard updates.count == services.count else { return nil }
+
+        return SumiNormalTabUserContent(
+            contentBlockingUpdate: combinedUpdate(updates),
+            sourceProvider: scriptsProvider
+        )
+    }
+
+    private static func combinedUpdate(
+        _ updates: [SumiContentBlockerRulesUpdate]
+    ) -> SumiNormalTabContentBlockingUpdate {
+        var globalRuleLists = [String: WKContentRuleList]()
+        var updateRuleCount = 0
+        var lookupSucceededIdentifiers = Set<String>()
+        var lookupFailedIdentifiers = Set<String>()
+        var ruleListLookupDuration: TimeInterval?
+
+        for update in updates {
+            updateRuleCount += update.rules.count
+            for rules in update.rules {
+                globalRuleLists[rules.storeIdentifier] = rules.rulesList
+            }
+            lookupSucceededIdentifiers.formUnion(update.lookupSucceededIdentifiers)
+            lookupFailedIdentifiers.formUnion(update.lookupFailedIdentifiers)
+            ruleListLookupDuration = combinedDuration(
+                ruleListLookupDuration,
+                update.ruleListLookupDuration
+            )
+        }
+
+        return SumiNormalTabContentBlockingUpdate(
+            globalRuleLists: globalRuleLists,
+            updateRuleCount: updateRuleCount,
+            lookupSucceededIdentifiers: lookupSucceededIdentifiers.sorted(),
+            lookupFailedIdentifiers: lookupFailedIdentifiers.sorted(),
+            ruleListLookupDuration: ruleListLookupDuration
         )
     }
 
@@ -150,6 +199,10 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
         privacyConfigurationManager = assetSource.privacyConfigurationManager
         retainedContentBlockingServices = assetSource.retainedContentBlockingServices
         super.init()
+
+        if let initialContent = assetSource.initialContent {
+            installContentBlockingUpdate(initialContent.contentBlockingUpdate)
+        }
 
         assetsPublisherCancellable = assetSource.assetsPublisher.sink { [weak self] content in
             Task { @MainActor [weak self] in
@@ -254,13 +307,21 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
     }
 
     private func installContentBlockingUpdate(_ update: SumiNormalTabContentBlockingUpdate) {
-        guard !isCleanedUp, assetsPublisherCancellable != nil else { return }
+        guard !isCleanedUp else { return }
+
+        let isContentBlockingFeatureEnabled = isContentBlockingFeatureEnabled
+        if hasInstalledEquivalentUpdate(
+            update,
+            isContentBlockingFeatureEnabled: isContentBlockingFeatureEnabled
+        ) {
+            resumeAssetWaiters()
+            return
+        }
 
         let start = Date()
         let hadAttachedRuleLists = !globalContentRuleLists.isEmpty
         removeAllContentRuleLists()
 
-        let isContentBlockingFeatureEnabled = isContentBlockingFeatureEnabled
         var addedIdentifiers = [String]()
         if isContentBlockingFeatureEnabled {
             for (identifier, ruleList) in update.globalRuleLists.sorted(by: { $0.key < $1.key }) {
@@ -281,6 +342,18 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
             tabAttachmentDuration: didTouchRuleLists ? Date().timeIntervalSince(start) : nil
         )
         resumeAssetWaiters()
+    }
+
+    private func hasInstalledEquivalentUpdate(
+        _ update: SumiNormalTabContentBlockingUpdate,
+        isContentBlockingFeatureEnabled: Bool
+    ) -> Bool {
+        guard let contentBlockingAssets else { return false }
+        return contentBlockingAssets.isContentBlockingFeatureEnabled == isContentBlockingFeatureEnabled
+            && Set(contentBlockingAssets.globalRuleLists.keys) == Set(update.globalRuleLists.keys)
+            && contentBlockingAssets.updateRuleCount == update.updateRuleCount
+            && contentBlockingAssets.lookupSucceededIdentifiers == update.lookupSucceededIdentifiers.sorted()
+            && contentBlockingAssets.lookupFailedIdentifiers == update.lookupFailedIdentifiers.sorted()
     }
 
     private func awaitContentBlockingAssetsInstalled() async {

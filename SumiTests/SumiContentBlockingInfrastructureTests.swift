@@ -20,6 +20,17 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
         XCTAssertFalse(controller.userScripts.isEmpty)
     }
 
+    func testDefaultFactoryExposesDisabledAssetsBeforeAwaitingInstallation() throws {
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController()
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+
+        let summary = normalTabController.contentBlockingAssetSummary
+        XCTAssertTrue(summary.isInstalled)
+        XCTAssertEqual(summary.globalRuleListCount, 0)
+        XCTAssertEqual(summary.updateRuleCount, 0)
+        XCTAssertFalse(summary.isContentBlockingFeatureEnabled)
+    }
+
     func testDisabledEmptyAssetSourceIsCheapAndHasNoRuleLists() async throws {
         let scriptsProvider = SumiNormalTabUserScripts()
         let assetSource = SumiNormalTabContentBlockingAssetSource.disabledEmpty(
