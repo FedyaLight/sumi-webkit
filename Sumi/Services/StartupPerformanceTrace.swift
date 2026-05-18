@@ -16,6 +16,7 @@ enum StartupPerformanceTrace {
     private static var didRecordFirstNavigationStart = false
     private static var didRecordFirstNavigationCommit = false
     private static var didRecordFirstNavigationFinish = false
+    private static var didRecordPostStartupIdlePoint = false
     private static var didBeginFirstWebViewCreation = false
     private static var didBeginFirstContentBlockingAttach = false
 
@@ -63,7 +64,7 @@ enum StartupPerformanceTrace {
         emitFirstEvent(
             flag: &didRecordFirstSelectedTabResolved,
             name: "Startup.firstSelectedTabResolved",
-            memoryLabel: nil
+            memoryLabel: "firstSelectedTabResolved"
         )
     }
 
@@ -122,6 +123,14 @@ enum StartupPerformanceTrace {
             flag: &didRecordFirstNavigationFinish,
             name: "Startup.firstNavigationDidFinish",
             memoryLabel: "firstNavigationDidFinish"
+        )
+    }
+
+    static func postStartupIdlePoint() {
+        emitFirstEvent(
+            flag: &didRecordPostStartupIdlePoint,
+            name: "Startup.postStartupIdlePoint",
+            memoryLabel: "postStartupIdlePoint"
         )
     }
 
@@ -206,5 +215,6 @@ enum StartupPerformanceTrace {
     static func firstNavigationStarted() {}
     static func firstNavigationCommitted() {}
     static func firstNavigationFinished() {}
+    static func postStartupIdlePoint() {}
 #endif
 }

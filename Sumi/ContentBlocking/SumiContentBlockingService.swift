@@ -438,6 +438,23 @@ final class SumiContentBlockingService {
         )
     }
 
+    /// Restores already-compiled WebKit rule lists without rehydrating their encoded JSON payloads.
+    /// Use this only for persisted generations that must already exist in `WKContentRuleListStore`;
+    /// callers that need repair-on-miss should fall back to `prepareRuleListUpdate`.
+    func prepareExistingRuleListUpdate(
+        ruleLists definitions: [SumiContentRuleListDefinition]
+    ) async throws -> SumiPreparedContentBlockingUpdate {
+        let metadataOnlyDefinitions = definitions.map { $0.metadataOnly() }
+        let policy: SumiContentBlockingPolicy = metadataOnlyDefinitions.isEmpty
+            ? .disabled
+            : .enabled(ruleLists: metadataOnlyDefinitions)
+        let update = try await existingUpdateEvent(for: metadataOnlyDefinitions)
+        return SumiPreparedContentBlockingUpdate(
+            policy: policy,
+            updateEvent: update
+        )
+    }
+
     func commitPreparedContentBlockingUpdate(
         _ preparedUpdate: SumiPreparedContentBlockingUpdate,
         refreshProfileSubjects: Bool = true
@@ -644,11 +661,69 @@ final class SumiContentBlockingService {
         )
     }
 
+    private func existingUpdateEvent(
+        for definitions: [SumiContentRuleListDefinition]
+    ) async throws -> SumiContentBlockerRulesUpdate {
+        var compiledRules: [SumiContentBlockerRules] = []
+        compiledRules.reserveCapacity(definitions.count)
+        var lookupSucceededIdentifiers = [String]()
+        var lookupFailedIdentifiers = [String]()
+        var ruleListLookupDuration: TimeInterval = 0
+        let storeIdentifiers = definitions.map { storeIdentifier(for: $0) }
+#if DEBUG
+        SumiProtectionStartupRestoreDiagnostics.shared.recordLookupAttempt(identifiers: storeIdentifiers)
+#endif
+
+        for definition in definitions {
+            let lookupStart = Date()
+            let storeIdentifier = storeIdentifier(for: definition)
+            guard let ruleList = await compiler.lookUpContentRuleList(forIdentifier: storeIdentifier) else {
+                ruleListLookupDuration += Date().timeIntervalSince(lookupStart)
+                lookupFailedIdentifiers.append(storeIdentifier)
+#if DEBUG
+                SumiProtectionStartupRestoreDiagnostics.shared.recordLookupMiss(storeIdentifier)
+#endif
+                throw SumiContentBlockingCompilationError.missingCompiledRuleList(storeIdentifier)
+            }
+            ruleListLookupDuration += Date().timeIntervalSince(lookupStart)
+#if DEBUG
+            SumiProtectionStartupRestoreDiagnostics.shared.recordLookupHit(storeIdentifier)
+#endif
+
+            let rules = SumiContentBlockerRules(
+                name: definition.name,
+                storeIdentifier: storeIdentifier,
+                rulesList: ruleList,
+                etag: definition.contentHash,
+                identifier: rulesIdentifier(for: definition)
+            )
+            compiledRulesByIdentifier[storeIdentifier] = rules
+            compiledRules.append(rules)
+            lookupSucceededIdentifiers.append(storeIdentifier)
+        }
+
+        return Self.updateEvent(
+            for: compiledRules,
+            lookupSucceededIdentifiers: lookupSucceededIdentifiers,
+            lookupFailedIdentifiers: lookupFailedIdentifiers,
+            ruleListLookupDuration: ruleListLookupDuration
+        )
+    }
+
     private func canLookUpCompiledRuleList(forIdentifier identifier: String) async -> Bool {
         for _ in 0..<3 {
+#if DEBUG
+            SumiProtectionStartupRestoreDiagnostics.shared.recordLookupAttempt(identifiers: [identifier])
+#endif
             if await compiler.canLookUpContentRuleList(forIdentifier: identifier) {
+#if DEBUG
+                SumiProtectionStartupRestoreDiagnostics.shared.recordLookupHit(identifier)
+#endif
                 return true
             }
+#if DEBUG
+            SumiProtectionStartupRestoreDiagnostics.shared.recordLookupMiss(identifier)
+#endif
             await Task.yield()
         }
         return false
@@ -679,11 +754,25 @@ final class SumiContentBlockingService {
 
         let ruleList: WKContentRuleList
         let storeReadiness: RuleStoreReadiness
+#if DEBUG
+        SumiProtectionStartupRestoreDiagnostics.shared.recordLookupAttempt(identifiers: [storeIdentifier])
+#endif
         if let cachedRuleList = await compiler.lookUpContentRuleList(forIdentifier: storeIdentifier) {
+#if DEBUG
+            SumiProtectionStartupRestoreDiagnostics.shared.recordLookupHit(storeIdentifier)
+#endif
             ruleList = cachedRuleList
             storeReadiness = .verifiedByStoreLookup
         } else {
+#if DEBUG
+            SumiProtectionStartupRestoreDiagnostics.shared.recordLookupMiss(storeIdentifier)
+#endif
             do {
+#if DEBUG
+                SumiProtectionStartupRestoreDiagnostics.shared.recordRepairCompileUsed(
+                    reason: "Compiled WebKit rule list missing for \(storeIdentifier); compiling payload-backed repair"
+                )
+#endif
                 ruleList = try await compiler.compileContentRuleList(
                     forIdentifier: storeIdentifier,
                     encodedContentRuleList: definition.encodedContentRuleList
@@ -798,6 +887,12 @@ final class SumiContentBlockingService {
                 try? await compiler.removeContentRuleList(forIdentifier: identifier)
             }
         }
+#if DEBUG
+        SumiProtectionStartupRestoreDiagnostics.shared.recordCompiledRuleListRemoval(
+            identifiers: uniqueIdentifiers,
+            reason: "SumiContentBlockingService stale compiled rule-list cleanup"
+        )
+#endif
     }
 
     private static func metadataOnlyPolicy(

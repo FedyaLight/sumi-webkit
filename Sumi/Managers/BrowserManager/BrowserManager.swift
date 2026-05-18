@@ -603,6 +603,13 @@ class BrowserManager: ObservableObject {
             schedulePrepareVisibleWebViews(for: windowState)
             refreshCompositor(for: windowState)
         }
+
+#if DEBUG
+        Task { @MainActor in
+            await Task.yield()
+            StartupPerformanceTrace.postStartupIdlePoint()
+        }
+#endif
     }
 
     var shouldDeferNormalTabMaterializationDuringStartup: Bool {

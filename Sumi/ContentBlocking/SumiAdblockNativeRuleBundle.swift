@@ -378,6 +378,14 @@ struct SumiAdblockNativeRuleBundle: Sendable {
             throw SumiAdblockNativeRuleBundleError.missingShard(shard.relativePath)
         }
         let data = try Data(contentsOf: url)
+#if DEBUG
+        SumiProtectionStartupRestoreDiagnostics.shared.recordShardJSONRead(
+            identifier: shard.webKitIdentifier,
+            path: url.path,
+            byteCount: data.count,
+            reason: "prepared native bundle install loaded shard JSON"
+        )
+#endif
         guard !data.isEmpty else {
             throw SumiAdblockNativeRuleBundleError.emptyShard(shard.relativePath)
         }

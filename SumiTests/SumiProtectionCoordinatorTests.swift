@@ -11,6 +11,9 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         temporaryDirectories.removeAll()
+#if DEBUG
+        SumiProtectionStartupRestoreDiagnostics.shared.resetForTests()
+#endif
         try await super.tearDown()
     }
 
@@ -66,6 +69,17 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertTrue(global.searchedBundlePaths.isEmpty)
         XCTAssertNil(global.bundleProfileId)
         XCTAssertFalse(fixture.didCreateAdblockRuleListStore())
+#if DEBUG
+        let startup = try XCTUnwrap(SumiProtectionStartupRestoreDiagnostics.shared.latestSnapshot)
+        XCTAssertFalse(startup.wkContentRuleListStoreLookupAttempted)
+        XCTAssertEqual(startup.lookupHitCount, 0)
+        XCTAssertEqual(startup.lookupMissCount, 0)
+        XCTAssertFalse(startup.metadataOnlyRestoreUsed)
+        XCTAssertFalse(startup.payloadBackedRestoreUsed)
+        XCTAssertFalse(startup.repairCompileUsed)
+        XCTAssertEqual(startup.totalShardJSONBytesRead, 0)
+        XCTAssertEqual(startup.shardJSONFileReadCount, 0)
+#endif
     }
 
     func testManualBundleUpdateWhileOffCachesOnlyAndDoesNotLoadAdblockRuntime() async throws {
@@ -300,6 +314,10 @@ final class SumiProtectionCoordinatorTests: XCTestCase {
         XCTAssertTrue(report.contains("missingIdentifiers="))
         XCTAssertTrue(report.contains("unexpectedOldIdentifiers="))
         XCTAssertTrue(report.contains("strictOffActive=false"))
+        XCTAssertTrue(report.contains("Startup restore diagnostics"))
+        XCTAssertTrue(report.contains("metadataOnlyRestoreUsed=true"))
+        XCTAssertTrue(report.contains("payloadBackedRestoreUsed="))
+        XCTAssertTrue(report.contains("totalShardJSONBytesRead="))
         XCTAssertFalse(report.contains("diagnosticsTargetURL="))
         XCTAssertFalse(report.contains("attachedIdentifiers="))
 #else
