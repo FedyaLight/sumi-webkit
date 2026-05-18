@@ -341,16 +341,27 @@ final class AdblockWebKitRuleListStore {
         let observedManifest = ruleListProvider.activeManifest
         do {
             let manifest = try await manifestStore.activeManifest()
+#if DEBUG
+            SumiProtectionStartupRestoreDiagnostics.shared.recordManifest(manifest)
+#endif
             do {
                 if try await installEmbeddedBundleIfNeeded(previousManifest: manifest) != nil { return }
             } catch where manifest != nil {
                 try await manifestStore.validateCompiledShardFiles(for: manifest!)
-                updateManifestIfNoNewerPublication(manifest, replacing: observedManifest)
+                updateManifestIfNoNewerPublication(
+                    manifest,
+                    replacing: observedManifest,
+                    compiledDefinitions: Self.metadataOnlyDefinitions(for: manifest!)
+                )
                 lastFailedShardIdentifier = nil
                 return
             }
             if let manifest { try await manifestStore.validateCompiledShardFiles(for: manifest) }
-            updateManifestIfNoNewerPublication(manifest, replacing: observedManifest)
+            updateManifestIfNoNewerPublication(
+                manifest,
+                replacing: observedManifest,
+                compiledDefinitions: manifest.map { Self.metadataOnlyDefinitions(for: $0) } ?? []
+            )
             lastFailedShardIdentifier = nil
         } catch let diagnostics as AdblockUpdateDiagnostics {
             lastFailedShardIdentifier = diagnostics.failedShardIdentifier
@@ -365,17 +376,32 @@ final class AdblockWebKitRuleListStore {
 
     private func updateManifestIfNoNewerPublication(
         _ manifest: AdblockCompiledGenerationManifest?,
-        replacing observedManifest: AdblockCompiledGenerationManifest?
+        replacing observedManifest: AdblockCompiledGenerationManifest?,
+        compiledDefinitions: [SumiContentRuleListDefinition] = []
     ) {
         guard ruleListProvider.activeManifest == observedManifest else { return }
-        ruleListProvider.updateManifest(manifest)
+        ruleListProvider.updateManifest(manifest, compiledDefinitions: compiledDefinitions)
     }
 
     func restorePreparedManifestIfAvailable(profileId: String) async throws -> AdblockCompiledGenerationManifest? {
         guard await isAdblockEnabled() else { return nil }
         guard let manifest = try await manifestStore.activeManifest(),
               Self.isPreparedManifest(manifest, profileId: profileId)
-        else { return nil }
+        else {
+#if DEBUG
+            SumiProtectionStartupRestoreDiagnostics.shared.recordFallback(
+                reason: "No persisted prepared manifest matched profile \(profileId)"
+            )
+#endif
+            return nil
+        }
+#if DEBUG
+        SumiProtectionStartupRestoreDiagnostics.shared.recordManifest(manifest)
+        SumiProtectionStartupRestoreDiagnostics.shared.recordGenerationStaleCheck(
+            consideredStale: false,
+            reason: "Persisted prepared manifest matches requested profile \(profileId)"
+        )
+#endif
         try await publishPersistedManifest(manifest)
         lastFailedShardIdentifier = nil
         lastUpdateDiagnostics = AdblockUpdateDiagnostics(
@@ -426,18 +452,36 @@ final class AdblockWebKitRuleListStore {
         previousManifest: AdblockCompiledGenerationManifest?
     ) async throws -> AdblockCompiledGenerationManifest? {
         guard let bundleURL = embeddedBundleURLProvider() else { return nil }
+        let bundle: SumiAdblockNativeRuleBundle
+        do {
+            bundle = try SumiAdblockNativeRuleBundle.load(directoryURL: bundleURL)
+        } catch {
+            throw diagnostics(
+                summary: "Adblock bundle install failed before publish: \(error.localizedDescription)",
+                stage: Self.bundleLoadFailureStage(error),
+                source: .appResource,
+                profileId: SumiProtectionBundleProfile.adblock,
+                bundleURL: bundleURL,
+                error: error
+            )
+        }
+        guard shouldInstallEmbeddedBundle(bundle, previousManifest: previousManifest) else {
+            return nil
+        }
         return try await installPreparedBundle(
             at: bundleURL,
+            preloadedBundle: bundle,
             source: .appResource,
             requestedProfileId: SumiProtectionBundleProfile.adblock,
             previousManifest: previousManifest,
-            skipIfAlreadyInstalled: true,
+            skipIfAlreadyInstalled: false,
             remoteMetadata: nil
         )
     }
 
     private func installPreparedBundle(
         at bundleURL: URL,
+        preloadedBundle: SumiAdblockNativeRuleBundle? = nil,
         source: SumiAdblockBundleInstallSource,
         requestedProfileId: String?,
         previousManifest: AdblockCompiledGenerationManifest?,
@@ -446,7 +490,7 @@ final class AdblockWebKitRuleListStore {
     ) async throws -> AdblockCompiledGenerationManifest? {
         let bundle: SumiAdblockNativeRuleBundle
         do {
-            bundle = try SumiAdblockNativeRuleBundle.load(directoryURL: bundleURL)
+            bundle = try preloadedBundle ?? SumiAdblockNativeRuleBundle.load(directoryURL: bundleURL)
         } catch {
             throw diagnostics(
                 summary: "Adblock bundle install failed before publish: \(error.localizedDescription)",
@@ -460,8 +504,23 @@ final class AdblockWebKitRuleListStore {
         if skipIfAlreadyInstalled,
            previousManifest?.generationSource == source.generationSource,
            previousManifest?.nativeRuleBundleId == bundle.manifest.bundleId {
+#if DEBUG
+            SumiProtectionStartupRestoreDiagnostics.shared.recordGenerationStaleCheck(
+                consideredStale: false,
+                reason: "Prepared bundle \(bundle.manifest.bundleId) is already installed for source \(source.generationSource.rawValue)"
+            )
+#endif
             return nil
         }
+#if DEBUG
+        let installReason = "Installing prepared bundle \(bundle.manifest.bundleId) from \(source.generationSource.rawValue)"
+        SumiProtectionStartupRestoreDiagnostics.shared.recordGenerationStaleCheck(
+            consideredStale: true,
+            reason: installReason
+        )
+        SumiProtectionStartupRestoreDiagnostics.shared.recordPayloadBackedRestoreUsed(reason: installReason)
+        SumiProtectionStartupRestoreDiagnostics.shared.recordRepairCompileUsed(reason: installReason)
+#endif
         let manifest = bundle.compiledGenerationManifest(
             previousManifest: previousManifest,
             installedDate: Date(),
@@ -500,17 +559,90 @@ final class AdblockWebKitRuleListStore {
 
     private func publishPersistedManifest(_ manifest: AdblockCompiledGenerationManifest) async throws {
         try await manifestStore.validateCompiledShardFiles(for: manifest)
-        let definitions = try await manifestStore.compiledShardDefinitions(for: manifest)
-        let preparedUpdate = try await contentBlockingService.prepareRuleListUpdate(
-            ruleLists: definitions,
-            retainEncodedRuleListsInPreparedPolicy: false
-        )
-        ruleListProvider.updateManifest(manifest)
+        var providerDefinitions = Self.metadataOnlyDefinitions(for: manifest)
+        let preparedUpdate: SumiPreparedContentBlockingUpdate
+        do {
+            preparedUpdate = try await contentBlockingService.prepareExistingRuleListUpdate(
+                ruleLists: providerDefinitions
+            )
+#if DEBUG
+            SumiProtectionStartupRestoreDiagnostics.shared.recordMetadataOnlyRestoreUsed()
+#endif
+        } catch {
+#if DEBUG
+            let fallbackReason = "Persisted manifest lookup-only restore failed: \(error.localizedDescription)"
+            SumiProtectionStartupRestoreDiagnostics.shared.recordFallback(reason: fallbackReason)
+            SumiProtectionStartupRestoreDiagnostics.shared.recordPayloadBackedRestoreUsed(reason: fallbackReason)
+            SumiProtectionStartupRestoreDiagnostics.shared.recordRepairCompileUsed(reason: fallbackReason)
+#endif
+            let definitions = try await manifestStore.compiledShardDefinitions(for: manifest)
+            providerDefinitions = definitions.map { $0.metadataOnly() }
+            preparedUpdate = try await contentBlockingService.prepareRuleListUpdate(
+                ruleLists: definitions,
+                retainEncodedRuleListsInPreparedPolicy: false
+            )
+        }
+        ruleListProvider.updateManifest(manifest, compiledDefinitions: providerDefinitions)
         contentBlockingService.commitPreparedContentBlockingUpdate(preparedUpdate)
+    }
+
+    private static func metadataOnlyDefinitions(
+        for manifest: AdblockCompiledGenerationManifest
+    ) -> [SumiContentRuleListDefinition] {
+        manifest.allNativeShards
+            .sorted { lhs, rhs in
+                lhs.kind == rhs.kind
+                    ? lhs.id < rhs.id
+                    : lhs.kind.rawValue < rhs.kind.rawValue
+            }
+            .map { shard in
+                SumiContentRuleListDefinition(
+                    name: shard.webKitIdentifier,
+                    encodedContentRuleList: "",
+                    storeIdentifierOverride: shard.webKitIdentifier,
+                    contentHashOverride: shard.contentHash
+                )
+            }
     }
 
     private static func isPreparedManifest(_ manifest: AdblockCompiledGenerationManifest, profileId: String) -> Bool {
         manifest.bundleProfileId == profileId || manifest.nativeRuleBundleId?.contains(profileId) == true
+    }
+
+    private func shouldInstallEmbeddedBundle(
+        _ bundle: SumiAdblockNativeRuleBundle,
+        previousManifest: AdblockCompiledGenerationManifest?
+    ) -> Bool {
+        guard let previousManifest else {
+#if DEBUG
+            SumiProtectionStartupRestoreDiagnostics.shared.recordGenerationStaleCheck(
+                consideredStale: true,
+                reason: "No active prepared manifest; embedded bundle \(bundle.manifest.bundleId) can seed startup"
+            )
+#endif
+            return true
+        }
+
+        guard previousManifest.generationSource == .embeddedBundle else {
+#if DEBUG
+            SumiProtectionStartupRestoreDiagnostics.shared.recordGenerationStaleCheck(
+                consideredStale: false,
+                reason: "Active \(previousManifest.generationSource.rawValue) generation is preserved; embedded bundle is not a startup repair candidate"
+            )
+#endif
+            return false
+        }
+
+        let shouldInstall = previousManifest.nativeRuleBundleId != bundle.manifest.bundleId
+#if DEBUG
+        SumiProtectionStartupRestoreDiagnostics.shared.recordGenerationStaleCheck(
+            consideredStale: shouldInstall,
+            reason: shouldInstall
+                ? "Embedded bundle changed from \(previousManifest.nativeRuleBundleId ?? "nil") to \(bundle.manifest.bundleId)"
+                : "Embedded bundle \(bundle.manifest.bundleId) already matches active generation"
+        )
+#endif
+        return shouldInstall
     }
 
     private func diagnostics(

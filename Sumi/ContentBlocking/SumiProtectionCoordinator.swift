@@ -1,6 +1,7 @@
 import Combine
 import CryptoKit
 import Foundation
+import OSLog
 
 enum SumiProtectionBundleProfile {
     static let unified = "adguardAdsPrivacy"
@@ -735,6 +736,13 @@ final class SumiProtectionCoordinator {
     @discardableResult
     func restoreAppliedLevelForStartup() async throws -> AdblockCompiledGenerationManifest? {
         let appliedLevel = settings.appliedLevel
+#if DEBUG
+        let startupDiagnosticsToken = SumiProtectionStartupRestoreDiagnostics.shared.begin(appliedLevel: appliedLevel)
+        defer {
+            let snapshot = SumiProtectionStartupRestoreDiagnostics.shared.finish(startupDiagnosticsToken)
+            Logger.sumi(category: "ProtectionStartupRestore").debug("\(snapshot.developerReport, privacy: .public)")
+        }
+#endif
         runtimeAppliedLevel = appliedLevel
         syncLegacyModuleGates(for: appliedLevel)
         guard let requiredBundleProfileId = appliedLevel.preferredBundleProfileId else {
@@ -1087,13 +1095,64 @@ final class SumiProtectionCoordinator {
             return
         }
 
+        let metadataPlan = globalAttachmentPlan(
+            for: level,
+            profileId: nil,
+            includeExpensiveDiagnostics: false,
+            loadRuleDefinitions: false
+        )
+#if DEBUG
+        SumiProtectionStartupRestoreDiagnostics.shared.recordExpectedShardIdentifiers(
+            metadataPlan.expectedRuleListIdentifiers
+        )
+#endif
+
+        try validateRequiredGroupsReady(in: metadataPlan)
+
+        guard metadataPlan.isAttachable else {
+            clearCachedAttachmentService()
+            cachedAttachmentPlan = metadataOnlyGlobalAttachmentPlan(metadataPlan)
+            return
+        }
+
+        let service = SumiContentBlockingService(policy: .disabled)
+
+        let metadataOnlyDefinitions = metadataOnlyRuleDefinitions(
+            matching: metadataPlan.expectedRuleListIdentifiers,
+            manifest: adBlockingModule.activeManifestIfLoaded()
+        )
+        if metadataOnlyDefinitions.map(\.webKitStoreIdentifier).sorted()
+            == metadataPlan.expectedRuleListIdentifiers.sorted()
+        {
+            do {
+                let preparedUpdate = try await service.prepareExistingRuleListUpdate(
+                    ruleLists: metadataOnlyDefinitions
+                )
+                service.commitPreparedContentBlockingUpdate(preparedUpdate)
+                cachedAttachmentPlan = metadataOnlyGlobalAttachmentPlan(metadataPlan)
+                cachedAttachmentService = service
+                contentBlockingServiceGenerationId &+= 1
+#if DEBUG
+                SumiProtectionStartupRestoreDiagnostics.shared.recordMetadataOnlyRestoreUsed()
+#endif
+                return
+            } catch {
+#if DEBUG
+                let fallbackReason = "Protection attachment lookup-only restore failed: \(error.localizedDescription)"
+                SumiProtectionStartupRestoreDiagnostics.shared.recordFallback(reason: fallbackReason)
+                SumiProtectionStartupRestoreDiagnostics.shared.recordPayloadBackedRestoreUsed(reason: fallbackReason)
+                SumiProtectionStartupRestoreDiagnostics.shared.recordRepairCompileUsed(reason: fallbackReason)
+#endif
+                // Repair-on-miss stays on the existing payload-backed path below.
+            }
+        }
+
         let plan = globalAttachmentPlan(
             for: level,
             profileId: nil,
             includeExpensiveDiagnostics: false,
             loadRuleDefinitions: true
         )
-
         try validateRequiredGroupsReady(in: plan)
 
         guard plan.isAttachable else {
@@ -1102,7 +1161,6 @@ final class SumiProtectionCoordinator {
             return
         }
 
-        let service = SumiContentBlockingService(policy: .disabled)
         let preparedUpdate = try await service.prepareRuleListUpdate(
             ruleLists: plan.ruleDefinitions,
             retainEncodedRuleListsInPreparedPolicy: false
@@ -1111,6 +1169,29 @@ final class SumiProtectionCoordinator {
         cachedAttachmentPlan = metadataOnlyGlobalAttachmentPlan(plan)
         cachedAttachmentService = service
         contentBlockingServiceGenerationId &+= 1
+    }
+
+    private func metadataOnlyRuleDefinitions(
+        matching identifiers: [String],
+        manifest: AdblockCompiledGenerationManifest?
+    ) -> [SumiContentRuleListDefinition] {
+        guard let manifest else { return [] }
+        let expectedIdentifiers = Set(identifiers)
+        return manifest.allNativeShards
+            .filter { expectedIdentifiers.contains($0.webKitIdentifier) }
+            .sorted { lhs, rhs in
+                lhs.kind == rhs.kind
+                    ? lhs.id < rhs.id
+                    : lhs.kind.rawValue < rhs.kind.rawValue
+            }
+            .map { shard in
+                SumiContentRuleListDefinition(
+                    name: shard.webKitIdentifier,
+                    encodedContentRuleList: "",
+                    storeIdentifierOverride: shard.webKitIdentifier,
+                    contentHashOverride: shard.contentHash
+                )
+            }
     }
 
     private func validateRequiredGroupsReady(
@@ -1418,6 +1499,13 @@ final class SumiProtectionCoordinator {
             "planningErrors=\(plan.planningErrors.joined(separator: " | "))",
             "currentTabDiagnosticsAvailable=\(currentTabDiagnostics != nil)",
         ]
+#if DEBUG
+        if let startupSnapshot = SumiProtectionStartupRestoreDiagnostics.shared.latestSnapshot {
+            lines.append("")
+            lines.append("Startup restore diagnostics")
+            lines.append(contentsOf: startupSnapshot.reportLines)
+        }
+#endif
         if currentTabDiagnostics == nil {
             lines.append("Sumi Adblock & Protection current-tab diagnostics\ncurrentTab=nil")
         }

@@ -12,6 +12,9 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         temporaryDirectories.removeAll()
+#if DEBUG
+        SumiProtectionStartupRestoreDiagnostics.shared.resetForTests()
+#endif
         try await super.tearDown()
     }
 
@@ -70,6 +73,39 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
         XCTAssertEqual(publisher.committedManifestIds, [previous.activeGenerationId])
     }
 
+    func testStartupCleanupPreservesActiveAndPreviousCompiledRuleLists() async throws {
+        let root = temporaryDirectory()
+        let store = AdblockUpdateManifestStore(rootDirectory: root)
+        let previous = try await PreparedAdblockTestSupport.seedPreparedManifest(
+            in: store,
+            generationId: "cleanup-previous-\(UUID().uuidString)",
+            generationSource: .developmentBundle
+        )
+        let active = try await PreparedAdblockTestSupport.seedPreparedManifest(
+            in: store,
+            generationId: "cleanup-active-\(UUID().uuidString)",
+            previousGenerationId: previous.activeGenerationId,
+            generationSource: .developmentBundle
+        )
+        let staleIdentifier = "sumi.adblock.network.stale.0001.deadbeef0000"
+        let compiler = RemovalRecordingLookupCompiler(
+            availableIdentifiers: Set(active.webKitRuleListIdentifiers)
+                .union(previous.webKitRuleListIdentifiers)
+                .union([staleIdentifier])
+        )
+        let collector = AdblockGenerationGarbageCollector(
+            manifestStore: store,
+            contentRuleListStore: compiler
+        )
+
+        let report = await collector.cleanupAfterSuccessfulUpdate()
+
+        XCTAssertEqual(report.removedWebKitIdentifiers, [staleIdentifier])
+        XCTAssertEqual(compiler.removedIdentifiers, [staleIdentifier])
+        XCTAssertTrue(Set(compiler.removedIdentifiers).isDisjoint(with: active.webKitRuleListIdentifiers))
+        XCTAssertTrue(Set(compiler.removedIdentifiers).isDisjoint(with: previous.webKitRuleListIdentifiers))
+    }
+
     private func temporaryDirectory() -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SumiAdblockUpdatePipelineTests-\(UUID().uuidString)", isDirectory: true)
@@ -120,4 +156,24 @@ private final class RollbackLookupCompiler: SumiContentRuleListCompiling {
     }
     func availableContentRuleListIdentifiers() async -> [String] { availableIdentifiers.sorted() }
     func removeContentRuleList(forIdentifier identifier: String) async throws {}
+}
+
+@MainActor
+private final class RemovalRecordingLookupCompiler: SumiContentRuleListCompiling {
+    private let availableIdentifiers: Set<String>
+    private(set) var removedIdentifiers: [String] = []
+
+    init(availableIdentifiers: Set<String>) {
+        self.availableIdentifiers = availableIdentifiers
+    }
+
+    func lookUpContentRuleList(forIdentifier identifier: String) async -> WKContentRuleList? { nil }
+    func canLookUpContentRuleList(forIdentifier identifier: String) async -> Bool { availableIdentifiers.contains(identifier) }
+    func compileContentRuleList(forIdentifier identifier: String, encodedContentRuleList: String) async throws -> WKContentRuleList {
+        throw AdblockUpdateDiagnostics(summary: "Not needed in cleanup test")
+    }
+    func availableContentRuleListIdentifiers() async -> [String] { availableIdentifiers.sorted() }
+    func removeContentRuleList(forIdentifier identifier: String) async throws {
+        removedIdentifiers.append(identifier)
+    }
 }

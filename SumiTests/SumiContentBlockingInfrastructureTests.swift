@@ -268,6 +268,67 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
         XCTAssertEqual(warmCompiler.compileCount, 0)
     }
 
+    func testExistingRuleListUpdateLooksUpWarmRuleListsWithoutRecompiling() async throws {
+        let definition = Self.validRuleListDefinition(
+            name: "SumiExistingRuleListUpdate-\(UUID().uuidString)",
+            blockedHost: "existing-update.example"
+        )
+
+        let setupService = SumiContentBlockingService(
+            policy: .enabled(ruleLists: [definition]),
+            compiler: CountingContentRuleListCompiler()
+        )
+        let setupController: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: setupService
+        )
+        let setupNormalTabController = try XCTUnwrap(setupController.sumiNormalTabUserContentController)
+        await setupNormalTabController.waitForContentBlockingAssetsInstalled()
+        setupNormalTabController.cleanUpBeforeClosing()
+
+        let compiler = CountingContentRuleListCompiler()
+        let service = SumiContentBlockingService(
+            policy: .disabled,
+            compiler: compiler,
+            compiledRuleListCatalog: InMemoryCompiledRuleListCatalog()
+        )
+
+        let prepared = try await service.prepareExistingRuleListUpdate(
+            ruleLists: [definition.metadataOnly()]
+        )
+
+        XCTAssertEqual(prepared.updateEvent.rules.count, 1)
+        XCTAssertEqual(compiler.lookupCount, 1)
+        XCTAssertEqual(compiler.canLookupCount, 0)
+        XCTAssertEqual(compiler.compileCount, 0)
+    }
+
+    func testExistingRuleListUpdateFailsWithoutCompilingWhenStoreEntryIsMissing() async throws {
+        let definition = Self.validRuleListDefinition(
+            name: "SumiMissingExistingRuleListUpdate-\(UUID().uuidString)",
+            blockedHost: "missing-existing-update.example"
+        )
+        let identifier = Self.storeIdentifier(for: definition)
+        let compiler = CountingContentRuleListCompiler()
+        let service = SumiContentBlockingService(
+            policy: .disabled,
+            compiler: compiler,
+            compiledRuleListCatalog: InMemoryCompiledRuleListCatalog()
+        )
+
+        do {
+            _ = try await service.prepareExistingRuleListUpdate(
+                ruleLists: [definition.metadataOnly()]
+            )
+            XCTFail("Expected lookup-only restore to report the missing compiled rule list")
+        } catch let error as SumiContentBlockingCompilationError {
+            XCTAssertEqual(error.identifier, identifier)
+        }
+
+        XCTAssertEqual(compiler.lookupCount, 1)
+        XCTAssertEqual(compiler.canLookupCount, 0)
+        XCTAssertEqual(compiler.compileCount, 0)
+    }
+
     func testPolicyUpdateRemovesPreviousCompiledRuleListForSameName() async throws {
         let compiler = CountingContentRuleListCompiler()
         let catalog = InMemoryCompiledRuleListCatalog()

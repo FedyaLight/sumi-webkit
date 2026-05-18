@@ -1,3 +1,4 @@
+import WebKit
 import XCTest
 
 @testable import Sumi
@@ -11,6 +12,9 @@ final class SumiAdBlockingModuleTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         temporaryDirectories.removeAll()
+#if DEBUG
+        SumiProtectionStartupRestoreDiagnostics.shared.resetForTests()
+#endif
         try await super.tearDown()
     }
 
@@ -78,6 +82,104 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         XCTAssertEqual(manifest?.generationSource, .developmentBundle)
         XCTAssertEqual(manifest?.bundleProfileId, "adguardAdsPrivacy")
         XCTAssertEqual(module.activeManifestIfLoaded()?.bundleProfileId, "adguardAdsPrivacy")
+    }
+
+    func testRepeatedPreparedManifestStartupRestoreUsesLookupOnlyWithoutShardPayloadReads() async throws {
+#if DEBUG
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults))
+        registry.enable(.adBlocking)
+        let root = temporaryDirectory()
+        let manifestStore = AdblockUpdateManifestStore(rootDirectory: root)
+        let generationId = "repeated-launch-\(UUID().uuidString)"
+        let compiler = RetainingContentRuleListCompiler()
+        let bundleURL = temporaryDirectory()
+            .appendingPathComponent("adguardAdsPrivacy", isDirectory: true)
+            .appendingPathComponent("SumiAdblockBundle", isDirectory: true)
+        try PreparedAdblockTestSupport.makeBundle(at: bundleURL, generationId: generationId)
+        let setupStore = AdblockWebKitRuleListStore(
+            settingsStore: AdblockSettingsStore(userDefaults: harness.defaults),
+            isAdblockEnabled: { true },
+            manifestStore: manifestStore,
+            compiler: compiler,
+            embeddedBundleURLProvider: { nil }
+        )
+        let installed = try await setupStore.requestPreparedBundleInstall(
+            bundleURL: bundleURL,
+            source: .developmentBundle,
+            profileId: "adguardAdsPrivacy"
+        )
+        let manifest = try XCTUnwrap(installed)
+
+        SumiProtectionStartupRestoreDiagnostics.shared.resetForTests()
+        let token = SumiProtectionStartupRestoreDiagnostics.shared.begin(
+            appliedLevel: .adblock,
+            trackedGenerationId: generationId
+        )
+        let warmStore = AdblockWebKitRuleListStore(
+            settingsStore: AdblockSettingsStore(userDefaults: harness.defaults),
+            isAdblockEnabled: { true },
+            manifestStore: manifestStore,
+            compiler: compiler,
+            embeddedBundleURLProvider: { nil }
+        )
+        let restored = try await warmStore.restorePreparedManifestIfAvailable(profileId: "adguardAdsPrivacy")
+        try await Task.sleep(nanoseconds: 250_000_000)
+        let snapshot = SumiProtectionStartupRestoreDiagnostics.shared.finish(token)
+
+        XCTAssertEqual(restored?.activeGenerationId, manifest.activeGenerationId)
+        XCTAssertEqual(snapshot.activeGenerationId, manifest.activeGenerationId)
+        XCTAssertEqual(snapshot.expectedShardIdentifiers, manifest.webKitRuleListIdentifiers)
+        XCTAssertTrue(snapshot.wkContentRuleListStoreLookupAttempted)
+        XCTAssertEqual(snapshot.lookupMissCount, 0)
+        XCTAssertGreaterThanOrEqual(snapshot.lookupHitCount, manifest.webKitRuleListIdentifiers.count)
+        XCTAssertTrue(snapshot.metadataOnlyRestoreUsed)
+        XCTAssertFalse(snapshot.payloadBackedRestoreUsed)
+        XCTAssertFalse(snapshot.repairCompileUsed)
+        XCTAssertEqual(snapshot.totalShardJSONBytesRead, 0)
+        XCTAssertEqual(snapshot.shardJSONFileReadCount, 0)
+#else
+        throw XCTSkip("Startup restore diagnostics are DEBUG-only.")
+#endif
+    }
+
+    func testMissingCompiledRuleListFallsBackToPayloadRepairWithDiagnostics() async throws {
+#if DEBUG
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let manifestStore = AdblockUpdateManifestStore(rootDirectory: temporaryDirectory())
+        let generationId = "missing-compiled-\(UUID().uuidString)"
+        let manifest = try await PreparedAdblockTestSupport.seedPreparedManifest(
+            in: manifestStore,
+            generationId: generationId
+        )
+        let store = AdblockWebKitRuleListStore(
+            settingsStore: AdblockSettingsStore(userDefaults: harness.defaults),
+            isAdblockEnabled: { true },
+            manifestStore: manifestStore,
+            compiler: SumiWKContentRuleListCompiler(),
+            embeddedBundleURLProvider: { nil }
+        )
+
+        let token = SumiProtectionStartupRestoreDiagnostics.shared.begin(
+            appliedLevel: .adblock,
+            trackedGenerationId: generationId
+        )
+        let restored = try await store.restorePreparedManifestIfAvailable(profileId: "adguardAdsPrivacy")
+        let snapshot = SumiProtectionStartupRestoreDiagnostics.shared.finish(token)
+
+        XCTAssertEqual(restored?.activeGenerationId, manifest.activeGenerationId)
+        XCTAssertTrue(snapshot.wkContentRuleListStoreLookupAttempted)
+        XCTAssertGreaterThan(snapshot.lookupMissCount, 0)
+        XCTAssertTrue(snapshot.payloadBackedRestoreUsed)
+        XCTAssertTrue(snapshot.repairCompileUsed)
+        XCTAssertGreaterThan(snapshot.totalShardJSONBytesRead, 0)
+        XCTAssertGreaterThan(snapshot.shardJSONFileReadCount, 0)
+        XCTAssertTrue(snapshot.fallbackReason?.contains("lookup-only restore failed") == true)
+#else
+        throw XCTSkip("Startup restore diagnostics are DEBUG-only.")
+#endif
     }
 
     func testSiteOverrideDisablesPreparedAdblockWithoutTouchingGlobalState() async throws {
@@ -169,5 +271,43 @@ final class SumiAdBlockingModuleTests: XCTestCase {
 
     private static func joined(_ parts: String...) -> String {
         parts.joined()
+    }
+}
+
+@MainActor
+private final class RetainingContentRuleListCompiler: SumiContentRuleListCompiling {
+    private let wrapped = SumiWKContentRuleListCompiler()
+    private let backingIdentifierPrefix = "sumi.tests.retained.\(UUID().uuidString)"
+    private var compiledRuleLists: [String: WKContentRuleList] = [:]
+    private var compileSequence = 0
+
+    func lookUpContentRuleList(forIdentifier identifier: String) async -> WKContentRuleList? {
+        compiledRuleLists[identifier]
+    }
+
+    func canLookUpContentRuleList(forIdentifier identifier: String) async -> Bool {
+        compiledRuleLists[identifier] != nil
+    }
+
+    func compileContentRuleList(
+        forIdentifier identifier: String,
+        encodedContentRuleList: String
+    ) async throws -> WKContentRuleList {
+        compileSequence += 1
+        let backingIdentifier = "\(backingIdentifierPrefix).\(compileSequence)"
+        let ruleList = try await wrapped.compileContentRuleList(
+            forIdentifier: backingIdentifier,
+            encodedContentRuleList: encodedContentRuleList
+        )
+        compiledRuleLists[identifier] = ruleList
+        return ruleList
+    }
+
+    func availableContentRuleListIdentifiers() async -> [String] {
+        compiledRuleLists.keys.sorted()
+    }
+
+    func removeContentRuleList(forIdentifier identifier: String) async throws {
+        compiledRuleLists.removeValue(forKey: identifier)
     }
 }
