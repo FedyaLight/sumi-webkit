@@ -75,6 +75,33 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(adBlockingModule.hasLoadedRuntime)
     }
 
+    func testStartupNormalTabMaterializationWaitsOnlyWhileProtectionRestoreIsPending() {
+        XCTAssertFalse(
+            StartupNormalTabMaterializationPolicy.shouldDefer(
+                appliedProtectionLevel: .off,
+                hasFinishedStartupProtectionRestore: false
+            )
+        )
+        XCTAssertTrue(
+            StartupNormalTabMaterializationPolicy.shouldDefer(
+                appliedProtectionLevel: .protection,
+                hasFinishedStartupProtectionRestore: false
+            )
+        )
+        XCTAssertTrue(
+            StartupNormalTabMaterializationPolicy.shouldDefer(
+                appliedProtectionLevel: .adblock,
+                hasFinishedStartupProtectionRestore: false
+            )
+        )
+        XCTAssertFalse(
+            StartupNormalTabMaterializationPolicy.shouldDefer(
+                appliedProtectionLevel: .adblock,
+                hasFinishedStartupProtectionRestore: true
+            )
+        )
+    }
+
     func testBrowserManagerStartupWithUserscriptsDisabledDoesNotInitializeUserscriptsRuntime() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }

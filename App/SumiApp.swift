@@ -23,7 +23,12 @@ struct SumiApp: App {
 
     // NOTE: `BrowserManager` remains the central app coordinator; incremental refactors move
     // capabilities behind protocols and `@Environment` (see `WebViewCoordinator`, `WindowRegistry`).
-    @StateObject private var browserManager = BrowserManager()
+    @StateObject private var browserManager: BrowserManager
+
+    init() {
+        StartupPerformanceTrace.appLaunchStarted()
+        _browserManager = StateObject(wrappedValue: BrowserManager())
+    }
 
     var body: some Scene {
         WindowGroup {

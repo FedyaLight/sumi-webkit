@@ -93,6 +93,15 @@ enum HistorySwipeDeferredWindowMutationKind: Hashable {
     case prepareVisibleWebViews
 }
 
+enum StartupNormalTabMaterializationPolicy {
+    static func shouldDefer(
+        appliedProtectionLevel: SumiProtectionLevel,
+        hasFinishedStartupProtectionRestore: Bool
+    ) -> Bool {
+        appliedProtectionLevel != .off && !hasFinishedStartupProtectionRestore
+    }
+}
+
 private final class WeakBrowserWindowState {
     weak var value: BrowserWindowState?
 
@@ -284,6 +293,8 @@ class BrowserManager: ObservableObject {
     private var structuralChangeCancellable: AnyCancellable?
     private var tabManagerLoadObserverToken: NSObjectProtocol?
     private var startupProtectionRestoreTask: Task<Void, Never>?
+    private(set) var hasFinishedStartupProtectionRestore = false
+    private var deferredStartupBackgroundTabIds: Set<UUID> = []
     private var pendingWindowSessionPersistTasks: [UUID: Task<Void, Never>] = [:]
     private var pendingWindowSessionPersistStates: [UUID: BrowserWindowState] = [:]
     private var pendingUserActivationsByWindow: [UUID: PendingUserTabActivation] = [:]
@@ -328,6 +339,11 @@ class BrowserManager: ObservableObject {
         externalSchemeSessionStore: SumiExternalSchemeSessionStore? = nil,
         externalSchemePermissionBridge: SumiExternalSchemePermissionBridge? = nil
     ) {
+        let startupTrace = StartupPerformanceTrace.browserManagerInitStarted()
+        defer {
+            StartupPerformanceTrace.browserManagerInitFinished(startupTrace)
+        }
+
         // Phase 1: initialize all stored properties
         let startupModelContext = SumiStartupPersistence.shared.container.mainContext
         let systemPermissionService = systemPermissionService ?? MacSumiSystemPermissionService()
@@ -544,12 +560,8 @@ class BrowserManager: ObservableObject {
     
     /// Called when TabManager finishes loading initial data from persistence
     private func handleTabManagerDataLoaded() {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            await self.awaitProtectionRestoreForStartupIfNeeded()
-            self.windowSessionService.handleTabManagerDataLoaded(delegate: self)
-            self.reconcileStartupSessionIfPossible()
-        }
+        windowSessionService.handleTabManagerDataLoaded(delegate: self)
+        reconcileStartupSessionIfPossible()
     }
 
     private func beginProtectionRestoreForStartupIfNeeded() {
@@ -559,12 +571,13 @@ class BrowserManager: ObservableObject {
         }
     }
 
-    private func awaitProtectionRestoreForStartupIfNeeded() async {
-        beginProtectionRestoreForStartupIfNeeded()
-        await startupProtectionRestoreTask?.value
-    }
-
     private func restoreProtectionForStartupIfNeeded() async {
+        let startupTrace = StartupPerformanceTrace.protectionRestoreStarted()
+        defer {
+            StartupPerformanceTrace.protectionRestoreFinished(startupTrace)
+            finishStartupProtectionRestore()
+        }
+
         do {
             _ = try await protectionCoordinator.restoreAppliedLevelForStartup()
         } catch {
@@ -573,6 +586,34 @@ class BrowserManager: ObservableObject {
                 category: "Protection"
             )
         }
+    }
+
+    private func finishStartupProtectionRestore() {
+        guard !hasFinishedStartupProtectionRestore else { return }
+        hasFinishedStartupProtectionRestore = true
+
+        let deferredBackgroundTabs = deferredStartupBackgroundTabIds
+        deferredStartupBackgroundTabIds.removeAll()
+        for tabId in deferredBackgroundTabs {
+            guard let tab = tabManager.tab(for: tabId) else { continue }
+            prepareBackgroundTabIfNeeded(tab, in: nil)
+        }
+
+        for windowState in windowRegistry?.allWindows ?? [] {
+            schedulePrepareVisibleWebViews(for: windowState)
+            refreshCompositor(for: windowState)
+        }
+    }
+
+    var shouldDeferNormalTabMaterializationDuringStartup: Bool {
+        StartupNormalTabMaterializationPolicy.shouldDefer(
+            appliedProtectionLevel: protectionCoordinator.settings.appliedLevel,
+            hasFinishedStartupProtectionRestore: hasFinishedStartupProtectionRestore
+        )
+    }
+
+    func canMaterializeNormalTabWebViewDuringStartup(_ tab: Tab) -> Bool {
+        !tab.requiresPrimaryWebView || !shouldDeferNormalTabMaterializationDuringStartup
     }
 
     // MARK: - Profile Switching
@@ -1089,6 +1130,10 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState?
     ) {
         guard tab.requiresPrimaryWebView else { return }
+        guard canMaterializeNormalTabWebViewDuringStartup(tab) else {
+            deferredStartupBackgroundTabIds.insert(tab.id)
+            return
+        }
         _ = windowState
         tab.loadWebViewIfNeeded()
     }
@@ -1798,6 +1843,8 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         loadPolicy: TabSelectionLoadPolicy
     ) {
+        guard canMaterializeNormalTabWebViewDuringStartup(tab) else { return }
+
         if tab.isUnloaded {
             tab.beginLoadingPresentationIfNeeded()
         }

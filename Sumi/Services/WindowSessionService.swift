@@ -118,6 +118,11 @@ final class WindowSessionService {
     }
 
     func handleTabManagerDataLoaded(delegate: WindowSessionServiceDelegate) {
+        let startupTrace = StartupPerformanceTrace.sessionRestoreStarted()
+        defer {
+            StartupPerformanceTrace.sessionRestoreFinished(startupTrace)
+        }
+
         RuntimeDiagnostics.debug(
             "TabManager finished loading persisted data; reconciling window state.",
             category: "WindowSessionService"
@@ -171,6 +176,8 @@ final class WindowSessionService {
             )
 
             windowState.isAwaitingInitialSessionResolution = false
+            StartupPerformanceTrace.firstSelectedTabResolved()
+            StartupPerformanceTrace.firstTabsClickable()
             windowState.refreshCompositor()
             persistWindowSession(for: windowState, delegate: delegate)
         }
@@ -292,6 +299,8 @@ final class WindowSessionService {
         )
 
         windowState.isAwaitingInitialSessionResolution = false
+        StartupPerformanceTrace.firstSelectedTabResolved()
+        StartupPerformanceTrace.firstTabsClickable()
         RuntimeDiagnostics.debug(
             "Setup window state \(windowState.id.uuidString) currentTab=\(windowState.currentTabId?.uuidString ?? "none") currentSpace=\(windowState.currentSpaceId?.uuidString ?? "none")",
             category: "WindowSessionService"

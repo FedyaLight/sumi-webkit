@@ -21,6 +21,8 @@ final class SumiTabLifecycleNavigationResponder:
               let webView = context.webView
         else { return }
 
+        StartupPerformanceTrace.firstNavigationStarted()
+
         if context.action?.navigationType.isBackForward == true {
             tab.beginBackForwardNavigationTracking(on: webView)
         } else {
@@ -76,6 +78,8 @@ final class SumiTabLifecycleNavigationResponder:
               let webView = context.webView
         else { return }
 
+        StartupPerformanceTrace.firstNavigationCommitted()
+
         tab.loadingState = .didCommit
         tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.loading])
 
@@ -115,6 +119,8 @@ final class SumiTabLifecycleNavigationResponder:
               context?.isMainFrame == true,
               let webView = context?.webView
         else { return }
+
+        StartupPerformanceTrace.firstNavigationFinished()
 
         tab.loadingState = .didFinish
         tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.loading])

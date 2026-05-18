@@ -41,6 +41,7 @@ struct ContentView: View {
                 minHeight: SumiBrowserWindowShellConfiguration.minimumContentSize.height
             )
             .onAppear {
+                StartupPerformanceTrace.firstWindowVisible()
                 // Set TabManager reference for computed properties
                 windowState.tabManager = browserManager.tabManager
                 // Register this window state with the registry
