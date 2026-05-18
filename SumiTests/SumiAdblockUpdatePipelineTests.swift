@@ -29,8 +29,9 @@ final class SumiAdblockUpdatePipelineTests: XCTestCase {
 
         XCTAssertEqual(active?.generationSource, .developmentBundle)
         XCTAssertEqual(active?.bundleProfileId, "adguardAdsPrivacy")
-        XCTAssertEqual(definitions.count, 1)
-        XCTAssertTrue(definitions[0].name.hasPrefix("sumi.adblock.network."))
+        XCTAssertEqual(definitions.count, 2)
+        XCTAssertTrue(definitions.contains { $0.name.hasPrefix("sumi.tracking.network.") })
+        XCTAssertTrue(definitions.contains { $0.name.hasPrefix("sumi.adblock.network.") })
     }
 
     func testRollbackRestoresPreviousPreparedGeneration() async throws {

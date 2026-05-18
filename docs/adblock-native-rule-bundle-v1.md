@@ -22,6 +22,8 @@ SumiAdblockBundle/
 
 `manifest.json` records the schema version, bundle id, profile id, compiler identity, safety-policy version, source-list ids and hashes, logical group metadata, profile-to-group mapping, shard metadata, unsafe native-CSS count, and deduplication/overlap summary. The app keeps only metadata, paths, hashes, identifiers, and logical groups in provider state; full shard JSON is read only for prepared-bundle verification and WebKit compilation.
 
+`trackingNetwork` is generated in `sumi-protection-bundles` from DuckDuckGo Tracker Radar / TDS (`https://staticcdn.duckduckgo.com/trackerblocking/v6/current/macos-tds.json`). The generated tracking shards are CC BY-NC-SA 4.0 derived data for non-commercial Sumi bundle use, with share-alike terms preserved. Bundle and release manifests must include `sourceName`, `sourceURL`, `sourceLicense`, `sourceLicenseURL`, `attribution`, `generatedAt`, `sourceSha256`, `ruleCount`, and `shardCount` for this group.
+
 ## Product contract
 
 The browser exposes only three product levels:
@@ -56,3 +58,14 @@ The static update path stays outside the browser runtime:
 Sumi.app never runs `adblock-rust`, never parses raw filter lists, and never checks for bundle updates on launch or timers. Existing pages may need reload or a full Sumi restart after a manual bundle update; the UI reports restart-required instead of claiming live replacement.
 
 The current repository keeps any temporary generation scripts as developer tooling only. They must not be referenced by Sumi.app runtime, release UI, or app-target build phases.
+
+The old browser-side DDG TrackerRadarKit path is retained only as a temporary migration fallback while prepared `trackingNetwork` output is validated against the previous baseline. It must not be used as an independent normal-tab attachment path when the prepared `trackingNetwork` group is active.
+
+## Manual validation
+
+1. Open Privacy / Protection settings and press **Update bundles**.
+2. Confirm diagnostics show `remoteManifestSignatureVerified=true`.
+3. Restart Sumi when the settings state reports that a restart is required.
+4. Test `Off`; diagnostics should show no active groups and no bundle work except the explicit update.
+5. Test `Protection`; diagnostics should show `generationSource=remoteReleaseBundle`, `activeGroups=trackingNetwork`, `trackingNetworkSource=DuckDuckGo Tracker Radar / TDS`, and `sourceLicense=CC BY-NC-SA 4.0`.
+6. Test `Adblock`; diagnostics should show `activeGroups=trackingNetwork,adblockAdsPrivacyNetwork` with empty missing identifiers.

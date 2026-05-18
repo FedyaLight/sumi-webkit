@@ -32,6 +32,10 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
         XCTAssertEqual(result.releaseTag, "bundles-20260517T000000Z-test")
         XCTAssertEqual(cached.manifest.profileId, SumiProtectionBundleProfile.adblock)
         XCTAssertEqual(cached.manifest.generationId, "remote-generation")
+        let trackingGroup = try XCTUnwrap(cached.manifest.groups?.first { $0.id == .trackingNetwork })
+        XCTAssertEqual(trackingGroup.source?.sourceName, PreparedAdblockTestSupport.ddgTrackingSourceName)
+        XCTAssertEqual(trackingGroup.source?.sourceLicense, PreparedAdblockTestSupport.ddgTrackingSourceLicense)
+        XCTAssertEqual(trackingGroup.source?.sourceLicenseURL, PreparedAdblockTestSupport.ddgTrackingSourceLicenseURL)
         XCTAssertEqual(metadata?.releaseVersion, result.releaseVersion)
         XCTAssertEqual(metadata?.manifestSignatureVerified, true)
         XCTAssertEqual(metadata?.signingKeyId, fixture.signingKey.id)
@@ -377,6 +381,29 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
             )
         }
 
+        let releaseGroups = try (bundle.manifest.groups ?? []).map { group -> [String: Any] in
+            let groupAssetNames: [String] = assetDescriptors.compactMap { descriptor -> String? in
+                guard descriptor["groupId"] as? String == group.id.rawValue else { return nil }
+                return descriptor["name"] as? String
+            }
+            var releaseGroup: [String: Any] = [
+                "id": group.id.rawValue,
+                "ruleCount": group.ruleCount,
+                "shardCount": group.shardCount,
+                "assetNames": groupAssetNames,
+                "assetRelativePaths": group.assetRelativePaths ?? [],
+                "notes": group.notes ?? [],
+            ]
+            if let status = group.status {
+                releaseGroup["status"] = status
+            }
+            if let source = group.source {
+                let sourceData = try JSONEncoder().encode(source)
+                releaseGroup["source"] = try JSONSerialization.jsonObject(with: sourceData)
+            }
+            return releaseGroup
+        }
+
         let releaseManifest: [String: Any] = [
             "schemaVersion": 1,
             "releaseVersion": releaseVersion,
@@ -398,6 +425,7 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
                     "bundleId": bundle.manifest.bundleId,
                     "generationId": bundle.manifest.generationId,
                     "generatedDate": bundle.manifest.generatedDate,
+                    "groups": releaseGroups,
                     "assetNames": assetDescriptors.compactMap { $0["name"] as? String },
                 ],
             ],

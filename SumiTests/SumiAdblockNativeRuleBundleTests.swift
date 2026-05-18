@@ -32,6 +32,28 @@ final class SumiAdblockNativeRuleBundleTests: XCTestCase {
         }
     }
 
+    func testPreparedTrackingNetworkSourceMetadataIsDecoded() throws {
+        let bundleURL = temporaryDirectory().appendingPathComponent("SumiAdblockBundle", isDirectory: true)
+        try PreparedAdblockTestSupport.makeBundle(at: bundleURL)
+        let bundle = try SumiAdblockNativeRuleBundle.load(directoryURL: bundleURL)
+        let manifest = bundle.compiledGenerationManifest(
+            previousManifest: nil,
+            installedDate: Date(timeIntervalSince1970: 1_700_000_000),
+            generationSource: .remoteReleaseBundle
+        )
+        let trackingGroup = try XCTUnwrap(manifest.nativeLogicalGroups?.first { $0.id == .trackingNetwork })
+
+        XCTAssertEqual(trackingGroup.sourceName, PreparedAdblockTestSupport.ddgTrackingSourceName)
+        XCTAssertEqual(trackingGroup.sourceURL, PreparedAdblockTestSupport.ddgTrackingSourceURL)
+        XCTAssertEqual(trackingGroup.sourceLicense, PreparedAdblockTestSupport.ddgTrackingSourceLicense)
+        XCTAssertEqual(trackingGroup.sourceLicenseURL, PreparedAdblockTestSupport.ddgTrackingSourceLicenseURL)
+        XCTAssertEqual(trackingGroup.sourceAttribution, PreparedAdblockTestSupport.ddgTrackingAttribution)
+        XCTAssertEqual(trackingGroup.sourceSha256, PreparedAdblockTestSupport.ddgTrackingSourceSha256)
+        XCTAssertEqual(trackingGroup.sourceNonCommercialOnly, true)
+        XCTAssertEqual(trackingGroup.sourceShareAlike, true)
+        XCTAssertTrue(trackingGroup.reportLine.contains("sourceLicense=CC BY-NC-SA 4.0"))
+    }
+
     func testPreparedBundleInstallPublishesDevelopmentBundleWithoutGeneration() async throws {
         let bundleURL = temporaryDirectory().appendingPathComponent("SumiAdblockBundle", isDirectory: true)
         try PreparedAdblockTestSupport.makeBundle(at: bundleURL)

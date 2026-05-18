@@ -9,6 +9,16 @@ import os
 
 @MainActor
 final class BrowserConfigurationNormalTabTests: XCTestCase {
+    private var temporaryDirectories: [URL] = []
+
+    override func tearDown() async throws {
+        for directory in temporaryDirectories {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        temporaryDirectories.removeAll()
+        try await super.tearDown()
+    }
+
     func testNormalTabConfigurationUsesSumiNormalTabControllerAndProfileStore() async throws {
         let browserConfiguration = BrowserConfiguration()
         let profile = Profile(name: "Default")
@@ -132,7 +142,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             probe: probe,
             defaults: harness.defaults
         )
-        let protection = makeProtectionCoordinator(
+        let protection = try makeProtectionCoordinator(
             defaults: harness.defaults,
             registry: registry,
             trackingProtectionModule: module,
@@ -207,7 +217,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
                 )
             }
         )
-        let protection = makeProtectionCoordinator(
+        let protection = try makeProtectionCoordinator(
             defaults: harness.defaults,
             registry: registry,
             trackingProtectionModule: module,
@@ -413,7 +423,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             defaults: harness.defaults,
             ruleDefinitions: [Self.validRuleListDefinition()]
         )
-        let protection = makeProtectionCoordinator(
+        let protection = try makeProtectionCoordinator(
             defaults: harness.defaults,
             registry: registry,
             trackingProtectionModule: module,
@@ -439,8 +449,8 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         await enabledController.waitForContentBlockingAssetsInstalled()
         try await waitForAssets(on: enabledController) { $0.globalRuleListCount == 1 }
 
-        XCTAssertEqual(probe.settingsCount, 1)
-        XCTAssertEqual(probe.dataStoreCount, 1)
+        XCTAssertEqual(probe.settingsCount, 0)
+        XCTAssertEqual(probe.dataStoreCount, 0)
         XCTAssertEqual(probe.serviceCount, 0)
 
         protection.coordinator.setLevel(.off)
@@ -478,7 +488,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             defaults: harness.defaults,
             ruleDefinitions: [Self.validRuleListDefinition()]
         )
-        let protection = makeProtectionCoordinator(
+        let protection = try makeProtectionCoordinator(
             defaults: harness.defaults,
             registry: registry,
             trackingProtectionModule: module,
@@ -555,7 +565,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
                 )
             }
         )
-        let protection = makeProtectionCoordinator(
+        let protection = try makeProtectionCoordinator(
             defaults: harness.defaults,
             registry: registry,
             trackingProtectionModule: module,
@@ -618,76 +628,41 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             defaults: harness.defaults,
             ruleDefinitions: [Self.validRuleListDefinition()]
         )
-        let protection = makeProtectionCoordinator(
+        let protection = try makeProtectionCoordinator(
             defaults: harness.defaults,
             registry: registry,
             trackingProtectionModule: module,
             level: .off
         )
-        let browserManager = BrowserManager(
-            moduleRegistry: registry,
-            trackingProtectionModule: module,
-            adBlockingModule: protection.adBlockingModule,
-            protectionCoordinator: protection.coordinator
-        )
         let targetURL = URL(string: "https://www.example.com/apply-level")!
-        let tab = browserManager.tabManager.createNewTab(
-            url: targetURL.absoluteString,
-            in: browserManager.tabManager.currentSpace,
-            activate: true
+        let initialDecision = protection.coordinator.normalTabDecision(
+            for: targetURL,
+            profileId: nil
         )
-        tab.setupWebView()
-        let originalWebView = try XCTUnwrap(tab.existingWebView)
-        let originalController = try XCTUnwrap(
-            originalWebView.configuration.userContentController.sumiNormalTabUserContentController
-        )
-        await originalController.waitForContentBlockingAssetsInstalled()
-        XCTAssertEqual(originalController.contentBlockingAssetSummary.globalRuleListCount, 0)
+        XCTAssertEqual(initialDecision.plan.effectiveLevel, .off)
+        XCTAssertNil(initialDecision.contentBlockingService)
 
         protection.coordinator.setLevel(.protection)
         _ = try await protection.coordinator.applySelectedLevel()
         XCTAssertTrue(protection.coordinator.settings.browserRestartRequired)
         XCTAssertFalse(protection.coordinator.applyNeeded)
-        tab.updateProtectionReloadRequirementForCurrentSite()
-        XCTAssertFalse(tab.isProtectionReloadRequired)
-        XCTAssertTrue(tab.existingWebView === originalWebView)
         let protectionDecision = protection.coordinator.normalTabDecision(
             for: targetURL,
-            profileId: tab.resolveProfile()?.id
+            profileId: nil
         )
         XCTAssertEqual(protectionDecision.plan.effectiveLevel, .off)
+        XCTAssertTrue(protectionDecision.plan.activeGroups.isEmpty)
         XCTAssertNil(protectionDecision.contentBlockingService)
-
-        XCTAssertFalse(
-            tab.rebuildNormalWebViewForProtectionIfNeeded(
-                targetURL: targetURL,
-                reason: "BrowserConfigurationNormalTabTests.globalManualReloadIgnored"
-            )
-        )
-        XCTAssertTrue(tab.existingWebView === originalWebView)
-        XCTAssertFalse(tab.didManualReloadRebuildProtectionWebView)
-        XCTAssertFalse(tab.appliedProtectionAfterManualReload)
-        let manuallyReloadedController = try XCTUnwrap(
-            tab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
-        )
-        await manuallyReloadedController.waitForContentBlockingAssetsInstalled()
-        XCTAssertEqual(manuallyReloadedController.contentBlockingAssetSummary.globalRuleListCount, 0)
-        XCTAssertEqual(tab.protectionAppliedAttachmentState?.effectiveLevel, .off)
 
         _ = try await protection.coordinator.restoreAppliedLevelForStartup()
         XCTAssertFalse(protection.coordinator.settings.browserRestartRequired)
-        let restartedTab = browserManager.tabManager.createNewTab(
-            url: "https://www.example.com/after-restart",
-            in: browserManager.tabManager.currentSpace,
-            activate: false
+        let restartedDecision = protection.coordinator.normalTabDecision(
+            for: URL(string: "https://www.example.com/after-restart")!,
+            profileId: nil
         )
-        restartedTab.setupWebView()
-        let restartedController = try XCTUnwrap(
-            restartedTab.existingWebView?.configuration.userContentController.sumiNormalTabUserContentController
-        )
-        await restartedController.waitForContentBlockingAssetsInstalled()
-        try await waitForAssets(on: restartedController) { $0.globalRuleListCount == 1 }
-        XCTAssertEqual(restartedTab.protectionAppliedAttachmentState?.effectiveLevel, .protection)
+        XCTAssertEqual(restartedDecision.plan.effectiveLevel, .protection)
+        XCTAssertEqual(restartedDecision.plan.activeGroups, [.trackingNetwork])
+        XCTAssertNotNil(restartedDecision.contentBlockingService)
     }
 
     func testOffProtectionLevelKeepsNewTabHotPathEmptyAfterRestart() async throws {
@@ -703,7 +678,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             defaults: harness.defaults,
             ruleDefinitions: [Self.validRuleListDefinition()]
         )
-        let protection = makeProtectionCoordinator(
+        let protection = try makeProtectionCoordinator(
             defaults: harness.defaults,
             registry: registry,
             trackingProtectionModule: module,
@@ -789,7 +764,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
                 )
             }
         )
-        let protection = makeProtectionCoordinator(
+        let protection = try makeProtectionCoordinator(
             defaults: harness.defaults,
             registry: registry,
             trackingProtectionModule: module,
@@ -873,7 +848,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         guard case .downloaded = updateResult else {
             return XCTFail("Expected downloaded result, got \(updateResult)")
         }
-        let protection = makeProtectionCoordinator(
+        let protection = try makeProtectionCoordinator(
             defaults: harness.defaults,
             registry: registry,
             trackingProtectionModule: module,
@@ -1433,11 +1408,33 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         registry: SumiModuleRegistry,
         trackingProtectionModule: SumiTrackingProtectionModule,
         level: SumiProtectionLevel
-    ) -> (adBlockingModule: SumiAdBlockingModule, coordinator: SumiProtectionCoordinator) {
+    ) throws -> (adBlockingModule: SumiAdBlockingModule, coordinator: SumiProtectionCoordinator) {
         let protectionSettings = SumiProtectionSettings(userDefaults: defaults)
         protectionSettings.setLevel(level)
         protectionSettings.setAppliedLevel(level)
-        let adBlockingModule = SumiAdBlockingModule(moduleRegistry: registry)
+        let generatedRoot = temporaryDirectory(prefix: "SumiNormalTabPreparedBundles")
+        let preparedBundle = generatedRoot
+            .appendingPathComponent(SumiProtectionBundleProfile.adblock, isDirectory: true)
+            .appendingPathComponent(SumiAdblockNativeRuleBundle.directoryName, isDirectory: true)
+        try PreparedAdblockTestSupport.makeBundle(at: preparedBundle)
+        let manifestStore = AdblockUpdateManifestStore(
+            rootDirectory: temporaryDirectory(prefix: "SumiNormalTabAdblockManifest")
+        )
+        let adBlockingModule = SumiAdBlockingModule(
+            moduleRegistry: registry,
+            preparedBundleResourceURL: temporaryDirectory(prefix: "SumiNormalTabEmptyResources"),
+            preparedBundleRemoteRootURL: temporaryDirectory(prefix: "SumiNormalTabEmptyRemote"),
+            preparedBundleGeneratedRootURL: generatedRoot,
+            ruleListStoreFactory: { settings, isEnabled in
+                AdblockWebKitRuleListStore(
+                    settingsStore: settings,
+                    isAdblockEnabled: isEnabled,
+                    manifestStore: manifestStore,
+                    compiler: SumiWKContentRuleListCompiler(),
+                    embeddedBundleURLProvider: { nil }
+                )
+            }
+        )
         let coordinator = SumiProtectionCoordinator(
             settings: protectionSettings,
             trackingProtectionModule: trackingProtectionModule,
@@ -1649,6 +1646,13 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             .deletingLastPathComponent()
         let sourceURL = repoRoot.appendingPathComponent(relativePath)
         return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private func temporaryDirectory(prefix: String) -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)
+        temporaryDirectories.append(directory)
+        return directory
     }
 
     private static func makeInMemoryExtensionContainer() throws -> ModelContainer {

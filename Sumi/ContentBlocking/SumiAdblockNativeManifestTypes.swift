@@ -75,6 +75,12 @@ struct NativeContentBlockingLogicalGroupDescriptor: Codable, Equatable, Sendable
     let sourceName: String?
     let sourceURL: String?
     let sourceLicense: String?
+    let sourceLicenseURL: String?
+    let sourceAttribution: String?
+    let sourceGeneratedAt: String?
+    let sourceSha256: String?
+    let sourceNonCommercialOnly: Bool?
+    let sourceShareAlike: Bool?
     let sourceGenerator: String?
     let notes: [String]
 
@@ -86,6 +92,12 @@ struct NativeContentBlockingLogicalGroupDescriptor: Codable, Equatable, Sendable
             "sourceName=\(sourceName ?? "nil")",
             "sourceURL=\(sourceURL ?? "nil")",
             "sourceLicense=\(sourceLicense ?? "nil")",
+            "sourceLicenseURL=\(sourceLicenseURL ?? "nil")",
+            "sourceAttribution=\(sourceAttribution ?? "nil")",
+            "sourceGeneratedAt=\(sourceGeneratedAt ?? "nil")",
+            "sourceSha256=\(sourceSha256 ?? "nil")",
+            "sourceNonCommercialOnly=\(sourceNonCommercialOnly.map(String.init) ?? "nil")",
+            "sourceShareAlike=\(sourceShareAlike.map(String.init) ?? "nil")",
             "sourceGenerator=\(sourceGenerator ?? "nil")",
             "notes=\(notes.joined(separator: " | "))",
         ].joined(separator: "; ")

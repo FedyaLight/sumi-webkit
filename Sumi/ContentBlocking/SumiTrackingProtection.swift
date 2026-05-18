@@ -3,6 +3,8 @@ import CryptoKit
 import Foundation
 @preconcurrency import TrackerRadarKit
 
+// Temporary migration fallback: normal tab protection is prepared-bundle-only through
+// SumiProtectionCoordinator when trackingNetwork is present in a signed release.
 enum SumiTrackingProtectionGlobalMode: String, Codable, CaseIterable, Sendable {
     case enabled
     case disabled

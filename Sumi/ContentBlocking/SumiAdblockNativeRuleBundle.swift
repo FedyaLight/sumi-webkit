@@ -87,8 +87,20 @@ struct SumiAdblockNativeRuleBundleManifest: Codable, Equatable, Sendable {
         struct Source: Codable, Equatable, Sendable {
             let type: String?
             let name: String?
+            let sourceName: String?
             let url: String?
+            let sourceURL: String?
             let license: String?
+            let sourceLicense: String?
+            let sourceLicenseURL: String?
+            let attribution: String?
+            let generatedAt: String?
+            let sourceSha256: String?
+            let sourceByteSize: Int?
+            let ruleCount: Int?
+            let shardCount: Int?
+            let nonCommercialOnly: Bool?
+            let shareAlike: Bool?
             let generator: String?
         }
 
@@ -294,9 +306,15 @@ struct SumiAdblockNativeRuleBundle: Sendable {
                 status: $0.status,
                 ruleCount: $0.ruleCount,
                 shardCount: $0.shardCount,
-                sourceName: $0.source?.name,
-                sourceURL: $0.source?.url,
-                sourceLicense: $0.source?.license,
+                sourceName: $0.source?.sourceName ?? $0.source?.name,
+                sourceURL: $0.source?.sourceURL ?? $0.source?.url,
+                sourceLicense: $0.source?.sourceLicense ?? $0.source?.license,
+                sourceLicenseURL: $0.source?.sourceLicenseURL,
+                sourceAttribution: $0.source?.attribution,
+                sourceGeneratedAt: $0.source?.generatedAt,
+                sourceSha256: $0.source?.sourceSha256,
+                sourceNonCommercialOnly: $0.source?.nonCommercialOnly,
+                sourceShareAlike: $0.source?.shareAlike,
                 sourceGenerator: $0.source?.generator,
                 notes: $0.notes ?? []
             )

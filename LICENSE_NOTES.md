@@ -11,6 +11,24 @@ conversion, and bundle generation belong outside the browser in the sibling
 external generation pipeline may have their own licenses, terms, and notices
 from the upstream list projects.
 
+Prepared `trackingNetwork` assets may be derived from DuckDuckGo Tracker Radar /
+Tracker Data Set:
+
+- Source: `https://staticcdn.duckduckgo.com/trackerblocking/v6/current/macos-tds.json`
+- License: CC BY-NC-SA 4.0
+- License URL: `https://creativecommons.org/licenses/by-nc-sa/4.0/`
+
+Those generated tracking assets are non-commercial Sumi protection-bundle data
+and remain subject to the CC BY-NC-SA 4.0 non-commercial and share-alike terms.
+Release and bundle manifests preserve the source name, source URL, license URL,
+attribution, generation date, source SHA-256, rule count, and shard count before
+Sumi consumes the prepared shards.
+
+The older in-browser DDG TrackerRadarKit path remains a temporary migration
+fallback until prepared `trackingNetwork` output is manually proven comparable.
+It must not be attached independently when a prepared `trackingNetwork` group is
+active.
+
 ## Adblock redirect/noop resource compatibility metadata
 
 Sumi recognizes a small set of uBO-compatible redirect/noop resource names for
