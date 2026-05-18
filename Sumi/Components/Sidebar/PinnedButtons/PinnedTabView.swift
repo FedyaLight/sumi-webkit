@@ -223,6 +223,7 @@ struct PinnedTileVisual: View {
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let faviconScale: CGFloat = 6.0
     private let faviconBlur: CGFloat = 30.0
@@ -262,7 +263,11 @@ struct PinnedTileVisual: View {
                     scale: faviconScale,
                     blur: faviconBlur
                 )
-                .loadingAlphaWaveMask(isLoading)
+                .conditionally(if: isLoading && !reduceMotion) { view in
+                    view.mask {
+                        PinnedTileLoadingAlphaWaveMask()
+                    }
+                }
                 .allowsHitTesting(false)
             }
         }
@@ -393,64 +398,32 @@ struct PinnedTileVisual: View {
     }
 }
 
-private extension View {
-    func loadingAlphaWaveMask(_ isActive: Bool) -> some View {
-        modifier(SumiLoadingAlphaWaveMaskModifier(isActive: isActive))
-    }
-}
-
-private struct SumiLoadingAlphaWaveMaskModifier: ViewModifier {
-    let isActive: Bool
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    func body(content: Content) -> some View {
-        content.mask {
-            if isActive && !reduceMotion {
-                SumiLoadingAlphaWaveMask()
-            } else {
-                Color.white
-            }
-        }
-    }
-}
-
-private struct SumiLoadingAlphaWaveMask: View {
-    @State private var isAnimating = false
-
+private struct PinnedTileLoadingAlphaWaveMask: View {
     var body: some View {
-        GeometryReader { proxy in
-            let size = proxy.size
-            let halfWidth = relativeHalfWidth(for: size.width)
-            let centerX = isAnimating ? 1 + halfWidth : -halfWidth
+        TimelineView(.animation) { timeline in
+            GeometryReader { proxy in
+                let width = max(proxy.size.width, 1)
+                let relativeHalfWidth = alphaWaveRelativeHalfWidth(for: width)
+                let progress = alphaWaveProgress(at: timeline.date)
+                let centerX = -relativeHalfWidth + progress * (1 + 2 * relativeHalfWidth)
 
-            LinearGradient(
-                stops: gradientStops(centerX: centerX, halfWidth: halfWidth),
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-            .onAppear {
-                restart()
+                LinearGradient(
+                    stops: alphaWaveStops(centerX: centerX, halfWidth: relativeHalfWidth),
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
             }
-            .onChange(of: size) { _, _ in
-                restart()
-            }
-            .animation(
-                .linear(duration: SumiTabTitleAnimation.loadingAlphaWaveCycleDuration)
-                    .repeatForever(autoreverses: false),
-                value: isAnimating
-            )
         }
     }
 
-    private func restart() {
-        isAnimating = false
-        DispatchQueue.main.async {
-            isAnimating = true
-        }
+    private func alphaWaveProgress(at date: Date) -> CGFloat {
+        let duration = SumiTabTitleAnimation.loadingAlphaWaveCycleDuration
+        guard duration > 0 else { return 0 }
+        let elapsed = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: duration)
+        return CGFloat(elapsed / duration)
     }
 
-    private func gradientStops(centerX: CGFloat, halfWidth: CGFloat) -> [Gradient.Stop] {
+    private func alphaWaveStops(centerX: CGFloat, halfWidth: CGFloat) -> [Gradient.Stop] {
         let leadingShoulder = halfWidth * 0.56
         let trailingShoulder = halfWidth * 0.56
         return [
@@ -471,8 +444,7 @@ private struct SumiLoadingAlphaWaveMask: View {
         ]
     }
 
-    private func relativeHalfWidth(for width: CGFloat) -> CGFloat {
-        guard width > 0 else { return 0 }
+    private func alphaWaveRelativeHalfWidth(for width: CGFloat) -> CGFloat {
         let bandWidth = min(
             max(
                 width * SumiTabTitleAnimation.loadingAlphaWaveRelativeBandWidth,
