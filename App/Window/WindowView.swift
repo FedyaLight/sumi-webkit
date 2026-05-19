@@ -14,6 +14,8 @@ private enum WindowTransientChromeZIndex {
     static let findInPage: Double = 3_500
     static let glance: Double = 8_000
     static let glanceFindInPage: Double = 8_500
+    /// Collapsed sidebar must sit above Glance so tab/space switching never dismisses or blocks it.
+    static let collapsedSidebar: Double = 8_750
     /// Floating bar must stay above Glance so URL editing keeps targeting the preview page.
     static let floatingBar: Double = 9_000
     /// Modal dialogs (quit, settings paths, etc.) must stay above app chrome.
@@ -74,6 +76,7 @@ struct WindowView: View {
                         )
                             .environmentObject(hoverSidebarManager)
                             .environment(windowState)
+                            .zIndex(WindowTransientChromeZIndex.collapsedSidebar)
                     }
                 }
 
@@ -98,7 +101,7 @@ struct WindowView: View {
             }
 
             // Glance overlay for external link previews
-                if presentedGlanceSession != nil {
+                if shouldRenderGlanceOverlay {
                     chromeThemeScope {
                         GlanceOverlayView()
                         .environmentObject(glanceManager)
@@ -466,6 +469,10 @@ struct WindowView: View {
 
     private var presentedGlanceSession: GlanceSession? {
         glanceManager.presentedSession(for: windowState)
+    }
+
+    private var shouldRenderGlanceOverlay: Bool {
+        glanceManager.currentSession?.windowId == windowState.id
     }
 
     private var activeGlanceSession: GlanceSession? {

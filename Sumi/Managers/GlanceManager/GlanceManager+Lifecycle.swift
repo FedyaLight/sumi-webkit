@@ -3,18 +3,12 @@ extension GlanceManager {
     func moveToSplitView() {
         guard let session = currentSession,
               let browserManager,
-              let windowState = windowRegistry?.windows[session.windowId] ?? windowRegistry?.activeWindow
+              let windowState = targetWindowState(for: session)
         else { return }
 
         transition(to: .promoting)
-        materializePreviewWebViewIfNeeded(for: session)
-        let newTab = browserManager.tabManager.adoptGlanceTab(
-            session.previewTab,
-            sourceTab: session.sourceTab,
-            in: browserManager.tabManager.currentSpace
-        )
+        let newTab = promotePreviewTab(for: session, browserManager: browserManager, windowState: windowState)
         browserManager.splitManager.enterSplit(with: newTab, placeOn: .right, in: windowState)
-        browserManager.selectTab(newTab, in: windowState)
         finishPromotedSession()
     }
 
@@ -23,19 +17,52 @@ extension GlanceManager {
               let browserManager else { return }
 
         transition(to: .promoting)
-        materializePreviewWebViewIfNeeded(for: session)
-        let newTab = browserManager.tabManager.adoptGlanceTab(
-            session.previewTab,
-            sourceTab: session.sourceTab,
-            in: browserManager.tabManager.currentSpace
+        let windowState = targetWindowState(for: session)
+        let newTab = promotePreviewTab(
+            for: session,
+            browserManager: browserManager,
+            windowState: windowState
         )
 
-        if let windowState = windowRegistry?.windows[session.windowId] ?? windowRegistry?.activeWindow {
+        if let windowState {
             browserManager.selectTab(newTab, in: windowState)
         } else {
             browserManager.selectTab(newTab)
         }
         finishPromotedSession()
+    }
+
+    private func promotePreviewTab(
+        for session: GlanceSession,
+        browserManager: BrowserManager,
+        windowState: BrowserWindowState?
+    ) -> Tab {
+        materializePreviewWebViewIfNeeded(for: session)
+        return browserManager.tabManager.adoptGlanceTab(
+            session.previewTab,
+            sourceTab: session.sourceTab,
+            in: targetSpace(for: session, browserManager: browserManager, windowState: windowState)
+        )
+    }
+
+    private func targetWindowState(for session: GlanceSession) -> BrowserWindowState? {
+        windowRegistry?.windows[session.windowId]
+            ?? session.sourceTab.flatMap { browserManager?.windowState(containing: $0) }
+            ?? windowRegistry?.activeWindow
+    }
+
+    private func targetSpace(
+        for session: GlanceSession,
+        browserManager: BrowserManager,
+        windowState: BrowserWindowState?
+    ) -> Space? {
+        windowState?.currentSpaceId.flatMap { spaceId in
+            browserManager.tabManager.spaces.first(where: { $0.id == spaceId })
+        }
+        ?? session.sourceTab?.spaceId.flatMap { spaceId in
+            browserManager.tabManager.spaces.first(where: { $0.id == spaceId })
+        }
+        ?? browserManager.tabManager.currentSpace
     }
 
     private func finishPromotedSession() {
