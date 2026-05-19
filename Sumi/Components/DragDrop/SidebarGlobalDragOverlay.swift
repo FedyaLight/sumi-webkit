@@ -89,9 +89,17 @@ class SidebarDragNSView: NSView {
         guard context.canResolveDrop else {
             return []
         }
+        SidebarTabListDragAutoscrollRegistry.shared.autoscrollIfNeeded(
+            sender: sender,
+            in: self
+        )
         return updateDragSlot(sender: sender)
             ? context.dragOperation
             : []
+    }
+
+    override func wantsPeriodicDraggingUpdates() -> Bool {
+        true
     }
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
@@ -201,4 +209,179 @@ class SidebarDragNSView: NSView {
         )
     }
 
+}
+
+enum SidebarTabListAutoscrollDirection: Equatable {
+    case up
+    case down
+}
+
+enum SidebarTabListAutoscrollPolicy {
+    static let edgeBandHeight: CGFloat = 32
+    static let minimumStep: CGFloat = 8
+    static let maximumStep: CGFloat = 28
+
+    static func direction(
+        for location: CGPoint,
+        in viewport: CGRect,
+        edgeBandHeight: CGFloat = Self.edgeBandHeight
+    ) -> SidebarTabListAutoscrollDirection? {
+        guard viewport.contains(location), edgeBandHeight > 0 else { return nil }
+
+        let topDistance = viewport.maxY - location.y
+        let bottomDistance = location.y - viewport.minY
+        let effectiveBandHeight = min(edgeBandHeight, viewport.height / 2)
+
+        if topDistance <= effectiveBandHeight, topDistance < bottomDistance {
+            return .up
+        }
+        if bottomDistance <= effectiveBandHeight, bottomDistance < topDistance {
+            return .down
+        }
+        return nil
+    }
+
+    static func step(
+        for location: CGPoint,
+        in viewport: CGRect,
+        direction: SidebarTabListAutoscrollDirection,
+        edgeBandHeight: CGFloat = Self.edgeBandHeight
+    ) -> CGFloat {
+        let effectiveBandHeight = max(1, min(edgeBandHeight, viewport.height / 2))
+        let distance: CGFloat
+        switch direction {
+        case .up:
+            distance = max(0, viewport.maxY - location.y)
+        case .down:
+            distance = max(0, location.y - viewport.minY)
+        }
+
+        let proximity = max(0, min(1, 1 - (distance / effectiveBandHeight)))
+        return minimumStep + ((maximumStep - minimumStep) * proximity)
+    }
+}
+
+@MainActor
+final class SidebarTabListDragAutoscrollRegistry {
+    static let shared = SidebarTabListDragAutoscrollRegistry()
+
+    private final class WeakScrollView {
+        weak var scrollView: NSScrollView?
+
+        init(_ scrollView: NSScrollView) {
+            self.scrollView = scrollView
+        }
+    }
+
+    private var scrollViewsByIdentifier: [ObjectIdentifier: WeakScrollView] = [:]
+
+    func register(_ scrollView: NSScrollView) {
+        cleanupReleasedScrollViews()
+        scrollViewsByIdentifier[ObjectIdentifier(scrollView)] = WeakScrollView(scrollView)
+    }
+
+    func unregister(_ scrollView: NSScrollView) {
+        scrollViewsByIdentifier[ObjectIdentifier(scrollView)] = nil
+    }
+
+    @discardableResult
+    func autoscrollIfNeeded(
+        sender: NSDraggingInfo,
+        in destinationView: NSView
+    ) -> Bool {
+        cleanupReleasedScrollViews()
+
+        let locationInWindow = sender.draggingLocation
+        let candidates = scrollViewsByIdentifier.values
+            .compactMap(\.scrollView)
+            .filter { $0.window === destinationView.window }
+            .compactMap { scrollView -> (scrollView: NSScrollView, viewport: CGRect, direction: SidebarTabListAutoscrollDirection)? in
+                let viewport = scrollView.contentView.convert(scrollView.contentView.bounds, to: nil)
+                guard let direction = SidebarTabListAutoscrollPolicy.direction(
+                    for: locationInWindow,
+                    in: viewport
+                ) else {
+                    return nil
+                }
+                return (scrollView, viewport, direction)
+            }
+            .sorted { lhs, rhs in
+                let lhsArea = lhs.viewport.width * lhs.viewport.height
+                let rhsArea = rhs.viewport.width * rhs.viewport.height
+                return lhsArea < rhsArea
+            }
+
+        guard let candidate = candidates.first else { return false }
+        return autoscroll(
+            candidate.scrollView,
+            locationInWindow: locationInWindow,
+            viewport: candidate.viewport,
+            direction: candidate.direction
+        )
+    }
+
+    private func autoscroll(
+        _ scrollView: NSScrollView,
+        locationInWindow: CGPoint,
+        viewport: CGRect,
+        direction: SidebarTabListAutoscrollDirection
+    ) -> Bool {
+        let contentView = scrollView.contentView
+        guard let documentView = scrollView.documentView else { return false }
+
+        let step = SidebarTabListAutoscrollPolicy.step(
+            for: locationInWindow,
+            in: viewport,
+            direction: direction
+        )
+        let visualDelta: CGFloat = {
+            switch direction {
+            case .up:
+                return -step
+            case .down:
+                return step
+            }
+        }()
+        let signedDelta = documentView.isFlipped ? visualDelta : -visualDelta
+        let currentOrigin = contentView.bounds.origin
+        let proposedOrigin = CGPoint(
+            x: currentOrigin.x,
+            y: currentOrigin.y + signedDelta
+        )
+        let constrainedOrigin = constrainedScrollOrigin(
+            proposedOrigin,
+            in: contentView
+        )
+
+        guard abs(constrainedOrigin.y - currentOrigin.y) > 0.5 else {
+            return false
+        }
+
+        contentView.scroll(to: constrainedOrigin)
+        scrollView.reflectScrolledClipView(contentView)
+        scrollView.flashScrollers()
+        SidebarDragState.shared.requestGeometryRefresh()
+        return true
+    }
+
+    private func constrainedScrollOrigin(
+        _ origin: CGPoint,
+        in contentView: NSClipView
+    ) -> CGPoint {
+        let documentRect = contentView.documentRect
+        let visibleSize = contentView.bounds.size
+        let maxX = max(documentRect.minX, documentRect.maxX - visibleSize.width)
+        let maxY = max(documentRect.minY, documentRect.maxY - visibleSize.height)
+
+        return CGPoint(
+            x: min(max(origin.x, documentRect.minX), maxX),
+            y: min(max(origin.y, documentRect.minY), maxY)
+        )
+    }
+
+    private func cleanupReleasedScrollViews() {
+        scrollViewsByIdentifier = scrollViewsByIdentifier.filter { _, weakScrollView in
+            weakScrollView.scrollView != nil
+        }
+    }
 }
