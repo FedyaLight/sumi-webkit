@@ -26,7 +26,32 @@ extension SpaceView {
         .accessibilityIdentifier("space-view-scroll-\(space.id.uuidString)")
         .scrollIndicators(.visible, axes: .vertical)
         .contentShape(Rectangle())
+        .mask(SidebarTabListVerticalFadeMask())
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
+
+private struct SidebarTabListVerticalFadeMask: View {
+    private let fadeHeight: CGFloat = 14
+
+    var body: some View {
+        VStack(spacing: 0) {
+            LinearGradient(
+                colors: [.clear, .white],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: fadeHeight)
+
+            Color.white
+
+            LinearGradient(
+                colors: [.white, .clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: fadeHeight)
+        }
     }
 }
 

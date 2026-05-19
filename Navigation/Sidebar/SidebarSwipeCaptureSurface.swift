@@ -1,6 +1,17 @@
 import AppKit
 import SwiftUI
 
+enum SidebarSwipeScrollForwardingPolicy {
+    static func shouldPreferTabListScroll(
+        hasPreciseScrollingDeltas: Bool,
+        scrollingDeltaX: CGFloat,
+        scrollingDeltaY: CGFloat
+    ) -> Bool {
+        guard hasPreciseScrollingDeltas else { return true }
+        return abs(scrollingDeltaY) >= abs(scrollingDeltaX)
+    }
+}
+
 struct SidebarSwipeCaptureSurface: NSViewRepresentable {
     let isEnabled: Bool
     let onEvent: (SpaceSwipeGestureEvent) -> Void
@@ -36,6 +47,11 @@ extension SidebarSwipeCaptureSurface {
             _ event: NSEvent,
             in view: CaptureView
         ) -> Bool {
+            if view.forwardScrollWheelToRegisteredTabListIfNeeded(event) {
+                tracker.reset()
+                return true
+            }
+
             let result = tracker.process(
                 .init(event: event),
                 width: view.bounds.width,
@@ -78,6 +94,24 @@ extension SidebarSwipeCaptureSurface {
             }
 
             super.scrollWheel(with: event)
+        }
+
+        func forwardScrollWheelToRegisteredTabListIfNeeded(_ event: NSEvent) -> Bool {
+            guard SidebarSwipeScrollForwardingPolicy.shouldPreferTabListScroll(
+                hasPreciseScrollingDeltas: event.hasPreciseScrollingDeltas,
+                scrollingDeltaX: event.scrollingDeltaX,
+                scrollingDeltaY: event.scrollingDeltaY
+            ),
+            let target = SidebarTabListDragAutoscrollRegistry.shared.registeredScrollView(
+                containingWindowPoint: event.locationInWindow,
+                in: window
+            )
+            else {
+                return false
+            }
+
+            target.scrollWheel(with: event)
+            return true
         }
 
         func forwardScrollWheelToUnderlying(_ event: NSEvent) -> Bool {

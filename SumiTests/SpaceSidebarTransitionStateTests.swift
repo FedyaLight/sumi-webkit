@@ -3,6 +3,30 @@ import XCTest
 
 @MainActor
 final class SpaceSidebarTransitionStateTests: XCTestCase {
+    func testSidebarSwipeCapturePrefersTabListForVerticalAndWheelScrolling() {
+        XCTAssertTrue(
+            SidebarSwipeScrollForwardingPolicy.shouldPreferTabListScroll(
+                hasPreciseScrollingDeltas: false,
+                scrollingDeltaX: 20,
+                scrollingDeltaY: 0
+            )
+        )
+        XCTAssertTrue(
+            SidebarSwipeScrollForwardingPolicy.shouldPreferTabListScroll(
+                hasPreciseScrollingDeltas: true,
+                scrollingDeltaX: 2,
+                scrollingDeltaY: 12
+            )
+        )
+        XCTAssertFalse(
+            SidebarSwipeScrollForwardingPolicy.shouldPreferTabListScroll(
+                hasPreciseScrollingDeltas: true,
+                scrollingDeltaX: 12,
+                scrollingDeltaY: 2
+            )
+        )
+    }
+
     func testSameSpaceClickIsNoOp() {
         let ids = [UUID(), UUID()]
         var state = SpaceSidebarTransitionState()

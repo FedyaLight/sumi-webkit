@@ -284,6 +284,27 @@ final class SidebarTabListDragAutoscrollRegistry {
         scrollViewsByIdentifier[ObjectIdentifier(scrollView)] = nil
     }
 
+    func registeredScrollView(
+        containingWindowPoint locationInWindow: CGPoint,
+        in window: NSWindow?
+    ) -> NSScrollView? {
+        cleanupReleasedScrollViews()
+
+        return scrollViewsByIdentifier.values
+            .compactMap(\.scrollView)
+            .filter { $0.window === window }
+            .filter { scrollView in
+                let viewport = scrollView.contentView.convert(scrollView.contentView.bounds, to: nil)
+                return viewport.contains(locationInWindow)
+            }
+            .sorted { lhs, rhs in
+                let lhsViewport = lhs.contentView.convert(lhs.contentView.bounds, to: nil)
+                let rhsViewport = rhs.contentView.convert(rhs.contentView.bounds, to: nil)
+                return (lhsViewport.width * lhsViewport.height) < (rhsViewport.width * rhsViewport.height)
+            }
+            .first
+    }
+
     @discardableResult
     func autoscrollIfNeeded(
         sender: NSDraggingInfo,
