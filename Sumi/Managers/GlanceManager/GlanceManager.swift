@@ -118,10 +118,17 @@ final class GlanceManager: ObservableObject {
     func presentedSession(for windowState: BrowserWindowState) -> GlanceSession? {
         guard let currentSession,
               phase != .idle,
-              phase != .promoting,
-              currentSession.windowId == windowState.id,
-              isSessionVisibleOnSelectedTab(currentSession, in: windowState)
+              currentSession.windowId == windowState.id
         else { return nil }
+
+        if phase == .promoting {
+            return currentSession
+        }
+
+        guard isSessionVisibleOnSelectedTab(currentSession, in: windowState) else {
+            return nil
+        }
+
         return currentSession
     }
 

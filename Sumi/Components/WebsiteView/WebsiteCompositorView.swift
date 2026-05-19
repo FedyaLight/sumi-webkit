@@ -469,6 +469,17 @@ final class WindowWebContentController: NSViewController {
             return host
         }
 
+        if let promotedHost = webViewCoordinator.takePromotedHost(
+            for: tab.id,
+            in: windowState.id,
+            expectedWebView: webView
+        ) {
+            clearPane(pane)
+            configureViewportStyle(on: promotedHost)
+            setPaneHost(promotedHost, for: pane)
+            return promotedHost
+        }
+
         if webViewCoordinator.isWebViewProtectedFromCompositorMutation(webView),
            let existingHost = protectedHost(for: webView) {
             clearPane(pane)
