@@ -28,6 +28,7 @@ struct GlanceOverlayView: NSViewRepresentable {
     func updateNSView(_ nsView: GlanceOverlayRootView, context: Context) {
         let tokens = themeContext.tokens(settings: sumiSettings)
         let configuration = GlanceOverlayConfiguration(
+            isVisible: glanceManager.presentedSession(for: windowState) != nil,
             isSidebarVisible: windowState.isSidebarVisible,
             sidebarWidth: windowState.sidebarWidth,
             sidebarPosition: sumiSettings.sidebarPosition,

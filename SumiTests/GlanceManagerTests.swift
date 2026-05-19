@@ -76,6 +76,58 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertTrue(previewTab.existingWebView === webView)
     }
 
+    func testMoveToNewTabPromotesPreviewInSourceWindow() async throws {
+        let browserManager = BrowserManager()
+        let sourceTab = makeSourceTab(in: browserManager)
+        let (windowRegistry, sourceWindow) = makeRegisteredWindow(in: browserManager, selecting: sourceTab)
+        let otherWindow = BrowserWindowState()
+        otherWindow.tabManager = browserManager.tabManager
+        windowRegistry.register(otherWindow)
+        windowRegistry.setActive(otherWindow)
+        let url = URL(string: "https://destination.example/page")!
+
+        browserManager.glanceManager.presentExternalURL(url, from: sourceTab)
+        let session = try XCTUnwrap(browserManager.glanceManager.currentSession)
+        let previewTab = session.previewTab
+        let webView = try await waitForPreviewWebView(in: session)
+
+        browserManager.glanceManager.moveToNewTab()
+
+        XCTAssertNil(browserManager.glanceManager.currentSession)
+        XCTAssertEqual(browserManager.glanceManager.phase, .idle)
+        XCTAssertTrue(browserManager.tabManager.tab(for: previewTab.id) === previewTab)
+        XCTAssertTrue(previewTab.existingWebView === webView)
+        XCTAssertEqual(sourceWindow.currentTabId, previewTab.id)
+        XCTAssertNotEqual(otherWindow.currentTabId, previewTab.id)
+    }
+
+    func testMoveToSplitViewPromotesPreviewIntoSourceWindowSplit() async throws {
+        let browserManager = BrowserManager()
+        let sourceTab = makeSourceTab(in: browserManager)
+        let (windowRegistry, sourceWindow) = makeRegisteredWindow(in: browserManager, selecting: sourceTab)
+        let url = URL(string: "https://destination.example/page")!
+
+        browserManager.glanceManager.presentExternalURL(url, from: sourceTab)
+        let session = try XCTUnwrap(browserManager.glanceManager.currentSession)
+        let previewTab = session.previewTab
+        let webView = try await waitForPreviewWebView(in: session)
+
+        browserManager.glanceManager.moveToSplitView()
+
+        let splitState = browserManager.splitManager.getSplitState(for: sourceWindow.id)
+        XCTAssertNil(browserManager.glanceManager.currentSession)
+        XCTAssertEqual(browserManager.glanceManager.phase, .idle)
+        XCTAssertTrue(splitState.isSplit)
+        XCTAssertEqual(splitState.leftTabId, sourceTab.id)
+        XCTAssertEqual(splitState.rightTabId, previewTab.id)
+        guard case .right? = splitState.activeSide else {
+            return XCTFail("Expected Glance split promotion to focus the right pane.")
+        }
+        XCTAssertEqual(windowRegistry.activeWindow?.id, sourceWindow.id)
+        XCTAssertEqual(sourceWindow.currentTabId, previewTab.id)
+        XCTAssertTrue(previewTab.existingWebView === webView)
+    }
+
     func testGlancePresentationStaysPinnedToSourceTabSelection() throws {
         let browserManager = BrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
@@ -116,6 +168,24 @@ final class GlanceManagerTests: XCTestCase {
         windowState.currentTabId = sourceTab.id
 
         XCTAssertTrue(browserManager.glanceManager.presentedSession(for: windowState) === session)
+    }
+
+    @discardableResult
+    private func makeRegisteredWindow(
+        in browserManager: BrowserManager,
+        selecting tab: Tab
+    ) -> (WindowRegistry, BrowserWindowState) {
+        let windowRegistry = browserManager.windowRegistry ?? WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
+
+        let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentSpaceId = tab.spaceId
+        windowState.currentTabId = tab.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+
+        return (windowRegistry, windowState)
     }
 
     private func makeSourceTab(in browserManager: BrowserManager) -> Tab {

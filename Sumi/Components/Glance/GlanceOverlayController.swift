@@ -2,6 +2,7 @@ import AppKit
 import WebKit
 
 struct GlanceOverlayConfiguration {
+    let isVisible: Bool
     let isSidebarVisible: Bool
     let sidebarWidth: CGFloat
     let sidebarPosition: SidebarPosition
@@ -105,6 +106,7 @@ final class GlanceOverlayController: NSObject {
     private var keyMonitor: Any?
     private var displayedSessionID: UUID?
     private var isAnimatingClose = false
+    private var isPresentationVisible = false
     private var closeConfirmationWorkItem: DispatchWorkItem?
     private var pendingPresentation: (session: GlanceSession, configuration: GlanceOverlayConfiguration)?
     private weak var previewWebView: FocusableWKWebView?
@@ -170,6 +172,7 @@ final class GlanceOverlayController: NSObject {
 
         guard let session else {
             pendingPresentation = nil
+            isPresentationVisible = false
             uninstallKeyMonitor()
             tearDownPresentedViews()
             self.session = nil
@@ -180,11 +183,29 @@ final class GlanceOverlayController: NSObject {
         if displayedSessionID != session.id {
             self.session = session
             displayedSessionID = session.id
-            presentWhenReady(session: session, configuration: configuration)
+            if configuration.isVisible {
+                presentWhenReady(session: session, configuration: configuration)
+            } else {
+                installViewsIfNeeded()
+                attachPreviewWebViewIfAvailable(for: session)
+                setPresentationVisible(false)
+            }
             return
         }
 
         self.session = session
+        if !configuration.isVisible {
+            pendingPresentation = nil
+            setPresentationVisible(false)
+            return
+        }
+
+        if !isPresentationVisible {
+            setPresentationVisible(true)
+            layoutForCurrentBounds(animated: false)
+            return
+        }
+
         if phase == .closing, !isAnimatingClose {
             pendingPresentation = nil
             animateClose(session: session, configuration: configuration)
@@ -209,6 +230,7 @@ final class GlanceOverlayController: NSObject {
     }
 
     private func rootViewDidLayout() {
+        guard configuration?.isVisible == true else { return }
         if presentPendingIfPossible() {
             return
         }
@@ -285,6 +307,11 @@ final class GlanceOverlayController: NSObject {
         guard let rootView else { return }
 
         installViewsIfNeeded()
+        isPresentationVisible = true
+        rootView.acceptsBackgroundMouseEvents = true
+        contentShadowView.isHidden = false
+        buttonStack.isHidden = false
+        webContentShieldAnchorView.isHidden = false
         installKeyMonitorIfNeeded()
         resetCloseConfirmation()
         attachPreviewWebViewIfAvailable(for: session)
@@ -340,10 +367,18 @@ final class GlanceOverlayController: NSObject {
         targetFrame: CGRect,
         configuration: GlanceOverlayConfiguration
     ) {
+        guard session?.id == sessionID else { return }
         contentShadowView.frame = targetFrame
         webClipView.frame = contentShadowView.bounds
-        publishContentFrame(targetFrame, in: rootView)
         manager?.markOpened(sessionID: sessionID)
+        guard isPresentationVisible,
+              self.configuration?.isVisible == true
+        else {
+            publishContentFrame(nil, in: rootView)
+            return
+        }
+
+        publishContentFrame(targetFrame, in: rootView)
         animateButtonsIn(configuration: configuration)
     }
 
@@ -462,7 +497,6 @@ final class GlanceOverlayController: NSObject {
     private func installViewsIfNeeded() {
         guard let rootView else { return }
         rootView.wantsLayer = true
-        rootView.acceptsBackgroundMouseEvents = true
 
         if webContentShieldAnchorView.superview == nil {
             rootView.addSubview(webContentShieldAnchorView)
@@ -480,6 +514,7 @@ final class GlanceOverlayController: NSObject {
 
     private func tearDownPresentedViews() {
         resetCloseConfirmation()
+        isPresentationVisible = false
         publishContentFrame(nil, in: rootView)
         WebContentMouseTrackingShield.unregister(webContentShieldAnchorView)
         rootView?.acceptsBackgroundMouseEvents = false
@@ -491,6 +526,28 @@ final class GlanceOverlayController: NSObject {
         webClipView.subviews.forEach { $0.removeFromSuperview() }
         buttonStack.removeFromSuperview()
         contentShadowView.removeFromSuperview()
+    }
+
+    private func setPresentationVisible(_ isVisible: Bool) {
+        isPresentationVisible = isVisible
+        rootView?.acceptsBackgroundMouseEvents = isVisible
+        contentShadowView.isHidden = !isVisible
+        buttonStack.isHidden = !isVisible
+        webContentShieldAnchorView.isHidden = !isVisible
+
+        if isVisible {
+            installKeyMonitorIfNeeded()
+            contentShadowView.alphaValue = 1
+            buttonStack.alphaValue = 1
+        } else {
+            uninstallKeyMonitor()
+            publishContentFrame(nil, in: rootView)
+            WebContentMouseTrackingShield.unregister(webContentShieldAnchorView)
+            rootView?.sidebarPassthroughRect = nil
+            rootView?.webContentCursorExclusionRect = nil
+            rootView?.chromeCursorExclusionRect = nil
+            resetCloseConfirmation()
+        }
     }
 
     private func attachPreviewWebViewIfAvailable(for session: GlanceSession?) {
@@ -543,6 +600,7 @@ final class GlanceOverlayController: NSObject {
     private func layoutForCurrentBounds(animated: Bool) {
         guard let rootView,
               let configuration,
+              configuration.isVisible,
               session != nil,
               !isAnimatingClose
         else { return }
