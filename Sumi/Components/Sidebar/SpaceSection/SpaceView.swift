@@ -37,13 +37,6 @@ struct SpaceView: View {
     @Environment(BrowserWindowState.self) var windowState
     @Environment(\.sumiSettings) var sumiSettings
     @ObservedObject var dragState = SidebarDragState.shared
-    @State var viewportHeight: CGFloat = 0
-    @State var totalContentHeight: CGFloat = 0
-    @State var scrollOffset: CGFloat = 0
-    @State var isScrollIndicatorActive: Bool = false
-    @State var scrollIndicatorHideTask: Task<Void, Never>?
-    @State var deferredScrollStateMutation = SidebarDeferredStateMutation<CGRect>()
-    @State var deferredContentHeightMutation = SidebarDeferredStateMutation<CGFloat>()
     @State var isNewTabHovered = false
     @State var regularRenderedTabItems: [RegularTabRenderedItem] = []
     @State var regularGapHeights: [UUID: CGFloat] = [:]

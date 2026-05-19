@@ -1,8 +1,83 @@
 import XCTest
+import CoreGraphics
 
 @testable import Sumi
 
 final class SidebarDropProjectionTests: XCTestCase {
+    func testTabListAutoscrollPolicyActivatesOnlyInsideVerticalEdgeBands() {
+        let viewport = CGRect(x: 10, y: 100, width: 240, height: 320)
+
+        XCTAssertEqual(
+            SidebarTabListAutoscrollPolicy.direction(
+                for: CGPoint(x: viewport.midX, y: viewport.maxY - 4),
+                in: viewport
+            ),
+            .up
+        )
+        XCTAssertEqual(
+            SidebarTabListAutoscrollPolicy.direction(
+                for: CGPoint(x: viewport.midX, y: viewport.minY + 4),
+                in: viewport
+            ),
+            .down
+        )
+        XCTAssertNil(
+            SidebarTabListAutoscrollPolicy.direction(
+                for: CGPoint(x: viewport.midX, y: viewport.midY),
+                in: viewport
+            )
+        )
+        XCTAssertNil(
+            SidebarTabListAutoscrollPolicy.direction(
+                for: CGPoint(x: viewport.maxX + 1, y: viewport.minY + 4),
+                in: viewport
+            )
+        )
+    }
+
+    func testTabListAutoscrollPolicyKeepsShortViewportsBoundedToNearestEdge() {
+        let viewport = CGRect(x: 0, y: 0, width: 80, height: 40)
+
+        XCTAssertEqual(
+            SidebarTabListAutoscrollPolicy.direction(
+                for: CGPoint(x: viewport.midX, y: viewport.maxY - 2),
+                in: viewport
+            ),
+            .up
+        )
+        XCTAssertEqual(
+            SidebarTabListAutoscrollPolicy.direction(
+                for: CGPoint(x: viewport.midX, y: viewport.minY + 2),
+                in: viewport
+            ),
+            .down
+        )
+        XCTAssertNil(
+            SidebarTabListAutoscrollPolicy.direction(
+                for: CGPoint(x: viewport.midX, y: viewport.midY),
+                in: viewport
+            )
+        )
+    }
+
+    func testTabListAutoscrollPolicyStepIncreasesTowardEdge() {
+        let viewport = CGRect(x: 0, y: 0, width: 100, height: 300)
+        let nearEdgeStep = SidebarTabListAutoscrollPolicy.step(
+            for: CGPoint(x: viewport.midX, y: viewport.minY + 2),
+            in: viewport,
+            direction: .down
+        )
+        let fartherFromEdgeStep = SidebarTabListAutoscrollPolicy.step(
+            for: CGPoint(x: viewport.midX, y: viewport.minY + 24),
+            in: viewport,
+            direction: .down
+        )
+
+        XCTAssertGreaterThan(nearEdgeStep, fartherFromEdgeStep)
+        XCTAssertGreaterThanOrEqual(fartherFromEdgeStep, SidebarTabListAutoscrollPolicy.minimumStep)
+        XCTAssertLessThanOrEqual(nearEdgeStep, SidebarTabListAutoscrollPolicy.maximumStep)
+    }
+
     func testProjectedIndexBeforeSourceMapsDirectlyToModelIndex() {
         XCTAssertEqual(
             SidebarDropProjection.modelInsertionIndex(
