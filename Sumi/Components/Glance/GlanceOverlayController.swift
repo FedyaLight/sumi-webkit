@@ -15,6 +15,7 @@ struct GlanceOverlayConfiguration {
 final class GlanceOverlayRootView: NSView {
     var onLayout: (() -> Void)?
     var onBackgroundMouseDown: (() -> Void)?
+    var onActionChromeMouseDown: ((CGPoint) -> Bool)?
     var acceptsBackgroundMouseEvents = false
     var sidebarPassthroughRect: CGRect? {
         didSet {
@@ -52,6 +53,10 @@ final class GlanceOverlayRootView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if onActionChromeMouseDown?(point) == true {
+            return
+        }
         onBackgroundMouseDown?()
     }
 
@@ -106,17 +111,21 @@ final class GlanceOverlayController: NSObject {
     private var keyMonitor: Any?
     private var displayedSessionID: UUID?
     private var isAnimatingClose = false
+    private var isAnimatingPromotion = false
+    private var isCompletingPromotionHandoff = false
     private var isPresentationVisible = false
     private var closeConfirmationWorkItem: DispatchWorkItem?
     private var pendingPresentation: (session: GlanceSession, configuration: GlanceOverlayConfiguration)?
     private weak var previewWebView: FocusableWKWebView?
+    private var previewHostView: SumiWebViewContainerView?
 
     private let webContentShieldAnchorView = GlanceWebContentShieldAnchorView(frame: .zero)
     private let contentShadowView = NSView(frame: .zero)
     private let webClipView = NSView(frame: .zero)
     private let buttonStack = GlanceActionButtonStack(
         buttonSize: Metrics.actionButtonSize,
-        spacing: Metrics.actionButtonSpacing
+        spacing: Metrics.actionButtonSpacing,
+        hitOutset: Metrics.actionButtonHitOutset
     )
     private let closeButton = GlanceActionButton(symbolName: "xmark", toolTip: "Close Glance")
     private let openButton = GlanceActionButton(symbolName: "arrow.up.left.and.arrow.down.right", toolTip: "Open in Tab")
@@ -129,7 +138,8 @@ final class GlanceOverlayController: NSObject {
         static let contentWidthFraction: CGFloat = 0.8
         static let actionButtonSize: CGFloat = 32
         static let actionButtonSpacing: CGFloat = 12
-        static let actionStackWidth: CGFloat = actionButtonSize
+        static let actionStackWidth: CGFloat = 44
+        static let actionButtonHitOutset: CGFloat = 6
         static let actionStackTopInset: CGFloat = 15
         static let actionStackSideGap: CGFloat = 12
     }
@@ -156,6 +166,9 @@ final class GlanceOverlayController: NSObject {
         rootView.onBackgroundMouseDown = { [weak self] in
             self?.closeFromBackdrop()
         }
+        rootView.onActionChromeMouseDown = { [weak self] point in
+            self?.handleActionChromeMouseDown(at: point) == true
+        }
         configureViews()
     }
 
@@ -174,7 +187,8 @@ final class GlanceOverlayController: NSObject {
             pendingPresentation = nil
             isPresentationVisible = false
             uninstallKeyMonitor()
-            tearDownPresentedViews()
+            tearDownPresentedViews(preservingPromotionHandoff: isCompletingPromotionHandoff)
+            isCompletingPromotionHandoff = false
             self.session = nil
             displayedSessionID = nil
             return
@@ -223,14 +237,20 @@ final class GlanceOverlayController: NSObject {
         closeConfirmationWorkItem?.cancel()
         closeConfirmationWorkItem = nil
         pendingPresentation = nil
+        isAnimatingPromotion = false
+        isCompletingPromotionHandoff = false
         uninstallKeyMonitor()
         tearDownPresentedViews()
         rootView?.onLayout = nil
         rootView?.onBackgroundMouseDown = nil
+        rootView?.onActionChromeMouseDown = nil
     }
 
     private func rootViewDidLayout() {
-        guard configuration?.isVisible == true else { return }
+        guard configuration?.isVisible == true,
+              !isAnimatingPromotion,
+              !isCompletingPromotionHandoff
+        else { return }
         if presentPendingIfPossible() {
             return
         }
@@ -512,7 +532,7 @@ final class GlanceOverlayController: NSObject {
         }
     }
 
-    private func tearDownPresentedViews() {
+    private func tearDownPresentedViews(preservingPromotionHandoff: Bool = false) {
         resetCloseConfirmation()
         isPresentationVisible = false
         publishContentFrame(nil, in: rootView)
@@ -522,8 +542,13 @@ final class GlanceOverlayController: NSObject {
         rootView?.webContentCursorExclusionRect = nil
         rootView?.chromeCursorExclusionRect = nil
         clearPreviewWebView()
+        if preservingPromotionHandoff {
+            previewHostView?.prepareForSuperviewTransferPreservingDisplayedContent()
+        } else {
+            webClipView.subviews.forEach { $0.removeFromSuperview() }
+        }
+        previewHostView = nil
         webContentShieldAnchorView.removeFromSuperview()
-        webClipView.subviews.forEach { $0.removeFromSuperview() }
         buttonStack.removeFromSuperview()
         contentShadowView.removeFromSuperview()
     }
@@ -556,12 +581,29 @@ final class GlanceOverlayController: NSObject {
         else { return }
 
         markPreviewWebView(webView)
-        guard webView.superview !== webClipView else { return }
+        let hostView: SumiWebViewContainerView
+        if let existingHost = previewHostView,
+           existingHost.tabID == session.previewTab.id,
+           existingHost.webView === webView {
+            hostView = existingHost
+        } else {
+            webClipView.subviews.forEach { $0.removeFromSuperview() }
+            hostView = SumiWebViewContainerView(tab: session.previewTab, webView: webView)
+            previewHostView = hostView
+        }
 
-        webView.removeFromSuperview()
-        webClipView.addSubview(webView)
-        webView.frame = webClipView.bounds
-        webView.autoresizingMask = [.width, .height]
+        guard hostView.superview !== webClipView else {
+            hostView.frame = webClipView.bounds
+            hostView.attachDisplayedContentIfNeeded()
+            return
+        }
+
+        hostView.prepareForSuperviewTransferPreservingDisplayedContent()
+        hostView.removeFromSuperview()
+        webClipView.addSubview(hostView)
+        hostView.frame = webClipView.bounds
+        hostView.autoresizingMask = [.width, .height]
+        hostView.attachDisplayedContentIfNeeded()
         WebContentMouseTrackingShield.refresh(for: webContentShieldAnchorView)
     }
 
@@ -602,7 +644,9 @@ final class GlanceOverlayController: NSObject {
               let configuration,
               configuration.isVisible,
               session != nil,
-              !isAnimatingClose
+              !isAnimatingClose,
+              !isAnimatingPromotion,
+              !isCompletingPromotionHandoff
         else { return }
 
         let targetFrame = targetContentFrame(in: rootView.bounds, configuration: configuration)
@@ -663,6 +707,15 @@ final class GlanceOverlayController: NSObject {
             }
         }
         return webArea
+    }
+
+    private func promotionContentFrame(
+        in bounds: CGRect,
+        configuration: GlanceOverlayConfiguration
+    ) -> CGRect {
+        webAreaFrame(in: bounds, configuration: configuration)
+            .standardized
+            .integral
     }
 
     private func startContentFrame(
@@ -821,13 +874,47 @@ final class GlanceOverlayController: NSObject {
     }
 
     private func closeFromBackdrop() {
+        guard !isAnimatingPromotion else { return }
         guard let session = manager?.beginAnimatedDismissal(),
               let configuration
         else { return }
         animateClose(session: session, configuration: configuration)
     }
 
+    private func handleActionChromeMouseDown(at point: CGPoint) -> Bool {
+        guard buttonStack.superview != nil,
+              !buttonStack.isHidden
+        else { return false }
+
+        let localPoint = buttonStack.convert(point, from: rootView)
+        let stackHitFrame = buttonStack.bounds.insetBy(
+            dx: -Metrics.actionButtonHitOutset,
+            dy: -Metrics.actionButtonHitOutset
+        )
+        guard stackHitFrame.contains(localPoint) else { return false }
+
+        let buttonActions: [(GlanceActionButton, () -> Void)] = [
+            (closeButton, { [weak self] in self?.closeButtonPressed() }),
+            (openButton, { [weak self] in self?.openButtonPressed() }),
+            (splitButton, { [weak self] in self?.splitButtonPressed() }),
+        ]
+
+        for (button, action) in buttonActions.reversed() {
+            let expandedFrame = button.frame.insetBy(
+                dx: -Metrics.actionButtonHitOutset,
+                dy: -Metrics.actionButtonHitOutset
+            )
+            guard expandedFrame.contains(localPoint) else { continue }
+            guard button.isEnabled else { return true }
+            action()
+            return true
+        }
+
+        return true
+    }
+
     @objc private func closeButtonPressed() {
+        guard !isAnimatingPromotion else { return }
         guard let manager,
               let session,
               let configuration
@@ -845,12 +932,122 @@ final class GlanceOverlayController: NSObject {
     }
 
     @objc private func openButtonPressed() {
-        manager?.moveToNewTab()
+        animatePromotionToRegularTab()
     }
 
     @objc private func splitButtonPressed() {
+        guard !isAnimatingPromotion else { return }
         guard splitButton.isEnabled else { return }
         manager?.moveToSplitView()
+    }
+
+    private func animatePromotionToRegularTab() {
+        guard !isAnimatingPromotion,
+              let manager,
+              let session,
+              let configuration,
+              let rootView
+        else { return }
+
+        isAnimatingPromotion = true
+        resetCloseConfirmation()
+        rootView.acceptsBackgroundMouseEvents = false
+        [closeButton, openButton, splitButton].forEach { $0.isEnabled = false }
+
+        attachPreviewWebViewIfAvailable(for: session)
+
+        let targetFrame = promotionContentFrame(in: rootView.bounds, configuration: configuration)
+        publishContentFrame(targetFrame, in: rootView)
+        layoutInteractionShield(in: rootView.bounds, contentFrame: targetFrame)
+
+        let duration = min(
+            configuration.reduceMotion ? Motion.reducedMotionDuration : Motion.glanceDuration,
+            0.28
+        )
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
+            buttonStack.animator().alphaValue = 0
+        }
+
+        animateContentFrame(
+            from: contentShadowView.frame,
+            to: targetFrame,
+            direction: .opening,
+            duration: duration
+        ) { [weak self, weak manager, sessionID = session.id] in
+            guard let self else { return }
+            guard self.session?.id == sessionID else {
+                self.isAnimatingPromotion = false
+                return
+            }
+            self.contentShadowView.frame = targetFrame
+            self.webClipView.frame = self.contentShadowView.bounds
+            self.completePromotionHandoff(
+                sessionID: sessionID,
+                manager: manager
+            )
+        }
+    }
+
+    private func completePromotionHandoff(
+        sessionID: UUID,
+        manager: GlanceManager?
+    ) {
+        guard session?.id == sessionID else {
+            isAnimatingPromotion = false
+            return
+        }
+
+        finishPromotionHandoff(sessionID: sessionID, manager: manager)
+    }
+
+    private func finishPromotionHandoff(
+        sessionID: UUID,
+        manager: GlanceManager?
+    ) {
+        guard session?.id == sessionID else {
+            isAnimatingPromotion = false
+            return
+        }
+
+        guard registerPreviewHostForPromotion() else {
+            isAnimatingPromotion = false
+            [closeButton, openButton, splitButton].forEach { $0.isEnabled = true }
+            buttonStack.animator().alphaValue = 1
+            return
+        }
+
+        isCompletingPromotionHandoff = true
+        isAnimatingPromotion = false
+        manager?.moveToNewTab(finishesAfterDisplayUpdate: true)
+    }
+
+    private func canRegisterPreviewHostForPromotion() -> Bool {
+        guard let previewHostView,
+              let session,
+              let webView = session.previewTab.existingWebView,
+              previewHostView.webView === webView
+        else { return false }
+
+        return true
+    }
+
+    private func registerPreviewHostForPromotion() -> Bool {
+        guard canRegisterPreviewHostForPromotion(),
+              let previewHostView,
+              let session,
+              let manager,
+              let webViewCoordinator = manager.browserManager?.webViewCoordinator
+        else { return false }
+
+        webViewCoordinator.registerPromotedHost(
+            previewHostView,
+            for: session.previewTab.id,
+            in: session.windowId
+        )
+        previewHostView.prepareForSuperviewTransferPreservingDisplayedContent()
+        return true
     }
 
     private func webContentIsFocused() -> Bool {
@@ -890,11 +1087,13 @@ private final class GlanceWebContentShieldAnchorView: NSView {
 private final class GlanceActionButtonStack: NSView {
     let spacing: CGFloat
     private let buttonSize: CGFloat
+    private let hitOutset: CGFloat
     private(set) var arrangedSubviews: [NSView] = []
 
-    init(buttonSize: CGFloat, spacing: CGFloat) {
+    init(buttonSize: CGFloat, spacing: CGFloat, hitOutset: CGFloat) {
         self.buttonSize = buttonSize
         self.spacing = spacing
+        self.hitOutset = hitOutset
         super.init(frame: .zero)
     }
 
@@ -933,10 +1132,20 @@ private final class GlanceActionButtonStack: NSView {
             if let hitView = subview.hitTest(convertedPoint) {
                 return hitView
             }
+            let expandedFrame = subview.frame.insetBy(
+                dx: -hitOutset,
+                dy: -hitOutset
+            )
+            if expandedFrame.contains(point) {
+                return subview
+            }
         }
-        return nil
+        return self
     }
 
+    override func mouseDown(with event: NSEvent) {}
+    override func rightMouseDown(with event: NSEvent) {}
+    override func otherMouseDown(with event: NSEvent) {}
     override func resetCursorRects() {}
 }
 

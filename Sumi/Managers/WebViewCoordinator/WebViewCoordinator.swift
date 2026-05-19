@@ -72,6 +72,7 @@ final class SumiWebViewContainerView: NSView {
     weak var tab: Tab?
 
     private var viewportCornerRadius: CGFloat = 0
+    private var preservesDisplayedContentOnNextRemoval = false
 
     override var constraints: [NSLayoutConstraint] { [] }
 
@@ -119,6 +120,10 @@ final class SumiWebViewContainerView: NSView {
         addDisplayedContent(displayedView)
     }
 
+    func prepareForSuperviewTransferPreservingDisplayedContent() {
+        preservesDisplayedContentOnNextRemoval = true
+    }
+
     private func addDisplayedContent(_ displayedView: NSView) {
         frameDisplayedContent(displayedView)
         addSubview(displayedView)
@@ -148,7 +153,11 @@ final class SumiWebViewContainerView: NSView {
     }
 
     override func removeFromSuperview() {
-        webView.sumiTabContentView.removeFromSuperview()
+        if preservesDisplayedContentOnNextRemoval {
+            preservesDisplayedContentOnNextRemoval = false
+        } else {
+            webView.sumiTabContentView.removeFromSuperview()
+        }
         super.removeFromSuperview()
     }
 
@@ -439,6 +448,9 @@ class WebViewCoordinator {
     @ObservationIgnored
     private var recentlyVisibleTabIDsByWindow: [UUID: [UUID]] = [:]
 
+    @ObservationIgnored
+    private var promotedHostsByTabAndWindow: [UUID: [UUID: SumiWebViewContainerView]] = [:]
+
     /// Prevent recursive sync calls
     @ObservationIgnored
     private var isSyncingTab: Set<UUID> = []
@@ -554,6 +566,23 @@ class WebViewCoordinator {
 
     func setWebView(_ webView: WKWebView, for tabId: UUID, in windowId: UUID) {
         registerTrackedWebView(webView, for: tabId, in: windowId)
+    }
+
+    func registerPromotedHost(_ host: SumiWebViewContainerView, for tabId: UUID, in windowId: UUID) {
+        promotedHostsByTabAndWindow[tabId, default: [:]][windowId] = host
+    }
+
+    func takePromotedHost(for tabId: UUID, in windowId: UUID, expectedWebView: WKWebView) -> SumiWebViewContainerView? {
+        guard let host = promotedHostsByTabAndWindow[tabId]?[windowId] else { return nil }
+        guard host.webView === expectedWebView else { return nil }
+
+        promotedHostsByTabAndWindow[tabId]?[windowId] = nil
+        if promotedHostsByTabAndWindow[tabId]?.isEmpty == true {
+            promotedHostsByTabAndWindow[tabId] = nil
+        }
+
+        host.prepareForSuperviewTransferPreservingDisplayedContent()
+        return host
     }
 
     @discardableResult

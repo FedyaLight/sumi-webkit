@@ -12,7 +12,7 @@ extension GlanceManager {
         finishPromotedSession()
     }
 
-    func moveToNewTab() {
+    func moveToNewTab(finishesAfterDisplayUpdate: Bool = false) {
         guard let session = currentSession,
               let browserManager else { return }
 
@@ -29,7 +29,14 @@ extension GlanceManager {
         } else {
             browserManager.selectTab(newTab)
         }
-        finishPromotedSession()
+        if finishesAfterDisplayUpdate {
+            DispatchQueue.main.async { [weak self, sessionID = session.id] in
+                guard self?.currentSession?.id == sessionID else { return }
+                self?.finishPromotedSession()
+            }
+        } else {
+            finishPromotedSession()
+        }
     }
 
     private func promotePreviewTab(
