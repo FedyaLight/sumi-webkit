@@ -38,8 +38,8 @@ extension BrowserManager {
     }
 
     func zoomInCurrentTab(in windowState: BrowserWindowState, source: ZoomPopoverSource? = nil) {
-        guard let currentTab = currentTab(for: windowState),
-              let webView = getWebView(for: currentTab.id, in: windowState.id)
+        guard let currentTab = activePageTab(for: windowState),
+              let webView = activePageWebView(for: windowState)
         else { return }
 
         let domain = currentTab.url.host ?? currentTab.url.absoluteString
@@ -53,8 +53,8 @@ extension BrowserManager {
     }
 
     func zoomOutCurrentTab(in windowState: BrowserWindowState, source: ZoomPopoverSource? = nil) {
-        guard let currentTab = currentTab(for: windowState),
-              let webView = getWebView(for: currentTab.id, in: windowState.id)
+        guard let currentTab = activePageTab(for: windowState),
+              let webView = activePageWebView(for: windowState)
         else { return }
 
         let domain = currentTab.url.host ?? currentTab.url.absoluteString
@@ -68,8 +68,8 @@ extension BrowserManager {
     }
 
     func resetZoomCurrentTab(in windowState: BrowserWindowState, source: ZoomPopoverSource? = nil) {
-        guard let currentTab = currentTab(for: windowState),
-              let webView = getWebView(for: currentTab.id, in: windowState.id)
+        guard let currentTab = activePageTab(for: windowState),
+              let webView = activePageWebView(for: windowState)
         else { return }
 
         let domain = currentTab.url.host ?? currentTab.url.absoluteString

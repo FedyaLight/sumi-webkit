@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 extension BrowserManager {
     func requestBookmarkEditorForActiveWindowFromMenu() {
         guard let windowState = windowRegistry?.activeWindow,
-              let tab = currentTab(for: windowState),
+              let tab = activePageTab(for: windowState),
               bookmarkManager.canBookmark(tab)
         else {
             return

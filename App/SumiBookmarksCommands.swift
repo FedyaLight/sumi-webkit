@@ -43,7 +43,7 @@ struct SumiBookmarksCommands: Commands {
             }
             .keyboardShortcut("d", modifiers: .command)
             .disabled(
-                !bookmarkManager.canBookmark(browserManager.currentTabForActiveWindow())
+                !bookmarkManager.canBookmark(browserManager.activePageTabForActiveWindow())
             )
 
             Button("Bookmark All Tabs…") {

@@ -20,16 +20,16 @@ final class ShortcutActionDispatcher {
 
             switch action {
             case .goBack:
-                if let tab = browserManager.currentTabForActiveWindow(),
+                if let tab = browserManager.activePageTabForActiveWindow(),
                    let windowId = self.windowRegistry?.activeWindow?.id,
-                   let webView = browserManager.getWebView(for: tab.id, in: windowId),
+                   let webView = browserManager.activePageWebViewForActiveWindow() ?? browserManager.getWebView(for: tab.id, in: windowId),
                    webView.canGoBack {
                     webView.goBack()
                 }
             case .goForward:
-                if let tab = browserManager.currentTabForActiveWindow(),
+                if let tab = browserManager.activePageTabForActiveWindow(),
                    let windowId = self.windowRegistry?.activeWindow?.id,
-                   let webView = browserManager.getWebView(for: tab.id, in: windowId),
+                   let webView = browserManager.activePageWebViewForActiveWindow() ?? browserManager.getWebView(for: tab.id, in: windowId),
                    webView.canGoForward {
                     webView.goForward()
                 }
@@ -76,7 +76,7 @@ final class ShortcutActionDispatcher {
             case .expandAllFolders:
                 browserManager.expandAllFoldersInSidebar()
             case .focusAddressBar:
-                let currentURL = browserManager.currentTabForActiveWindow()?.url.absoluteString ?? ""
+                let currentURL = browserManager.activePageURLForActiveWindow()?.absoluteString ?? ""
                 browserManager.focusFloatingBarForActiveWindow(
                     prefill: currentURL,
                     navigateCurrentTab: true

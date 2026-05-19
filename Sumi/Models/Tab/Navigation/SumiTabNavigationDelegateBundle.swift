@@ -8,6 +8,8 @@ final class SumiTabNavigationDelegateBundle {
     let distributedNavigationDelegate: DistributedNavigationDelegate
     let popupHandling: SumiPopupHandlingNavigationResponder
 
+    private let glanceNavigation: SumiGlanceNavigationResponder
+    private let glanceNavigationAdapter: SumiNavigationResponderAdapter
     private let installNavigation: SumiInstallNavigationResponder
     private let installNavigationAdapter: SumiNavigationResponderAdapter
     private let popupHandlingAdapter: SumiNavigationResponderAdapter
@@ -25,6 +27,8 @@ final class SumiTabNavigationDelegateBundle {
 
     init(tab: Tab) {
         self.distributedNavigationDelegate = DistributedNavigationDelegate()
+        self.glanceNavigation = SumiGlanceNavigationResponder(tab: tab)
+        self.glanceNavigationAdapter = SumiNavigationResponderAdapter(target: glanceNavigation)
         self.installNavigation = SumiInstallNavigationResponder(tab: tab)
         self.installNavigationAdapter = SumiNavigationResponderAdapter(target: installNavigation)
         self.popupHandling = SumiPopupHandlingNavigationResponder(tab: tab)
@@ -45,6 +49,7 @@ final class SumiTabNavigationDelegateBundle {
         self.findInPageAdapter = SumiNavigationResponderAdapter(target: tab.findInPage)
 
         distributedNavigationDelegate.setResponders(
+            .strong(glanceNavigationAdapter),
             .strong(installNavigationAdapter),
             .strong(popupHandlingAdapter),
             .strong(externalSchemeAdapter),

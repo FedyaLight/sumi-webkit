@@ -53,10 +53,11 @@ extension URLBarView {
     }
 
     func copyLinkButton(for currentTab: Tab) -> some View {
+        let url = activePageURL ?? currentTab.url
         let action = {
-            copyURLToClipboard(currentTab.url.absoluteString)
+            copyURLToClipboard(url.absoluteString)
         }
-        let isAvailable = isCopyLinkAvailable(for: currentTab)
+        let isAvailable = isCopyLinkAvailable(for: url)
 
         return Button("Copy Link", systemImage: showCheckmark ? "checkmark" : "link", action: action)
         .labelStyle(.iconOnly)
@@ -130,8 +131,8 @@ extension URLBarView {
         }
     }
 
-    func isCopyLinkAvailable(for tab: Tab) -> Bool {
-        guard let scheme = tab.url.scheme?.lowercased() else { return false }
+    func isCopyLinkAvailable(for url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else { return false }
         return scheme == "http" || scheme == "https"
     }
 }

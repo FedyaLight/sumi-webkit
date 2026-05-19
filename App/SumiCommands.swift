@@ -101,7 +101,7 @@ struct SumiCommands: Commands {
             Button("Clear Cookies for Current Site") {
                 browserManager.clearCurrentPageCookies()
             }
-            .disabled(browserManager.currentTabForActiveWindow()?.url.host == nil)
+            .disabled(browserManager.activePageURLForActiveWindow()?.host == nil)
 
             Button("Clear Browsing History") {
                 browserManager.clearAllHistoryFromMenu()
@@ -183,20 +183,20 @@ struct SumiCommands: Commands {
             
             Divider()
             Button("Open Command Bar") {
-                let currentURL = browserManager.currentTabForActiveWindow()?.url.absoluteString ?? ""
+                let currentURL = browserManager.activePageURLForActiveWindow()?.absoluteString ?? ""
                 browserManager.focusFloatingBarForActiveWindow(
                     prefill: currentURL,
                     navigateCurrentTab: true
                 )
             }
             .modifier(dynamicShortcut(.focusAddressBar))
-            .disabled(browserManager.currentTabForActiveWindow() == nil)
+            .disabled(browserManager.activePageTabForActiveWindow() == nil)
 
             Button("Copy Current URL") {
                 browserManager.copyCurrentURL()
             }
             .modifier(dynamicShortcut(.copyCurrentURL))
-            .disabled(browserManager.currentTabForActiveWindow() == nil)
+            .disabled(browserManager.activePageTabForActiveWindow() == nil)
         }
 
         // Sidebar commands
@@ -214,13 +214,13 @@ struct SumiCommands: Commands {
                 browserManager.showFindBar()
             }
             .modifier(dynamicShortcut(.findInPage))
-            .disabled(browserManager.currentTabForActiveWindow() == nil)
+            .disabled(browserManager.activePageTabForActiveWindow() == nil)
 
             Button("Reload Page") {
                 browserManager.refreshCurrentTabInActiveWindow()
             }
             .modifier(dynamicShortcut(.refresh))
-            .disabled(browserManager.currentTabForActiveWindow() == nil)
+            .disabled(browserManager.activePageTabForActiveWindow() == nil)
 
             Divider()
 
@@ -228,19 +228,19 @@ struct SumiCommands: Commands {
                 browserManager.zoomInCurrentTab()
             }
             .modifier(dynamicShortcut(.zoomIn))
-            .disabled(browserManager.currentTabForActiveWindow() == nil)
+            .disabled(browserManager.activePageTabForActiveWindow() == nil)
 
             Button("Zoom Out") {
                 browserManager.zoomOutCurrentTab()
             }
             .modifier(dynamicShortcut(.zoomOut))
-            .disabled(browserManager.currentTabForActiveWindow() == nil)
+            .disabled(browserManager.activePageTabForActiveWindow() == nil)
 
             Button("Actual Size") {
                 browserManager.resetZoomCurrentTab()
             }
             .modifier(dynamicShortcut(.actualSize))
-            .disabled(browserManager.currentTabForActiveWindow() == nil)
+            .disabled(browserManager.activePageTabForActiveWindow() == nil)
 
             Divider()
 
@@ -248,7 +248,7 @@ struct SumiCommands: Commands {
                 browserManager.hardReloadCurrentPage()
             }
             .modifier(dynamicShortcut(.hardReload))
-            .disabled(browserManager.currentTabForActiveWindow() == nil)
+            .disabled(browserManager.activePageTabForActiveWindow() == nil)
 
             Divider()
 
@@ -256,7 +256,7 @@ struct SumiCommands: Commands {
                 browserManager.openWebInspector()
             }
             .modifier(dynamicShortcut(.openDevTools))
-            .disabled(browserManager.currentTabForActiveWindow() == nil)
+            .disabled(browserManager.activePageTabForActiveWindow() == nil)
 
             Divider()
 
@@ -265,7 +265,7 @@ struct SumiCommands: Commands {
             }
             .modifier(dynamicShortcut(.muteUnmuteAudio))
             .disabled(
-                browserManager.currentTabForActiveWindow() == nil
+                browserManager.activePageTabForActiveWindow() == nil
                     || !browserManager.currentTabHasAudioContent())
         }
 

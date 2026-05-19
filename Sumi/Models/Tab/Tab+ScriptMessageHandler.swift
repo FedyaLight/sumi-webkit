@@ -3,6 +3,10 @@ import Foundation
 import os.log
 import WebKit
 
+private enum GlanceLinkGesture {
+    static let originMaxAge: TimeInterval = 2.0
+}
+
 extension Tab {
     func normalTabCoreUserScripts() -> [SumiUserScript] {
         [
@@ -25,8 +29,19 @@ extension Tab {
         return activeFlags == [.option]
     }
 
-    func openURLInGlance(_ url: URL) {
-        browserManager?.glanceManager.presentExternalURL(url, from: self)
+    func openURLInGlance(_ url: URL, originRectInWindow: CGRect? = nil) {
+        browserManager?.glanceManager.presentExternalURL(
+            url,
+            from: self,
+            originRectInWindow: originRectInWindow
+        )
+    }
+
+    func openURLInGlanceFromLinkGesture(_ url: URL) {
+        openURLInGlance(
+            url,
+            originRectInWindow: glanceOriginRectInWindow(maxAge: GlanceLinkGesture.originMaxAge)
+        )
     }
 
     func updateHoveredLink(_ href: String?) {
@@ -34,7 +49,7 @@ extension Tab {
         onLinkHover?(href)
     }
 
-    func immediateGlanceURLForWebViewMouseDown(_ event: NSEvent) -> URL? {
+    func dynamicGlanceURLForWebViewMouseDown(_ event: NSEvent) -> URL? {
         guard event.type == .leftMouseDown,
               let targetURL = lastHoveredLinkURL,
               targetURL.isGlancePreviewableLink
@@ -42,7 +57,7 @@ extension Tab {
 
         let modifierFlags = event.modifierFlags.intersection([.command, .option, .control, .shift])
         if isGlanceTriggerActive(modifierFlags) {
-            return targetURL
+            return nil
         }
         if shouldOpenDynamicallyInGlance(url: targetURL, modifierFlags: modifierFlags) {
             return targetURL
@@ -50,11 +65,15 @@ extension Tab {
         return nil
     }
 
-    func glanceOriginRectInWindow(maxAge: TimeInterval = 1.0) -> CGRect? {
+    func glanceOriginRectInWindow(maxAge: TimeInterval = 1.5) -> CGRect? {
+        if let mouseDownOrigin = recentGlanceMouseDownOriginRect(maxAge: maxAge) {
+            return mouseDownOrigin
+        }
+
         guard let event = lastWebViewInteractionEvent else { return nil }
         let age = ProcessInfo.processInfo.systemUptime - event.timestamp
         guard age >= 0, age <= maxAge else { return nil }
-        let point = event.locationInWindow
+        let point = event.window?.mouseLocationOutsideOfEventStream ?? event.locationInWindow
         return CGRect(x: point.x - 22, y: point.y - 22, width: 44, height: 44)
     }
 
@@ -63,8 +82,7 @@ extension Tab {
         return resolvedNavigationModifierFlags(actionFlags: flags)
     }
 
-    /// Resolves which modifier keys apply to a link or popup navigation when WebKit reports empty or misleading flags,
-    /// using (in order) a fresh main-window mouseDown snapshot, WebKit-provided flags, the last interaction event, then tab click state.
+    /// Resolves link gesture modifiers when WebKit reports empty or stale flags.
     func resolvedNavigationModifierFlags(actionFlags: NSEvent.ModifierFlags) -> NSEvent.ModifierFlags {
         if let interactionFlags = recentWebViewMouseDownModifierFlags() {
             return interactionFlags
@@ -175,7 +193,7 @@ private extension URL {
 }
 
 /// Reports hovered `<a href>` for chrome (e.g. link status). Injected in the main frame only to limit work in subframes;
-/// links inside iframes will not drive the status line until hovered in the top document.
+/// native navigation policy still handles actual link activations in subframes.
 @MainActor
 private final class SumiLinkInteractionUserScript: NSObject, SumiUserScript, @MainActor SumiUserScriptMessaging, WKScriptMessageHandlerWithReply {
     private let context: String
@@ -218,7 +236,7 @@ private final class SumiLinkInteractionUserScript: NSObject, SumiUserScript, @Ma
             function findLinkTarget(start) {
                 let t = start;
                 while (t && t !== document) {
-                    if (t.nodeType === 1 && t.tagName === "A" && t.href) {
+                    if (t.nodeType === 1 && t.localName && t.localName.toLowerCase() === "a" && t.href) {
                         return t;
                     }
                     t = t.parentElement;

@@ -12,9 +12,10 @@ import SwiftUI
 /// Relative stacking for full-window transient chrome (higher draws above lower).
 private enum WindowTransientChromeZIndex {
     static let findInPage: Double = 3_500
+    static let glance: Double = 8_000
+    static let glanceFindInPage: Double = 8_500
+    /// Floating bar must stay above Glance so URL editing keeps targeting the preview page.
     static let floatingBar: Double = 9_000
-    /// Glance preview: above floating bar, below blocking dialogs.
-    static let glance: Double = 10_000
     /// Modal dialogs (quit, settings paths, etc.) must stay above app chrome.
     static let dialog: Double = 11_000
     /// Drag ghost only.
@@ -24,6 +25,7 @@ private enum WindowTransientChromeZIndex {
 /// Main window view that orchestrates the browser UI layout
 struct WindowView: View {
     @EnvironmentObject var browserManager: BrowserManager
+    @EnvironmentObject private var glanceManager: GlanceManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sumiSettings) var sumiSettings
@@ -96,14 +98,32 @@ struct WindowView: View {
             }
 
             // Glance overlay for external link previews
-                if browserManager.glanceManager.isActive || browserManager.glanceManager.currentSession != nil {
+                if presentedGlanceSession != nil {
                     chromeThemeScope {
                         GlanceOverlayView()
-                        .environmentObject(browserManager.glanceManager)
+                        .environmentObject(glanceManager)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .zIndex(WindowTransientChromeZIndex.glance)
                 }
             }
+
+                if let glanceFindInPageSession,
+                   let contentFrame = glanceFindInPageSession.contentFrameInWindowSpace {
+                    chromeThemeScope {
+                        FindInPageChromeHost(
+                            browserManager: browserManager,
+                            findManager: browserManager.findManager,
+                            windowRegistry: windowRegistry,
+                            windowState: windowState,
+                            sumiSettings: sumiSettings,
+                            resolvedThemeContext: resolvedThemeContext,
+                            colorScheme: globalColorScheme
+                        )
+                        .frame(width: max(contentFrame.width, 0), height: max(contentFrame.height, 0))
+                        .position(x: contentFrame.midX, y: contentFrame.midY)
+                        .zIndex(WindowTransientChromeZIndex.glanceFindInPage)
+                    }
+                }
 
                 chromeThemeScope {
                     SidebarFloatingDragPreview()
@@ -289,7 +309,7 @@ struct WindowView: View {
             WebContent()
                 .scaleEffect(glanceWebContentScale)
                 .opacity(glanceWebContentOpacity)
-                .animation(glanceWebContentAnimation, value: browserManager.glanceManager.isActive)
+                .animation(glanceWebContentAnimation, value: glanceWebContentIsDimmed)
 
             if rendersDockedSidebar && shellEdge.isRight {
                 SidebarDockedColumn(
@@ -394,7 +414,8 @@ struct WindowView: View {
                 windowState: windowState,
                 sumiSettings: sumiSettings,
                 resolvedThemeContext: resolvedThemeContext,
-                colorScheme: globalColorScheme
+                colorScheme: globalColorScheme,
+                isSuppressed: findChromeBelongsToGlance
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .zIndex(WindowTransientChromeZIndex.findInPage)
@@ -425,17 +446,40 @@ struct WindowView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private var glanceWebContentIsDimmed: Bool {
+        guard presentedGlanceSession != nil else { return false }
+        return glanceManager.phase == .opening || glanceManager.phase == .open || glanceManager.phase == .closing
+    }
+
     private var glanceWebContentScale: CGFloat {
-        browserManager.glanceManager.isActive && !reduceMotion ? 0.97 : 1
+        glanceWebContentIsDimmed && !reduceMotion ? 0.97 : 1
     }
 
     private var glanceWebContentOpacity: Double {
-        guard browserManager.glanceManager.isActive else { return 1 }
+        guard glanceWebContentIsDimmed else { return 1 }
         return reduceMotion ? 0.75 : 0.3
     }
 
     private var glanceWebContentAnimation: Animation? {
         reduceMotion ? .easeOut(duration: 0.08) : .smooth(duration: 0.35)
+    }
+
+    private var presentedGlanceSession: GlanceSession? {
+        glanceManager.presentedSession(for: windowState)
+    }
+
+    private var activeGlanceSession: GlanceSession? {
+        glanceManager.activeSession(for: windowState)
+    }
+
+    private var findChromeBelongsToGlance: Bool {
+        guard let activeGlanceSession else { return false }
+        return browserManager.findManager.currentTab?.id == activeGlanceSession.previewTab.id
+    }
+
+    private var glanceFindInPageSession: GlanceSession? {
+        guard findChromeBelongsToGlance else { return nil }
+        return activeGlanceSession
     }
 
     private var resolvedThemeContext: ResolvedThemeContext {

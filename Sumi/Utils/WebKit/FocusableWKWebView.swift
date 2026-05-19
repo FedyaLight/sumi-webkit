@@ -29,6 +29,8 @@ final class FocusableWKWebView: WKWebView {
 
     private static let webKitMouseTrackingLoadSheddingEnabled = true
     private static let webKitMouseTrackingObserverClassName = "WKMouseTrackingObserver"
+    private static let glanceCursorReuseDistance: CGFloat = 72
+    private static let glanceCursorReuseInterval: TimeInterval = 0.2
     private var webKitMouseTrackingLoadSheddingObserver: NSKeyValueObservation?
     private var webKitMouseTrackingArea: NSTrackingArea?
     private var isWebKitMouseTrackingLoadSheddingActive = false
@@ -38,11 +40,43 @@ final class FocusableWKWebView: WKWebView {
     private var webKitClientMediaControlsView: NSView?
     private var webKitClientMediaControlsTouchBar: NSTouchBar?
     private var webKitClientMediaControlsProvider: NSObject?
+    private var glanceCursorSettleToken = 0
+    private var glanceCursorSettleWorkItem: DispatchWorkItem?
+    private var lastGlancePageCursor: NSCursor?
+    private var lastGlancePageCursorPoint: CGPoint?
+    private var lastGlancePageCursorTimestamp: TimeInterval = 0
 
     weak var owningTab: Tab?
     let interactionEventsPublisher = PassthroughSubject<SumiWebViewInteractionEvent, Never>()
     private var findInPageCompletionHandler: ((FindResult) -> Void)?
-    private var shouldSwallowNextMouseUpAfterImmediateGlance = false
+    private var shouldSwallowNextMouseUpAfterDynamicGlance = false
+    var isTransientChromeMouseTrackingSuppressionExempt = false {
+        didSet {
+            guard isTransientChromeMouseTrackingSuppressionExempt != oldValue else { return }
+            if isTransientChromeMouseTrackingSuppressionExempt {
+                setTransientChromeMouseTrackingSuppressed(false)
+            } else {
+                WebContentMouseTrackingShield.applyCurrentShieldState(to: self)
+            }
+            refreshWebKitMouseTrackingArea()
+        }
+    }
+    var keepsWebKitMouseTrackingDuringLoad = false {
+        didSet {
+            guard keepsWebKitMouseTrackingDuringLoad != oldValue else { return }
+            refreshWebKitMouseTrackingArea()
+        }
+    }
+    var stabilizesCursorDuringGlancePresentation = false {
+        didSet {
+            guard stabilizesCursorDuringGlancePresentation != oldValue else { return }
+            if stabilizesCursorDuringGlancePresentation {
+                refreshMouseTrackingForGlancePresentation()
+            } else {
+                resetGlanceCursorStabilization()
+            }
+        }
+    }
 
     override init(frame: CGRect, configuration: WKWebViewConfiguration) {
         _ = Self.swizzleImmediateActionAnimationControllerOnce
@@ -60,7 +94,7 @@ final class FocusableWKWebView: WKWebView {
 
     override func addTrackingArea(_ trackingArea: NSTrackingArea) {
         guard Self.webKitMouseTrackingLoadSheddingEnabled,
-              trackingArea.owner?.className == Self.webKitMouseTrackingObserverClassName
+              Self.isWebKitMouseTrackingArea(trackingArea)
         else {
             super.addTrackingArea(trackingArea)
             return
@@ -94,6 +128,17 @@ final class FocusableWKWebView: WKWebView {
         }
     }
 
+    private static func isWebKitMouseTrackingArea(_ trackingArea: NSTrackingArea) -> Bool {
+        guard trackingArea.options.contains(.mouseMoved),
+              let owner = trackingArea.owner
+        else { return false }
+
+        let ownerClassName = NSStringFromClass(object_getClass(owner) ?? Swift.type(of: owner))
+        return ownerClassName == webKitMouseTrackingObserverClassName
+            || ownerClassName.hasSuffix(".\(webKitMouseTrackingObserverClassName)")
+            || ownerClassName.contains(webKitMouseTrackingObserverClassName)
+    }
+
     private func scheduleWebKitMouseTrackingRefresh(for trackingArea: NSTrackingArea) {
         let trackingAreaID = ObjectIdentifier(trackingArea)
         Task { @MainActor [weak self, trackingAreaID] in
@@ -111,38 +156,49 @@ final class FocusableWKWebView: WKWebView {
             removeTrackingArea(trackingArea)
         } else {
             guard !trackingAreas.contains(trackingArea) else { return }
-            superAddTrackingArea(trackingArea)
+            super.addTrackingArea(trackingArea)
         }
     }
 
     private var shouldSuspendWebKitMouseTracking: Bool {
-        isWebKitMouseTrackingLoadSheddingActive || isTransientChromeMouseTrackingSuppressed
+        (isWebKitMouseTrackingLoadSheddingActive && !keepsWebKitMouseTrackingDuringLoad)
+            || isTransientChromeMouseTrackingSuppressed
     }
 
-    private func superAddTrackingArea(_ trackingArea: NSTrackingArea) {
-        super.addTrackingArea(trackingArea)
+    private func refreshWebKitMouseTrackingArea() {
+        guard let trackingArea = webKitMouseTrackingArea else { return }
+        updateWebKitMouseTrackingArea(trackingArea)
+    }
+
+    func refreshMouseTrackingForGlancePresentation() {
+        updateTrackingAreas()
+        refreshWebKitMouseTrackingArea()
+        window?.invalidateCursorRects(for: self)
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        let shouldSuppress = window.map(WebContentMouseTrackingShield.isActive(in:)) ?? false
-        setTransientChromeMouseTrackingSuppressed(shouldSuppress)
+        WebContentMouseTrackingShield.applyCurrentShieldState(to: self)
     }
 
     func setTransientChromeMouseTrackingSuppressed(
         _ isSuppressed: Bool,
         shieldRects: [SumiTransientChromeInteractionShieldRect] = []
     ) {
-        setTransientChromeInteractionShieldApplied(isSuppressed, shieldRects: shieldRects)
+        let shouldSuppress = isSuppressed && !isTransientChromeMouseTrackingSuppressionExempt
+        setTransientChromeInteractionShieldApplied(
+            shouldSuppress,
+            shieldRects: shouldSuppress ? shieldRects : []
+        )
 
-        guard isTransientChromeMouseTrackingSuppressed != isSuppressed else { return }
+        guard isTransientChromeMouseTrackingSuppressed != shouldSuppress else { return }
 
-        isTransientChromeMouseTrackingSuppressed = isSuppressed
+        isTransientChromeMouseTrackingSuppressed = shouldSuppress
         if let trackingArea = webKitMouseTrackingArea {
             updateWebKitMouseTrackingArea(trackingArea)
         }
 
-        if isSuppressed {
+        if shouldSuppress {
             owningTab?.updateHoveredLink(nil)
         }
     }
@@ -180,7 +236,7 @@ final class FocusableWKWebView: WKWebView {
         owningTab?.setClickModifierFlags(event.modifierFlags)
         owningTab?.recordPopupUserActivation(event, kind: "mouseDown")
 
-        if routeImmediateGlanceIfNeeded(with: event) {
+        if routeDynamicGlanceIfNeeded(with: event) {
             return
         }
 
@@ -212,13 +268,13 @@ final class FocusableWKWebView: WKWebView {
         performDefaultMouseDownBehavior(with: event)
     }
 
-    private func routeImmediateGlanceIfNeeded(with event: NSEvent) -> Bool {
+    private func routeDynamicGlanceIfNeeded(with event: NSEvent) -> Bool {
         guard let tab = owningTab,
-              let targetURL = tab.immediateGlanceURLForWebViewMouseDown(event)
+              let targetURL = tab.dynamicGlanceURLForWebViewMouseDown(event)
         else { return false }
 
-        shouldSwallowNextMouseUpAfterImmediateGlance = true
-        tab.openURLInGlance(targetURL)
+        shouldSwallowNextMouseUpAfterDynamicGlance = true
+        tab.openURLInGlanceFromLinkGesture(targetURL)
         tab.activate()
         tab.setClickModifierFlags([])
         return true
@@ -227,14 +283,46 @@ final class FocusableWKWebView: WKWebView {
     private func performDefaultMouseDownBehavior(with event: NSEvent) {
         super.mouseDown(with: event)
         owningTab?.activate()
-        interactionEventsPublisher.send(.mouseDown(event))
     }
 
     override func mouseMoved(with event: NSEvent) {
         guard !isTransientChromeMouseTrackingSuppressed else {
             return
         }
+        guard stabilizesCursorDuringGlancePresentation else {
+            super.mouseMoved(with: event)
+            return
+        }
+        mouseMovedWithGlanceCursorStabilization(event)
+    }
+
+    private func mouseMovedWithGlanceCursorStabilization(_ event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let cursorBeforeMove = NSCursor.current
         super.mouseMoved(with: event)
+        guard bounds.contains(point) else {
+            resetGlanceCursorStabilization()
+            return
+        }
+
+        let cursorAfterMove = NSCursor.current
+        if rememberGlancePageCursorIfNeeded(cursorAfterMove, at: point, timestamp: event.timestamp) {
+            scheduleGlanceCursorSettleCapture()
+            return
+        }
+
+        if !Self.isArrowCursor(cursorBeforeMove) {
+            rememberGlancePageCursor(cursorBeforeMove, at: point, timestamp: event.timestamp)
+            cursorBeforeMove.set()
+            scheduleGlanceCursorSettleCapture()
+            return
+        }
+
+        if let lastGlancePageCursor,
+           canReuseGlancePageCursor(at: point, timestamp: event.timestamp) {
+            lastGlancePageCursor.set()
+        }
+        scheduleGlanceCursorSettleCapture()
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -249,6 +337,94 @@ final class FocusableWKWebView: WKWebView {
             return
         }
         super.cursorUpdate(with: event)
+        if stabilizesCursorDuringGlancePresentation {
+            let point = convert(event.locationInWindow, from: nil)
+            _ = rememberGlancePageCursorIfNeeded(NSCursor.current, at: point, timestamp: event.timestamp)
+        }
+    }
+
+    private static func isArrowCursor(_ cursor: NSCursor) -> Bool {
+        cursor === NSCursor.arrow
+    }
+
+    private func rememberGlancePageCursorIfNeeded(
+        _ cursor: NSCursor,
+        at point: CGPoint,
+        timestamp: TimeInterval
+    ) -> Bool {
+        guard !Self.isArrowCursor(cursor),
+              bounds.contains(point)
+        else { return false }
+
+        rememberGlancePageCursor(cursor, at: point, timestamp: timestamp)
+        return true
+    }
+
+    private func rememberGlancePageCursor(
+        _ cursor: NSCursor,
+        at point: CGPoint,
+        timestamp: TimeInterval
+    ) {
+        lastGlancePageCursor = cursor
+        lastGlancePageCursorPoint = point
+        lastGlancePageCursorTimestamp = timestamp
+    }
+
+    private func canReuseGlancePageCursor(
+        at point: CGPoint,
+        timestamp: TimeInterval
+    ) -> Bool {
+        guard let lastGlancePageCursorPoint else { return false }
+        guard timestamp - lastGlancePageCursorTimestamp <= Self.glanceCursorReuseInterval else { return false }
+
+        let dx = point.x - lastGlancePageCursorPoint.x
+        let dy = point.y - lastGlancePageCursorPoint.y
+        return sqrt(dx * dx + dy * dy) <= Self.glanceCursorReuseDistance
+    }
+
+    private func scheduleGlanceCursorSettleCapture() {
+        glanceCursorSettleWorkItem?.cancel()
+        glanceCursorSettleToken &+= 1
+        let token = glanceCursorSettleToken
+        let workItem = DispatchWorkItem { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self,
+                      self.stabilizesCursorDuringGlancePresentation,
+                      self.glanceCursorSettleToken == token
+                else { return }
+                self.glanceCursorSettleWorkItem = nil
+
+                guard let window = self.window else {
+                    self.resetGlanceCursorStabilization()
+                    return
+                }
+
+                let currentPoint = self.convert(window.mouseLocationOutsideOfEventStream, from: nil)
+                guard self.bounds.contains(currentPoint) else {
+                    self.resetGlanceCursorStabilization()
+                    return
+                }
+
+                let timestamp = ProcessInfo.processInfo.systemUptime
+                let cursor = NSCursor.current
+                if !Self.isArrowCursor(cursor) {
+                    self.rememberGlancePageCursor(cursor, at: currentPoint, timestamp: timestamp)
+                } else if !self.canReuseGlancePageCursor(at: currentPoint, timestamp: timestamp) {
+                    self.resetGlanceCursorStabilization()
+                }
+            }
+        }
+        glanceCursorSettleWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: workItem)
+    }
+
+    private func resetGlanceCursorStabilization() {
+        glanceCursorSettleWorkItem?.cancel()
+        glanceCursorSettleWorkItem = nil
+        glanceCursorSettleToken &+= 1
+        lastGlancePageCursor = nil
+        lastGlancePageCursorPoint = nil
+        lastGlancePageCursorTimestamp = 0
     }
 
     /// DDG-style gate: left primary click + control + allowlisted host + kill switch.
@@ -354,8 +530,8 @@ final class FocusableWKWebView: WKWebView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        if shouldSwallowNextMouseUpAfterImmediateGlance {
-            shouldSwallowNextMouseUpAfterImmediateGlance = false
+        if shouldSwallowNextMouseUpAfterDynamicGlance {
+            shouldSwallowNextMouseUpAfterDynamicGlance = false
             owningTab?.setClickModifierFlags([])
             owningTab?.clearWebViewInteractionEvent()
             return

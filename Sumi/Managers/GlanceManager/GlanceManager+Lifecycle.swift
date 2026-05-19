@@ -1,6 +1,3 @@
-import Foundation
-import WebKit
-
 @MainActor
 extension GlanceManager {
     func moveToSplitView() {
@@ -44,7 +41,6 @@ extension GlanceManager {
     private func finishPromotedSession() {
         currentSession = nil
         transition(to: .idle)
-        NotificationCenter.default.post(name: .glanceDidDeactivate, object: self)
     }
 
     private func materializePreviewWebViewIfNeeded(for session: GlanceSession) {

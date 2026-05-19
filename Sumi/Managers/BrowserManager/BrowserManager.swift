@@ -889,6 +889,19 @@ class BrowserManager: ObservableObject {
         dismissFloatingBar(in: activeWindow, preserveDraft: preserveDraft)
     }
 
+    @discardableResult
+    func dismissFloatingBarIfVisible(
+        in windowId: UUID,
+        preserveDraft: Bool = true
+    ) -> Bool {
+        guard let windowState = windowRegistry?.windows[windowId],
+              windowState.isFloatingBarVisible
+        else { return false }
+
+        dismissFloatingBar(in: windowState, preserveDraft: preserveDraft)
+        return true
+    }
+
     func openFloatingBarSuggestion(
         _ suggestion: SearchManager.SearchSuggestion,
         in windowState: BrowserWindowState
@@ -905,6 +918,8 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         navigatesCurrentTab: Bool
     ) {
+        let navigationTargetTab = activePageTab(for: windowState)
+
         switch suggestion.type {
         case .tab(let existingTab):
             selectTab(existingTab, in: windowState)
@@ -914,9 +929,9 @@ class BrowserManager: ObservableObject {
             )
         case .history(let historyEntry):
             if navigatesCurrentTab,
-               currentTab(for: windowState) != nil
+               let navigationTargetTab
             {
-                currentTab(for: windowState)?.loadURL(historyEntry.url.absoluteString)
+                navigationTargetTab.loadURL(historyEntry.url.absoluteString)
                 RuntimeDiagnostics.debug(
                     "Navigated current tab to history URL: \(historyEntry.url)",
                     category: "FloatingBar"
@@ -933,9 +948,9 @@ class BrowserManager: ObservableObject {
             }
         case .bookmark(let bookmark):
             if navigatesCurrentTab,
-               currentTab(for: windowState) != nil
+               let navigationTargetTab
             {
-                currentTab(for: windowState)?.loadURL(bookmark.url.absoluteString)
+                navigationTargetTab.loadURL(bookmark.url.absoluteString)
                 RuntimeDiagnostics.debug(
                     "Navigated current tab to bookmark URL: \(bookmark.url)",
                     category: "FloatingBar"
@@ -952,9 +967,9 @@ class BrowserManager: ObservableObject {
             }
         case .url, .search:
             if navigatesCurrentTab,
-               currentTab(for: windowState) != nil
+               let navigationTargetTab
             {
-                currentTab(for: windowState)?.navigateToURL(suggestion.text)
+                navigationTargetTab.navigateToURL(suggestion.text)
                 RuntimeDiagnostics.debug(
                     "Navigated current tab to: \(suggestion.text)",
                     category: "FloatingBar"
@@ -1001,12 +1016,12 @@ class BrowserManager: ObservableObject {
     }
 
     func showFindBar() {
-        findManager.showFindBar(for: currentTabForActiveWindow())
+        findManager.showFindBar(for: activePageTabForActiveWindow())
     }
 
     func updateFindManagerCurrentTab() {
         // Update the current tab for find manager
-        findManager.updateCurrentTab(currentTabForActiveWindow())
+        findManager.updateCurrentTab(activePageTabForActiveWindow())
     }
 
     enum TabSelectionLoadPolicy {
@@ -1410,6 +1425,11 @@ class BrowserManager: ObservableObject {
             return
         }
         if let activeWindow = windowRegistry?.activeWindow,
+           glanceManager.activePreviewTab(for: activeWindow) != nil {
+            glanceManager.dismissGlance()
+            return
+        }
+        if let activeWindow = windowRegistry?.activeWindow,
            let currentTab = currentTab(for: activeWindow) {
             closeTab(currentTab, in: activeWindow)
         } else if let activeWindow = windowRegistry?.activeWindow {
@@ -1418,6 +1438,10 @@ class BrowserManager: ObservableObject {
     }
 
     func closeTab(_ tab: Tab, in windowState: BrowserWindowState) {
+        if glanceManager.currentSession?.sourceTab?.id == tab.id {
+            glanceManager.dismissGlance()
+        }
+
         if windowState.isIncognito {
             closeIncognitoTab(tab, in: windowState)
             return

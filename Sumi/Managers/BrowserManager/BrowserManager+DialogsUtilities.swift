@@ -7,6 +7,7 @@
 
 import AppKit
 import SwiftUI
+import WebKit
 
 @MainActor
 private final class SidebarSharingServicePickerRetainer {
@@ -166,26 +167,60 @@ extension BrowserManager {
         return tabManager.currentTab
     }
 
+    func activePageTab(for windowState: BrowserWindowState) -> Tab? {
+        glanceManager.activePreviewTab(for: windowState)
+            ?? currentTab(for: windowState)
+    }
+
+    func activePageTabForActiveWindow() -> Tab? {
+        if let activeWindow = windowRegistry?.activeWindow {
+            return activePageTab(for: activeWindow)
+        }
+        return tabManager.currentTab
+    }
+
+    func activePageWebView(for windowState: BrowserWindowState) -> WKWebView? {
+        guard let tab = activePageTab(for: windowState) else { return nil }
+        return tab.existingWebView ?? getWebView(for: tab.id, in: windowState.id)
+    }
+
+    func activePageWebViewForActiveWindow() -> WKWebView? {
+        guard let activeWindow = windowRegistry?.activeWindow else { return nil }
+        return activePageWebView(for: activeWindow)
+    }
+
+    func activePageURL(for windowState: BrowserWindowState) -> URL? {
+        glanceManager.activeSession(for: windowState)?.currentURL
+            ?? activePageTab(for: windowState)?.url
+    }
+
+    func activePageURLForActiveWindow() -> URL? {
+        guard let activeWindow = windowRegistry?.activeWindow else {
+            return tabManager.currentTab?.url
+        }
+        return activePageURL(for: activeWindow)
+    }
+
     func refreshCurrentTabInActiveWindow() {
-        currentTabForActiveWindow()?.refresh()
+        activePageTabForActiveWindow()?.refresh()
     }
 
     func toggleMuteCurrentTabInActiveWindow() {
-        currentTabForActiveWindow()?.toggleMute()
+        activePageTabForActiveWindow()?.toggleMute()
     }
 
     func currentTabIsMuted() -> Bool {
-        currentTabForActiveWindow()?.audioState.isMuted ?? false
+        activePageTabForActiveWindow()?.audioState.isMuted ?? false
     }
 
     func currentTabHasAudioContent() -> Bool {
-        currentTabForActiveWindow()?.audioState.isPlayingAudio ?? false
+        activePageTabForActiveWindow()?.audioState.isPlayingAudio ?? false
     }
 
     // MARK: - URL Utilities
 
     func copyCurrentURL() {
-        if let url = currentTabForActiveWindow()?.url.absoluteString {
+        if let url = activePageURLForActiveWindow()?.absoluteString {
             RuntimeDiagnostics.emit("Attempting to copy URL: \(url)")
 
             DispatchQueue.main.async {
@@ -210,7 +245,7 @@ extension BrowserManager {
     // MARK: - Web Inspector
 
     func openWebInspector() {
-        guard let currentTab = currentTabForActiveWindow() else {
+        guard let currentTab = activePageTabForActiveWindow() else {
             RuntimeDiagnostics.emit("No current tab to inspect")
             return
         }

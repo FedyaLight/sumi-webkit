@@ -8,11 +8,13 @@ struct FindInPageChromeHost: View {
     var sumiSettings: SumiSettingsService
     var resolvedThemeContext: ResolvedThemeContext
     var colorScheme: ColorScheme
+    var isSuppressed: Bool = false
 
     private var shouldPresent: Bool {
         windowRegistry.activeWindow?.id == windowState.id
             && findManager.isFindBarVisible
             && !isModalSuppressed
+            && !isSuppressed
     }
 
     private var isModalSuppressed: Bool {

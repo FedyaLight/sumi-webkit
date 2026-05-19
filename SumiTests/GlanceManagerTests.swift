@@ -76,6 +76,48 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertTrue(previewTab.existingWebView === webView)
     }
 
+    func testGlancePresentationStaysPinnedToSourceTabSelection() throws {
+        let browserManager = BrowserManager()
+        let sourceTab = makeSourceTab(in: browserManager)
+        let otherTab = browserManager.tabManager.createNewTab(
+            url: "https://other.example/page",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentSpaceId = sourceTab.spaceId
+        windowState.currentTabId = sourceTab.id
+
+        let previewTab = Tab(
+            url: URL(string: "https://destination.example/page")!,
+            name: "Destination",
+            browserManager: browserManager
+        )
+        let session = GlanceSession(
+            targetURL: previewTab.url,
+            windowId: windowState.id,
+            sourceTab: sourceTab,
+            previewTab: previewTab,
+            originRectInWindow: CGRect(x: 10, y: 10, width: 44, height: 44)
+        )
+        browserManager.glanceManager.currentSession = session
+        browserManager.glanceManager.transition(to: .open)
+
+        XCTAssertTrue(browserManager.glanceManager.presentedSession(for: windowState) === session)
+        XCTAssertTrue(browserManager.glanceManager.activePreviewTab(for: windowState) === previewTab)
+
+        windowState.currentTabId = otherTab.id
+
+        XCTAssertNil(browserManager.glanceManager.presentedSession(for: windowState))
+        XCTAssertNil(browserManager.glanceManager.activePreviewTab(for: windowState))
+        XCTAssertTrue(browserManager.glanceManager.currentSession === session)
+
+        windowState.currentTabId = sourceTab.id
+
+        XCTAssertTrue(browserManager.glanceManager.presentedSession(for: windowState) === session)
+    }
+
     private func makeSourceTab(in browserManager: BrowserManager) -> Tab {
         let space = browserManager.tabManager.currentSpace
             ?? browserManager.tabManager.createSpace(name: "Glance Tests")

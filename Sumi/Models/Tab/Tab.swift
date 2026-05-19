@@ -17,6 +17,11 @@ extension Notification.Name {
     static let sumiTabLoadingStateDidChange = Notification.Name("SumiTabLoadingStateDidChange")
 }
 
+struct SumiGlanceOriginSnapshot {
+    let rectInWindow: CGRect
+    let timestamp: TimeInterval
+}
+
 enum SumiWebViewShutdown {
     @MainActor
     static func perform(
@@ -402,6 +407,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     // MARK: - Link Hover Callback
     var onLinkHover: ((String?) -> Void)? = nil
     var lastHoveredLinkURL: URL? = nil
+    var lastGlanceMouseDownOrigin: SumiGlanceOriginSnapshot?
 
     private var navigationStateController: TabNavigationStateController {
         navigationRuntime.navigationStateController
@@ -444,6 +450,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     func recordWebViewInteraction(_ event: NSEvent) {
         lastWebViewInteractionEvent = event
+        recordGlanceMouseDownOriginIfNeeded(event)
     }
 
     func clearWebViewInteractionEvent() {
@@ -463,6 +470,22 @@ public class Tab: NSObject, Identifiable, ObservableObject {
               event.type == .leftMouseDown || event.type == .otherMouseDown
         else { return nil }
         return recentWebViewInteractionModifierFlags(maxAge: maxAge)
+    }
+
+    func recordGlanceMouseDownOriginIfNeeded(_ event: NSEvent) {
+        guard event.type == .leftMouseDown else { return }
+        let point = event.window?.mouseLocationOutsideOfEventStream ?? event.locationInWindow
+        lastGlanceMouseDownOrigin = SumiGlanceOriginSnapshot(
+            rectInWindow: CGRect(x: point.x - 22, y: point.y - 22, width: 44, height: 44),
+            timestamp: ProcessInfo.processInfo.systemUptime
+        )
+    }
+
+    func recentGlanceMouseDownOriginRect(maxAge: TimeInterval = 1.5) -> CGRect? {
+        guard let origin = lastGlanceMouseDownOrigin else { return nil }
+        let age = ProcessInfo.processInfo.systemUptime - origin.timestamp
+        guard age >= 0, age <= maxAge else { return nil }
+        return origin.rectInWindow
     }
 
     func popupPermissionTabContext(for webView: WKWebView) -> SumiPopupPermissionTabContext? {

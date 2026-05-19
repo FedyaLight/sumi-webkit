@@ -21,6 +21,7 @@ class GlanceSession: ObservableObject, Identifiable {
     @Published var title: String
     @Published var isLoading: Bool = true
     @Published var estimatedProgress: Double = 0
+    @Published var contentFrameInWindowSpace: CGRect?
     private var observations: [NSKeyValueObservation] = []
 
     init(
@@ -57,6 +58,11 @@ class GlanceSession: ObservableObject, Identifiable {
 
     func updateProgress(_ progress: Double) {
         estimatedProgress = progress
+    }
+
+    func updateContentFrameInWindowSpace(_ frame: CGRect?) {
+        guard contentFrameInWindowSpace != frame else { return }
+        contentFrameInWindowSpace = frame
     }
 
     func observe(_ webView: WKWebView) {
