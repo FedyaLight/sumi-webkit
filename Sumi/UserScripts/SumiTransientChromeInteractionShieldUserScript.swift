@@ -6,6 +6,7 @@ struct SumiTransientChromeInteractionShieldRect: Equatable {
     var y: CGFloat
     var width: CGFloat
     var height: CGFloat
+    var coversViewport: Bool = false
 }
 
 @MainActor
@@ -32,11 +33,18 @@ final class SumiTransientChromeInteractionShieldUserScript: NSObject, SumiUserSc
         }
 
         let rectsSource = "[" + rects.map {
-            "{ left: \($0.x), top: \($0.y), width: \($0.width), height: \($0.height) }"
+            if $0.coversViewport {
+                return "{ fullViewport: true }"
+            }
+            return "{ left: \($0.x), top: \($0.y), width: \($0.width), height: \($0.height) }"
         }.joined(separator: ",") + "]"
 
         return """
         (function() {
+            if (!(window.\(apiName) && typeof window.\(apiName).setActive === "function")) {
+                \(makeSource())
+            }
+
             const shield = window.\(apiName);
             if (shield && typeof shield.setActive === "function") {
                 shield.setActive(\(isActive ? "true" : "false"), \(pointSource), \(rectsSource));
@@ -48,7 +56,7 @@ final class SumiTransientChromeInteractionShieldUserScript: NSObject, SumiUserSc
     private static func makeSource() -> String {
         """
         (function() {
-            if (window.\(Self.sourceMarker)) { return; }
+            if (window.\(Self.sourceMarker) && window.\(Self.apiName) && typeof window.\(Self.apiName).setActive === "function") { return; }
             window.\(Self.sourceMarker) = true;
 
             const shieldIdPrefix = "__sumi_transient_chrome_interaction_shield_";
@@ -99,6 +107,15 @@ final class SumiTransientChromeInteractionShieldUserScript: NSObject, SumiUserSc
             function normalizeRect(rect) {
                 if (!rect) { return null; }
 
+                if (rect.fullViewport === true) {
+                    const width = Math.max(document.documentElement.clientWidth, window.innerWidth || 0);
+                    const height = Math.max(document.documentElement.clientHeight, window.innerHeight || 0);
+                    if (width <= 0 || height <= 0) {
+                        return null;
+                    }
+                    return { left: 0, top: 0, width, height, right: width, bottom: height, fullViewport: true };
+                }
+
                 const left = Number(rect.left);
                 const top = Number(rect.top);
                 const width = Number(rect.width);
@@ -132,6 +149,12 @@ final class SumiTransientChromeInteractionShieldUserScript: NSObject, SumiUserSc
                 return pointIsInsideActiveRect(Number(event.clientX), Number(event.clientY));
             }
 
+            function setShieldStyle(element, properties) {
+                Object.keys(properties).forEach(function(name) {
+                    element.style.setProperty(name, properties[name], "important");
+                });
+            }
+
             function ensureShieldElement(index) {
                 if (shieldElements[index] && shieldElements[index].isConnected) {
                     return shieldElements[index];
@@ -142,15 +165,18 @@ final class SumiTransientChromeInteractionShieldUserScript: NSObject, SumiUserSc
                 shieldElement.id = shieldId;
                 shieldElement.setAttribute("aria-hidden", "true");
                 shieldElement.setAttribute("data-sumi-transient-chrome-shield", "true");
-                Object.assign(shieldElement.style, {
+                setShieldStyle(shieldElement, {
+                    all: "initial",
+                    display: "block",
                     position: "fixed",
-                    zIndex: "2147483647",
+                    "z-index": "2147483647",
                     background: "transparent",
-                    pointerEvents: "auto",
+                    opacity: "0",
+                    "pointer-events": "auto",
                     cursor: "default",
-                    userSelect: "none",
-                    webkitUserSelect: "none",
-                    touchAction: "none",
+                    "user-select": "none",
+                    "-webkit-user-select": "none",
+                    "touch-action": "none",
                     contain: "strict"
                 });
 
@@ -180,12 +206,21 @@ final class SumiTransientChromeInteractionShieldUserScript: NSObject, SumiUserSc
                     const shieldIndex = activeRects.length;
                     activeRects.push(normalized);
                     const shieldElement = ensureShieldElement(shieldIndex);
-                    Object.assign(shieldElement.style, {
-                        left: normalized.left + "px",
-                        top: normalized.top + "px",
-                        width: normalized.width + "px",
-                        height: normalized.height + "px"
-                    });
+                    if (normalized.fullViewport) {
+                        setShieldStyle(shieldElement, {
+                            left: "0px",
+                            top: "0px",
+                            width: "100vw",
+                            height: "100vh"
+                        });
+                    } else {
+                        setShieldStyle(shieldElement, {
+                            left: normalized.left + "px",
+                            top: normalized.top + "px",
+                            width: normalized.width + "px",
+                            height: normalized.height + "px"
+                        });
+                    }
                 });
 
                 removeShieldElements(activeRects.length);

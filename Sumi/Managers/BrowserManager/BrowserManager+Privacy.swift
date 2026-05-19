@@ -13,10 +13,12 @@ extension BrowserManager {
     private func makePrivacyContext() -> BrowserPrivacyService.Context {
         BrowserPrivacyService.Context(
             currentDataStore: { [weak self] in
-                self?.currentProfile?.dataStore ?? WKWebsiteDataStore.default()
+                self?.activePageTabForActiveWindow()?.resolveProfile()?.dataStore
+                    ?? self?.currentProfile?.dataStore
+                    ?? WKWebsiteDataStore.default()
             },
             currentTab: { [weak self] in
-                self?.currentTabForActiveWindow()
+                self?.activePageTabForActiveWindow()
             },
             activeWindowId: { [weak self] in
                 self?.windowRegistry?.activeWindow?.id

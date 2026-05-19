@@ -234,7 +234,7 @@ class KeyboardShortcutManager {
         }
 
         if event.keyCode == UInt16(kVK_Escape),
-           browserManager?.currentTabForActiveWindow()?.findInPage.model.isVisible == true {
+           browserManager?.findManager.isFindBarVisible == true {
             browserManager?.findManager.hideFindBar()
             return nil
         }
@@ -286,6 +286,11 @@ class KeyboardShortcutManager {
 
         guard let keyCombination = KeyCombination(from: event) else {
             return .pass(event)
+        }
+
+        if keyCombination == KeyCombination(key: "escape") {
+            browserManager?.dismissFloatingBar(in: state, preserveDraft: true)
+            return .consume
         }
 
         if systemOwnedShortcuts.contains(keyCombination) {

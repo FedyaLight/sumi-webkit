@@ -43,6 +43,7 @@ enum URLBarHubInitialMode {
 
 struct URLBarView: View {
     @EnvironmentObject var browserManager: BrowserManager
+    @EnvironmentObject var glanceManager: GlanceManager
     @Environment(BrowserWindowState.self) var windowState
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) var themeContext
@@ -113,7 +114,7 @@ struct URLBarView: View {
             }
             .onTapGesture {
                 guard !isZoomButtonHovering else { return }
-                let currentURL = currentTab?.url.absoluteString ?? ""
+                let currentURL = activePageURL?.absoluteString ?? ""
                 browserManager.focusFloatingBar(
                     in: windowState,
                     prefill: currentURL,
@@ -147,6 +148,10 @@ struct URLBarView: View {
     }
 
     var currentTab: Tab? {
+        if let glanceTab = glanceManager.activePreviewTab(for: windowState) {
+            return glanceTab
+        }
+
         let currentTabId = windowState.currentTabId
         if windowState.isIncognito {
             return windowState.ephemeralTabs.first { $0.id == currentTabId }
@@ -154,6 +159,11 @@ struct URLBarView: View {
         guard let currentTabId else { return nil }
         return browserManager.tabManager.tab(for: currentTabId)
             ?? browserManager.currentTab(for: windowState)
+    }
+
+    var activePageURL: URL? {
+        glanceManager.activeSession(for: windowState)?.currentURL
+            ?? currentTab?.url
     }
 
     var effectiveProfileId: UUID? {
@@ -173,7 +183,7 @@ struct URLBarView: View {
 
     var siteControlsSnapshot: SiteControlsSnapshot {
         SiteControlsSnapshot.resolve(
-            url: currentTab?.url,
+            url: activePageURL,
             profile: effectiveProfile,
             showsAutoplayPermission: currentTab?.audioState.isPlayingAudio == true
         )

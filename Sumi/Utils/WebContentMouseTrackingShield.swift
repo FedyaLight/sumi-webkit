@@ -22,9 +22,16 @@ enum WebContentMouseTrackingShield {
     private static var activeShieldIDsByWindowID: [ObjectIdentifier: Set<ObjectIdentifier>] = [:]
     private static var windowByID: [ObjectIdentifier: WeakWindow] = [:]
     private static var shieldByID: [ObjectIdentifier: WeakView] = [:]
+    private static var excludedAncestorByShieldID: [ObjectIdentifier: WeakView] = [:]
+    private static var coversAllWebContentShieldIDs: Set<ObjectIdentifier> = []
     private static var windowIDByShieldID: [ObjectIdentifier: ObjectIdentifier] = [:]
 
-    static func setActive(_ isActive: Bool, for shieldView: NSView) {
+    static func setActive(
+        _ isActive: Bool,
+        for shieldView: NSView,
+        excludingWebContentIn excludedAncestor: NSView? = nil,
+        coversAllWebContent: Bool = false
+    ) {
         pruneStaleEntries()
 
         let shieldID = ObjectIdentifier(shieldView)
@@ -41,12 +48,24 @@ enum WebContentMouseTrackingShield {
                 removeShield(shieldID, from: previousWindowID)
             }
             shieldByID.removeValue(forKey: shieldID)
+            excludedAncestorByShieldID.removeValue(forKey: shieldID)
+            coversAllWebContentShieldIDs.remove(shieldID)
             windowIDByShieldID.removeValue(forKey: shieldID)
             return
         }
 
         windowByID[nextWindowID] = WeakWindow(nextWindow)
         shieldByID[shieldID] = WeakView(shieldView)
+        if let excludedAncestor {
+            excludedAncestorByShieldID[shieldID] = WeakView(excludedAncestor)
+        } else {
+            excludedAncestorByShieldID.removeValue(forKey: shieldID)
+        }
+        if coversAllWebContent {
+            coversAllWebContentShieldIDs.insert(shieldID)
+        } else {
+            coversAllWebContentShieldIDs.remove(shieldID)
+        }
         windowIDByShieldID[shieldID] = nextWindowID
 
         var shieldIDs = activeShieldIDsByWindowID[nextWindowID] ?? []
@@ -54,6 +73,19 @@ enum WebContentMouseTrackingShield {
         activeShieldIDsByWindowID[nextWindowID] = shieldIDs
 
         applyShieldState(true, to: nextWindow)
+    }
+
+    static func applyCurrentShieldState(to webView: FocusableWKWebView) {
+        pruneStaleEntries()
+
+        guard let window = webView.window,
+              activeShieldIDsByWindowID[ObjectIdentifier(window)]?.isEmpty == false
+        else {
+            webView.setTransientChromeMouseTrackingSuppressed(false)
+            return
+        }
+
+        applyShieldState(true, in: webView)
     }
 
     static func refresh(for shieldView: NSView) {
@@ -79,12 +111,8 @@ enum WebContentMouseTrackingShield {
 
         removeShield(shieldID, from: windowID)
         shieldByID.removeValue(forKey: shieldID)
-    }
-
-    static func isActive(in window: NSWindow) -> Bool {
-        pruneStaleEntries()
-        let windowID = ObjectIdentifier(window)
-        return activeShieldIDsByWindowID[windowID]?.isEmpty == false
+        excludedAncestorByShieldID.removeValue(forKey: shieldID)
+        coversAllWebContentShieldIDs.remove(shieldID)
     }
 
     private static func removeShield(_ shieldID: ObjectIdentifier, from windowID: ObjectIdentifier) {
@@ -100,6 +128,9 @@ enum WebContentMouseTrackingShield {
             }
         } else {
             activeShieldIDsByWindowID[windowID] = shieldIDs
+            if let window = windowByID[windowID]?.value {
+                applyShieldState(true, to: window)
+            }
         }
     }
 
@@ -112,6 +143,8 @@ enum WebContentMouseTrackingShield {
                 removeShield(shieldID, from: windowID)
             }
             shieldByID.removeValue(forKey: shieldID)
+            excludedAncestorByShieldID.removeValue(forKey: shieldID)
+            coversAllWebContentShieldIDs.remove(shieldID)
         }
 
         let staleWindowIDs = windowByID.compactMap { windowID, weakWindow in
@@ -130,9 +163,10 @@ enum WebContentMouseTrackingShield {
 
     private static func applyShieldState(_ isShielded: Bool, in rootView: NSView) {
         if let webView = rootView as? FocusableWKWebView {
+            let shieldRects = isShielded ? activeShieldRects(for: webView) : []
             webView.setTransientChromeMouseTrackingSuppressed(
-                isShielded,
-                shieldRects: isShielded ? activeShieldRects(for: webView) : []
+                isShielded && !shieldRects.isEmpty,
+                shieldRects: shieldRects
             )
         }
 
@@ -142,16 +176,39 @@ enum WebContentMouseTrackingShield {
     }
 
     private static func activeShieldRects(for webView: FocusableWKWebView) -> [SumiTransientChromeInteractionShieldRect] {
+        guard !webView.isTransientChromeMouseTrackingSuppressionExempt else { return [] }
         guard let window = webView.window else { return [] }
 
         let windowID = ObjectIdentifier(window)
         guard let shieldIDs = activeShieldIDsByWindowID[windowID] else { return [] }
 
-        return shieldIDs.compactMap { shieldID in
+        let applicableShieldIDs = shieldIDs.filter { shieldID in
             guard let shieldView = shieldByID[shieldID]?.value,
                   shieldView.window === window
-            else { return nil }
+            else { return false }
 
+            if let excludedAncestor = excludedAncestorByShieldID[shieldID]?.value,
+               isView(webView, descendantOf: excludedAncestor) {
+                return false
+            }
+
+            return true
+        }
+
+        if applicableShieldIDs.contains(where: coversAllWebContentShieldIDs.contains) {
+            return [
+                SumiTransientChromeInteractionShieldRect(
+                    x: 0,
+                    y: 0,
+                    width: webView.bounds.width,
+                    height: webView.bounds.height,
+                    coversViewport: true
+                ),
+            ]
+        }
+
+        return applicableShieldIDs.compactMap { shieldID in
+            guard let shieldView = shieldByID[shieldID]?.value else { return nil }
             let rectInWindow = shieldView.convert(shieldView.bounds, to: nil)
             let rectInWebView = webView.convert(rectInWindow, from: nil)
             let clippedRect = rectInWebView.intersection(webView.bounds)
@@ -167,6 +224,15 @@ enum WebContentMouseTrackingShield {
                 height: clippedRect.height
             )
         }
+    }
+
+    private static func isView(_ view: NSView, descendantOf ancestor: NSView) -> Bool {
+        var current: NSView? = view
+        while let candidate = current {
+            if candidate === ancestor { return true }
+            current = candidate.superview
+        }
+        return false
     }
 }
 

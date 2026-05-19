@@ -53,7 +53,7 @@ extension URLBarView {
         if currentTab.representsSumiBookmarksSurface {
             return String(localized: "Bookmarks")
         }
-        return formatURL(currentTab.url)
+        return formatURL(activePageURL ?? currentTab.url)
     }
 
     func formatURL(_ url: URL) -> String {

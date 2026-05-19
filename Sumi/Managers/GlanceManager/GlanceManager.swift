@@ -6,14 +6,7 @@
 //
 
 import SwiftUI
-import WebKit
 import AppKit
-
-enum GlanceDismissReason {
-    case close
-    case promoteToTab
-    case moveToSplit
-}
 
 enum GlancePresentationPhase: Equatable {
     case idle
@@ -36,7 +29,11 @@ final class GlanceManager: ObservableObject {
         self.browserManager = browserManager
     }
 
-    func presentExternalURL(_ url: URL, from tab: Tab?) {
+    func presentExternalURL(
+        _ url: URL,
+        from tab: Tab?,
+        originRectInWindow: CGRect? = nil
+    ) {
         guard let browserManager else { return }
 
         if currentSession?.currentURL == url {
@@ -44,14 +41,15 @@ final class GlanceManager: ObservableObject {
         }
 
         if currentSession != nil {
-            finishCurrentSession(reason: .close, preservesPreviewWebView: false)
+            finishCurrentSession(preservesPreviewWebView: false)
         }
 
         let windowState = tab.flatMap { browserManager.windowState(containing: $0) } ?? windowRegistry?.activeWindow
         let windowId = windowState?.id ?? UUID()
         let previewTab = makePreviewTab(for: url, sourceTab: tab)
 
-        let originRect = tab?.glanceOriginRectInWindow()
+        let originRect = originRectInWindow
+            ?? tab?.glanceOriginRectInWindow()
             ?? GlanceManager.fallbackOriginRect(in: windowState?.window)
 
         let session = GlanceSession(
@@ -64,7 +62,6 @@ final class GlanceManager: ObservableObject {
 
         currentSession = session
         transition(to: .opening)
-        NotificationCenter.default.post(name: .glanceDidActivate, object: self)
 
         Task { @MainActor [weak self, weak session] in
             guard let self,
@@ -94,7 +91,7 @@ final class GlanceManager: ObservableObject {
     }
 
     @discardableResult
-    func beginAnimatedDismissal(reason: GlanceDismissReason = .close) -> GlanceSession? {
+    func beginAnimatedDismissal() -> GlanceSession? {
         guard let currentSession,
               phase != .closing,
               phase != .promoting
@@ -103,19 +100,51 @@ final class GlanceManager: ObservableObject {
         return currentSession
     }
 
-    func finishAnimatedDismissal(sessionID: UUID, reason: GlanceDismissReason = .close) {
+    func finishAnimatedDismissal(sessionID: UUID) {
         guard currentSession?.id == sessionID else { return }
-        finishCurrentSession(reason: reason, preservesPreviewWebView: false)
+        finishCurrentSession(preservesPreviewWebView: false)
     }
 
-    func dismissGlance(reason: GlanceDismissReason = .close) {
+    func dismissGlance() {
         guard currentSession != nil || isActive else { return }
         transition(to: .closing)
-        finishCurrentSession(reason: reason, preservesPreviewWebView: false)
+        finishCurrentSession(preservesPreviewWebView: false)
     }
 
-    func adoptedPreviewTabForTesting() -> Tab? {
-        currentSession?.previewTab
+    var isPreviewActive: Bool {
+        currentSession != nil && phase != .idle && phase != .closing && phase != .promoting
+    }
+
+    func presentedSession(for windowState: BrowserWindowState) -> GlanceSession? {
+        guard let currentSession,
+              phase != .idle,
+              phase != .promoting,
+              currentSession.windowId == windowState.id,
+              isSessionVisibleOnSelectedTab(currentSession, in: windowState)
+        else { return nil }
+        return currentSession
+    }
+
+    func activePreviewTab(for windowState: BrowserWindowState) -> Tab? {
+        activeSession(for: windowState)?.previewTab
+    }
+
+    func activeSession(for windowState: BrowserWindowState) -> GlanceSession? {
+        guard isPreviewActive else { return nil }
+        return presentedSession(for: windowState)
+    }
+
+    private func isSessionVisibleOnSelectedTab(
+        _ session: GlanceSession,
+        in windowState: BrowserWindowState
+    ) -> Bool {
+        guard let sourceTab = session.sourceTab else { return true }
+        return browserManager?.currentTab(for: windowState)?.id == sourceTab.id
+    }
+
+    func updateContentFrameInWindowSpace(_ frame: CGRect?, sessionID: UUID) {
+        guard currentSession?.id == sessionID else { return }
+        currentSession?.updateContentFrameInWindowSpace(frame)
     }
 
     func transition(to newPhase: GlancePresentationPhase) {
@@ -124,7 +153,6 @@ final class GlanceManager: ObservableObject {
     }
 
     private func finishCurrentSession(
-        reason: GlanceDismissReason,
         preservesPreviewWebView: Bool
     ) {
         guard let session = currentSession else {
@@ -139,9 +167,14 @@ final class GlanceManager: ObservableObject {
             session.previewTab.primaryWindowId = nil
         }
 
+        let shouldResetFindManager = browserManager?.findManager.currentTab?.id == session.previewTab.id
+
         currentSession = nil
         transition(to: .idle)
-        NotificationCenter.default.post(name: .glanceDidDeactivate, object: self)
+        if shouldResetFindManager {
+            browserManager?.findManager.hideFindBar()
+            browserManager?.updateFindManagerCurrentTab()
+        }
     }
 
     private func makePreviewTab(for url: URL, sourceTab: Tab?) -> Tab {
@@ -168,10 +201,4 @@ final class GlanceManager: ObservableObject {
             ?? CGPoint(x: (window?.frame.width ?? 800) / 2, y: (window?.frame.height ?? 600) / 2)
         return CGRect(x: point.x - 22, y: point.y - 22, width: 44, height: 44)
     }
-}
-
-// MARK: - Notifications
-extension Notification.Name {
-    static let glanceDidActivate = Notification.Name("GlanceDidActivate")
-    static let glanceDidDeactivate = Notification.Name("GlanceDidDeactivate")
 }
