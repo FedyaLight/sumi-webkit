@@ -18,7 +18,7 @@ final class SumiGlanceNavigationResponder: SumiNavigationActionWebViewResponding
         guard let tab,
               tab.browserManager != nil,
               let url = navigationAction.url,
-              url.sumiIsNativeGlancePreviewableLink,
+              url.sumiIsGlancePreviewableLink,
               navigationAction.isNativeGlanceLinkActivation
         else { return .next }
 
@@ -91,7 +91,11 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
         }
 
         let navigationFlags = tab.navigationModifierFlags(from: navigationAction)
-        if routeExplicitGlanceIfNeeded(requestURL, modifierFlags: navigationFlags, tab: tab) {
+        if routeExplicitGlanceIfNeeded(
+            requestURL,
+            isRequested: tab.isGlanceTriggerActive(navigationFlags),
+            tab: tab
+        ) {
             return nil
         }
 
@@ -105,9 +109,14 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             )
         }
 
+        let shouldOpenDynamicGlance = !isExtensionOriginated && (
+            requestURL.map {
+                tab.shouldOpenDynamicallyInGlance(url: $0, modifierFlags: navigationFlags)
+            } ?? false
+        )
         if routeDynamicGlanceIfNeeded(
             requestURL,
-            modifierFlags: navigationFlags,
+            isRequested: shouldOpenDynamicGlance,
             tab: tab,
             isExtensionOriginated: isExtensionOriginated
         ) {
@@ -116,7 +125,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
 
         let behavior = SumiLinkOpenBehavior(
             buttonIsMiddle: false,
-            modifierFlags: tab.navigationModifierFlags(from: navigationAction),
+            modifierFlags: navigationFlags,
             switchToNewTabWhenOpenedPreference: false,
             canOpenLinkInCurrentTab: false,
             shouldSelectNewTab: true
@@ -178,7 +187,11 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
         }
 
         let navigationFlags = tab.navigationModifierFlags(from: navigationAction)
-        if routeExplicitGlanceIfNeeded(requestURL, modifierFlags: navigationFlags, tab: tab) {
+        if routeExplicitGlanceIfNeeded(
+            requestURL,
+            isRequested: tab.isGlanceTriggerActive(navigationFlags),
+            tab: tab
+        ) {
             return nil
         }
 
@@ -192,9 +205,14 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             )
         }
 
+        let shouldOpenDynamicGlance = !isExtensionOriginated && (
+            requestURL.map {
+                tab.shouldOpenDynamicallyInGlance(url: $0, modifierFlags: navigationFlags)
+            } ?? false
+        )
         if routeDynamicGlanceIfNeeded(
             requestURL,
-            modifierFlags: navigationFlags,
+            isRequested: shouldOpenDynamicGlance,
             tab: tab,
             isExtensionOriginated: isExtensionOriginated
         ) {
@@ -203,7 +221,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
 
         let behavior = SumiLinkOpenBehavior(
             buttonIsMiddle: false,
-            modifierFlags: tab.navigationModifierFlags(from: navigationAction),
+            modifierFlags: navigationFlags,
             switchToNewTabWhenOpenedPreference: false,
             canOpenLinkInCurrentTab: false,
             shouldSelectNewTab: true
@@ -272,18 +290,33 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
         }
 
         let modifierFlags = navigationModifierFlags(from: navigationAction, tab: tab)
+        if routeExplicitGlanceIfNeeded(
+            url,
+            isRequested: tab.isGlanceTriggerActive(modifierFlags),
+            tab: tab
+        ) {
+            return .cancel
+        }
+
         guard let targetFrame = navigationAction.targetFrame else { return .next }
 
         let isExtensionOriginated = Tab.isExtensionOriginatedPopupNavigation(
             sourceURL: navigationAction.sourceURL,
             requestURL: url
         )
+        let isMiddleButtonClick = navigationAction.navigationType.isMiddleButtonClick
+        let shouldOpenDynamicGlance = !isExtensionOriginated
+            && !isMiddleButtonClick
+            && tab.shouldOpenDynamicallyInGlance(
+                url: url,
+                modifierFlags: modifierFlags
+            )
         if routeDynamicGlanceIfNeeded(
             url,
-            modifierFlags: modifierFlags,
+            isRequested: shouldOpenDynamicGlance,
             tab: tab,
             isExtensionOriginated: isExtensionOriginated,
-            isMiddleButtonClick: navigationAction.navigationType.isMiddleButtonClick
+            isMiddleButtonClick: isMiddleButtonClick
         ) {
             return .cancel
         }
@@ -358,12 +391,12 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
 
     private func routeExplicitGlanceIfNeeded(
         _ url: URL?,
-        modifierFlags: NSEvent.ModifierFlags,
+        isRequested: Bool,
         tab: Tab
     ) -> Bool {
         guard let url,
-              url.sumiIsNativeGlancePreviewableLink,
-              tab.isGlanceTriggerActive(modifierFlags)
+              url.sumiIsGlancePreviewableLink,
+              isRequested
         else { return false }
 
         tab.openURLInGlanceFromLinkGesture(url)
@@ -373,7 +406,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
 
     private func routeDynamicGlanceIfNeeded(
         _ url: URL?,
-        modifierFlags: NSEvent.ModifierFlags,
+        isRequested: Bool,
         tab: Tab,
         isExtensionOriginated: Bool,
         isMiddleButtonClick: Bool = false
@@ -381,7 +414,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
         guard let url,
               !isExtensionOriginated,
               !isMiddleButtonClick,
-              tab.shouldOpenDynamicallyInGlance(url: url, modifierFlags: modifierFlags)
+              isRequested
         else { return false }
 
         tab.openURLInGlanceFromLinkGesture(url)
@@ -479,12 +512,5 @@ private extension SumiNavigationAction {
     var isNativeGlanceLinkActivation: Bool {
         navigationType.isLinkActivated
             || (navigationType == .other && isUserInitiated)
-    }
-}
-
-private extension URL {
-    var sumiIsNativeGlancePreviewableLink: Bool {
-        guard let scheme = sumiNavigationalScheme else { return false }
-        return [.http, .https, .file].contains(scheme)
     }
 }

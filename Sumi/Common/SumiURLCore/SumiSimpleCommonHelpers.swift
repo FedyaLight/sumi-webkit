@@ -46,6 +46,15 @@ extension URL {
         scheme.map(SumiNavigationalScheme.init(rawValue:))
     }
 
+    var sumiIsGlancePreviewableLink: Bool {
+        switch sumiNavigationalScheme {
+        case .http, .https, .file:
+            return true
+        default:
+            return false
+        }
+    }
+
     func sumiAppending(_ path: String) -> URL {
         appendingPathComponent(path)
     }
