@@ -190,6 +190,26 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertTrue(browserManager.glanceManager.presentedSession(for: windowState) === session)
     }
 
+    func testGlancePreviewPermissionSurfaceCountsAsActiveAndVisible() async throws {
+        let browserManager = BrowserManager()
+        let sourceTab = makeSourceTab(in: browserManager)
+        let (windowRegistry, _) = makeRegisteredWindow(in: browserManager, selecting: sourceTab)
+        let url = URL(string: "https://destination.example/page")!
+
+        browserManager.glanceManager.presentExternalURL(url, from: sourceTab)
+        let session = try XCTUnwrap(browserManager.glanceManager.currentSession)
+        let previewTab = session.previewTab
+        let webView = try await waitForPreviewWebView(in: session)
+
+        XCTAssertFalse(previewTab.isCurrentTab)
+        XCTAssertNil(previewTab.primaryWindowId)
+        XCTAssertTrue(previewTab.permissionRequestIsActiveSurface(for: webView))
+        XCTAssertTrue(previewTab.permissionRequestIsVisibleSurface(for: webView))
+        XCTAssertFalse(previewTab.permissionRequestIsActiveSurface(for: WKWebView()))
+        XCTAssertFalse(previewTab.permissionRequestIsVisibleSurface(for: WKWebView()))
+        withExtendedLifetime(windowRegistry) {}
+    }
+
     @discardableResult
     private func makeRegisteredWindow(
         in browserManager: BrowserManager,

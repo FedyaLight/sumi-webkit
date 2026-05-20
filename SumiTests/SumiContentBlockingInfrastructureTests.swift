@@ -519,10 +519,22 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
     func testWebViewCoordinatorAwaitsContentBlockingAssetsBeforeInitialLoad() throws {
         let source = try Self.source(named: "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift")
 
-        let waitRange = try XCTUnwrap(source.range(of: "await controller.waitForContentBlockingAssetsInstalled()"))
+        let waitRange = try XCTUnwrap(source.range(of: "await controller.waitForInitialUserContentInstallation()"))
         let loadRange = try XCTUnwrap(source.range(of: "performLoad()", range: waitRange.upperBound..<source.endIndex))
 
         XCTAssertLessThan(waitRange.lowerBound, loadRange.lowerBound)
+    }
+
+    func testInitialNormalTabLoadAwaitsCoreUserScriptsBeforePageLoad() throws {
+        let tabRuntime = try Self.source(named: "Sumi/Models/Tab/Tab+WebViewRuntime.swift")
+        let navigationState = try Self.source(named: "Sumi/Models/Tab/Tab+NavigationState.swift")
+
+        let waitRange = try XCTUnwrap(tabRuntime.range(of: "await controller.waitForInitialUserContentInstallation()"))
+        let loadRange = try XCTUnwrap(tabRuntime.range(of: "self.loadURL(self.url)", range: waitRange.upperBound..<tabRuntime.endIndex))
+
+        XCTAssertLessThan(waitRange.lowerBound, loadRange.lowerBound)
+        XCTAssertFalse(tabRuntime.contains("if controller.contentBlockingAssetSummary.isInstalled {\n                    loadURL(url)"))
+        XCTAssertFalse(navigationState.contains("guard !controller.contentBlockingAssetSummary.isInstalled else"))
     }
 
     func testNormalPageInterceptionIsNotRegisteredInSumiSources() throws {

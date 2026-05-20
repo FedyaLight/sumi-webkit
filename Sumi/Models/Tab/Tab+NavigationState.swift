@@ -138,14 +138,6 @@ extension Tab {
             return
         }
 
-        guard !controller.contentBlockingAssetSummary.isInstalled else {
-            performMainFrameNavigationAfterHydrationIfNeeded(
-                on: webView,
-                performLoad: performLoad
-            )
-            return
-        }
-
         cancelPendingMainFrameNavigation()
         let token = UUID()
         pendingMainFrameNavigationToken = token

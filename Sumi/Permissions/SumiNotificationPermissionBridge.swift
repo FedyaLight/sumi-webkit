@@ -327,9 +327,7 @@ final class SumiNotificationPermissionBridge {
         source: SumiNotificationBridgeSource
     ) async -> SumiPermissionCoordinatorDecision {
         if pendingStrategy.waitsForPromptUI,
-           context.surface == .normalTab,
-           context.isActiveTab,
-           context.isVisibleTab {
+           context.surface == .normalTab {
             return await coordinator.requestPermission(context)
         }
 

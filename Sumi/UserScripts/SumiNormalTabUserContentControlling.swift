@@ -54,6 +54,14 @@ protocol SumiNormalTabUserContentControlling: AnyObject {
     func cleanUpBeforeClosing()
 }
 
+extension SumiNormalTabUserContentControlling {
+    func waitForInitialUserContentInstallation() async {
+        let signpostState = PerformanceTrace.beginInterval("ContentBlocking.assetsInstallWait")
+        await waitForContentBlockingAssetsInstalled()
+        PerformanceTrace.endInterval("ContentBlocking.assetsInstallWait", signpostState)
+    }
+}
+
 @MainActor
 private enum SumiNormalTabAssociatedKeys {
     static var scriptsProvider: UInt8 = 0

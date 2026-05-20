@@ -220,9 +220,7 @@ final class SumiWebKitGeolocationBridge {
         for context: SumiPermissionSecurityContext
     ) async -> SumiPermissionCoordinatorDecision {
         if pendingStrategy.waitsForPromptUI,
-           context.surface == .normalTab,
-           context.isActiveTab,
-           context.isVisibleTab {
+           context.surface == .normalTab {
             return await coordinator.requestPermission(context)
         }
 
