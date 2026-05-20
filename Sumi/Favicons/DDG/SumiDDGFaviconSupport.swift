@@ -157,9 +157,10 @@ final class SumiDDGFaviconUserScripts: SumiUserScriptsProvider {
     }
 
     func loadWKUserScripts() async -> [WKUserScript] {
+        let scriptsToLoad = userScripts
         var scripts: [WKUserScript] = []
-        scripts.reserveCapacity(userScripts.count)
-        for userScript in userScripts {
+        scripts.reserveCapacity(scriptsToLoad.count)
+        for userScript in scriptsToLoad {
             scripts.append(SumiUserScriptBuilder.makeWKUserScript(from: userScript))
         }
         return scripts

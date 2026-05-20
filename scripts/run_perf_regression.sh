@@ -6,27 +6,40 @@ ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 PROJECT="$ROOT/Sumi.xcodeproj"
 SCHEME="${SUMI_SCHEME:-Sumi}"
 DESTINATION="${SUMI_XCODE_DESTINATION:-platform=macOS,arch=arm64}"
-DERIVED_DATA="${SUMI_PERF_DERIVED_DATA:-$ROOT/.build/perf-derived-data}"
-TRACE_DIR="${SUMI_PERF_TRACE_DIR:-$ROOT/.build/perf-traces}"
+DERIVED_DATA="${SUMI_PERF_DERIVED_DATA:-$ROOT/.build/performance/perf-derived-data}"
+TRACE_DIR="${SUMI_PERF_TRACE_DIR:-$ROOT/.build/profiles}"
 TIME_LIMIT="${SUMI_PERF_TIME_LIMIT:-90s}"
 
 OPTIMIZED_STACK_TESTS=(
   "-only-testing:SumiTests/TabManagerStructuralPersistenceTests"
   "-only-testing:SumiTests/TabManagerStructuralBatchingTests"
   "-only-testing:SumiTests/RuntimeStateCoalescerTests"
-  "-only-testing:SumiTests/WebViewCoordinatorTests"
-  "-only-testing:SumiTests/ExtensionManagerTests/testManagerInitWithDisabledPersistedExtensionLoadsMetadataWithoutRuntime"
-  "-only-testing:SumiTests/ExtensionManagerTests/testRequestExtensionRuntimeIsIdempotentAndBoundsProfileStoreCache"
-  "-only-testing:SumiTests/ExtensionManagerTests/testResetInjectedBrowserConfigurationRuntimeStateReleasesRuntimeArtifacts"
-  "-only-testing:SumiTests/ExtensionManagerTests/testRegisterExistingWindowStateDoesNotBackfillLiveTabs"
-  "-only-testing:SumiTests/ExtensionManagerTests/testRegisterExistingWindowStateSkipsLiveTabOpenBeforeInitialExtensionLoadCompletes"
-  "-only-testing:SumiTests/ExtensionManagerTests/testDisableThenUninstallTearsDownRuntimeArtifacts"
-  "-only-testing:SumiTests/ExtensionManagerTests/testSwitchProfilePreservesLoadedExtensionsAndReconcilesPageBridges"
-  "-only-testing:SumiTests/ExtensionManagerTests/testRequiredBackgroundWakeCoalescesInFlightRequestsAndSkipsLoadedContext"
-  "-only-testing:SumiTests/ExtensionManagerTests/testRequiredBackgroundWakeStateClearsOnRuntimeTeardown"
-  "-only-testing:SumiTests/ExtensionManagerTests/testBrowserExtensionSurfaceStoreReceivesInstalledExtensionsAfterMutation"
-  "-only-testing:SumiTests/ExtensionManagerTests/testBrowserExtensionSurfaceStoreReloadPublishesAsynchronously"
-  "-only-testing:SumiTests/ExtensionManagerTests/testSettingsViewStateDeferralSchedulesMutationAsynchronously"
+  "-only-testing:SumiTests/BrowserConfigurationNormalTabTests/testBrowserManagerStartupWithProtectionOffDoesNotInitializePreparedBundleRuntime"
+  "-only-testing:SumiTests/BrowserConfigurationNormalTabTests/testStartupNormalTabMaterializationWaitsOnlyWhileProtectionRestoreIsPending"
+  "-only-testing:SumiTests/BrowserConfigurationNormalTabTests/testTabNormalWebViewCreationWithProtectionOffDoesNotLoadOrAttachPreparedRules"
+  "-only-testing:SumiTests/BrowserConfigurationNormalTabTests/testOffProtectionLevelKeepsNewTabHotPathEmptyAfterRestart"
+  "-only-testing:SumiTests/BrowserConfigurationNormalTabTests/testNormalTabConfigurationInstallsCoreScriptProvider"
+  "-only-testing:SumiTests/BrowserConfigurationNormalTabTests/testPrimaryTabSetupUsesCentralFactoryNotFaviconOnlyFactoryOrScriptRemoval"
+  "-only-testing:SumiTests/BrowserConfigurationNormalTabTests/testCoordinatorDoesNotCreateNormalWebViewsOrFallbackToGlance"
+  "-only-testing:SumiTests/SumiContentBlockingInfrastructureTests/testDefaultFactoryExposesDisabledAssetsBeforeAwaitingInstallation"
+  "-only-testing:SumiTests/SumiContentBlockingInfrastructureTests/testDisabledEmptyAssetSourceIsCheapAndHasNoRuleLists"
+  "-only-testing:SumiTests/SumiContentBlockingInfrastructureTests/testWarmStoreRuleListDoesNotPerformDuplicateSmokeLookup"
+  "-only-testing:SumiTests/SumiContentBlockingInfrastructureTests/testExistingRuleListUpdateLooksUpWarmRuleListsWithoutRecompiling"
+  "-only-testing:SumiTests/SumiContentBlockingInfrastructureTests/testWebViewCoordinatorAwaitsContentBlockingAssetsBeforeInitialLoad"
+  "-only-testing:SumiTests/SumiNormalTabUserContentControllerParityTests/testWaitForContentBlockingAssetsInstalledReturnsForAlreadyInstalledDisabledAssets"
+  "-only-testing:SumiTests/SumiNormalTabUserContentControllerParityTests/testEquivalentManagedScriptSetDoesNotAdvanceRevision"
+  "-only-testing:SumiTests/SumiNormalTabUserContentControllerParityTests/testEquivalentReplacementDoesNotDuplicateInstalledScripts"
+  "-only-testing:SumiTests/SumiNormalTabUserContentControllerParityTests/testCleanupIsIdempotentAndPreventsLaterScriptReplacement"
+  "-only-testing:SumiTests/SumiPerformanceModularRegressionTests/testPrompt22MemorySaverRegressionGates"
+  "-only-testing:SumiTests/SumiPerformanceModularRegressionTests/testBrowserManagerStartupAndSettingsSurfacesDoNotConstructDisabledRuntimes"
+  "-only-testing:SumiTests/SumiPerformanceModularRegressionTests/testCachedProtectionAttachmentPlanDropsEncodedRuleListsAfterPreparation"
+  "-only-testing:SumiTests/SumiPerformanceModularRegressionTests/testDefaultNormalTabAttachesOnlyCoreRuntimeAndNoOptionalModuleAssets"
+  "-only-testing:SumiTests/SumiPerformanceModularRegressionTests/testAdBlockingPreparedBundleBoundaryStaysInertUntilNeeded"
+  "-only-testing:SumiTests/SumiAdBlockingModuleTests/testRepeatedPreparedManifestStartupRestoreUsesLookupOnlyWithoutShardPayloadReads"
+  "-only-testing:SumiTests/SumiAdBlockingModuleTests/testAppRuntimeHasNoGenerationFallbackRustInvocationOrEnhancedRuntime"
+  "-only-testing:SumiTests/SumiProtectionCoordinatorTests/testOffSkipsBundleDiscoveryInstallLookupAndRuleAttachment"
+  "-only-testing:SumiTests/SumiProtectionCoordinatorTests/testNativeProtectionModesRemainJSFreeAndNormalTabAttachmentStaysCoordinated"
+  "-only-testing:SumiTests/SumiProtectionCoordinatorTests/testPreparedBundleOnlySourceGuardsCoverLegacyRuntimePaths"
 )
 
 usage() {
@@ -37,8 +50,8 @@ Usage:
   scripts/run_perf_regression.sh ui-smoke
 
 Environment:
-  SUMI_PERF_DERIVED_DATA   DerivedData path (default: .build/perf-derived-data)
-  SUMI_PERF_TRACE_DIR      Trace output dir (default: .build/perf-traces)
+  SUMI_PERF_DERIVED_DATA   DerivedData path (default: .build/performance/perf-derived-data)
+  SUMI_PERF_TRACE_DIR      Trace output dir (default: .build/profiles)
   SUMI_PERF_TIME_LIMIT     xctrace time limit (default: 90s)
   SUMI_APP_SUPPORT_OVERRIDE Optional app support fixture passed to xctrace with --env
 USAGE

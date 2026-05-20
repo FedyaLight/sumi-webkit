@@ -55,6 +55,12 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
         let assetSource = SumiNormalTabContentBlockingAssetSource.disabledEmpty(
             scriptsProvider: scriptsProvider
         )
+        var publishedAssetCount = 0
+        let cancellable = assetSource.assetsPublisher.sink { _ in
+            publishedAssetCount += 1
+        }
+        defer { cancellable.cancel() }
+
         let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
             scriptsProvider: scriptsProvider
         )
@@ -66,6 +72,8 @@ final class SumiContentBlockingInfrastructureTests: XCTestCase {
         XCTAssertTrue(summary.isInstalled)
         XCTAssertEqual(summary.globalRuleListCount, 0)
         XCTAssertFalse(summary.isContentBlockingFeatureEnabled)
+        XCTAssertEqual(publishedAssetCount, 0)
+        XCTAssertNotNil(assetSource.initialContent)
         XCTAssertFalse(assetSource.privacyConfigurationManager.privacyConfig.isEnabled(featureKey: .contentBlocking))
         XCTAssertTrue(scriptsProvider.userScripts.isEmpty == false)
     }

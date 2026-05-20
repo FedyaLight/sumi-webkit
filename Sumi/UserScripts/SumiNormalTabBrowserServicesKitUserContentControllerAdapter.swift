@@ -38,7 +38,7 @@ struct SumiNormalTabContentBlockingAssetSource {
             sourceProvider: scriptsProvider
         )
         return SumiNormalTabContentBlockingAssetSource(
-            assetsPublisher: Just(content).eraseToAnyPublisher(),
+            assetsPublisher: Empty().eraseToAnyPublisher(),
             initialContent: content,
             privacyConfigurationManager: SumiContentBlockingPrivacyConfigurationManager(
                 isContentBlockingEnabled: false

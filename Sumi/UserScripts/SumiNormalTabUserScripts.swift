@@ -16,6 +16,7 @@ final class SumiNormalTabUserScripts: SumiUserScriptsProvider {
     private var contentBlockingUserScripts: [SumiUserScript]
     private var managedUserScripts: [SumiUserScript]
     private var managedUserScriptSignature: [UserScriptSignature]
+    private var cachedUserScripts: [SumiUserScript]?
     private(set) var scriptsRevision = 0
 
     init(
@@ -28,12 +29,22 @@ final class SumiNormalTabUserScripts: SumiUserScriptsProvider {
     }
 
     var userScripts: [SumiUserScript] {
-        [transientChromeInteractionShieldUserScript] + contentBlockingUserScripts + faviconScripts.userScripts + managedUserScripts
+        if let cachedUserScripts {
+            return cachedUserScripts
+        }
+
+        let scripts = [transientChromeInteractionShieldUserScript]
+            + contentBlockingUserScripts
+            + faviconScripts.userScripts
+            + managedUserScripts
+        cachedUserScripts = scripts
+        return scripts
     }
 
     func replaceManagedUserScripts(_ userScripts: [SumiUserScript]) {
         managedUserScripts = userScripts
         managedUserScriptSignature = Self.signature(for: userScripts)
+        cachedUserScripts = nil
         scriptsRevision += 1
     }
 
@@ -46,14 +57,16 @@ final class SumiNormalTabUserScripts: SumiUserScriptsProvider {
 
         managedUserScripts = userScripts
         managedUserScriptSignature = signature
+        cachedUserScripts = nil
         scriptsRevision += 1
         return true
     }
 
     func loadWKUserScripts() async -> [WKUserScript] {
+        let scriptsToLoad = userScripts
         var scripts: [WKUserScript] = []
-        scripts.reserveCapacity(userScripts.count)
-        for userScript in userScripts {
+        scripts.reserveCapacity(scriptsToLoad.count)
+        for userScript in scriptsToLoad {
             scripts.append(SumiUserScriptBuilder.makeWKUserScript(from: userScript))
         }
         return scripts
