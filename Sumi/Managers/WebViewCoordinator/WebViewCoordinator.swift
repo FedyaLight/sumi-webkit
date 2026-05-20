@@ -451,6 +451,9 @@ class WebViewCoordinator {
     @ObservationIgnored
     private var promotedHostsByTabAndWindow: [UUID: [UUID: SumiWebViewContainerView]] = [:]
 
+    @ObservationIgnored
+    private var promotedHostAttachmentCompletionsByTabAndWindow: [UUID: [UUID: (@MainActor () -> Void)]] = [:]
+
     /// Prevent recursive sync calls
     @ObservationIgnored
     private var isSyncingTab: Set<UUID> = []
@@ -568,8 +571,21 @@ class WebViewCoordinator {
         registerTrackedWebView(webView, for: tabId, in: windowId)
     }
 
-    func registerPromotedHost(_ host: SumiWebViewContainerView, for tabId: UUID, in windowId: UUID) {
+    func registerPromotedHost(
+        _ host: SumiWebViewContainerView,
+        for tabId: UUID,
+        in windowId: UUID,
+        attachmentCompletion: (@MainActor () -> Void)? = nil
+    ) {
         promotedHostsByTabAndWindow[tabId, default: [:]][windowId] = host
+        if let attachmentCompletion {
+            promotedHostAttachmentCompletionsByTabAndWindow[tabId, default: [:]][windowId] = attachmentCompletion
+        } else {
+            promotedHostAttachmentCompletionsByTabAndWindow[tabId]?[windowId] = nil
+            if promotedHostAttachmentCompletionsByTabAndWindow[tabId]?.isEmpty == true {
+                promotedHostAttachmentCompletionsByTabAndWindow[tabId] = nil
+            }
+        }
     }
 
     func takePromotedHost(for tabId: UUID, in windowId: UUID, expectedWebView: WKWebView) -> SumiWebViewContainerView? {
@@ -583,6 +599,18 @@ class WebViewCoordinator {
 
         host.prepareForSuperviewTransferPreservingDisplayedContent()
         return host
+    }
+
+    func completePromotedHostAttachment(for tabId: UUID, in windowId: UUID) {
+        guard let completion = promotedHostAttachmentCompletionsByTabAndWindow[tabId]?[windowId] else {
+            return
+        }
+
+        promotedHostAttachmentCompletionsByTabAndWindow[tabId]?[windowId] = nil
+        if promotedHostAttachmentCompletionsByTabAndWindow[tabId]?.isEmpty == true {
+            promotedHostAttachmentCompletionsByTabAndWindow[tabId] = nil
+        }
+        completion()
     }
 
     @discardableResult

@@ -503,35 +503,56 @@ final class WindowWebContentController: NSViewController {
             return
         }
 
-        parkedProtectedHosts.removeValue(forKey: ObjectIdentifier(host.webView))
-        if host.superview != nil && host.superview !== paneView {
-            host.removeFromSuperview()
+        performWithoutImplicitAnimations {
+            parkedProtectedHosts.removeValue(forKey: ObjectIdentifier(host.webView))
+            if host.superview != nil && host.superview !== paneView {
+                host.removeFromSuperview()
+            }
+            if host.superview == nil || host.superview === paneView {
+                paneView.placeContentHostAboveChromeShadow(host)
+            }
+            host.frame = paneView.bounds
+            host.autoresizingMask = [.width, .height]
+            configureViewportStyle(on: host)
+            host.attachDisplayedContentIfNeeded()
+            host.isHidden = false
+            paneView.layoutSubtreeIfNeeded()
+            host.layoutSubtreeIfNeeded()
         }
-        if host.superview == nil || host.superview === paneView {
-            paneView.placeContentHostAboveChromeShadow(host)
-        }
-        host.frame = paneView.bounds
-        host.autoresizingMask = [.width, .height]
-        configureViewportStyle(on: host)
-        host.attachDisplayedContentIfNeeded()
-        host.isHidden = false
+        webViewCoordinator.completePromotedHostAttachment(for: host.tabID, in: windowState.id)
     }
 
     private func attachProtectedHost(_ host: SumiWebViewContainerView, to paneView: PaneContainerView) {
-        let webViewID = ObjectIdentifier(host.webView)
-        parkedProtectedHosts[webViewID] = host
+        performWithoutImplicitAnimations {
+            let webViewID = ObjectIdentifier(host.webView)
+            parkedProtectedHosts[webViewID] = host
 
-        if host.superview != nil && host.superview !== paneView {
-            host.removeFromSuperview()
+            if host.superview != nil && host.superview !== paneView {
+                host.removeFromSuperview()
+            }
+            if host.superview == nil || host.superview === paneView {
+                paneView.placeContentHostAboveChromeShadow(host)
+            }
+            host.frame = paneView.bounds
+            host.autoresizingMask = [.width, .height]
+            configureViewportStyle(on: host)
+            host.attachDisplayedContentIfNeeded()
+            host.isHidden = false
+            paneView.layoutSubtreeIfNeeded()
+            host.layoutSubtreeIfNeeded()
         }
-        if host.superview == nil || host.superview === paneView {
-            paneView.placeContentHostAboveChromeShadow(host)
+        webViewCoordinator.completePromotedHostAttachment(for: host.tabID, in: windowState.id)
+    }
+
+    private func performWithoutImplicitAnimations(_ updates: () -> Void) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            context.allowsImplicitAnimation = false
+            updates()
         }
-        host.frame = paneView.bounds
-        host.autoresizingMask = [.width, .height]
-        configureViewportStyle(on: host)
-        host.attachDisplayedContentIfNeeded()
-        host.isHidden = false
+        CATransaction.commit()
     }
 
     private func protectedHost(for webView: WKWebView) -> SumiWebViewContainerView? {

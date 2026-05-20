@@ -27,12 +27,14 @@ struct GlanceOverlayView: NSViewRepresentable {
 
     func updateNSView(_ nsView: GlanceOverlayRootView, context: Context) {
         let tokens = themeContext.tokens(settings: sumiSettings)
+        let browserChromeGeometry = BrowserChromeGeometry(settings: sumiSettings)
         let configuration = GlanceOverlayConfiguration(
             isVisible: glanceManager.presentedSession(for: windowState) != nil,
             isSidebarVisible: windowState.isSidebarVisible,
             sidebarWidth: windowState.sidebarWidth,
             sidebarPosition: sumiSettings.sidebarPosition,
             cornerRadius: max(14, sumiSettings.resolvedCornerRadius(14)),
+            browserContentCornerRadius: browserChromeGeometry.contentRadius,
             accentColor: Self.nsColor(tokens.accent),
             surfaceColor: Self.nsColor(tokens.floatingBarBackground),
             reduceMotion: reduceMotion

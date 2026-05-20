@@ -313,6 +313,12 @@ struct WindowView: View {
             WebContent()
                 .scaleEffect(glanceWebContentScale)
                 .opacity(glanceWebContentOpacity)
+                .transaction { transaction in
+                    if suppressesGlanceWebContentAnimation {
+                        transaction.animation = nil
+                        transaction.disablesAnimations = true
+                    }
+                }
                 .animation(glanceWebContentAnimation, value: glanceWebContentIsDimmed)
 
             if rendersDockedSidebar && shellEdge.isRight {
@@ -465,7 +471,12 @@ struct WindowView: View {
     }
 
     private var glanceWebContentAnimation: Animation? {
-        reduceMotion ? .easeOut(duration: 0.08) : .smooth(duration: 0.35)
+        guard !suppressesGlanceWebContentAnimation else { return nil }
+        return reduceMotion ? Animation.easeOut(duration: 0.08) : Animation.smooth(duration: 0.35)
+    }
+
+    private var suppressesGlanceWebContentAnimation: Bool {
+        glanceManager.phase == .promoting
     }
 
     private var presentedGlanceSession: GlanceSession? {

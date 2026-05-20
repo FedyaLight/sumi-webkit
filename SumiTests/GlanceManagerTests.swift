@@ -120,6 +120,66 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertNotEqual(otherWindow.currentTabId, previewTab.id)
     }
 
+    func testMoveToNewTabCanWaitForDisplayAttachmentBeforeFinishingPromotion() async throws {
+        let browserManager = BrowserManager()
+        let sourceTab = makeSourceTab(in: browserManager)
+        let (windowRegistry, sourceWindow) = makeRegisteredWindow(in: browserManager, selecting: sourceTab)
+        let url = URL(string: "https://destination.example/page")!
+
+        browserManager.glanceManager.presentExternalURL(url, from: sourceTab)
+        let session = try XCTUnwrap(browserManager.glanceManager.currentSession)
+        let previewTab = session.previewTab
+        _ = try await waitForPreviewWebView(in: session)
+
+        browserManager.glanceManager.moveToNewTab(finishesAfterDisplayUpdate: true)
+
+        XCTAssertTrue(browserManager.glanceManager.currentSession === session)
+        XCTAssertEqual(browserManager.glanceManager.phase, .promoting)
+        XCTAssertTrue(browserManager.tabManager.tab(for: previewTab.id) === previewTab)
+        XCTAssertNotNil(previewTab.existingWebView)
+        XCTAssertEqual(sourceWindow.currentTabId, previewTab.id)
+
+        browserManager.glanceManager.finishPromotedSession(sessionID: session.id)
+
+        XCTAssertNil(browserManager.glanceManager.currentSession)
+        XCTAssertEqual(browserManager.glanceManager.phase, .idle)
+        withExtendedLifetime(windowRegistry) {}
+    }
+
+    func testPromotionTargetLayoutKeepsTopAndBottomChromeGutters() {
+        let frame = GlancePromotionTargetLayout.contentFrame(
+            in: CGRect(x: 0, y: 0, width: 1000, height: 700),
+            isSidebarVisible: false,
+            sidebarWidth: 0,
+            sidebarPosition: .left,
+            elementSeparation: 8
+        )
+
+        XCTAssertEqual(frame, CGRect(x: 8, y: 8, width: 984, height: 684))
+    }
+
+    func testPromotionTargetLayoutDoesNotAddExtraGutterBesideDockedSidebar() {
+        let bounds = CGRect(x: 0, y: 0, width: 1000, height: 700)
+
+        let leftSidebarFrame = GlancePromotionTargetLayout.contentFrame(
+            in: bounds,
+            isSidebarVisible: true,
+            sidebarWidth: 220,
+            sidebarPosition: .left,
+            elementSeparation: 8
+        )
+        let rightSidebarFrame = GlancePromotionTargetLayout.contentFrame(
+            in: bounds,
+            isSidebarVisible: true,
+            sidebarWidth: 220,
+            sidebarPosition: .right,
+            elementSeparation: 8
+        )
+
+        XCTAssertEqual(leftSidebarFrame, CGRect(x: 220, y: 8, width: 772, height: 684))
+        XCTAssertEqual(rightSidebarFrame, CGRect(x: 8, y: 8, width: 772, height: 684))
+    }
+
     func testMoveToSplitViewPromotesPreviewIntoSourceWindowSplit() async throws {
         let browserManager = BrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
