@@ -41,25 +41,18 @@ enum WebViewSyncLoadPolicy {
 enum VisibleTabPreparationPlan {
     static func visibleTabIDs(
         currentTabId: UUID?,
-        isSplit: Bool,
-        leftTabId: UUID?,
-        rightTabId: UUID?,
-        isPreviewActive: Bool
+        splitTabIds: [UUID],
+        isPreviewActive _: Bool
     ) -> [UUID] {
         guard let currentTabId else { return [] }
-        guard !isPreviewActive else { return [currentTabId] }
 
-        let isCurrentSplitPane = currentTabId == leftTabId || currentTabId == rightTabId
-        guard isSplit, isCurrentSplitPane else {
+        guard splitTabIds.contains(currentTabId) else {
             return [currentTabId]
         }
 
         var orderedIDs: [UUID] = []
-        if let leftTabId {
-            orderedIDs.append(leftTabId)
-        }
-        if let rightTabId, rightTabId != leftTabId {
-            orderedIDs.append(rightTabId)
+        for tabId in splitTabIds where orderedIDs.contains(tabId) == false {
+            orderedIDs.append(tabId)
         }
         return orderedIDs.isEmpty ? [currentTabId] : orderedIDs
     }
@@ -1752,10 +1745,8 @@ class WebViewCoordinator {
     ) -> [UUID] {
         VisibleTabPreparationPlan.visibleTabIDs(
             currentTabId: browserManager.currentTab(for: windowState)?.id,
-            isSplit: browserManager.splitManager.isSplit(for: windowState.id),
-            leftTabId: browserManager.splitManager.leftTabId(for: windowState.id),
-            rightTabId: browserManager.splitManager.rightTabId(for: windowState.id),
-            isPreviewActive: browserManager.splitManager.getSplitState(for: windowState.id).isPreviewActive
+            splitTabIds: browserManager.splitManager.visibleTabIds(for: windowState.id),
+            isPreviewActive: browserManager.splitManager.isPreviewActive(for: windowState.id)
         ).filter { tabId in
             guard let tab = resolveTab(for: tabId, in: windowState, browserManager: browserManager) else {
                 return false

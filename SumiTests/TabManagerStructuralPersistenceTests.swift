@@ -238,6 +238,53 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         XCTAssertTrue(storedTab.canGoForward)
     }
 
+    func testSplitGroupLayoutPersistsThroughStoreReload() async throws {
+        let container = try makeInMemoryContainer()
+        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let space = tabManager.createSpace(name: "Split", profileId: UUID())
+        let tabs = [
+            tabManager.createNewTab(url: "https://example.com/one", in: space, activate: true),
+            tabManager.createNewTab(url: "https://example.com/two", in: space, activate: false),
+            tabManager.createNewTab(url: "https://example.com/three", in: space, activate: false)
+        ]
+        let baseGroup = try XCTUnwrap(
+            SplitGroup.make(
+                tabIds: tabs.map(\.id),
+                layoutKind: .vertical,
+                activeTabId: tabs[1].id
+            )
+        )
+        let resizedGroup = SplitGroup(
+            id: baseGroup.id,
+            layoutKind: .vertical,
+            layoutTree: baseGroup.layoutTree.updatingChildSizes(at: [], sizes: [0.2, 0.3, 0.5]),
+            activeTabId: tabs[1].id
+        )
+
+        tabManager.upsertSplitGroup(resizedGroup)
+
+        try await waitForPersistedState(in: container) { state in
+            guard let data = state.splitGroupsData,
+                  let decoded = try? JSONDecoder().decode([SplitGroup].self, from: data),
+                  let storedGroup = decoded.first(where: { $0.id == resizedGroup.id })
+            else {
+                return false
+            }
+            return storedGroup.layoutKind == resizedGroup.layoutKind
+                && storedGroup.layoutTree == resizedGroup.layoutTree
+                && storedGroup.activeTabId == resizedGroup.activeTabId
+        }
+
+        let restoredManager = TabManager(context: ModelContext(container), loadPersistedState: false)
+        let didLoad = await restoredManager.loadFromStoreAwaitingResult()
+
+        XCTAssertTrue(didLoad)
+        let restoredGroup = try XCTUnwrap(restoredManager.splitGroup(with: resizedGroup.id))
+        XCTAssertEqual(restoredGroup.layoutKind, resizedGroup.layoutKind)
+        XCTAssertEqual(restoredGroup.layoutTree, resizedGroup.layoutTree)
+        XCTAssertEqual(restoredGroup.activeTabId, resizedGroup.activeTabId)
+    }
+
     func testFullReconcileDeletesStaleEntitiesAndPreservesFolders() async throws {
         let container = try makeInMemoryContainer()
         let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)

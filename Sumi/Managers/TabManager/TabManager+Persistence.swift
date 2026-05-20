@@ -9,12 +9,14 @@ struct TabManagerSnapshotCache {
     private typealias SnapshotFolder = TabSnapshotRepository.SnapshotFolder
 
     private var spaceSnapshots: [SnapshotSpace] = []
+    private var splitGroupSnapshots: [SplitGroup] = []
     private var pinnedTabsByProfile: [UUID: [SnapshotTab]] = [:]
     private var spacePinnedTabsBySpace: [UUID: [SnapshotTab]] = [:]
     private var regularTabsBySpace: [UUID: [SnapshotTab]] = [:]
     private var folderSnapshotsBySpace: [UUID: [SnapshotFolder]] = [:]
 
     private var spacesDirty = true
+    private var splitGroupsDirty = true
     private var dirtyPinnedProfileIds: Set<UUID> = []
     private var dirtySpacePinnedSpaceIds: Set<UUID> = []
     private var dirtyRegularTabSpaceIds: Set<UUID> = []
@@ -22,6 +24,7 @@ struct TabManagerSnapshotCache {
 
     mutating func invalidateAll() {
         spacesDirty = true
+        splitGroupsDirty = true
         dirtyPinnedProfileIds = []
         dirtySpacePinnedSpaceIds = []
         dirtyRegularTabSpaceIds = []
@@ -34,6 +37,10 @@ struct TabManagerSnapshotCache {
 
     mutating func invalidateSpaces() {
         spacesDirty = true
+    }
+
+    mutating func invalidateSplitGroups() {
+        splitGroupsDirty = true
     }
 
     mutating func invalidatePinned(profileId: UUID) {
@@ -72,6 +79,10 @@ struct TabManagerSnapshotCache {
             }
             spacesDirty = false
         }
+        if splitGroupsDirty {
+            splitGroupSnapshots = SplitGroup.sanitized(tabManager.splitGroups)
+            splitGroupsDirty = false
+        }
 
         refreshPinnedTabs(using: tabManager)
         refreshSpacePinnedTabs(using: tabManager, liveSpaceIds: liveSpaceIds)
@@ -108,6 +119,7 @@ struct TabManagerSnapshotCache {
             spaces: spaceSnapshots,
             tabs: tabSnapshots,
             folders: folderSnapshots,
+            splitGroups: splitGroupSnapshots,
             state: state
         )
     }
@@ -260,6 +272,7 @@ struct TabStructuralDirtySet: Sendable {
     var deletedTabIds: Set<UUID> = []
     var deletedFolderIds: Set<UUID> = []
     var deletedSpaceIds: Set<UUID> = []
+    var splitGroupsDirty = false
     var needsFullReconcileReason: String?
 
     var isEmpty: Bool {
@@ -269,6 +282,7 @@ struct TabStructuralDirtySet: Sendable {
             && deletedTabIds.isEmpty
             && deletedFolderIds.isEmpty
             && deletedSpaceIds.isEmpty
+            && splitGroupsDirty == false
             && needsFullReconcileReason == nil
     }
 
@@ -279,6 +293,7 @@ struct TabStructuralDirtySet: Sendable {
             || deletedTabIds.isEmpty == false
             || deletedFolderIds.isEmpty == false
             || deletedSpaceIds.isEmpty == false
+            || splitGroupsDirty
     }
 
     mutating func markTabsDirty<S: Sequence>(_ ids: S) where S.Element == UUID {
@@ -323,6 +338,10 @@ struct TabStructuralDirtySet: Sendable {
         }
     }
 
+    mutating func markSplitGroupsDirty() {
+        splitGroupsDirty = true
+    }
+
     mutating func requestFullReconcile(reason: String) {
         if needsFullReconcileReason == nil {
             needsFullReconcileReason = reason
@@ -342,6 +361,7 @@ struct TabStructuralDirtySet: Sendable {
         deletedTabIds.formUnion(other.deletedTabIds)
         deletedFolderIds.formUnion(other.deletedFolderIds)
         deletedSpaceIds.formUnion(other.deletedSpaceIds)
+        splitGroupsDirty = splitGroupsDirty || other.splitGroupsDirty
         if let reason = other.needsFullReconcileReason {
             requestFullReconcile(reason: reason)
         }
@@ -534,6 +554,7 @@ extension TabManager {
             spaces: makeDirtySpaceSnapshots(for: dirtySet.dirtySpaceIds),
             tabs: makeDirtyTabSnapshots(for: dirtySet.dirtyTabIds),
             folders: makeDirtyFolderSnapshots(for: dirtySet.dirtyFolderIds),
+            splitGroups: dirtySet.splitGroupsDirty ? SplitGroup.sanitized(splitGroups) : nil,
             deletedSpaceIds: dirtySet.deletedSpaceIds,
             deletedTabIds: dirtySet.deletedTabIds,
             deletedFolderIds: dirtySet.deletedFolderIds,
@@ -882,6 +903,7 @@ extension TabManager {
 
         spaces = restoredSpaces
         tabsBySpace = restoredTabsBySpace
+        splitGroups = SplitGroup.sanitized(payload.splitGroups)
         foldersBySpace = restoredFoldersBySpace
         pinnedByProfile = restoredPinnedByProfile
         pendingPinnedWithoutProfile = restoredPendingPinned

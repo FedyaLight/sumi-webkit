@@ -21,6 +21,11 @@ enum ShortcutAction: String, CaseIterable, Hashable, Codable {
     case goToTab8 = "go_to_tab_8"
     case goToLastTab = "go_to_last_tab"
     case duplicateTab = "duplicate_tab"
+    case splitGrid = "split_grid"
+    case splitVertical = "split_vertical"
+    case splitHorizontal = "split_horizontal"
+    case unsplit = "unsplit"
+    case newEmptySplit = "new_empty_split"
 
     case nextSpace = "next_space"
     case previousSpace = "previous_space"
@@ -66,6 +71,11 @@ enum ShortcutAction: String, CaseIterable, Hashable, Codable {
         case .goToTab8: return "Go to Tab 8"
         case .goToLastTab: return "Go to Last Tab"
         case .duplicateTab: return "Duplicate Tab"
+        case .splitGrid: return "Split Grid"
+        case .splitVertical: return "Split Vertical"
+        case .splitHorizontal: return "Split Horizontal"
+        case .unsplit: return "Unsplit"
+        case .newEmptySplit: return "New Empty Split"
         case .nextSpace: return "Next Space"
         case .previousSpace: return "Previous Space"
         case .newWindow: return "New Window"
@@ -93,7 +103,7 @@ enum ShortcutAction: String, CaseIterable, Hashable, Codable {
         switch self {
         case .goBack, .goForward, .refresh, .clearCookiesAndRefresh, .focusAddressBar, .findInPage, .hardReload:
             return .navigation
-        case .newTab, .closeTab, .undoCloseTab, .nextTab, .previousTab, .goToTab1, .goToTab2, .goToTab3, .goToTab4, .goToTab5, .goToTab6, .goToTab7, .goToTab8, .goToLastTab, .duplicateTab:
+        case .newTab, .closeTab, .undoCloseTab, .nextTab, .previousTab, .goToTab1, .goToTab2, .goToTab3, .goToTab4, .goToTab5, .goToTab6, .goToTab7, .goToTab8, .goToLastTab, .duplicateTab, .splitGrid, .splitVertical, .splitHorizontal, .unsplit, .newEmptySplit:
             return .tabs
         case .nextSpace, .previousSpace, .customizeSpaceGradient:
             return .spaces

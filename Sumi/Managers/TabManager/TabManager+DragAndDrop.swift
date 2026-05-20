@@ -548,12 +548,8 @@ extension TabManager {
             return
         }
 
-        for (windowId, _) in windows where splitManager.isSplit(for: windowId) {
-            if splitManager.leftTabId(for: windowId) == tab.id {
-                splitManager.exitSplit(keep: .right, for: windowId)
-            } else if splitManager.rightTabId(for: windowId) == tab.id {
-                splitManager.exitSplit(keep: .left, for: windowId)
-            }
+        for (windowId, _) in windows where splitManager.visibleTabIds(for: windowId).contains(tab.id) {
+            splitManager.handleTabClosure(tab.id)
         }
     }
 }

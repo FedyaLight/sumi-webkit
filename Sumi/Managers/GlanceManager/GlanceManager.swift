@@ -83,7 +83,7 @@ final class GlanceManager: ObservableObject {
         guard let browserManager,
               let windowId = currentSession?.windowId else { return false }
 
-        return !browserManager.splitManager.isSplit(for: windowId)
+        return browserManager.splitManager.visibleTabIds(for: windowId).count < SplitGroup.maximumTabs
     }
 
     func markOpened(sessionID: UUID) {

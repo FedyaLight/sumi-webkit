@@ -39,6 +39,7 @@ struct TabRestorePayload: Sendable {
     let pinnedShortcutsByProfile: [UUID: [TabRestoreShortcutDTO]]
     let pendingPinnedShortcuts: [TabRestoreShortcutDTO]
     let spacePinnedShortcutsBySpace: [UUID: [TabRestoreShortcutDTO]]
+    let splitGroups: [SplitGroup]
     let currentSpaceId: UUID?
     let currentTabId: UUID?
     let snapshot: TabSnapshotRepository.Snapshot
@@ -110,6 +111,7 @@ actor TabRestoreLoader {
     private struct RawState {
         let currentTabID: UUID?
         let currentSpaceID: UUID?
+        let splitGroupsData: Data?
     }
 
     private func fetchRawStore() throws -> RawStore {
@@ -159,7 +161,11 @@ actor TabRestoreLoader {
         }
 
         let states = try ctx.fetch(FetchDescriptor<TabsStateEntity>()).map { entity in
-            RawState(currentTabID: entity.currentTabID, currentSpaceID: entity.currentSpaceID)
+            RawState(
+                currentTabID: entity.currentTabID,
+                currentSpaceID: entity.currentSpaceID,
+                splitGroupsData: entity.splitGroupsData
+            )
         }
 
         return RawStore(spaces: spaces, tabs: tabs, folders: folders, states: states)
@@ -209,6 +215,11 @@ actor TabRestoreLoader {
             regularTabsBySpace: categorizedTabs.regularTabsBySpace,
             repairReasons: &repairReasons
         )
+        let splitGroups = restoreSplitGroups(
+            from: raw.states.first?.splitGroupsData,
+            validTabIds: Set(categorizedTabs.regularTabsBySpace.values.flatMap { $0.map(\.id) }),
+            repairReasons: &repairReasons
+        )
 
         let snapshot = makeSnapshot(
             spaces: spaces,
@@ -217,6 +228,7 @@ actor TabRestoreLoader {
             pinnedShortcutsByProfile: categorizedTabs.pinnedShortcutsByProfile,
             pendingPinnedShortcuts: categorizedTabs.pendingPinnedShortcuts,
             spacePinnedShortcutsBySpace: categorizedTabs.spacePinnedShortcutsBySpace,
+            splitGroups: splitGroups,
             currentSpaceId: selection.currentSpaceId,
             currentTabId: selection.currentTabId
         )
@@ -228,6 +240,7 @@ actor TabRestoreLoader {
             pinnedShortcutsByProfile: categorizedTabs.pinnedShortcutsByProfile,
             pendingPinnedShortcuts: categorizedTabs.pendingPinnedShortcuts,
             spacePinnedShortcutsBySpace: categorizedTabs.spacePinnedShortcutsBySpace,
+            splitGroups: splitGroups,
             currentSpaceId: selection.currentSpaceId,
             currentTabId: selection.currentTabId,
             snapshot: snapshot,
@@ -501,6 +514,7 @@ actor TabRestoreLoader {
         pinnedShortcutsByProfile: [UUID: [TabRestoreShortcutDTO]],
         pendingPinnedShortcuts: [TabRestoreShortcutDTO],
         spacePinnedShortcutsBySpace: [UUID: [TabRestoreShortcutDTO]],
+        splitGroups: [SplitGroup],
         currentSpaceId: UUID?,
         currentTabId: UUID?
     ) -> TabSnapshotRepository.Snapshot {
@@ -572,11 +586,47 @@ actor TabRestoreLoader {
             spaces: snapshotSpaces,
             tabs: snapshotTabs,
             folders: snapshotFolders,
+            splitGroups: splitGroups,
             state: TabSnapshotRepository.SnapshotState(
                 currentTabID: currentTabId,
                 currentSpaceID: currentSpaceId
             )
         )
+    }
+
+    private func restoreSplitGroups(
+        from data: Data?,
+        validTabIds: Set<UUID>,
+        repairReasons: inout Set<String>
+    ) -> [SplitGroup] {
+        guard let data, data.isEmpty == false else { return [] }
+        do {
+            let decoded = try JSONDecoder().decode([SplitGroup].self, from: data)
+            let restored = decoded.compactMap { group -> SplitGroup? in
+                let tabIds = group.tabIds.filter { validTabIds.contains($0) }
+                guard tabIds.count >= SplitGroup.minimumTabs else {
+                    repairReasons.insert("removed stale split group")
+                    return nil
+                }
+                if tabIds != group.tabIds {
+                    repairReasons.insert("repaired stale split group tabs")
+                    return SplitGroup.make(
+                        tabIds: tabIds,
+                        layoutKind: group.layoutKind,
+                        activeTabId: group.activeTabId.flatMap { tabIds.contains($0) ? $0 : tabIds.first }
+                    )
+                }
+                return group
+            }
+            let sanitized = SplitGroup.sanitized(restored)
+            if sanitized.count != restored.count {
+                repairReasons.insert("removed overlapping split groups")
+            }
+            return sanitized
+        } catch {
+            repairReasons.insert("removed unreadable split groups")
+            return []
+        }
     }
 
     private func makeSnapshotTab(

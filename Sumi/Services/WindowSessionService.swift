@@ -505,7 +505,7 @@ final class WindowSessionService {
                 text: windowState.floatingBarDraftText,
                 navigateCurrentTab: windowState.floatingBarDraftNavigatesCurrentTab
             ),
-            splitSession: delegate.splitManager.snapshot(for: windowState.id)
+            splitSession: nil
         )
     }
 }

@@ -337,7 +337,7 @@ private struct ThemeChromePalette {
             sidebarRowActive: sidebarRowActive,
             sidebarRowHover: sidebarRowHover,
             sidebarSelectionShadow: sidebarSelectionShadow,
-            // Match selected tab rows (`SpaceTab`, `SplitTabRow`): white lift when the live tab is this essential.
+            // Match selected tab rows (`SpaceTab`, `SplitGroupSidebarRow`): white lift when the live tab is this essential.
             pinnedActiveBackground: sidebarRowActive,
             pinnedHoverBackground: fieldBackgroundHover,
             pinnedIdleBackground: fieldBackground,

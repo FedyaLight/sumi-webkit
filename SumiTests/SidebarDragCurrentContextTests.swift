@@ -393,11 +393,14 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
         harness.windowState.currentTabId = currentTab.id
-        var splitState = SplitViewManager.WindowSplitState()
-        splitState.isSplit = true
-        splitState.leftTabId = currentTab.id
-        splitState.rightTabId = draggedTab.id
-        harness.browserManager.splitManager.setSplitState(splitState, for: harness.windowState.id)
+        let splitGroup = try XCTUnwrap(
+            SplitGroup.make(
+                tabIds: [currentTab.id, draggedTab.id],
+                layoutKind: .vertical,
+                activeTabId: currentTab.id
+            )
+        )
+        tabManager.upsertSplitGroup(splitGroup, schedulePersistence: false)
         let scope = try makeScope(
             spaceId: space.id,
             profileId: profileId,
@@ -424,8 +427,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertEqual(liveTab.shortcutPinId, pin.id)
         XCTAssertEqual(liveTab.shortcutPinRole, .spacePinned)
         XCTAssertTrue(harness.browserManager.splitManager.isSplit(for: harness.windowState.id))
-        XCTAssertEqual(harness.browserManager.splitManager.leftTabId(for: harness.windowState.id), currentTab.id)
-        XCTAssertEqual(harness.browserManager.splitManager.rightTabId(for: harness.windowState.id), draggedTab.id)
+        XCTAssertEqual(harness.browserManager.splitManager.visibleTabIds(for: harness.windowState.id), [currentTab.id, draggedTab.id])
     }
 
     func testSplitVisibleRegularTabDropIntoEssentialsPreservesLiveInstanceAndSplit() throws {
@@ -438,11 +440,14 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
         harness.windowState.currentTabId = currentTab.id
-        var splitState = SplitViewManager.WindowSplitState()
-        splitState.isSplit = true
-        splitState.leftTabId = currentTab.id
-        splitState.rightTabId = draggedTab.id
-        harness.browserManager.splitManager.setSplitState(splitState, for: harness.windowState.id)
+        let splitGroup = try XCTUnwrap(
+            SplitGroup.make(
+                tabIds: [currentTab.id, draggedTab.id],
+                layoutKind: .vertical,
+                activeTabId: currentTab.id
+            )
+        )
+        tabManager.upsertSplitGroup(splitGroup, schedulePersistence: false)
         let scope = try makeScope(
             spaceId: space.id,
             profileId: profileId,
@@ -470,8 +475,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertEqual(liveTab.shortcutPinRole, .essential)
         XCTAssertNil(liveTab.spaceId)
         XCTAssertTrue(harness.browserManager.splitManager.isSplit(for: harness.windowState.id))
-        XCTAssertEqual(harness.browserManager.splitManager.leftTabId(for: harness.windowState.id), currentTab.id)
-        XCTAssertEqual(harness.browserManager.splitManager.rightTabId(for: harness.windowState.id), draggedTab.id)
+        XCTAssertEqual(harness.browserManager.splitManager.visibleTabIds(for: harness.windowState.id), [currentTab.id, draggedTab.id])
     }
 
     func testNonDisplayedRegularTabDropIntoShortcutSectionsCreatesLauncherWithoutLiveTab() throws {

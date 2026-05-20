@@ -185,20 +185,7 @@ extension SpaceView {
     private var regularTabsContent: some View {
         Group {
             let currentTabs = tabs
-            let split = splitManager
-            let windowId = windowState.id
-            if !SidebarDragState.shared.isDragging,
-               split.isSplit(for: windowId),
-               let leftId = split.leftTabId(for: windowId), let rightId = split.rightTabId(for: windowId),
-               let leftIdx = currentTabs.firstIndex(where: { $0.id == leftId }),
-               let rightIdx = currentTabs.firstIndex(where: { $0.id == rightId }),
-               leftIdx >= 0, rightIdx >= 0,
-               leftIdx < currentTabs.count, rightIdx < currentTabs.count,
-               leftIdx != rightIdx {
-                splitTabsView(currentTabs: currentTabs, leftIdx: leftIdx, rightIdx: rightIdx)
-            } else {
-                regularTabsView(currentTabs: currentTabs)
-            }
+            regularTabsView(currentTabs: currentTabs)
         }
         .frame(minWidth: 0, maxWidth: innerWidth, alignment: .leading)
         .contentShape(Rectangle())
@@ -209,21 +196,25 @@ extension SpaceView {
             .frame(height: tabs.isEmpty ? 48 : 24)
     }
 
-    private func splitTabsView(currentTabs: [Tab], leftIdx: Int, rightIdx: Int) -> some View {
-        let firstIdx = min(leftIdx, rightIdx)
-        let secondIdx = max(leftIdx, rightIdx)
-
+    private func regularTabsView(currentTabs: [Tab]) -> some View {
         return regularTabsRowStack {
-            ForEach(Array(currentTabs.enumerated()), id: \.element.id) { pair in
-                let (idx, tab) = pair
-                if idx == firstIdx {
-                    VStack(spacing: 2) {
-                        let left = currentTabs[leftIdx]
-                        let right = currentTabs[rightIdx]
-
-                        SplitTabRow(
-                            left: left,
-                            right: right,
+            let tabById = Dictionary(uniqueKeysWithValues: currentTabs.map { ($0.id, $0) })
+            let splitGroups = visibleSplitGroups(currentTabs: currentTabs)
+            let groupedTabIds = Set(splitGroups.flatMap(\.tabIds))
+            let splitGroupByFirstTabId = Dictionary(
+                uniqueKeysWithValues: splitGroups.compactMap { group -> (UUID, SplitGroup)? in
+                    guard let first = group.tabIds.first else { return nil }
+                    return (first, group)
+                }
+            )
+            ForEach(regularDisplayItems(currentTabs: currentTabs), id: \.self) { item in
+                switch item {
+                case .tab(let tabId):
+                    if let group = splitGroupByFirstTabId[tabId] {
+                        let groupTabs = group.tabIds.compactMap { tabById[$0] }
+                        SplitGroupSidebarRow(
+                            group: group,
+                            tabs: groupTabs,
                             spaceId: space.id,
                             isAppKitInteractionEnabled: isInteractive,
                             contextMenuEntries: regularTabContextMenuEntries,
@@ -231,23 +222,10 @@ extension SpaceView {
                             onClose: closeRegularTab
                         )
                         .environmentObject(browserManager)
-                    }
-                } else if idx == secondIdx {
-                    EmptyView()
-                } else {
-                    regularTabView(tab)
-                }
-            }
-        }
-    }
-
-    private func regularTabsView(currentTabs: [Tab]) -> some View {
-        return regularTabsRowStack {
-            let tabById = Dictionary(uniqueKeysWithValues: currentTabs.map { ($0.id, $0) })
-            ForEach(regularDisplayItems(currentTabs: currentTabs), id: \.self) { item in
-                switch item {
-                case .tab(let tabId):
-                    if let tab = tabById[tabId] {
+                        .environmentObject(splitManager)
+                    } else if groupedTabIds.contains(tabId) {
+                        EmptyView()
+                    } else if let tab = tabById[tabId] {
                         regularRenderedTabView(tab)
                     }
                 case .gap(let gapId):
@@ -259,6 +237,22 @@ extension SpaceView {
             if !regularTabsUsesProjectedDropLayout {
                 regularDropGuideOverlay(itemCount: currentTabs.count)
             }
+        }
+    }
+
+    private func visibleSplitGroups(currentTabs: [Tab]) -> [SplitGroup] {
+        guard !SidebarDragState.shared.isDragging else { return [] }
+        let currentTabIds = Set(currentTabs.map(\.id))
+        var seenGroupIds = Set<UUID>()
+        return currentTabs.compactMap { tab in
+            guard let group = browserManager.tabManager.splitGroup(containing: tab.id),
+                  seenGroupIds.insert(group.id).inserted,
+                  group.tabIds.count >= SplitGroup.minimumTabs,
+                  group.tabIds.allSatisfy({ currentTabIds.contains($0) })
+            else {
+                return nil
+            }
+            return group
         }
     }
 
@@ -754,6 +748,8 @@ extension SpaceView {
                 onRename: { tab.startRenaming() },
                 onSplitRight: { browserManager.splitManager.enterSplit(with: tab, placeOn: .right, in: windowState) },
                 onSplitLeft: { browserManager.splitManager.enterSplit(with: tab, placeOn: .left, in: windowState) },
+                onSplitTop: { browserManager.splitManager.enterSplit(with: tab, placeOn: .top, in: windowState) },
+                onSplitBottom: { browserManager.splitManager.enterSplit(with: tab, placeOn: .bottom, in: windowState) },
                 onDuplicate: { browserManager.duplicateTab(tab, in: windowState) },
                 onMoveToSpace: { targetSpaceId in browserManager.tabManager.moveTab(tab.id, to: targetSpaceId) },
                 onMoveUp: { onMoveTabUp(tab) },

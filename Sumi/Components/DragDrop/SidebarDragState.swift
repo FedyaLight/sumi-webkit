@@ -39,7 +39,7 @@ final class SidebarDragState: ObservableObject {
     @Published var hoveredSlot: DropZoneSlot = .empty
     @Published var folderDropIntent: FolderDropIntent = .none
     @Published var activeHoveredFolderId: UUID? = nil
-    @Published var activeSplitTarget: SplitViewManager.Side? = nil
+    @Published var activeSplitTarget: SplitDropSide? = nil
     @Published var activeDragItemId: UUID? = nil
     @Published var dragLocation: CGPoint? = nil
     @Published var previewDragLocation: CGPoint? = nil

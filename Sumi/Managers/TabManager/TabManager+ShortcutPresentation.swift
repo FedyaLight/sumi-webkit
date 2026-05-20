@@ -54,9 +54,10 @@ extension TabManager {
             return .launcherOnly
         }
 
-        let isInSplit = splitManager?.side(for: liveTab.id, in: windowState.id) != nil
+        let isInSplit = splitManager?.isTabVisibleInSplit(liveTab.id, in: windowState.id) == true
         if isInSplit {
-            let isSelected = windowState.currentTabId == liveTab.id || windowState.currentShortcutPinId == pin.id
+            let isSelected = splitManager?.isTabActiveInSplit(liveTab.id, in: windowState.id) == true
+                || windowState.currentShortcutPinId == pin.id
             return isSelected ? .splitProxySelected : .splitProxyBackgrounded
         }
 

@@ -22,6 +22,8 @@ struct SidebarRegularTabMenuCallbacks {
     let onRename: () -> Void
     let onSplitRight: () -> Void
     let onSplitLeft: () -> Void
+    let onSplitTop: () -> Void
+    let onSplitBottom: () -> Void
     let onDuplicate: () -> Void
     let onMoveToSpace: (UUID) -> Void
     let onMoveUp: () -> Void
@@ -36,6 +38,8 @@ struct SidebarLauncherMenuCallbacks {
     let onOpen: () -> Void
     let onSplitRight: () -> Void
     let onSplitLeft: () -> Void
+    let onSplitTop: () -> Void
+    let onSplitBottom: () -> Void
     let onDuplicate: () -> Void
     let onResetToLaunchURL: (() -> Void)?
     let onReplaceLauncherURLWithCurrent: (() -> Void)?
@@ -51,6 +55,8 @@ struct SidebarEssentialsMenuCallbacks {
     let onOpen: () -> Void
     let onSplitRight: () -> Void
     let onSplitLeft: () -> Void
+    let onSplitTop: () -> Void
+    let onSplitBottom: () -> Void
     let onCloseCurrentPage: (() -> Void)?
     let onRemoveFromEssentials: () -> Void
     let onMoveToRegularTabs: () -> Void
@@ -179,6 +185,8 @@ func makeRegularTabContextMenuEntries(
             children: [
                 .action(.init(title: "Right", systemImage: "rectangle.righthalf.filled", onAction: callbacks.onSplitRight)),
                 .action(.init(title: "Left", systemImage: "rectangle.lefthalf.filled", onAction: callbacks.onSplitLeft)),
+                .action(.init(title: "Top", systemImage: "rectangle.tophalf.filled", onAction: callbacks.onSplitTop)),
+                .action(.init(title: "Bottom", systemImage: "rectangle.bottomhalf.filled", onAction: callbacks.onSplitBottom)),
             ]
         ),
         .action(.init(title: "Duplicate", systemImage: "plus.square.on.square", classification: .structuralMutation, onAction: callbacks.onDuplicate)),
@@ -217,6 +225,8 @@ func makeSpacePinnedLauncherContextMenuEntries(
             .action(.init(title: "Open", systemImage: "arrow.up.forward.app", onAction: callbacks.onOpen)),
             .action(.init(title: "Open in Split (Right)", systemImage: "rectangle.split.2x1", onAction: callbacks.onSplitRight)),
             .action(.init(title: "Open in Split (Left)", systemImage: "rectangle.split.2x1", onAction: callbacks.onSplitLeft)),
+            .action(.init(title: "Open in Split (Top)", systemImage: "rectangle.split.1x2", onAction: callbacks.onSplitTop)),
+            .action(.init(title: "Open in Split (Bottom)", systemImage: "rectangle.split.1x2", onAction: callbacks.onSplitBottom)),
         ],
     ]
 
@@ -261,6 +271,8 @@ func makeFolderLauncherContextMenuEntries(
             .action(.init(title: "Open", systemImage: "arrow.up.forward.app", onAction: callbacks.onOpen)),
             .action(.init(title: "Open in Split (Right)", systemImage: "rectangle.split.2x1", onAction: callbacks.onSplitRight)),
             .action(.init(title: "Open in Split (Left)", systemImage: "rectangle.split.2x1", onAction: callbacks.onSplitLeft)),
+            .action(.init(title: "Open in Split (Top)", systemImage: "rectangle.split.1x2", onAction: callbacks.onSplitTop)),
+            .action(.init(title: "Open in Split (Bottom)", systemImage: "rectangle.split.1x2", onAction: callbacks.onSplitBottom)),
             .action(.init(title: "Duplicate Tab", systemImage: "doc.on.doc", classification: .structuralMutation, onAction: callbacks.onDuplicate)),
         ],
     ]
@@ -303,6 +315,8 @@ func makeEssentialsContextMenuEntries(
             .action(.init(title: "Open", systemImage: "arrow.up.forward.app", onAction: callbacks.onOpen)),
             .action(.init(title: "Open in Split (Right)", systemImage: "rectangle.split.2x1", onAction: callbacks.onSplitRight)),
             .action(.init(title: "Open in Split (Left)", systemImage: "rectangle.split.2x1", onAction: callbacks.onSplitLeft)),
+            .action(.init(title: "Open in Split (Top)", systemImage: "rectangle.split.1x2", onAction: callbacks.onSplitTop)),
+            .action(.init(title: "Open in Split (Bottom)", systemImage: "rectangle.split.1x2", onAction: callbacks.onSplitBottom)),
         ],
     ]
 

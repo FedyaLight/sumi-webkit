@@ -532,6 +532,8 @@ struct PinnedGrid: View {
             onUnpinToRegular: { moveToRegularTabs(pin) },
             onSplitRight: { openInSplit(pin, side: .right) },
             onSplitLeft: { openInSplit(pin, side: .left) },
+            onSplitTop: { openInSplit(pin, side: .top) },
+            onSplitBottom: { openInSplit(pin, side: .bottom) },
             showsCloseAction: presentationState.isSelected,
             dragPinnedConfiguration: configuration,
             dragIsEnabled: !browserManager.isTransitioningProfile && isAppKitInteractionEnabled,
@@ -602,7 +604,7 @@ struct PinnedGrid: View {
         browserManager.tabManager.deactivateShortcutLiveTab(pinId: pin.id, in: windowState.id)
     }
 
-    private func openInSplit(_ pin: ShortcutPin, side: SplitViewManager.Side) {
+    private func openInSplit(_ pin: ShortcutPin, side: SplitDropSide) {
         let tab = browserManager.tabManager.activateShortcutPin(
             pin,
             in: windowState.id,
@@ -824,6 +826,8 @@ private struct PinnedTile: View {
     let onUnpinToRegular: () -> Void
     let onSplitRight: () -> Void
     let onSplitLeft: () -> Void
+    let onSplitTop: () -> Void
+    let onSplitBottom: () -> Void
     let showsCloseAction: Bool
     let dragPinnedConfiguration: PinnedTabsConfiguration
     let dragIsEnabled: Bool
@@ -845,6 +849,8 @@ private struct PinnedTile: View {
                     onUnpinToRegular: onUnpinToRegular,
                     onSplitRight: onSplitRight,
                     onSplitLeft: onSplitLeft,
+                    onSplitTop: onSplitTop,
+                    onSplitBottom: onSplitBottom,
                     showsCloseAction: showsCloseAction,
                     dragPinnedConfiguration: dragPinnedConfiguration,
                     dragIsEnabled: dragIsEnabled,
@@ -863,6 +869,8 @@ private struct PinnedTile: View {
                     onUnpinToRegular: onUnpinToRegular,
                     onSplitRight: onSplitRight,
                     onSplitLeft: onSplitLeft,
+                    onSplitTop: onSplitTop,
+                    onSplitBottom: onSplitBottom,
                     showsCloseAction: showsCloseAction,
                     dragPinnedConfiguration: dragPinnedConfiguration,
                     dragIsEnabled: dragIsEnabled,
@@ -887,6 +895,8 @@ private struct LivePinnedTileContent: View {
     let onUnpinToRegular: () -> Void
     let onSplitRight: () -> Void
     let onSplitLeft: () -> Void
+    let onSplitTop: () -> Void
+    let onSplitBottom: () -> Void
     let showsCloseAction: Bool
     let dragPinnedConfiguration: PinnedTabsConfiguration
     let dragIsEnabled: Bool
@@ -921,6 +931,8 @@ private struct LivePinnedTileContent: View {
                     onOpen: onActivate,
                     onSplitRight: onSplitRight,
                     onSplitLeft: onSplitLeft,
+                    onSplitTop: onSplitTop,
+                    onSplitBottom: onSplitBottom,
                     onCloseCurrentPage: onClose,
                     onRemoveFromEssentials: onRemovePin,
                     onMoveToRegularTabs: onUnpinToRegular
@@ -977,6 +989,8 @@ private struct StoredPinnedTileContent: View {
     let onUnpinToRegular: () -> Void
     let onSplitRight: () -> Void
     let onSplitLeft: () -> Void
+    let onSplitTop: () -> Void
+    let onSplitBottom: () -> Void
     let showsCloseAction: Bool
     let dragPinnedConfiguration: PinnedTabsConfiguration
     let dragIsEnabled: Bool
@@ -1018,6 +1032,8 @@ private struct StoredPinnedTileContent: View {
                     onOpen: onActivate,
                     onSplitRight: onSplitRight,
                     onSplitLeft: onSplitLeft,
+                    onSplitTop: onSplitTop,
+                    onSplitBottom: onSplitBottom,
                     onCloseCurrentPage: onClose,
                     onRemoveFromEssentials: onRemovePin,
                     onMoveToRegularTabs: onUnpinToRegular

@@ -14,7 +14,7 @@ protocol ShellSelectionTabStore: AnyObject {
 
 @MainActor
 final class ShellSelectionService {
-    typealias SplitTabProvider = (_ windowId: UUID) -> (left: UUID?, right: UUID?)
+    typealias SplitTabProvider = (_ windowId: UUID) -> [UUID]
 
     private let splitTabsForWindow: SplitTabProvider
 
@@ -197,8 +197,7 @@ final class ShellSelectionService {
         }
 
         appendIfMissing(currentTab(for: windowState, tabStore: tabStore))
-        appendIfMissing(splitTabs.left.flatMap { tabStore.tab(for: $0) })
-        appendIfMissing(splitTabs.right.flatMap { tabStore.tab(for: $0) })
+        splitTabs.forEach { appendIfMissing(tabStore.tab(for: $0)) }
 
         return orderedTabs
     }
@@ -246,7 +245,7 @@ final class ShellSelectionService {
         }
 
         let splitTabs = splitTabsForWindow(windowState.id)
-        if splitTabs.left == tab.id || splitTabs.right == tab.id {
+        if splitTabs.contains(tab.id) {
             return true
         }
 
