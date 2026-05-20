@@ -58,6 +58,25 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertNil(previewTab.existingWebView)
     }
 
+    func testDismissGlanceImmediatelyClearsPreviewInstance() async throws {
+        let browserManager = BrowserManager()
+        let sourceTab = makeSourceTab(in: browserManager)
+        let url = URL(string: "https://destination.example/page")!
+
+        browserManager.glanceManager.presentExternalURL(url, from: sourceTab)
+        let session = try XCTUnwrap(browserManager.glanceManager.currentSession)
+        let previewTab = session.previewTab
+        _ = try await waitForPreviewWebView(in: session)
+
+        browserManager.glanceManager.dismissGlance()
+
+        XCTAssertNil(browserManager.glanceManager.currentSession)
+        XCTAssertEqual(browserManager.glanceManager.phase, .idle)
+        XCTAssertFalse(browserManager.glanceManager.isActive)
+        XCTAssertNil(previewTab.existingWebView)
+        XCTAssertNil(previewTab.primaryWindowId)
+    }
+
     func testMoveToNewTabAdoptsSamePreviewTabAndWebView() async throws {
         let browserManager = BrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
@@ -164,6 +183,7 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertNil(browserManager.glanceManager.presentedSession(for: windowState))
         XCTAssertNil(browserManager.glanceManager.activePreviewTab(for: windowState))
         XCTAssertTrue(browserManager.glanceManager.currentSession === session)
+        XCTAssertTrue(browserManager.glanceManager.sidebarSession(for: windowState) === session)
 
         windowState.currentTabId = sourceTab.id
 
