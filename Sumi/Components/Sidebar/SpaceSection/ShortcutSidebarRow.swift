@@ -160,11 +160,14 @@ private struct ShortcutSidebarRowChrome: View {
     let onRemove: () -> Void
 
     @Environment(BrowserWindowState.self) private var windowState
+    @EnvironmentObject private var glanceManager: GlanceManager
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isRowHovered = false
     @State private var isActionHovered = false
+    @State private var isGlanceCloseHovered = false
     @State private var isResetHovered = false
+    @State private var suppressRegularActionUntilHoverExit = false
     @State private var faviconCacheRefreshID = UUID()
     @State private var loadedStoredFaviconURL: URL?
     @State private var loadedStoredFavicon: Image?
@@ -253,6 +256,18 @@ private struct ShortcutSidebarRowChrome: View {
         .accessibilityIdentifier(accessibilityID ?? "shortcut-sidebar-row")
         .accessibilityValue(runtimeAffordance.isSelected ? "selected" : "not selected")
         .sidebarDDGHover($isRowHovered, isEnabled: dragIsEnabled)
+        .onChange(of: isRowHovered) { _, hovering in
+            if !hovering {
+                suppressRegularActionUntilHoverExit = false
+            }
+        }
+        .onChange(of: activeGlanceSessionForRow?.id) { oldValue, newValue in
+            if oldValue != nil, newValue == nil, isRowHovered {
+                suppressRegularActionUntilHoverExit = true
+            } else if newValue != nil {
+                suppressRegularActionUntilHoverExit = false
+            }
+        }
         .sidebarZenPressEffect(sourceID: rowSourceID, isEnabled: dragIsEnabled)
         .task(id: storedFaviconLoadKey) {
             await loadStoredFavicon()
@@ -416,42 +431,55 @@ private struct ShortcutSidebarRowChrome: View {
             title: resolvedTitle,
             font: .systemFont(ofSize: 13, weight: .medium),
             textColor: textColor,
-            trailingFadePadding: SidebarHoverChrome.trailingFadePadding(
-                showsTrailingAction: showsActionButton
-            ),
+            trailingFadePadding: titleTrailingFadePadding,
             animated: liveTab != nil,
             isLoading: liveTab?.isLoading ?? false
         )
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
     }
 
+    @ViewBuilder
     private var trailingActionButton: some View {
-        Button(action: performActionButton) {
-            Image(systemName: actionIconName)
-                .font(.system(size: 12, weight: .heavy))
-                .foregroundColor(textColor)
-                .frame(
-                    width: SidebarRowLayout.trailingActionSize,
-                    height: SidebarRowLayout.trailingActionSize
-                )
-                .background(displayIsActionHovering ? actionBackground : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-        }
-        .buttonStyle(
-            SidebarZenActionButtonStyle(
-                isEnabled: showsActionButton && !freezesHoverState
+        if let glanceSession = activeGlanceSessionForRow {
+            SidebarGlanceTrailingAccessory(
+                session: glanceSession,
+                sourceID: pin.id.uuidString,
+                accessibilityPrefix: "shortcut-sidebar-glance",
+                showsCloseButton: showsGlanceCloseButton,
+                isCloseHovered: $isGlanceCloseHovered,
+                textColor: textColor,
+                closeBackground: actionBackground,
+                isEnabled: !freezesHoverState,
+                isInteractionEnabled: dragIsEnabled
             )
-        )
-        .opacity(showsActionButton ? 1 : 0)
-        .allowsHitTesting(showsActionButton && !freezesHoverState)
-        .accessibilityHidden(!showsActionButton)
-        .sidebarDDGHover($isActionHovered, isEnabled: showsActionButton && dragIsEnabled)
-        .accessibilityIdentifier(trailingActionAccessibilityID ?? "shortcut-sidebar-action")
-        .sidebarAppKitPrimaryAction(
-            isEnabled: showsActionButton && !freezesHoverState,
-            isInteractionEnabled: dragIsEnabled,
-            action: performActionButton
-        )
+        } else {
+            Button(action: performActionButton) {
+                Image(systemName: actionIconName)
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundColor(textColor)
+                    .frame(
+                        width: SidebarRowLayout.trailingActionSize,
+                        height: SidebarRowLayout.trailingActionSize
+                    )
+                    .background(displayIsActionHovering ? actionBackground : Color.clear)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            .buttonStyle(
+                SidebarZenActionButtonStyle(
+                    isEnabled: showsActionButton && !freezesHoverState
+                )
+            )
+            .opacity(showsActionButton ? 1 : 0)
+            .allowsHitTesting(showsActionButton && !freezesHoverState)
+            .accessibilityHidden(!showsActionButton)
+            .sidebarDDGHover($isActionHovered, isEnabled: showsActionButton && dragIsEnabled)
+            .accessibilityIdentifier(trailingActionAccessibilityID ?? "shortcut-sidebar-action")
+            .sidebarAppKitPrimaryAction(
+                isEnabled: showsActionButton && !freezesHoverState,
+                isInteractionEnabled: dragIsEnabled,
+                action: performActionButton
+            )
+        }
     }
 
     private var backgroundColor: Color {
@@ -490,7 +518,38 @@ private struct ShortcutSidebarRowChrome: View {
     }
 
     private var showsActionButton: Bool {
-        displayIsHovering
+        activeGlanceSessionForRow == nil
+            && !suppressRegularActionUntilHoverExit
+            && displayIsHovering
+    }
+
+    private var activeGlanceSessionForRow: GlanceSession? {
+        guard let liveTab,
+              let session = glanceManager.sidebarSession(for: windowState),
+              session.sourceTab?.id == liveTab.id
+        else { return nil }
+        return session
+    }
+
+    private var showsGlanceCloseButton: Bool {
+        activeGlanceSessionForRow != nil && displayIsHovering
+    }
+
+    private var titleTrailingFadePadding: CGFloat {
+        if activeGlanceSessionForRow != nil {
+            return SidebarRowLayout.trailingActionSize
+                + (showsGlanceCloseButton ? SidebarRowLayout.trailingActionSize + SidebarRowLayout.trailingActionGap : 0)
+        }
+        return SidebarHoverChrome.trailingFadePadding(showsTrailingAction: showsActionButton)
+    }
+
+    private var trailingActivationExclusionWidth: CGFloat {
+        if activeGlanceSessionForRow != nil {
+            return SidebarRowLayout.trailingActionSize
+                + SidebarRowLayout.trailingInset
+                + (showsGlanceCloseButton ? SidebarRowLayout.trailingActionSize + SidebarRowLayout.trailingActionGap : 0)
+        }
+        return dragHasTrailingActionExclusion ? 40 : 0
     }
 
     private var freezesHoverState: Bool {
@@ -543,6 +602,7 @@ private struct ShortcutSidebarRowChrome: View {
             dragSourceZone: dragSourceZone,
             dragHasTrailingActionExclusion: dragHasTrailingActionExclusion,
             hasLiveAudioExclusion: liveTab?.audioState.showsTabAudioButton == true,
+            trailingActionExclusionWidth: trailingActivationExclusionWidth,
             previewIcon: displayFavicon,
             action: action,
             dragIsEnabled: dragIsEnabled
@@ -567,8 +627,7 @@ private struct ShortcutSidebarRowChrome: View {
             let resetExclusionWidth = runtimeAffordance.usesResetLeadingAction
                 ? ShortcutSidebarAudioHitArea.contentStartX(usesResetLeadingAction: true)
                 : 0
-            let trailingExclusionWidth: CGFloat = dragHasTrailingActionExclusion ? 40 : 0
-            let trailingLimit = max(proxy.size.width - trailingExclusionWidth, resetExclusionWidth)
+            let trailingLimit = max(proxy.size.width - trailingActivationExclusionWidth, resetExclusionWidth)
 
             ZStack(alignment: .leading) {
                 if let audioButtonHitFrame {
@@ -632,6 +691,7 @@ func makeShortcutSidebarDragSourceConfiguration(
     dragSourceZone: DropZoneID?,
     dragHasTrailingActionExclusion: Bool,
     hasLiveAudioExclusion: Bool = false,
+    trailingActionExclusionWidth: CGFloat = 40,
     previewIcon: Image,
     action: (() -> Void)? = nil,
     dragIsEnabled: Bool = true
@@ -650,7 +710,8 @@ func makeShortcutSidebarDragSourceConfiguration(
         exclusionZones: makeShortcutSidebarDragExclusionZones(
             runtimeAffordance: runtimeAffordance,
             dragHasTrailingActionExclusion: dragHasTrailingActionExclusion,
-            hasLiveAudioExclusion: hasLiveAudioExclusion
+            hasLiveAudioExclusion: hasLiveAudioExclusion,
+            trailingActionExclusionWidth: trailingActionExclusionWidth
         ),
         onActivate: action,
         isEnabled: dragIsEnabled
@@ -662,6 +723,21 @@ func makeShortcutSidebarDragExclusionZones(
     runtimeAffordance: SumiLauncherRuntimeAffordanceState,
     dragHasTrailingActionExclusion: Bool,
     hasLiveAudioExclusion: Bool = false
+) -> [SidebarDragSourceExclusionZone] {
+    makeShortcutSidebarDragExclusionZones(
+        runtimeAffordance: runtimeAffordance,
+        dragHasTrailingActionExclusion: dragHasTrailingActionExclusion,
+        hasLiveAudioExclusion: hasLiveAudioExclusion,
+        trailingActionExclusionWidth: 40
+    )
+}
+
+@MainActor
+func makeShortcutSidebarDragExclusionZones(
+    runtimeAffordance: SumiLauncherRuntimeAffordanceState,
+    dragHasTrailingActionExclusion: Bool,
+    hasLiveAudioExclusion: Bool = false,
+    trailingActionExclusionWidth: CGFloat = 40
 ) -> [SidebarDragSourceExclusionZone] {
     var exclusions: [SidebarDragSourceExclusionZone] = []
     if runtimeAffordance.usesResetLeadingAction {
@@ -677,7 +753,7 @@ func makeShortcutSidebarDragExclusionZones(
         )
     }
     if dragHasTrailingActionExclusion {
-        exclusions.append(.trailingStrip(40))
+        exclusions.append(.trailingStrip(trailingActionExclusionWidth))
     }
     return exclusions
 }

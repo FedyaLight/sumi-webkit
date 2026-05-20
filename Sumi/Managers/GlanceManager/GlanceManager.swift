@@ -141,6 +141,14 @@ final class GlanceManager: ObservableObject {
         return presentedSession(for: windowState)
     }
 
+    func sidebarSession(for windowState: BrowserWindowState) -> GlanceSession? {
+        guard isPreviewActive,
+              let currentSession,
+              currentSession.windowId == windowState.id
+        else { return nil }
+        return currentSession
+    }
+
     private func isSessionVisibleOnSelectedTab(
         _ session: GlanceSession,
         in windowState: BrowserWindowState

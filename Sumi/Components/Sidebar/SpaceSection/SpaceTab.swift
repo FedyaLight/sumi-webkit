@@ -20,8 +20,11 @@ struct SpaceTab: View {
     @FocusState private var isTextFieldFocused: Bool
     @State private var isRowHovered = false
     @State private var isCloseHovered = false
+    @State private var isGlanceCloseHovered = false
     @State private var isSpeakerHovered = false
+    @State private var suppressRegularCloseUntilHoverExit = false
     @EnvironmentObject var browserManager: BrowserManager
+    @EnvironmentObject private var glanceManager: GlanceManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var settings
     @Environment(\.resolvedThemeContext) private var themeContext
@@ -116,9 +119,7 @@ struct SpaceTab: View {
                         title: tab.name,
                         font: .systemFont(ofSize: 13, weight: .medium),
                         textColor: textTab,
-                        trailingFadePadding: SidebarHoverChrome.trailingFadePadding(
-                            showsTrailingAction: showsCloseButton
-                        ),
+                        trailingFadePadding: titleTrailingFadePadding,
                         isLoading: tab.isLoading
                     )
                     .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
@@ -137,7 +138,7 @@ struct SpaceTab: View {
                 rowActivationOverlay
             }
             .overlay(alignment: .trailing) {
-                closeButton
+                trailingAccessory
                     .padding(.trailing, SidebarRowLayout.trailingInset)
             }
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -146,6 +147,18 @@ struct SpaceTab: View {
         .accessibilityIdentifier("tab-row-\(tab.id.uuidString)")
         .accessibilityValue(isCurrentTab ? "selected" : "not selected")
         .sidebarDDGHover($isRowHovered, isEnabled: isAppKitInteractionEnabled)
+        .onChange(of: isRowHovered) { _, hovering in
+            if !hovering {
+                suppressRegularCloseUntilHoverExit = false
+            }
+        }
+        .onChange(of: activeGlanceSessionForRow?.id) { oldValue, newValue in
+            if oldValue != nil, newValue == nil, isRowHovered {
+                suppressRegularCloseUntilHoverExit = true
+            } else if newValue != nil {
+                suppressRegularCloseUntilHoverExit = false
+            }
+        }
         .sidebarZenPressEffect(
             sourceID: rowSourceID,
             isEnabled: isAppKitInteractionEnabled && !tab.isRenaming
@@ -163,7 +176,7 @@ struct SpaceTab: View {
         )
         .sidebarAppKitContextMenu(
             isInteractionEnabled: isAppKitInteractionEnabled,
-            dragSource: dragSourceConfiguration,
+            dragSource: effectiveDragSourceConfiguration,
             primaryAction: {
                 if tab.isRenaming {
                     tab.saveRename()
@@ -230,9 +243,50 @@ struct SpaceTab: View {
     }
 
     private var showsCloseButton: Bool {
-        SidebarHoverChrome.showsTrailingAction(
+        guard activeGlanceSessionForRow == nil else { return false }
+        guard !suppressRegularCloseUntilHoverExit else { return false }
+        return SidebarHoverChrome.showsTrailingAction(
             isHovered: displayIsHovering,
             isSelected: isCurrentTab
+        )
+    }
+
+    private var activeGlanceSessionForRow: GlanceSession? {
+        guard let session = glanceManager.sidebarSession(for: windowState),
+              session.sourceTab?.id == tab.id
+        else { return nil }
+        return session
+    }
+
+    private var showsGlanceCloseButton: Bool {
+        activeGlanceSessionForRow != nil && displayIsHovering
+    }
+
+    private var titleTrailingFadePadding: CGFloat {
+        if activeGlanceSessionForRow != nil {
+            return SidebarRowLayout.trailingActionSize
+                + (showsGlanceCloseButton ? SidebarRowLayout.trailingActionSize + SidebarRowLayout.trailingActionGap : 0)
+        }
+        return SidebarHoverChrome.trailingFadePadding(showsTrailingAction: showsCloseButton)
+    }
+
+    private var trailingActivationExclusionWidth: CGFloat {
+        if activeGlanceSessionForRow != nil {
+            return SidebarRowLayout.trailingActionSize
+                + SidebarRowLayout.trailingInset
+                + (showsGlanceCloseButton ? SidebarRowLayout.trailingActionSize + SidebarRowLayout.trailingActionGap : 0)
+        }
+        return 40
+    }
+
+    private var effectiveDragSourceConfiguration: SidebarDragSourceConfiguration? {
+        guard let dragSourceConfiguration else { return nil }
+        guard activeGlanceSessionForRow != nil else { return dragSourceConfiguration }
+
+        return dragSourceConfiguration.replacingExclusionZones(
+            dragSourceConfiguration.exclusionZones + [
+                .trailingStrip(trailingActivationExclusionWidth)
+            ]
         )
     }
 
@@ -257,8 +311,7 @@ struct SpaceTab: View {
     private var rowActivationOverlay: some View {
         if !tab.isRenaming {
             GeometryReader { proxy in
-                let trailingExclusionWidth: CGFloat = 40
-                let trailingLimit = max(proxy.size.width - trailingExclusionWidth, 0)
+                let trailingLimit = max(proxy.size.width - trailingActivationExclusionWidth, 0)
 
                 ZStack(alignment: .leading) {
                     if tab.audioState.showsTabAudioButton {
@@ -286,6 +339,25 @@ struct SpaceTab: View {
 
     private func activateRow() {
         action()
+    }
+
+    @ViewBuilder
+    private var trailingAccessory: some View {
+        if let glanceSession = activeGlanceSessionForRow {
+            SidebarGlanceTrailingAccessory(
+                session: glanceSession,
+                sourceID: tab.id.uuidString,
+                accessibilityPrefix: "space-regular-tab-glance",
+                showsCloseButton: showsGlanceCloseButton,
+                isCloseHovered: $isGlanceCloseHovered,
+                textColor: textTab,
+                closeBackground: isCurrentTab ? tokens.fieldBackgroundHover : tokens.fieldBackground,
+                isEnabled: !freezesHoverState,
+                isInteractionEnabled: isAppKitInteractionEnabled
+            )
+        } else {
+            closeButton
+        }
     }
 
     private var closeButton: some View {
@@ -322,4 +394,80 @@ struct SpaceTab: View {
         )
     }
 
+}
+
+struct SidebarGlanceTrailingAccessory: View {
+    @ObservedObject var session: GlanceSession
+    let sourceID: String
+    let accessibilityPrefix: String
+    let showsCloseButton: Bool
+    @Binding var isCloseHovered: Bool
+    let textColor: Color
+    let closeBackground: Color
+    let isEnabled: Bool
+    let isInteractionEnabled: Bool
+
+    @EnvironmentObject private var glanceManager: GlanceManager
+    @Environment(BrowserWindowState.self) private var windowState
+
+    var body: some View {
+        HStack(spacing: SidebarRowLayout.trailingActionGap) {
+            closeButton
+            SidebarTabFaviconView(
+                tab: session.previewTab,
+                size: SidebarRowLayout.faviconSize,
+                cornerRadius: 5
+            )
+            .frame(
+                width: SidebarRowLayout.trailingActionSize,
+                height: SidebarRowLayout.trailingActionSize
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .help(session.title)
+            .accessibilityIdentifier("\(accessibilityPrefix)-favicon-\(sourceID)")
+        }
+    }
+
+    private var closeButton: some View {
+        Button(action: closeCurrentSession) {
+            Image(systemName: "xmark")
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundColor(textColor)
+                .frame(
+                    width: SidebarRowLayout.trailingActionSize,
+                    height: SidebarRowLayout.trailingActionSize
+                )
+                .background(displayIsCloseHovering ? closeBackground : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(
+            SidebarZenActionButtonStyle(
+                isEnabled: showsCloseButton && isEnabled
+            )
+        )
+        .opacity(showsCloseButton ? 1 : 0)
+        .sidebarZenActionOpacity(showsCloseButton)
+        .allowsHitTesting(showsCloseButton && isEnabled)
+        .accessibilityHidden(!showsCloseButton)
+        .sidebarDDGHover($isCloseHovered, isEnabled: showsCloseButton && isInteractionEnabled)
+        .accessibilityIdentifier("\(accessibilityPrefix)-close-\(sourceID)")
+        .sidebarAppKitPrimaryAction(
+            isEnabled: showsCloseButton && isEnabled,
+            isInteractionEnabled: isInteractionEnabled,
+            action: closeCurrentSession
+        )
+        .help("Close Glance")
+    }
+
+    private var displayIsCloseHovering: Bool {
+        SidebarHoverChrome.displayHover(
+            isCloseHovered,
+            freezesHoverState: windowState.sidebarInteractionState.freezesSidebarHoverState
+        )
+    }
+
+    private func closeCurrentSession() {
+        guard glanceManager.currentSession?.id == session.id else { return }
+        glanceManager.dismissGlance()
+    }
 }

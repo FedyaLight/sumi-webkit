@@ -2215,6 +2215,7 @@ struct SpacesSideBarView: View {
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .environmentObject(browserManager)
+        .environmentObject(browserManager.glanceManager)
         .environment(windowState)
         .environmentObject(browserManager.splitManager)
         .id(space.id)

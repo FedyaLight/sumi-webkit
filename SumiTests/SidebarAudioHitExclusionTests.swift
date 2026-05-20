@@ -58,6 +58,18 @@ final class SidebarAudioHitExclusionTests: XCTestCase {
         XCTAssertFalse(contains(CGPoint(x: 39, y: 18), in: zones, bounds: bounds))
     }
 
+    func testShortcutTrailingExclusionCanCoverGlanceAccessory() {
+        let zones = makeShortcutSidebarDragExclusionZones(
+            runtimeAffordance: .liveBackgrounded,
+            dragHasTrailingActionExclusion: true,
+            trailingActionExclusionWidth: 62
+        )
+        let bounds = CGRect(x: 0, y: 0, width: 220, height: 36)
+
+        XCTAssertTrue(contains(CGPoint(x: 159, y: 18), in: zones, bounds: bounds))
+        XCTAssertFalse(contains(CGPoint(x: 157, y: 18), in: zones, bounds: bounds))
+    }
+
     private func contains(
         _ point: CGPoint,
         in zones: [SidebarDragSourceExclusionZone],

@@ -79,6 +79,25 @@ struct SidebarDragSourceConfiguration {
         self.onActivate = onActivate
         self.isEnabled = isEnabled
     }
+
+    func replacingExclusionZones(
+        _ exclusionZones: [SidebarDragSourceExclusionZone]
+    ) -> SidebarDragSourceConfiguration {
+        SidebarDragSourceConfiguration(
+            item: item,
+            sourceZone: sourceZone,
+            previewKind: previewKind,
+            previewIcon: previewIcon,
+            chromeTemplateSystemImageName: chromeTemplateSystemImageName,
+            pinnedConfig: pinnedConfig,
+            previewPresentationState: previewPresentationState,
+            folderGlyphPresentation: folderGlyphPresentation,
+            folderGlyphPalette: folderGlyphPalette,
+            exclusionZones: exclusionZones,
+            onActivate: onActivate,
+            isEnabled: isEnabled
+        )
+    }
 }
 
 struct SidebarDragPreviewSession {

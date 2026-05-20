@@ -214,6 +214,7 @@ struct WindowView: View {
             hoverSidebarManager.stop()
         }
         .environmentObject(browserManager)
+        .environmentObject(glanceManager)
         .environmentObject(browserManager.splitManager)
         .environmentObject(hoverSidebarManager)
         .environment(\.resolvedThemeContext, resolvedThemeContext)
