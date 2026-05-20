@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import WebKit
 
 struct GlanceOverlayConfiguration {
@@ -7,9 +8,50 @@ struct GlanceOverlayConfiguration {
     let sidebarWidth: CGFloat
     let sidebarPosition: SidebarPosition
     let cornerRadius: CGFloat
+    let browserContentCornerRadius: CGFloat
     let accentColor: NSColor
     let surfaceColor: NSColor
     let reduceMotion: Bool
+}
+
+enum GlancePromotionTargetLayout {
+    static func contentFrame(
+        in bounds: CGRect,
+        isSidebarVisible: Bool,
+        sidebarWidth: CGFloat,
+        sidebarPosition: SidebarPosition,
+        elementSeparation: CGFloat = BrowserChromeGeometry.elementSeparation
+    ) -> CGRect {
+        guard bounds.width > 0, bounds.height > 0 else { return .zero }
+
+        let inset = max(0, elementSeparation)
+        let hasLeftSidebar = isSidebarVisible && sidebarPosition == .left
+        let hasRightSidebar = isSidebarVisible && sidebarPosition == .right
+        let leadingInset = hasLeftSidebar ? CGFloat.zero : inset
+        let trailingInset = hasRightSidebar ? CGFloat.zero : inset
+
+        var contentFrame = bounds
+        contentFrame.origin.x += leadingInset
+        contentFrame.origin.y += inset
+        contentFrame.size.width -= leadingInset + trailingInset
+        contentFrame.size.height -= inset * 2
+
+        if isSidebarVisible {
+            let sidebarWidth = min(max(0, sidebarWidth), max(0, contentFrame.width))
+            if sidebarPosition == .left {
+                contentFrame.origin.x += sidebarWidth
+                contentFrame.size.width -= sidebarWidth
+            } else {
+                contentFrame.size.width -= sidebarWidth
+            }
+        }
+
+        contentFrame.size.width = max(0, contentFrame.width)
+        contentFrame.size.height = max(0, contentFrame.height)
+        return contentFrame
+            .standardized
+            .integral
+    }
 }
 
 final class GlanceOverlayRootView: NSView {
@@ -136,6 +178,9 @@ final class GlanceOverlayController: NSObject {
         static let webAreaVerticalInset: CGFloat = 12
         static let minimumContentWidth: CGFloat = 320
         static let contentWidthFraction: CGFloat = 0.8
+        static let glanceShadowOpacity: Float = 0.22
+        static let glanceShadowRadius: CGFloat = 24
+        static let glanceShadowOffset = CGSize(width: 0, height: -6)
         static let actionButtonSize: CGFloat = 32
         static let actionButtonSpacing: CGFloat = 12
         static let actionStackWidth: CGFloat = 44
@@ -155,6 +200,13 @@ final class GlanceOverlayController: NSObject {
     private enum AnimationDirection {
         case opening
         case closing
+    }
+
+    private struct ContentVisualStyle {
+        let cornerRadius: CGFloat
+        let shadowOpacity: Float
+        let shadowRadius: CGFloat
+        let shadowOffset: CGSize
     }
 
     init(rootView: GlanceOverlayRootView) {
@@ -289,13 +341,19 @@ final class GlanceOverlayController: NSObject {
     private func configureViews() {
         contentShadowView.wantsLayer = true
         contentShadowView.layer?.shadowColor = NSColor.black.cgColor
-        contentShadowView.layer?.shadowOpacity = 0.22
-        contentShadowView.layer?.shadowRadius = 24
-        contentShadowView.layer?.shadowOffset = CGSize(width: 0, height: -6)
+        contentShadowView.layer?.shadowOpacity = Metrics.glanceShadowOpacity
+        contentShadowView.layer?.shadowRadius = Metrics.glanceShadowRadius
+        contentShadowView.layer?.shadowOffset = Metrics.glanceShadowOffset
+        if #available(macOS 10.15, *) {
+            contentShadowView.layer?.cornerCurve = .continuous
+        }
 
         webClipView.wantsLayer = true
         webClipView.layer?.masksToBounds = true
         webClipView.autoresizingMask = [.width, .height]
+        if #available(macOS 10.15, *) {
+            webClipView.layer?.cornerCurve = .continuous
+        }
 
         [closeButton, openButton, splitButton].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = true
@@ -313,10 +371,141 @@ final class GlanceOverlayController: NSObject {
     private func apply(configuration: GlanceOverlayConfiguration) {
         contentShadowView.layer?.backgroundColor = configuration.surfaceColor.cgColor
         webClipView.layer?.backgroundColor = configuration.surfaceColor.cgColor
-        webClipView.layer?.cornerRadius = configuration.cornerRadius
-        contentShadowView.layer?.cornerRadius = configuration.cornerRadius
+        if !isAnimatingPromotion && !isCompletingPromotionHandoff {
+            applyContentVisualStyle(glanceContentVisualStyle(for: configuration))
+        }
         [closeButton, openButton, splitButton].forEach {
             $0.apply(accentColor: configuration.accentColor)
+        }
+    }
+
+    private func glanceContentVisualStyle(
+        for configuration: GlanceOverlayConfiguration
+    ) -> ContentVisualStyle {
+        ContentVisualStyle(
+            cornerRadius: configuration.cornerRadius,
+            shadowOpacity: Metrics.glanceShadowOpacity,
+            shadowRadius: Metrics.glanceShadowRadius,
+            shadowOffset: Metrics.glanceShadowOffset
+        )
+    }
+
+    private func browserViewportContentVisualStyle(
+        for configuration: GlanceOverlayConfiguration
+    ) -> ContentVisualStyle {
+        ContentVisualStyle(
+            cornerRadius: configuration.browserContentCornerRadius,
+            shadowOpacity: Float(BrowserContentViewportVisuals.shadowOpacity),
+            shadowRadius: BrowserContentViewportVisuals.shadowRadius,
+            shadowOffset: CGSize(
+                width: BrowserContentViewportVisuals.shadowX,
+                height: BrowserContentViewportVisuals.shadowY
+            )
+        )
+    }
+
+    private func applyContentVisualStyle(_ style: ContentVisualStyle) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        contentShadowView.layer?.cornerRadius = style.cornerRadius
+        contentShadowView.layer?.shadowOpacity = style.shadowOpacity
+        contentShadowView.layer?.shadowRadius = style.shadowRadius
+        contentShadowView.layer?.shadowOffset = style.shadowOffset
+        webClipView.layer?.cornerRadius = style.cornerRadius
+        CATransaction.commit()
+    }
+
+    private func animateContentVisualStyle(
+        to style: ContentVisualStyle,
+        duration: TimeInterval,
+        timingFunction: CAMediaTimingFunction
+    ) {
+        guard duration > 0,
+              let shadowLayer = contentShadowView.layer,
+              let clipLayer = webClipView.layer
+        else {
+            applyContentVisualStyle(style)
+            return
+        }
+
+        let currentShadowLayer = shadowLayer.presentation() ?? shadowLayer
+        let currentClipLayer = clipLayer.presentation() ?? clipLayer
+        let fromShadowCornerRadius = currentShadowLayer.cornerRadius
+        let fromClipCornerRadius = currentClipLayer.cornerRadius
+        let fromShadowOpacity = currentShadowLayer.shadowOpacity
+        let fromShadowRadius = currentShadowLayer.shadowRadius
+        let fromShadowOffset = currentShadowLayer.shadowOffset
+
+        addLayerAnimation(
+            to: shadowLayer,
+            keyPath: "cornerRadius",
+            fromValue: fromShadowCornerRadius,
+            toValue: style.cornerRadius,
+            duration: duration,
+            timingFunction: timingFunction
+        )
+        addLayerAnimation(
+            to: clipLayer,
+            keyPath: "cornerRadius",
+            fromValue: fromClipCornerRadius,
+            toValue: style.cornerRadius,
+            duration: duration,
+            timingFunction: timingFunction
+        )
+        addLayerAnimation(
+            to: shadowLayer,
+            keyPath: "shadowOpacity",
+            fromValue: fromShadowOpacity,
+            toValue: style.shadowOpacity,
+            duration: duration,
+            timingFunction: timingFunction
+        )
+        addLayerAnimation(
+            to: shadowLayer,
+            keyPath: "shadowRadius",
+            fromValue: fromShadowRadius,
+            toValue: style.shadowRadius,
+            duration: duration,
+            timingFunction: timingFunction
+        )
+        addLayerAnimation(
+            to: shadowLayer,
+            keyPath: "shadowOffset",
+            fromValue: NSValue(size: fromShadowOffset),
+            toValue: NSValue(size: style.shadowOffset),
+            duration: duration,
+            timingFunction: timingFunction
+        )
+    }
+
+    private func addLayerAnimation(
+        to layer: CALayer,
+        keyPath: String,
+        fromValue: Any,
+        toValue: Any,
+        duration: TimeInterval,
+        timingFunction: CAMediaTimingFunction
+    ) {
+        let animation = CABasicAnimation(keyPath: keyPath)
+        animation.fromValue = fromValue
+        animation.toValue = toValue
+        animation.duration = duration
+        animation.timingFunction = timingFunction
+        animation.fillMode = .both
+        animation.isRemovedOnCompletion = false
+        layer.add(animation, forKey: "glancePromotion.\(keyPath)")
+    }
+
+    private func removeContentVisualStyleAnimations() {
+        let keys = [
+            "cornerRadius",
+            "shadowOpacity",
+            "shadowRadius",
+            "shadowOffset",
+        ]
+        for key in keys {
+            contentShadowView.layer?.removeAnimation(forKey: "glancePromotion.\(key)")
+            webClipView.layer?.removeAnimation(forKey: "glancePromotion.\(key)")
         }
     }
 
@@ -713,9 +902,14 @@ final class GlanceOverlayController: NSObject {
         in bounds: CGRect,
         configuration: GlanceOverlayConfiguration
     ) -> CGRect {
-        webAreaFrame(in: bounds, configuration: configuration)
-            .standardized
-            .integral
+        // Match the browser viewport, not the full window: keep the visual chrome gutters
+        // during promotion while avoiding an extra side gutter beside a docked sidebar.
+        GlancePromotionTargetLayout.contentFrame(
+            in: bounds,
+            isSidebarVisible: configuration.isSidebarVisible,
+            sidebarWidth: configuration.sidebarWidth,
+            sidebarPosition: configuration.sidebarPosition
+        )
     }
 
     private func startContentFrame(
@@ -964,9 +1158,15 @@ final class GlanceOverlayController: NSObject {
             configuration.reduceMotion ? Motion.reducedMotionDuration : Motion.glanceDuration,
             0.28
         )
+        let promotionTimingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
+        animateContentVisualStyle(
+            to: browserViewportContentVisualStyle(for: configuration),
+            duration: duration,
+            timingFunction: promotionTimingFunction
+        )
         NSAnimationContext.runAnimationGroup { context in
             context.duration = duration
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
+            context.timingFunction = promotionTimingFunction
             buttonStack.animator().alphaValue = 0
         }
 
@@ -979,10 +1179,15 @@ final class GlanceOverlayController: NSObject {
             guard let self else { return }
             guard self.session?.id == sessionID else {
                 self.isAnimatingPromotion = false
+                self.removeContentVisualStyleAnimations()
                 return
             }
             self.contentShadowView.frame = targetFrame
             self.webClipView.frame = self.contentShadowView.bounds
+            self.applyContentVisualStyle(
+                self.browserViewportContentVisualStyle(for: configuration)
+            )
+            self.removeContentVisualStyleAnimations()
             self.completePromotionHandoff(
                 sessionID: sessionID,
                 manager: manager
@@ -1015,6 +1220,10 @@ final class GlanceOverlayController: NSObject {
             isAnimatingPromotion = false
             [closeButton, openButton, splitButton].forEach { $0.isEnabled = true }
             buttonStack.animator().alphaValue = 1
+            if let configuration {
+                removeContentVisualStyleAnimations()
+                applyContentVisualStyle(glanceContentVisualStyle(for: configuration))
+            }
             return
         }
 
@@ -1044,10 +1253,35 @@ final class GlanceOverlayController: NSObject {
         webViewCoordinator.registerPromotedHost(
             previewHostView,
             for: session.previewTab.id,
-            in: session.windowId
+            in: session.windowId,
+            attachmentCompletion: { [weak self, weak manager, sessionID = session.id] in
+                guard let self,
+                      self.session?.id == sessionID
+                else {
+                    manager?.finishPromotedSession(sessionID: sessionID)
+                    return
+                }
+                self.completePromotionAfterCompositorAttachment(sessionID: sessionID, manager: manager)
+            }
         )
         previewHostView.prepareForSuperviewTransferPreservingDisplayedContent()
         return true
+    }
+
+    private func completePromotionAfterCompositorAttachment(
+        sessionID: UUID,
+        manager: GlanceManager?
+    ) {
+        guard session?.id == sessionID else {
+            manager?.finishPromotedSession(sessionID: sessionID)
+            return
+        }
+
+        rootView?.acceptsBackgroundMouseEvents = false
+        contentShadowView.isHidden = true
+        buttonStack.isHidden = true
+        webContentShieldAnchorView.isHidden = true
+        manager?.finishPromotedSession(sessionID: sessionID)
     }
 
     private func webContentIsFocused() -> Bool {

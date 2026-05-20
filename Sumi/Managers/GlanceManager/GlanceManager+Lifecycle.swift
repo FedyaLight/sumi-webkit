@@ -8,6 +8,10 @@ extension GlanceManager {
 
         transition(to: .promoting)
         let newTab = promotePreviewTab(for: session, browserManager: browserManager, windowState: windowState)
+        if let sourceTab = session.sourceTab {
+            windowState.currentSpaceId = sourceTab.spaceId ?? windowState.currentSpaceId
+            windowState.currentTabId = sourceTab.id
+        }
         browserManager.splitManager.enterSplit(with: newTab, placeOn: .right, in: windowState)
         finishPromotedSession()
     }
@@ -30,9 +34,9 @@ extension GlanceManager {
             browserManager.selectTab(newTab)
         }
         if finishesAfterDisplayUpdate {
-            DispatchQueue.main.async { [weak self, sessionID = session.id] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self, sessionID = session.id] in
                 guard self?.currentSession?.id == sessionID else { return }
-                self?.finishPromotedSession()
+                self?.finishPromotedSession(sessionID: sessionID)
             }
         } else {
             finishPromotedSession()
@@ -75,6 +79,11 @@ extension GlanceManager {
     private func finishPromotedSession() {
         currentSession = nil
         transition(to: .idle)
+    }
+
+    func finishPromotedSession(sessionID: UUID) {
+        guard currentSession?.id == sessionID else { return }
+        finishPromotedSession()
     }
 
     private func materializePreviewWebViewIfNeeded(for session: GlanceSession) {
