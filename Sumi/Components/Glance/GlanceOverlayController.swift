@@ -14,6 +14,20 @@ struct GlanceOverlayConfiguration {
     let reduceMotion: Bool
 }
 
+extension GlanceOverlayConfiguration: Equatable {
+    static func == (lhs: GlanceOverlayConfiguration, rhs: GlanceOverlayConfiguration) -> Bool {
+        lhs.isVisible == rhs.isVisible
+            && lhs.isSidebarVisible == rhs.isSidebarVisible
+            && lhs.sidebarWidth == rhs.sidebarWidth
+            && lhs.sidebarPosition == rhs.sidebarPosition
+            && lhs.cornerRadius == rhs.cornerRadius
+            && lhs.browserContentCornerRadius == rhs.browserContentCornerRadius
+            && lhs.accentColor.isEqual(rhs.accentColor)
+            && lhs.surfaceColor.isEqual(rhs.surfaceColor)
+            && lhs.reduceMotion == rhs.reduceMotion
+    }
+}
+
 enum GlancePromotionTargetLayout {
     static func contentFrame(
         in bounds: CGRect,
@@ -230,9 +244,12 @@ final class GlanceOverlayController: NSObject {
         phase: GlancePresentationPhase,
         configuration: GlanceOverlayConfiguration
     ) {
+        let previousConfiguration = self.configuration
         self.manager = manager
         self.configuration = configuration
-        apply(configuration: configuration)
+        if previousConfiguration != configuration {
+            apply(configuration: configuration)
+        }
         splitButton.isEnabled = manager.canEnterSplitView
 
         guard let session else {
@@ -1087,23 +1104,34 @@ final class GlanceOverlayController: NSObject {
         )
         guard stackHitFrame.contains(localPoint) else { return false }
 
-        let buttonActions: [(GlanceActionButton, () -> Void)] = [
-            (closeButton, { [weak self] in self?.closeButtonPressed() }),
-            (openButton, { [weak self] in self?.openButtonPressed() }),
-            (splitButton, { [weak self] in self?.splitButtonPressed() }),
-        ]
-
-        for (button, action) in buttonActions.reversed() {
-            let expandedFrame = button.frame.insetBy(
-                dx: -Metrics.actionButtonHitOutset,
-                dy: -Metrics.actionButtonHitOutset
-            )
-            guard expandedFrame.contains(localPoint) else { continue }
-            guard button.isEnabled else { return true }
-            action()
+        if handleActionButtonHit(splitButton, at: localPoint) {
+            return true
+        }
+        if handleActionButtonHit(openButton, at: localPoint) {
+            return true
+        }
+        if handleActionButtonHit(closeButton, at: localPoint) {
             return true
         }
 
+        return true
+    }
+
+    private func handleActionButtonHit(_ button: GlanceActionButton, at localPoint: CGPoint) -> Bool {
+        let expandedFrame = button.frame.insetBy(
+            dx: -Metrics.actionButtonHitOutset,
+            dy: -Metrics.actionButtonHitOutset
+        )
+        guard expandedFrame.contains(localPoint) else { return false }
+        guard button.isEnabled else { return true }
+
+        if button === splitButton {
+            splitButtonPressed()
+        } else if button === openButton {
+            openButtonPressed()
+        } else {
+            closeButtonPressed()
+        }
         return true
     }
 
@@ -1387,17 +1415,26 @@ private final class GlanceActionButton: NSButton {
     private let symbolName: String
     private var accentColor: NSColor = .controlAccentColor
     private var trackingArea: NSTrackingArea?
+    private var currentScale: CGFloat = 1
+    private var cursorInvalidationBounds: CGRect = .null
     private var isHovered = false {
         didSet {
+            guard isHovered != oldValue else { return }
             updateAppearance()
             updateScale()
         }
     }
     private var isPressed = false {
-        didSet { updateScale() }
+        didSet {
+            guard isPressed != oldValue else { return }
+            updateScale()
+        }
     }
     var requiresSecondPress: Bool = false {
-        didSet { updateAppearance() }
+        didSet {
+            guard requiresSecondPress != oldValue else { return }
+            updateAppearance()
+        }
     }
 
     init(symbolName: String, toolTip: String) {
@@ -1427,6 +1464,7 @@ private final class GlanceActionButton: NSButton {
     }
 
     func apply(accentColor: NSColor) {
+        guard !self.accentColor.isEqual(accentColor) else { return }
         self.accentColor = accentColor
         updateAppearance()
     }
@@ -1485,6 +1523,7 @@ private final class GlanceActionButton: NSButton {
 
     override var isEnabled: Bool {
         didSet {
+            guard isEnabled != oldValue else { return }
             updateAppearance()
             window?.invalidateCursorRects(for: self)
             setPointingHandCursorIfNeeded()
@@ -1508,8 +1547,14 @@ private final class GlanceActionButton: NSButton {
 
     override func layout() {
         super.layout()
-        layer?.cornerRadius = min(bounds.width, bounds.height) / 2
-        window?.invalidateCursorRects(for: self)
+        let cornerRadius = min(bounds.width, bounds.height) / 2
+        if layer?.cornerRadius != cornerRadius {
+            layer?.cornerRadius = cornerRadius
+        }
+        if cursorInvalidationBounds != bounds {
+            cursorInvalidationBounds = bounds
+            window?.invalidateCursorRects(for: self)
+        }
     }
 
     private func updateImage() {
@@ -1554,6 +1599,8 @@ private final class GlanceActionButton: NSButton {
         }
 
         guard let layer else { return }
+        guard currentScale != scale else { return }
+        currentScale = scale
         CATransaction.begin()
         CATransaction.setAnimationDuration(0.05)
         CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))

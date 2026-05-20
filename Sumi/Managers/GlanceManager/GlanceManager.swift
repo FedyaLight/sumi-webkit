@@ -18,12 +18,15 @@ enum GlancePresentationPhase: Equatable {
 
 @MainActor
 final class GlanceManager: ObservableObject {
-    @Published var isActive: Bool = false
     @Published var phase: GlancePresentationPhase = .idle
     @Published var currentSession: GlanceSession?
 
     weak var browserManager: BrowserManager?
     weak var windowRegistry: WindowRegistry?
+
+    var isActive: Bool {
+        phase != .idle
+    }
 
     func attach(browserManager: BrowserManager) {
         self.browserManager = browserManager
@@ -163,8 +166,8 @@ final class GlanceManager: ObservableObject {
     }
 
     func transition(to newPhase: GlancePresentationPhase) {
+        guard phase != newPhase else { return }
         phase = newPhase
-        isActive = newPhase != .idle
     }
 
     private func finishCurrentSession(

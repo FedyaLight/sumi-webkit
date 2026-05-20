@@ -48,15 +48,21 @@ class GlanceSession: ObservableObject, Identifiable {
     }
 
     func updateNavigationState(url: URL?, title: String?) {
-        if let url { currentURL = url }
-        if let title, !title.isEmpty { self.title = title }
+        if let url, currentURL != url {
+            currentURL = url
+        }
+        if let title, !title.isEmpty, self.title != title {
+            self.title = title
+        }
     }
 
     func updateLoading(isLoading: Bool) {
+        guard self.isLoading != isLoading else { return }
         self.isLoading = isLoading
     }
 
     func updateProgress(_ progress: Double) {
+        guard estimatedProgress != progress else { return }
         estimatedProgress = progress
     }
 

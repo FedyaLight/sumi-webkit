@@ -30,6 +30,7 @@ final class FocusableWKWebView: WKWebView {
     private static let webKitMouseTrackingLoadSheddingEnabled = true
     private static let webKitMouseTrackingObserverClassName = "WKMouseTrackingObserver"
     private static let glanceCursorReuseDistance: CGFloat = 72
+    private static let glanceCursorReuseDistanceSquared = glanceCursorReuseDistance * glanceCursorReuseDistance
     private static let glanceCursorReuseInterval: TimeInterval = 0.2
     private var webKitMouseTrackingLoadSheddingObserver: NSKeyValueObservation?
     private var webKitMouseTrackingArea: NSTrackingArea?
@@ -379,7 +380,7 @@ final class FocusableWKWebView: WKWebView {
 
         let dx = point.x - lastGlancePageCursorPoint.x
         let dy = point.y - lastGlancePageCursorPoint.y
-        return sqrt(dx * dx + dy * dy) <= Self.glanceCursorReuseDistance
+        return dx * dx + dy * dy <= Self.glanceCursorReuseDistanceSquared
     }
 
     private func scheduleGlanceCursorSettleCapture() {

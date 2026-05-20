@@ -52,7 +52,7 @@ extension Tab {
     func dynamicGlanceURLForWebViewMouseDown(_ event: NSEvent) -> URL? {
         guard event.type == .leftMouseDown,
               let targetURL = lastHoveredLinkURL,
-              targetURL.isGlancePreviewableLink
+              targetURL.sumiIsGlancePreviewableLink
         else { return nil }
 
         let modifierFlags = event.modifierFlags.intersection([.command, .option, .control, .shift])
@@ -105,11 +105,9 @@ extension Tab {
             return false
         }
         guard isPinned || shortcutPinRole == .essential else { return false }
-        guard let scheme = url.sumiNavigationalScheme,
-              [.http, .https, .file].contains(scheme)
-        else { return false }
+        guard url.sumiIsGlancePreviewableLink else { return false }
 
-        if scheme == .file {
+        if url.sumiNavigationalScheme == .file {
             return self.url != url
         }
 
@@ -182,13 +180,6 @@ extension Tab {
                 RuntimeDiagnostics.emit("❌ [Tab] Failed to deliver identity result: \(error.localizedDescription)")
             }
         }
-    }
-}
-
-private extension URL {
-    var isGlancePreviewableLink: Bool {
-        guard let scheme = sumiNavigationalScheme else { return false }
-        return [.http, .https, .file].contains(scheme)
     }
 }
 
