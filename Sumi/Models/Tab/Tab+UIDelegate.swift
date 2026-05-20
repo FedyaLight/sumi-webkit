@@ -431,6 +431,7 @@ extension Tab: WKUIDelegate {
         let pageGeneration = String(extensionRuntimeDocumentSequence)
         let pageId = "\(tabId):\(pageGeneration)"
         let committedURL = extensionRuntimeCommittedMainDocumentURL
+        let surfaceState = permissionRequestSurfaceState(for: webView)
         return SumiWebKitGeolocationTabContext(
             tabId: tabId,
             pageId: pageId,
@@ -439,8 +440,8 @@ extension Tab: WKUIDelegate {
             committedURL: committedURL,
             visibleURL: webView.url ?? url,
             mainFrameURL: committedURL ?? webView.url ?? url,
-            isActiveTab: isCurrentTab,
-            isVisibleTab: primaryWindowId != nil,
+            isActiveTab: surfaceState.isActive,
+            isVisibleTab: surfaceState.isVisible,
             navigationOrPageGeneration: pageGeneration,
             isCurrentPage: { [weak self] in
                 guard let self else { return false }
@@ -460,6 +461,7 @@ extension Tab: WKUIDelegate {
         let pageGeneration = String(extensionRuntimeDocumentSequence)
         let pageId = "\(tabId):\(pageGeneration)"
         let committedURL = extensionRuntimeCommittedMainDocumentURL
+        let surfaceState = permissionRequestSurfaceState(for: webView)
         return SumiWebKitMediaCaptureTabContext(
             tabId: tabId,
             pageId: pageId,
@@ -468,8 +470,8 @@ extension Tab: WKUIDelegate {
             committedURL: committedURL,
             visibleURL: webView.url ?? url,
             mainFrameURL: committedURL ?? fallbackMainFrameURL ?? webView.url ?? url,
-            isActiveTab: isCurrentTab,
-            isVisibleTab: primaryWindowId != nil,
+            isActiveTab: surfaceState.isActive,
+            isVisibleTab: surfaceState.isVisible,
             navigationOrPageGeneration: pageGeneration,
             isCurrentPage: { [weak self] in
                 guard let self else { return false }
@@ -487,6 +489,7 @@ extension Tab: WKUIDelegate {
         let tabId = id.uuidString.lowercased()
         let pageGeneration = String(extensionRuntimeDocumentSequence)
         let committedURL = extensionRuntimeCommittedMainDocumentURL
+        let surfaceState = permissionRequestSurfaceState(for: webView)
         return SumiFilePickerPermissionTabContext(
             tabId: tabId,
             pageId: "\(tabId):\(pageGeneration)",
@@ -495,8 +498,8 @@ extension Tab: WKUIDelegate {
             committedURL: committedURL,
             visibleURL: webView.url ?? url,
             mainFrameURL: committedURL ?? webView.url ?? url,
-            isActiveTab: isCurrentTab,
-            isVisibleTab: primaryWindowId != nil,
+            isActiveTab: surfaceState.isActive,
+            isVisibleTab: surfaceState.isVisible,
             navigationOrPageGeneration: pageGeneration
         )
     }
@@ -510,6 +513,7 @@ extension Tab: WKUIDelegate {
         let pageGeneration = String(extensionRuntimeDocumentSequence)
         let pageId = "\(tabId):\(pageGeneration)"
         let committedURL = extensionRuntimeCommittedMainDocumentURL
+        let surfaceState = permissionRequestSurfaceState(for: webView)
         return SumiStorageAccessTabContext(
             tabId: tabId,
             pageId: pageId,
@@ -518,8 +522,8 @@ extension Tab: WKUIDelegate {
             committedURL: committedURL,
             visibleURL: webView.url ?? url,
             mainFrameURL: committedURL ?? webView.url ?? url,
-            isActiveTab: isCurrentTab,
-            isVisibleTab: primaryWindowId != nil,
+            isActiveTab: surfaceState.isActive,
+            isVisibleTab: surfaceState.isVisible,
             navigationOrPageGeneration: pageGeneration,
             isCurrentPage: { [weak self] in
                 guard let self else { return false }

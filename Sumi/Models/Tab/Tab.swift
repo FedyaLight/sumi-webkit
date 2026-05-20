@@ -432,6 +432,35 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         "\(id.uuidString.lowercased()):\(extensionRuntimeDocumentSequence)"
     }
 
+    func permissionRequestSurfaceState(for webView: WKWebView?) -> (isActive: Bool, isVisible: Bool) {
+        if let webView,
+           isActiveGlancePreviewSurface(for: webView) {
+            return (true, true)
+        }
+        return (isCurrentTab, primaryWindowId != nil)
+    }
+
+    func permissionRequestIsActiveSurface(for webView: WKWebView?) -> Bool {
+        permissionRequestSurfaceState(for: webView).isActive
+    }
+
+    func permissionRequestIsVisibleSurface(for webView: WKWebView?) -> Bool {
+        permissionRequestSurfaceState(for: webView).isVisible
+    }
+
+    private func isActiveGlancePreviewSurface(for webView: WKWebView) -> Bool {
+        guard let browserManager,
+              let session = browserManager.glanceManager.currentSession,
+              session.previewTab.id == id,
+              session.previewTab.existingWebView === webView,
+              let windowState = browserManager.windowRegistry?.windows[session.windowId],
+              browserManager.glanceManager.activeSession(for: windowState)?.id == session.id
+        else {
+            return false
+        }
+        return true
+    }
+
     func recordPopupUserActivation(_ event: NSEvent, kind: String) {
         recordWebViewInteraction(event)
         popupUserActivationTracker.record(event: event, kind: kind)

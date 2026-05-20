@@ -298,13 +298,6 @@ extension Tab {
             }
         }
 
-        if reusableExistingWebView == nil {
-            if let webView = _webView, webViewConfigurationOverride != nil {
-                SumiUserAgent.apply(to: webView)
-                webView.setValue(true, forKey: "drawsBackground")
-            }
-        }
-
         if let webView = _webView {
             if RuntimeDiagnostics.isDeveloperInspectionEnabled {
                 webView.isInspectable = true
@@ -320,20 +313,16 @@ extension Tab {
         if !isPopupHost && _existingWebView == nil {
             if let controller = _webView?.configuration.userContentController.sumiNormalTabUserContentController {
                 let initialWebView = _webView
-                if controller.contentBlockingAssetSummary.isInstalled {
-                    loadURL(url)
-                } else {
-                    Task { @MainActor [weak self, weak initialWebView] in
-                        let signpostState = PerformanceTrace.beginInterval("ContentBlocking.assetsInstallWait")
-                        await controller.waitForContentBlockingAssetsInstalled()
-                        PerformanceTrace.endInterval("ContentBlocking.assetsInstallWait", signpostState)
-                        guard let self,
-                              let initialWebView,
-                              self._existingWebView == nil,
-                              self._webView === initialWebView
-                        else { return }
-                        self.loadURL(self.url)
+                Task { @MainActor [weak self, weak initialWebView] in
+                    await controller.waitForInitialUserContentInstallation()
+                    guard let self,
+                          let initialWebView,
+                          self._existingWebView == nil,
+                          self._webView === initialWebView
+                    else {
+                        return
                     }
+                    self.loadURL(self.url)
                 }
             } else {
                 loadURL(url)

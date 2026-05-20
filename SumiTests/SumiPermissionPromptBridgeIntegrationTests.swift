@@ -40,6 +40,76 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
         withExtendedLifetime(webView) {}
     }
 
+    func testMediaAutoPromptDoesNotDenyBeforePromptPresenterCatchesUp() async {
+        let coordinator = makeCoordinator(
+            systemStates: [.camera: .authorized],
+            store: PromptBridgePermissionStore()
+        )
+        let bridge = SumiWebKitPermissionBridge(
+            coordinator: coordinator,
+            runtimeController: FakeSumiRuntimePermissionController(),
+            now: { promptBridgeFixedDate }
+        )
+        let expectation = XCTestExpectation(description: "media auto prompt decision")
+        var decisions: [WKPermissionDecision] = []
+        let webView = WKWebView()
+
+        bridge.handleMediaCaptureAuthorization(
+            mediaRequest(permissionTypes: [.camera]),
+            tabContext: mediaTabContext(isActiveTab: false, isVisibleTab: false),
+            webView: webView
+        ) { decision in
+            decisions.append(decision)
+            expectation.fulfill()
+        }
+
+        let query = await waitForActiveQuery(coordinator, pageId: "tab-a:1")
+        XCTAssertTrue(decisions.isEmpty)
+        await coordinator.approveOnce(query.id)
+
+        await fulfillment(of: [expectation], timeout: 2)
+        XCTAssertEqual(decisions, [.grant])
+        withExtendedLifetime(webView) {}
+    }
+
+    func testGeolocationAutoPromptDoesNotDenyBeforePromptPresenterCatchesUp() async {
+        let coordinator = makeCoordinator(
+            systemStates: [.geolocation: .authorized],
+            store: PromptBridgePermissionStore()
+        )
+        let provider = FakeSumiGeolocationProvider()
+        let bridge = SumiWebKitGeolocationBridge(
+            coordinator: coordinator,
+            geolocationProvider: provider,
+            now: { promptBridgeFixedDate }
+        )
+        let expectation = XCTestExpectation(description: "geolocation auto prompt decision")
+        var decisions: [WKPermissionDecision] = []
+        let webView = WKWebView()
+
+        bridge.handleGeolocationAuthorization(
+            SumiWebKitGeolocationRequest(
+                id: "geo-a",
+                requestingOrigin: SumiPermissionOrigin(string: "https://example.com"),
+                isMainFrame: true
+            ),
+            tabContext: geolocationTabContext(isActiveTab: false, isVisibleTab: false),
+            webView: webView
+        ) { decision in
+            decisions.append(decision)
+            expectation.fulfill()
+        }
+
+        let query = await waitForActiveQuery(coordinator, pageId: "tab-a:1")
+        XCTAssertTrue(decisions.isEmpty)
+        await coordinator.approveOnce(query.id)
+
+        await fulfillment(of: [expectation], timeout: 2)
+        XCTAssertEqual(decisions, [.grant])
+        withExtendedLifetime(webView) {}
+        withExtendedLifetime(provider) {}
+    }
+
     func testNotificationDismissResolvesWebsiteRequestToDefault() async {
         let coordinator = makeCoordinator(
             systemStates: [.notifications: .authorized],
@@ -62,6 +132,31 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
 
         let result = await task.value
         XCTAssertEqual(result, .default)
+    }
+
+    func testNotificationAutoPromptDoesNotResolveBeforePromptPresenterCatchesUp() async {
+        let coordinator = makeCoordinator(
+            systemStates: [.notifications: .authorized],
+            store: PromptBridgePermissionStore()
+        )
+        let bridge = SumiNotificationPermissionBridge(
+            coordinator: coordinator,
+            notificationService: FakeSumiNotificationService(),
+            now: { promptBridgeFixedDate }
+        )
+
+        let task = Task {
+            await bridge.requestWebsitePermission(
+                request: notificationRequest(),
+                tabContext: notificationTabContext(isActiveTab: false, isVisibleTab: false)
+            )
+        }
+        let query = await waitForActiveQuery(coordinator, pageId: "tab-a:1")
+        XCTAssertFalse(task.isCancelled)
+        await coordinator.approveOnce(query.id)
+
+        let result = await task.value
+        XCTAssertEqual(result, .granted)
     }
 
     func testStorageAccessPromptRequiredWaitsForUserSettlementAndDeniesOnDismiss() async {
@@ -180,7 +275,10 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
         )
     }
 
-    private func mediaTabContext() -> SumiWebKitMediaCaptureTabContext {
+    private func mediaTabContext(
+        isActiveTab: Bool = true,
+        isVisibleTab: Bool = true
+    ) -> SumiWebKitMediaCaptureTabContext {
         SumiWebKitMediaCaptureTabContext(
             tabId: "tab-a",
             pageId: "tab-a:1",
@@ -189,8 +287,26 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
             committedURL: URL(string: "https://example.com"),
             visibleURL: URL(string: "https://example.com/path"),
             mainFrameURL: URL(string: "https://example.com"),
-            isActiveTab: true,
-            isVisibleTab: true,
+            isActiveTab: isActiveTab,
+            isVisibleTab: isVisibleTab,
+            navigationOrPageGeneration: "1"
+        )
+    }
+
+    private func geolocationTabContext(
+        isActiveTab: Bool = true,
+        isVisibleTab: Bool = true
+    ) -> SumiWebKitGeolocationTabContext {
+        SumiWebKitGeolocationTabContext(
+            tabId: "tab-a",
+            pageId: "tab-a:1",
+            profilePartitionId: "profile-a",
+            isEphemeralProfile: false,
+            committedURL: URL(string: "https://example.com"),
+            visibleURL: URL(string: "https://example.com/path"),
+            mainFrameURL: URL(string: "https://example.com"),
+            isActiveTab: isActiveTab,
+            isVisibleTab: isVisibleTab,
             navigationOrPageGeneration: "1"
         )
     }
@@ -203,7 +319,10 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
         )
     }
 
-    private func notificationTabContext() -> SumiWebNotificationTabContext {
+    private func notificationTabContext(
+        isActiveTab: Bool = true,
+        isVisibleTab: Bool = true
+    ) -> SumiWebNotificationTabContext {
         SumiWebNotificationTabContext(
             tabId: "tab-a",
             pageId: "tab-a:1",
@@ -212,8 +331,8 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
             committedURL: URL(string: "https://example.com/page"),
             visibleURL: URL(string: "https://example.com/page"),
             mainFrameURL: URL(string: "https://example.com/page"),
-            isActiveTab: true,
-            isVisibleTab: true,
+            isActiveTab: isActiveTab,
+            isVisibleTab: isVisibleTab,
             navigationOrPageGeneration: "1"
         )
     }

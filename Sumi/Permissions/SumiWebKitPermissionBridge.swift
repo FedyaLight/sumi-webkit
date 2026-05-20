@@ -617,9 +617,7 @@ final class SumiWebKitPermissionBridge {
         timeoutReason: String
     ) async -> SumiPermissionCoordinatorDecision {
         if shouldWaitForPromptUI,
-           (context.surface == .normalTab || context.surface == .miniWindow),
-           context.isActiveTab,
-           context.isVisibleTab {
+           (context.surface == .normalTab || context.surface == .miniWindow) {
             return await coordinator.requestPermission(context)
         }
 

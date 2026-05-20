@@ -934,15 +934,9 @@ class WebViewCoordinator {
             }
 
             if let controller = webView.configuration.userContentController.sumiNormalTabUserContentController {
-                if controller.contentBlockingAssetSummary.isInstalled {
+                Task { @MainActor in
+                    await controller.waitForInitialUserContentInstallation()
                     performLoad()
-                } else {
-                    Task { @MainActor in
-                        let signpostState = PerformanceTrace.beginInterval("ContentBlocking.assetsInstallWait")
-                        await controller.waitForContentBlockingAssetsInstalled()
-                        PerformanceTrace.endInterval("ContentBlocking.assetsInstallWait", signpostState)
-                        performLoad()
-                    }
                 }
             } else {
                 performLoad()

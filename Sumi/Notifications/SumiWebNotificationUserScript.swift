@@ -534,6 +534,7 @@ extension Tab {
         let pageGeneration = String(extensionRuntimeDocumentSequence)
         let pageId = "\(tabId):\(pageGeneration)"
         let committedURL = extensionRuntimeCommittedMainDocumentURL
+        let surfaceState = permissionRequestSurfaceState(for: webView)
         return SumiWebNotificationTabContext(
             tabId: tabId,
             pageId: pageId,
@@ -542,8 +543,8 @@ extension Tab {
             committedURL: committedURL,
             visibleURL: webView?.url ?? url,
             mainFrameURL: committedURL ?? webView?.url ?? url,
-            isActiveTab: isCurrentTab,
-            isVisibleTab: primaryWindowId != nil,
+            isActiveTab: surfaceState.isActive,
+            isVisibleTab: surfaceState.isVisible,
             navigationOrPageGeneration: pageGeneration,
             isCurrentPage: { [weak self] in
                 guard let self else { return false }
