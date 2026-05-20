@@ -62,6 +62,29 @@ extension BrowserManager {
         selectTab(lastTab, in: activeWindow)
     }
 
+    func setActiveSplitLayout(_ layoutKind: SplitLayoutKind) {
+        guard let activeWindow = windowRegistry?.activeWindow else { return }
+        if splitManager.isSplit(for: activeWindow.id) {
+            splitManager.setLayoutKind(layoutKind, for: activeWindow.id)
+            return
+        }
+        guard let current = currentTab(for: activeWindow),
+              current.representsSumiNativeSurface == false
+        else { return }
+        splitManager.enterSplit(with: current, placeOn: .right, in: activeWindow)
+        splitManager.setLayoutKind(layoutKind, for: activeWindow.id)
+    }
+
+    func unsplitActiveWindow() {
+        guard let activeWindow = windowRegistry?.activeWindow else { return }
+        splitManager.unsplitActiveGroup(for: activeWindow.id)
+    }
+
+    func createEmptySplitInActiveWindow() {
+        guard let activeWindow = windowRegistry?.activeWindow else { return }
+        splitManager.createEmptySplit(side: .right, in: activeWindow)
+    }
+
     func selectNextSpaceInActiveWindow() {
         guard let activeWindow = windowRegistry?.activeWindow,
               let currentSpaceId = activeWindow.currentSpaceId,

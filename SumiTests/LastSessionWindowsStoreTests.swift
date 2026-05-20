@@ -97,6 +97,7 @@ final class LastSessionWindowsStoreTests: XCTestCase {
                 )
             ],
             folders: [],
+            splitGroups: [],
             state: TabSnapshotRepository.SnapshotState(
                 currentTabID: tabId,
                 currentSpaceID: spaceId

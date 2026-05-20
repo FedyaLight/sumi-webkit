@@ -97,15 +97,19 @@ final class FocusableWKWebView: WKWebView {
         guard Self.webKitMouseTrackingLoadSheddingEnabled,
               Self.isWebKitMouseTrackingArea(trackingArea)
         else {
-            super.addTrackingArea(trackingArea)
+            superAddTrackingArea(trackingArea)
             return
         }
 
         installWebKitMouseTrackingLoadShedding(for: trackingArea)
         if !shouldSuspendWebKitMouseTracking, !trackingAreas.contains(trackingArea) {
-            super.addTrackingArea(trackingArea)
+            superAddTrackingArea(trackingArea)
         }
         scheduleWebKitMouseTrackingRefresh(for: trackingArea)
+    }
+
+    private func superAddTrackingArea(_ trackingArea: NSTrackingArea) {
+        super.addTrackingArea(trackingArea)
     }
 
     private func installWebKitMouseTrackingLoadShedding(for trackingArea: NSTrackingArea) {
@@ -157,7 +161,7 @@ final class FocusableWKWebView: WKWebView {
             removeTrackingArea(trackingArea)
         } else {
             guard !trackingAreas.contains(trackingArea) else { return }
-            super.addTrackingArea(trackingArea)
+            superAddTrackingArea(trackingArea)
         }
     }
 

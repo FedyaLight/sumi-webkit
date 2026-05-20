@@ -749,10 +749,8 @@ final class TabSuspensionService {
         for windowState in browserManager.windowRegistry?.windows.values.map({ $0 }) ?? [] {
             let tabIDs = VisibleTabPreparationPlan.visibleTabIDs(
                 currentTabId: browserManager.currentTab(for: windowState)?.id,
-                isSplit: browserManager.splitManager.isSplit(for: windowState.id),
-                leftTabId: browserManager.splitManager.leftTabId(for: windowState.id),
-                rightTabId: browserManager.splitManager.rightTabId(for: windowState.id),
-                isPreviewActive: browserManager.splitManager.getSplitState(for: windowState.id).isPreviewActive
+                splitTabIds: browserManager.splitManager.visibleTabIds(for: windowState.id),
+                isPreviewActive: browserManager.splitManager.isPreviewActive(for: windowState.id)
             )
             visible[windowState.id] = Set(tabIDs)
         }

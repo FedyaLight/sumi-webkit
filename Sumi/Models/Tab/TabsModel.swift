@@ -97,9 +97,11 @@ final class FolderEntity {
 final class TabsStateEntity {
     var currentTabID: UUID?
     var currentSpaceID: UUID?
+    var splitGroupsData: Data?
 
-    init(currentTabID: UUID?, currentSpaceID: UUID?) {
+    init(currentTabID: UUID?, currentSpaceID: UUID?, splitGroupsData: Data? = nil) {
         self.currentTabID = currentTabID
         self.currentSpaceID = currentSpaceID
+        self.splitGroupsData = splitGroupsData
     }
 }

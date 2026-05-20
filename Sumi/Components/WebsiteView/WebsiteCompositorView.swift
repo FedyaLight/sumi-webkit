@@ -1,42 +1,36 @@
 import AppKit
 import Combine
+import QuartzCore
 import SwiftUI
 import WebKit
+
+@MainActor
+private func countHostedWebViews(in root: NSView) -> Int {
+    var count = 0
+    for subview in root.subviews {
+        if subview is SumiWebViewContainerView || subview is WKWebView {
+            count += 1
+        } else {
+            count += countHostedWebViews(in: subview)
+        }
+    }
+    return count
+}
 
 // MARK: - Tab Compositor Wrapper
 
 struct WebsiteDisplayState: Equatable {
-    let splitFraction: CGFloat
-    let splitOrientation: SplitOrientation
-    let isSplit: Bool
-    let leftId: UUID?
-    let rightId: UUID?
+    let splitGroup: SplitGroup?
     let currentId: UUID?
     let compositorVersion: Int
     let currentTabUnloaded: Bool
     let visibleTabIds: Set<UUID>
     let isPreviewActive: Bool
     let isSplitDropCaptureActive: Bool
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.splitFraction == rhs.splitFraction
-            && lhs.splitOrientation == rhs.splitOrientation
-            && lhs.isSplit == rhs.isSplit
-            && lhs.leftId == rhs.leftId
-            && lhs.rightId == rhs.rightId
-            && lhs.currentId == rhs.currentId
-            && lhs.compositorVersion == rhs.compositorVersion
-            && lhs.currentTabUnloaded == rhs.currentTabUnloaded
-            && lhs.visibleTabIds == rhs.visibleTabIds
-            && lhs.isPreviewActive == rhs.isPreviewActive
-            && lhs.isSplitDropCaptureActive == rhs.isSplitDropCaptureActive
-    }
 }
 
 @MainActor
 final class WindowWebContentController: NSViewController {
-    // WebKit reparents the view asynchronously around element-fullscreen exit.
-    // One immediate retry plus two bounded follow-ups covers that short window.
     private static let mediaTouchBarRecoveryRetryDelays: [TimeInterval] = [0, 0.2, 0.5]
 
     private let browserManager: BrowserManager
@@ -54,11 +48,10 @@ final class WindowWebContentController: NSViewController {
     private var appliedDisplayState: WebsiteDisplayState?
     private var isDisplayStateApplyScheduled = false
     private var lastHoverTabId: UUID?
-    private var pendingSplitRepairKeepSide: SplitViewManager.Side? = nil
+    private var pendingSplitRepairGroupId: UUID?
     private var hoveredLinkHandler: ((String?) -> Void)?
     private var singlePaneHost: SumiWebViewContainerView?
-    private var leftPaneHost: SumiWebViewContainerView?
-    private var rightPaneHost: SumiWebViewContainerView?
+    private var splitPaneHostsByTabId: [UUID: SumiWebViewContainerView] = [:]
     private var parkedProtectedHosts: [ObjectIdentifier: SumiWebViewContainerView] = [:]
     private var mediaTouchBarRecoveryCancellable: AnyCancellable?
 
@@ -95,9 +88,8 @@ final class WindowWebContentController: NSViewController {
         if webViewCoordinator.hasActiveFullscreen(in: windowState.id) {
             webViewCoordinator.closeActiveFullscreenMedia(in: windowState.id)
         }
-        clearPane(.single)
-        clearPane(.left)
-        clearPane(.right)
+        clearSinglePane()
+        clearAllSplitPaneHosts()
         mediaTouchBarRecoveryCancellable?.cancel()
         mediaTouchBarRecoveryCancellable = nil
         webViewCoordinator.removeCompositorContainerView(for: windowState.id)
@@ -173,11 +165,7 @@ final class WindowWebContentController: NSViewController {
             currentTab: currentTab,
             displayState: displayState
         )
-        guard appliedDisplayState != displayState
-                || hasStaleSubviews
-        else {
-            return
-        }
+        guard appliedDisplayState != displayState || hasStaleSubviews else { return }
 
         let previousCurrentId = appliedDisplayState?.currentId
         apply(displayState: displayState, currentTab: currentTab)
@@ -197,61 +185,21 @@ final class WindowWebContentController: NSViewController {
             windowId: windowState.id
         )
 
-        if displayState.isPreviewActive {
-            showSinglePane(tab: currentTab)
-            return
-        }
-
-        let isCurrentPane = displayState.currentId != nil
-            && (displayState.currentId == displayState.leftId || displayState.currentId == displayState.rightId)
-
-        if displayState.isSplit && isCurrentPane {
-            let leftTab = displayState.leftId.flatMap { browserManager.tabManager.tab(for: $0) }
-            let rightTab = displayState.rightId.flatMap { browserManager.tabManager.tab(for: $0) }
-
-            if leftTab == nil && rightTab == nil {
-                scheduleSplitRepair(keep: .left)
+        if let group = displayState.splitGroup,
+           let currentId = displayState.currentId,
+           group.contains(currentId)
+        {
+            let tabs = group.tabIds.compactMap { browserManager.tabManager.tab(for: $0) }
+            guard tabs.count == group.tabIds.count else {
+                scheduleSplitRepair(groupId: group.id)
                 showSinglePane(tab: currentTab)
                 return
             }
-            if leftTab == nil {
-                scheduleSplitRepair(keep: .right)
-                showSinglePane(tab: currentTab)
-                return
-            }
-            if rightTab == nil {
-                scheduleSplitRepair(keep: .left)
-                showSinglePane(tab: currentTab)
-                return
-            }
-
-            let fraction = max(
-                splitManager.minFraction,
-                min(splitManager.maxFraction, displayState.splitFraction)
-            )
-
-            showSplitPanes(
-                leftTab: leftTab,
-                rightTab: rightTab,
-                fraction: fraction,
-                orientation: displayState.splitOrientation
-            )
+            showSplitGroup(group, tabs: tabs)
             return
         }
 
         showSinglePane(tab: currentTab)
-    }
-
-    private func hostedWebViewCount(in root: NSView) -> Int {
-        var count = 0
-        for subview in root.subviews {
-            if subview is SumiWebViewContainerView || subview is WKWebView {
-                count += 1
-            } else {
-                count += hostedWebViewCount(in: subview)
-            }
-        }
-        return count
     }
 
     private func compositorSubtreeHasStaleWebViews(
@@ -262,32 +210,22 @@ final class WindowWebContentController: NSViewController {
             return false
         }
 
-        if displayState.isPreviewActive {
+        let shouldShowSplit = displayState.currentId.map {
+            displayState.splitGroup?.contains($0) == true
+        } ?? false
+
+        if shouldShowSplit == false {
             let expected = (currentTab != nil && displayState.currentTabUnloaded == false) ? 1 : 0
-            if hostedWebViewCount(in: containerView.singlePaneView) > expected { return true }
-            if hostedWebViewCount(in: containerView.leftPaneView) > 0 { return true }
-            if hostedWebViewCount(in: containerView.rightPaneView) > 0 { return true }
+            if countHostedWebViews(in: containerView.singlePaneView) > expected { return true }
+            if containerView.hostedSplitWebViewCount > 0 { return true }
             return false
         }
 
-        let isCurrentPane = displayState.currentId != nil
-            && (displayState.currentId == displayState.leftId || displayState.currentId == displayState.rightId)
-
-        if displayState.isSplit, isCurrentPane {
-            let leftTab = displayState.leftId.flatMap { browserManager.tabManager.tab(for: $0) }
-            let rightTab = displayState.rightId.flatMap { browserManager.tabManager.tab(for: $0) }
-            let leftExpected = (leftTab != nil && leftTab?.isUnloaded == false) ? 1 : 0
-            let rightExpected = (rightTab != nil && rightTab?.isUnloaded == false) ? 1 : 0
-            if hostedWebViewCount(in: containerView.leftPaneView) > leftExpected { return true }
-            if hostedWebViewCount(in: containerView.rightPaneView) > rightExpected { return true }
-            if hostedWebViewCount(in: containerView.singlePaneView) > 0 { return true }
-            return false
+        if countHostedWebViews(in: containerView.singlePaneView) > 0 { return true }
+        guard let group = displayState.splitGroup else { return false }
+        for tabId in splitPaneHostsByTabId.keys where group.contains(tabId) == false {
+            return true
         }
-
-        let expected = (currentTab != nil && displayState.currentTabUnloaded == false) ? 1 : 0
-        if hostedWebViewCount(in: containerView.singlePaneView) > expected { return true }
-        if hostedWebViewCount(in: containerView.leftPaneView) > 0 { return true }
-        if hostedWebViewCount(in: containerView.rightPaneView) > 0 { return true }
         return false
     }
 
@@ -295,55 +233,51 @@ final class WindowWebContentController: NSViewController {
         containerView.setPaneLayout(.single)
         containerView.layoutSubtreeIfNeeded()
         containerView.singlePaneView.isHidden = false
-        containerView.leftPaneView.isHidden = true
-        containerView.rightPaneView.isHidden = true
 
-        if let tab, let host = webViewHost(for: tab, pane: .single) {
+        if let tab, let host = webViewHost(for: tab, slot: .single) {
             attach(host, to: containerView.singlePaneView)
             containerView.singlePaneView.removeHostedSubviews(
                 keeping: host,
                 shouldRemove: shouldRemoveHostedSubview
             )
         } else {
-            clearPane(.single)
+            clearSinglePane()
         }
 
-        clearPane(.left)
-        clearPane(.right)
+        clearAllSplitPaneHosts()
     }
 
-    private func showSplitPanes(
-        leftTab: Tab?,
-        rightTab: Tab?,
-        fraction: CGFloat,
-        orientation: SplitOrientation
-    ) {
-        containerView.setPaneLayout(.split(fraction: fraction, orientation: orientation))
+    private func showSplitGroup(_ group: SplitGroup, tabs: [Tab]) {
+        containerView.setPaneLayout(.split(group))
         containerView.layoutSubtreeIfNeeded()
-        containerView.singlePaneView.isHidden = true
-        clearPane(.single)
+        clearSinglePane()
 
-        containerView.leftPaneView.isHidden = false
-        containerView.rightPaneView.isHidden = false
-
-        if let leftTab, let host = webViewHost(for: leftTab, pane: .left) {
-            attach(host, to: containerView.leftPaneView)
-            containerView.leftPaneView.removeHostedSubviews(
-                keeping: host,
-                shouldRemove: shouldRemoveHostedSubview
-            )
-        } else {
-            clearPane(.left)
+        let visibleIds = Set(group.tabIds)
+        for tabId in Array(splitPaneHostsByTabId.keys) where visibleIds.contains(tabId) == false {
+            clearSplitPaneHost(tabId)
         }
 
-        if let rightTab, let host = webViewHost(for: rightTab, pane: .right) {
-            attach(host, to: containerView.rightPaneView)
-            containerView.rightPaneView.removeHostedSubviews(
-                keeping: host,
-                shouldRemove: shouldRemoveHostedSubview
-            )
-        } else {
-            clearPane(.right)
+        for tab in tabs {
+            guard let paneView = containerView.paneView(for: tab.id) else {
+                clearSplitPaneHost(tab.id)
+                continue
+            }
+            if let host = webViewHost(for: tab, slot: .split(tab.id)) {
+                paneView.configureSplitControls(
+                    tab: tab,
+                    browserManager: browserManager,
+                    splitManager: browserManager.splitManager,
+                    windowState: windowState
+                )
+                attach(host, to: paneView)
+                paneView.removeHostedSubviews(
+                    keeping: host,
+                    shouldRemove: shouldRemoveHostedSubview
+                )
+            } else {
+                paneView.clearSplitControls()
+                clearSplitPaneHost(tab.id)
+            }
         }
     }
 
@@ -447,25 +381,26 @@ final class WindowWebContentController: NSViewController {
         }
     }
 
-    private func webViewHost(
-        for tab: Tab,
-        pane: CompositorPaneDestination
-    ) -> SumiWebViewContainerView? {
+    private enum PaneSlot: Hashable {
+        case single
+        case split(UUID)
+    }
+
+    private func webViewHost(for tab: Tab, slot: PaneSlot) -> SumiWebViewContainerView? {
         guard tab.requiresPrimaryWebView else {
-            clearPane(pane)
+            clearPaneHost(slot)
             return nil
         }
         let webView = webViewCoordinator.getWebView(for: tab.id, in: windowState.id)
             ?? webViewCoordinator.getOrCreateWebView(for: tab, in: windowState.id)
         guard let webView else {
-            clearPane(pane)
+            clearPaneHost(slot)
             return nil
         }
 
-        if let host = paneHost(pane),
+        if let host = paneHost(slot),
            host.tabID == tab.id,
-           host.webView === webView
-        {
+           host.webView === webView {
             return host
         }
 
@@ -474,35 +409,30 @@ final class WindowWebContentController: NSViewController {
             in: windowState.id,
             expectedWebView: webView
         ) {
-            clearPane(pane)
+            clearPaneHost(slot)
             configureViewportStyle(on: promotedHost)
-            setPaneHost(promotedHost, for: pane)
+            setPaneHost(promotedHost, for: slot)
             return promotedHost
         }
 
         if webViewCoordinator.isWebViewProtectedFromCompositorMutation(webView),
            let existingHost = protectedHost(for: webView) {
-            clearPane(pane)
+            clearPaneHost(slot)
             configureViewportStyle(on: existingHost)
             clearPaneHostReferences(to: existingHost)
-            setPaneHost(existingHost, for: pane)
+            setPaneHost(existingHost, for: slot)
             return existingHost
         }
 
-        clearPane(pane)
+        clearPaneHost(slot)
         let host = SumiWebViewContainerView(tab: tab, webView: webView)
         configureViewportStyle(on: host)
-        setPaneHost(host, for: pane)
+        setPaneHost(host, for: slot)
         return host
     }
 
     private func attach(_ host: SumiWebViewContainerView, to paneView: PaneContainerView) {
         let isProtected = webViewCoordinator.isWebViewProtectedFromCompositorMutation(host.webView)
-        if isProtected {
-            attachProtectedHost(host, to: paneView)
-            return
-        }
-
         performWithoutImplicitAnimations {
             parkedProtectedHosts.removeValue(forKey: ObjectIdentifier(host.webView))
             if host.superview != nil && host.superview !== paneView {
@@ -519,27 +449,8 @@ final class WindowWebContentController: NSViewController {
             paneView.layoutSubtreeIfNeeded()
             host.layoutSubtreeIfNeeded()
         }
-        webViewCoordinator.completePromotedHostAttachment(for: host.tabID, in: windowState.id)
-    }
-
-    private func attachProtectedHost(_ host: SumiWebViewContainerView, to paneView: PaneContainerView) {
-        performWithoutImplicitAnimations {
-            let webViewID = ObjectIdentifier(host.webView)
-            parkedProtectedHosts[webViewID] = host
-
-            if host.superview != nil && host.superview !== paneView {
-                host.removeFromSuperview()
-            }
-            if host.superview == nil || host.superview === paneView {
-                paneView.placeContentHostAboveChromeShadow(host)
-            }
-            host.frame = paneView.bounds
-            host.autoresizingMask = [.width, .height]
-            configureViewportStyle(on: host)
-            host.attachDisplayedContentIfNeeded()
-            host.isHidden = false
-            paneView.layoutSubtreeIfNeeded()
-            host.layoutSubtreeIfNeeded()
+        if isProtected {
+            parkedProtectedHosts[ObjectIdentifier(host.webView)] = host
         }
         webViewCoordinator.completePromotedHostAttachment(for: host.tabID, in: windowState.id)
     }
@@ -561,9 +472,12 @@ final class WindowWebContentController: NSViewController {
             return parkedHost
         }
 
-        if let currentHost = [singlePaneHost, leftPaneHost, rightPaneHost]
-            .compactMap({ $0 })
-            .first(where: { $0.webView === webView }) {
+        if let singlePaneHost, singlePaneHost.webView === webView {
+            parkedProtectedHosts[webViewID] = singlePaneHost
+            return singlePaneHost
+        }
+
+        for currentHost in splitPaneHostsByTabId.values where currentHost.webView === webView {
             parkedProtectedHosts[webViewID] = currentHost
             return currentHost
         }
@@ -571,21 +485,54 @@ final class WindowWebContentController: NSViewController {
         return nil
     }
 
-    private func clearPane(_ pane: CompositorPaneDestination) {
-        let paneView = paneView(for: pane)
-        if let host = paneHost(pane) {
-            if webViewCoordinator.isWebViewProtectedFromCompositorMutation(host.webView) {
-                parkProtectedHost(host)
-            } else {
-                parkedProtectedHosts.removeValue(forKey: ObjectIdentifier(host.webView))
-                host.removeFromSuperview()
-            }
+    private func clearPaneHost(_ slot: PaneSlot) {
+        switch slot {
+        case .single:
+            clearSinglePane()
+        case .split(let tabId):
+            clearSplitPaneHost(tabId)
         }
-        setPaneHost(nil, for: pane)
-        paneView.removeHostedSubviews(
+    }
+
+    private func clearSinglePane() {
+        if let host = singlePaneHost {
+            removeHostFromDisplay(host)
+        }
+        singlePaneHost = nil
+        containerView.singlePaneView.removeHostedSubviews(
             keeping: nil,
             shouldRemove: shouldRemoveHostedSubview
         )
+    }
+
+    private func clearSplitPaneHost(_ tabId: UUID) {
+        if let host = splitPaneHostsByTabId[tabId] {
+            removeHostFromDisplay(host)
+        }
+        splitPaneHostsByTabId[tabId] = nil
+        if let paneView = containerView.paneView(for: tabId) {
+            paneView.clearSplitControls()
+            paneView.removeHostedSubviews(
+                keeping: nil,
+                shouldRemove: shouldRemoveHostedSubview
+            )
+        }
+    }
+
+    private func clearAllSplitPaneHosts() {
+        for tabId in Array(splitPaneHostsByTabId.keys) {
+            clearSplitPaneHost(tabId)
+        }
+        containerView.clearSplitTree()
+    }
+
+    private func removeHostFromDisplay(_ host: SumiWebViewContainerView) {
+        if webViewCoordinator.isWebViewProtectedFromCompositorMutation(host.webView) {
+            parkProtectedHost(host)
+        } else {
+            parkedProtectedHosts.removeValue(forKey: ObjectIdentifier(host.webView))
+            host.removeFromSuperview()
+        }
     }
 
     private func shouldRemoveHostedSubview(_ subview: NSView) -> Bool {
@@ -606,30 +553,25 @@ final class WindowWebContentController: NSViewController {
     }
 
     private func displayedHost(for tabId: UUID) -> SumiWebViewContainerView? {
-        [singlePaneHost, leftPaneHost, rightPaneHost].compactMap { $0 }.first {
-            $0.tabID == tabId
-        }
+        if singlePaneHost?.tabID == tabId { return singlePaneHost }
+        return splitPaneHostsByTabId[tabId]
     }
 
-    private func paneHost(_ pane: CompositorPaneDestination) -> SumiWebViewContainerView? {
-        switch pane {
+    private func paneHost(_ slot: PaneSlot) -> SumiWebViewContainerView? {
+        switch slot {
         case .single:
             return singlePaneHost
-        case .left:
-            return leftPaneHost
-        case .right:
-            return rightPaneHost
+        case .split(let tabId):
+            return splitPaneHostsByTabId[tabId]
         }
     }
 
-    private func setPaneHost(_ host: SumiWebViewContainerView?, for pane: CompositorPaneDestination) {
-        switch pane {
+    private func setPaneHost(_ host: SumiWebViewContainerView?, for slot: PaneSlot) {
+        switch slot {
         case .single:
             singlePaneHost = host
-        case .left:
-            leftPaneHost = host
-        case .right:
-            rightPaneHost = host
+        case .split(let tabId):
+            splitPaneHostsByTabId[tabId] = host
         }
     }
 
@@ -637,30 +579,15 @@ final class WindowWebContentController: NSViewController {
         if singlePaneHost === host {
             singlePaneHost = nil
         }
-        if leftPaneHost === host {
-            leftPaneHost = nil
-        }
-        if rightPaneHost === host {
-            rightPaneHost = nil
-        }
-    }
-
-    private func paneView(for pane: CompositorPaneDestination) -> PaneContainerView {
-        switch pane {
-        case .single:
-            return containerView.singlePaneView
-        case .left:
-            return containerView.leftPaneView
-        case .right:
-            return containerView.rightPaneView
+        for (tabId, currentHost) in splitPaneHostsByTabId where currentHost === host {
+            splitPaneHostsByTabId[tabId] = nil
         }
     }
 
     private func missingPreparedWebViews(for visibleTabIds: Set<UUID>) -> Bool {
         visibleTabIds.contains { tabId in
             if let tab = browserManager.tabManager.tab(for: tabId),
-               tab.requiresPrimaryWebView == false
-            {
+               tab.requiresPrimaryWebView == false {
                 return false
             }
             return webViewCoordinator.getWebView(for: tabId, in: windowState.id) == nil
@@ -668,8 +595,11 @@ final class WindowWebContentController: NSViewController {
     }
 
     private func updateDisplayedHostViewportStyles() {
-        [singlePaneHost, leftPaneHost, rightPaneHost].compactMap { $0 }.forEach {
-            configureViewportStyle(on: $0)
+        if let singlePaneHost {
+            configureViewportStyle(on: singlePaneHost)
+        }
+        for splitPaneHost in splitPaneHostsByTabId.values {
+            configureViewportStyle(on: splitPaneHost)
         }
     }
 
@@ -677,14 +607,14 @@ final class WindowWebContentController: NSViewController {
         host.setBrowserContentViewport(geometry: chromeGeometry)
     }
 
-    private func scheduleSplitRepair(keep side: SplitViewManager.Side) {
-        guard pendingSplitRepairKeepSide != side else { return }
-        pendingSplitRepairKeepSide = side
+    private func scheduleSplitRepair(groupId: UUID) {
+        guard pendingSplitRepairGroupId != groupId else { return }
+        pendingSplitRepairGroupId = groupId
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.browserManager.splitManager.exitSplit(keep: side, for: self.windowState.id)
-            self.pendingSplitRepairKeepSide = nil
+            self.browserManager.tabManager.removeSplitGroup(id: groupId)
+            self.pendingSplitRepairGroupId = nil
         }
     }
 }
@@ -693,11 +623,7 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
     let browserManager: BrowserManager
     let webViewCoordinator: WebViewCoordinator
     @Binding var hoveredLink: String?
-    var splitFraction: CGFloat
-    var splitOrientation: SplitOrientation
-    var isSplit: Bool
-    var leftId: UUID?
-    var rightId: UUID?
+    var splitGroup: SplitGroup?
     var isSplitDropCaptureActive: Bool
     var chromeGeometry: BrowserChromeGeometry
     let windowState: BrowserWindowState
@@ -767,35 +693,25 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
         controller.tearDownController()
     }
 
-    private func visibleTabIds(currentId: UUID?) -> Set<UUID> {
-        guard let currentId else { return [] }
-        let split = browserManager.splitManager
-        guard split.getSplitState(for: windowState.id).isPreviewActive == false else {
-            return [currentId]
-        }
-        let leftId = split.leftTabId(for: windowState.id)
-        let rightId = split.rightTabId(for: windowState.id)
-        let isCurrentPane = currentId == leftId || currentId == rightId
-        guard split.isSplit(for: windowState.id), isCurrentPane else {
-            return [currentId]
-        }
-        return Set([leftId, rightId].compactMap { $0 })
+    private func visibleTabIds(currentId: UUID?, isPreviewActive: Bool) -> Set<UUID> {
+        Set(VisibleTabPreparationPlan.visibleTabIDs(
+            currentTabId: currentId,
+            splitTabIds: splitGroup?.tabIds ?? [],
+            isPreviewActive: isPreviewActive
+        ))
     }
 
     private func makeDisplayState() -> WebsiteDisplayState {
         let currentTab = browserManager.currentTab(for: windowState)
         let currentId = currentTab?.id
+        let isPreviewActive = browserManager.splitManager.isPreviewActive(for: windowState.id)
         return WebsiteDisplayState(
-            splitFraction: splitFraction,
-            splitOrientation: splitOrientation,
-            isSplit: isSplit,
-            leftId: leftId,
-            rightId: rightId,
+            splitGroup: splitGroup,
             currentId: currentId,
             compositorVersion: windowState.compositorVersion,
             currentTabUnloaded: currentTab?.isUnloaded ?? true,
-            visibleTabIds: visibleTabIds(currentId: currentId),
-            isPreviewActive: browserManager.splitManager.getSplitState(for: windowState.id).isPreviewActive,
+            visibleTabIds: visibleTabIds(currentId: currentId, isPreviewActive: isPreviewActive),
+            isPreviewActive: isPreviewActive,
             isSplitDropCaptureActive: isSplitDropCaptureActive
         )
     }
@@ -803,18 +719,23 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
 
 // MARK: - Container View
 
-private class ContainerView: NSView {
+private final class ContainerView: NSView {
     enum PaneLayout: Equatable {
         case single
-        case split(fraction: CGFloat, orientation: SplitOrientation)
+        case split(SplitGroup)
     }
 
     let singlePaneView = PaneContainerView()
-    let leftPaneView = PaneContainerView()
-    let rightPaneView = PaneContainerView()
+    private let splitRootView = SplitRootView()
     private let splitDropCaptureView = SplitDropCaptureView(frame: .zero)
     private var paneLayout: PaneLayout = .single
     private var chromeGeometry: BrowserChromeGeometry
+    private weak var splitManager: SplitViewManager?
+    private var windowId: UUID
+
+    var hostedSplitWebViewCount: Int {
+        splitRootView.hostedWebViewCount
+    }
 
     init(
         browserManager: BrowserManager,
@@ -823,18 +744,16 @@ private class ContainerView: NSView {
         chromeGeometry: BrowserChromeGeometry
     ) {
         self.chromeGeometry = chromeGeometry
+        self.splitManager = splitManager
+        self.windowId = windowId
         super.init(frame: .zero)
 
         singlePaneView.identifier = CompositorPaneDestination.single.viewIdentifier
-        leftPaneView.identifier = CompositorPaneDestination.left.viewIdentifier
-        rightPaneView.identifier = CompositorPaneDestination.right.viewIdentifier
         singlePaneView.setChromeGeometry(chromeGeometry)
-        leftPaneView.setChromeGeometry(chromeGeometry)
-        rightPaneView.setChromeGeometry(chromeGeometry)
+        splitRootView.setChromeGeometry(chromeGeometry)
 
         addSubview(singlePaneView)
-        addSubview(leftPaneView)
-        addSubview(rightPaneView)
+        addSubview(splitRootView)
 
         setSplitDropCaptureActive(
             false,
@@ -867,8 +786,7 @@ private class ContainerView: NSView {
         guard chromeGeometry != geometry else { return }
         chromeGeometry = geometry
         singlePaneView.setChromeGeometry(geometry)
-        leftPaneView.setChromeGeometry(geometry)
-        rightPaneView.setChromeGeometry(geometry)
+        splitRootView.setChromeGeometry(geometry)
         needsLayout = true
     }
 
@@ -878,6 +796,8 @@ private class ContainerView: NSView {
         splitManager: SplitViewManager,
         windowId: UUID
     ) {
+        self.splitManager = splitManager
+        self.windowId = windowId
         splitDropCaptureView.browserManager = browserManager
         splitDropCaptureView.splitManager = splitManager
         splitDropCaptureView.windowId = windowId
@@ -888,112 +808,265 @@ private class ContainerView: NSView {
             }
             splitDropCaptureView.frame = bounds
         } else if splitDropCaptureView.superview === self {
+            splitDropCaptureView.cancelActiveDragPreview()
             splitDropCaptureView.removeFromSuperview()
+        } else {
+            splitDropCaptureView.cancelActiveDragPreview()
         }
     }
 
-    // Don't intercept events - let them pass through to webviews
+    func paneView(for tabId: UUID) -> PaneContainerView? {
+        splitRootView.paneView(for: tabId)
+    }
+
+    func clearSplitTree() {
+        splitRootView.clear()
+    }
+
     override var acceptsFirstResponder: Bool { false }
 
-    override func resetCursorRects() {
-        // Empty: prevents NSHostingView and other ancestors from registering
-        // arrow cursor rects over the webview. WKWebView uses NSCursor.set()
-        // internally, which works correctly when cursor rects don't override it.
-    }
+    override func resetCursorRects() {}
 
     private func applyPaneLayout() {
         switch paneLayout {
         case .single:
-            singlePaneView.frame = pixelAligned(bounds)
-            leftPaneView.frame = .zero
-            rightPaneView.frame = .zero
+            singlePaneView.isHidden = false
+            splitRootView.isHidden = true
+            singlePaneView.frame = bounds
+            splitRootView.frame = .zero
 
-        case .split(let fraction, let orientation):
+        case .split(let group):
+            singlePaneView.isHidden = true
+            splitRootView.isHidden = false
             singlePaneView.frame = .zero
-            let frames = splitPaneFrames(fraction: fraction, orientation: orientation)
-            leftPaneView.frame = frames.left
-            rightPaneView.frame = frames.right
-        }
-    }
-
-    private func splitPaneFrames(
-        fraction: CGFloat,
-        orientation: SplitOrientation
-    ) -> (left: NSRect, right: NSRect) {
-        let total = pixelAligned(bounds)
-        let gap = pixelAlignedLength(chromeGeometry.elementSeparation)
-        let halfGap = gap / 2
-
-        switch orientation {
-        case .horizontal:
-            let splitX = pixelAlignedCoordinate(total.minX + total.width * fraction)
-            let leftMaxX = pixelAlignedCoordinate(splitX - halfGap)
-            let rightMinX = pixelAlignedCoordinate(splitX + halfGap)
-            return (
-                left: pixelAligned(NSRect(
-                    x: total.minX,
-                    y: total.minY,
-                    width: max(1, leftMaxX - total.minX),
-                    height: total.height
-                )),
-                right: pixelAligned(NSRect(
-                    x: rightMinX,
-                    y: total.minY,
-                    width: max(1, total.maxX - rightMinX),
-                    height: total.height
-                ))
-            )
-
-        case .vertical:
-            let splitY = pixelAlignedCoordinate(total.maxY - total.height * fraction)
-            let bottomMaxY = pixelAlignedCoordinate(splitY - halfGap)
-            let topMinY = pixelAlignedCoordinate(splitY + halfGap)
-            return (
-                left: pixelAligned(NSRect(
-                    x: total.minX,
-                    y: topMinY,
-                    width: total.width,
-                    height: max(1, total.maxY - topMinY)
-                )),
-                right: pixelAligned(NSRect(
-                    x: total.minX,
-                    y: total.minY,
-                    width: total.width,
-                    height: max(1, bottomMaxY - total.minY)
-                ))
+            splitRootView.frame = bounds
+            splitRootView.configure(
+                group: group,
+                chromeGeometry: chromeGeometry,
+                onResize: { [weak self] path, sizes in
+                    guard let self else { return }
+                    self.splitManager?.updateLayoutSizes(
+                        groupId: group.id,
+                        path: path,
+                        sizes: sizes,
+                        for: self.windowId
+                    )
+                }
             )
         }
-    }
-
-    private var backingScale: CGFloat {
-        window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
-    }
-
-    private func pixelAlignedCoordinate(_ value: CGFloat) -> CGFloat {
-        (value * backingScale).rounded(.toNearestOrAwayFromZero) / backingScale
-    }
-
-    private func pixelAlignedLength(_ value: CGFloat) -> CGFloat {
-        max(0, pixelAlignedCoordinate(value))
-    }
-
-    private func pixelAligned(_ rect: NSRect) -> NSRect {
-        let minX = pixelAlignedCoordinate(rect.minX)
-        let minY = pixelAlignedCoordinate(rect.minY)
-        let maxX = pixelAlignedCoordinate(rect.maxX)
-        let maxY = pixelAlignedCoordinate(rect.maxY)
-        return NSRect(
-            x: minX,
-            y: minY,
-            width: max(0, maxX - minX),
-            height: max(0, maxY - minY)
-        )
     }
 }
 
-private final class PaneContainerView: NSView {
+private final class SplitRootView: NSView {
+    private var chromeGeometry = BrowserChromeGeometry()
+    private var paneViewsByTabId: [UUID: PaneContainerView] = [:]
+    private var rootView: NSView?
+    private var currentGroup: SplitGroup?
+    private var onResize: (([Int], [Double]) -> Void)?
+    private var layoutGeneration: UInt = 0
+
+    var hostedWebViewCount: Int {
+        rootView.map { countHostedWebViews(in: $0) } ?? 0
+    }
+
+    override var acceptsFirstResponder: Bool { false }
+
+    func setChromeGeometry(_ geometry: BrowserChromeGeometry) {
+        guard chromeGeometry != geometry else { return }
+        chromeGeometry = geometry
+        paneViewsByTabId.values.forEach { $0.setChromeGeometry(geometry) }
+        needsLayout = true
+    }
+
+    func configure(
+        group: SplitGroup,
+        chromeGeometry: BrowserChromeGeometry,
+        onResize: @escaping ([Int], [Double]) -> Void
+    ) {
+        self.onResize = onResize
+        setChromeGeometry(chromeGeometry)
+        if let currentGroup,
+           currentGroup.layoutTree.hasSameStructure(as: group.layoutTree) {
+            self.currentGroup = group
+            rootView?.frame = bounds
+            applyStoredSizes(from: group.layoutTree, to: rootView)
+            return
+        }
+
+        rootView?.removeFromSuperview()
+        paneViewsByTabId.removeAll(keepingCapacity: true)
+        currentGroup = group
+        layoutGeneration &+= 1
+        let view = makeView(for: group.layoutTree, path: [], generation: layoutGeneration)
+        rootView = view
+        addSubview(view)
+        needsLayout = true
+    }
+
+    func clear() {
+        currentGroup = nil
+        layoutGeneration &+= 1
+        paneViewsByTabId.values.forEach { $0.clearSplitControls() }
+        rootView?.removeFromSuperview()
+        rootView = nil
+        paneViewsByTabId.removeAll(keepingCapacity: true)
+    }
+
+    func paneView(for tabId: UUID) -> PaneContainerView? {
+        paneViewsByTabId[tabId]
+    }
+
+    override func layout() {
+        super.layout()
+        rootView?.frame = bounds
+    }
+
+    private func makeView(for tree: SplitLayoutTree, path: [Int], generation: UInt) -> NSView {
+        switch tree {
+        case .leaf(let tabId, _):
+            let pane = PaneContainerView()
+            pane.identifier = NSUserInterfaceItemIdentifier("split-pane-\(tabId.uuidString)")
+            pane.setChromeGeometry(chromeGeometry)
+            paneViewsByTabId[tabId] = pane
+            return pane
+
+        case .split(let axis, _, let children):
+            let split = NativeSplitTreeView(axis: axis, path: path, sizes: children.map(\.sizeInParent))
+            split.resizeHandler = { [weak self] resizePath, sizes in
+                guard let self, generation == self.layoutGeneration else { return }
+                self.onResize?(resizePath, sizes)
+            }
+            for (index, child) in children.enumerated() {
+                split.addSubview(makeView(for: child, path: path + [index], generation: generation))
+            }
+            return split
+        }
+    }
+
+    private func applyStoredSizes(from tree: SplitLayoutTree, to view: NSView?) {
+        guard let view else { return }
+        switch tree {
+        case .leaf:
+            return
+        case .split(_, _, let children):
+            if let splitView = view as? NativeSplitTreeView {
+                splitView.updateStoredSizes(children.map(\.sizeInParent))
+            }
+            for (childTree, childView) in zip(children, view.subviews) {
+                applyStoredSizes(from: childTree, to: childView)
+            }
+        }
+    }
+
+}
+
+private final class NativeSplitTreeView: NSSplitView, NSSplitViewDelegate {
+    let path: [Int]
+    var resizeHandler: (([Int], [Double]) -> Void)?
+    private var storedSizes: [Double]
+    private var needsStoredSizeApplication = true
+    private var isApplyingStoredSizes = false
+    private var lastReportedSizes: [Double] = []
+
+    init(axis: SplitAxis, path: [Int], sizes: [Double]) {
+        self.path = path
+        self.storedSizes = sizes
+        super.init(frame: .zero)
+        isVertical = axis == .row
+        dividerStyle = .thin
+        wantsLayer = false
+        delegate = self
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var acceptsFirstResponder: Bool { false }
+
+    override func layout() {
+        let shouldSuppressResizeReports = needsStoredSizeApplication
+        if shouldSuppressResizeReports {
+            isApplyingStoredSizes = true
+        }
+        super.layout()
+        if shouldSuppressResizeReports {
+            isApplyingStoredSizes = false
+        }
+        applyStoredSizesIfNeeded()
+    }
+
+    func updateStoredSizes(_ sizes: [Double]) {
+        guard sizes.count == subviews.count else { return }
+        let normalized = Self.normalizedSizes(sizes, fallbackCount: subviews.count)
+        guard !normalized.isApproximatelyEqual(to: storedSizes) else { return }
+        storedSizes = normalized
+        needsStoredSizeApplication = true
+        needsLayout = true
+    }
+
+    func splitViewDidResizeSubviews(_ notification: Notification) {
+        guard !isApplyingStoredSizes,
+              !needsStoredSizeApplication,
+              !isHidden,
+              bounds.width > 0,
+              bounds.height > 0
+        else { return }
+        let lengths = subviews.map { isVertical ? $0.frame.width : $0.frame.height }
+        let total = lengths.reduce(0, +)
+        guard total > 0 else { return }
+        let sizes = lengths.map { Double($0 / total) }
+        guard !sizes.isApproximatelyEqual(to: lastReportedSizes) else { return }
+        lastReportedSizes = sizes
+        resizeHandler?(path, sizes)
+    }
+
+    func splitView(_ splitView: NSSplitView, constrainMinCoordinate proposedMinimumPosition: CGFloat, ofSubviewAt dividerIndex: Int) -> CGFloat {
+        proposedMinimumPosition + 48
+    }
+
+    func splitView(_ splitView: NSSplitView, constrainMaxCoordinate proposedMaximumPosition: CGFloat, ofSubviewAt dividerIndex: Int) -> CGFloat {
+        proposedMaximumPosition - 48
+    }
+
+    private func applyStoredSizesIfNeeded() {
+        guard needsStoredSizeApplication, subviews.count >= 2 else { return }
+        let totalLength = isVertical ? bounds.width : bounds.height
+        guard totalLength > 0 else { return }
+
+        needsStoredSizeApplication = false
+        isApplyingStoredSizes = true
+        let normalized = Self.normalizedSizes(storedSizes, fallbackCount: subviews.count)
+        storedSizes = normalized
+        lastReportedSizes = normalized
+        var accumulated: CGFloat = 0
+        for index in 0 ..< subviews.count - 1 {
+            let fraction = CGFloat(normalized[safe: index] ?? (1 / Double(subviews.count)))
+            accumulated += totalLength * fraction
+            setPosition(accumulated, ofDividerAt: index)
+        }
+        isApplyingStoredSizes = false
+    }
+
+    private static func normalizedSizes(_ sizes: [Double], fallbackCount: Int) -> [Double] {
+        guard sizes.count == fallbackCount, fallbackCount > 0 else {
+            return Array(repeating: 1 / Double(max(1, fallbackCount)), count: max(0, fallbackCount))
+        }
+        let total = sizes.reduce(0) { $0 + max(0.01, $1) }
+        guard total > 0 else {
+            return Array(repeating: 1 / Double(fallbackCount), count: fallbackCount)
+        }
+        return sizes.map { max(0.01, $0) / total }
+    }
+}
+
+final class PaneContainerView: NSView {
     private let chromeShadowView = BrowserContentViewportShadowView(frame: .zero)
     private var chromeGeometry = BrowserChromeGeometry()
+    private var splitControlsView: SplitPaneControlsView?
+    private var paneTrackingArea: NSTrackingArea?
+    private var isPointerInside = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -1017,6 +1090,36 @@ private final class PaneContainerView: NSView {
     func placeContentHostAboveChromeShadow(_ host: SumiWebViewContainerView) {
         chromeShadowView.isHidden = false
         addSubview(host, positioned: .above, relativeTo: chromeShadowView)
+        if let splitControlsView {
+            addSubview(splitControlsView, positioned: .above, relativeTo: host)
+        }
+    }
+
+    func configureSplitControls(
+        tab: Tab,
+        browserManager: BrowserManager,
+        splitManager: SplitViewManager,
+        windowState: BrowserWindowState
+    ) {
+        let controls = splitControlsView ?? SplitPaneControlsView()
+        splitControlsView = controls
+        controls.configure(
+            tab: tab,
+            browserManager: browserManager,
+            splitManager: splitManager,
+            windowState: windowState
+        )
+        if controls.superview !== self {
+            addSubview(controls, positioned: .above, relativeTo: nil)
+        }
+        controls.setVisible(isPointerInside, animated: false)
+        needsLayout = true
+    }
+
+    func clearSplitControls() {
+        splitControlsView?.removeFromSuperview()
+        splitControlsView = nil
+        isPointerInside = false
     }
 
     func removeHostedSubviews(
@@ -1024,7 +1127,7 @@ private final class PaneContainerView: NSView {
         shouldRemove: (NSView) -> Bool = { _ in true }
     ) {
         for subview in subviews
-            where subview !== keepView && subview !== chromeShadowView
+            where subview !== keepView && subview !== chromeShadowView && subview !== splitControlsView
         {
             if shouldRemove(subview) {
                 subview.removeFromSuperview()
@@ -1037,6 +1140,34 @@ private final class PaneContainerView: NSView {
     override func layout() {
         super.layout()
         layoutChromeShadow()
+        layoutSplitControls()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let paneTrackingArea {
+            removeTrackingArea(paneTrackingArea)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.activeInActiveApp, .mouseEnteredAndExited, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        paneTrackingArea = area
+        addTrackingArea(area)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        isPointerInside = true
+        splitControlsView?.setVisible(true, animated: true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        isPointerInside = false
+        splitControlsView?.setVisible(false, animated: true)
     }
 
     private func layoutChromeShadow() {
@@ -1058,7 +1189,324 @@ private final class PaneContainerView: NSView {
         )
     }
 
+    private func layoutSplitControls() {
+        guard let controls = splitControlsView else { return }
+        let size = controls.intrinsicContentSize
+        controls.frame = NSRect(
+            x: max(0, (bounds.width - size.width) / 2),
+            y: max(0, bounds.height - size.height),
+            width: size.width,
+            height: size.height
+        )
+    }
+
     private var hostedContentView: SumiWebViewContainerView? {
         subviews.first { $0 is SumiWebViewContainerView && !$0.isHidden } as? SumiWebViewContainerView
+    }
+}
+
+private final class SplitPaneControlsView: NSVisualEffectView {
+    private let stackView = NSStackView()
+    private let dragButton = SplitPaneDragButton()
+    private let expandButton = SplitPaneToolbarButton(symbolName: "arrow.up.left.and.arrow.down.right")
+    private weak var browserManager: BrowserManager?
+    private weak var splitManager: SplitViewManager?
+    private weak var windowState: BrowserWindowState?
+    private weak var tab: Tab?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        material = .hudWindow
+        blendingMode = .withinWindow
+        state = .active
+        wantsLayer = true
+        layer?.cornerRadius = 7
+
+        stackView.orientation = .horizontal
+        stackView.alignment = .centerY
+        stackView.spacing = 6
+        stackView.edgeInsets = NSEdgeInsets(top: 3, left: 7, bottom: 3, right: 7)
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stackView)
+
+        dragButton.toolTip = "Rearrange Split"
+        expandButton.toolTip = "Expand Tab"
+        expandButton.target = self
+        expandButton.action = #selector(expandTab)
+        stackView.addArrangedSubview(dragButton)
+        stackView.addArrangedSubview(expandButton)
+
+        NSLayoutConstraint.activate([
+            stackView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stackView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stackView.topAnchor.constraint(equalTo: topAnchor),
+            stackView.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+
+        alphaValue = 0
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: 74, height: 24)
+    }
+
+    func configure(
+        tab: Tab,
+        browserManager: BrowserManager,
+        splitManager: SplitViewManager,
+        windowState: BrowserWindowState
+    ) {
+        self.tab = tab
+        self.browserManager = browserManager
+        self.splitManager = splitManager
+        self.windowState = windowState
+        dragButton.configure(
+            tab: tab,
+            windowState: windowState,
+            browserManager: browserManager,
+            splitManager: splitManager
+        )
+    }
+
+    func setVisible(_ isVisible: Bool, animated: Bool) {
+        let updates = { self.alphaValue = isVisible ? 1 : 0 }
+        guard animated else {
+            updates()
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.10
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            self.animator().alphaValue = isVisible ? 1 : 0
+        }
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        alphaValue > 0.05 ? super.hitTest(point) : nil
+    }
+
+    @objc private func expandTab() {
+        guard let tab, let splitManager, let windowState else { return }
+        splitManager.expandSplitPane(tabId: tab.id, in: windowState)
+    }
+}
+
+private class SplitPaneToolbarButton: NSButton {
+    init(symbolName: String) {
+        super.init(frame: NSRect(x: 0, y: 0, width: 18, height: 18))
+        image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 11, weight: .semibold))
+        imagePosition = .imageOnly
+        isBordered = false
+        bezelStyle = .regularSquare
+        setButtonType(.momentaryChange)
+        contentTintColor = .labelColor
+        wantsLayer = true
+        layer?.cornerRadius = 4
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: 18, height: 18)
+    }
+
+    override func updateLayer() {
+        super.updateLayer()
+        layer?.backgroundColor = isHighlighted
+            ? NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
+            : NSColor.clear.cgColor
+    }
+}
+
+private final class SplitPaneDragButton: SplitPaneToolbarButton, NSDraggingSource {
+    private static let transparentDragImage: NSImage = {
+        let image = NSImage(size: NSSize(width: 1, height: 1))
+        image.lockFocus()
+        NSColor.clear.setFill()
+        NSRect(x: 0, y: 0, width: 1, height: 1).fill()
+        image.unlockFocus()
+        return image
+    }()
+
+    private weak var tab: Tab?
+    private weak var windowState: BrowserWindowState?
+    private weak var browserManager: BrowserManager?
+    private weak var splitManager: SplitViewManager?
+    private var didStartDrag = false
+    private var mouseDownEvent: NSEvent?
+
+    init() {
+        super.init(symbolName: "arrow.up.and.down.and.arrow.left.and.right")
+        contentTintColor = .labelColor
+    }
+
+    func configure(
+        tab: Tab,
+        windowState: BrowserWindowState,
+        browserManager: BrowserManager,
+        splitManager: SplitViewManager
+    ) {
+        self.tab = tab
+        self.windowState = windowState
+        self.browserManager = browserManager
+        self.splitManager = splitManager
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .openHand)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        mouseDownEvent = event
+        didStartDrag = false
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard !didStartDrag else { return }
+        startDrag(with: mouseDownEvent ?? event, sessionEvent: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        mouseDownEvent = nil
+        if !didStartDrag {
+            super.mouseUp(with: event)
+        }
+    }
+
+    func draggingSession(
+        _ session: NSDraggingSession,
+        sourceOperationMaskFor context: NSDraggingContext
+    ) -> NSDragOperation {
+        .move
+    }
+
+    func ignoreModifierKeys(for session: NSDraggingSession) -> Bool {
+        true
+    }
+
+    func draggingSession(
+        _ session: NSDraggingSession,
+        movedTo screenPoint: NSPoint
+    ) {
+        guard let locations = SidebarDragLocationMapper.sourceLocationsFromScreenPoint(
+            callbackScreenPoint: screenPoint,
+            in: self
+        ) else { return }
+        SidebarDragState.shared.updateDragLocation(
+            locations.dropLocation,
+            previewLocation: locations.previewLocation
+        )
+    }
+
+    func draggingSession(
+        _ session: NSDraggingSession,
+        endedAt screenPoint: NSPoint,
+        operation: NSDragOperation
+    ) {
+        SidebarDragState.shared.resetInteractionState()
+        setSplitDropShieldActive(false)
+        NotificationCenter.default.post(name: .tabDragDidEnd, object: nil)
+        didStartDrag = false
+        mouseDownEvent = nil
+    }
+
+    private func startDrag(with event: NSEvent, sessionEvent: NSEvent) {
+        guard let tab, let windowState else { return }
+        let spaceId = tab.spaceId ?? windowState.currentSpaceId
+        guard let spaceId else { return }
+
+        let item = SumiDragItem(
+            tabId: tab.id,
+            title: tab.name,
+            urlString: tab.url.absoluteString
+        )
+        let scope = SidebarDragScope(
+            windowId: windowState.id,
+            spaceId: spaceId,
+            profileId: windowState.currentProfileId,
+            sourceContainer: .spaceRegular(spaceId),
+            sourceItemId: tab.id,
+            sourceItemKind: .tab
+        )
+
+        let localPoint = convert(event.locationInWindow, from: nil)
+        let dragLocation = SidebarDragLocationMapper.swiftUIGlobalPoint(
+            fromLocalPoint: localPoint,
+            in: self
+        )
+        let previewLocation = SidebarDragLocationMapper.swiftUIPreviewPoint(
+            fromLocalPoint: localPoint,
+            in: self
+        )
+        let previewModel = SidebarDragPreviewModel(
+            item: item,
+            sourceZone: .spaceRegular(spaceId),
+            baseKind: .row,
+            previewIcon: tab.favicon,
+            chromeTemplateSystemImageName: nil,
+            sourceSize: CGSize(width: 180, height: SidebarRowLayout.rowHeight),
+            normalizedTopLeadingAnchor: CGPoint(x: 0.5, y: 0.5),
+            pinnedConfig: .large,
+            shortcutPresentationState: nil,
+            folderGlyphPresentation: nil,
+            folderGlyphPalette: nil
+        )
+
+        didStartDrag = true
+        SidebarDragState.shared.beginInternalDragSession(
+            itemId: tab.id,
+            location: dragLocation,
+            previewLocation: previewLocation,
+            previewKind: .row,
+            previewAssets: [:],
+            previewModel: previewModel,
+            scope: scope
+        )
+        setSplitDropShieldActive(true)
+
+        let dragItem = NSDraggingItem(pasteboardWriter: item.pasteboardItem(scope: scope))
+        dragItem.setDraggingFrame(
+            NSRect(x: localPoint.x, y: localPoint.y, width: 1, height: 1),
+            contents: Self.transparentDragImage
+        )
+        let session = beginDraggingSession(with: [dragItem], event: sessionEvent, source: self)
+        session.animatesToStartingPositionsOnCancelOrFail = true
+    }
+
+    private func setSplitDropShieldActive(_ isActive: Bool) {
+        guard let browserManager, let splitManager, let windowState else { return }
+        enclosingContainerView?.setSplitDropCaptureActive(
+            isActive,
+            browserManager: browserManager,
+            splitManager: splitManager,
+            windowId: windowState.id
+        )
+    }
+
+    private var enclosingContainerView: ContainerView? {
+        var view = superview
+        while let current = view {
+            if let container = current as? ContainerView {
+                return container
+            }
+            view = current.superview
+        }
+        return nil
+    }
+}
+
+private extension Array where Element == Double {
+    func isApproximatelyEqual(to other: [Double], accuracy: Double = 0.0005) -> Bool {
+        guard count == other.count else { return false }
+        return zip(self, other).allSatisfy { abs($0 - $1) <= accuracy }
     }
 }

@@ -11,7 +11,7 @@ final class ShellSelectionServiceTests: XCTestCase {
     }
 
     func testCurrentTabRejectsLegacyPinnedSelection() {
-        let service = ShellSelectionService { _ in (nil, nil) }
+        let service = ShellSelectionService { _ in [] }
         let space = Space(name: "Personal")
         let legacyPinned = Tab(url: URL(string: "https://legacy.example")!, name: "Legacy", spaceId: space.id, index: 0)
         legacyPinned.isSpacePinned = true
@@ -33,7 +33,7 @@ final class ShellSelectionServiceTests: XCTestCase {
     }
 
     func testPreferredTabForSpaceSkipsLegacyPinnedActiveTabId() {
-        let service = ShellSelectionService { _ in (nil, nil) }
+        let service = ShellSelectionService { _ in [] }
         let space = Space(name: "Work")
         let legacyPinned = Tab(url: URL(string: "https://legacy.example")!, name: "Legacy", spaceId: space.id, index: 0)
         legacyPinned.isSpacePinned = true
@@ -54,7 +54,7 @@ final class ShellSelectionServiceTests: XCTestCase {
     }
 
     func testTabsForDisplayExcludesLegacyPinnedTabs() {
-        let service = ShellSelectionService { _ in (nil, nil) }
+        let service = ShellSelectionService { _ in [] }
         let space = Space(name: "Docs")
         let legacyPinned = Tab(url: URL(string: "https://legacy.example")!, name: "Legacy", spaceId: space.id, index: 0)
         legacyPinned.isSpacePinned = true
@@ -74,7 +74,7 @@ final class ShellSelectionServiceTests: XCTestCase {
     }
 
     func testTabsForWebExtensionWindowIncludesCurrentTabWhenDisplayListMissesIt() {
-        let service = ShellSelectionService { _ in (nil, nil) }
+        let service = ShellSelectionService { _ in [] }
         let space = Space(name: "Video")
         let staleRegular = Tab(
             url: URL(string: "https://stale.example")!,
@@ -124,7 +124,7 @@ final class ShellSelectionServiceTests: XCTestCase {
         )
 
         let service = ShellSelectionService { _ in
-            (left: leftTab.id, right: splitTab.id)
+            [leftTab.id, splitTab.id]
         }
         let store = FakeShellSelectionTabStore(
             spaces: [leftSpace, rightSpace],
@@ -148,7 +148,7 @@ final class ShellSelectionServiceTests: XCTestCase {
     }
 
     func testPreferredTabForWindowDoesNotActivateMissingShortcutOrUseGlobalFallbackDuringRead() {
-        let service = ShellSelectionService { _ in (nil, nil) }
+        let service = ShellSelectionService { _ in [] }
         let fallback = Tab(
             url: URL(string: "https://fallback.example")!,
             name: "Fallback",
@@ -178,7 +178,7 @@ final class ShellSelectionServiceTests: XCTestCase {
     }
 
     func testPreferredRegularTabForWindowRequiresCurrentWindowSpace() {
-        let service = ShellSelectionService { _ in (nil, nil) }
+        let service = ShellSelectionService { _ in [] }
         let otherSpace = Space(name: "Other")
         let otherTab = Tab(
             url: URL(string: "https://other.example")!,
@@ -198,7 +198,7 @@ final class ShellSelectionServiceTests: XCTestCase {
     }
 
     func testPreferredTabForWindowReturnsExistingShortcutLiveTabWithoutActivating() {
-        let service = ShellSelectionService { _ in (nil, nil) }
+        let service = ShellSelectionService { _ in [] }
         let pin = ShortcutPin(
             id: UUID(),
             role: .essential,

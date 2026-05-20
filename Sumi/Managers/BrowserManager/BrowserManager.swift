@@ -230,11 +230,8 @@ class BrowserManager: ObservableObject {
     let privacyService = BrowserPrivacyService()
 
     lazy var shellSelectionService = ShellSelectionService { [weak self] windowId in
-        guard let self else { return (nil, nil) }
-        return (
-            left: self.splitManager.leftTabId(for: windowId),
-            right: self.splitManager.rightTabId(for: windowId)
-        )
+        guard let self else { return [] }
+        return self.splitManager.visibleTabIds(for: windowId)
     }
     lazy var webViewRoutingService = BrowserWebViewRoutingService(
         tabLookup: { [weak self] tabId in
@@ -872,6 +869,7 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         preserveDraft: Bool
     ) {
+        splitManager.cancelEmptySplitPlaceholder(in: windowState)
         windowState.floatingBarPresentationReason = .none
         windowState.isFloatingBarVisible = false
         if !preserveDraft {
@@ -922,7 +920,9 @@ class BrowserManager: ObservableObject {
 
         switch suggestion.type {
         case .tab(let existingTab):
-            selectTab(existingTab, in: windowState)
+            if !splitManager.replaceEmptySplitPlaceholder(with: existingTab, in: windowState) {
+                selectTab(existingTab, in: windowState)
+            }
             RuntimeDiagnostics.debug(
                 "Switched to existing tab: \(existingTab.name)",
                 category: "FloatingBar"
@@ -931,6 +931,7 @@ class BrowserManager: ObservableObject {
             if navigatesCurrentTab,
                let navigationTargetTab
             {
+                splitManager.commitEmptySplitPlaceholder(tabId: navigationTargetTab.id, in: windowState)
                 navigationTargetTab.loadURL(historyEntry.url.absoluteString)
                 RuntimeDiagnostics.debug(
                     "Navigated current tab to history URL: \(historyEntry.url)",
@@ -950,6 +951,7 @@ class BrowserManager: ObservableObject {
             if navigatesCurrentTab,
                let navigationTargetTab
             {
+                splitManager.commitEmptySplitPlaceholder(tabId: navigationTargetTab.id, in: windowState)
                 navigationTargetTab.loadURL(bookmark.url.absoluteString)
                 RuntimeDiagnostics.debug(
                     "Navigated current tab to bookmark URL: \(bookmark.url)",
@@ -969,6 +971,7 @@ class BrowserManager: ObservableObject {
             if navigatesCurrentTab,
                let navigationTargetTab
             {
+                splitManager.commitEmptySplitPlaceholder(tabId: navigationTargetTab.id, in: windowState)
                 navigationTargetTab.navigateToURL(suggestion.text)
                 RuntimeDiagnostics.debug(
                     "Navigated current tab to: \(suggestion.text)",
@@ -1647,11 +1650,7 @@ class BrowserManager: ObservableObject {
                 return true
             }
 
-            if splitManager.leftTabId(for: windowState.id) == tab.id {
-                return true
-            }
-
-            if splitManager.rightTabId(for: windowState.id) == tab.id {
+            if splitManager.visibleTabIds(for: windowState.id).contains(tab.id) {
                 return true
             }
 
@@ -1770,10 +1769,6 @@ class BrowserManager: ObservableObject {
             updateSpaceFromTab: updateSpaceFromTab,
             rememberSelection: rememberSelection
         )
-
-        if tab.representsSumiNativeSurface, splitManager.isSplit(for: windowState.id) {
-            splitManager.exitSplit(keep: .left, for: windowState.id)
-        }
 
         var stateDidChange = false
         stateDidChange = assignIfChanged(\.currentTabId, targetState.currentTabId, in: windowState) || stateDidChange

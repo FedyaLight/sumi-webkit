@@ -425,6 +425,8 @@ extension SpaceView {
                 onOpen: { activateShortcutPin(pin) },
                 onSplitRight: { openShortcutPinInSplit(pin, side: .right) },
                 onSplitLeft: { openShortcutPinInSplit(pin, side: .left) },
+                onSplitTop: { openShortcutPinInSplit(pin, side: .top) },
+                onSplitBottom: { openShortcutPinInSplit(pin, side: .bottom) },
                 onDuplicate: {},
                 onResetToLaunchURL: { resetShortcutPin(pin) },
                 onReplaceLauncherURLWithCurrent: { _ = browserManager.tabManager.replaceShortcutPinURLWithCurrent(pin, in: windowState) },
@@ -559,7 +561,7 @@ extension SpaceView {
         browserManager.tabManager.deactivateShortcutLiveTab(pinId: pin.id, in: windowState.id)
     }
 
-    private func openShortcutPinInSplit(_ pin: ShortcutPin, side: SplitViewManager.Side) {
+    private func openShortcutPinInSplit(_ pin: ShortcutPin, side: SplitDropSide) {
         let liveTab = browserManager.tabManager.activateShortcutPin(
             pin,
             in: windowState.id,

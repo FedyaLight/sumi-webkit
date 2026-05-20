@@ -750,6 +750,8 @@ struct TabFolderView: View {
                 onOpen: { activateShortcutPin(pin) },
                 onSplitRight: { openShortcutPinInSplit(pin, side: .right) },
                 onSplitLeft: { openShortcutPinInSplit(pin, side: .left) },
+                onSplitTop: { openShortcutPinInSplit(pin, side: .top) },
+                onSplitBottom: { openShortcutPinInSplit(pin, side: .bottom) },
                 onDuplicate: { duplicateShortcutPin(pin) },
                 onResetToLaunchURL: { resetShortcutPin(pin) },
                 onReplaceLauncherURLWithCurrent: { _ = browserManager.tabManager.replaceShortcutPinURLWithCurrent(pin, in: windowState) },
@@ -1030,7 +1032,7 @@ struct TabFolderView: View {
         browserManager.tabManager.deactivateShortcutLiveTab(pinId: pin.id, in: windowState.id)
     }
 
-    private func openShortcutPinInSplit(_ pin: ShortcutPin, side: SplitViewManager.Side) {
+    private func openShortcutPinInSplit(_ pin: ShortcutPin, side: SplitDropSide) {
         let liveTab = browserManager.tabManager.activateShortcutPin(
             pin,
             in: windowState.id,

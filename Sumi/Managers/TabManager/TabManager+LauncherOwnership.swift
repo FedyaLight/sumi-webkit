@@ -418,8 +418,7 @@ extension TabManager {
             }
 
             guard let splitManager else { return false }
-            return splitManager.leftTabId(for: windowId) == tabId
-                || splitManager.rightTabId(for: windowId) == tabId
+            return splitManager.visibleTabIds(for: windowId).contains(tabId)
         }
 
         if let activeWindowId = browserManager?.windowRegistry?.activeWindow?.id,

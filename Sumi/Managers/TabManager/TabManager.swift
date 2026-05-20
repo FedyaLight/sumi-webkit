@@ -39,6 +39,16 @@ class TabManager: ObservableObject {
     // Normal tabs per space
     @Published var tabsBySpace: [UUID: [Tab]] = [:]
 
+    // Structural split groups, restored and persisted with the tab model.
+    @Published var splitGroups: [SplitGroup] = [] {
+        didSet {
+            rebuildSplitGroupIndexes()
+        }
+    }
+    private(set) var splitGroupById: [UUID: SplitGroup] = [:]
+    private(set) var splitGroupIndexById: [UUID: Int] = [:]
+    private(set) var splitGroupIdByTabId: [UUID: UUID] = [:]
+
     // Folders per space
     @Published var foldersBySpace: [UUID: [TabFolder]] = [:]
 
@@ -67,6 +77,19 @@ class TabManager: ObservableObject {
     private var pendingFaviconPresentationRefreshTask: Task<Void, Never>?
     // Space activation to resume after a deferred profile switch
     var pendingSpaceActivation: UUID?
+
+    private func rebuildSplitGroupIndexes() {
+        splitGroupById.removeAll(keepingCapacity: true)
+        splitGroupIndexById.removeAll(keepingCapacity: true)
+        splitGroupIdByTabId.removeAll(keepingCapacity: true)
+        for (index, group) in splitGroups.enumerated() {
+            splitGroupById[group.id] = group
+            splitGroupIndexById[group.id] = index
+            for tabId in group.tabIds {
+                splitGroupIdByTabId[tabId] = group.id
+            }
+        }
+    }
     
     // Live essentials API for shell views that still read a tab-backed collection.
     var pinnedTabs: [Tab] {
@@ -219,6 +242,7 @@ class TabManager: ObservableObject {
                 self.faviconCacheObserver = nil
             }
             tabsBySpace.removeAll()
+            splitGroups.removeAll()
             spacePinnedShortcuts.removeAll()
             foldersBySpace.removeAll()
             pinnedByProfile.removeAll()
@@ -1063,22 +1087,13 @@ class TabManager: ObservableObject {
             currentTab = tab
         }
 
-        // Do not auto-exit split when leaving split panes; preserve split state
-
-        // Update active side in split view for all windows that contain this tab
-        // Also update windowState.currentTabId for windows that have this tab in split view
+        // Update active split group state for windows that currently display this tab.
         if let bm = browserManager {
             for (windowId, windowState) in bm.windowRegistry?.windows ?? [:] {
-                // Check if this tab is in split view for this window
-                if bm.splitManager.isSplit(for: windowId) {
-                    let state = bm.splitManager.getSplitState(for: windowId)
-                    // If tab is on left or right side, update active side and window's current tab
-                    if state.leftTabId == tab.id || state.rightTabId == tab.id {
-                        bm.splitManager.updateActiveSide(for: tab.id, in: windowId)
-                        // Update window's current tab ID so other UI components work correctly
-                        if windowState.currentTabId != tab.id {
-                            windowState.currentTabId = tab.id
-                        }
+                if bm.splitManager.visibleTabIds(for: windowId).contains(tab.id) {
+                    bm.splitManager.updateActiveSide(for: tab.id, in: windowId)
+                    if windowState.currentTabId != tab.id {
+                        windowState.currentTabId = tab.id
                     }
                 }
             }

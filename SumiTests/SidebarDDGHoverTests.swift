@@ -356,7 +356,7 @@ final class SidebarDDGHoverTests: XCTestCase {
         let paths = [
             "Sumi/Components/Sidebar/SidebarDDGHover.swift",
             "Sumi/Components/Sidebar/SpaceSection/SpaceTab.swift",
-            "Sumi/Components/Sidebar/SpaceSection/SplitTabRow.swift",
+            "Sumi/Components/Sidebar/SpaceSection/SplitGroupSidebarRow.swift",
             "Sumi/Components/Sidebar/SpaceSection/SpaceView.swift",
             "Sumi/Components/Sidebar/SpaceSection/ShortcutSidebarRow.swift",
             "Sumi/Components/Sidebar/SpaceSection/TabFolderView.swift",

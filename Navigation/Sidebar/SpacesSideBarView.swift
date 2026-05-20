@@ -153,7 +153,6 @@ struct SpaceTabRowSnapshot: Identifiable {
     let title: String
     let icon: SpaceSidebarSnapshotIcon
     let isSelected: Bool
-    var isSplitActiveSide: Bool
     let showsUnloadedIndicator: Bool
     let showsAudioButton: Bool
     let isMuted: Bool
@@ -197,33 +196,13 @@ struct EssentialsSnapshot {
     let items: [SpaceShortcutSnapshot]
 }
 
-struct SpaceSplitRowSnapshot: Identifiable {
-    let id: String
-    let left: SpaceTabRowSnapshot
-    let right: SpaceTabRowSnapshot
-}
-
-enum SpaceRegularItemSnapshot: Identifiable {
-    case tab(SpaceTabRowSnapshot)
-    case split(SpaceSplitRowSnapshot)
-
-    var id: String {
-        switch self {
-        case .tab(let tab):
-            return tab.id.uuidString
-        case .split(let split):
-            return split.id
-        }
-    }
-}
-
 struct SpaceSidebarPageSnapshot {
     let spaceId: UUID
     let title: String
     let iconValue: String
     let essentials: EssentialsSnapshot?
     let pinnedItems: [SpacePinnedItemSnapshot]
-    let regularItems: [SpaceRegularItemSnapshot]
+    let regularItems: [SpaceTabRowSnapshot]
     let regularTabs: [SpaceTabRowSnapshot]
     let showsNewTabButtonInList: Bool
     let showsTopNewTabButton: Bool
@@ -343,11 +322,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 windowState: windowState,
                 splitManager: splitManager
             ),
-            regularItems: regularItemsSnapshot(
-                tabs: regularTabs,
-                splitManager: splitManager,
-                windowState: windowState
-            ),
+            regularItems: regularTabs,
             regularTabs: regularTabs,
             showsNewTabButtonInList: settings.showNewTabButtonInTabList,
             showsTopNewTabButton: settings.tabListNewTabButtonPosition == .top,
@@ -511,7 +486,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             for: pin,
             in: windowState
         )
-        let splitSide = liveTab.flatMap { splitManager.side(for: $0.id, in: windowState.id) }
+        let isInVisibleSplit = liveTab.map { splitManager.isTabVisibleInSplit($0.id, in: windowState.id) } == true
         let essentialRuntimeState = browserManager.tabManager.essentialRuntimeState(
             for: pin,
             in: windowState,
@@ -525,52 +500,10 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             presentationState: presentationState,
             showsAudioButton: liveTab?.audioState.showsTabAudioButton ?? false,
             isMuted: liveTab?.audioState.isMuted ?? false,
-            showsSplitBadge: essentialRuntimeState?.showsSplitProxyBadge == true || splitSide != nil,
+            showsSplitBadge: essentialRuntimeState?.showsSplitProxyBadge == true || isInVisibleSplit,
             splitBadgeIsSelected: essentialRuntimeState?.isSelected == true
-                || (splitSide != nil && splitManager.activeSide(for: windowState.id) == splitSide)
+                || liveTab.map { splitManager.isTabActiveInSplit($0.id, in: windowState.id) } == true
         )
-    }
-
-    private static func regularItemsSnapshot(
-        tabs: [SpaceTabRowSnapshot],
-        splitManager: SplitViewManager,
-        windowState: BrowserWindowState
-    ) -> [SpaceRegularItemSnapshot] {
-        guard splitManager.isSplit(for: windowState.id),
-              let leftId = splitManager.leftTabId(for: windowState.id),
-              let rightId = splitManager.rightTabId(for: windowState.id),
-              let leftIndex = tabs.firstIndex(where: { $0.id == leftId }),
-              let rightIndex = tabs.firstIndex(where: { $0.id == rightId }),
-              leftIndex != rightIndex
-        else {
-            return tabs.map(SpaceRegularItemSnapshot.tab)
-        }
-
-        let firstIndex = min(leftIndex, rightIndex)
-        let secondIndex = max(leftIndex, rightIndex)
-        let activeSide = splitManager.activeSide(for: windowState.id)
-
-        return tabs.enumerated().compactMap { index, tab in
-            if index == firstIndex {
-                var left = tabs[leftIndex]
-                var right = tabs[rightIndex]
-                left.isSplitActiveSide = activeSide == .left
-                right.isSplitActiveSide = activeSide == .right
-                return .split(
-                    SpaceSplitRowSnapshot(
-                        id: "split-\(left.id.uuidString)-\(right.id.uuidString)",
-                        left: left,
-                        right: right
-                    )
-                )
-            }
-
-            if index == secondIndex {
-                return nil
-            }
-
-            return .tab(tab)
-        }
     }
 
     private static func tabSnapshot(
@@ -582,7 +515,6 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             title: tab.name,
             icon: tabIcon(for: tab),
             isSelected: currentTabId == tab.id,
-            isSplitActiveSide: false,
             showsUnloadedIndicator: tab.showsWebViewUnloadedIndicator,
             showsAudioButton: tab.audioState.showsTabAudioButton,
             isMuted: tab.audioState.isMuted
@@ -1117,20 +1049,12 @@ private struct SpaceSnapshotRegularTabsSectionView: View {
                 }
 
                 VStack(spacing: 2) {
-                    ForEach(snapshot.regularItems) { item in
-                        switch item {
-                        case .tab(let tab):
-                            SpaceSnapshotRegularTabRowView(
-                                tab: tab,
-                                rowCornerRadius: snapshot.rowCornerRadius,
-                                tokens: tokens
-                            )
-                        case .split(let split):
-                            SpaceSnapshotSplitRowView(
-                                split: split,
-                                tokens: tokens
-                            )
-                        }
+                    ForEach(snapshot.regularItems) { tab in
+                        SpaceSnapshotRegularTabRowView(
+                            tab: tab,
+                            rowCornerRadius: snapshot.rowCornerRadius,
+                            tokens: tokens
+                        )
                     }
                 }
                 .frame(minWidth: 0, maxWidth: innerWidth, alignment: .leading)
@@ -1211,74 +1135,6 @@ private struct SpaceSnapshotRegularTabRowView: View {
             color: tab.isSelected ? tokens.sidebarSelectionShadow : .clear,
             radius: tab.isSelected ? 2 : 0,
             y: tab.isSelected ? 1.5 : 0
-        )
-    }
-}
-
-private struct SpaceSnapshotSplitRowView: View {
-    let split: SpaceSplitRowSnapshot
-    let tokens: ChromeThemeTokens
-
-    var body: some View {
-        HStack(spacing: 1) {
-            SpaceSnapshotSplitHalfView(
-                tab: split.left,
-                rowCornerRadius: 8,
-                tokens: tokens
-            )
-            Rectangle()
-                .fill(tokens.separator)
-                .frame(width: 1, height: 24)
-                .padding(.vertical, 4)
-            SpaceSnapshotSplitHalfView(
-                tab: split.right,
-                rowCornerRadius: 8,
-                tokens: tokens
-            )
-        }
-        .frame(height: 34)
-        .padding(2)
-        .background(tokens.fieldBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(tokens.separator.opacity(0.75), lineWidth: 0.5)
-        }
-    }
-}
-
-private struct SpaceSnapshotSplitHalfView: View {
-    let tab: SpaceTabRowSnapshot
-    let rowCornerRadius: CGFloat
-    let tokens: ChromeThemeTokens
-
-    private var isHighlighted: Bool {
-        tab.isSelected || tab.isSplitActiveSide
-    }
-
-    var body: some View {
-        HStack(spacing: 8) {
-            SpaceSnapshotIconView(
-                icon: tab.icon,
-                size: SidebarRowLayout.faviconSize,
-                cornerRadius: 4,
-                foregroundColor: tokens.primaryText
-            )
-            SpaceSnapshotFadingTitleLabel(
-                title: tab.title,
-                font: .system(size: 13, weight: .medium),
-                color: tokens.primaryText
-            )
-                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.horizontal, 8)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(isHighlighted ? tokens.sidebarRowActive : .clear)
-        .clipShape(RoundedRectangle(cornerRadius: rowCornerRadius, style: .continuous))
-        .shadow(
-            color: isHighlighted ? tokens.sidebarSelectionShadow : .clear,
-            radius: isHighlighted ? 2 : 0,
-            y: isHighlighted ? 1 : 0
         )
     }
 }

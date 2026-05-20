@@ -55,6 +55,16 @@ final class ShortcutActionDispatcher {
                 browserManager.selectLastTabInActiveWindow()
             case .duplicateTab:
                 browserManager.duplicateCurrentTab()
+            case .splitGrid:
+                browserManager.setActiveSplitLayout(.grid)
+            case .splitVertical:
+                browserManager.setActiveSplitLayout(.vertical)
+            case .splitHorizontal:
+                browserManager.setActiveSplitLayout(.horizontal)
+            case .unsplit:
+                browserManager.unsplitActiveWindow()
+            case .newEmptySplit:
+                browserManager.createEmptySplitInActiveWindow()
             case .nextSpace:
                 browserManager.selectNextSpaceInActiveWindow()
             case .previousSpace:

@@ -160,19 +160,12 @@ struct WebsiteView: View {
             }
             .allowsHitTesting(false)
             
-            // Split preview overlay - shows cards during drag operations
-            if splitManager.getSplitState(for: windowState.id).isPreviewActive {
-                SplitPreviewOverlay()
-                    .environmentObject(splitManager)
-                    .environmentObject(browserManager)
-                    .environment(windowState)
-                    .coordinateSpace(name: dragCoordinateSpace)
-                    .animation(
-                        .spring(response: 0.3, dampingFraction: 0.6, blendDuration: 0.2),
-                        value: splitManager.getSplitState(for: windowState.id).isPreviewActive
-                    )
-                    .allowsHitTesting(false)
-            }
+            // Native edge preview for sidebar-to-content split drops.
+            SplitPreviewOverlay()
+                .environmentObject(splitManager)
+                .environment(windowState)
+                .coordinateSpace(name: dragCoordinateSpace)
+                .allowsHitTesting(false)
             
         }
     }
@@ -191,12 +184,9 @@ struct WebsiteView: View {
             browserManager: browserManager,
             webViewCoordinator: webViewCoordinator,
             hoveredLink: $hoveredLink,
-            splitFraction: splitManager.dividerFraction(for: windowState.id),
-            splitOrientation: splitManager.orientation(for: windowState.id),
-            isSplit: splitManager.isSplit(for: windowState.id),
-            leftId: splitManager.leftTabId(for: windowState.id),
-            rightId: splitManager.rightTabId(for: windowState.id),
-            isSplitDropCaptureActive: sidebarDragState.isDragging && sidebarDragState.isInternalDragSession,
+            splitGroup: splitManager.splitGroup(for: windowState.id),
+            isSplitDropCaptureActive: sidebarDragState.isInternalDragGeometryArmed
+                || (sidebarDragState.isDragging && sidebarDragState.isInternalDragSession),
             chromeGeometry: chromeGeometry,
             windowState: windowState
         )
@@ -266,158 +256,190 @@ struct WebsiteView: View {
 // MARK: - Split Preview Overlay
 private struct SplitPreviewOverlay: View {
     @EnvironmentObject var splitManager: SplitViewManager
-    @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.sumiSettings) private var sumiSettings
+    @State private var renderedZone: SplitPreviewZone?
+    @State private var renderedOpacity: Double = 0
+    @State private var renderGeneration: UInt = 0
     
     var body: some View {
         GeometryReader { geometry in
             let splitState = splitManager.getSplitState(for: windowState.id)
-            let dragLocation = splitState.dragLocation
-            let cardPadding: CGFloat = 20
-            let cardWidth: CGFloat = 315
-            let cardHeight: CGFloat = 522
-            
-            HStack(spacing: 0) {
-                // Left card - vertically centered with magnetic effect
-                VStack {
-                    Spacer()
-                    MagneticCardView(
-                        side: .left,
-                        icon: "rectangle.lefthalf.filled",
-                        text: "Add left split",
-                        dragLocation: dragLocation,
-                        cardFrame: CGRect(
-                            x: cardPadding,
-                            y: (geometry.size.height - cardHeight) / 2,
-                            width: cardWidth,
-                            height: cardHeight
-                        ),
-                        geometry: geometry,
-                        accentColor: tokens.accent
-                    )
-                    Spacer()
+            let requestedZone = SplitPreviewZone.make(
+                splitState: splitState,
+                containerHeight: geometry.size.height
+            )
+
+            ZStack {
+                if let renderedZone {
+                    SplitPreviewZoneShape(rect: renderedZone.rect)
+                        .fill(previewFill(for: renderedZone.style))
+                        .overlay {
+                            SplitPreviewZoneShape(rect: renderedZone.rect)
+                                .stroke(
+                                    previewStroke(for: renderedZone.style),
+                                    lineWidth: 1.5
+                                )
+                        }
+                        .opacity(renderedOpacity)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
                 }
-                .padding(.leading, cardPadding)
-                
-                Spacer()
-                
-                // Right card - vertically centered with magnetic effect
-                VStack {
-                    Spacer()
-                    MagneticCardView(
-                        side: .right,
-                        icon: "rectangle.righthalf.filled",
-                        text: "Add right split",
-                        dragLocation: dragLocation,
-                        cardFrame: CGRect(
-                            x: geometry.size.width - cardPadding - cardWidth,
-                            y: (geometry.size.height - cardHeight) / 2,
-                            width: cardWidth,
-                            height: cardHeight
-                        ),
-                        geometry: geometry,
-                        accentColor: tokens.accent
-                    )
-                    Spacer()
-                }
-                .padding(.trailing, cardPadding)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .allowsHitTesting(false) // Don't intercept mouse events - let drag handling work
+            .onAppear {
+                syncRenderedZone(to: requestedZone)
+            }
+            .onChange(of: requestedZone) { _, newZone in
+                syncRenderedZone(to: newZone)
+            }
         }
+        .allowsHitTesting(false)
     }
 
     private var tokens: ChromeThemeTokens {
         themeContext.tokens(settings: sumiSettings)
     }
+
+    private var previewAnimation: Animation {
+        .easeInOut(duration: 0.16)
+    }
+
+    private func syncRenderedZone(to requestedZone: SplitPreviewZone?) {
+        renderGeneration &+= 1
+        let generation = renderGeneration
+        guard let requestedZone else {
+            guard renderedZone != nil else { return }
+            withAnimation(previewAnimation) {
+                renderedOpacity = 0
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                if generation == renderGeneration, renderedOpacity == 0 {
+                    renderedZone = nil
+                }
+            }
+            return
+        }
+
+        if renderedZone == nil {
+            renderedZone = requestedZone
+            renderedOpacity = 0
+            DispatchQueue.main.async {
+                withAnimation(previewAnimation) {
+                    renderedOpacity = 1
+                }
+            }
+            return
+        }
+
+        withAnimation(previewAnimation) {
+            renderedZone = requestedZone
+            renderedOpacity = 1
+        }
+    }
+
+    private func previewFill(for style: SplitDropPreviewStyle) -> Color {
+        switch style {
+        case .edge:
+            return tokens.floatingBarBackground.opacity(0.65)
+        case .center:
+            return tokens.floatingBarBackground.opacity(0.65)
+        }
+    }
+
+    private func previewStroke(for style: SplitDropPreviewStyle) -> Color {
+        switch style {
+        case .edge:
+            return tokens.accent.opacity(0.86)
+        case .center:
+            return tokens.accent.opacity(0.78)
+        }
+    }
 }
 
-// MARK: - Magnetic Card View
-private struct MagneticCardView: View {
-    let side: SplitViewManager.Side
-    let icon: String
-    let text: String
-    let dragLocation: CGPoint?
-    let cardFrame: CGRect
-    let geometry: GeometryProxy
-    let accentColor: Color
-    
-    @EnvironmentObject var splitManager: SplitViewManager
-    @Environment(BrowserWindowState.self) private var windowState
-    
-    @State private var offset: CGSize = .zero
-    @State private var isMagneticallyActive: Bool = false
-    
-    // Computed property: card is hovered if previewSide matches OR if magnetically active
-    private var cardIsHovered: Bool {
-        let splitState = splitManager.getSplitState(for: windowState.id)
-        return splitState.previewSide == side || isMagneticallyActive
+private struct SplitPreviewZone: Equatable {
+    let rect: CGRect
+    let style: SplitDropPreviewStyle
+
+    static func make(
+        splitState: SplitViewManager.WindowSplitState,
+        containerHeight: CGFloat
+    ) -> SplitPreviewZone? {
+        guard splitState.isPreviewActive,
+              let side = splitState.previewSide,
+              let targetRect = splitState.previewTargetRect
+        else { return nil }
+
+        let swiftUITargetRect = targetRect.convertedFromAppKitCoordinates(
+            containerHeight: containerHeight
+        )
+        return SplitPreviewZone(
+            rect: SplitPreviewZoneGeometry.zoneRect(
+                side: side,
+                targetRect: swiftUITargetRect,
+                style: splitState.previewStyle
+            ),
+            style: splitState.previewStyle
+        )
     }
-    
-    var body: some View {
-        SplitCardView(
-            icon: icon,
-            text: text,
-            isTabHovered: cardIsHovered,
-            accentColor: accentColor
-        )
-        .offset(offset)
-        .scaleEffect(1.0) // Cards appear at full size
-        .animation(
-            dragLocation != nil ? .interactiveSpring(response: 0.3, dampingFraction: 0.7) : .spring(response: 0.4, dampingFraction: 0.6),
-            value: offset
-        )
-        .transition(.asymmetric(
-            insertion: .scale(scale: 0.7, anchor: .center),
-            removal: .scale(scale: 0.5, anchor: .center).combined(with: .opacity)
-        ))
-        .onChange(of: dragLocation) { _, location in
-            guard let location = location else {
-                if isMagneticallyActive {
-                    isMagneticallyActive = false
-                    offset = .zero
-                    // Clear preview side when drag ends
-                    splitManager.updatePreviewSide(nil, for: windowState.id)
-                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
-                }
-                return
-            }
-            
-            // dragLocation is in NSView coordinates (relative to container view, bottom-left origin)
-            // cardFrame is in GeometryReader coordinates (top-left origin)
-            // Convert NSView Y coordinate to SwiftUI coordinate space
-            let geometryHeight = geometry.size.height
-            let convertedLocation = CGPoint(x: location.x, y: geometryHeight - location.y)
-            
-            let cardCenter = CGPoint(x: cardFrame.midX, y: cardFrame.midY)
-            
-            // Check if drag is within card bounds (with some margin for magnetic effect)
-            let margin: CGFloat = 50
-            let expandedFrame = cardFrame.insetBy(dx: -margin, dy: -margin)
-            
-            if expandedFrame.contains(convertedLocation) {
-                // Calculate magnetic offset (45% of distance to center)
-                let dx = (convertedLocation.x - cardCenter.x) * 0.45
-                let dy = (convertedLocation.y - cardCenter.y) * 0.45
-                offset = CGSize(width: dx, height: dy)
-                
-                if !isMagneticallyActive {
-                    isMagneticallyActive = true
-                    // Update preview side to indicate this card is hovered
-                    splitManager.updatePreviewSide(side, for: windowState.id)
-                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
-                }
-            } else {
-                if isMagneticallyActive {
-                    isMagneticallyActive = false
-                    offset = .zero
-                    // Clear preview side when leaving card
-                    splitManager.updatePreviewSide(nil, for: windowState.id)
-                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
-                }
-            }
+}
+
+private enum SplitPreviewZoneGeometry {
+    static func zoneRect(
+        side: SplitDropSide,
+        targetRect: CGRect,
+        style: SplitDropPreviewStyle
+    ) -> CGRect {
+        _ = side
+        _ = style
+        return targetRect.standardized
+    }
+}
+
+private struct SplitPreviewZoneShape: Shape {
+    var rect: CGRect
+
+    var animatableData: AnimatablePair<CGFloat, AnimatablePair<CGFloat, AnimatablePair<CGFloat, CGFloat>>> {
+        get {
+            AnimatablePair(
+                rect.origin.x,
+                AnimatablePair(
+                    rect.origin.y,
+                    AnimatablePair(rect.size.width, rect.size.height)
+                )
+            )
         }
+        set {
+            rect = CGRect(
+                x: newValue.first,
+                y: newValue.second.first,
+                width: newValue.second.second.first,
+                height: newValue.second.second.second
+            )
+        }
+    }
+
+    func path(in _: CGRect) -> Path {
+        let insetRect = inset(rect.standardized, by: 8)
+        return Path(
+            roundedRect: insetRect,
+            cornerRadius: min(10, min(insetRect.width, insetRect.height) / 2)
+        )
+    }
+
+    private func inset(_ rect: CGRect, by amount: CGFloat) -> CGRect {
+        let dx = min(amount, max(0, rect.width / 2 - 1))
+        let dy = min(amount, max(0, rect.height / 2 - 1))
+        return rect.insetBy(dx: dx, dy: dy)
+    }
+}
+
+private extension CGRect {
+    func convertedFromAppKitCoordinates(containerHeight: CGFloat) -> CGRect {
+        CGRect(
+            x: minX,
+            y: containerHeight - maxY,
+            width: width,
+            height: height
+        )
     }
 }

@@ -1,6 +1,6 @@
 import Foundation
 
-enum SplitOrientation: String, Codable, Hashable {
+enum LegacySplitOrientation: String, Codable, Hashable {
     case horizontal
     case vertical
 }
@@ -26,12 +26,13 @@ struct SpaceShortcutSelectionSnapshot: Codable, Equatable, Hashable {
     var shortcutPinId: UUID
 }
 
-struct SplitSessionSnapshot: Codable, Equatable, Hashable {
+// Legacy decoder only. New split groups are persisted with tab snapshots.
+struct LegacySplitSessionSnapshot: Codable, Equatable, Hashable {
     var leftTabId: UUID
     var rightTabId: UUID
     var dividerFraction: Double
     var activeSideRawValue: String?
-    var orientation: SplitOrientation
+    var orientation: LegacySplitOrientation
 }
 
 struct WindowSessionSnapshot: Codable, Equatable, Hashable {
@@ -49,5 +50,5 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
     var sidebarContentWidth: Double
     var isSidebarVisible: Bool
     var floatingBarDraft: FloatingBarDraftState
-    var splitSession: SplitSessionSnapshot?
+    var splitSession: LegacySplitSessionSnapshot?
 }

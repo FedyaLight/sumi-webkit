@@ -74,7 +74,7 @@ private struct ShortcutSidebarLiveRowContent: View {
     @Environment(BrowserWindowState.self) private var windowState
 
     var body: some View {
-        let splitSide = splitManager.side(for: liveTab.id, in: windowState.id)
+        let isInVisibleSplit = splitManager.isTabVisibleInSplit(liveTab.id, in: windowState.id)
 
         ShortcutSidebarRowChrome(
             pin: pin,
@@ -84,8 +84,8 @@ private struct ShortcutSidebarLiveRowContent: View {
                 for: pin,
                 in: windowState
             ),
-            showsSplitBadge: splitSide != nil,
-            splitBadgeIsSelected: splitManager.activeSide(for: windowState.id) == splitSide,
+            showsSplitBadge: isInVisibleSplit,
+            splitBadgeIsSelected: splitManager.isTabActiveInSplit(liveTab.id, in: windowState.id),
             accessibilityID: accessibilityID,
             contextMenuEntries: contextMenuEntries,
             action: action,

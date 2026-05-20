@@ -71,13 +71,38 @@ actor TabSnapshotRepository {
         let spaces: [SnapshotSpace]
         let tabs: [SnapshotTab]
         let folders: [SnapshotFolder]
+        let splitGroups: [SplitGroup]
         let state: SnapshotState
+
+        init(
+            spaces: [SnapshotSpace],
+            tabs: [SnapshotTab],
+            folders: [SnapshotFolder],
+            splitGroups: [SplitGroup] = [],
+            state: SnapshotState
+        ) {
+            self.spaces = spaces
+            self.tabs = tabs
+            self.folders = folders
+            self.splitGroups = splitGroups
+            self.state = state
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            spaces = try container.decode([SnapshotSpace].self, forKey: .spaces)
+            tabs = try container.decode([SnapshotTab].self, forKey: .tabs)
+            folders = try container.decode([SnapshotFolder].self, forKey: .folders)
+            splitGroups = try container.decodeIfPresent([SplitGroup].self, forKey: .splitGroups) ?? []
+            state = try container.decode(SnapshotState.self, forKey: .state)
+        }
     }
 
     struct StructuralDelta: Sendable {
         let spaces: [SnapshotSpace]
         let tabs: [SnapshotTab]
         let folders: [SnapshotFolder]
+        let splitGroups: [SplitGroup]?
         let deletedSpaceIds: Set<UUID>
         let deletedTabIds: Set<UUID>
         let deletedFolderIds: Set<UUID>
@@ -309,7 +334,7 @@ actor TabSnapshotRepository {
         }
 
         do {
-            try upsertState(in: ctx, state: delta.state)
+            try upsertState(in: ctx, state: delta.state, splitGroups: delta.splitGroups)
         } catch {
             throw classify(error)
         }
@@ -376,7 +401,7 @@ actor TabSnapshotRepository {
         }
 
         do {
-            try upsertState(in: ctx, state: snapshot.state)
+            try upsertState(in: ctx, state: snapshot.state, splitGroups: snapshot.splitGroups)
         } catch {
             throw classify(error)
         }
@@ -483,7 +508,11 @@ actor TabSnapshotRepository {
         }
     }
 
-    private func upsertState(in ctx: ModelContext, state snapshotState: SnapshotState) throws {
+    private func upsertState(
+        in ctx: ModelContext,
+        state snapshotState: SnapshotState,
+        splitGroups: [SplitGroup]? = nil
+    ) throws {
         let states = try ctx.fetch(FetchDescriptor<TabsStateEntity>())
         let state = states.first ?? {
             let entity = TabsStateEntity(currentTabID: nil, currentSpaceID: nil)
@@ -492,6 +521,9 @@ actor TabSnapshotRepository {
         }()
         state.currentTabID = snapshotState.currentTabID
         state.currentSpaceID = snapshotState.currentSpaceID
+        if let splitGroups {
+            state.splitGroupsData = try JSONEncoder().encode(SplitGroup.sanitized(splitGroups))
+        }
     }
 
     private func fetchTabs(in ctx: ModelContext, ids: Set<UUID>) throws -> [UUID: TabEntity] {
@@ -601,7 +633,7 @@ actor TabSnapshotRepository {
         }
 
         do {
-            try upsertState(in: ctx, state: snapshot.state)
+            try upsertState(in: ctx, state: snapshot.state, splitGroups: snapshot.splitGroups)
         } catch {
             throw classify(error)
         }
@@ -650,6 +682,10 @@ actor TabSnapshotRepository {
             }
         }
 
+        if let splitGroups = delta.splitGroups {
+            try validateSplitGroups(splitGroups)
+        }
+
         for folder in delta.folders where delta.deletedSpaceIds.contains(folder.spaceId) {
             throw PersistenceError.invalidModelState
         }
@@ -683,8 +719,17 @@ actor TabSnapshotRepository {
             }
         }
 
+        try validateSplitGroups(snapshot.splitGroups)
+
         for space in snapshot.spaces where space.profileId == nil {
             Self.log.debug("[validate] Space missing profileId: \(space.id.uuidString, privacy: .public)")
+        }
+    }
+
+    private func validateSplitGroups(_ splitGroups: [SplitGroup]) throws {
+        let sanitized = SplitGroup.sanitized(splitGroups)
+        guard sanitized.count == splitGroups.count else {
+            throw PersistenceError.invalidModelState
         }
     }
 

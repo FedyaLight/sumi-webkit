@@ -293,7 +293,7 @@ final class WindowSessionServiceTests: XCTestCase {
 private final class TestWindowSessionDelegate: WindowSessionServiceDelegate {
     let tabManager: TabManager
     let splitManager = SplitViewManager()
-    let shellSelectionService = ShellSelectionService(splitTabsForWindow: { _ in (nil, nil) })
+    let shellSelectionService = ShellSelectionService(splitTabsForWindow: { _ in [] })
     var currentProfile: Profile?
     var windowRegistry: WindowRegistry?
     private let themeCoordinator = WorkspaceThemeCoordinator()
