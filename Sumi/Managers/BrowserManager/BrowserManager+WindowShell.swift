@@ -60,6 +60,8 @@ extension BrowserManager {
                 )
                     .ignoresSafeArea(.all)
                     .environmentObject(self)
+                    .environmentObject(self.glanceManager)
+                    .environmentObject(self.extensionSurfaceStore)
                     .environment(windowRegistry)
                     .environment(webViewCoordinator)
                     .environment(\.sumiSettings, self.sumiSettings ?? SumiSettingsService())

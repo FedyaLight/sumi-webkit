@@ -252,6 +252,46 @@ struct RecentlyClosedTabState: Identifiable, Equatable {
     let profileId: UUID?
 }
 
+struct RecentlyClosedShortcutPinState: Equatable {
+    let id: UUID
+    let role: ShortcutPinRole
+    let profileId: UUID?
+    let spaceId: UUID?
+    let index: Int
+    let folderId: UUID?
+    let launchURL: URL
+    let title: String
+    let iconAsset: String?
+
+    @MainActor
+    init(pin: ShortcutPin) {
+        self.id = pin.id
+        self.role = pin.role
+        self.profileId = pin.profileId
+        self.spaceId = pin.spaceId
+        self.index = pin.index
+        self.folderId = pin.folderId
+        self.launchURL = pin.launchURL
+        self.title = pin.title
+        self.iconAsset = pin.iconAsset
+    }
+}
+
+struct RecentlyClosedShortcutLiveState: Identifiable, Equatable {
+    let id: UUID
+    let pin: RecentlyClosedShortcutPinState
+    let title: String
+    let url: URL
+    let sourceWindowId: UUID?
+    let canGoBack: Bool
+    let canGoForward: Bool
+}
+
+struct RecentlyClosedShortcutLauncherState: Identifiable, Equatable {
+    let id: UUID
+    let pin: RecentlyClosedShortcutPinState
+}
+
 struct RecentlyClosedWindowState: Identifiable, Equatable {
     let id: UUID
     let title: String
@@ -260,12 +300,18 @@ struct RecentlyClosedWindowState: Identifiable, Equatable {
 
 enum RecentlyClosedItem: Identifiable, Equatable {
     case tab(RecentlyClosedTabState)
+    case shortcutLiveInstance(RecentlyClosedShortcutLiveState)
+    case shortcutLauncher(RecentlyClosedShortcutLauncherState)
     case window(RecentlyClosedWindowState)
 
     var id: UUID {
         switch self {
         case .tab(let tab):
             return tab.id
+        case .shortcutLiveInstance(let shortcut):
+            return shortcut.id
+        case .shortcutLauncher(let shortcut):
+            return shortcut.id
         case .window(let window):
             return window.id
         }

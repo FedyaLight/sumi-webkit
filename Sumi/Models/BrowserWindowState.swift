@@ -40,6 +40,11 @@ struct SplitGroupFocusRequest: Equatable {
     let targetSpaceId: UUID
 }
 
+enum BrowserWindowSelectionHistoryItem: Equatable {
+    case regularTab(UUID)
+    case shortcutPin(UUID)
+}
+
 /// Represents the state of a single browser window, allowing multiple windows
 /// to have independent tab selections and UI states while sharing the same tab data.
 @MainActor
@@ -115,6 +120,9 @@ class BrowserWindowState {
 
     /// Most recently selected non-essential live shortcut for each space in this window.
     var selectedShortcutPinForSpace: [UUID: UUID] = [:]
+
+    /// Most recently selected tabs and live shortcuts for each space, used only as a close-tab fallback.
+    var recentSelectionItemsBySpace: [UUID: [BrowserWindowSelectionHistoryItem]] = [:]
 
     /// Sidebar width for this window
     var sidebarWidth: CGFloat = BrowserWindowState.sidebarDefaultWidth
@@ -327,6 +335,45 @@ class BrowserWindowState {
     func removeFromRegularTabHistory(_ tabId: UUID) {
         for (spaceId, history) in recentRegularTabIdsBySpace {
             recentRegularTabIdsBySpace[spaceId] = history.filter { $0 != tabId }
+        }
+        removeFromSelectionHistory { item in
+            if case let .regularTab(historyTabId) = item {
+                return historyTabId == tabId
+            }
+            return false
+        }
+    }
+
+    @discardableResult
+    func recordSelection(_ item: BrowserWindowSelectionHistoryItem, in spaceId: UUID) -> Bool {
+        let previous = recentSelectionItemsBySpace[spaceId] ?? []
+        var history = previous
+        history.removeAll { $0 == item }
+        history.insert(item, at: 0)
+        if history.count > 20 {
+            history = Array(history.prefix(20))
+        }
+        recentSelectionItemsBySpace[spaceId] = history
+        return history != previous
+    }
+
+    func removeFromShortcutLiveSelectionHistory(_ pinId: UUID) {
+        removeFromSelectionHistory { item in
+            if case let .shortcutPin(historyPinId) = item {
+                return historyPinId == pinId
+            }
+            return false
+        }
+    }
+
+    private func removeFromSelectionHistory(_ shouldRemove: (BrowserWindowSelectionHistoryItem) -> Bool) {
+        for (spaceId, history) in recentSelectionItemsBySpace {
+            let filtered = history.filter { !shouldRemove($0) }
+            if filtered.isEmpty {
+                recentSelectionItemsBySpace.removeValue(forKey: spaceId)
+            } else {
+                recentSelectionItemsBySpace[spaceId] = filtered
+            }
         }
     }
 

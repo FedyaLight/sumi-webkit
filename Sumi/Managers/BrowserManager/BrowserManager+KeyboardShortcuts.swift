@@ -126,7 +126,7 @@ extension BrowserManager {
     }
 
     func undoCloseTab() {
-        tabManager.undoCloseTab()
+        reopenMostRecentClosedItem()
     }
 
     func expandAllFoldersInSidebar() {

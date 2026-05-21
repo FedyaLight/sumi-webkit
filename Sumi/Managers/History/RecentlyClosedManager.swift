@@ -47,6 +47,38 @@ final class RecentlyClosedManager: ObservableObject {
         prepend(item)
     }
 
+    func captureClosedShortcutLiveInstance(
+        tab: Tab,
+        pin: ShortcutPin,
+        sourceWindowId: UUID?
+    ) {
+        guard !tab.representsSumiEmptySurface else { return }
+
+        let title = tab.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let item = RecentlyClosedItem.shortcutLiveInstance(
+            RecentlyClosedShortcutLiveState(
+                id: UUID(),
+                pin: RecentlyClosedShortcutPinState(pin: pin),
+                title: title.isEmpty ? tab.url.absoluteString : tab.name,
+                url: tab.url,
+                sourceWindowId: sourceWindowId,
+                canGoBack: tab.canGoBack,
+                canGoForward: tab.canGoForward
+            )
+        )
+        prepend(item)
+    }
+
+    func captureDeletedShortcutLauncher(_ pin: ShortcutPin) {
+        let item = RecentlyClosedItem.shortcutLauncher(
+            RecentlyClosedShortcutLauncherState(
+                id: UUID(),
+                pin: RecentlyClosedShortcutPinState(pin: pin)
+            )
+        )
+        prepend(item)
+    }
+
     func captureClosedWindow(
         title: String,
         session: WindowSessionSnapshot
@@ -70,6 +102,14 @@ final class RecentlyClosedManager: ObservableObject {
             switch (existing, item) {
             case (.tab(let lhs), .tab(let rhs)):
                 return lhs.url == rhs.url && lhs.profileId == rhs.profileId
+            case (.shortcutLiveInstance(let lhs), .shortcutLiveInstance(let rhs)):
+                return lhs.pin.id == rhs.pin.id
+            case (.shortcutLiveInstance(let lhs), .shortcutLauncher(let rhs)):
+                return lhs.pin.id == rhs.pin.id
+            case (.shortcutLauncher(let lhs), .shortcutLiveInstance(let rhs)):
+                return lhs.pin.id == rhs.pin.id
+            case (.shortcutLauncher(let lhs), .shortcutLauncher(let rhs)):
+                return lhs.pin.id == rhs.pin.id
             case (.window(let lhs), .window(let rhs)):
                 return lhs.session == rhs.session
             default:

@@ -1456,7 +1456,7 @@ class BrowserManager: ObservableObject {
         }
 
         let wasCurrent = windowState.currentTabId == tab.id
-        let fallback = wasCurrent ? fallbackRegularTab(afterClosing: tab, in: windowState) : nil
+        let fallback = wasCurrent ? fallbackTab(afterClosing: tab, in: windowState) : nil
         tabManager.removeTab(tab.id)
         windowState.removeFromRegularTabHistory(tab.id)
 
@@ -1778,6 +1778,12 @@ class BrowserManager: ObservableObject {
         stateDidChange = assignIfChanged(\.currentShortcutPinRole, targetState.currentShortcutPinRole, in: windowState) || stateDidChange
         stateDidChange = applyShortcutMemoryUpdate(targetState.shortcutMemoryUpdate, to: windowState) || stateDidChange
         stateDidChange = applyRegularTabMemoryUpdate(targetState.regularTabMemoryUpdate, to: windowState) || stateDidChange
+        stateDidChange = recordSelectionHistoryIfNeeded(
+            tab,
+            targetState: targetState,
+            rememberSelection: rememberSelection,
+            in: windowState
+        ) || stateDidChange
 
         let selectedTabChanged = previousTabId != tab.id
         let requiresMaterialization = tab.isUnloaded && tab.requiresPrimaryWebView
@@ -1899,6 +1905,30 @@ class BrowserManager: ObservableObject {
             }
             return didChange
         }
+    }
+
+    @discardableResult
+    private func recordSelectionHistoryIfNeeded(
+        _ tab: Tab,
+        targetState: WindowTabSelectionTargetState,
+        rememberSelection: Bool,
+        in windowState: BrowserWindowState
+    ) -> Bool {
+        guard rememberSelection,
+              let spaceId = targetState.currentSpaceId
+        else {
+            return false
+        }
+
+        let item: BrowserWindowSelectionHistoryItem
+        if tab.isShortcutLiveInstance {
+            guard let pinId = tab.shortcutPinId else { return false }
+            item = .shortcutPin(pinId)
+        } else {
+            item = .regularTab(tab.id)
+        }
+
+        return windowState.recordSelection(item, in: spaceId)
     }
 
     private func scheduleTabLoadIfNeeded(
@@ -2350,11 +2380,13 @@ class BrowserManager: ObservableObject {
         if let group = tabManager.splitGroup(containing: tab.id)
             ?? tab.shortcutPinId.flatMap({ tabManager.splitGroup(containingPinId: $0) }) {
             if group.isShortcutHosted {
+                captureClosedShortcutLiveInstance(tab, in: windowState)
                 unloadShortcutHostedSplitGroup(group, in: windowState)
                 return
             }
             if group.member(for: tab.id)?.isShortcutBacked == true
                 || tab.shortcutPinId.flatMap({ group.member(forPinId: $0)?.isShortcutBacked }) == true {
+                captureClosedShortcutLiveInstance(tab, in: windowState)
                 restoreShortcutSplitMember(
                     tab.id,
                     from: group,
@@ -2364,6 +2396,8 @@ class BrowserManager: ObservableObject {
                 return
             }
         }
+
+        captureClosedShortcutLiveInstance(tab, in: windowState)
 
         let wasCurrent =
             windowState.currentTabId == tab.id
@@ -2384,11 +2418,26 @@ class BrowserManager: ObservableObject {
         windowState.currentShortcutPinRole = nil
         windowState.currentTabId = nil
 
-        if let fallback = preferredRegularTabForWindow(windowState) {
+        if let fallback = historicalFallbackTab(afterClosing: tab, in: windowState) {
+            selectTab(fallback, in: windowState)
+        } else if let fallback = preferredRegularTabForWindow(windowState) {
             selectTab(fallback, in: windowState)
         } else {
             showEmptyState(in: windowState)
         }
+    }
+
+    private func captureClosedShortcutLiveInstance(_ tab: Tab, in windowState: BrowserWindowState) {
+        guard let pinId = tab.shortcutPinId,
+              let pin = tabManager.shortcutPin(by: pinId)
+        else {
+            return
+        }
+        recentlyClosedManager.captureClosedShortcutLiveInstance(
+            tab: tab,
+            pin: pin,
+            sourceWindowId: windowState.id
+        )
     }
 
     private func closeIncognitoTab(_ tab: Tab, in windowState: BrowserWindowState) {
@@ -2405,7 +2454,7 @@ class BrowserManager: ObservableObject {
         }
     }
 
-    private func fallbackRegularTab(afterClosing tab: Tab, in windowState: BrowserWindowState) -> Tab? {
+    private func fallbackTab(afterClosing tab: Tab, in windowState: BrowserWindowState) -> Tab? {
         let targetSpaceId = tab.spaceId ?? windowState.currentSpaceId
         guard let targetSpaceId,
               let space = tabManager.spaces.first(where: { $0.id == targetSpaceId })
@@ -2414,7 +2463,18 @@ class BrowserManager: ObservableObject {
         }
 
         let regularTabs = tabManager.tabs(in: space).filter { $0.id != tab.id }
-        guard !regularTabs.isEmpty else { return nil }
+        if let historyMatch = historicalFallbackTab(
+            afterClosing: tab,
+            in: windowState,
+            targetSpaceId: targetSpaceId,
+            regularTabs: regularTabs
+        ) {
+            return historyMatch
+        }
+
+        guard !regularTabs.isEmpty else {
+            return nil
+        }
 
         if let historyMatch = windowState.recentRegularTabIdsBySpace[targetSpaceId]?.first(where: { historyId in
             historyId != tab.id && regularTabs.contains(where: { $0.id == historyId })
@@ -2435,6 +2495,47 @@ class BrowserManager: ObservableObject {
         }
 
         return regularTabs.last
+    }
+
+    private func historicalFallbackTab(afterClosing tab: Tab, in windowState: BrowserWindowState) -> Tab? {
+        let targetSpaceId = tab.spaceId ?? windowState.currentSpaceId
+        guard let targetSpaceId,
+              let space = tabManager.spaces.first(where: { $0.id == targetSpaceId })
+        else {
+            return nil
+        }
+
+        return historicalFallbackTab(
+            afterClosing: tab,
+            in: windowState,
+            targetSpaceId: targetSpaceId,
+            regularTabs: tabManager.tabs(in: space).filter { $0.id != tab.id }
+        )
+    }
+
+    private func historicalFallbackTab(
+        afterClosing tab: Tab,
+        in windowState: BrowserWindowState,
+        targetSpaceId: UUID,
+        regularTabs: [Tab]
+    ) -> Tab? {
+        for item in windowState.recentSelectionItemsBySpace[targetSpaceId] ?? [] {
+            switch item {
+            case let .regularTab(tabId):
+                if tabId != tab.id,
+                   let regularTab = regularTabs.first(where: { $0.id == tabId }) {
+                    return regularTab
+                }
+            case let .shortcutPin(pinId):
+                if let liveTab = tabManager.shortcutLiveTab(for: pinId, in: windowState.id),
+                   liveTab.id != tab.id,
+                   liveTab.shortcutPinRole == .essential || liveTab.spaceId == targetSpaceId {
+                    return liveTab
+                }
+            }
+        }
+
+        return nil
     }
 
     func showEmptyState(in windowState: BrowserWindowState) {

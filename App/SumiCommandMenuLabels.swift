@@ -15,6 +15,10 @@ enum SumiCommandMenuLabels {
         switch item {
         case .tab(let tab):
             return tab.title.isEmpty ? tab.url.absoluteString : tab.title
+        case .shortcutLiveInstance(let shortcut):
+            return shortcut.title.isEmpty ? shortcut.url.absoluteString : shortcut.title
+        case .shortcutLauncher(let shortcut):
+            return shortcut.pin.title.isEmpty ? shortcut.pin.launchURL.absoluteString : shortcut.pin.title
         case .window(let window):
             return window.title.isEmpty ? "Window" : window.title
         }

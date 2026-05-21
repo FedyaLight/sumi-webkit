@@ -34,6 +34,10 @@ extension TabManager {
 
     func removeShortcutPin(_ pin: ShortcutPin) {
         withStructuralUpdateTransaction {
+            if shortcutPin(by: pin.id) != nil {
+                browserManager?.recentlyClosedManager.captureDeletedShortcutLauncher(pin)
+            }
+
             if pin.role == .essential, let profileId = pin.profileId {
                 var arr = pinnedByProfile[profileId] ?? []
                 arr.removeAll { $0.id == pin.id }
@@ -57,6 +61,9 @@ extension TabManager {
             }
             for windowId in liveWindowIds {
                 deactivateShortcutLiveTab(pinId: pin.id, in: windowId)
+            }
+            for windowState in browserManager?.windowRegistry?.allWindows ?? [] {
+                windowState.removeFromShortcutLiveSelectionHistory(pin.id)
             }
             scheduleStructuralPersistence()
         }

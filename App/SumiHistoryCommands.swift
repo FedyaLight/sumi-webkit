@@ -45,10 +45,11 @@ struct SumiHistoryCommands: Commands {
             Button(
                 recentlyClosedManager.mostRecentItem.map { item in
                     if case .window = item { return "Reopen Last Closed Window" }
+                    if case .shortcutLauncher = item { return "Reopen Last Closed Launcher" }
                     return "Reopen Last Closed Tab"
                 } ?? "Reopen Last Closed Tab"
             ) {
-                browserManager.reopenLastClosedItem()
+                browserManager.reopenMostRecentClosedItem()
             }
             .modifier(dynamicShortcut(.undoCloseTab))
             .disabled(recentlyClosedManager.canReopenRecentlyClosedItem == false)
@@ -68,6 +69,16 @@ struct SumiHistoryCommands: Commands {
                                 SumiCommandMenuLabels.site(
                                     SumiCommandMenuLabels.recentlyClosedTitle(for: item),
                                     url: tab.url
+                                )
+                            case .shortcutLiveInstance(let shortcut):
+                                SumiCommandMenuLabels.site(
+                                    SumiCommandMenuLabels.recentlyClosedTitle(for: item),
+                                    url: shortcut.url
+                                )
+                            case .shortcutLauncher(let shortcut):
+                                SumiCommandMenuLabels.site(
+                                    SumiCommandMenuLabels.recentlyClosedTitle(for: item),
+                                    url: shortcut.pin.launchURL
                                 )
                             case .window:
                                 SumiCommandMenuLabels.system(
