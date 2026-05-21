@@ -17,6 +17,12 @@ final class SplitViewManager: ObservableObject {
         var previewStyle: SplitDropPreviewStyle = .edge
     }
 
+    struct WindowSplitPreviewState: Equatable {
+        var isActive: Bool = false
+        var targetRect: CGRect? = nil
+        var style: SplitDropPreviewStyle = .edge
+    }
+
     private struct TransientWindowSplitState: Equatable {
         var isPreviewActive: Bool = false
         var previewSide: SplitDropSide? = nil
@@ -25,10 +31,10 @@ final class SplitViewManager: ObservableObject {
     }
 
     private struct FullGroupCandidateCacheKey: Hashable {
-        let tabIds: [UUID]
+        let tabIds: Set<UUID>
 
         init(tabIds: [UUID]) {
-            self.tabIds = tabIds.sorted { $0.uuidString < $1.uuidString }
+            self.tabIds = Set(tabIds)
         }
     }
 
@@ -73,6 +79,15 @@ final class SplitViewManager: ObservableObject {
             previewSide: transient.previewSide,
             previewTargetRect: transient.previewTargetRect,
             previewStyle: transient.previewStyle
+        )
+    }
+
+    func previewState(for windowId: UUID) -> WindowSplitPreviewState {
+        let transient = transientState(for: windowId)
+        return WindowSplitPreviewState(
+            isActive: transient.isPreviewActive,
+            targetRect: transient.previewTargetRect,
+            style: transient.previewStyle
         )
     }
 
@@ -218,11 +233,8 @@ final class SplitViewManager: ObservableObject {
         else { return false }
 
         emptySplitPlaceholderTabIdsByWindow.removeValue(forKey: windowState.id)
-        let placeholderTab = browserManager?.tabManager.tab(for: placeholderTabId)
         guard let resolved = resolvedSplitTab(
             tab,
-            anchor: placeholderTab,
-            placeAfterAnchor: true,
             host: group.host,
             sourceGroup: nil,
             in: windowState
@@ -261,8 +273,7 @@ final class SplitViewManager: ObservableObject {
     func enterSplit(
         with tab: Tab,
         placeOn side: SplitDropSide = .right,
-        in windowState: BrowserWindowState,
-        animate _: Bool = true
+        in windowState: BrowserWindowState
     ) {
         guard let bm = browserManager else { return }
         let tm = bm.tabManager
@@ -336,13 +347,10 @@ final class SplitViewManager: ObservableObject {
         }
 
         let sourceGroup = sourceSplitGroup(for: tab)
-        let placeAfterAnchor = side != .left && side != .top
 
         if let targetGroup {
             guard let resolvedIncoming = resolvedSplitTab(
                 tab,
-                anchor: targetTab,
-                placeAfterAnchor: placeAfterAnchor,
                 host: targetGroup.host,
                 sourceGroup: sourceGroup,
                 in: windowState
@@ -401,16 +409,12 @@ final class SplitViewManager: ObservableObject {
         let host = initialHost(for: tab, targetTab: targetTab, in: windowState)
         guard let resolvedIncoming = resolvedSplitTab(
             tab,
-            anchor: targetTab,
-            placeAfterAnchor: placeAfterAnchor,
             host: host,
             sourceGroup: sourceGroup,
             in: windowState
         ),
         let resolvedAnchor = resolvedSplitTab(
             targetTab,
-            anchor: resolvedIncoming.tab,
-            placeAfterAnchor: false,
             host: host,
             sourceGroup: tm.splitGroup(containing: targetTab.id),
             in: windowState
@@ -1299,8 +1303,9 @@ final class SplitViewManager: ObservableObject {
             ) else {
                 continue
             }
+            let candidateRects = candidate.leafRects(in: bounds)
             guard candidate.hasSameStructure(as: tree) == false,
-                  let draggedRect = candidate.leafRect(for: draggedTabId, in: bounds)
+                  let draggedRect = candidateRects[draggedTabId]
             else {
                 continue
             }
@@ -1313,7 +1318,7 @@ final class SplitViewManager: ObservableObject {
                 / max(1, area(of: bounds))
             let stableMovement = stableLeafMovement(
                 from: currentRects,
-                to: candidate.leafRects(in: bounds),
+                to: candidateRects,
                 excluding: draggedTabId
             )
             let scoredCandidate = FullGroupPairCandidate(
@@ -1333,7 +1338,9 @@ final class SplitViewManager: ObservableObject {
     }
 
     private func fullGroupCandidateTrees(tabIds: [UUID]) -> [SplitLayoutTree] {
-        guard tabIds.count == SplitGroup.maximumTabs else { return [] }
+        guard tabIds.count == SplitGroup.maximumTabs,
+              Set(tabIds).count == tabIds.count
+        else { return [] }
         let cacheKey = FullGroupCandidateCacheKey(tabIds: tabIds)
         if let cached = fullGroupCandidateTreesByKey[cacheKey] {
             return cached
@@ -1352,7 +1359,7 @@ final class SplitViewManager: ObservableObject {
         }
 
         for rootAxis in [SplitAxis.row, .column] {
-            for ids in permutations(of: tabIds) {
+            forEachPermutation(of: tabIds) { ids in
                 let childAxis = perpendicularAxis(to: rootAxis)
                 append(
                     SplitLayoutTree.split(
@@ -1422,15 +1429,26 @@ final class SplitViewManager: ObservableObject {
         )
     }
 
-    private func permutations(of ids: [UUID]) -> [[UUID]] {
-        guard let first = ids.first else { return [[]] }
-        return permutations(of: Array(ids.dropFirst())).flatMap { rest in
-            (0 ... rest.count).map { index in
-                var next = rest
-                next.insert(first, at: index)
-                return next
+    private func forEachPermutation(of ids: [UUID], _ body: ([UUID]) -> Void) {
+        guard ids.isEmpty == false else {
+            body([])
+            return
+        }
+
+        var values = ids
+        func permute(from startIndex: Int) {
+            if startIndex == values.count {
+                body(values)
+                return
+            }
+
+            for index in startIndex ..< values.count {
+                values.swapAt(startIndex, index)
+                permute(from: startIndex + 1)
+                values.swapAt(startIndex, index)
             }
         }
+        permute(from: 0)
     }
 
     private func pairOrder(
@@ -1624,7 +1642,7 @@ final class SplitViewManager: ObservableObject {
         setTransientState(transient, for: windowId)
     }
 
-    func endPreview(cancel _: Bool, for windowId: UUID) {
+    func endPreview(for windowId: UUID) {
         var transient = transientState(for: windowId)
         transient.isPreviewActive = false
         transient.previewSide = nil
@@ -1645,8 +1663,6 @@ final class SplitViewManager: ObservableObject {
 
     private func resolvedSplitTab(
         _ candidate: Tab,
-        anchor _: Tab?,
-        placeAfterAnchor _: Bool,
         host: SplitGroupHost,
         sourceGroup: SplitGroup?,
         in windowState: BrowserWindowState

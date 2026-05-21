@@ -140,11 +140,13 @@ struct WebsiteView: View {
     }
 
     var body: some View {
+        let nativeSurfaceKind = activeNativeSurfaceKind
+
         ZStack() {
             tabCompositor
-                .allowsHitTesting(nativeSurfaceIsVisible == false)
+                .allowsHitTesting(nativeSurfaceKind == nil)
 
-            nativeSurface
+            nativeSurface(kind: nativeSurfaceKind)
                 .id(windowState.nativeSurfaceRoutingRevision)
 
             VStack {
@@ -170,13 +172,21 @@ struct WebsiteView: View {
         }
     }
 
-    private var nativeSurfaceIsVisible: Bool {
-        guard splitManager.isSplit(for: windowState.id) == false else { return false }
-        guard let currentTab = browserManager.currentTab(for: windowState) else { return true }
-        return currentTab.representsSumiHistorySurface
-            || currentTab.representsSumiBookmarksSurface
-            || currentTab.representsSumiSettingsSurface
-            || currentTab.representsSumiEmptySurface
+    private enum NativeSurfaceKind {
+        case history
+        case bookmarks
+        case settings
+        case empty
+    }
+
+    private var activeNativeSurfaceKind: NativeSurfaceKind? {
+        guard splitManager.isSplit(for: windowState.id) == false else { return nil }
+        guard let currentTab = browserManager.currentTab(for: windowState) else { return .empty }
+        if currentTab.representsSumiHistorySurface { return .history }
+        if currentTab.representsSumiBookmarksSurface { return .bookmarks }
+        if currentTab.representsSumiSettingsSurface { return .settings }
+        if currentTab.representsSumiEmptySurface { return .empty }
+        return nil
     }
 
     private var tabCompositor: some View {
@@ -195,59 +205,50 @@ struct WebsiteView: View {
     }
 
     @ViewBuilder
-    private var nativeSurface: some View {
-        if let currentTab = browserManager.currentTab(for: windowState) {
-            if splitManager.isSplit(for: windowState.id) == false,
-               currentTab.representsSumiHistorySurface
-            {
-                SumiHistoryTabRootView(
-                    browserManager: browserManager,
-                    windowState: windowState
-                )
-                .environmentObject(browserManager)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .browserContentSurface(
-                    geometry: chromeGeometry,
-                    background: browserContentSurfaceBackground
-                )
-                .allowsHitTesting(true)
-            } else if splitManager.isSplit(for: windowState.id) == false,
-                      currentTab.representsSumiBookmarksSurface
-            {
-                SumiBookmarksTabRootView(
-                    browserManager: browserManager,
-                    windowState: windowState
-                )
-                .environmentObject(browserManager)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .browserContentSurface(
-                    geometry: chromeGeometry,
-                    background: browserContentSurfaceBackground
-                )
-                .allowsHitTesting(true)
-            } else if splitManager.isSplit(for: windowState.id) == false,
-                      currentTab.representsSumiSettingsSurface
-            {
-                SumiSettingsTabRootView(
-                    browserManager: browserManager,
-                    windowState: windowState
-                )
-                .environmentObject(browserManager)
-                .environmentObject(browserManager.extensionSurfaceStore)
-                .environment(keyboardShortcutManager)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .browserContentSurface(
-                    geometry: chromeGeometry,
-                    background: browserContentSurfaceBackground
-                )
-                .allowsHitTesting(true)
-            } else if splitManager.isSplit(for: windowState.id) == false,
-                      currentTab.representsSumiEmptySurface
-            {
-                EmptyWebsiteView()
-            }
-        } else {
+    private func nativeSurface(kind: NativeSurfaceKind?) -> some View {
+        switch kind {
+        case .history:
+            SumiHistoryTabRootView(
+                browserManager: browserManager,
+                windowState: windowState
+            )
+            .environmentObject(browserManager)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .browserContentSurface(
+                geometry: chromeGeometry,
+                background: browserContentSurfaceBackground
+            )
+            .allowsHitTesting(true)
+        case .bookmarks:
+            SumiBookmarksTabRootView(
+                browserManager: browserManager,
+                windowState: windowState
+            )
+            .environmentObject(browserManager)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .browserContentSurface(
+                geometry: chromeGeometry,
+                background: browserContentSurfaceBackground
+            )
+            .allowsHitTesting(true)
+        case .settings:
+            SumiSettingsTabRootView(
+                browserManager: browserManager,
+                windowState: windowState
+            )
+            .environmentObject(browserManager)
+            .environmentObject(browserManager.extensionSurfaceStore)
+            .environment(keyboardShortcutManager)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .browserContentSurface(
+                geometry: chromeGeometry,
+                background: browserContentSurfaceBackground
+            )
+            .allowsHitTesting(true)
+        case .empty:
             EmptyWebsiteView()
+        case nil:
+            EmptyView()
         }
     }
 
@@ -265,9 +266,9 @@ private struct SplitPreviewOverlay: View {
     
     var body: some View {
         GeometryReader { geometry in
-            let splitState = splitManager.getSplitState(for: windowState.id)
+            let previewState = splitManager.previewState(for: windowState.id)
             let requestedZone = SplitPreviewZone.make(
-                splitState: splitState,
+                previewState: previewState,
                 containerHeight: geometry.size.height
             )
 
@@ -361,37 +362,20 @@ private struct SplitPreviewZone: Equatable {
     let style: SplitDropPreviewStyle
 
     static func make(
-        splitState: SplitViewManager.WindowSplitState,
+        previewState: SplitViewManager.WindowSplitPreviewState,
         containerHeight: CGFloat
     ) -> SplitPreviewZone? {
-        guard splitState.isPreviewActive,
-              let side = splitState.previewSide,
-              let targetRect = splitState.previewTargetRect
+        guard previewState.isActive,
+              let targetRect = previewState.targetRect
         else { return nil }
 
         let swiftUITargetRect = targetRect.convertedFromAppKitCoordinates(
             containerHeight: containerHeight
         )
         return SplitPreviewZone(
-            rect: SplitPreviewZoneGeometry.zoneRect(
-                side: side,
-                targetRect: swiftUITargetRect,
-                style: splitState.previewStyle
-            ),
-            style: splitState.previewStyle
+            rect: swiftUITargetRect.standardized,
+            style: previewState.style
         )
-    }
-}
-
-private enum SplitPreviewZoneGeometry {
-    static func zoneRect(
-        side: SplitDropSide,
-        targetRect: CGRect,
-        style: SplitDropPreviewStyle
-    ) -> CGRect {
-        _ = side
-        _ = style
-        return targetRect.standardized
     }
 }
 

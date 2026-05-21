@@ -6,12 +6,10 @@ import SwiftUI
 enum SidebarMotionPolicy {
     enum Mode: Equatable {
         case standard
-        case interactive
         case reducedMotion
     }
 
     static let rowPressedScale: CGFloat = 0.98
-    static let rowPressCancelDistance: CGFloat = 3
 
     static func currentMode(reduceMotion: Bool) -> Mode {
         reduceMotion ? .reducedMotion : .standard
@@ -25,7 +23,7 @@ enum SidebarMotionPolicy {
         switch mode {
         case .reducedMotion:
             return nil
-        case .standard, .interactive:
+        case .standard:
             return .timingCurve(
                 isShowing ? 0.0 : 0.42,
                 0.0,
@@ -40,7 +38,7 @@ enum SidebarMotionPolicy {
         switch mode {
         case .reducedMotion:
             return .easeOut(duration: 0.08)
-        case .standard, .interactive:
+        case .standard:
             return .smooth(duration: 0.22)
         }
     }

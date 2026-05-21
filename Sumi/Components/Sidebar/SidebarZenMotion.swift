@@ -7,7 +7,6 @@ import SwiftUI
 
 enum SidebarRowMotionMetrics {
     static let pressedScale = SidebarMotionPolicy.rowPressedScale
-    static let pressCancelDistance = SidebarMotionPolicy.rowPressCancelDistance
 }
 
 enum SidebarDropMotion {
@@ -19,15 +18,6 @@ enum SidebarDropMotion {
 enum SidebarZenPressKind {
     case row
     case split
-
-    var duration: Double {
-        switch self {
-        case .row:
-            0.20
-        case .split:
-            0.10
-        }
-    }
 
     var isSplit: Bool {
         switch self {

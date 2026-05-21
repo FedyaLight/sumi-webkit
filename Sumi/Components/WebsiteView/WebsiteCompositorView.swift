@@ -5,13 +5,16 @@ import SwiftUI
 import WebKit
 
 @MainActor
-private func countHostedWebViews(in root: NSView) -> Int {
+private func hostedWebViewCount(in root: NSView, stoppingAfter limit: Int = .max) -> Int {
     var count = 0
     for subview in root.subviews {
         if subview is SumiWebViewContainerView || subview is WKWebView {
             count += 1
         } else {
-            count += countHostedWebViews(in: subview)
+            count += hostedWebViewCount(in: subview, stoppingAfter: limit - count)
+        }
+        if count > limit {
+            return count
         }
     }
     return count
@@ -216,12 +219,12 @@ final class WindowWebContentController: NSViewController {
 
         if shouldShowSplit == false {
             let expected = (currentTab != nil && displayState.currentTabUnloaded == false) ? 1 : 0
-            if countHostedWebViews(in: containerView.singlePaneView) > expected { return true }
-            if containerView.hostedSplitWebViewCount > 0 { return true }
+            if hostedWebViewCount(in: containerView.singlePaneView, stoppingAfter: expected) > expected { return true }
+            if containerView.hasHostedSplitWebViews { return true }
             return false
         }
 
-        if countHostedWebViews(in: containerView.singlePaneView) > 0 { return true }
+        if hostedWebViewCount(in: containerView.singlePaneView, stoppingAfter: 0) > 0 { return true }
         guard let group = displayState.splitGroup else { return false }
         for tabId in splitPaneHostsByTabId.keys where group.contains(tabId) == false {
             return true
@@ -733,8 +736,8 @@ private final class ContainerView: NSView {
     private weak var splitManager: SplitViewManager?
     private var windowId: UUID
 
-    var hostedSplitWebViewCount: Int {
-        splitRootView.hostedWebViewCount
+    var hasHostedSplitWebViews: Bool {
+        splitRootView.hasHostedWebViews
     }
 
     init(
@@ -865,8 +868,8 @@ private final class SplitRootView: NSView {
     private var onResize: (([Int], [Double]) -> Void)?
     private var layoutGeneration: UInt = 0
 
-    var hostedWebViewCount: Int {
-        rootView.map { countHostedWebViews(in: $0) } ?? 0
+    var hasHostedWebViews: Bool {
+        rootView.map { hostedWebViewCount(in: $0, stoppingAfter: 0) > 0 } ?? false
     }
 
     override var acceptsFirstResponder: Bool { false }
@@ -1274,7 +1277,10 @@ private final class SplitPaneControlsView: NSVisualEffectView {
     }
 
     func setVisible(_ isVisible: Bool, animated: Bool) {
-        let updates = { self.alphaValue = isVisible ? 1 : 0 }
+        let targetAlpha: CGFloat = isVisible ? 1 : 0
+        guard abs(alphaValue - targetAlpha) > 0.001 else { return }
+
+        let updates = { self.alphaValue = targetAlpha }
         guard animated else {
             updates()
             return
@@ -1282,7 +1288,7 @@ private final class SplitPaneControlsView: NSVisualEffectView {
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.10
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            self.animator().alphaValue = isVisible ? 1 : 0
+            self.animator().alphaValue = targetAlpha
         }
     }
 
