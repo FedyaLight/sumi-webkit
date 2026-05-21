@@ -150,12 +150,31 @@ extension BrowserManager {
         extensionsModule.cancelNativeMessagingSessionsIfLoaded(
             reason: "BrowserManager.cleanupAllTabs"
         )
-        let allTabs = tabManager.pinnedTabs + tabManager.tabs
+        extensionsModule.closeAllOptionsWindowsIfLoaded()
+        externalMiniWindowManager.closeAll()
+        glanceManager.dismissGlance()
+
+        var seenTabIDs = Set<UUID>()
+        var allTabs: [Tab] = []
+
+        func append(_ tab: Tab) {
+            guard seenTabIDs.insert(tab.id).inserted else { return }
+            allTabs.append(tab)
+        }
+
+        tabManager.allPinnedTabsAllProfiles.forEach(append)
+        tabManager.allTabs().forEach(append)
+        windowRegistry?.allWindows
+            .flatMap(\.ephemeralTabs)
+            .forEach(append)
 
         for tab in allTabs {
             RuntimeDiagnostics.emit("🔄 [BrowserManager] Cleaning up tab: \(tab.name)")
-            tab.closeTab()
+            tab.cleanupNormalTabPermissionRuntime(reason: "browser-manager-cleanup-all-tabs")
+            tab.performComprehensiveWebViewCleanup()
         }
+
+        webViewCoordinator?.cleanupAllWebViews(tabManager: tabManager)
     }
 
     // MARK: - Window-Aware Tab Operations for Commands

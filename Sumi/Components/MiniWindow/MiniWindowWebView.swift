@@ -48,12 +48,21 @@ struct MiniWindowWebView: NSViewRepresentable {
         context.coordinator.loadInitialURLIfNeeded(on: nsView)
     }
 
+    static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
+        coordinator.cleanUp(
+            webView: nsView,
+            cancelsAuth: false,
+            reason: "MiniWindowWebView.dismantleNSView"
+        )
+    }
+
     // MARK: - Coordinator
     @MainActor
     final class Coordinator: NSObject, WKScriptMessageHandler {
         var session: MiniWindowSession
         private var progressObservation: NSKeyValueObservation?
         private var didLoadInitialURL = false
+        private var didInstallAuthCompletionHandler = false
 
         /// Weak reference to the webView so we can clean up message handlers in deinit
         private weak var installedWebView: WKWebView?
@@ -67,9 +76,12 @@ struct MiniWindowWebView: NSViewRepresentable {
             // reference to this Coordinator. Without this, the WKUserContentController
             // retains the Coordinator forever.
             let webView = installedWebView
+            let shouldRemoveHandler = didInstallAuthCompletionHandler
             Task { @MainActor in
-                webView?.configuration.userContentController
-                    .removeScriptMessageHandler(forName: "authCompletion")
+                guard shouldRemoveHandler else { return }
+                webView?.configuration.userContentController.removeScriptMessageHandler(
+                    forName: "authCompletion"
+                )
             }
         }
 
@@ -85,7 +97,10 @@ struct MiniWindowWebView: NSViewRepresentable {
         func installAuthDetectionScript(on webView: WKWebView) {
             // Add message handler for authentication completion
             installedWebView = webView
-            webView.configuration.userContentController.add(self, name: "authCompletion")
+            if didInstallAuthCompletionHandler == false {
+                webView.configuration.userContentController.add(self, name: "authCompletion")
+                didInstallAuthCompletionHandler = true
+            }
             
             // Inject a simpler, less intrusive JavaScript to detect authentication completion
             let authDetectionScript = """
@@ -143,6 +158,38 @@ struct MiniWindowWebView: NSViewRepresentable {
             
             let script = WKUserScript(source: authDetectionScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
             webView.configuration.userContentController.addUserScript(script)
+        }
+
+        func cleanUp(
+            webView: WKWebView?,
+            cancelsAuth: Bool,
+            reason: String
+        ) {
+            progressObservation?.invalidate()
+            progressObservation = nil
+
+            if cancelsAuth {
+                session.cancelAuthDueToClose()
+            }
+
+            guard let webView else { return }
+
+            if didInstallAuthCompletionHandler {
+                webView.configuration.userContentController.removeScriptMessageHandler(
+                    forName: "authCompletion"
+                )
+                didInstallAuthCompletionHandler = false
+            }
+
+            SumiAuxiliaryWebViewShutdown.perform(
+                on: webView,
+                browserManager: session.browserManager,
+                reason: reason
+            )
+
+            if installedWebView === webView {
+                installedWebView = nil
+            }
         }
 
         func loadInitialURLIfNeeded(on webView: WKWebView) {
@@ -278,6 +325,17 @@ extension MiniWindowWebView.Coordinator: WKNavigationDelegate {
 // MARK: - WKUIDelegate
 @MainActor
 extension MiniWindowWebView.Coordinator: WKUIDelegate {
+    func webViewDidClose(_ webView: WKWebView) {
+        RuntimeDiagnostics.emit("🔐 [MiniWindow] WebKit requested window close")
+        let window = webView.window
+        cleanUp(
+            webView: webView,
+            cancelsAuth: true,
+            reason: "MiniWindowWebView.webViewDidClose"
+        )
+        window?.close()
+    }
+
     func webView(
         _ webView: WKWebView,
         createWebViewWith configuration: WKWebViewConfiguration,

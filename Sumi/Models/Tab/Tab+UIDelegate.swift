@@ -74,6 +74,22 @@ extension Tab: WKUIDelegate {
         }
     }
 
+    public func webViewDidClose(_ webView: WKWebView) {
+        RuntimeDiagnostics.debug(category: "Tab") {
+            "WebKit requested WebView close for tab=\(id.uuidString.prefix(8))."
+        }
+
+        if browserManager?.handleWebViewDidClose(webView) == true {
+            return
+        }
+
+        cleanupCloneWebView(webView)
+        if _webView === webView {
+            _webView = nil
+            primaryWindowId = nil
+        }
+    }
+
     public func webView(
         _ webView: WKWebView,
         runJavaScriptAlertPanelWithMessage message: String,

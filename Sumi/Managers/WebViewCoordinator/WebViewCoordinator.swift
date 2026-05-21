@@ -310,6 +310,7 @@ enum DeferredWebViewCommandKey: Hashable {
     case removeWebViewFromContainers(ObjectIdentifier)
     case removeAllWebViews(UUID)
     case removeTrackedWebView(ObjectIdentifier, UUID, UUID)
+    case closeWebViewFromWebKit(ObjectIdentifier)
     case cleanupWindow(UUID)
     case cleanupAllWebViews
     case rebuildLiveWebViews(UUID)
@@ -322,6 +323,7 @@ enum DeferredWebViewCommand {
     case removeWebViewFromContainers(webViewID: ObjectIdentifier)
     case removeAllWebViews(tabID: UUID)
     case removeTrackedWebView(webViewID: ObjectIdentifier, tabID: UUID, windowID: UUID)
+    case closeWebViewFromWebKit(webViewID: ObjectIdentifier)
     case cleanupWindow(windowID: UUID)
     case cleanupAllWebViews
     case rebuildLiveWebViews(tabID: UUID, preferredPrimaryWindowID: UUID?)
@@ -337,6 +339,8 @@ enum DeferredWebViewCommand {
             return .removeAllWebViews(tabID)
         case .removeTrackedWebView(let webViewID, let tabID, let windowID):
             return .removeTrackedWebView(webViewID, tabID, windowID)
+        case .closeWebViewFromWebKit(let webViewID):
+            return .closeWebViewFromWebKit(webViewID)
         case .cleanupWindow(let windowID):
             return .cleanupWindow(windowID)
         case .cleanupAllWebViews:
@@ -360,6 +364,8 @@ enum DeferredWebViewCommand {
             return "removeAllWebViews tab=\(tabID.uuidString.prefix(8))"
         case .removeTrackedWebView(let webViewID, let tabID, let windowID):
             return "removeTrackedWebView tab=\(tabID.uuidString.prefix(8)) window=\(windowID.uuidString.prefix(8)) webView=\(webViewID)"
+        case .closeWebViewFromWebKit(let webViewID):
+            return "closeWebViewFromWebKit webView=\(webViewID)"
         case .cleanupWindow(let windowID):
             return "cleanupWindow window=\(windowID.uuidString.prefix(8))"
         case .cleanupAllWebViews:
@@ -812,6 +818,37 @@ class WebViewCoordinator {
 
     func windowID(containing webView: WKWebView) -> UUID? {
         windowId(containing: webView)
+    }
+
+    @discardableResult
+    func handleWebViewDidClose(_ webView: WKWebView) -> Bool {
+        let webViewID = ObjectIdentifier(webView)
+        noteWeakWebView(webView)
+
+        if enqueueDeferredProtectedCommand(
+            .closeWebViewFromWebKit(webViewID: webViewID),
+            for: webView,
+            reason: "webViewDidClose"
+        ) {
+            closeFullscreenMediaIfNeeded(on: webView)
+            return true
+        }
+
+        if let owner = trackedOwner(containing: webView) {
+            return closeTrackedWebViewFromWebKit(webView, owner: owner)
+        }
+
+        if let (tab, windowState) = untrackedTabContext(for: webView) {
+            closeTabForWebKitCloseRequest(tab, windowState: windowState)
+            return true
+        }
+
+        SumiAuxiliaryWebViewShutdown.perform(
+            on: webView,
+            browserManager: browserManager,
+            reason: "WebKit webViewDidClose fallback"
+        )
+        return true
     }
 
     private func flushDeferredProtectedCommands(for webViewID: ObjectIdentifier) {
@@ -1596,6 +1633,8 @@ class WebViewCoordinator {
             return resolvedTab(with: tabID) != nil
         case .removeTrackedWebView(let webViewID, _, _):
             return resolveWebView(with: webViewID) != nil
+        case .closeWebViewFromWebKit(let webViewID):
+            return resolveWebView(with: webViewID) != nil
         case .cleanupWindow(let windowID):
             return browserManager?.tabManager != nil
                 && (
@@ -1649,6 +1688,11 @@ class WebViewCoordinator {
                 webView,
                 owner: TrackedWebViewOwner(tabID: tabID, windowID: windowID)
             )
+        case .closeWebViewFromWebKit(let webViewID):
+            guard let webView = resolveWebView(with: webViewID) else {
+                return false
+            }
+            handleWebViewDidClose(webView)
         case .cleanupWindow(let windowID):
             guard let tabManager = browserManager?.tabManager else {
                 return false
@@ -1736,6 +1780,74 @@ class WebViewCoordinator {
                 browserManager: browserManager
             )
         }
+    }
+
+    @discardableResult
+    private func closeTrackedWebViewFromWebKit(
+        _ webView: WKWebView,
+        owner: TrackedWebViewOwner
+    ) -> Bool {
+        guard let browserManager,
+              let tab = resolvedTab(with: owner.tabID)
+        else {
+            cleanupTrackedWebView(webView, owner: owner)
+            return true
+        }
+
+        let windowState = browserManager.windowRegistry?.windows[owner.windowID]
+            ?? browserManager.windowState(containing: tab)
+        closeTabForWebKitCloseRequest(tab, windowState: windowState)
+        return true
+    }
+
+    private func closeTabForWebKitCloseRequest(
+        _ tab: Tab,
+        windowState: BrowserWindowState?
+    ) {
+        guard let browserManager else {
+            tab.performComprehensiveWebViewCleanup()
+            return
+        }
+
+        if let windowState {
+            browserManager.closeTab(tab, in: windowState)
+            return
+        }
+
+        if let containingWindow = browserManager.windowState(containing: tab) {
+            browserManager.closeTab(tab, in: containingWindow)
+            return
+        }
+
+        tab.performComprehensiveWebViewCleanup()
+        browserManager.tabManager.removeTab(tab.id)
+    }
+
+    private func untrackedTabContext(
+        for webView: WKWebView
+    ) -> (tab: Tab, windowState: BrowserWindowState?)? {
+        guard let browserManager else { return nil }
+
+        func matches(_ tab: Tab) -> Bool {
+            tab.existingWebView === webView || tab.assignedWebView === webView
+        }
+
+        if let windowStates = browserManager.windowRegistry?.allWindows {
+            for windowState in windowStates {
+                if let tab = windowState.ephemeralTabs.first(where: matches) {
+                    return (tab, windowState)
+                }
+            }
+        }
+
+        if let tab = browserManager.tabManager.allTabs().first(where: matches) {
+            return (
+                tab,
+                browserManager.windowState(containing: tab)
+            )
+        }
+
+        return nil
     }
 
     private func visibleTabIDs(

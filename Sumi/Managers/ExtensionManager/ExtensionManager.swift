@@ -132,6 +132,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     var extensionErrorObserverTokens: [String: NSObjectProtocol] = [:]
     var lastLoggedExtensionErrorFingerprints: [String: String] = [:]
     var optionsWindows: [String: NSWindow] = [:]
+    var optionsWindowDelegates: [String: ExtensionOptionsWindowDelegate] = [:]
     var tabAdapters: [UUID: ExtensionTabAdapter] = [:]
     var windowAdapters: [UUID: ExtensionWindowAdapter] = [:]
     var installedPageBridgeIDs: Set<String> = []

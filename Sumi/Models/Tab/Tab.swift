@@ -67,6 +67,45 @@ enum SumiWebViewShutdown {
     }
 }
 
+enum SumiAuxiliaryWebViewShutdown {
+    @MainActor
+    static func perform(
+        on webView: WKWebView,
+        browserManager: BrowserManager?,
+        reason: String
+    ) {
+        webView.stopLoading()
+        stopNativeMedia(on: webView)
+
+        browserManager?.extensionsModule.releaseExternallyConnectableRuntimeIfLoaded(
+            for: webView,
+            reason: reason
+        )
+
+        if let controller = webView.configuration.userContentController.sumiNormalTabUserContentController {
+            controller.cleanUpBeforeClosing()
+        } else {
+            webView.configuration.userContentController.removeAllUserScripts()
+        }
+
+        webView.navigationDelegate = nil
+        webView.uiDelegate = nil
+        webView.removeFromSuperview()
+    }
+
+    @MainActor
+    private static func stopNativeMedia(on webView: WKWebView) {
+        webView.pauseAllMediaPlayback(completionHandler: nil)
+
+        if webView.cameraCaptureState != .none {
+            webView.setCameraCaptureState(.none, completionHandler: nil)
+        }
+        if webView.microphoneCaptureState != .none {
+            webView.setMicrophoneCaptureState(.none, completionHandler: nil)
+        }
+    }
+}
+
 @MainActor
 public class Tab: NSObject, Identifiable, ObservableObject {
     public let id: UUID

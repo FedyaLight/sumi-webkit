@@ -6,6 +6,46 @@ import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
+final class ExtensionOptionsWindowDelegate: NSObject, NSWindowDelegate, WKUIDelegate {
+    private let extensionId: String
+    private weak var manager: ExtensionManager?
+    private weak var webView: WKWebView?
+    var isCleaningUp = false
+
+    init(
+        extensionId: String,
+        manager: ExtensionManager,
+        webView: WKWebView
+    ) {
+        self.extensionId = extensionId
+        self.manager = manager
+        self.webView = webView
+        super.init()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard isCleaningUp == false else { return }
+        manager?.cleanupOptionsWindow(
+            for: extensionId,
+            window: notification.object as? NSWindow,
+            webView: webView,
+            shouldOrderOut: false
+        )
+    }
+
+    func webViewDidClose(_ webView: WKWebView) {
+        guard isCleaningUp == false else { return }
+        manager?.cleanupOptionsWindow(
+            for: extensionId,
+            window: webView.window,
+            webView: webView,
+            shouldOrderOut: true
+        )
+    }
+}
+
+@available(macOS 15.5, *)
+@MainActor
 extension ExtensionManager: NSPopoverDelegate {
     func prepareWebViewConfigurationForExtensionRuntime(
         _ configuration: WKWebViewConfiguration,
@@ -102,12 +142,46 @@ extension ExtensionManager: NSPopoverDelegate {
     }
 
     func closeOptionsWindow(for extensionId: String) {
-        guard let window = optionsWindows.removeValue(forKey: extensionId) else {
+        cleanupOptionsWindow(for: extensionId, shouldOrderOut: true)
+    }
+
+    func closeAllOptionsWindows() {
+        Array(optionsWindows.keys).forEach { closeOptionsWindow(for: $0) }
+    }
+
+    func cleanupOptionsWindow(
+        for extensionId: String,
+        window: NSWindow? = nil,
+        webView: WKWebView? = nil,
+        shouldOrderOut: Bool
+    ) {
+        guard let resolvedWindow = window ?? optionsWindows[extensionId] else {
+            optionsWindowDelegates.removeValue(forKey: extensionId)
             return
         }
-        window.orderOut(nil)
-        window.contentViewController = nil
-        window.delegate = nil
+
+        let delegate = optionsWindowDelegates[extensionId]
+        delegate?.isCleaningUp = true
+
+        let resolvedWebView = webView ?? resolvedWindow.contentView.flatMap {
+            Self.firstWebView(in: $0)
+        }
+        if let resolvedWebView {
+            SumiAuxiliaryWebViewShutdown.perform(
+                on: resolvedWebView,
+                browserManager: browserManager,
+                reason: "Extension options window cleanup"
+            )
+        }
+
+        if shouldOrderOut {
+            resolvedWindow.orderOut(nil)
+        }
+        resolvedWindow.contentViewController = nil
+        resolvedWindow.contentView = nil
+        resolvedWindow.delegate = nil
+        optionsWindows.removeValue(forKey: extensionId)
+        optionsWindowDelegates.removeValue(forKey: extensionId)
     }
 
     func prepareWebViewForExtensionRuntime(
@@ -333,7 +407,15 @@ extension ExtensionManager: NSPopoverDelegate {
         window.center()
 
         closeOptionsWindow(for: extensionId)
+        let delegate = ExtensionOptionsWindowDelegate(
+            extensionId: extensionId,
+            manager: self,
+            webView: webView
+        )
+        webView.uiDelegate = delegate
+        window.delegate = delegate
         optionsWindows[extensionId] = window
+        optionsWindowDelegates[extensionId] = delegate
         window.orderFront(nil)
 
         completionHandler(nil)
@@ -445,6 +527,19 @@ extension ExtensionManager: NSPopoverDelegate {
         } else {
             anchorObserverTokens[extensionId] = tokens
         }
+    }
+
+    private static func firstWebView(in root: NSView) -> WKWebView? {
+        if let webView = root as? WKWebView {
+            return webView
+        }
+
+        for subview in root.subviews {
+            if let webView = firstWebView(in: subview) {
+                return webView
+            }
+        }
+        return nil
     }
 
     private func showErrorAlert(_ error: ExtensionError) {
