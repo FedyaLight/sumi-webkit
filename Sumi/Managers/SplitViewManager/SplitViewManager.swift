@@ -4,19 +4,6 @@ import SwiftUI
 
 @MainActor
 final class SplitViewManager: ObservableObject {
-    struct WindowSplitState {
-        var isSplit: Bool = false
-        var groupId: UUID?
-        var tabIds: [UUID] = []
-        var layoutTree: SplitLayoutTree?
-        var layoutKind: SplitLayoutKind = .vertical
-        var activeTabId: UUID?
-        var isPreviewActive: Bool = false
-        var previewSide: SplitDropSide? = nil
-        var previewTargetRect: CGRect? = nil
-        var previewStyle: SplitDropPreviewStyle = .edge
-    }
-
     struct WindowSplitPreviewState: Equatable {
         var isActive: Bool = false
         var targetRect: CGRect? = nil
@@ -25,7 +12,6 @@ final class SplitViewManager: ObservableObject {
 
     private struct TransientWindowSplitState: Equatable {
         var isPreviewActive: Bool = false
-        var previewSide: SplitDropSide? = nil
         var previewTargetRect: CGRect? = nil
         var previewStyle: SplitDropPreviewStyle = .edge
     }
@@ -45,11 +31,7 @@ final class SplitViewManager: ObservableObject {
 
     private static let previewPlaceholderTabId = UUID()
 
-    @Published private(set) var revision: UInt = 0
-    @Published var isPreviewActive: Bool = false
-    @Published var previewSide: SplitDropSide? = nil
-    @Published var previewTargetRect: CGRect? = nil
-    @Published var previewStyle: SplitDropPreviewStyle = .edge
+    private var activeWindowPreviewState = WindowSplitPreviewState()
 
     weak var browserManager: BrowserManager?
     weak var windowRegistry: WindowRegistry?
@@ -61,25 +43,6 @@ final class SplitViewManager: ObservableObject {
 
     init(browserManager: BrowserManager? = nil) {
         self.browserManager = browserManager
-    }
-
-    func getSplitState(for windowId: UUID) -> WindowSplitState {
-        let group = splitGroup(for: windowId)
-        let transient = transientState(for: windowId)
-        let tabIds = group?.tabIds ?? []
-        let activeTabId = activeTabId(for: windowId, in: group)
-        return WindowSplitState(
-            isSplit: group != nil,
-            groupId: group?.id,
-            tabIds: tabIds,
-            layoutTree: group?.layoutTree,
-            layoutKind: group?.layoutKind ?? .vertical,
-            activeTabId: activeTabId,
-            isPreviewActive: transient.isPreviewActive,
-            previewSide: transient.previewSide,
-            previewTargetRect: transient.previewTargetRect,
-            previewStyle: transient.previewStyle
-        )
     }
 
     func previewState(for windowId: UUID) -> WindowSplitPreviewState {
@@ -159,7 +122,7 @@ final class SplitViewManager: ObservableObject {
         for windowState in windows.values {
             browserManager?.refreshCompositor(for: windowState)
         }
-        bumpRevision()
+        objectWillChange.send()
     }
 
     func updateActiveSide(for tabId: UUID, in windowId: UUID) {
@@ -1614,13 +1577,11 @@ final class SplitViewManager: ObservableObject {
     }
 
     func beginPreview(
-        side: SplitDropSide?,
         targetRect: CGRect? = nil,
         style: SplitDropPreviewStyle = .edge,
         for windowId: UUID
     ) {
         var transient = transientState(for: windowId)
-        transient.previewSide = side
         transient.previewTargetRect = targetRect
         transient.previewStyle = style
         transient.isPreviewActive = true
@@ -1629,14 +1590,12 @@ final class SplitViewManager: ObservableObject {
     }
 
     func updatePreview(
-        side: SplitDropSide?,
         targetRect: CGRect?,
         style: SplitDropPreviewStyle = .edge,
         for windowId: UUID
     ) {
         var transient = transientState(for: windowId)
         guard transient.isPreviewActive else { return }
-        transient.previewSide = side
         transient.previewTargetRect = targetRect
         transient.previewStyle = style
         setTransientState(transient, for: windowId)
@@ -1644,8 +1603,11 @@ final class SplitViewManager: ObservableObject {
 
     func endPreview(for windowId: UUID) {
         var transient = transientState(for: windowId)
+        guard transient.isPreviewActive
+            || transient.previewTargetRect != nil
+            || transient.previewStyle != .edge
+        else { return }
         transient.isPreviewActive = false
-        transient.previewSide = nil
         transient.previewTargetRect = nil
         transient.previewStyle = .edge
         setTransientState(transient, for: windowId)
@@ -1920,7 +1882,6 @@ final class SplitViewManager: ObservableObject {
         let previous = transientState(for: windowId)
         guard previous != state else { return }
         if state.isPreviewActive == false,
-           state.previewSide == nil,
            state.previewTargetRect == nil {
             transientWindowSplitStates.removeValue(forKey: windowId)
         } else {
@@ -1929,18 +1890,22 @@ final class SplitViewManager: ObservableObject {
         syncPublishedStateIfNeeded(for: windowId)
     }
 
-    private func syncPublishedStateIfNeeded(for windowId: UUID) {
+    private func syncPublishedStateIfNeeded(for windowId: UUID, forceNotify: Bool = false) {
         guard windowRegistry?.activeWindow?.id == windowId else { return }
         let transient = transientState(for: windowId)
-        isPreviewActive = transient.isPreviewActive
-        previewSide = transient.previewSide
-        previewTargetRect = transient.previewTargetRect
-        previewStyle = transient.previewStyle
-        bumpRevision()
+        let next = WindowSplitPreviewState(
+            isActive: transient.isPreviewActive,
+            targetRect: transient.previewTargetRect,
+            style: transient.previewStyle
+        )
+        guard forceNotify || activeWindowPreviewState != next else { return }
+
+        objectWillChange.send()
+        activeWindowPreviewState = next
     }
 
     private func notifyChanged(for windowId: UUID) {
-        syncPublishedStateIfNeeded(for: windowId)
+        syncPublishedStateIfNeeded(for: windowId, forceNotify: true)
         refreshWindow(windowId)
     }
 
@@ -1951,10 +1916,6 @@ final class SplitViewManager: ObservableObject {
         }
     }
 
-    private func bumpRevision() {
-        revision &+= 1
-        objectWillChange.send()
-    }
 }
 
 private extension SplitLayoutTree {

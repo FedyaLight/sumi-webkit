@@ -40,8 +40,6 @@ struct SpaceStripMetrics: Equatable {
 
 struct SpaceStripGeometry: Equatable {
     let slotFrames: [CGRect]
-    let spacing: CGFloat
-    let contentFrame: CGRect
 
     static func make(
         itemCount: Int,
@@ -49,7 +47,7 @@ struct SpaceStripGeometry: Equatable {
         metrics: SpaceStripMetrics
     ) -> Self {
         guard itemCount > 0 else {
-            return Self(slotFrames: [], spacing: 0, contentFrame: .zero)
+            return Self(slotFrames: [])
         }
 
         let spacing: CGFloat
@@ -72,11 +70,7 @@ struct SpaceStripGeometry: Equatable {
             )
         }
 
-        return Self(
-            slotFrames: frames,
-            spacing: spacing,
-            contentFrame: CGRect(x: originX, y: 0, width: contentWidth, height: metrics.slotSize)
-        )
+        return Self(slotFrames: frames)
     }
 
     func frame(at index: Int) -> CGRect? {

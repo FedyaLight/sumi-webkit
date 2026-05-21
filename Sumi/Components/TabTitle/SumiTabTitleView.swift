@@ -90,6 +90,41 @@ enum SumiTabTitleAnimation {
     static let loadingAlphaWaveRelativeBandWidth = CGFloat(0.72)
     static let loadingAlphaWaveShoulderAlpha = CGFloat(0.55)
     static let loadingAlphaWaveMinimumAlpha = CGFloat(0.04)
+
+    static var loadingAlphaWaveMaskColors: [CGColor] {
+        [
+            NSColor.white.cgColor,
+            NSColor.white.withAlphaComponent(loadingAlphaWaveShoulderAlpha).cgColor,
+            NSColor.white.withAlphaComponent(loadingAlphaWaveMinimumAlpha).cgColor,
+            NSColor.white.withAlphaComponent(loadingAlphaWaveShoulderAlpha).cgColor,
+            NSColor.white.cgColor
+        ]
+    }
+
+    static func loadingAlphaWaveRelativeHalfWidth(for width: CGFloat) -> CGFloat {
+        guard width > 0 else { return 0 }
+        let bandWidth = min(
+            max(
+                width * loadingAlphaWaveRelativeBandWidth,
+                loadingAlphaWaveMinimumBandWidth
+            ),
+            loadingAlphaWaveMaximumBandWidth
+        )
+        return (bandWidth / width) / 2
+    }
+
+    static func loadingAlphaWaveLocations(centerX: CGFloat, width: CGFloat) -> [NSNumber] {
+        let halfWidth = loadingAlphaWaveRelativeHalfWidth(for: width)
+        let leadingShoulder = halfWidth * 0.56
+        let trailingShoulder = halfWidth * 0.56
+        return [
+            NSNumber(value: Double(centerX - halfWidth)),
+            NSNumber(value: Double(centerX - leadingShoulder)),
+            NSNumber(value: Double(centerX)),
+            NSNumber(value: Double(centerX + trailingShoulder)),
+            NSNumber(value: Double(centerX + halfWidth))
+        ]
+    }
 }
 
 final class SumiTabTitleView: NSView {
@@ -300,13 +335,7 @@ private extension SumiTabTitleView {
         mask.frame = bounds
         mask.startPoint = CGPoint(x: 0, y: 0.5)
         mask.endPoint = CGPoint(x: 1, y: 0.5)
-        mask.colors = [
-            NSColor.white.cgColor,
-            NSColor.white.withAlphaComponent(SumiTabTitleAnimation.loadingAlphaWaveShoulderAlpha).cgColor,
-            NSColor.white.withAlphaComponent(SumiTabTitleAnimation.loadingAlphaWaveMinimumAlpha).cgColor,
-            NSColor.white.withAlphaComponent(SumiTabTitleAnimation.loadingAlphaWaveShoulderAlpha).cgColor,
-            NSColor.white.cgColor
-        ]
+        mask.colors = SumiTabTitleAnimation.loadingAlphaWaveMaskColors
         mask.locations = loadingAlphaWaveLocations(centerX: -loadingAlphaWaveRelativeHalfWidth)
         mask.opacity = 1
 
@@ -324,32 +353,12 @@ private extension SumiTabTitleView {
         return animation
     }
 
-    var loadingAlphaWaveBandWidth: CGFloat {
-        min(
-            max(
-                bounds.width * SumiTabTitleAnimation.loadingAlphaWaveRelativeBandWidth,
-                SumiTabTitleAnimation.loadingAlphaWaveMinimumBandWidth
-            ),
-            SumiTabTitleAnimation.loadingAlphaWaveMaximumBandWidth
-        )
-    }
-
     var loadingAlphaWaveRelativeHalfWidth: CGFloat {
-        guard bounds.width > 0 else { return 0 }
-        return (loadingAlphaWaveBandWidth / bounds.width) / 2
+        SumiTabTitleAnimation.loadingAlphaWaveRelativeHalfWidth(for: bounds.width)
     }
 
     func loadingAlphaWaveLocations(centerX: CGFloat) -> [NSNumber] {
-        let halfWidth = loadingAlphaWaveRelativeHalfWidth
-        let leadingShoulder = halfWidth * 0.56
-        let trailingShoulder = halfWidth * 0.56
-        return [
-            NSNumber(value: Double(centerX - halfWidth)),
-            NSNumber(value: Double(centerX - leadingShoulder)),
-            NSNumber(value: Double(centerX)),
-            NSNumber(value: Double(centerX + trailingShoulder)),
-            NSNumber(value: Double(centerX + halfWidth))
-        ]
+        SumiTabTitleAnimation.loadingAlphaWaveLocations(centerX: centerX, width: bounds.width)
     }
 }
 

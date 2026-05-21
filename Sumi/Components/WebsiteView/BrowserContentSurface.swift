@@ -5,8 +5,6 @@ enum BrowserContentViewportVisuals {
     static let shadowRadius: CGFloat = 4
     static let shadowX: CGFloat = 0
     static let shadowY: CGFloat = 0
-    static let cornerCutoutShadowOpacityMultiplier: CGFloat = 0.45
-    static let cornerCutoutShadowRadiusMultiplier: CGFloat = 1.35
 }
 
 struct BrowserContentSurfaceModifier: ViewModifier {

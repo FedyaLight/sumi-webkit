@@ -28,8 +28,16 @@ struct WebsiteDisplayState: Equatable {
     let compositorVersion: Int
     let currentTabUnloaded: Bool
     let visibleTabIds: Set<UUID>
-    let isPreviewActive: Bool
     let isSplitDropCaptureActive: Bool
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.splitGroup == rhs.splitGroup
+            && lhs.currentId == rhs.currentId
+            && lhs.compositorVersion == rhs.compositorVersion
+            && lhs.currentTabUnloaded == rhs.currentTabUnloaded
+            && lhs.visibleTabIds == rhs.visibleTabIds
+            && lhs.isSplitDropCaptureActive == rhs.isSplitDropCaptureActive
+    }
 }
 
 @MainActor
@@ -115,6 +123,14 @@ final class WindowWebContentController: NSViewController {
         hoveredLinkHandler: @escaping (String?) -> Void,
         chromeGeometry: BrowserChromeGeometry
     ) {
+        let currentTab = browserManager.currentTab(for: windowState)
+        let displayStateChanged = appliedDisplayState != displayState
+        let hasStaleSubviews = compositorSubtreeHasStaleWebViews(
+            currentTab: currentTab,
+            displayState: displayState
+        )
+        let needsDisplayStateApply = displayStateChanged || hasStaleSubviews
+
         if self.chromeGeometry != chromeGeometry {
             self.chromeGeometry = chromeGeometry
             containerView.setChromeGeometry(chromeGeometry)
@@ -134,12 +150,13 @@ final class WindowWebContentController: NSViewController {
         }
 
         if lastHoverTabId != displayState.currentId,
-           let currentTab = browserManager.currentTab(for: windowState)
+           let currentTab
         {
             setupHoverCallbacks(for: currentTab)
             lastHoverTabId = displayState.currentId
         }
 
+        guard needsDisplayStateApply else { return }
         scheduleDisplayStateApply()
     }
 
@@ -696,25 +713,22 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
         controller.tearDownController()
     }
 
-    private func visibleTabIds(currentId: UUID?, isPreviewActive: Bool) -> Set<UUID> {
+    private func visibleTabIds(currentId: UUID?) -> Set<UUID> {
         Set(VisibleTabPreparationPlan.visibleTabIDs(
             currentTabId: currentId,
-            splitTabIds: splitGroup?.tabIds ?? [],
-            isPreviewActive: isPreviewActive
+            splitTabIds: splitGroup?.tabIds ?? []
         ))
     }
 
     private func makeDisplayState() -> WebsiteDisplayState {
         let currentTab = browserManager.currentTab(for: windowState)
         let currentId = currentTab?.id
-        let isPreviewActive = browserManager.splitManager.isPreviewActive(for: windowState.id)
         return WebsiteDisplayState(
             splitGroup: splitGroup,
             currentId: currentId,
             compositorVersion: windowState.compositorVersion,
             currentTabUnloaded: currentTab?.isUnloaded ?? true,
-            visibleTabIds: visibleTabIds(currentId: currentId, isPreviewActive: isPreviewActive),
-            isPreviewActive: isPreviewActive,
+            visibleTabIds: visibleTabIds(currentId: currentId),
             isSplitDropCaptureActive: isSplitDropCaptureActive
         )
     }
@@ -813,8 +827,6 @@ private final class ContainerView: NSView {
         } else if splitDropCaptureView.superview === self {
             splitDropCaptureView.cancelActiveDragPreview()
             splitDropCaptureView.removeFromSuperview()
-        } else {
-            splitDropCaptureView.cancelActiveDragPreview()
         }
     }
 
@@ -1212,7 +1224,6 @@ private final class SplitPaneControlsView: NSVisualEffectView {
     private let stackView = NSStackView()
     private let dragButton = SplitPaneDragButton()
     private let expandButton = SplitPaneToolbarButton(icon: .fullscreen)
-    private weak var browserManager: BrowserManager?
     private weak var splitManager: SplitViewManager?
     private weak var windowState: BrowserWindowState?
     private weak var tab: Tab?
@@ -1265,7 +1276,6 @@ private final class SplitPaneControlsView: NSVisualEffectView {
         windowState: BrowserWindowState
     ) {
         self.tab = tab
-        self.browserManager = browserManager
         self.splitManager = splitManager
         self.windowState = windowState
         dragButton.configure(

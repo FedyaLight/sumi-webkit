@@ -50,21 +50,6 @@ enum KeyboardShortcutPresentation {
         return result
     }
 
-    static func nsMenuKeyEquivalent(for keyCombination: KeyCombination) -> String? {
-        switch keyCombination.key.lowercased() {
-        case "return", "enter":
-            return "\r"
-        case "delete", "backspace":
-            return "\u{8}"
-        case "tab":
-            return "\t"
-        case "space":
-            return " "
-        default:
-            guard keyCombination.key.count == 1 else { return nil }
-            return keyCombination.key.lowercased()
-        }
-    }
 }
 
 extension Modifiers {

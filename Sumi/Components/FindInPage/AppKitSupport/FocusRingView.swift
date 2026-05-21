@@ -127,11 +127,4 @@ final class FocusRingView: NSView {
         refreshLayerColors()
     }
 
-    func sumi_findApplyAssetColors() {
-        sumi_chromeApplyAssetColors()
-    }
-
-    func sumi_findApplyChromePaint(_ paint: FindInPageChromePaint) {
-        sumi_chromeApplyChromePaint(paint)
-    }
 }

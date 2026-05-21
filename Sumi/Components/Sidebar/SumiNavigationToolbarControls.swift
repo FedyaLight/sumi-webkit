@@ -296,7 +296,7 @@ final class SumiNavigationLongPressButton: MouseOverButton {
         isMouseDown = false
     }
 
-    @objc private func longPressTimerFired(_ timer: Timer) {
+    @objc private func longPressTimerFired(_: Timer) {
         let mouseUpEventSnapshot = mouseUpEventSnapshot
         displayInstalledMenu()
         guard let mouseUpEvent = mouseUpEventSnapshot?.makeEvent() else { return }

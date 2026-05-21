@@ -156,14 +156,6 @@ struct SumiSettingsModuleToggleGate<EnabledContent: View>: View {
     }
 }
 
-extension SumiSettingsModuleToggleGate where EnabledContent == EmptyView {
-    init(descriptor: SumiSettingsModuleToggleDescriptor) {
-        self.init(descriptor: descriptor) {
-            EmptyView()
-        }
-    }
-}
-
 private struct SumiSettingsModuleToggleCard: View {
     let descriptor: SumiSettingsModuleToggleDescriptor
     @Binding var isEnabled: Bool

@@ -5,6 +5,7 @@
 //  Created by Maciek Bagiński on 30/07/2025.
 //
 
+import AppKit
 import SwiftUI
 
 enum PinnedTileFaviconLayout {
@@ -269,7 +270,7 @@ struct PinnedTileVisual: View {
                 )
                 .conditionally(if: isLoading && !reduceMotion) { view in
                     view.mask {
-                        PinnedTileLoadingAlphaWaveMask()
+                        PinnedTileLoadingAlphaWaveLayerMask()
                     }
                 }
                 .allowsHitTesting(false)
@@ -282,7 +283,7 @@ struct PinnedTileVisual: View {
                 )
                 .conditionally(if: isLoading && !reduceMotion) { view in
                     view.mask {
-                        PinnedTileLoadingAlphaWaveMask()
+                        PinnedTileLoadingAlphaWaveLayerMask()
                     }
                 }
                 .allowsHitTesting(false)
@@ -491,61 +492,128 @@ struct PinnedTileSplitGroupOutlineMask: View {
     }
 }
 
-private struct PinnedTileLoadingAlphaWaveMask: View {
+private struct PinnedTileLoadingAlphaWaveLayerMask: View {
     var body: some View {
-        TimelineView(.animation) { timeline in
-            GeometryReader { proxy in
-                let width = max(proxy.size.width, 1)
-                let relativeHalfWidth = alphaWaveRelativeHalfWidth(for: width)
-                let progress = alphaWaveProgress(at: timeline.date)
-                let centerX = -relativeHalfWidth + progress * (1 + 2 * relativeHalfWidth)
+        GeometryReader { proxy in
+            PinnedTileLoadingAlphaWaveMaskRepresentable()
+                .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+    }
+}
 
-                LinearGradient(
-                    stops: alphaWaveStops(centerX: centerX, halfWidth: relativeHalfWidth),
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-            }
+private struct PinnedTileLoadingAlphaWaveMaskRepresentable: NSViewRepresentable {
+    func makeNSView(context _: Context) -> PinnedTileLoadingAlphaWaveMaskView {
+        PinnedTileLoadingAlphaWaveMaskView()
+    }
+
+    func updateNSView(_ nsView: PinnedTileLoadingAlphaWaveMaskView, context _: Context) {
+        nsView.updateAnimation()
+    }
+
+    func sizeThatFits(
+        _ proposal: ProposedViewSize,
+        nsView: PinnedTileLoadingAlphaWaveMaskView,
+        context _: Context
+    ) -> CGSize? {
+        CGSize(
+            width: proposal.width ?? nsView.fittingSize.width,
+            height: proposal.height ?? nsView.fittingSize.height
+        )
+    }
+}
+
+private final class PinnedTileLoadingAlphaWaveMaskView: NSView {
+    private let gradientLayer = CAGradientLayer()
+    private var lastConfiguredSize: CGSize = .zero
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.addSublayer(gradientLayer)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func hitTest(_: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func layout() {
+        super.layout()
+        updateAnimation()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            stopAnimation()
+        } else {
+            updateAnimation()
         }
     }
 
-    private func alphaWaveProgress(at date: Date) -> CGFloat {
-        let duration = SumiTabTitleAnimation.loadingAlphaWaveCycleDuration
-        guard duration > 0 else { return 0 }
-        let elapsed = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: duration)
-        return CGFloat(elapsed / duration)
+    func updateAnimation() {
+        guard bounds.width > 1,
+              bounds.height > 1,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        else {
+            stopAnimation()
+            return
+        }
+
+        guard lastConfiguredSize != bounds.size
+                || gradientLayer.animation(forKey: SumiTabTitleAnimation.loadingAlphaWaveKey) == nil
+        else {
+            return
+        }
+
+        lastConfiguredSize = bounds.size
+        configureGradientLayer()
+        gradientLayer.add(buildAnimation(), forKey: SumiTabTitleAnimation.loadingAlphaWaveKey)
     }
 
-    private func alphaWaveStops(centerX: CGFloat, halfWidth: CGFloat) -> [Gradient.Stop] {
-        let leadingShoulder = halfWidth * 0.56
-        let trailingShoulder = halfWidth * 0.56
-        return [
-            .init(color: .white, location: centerX - halfWidth),
-            .init(
-                color: .white.opacity(SumiTabTitleAnimation.loadingAlphaWaveShoulderAlpha),
-                location: centerX - leadingShoulder
-            ),
-            .init(
-                color: .white.opacity(SumiTabTitleAnimation.loadingAlphaWaveMinimumAlpha),
-                location: centerX
-            ),
-            .init(
-                color: .white.opacity(SumiTabTitleAnimation.loadingAlphaWaveShoulderAlpha),
-                location: centerX + trailingShoulder
-            ),
-            .init(color: .white, location: centerX + halfWidth)
-        ]
+    private func stopAnimation() {
+        gradientLayer.removeAnimation(forKey: SumiTabTitleAnimation.loadingAlphaWaveKey)
+        lastConfiguredSize = .zero
     }
 
-    private func alphaWaveRelativeHalfWidth(for width: CGFloat) -> CGFloat {
-        let bandWidth = min(
-            max(
-                width * SumiTabTitleAnimation.loadingAlphaWaveRelativeBandWidth,
-                SumiTabTitleAnimation.loadingAlphaWaveMinimumBandWidth
-            ),
-            SumiTabTitleAnimation.loadingAlphaWaveMaximumBandWidth
+    private func configureGradientLayer() {
+        let halfWidth = SumiTabTitleAnimation.loadingAlphaWaveRelativeHalfWidth(for: bounds.width)
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+
+        gradientLayer.frame = bounds
+        gradientLayer.startPoint = CGPoint(x: 0, y: 0.5)
+        gradientLayer.endPoint = CGPoint(x: 1, y: 0.5)
+        gradientLayer.colors = SumiTabTitleAnimation.loadingAlphaWaveMaskColors
+        gradientLayer.locations = SumiTabTitleAnimation.loadingAlphaWaveLocations(
+            centerX: -halfWidth,
+            width: bounds.width
         )
-        return (bandWidth / width) / 2
+        gradientLayer.opacity = 1
+
+        CATransaction.commit()
+    }
+
+    private func buildAnimation() -> CABasicAnimation {
+        let halfWidth = SumiTabTitleAnimation.loadingAlphaWaveRelativeHalfWidth(for: bounds.width)
+        let animation = CABasicAnimation(keyPath: "locations")
+        animation.fromValue = SumiTabTitleAnimation.loadingAlphaWaveLocations(
+            centerX: -halfWidth,
+            width: bounds.width
+        )
+        animation.toValue = SumiTabTitleAnimation.loadingAlphaWaveLocations(
+            centerX: 1 + halfWidth,
+            width: bounds.width
+        )
+        animation.duration = SumiTabTitleAnimation.loadingAlphaWaveCycleDuration
+        animation.timingFunction = CAMediaTimingFunction(name: .linear)
+        animation.repeatCount = .infinity
+        animation.isRemovedOnCompletion = false
+        return animation
     }
 }
 

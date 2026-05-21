@@ -171,10 +171,7 @@ final class SidebarInteractiveOwnerRegistry {
     ) -> SidebarInteractiveOwnerRecoveryResult {
         pruneStaleOwners()
 
-        var recoveredCount = 0
         var sourceOwnerResolved = false
-        var resolvedOwnerDescription: String?
-        var resolutionReason: String?
         for id in ownerOrder {
             guard let owner = ownersByID[id]?.view,
                   isLive(owner, in: window)
@@ -183,23 +180,17 @@ final class SidebarInteractiveOwnerRegistry {
             owner.cancelPrimaryMouseTracking()
             owner.setTransientInteractionEnabled(true)
             SidebarTransientUIHitTestingRecovery.invalidateLayoutChain(from: owner)
-            recoveredCount += 1
 
             if !sourceOwnerResolved,
                let sourceMetadata,
-               let resolvedBy = owner.recoveryResolutionReason(matching: sourceMetadata)
+               owner.recoveryResolutionReason(matching: sourceMetadata) != nil
             {
                 sourceOwnerResolved = true
-                resolvedOwnerDescription = owner.recoveryDebugDescription
-                resolutionReason = resolvedBy
             }
         }
 
         return SidebarInteractiveOwnerRecoveryResult(
-            recoveredOwnerCount: recoveredCount,
-            sourceOwnerResolved: sourceOwnerResolved,
-            resolvedOwnerDescription: resolvedOwnerDescription,
-            resolutionReason: resolutionReason
+            sourceOwnerResolved: sourceOwnerResolved
         )
     }
 

@@ -14,8 +14,4 @@ extension NSAppearance {
         NSApp.effectiveAppearance.performAsCurrentDrawingAppearance(body)
     }
 
-    @MainActor
-    static func sumi_findWithAppAppearance(_ body: () -> Void) {
-        sumi_chromeWithAppAppearance(body)
-    }
 }

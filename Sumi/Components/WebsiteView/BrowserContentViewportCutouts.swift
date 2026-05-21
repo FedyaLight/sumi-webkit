@@ -13,7 +13,6 @@ final class BrowserContentViewportShadowView: NSView {
         )
     }
 
-    private static let shadowOpacityAnimationKey = "browserContentViewport.shadowOpacity"
     private static let targetShadowOpacity = Float(BrowserContentViewportVisuals.shadowOpacity)
 
     var viewportRect: NSRect = .zero {
@@ -65,44 +64,6 @@ final class BrowserContentViewportShadowView: NSView {
             height: BrowserContentViewportVisuals.shadowY
         )
         updateLayerShape()
-    }
-
-    func setShadowOpacity(_ opacity: Float) {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        shadowSurfaceLayer.removeAnimation(forKey: Self.shadowOpacityAnimationKey)
-        shadowSurfaceLayer.shadowOpacity = min(max(opacity, 0), 1)
-        CATransaction.commit()
-    }
-
-    func restoreShadowOpacity() {
-        setShadowOpacity(Self.targetShadowOpacity)
-    }
-
-    func animateShadowOpacityReveal(
-        duration: TimeInterval,
-        timingFunction: CAMediaTimingFunction
-    ) {
-        let currentOpacity = shadowSurfaceLayer.presentation()?.shadowOpacity
-            ?? shadowSurfaceLayer.shadowOpacity
-        let targetOpacity = Self.targetShadowOpacity
-
-        guard duration > 0, abs(currentOpacity - targetOpacity) > 0.000_1 else {
-            restoreShadowOpacity()
-            return
-        }
-
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        shadowSurfaceLayer.shadowOpacity = targetOpacity
-        CATransaction.commit()
-
-        let animation = CABasicAnimation(keyPath: "shadowOpacity")
-        animation.fromValue = currentOpacity
-        animation.toValue = targetOpacity
-        animation.duration = duration
-        animation.timingFunction = timingFunction
-        shadowSurfaceLayer.add(animation, forKey: Self.shadowOpacityAnimationKey)
     }
 
     private func updateLayerShape() {

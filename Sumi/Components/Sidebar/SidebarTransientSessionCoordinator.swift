@@ -73,16 +73,10 @@ struct SidebarInteractiveOwnerRecoveryMetadata: Hashable, CustomStringConvertibl
 }
 
 struct SidebarInteractiveOwnerRecoveryResult: Equatable {
-    let recoveredOwnerCount: Int
     let sourceOwnerResolved: Bool
-    let resolvedOwnerDescription: String?
-    let resolutionReason: String?
 
     static let none = SidebarInteractiveOwnerRecoveryResult(
-        recoveredOwnerCount: 0,
-        sourceOwnerResolved: false,
-        resolvedOwnerDescription: nil,
-        resolutionReason: nil
+        sourceOwnerResolved: false
     )
 }
 
@@ -344,7 +338,7 @@ final class SidebarTransientSessionCoordinator {
     }
 
     func finishMenuActionDispatch(
-        path: String,
+        path _: String,
         classification: SidebarContextMenuActionClassification
     ) {
         guard pendingMenuActionCount > 0 else { return }

@@ -21,15 +21,6 @@ enum SidebarPageRenderMode: Equatable {
         }
     }
 
-    var debugDescription: String {
-        switch self {
-        case .interactive:
-            return "interactive"
-        case .transitionSnapshot:
-            return "transitionSnapshot"
-        }
-    }
-
     var animatesEssentialsLayout: Bool {
         self == .interactive
     }

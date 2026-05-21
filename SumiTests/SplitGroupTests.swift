@@ -2136,38 +2136,33 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(centerReplace.previewStyle, .center)
     }
 
-    func testPreviewSideAndRectUpdateTogether() throws {
+    func testPreviewRectAndStyleUpdateTogether() throws {
         let harness = try makeHarness()
         let firstRect = CGRect(x: 0, y: 0, width: 500, height: 600)
         let secondRect = CGRect(x: 500, y: 0, width: 500, height: 600)
 
         harness.browserManager.splitManager.beginPreview(
-            side: .left,
             targetRect: firstRect,
             for: harness.windowState.id
         )
-        var state = harness.browserManager.splitManager.getSplitState(for: harness.windowState.id)
-        XCTAssertTrue(state.isPreviewActive)
-        XCTAssertEqual(state.previewSide, .left)
-        XCTAssertEqual(state.previewTargetRect, firstRect)
+        var state = harness.browserManager.splitManager.previewState(for: harness.windowState.id)
+        XCTAssertTrue(state.isActive)
+        XCTAssertEqual(state.targetRect, firstRect)
 
         harness.browserManager.splitManager.updatePreview(
-            side: .right,
             targetRect: secondRect,
             style: .center,
             for: harness.windowState.id
         )
-        state = harness.browserManager.splitManager.getSplitState(for: harness.windowState.id)
-        XCTAssertEqual(state.previewSide, .right)
-        XCTAssertEqual(state.previewTargetRect, secondRect)
-        XCTAssertEqual(state.previewStyle, .center)
+        state = harness.browserManager.splitManager.previewState(for: harness.windowState.id)
+        XCTAssertEqual(state.targetRect, secondRect)
+        XCTAssertEqual(state.style, .center)
 
         harness.browserManager.splitManager.endPreview(for: harness.windowState.id)
-        state = harness.browserManager.splitManager.getSplitState(for: harness.windowState.id)
-        XCTAssertFalse(state.isPreviewActive)
-        XCTAssertNil(state.previewSide)
-        XCTAssertNil(state.previewTargetRect)
-        XCTAssertEqual(state.previewStyle, .edge)
+        state = harness.browserManager.splitManager.previewState(for: harness.windowState.id)
+        XCTAssertFalse(state.isActive)
+        XCTAssertNil(state.targetRect)
+        XCTAssertEqual(state.style, .edge)
     }
 
     func testSplitDropCaptureCancelClearsStalePreviewWithoutExitEvent() throws {
@@ -2177,19 +2172,17 @@ final class SplitGroupTests: XCTestCase {
         captureView.windowId = harness.windowState.id
 
         harness.browserManager.splitManager.beginPreview(
-            side: .right,
             targetRect: CGRect(x: 500, y: 0, width: 500, height: 800),
             for: harness.windowState.id
         )
 
-        XCTAssertTrue(harness.browserManager.splitManager.getSplitState(for: harness.windowState.id).isPreviewActive)
+        XCTAssertTrue(harness.browserManager.splitManager.previewState(for: harness.windowState.id).isActive)
 
         captureView.cancelActiveDragPreview()
 
-        let state = harness.browserManager.splitManager.getSplitState(for: harness.windowState.id)
-        XCTAssertFalse(state.isPreviewActive)
-        XCTAssertNil(state.previewSide)
-        XCTAssertNil(state.previewTargetRect)
+        let state = harness.browserManager.splitManager.previewState(for: harness.windowState.id)
+        XCTAssertFalse(state.isActive)
+        XCTAssertNil(state.targetRect)
     }
 
     func testSplitDropCaptureClearsStalePreviewWhenDragSessionEndsElsewhere() throws {
@@ -2199,17 +2192,15 @@ final class SplitGroupTests: XCTestCase {
         captureView.windowId = harness.windowState.id
 
         harness.browserManager.splitManager.beginPreview(
-            side: .bottom,
             targetRect: CGRect(x: 0, y: 0, width: 1000, height: 400),
             for: harness.windowState.id
         )
 
         NotificationCenter.default.post(name: .tabDragDidEnd, object: nil)
 
-        let state = harness.browserManager.splitManager.getSplitState(for: harness.windowState.id)
-        XCTAssertFalse(state.isPreviewActive)
-        XCTAssertNil(state.previewSide)
-        XCTAssertNil(state.previewTargetRect)
+        let state = harness.browserManager.splitManager.previewState(for: harness.windowState.id)
+        XCTAssertFalse(state.isActive)
+        XCTAssertNil(state.targetRect)
     }
 
     func testSanitizedDropsInvalidDuplicateAndOverlappingGroups() throws {
@@ -2241,24 +2232,21 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(
             VisibleTabPreparationPlan.visibleTabIDs(
                 currentTabId: current,
-                splitTabIds: [current, secondary],
-                isPreviewActive: false
+                splitTabIds: [current, secondary, current, secondary]
             ),
             [current, secondary]
         )
         XCTAssertEqual(
             VisibleTabPreparationPlan.visibleTabIDs(
                 currentTabId: current,
-                splitTabIds: [current, secondary],
-                isPreviewActive: true
+                splitTabIds: [current, secondary]
             ),
             [current, secondary]
         )
         XCTAssertEqual(
             VisibleTabPreparationPlan.visibleTabIDs(
                 currentTabId: current,
-                splitTabIds: [secondary],
-                isPreviewActive: false
+                splitTabIds: [secondary]
             ),
             [current]
         )

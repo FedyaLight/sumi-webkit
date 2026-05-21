@@ -190,8 +190,11 @@ final class SpaceReorderDragStateTests: XCTestCase {
         XCTAssertEqual(small.slotSize, 28)
         XCTAssertEqual(compactVisual.slotFrames.map(\.width), [28, 28, 28])
         XCTAssertEqual(compactVisual, normalVisual)
-        XCTAssertGreaterThanOrEqual(compactVisual.spacing, small.minSpacing)
-        XCTAssertLessThanOrEqual(compactVisual.spacing, small.maxSpacing)
+        let gaps = zip(compactVisual.slotFrames, compactVisual.slotFrames.dropFirst()).map {
+            $1.minX - $0.maxX
+        }
+        XCTAssertTrue(gaps.allSatisfy { $0 >= small.minSpacing })
+        XCTAssertTrue(gaps.allSatisfy { $0 <= small.maxSpacing })
     }
 
     private func makeGeometry(itemCount: Int) -> SpaceStripGeometry {
