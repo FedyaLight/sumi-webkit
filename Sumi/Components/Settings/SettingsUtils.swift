@@ -85,7 +85,7 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
                 icon: tab.icon,
                 group: .privacy,
                 keywords: [
-                    "tracking", "protection", "ad blocking", "tracker data",
+                    "tracking", "protection", "ad blocking", "protection bundles",
                     "site overrides", "rules", "privacy", "security",
                     "site settings", "permissions", "camera", "microphone",
                     "location", "notifications", "popups", "pop-ups",

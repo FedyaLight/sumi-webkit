@@ -83,22 +83,29 @@ final class SumiAdblockNativeRuleBundleTests: XCTestCase {
         XCTAssertEqual(store.lastUpdateDiagnostics?.summary, "success: Adblock bundle installed")
     }
 
-    func testDevelopmentBundleCatalogStillFindsPreparedAdguardAdsPrivacyImport() throws {
+    func testDevelopmentBundleResolverStillFindsPreparedAdguardAdsPrivacyImport() throws {
         let resourceRoot = temporaryDirectory()
+        let remoteRoot = temporaryDirectory()
         let generatedRoot = temporaryDirectory()
         let developmentBundle = generatedRoot
             .appendingPathComponent("adguardAdsPrivacy", isDirectory: true)
             .appendingPathComponent("SumiAdblockBundle", isDirectory: true)
         try PreparedAdblockTestSupport.makeBundle(at: developmentBundle)
 
-        let snapshot = SumiEmbeddedAdblockBundleCatalog.snapshot(
+        let discovery = SumiPreparedAdblockBundleResolver.discover(
+            profileId: "adguardAdsPrivacy",
             resourceURL: resourceRoot,
+            remoteBundlesRootURL: remoteRoot,
             generatedBundlesRootURL: generatedRoot
         )
 
-        XCTAssertEqual(snapshot.installableProfiles.map(\.profileId), ["adguardAdsPrivacy"])
-        XCTAssertEqual(snapshot.installableProfiles.map(\.source), [.developmentBundle])
-        XCTAssertTrue(snapshot.expectedDevelopmentPath.contains(".build/sumi-adblock-bundles/<profile>/SumiAdblockBundle") || snapshot.expectedDevelopmentPath.contains("<profile>/SumiAdblockBundle"))
+        XCTAssertEqual(discovery.resolvedBundle?.source, .developmentBundle)
+        XCTAssertEqual(discovery.resolvedBundle?.profileId, "adguardAdsPrivacy")
+        XCTAssertTrue(
+            discovery.searchedPaths.contains {
+                $0.source == .developmentBundle && $0.exists && $0.rejectionReason == nil
+            }
+        )
     }
 
     func testPreparedBundleInstallRejectsUnsupportedNativeCSSSafetyPolicy() async throws {

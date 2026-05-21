@@ -25,7 +25,6 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         let module = SumiAdBlockingModule(moduleRegistry: registry)
 
         XCTAssertFalse(module.isEnabled)
-        XCTAssertEqual(module.status, .disabled)
         XCTAssertFalse(module.hasLoadedRuntime)
     }
 
@@ -39,7 +38,9 @@ final class SumiAdBlockingModuleTests: XCTestCase {
         let module = makeModule(registry: registry, defaults: harness.defaults, manifestStore: manifestStore)
 
         _ = try await module.restorePreparedNativeRuleBundleForStartup(profileId: "adguardAdsPrivacy")
-        let definitions = try module.contentRuleListDefinitions(for: [.network])
+        let definitions = try module.contentRuleListDefinitions(
+            for: Set(SumiProtectionLevel.adblock.requestedGroups)
+        )
         let state = module.desiredAttachmentState(for: URL(string: "https://example.com")!)
 
         XCTAssertEqual(definitions.count, 2)

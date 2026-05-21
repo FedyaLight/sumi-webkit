@@ -413,7 +413,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         adBlockingModule.setEnabled(true)
         XCTAssertTrue(registry.isEnabled(.trackingProtection))
         XCTAssertTrue(registry.isEnabled(.adBlocking))
-        XCTAssertEqual(adBlockingModule.status, .enabledNativeContentBlocking)
         XCTAssertFalse(adBlockingModule.hasLoadedRuntime)
 
         registry.enable(.userScripts)
@@ -700,13 +699,11 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let module = SumiAdBlockingModule(moduleRegistry: registry)
 
         XCTAssertFalse(module.isEnabled)
-        XCTAssertEqual(module.status, .disabled)
         XCTAssertFalse(module.hasLoadedRuntime)
 
         module.setEnabled(true)
 
         XCTAssertTrue(module.isEnabled)
-        XCTAssertEqual(module.status, .enabledNativeContentBlocking)
         XCTAssertFalse(module.hasLoadedRuntime)
 
         let adBlockingSource = try Self.source(named: "Sumi/ContentBlocking/SumiAdBlockingModule.swift")
@@ -720,6 +717,17 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
                 "SumiTrackingProtectionModule",
                 "SumiTrackingRuleListProvider",
                 "SumiTrackingRuleListPipeline",
+                "SumiAdBlockingModuleStatus",
+                "SumiAdblockCurrentTabDiagnostics",
+                "SumiAdblockAttachmentDiagnostics",
+                "embeddedAdblockBundleSnapshot",
+                "installEmbeddedAdblockBundle",
+                "SumiEmbeddedAdblockBundleCatalog",
+                "requestEmbeddedBundleInstall",
+                "contentRuleListDefinitions(for allowedKinds",
+                "runtimeGenerated",
+                "ContentBlockerRulesBuilder",
+                "TrackerRadarKit",
                 "WKUserScript",
                 "addUserScript",
                 "addScriptMessageHandler",
