@@ -89,6 +89,7 @@ final class LastSessionWindowsStoreTests: XCTestCase {
                     isPinned: false,
                     isSpacePinned: false,
                     profileId: nil,
+                    executionProfileId: nil,
                     folderId: nil,
                     iconAsset: nil,
                     currentURLString: "https://example.com",

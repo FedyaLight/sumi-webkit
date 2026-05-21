@@ -543,6 +543,7 @@ struct PinnedGrid: View {
                 for: pin.id,
                 in: windowState.id
             )
+            let contextMenuActions = essentialContextMenuActions(for: pin)
 
             PinnedTile(
                 pin: pin,
@@ -553,30 +554,10 @@ struct PinnedGrid: View {
                 onActivate: { activate(pin) },
                 onClose: { closeIfActive(pin) },
                 onUnload: { unload(pin) },
-                onDuplicate: { duplicateAsRegularTab(pin) },
-                onCopyLink: { copyLink(pin.launchURL) },
-                onShare: {
-                    presentSharePicker(
-                        for: pin.launchURL,
-                        source: windowState.resolveSidebarPresentationSource()
-                    )
-                },
-                onRename: { presentShortcutLinkEditor(for: pin) },
-                onBackToSavedURL: { resetShortcutPin(pin) },
-                onUseCurrentPageAsSavedURL: { _ = browserManager.tabManager.replaceShortcutPinURLWithCurrent(pin, in: windowState) },
-                onEditURL: { presentShortcutLinkEditor(for: pin) },
                 onIconSelected: { newIconAsset in
                     _ = browserManager.tabManager.updateShortcutPin(pin, iconAsset: newIconAsset)
                 },
-                onDeleteSavedTab: { confirmDeleteEssential(pin) },
-                folderChoices: essentialFolderChoices,
-                spaceChoices: essentialSpaceChoices,
-                profileChoices: currentSpaceProfileChoices,
-                onMoveToFolder: { folderId in moveEssential(pin, toFolder: folderId) },
-                onMoveToSpace: { targetSpaceId in moveEssential(pin, toSpace: targetSpaceId) },
-                onConvertSpaceToProfile: { profileId in convertCurrentSpace(toProfile: profileId) },
-                hasLiveInstance: presentationState.isOpenLive,
-                hasSavedURLDrift: browserManager.tabManager.shortcutHasDrifted(pin, in: windowState),
+                contextMenuActions: contextMenuActions,
                 dragPinnedConfiguration: configuration,
                 dragIsEnabled: !browserManager.isTransitioningProfile && isAppKitInteractionEnabled,
                 isAppKitInteractionEnabled: isAppKitInteractionEnabled
@@ -672,6 +653,74 @@ struct PinnedGrid: View {
         )
     }
 
+    private func essentialContextMenuActions(for pin: ShortcutPin) -> EssentialTileContextMenuActions {
+        EssentialTileContextMenuActions(makeEntries: { onEditIcon in
+            let savedURLDriftActions: SidebarSavedURLDriftActions? =
+                browserManager.tabManager.shortcutHasDrifted(pin, in: windowState)
+                    ? .init(
+                        onBackToSavedURL: { resetShortcutPin(pin) },
+                        onUseCurrentPageAsSavedURL: { _ = browserManager.tabManager.replaceShortcutPinURLWithCurrent(pin, in: windowState) }
+                    )
+                    : nil
+            let unloadAction: (() -> Void)? = pinPresentationState(pin).isOpenLive
+                ? { unload(pin) }
+                : nil
+            let moveToSpaceAction: (UUID) -> Void = { targetSpaceId in
+                moveEssential(pin, toSpace: targetSpaceId)
+            }
+            let spaceChoices = essentialSpaceChoices
+
+            return makeSidebarTabContextMenuEntries(
+                role: .essential,
+                actions: .init(
+                    duplicate: { duplicateAsRegularTab(pin) },
+                    copyLink: { copyLink(pin.launchURL) },
+                    share: {
+                        presentSharePicker(
+                            for: pin.launchURL,
+                            source: windowState.resolveSidebarPresentationSource()
+                        )
+                    },
+                    rename: { presentShortcutLinkEditor(for: pin) },
+                    folderTarget: .init(
+                        choices: essentialFolderChoices,
+                        onSelect: { folderId in moveEssential(pin, toFolder: folderId) }
+                    ),
+                    moveToSpace: .init(
+                        choices: spaceChoices,
+                        onSelect: moveToSpaceAction,
+                        presentPicker: {
+                            MainActor.assumeIsolated {
+                                presentSidebarSpaceDestinationPicker(
+                                    choices: spaceChoices,
+                                    browserManager: browserManager,
+                                    settings: sumiSettings,
+                                    themeContext: themeContext,
+                                    source: windowState.resolveSidebarPresentationSource(),
+                                    onSelect: moveToSpaceAction
+                                )
+                            }
+                        }
+                    ),
+                    profileTarget: .init(
+                        choices: profileChoices(for: pin),
+                        onSelect: { profileId in
+                            browserManager.tabManager.assign(
+                                shortcutPin: pin,
+                                toExecutionProfile: profileId
+                            )
+                        }
+                    ),
+                    savedURLDrift: savedURLDriftActions,
+                    changeIcon: onEditIcon,
+                    editURL: { presentShortcutLinkEditor(for: pin) },
+                    unload: unloadAction,
+                    deleteSavedTab: { confirmDeleteEssential(pin) }
+                )
+            )
+        })
+    }
+
     private var contextMenuSpace: Space? {
         let targetSpaceId = windowState.currentSpaceId
             ?? spaceId
@@ -689,16 +738,17 @@ struct PinnedGrid: View {
 
     private var essentialSpaceChoices: [SidebarContextMenuChoice] {
         makeSidebarContextMenuSpaceChoices(
-            spaces: browserManager.tabManager.spaces,
-            profiles: browserManager.profileManager.profiles
+            spaces: browserManager.tabManager.spaces
         )
     }
 
-    private var currentSpaceProfileChoices: [SidebarContextMenuChoice] {
-        guard let contextMenuSpace else { return [] }
+    private func profileChoices(for pin: ShortcutPin) -> [SidebarContextMenuChoice] {
         return makeSidebarContextMenuProfileChoices(
             profiles: browserManager.profileManager.profiles,
-            selectedProfileId: contextMenuSpace.profileId
+            selectedProfileId: browserManager.tabManager.resolvedExecutionProfileId(
+                for: pin,
+                currentSpaceId: contextMenuSpace?.id
+            )
         )
     }
 
@@ -734,11 +784,6 @@ struct PinnedGrid: View {
                 index: targetIndex
             )
         }
-    }
-
-    private func convertCurrentSpace(toProfile profileId: UUID) {
-        guard let spaceId = contextMenuSpace?.id else { return }
-        browserManager.tabManager.assign(spaceId: spaceId, toProfile: profileId)
     }
 
     private func resetShortcutPin(_ pin: ShortcutPin) {
@@ -1134,6 +1179,14 @@ private extension ShortcutPin {
     }
 }
 
+private struct EssentialTileContextMenuActions {
+    let makeEntries: (@escaping () -> Void) -> [SidebarContextMenuEntry]
+
+    func entries(onEditIcon: @escaping () -> Void) -> [SidebarContextMenuEntry] {
+        makeEntries(onEditIcon)
+    }
+}
+
 private struct PinnedTile: View {
     @ObservedObject var pin: ShortcutPin
     let presentationState: ShortcutPresentationState
@@ -1143,23 +1196,8 @@ private struct PinnedTile: View {
     let onActivate: () -> Void
     let onClose: () -> Void
     let onUnload: () -> Void
-    let onDuplicate: () -> Void
-    let onCopyLink: () -> Void
-    let onShare: () -> Void
-    let onRename: () -> Void
-    let onBackToSavedURL: () -> Void
-    let onUseCurrentPageAsSavedURL: () -> Void
-    let onEditURL: () -> Void
     let onIconSelected: (String) -> Void
-    let onDeleteSavedTab: () -> Void
-    let folderChoices: [SidebarContextMenuChoice]
-    let spaceChoices: [SidebarContextMenuChoice]
-    let profileChoices: [SidebarContextMenuChoice]
-    let onMoveToFolder: (UUID) -> Void
-    let onMoveToSpace: (UUID) -> Void
-    let onConvertSpaceToProfile: (UUID) -> Void
-    let hasLiveInstance: Bool
-    let hasSavedURLDrift: Bool
+    let contextMenuActions: EssentialTileContextMenuActions
     let dragPinnedConfiguration: PinnedTabsConfiguration
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
@@ -1180,23 +1218,8 @@ private struct PinnedTile: View {
                     onActivate: onActivate,
                     onClose: onClose,
                     onUnload: onUnload,
-                    onDuplicate: onDuplicate,
-                    onCopyLink: onCopyLink,
-                    onShare: onShare,
-                    onRename: onRename,
-                    onBackToSavedURL: onBackToSavedURL,
-                    onUseCurrentPageAsSavedURL: onUseCurrentPageAsSavedURL,
                     onEditIcon: toggleEssentialIconPicker,
-                    onEditURL: onEditURL,
-                    onDeleteSavedTab: onDeleteSavedTab,
-                    folderChoices: folderChoices,
-                    spaceChoices: spaceChoices,
-                    profileChoices: profileChoices,
-                    onMoveToFolder: onMoveToFolder,
-                    onMoveToSpace: onMoveToSpace,
-                    onConvertSpaceToProfile: onConvertSpaceToProfile,
-                    hasLiveInstance: hasLiveInstance,
-                    hasSavedURLDrift: hasSavedURLDrift,
+                    contextMenuActions: contextMenuActions,
                     dragPinnedConfiguration: dragPinnedConfiguration,
                     dragIsEnabled: dragIsEnabled,
                     isAppKitInteractionEnabled: isAppKitInteractionEnabled
@@ -1210,23 +1233,8 @@ private struct PinnedTile: View {
                     onActivate: onActivate,
                     onClose: onClose,
                     onUnload: onUnload,
-                    onDuplicate: onDuplicate,
-                    onCopyLink: onCopyLink,
-                    onShare: onShare,
-                    onRename: onRename,
-                    onBackToSavedURL: onBackToSavedURL,
-                    onUseCurrentPageAsSavedURL: onUseCurrentPageAsSavedURL,
                     onEditIcon: toggleEssentialIconPicker,
-                    onEditURL: onEditURL,
-                    onDeleteSavedTab: onDeleteSavedTab,
-                    folderChoices: folderChoices,
-                    spaceChoices: spaceChoices,
-                    profileChoices: profileChoices,
-                    onMoveToFolder: onMoveToFolder,
-                    onMoveToSpace: onMoveToSpace,
-                    onConvertSpaceToProfile: onConvertSpaceToProfile,
-                    hasLiveInstance: hasLiveInstance,
-                    hasSavedURLDrift: hasSavedURLDrift,
+                    contextMenuActions: contextMenuActions,
                     dragPinnedConfiguration: dragPinnedConfiguration,
                     dragIsEnabled: dragIsEnabled,
                     isAppKitInteractionEnabled: isAppKitInteractionEnabled
@@ -1268,23 +1276,8 @@ private struct LivePinnedTileContent: View {
     let onActivate: () -> Void
     let onClose: () -> Void
     let onUnload: () -> Void
-    let onDuplicate: () -> Void
-    let onCopyLink: () -> Void
-    let onShare: () -> Void
-    let onRename: () -> Void
-    let onBackToSavedURL: () -> Void
-    let onUseCurrentPageAsSavedURL: () -> Void
     let onEditIcon: () -> Void
-    let onEditURL: () -> Void
-    let onDeleteSavedTab: () -> Void
-    let folderChoices: [SidebarContextMenuChoice]
-    let spaceChoices: [SidebarContextMenuChoice]
-    let profileChoices: [SidebarContextMenuChoice]
-    let onMoveToFolder: (UUID) -> Void
-    let onMoveToSpace: (UUID) -> Void
-    let onConvertSpaceToProfile: (UUID) -> Void
-    let hasLiveInstance: Bool
-    let hasSavedURLDrift: Bool
+    let contextMenuActions: EssentialTileContextMenuActions
     let dragPinnedConfiguration: PinnedTabsConfiguration
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
@@ -1316,31 +1309,7 @@ private struct LivePinnedTileContent: View {
             showsUnloadIndicator: false,
             showsSplitGroupOutline: essentialRuntimeState?.showsSplitProxyOutline == true,
             supportsMiddleClickUnload: true,
-            contextMenuEntries: makeSidebarTabContextMenuEntries(
-                role: .essential,
-                capabilities: .init(
-                    folders: folderChoices,
-                    spaces: spaceChoices,
-                    profiles: profileChoices,
-                    hasSavedURLDrift: hasSavedURLDrift,
-                    hasLiveInstance: hasLiveInstance
-                ),
-                callbacks: .init(
-                    onDuplicate: onDuplicate,
-                    onCopyLink: onCopyLink,
-                    onShare: onShare,
-                    onRename: onRename,
-                    onMoveToFolder: onMoveToFolder,
-                    onMoveToSpace: onMoveToSpace,
-                    onConvertSpaceToProfile: onConvertSpaceToProfile,
-                    onBackToSavedURL: onBackToSavedURL,
-                    onUseCurrentPageAsSavedURL: onUseCurrentPageAsSavedURL,
-                    onChangeIcon: onEditIcon,
-                    onEditURL: onEditURL,
-                    onUnload: onUnload,
-                    onDeleteSavedTab: onDeleteSavedTab
-                )
-            ),
+            contextMenuEntries: { contextMenuActions.entries(onEditIcon: onEditIcon) },
             action: onActivate,
             onUnload: onUnload
         )
@@ -1375,23 +1344,8 @@ private struct StoredPinnedTileContent: View {
     let onActivate: () -> Void
     let onClose: () -> Void
     let onUnload: () -> Void
-    let onDuplicate: () -> Void
-    let onCopyLink: () -> Void
-    let onShare: () -> Void
-    let onRename: () -> Void
-    let onBackToSavedURL: () -> Void
-    let onUseCurrentPageAsSavedURL: () -> Void
     let onEditIcon: () -> Void
-    let onEditURL: () -> Void
-    let onDeleteSavedTab: () -> Void
-    let folderChoices: [SidebarContextMenuChoice]
-    let spaceChoices: [SidebarContextMenuChoice]
-    let profileChoices: [SidebarContextMenuChoice]
-    let onMoveToFolder: (UUID) -> Void
-    let onMoveToSpace: (UUID) -> Void
-    let onConvertSpaceToProfile: (UUID) -> Void
-    let hasLiveInstance: Bool
-    let hasSavedURLDrift: Bool
+    let contextMenuActions: EssentialTileContextMenuActions
     let dragPinnedConfiguration: PinnedTabsConfiguration
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
@@ -1429,31 +1383,7 @@ private struct StoredPinnedTileContent: View {
             showsUnloadIndicator: false,
             showsSplitGroupOutline: essentialRuntimeState?.showsSplitProxyOutline == true,
             supportsMiddleClickUnload: true,
-            contextMenuEntries: makeSidebarTabContextMenuEntries(
-                role: .essential,
-                capabilities: .init(
-                    folders: folderChoices,
-                    spaces: spaceChoices,
-                    profiles: profileChoices,
-                    hasSavedURLDrift: hasSavedURLDrift,
-                    hasLiveInstance: hasLiveInstance
-                ),
-                callbacks: .init(
-                    onDuplicate: onDuplicate,
-                    onCopyLink: onCopyLink,
-                    onShare: onShare,
-                    onRename: onRename,
-                    onMoveToFolder: onMoveToFolder,
-                    onMoveToSpace: onMoveToSpace,
-                    onConvertSpaceToProfile: onConvertSpaceToProfile,
-                    onBackToSavedURL: onBackToSavedURL,
-                    onUseCurrentPageAsSavedURL: onUseCurrentPageAsSavedURL,
-                    onChangeIcon: onEditIcon,
-                    onEditURL: onEditURL,
-                    onUnload: onUnload,
-                    onDeleteSavedTab: onDeleteSavedTab
-                )
-            ),
+            contextMenuEntries: { contextMenuActions.entries(onEditIcon: onEditIcon) },
             action: onActivate,
             onUnload: onUnload
         )

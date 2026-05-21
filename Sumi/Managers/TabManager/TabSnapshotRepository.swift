@@ -35,6 +35,7 @@ actor TabSnapshotRepository {
         let isPinned: Bool
         let isSpacePinned: Bool
         let profileId: UUID?
+        let executionProfileId: UUID?
         let folderId: UUID?
         let iconAsset: String?
         let currentURLString: String?
@@ -428,6 +429,7 @@ actor TabSnapshotRepository {
             existing.index = tab.index
             existing.spaceId = tab.spaceId
             existing.profileId = tab.profileId
+            existing.executionProfileId = tab.executionProfileId
             existing.folderId = tab.folderId
             existing.iconAsset = tab.iconAsset
             existing.currentURLString = tab.currentURLString
@@ -443,6 +445,7 @@ actor TabSnapshotRepository {
                 index: tab.index,
                 spaceId: tab.spaceId,
                 profileId: tab.profileId,
+                executionProfileId: tab.executionProfileId,
                 folderId: tab.folderId,
                 iconAsset: tab.iconAsset,
                 currentURLString: tab.currentURLString,

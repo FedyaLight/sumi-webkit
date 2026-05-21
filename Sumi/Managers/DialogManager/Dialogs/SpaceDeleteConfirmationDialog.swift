@@ -164,7 +164,6 @@ struct SavedTabDeleteConfirmationDialog: DialogPresentable {
                     text: kind.title,
                     iconName: "trash",
                     variant: .primary,
-                    keyboardShortcut: .return,
                     action: onDelete
                 )
             ]

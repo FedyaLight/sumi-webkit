@@ -26,12 +26,20 @@ enum SidebarContextMenuActionClassification: String {
 struct SidebarContextMenuChoice: Identifiable, Equatable {
     let id: UUID
     let title: String
+    var icon: SidebarContextMenuIcon? = nil
     var isSelected: Bool = false
+}
+
+enum SidebarContextMenuIcon: Equatable {
+    case systemImage(String)
+    case emoji(String)
+    case folderIcon(String)
 }
 
 struct SidebarContextMenuAction {
     let title: String
     let systemImage: String?
+    let icon: SidebarContextMenuIcon?
     let isEnabled: Bool
     let state: NSControl.StateValue
     let role: SidebarContextMenuRole
@@ -41,6 +49,7 @@ struct SidebarContextMenuAction {
     init(
         title: String,
         systemImage: String? = nil,
+        icon: SidebarContextMenuIcon? = nil,
         isEnabled: Bool = true,
         state: NSControl.StateValue = .off,
         role: SidebarContextMenuRole = .normal,
@@ -49,6 +58,7 @@ struct SidebarContextMenuAction {
     ) {
         self.title = title
         self.systemImage = systemImage
+        self.icon = icon
         self.isEnabled = isEnabled
         self.state = state
         self.role = role
@@ -57,10 +67,38 @@ struct SidebarContextMenuAction {
     }
 }
 
+extension SidebarContextMenuAction {
+    func withIcon(_ icon: SidebarContextMenuIcon?) -> SidebarContextMenuAction {
+        guard let icon else { return self }
+        return SidebarContextMenuAction(
+            title: title,
+            systemImage: systemImage,
+            icon: icon,
+            isEnabled: isEnabled,
+            state: state,
+            role: role,
+            classification: classification,
+            action: action
+        )
+    }
+}
+
 indirect enum SidebarContextMenuEntry {
     case action(SidebarContextMenuAction)
     case submenu(title: String, systemImage: String? = nil, children: [SidebarContextMenuEntry])
     case separator
+}
+
+extension SidebarContextMenuEntry {
+    func withIcon(_ icon: SidebarContextMenuIcon?) -> SidebarContextMenuEntry {
+        guard let icon else { return self }
+        switch self {
+        case .action(let action):
+            return .action(action.withIcon(icon))
+        case .submenu, .separator:
+            return self
+        }
+    }
 }
 
 enum SidebarContextMenuSurfaceKind: Equatable {

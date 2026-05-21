@@ -778,76 +778,116 @@ struct TabFolderView: View {
         )
         let spaceChoices = makeSidebarContextMenuSpaceChoices(
             spaces: browserManager.tabManager.spaces,
-            profiles: profiles,
             selectedSpaceId: pin.spaceId
         )
         let profileChoices = makeSidebarContextMenuProfileChoices(
             profiles: profiles,
-            selectedProfileId: space.profileId
+            selectedProfileId: browserManager.tabManager.resolvedExecutionProfileId(
+                for: pin,
+                currentSpaceId: space.id
+            )
         )
+        let addToEssentialsAction: (() -> Void)? = browserManager.tabManager.canAddURLToEssentials(
+            pin.launchURL,
+            using: .init(windowState: windowState, spaceId: space.id)
+        )
+            ? { pinShortcutGlobally(pin) }
+            : nil
+        let savedURLDriftActions: SidebarSavedURLDriftActions? =
+            browserManager.tabManager.shortcutHasDrifted(pin, in: windowState)
+                ? .init(
+                    onBackToSavedURL: { resetShortcutPin(pin) },
+                    onUseCurrentPageAsSavedURL: { _ = browserManager.tabManager.replaceShortcutPinURLWithCurrent(pin, in: windowState) }
+                )
+                : nil
+        let unloadAction: (() -> Void)? = presentationState.isOpenLive
+            ? { unloadShortcutPin(pin) }
+            : nil
+        let moveToSpaceAction: (UUID) -> Void = { targetSpaceId in
+            moveShortcutPin(pin, toSpace: targetSpaceId)
+        }
 
         return makeSidebarTabContextMenuEntries(
             role: .folderPinnedTab,
-            capabilities: .init(
-                folders: folderChoices,
-                spaces: spaceChoices,
-                profiles: profileChoices,
-                showsAddToEssentials: canAddShortcutToEssentials(pin),
-                hasSavedURLDrift: browserManager.tabManager.shortcutHasDrifted(pin, in: windowState),
-                hasLiveInstance: presentationState.isOpenLive
-            ),
-            callbacks: .init(
-                onDuplicate: { duplicateShortcutPin(pin) },
-                onCopyLink: { copyLink(pin.launchURL) },
-                onShare: {
+            actions: .init(
+                duplicate: { duplicateShortcutPin(pin) },
+                copyLink: { copyLink(pin.launchURL) },
+                share: {
                     presentSharePicker(
                         for: pin.launchURL,
                         source: windowState.resolveSidebarPresentationSource()
                     )
                 },
-                onRename: {
+                rename: {
                     presentShortcutLinkEditor(
                         for: pin,
                         source: windowState.resolveSidebarPresentationSource()
                     )
                 },
-                onMoveToFolder: { folderId in moveShortcutPin(pin, toFolder: folderId) },
-                onMoveToSpace: { targetSpaceId in moveShortcutPin(pin, toSpace: targetSpaceId) },
-                onConvertSpaceToProfile: { profileId in
-                    browserManager.tabManager.assign(spaceId: space.id, toProfile: profileId)
-                },
-                onAddToEssentials: { pinShortcutGlobally(pin) },
-                onBackToSavedURL: { resetShortcutPin(pin) },
-                onUseCurrentPageAsSavedURL: { _ = browserManager.tabManager.replaceShortcutPinURLWithCurrent(pin, in: windowState) },
-                onChangeIcon: toggleEditIcon,
-                onEditURL: {
+                folderTarget: .init(
+                    choices: folderChoices,
+                    onSelect: { folderId in moveShortcutPin(pin, toFolder: folderId) }
+                ),
+                moveToSpace: .init(
+                    choices: spaceChoices,
+                    onSelect: moveToSpaceAction,
+                    presentPicker: {
+                        MainActor.assumeIsolated {
+                            presentSidebarSpaceDestinationPicker(
+                                choices: spaceChoices,
+                                browserManager: browserManager,
+                                settings: sumiSettings,
+                                themeContext: themeContext,
+                                source: windowState.resolveSidebarPresentationSource(),
+                                onSelect: moveToSpaceAction
+                            )
+                        }
+                    }
+                ),
+                profileTarget: .init(
+                    choices: profileChoices,
+                    onSelect: { profileId in
+                        browserManager.tabManager.assign(
+                            shortcutPin: pin,
+                            toExecutionProfile: profileId
+                        )
+                    }
+                ),
+                addToEssentials: addToEssentialsAction,
+                savedURLDrift: savedURLDriftActions,
+                changeIcon: toggleEditIcon,
+                editURL: {
                     presentShortcutLinkEditor(
                         for: pin,
                         source: windowState.resolveSidebarPresentationSource()
                     )
                 },
-                onUnload: { unloadShortcutPin(pin) },
-                onDeleteSavedTab: { confirmDeleteShortcutPin(pin) }
+                unload: unloadAction,
+                deleteSavedTab: { confirmDeleteShortcutPin(pin) }
             )
         )
     }
 
     private func folderHeaderContextMenuEntries() -> [SidebarContextMenuEntry] {
-        makeFolderHeaderContextMenuEntries(
-            hasCustomIcon: folderHasCustomIcon,
-            showsUnloadActiveTabs: folderHasLiveSavedTabs,
-            callbacks: .init(
-                onRename: startRenaming,
-                onChangeIcon: {
+        let unloadActiveTabsAction: (() -> Void)?
+        if folderHasLiveSavedTabs {
+            unloadActiveTabsAction = unloadActiveFolderTabs
+        } else {
+            unloadActiveTabsAction = nil
+        }
+
+        return makeFolderHeaderContextMenuEntries(
+            actions: .init(
+                rename: startRenaming,
+                changeIcon: {
                     presentFolderIconPicker(
                         source: windowState.resolveSidebarPresentationSource()
                     )
                 },
-                onResetIcon: { browserManager.tabManager.updateFolderIcon(folder.id, icon: "") },
-                onAddTab: onAddTab,
-                onAlphabetize: alphabetizeTabs,
-                onUnloadActiveTabs: unloadActiveFolderTabs,
-                onDelete: onDelete
+                addTab: onAddTab,
+                alphabetize: alphabetizeTabs,
+                unloadActiveTabs: unloadActiveTabsAction,
+                delete: onDelete
             )
         )
     }
@@ -1185,13 +1225,6 @@ struct TabFolderView: View {
         browserManager.tabManager.pinTab(
             syntheticTab,
             context: .init(windowState: windowState, spaceId: space.id)
-        )
-    }
-
-    private func canAddShortcutToEssentials(_ pin: ShortcutPin) -> Bool {
-        browserManager.tabManager.canAddURLToEssentials(
-            pin.launchURL,
-            using: .init(windowState: windowState, spaceId: space.id)
         )
     }
 

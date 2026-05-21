@@ -60,6 +60,14 @@ struct SumiEmojiPickerPanel: View {
 
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 4) {
+                    SumiEmojiResetGridCell(
+                        isSelected: model.currentGlyph.isEmpty,
+                        onTap: {
+                            model.currentGlyph = ""
+                            onEmojiSelected("")
+                        }
+                    )
+
                     ForEach(displayedEntries) { entry in
                         SumiEmojiGridCell(
                             glyph: entry.glyph,
@@ -201,6 +209,44 @@ private struct SumiEmojiGridCell: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .accessibilityLabel(glyph)
+    }
+
+    private var cellBackground: Color {
+        if isSelected {
+            Color(nsColor: .selectedContentBackgroundColor).opacity(0.55)
+        } else if hovering {
+            Color(nsColor: .quaternaryLabelColor).opacity(0.45)
+        } else {
+            Color.clear
+        }
+    }
+}
+
+private struct SumiEmojiResetGridCell: View {
+    let isSelected: Bool
+    let onTap: () -> Void
+
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @State private var hovering = false
+
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
+    }
+
+    var body: some View {
+        Button(action: onTap) {
+            Image(systemName: "nosign")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(tokens.secondaryText)
+                .frame(width: 34, height: 34)
+                .background(cellBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("No custom icon")
+        .accessibilityLabel("No custom icon")
     }
 
     private var cellBackground: Color {

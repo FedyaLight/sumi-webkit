@@ -19,7 +19,11 @@ enum SumiPersistentGlyph {
 
     /// True when the string should be drawn with `Text` (emoji / pictographic slot).
     static func presentsAsEmoji(_ string: String) -> Bool {
-        string.unicodeScalars.contains { scalar in
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        guard trimmed.unicodeScalars.allSatisfy(\.isASCII) == false else { return false }
+
+        return trimmed.unicodeScalars.contains { scalar in
             if scalar.properties.isEmoji {
                 return true
             }

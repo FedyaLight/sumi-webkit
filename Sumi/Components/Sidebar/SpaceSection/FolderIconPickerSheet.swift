@@ -80,7 +80,8 @@ struct FolderIconPickerSheet: View {
                         onRequestClose()
                         onReset()
                     }
-                    .help("No icon")
+                    .help("No custom icon")
+                    .accessibilityLabel("No custom icon")
 
                     ForEach(filteredIcons, id: \.self) { iconName in
                         FolderIconPickerTile(

@@ -147,6 +147,7 @@ struct TabManagerSnapshotCache {
                     isPinned: true,
                     isSpacePinned: false,
                     profileId: profileId,
+                    executionProfileId: pin.executionProfileId,
                     folderId: nil,
                     iconAsset: pin.iconAsset,
                     currentURLString: pin.launchURL.absoluteString,
@@ -183,6 +184,7 @@ struct TabManagerSnapshotCache {
                     isPinned: false,
                     isSpacePinned: true,
                     profileId: nil,
+                    executionProfileId: pin.executionProfileId,
                     folderId: pin.folderId,
                     iconAsset: pin.iconAsset,
                     currentURLString: pin.launchURL.absoluteString,
@@ -218,7 +220,8 @@ struct TabManagerSnapshotCache {
                     spaceId: spaceId,
                     isPinned: false,
                     isSpacePinned: false,
-                    profileId: nil,
+                    profileId: tab.profileId,
+                    executionProfileId: nil,
                     folderId: tab.folderId,
                     iconAsset: nil,
                     currentURLString: tab.url.absoluteString,
@@ -598,6 +601,7 @@ extension TabManager {
                         isPinned: true,
                         isSpacePinned: false,
                         profileId: profileId,
+                        executionProfileId: pin.executionProfileId,
                         folderId: nil,
                         iconAsset: pin.iconAsset,
                         currentURLString: pin.launchURL.absoluteString,
@@ -621,6 +625,7 @@ extension TabManager {
                         isPinned: false,
                         isSpacePinned: true,
                         profileId: nil,
+                        executionProfileId: pin.executionProfileId,
                         folderId: pin.folderId,
                         iconAsset: pin.iconAsset,
                         currentURLString: pin.launchURL.absoluteString,
@@ -641,7 +646,8 @@ extension TabManager {
                         spaceId: space.id,
                         isPinned: false,
                         isSpacePinned: false,
-                        profileId: nil,
+                        profileId: tab.profileId,
+                        executionProfileId: nil,
                         folderId: tab.folderId,
                         iconAsset: nil,
                         currentURLString: tab.url.absoluteString,
@@ -987,6 +993,7 @@ extension TabManager {
             loadsCachedFaviconOnInit: false
         )
         tab.folderId = dto.folderId
+        tab.profileId = dto.profileId
         tab.isPinned = false
         tab.isSpacePinned = false
         tab.canGoBack = dto.canGoBack
@@ -999,6 +1006,7 @@ extension TabManager {
             id: dto.id,
             role: dto.role,
             profileId: dto.profileId,
+            executionProfileId: dto.executionProfileId,
             spaceId: dto.spaceId,
             index: dto.index,
             folderId: dto.folderId,

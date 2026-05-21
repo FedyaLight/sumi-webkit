@@ -159,6 +159,7 @@ extension TabManager {
                         id: snapshotTab.id,
                         role: .essential,
                         profileId: profileId,
+                        executionProfileId: snapshotTab.executionProfileId,
                         index: snapshotTab.index,
                         launchURL: url,
                         title: snapshotTab.name,
@@ -189,6 +190,7 @@ extension TabManager {
                     ShortcutPin(
                         id: snapshotTab.id,
                         role: .spacePinned,
+                        executionProfileId: snapshotTab.executionProfileId ?? snapshotTab.profileId,
                         spaceId: spaceId,
                         index: snapshotTab.index,
                         folderId: snapshotTab.folderId,
@@ -231,7 +233,7 @@ extension TabManager {
                 )
                 tab.canGoBack = snapshotTab.canGoBack
                 tab.canGoForward = snapshotTab.canGoForward
-                tab.profileId = spaces.first(where: { $0.id == spaceId })?.profileId
+                tab.profileId = snapshotTab.profileId ?? spaces.first(where: { $0.id == spaceId })?.profileId
                 attach(tab)
                 tabs.append(tab)
             }

@@ -15,7 +15,7 @@ struct SpaceTab: View {
     var action: () -> Void
     var onClose: () -> Void
     var onMute: () -> Void
-    var contextMenuEntries: [SidebarContextMenuEntry] = []
+    var contextMenuEntries: () -> [SidebarContextMenuEntry] = { [] }
     var fetchesVisiblePresentation: Bool = true
     @FocusState private var isTextFieldFocused: Bool
     @State private var isRowHovered = false
@@ -184,7 +184,7 @@ struct SpaceTab: View {
                 action()
             },
             sourceID: rowSourceID,
-            entries: { contextMenuEntries }
+            entries: contextMenuEntries
         )
         .task(id: tab.url) {
             guard fetchesVisiblePresentation else { return }
